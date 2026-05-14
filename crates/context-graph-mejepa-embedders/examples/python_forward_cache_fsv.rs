@@ -1,3 +1,4 @@
+use chrono::{DateTime, SecondsFormat, Utc};
 use context_graph_embeddings::get_memory_estimate;
 use context_graph_mejepa_embedders::{
     digest_manifest_for_embedder, embedder_model_id, AlgorithmicEmbedderForward, EmbedderForward,
@@ -4691,11 +4692,8 @@ fn unix_ms() -> FsvResult<u128> {
 }
 
 fn utc_now() -> FsvResult<String> {
-    let output = Command::new("date")
-        .args(["-u", "+%Y-%m-%dT%H:%M:%SZ"])
-        .output()?;
-    require("date command succeeded", output.status.success())?;
-    Ok(String::from_utf8(output.stdout)?.trim().to_string())
+    let now: DateTime<Utc> = SystemTime::now().into();
+    Ok(now.to_rfc3339_opts(SecondsFormat::Secs, true))
 }
 
 fn require(label: &str, condition: bool) -> FsvResult<()> {
@@ -4717,5 +4715,71 @@ impl OutputNorm for EmbedderOutput {
             .map(|value| (*value as f64) * (*value as f64))
             .sum::<f64>()
             .sqrt()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    struct PathGuard(Option<OsString>);
+
+    impl Drop for PathGuard {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(path) => std::env::set_var("PATH", path),
+                None => std::env::remove_var("PATH"),
+            }
+        }
+    }
+
+    #[test]
+    fn utc_now_does_not_depend_on_external_date_command() {
+        let _path_guard = PathGuard(std::env::var_os("PATH"));
+        std::env::set_var("PATH", "/nonexistent-contextgraph-date-path");
+
+        let stamp = utc_now().expect("UTC timestamp should be generated in-process");
+
+        assert_eq!(stamp.len(), "1970-01-01T00:00:00Z".len());
+        assert_eq!(&stamp[4..5], "-");
+        assert_eq!(&stamp[7..8], "-");
+        assert_eq!(&stamp[10..11], "T");
+        assert_eq!(&stamp[13..14], ":");
+        assert_eq!(&stamp[16..17], ":");
+        assert!(stamp.ends_with('Z'));
+    }
+
+    #[test]
+    fn utc_now_ignores_failing_date_binary_in_path() -> FsvResult<()> {
+        let _path_guard = PathGuard(std::env::var_os("PATH"));
+        let bin_dir = tempfile::tempdir()?;
+        let date_path = bin_dir.path().join("date");
+        fs::write(&date_path, "#!/bin/sh\nexit 37\n")?;
+        fs::set_permissions(&date_path, fs::Permissions::from_mode(0o755))?;
+        std::env::set_var("PATH", bin_dir.path());
+
+        let stamp = utc_now()?;
+
+        assert!(stamp.ends_with('Z'));
+        assert_eq!(stamp.len(), "1970-01-01T00:00:00Z".len());
+        Ok(())
+    }
+
+    #[test]
+    fn utc_now_ignores_malformed_date_output_in_path() -> FsvResult<()> {
+        let _path_guard = PathGuard(std::env::var_os("PATH"));
+        let bin_dir = tempfile::tempdir()?;
+        let date_path = bin_dir.path().join("date");
+        fs::write(&date_path, "#!/bin/sh\nprintf 'not-a-timestamp\\n'\n")?;
+        fs::set_permissions(&date_path, fs::Permissions::from_mode(0o755))?;
+        std::env::set_var("PATH", bin_dir.path());
+
+        let stamp = utc_now()?;
+
+        assert!(stamp.ends_with('Z'));
+        assert_eq!(&stamp[10..11], "T");
+        assert_ne!(stamp, "not-a-timestamp");
+        Ok(())
     }
 }
