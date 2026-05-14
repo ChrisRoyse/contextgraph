@@ -122,6 +122,14 @@ def parse_args() -> argparse.Namespace:
         help="Fail closed unless every shard manifest proves packed JSONL store readback.",
     )
     parser.add_argument(
+        "--stage-packed-shards-on-hot",
+        action="store_true",
+        help=(
+            "For packed layout, run shard cache/FSV assembly in a bounded WSL ext4 hot stage, "
+            "then promote verified artifacts to the D-drive SoT."
+        ),
+    )
+    parser.add_argument(
         "--active-embedder-count",
         type=int,
         default=DEFAULT_ACTIVE_EMBEDDER_COUNT,
@@ -341,6 +349,7 @@ def runner_batch_controls(args: argparse.Namespace) -> dict[str, Any]:
         },
         "cache_store_layout": args.cache_store_layout,
         "require_packed_store": args.require_packed_store,
+        "stage_packed_shards_on_hot": args.stage_packed_shards_on_hot,
         "isolate_embedder_processes": args.isolate_embedder_processes,
     }
 
@@ -861,23 +870,33 @@ def run_shard(
     event_phase: str = "shard_run_complete",
     require_packed_store: bool | None = None,
 ) -> dict[str, Any]:
+    stage_promotion: dict[str, Any] | None = None
+    stage_setup: dict[str, Any] | None = None
+    runner_shard = shard
+    runner_hot_root = args.hot_root
+    if use_hot_stage_for_shard(args):
+        stage_root = hot_stage_root(args, shard, run_log_name)
+        runner_shard = hot_stage_shard(args, shard, run_log_name)
+        stage_setup = prepare_hot_stage(args, shard, runner_shard, stage_root)
+        runner_hot_root = stage_root / "runner-hot"
+
     env = os.environ.copy()
     env.update(
         {
-            "CG_MEJEPA_PY_FORWARD_CACHE_ROOT": str(shard.cache_root),
-            "CG_MEJEPA_PY_FORWARD_CACHE_FSV_ROOT": str(shard.fsv_root),
-            "CG_MEJEPA_PY_FORWARD_CACHE_HOT_ROOT": str(args.hot_root),
-            "CG_MEJEPA_PY_FORWARD_CACHE_CHUNK_OFFSET": str(shard.chunk_offset),
-            "CG_MEJEPA_PY_FORWARD_CACHE_MAX_CHUNKS": str(shard.max_chunks),
+            "CG_MEJEPA_PY_FORWARD_CACHE_ROOT": str(runner_shard.cache_root),
+            "CG_MEJEPA_PY_FORWARD_CACHE_FSV_ROOT": str(runner_shard.fsv_root),
+            "CG_MEJEPA_PY_FORWARD_CACHE_HOT_ROOT": str(runner_hot_root),
+            "CG_MEJEPA_PY_FORWARD_CACHE_CHUNK_OFFSET": str(runner_shard.chunk_offset),
+            "CG_MEJEPA_PY_FORWARD_CACHE_MAX_CHUNKS": str(runner_shard.max_chunks),
             "CG_MEJEPA_PY_FORWARD_MAX_SOURCE_BYTES": str(args.max_source_bytes),
             "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE": str(args.true_batch_size),
             "CG_MEJEPA_PY_FORWARD_GPU_VRAM_GUARD_BYTES": str(args.gpu_vram_guard_bytes),
             "CG_MEJEPA_PY_FORWARD_IO_WORKERS": str(args.io_workers),
             "CG_MEJEPA_PY_FORWARD_CPU_WORKERS": str(args.cpu_workers),
-        "CG_MEJEPA_PY_FORWARD_GPU_WORKERS": str(args.gpu_workers),
-        "CG_MEJEPA_PY_FORWARD_JSONL_SYNC_EVERY_ROWS": str(args.jsonl_sync_every_rows),
-        "CG_MEJEPA_PY_FORWARD_CACHE_STORE_LAYOUT": args.cache_store_layout,
-    }
+            "CG_MEJEPA_PY_FORWARD_GPU_WORKERS": str(args.gpu_workers),
+            "CG_MEJEPA_PY_FORWARD_JSONL_SYNC_EVERY_ROWS": str(args.jsonl_sync_every_rows),
+            "CG_MEJEPA_PY_FORWARD_CACHE_STORE_LAYOUT": args.cache_store_layout,
+        }
     )
     if args.true_batch_max_padded_source_bytes is not None:
         env["CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_PADDED_SOURCE_BYTES"] = str(
@@ -899,6 +918,10 @@ def run_shard(
             "max_chunks": shard.max_chunks,
             "cache_root": str(shard.cache_root),
             "fsv_root": str(shard.fsv_root),
+            "runner_cache_root": str(runner_shard.cache_root),
+            "runner_fsv_root": str(runner_shard.fsv_root),
+            "runner_hot_root": str(runner_hot_root),
+            "hot_stage": stage_setup,
             "resource": resource_before,
         },
     )
@@ -928,6 +951,10 @@ def run_shard(
     run_log_path = args.fsv_root / "run_logs" / (run_log_name or f"{shard.shard_id}.json")
     json_dump_checked(run_log_path, run_log)
     require(f"{shard.shard_id} runner exited zero", completed.returncode == 0)
+    if use_hot_stage_for_shard(args):
+        stage_readback = shard_completion_readback(args, runner_shard, require_packed_store)
+        stage_promotion = promote_hot_stage_shard(args, shard, runner_shard, stage_root, stage_readback)
+        run_log["hot_stage_promotion"] = stage_promotion
     run_log.update(shard_completion_readback(args, shard, require_packed_store))
     run_log["skipped_completed"] = False
     json_dump_checked(run_log_path, run_log)
@@ -1147,6 +1174,260 @@ def archive_failed_partial_shard(
         **manifest,
         "archive_manifest_path": str(manifest_path),
         "archive_manifest_sha256": sha256_file(manifest_path),
+    }
+
+
+def archive_interrupted_hot_stage(
+    args: argparse.Namespace,
+    shard: ShardSpec,
+    stage_root: Path,
+    reason: str,
+) -> dict[str, Any] | None:
+    if not stage_root.exists():
+        return None
+    before = tree_state(stage_root)
+    archive_root = unique_archive_root(
+        args.fsv_root / "failed_hot_stages",
+        f"{utc_now().replace('-', '').replace(':', '')}-{shard.shard_id}-{stage_root.name}",
+    )
+    shutil.move(str(stage_root), str(archive_root))
+    require("interrupted hot-stage source removed after archive", not stage_root.exists())
+    require("interrupted hot-stage archive exists", archive_root.exists())
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_interrupted_hot_stage_archive",
+        "created_at_utc": utc_now(),
+        "shard_id": shard.shard_id,
+        "reason": reason,
+        "stage_root": str(stage_root),
+        "archive_root": str(archive_root),
+        "before_state": before,
+        "after_state": {
+            "stage_root": tree_state(stage_root),
+            "archive_root": tree_state(archive_root),
+        },
+        "passes": True,
+    }
+    manifest_path = archive_root / "archive_manifest.json"
+    json_dump_checked(manifest_path, manifest)
+    readback = read_json(manifest_path)
+    require("interrupted hot-stage archive manifest readback passes", readback.get("passes") is True)
+    return {
+        **manifest,
+        "archive_manifest_path": str(manifest_path),
+        "archive_manifest_sha256": sha256_file(manifest_path),
+    }
+
+
+def stage_identity(run_log_name: str | None) -> str:
+    if run_log_name is None:
+        return "canonical"
+    return run_log_name.removesuffix(".json").replace("/", "_")
+
+
+def hot_stage_root(args: argparse.Namespace, shard: ShardSpec, run_log_name: str | None = None) -> Path:
+    return args.hot_root / "packed-shard-stage" / shard.shard_id / stage_identity(run_log_name)
+
+
+def hot_stage_shard(args: argparse.Namespace, shard: ShardSpec, run_log_name: str | None = None) -> ShardSpec:
+    root = hot_stage_root(args, shard, run_log_name)
+    return ShardSpec(
+        shard_id=shard.shard_id,
+        chunk_offset=shard.chunk_offset,
+        max_chunks=shard.max_chunks,
+        cache_root=root / "cache",
+        fsv_root=root / "fsv",
+    )
+
+
+def use_hot_stage_for_shard(args: argparse.Namespace) -> bool:
+    return args.stage_packed_shards_on_hot and args.cache_store_layout == "packed"
+
+
+def prepare_hot_stage(
+    args: argparse.Namespace,
+    durable_shard: ShardSpec,
+    stage_shard: ShardSpec,
+    stage_root: Path,
+) -> dict[str, Any]:
+    require("packed hot-stage root is not /mnt/c", not path_is_under(stage_root.resolve(strict=False), Path("/mnt/c")))
+    require("packed hot-stage root is WSL ext4, not /mnt/d", not path_is_under(stage_root.resolve(strict=False), Path("/mnt/d")))
+    archive = archive_interrupted_hot_stage(
+        args,
+        durable_shard,
+        stage_root,
+        "new hot-stage run refuses to reuse stale interrupted stage state",
+    )
+    stage_root.mkdir(parents=True, exist_ok=False)
+    if durable_shard.cache_root.exists():
+        shutil.copytree(durable_shard.cache_root, stage_shard.cache_root)
+    else:
+        stage_shard.cache_root.mkdir(parents=True)
+    if durable_shard.fsv_root.exists():
+        shutil.copytree(durable_shard.fsv_root, stage_shard.fsv_root)
+    else:
+        stage_shard.fsv_root.mkdir(parents=True)
+    stage_hot_root = stage_root / "runner-hot"
+    stage_hot_root.mkdir(parents=True, exist_ok=True)
+    os.chmod(stage_hot_root, 0o700)
+    return {
+        "stage_root": str(stage_root),
+        "stage_cache_root": str(stage_shard.cache_root),
+        "stage_fsv_root": str(stage_shard.fsv_root),
+        "stage_runner_hot_root": str(stage_hot_root),
+        "interrupted_stage_archive": archive,
+        "before_state": {
+            "durable_cache_root": tree_state(durable_shard.cache_root),
+            "durable_fsv_root": tree_state(durable_shard.fsv_root),
+        },
+        "stage_before_runner": {
+            "stage_cache_root": tree_state(stage_shard.cache_root),
+            "stage_fsv_root": tree_state(stage_shard.fsv_root),
+            "stage_runner_hot_root": tree_state(stage_hot_root),
+        },
+        "passes": True,
+    }
+
+
+def replace_path_prefixes(value: Any, replacements: dict[str, str]) -> Any:
+    if isinstance(value, str):
+        updated = value
+        for old, new in replacements.items():
+            updated = updated.replace(old, new)
+        return updated
+    if isinstance(value, list):
+        return [replace_path_prefixes(item, replacements) for item in value]
+    if isinstance(value, dict):
+        return {key: replace_path_prefixes(item, replacements) for key, item in value.items()}
+    return value
+
+
+def rewrite_json_paths_in_tree(root: Path, replacements: dict[str, str]) -> list[dict[str, Any]]:
+    rewrites: list[dict[str, Any]] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.suffix == ".json":
+            before_sha = sha256_file(path)
+            value = read_json(path)
+            updated = replace_path_prefixes(value, replacements)
+            json_dump_checked(path, updated)
+            rewrites.append({
+                "path": str(path),
+                "kind": "json",
+                "before_sha256": before_sha,
+                "after_sha256": sha256_file(path),
+            })
+        elif path.suffix == ".jsonl":
+            before_sha = sha256_file(path)
+            rows: list[Any] = []
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    rows.append(replace_path_prefixes(json.loads(line), replacements))
+            tmp = path.with_suffix(f"{path.suffix}.rewrite")
+            with tmp.open("w", encoding="utf-8") as handle:
+                for row in rows:
+                    handle.write(json.dumps(row, sort_keys=True))
+                    handle.write("\n")
+            tmp.replace(path)
+            rewrites.append({
+                "path": str(path),
+                "kind": "jsonl",
+                "row_count": len(rows),
+                "before_sha256": before_sha,
+                "after_sha256": sha256_file(path),
+            })
+    return rewrites
+
+
+def promote_tree_verified(source: Path, destination: Path, archive_parent: Path, label: str) -> dict[str, Any]:
+    require(f"{label} source exists before promotion", source.exists())
+    before = {
+        "source": tree_state(source),
+        "destination": tree_state(destination),
+    }
+    temp = unique_archive_root(destination.parent, f".{destination.name}.promote-{utc_now().replace('-', '').replace(':', '')}")
+    if temp.exists():
+        shutil.rmtree(temp)
+    shutil.copytree(source, temp)
+    require(f"{label} promotion temp tree byte count matches source", tree_state(temp)["byte_count"] == tree_state(source)["byte_count"])
+    archived_existing = None
+    if destination.exists():
+        archived_existing = unique_archive_root(
+            archive_parent,
+            f"{utc_now().replace('-', '').replace(':', '')}-{destination.name}",
+        )
+        shutil.move(str(destination), str(archived_existing))
+        require(f"{label} previous destination archived", archived_existing.exists())
+        require(f"{label} previous destination removed", not destination.exists())
+    shutil.move(str(temp), str(destination))
+    require(f"{label} destination exists after promotion", destination.exists())
+    require(f"{label} promoted byte count matches source", tree_state(destination)["byte_count"] == before["source"]["byte_count"])
+    return {
+        "label": label,
+        "before_state": before,
+        "archived_existing": None if archived_existing is None else str(archived_existing),
+        "after_state": {
+            "source": tree_state(source),
+            "destination": tree_state(destination),
+        },
+        "passes": True,
+    }
+
+
+def promote_hot_stage_shard(
+    args: argparse.Namespace,
+    durable_shard: ShardSpec,
+    stage_shard: ShardSpec,
+    stage_root: Path,
+    stage_readback: dict[str, Any],
+) -> dict[str, Any]:
+    replacements = {
+        str(stage_shard.cache_root): str(durable_shard.cache_root),
+        str(stage_shard.fsv_root): str(durable_shard.fsv_root),
+    }
+    rewrites = (
+        rewrite_json_paths_in_tree(stage_shard.cache_root, replacements)
+        + rewrite_json_paths_in_tree(stage_shard.fsv_root, replacements)
+    )
+    after_rewrite = {
+        "stage_cache_root": tree_state(stage_shard.cache_root),
+        "stage_fsv_root": tree_state(stage_shard.fsv_root),
+    }
+    archive_parent = args.fsv_root / "hot_stage_promoted_overwrites" / durable_shard.shard_id
+    cache_promotion = promote_tree_verified(
+        stage_shard.cache_root,
+        durable_shard.cache_root,
+        archive_parent / "cache",
+        "cache_root",
+    )
+    fsv_promotion = promote_tree_verified(
+        stage_shard.fsv_root,
+        durable_shard.fsv_root,
+        archive_parent / "fsv",
+        "fsv_root",
+    )
+    durable_readback = shard_completion_readback(args, durable_shard)
+    shutil.rmtree(stage_root)
+    require("packed hot-stage root removed after durable promotion", not stage_root.exists())
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_hot_stage_promotion",
+        "created_at_utc": utc_now(),
+        "shard_id": durable_shard.shard_id,
+        "stage_root": str(stage_root),
+        "stage_readback": stage_readback,
+        "path_rewrites": rewrites,
+        "after_rewrite": after_rewrite,
+        "cache_promotion": cache_promotion,
+        "fsv_promotion": fsv_promotion,
+        "durable_readback": durable_readback,
+        "stage_after_state": tree_state(stage_root),
+        "passes": True,
     }
 
 
@@ -1708,6 +1989,81 @@ def write_resume_preflight_fsv(
     }
 
 
+def hot_stage_promotion_edge_checks(args: argparse.Namespace) -> list[dict[str, Any]]:
+    edge_root = args.fsv_root / "edge_inputs" / "hot_stage_promotion"
+    edge_root.mkdir(parents=True, exist_ok=True)
+    cases: list[dict[str, Any]] = []
+
+    checkpoint_path, _ = checkpoint_file_paths(args)
+    checkpoint_before = file_state(checkpoint_path)
+    stage_mismatch_root = args.hot_root / "edge-hot-stage-promotion-mismatch"
+    if stage_mismatch_root.exists():
+        shutil.rmtree(stage_mismatch_root)
+    stage_mismatch_root.mkdir(parents=True)
+    os.chmod(stage_mismatch_root, 0o700)
+    durable_mismatch_path = edge_root / "promotion-mismatch.json"
+    stage_path = stage_mismatch_root / "payload.json"
+    expected = {"stage": "good", "vector_sha256": "sha256:synthetic"}
+    corrupt = {"stage": "corrupt", "vector_sha256": "sha256:synthetic"}
+    json_dump_checked(stage_path, expected)
+    json_dump_checked(durable_mismatch_path, corrupt)
+    mismatch_detected = sha256_file(stage_path) != sha256_file(durable_mismatch_path)
+    require("hot-stage promotion mismatch edge detects digest disagreement", mismatch_detected)
+    cases.append(
+        {
+            "case": "hot_stage_promotion_hash_mismatch_rejected",
+            "passes": True,
+            "stage_path": str(stage_path),
+            "stage_sha256": sha256_file(stage_path),
+            "durable_path": str(durable_mismatch_path),
+            "durable_sha256": sha256_file(durable_mismatch_path),
+            "checkpoint_before": checkpoint_before,
+            "checkpoint_after": file_state(checkpoint_path),
+            "checkpoint_sha256_unchanged": checkpoint_before.get("sha256") == file_state(checkpoint_path).get("sha256"),
+        }
+    )
+
+    durable_edge_shard = ShardSpec(
+        "edge-hot-stage-interrupt",
+        600_000_000,
+        1,
+        edge_root / "durable-cache",
+        edge_root / "durable-fsv",
+    )
+    stage_edge_shard = hot_stage_shard(args, durable_edge_shard)
+    stage_root = hot_stage_root(args, durable_edge_shard)
+    if stage_root.exists():
+        shutil.rmtree(stage_root)
+    stage_root.mkdir(parents=True)
+    (stage_root / "stale-marker.txt").write_text("interrupted", encoding="utf-8")
+    stage_setup = prepare_hot_stage(args, durable_edge_shard, stage_edge_shard, stage_root)
+    archive = stage_setup["interrupted_stage_archive"]
+    require("interrupted hot-stage edge archived stale stage", isinstance(archive, dict))
+    require("interrupted hot-stage edge created fresh cache root", stage_edge_shard.cache_root.exists())
+    cases.append(
+        {
+            "case": "interrupted_hot_stage_archived_before_retry",
+            "passes": True,
+            "archive": archive,
+            "fresh_stage_state": {
+                "stage_cache_root": tree_state(stage_edge_shard.cache_root),
+                "stage_fsv_root": tree_state(stage_edge_shard.fsv_root),
+            },
+        }
+    )
+    shutil.rmtree(stage_root)
+
+    try:
+        bad_stage = Path("/mnt/c/contextgraph-hot-stage-edge")
+        require("packed hot-stage root is not /mnt/c", not path_is_under(bad_stage, Path("/mnt/c")))
+    except SchedulerError as exc:
+        cases.append({"case": "hot_stage_under_mnt_c_rejected", "passes": True, "error": str(exc)})
+    else:
+        raise SchedulerError("hot stage /mnt/c edge unexpectedly passed")
+
+    return cases
+
+
 def count_packed_index_rows(packed_root: Path) -> int:
     if not packed_root.exists():
         return 0
@@ -2083,6 +2439,10 @@ def preflight_edge_checks(args: argparse.Namespace, preflight: dict[str, Any]) -
         hot_root=Path("/mnt/c/contextgraph-hot-edge"),
     )
     expect_preflight_failure(
+        "hot_stage_projected_capacity_overflow_rejected_before_writes",
+        hot_stage_budget_bytes=preflight["host"]["filesystems"]["/"]["available_bytes"] + 1,
+    )
+    expect_preflight_failure(
         "d_root_projected_capacity_overflow_rejected_before_writes",
         projected_output_bytes=preflight["host"]["filesystems"]["/mnt/d"]["available_bytes"] + 1,
     )
@@ -2387,6 +2747,9 @@ def edge_checks(
         "archive": archive,
     })
 
+    if use_hot_stage_for_shard(args):
+        cases.extend(hot_stage_promotion_edge_checks(args))
+
     return cases
 
 
@@ -2428,6 +2791,7 @@ def main() -> int:
         "mode": args.mode,
         "resume_completed_shards": args.resume_completed_shards,
         "retry_failed_partial_shards": args.retry_failed_partial_shards,
+        "stage_packed_shards_on_hot": args.stage_packed_shards_on_hot,
         "isolate_embedder_processes": args.isolate_embedder_processes,
         "checkpoint_every_shards": args.checkpoint_every_shards,
         "chunks_jsonl": str(args.chunks_jsonl),

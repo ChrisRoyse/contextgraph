@@ -2635,8 +2635,8 @@ impl ForwardCacheStore {
                     !self.packed_index.contains_key(&record.cache_key_sha256),
                 )?;
                 require(
-                    "packed cache root is durable D-drive",
-                    paths.packed_root().starts_with("/mnt/d"),
+                    "packed cache root is not Windows mounted /mnt/c",
+                    !paths.packed_root().starts_with("/mnt/c"),
                 )?;
                 fs::create_dir_all(paths.packed_root())?;
                 let packed_record_path = paths.packed_record_path(embedder);
