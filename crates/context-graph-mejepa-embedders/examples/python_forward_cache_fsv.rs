@@ -371,7 +371,8 @@ async fn main() -> FsvResult<()> {
     verify_registry_matches_runtime(&registry, only_embedder)?;
     let batch_controls = build_true_batch_controls(&registry, true_batch_size, max_source_bytes)?;
     let config = ModelsConfig::load(&paths.models_config)?;
-    let mut cache_store = ForwardCacheStore::open(&paths, cache_store_layout)?;
+    let mut cache_store =
+        ForwardCacheStore::open(&paths, cache_store_layout, jsonl_sync_every_rows)?;
 
     let mut coverage_tracker = CoverageTracker::new(&registry, chunks.len())?;
     let mut first_pass_count = 0usize;
@@ -531,6 +532,7 @@ async fn main() -> FsvResult<()> {
         }
     }
 
+    let packed_index_write_state = cache_store.finish_packed_index_writers()?;
     let schema = schema_json();
     write_json_checked(&paths.schema_path(), &schema)?;
     let manifest_state = store_state("manifest_before_final_write", &paths)?;
@@ -590,6 +592,7 @@ async fn main() -> FsvResult<()> {
             "index": index_write_state,
             "quarantine": quarantine_write_state,
             "batch_telemetry": batch_telemetry_write_state,
+            "packed_index": packed_index_write_state,
             "sync_every_rows": jsonl_sync_every_rows,
         },
         "packed_store": cache_store.write_manifest(&paths)?,
@@ -617,9 +620,9 @@ async fn main() -> FsvResult<()> {
         edge_pretrained_token_quadratic_defaults(&paths)?,
     ];
     if registry.iter().any(|record| {
-        record.embedder_id().map_or(false, |embedder| {
-            SUPPORTED_PRETRAINED_FORWARD_EMBEDDERS.contains(&embedder)
-        })
+        record
+            .embedder_id()
+            .is_ok_and(|embedder| SUPPORTED_PRETRAINED_FORWARD_EMBEDDERS.contains(&embedder))
     }) {
         edge_cases.push(edge_true_batch_vram_guard(
             &paths,
@@ -637,7 +640,9 @@ async fn main() -> FsvResult<()> {
         edge_true_batch_gpu_oom_classifier(&paths)?,
         edge_hot_stage_promotion_mismatch(&paths)?,
         edge_cache_corruption(&paths)?,
+        edge_packed_duplicate_key_before_append(&paths)?,
         edge_packed_duplicate_key(&paths)?,
+        edge_packed_malformed_schema(&paths)?,
         edge_packed_corrupt_row(&paths)?,
         edge_packed_missing_payload(&paths)?,
         edge_packed_truncated_payload(&paths)?,
@@ -2348,7 +2353,7 @@ fn load_active_embedder_records(
         if record.activation_status == "active" && record.panel_role == "target_side_embedder" {
             validate_registry_record(&record)?;
             let embedder = record.embedder_id()?;
-            if only_embedder.map_or(true, |only| only == embedder) {
+            if only_embedder.is_none_or(|only| only == embedder) {
                 out.push(record);
             }
         }
@@ -2473,16 +2478,22 @@ fn read_cache_record(path: &Path) -> FsvResult<ForwardCacheRecord> {
 struct ForwardCacheStore {
     layout: CacheStoreLayout,
     packed_index: BTreeMap<String, PackedIndexRow>,
+    packed_index_sinks: BTreeMap<String, PackedIndexSink>,
+    packed_index_write_states: BTreeMap<String, PackedIndexWriteState>,
+    packed_index_sync_every_rows: usize,
 }
 
 impl ForwardCacheStore {
-    fn open(paths: &Paths, layout: CacheStoreLayout) -> FsvResult<Self> {
+    fn open(paths: &Paths, layout: CacheStoreLayout, sync_every_rows: usize) -> FsvResult<Self> {
         if layout == CacheStoreLayout::PackedJsonl {
             fs::create_dir_all(paths.packed_root())?;
         }
         let mut store = Self {
             layout,
             packed_index: BTreeMap::new(),
+            packed_index_sinks: BTreeMap::new(),
+            packed_index_write_states: BTreeMap::new(),
+            packed_index_sync_every_rows: sync_every_rows,
         };
         if layout == CacheStoreLayout::PackedJsonl {
             store.packed_index = load_packed_index_rows(paths)?;
@@ -2492,6 +2503,37 @@ impl ForwardCacheStore {
 
     fn layout(&self) -> CacheStoreLayout {
         self.layout
+    }
+
+    fn packed_index_sink(
+        &mut self,
+        paths: &Paths,
+        embedder: &str,
+    ) -> FsvResult<&mut PackedIndexSink> {
+        if !self.packed_index_sinks.contains_key(embedder) {
+            let sink = PackedIndexSink::open(
+                &paths.packed_index_path(embedder),
+                self.packed_index_sync_every_rows,
+            )?;
+            self.packed_index_sinks.insert(embedder.to_string(), sink);
+        }
+        self.packed_index_sinks.get_mut(embedder).ok_or_else(|| {
+            Box::<dyn std::error::Error>::from(format!(
+                "packed index sink disappeared for {embedder}"
+            ))
+        })
+    }
+
+    fn finish_packed_index_writers(
+        &mut self,
+    ) -> FsvResult<BTreeMap<String, PackedIndexWriteState>> {
+        let sinks = std::mem::take(&mut self.packed_index_sinks);
+        for (embedder, sink) in sinks {
+            let state = sink.finish()?;
+            self.packed_index_write_states
+                .insert(embedder.to_string(), state);
+        }
+        Ok(self.packed_index_write_states.clone())
     }
 
     fn record_locator(
@@ -2598,7 +2640,6 @@ impl ForwardCacheStore {
                 )?;
                 fs::create_dir_all(paths.packed_root())?;
                 let packed_record_path = paths.packed_record_path(embedder);
-                let packed_index_path = paths.packed_index_path(embedder);
                 let bytes = serde_json::to_vec(record)?;
                 let mut file = OpenOptions::new()
                     .create(true)
@@ -2621,7 +2662,7 @@ impl ForwardCacheStore {
                     vector_sha256: record.output.vector_sha256.clone(),
                     vector_len: record.output.vector_len,
                 };
-                append_jsonl_row_checked(&packed_index_path, &row)?;
+                self.packed_index_sink(paths, embedder)?.append_row(&row)?;
                 self.packed_index
                     .insert(record.cache_key_sha256.clone(), row.clone());
                 let readback = self.read(paths, embedder, &record.key)?;
@@ -2656,6 +2697,7 @@ impl ForwardCacheStore {
                     .to_string();
                 let index_path = paths.packed_index_path(&embedder);
                 let rows = read_packed_index_file(&index_path)?;
+                let index_write_state = self.packed_index_write_states.get(&embedder);
                 per_embedder.insert(
                     embedder,
                     json!({
@@ -2665,6 +2707,7 @@ impl ForwardCacheStore {
                         "index_path": index_path.display().to_string(),
                         "index_sha256": sha256_file(&index_path)?,
                         "row_count": rows.len(),
+                        "index_write_state": index_write_state,
                     }),
                 );
             }
@@ -2730,6 +2773,7 @@ fn read_packed_index_file(path: &Path) -> FsvResult<Vec<PackedIndexRow>> {
             continue;
         }
         let row: PackedIndexRow = serde_json::from_str(&line)?;
+        validate_packed_index_row(path, &row)?;
         require(
             "packed index key appears once per file",
             seen.insert(row.cache_key_sha256.clone()),
@@ -2741,6 +2785,43 @@ fn read_packed_index_file(path: &Path) -> FsvResult<Vec<PackedIndexRow>> {
         rows.push(row);
     }
     Ok(rows)
+}
+
+fn validate_packed_index_row(path: &Path, row: &PackedIndexRow) -> FsvResult<()> {
+    require(
+        "packed index row schema version matches",
+        row.schema_version == CACHE_SCHEMA_VERSION,
+    )?;
+    require(
+        "packed index row artifact kind matches",
+        row.artifact_kind == "python_forward_cache_packed_index_row",
+    )?;
+    require(
+        "packed index row cache key is sha256-prefixed",
+        is_prefixed_sha256(&row.cache_key_sha256),
+    )?;
+    require(
+        "packed index row record sha256 is sha256-prefixed",
+        is_prefixed_sha256(&row.record_sha256),
+    )?;
+    require(
+        "packed index row vector sha256 is sha256-prefixed",
+        is_prefixed_sha256(&row.vector_sha256),
+    )?;
+    require(
+        "packed index row vector length is non-zero",
+        row.vector_len > 0,
+    )?;
+    require("packed index row byte length is non-zero", row.byte_len > 0)?;
+    if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
+        if let Some(embedder) = file_name.strip_suffix(".index.jsonl") {
+            require(
+                "packed index row embedder matches index file",
+                row.embedder_id == embedder,
+            )?;
+        }
+    }
+    Ok(())
 }
 
 fn write_cache_record_promoted_checked(
@@ -3596,6 +3677,52 @@ fn edge_paths_with_cache_root(paths: &Paths, cache_root: PathBuf) -> Paths {
     }
 }
 
+fn synthetic_packed_edge_record(case: &str) -> FsvResult<ForwardCacheRecord> {
+    let vector = vec![1.0, 2.0, 3.0];
+    let key = ForwardCacheKey {
+        schema_version: CACHE_SCHEMA_VERSION,
+        artifact_kind: "edge_python_ast_chunk_forward".to_string(),
+        chunk_id: sha256_prefixed_bytes(format!("{case}:chunk").as_bytes()),
+        source_sha256: sha256_prefixed_bytes(format!("{case}:source").as_bytes()),
+        file_sha256: sha256_prefixed_bytes(format!("{case}:file").as_bytes()),
+        embedder_id: "e1".to_string(),
+        instrument_record_id: format!("edge-instrument-record-{case}"),
+        preprocessing_hash: sha256_prefixed_bytes(b"edge-preprocessing"),
+        model_hash: sha256_prefixed_bytes(b"edge-model"),
+        input_sha256: sha256_prefixed_bytes(format!("{case}:input").as_bytes()),
+        output_feature_family: "edge".to_string(),
+    };
+    let cache_key_sha256 = key_hash(&key)?;
+    Ok(ForwardCacheRecord {
+        schema_version: CACHE_SCHEMA_VERSION,
+        cache_key_sha256,
+        key,
+        chunk: ChunkRef {
+            task_instance_id: format!("edge-task-{case}"),
+            repo: "edge/repo".to_string(),
+            workspace_state: "edge-state".to_string(),
+            absolute_path: format!("/edge/{case}.py"),
+            relative_path: format!("edge/{case}.py"),
+            chunk_time: "2026-05-14T00:00:00Z".to_string(),
+        },
+        instrument_id: format!("edge-instrument-{case}"),
+        instrument_kind: "edge_synthetic".to_string(),
+        output: ForwardCacheOutput {
+            vector_len: vector.len(),
+            vector_sha256: vector_sha256(&vector),
+            vector_l2_norm: vector
+                .iter()
+                .map(|value| f64::from(*value) * f64::from(*value))
+                .sum::<f64>()
+                .sqrt(),
+            precision_class: "edge_synthetic".to_string(),
+            runtime_model_version: "edge_synthetic".to_string(),
+            vector,
+        },
+        source_readback_verified: true,
+    })
+}
+
 fn write_edge_packed_row(
     paths: &Paths,
     case: &str,
@@ -3634,6 +3761,67 @@ fn write_edge_packed_row(
     Ok(edge_paths)
 }
 
+fn edge_packed_duplicate_key_before_append(paths: &Paths) -> FsvResult<Value> {
+    let before = store_state("edge_packed_duplicate_before_append_before", paths)?;
+    let cache_root = paths
+        .fsv_root
+        .join("packed_store_edges")
+        .join("duplicate-before-append");
+    if cache_root.exists() {
+        fs::remove_dir_all(&cache_root)?;
+    }
+    let edge_paths = edge_paths_with_cache_root(paths, cache_root);
+    let mut store = ForwardCacheStore::open(
+        &edge_paths,
+        CacheStoreLayout::PackedJsonl,
+        DEFAULT_JSONL_SYNC_EVERY_ROWS,
+    )?;
+    let record = synthetic_packed_edge_record("duplicate-before-append")?;
+    let readback = store.write(&edge_paths, "e1", &record)?;
+    store.finish_packed_index_writers()?;
+    let index_path = edge_paths.packed_index_path("e1");
+    let rows_before = read_packed_index_file(&index_path)?.len();
+    let bytes_before = fs::metadata(&index_path)?.len();
+    let err = store.write(&edge_paths, "e1", &record).unwrap_err();
+    let rows_after = read_packed_index_file(&index_path)?.len();
+    let bytes_after = fs::metadata(&index_path)?.len();
+    require(
+        "packed duplicate-before-append error is explicit",
+        err.to_string()
+            .contains("packed cache duplicate key rejected before append"),
+    )?;
+    require(
+        "packed duplicate-before-append leaves row count unchanged",
+        rows_after == rows_before,
+    )?;
+    require(
+        "packed duplicate-before-append leaves index bytes unchanged",
+        bytes_after == bytes_before,
+    )?;
+    require(
+        "packed duplicate-before-append first readback uses packed payload",
+        readback.packed_record_path.is_some() && readback.packed_byte_len.is_some(),
+    )?;
+    let after = store_state("edge_packed_duplicate_before_append_after", paths)?;
+    require(
+        "packed duplicate-before-append edge writes no primary cache records",
+        before.cache_record_count == after.cache_record_count,
+    )?;
+    Ok(json!({
+        "case": "packed_duplicate_key_rejected_before_append",
+        "before_state": before,
+        "trigger": "write one packed cache record, finish the index writer, then attempt the same cache key again",
+        "edge_index_path": index_path.display().to_string(),
+        "rows_before_duplicate": rows_before,
+        "rows_after_duplicate": rows_after,
+        "bytes_before_duplicate": bytes_before,
+        "bytes_after_duplicate": bytes_after,
+        "error": err.to_string(),
+        "after_state": after,
+        "passes": true,
+    }))
+}
+
 fn edge_packed_duplicate_key(paths: &Paths) -> FsvResult<Value> {
     let before = store_state("edge_packed_duplicate_before", paths)?;
     let key = format!("sha256:{}", "a".repeat(64));
@@ -3662,6 +3850,58 @@ fn edge_packed_duplicate_key(paths: &Paths) -> FsvResult<Value> {
         "before_state": before,
         "trigger": "write two packed index rows with the same cache_key_sha256 and load the packed index",
         "edge_index_path": edge_paths.packed_index_path("e1").display().to_string(),
+        "error": err.to_string(),
+        "after_state": after,
+        "passes": true,
+    }))
+}
+
+fn edge_packed_malformed_schema(paths: &Paths) -> FsvResult<Value> {
+    let before = store_state("edge_packed_malformed_schema_before", paths)?;
+    let cache_root = paths
+        .fsv_root
+        .join("packed_store_edges")
+        .join("malformed-schema");
+    if cache_root.exists() {
+        fs::remove_dir_all(&cache_root)?;
+    }
+    let edge_paths = edge_paths_with_cache_root(paths, cache_root);
+    fs::create_dir_all(edge_paths.packed_root())?;
+    let payload = br#"{"edge":"malformed-schema"}"#;
+    let mut record_bytes = payload.to_vec();
+    record_bytes.push(b'\n');
+    let record_path = edge_paths.packed_record_path("e1");
+    let index_path = edge_paths.packed_index_path("e1");
+    write_bytes_atomic(&record_path, &record_bytes)?;
+    let row = PackedIndexRow {
+        schema_version: CACHE_SCHEMA_VERSION + 1,
+        artifact_kind: "python_forward_cache_packed_index_row".to_string(),
+        cache_key_sha256: format!("sha256:{}", "e".repeat(64)),
+        embedder_id: "e1".to_string(),
+        packed_record_path: record_path.display().to_string(),
+        byte_offset: 0,
+        byte_len: payload.len() as u64,
+        record_sha256: sha256_prefixed_bytes(payload),
+        vector_sha256: sha256_prefixed_bytes(b"edge-vector"),
+        vector_len: 3,
+    };
+    append_jsonl_row_checked(&index_path, &row)?;
+    let err = load_packed_index_rows(&edge_paths).unwrap_err();
+    require(
+        "packed malformed-schema edge reports schema version",
+        err.to_string()
+            .contains("packed index row schema version matches"),
+    )?;
+    let after = store_state("edge_packed_malformed_schema_after", paths)?;
+    require(
+        "packed malformed-schema edge writes no primary cache records",
+        before.cache_record_count == after.cache_record_count,
+    )?;
+    Ok(json!({
+        "case": "packed_malformed_index_schema_rejected",
+        "before_state": before,
+        "trigger": "write a packed index row whose schema_version exceeds the frozen cache schema",
+        "edge_index_path": index_path.display().to_string(),
         "error": err.to_string(),
         "after_state": after,
         "passes": true,
@@ -4071,6 +4311,117 @@ fn is_packed_index_path(path: &Path) -> bool {
 
 fn is_packed_payload_path(path: &Path) -> bool {
     path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") && !is_packed_index_path(path)
+}
+
+struct PackedIndexSink {
+    path: PathBuf,
+    file: File,
+    initial_rows: usize,
+    initial_bytes: u64,
+    rows_written: usize,
+    bytes_written: u64,
+    sync_every_rows: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PackedIndexWriteState {
+    path: String,
+    initial_row_count: usize,
+    appended_row_count: usize,
+    final_row_count: usize,
+    readback_row_count: usize,
+    initial_byte_count: u64,
+    appended_byte_count: u64,
+    final_byte_count: u64,
+    sha256: String,
+    sync_every_rows: usize,
+}
+
+impl PackedIndexSink {
+    fn open(path: &Path, sync_every_rows: usize) -> FsvResult<Self> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let initial_rows = count_jsonl_rows(path)?;
+        let initial_bytes = if path.exists() {
+            fs::metadata(path)?.len()
+        } else {
+            0
+        };
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .read(true)
+            .mode(0o600)
+            .open(path)?;
+        Ok(Self {
+            path: path.to_path_buf(),
+            file,
+            initial_rows,
+            initial_bytes,
+            rows_written: 0,
+            bytes_written: 0,
+            sync_every_rows,
+        })
+    }
+
+    fn append_row(&mut self, row: &PackedIndexRow) -> FsvResult<()> {
+        validate_packed_index_row(&self.path, row)?;
+        let bytes = serde_json::to_vec(row)?;
+        self.file.write_all(&bytes)?;
+        self.file.write_all(b"\n")?;
+        self.rows_written += 1;
+        self.bytes_written = self
+            .bytes_written
+            .checked_add(bytes.len() as u64 + 1)
+            .ok_or("packed index sink byte counter overflow")?;
+        if self.sync_every_rows > 0 && self.rows_written.is_multiple_of(self.sync_every_rows) {
+            self.file.sync_all()?;
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> FsvResult<PackedIndexWriteState> {
+        let Self {
+            path,
+            file,
+            initial_rows,
+            initial_bytes,
+            rows_written,
+            bytes_written,
+            sync_every_rows,
+        } = self;
+        file.sync_all()?;
+        drop(file);
+        if let Some(parent) = path.parent() {
+            File::open(parent)?.sync_all()?;
+        }
+        let readback_rows = read_packed_index_file(&path)?;
+        let expected_rows = initial_rows
+            .checked_add(rows_written)
+            .ok_or("packed index sink row counter overflow")?;
+        require(
+            "packed index sink final row count matches tracked writes",
+            readback_rows.len() == expected_rows,
+        )?;
+        let final_byte_count = fs::metadata(&path)?.len();
+        require(
+            "packed index sink final byte count matches tracked writes",
+            final_byte_count == initial_bytes + bytes_written,
+        )?;
+        Ok(PackedIndexWriteState {
+            path: path.display().to_string(),
+            initial_row_count: initial_rows,
+            appended_row_count: rows_written,
+            final_row_count: expected_rows,
+            readback_row_count: readback_rows.len(),
+            initial_byte_count: initial_bytes,
+            appended_byte_count: bytes_written,
+            final_byte_count,
+            sha256: sha256_file(&path)?,
+            sync_every_rows,
+        })
+    }
 }
 
 struct JsonlSink {

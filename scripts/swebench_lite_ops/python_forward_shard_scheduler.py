@@ -1832,12 +1832,16 @@ def edge_checks(
             "current_run_rows": packed_readback["current_run_rows"],
             "cumulative_rows": packed_readback["cumulative_rows"],
         })
+        partial_readback_args = argparse.Namespace(**vars(args))
+        partial_readback_args.active_embedder_count = max(args.active_embedder_count, 2)
         try:
-            completed_shard_readback(args, isolated_cumulative)
+            completed_shard_readback(partial_readback_args, isolated_cumulative)
         except SchedulerError as exc:
             cases.append({
                 "case": "isolated_partial_manifest_rejected_as_completed_shard",
                 "passes": True,
+                "expected_active_embedder_count": partial_readback_args.active_embedder_count,
+                "partial_manifest_active_embedder_count": 1,
                 "error": str(exc),
             })
         else:
