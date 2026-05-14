@@ -69,6 +69,7 @@ class ShardSpec:
 
 
 def parse_args() -> argparse.Namespace:
+    default_cpu_workers = detected_cpu_worker_count()
     parser = argparse.ArgumentParser(
         description="Run and aggregate sharded Python forward-cache generation."
     )
@@ -105,7 +106,7 @@ def parse_args() -> argparse.Namespace:
         help="Fail shard runners before model forward if their batch VRAM plan exceeds this byte guard.",
     )
     parser.add_argument("--io-workers", type=int, default=2)
-    parser.add_argument("--cpu-workers", type=int, default=32)
+    parser.add_argument("--cpu-workers", type=int, default=default_cpu_workers)
     parser.add_argument("--gpu-workers", type=int, default=1)
     parser.add_argument("--jsonl-sync-every-rows", type=int, default=512)
     parser.add_argument("--runner-timeout-seconds", type=int, default=DEFAULT_RUNNER_TIMEOUT_SECONDS)
@@ -212,6 +213,34 @@ def parse_args() -> argparse.Namespace:
 
 def utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def detected_cpu_worker_count() -> int:
+    if hasattr(os, "sched_getaffinity"):
+        affinity = os.sched_getaffinity(0)
+        require("MEJEPA_SCHEDULER_CPU_AFFINITY_EMPTY: live CPU affinity is non-empty", bool(affinity))
+        return len(affinity)
+    count = os.cpu_count()
+    require("MEJEPA_SCHEDULER_CPU_COUNT_MISSING: os.cpu_count returned a usable value", count is not None and count > 0)
+    return int(count)
+
+
+def format_cpu_affinity() -> str | None:
+    if not hasattr(os, "sched_getaffinity"):
+        return None
+    cpus = sorted(os.sched_getaffinity(0))
+    if not cpus:
+        return None
+    ranges: list[str] = []
+    start = prev = cpus[0]
+    for cpu in cpus[1:]:
+        if cpu == prev + 1:
+            prev = cpu
+            continue
+        ranges.append(f"{start}-{prev}" if start != prev else str(start))
+        start = prev = cpu
+    ranges.append(f"{start}-{prev}" if start != prev else str(start))
+    return ",".join(ranges)
 
 
 def require(label: str, condition: bool) -> None:
@@ -468,9 +497,12 @@ def first_cpuinfo_value(key: str) -> str | None:
 def cpu_snapshot() -> dict[str, Any]:
     nproc = run_probe(["nproc"])
     require_probe_success("MEJEPA_SCHEDULER_NPROC_FAILED", nproc)
+    affinity_count = detected_cpu_worker_count()
     return {
         "nproc": nproc,
         "logical_threads": int(nproc["stdout"].strip()),
+        "affinity_logical_threads": affinity_count,
+        "affinity_cpus_allowed_list": format_cpu_affinity(),
         "os_cpu_count": os.cpu_count(),
         "model_name": first_cpuinfo_value("model name"),
         "cpu_cores_per_socket": first_cpuinfo_value("cpu cores"),
@@ -702,7 +734,7 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
     cpu = cpu_snapshot()
     gpu = gpu_snapshot(args)
     capacity = projected_capacity(args)
-    worker_ceiling = max(int(cpu["logical_threads"]) + 2, 32)
+    worker_ceiling = min(int(cpu["logical_threads"]), int(cpu["affinity_logical_threads"]))
     require("MEJEPA_SCHEDULER_IO_WORKERS_INVALID: D-drive I/O workers is positive", args.io_workers > 0)
     require("MEJEPA_SCHEDULER_CPU_WORKERS_INVALID: CPU workers is positive", args.cpu_workers > 0)
     require("MEJEPA_SCHEDULER_GPU_WORKERS_INVALID: GPU workers is positive", args.gpu_workers > 0)
@@ -756,6 +788,8 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
             "max_d_drive_io_workers": MAX_D_DRIVE_IO_WORKERS,
             "cpu_worker_ceiling": worker_ceiling,
             "detected_logical_threads": cpu["logical_threads"],
+            "detected_affinity_logical_threads": cpu["affinity_logical_threads"],
+            "detected_affinity_cpus_allowed_list": cpu["affinity_cpus_allowed_list"],
             "detected_gpu_count": gpu["gpu_count"],
             "max_gpu_workers_per_device": MAX_GPU_WORKERS_PER_DEVICE,
         },
@@ -1597,6 +1631,10 @@ def preflight_edge_checks(args: argparse.Namespace, preflight: dict[str, Any]) -
     expect_preflight_failure(
         "too_many_gpu_workers_rejected_before_writes",
         gpu_workers=preflight["host"]["gpu"]["gpu_count"] + 1,
+    )
+    expect_preflight_failure(
+        "too_many_cpu_workers_rejected_before_writes",
+        cpu_workers=preflight["worker_policy"]["cpu_worker_ceiling"] + 1,
     )
     expect_preflight_failure(
         "zero_cpu_workers_rejected_before_writes",

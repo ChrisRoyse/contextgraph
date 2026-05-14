@@ -35,7 +35,7 @@ const DEFAULT_JSONL_SYNC_EVERY_ROWS: usize = 512;
 const DEFAULT_TRUE_BATCH_SIZE: usize = 8;
 const DEFAULT_GPU_VRAM_GUARD_BYTES: u64 = 32_607 * 1024 * 1024;
 const DEFAULT_IO_WORKERS: usize = 2;
-const DEFAULT_CPU_WORKERS: usize = 32;
+const DEFAULT_CPU_WORKERS_FALLBACK: usize = 1;
 const DEFAULT_GPU_WORKERS: usize = 1;
 const SAMPLE_LIMIT: usize = 20;
 const DEFAULT_CACHE_STORE_LAYOUT: &str = "packed";
@@ -302,7 +302,7 @@ async fn main() -> FsvResult<()> {
         DEFAULT_GPU_VRAM_GUARD_BYTES,
     )?;
     let io_workers = env_usize("CG_MEJEPA_PY_FORWARD_IO_WORKERS", DEFAULT_IO_WORKERS)?;
-    let cpu_workers = env_usize("CG_MEJEPA_PY_FORWARD_CPU_WORKERS", DEFAULT_CPU_WORKERS)?;
+    let cpu_workers = env_usize("CG_MEJEPA_PY_FORWARD_CPU_WORKERS", default_cpu_workers())?;
     let gpu_workers = env_usize("CG_MEJEPA_PY_FORWARD_GPU_WORKERS", DEFAULT_GPU_WORKERS)?;
     let jsonl_sync_every_rows = env_usize(
         "CG_MEJEPA_PY_FORWARD_JSONL_SYNC_EVERY_ROWS",
@@ -4271,6 +4271,12 @@ fn env_usize(name: &str, default: usize) -> FsvResult<usize> {
         Ok(value) => Ok(value.parse()?),
         Err(_) => Ok(default),
     }
+}
+
+fn default_cpu_workers() -> usize {
+    std::thread::available_parallelism()
+        .map(|threads| threads.get())
+        .unwrap_or(DEFAULT_CPU_WORKERS_FALLBACK)
 }
 
 fn env_usize_optional(name: &str) -> FsvResult<Option<usize>> {

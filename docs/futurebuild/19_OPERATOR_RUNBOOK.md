@@ -85,9 +85,11 @@ nvcc --version
 docker info
 ```
 
-Expected local hardware profile: Ryzen 9 9950X3D, 16 cores / 32 threads, about
-110 GiB RAM visible to WSL, 32 GiB swap visible to WSL, RTX 5090 with 32607 MiB
-VRAM, CUDA 13.2, and `/mnt/d` with enough free bytes for the durable corpus.
+Expected local hardware profile: Ryzen 9 9950X3D, 16 cores / 32 threads on the
+host, about 110 GiB RAM visible to WSL, 32 GiB swap visible to WSL, RTX 5090
+with 32607 MiB VRAM, CUDA 13.2, and `/mnt/d` with enough free bytes for the
+durable corpus. Use live Linux affinity for worker counts: `nproc` is the
+source of truth for how many CPU workers this WSL process can actually use.
 
 Fail closed if any required detector fails:
 
@@ -106,8 +108,9 @@ Fail closed if any required detector fails:
 Worker policy for this host:
 
 - D-drive/Docker I/O: keep bounded, normally `--io-workers 2`.
-- CPU AST/static/token work: use the 9950X3D thread budget, normally
-  `--cpu-workers 32`.
+- CPU AST/static/token work: use the live WSL affinity budget, normally
+  `--cpu-workers "$(nproc)"`. On this host that may be lower than the 32-thread
+  hardware spec if WSL constrains the process affinity.
 - GPU forwards: use CUDA where the embedder supports it; normally
   `--gpu-workers 1` plus per-embedder true-batch controls to avoid cumulative
   VRAM residency.
@@ -122,6 +125,7 @@ hardware policy. Build the release runner first:
 ```bash
 cargo build --release --example python_forward_cache_fsv
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+CPU_WORKERS="$(nproc)"
 CACHE_ROOT="/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-026-smoke-${RUN_ID}"
 FSV_ROOT="/mnt/d/contextgraph/fsv/task-py-data-026-smoke-${RUN_ID}-fsv"
 HOT_ROOT="/home/cabdru/.cache/contextgraph/task-py-data-026-smoke-${RUN_ID}"
@@ -139,7 +143,7 @@ python3 scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
   --embedder-max-padded-source-bytes e1=1048576,e6=1048576,e7=1048576,e8=1048576,e10=1048576,e12=524288,e13=1048576,e14=262144,e9=4194304 \
   --gpu-vram-guard-bytes 34190917632 \
   --io-workers 2 \
-  --cpu-workers 32 \
+  --cpu-workers "$CPU_WORKERS" \
   --gpu-workers 1 \
   --jsonl-sync-every-rows 512 \
   --runner-timeout-seconds 1800 \
@@ -179,7 +183,8 @@ full-run pattern uses 128-chunk shards, packed storage, isolated embedder
 processes, one checkpoint per shard, and failed-partial archiving:
 
 ```bash
-tmux new-session -d -s cg_pydata016_full 'cd /home/cabdru/contextgraph && \
+CPU_WORKERS="$(nproc)"
+tmux new-session -d -s cg_pydata016_full "cd /home/cabdru/contextgraph && \
 python3 scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
   --task-id TASK-PY-DATA-016 \
   --cache-root /mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514 \
@@ -194,7 +199,7 @@ python3 scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
   --embedder-max-padded-source-bytes e1=1048576,e6=1048576,e7=1048576,e8=1048576,e10=1048576,e12=524288,e13=1048576,e14=262144,e9=4194304 \
   --gpu-vram-guard-bytes 34190917632 \
   --io-workers 2 \
-  --cpu-workers 32 \
+  --cpu-workers \"$CPU_WORKERS\" \
   --gpu-workers 1 \
   --jsonl-sync-every-rows 512 \
   --runner-timeout-seconds 1800 \
@@ -205,7 +210,7 @@ python3 scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
   --checkpoint-every-shards 1 \
   --isolate-embedder-processes \
   --cargo-runner target/release/examples/python_forward_cache_fsv \
-  > /mnt/d/contextgraph/runtime/task-py-data-016-full-20260514T172028Z/scheduler.log 2>&1'
+  > /mnt/d/contextgraph/runtime/task-py-data-016-full-20260514T172028Z/scheduler.log 2>&1"
 ```
 
 Monitor from source-of-truth files:
