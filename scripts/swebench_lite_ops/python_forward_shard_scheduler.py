@@ -163,9 +163,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=("run", "aggregate-only"),
+        choices=("run", "aggregate-only", "preflight-resume"),
         default="run",
-        help="run executes shard runners first; aggregate-only only reads existing shard manifests.",
+        help=(
+            "run executes shard runners first; aggregate-only only reads existing shard manifests; "
+            "preflight-resume scans the existing checkpoint next-shard state and archives unsafe partials."
+        ),
     )
     parser.add_argument(
         "--resume-completed-shards",
@@ -1073,6 +1076,16 @@ def unique_archive_root(parent: Path, stem: str) -> Path:
     return candidate
 
 
+def unique_json_path(parent: Path, stem: str) -> Path:
+    parent.mkdir(parents=True, exist_ok=True)
+    candidate = parent / f"{stem}.json"
+    suffix = 1
+    while candidate.exists():
+        candidate = parent / f"{stem}-{suffix:02d}.json"
+        suffix += 1
+    return candidate
+
+
 def archive_failed_partial_shard(
     args: argparse.Namespace,
     shard: ShardSpec,
@@ -1244,6 +1257,455 @@ def write_checkpoint(
     require("checkpoint cache and FSV summaries match", cache_readback["summary"] == fsv_readback["summary"])
     require("checkpoint readback passes", cache_readback["passes"] is True and fsv_readback["passes"] is True)
     return checkpoint
+
+
+def checkpoint_file_paths(args: argparse.Namespace) -> tuple[Path, Path]:
+    return (
+        args.cache_root / "python_forward_cache_checkpoint.json",
+        args.fsv_root / "python_forward_cache_checkpoint.json",
+    )
+
+
+def read_existing_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
+    cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
+    require("resume checkpoint cache file exists", cache_checkpoint_path.is_file())
+    require("resume checkpoint FSV file exists", fsv_checkpoint_path.is_file())
+    cache_bytes = cache_checkpoint_path.read_bytes()
+    fsv_bytes = fsv_checkpoint_path.read_bytes()
+    require("resume checkpoint cache and FSV bytes match", cache_bytes == fsv_bytes)
+    checkpoint = json.loads(cache_bytes.decode("utf-8"))
+    require("resume checkpoint passes", checkpoint.get("passes") is True)
+    require(
+        "resume checkpoint artifact kind matches",
+        checkpoint.get("artifact_kind") == "python_forward_shard_scheduler_checkpoint",
+    )
+    return checkpoint
+
+
+def checkpoint_next_shard(checkpoint: dict[str, Any], shards: list[ShardSpec]) -> ShardSpec:
+    progress = checkpoint.get("progress", {})
+    next_info = progress.get("next_shard")
+    require("resume checkpoint has a next shard", isinstance(next_info, dict))
+    shard_id = next_info.get("shard_id")
+    require("resume checkpoint next shard id is present", isinstance(shard_id, str) and bool(shard_id))
+    matching = [shard for shard in shards if shard.shard_id == shard_id]
+    require("resume checkpoint next shard exists in current shard plan", len(matching) == 1)
+    shard = matching[0]
+    require(
+        "resume checkpoint next shard offset matches plan",
+        int(next_info.get("chunk_offset", -1)) == shard.chunk_offset,
+    )
+    require(
+        "resume checkpoint next shard size matches plan",
+        int(next_info.get("max_chunks", -1)) == shard.max_chunks,
+    )
+    return shard
+
+
+def write_resume_decision(
+    args: argparse.Namespace,
+    shard: ShardSpec,
+    decision: dict[str, Any],
+) -> dict[str, Any]:
+    decision_root = args.fsv_root / "resume_decisions"
+    path = unique_json_path(
+        decision_root,
+        f"{utc_now().replace('-', '').replace(':', '')}-{shard.shard_id}",
+    )
+    value = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_resume_decision",
+        "created_at_utc": utc_now(),
+        "shard_id": shard.shard_id,
+        "chunk_offset": shard.chunk_offset,
+        "max_chunks": shard.max_chunks,
+        **decision,
+    }
+    json_dump_checked(path, value)
+    readback = read_json(path)
+    require("resume decision readback has pass flag", readback.get("passes") in (True, False))
+    return {
+        **value,
+        "decision_path": str(path),
+        "decision_sha256": sha256_file(path),
+    }
+
+
+def scan_checkpoint_next_shard_state(
+    args: argparse.Namespace,
+    shards: list[ShardSpec],
+    checkpoint: dict[str, Any],
+) -> dict[str, Any]:
+    shard = checkpoint_next_shard(checkpoint, shards)
+    cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
+    before = {
+        "checkpoint_cache": file_state(cache_checkpoint_path),
+        "checkpoint_fsv": file_state(fsv_checkpoint_path),
+        "cache_root": tree_state(shard.cache_root),
+        "fsv_root": tree_state(shard.fsv_root),
+        "run_log": file_state(shard_run_log_path(args, shard)),
+    }
+    has_existing_state = (
+        shard.cache_root.exists()
+        or shard.fsv_root.exists()
+        or shard_run_log_path(args, shard).exists()
+    )
+    if not has_existing_state:
+        return write_resume_decision(
+            args,
+            shard,
+            {
+                "decision": "no_partial_state",
+                "reason": "checkpoint next shard has no cache, FSV, or run-log state",
+                "before_state": before,
+                "after_state": {
+                    "checkpoint_cache": file_state(cache_checkpoint_path),
+                    "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                    "cache_root": tree_state(shard.cache_root),
+                    "fsv_root": tree_state(shard.fsv_root),
+                    "run_log": file_state(shard_run_log_path(args, shard)),
+                },
+                "checkpoint_sha256_unchanged": before["checkpoint_cache"].get("sha256")
+                == file_state(cache_checkpoint_path).get("sha256"),
+                "passes": True,
+            },
+        )
+    try:
+        completed = completed_shard_readback(args, shard)
+    except SchedulerError as exc:
+        if not args.retry_failed_partial_shards:
+            decision = write_resume_decision(
+                args,
+                shard,
+                {
+                    "decision": "blocked_partial_state",
+                    "reason": str(exc),
+                    "before_state": before,
+                    "after_state": {
+                        "checkpoint_cache": file_state(cache_checkpoint_path),
+                        "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                        "cache_root": tree_state(shard.cache_root),
+                        "fsv_root": tree_state(shard.fsv_root),
+                        "run_log": file_state(shard_run_log_path(args, shard)),
+                    },
+                    "checkpoint_sha256_unchanged": before["checkpoint_cache"].get("sha256")
+                    == file_state(cache_checkpoint_path).get("sha256"),
+                    "passes": False,
+                },
+            )
+            raise SchedulerError(
+                f"checkpoint next shard has unsafe partial state; decision={decision['decision_path']}"
+            ) from exc
+        archive = archive_failed_partial_shard(
+            args,
+            shard,
+            f"pre-resume scanner rejected checkpoint next shard: {exc}",
+        )
+        return write_resume_decision(
+            args,
+            shard,
+            {
+                "decision": "archived_for_retry",
+                "reason": str(exc),
+                "before_state": before,
+                "archive": archive,
+                "after_state": {
+                    "checkpoint_cache": file_state(cache_checkpoint_path),
+                    "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                    "cache_root": tree_state(shard.cache_root),
+                    "fsv_root": tree_state(shard.fsv_root),
+                    "run_log": file_state(shard_run_log_path(args, shard)),
+                },
+                "checkpoint_sha256_unchanged": before["checkpoint_cache"].get("sha256")
+                == file_state(cache_checkpoint_path).get("sha256"),
+                "passes": True,
+            },
+        )
+    return write_resume_decision(
+        args,
+        shard,
+        {
+            "decision": "exact_resume_proof_accepted",
+            "reason": "completed shard readback passed against D-drive SoT",
+            "before_state": before,
+            "completed_readback": completed,
+            "after_state": {
+                "checkpoint_cache": file_state(cache_checkpoint_path),
+                "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                "cache_root": tree_state(shard.cache_root),
+                "fsv_root": tree_state(shard.fsv_root),
+                "run_log": file_state(shard_run_log_path(args, shard)),
+            },
+            "checkpoint_sha256_unchanged": before["checkpoint_cache"].get("sha256")
+            == file_state(cache_checkpoint_path).get("sha256"),
+            "passes": True,
+        },
+    )
+
+
+def checkpoint_for_shard(shard: ShardSpec) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_shard_scheduler_checkpoint",
+        "passes": True,
+        "progress": {
+            "next_shard": {
+                "shard_id": shard.shard_id,
+                "chunk_offset": shard.chunk_offset,
+                "max_chunks": shard.max_chunks,
+                "cache_root": str(shard.cache_root),
+                "fsv_root": str(shard.fsv_root),
+            }
+        },
+    }
+
+
+def write_checkpoint_pair(args: argparse.Namespace, checkpoint: dict[str, Any]) -> dict[str, Any]:
+    cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
+    json_dump_checked(cache_checkpoint_path, checkpoint)
+    json_dump_checked(fsv_checkpoint_path, checkpoint)
+    cache_readback = read_json(cache_checkpoint_path)
+    fsv_readback = read_json(fsv_checkpoint_path)
+    require("checkpoint pair cache readback passes", cache_readback.get("passes") is True)
+    require("checkpoint pair FSV readback passes", fsv_readback.get("passes") is True)
+    require("checkpoint pair bytes match", cache_checkpoint_path.read_bytes() == fsv_checkpoint_path.read_bytes())
+    return {
+        "cache_checkpoint": file_state(cache_checkpoint_path),
+        "fsv_checkpoint": file_state(fsv_checkpoint_path),
+    }
+
+
+def clone_resume_edge_args(
+    args: argparse.Namespace,
+    edge_root: Path,
+    case_name: str,
+    *,
+    active_embedder_count: int | None = None,
+    retry_failed_partial_shards: bool = True,
+) -> argparse.Namespace:
+    case_root = edge_root / case_name
+    if case_root.exists():
+        shutil.rmtree(case_root)
+    edge_args = argparse.Namespace(**vars(args))
+    edge_args.cache_root = case_root / "cache"
+    edge_args.fsv_root = case_root / "fsv"
+    edge_args.hot_root = case_root / "hot"
+    edge_args.retry_failed_partial_shards = retry_failed_partial_shards
+    edge_args.require_packed_store = True
+    if active_embedder_count is not None:
+        edge_args.active_embedder_count = active_embedder_count
+    edge_args.cache_root.mkdir(parents=True)
+    edge_args.fsv_root.mkdir(parents=True)
+    edge_args.hot_root.mkdir(parents=True)
+    os.chmod(edge_args.hot_root, 0o700)
+    return edge_args
+
+
+def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any]]:
+    edge_root = args.fsv_root / "edge_inputs" / "resume_preflight"
+    edge_root.mkdir(parents=True, exist_ok=True)
+    cases: list[dict[str, Any]] = []
+
+    def append_case(case_name: str, edge_args: argparse.Namespace, shard: ShardSpec, decision: dict[str, Any]) -> None:
+        cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(edge_args)
+        cases.append(
+            {
+                "case": case_name,
+                "passes": True,
+                "decision": decision["decision"],
+                "decision_path": decision["decision_path"],
+                "decision_sha256": decision["decision_sha256"],
+                "checkpoint_cache": file_state(cache_checkpoint_path),
+                "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                "source_after_state": {
+                    "cache_root": tree_state(shard.cache_root),
+                    "fsv_root": tree_state(shard.fsv_root),
+                    "run_log": file_state(shard_run_log_path(edge_args, shard)),
+                },
+            }
+        )
+
+    no_state_args = clone_resume_edge_args(args, edge_root, "no-partial-state", active_embedder_count=1)
+    no_state_shard = ShardSpec(
+        "edge-no-partial-state",
+        500_000_000,
+        1,
+        no_state_args.cache_root / "shards" / "edge-no-partial-state",
+        no_state_args.fsv_root / "shards" / "edge-no-partial-state",
+    )
+    write_checkpoint_pair(no_state_args, checkpoint_for_shard(no_state_shard))
+    no_state_decision = scan_checkpoint_next_shard_state(no_state_args, [no_state_shard], read_existing_checkpoint(no_state_args))
+    require("resume no-partial edge accepts absent state", no_state_decision["decision"] == "no_partial_state")
+    require("resume no-partial edge keeps checkpoint unchanged", no_state_decision["checkpoint_sha256_unchanged"] is True)
+    append_case("resume_no_partial_state_accepted", no_state_args, no_state_shard, no_state_decision)
+
+    partial_args = clone_resume_edge_args(args, edge_root, "partial-without-manifest", active_embedder_count=1)
+    partial_shard = ShardSpec(
+        "edge-partial-without-manifest",
+        500_000_001,
+        1,
+        partial_args.cache_root / "shards" / "edge-partial-without-manifest",
+        partial_args.fsv_root / "shards" / "edge-partial-without-manifest",
+    )
+    write_checkpoint_pair(partial_args, checkpoint_for_shard(partial_shard))
+    partial_shard.cache_root.mkdir(parents=True)
+    partial_shard.fsv_root.mkdir(parents=True)
+    (partial_shard.cache_root / "python_forward_cache_index.jsonl").write_text(
+        json.dumps({"cache_key_sha256": f"sha256:{'6' * 64}"}) + "\n",
+        encoding="utf-8",
+    )
+    json_dump_checked(partial_shard.fsv_root / "partial_marker.json", {"passes": False})
+    json_dump_checked(
+        shard_run_log_path(partial_args, partial_shard),
+        {"shard_id": partial_shard.shard_id, "exit_code": 1, "stderr_tail": "synthetic partial"},
+    )
+    partial_decision = scan_checkpoint_next_shard_state(partial_args, [partial_shard], read_existing_checkpoint(partial_args))
+    require("resume partial edge archives for retry", partial_decision["decision"] == "archived_for_retry")
+    require("resume partial edge keeps checkpoint unchanged", partial_decision["checkpoint_sha256_unchanged"] is True)
+    require("resume partial edge removes source cache root", not partial_shard.cache_root.exists())
+    require("resume partial edge removes source FSV root", not partial_shard.fsv_root.exists())
+    require("resume partial edge removes source run log", not shard_run_log_path(partial_args, partial_shard).exists())
+    append_case("resume_partial_without_manifest_archived", partial_args, partial_shard, partial_decision)
+
+    mismatch_args = clone_resume_edge_args(args, edge_root, "mismatched-completed-proof", active_embedder_count=2)
+    mismatch_shard = write_minimal_packed_shard(
+        edge_root / "mismatched-completed-proof" / "payload",
+        "edge-mismatched-completed-proof",
+        500_000_002,
+        1,
+    )
+    write_checkpoint_pair(mismatch_args, checkpoint_for_shard(mismatch_shard))
+    mismatch_decision = scan_checkpoint_next_shard_state(
+        mismatch_args,
+        [mismatch_shard],
+        read_existing_checkpoint(mismatch_args),
+    )
+    require("resume mismatch edge archives for retry", mismatch_decision["decision"] == "archived_for_retry")
+    require("resume mismatch edge keeps checkpoint unchanged", mismatch_decision["checkpoint_sha256_unchanged"] is True)
+    require("resume mismatch edge removes source cache root", not mismatch_shard.cache_root.exists())
+    require("resume mismatch edge removes source FSV root", not mismatch_shard.fsv_root.exists())
+    append_case("resume_mismatched_completed_proof_archived", mismatch_args, mismatch_shard, mismatch_decision)
+
+    exact_args = clone_resume_edge_args(
+        args,
+        edge_root,
+        "exact-completed-proof",
+        active_embedder_count=1,
+        retry_failed_partial_shards=False,
+    )
+    exact_shard = write_minimal_packed_shard(
+        edge_root / "exact-completed-proof" / "payload",
+        "edge-exact-completed-proof",
+        500_000_003,
+        1,
+    )
+    write_checkpoint_pair(exact_args, checkpoint_for_shard(exact_shard))
+    exact_decision = scan_checkpoint_next_shard_state(exact_args, [exact_shard], read_existing_checkpoint(exact_args))
+    require("resume exact edge accepts completed proof", exact_decision["decision"] == "exact_resume_proof_accepted")
+    require("resume exact edge keeps checkpoint unchanged", exact_decision["checkpoint_sha256_unchanged"] is True)
+    require("resume exact edge preserves source cache root", exact_shard.cache_root.exists())
+    require("resume exact edge preserves source FSV root", exact_shard.fsv_root.exists())
+    append_case("resume_exact_completed_proof_accepted", exact_args, exact_shard, exact_decision)
+
+    blocked_args = clone_resume_edge_args(
+        args,
+        edge_root,
+        "blocked-without-retry",
+        active_embedder_count=1,
+        retry_failed_partial_shards=False,
+    )
+    blocked_shard = ShardSpec(
+        "edge-blocked-without-retry",
+        500_000_004,
+        1,
+        blocked_args.cache_root / "shards" / "edge-blocked-without-retry",
+        blocked_args.fsv_root / "shards" / "edge-blocked-without-retry",
+    )
+    write_checkpoint_pair(blocked_args, checkpoint_for_shard(blocked_shard))
+    blocked_shard.cache_root.mkdir(parents=True)
+    blocked_shard.fsv_root.mkdir(parents=True)
+    (blocked_shard.cache_root / "python_forward_cache_index.jsonl").write_text("", encoding="utf-8")
+    try:
+        scan_checkpoint_next_shard_state(blocked_args, [blocked_shard], read_existing_checkpoint(blocked_args))
+    except SchedulerError as exc:
+        decision_files = sorted((blocked_args.fsv_root / "resume_decisions").glob("*.json"))
+        require("resume blocked edge wrote decision file", bool(decision_files))
+        blocked_decision = read_json(decision_files[-1])
+        require("resume blocked edge records blocked decision", blocked_decision.get("decision") == "blocked_partial_state")
+        require("resume blocked edge records failed pass flag", blocked_decision.get("passes") is False)
+        cases.append(
+            {
+                "case": "resume_partial_without_retry_blocks",
+                "passes": True,
+                "error": str(exc),
+                "decision_path": str(decision_files[-1]),
+                "decision_sha256": sha256_file(decision_files[-1]),
+                "decision": blocked_decision.get("decision"),
+                "source_after_state": {
+                    "cache_root": tree_state(blocked_shard.cache_root),
+                    "fsv_root": tree_state(blocked_shard.fsv_root),
+                    "run_log": file_state(shard_run_log_path(blocked_args, blocked_shard)),
+                },
+            }
+        )
+    else:
+        raise SchedulerError("resume blocked edge unexpectedly passed")
+
+    return cases
+
+
+def write_resume_preflight_fsv(
+    args: argparse.Namespace,
+    started_at: str,
+    before: dict[str, Any],
+    checkpoint: dict[str, Any],
+    decision: dict[str, Any],
+    edge_cases: list[dict[str, Any]],
+) -> dict[str, Any]:
+    require("resume preflight decision passes", decision.get("passes") is True)
+    require("resume preflight edge cases pass", all(case.get("passes") is True for case in edge_cases))
+    cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
+    fsv = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_resume_preflight_fsv",
+        "started_at_utc": started_at,
+        "created_at_utc": utc_now(),
+        "source_of_truth": {
+            "checkpoint_cache": str(cache_checkpoint_path),
+            "checkpoint_fsv": str(fsv_checkpoint_path),
+            "decision_path": decision["decision_path"],
+            "cache_root": str(args.cache_root),
+            "fsv_root": str(args.fsv_root),
+            "hot_root": str(args.hot_root),
+        },
+        "before_state": before,
+        "checkpoint_progress": checkpoint.get("progress"),
+        "checkpoint_summary": checkpoint.get("summary"),
+        "decision": decision,
+        "edge_cases": edge_cases,
+        "after_state": {
+            "cache_root": tree_state(args.cache_root),
+            "fsv_root": tree_state(args.fsv_root),
+            "hot_root": tree_state(args.hot_root),
+            "checkpoint_cache": file_state(cache_checkpoint_path),
+            "checkpoint_fsv": file_state(fsv_checkpoint_path),
+            "disk": disk_snapshot(),
+            "resource": resource_snapshot(args, "resume_preflight_after"),
+        },
+        "passes": True,
+    }
+    fsv_path = args.fsv_root / "python_forward_resume_preflight_fsv.json"
+    json_dump_checked(fsv_path, fsv)
+    readback = read_json(fsv_path)
+    require("resume preflight FSV readback passes", readback.get("passes") is True)
+    return {
+        **fsv,
+        "fsv_path": str(fsv_path),
+        "fsv_sha256": sha256_file(fsv_path),
+    }
 
 
 def count_packed_index_rows(packed_root: Path) -> int:
@@ -1989,18 +2451,55 @@ def main() -> int:
     json_dump_checked(plan_path, plan)
     event(event_path, "plan_written", {"plan_path": str(plan_path), "plan_sha256": sha256_file(plan_path)})
 
+    if args.mode == "preflight-resume":
+        checkpoint = read_existing_checkpoint(args)
+        decision = scan_checkpoint_next_shard_state(args, shards, checkpoint)
+        event(
+            event_path,
+            "resume_preflight_decision",
+            {
+                "decision": decision["decision"],
+                "decision_path": decision["decision_path"],
+                "decision_sha256": decision["decision_sha256"],
+                "passes": decision["passes"],
+            },
+        )
+        edge_cases = resume_preflight_edge_checks(args)
+        fsv = write_resume_preflight_fsv(args, started_at, before, checkpoint, decision, edge_cases)
+        print(json.dumps(fsv, indent=2, sort_keys=True))
+        return 0
+
     run_logs = []
-    checkpoint = write_checkpoint(args, shards, run_logs, started_at, preflight, "initial")
-    event(
-        event_path,
-        "checkpoint_written",
-        {
-            "phase": checkpoint["phase"],
-            "progress": checkpoint["progress"],
-            "summary": checkpoint["summary"],
-            "resource": checkpoint["resource"],
-        },
-    )
+    cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
+    if (
+        args.mode == "run"
+        and args.resume_completed_shards
+        and cache_checkpoint_path.exists()
+        and fsv_checkpoint_path.exists()
+    ):
+        checkpoint = read_existing_checkpoint(args)
+        event(
+            event_path,
+            "resume_checkpoint_observed",
+            {
+                "checkpoint_cache": file_state(cache_checkpoint_path),
+                "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                "progress": checkpoint.get("progress"),
+                "summary": checkpoint.get("summary"),
+            },
+        )
+    else:
+        checkpoint = write_checkpoint(args, shards, run_logs, started_at, preflight, "initial")
+        event(
+            event_path,
+            "checkpoint_written",
+            {
+                "phase": checkpoint["phase"],
+                "progress": checkpoint["progress"],
+                "summary": checkpoint["summary"],
+                "resource": checkpoint["resource"],
+            },
+        )
     if args.mode == "run":
         for shard in shards:
             if args.resume_completed_shards and (
