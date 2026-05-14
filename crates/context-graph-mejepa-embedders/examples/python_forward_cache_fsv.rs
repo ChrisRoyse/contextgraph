@@ -39,6 +39,9 @@ const DEFAULT_CPU_WORKERS: usize = 32;
 const DEFAULT_GPU_WORKERS: usize = 1;
 const SAMPLE_LIMIT: usize = 20;
 const DEFAULT_CACHE_STORE_LAYOUT: &str = "packed";
+const DEFAULT_PRETRAINED_MAX_TOKEN_QUADRATIC_ELEMENTS: u64 = 32_000_000;
+const DEFAULT_E14_MAX_TOKEN_QUADRATIC_ELEMENTS: u64 =
+    DEFAULT_PRETRAINED_MAX_TOKEN_QUADRATIC_ELEMENTS;
 
 #[derive(Debug, Clone, Deserialize)]
 struct AstChunk {
@@ -306,6 +309,7 @@ async fn main() -> FsvResult<()> {
         DEFAULT_JSONL_SYNC_EVERY_ROWS,
     )?;
     let cache_store_layout = CacheStoreLayout::from_env()?;
+    let only_embedder = env_embedder_optional("CG_MEJEPA_PY_FORWARD_ONLY_EMBEDDER")?;
     require("max chunk count is non-zero", max_chunks > 0)?;
     require("max source byte guard is non-zero", max_source_bytes > 0)?;
     require(
@@ -352,6 +356,7 @@ async fn main() -> FsvResult<()> {
                 "max_chunks": max_chunks,
                 "true_batch_size": true_batch_size,
                 "cache_store_layout": cache_store_layout.as_str(),
+                "only_embedder": only_embedder.map(|embedder| embedder.slug().to_string()),
             },
             "reason": "run started; final manifest is written only after cache/index/quarantine/FSV readback succeeds",
         }),
@@ -362,8 +367,8 @@ async fn main() -> FsvResult<()> {
 
     let before = store_state("before", &paths)?;
     let chunks = load_chunks(&paths.chunks_jsonl, chunk_offset, max_chunks)?;
-    let registry = load_active_embedder_records(&paths.registry_jsonl)?;
-    verify_registry_matches_runtime(&registry)?;
+    let registry = load_active_embedder_records(&paths.registry_jsonl, only_embedder)?;
+    verify_registry_matches_runtime(&registry, only_embedder)?;
     let batch_controls = build_true_batch_controls(&registry, true_batch_size, max_source_bytes)?;
     let config = ModelsConfig::load(&paths.models_config)?;
     let mut cache_store = ForwardCacheStore::open(&paths, cache_store_layout)?;
@@ -491,8 +496,8 @@ async fn main() -> FsvResult<()> {
     let quarantine_write_state = quarantine_sink.finish()?;
     let batch_telemetry_write_state = batch_telemetry_sink.finish()?;
     require(
-        "true-batch telemetry exists for pretrained and E9 algorithmic runner paths",
-        batch_telemetry_write_state.row_count > 0,
+        "batch telemetry exists when the runner performs first-pass writes",
+        batch_telemetry_write_state.row_count > 0 || coverage_tracker.first_pass_writes() == 0,
     )?;
 
     for chunk in &chunks {
@@ -552,6 +557,7 @@ async fn main() -> FsvResult<()> {
                 "models_config": paths.models_config.display().to_string(),
             "chunk_offset": chunk_offset,
             "max_chunks": max_chunks,
+                "only_embedder": only_embedder.map(|embedder| embedder.slug().to_string()),
                 "max_forward_source_text_bytes": max_source_bytes,
                 "cache_store_layout": cache_store.layout().as_str(),
                 "hot_model_cache_root": paths.hot_model_cache_root().display().to_string(),
@@ -591,6 +597,7 @@ async fn main() -> FsvResult<()> {
             "MEJEPA_FORWARD_EMPTY_CHUNK": "accepted Python file has empty or whitespace-only source_text; no text embedding can be computed, so every embedder pair is explicitly quarantined",
             "MEJEPA_FORWARD_INPUT_TOO_LARGE": "accepted Python AST chunk exceeds max_forward_source_text_bytes; chunk must be split or explicitly accepted as missing-output quarantine before full corpus success",
             "MEJEPA_FORWARD_TOKEN_TOO_LONG": "model tokenizer rejected this chunk under the active pretrained embedder token limit; the row is isolated from the true batch and explicitly quarantined with no vector output",
+            "MEJEPA_FORWARD_GPU_OOM": "GPU memory exhaustion remained after true-batch binary isolation reached a single row; no CPU or deterministic vector fallback is permitted, so the missing embedder pair is explicitly quarantined with full error evidence",
         },
         "quarantine_row_count": coverage_tracker.quarantined_pairs(),
         "index_sha256": sha256_file(&paths.index_path())?,
@@ -600,22 +607,59 @@ async fn main() -> FsvResult<()> {
     });
     write_json_checked(&paths.manifest_path(), &manifest)?;
 
-    let edge_cases = vec![
+    let mut edge_cases = vec![
         edge_empty_chunk(&paths, &registry[0])?,
         edge_embedder_mismatch(&paths).await?,
         edge_unsupported_true_batch(&paths).await?,
         edge_invalid_embedder_batch_config(&paths)?,
         edge_batch_planner_source_budget(&paths)?,
-        edge_true_batch_vram_guard(&paths, &registry, max_source_bytes)?,
+        edge_token_quadratic_batch_planner(&paths)?,
+        edge_pretrained_token_quadratic_defaults(&paths)?,
+    ];
+    if registry.iter().any(|record| {
+        record.embedder_id().map_or(false, |embedder| {
+            SUPPORTED_PRETRAINED_FORWARD_EMBEDDERS.contains(&embedder)
+        })
+    }) {
+        edge_cases.push(edge_true_batch_vram_guard(
+            &paths,
+            &registry,
+            max_source_bytes,
+        )?);
+    } else {
+        edge_cases.push(edge_not_applicable(
+            &paths,
+            "true_batch_vram_guard_not_applicable_for_isolated_algorithmic_embedder",
+            "single-embedder process isolation selected only an algorithmic wrapper, so no pretrained VRAM guard is evaluated in this subrun",
+        )?);
+    }
+    edge_cases.extend([
+        edge_true_batch_gpu_oom_classifier(&paths)?,
         edge_hot_stage_promotion_mismatch(&paths)?,
         edge_cache_corruption(&paths)?,
         edge_packed_duplicate_key(&paths)?,
         edge_packed_corrupt_row(&paths)?,
         edge_packed_missing_payload(&paths)?,
         edge_packed_truncated_payload(&paths)?,
-        edge_maximum_size_chunk(&paths, &registry, max_source_bytes).await?,
-        edge_dimension_mismatch(&paths, &chunks[0], &registry[0], max_source_bytes)?,
-    ];
+    ]);
+    if registry
+        .iter()
+        .any(|record| matches!(record.embedder_id(), Ok(EmbedderId::E9)))
+    {
+        edge_cases.push(edge_maximum_size_chunk(&paths, &registry, max_source_bytes).await?);
+    } else {
+        edge_cases.push(edge_not_applicable(
+            &paths,
+            "maximum_size_e9_edge_not_applicable_for_isolated_embedder",
+            "single-embedder process isolation selected a registry slice that does not include E9; the final all-embedder readback pass still runs the E9 maximum-size edge",
+        )?);
+    }
+    edge_cases.push(edge_dimension_mismatch(
+        &paths,
+        &chunks[0],
+        &registry[0],
+        max_source_bytes,
+    )?);
     let after = store_state("after", &paths)?;
     let fsv = json!({
         "source_of_truth": {
@@ -657,6 +701,7 @@ async fn main() -> FsvResult<()> {
             "durable_root_on_d_drive": paths.cache_root.starts_with("/mnt/d"),
             "chunk_offset": chunk_offset,
             "max_chunks": max_chunks,
+            "only_embedder": only_embedder.map(|embedder| embedder.slug().to_string()),
             "max_forward_source_text_bytes": max_source_bytes,
             "hot_model_cache_max_bytes": hot_model_cache_max_bytes,
             "cache_store_layout": cache_store.layout().as_str(),
@@ -1106,8 +1151,10 @@ struct EmbedderBatchControls {
     max_rows: usize,
     hard_max_rows: Option<usize>,
     max_padded_source_bytes: u64,
+    max_token_quadratic_elements: u64,
     row_env_var: String,
     padded_source_env_var: String,
+    token_quadratic_env_var: String,
     planner: String,
 }
 
@@ -1121,6 +1168,7 @@ struct BatchSourceStats {
     token_estimate_min: usize,
     token_estimate_max: usize,
     token_estimate_sum: usize,
+    padded_token_quadratic_elements: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1132,6 +1180,8 @@ struct RunnerBatchVramPlan {
     model_vram_bytes: u64,
     input_budget_bytes: u64,
     output_budget_bytes: u64,
+    attention_budget_bytes: u64,
+    padded_token_quadratic_elements: u64,
     required_bytes: u64,
     guard_bytes: u64,
 }
@@ -1158,10 +1208,6 @@ fn build_true_batch_controls(
             controls.insert(embedder, control).is_none(),
         )?;
     }
-    require(
-        "at least one true-batch embedder batch control exists",
-        !controls.is_empty(),
-    )?;
     Ok(controls)
 }
 
@@ -1178,7 +1224,10 @@ fn embedder_batch_controls(
     let row_env_var = format!("CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE_{slug_upper}");
     let padded_source_env_var =
         format!("CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_PADDED_SOURCE_BYTES_{slug_upper}");
+    let token_quadratic_env_var =
+        format!("CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_TOKEN_QUADRATIC_{slug_upper}");
     let global_padded_env_var = "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_PADDED_SOURCE_BYTES";
+    let global_token_quadratic_env_var = "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_TOKEN_QUADRATIC";
     let max_rows = env_usize_optional(&row_env_var)?.unwrap_or(global_true_batch_size);
     let default_padded_source_bytes = (global_true_batch_size as u64)
         .checked_mul(max_source_bytes as u64)
@@ -1186,13 +1235,22 @@ fn embedder_batch_controls(
     let max_padded_source_bytes = env_u64_optional(&padded_source_env_var)?
         .or(env_u64_optional(global_padded_env_var)?)
         .unwrap_or(default_padded_source_bytes);
+    let max_token_quadratic_elements = env_u64_optional(&token_quadratic_env_var)?
+        .or(env_u64_optional(global_token_quadratic_env_var)?)
+        .unwrap_or(default_token_quadratic_elements(
+            embedder,
+            global_true_batch_size,
+            max_source_bytes,
+        )?);
     let controls = EmbedderBatchControls {
         embedder_id: embedder.slug().to_string(),
         max_rows,
         hard_max_rows: embedder_hard_max_rows(embedder),
         max_padded_source_bytes,
+        max_token_quadratic_elements,
         row_env_var,
         padded_source_env_var,
+        token_quadratic_env_var,
         planner: "stable_source_byte_len_then_chunk_index".to_string(),
     };
     validate_embedder_batch_controls(embedder, &controls)?;
@@ -1204,6 +1262,24 @@ fn embedder_hard_max_rows(embedder: EmbedderId) -> Option<usize> {
         EmbedderId::E6 | EmbedderId::E7 | EmbedderId::E12 | EmbedderId::E13 => Some(32),
         EmbedderId::E14 => Some(8),
         _ => None,
+    }
+}
+
+fn default_token_quadratic_elements(
+    embedder: EmbedderId,
+    global_true_batch_size: usize,
+    max_source_bytes: usize,
+) -> FsvResult<u64> {
+    match embedder {
+        EmbedderId::E1
+        | EmbedderId::E6
+        | EmbedderId::E7
+        | EmbedderId::E8
+        | EmbedderId::E10
+        | EmbedderId::E12
+        | EmbedderId::E13
+        | EmbedderId::E14 => Ok(DEFAULT_PRETRAINED_MAX_TOKEN_QUADRATIC_ELEMENTS),
+        _ => padded_token_quadratic_elements(max_source_bytes, global_true_batch_size),
     }
 }
 
@@ -1219,6 +1295,10 @@ fn validate_embedder_batch_controls(
     require(
         "per-embedder padded source-byte budget is non-zero",
         controls.max_padded_source_bytes > 0,
+    )?;
+    require(
+        "per-embedder token-quadratic budget is non-zero",
+        controls.max_token_quadratic_elements > 0,
     )?;
     if let Some(hard_max_rows) = controls.hard_max_rows {
         if controls.max_rows > hard_max_rows {
@@ -1261,7 +1341,19 @@ fn plan_pending_batches(
             let next_max = current_max.max(row.source_byte_len);
             padded_source_bytes(next_max, current.len() + 1)? > controls.max_padded_source_bytes
         };
-        if would_exceed_rows || would_exceed_source {
+        let would_exceed_token_quadratic = if current.is_empty() {
+            false
+        } else {
+            let current_max = current
+                .iter()
+                .map(|pending| pending.source_byte_len)
+                .max()
+                .ok_or("non-empty planner batch missing source length")?;
+            let next_max = current_max.max(row.source_byte_len);
+            padded_token_quadratic_elements(next_max, current.len() + 1)?
+                > controls.max_token_quadratic_elements
+        };
+        if would_exceed_rows || would_exceed_source || would_exceed_token_quadratic {
             require("planner emits only non-empty batches", !current.is_empty())?;
             batches.push(current);
             current = Vec::new();
@@ -1275,6 +1367,11 @@ fn plan_pending_batches(
         require(
             "planner batch respects padded source-byte budget unless single row exceeds budget",
             current_stats.padded_source_bytes <= controls.max_padded_source_bytes
+                || current_stats.row_count == 1,
+        )?;
+        require(
+            "planner batch respects token-quadratic budget unless single row exceeds budget",
+            current_stats.padded_token_quadratic_elements <= controls.max_token_quadratic_elements
                 || current_stats.row_count == 1,
         )?;
     }
@@ -1310,6 +1407,10 @@ fn batch_source_stats(batch: &[PendingForward]) -> FsvResult<BatchSourceStats> {
         token_estimate_min: estimated_tokens_from_source_bytes(source_byte_min),
         token_estimate_max: estimated_tokens_from_source_bytes(source_byte_max),
         token_estimate_sum,
+        padded_token_quadratic_elements: padded_token_quadratic_elements(
+            source_byte_max,
+            batch.len(),
+        )?,
     })
 }
 
@@ -1321,6 +1422,14 @@ fn padded_source_bytes(source_byte_max: usize, row_count: usize) -> FsvResult<u6
 
 fn estimated_tokens_from_source_bytes(source_byte_len: usize) -> usize {
     source_byte_len.saturating_add(3) / 4
+}
+
+fn padded_token_quadratic_elements(source_byte_max: usize, row_count: usize) -> FsvResult<u64> {
+    let token_max = estimated_tokens_from_source_bytes(source_byte_max) as u64;
+    token_max
+        .checked_mul(token_max)
+        .and_then(|value| value.checked_mul(row_count as u64))
+        .ok_or_else(|| "token-quadratic batch budget overflow".into())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1630,24 +1739,24 @@ async fn forward_true_batch_with_token_quarantine(
                 }
             }
             Err(error) => {
-                if !is_token_overlimit_error(error.as_ref()) {
+                let Some(isolation) = classify_true_batch_isolation_error(error.as_ref()) else {
                     return Err(error);
-                }
+                };
                 let error_text = error_chain_text(error.as_ref());
                 if rows.len() == 1 {
                     let (row_index, pending) = rows
                         .into_iter()
                         .next()
-                        .ok_or("token-overlimit isolation group unexpectedly empty")?;
+                        .ok_or("true-batch isolation group unexpectedly empty")?;
                     let chunk = &chunks[pending.chunk_index];
                     let reason = format!(
-                        "model tokenizer rejected this chunk inside true-batch {}; row_index={}; error={}",
-                        batch_id, row_index, error_text
+                        "{} inside true-batch {}; row_index={}; error={}",
+                        isolation.quarantine_reason, batch_id, row_index, error_text
                     );
                     let row = quarantine_row(
                         chunk,
                         record,
-                        "MEJEPA_FORWARD_TOKEN_TOO_LONG",
+                        isolation.error_code,
                         &reason,
                         max_source_bytes,
                     )?;
@@ -1659,33 +1768,34 @@ async fn forward_true_batch_with_token_quarantine(
                         paths,
                         chunk,
                         record,
-                        "true_batch_token_overlimit_quarantine",
+                        isolation.quarantine_event,
                         json!({
                             "batch_id": batch_id,
                             "batch_index": batch_index,
                             "row_index": row_index,
                             "cache_key_sha256": pending.key_sha,
                             "record_path": pending.path.display().to_string(),
-                            "error_code": "MEJEPA_FORWARD_TOKEN_TOO_LONG",
+                            "error_code": isolation.error_code,
                             "error": error_text,
                         }),
                     )?;
                     quarantined_rows.push(row);
                 } else {
                     let split_at = rows.len() / 2;
-                    require("token-overlimit split makes progress", split_at > 0)?;
+                    require("true-batch split makes progress", split_at > 0)?;
                     let first_chunk = &chunks[rows[0].1.chunk_index];
                     write_progress(
                         paths,
                         first_chunk,
                         record,
-                        "true_batch_token_overlimit_split",
+                        isolation.split_event,
                         json!({
                             "batch_id": batch_id,
                             "batch_index": batch_index,
                             "group_size": rows.len(),
                             "left_size": split_at,
                             "right_size": rows.len() - split_at,
+                            "error_code": isolation.error_code,
                             "error": error_text,
                         }),
                     )?;
@@ -1703,9 +1813,45 @@ async fn forward_true_batch_with_token_quarantine(
     })
 }
 
+#[derive(Debug, Clone, Copy)]
+struct TrueBatchIsolation {
+    error_code: &'static str,
+    split_event: &'static str,
+    quarantine_event: &'static str,
+    quarantine_reason: &'static str,
+}
+
+fn classify_true_batch_isolation_error(
+    error: &dyn std::error::Error,
+) -> Option<TrueBatchIsolation> {
+    if is_token_overlimit_error(error) {
+        return Some(TrueBatchIsolation {
+            error_code: "MEJEPA_FORWARD_TOKEN_TOO_LONG",
+            split_event: "true_batch_token_overlimit_split",
+            quarantine_event: "true_batch_token_overlimit_quarantine",
+            quarantine_reason: "model tokenizer rejected this chunk",
+        });
+    }
+    if is_gpu_oom_error(error) {
+        return Some(TrueBatchIsolation {
+            error_code: "MEJEPA_FORWARD_GPU_OOM",
+            split_event: "true_batch_gpu_oom_split",
+            quarantine_event: "true_batch_gpu_oom_quarantine",
+            quarantine_reason: "GPU memory exhaustion remained after batch isolation",
+        });
+    }
+    None
+}
+
 fn is_token_overlimit_error(error: &dyn std::error::Error) -> bool {
     let text = error_chain_text(error);
     text.contains("Input too long") && text.contains("exceeds max")
+}
+
+fn is_gpu_oom_error(error: &dyn std::error::Error) -> bool {
+    let text = error_chain_text(error).to_ascii_lowercase();
+    text.contains("cuda_error_out_of_memory")
+        || (text.contains("gpu error") && text.contains("out of memory"))
 }
 
 fn error_chain_text(error: &dyn std::error::Error) -> String {
@@ -1738,9 +1884,14 @@ fn validate_runner_true_batch_vram_guard(
         .checked_mul(embedder.dimension() as u64)
         .and_then(|value| value.checked_mul(std::mem::size_of::<f32>() as u64))
         .ok_or("true-batch output byte budget overflow")?;
+    let padded_token_quadratic_elements =
+        padded_token_quadratic_elements(source_byte_max, batch_size)?;
+    let attention_budget_bytes =
+        true_batch_attention_budget_bytes(embedder, padded_token_quadratic_elements)?;
     let required_bytes = model_vram_bytes
         .checked_add(input_budget_bytes)
         .and_then(|value| value.checked_add(output_budget_bytes))
+        .and_then(|value| value.checked_add(attention_budget_bytes))
         .ok_or("true-batch VRAM required byte overflow")?;
     if required_bytes > guard_bytes {
         return Err(format!(
@@ -1760,9 +1911,31 @@ fn validate_runner_true_batch_vram_guard(
         model_vram_bytes,
         input_budget_bytes,
         output_budget_bytes,
+        attention_budget_bytes,
+        padded_token_quadratic_elements,
         required_bytes,
         guard_bytes,
     })
+}
+
+fn true_batch_attention_budget_bytes(
+    embedder: EmbedderId,
+    padded_token_quadratic_elements: u64,
+) -> FsvResult<u64> {
+    let bytes_per_element = match embedder {
+        EmbedderId::E14 => 384,
+        EmbedderId::E7 => 256,
+        EmbedderId::E1
+        | EmbedderId::E6
+        | EmbedderId::E8
+        | EmbedderId::E10
+        | EmbedderId::E12
+        | EmbedderId::E13 => 128,
+        _ => 0,
+    };
+    padded_token_quadratic_elements
+        .checked_mul(bytes_per_element)
+        .ok_or_else(|| "true-batch attention budget overflow".into())
 }
 
 async fn cache_or_forward(
@@ -2160,7 +2333,10 @@ fn load_chunks(path: &Path, chunk_offset: usize, max_chunks: usize) -> FsvResult
     Ok(out)
 }
 
-fn load_active_embedder_records(path: &Path) -> FsvResult<Vec<RegistryRecord>> {
+fn load_active_embedder_records(
+    path: &Path,
+    only_embedder: Option<EmbedderId>,
+) -> FsvResult<Vec<RegistryRecord>> {
     let file = File::open(path)?;
     let mut out = Vec::new();
     for line in BufReader::new(file).lines() {
@@ -2171,7 +2347,10 @@ fn load_active_embedder_records(path: &Path) -> FsvResult<Vec<RegistryRecord>> {
         let record: RegistryRecord = serde_json::from_str(&line)?;
         if record.activation_status == "active" && record.panel_role == "target_side_embedder" {
             validate_registry_record(&record)?;
-            out.push(record);
+            let embedder = record.embedder_id()?;
+            if only_embedder.map_or(true, |only| only == embedder) {
+                out.push(record);
+            }
         }
     }
     out.sort_by_key(|record| {
@@ -2180,7 +2359,10 @@ fn load_active_embedder_records(path: &Path) -> FsvResult<Vec<RegistryRecord>> {
             .map(|id| id.slug().to_string())
             .unwrap_or_default()
     });
-    require("active embedder registry is non-empty", !out.is_empty())?;
+    require(
+        "filtered active embedder registry is non-empty",
+        !out.is_empty(),
+    )?;
     Ok(out)
 }
 
@@ -2206,11 +2388,25 @@ fn validate_registry_record(record: &RegistryRecord) -> FsvResult<()> {
     Ok(())
 }
 
-fn verify_registry_matches_runtime(registry: &[RegistryRecord]) -> FsvResult<()> {
+fn verify_registry_matches_runtime(
+    registry: &[RegistryRecord],
+    only_embedder: Option<EmbedderId>,
+) -> FsvResult<()> {
     let registry_ids = registry
         .iter()
         .map(RegistryRecord::embedder_id)
         .collect::<Result<BTreeSet<_>, _>>()?;
+    if let Some(only) = only_embedder {
+        require(
+            "single-embedder process isolation registry contains exactly requested embedder",
+            registry_ids == BTreeSet::from([only]),
+        )?;
+        require(
+            "requested isolated embedder is supported by forward runtime",
+            SUPPORTED_FORWARD_EMBEDDERS.contains(&only),
+        )?;
+        return Ok(());
+    }
     let runtime_ids = SUPPORTED_FORWARD_EMBEDDERS
         .iter()
         .copied()
@@ -2832,6 +3028,23 @@ impl CoverageTracker {
     }
 }
 
+fn edge_not_applicable(paths: &Paths, case: &str, reason: &str) -> FsvResult<Value> {
+    let before = store_state(&format!("{case}_before"), paths)?;
+    let after = store_state(&format!("{case}_after"), paths)?;
+    require(
+        "not-applicable edge writes no cache records",
+        before.cache_record_count == after.cache_record_count,
+    )?;
+    Ok(json!({
+        "case": case,
+        "before_state": before,
+        "trigger": reason,
+        "after_state": after,
+        "not_applicable": true,
+        "passes": true,
+    }))
+}
+
 fn edge_empty_chunk(paths: &Paths, registry: &RegistryRecord) -> FsvResult<Value> {
     let before = store_state("edge_empty_before", paths)?;
     let mut chunk = load_chunks(&paths.chunks_jsonl, 0, 1)?.remove(0);
@@ -2939,9 +3152,15 @@ fn edge_invalid_embedder_batch_config(paths: &Paths) -> FsvResult<Value> {
             max_rows,
             hard_max_rows: embedder_hard_max_rows(embedder),
             max_padded_source_bytes: (max_rows as u64) * 32_768,
+            max_token_quadratic_elements: default_token_quadratic_elements(
+                embedder, max_rows, 32_768,
+            )?,
             row_env_var: format!("CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE_{slug_upper}"),
             padded_source_env_var: format!(
                 "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_PADDED_SOURCE_BYTES_{slug_upper}"
+            ),
+            token_quadratic_env_var: format!(
+                "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_TOKEN_QUADRATIC_{slug_upper}"
             ),
             planner: "stable_source_byte_len_then_chunk_index".to_string(),
         };
@@ -2976,8 +3195,11 @@ fn edge_batch_planner_source_budget(paths: &Paths) -> FsvResult<Value> {
         max_rows: 8,
         hard_max_rows: embedder_hard_max_rows(EmbedderId::E14),
         max_padded_source_bytes: 64,
+        max_token_quadratic_elements: DEFAULT_E14_MAX_TOKEN_QUADRATIC_ELEMENTS,
         row_env_var: "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE_E14".to_string(),
         padded_source_env_var: "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_PADDED_SOURCE_BYTES_E14"
+            .to_string(),
+        token_quadratic_env_var: "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_TOKEN_QUADRATIC_E14"
             .to_string(),
         planner: "stable_source_byte_len_then_chunk_index".to_string(),
     };
@@ -3023,6 +3245,123 @@ fn edge_batch_planner_source_budget(paths: &Paths) -> FsvResult<Value> {
         "batch_controls": controls,
         "batch_count": batches.len(),
         "batch_stats": stats,
+        "after_state": after,
+        "passes": true,
+    }))
+}
+
+fn edge_token_quadratic_batch_planner(paths: &Paths) -> FsvResult<Value> {
+    let before = store_state("edge_token_quadratic_batch_planner_before", paths)?;
+    let controls = EmbedderBatchControls {
+        embedder_id: EmbedderId::E14.slug().to_string(),
+        max_rows: 4,
+        hard_max_rows: embedder_hard_max_rows(EmbedderId::E14),
+        max_padded_source_bytes: 262_144,
+        max_token_quadratic_elements: DEFAULT_E14_MAX_TOKEN_QUADRATIC_ELEMENTS,
+        row_env_var: "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE_E14".to_string(),
+        padded_source_env_var: "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_PADDED_SOURCE_BYTES_E14"
+            .to_string(),
+        token_quadratic_env_var: "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_TOKEN_QUADRATIC_E14"
+            .to_string(),
+        planner: "stable_source_byte_len_then_chunk_index".to_string(),
+    };
+    let pending = [
+        1_221usize, 1_424, 1_454, 1_531, 2_472, 3_845, 14_496, 20_510,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(chunk_index, source_byte_len)| {
+        edge_pending_forward(EmbedderId::E14, chunk_index, source_byte_len)
+    })
+    .collect::<FsvResult<Vec<_>>>()?;
+    let batches = plan_pending_batches(EmbedderId::E14, &pending, &controls)?;
+    let stats = batches
+        .iter()
+        .map(|batch| batch_source_stats(batch))
+        .collect::<FsvResult<Vec<_>>>()?;
+    require(
+        "token-quadratic planner preserves every pending row",
+        batches.iter().map(Vec::len).sum::<usize>() == pending.len(),
+    )?;
+    require(
+        "token-quadratic planner isolates longest rows instead of padded batching them",
+        stats
+            .iter()
+            .filter(|stat| stat.source_byte_max >= 14_496)
+            .all(|stat| stat.row_count == 1),
+    )?;
+    require(
+        "token-quadratic planner never exceeds budget unless singleton",
+        stats.iter().all(|stat| {
+            stat.padded_token_quadratic_elements <= controls.max_token_quadratic_elements
+                || stat.row_count == 1
+        }),
+    )?;
+    let after = store_state("edge_token_quadratic_batch_planner_after", paths)?;
+    require(
+        "token-quadratic planner edge writes no cache records",
+        before.cache_record_count == after.cache_record_count,
+    )?;
+    Ok(json!({
+        "case": "token_quadratic_batch_planner_isolates_e14_long_rows",
+        "before_state": before,
+        "trigger": "plan synthetic E14 shard-5 length distribution under a quadratic token budget",
+        "batch_controls": controls,
+        "batch_count": batches.len(),
+        "batch_stats": stats,
+        "after_state": after,
+        "passes": true,
+    }))
+}
+
+fn edge_pretrained_token_quadratic_defaults(paths: &Paths) -> FsvResult<Value> {
+    let before = store_state("edge_pretrained_token_quadratic_defaults_before", paths)?;
+    let global_true_batch_size = 8usize;
+    let max_source_bytes = 32_768usize;
+    let mut pretrained = Vec::new();
+    for embedder in SUPPORTED_PRETRAINED_FORWARD_EMBEDDERS {
+        let token_budget =
+            default_token_quadratic_elements(*embedder, global_true_batch_size, max_source_bytes)?;
+        let attention_budget = true_batch_attention_budget_bytes(*embedder, token_budget)?;
+        require(
+            "pretrained transformer default token-quadratic budget is bounded",
+            token_budget == DEFAULT_PRETRAINED_MAX_TOKEN_QUADRATIC_ELEMENTS,
+        )?;
+        require(
+            "pretrained transformer default attention budget is non-zero",
+            attention_budget > 0,
+        )?;
+        pretrained.push(json!({
+            "embedder_id": embedder.slug(),
+            "token_quadratic_budget": token_budget,
+            "attention_budget_bytes": attention_budget,
+        }));
+    }
+    let e9_budget =
+        default_token_quadratic_elements(EmbedderId::E9, global_true_batch_size, max_source_bytes)?;
+    require(
+        "E9 algorithmic HDC keeps source-derived token-quadratic default",
+        e9_budget == padded_token_quadratic_elements(max_source_bytes, global_true_batch_size)?,
+    )?;
+    require(
+        "E9 algorithmic HDC default remains larger than transformer guard",
+        e9_budget > DEFAULT_PRETRAINED_MAX_TOKEN_QUADRATIC_ELEMENTS,
+    )?;
+    let after = store_state("edge_pretrained_token_quadratic_defaults_after", paths)?;
+    require(
+        "pretrained token-quadratic defaults edge writes no cache records",
+        before.cache_record_count == after.cache_record_count,
+    )?;
+    Ok(json!({
+        "case": "pretrained_token_quadratic_defaults_bound_transformer_batches",
+        "before_state": before,
+        "trigger": "inspect default token-quadratic and attention VRAM budgets for all true-batch embedder classes",
+        "pretrained": pretrained,
+        "algorithmic_e9": {
+            "embedder_id": EmbedderId::E9.slug(),
+            "token_quadratic_budget": e9_budget,
+            "attention_budget_bytes": true_batch_attention_budget_bytes(EmbedderId::E9, e9_budget)?,
+        },
         "after_state": after,
         "passes": true,
     }))
@@ -3097,6 +3436,39 @@ fn edge_true_batch_vram_guard(
         "guard_bytes": plan.required_bytes.saturating_sub(1),
         "after_state": after,
         "error": err.to_string(),
+        "passes": true,
+    }))
+}
+
+fn edge_true_batch_gpu_oom_classifier(paths: &Paths) -> FsvResult<Value> {
+    let before = store_state("edge_true_batch_gpu_oom_classifier_before", paths)?;
+    let synthetic_error = std::io::Error::other(
+        "true-batch forward pass failed: GPU error: BgeM3DenseModel true-batch layer 0 softmax failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")",
+    );
+    let isolation = classify_true_batch_isolation_error(&synthetic_error)
+        .ok_or("CUDA OOM classifier did not classify synthetic error")?;
+    require(
+        "CUDA OOM classifier maps to explicit quarantine code",
+        isolation.error_code == "MEJEPA_FORWARD_GPU_OOM",
+    )?;
+    require(
+        "CUDA OOM classifier exposes split event",
+        isolation.split_event == "true_batch_gpu_oom_split",
+    )?;
+    let after = store_state("edge_true_batch_gpu_oom_classifier_after", paths)?;
+    require(
+        "CUDA OOM classifier edge writes no cache records",
+        before.cache_record_count == after.cache_record_count,
+    )?;
+    Ok(json!({
+        "case": "true_batch_gpu_oom_classifier_rejects_fail_open",
+        "before_state": before,
+        "trigger": "classify synthetic Candle CUDA_ERROR_OUT_OF_MEMORY from BGE-M3 softmax",
+        "error": synthetic_error.to_string(),
+        "error_code": isolation.error_code,
+        "split_event": isolation.split_event,
+        "quarantine_event": isolation.quarantine_event,
+        "after_state": after,
         "passes": true,
     }))
 }
@@ -3897,6 +4269,21 @@ fn env_u64(name: &str, default: u64) -> FsvResult<u64> {
 fn env_u64_optional(name: &str) -> FsvResult<Option<u64>> {
     match std::env::var(name) {
         Ok(value) => Ok(Some(value.parse()?)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(err) => Err(format!("{name} could not be read as UTF-8: {err}").into()),
+    }
+}
+
+fn env_embedder_optional(name: &str) -> FsvResult<Option<EmbedderId>> {
+    match std::env::var(name) {
+        Ok(value) => {
+            let trimmed = value.trim();
+            require(
+                "isolated embedder environment value is non-empty",
+                !trimmed.is_empty(),
+            )?;
+            Ok(Some(EmbedderId::parse(trimmed)?))
+        }
         Err(std::env::VarError::NotPresent) => Ok(None),
         Err(err) => Err(format!("{name} could not be read as UTF-8: {err}").into()),
     }

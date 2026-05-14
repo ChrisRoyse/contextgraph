@@ -27,9 +27,11 @@ DEFAULT_CACHE_ROOT = Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1")
 DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-029-sharded-cuda-scheduler-fsv")
 DEFAULT_HOT_ROOT = Path("/home/cabdru/.cache/contextgraph/python-forward-shard-scheduler")
 DEFAULT_RUNNER_TIMEOUT_SECONDS = 3600
+DEFAULT_CARGO_RUNNER = "target/release/examples/python_forward_cache_fsv"
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-029"
 SUPPORTED_TRUE_BATCH_SLUGS = {"e1", "e6", "e7", "e8", "e9", "e10", "e12", "e13", "e14"}
+ISOLATED_FORWARD_SLUGS = ("e1", "e10", "e12", "e13", "e14", "e6", "e7", "e8", "e9")
 DEFAULT_ACTIVE_EMBEDDER_COUNT = 12
 DEFAULT_ESTIMATED_RECORD_BYTES = 16 * 1024
 DEFAULT_HOT_STAGE_BUDGET_BYTES = 48 * 1024 * 1024 * 1024
@@ -172,6 +174,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--retry-failed-partial-shards",
+        action="store_true",
+        help=(
+            "When used with --resume-completed-shards, archive a failed or partial "
+            "shard cache/FSV/run-log under fsv_root/failed_partial_shards before "
+            "retrying that shard. Passed shard manifests are still the only skip condition."
+        ),
+    )
+    parser.add_argument(
+        "--isolate-embedder-processes",
+        action="store_true",
+        help=(
+            "Run each active embedder in a separate Rust runner process, then run a final "
+            "all-embedder readback pass. This avoids cumulative CUDA model residency inside "
+            "one shard process while still requiring the final shard manifest/FSV to pass."
+        ),
+    )
+    parser.add_argument(
         "--checkpoint-every-shards",
         type=int,
         default=1,
@@ -182,8 +202,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--cargo-runner",
-        default="cargo run -p context-graph-mejepa-embedders --example python_forward_cache_fsv",
-        help="Shell command for the existing Rust shard runner.",
+        default=DEFAULT_CARGO_RUNNER,
+        help="Shell command for the release-built Rust shard runner.",
     )
     return parser.parse_args()
 
@@ -236,6 +256,43 @@ def validate_embedder_batch_maps(
         require(f"{slug} padded source-byte budget is positive", value > 0)
 
 
+def validate_release_runner(args: argparse.Namespace) -> dict[str, Any]:
+    parts = shlex.split(args.cargo_runner)
+    require("MEJEPA_SCHEDULER_RUNNER_EMPTY: cargo runner command is non-empty", bool(parts))
+    first = parts[0]
+    if first == "cargo":
+        raise SchedulerError(
+            "MEJEPA_SCHEDULER_RELEASE_RUNNER_REQUIRED: corpus runs must use the "
+            "release-built runner; run `cargo build --release -p "
+            "context-graph-mejepa-embedders --example python_forward_cache_fsv` "
+            "and pass --cargo-runner target/release/examples/python_forward_cache_fsv"
+        )
+    runner_path = Path(first)
+    if runner_path.is_absolute() or "/" in first:
+        resolved = runner_path if runner_path.is_absolute() else (Path.cwd() / runner_path)
+        require(
+            "MEJEPA_SCHEDULER_RELEASE_RUNNER_MISSING: release runner exists before writes",
+            resolved.is_file(),
+        )
+        normalized = resolved.as_posix()
+        require(
+            "MEJEPA_SCHEDULER_RELEASE_RUNNER_PATH: runner path targets release example binary",
+            normalized.endswith("/target/release/examples/python_forward_cache_fsv"),
+        )
+        return {
+            "command": args.cargo_runner,
+            "binary_path": str(resolved),
+            "binary_size_bytes": resolved.stat().st_size,
+            "release_runner": True,
+        }
+    return {
+        "command": args.cargo_runner,
+        "binary_path": first,
+        "release_runner": True,
+        "note": "runner resolved through PATH; command is not cargo run",
+    }
+
+
 def runner_batch_controls(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "true_batch_size": args.true_batch_size,
@@ -250,6 +307,7 @@ def runner_batch_controls(args: argparse.Namespace) -> dict[str, Any]:
         },
         "cache_store_layout": args.cache_store_layout,
         "require_packed_store": args.require_packed_store,
+        "isolate_embedder_processes": args.isolate_embedder_processes,
     }
 
 
@@ -325,6 +383,18 @@ def tree_state(path: Path) -> dict[str, Any]:
         "hash_sample": sample,
         "hash_sample_truncated": file_count > len(sample),
     }
+
+
+def file_state(path: Path) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "path": str(path),
+        "exists": path.exists(),
+        "is_file": path.is_file(),
+    }
+    if path.is_file():
+        state["byte_count"] = path.stat().st_size
+        state["sha256"] = sha256_file(path)
+    return state
 
 
 def run_probe(cmd: list[str]) -> dict[str, Any]:
@@ -483,6 +553,7 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
     hot_root = args.hot_root.expanduser().resolve(strict=False)
     cache_root = args.cache_root.expanduser().resolve(strict=False)
     fsv_root = args.fsv_root.expanduser().resolve(strict=False)
+    runner = validate_release_runner(args)
     require(
         "MEJEPA_SCHEDULER_HOT_ROOT_WINDOWS_MOUNT: hot root must not be under /mnt/c",
         not path_is_under(hot_root, Path("/mnt/c")),
@@ -552,6 +623,7 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
             "cache_root_on_durable_d": True,
             "fsv_root_on_durable_d": True,
         },
+        "runner": runner,
         "capacity_policy": capacity,
         "worker_policy": {
             "selected": runner_batch_controls(args)["worker_tiers"],
@@ -621,6 +693,10 @@ def run_shard(
     shard: ShardSpec,
     event_path: Path,
     preflight: dict[str, Any],
+    extra_env: dict[str, str] | None = None,
+    run_log_name: str | None = None,
+    event_phase: str = "shard_run_complete",
+    require_packed_store: bool | None = None,
 ) -> dict[str, Any]:
     env = os.environ.copy()
     env.update(
@@ -648,6 +724,8 @@ def run_shard(
         env[f"CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE_{slug.upper()}"] = str(value)
     for slug, value in args.embedder_max_padded_source_byte_map.items():
         env[f"CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_PADDED_SOURCE_BYTES_{slug.upper()}"] = str(value)
+    if extra_env:
+        env.update(extra_env)
     event(
         event_path,
         "shard_run_start",
@@ -674,17 +752,67 @@ def run_shard(
         "exit_code": completed.returncode,
         "elapsed_seconds": round(elapsed, 3),
         "runner_batch_controls": runner_batch_controls(args),
+        "runner_extra_env": extra_env or {},
         "host_preflight": preflight,
         "stdout_tail": completed.stdout[-8000:],
         "stderr_tail": completed.stderr[-8000:],
     }
-    json_dump_checked(args.fsv_root / "run_logs" / f"{shard.shard_id}.json", run_log)
+    run_log_path = args.fsv_root / "run_logs" / (run_log_name or f"{shard.shard_id}.json")
+    json_dump_checked(run_log_path, run_log)
     require(f"{shard.shard_id} runner exited zero", completed.returncode == 0)
-    run_log.update(shard_completion_readback(args, shard))
+    run_log.update(shard_completion_readback(args, shard, require_packed_store))
     run_log["skipped_completed"] = False
-    json_dump_checked(args.fsv_root / "run_logs" / f"{shard.shard_id}.json", run_log)
-    event(event_path, "shard_run_complete", run_log)
+    json_dump_checked(run_log_path, run_log)
+    event(event_path, event_phase, run_log)
     return run_log
+
+
+def run_shard_embedder_isolated(
+    args: argparse.Namespace,
+    shard: ShardSpec,
+    event_path: Path,
+    preflight: dict[str, Any],
+) -> dict[str, Any]:
+    event(
+        event_path,
+        "shard_embedder_isolation_start",
+        {
+            "shard_id": shard.shard_id,
+            "embedder_order": list(ISOLATED_FORWARD_SLUGS),
+        },
+    )
+    subruns = []
+    for slug in ISOLATED_FORWARD_SLUGS:
+        subrun = run_shard(
+            args,
+            shard,
+            event_path,
+            preflight,
+            extra_env={"CG_MEJEPA_PY_FORWARD_ONLY_EMBEDDER": slug},
+            run_log_name=f"{shard.shard_id}.{slug}.json",
+            event_phase="shard_embedder_subrun_complete",
+            require_packed_store=False,
+        )
+        subruns.append(
+            {
+                "embedder_id": slug,
+                "run_log": str(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
+                "manifest_sha256": subrun.get("manifest_sha256"),
+                "fsv_sha256": subrun.get("fsv_sha256"),
+                "summary": subrun.get("summary"),
+            }
+        )
+    final_run = run_shard(
+        args,
+        shard,
+        event_path,
+        preflight,
+        event_phase="shard_run_complete",
+    )
+    final_run["isolated_embedder_subruns"] = subruns
+    json_dump_checked(shard_run_log_path(args, shard), final_run)
+    event(event_path, "shard_run_embedder_isolated_complete", final_run)
+    return final_run
 
 
 def load_existing_run_logs(fsv_root: Path) -> list[dict[str, Any]]:
@@ -708,8 +836,16 @@ def validate_shard_fsv(shard: ShardSpec) -> dict[str, Any]:
     }
 
 
-def shard_completion_readback(args: argparse.Namespace, shard: ShardSpec) -> dict[str, Any]:
-    manifest = validate_manifest(shard, args.require_packed_store)
+def shard_completion_readback(
+    args: argparse.Namespace,
+    shard: ShardSpec,
+    require_packed_store: bool | None = None,
+) -> dict[str, Any]:
+    manifest = validate_manifest(
+        shard,
+        args.require_packed_store if require_packed_store is None else require_packed_store,
+        validate_packed_readback=require_packed_store is not False,
+    )
     fsv_readback = validate_shard_fsv(shard)
     return {
         "manifest_path": str(shard.manifest_path()),
@@ -728,6 +864,84 @@ def completed_shard_readback(args: argparse.Namespace, shard: ShardSpec) -> dict
         "skipped_completed": True,
         "runner_batch_controls": runner_batch_controls(args),
         **shard_completion_readback(args, shard),
+    }
+
+
+def shard_run_log_path(args: argparse.Namespace, shard: ShardSpec) -> Path:
+    return args.fsv_root / "run_logs" / f"{shard.shard_id}.json"
+
+
+def unique_archive_root(parent: Path, stem: str) -> Path:
+    parent.mkdir(parents=True, exist_ok=True)
+    candidate = parent / stem
+    suffix = 1
+    while candidate.exists():
+        candidate = parent / f"{stem}-{suffix:02d}"
+        suffix += 1
+    return candidate
+
+
+def archive_failed_partial_shard(
+    args: argparse.Namespace,
+    shard: ShardSpec,
+    reason: str,
+) -> dict[str, Any]:
+    run_log_path = shard_run_log_path(args, shard)
+    before = {
+        "cache_root": tree_state(shard.cache_root),
+        "fsv_root": tree_state(shard.fsv_root),
+        "run_log": file_state(run_log_path),
+    }
+    archive_root = unique_archive_root(
+        args.fsv_root / "failed_partial_shards",
+        f"{utc_now().replace('-', '').replace(':', '')}-{shard.shard_id}",
+    )
+    archive_root.mkdir(parents=True, exist_ok=False)
+    moved: dict[str, str] = {}
+    for label, source in (
+        ("cache_root", shard.cache_root),
+        ("fsv_root", shard.fsv_root),
+    ):
+        if source.exists():
+            destination = archive_root / label
+            shutil.move(str(source), str(destination))
+            require(f"{label} moved into failed partial archive", destination.exists())
+            require(f"{label} source removed after archive move", not source.exists())
+            moved[label] = str(destination)
+    if run_log_path.exists():
+        destination = archive_root / "run_log.json"
+        shutil.move(str(run_log_path), str(destination))
+        require("run log moved into failed partial archive", destination.is_file())
+        require("run log source removed after archive move", not run_log_path.exists())
+        moved["run_log"] = str(destination)
+    require("failed partial archive captured at least one artifact", bool(moved))
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_failed_partial_shard_archive",
+        "created_at_utc": utc_now(),
+        "shard_id": shard.shard_id,
+        "chunk_offset": shard.chunk_offset,
+        "max_chunks": shard.max_chunks,
+        "reason": reason,
+        "archive_root": str(archive_root),
+        "before_state": before,
+        "moved_artifacts": moved,
+        "source_after_state": {
+            "cache_root": tree_state(shard.cache_root),
+            "fsv_root": tree_state(shard.fsv_root),
+            "run_log": file_state(run_log_path),
+        },
+        "passes": True,
+    }
+    manifest_path = archive_root / "archive_manifest.json"
+    json_dump_checked(manifest_path, manifest)
+    readback = read_json(manifest_path)
+    require("failed partial archive manifest readback passes", readback.get("passes") is True)
+    return {
+        **manifest,
+        "archive_manifest_path": str(manifest_path),
+        "archive_manifest_sha256": sha256_file(manifest_path),
     }
 
 
@@ -856,6 +1070,18 @@ def validate_packed_store_manifest(shard: ShardSpec, manifest: dict[str, Any]) -
     require(f"{shard.shard_id} packed record root exists", packed_root.is_dir())
     packed_manifest = read_json(packed_manifest_path)
     summary = manifest.get("summary", {})
+    inputs = manifest.get("inputs", {})
+    only_embedder = inputs.get("only_embedder")
+    current_run_rows = summary.get("cache_record_count")
+    cumulative_rows = summary.get("global_cache_record_count_at_manifest_write", current_run_rows)
+    require(
+        f"{shard.shard_id} packed current run row count is present",
+        isinstance(current_run_rows, int) and current_run_rows >= 0,
+    )
+    require(
+        f"{shard.shard_id} packed cumulative row count is present",
+        isinstance(cumulative_rows, int) and cumulative_rows >= current_run_rows,
+    )
     require(
         f"{shard.shard_id} packed manifest passes",
         packed_manifest.get("passes") is True,
@@ -866,13 +1092,23 @@ def validate_packed_store_manifest(shard: ShardSpec, manifest: dict[str, Any]) -
     )
     require(
         f"{shard.shard_id} packed row count matches manifest",
-        packed_manifest.get("row_count") == summary.get("cache_record_count"),
+        packed_manifest.get("row_count") == cumulative_rows,
     )
     packed_index_rows = count_packed_index_rows(packed_root)
     require(
         f"{shard.shard_id} packed index rows match manifest",
-        packed_index_rows == summary.get("cache_record_count"),
+        packed_index_rows == cumulative_rows,
     )
+    per_embedder = packed_manifest.get("per_embedder", {})
+    if only_embedder:
+        require(
+            f"{shard.shard_id} only_embedder packed entry exists",
+            only_embedder in per_embedder,
+        )
+        require(
+            f"{shard.shard_id} only_embedder packed row count matches current run",
+            per_embedder[only_embedder].get("row_count") == current_run_rows,
+        )
     for embedder, row in packed_manifest.get("per_embedder", {}).items():
         record_path = Path(row.get("record_path", ""))
         index_path = Path(row.get("index_path", ""))
@@ -887,11 +1123,17 @@ def validate_packed_store_manifest(shard: ShardSpec, manifest: dict[str, Any]) -
         "packed_manifest_sha256": sha256_file(packed_manifest_path),
         "packed_record_root": str(packed_root),
         "packed_index_rows": packed_index_rows,
+        "current_run_rows": current_run_rows,
+        "cumulative_rows": cumulative_rows,
         "packed_manifest": packed_manifest,
     }
 
 
-def validate_manifest(shard: ShardSpec, require_packed_store: bool) -> dict[str, Any]:
+def validate_manifest(
+    shard: ShardSpec,
+    require_packed_store: bool,
+    validate_packed_readback: bool = True,
+) -> dict[str, Any]:
     manifest = read_json(shard.manifest_path())
     require(f"{shard.shard_id} manifest status passed", manifest.get("status") == "passed")
     require(f"{shard.shard_id} manifest passes true", manifest.get("passes") is True)
@@ -918,8 +1160,8 @@ def validate_manifest(shard: ShardSpec, require_packed_store: bool) -> dict[str,
     )
     batch_telemetry_rows = count_jsonl_rows(batch_telemetry_path)
     require(
-        f"{shard.shard_id} batch telemetry row count positive",
-        batch_telemetry_rows > 0,
+        f"{shard.shard_id} batch telemetry exists when first-pass writes occurred",
+        batch_telemetry_rows > 0 or summary.get("first_pass_writes") == 0,
     )
     require(
         f"{shard.shard_id} batch telemetry row count matches manifest",
@@ -940,7 +1182,7 @@ def validate_manifest(shard: ShardSpec, require_packed_store: bool) -> dict[str,
             f"{shard.shard_id} packed store is required",
             layout == "packed-jsonl",
         )
-    if layout == "packed-jsonl":
+    if layout == "packed-jsonl" and validate_packed_readback:
         manifest["packed_store_readback"] = validate_packed_store_manifest(shard, manifest)
     return manifest
 
@@ -1032,6 +1274,58 @@ def write_minimal_packed_shard(root: Path, shard_id: str, chunk_offset: int, max
     )
     json_dump_checked(fsv_root / "python_forward_cache_fsv.json", {"passes": True})
     return ShardSpec(shard_id, chunk_offset, max_chunks, cache_root, fsv_root)
+
+
+def write_cumulative_isolated_packed_shard(
+    root: Path,
+    shard_id: str,
+    chunk_offset: int,
+    max_chunks: int,
+) -> ShardSpec:
+    shard = write_minimal_packed_shard(root, shard_id, chunk_offset, max_chunks)
+    packed_root = shard.cache_root / "packed_records"
+    record_path = packed_root / "e10.jsonl"
+    index_path = packed_root / "e10.index.jsonl"
+    record = {
+        "schema_version": SCHEMA_VERSION,
+        "cache_key_sha256": f"sha256:{'4' * 64}",
+        "vector_sha256": f"sha256:{'5' * 64}",
+        "vector_len": 3,
+    }
+    jsonl_append_checked(record_path, record)
+    index_row = {
+        "schema_version": SCHEMA_VERSION,
+        "cache_key_sha256": record["cache_key_sha256"],
+        "embedder_id": "e10",
+        "packed_record_path": str(record_path),
+        "byte_offset": 0,
+        "byte_len": len(record_path.read_bytes().rstrip(b"\n")),
+        "record_sha256": sha256_file(record_path),
+        "vector_sha256": record["vector_sha256"],
+        "vector_len": record["vector_len"],
+    }
+    jsonl_append_checked(index_path, index_row)
+    index_jsonl = shard.cache_root / "python_forward_cache_index.jsonl"
+    telemetry_jsonl = shard.cache_root / "python_forward_cache_batch_telemetry.jsonl"
+    index_jsonl.write_text(json.dumps({"cache_key_sha256": record["cache_key_sha256"]}) + "\n", encoding="utf-8")
+    telemetry_jsonl.write_text(json.dumps({"batch_id": "edge-e10", "batch_size": 1}) + "\n", encoding="utf-8")
+    packed_manifest = read_json(shard.cache_root / "python_forward_cache_packed_manifest.json")
+    packed_manifest["row_count"] = 2
+    packed_manifest["per_embedder"]["e10"] = {
+        "record_path": str(record_path),
+        "record_sha256": sha256_file(record_path),
+        "byte_count": record_path.stat().st_size,
+        "index_path": str(index_path),
+        "index_sha256": sha256_file(index_path),
+        "row_count": 1,
+    }
+    json_dump_checked(shard.cache_root / "python_forward_cache_packed_manifest.json", packed_manifest)
+    manifest_path = shard.cache_root / "python_forward_cache_manifest.json"
+    manifest = read_json(manifest_path)
+    manifest["inputs"]["only_embedder"] = "e10"
+    manifest["summary"]["global_cache_record_count_at_manifest_write"] = 2
+    json_dump_checked(manifest_path, manifest)
+    return shard
 
 
 def aggregate(shards: list[ShardSpec], output_path: Path, require_packed_store: bool = False) -> dict[str, Any]:
@@ -1145,6 +1439,10 @@ def preflight_edge_checks(args: argparse.Namespace, preflight: dict[str, Any]) -
         "zero_cpu_workers_rejected_before_writes",
         cpu_workers=0,
     )
+    expect_preflight_failure(
+        "debug_cargo_run_rejected_before_writes",
+        cargo_runner="cargo run -p context-graph-mejepa-embedders --example python_forward_cache_fsv",
+    )
     return cases
 
 
@@ -1169,6 +1467,20 @@ def edge_checks(
             cases.append({"case": case_name, "passes": True, "error": str(exc)})
         else:
             raise SchedulerError(f"{case_name} edge unexpectedly passed")
+
+    require(
+        "isolated process list excludes serial temporal embedders",
+        not {"e2", "e3", "e4"}.intersection(ISOLATED_FORWARD_SLUGS),
+    )
+    require(
+        "isolated process list includes CUDA HDC embedder",
+        "e9" in ISOLATED_FORWARD_SLUGS,
+    )
+    cases.append({
+        "case": "isolated_process_list_matches_true_batch_capability",
+        "passes": True,
+        "isolated_forward_slugs": list(ISOLATED_FORWARD_SLUGS),
+    })
 
     missing = ShardSpec(
         shard_id="edge-missing-manifest",
@@ -1267,6 +1579,78 @@ def edge_checks(
         else:
             raise SchedulerError("old layout edge unexpectedly passed")
 
+        isolated_cumulative = write_cumulative_isolated_packed_shard(
+            edge_root,
+            "edge-isolated-cumulative-packed",
+            350_000_000,
+            1,
+        )
+        isolated_manifest = validate_manifest(isolated_cumulative, args.require_packed_store)
+        packed_readback = isolated_manifest["packed_store_readback"]
+        require(
+            "isolated cumulative packed edge preserves current run rows",
+            packed_readback["current_run_rows"] == 1,
+        )
+        require(
+            "isolated cumulative packed edge preserves cumulative rows",
+            packed_readback["cumulative_rows"] == 2,
+        )
+        cases.append({
+            "case": "isolated_embedder_cumulative_packed_store_validated",
+            "passes": True,
+            "current_run_rows": packed_readback["current_run_rows"],
+            "cumulative_rows": packed_readback["cumulative_rows"],
+        })
+
+    partial = ShardSpec(
+        shard_id="edge-partial-archive",
+        chunk_offset=400_000_000,
+        max_chunks=1,
+        cache_root=edge_root / "partial-cache",
+        fsv_root=edge_root / "partial-fsv",
+    )
+    if partial.cache_root.exists():
+        shutil.rmtree(partial.cache_root)
+    if partial.fsv_root.exists():
+        shutil.rmtree(partial.fsv_root)
+    partial.cache_root.mkdir(parents=True)
+    partial.fsv_root.mkdir(parents=True)
+    (partial.cache_root / "python_forward_cache_index.jsonl").write_text(
+        json.dumps({"cache_key_sha256": f"sha256:{'3' * 64}"}) + "\n",
+        encoding="utf-8",
+    )
+    json_dump_checked(partial.fsv_root / "partial_marker.json", {"passes": False})
+    json_dump_checked(
+        shard_run_log_path(args, partial),
+        {
+            "shard_id": partial.shard_id,
+            "exit_code": 1,
+            "stderr_tail": "synthetic edge failed before manifest",
+        },
+    )
+    archive = archive_failed_partial_shard(
+        args,
+        partial,
+        "edge synthetic partial shard failed before passed manifest",
+    )
+    require(
+        "partial archive edge removed source cache root",
+        not partial.cache_root.exists(),
+    )
+    require(
+        "partial archive edge removed source FSV root",
+        not partial.fsv_root.exists(),
+    )
+    require(
+        "partial archive edge removed source run log",
+        not shard_run_log_path(args, partial).exists(),
+    )
+    cases.append({
+        "case": "failed_partial_shard_archived_before_retry",
+        "passes": True,
+        "archive": archive,
+    })
+
     return cases
 
 
@@ -1306,6 +1690,8 @@ def main() -> int:
         "created_at_utc": started_at,
         "mode": args.mode,
         "resume_completed_shards": args.resume_completed_shards,
+        "retry_failed_partial_shards": args.retry_failed_partial_shards,
+        "isolate_embedder_processes": args.isolate_embedder_processes,
         "checkpoint_every_shards": args.checkpoint_every_shards,
         "chunks_jsonl": str(args.chunks_jsonl),
         "cache_root": str(args.cache_root),
@@ -1341,36 +1727,58 @@ def main() -> int:
     )
     if args.mode == "run":
         for shard in shards:
-            if args.resume_completed_shards and shard.manifest_path().is_file():
-                run_log = completed_shard_readback(args, shard)
-                json_dump_checked(args.fsv_root / "run_logs" / f"{shard.shard_id}.json", run_log)
-                event(event_path, "shard_run_skipped_completed", run_log)
-                run_logs.append(run_log)
-                if len(run_logs) % args.checkpoint_every_shards == 0:
-                    checkpoint = write_checkpoint(
+            if args.resume_completed_shards and (
+                shard.cache_root.exists()
+                or shard.fsv_root.exists()
+                or shard_run_log_path(args, shard).exists()
+            ):
+                if shard.manifest_path().is_file():
+                    try:
+                        run_log = completed_shard_readback(args, shard)
+                    except SchedulerError as exc:
+                        if not args.retry_failed_partial_shards:
+                            raise
+                        archive = archive_failed_partial_shard(args, shard, str(exc))
+                        event(event_path, "failed_partial_shard_archived_for_retry", archive)
+                    else:
+                        json_dump_checked(shard_run_log_path(args, shard), run_log)
+                        event(event_path, "shard_run_skipped_completed", run_log)
+                        run_logs.append(run_log)
+                        if len(run_logs) % args.checkpoint_every_shards == 0:
+                            checkpoint = write_checkpoint(
+                                args,
+                                shards,
+                                run_logs,
+                                started_at,
+                                preflight,
+                                "running",
+                            )
+                            event(
+                                event_path,
+                                "checkpoint_written",
+                                {
+                                    "phase": checkpoint["phase"],
+                                    "progress": checkpoint["progress"],
+                                    "summary": checkpoint["summary"],
+                                },
+                            )
+                        continue
+                else:
+                    if not args.retry_failed_partial_shards:
+                        raise SchedulerError(
+                            f"{shard.shard_id} has partial cache state without a passed manifest: "
+                            f"{shard.cache_root}"
+                        )
+                    archive = archive_failed_partial_shard(
                         args,
-                        shards,
-                        run_logs,
-                        started_at,
-                        preflight,
-                        "running",
+                        shard,
+                        "partial shard state exists without a manifest that can pass readback",
                     )
-                    event(
-                        event_path,
-                        "checkpoint_written",
-                        {
-                            "phase": checkpoint["phase"],
-                            "progress": checkpoint["progress"],
-                            "summary": checkpoint["summary"],
-                        },
-                    )
-                continue
-            if args.resume_completed_shards and shard.cache_root.exists():
-                raise SchedulerError(
-                    f"{shard.shard_id} has partial cache state without a passed manifest: "
-                    f"{shard.cache_root}"
-                )
-            run_logs.append(run_shard(args, shard, event_path, preflight))
+                    event(event_path, "failed_partial_shard_archived_for_retry", archive)
+            if args.isolate_embedder_processes:
+                run_logs.append(run_shard_embedder_isolated(args, shard, event_path, preflight))
+            else:
+                run_logs.append(run_shard(args, shard, event_path, preflight))
             if len(run_logs) % args.checkpoint_every_shards == 0:
                 checkpoint = write_checkpoint(
                     args,
