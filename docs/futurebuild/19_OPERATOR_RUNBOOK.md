@@ -44,6 +44,206 @@ If any step fails, see `§7 Troubleshooting`.
 
 ---
 
+## 1.5 Python SWE-bench data-explosion runbook
+
+**Active scope.** This is the operator procedure for the Python ME-JEPA-Code
+data foundation. It starts from real SWE-bench Lite Python code and ends in
+durable D-drive stores that downstream DDA, TCT, reward tensors, and Q1-Q5
+`RealityPrediction` training consume. Gridworld, counter-world, O*NET,
+career-taxonomy, and other proof-domain harnesses are archived research
+fixtures; they are not active prerequisites for the Python ship gate unless a
+future GitHub issue proves they add durable Python code-reality signal.
+
+### 1.5.1 Source-of-truth map
+
+| Stage | Source of truth | Required readback |
+|---|---|---|
+| Raw Python corpus | `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/` | instance count, mutation/oracle rows, provenance |
+| AST/code chunks | chunk JSONL selected by the scheduler | chunk count and source byte limits |
+| Forward cache | `/mnt/d/contextgraph/corpus/python-forward-cache-*` | manifest, schema, index JSONL, packed records, quarantine JSONL |
+| FSV evidence | `/mnt/d/contextgraph/fsv/task-py-data-*-fsv/` | `passes=true`, happy path and edge-case readbacks |
+| Runtime/checkpoints | `/mnt/d/contextgraph/runtime/` and `python_forward_cache_checkpoint.json` | completed shards, expected/accounted pairs, resource snapshots |
+| Hot staging | `/home/cabdru/.cache/contextgraph/` or `/var/tmp/contextgraph/` | bounded `du -sh`; promoted D-drive target exists |
+
+Bulk durable state stays on `/mnt/d/contextgraph/`. High-churn bounded working
+sets may use WSL ext4 on the C-drive VHDX, preferably
+`/home/cabdru/.cache/contextgraph/` or `/var/tmp/contextgraph/`. Do not use
+`/mnt/c` as a hot path; it is the Windows NTFS mount.
+
+### 1.5.2 Hardware-aware preflight
+
+Run this before any new data-explosion run or after changing batch sizes:
+
+```bash
+cd /home/cabdru/contextgraph
+sed -n '1,120p' docs2/systemspecs.md
+nproc
+free -b
+df -B1 / /mnt/c /mnt/d
+nvidia-smi --query-gpu=name,driver_version,compute_cap,memory.total,memory.used,memory.free,utilization.gpu,utilization.memory,temperature.gpu,power.draw --format=csv,noheader,nounits
+nvcc --version
+docker info
+```
+
+Expected local hardware profile: Ryzen 9 9950X3D, 16 cores / 32 threads, about
+110 GiB RAM visible to WSL, 32 GiB swap visible to WSL, RTX 5090 with 32607 MiB
+VRAM, CUDA 13.2, and `/mnt/d` with enough free bytes for the durable corpus.
+
+Fail closed if any required detector fails:
+
+- Missing `/mnt/d/contextgraph/`: do not write to `/tmp`, `/mnt/c`, or the repo
+  root; remount D: and rerun preflight.
+- Missing Docker Desktop: do not run oracle/evaluator stages; file or update a
+  `status:blocked` GitHub issue with the failed `docker info` output.
+- Missing `nvidia-smi` or required CUDA mode: required-GPU forward runs must
+  fail with a structured error such as `MEJEPA_SCHEDULER_CUDA_REQUIRED`; do not
+  silently reroute required GPU outputs to CPU.
+- VRAM guard exceeded: lower the relevant embedder batch size and rerun the
+  smoke FSV before a full run.
+- D-drive or hot-stage capacity insufficient: shrink the shard plan or free
+  space; no partial write is acceptable without a failed-partial archive.
+
+Worker policy for this host:
+
+- D-drive/Docker I/O: keep bounded, normally `--io-workers 2`.
+- CPU AST/static/token work: use the 9950X3D thread budget, normally
+  `--cpu-workers 32`.
+- GPU forwards: use CUDA where the embedder supports it; normally
+  `--gpu-workers 1` plus per-embedder true-batch controls to avoid cumulative
+  VRAM residency.
+- Correctness beats speed. Prefer checkpointed, resumable, FSV-proven progress
+  over aggressive tuning that risks hidden state loss.
+
+### 1.5.3 Small-sample smoke path
+
+Use a one-shard smoke run after changing scheduler, embedder, storage, or
+hardware policy. Build the release runner first:
+
+```bash
+cargo build --release --example python_forward_cache_fsv
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+CACHE_ROOT="/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-026-smoke-${RUN_ID}"
+FSV_ROOT="/mnt/d/contextgraph/fsv/task-py-data-026-smoke-${RUN_ID}-fsv"
+python3 scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
+  --task-id TASK-PY-DATA-026-SMOKE \
+  --cache-root "$CACHE_ROOT" \
+  --fsv-root "$FSV_ROOT" \
+  --hot-root /home/cabdru/.cache/contextgraph/task-py-data-026-smoke \
+  --start-offset 0 \
+  --shard-size 1 \
+  --shard-count 1 \
+  --max-source-bytes 32768 \
+  --true-batch-size 8 \
+  --embedder-batch-sizes e1=32,e6=32,e7=32,e8=32,e10=32,e12=32,e13=32,e14=8,e9=128 \
+  --embedder-max-padded-source-bytes e1=1048576,e6=1048576,e7=1048576,e8=1048576,e10=1048576,e12=524288,e13=1048576,e14=262144,e9=4194304 \
+  --gpu-vram-guard-bytes 34190917632 \
+  --io-workers 2 \
+  --cpu-workers 32 \
+  --gpu-workers 1 \
+  --jsonl-sync-every-rows 512 \
+  --runner-timeout-seconds 1800 \
+  --cache-store-layout packed \
+  --require-packed-store \
+  --resume-completed-shards \
+  --retry-failed-partial-shards \
+  --checkpoint-every-shards 1 \
+  --isolate-embedder-processes \
+  --cargo-runner target/release/examples/python_forward_cache_fsv
+```
+
+Then read the bytes, not the return value:
+
+```bash
+jq '{passes, source_of_truth}' "$FSV_ROOT/python_forward_shard_scheduler_fsv.json"
+jq '{progress, summary, resource}' "$CACHE_ROOT/python_forward_cache_checkpoint.json"
+find "$CACHE_ROOT" -maxdepth 3 -type f | sort | head -40
+du -sh /home/cabdru/.cache/contextgraph/task-py-data-026-smoke "$CACHE_ROOT" "$FSV_ROOT"
+```
+
+The existing known-good observability smoke evidence is
+`/mnt/d/contextgraph/fsv/task-py-data-024-observability-smoke-20260514-fsv/python_forward_shard_scheduler_fsv.json`
+with `passes=true`. It proves packed-record readback, checkpointed progress,
+capacity evidence, CUDA detection, RAM/VRAM/process/disk resource snapshots,
+and fail-closed edge cases.
+
+### 1.5.4 Full corpus run and checkpoints
+
+Run the full 300x8 Python corpus as a resumable shard schedule. The current
+full-run pattern uses 128-chunk shards, packed storage, isolated embedder
+processes, one checkpoint per shard, and failed-partial archiving:
+
+```bash
+tmux new-session -d -s cg_pydata016_full 'cd /home/cabdru/contextgraph && \
+python3 scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
+  --task-id TASK-PY-DATA-016 \
+  --cache-root /mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514 \
+  --fsv-root /mnt/d/contextgraph/fsv/task-py-data-016-full-20260514-fsv \
+  --hot-root /home/cabdru/.cache/contextgraph/task-py-data-039-e9-cuda-128 \
+  --start-offset 0 \
+  --shard-size 128 \
+  --shard-count 2933 \
+  --max-source-bytes 32768 \
+  --true-batch-size 8 \
+  --embedder-batch-sizes e1=32,e6=32,e7=32,e8=32,e10=32,e12=32,e13=32,e14=8,e9=128 \
+  --embedder-max-padded-source-bytes e1=1048576,e6=1048576,e7=1048576,e8=1048576,e10=1048576,e12=524288,e13=1048576,e14=262144,e9=4194304 \
+  --gpu-vram-guard-bytes 34190917632 \
+  --io-workers 2 \
+  --cpu-workers 32 \
+  --gpu-workers 1 \
+  --jsonl-sync-every-rows 512 \
+  --runner-timeout-seconds 1800 \
+  --cache-store-layout packed \
+  --require-packed-store \
+  --resume-completed-shards \
+  --retry-failed-partial-shards \
+  --checkpoint-every-shards 1 \
+  --isolate-embedder-processes \
+  --cargo-runner target/release/examples/python_forward_cache_fsv \
+  > /mnt/d/contextgraph/runtime/task-py-data-016-full-20260514T172028Z/scheduler.log 2>&1'
+```
+
+Monitor from source-of-truth files:
+
+```bash
+tmux list-sessions
+ps -eo pid,ppid,stat,etime,%cpu,%mem,rss,cmd | rg 'python_forward_shard_scheduler|python_forward_cache_fsv|target/release/examples/python_forward_cache_fsv'
+jq '{progress, summary, resource:{phase:.resource.phase, mem_available:.resource.memory.MemAvailable_bytes, gpu_free:.resource.gpu.gpus[0].memory_free_bytes, scheduler_pid:.resource.scheduler_process.pid}}' \
+  /mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514/python_forward_cache_checkpoint.json
+find /mnt/d/contextgraph/fsv/task-py-data-016-full-20260514-fsv/run_logs -maxdepth 1 -name 'shard-*.json' | wc -l
+nvidia-smi --query-gpu=memory.total,memory.used,memory.free,utilization.gpu,utilization.memory,temperature.gpu,power.draw --format=csv,noheader,nounits
+```
+
+Resume/recovery rules:
+
+- A completed shard is skippable only when its manifest, FSV, telemetry,
+  index/quarantine, and packed-store readback pass.
+- Partial or corrupt shard state is archived under
+  `fsv_root/failed_partial_shards/` before retry.
+- Checkpoint progress is authoritative. Return values and logs are evidence of
+  attempt, not success.
+- For every heartbeat, report `completed_shards`, `completed_chunk_capacity`,
+  `expected_pairs`, `accounted_pairs`, `cache_record_count`,
+  `quarantine_row_count`, `second_pass_hits`, RAM, VRAM, and active PIDs.
+
+### 1.5.5 Edge cases operators must exercise
+
+Before promoting a new scheduler or runbook change, capture happy path plus at
+least these edge cases in `/mnt/d/contextgraph/fsv/`:
+
+| Edge | Trigger | Expected source-of-truth result |
+|---|---|---|
+| Missing Docker | `docker info` fails before oracle work | no corpus/oracle write; GitHub issue marked `status:blocked` |
+| Missing corpus | source corpus path absent | scheduler exits before cache write; checkpoint absent or unchanged |
+| Missing CUDA detector | invalid `--nvidia-smi-command` | structured CUDA-required error; no silent CPU fallback |
+| Failed embedder output | corrupt/missing manifest or output row | quarantine or failed-partial archive; `accounted_pairs == expected_pairs` remains required |
+| Duplicate/resume | rerun with `--resume-completed-shards` | completed shard skipped only after full manifest/FSV/readback proof |
+
+When any edge fails unexpectedly, stop the run, inspect the SoT, fix the root
+cause, write or update a GitHub issue, then rerun the adjacent happy path and
+edges. Do not delete failed-partial archives; they are evidence.
+
+---
+
 ## 2. Daily operations (2-5 minutes)
 
 ```bash
@@ -162,7 +362,7 @@ systemctl --user restart mejepa-daemon
 
 1. Identify which supervised task is flapping (log lines name it).
 2. Check if it's a known issue (CF corruption → see 5.2; OOM → see 5.5; etc.).
-3. If unknown: `systemctl --user stop mejepa-daemon`; investigate; create blocker in `memory/blockers/`; restart.
+3. If unknown: `systemctl --user stop mejepa-daemon`; investigate; create or update a `status:blocked` GitHub issue with the log evidence; restart only after the blocker condition is understood.
 
 ### 5.2 `MEJEPA_INFER_WITNESS_CHAIN_BROKEN`
 
@@ -245,7 +445,7 @@ context-graph-cli mejepa daemon-status
 
 1. `systemctl --user restart mejepa-daemon`
 2. Check `valgrind`-style profiling (collect data during repro)
-3. Create blocker in `memory/blockers/` with severity and reproducible scenario.
+3. Create or update a `status:blocked` GitHub issue with severity, reproducible scenario, and the direct source-of-truth readback.
 
 ### 5.6 `MEJEPA_D_DRIVE_UNAVAILABLE`
 
@@ -413,7 +613,7 @@ These wrap the MCP tools for easier shell-side use.
 
 If anything in §5 doesn't resolve within 1 day:
 
-1. Write a high-severity blocker in `memory/blockers/<date>--<short-name>.md` with severity, reproducible scenario, what's been tried.
+1. Open or update a high-severity GitHub issue with `status:blocked`, severity, reproducible scenario, and what's been tried.
 2. If user-facing degradation: pause prediction emission via `mcp_call mejepa_pause_predictions --duration-mins 60`; the agent receives `Verdict::Abstain` until resumed.
 3. Investigate root cause; fix; resume.
 
