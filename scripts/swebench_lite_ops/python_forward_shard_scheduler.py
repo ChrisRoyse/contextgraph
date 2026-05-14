@@ -179,6 +179,20 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--write-resume-gate",
+        action="store_true",
+        help=(
+            "After a short benchmark run, write and enforce the fail-closed "
+            "telemetry/resume-gate artifact required before relaunching the full corpus run."
+        ),
+    )
+    parser.add_argument(
+        "--resume-gate-baseline-checkpoint",
+        type=Path,
+        default=None,
+        help="Optional stopped-run checkpoint to read and include as the resume-gate comparison baseline.",
+    )
+    parser.add_argument(
         "--resume-completed-shards",
         action="store_true",
         help=(
@@ -404,6 +418,24 @@ def count_jsonl_rows(path: Path) -> int:
                 raise SchedulerError(f"invalid JSONL row in {path}:{line_no}: {exc}") from exc
             count += 1
     return count
+
+
+def read_jsonl_rows(path: Path) -> list[Any]:
+    require(f"{path} JSONL exists", path.is_file())
+    rows: list[Any] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                rows.append(json.loads(line))
+            except Exception as exc:  # noqa: BLE001 - include line number.
+                raise SchedulerError(f"invalid JSONL row in {path}:{line_no}: {exc}") from exc
+    return rows
+
+
+def elapsed_ms(started: float) -> float:
+    return round((time.monotonic() - started) * 1000.0, 3)
 
 
 def tree_state(path: Path) -> dict[str, Any]:
@@ -951,11 +983,19 @@ def run_shard(
     run_log_path = args.fsv_root / "run_logs" / (run_log_name or f"{shard.shard_id}.json")
     json_dump_checked(run_log_path, run_log)
     require(f"{shard.shard_id} runner exited zero", completed.returncode == 0)
+    timing_ms = {"runner_subprocess_ms": round(elapsed * 1000.0, 3)}
     if use_hot_stage_for_shard(args):
+        stage_readback_started = time.monotonic()
         stage_readback = shard_completion_readback(args, runner_shard, require_packed_store)
+        timing_ms["stage_readback_ms"] = elapsed_ms(stage_readback_started)
+        promotion_started = time.monotonic()
         stage_promotion = promote_hot_stage_shard(args, shard, runner_shard, stage_root, stage_readback)
+        timing_ms["hot_stage_promotion_ms"] = elapsed_ms(promotion_started)
         run_log["hot_stage_promotion"] = stage_promotion
+    durable_readback_started = time.monotonic()
     run_log.update(shard_completion_readback(args, shard, require_packed_store))
+    timing_ms["durable_readback_ms"] = elapsed_ms(durable_readback_started)
+    run_log["timing_ms"] = timing_ms
     run_log["skipped_completed"] = False
     json_dump_checked(run_log_path, run_log)
     event(event_path, event_phase, run_log)
@@ -1385,33 +1425,44 @@ def promote_hot_stage_shard(
     stage_root: Path,
     stage_readback: dict[str, Any],
 ) -> dict[str, Any]:
+    total_started = time.monotonic()
     replacements = {
         str(stage_shard.cache_root): str(durable_shard.cache_root),
         str(stage_shard.fsv_root): str(durable_shard.fsv_root),
     }
+    rewrite_started = time.monotonic()
     rewrites = (
         rewrite_json_paths_in_tree(stage_shard.cache_root, replacements)
         + rewrite_json_paths_in_tree(stage_shard.fsv_root, replacements)
     )
+    path_rewrite_ms = elapsed_ms(rewrite_started)
     after_rewrite = {
         "stage_cache_root": tree_state(stage_shard.cache_root),
         "stage_fsv_root": tree_state(stage_shard.fsv_root),
     }
     archive_parent = args.fsv_root / "hot_stage_promoted_overwrites" / durable_shard.shard_id
+    cache_promotion_started = time.monotonic()
     cache_promotion = promote_tree_verified(
         stage_shard.cache_root,
         durable_shard.cache_root,
         archive_parent / "cache",
         "cache_root",
     )
+    cache_promotion_ms = elapsed_ms(cache_promotion_started)
+    fsv_promotion_started = time.monotonic()
     fsv_promotion = promote_tree_verified(
         stage_shard.fsv_root,
         durable_shard.fsv_root,
         archive_parent / "fsv",
         "fsv_root",
     )
+    fsv_promotion_ms = elapsed_ms(fsv_promotion_started)
+    durable_readback_started = time.monotonic()
     durable_readback = shard_completion_readback(args, durable_shard)
+    durable_readback_ms = elapsed_ms(durable_readback_started)
+    cleanup_started = time.monotonic()
     shutil.rmtree(stage_root)
+    stage_cleanup_ms = elapsed_ms(cleanup_started)
     require("packed hot-stage root removed after durable promotion", not stage_root.exists())
     return {
         "schema_version": SCHEMA_VERSION,
@@ -1427,6 +1478,14 @@ def promote_hot_stage_shard(
         "fsv_promotion": fsv_promotion,
         "durable_readback": durable_readback,
         "stage_after_state": tree_state(stage_root),
+        "timing_ms": {
+            "path_rewrite_ms": path_rewrite_ms,
+            "cache_promotion_ms": cache_promotion_ms,
+            "fsv_promotion_ms": fsv_promotion_ms,
+            "durable_readback_ms": durable_readback_ms,
+            "stage_cleanup_ms": stage_cleanup_ms,
+            "total_ms": elapsed_ms(total_started),
+        },
         "passes": True,
     }
 
@@ -1439,6 +1498,7 @@ def write_checkpoint(
     preflight: dict[str, Any],
     phase: str,
 ) -> dict[str, Any]:
+    checkpoint_started = time.monotonic()
     completed_by_id: dict[str, dict[str, Any]] = {}
     for log in run_logs:
         shard_id = log.get("shard_id")
@@ -1527,10 +1587,14 @@ def write_checkpoint(
         "recent_run_logs": run_logs[-5:],
         "disk": disk_snapshot(),
         "resource": resource_snapshot(args, f"checkpoint_{phase}"),
+        "timing_ms": {
+            "checkpoint_update_ms": 0.0,
+        },
         "passes": True,
     }
     cache_checkpoint_path = args.cache_root / "python_forward_cache_checkpoint.json"
     fsv_checkpoint_path = args.fsv_root / "python_forward_cache_checkpoint.json"
+    checkpoint["timing_ms"]["checkpoint_update_ms"] = elapsed_ms(checkpoint_started)
     json_dump_checked(cache_checkpoint_path, checkpoint)
     json_dump_checked(fsv_checkpoint_path, checkpoint)
     cache_readback = read_json(cache_checkpoint_path)
@@ -2062,6 +2126,336 @@ def hot_stage_promotion_edge_checks(args: argparse.Namespace) -> list[dict[str, 
         raise SchedulerError("hot stage /mnt/c edge unexpectedly passed")
 
     return cases
+
+
+def require_numeric_ms(label: str, value: Any) -> float:
+    require(f"{label} timing exists", isinstance(value, (int, float)))
+    numeric = float(value)
+    require(f"{label} timing is non-negative", numeric >= 0.0)
+    return numeric
+
+
+def validate_batch_telemetry_rows(
+    args: argparse.Namespace,
+    shard_id: str,
+    summary: dict[str, Any],
+    rows: list[Any],
+    resource_before: dict[str, Any],
+    resource_after: dict[str, Any],
+) -> dict[str, Any]:
+    expected_rows = int(summary.get("batch_telemetry_row_count", -1))
+    require(f"{shard_id} telemetry row count matches manifest summary", len(rows) == expected_rows)
+    gpus_before = resource_before.get("gpu", {}).get("gpus", [])
+    gpus_after = resource_after.get("gpu", {}).get("gpus", [])
+    per_embedder: dict[str, dict[str, Any]] = {}
+    output_total = 0
+    quarantine_total = 0
+    latency_total_ms = 0.0
+    for index, row in enumerate(rows):
+        require(f"{shard_id} telemetry row {index} is object", isinstance(row, dict))
+        embedder_id = row.get("embedder_id")
+        require(f"{shard_id} telemetry row {index} has embedder id", isinstance(embedder_id, str) and bool(embedder_id))
+        latency_total_ms += require_numeric_ms(f"{shard_id} telemetry row {index}", row.get("latency_ms"))
+        entry = per_embedder.setdefault(
+            embedder_id,
+            {
+                "embedder_id": embedder_id,
+                "batch_count": 0,
+                "output_count": 0,
+                "quarantine_count": 0,
+                "latency_ms_total": 0.0,
+                "requested_device": None,
+                "actual_device": None,
+                "fallback_status": "not_observed",
+                "vram_required_bytes_max": 0,
+                "vram_free_before_bytes": None,
+                "vram_free_after_bytes": None,
+            },
+        )
+        entry["batch_count"] += 1
+        entry["latency_ms_total"] += float(row.get("latency_ms"))
+        artifact_kind = row.get("artifact_kind")
+        if artifact_kind == "python_forward_true_batch_telemetry":
+            require(f"{shard_id} true-batch row {index} says true_batch", row.get("true_batch") is True)
+            batch_size = int(row.get("batch_size", -1))
+            output_count = int(row.get("output_count", -1))
+            quarantine_count = int(row.get("quarantine_count", -1))
+            require(
+                f"{shard_id} true-batch row {index} output/quarantine accounts for batch",
+                output_count + quarantine_count == batch_size,
+            )
+            vram_plan = row.get("vram_plan")
+            require(f"{shard_id} true-batch row {index} has GPU VRAM plan", isinstance(vram_plan, dict))
+            require(
+                f"{shard_id} true-batch row {index} VRAM plan embedder matches row",
+                vram_plan.get("embedder_id") == embedder_id,
+            )
+            require(
+                f"{shard_id} true-batch row {index} VRAM plan fits guard",
+                int(vram_plan.get("required_bytes", -1)) <= int(vram_plan.get("guard_bytes", -2)),
+            )
+            require(f"{shard_id} true-batch row {index} has before GPU telemetry", bool(gpus_before))
+            require(f"{shard_id} true-batch row {index} has after GPU telemetry", bool(gpus_after))
+            precision_classes = row.get("precision_classes")
+            require(
+                f"{shard_id} true-batch row {index} records precision classes",
+                isinstance(precision_classes, list) and bool(precision_classes),
+            )
+            require(
+                f"{shard_id} true-batch row {index} has no fallback precision class",
+                not any("fallback" in str(value).lower() for value in precision_classes),
+            )
+            entry["requested_device"] = "cuda"
+            entry["actual_device"] = "cuda_contract_verified_by_vram_plan_and_gpu_resource"
+            entry["fallback_status"] = "none"
+            entry["vram_required_bytes_max"] = max(
+                int(entry["vram_required_bytes_max"]),
+                int(vram_plan.get("required_bytes", 0)),
+            )
+            entry["vram_free_before_bytes"] = gpus_before[0].get("memory_free_bytes")
+            entry["vram_free_after_bytes"] = gpus_after[0].get("memory_free_bytes")
+            output_total += output_count
+            quarantine_total += quarantine_count
+        elif artifact_kind == "python_forward_algorithmic_serial_telemetry":
+            require(f"{shard_id} serial row {index} marks CUDA not applicable", row.get("cuda_applicable") is False)
+            require(
+                f"{shard_id} serial row {index} has CPU-only reason",
+                isinstance(row.get("reason_code"), str) and bool(row.get("reason_code")),
+            )
+            output_count = int(row.get("processed_non_quarantine_count", -1))
+            quarantine_count = int(row.get("quarantine_count", -1))
+            row_count = int(row.get("row_count", -1))
+            require(
+                f"{shard_id} serial row {index} output/quarantine accounts for row count",
+                output_count + quarantine_count == row_count,
+            )
+            entry["requested_device"] = "cpu"
+            entry["actual_device"] = "cpu_only_verified_contract"
+            entry["fallback_status"] = "not_applicable"
+            output_total += output_count
+            quarantine_total += quarantine_count
+        else:
+            raise SchedulerError(f"{shard_id} telemetry row {index} unsupported artifact kind: {artifact_kind}")
+
+    require(
+        f"{shard_id} telemetry output count matches manifest cache records",
+        output_total == int(summary.get("cache_record_count", -1)),
+    )
+    require(
+        f"{shard_id} telemetry quarantine count matches manifest quarantine rows",
+        quarantine_total == int(summary.get("quarantine_row_count", -1)),
+    )
+    return {
+        "row_count": len(rows),
+        "output_count": output_total,
+        "quarantine_count": quarantine_total,
+        "latency_ms_total": round(latency_total_ms, 3),
+        "per_embedder": per_embedder,
+        "passes": True,
+    }
+
+
+def validate_run_log_resume_telemetry(args: argparse.Namespace, run_log: dict[str, Any]) -> dict[str, Any]:
+    shard_id = run_log.get("shard_id")
+    require("resume gate run log has shard id", isinstance(shard_id, str) and bool(shard_id))
+    require(f"{shard_id} resume gate run log exited zero", run_log.get("exit_code") == 0)
+    require(f"{shard_id} resume gate run log was executed", run_log.get("skipped_completed") is False)
+    elapsed_seconds = float(run_log.get("elapsed_seconds", -1.0))
+    require(f"{shard_id} resume gate elapsed seconds positive", elapsed_seconds > 0.0)
+    timing = run_log.get("timing_ms")
+    require(f"{shard_id} resume gate has timing object", isinstance(timing, dict))
+    require_numeric_ms(f"{shard_id} runner subprocess", timing.get("runner_subprocess_ms"))
+    require_numeric_ms(f"{shard_id} durable readback", timing.get("durable_readback_ms"))
+    if use_hot_stage_for_shard(args):
+        require(f"{shard_id} hot-stage promotion exists", isinstance(run_log.get("hot_stage_promotion"), dict))
+        promotion_timing = run_log["hot_stage_promotion"].get("timing_ms")
+        require(f"{shard_id} hot-stage promotion timing exists", isinstance(promotion_timing, dict))
+        for key in (
+            "path_rewrite_ms",
+            "cache_promotion_ms",
+            "fsv_promotion_ms",
+            "durable_readback_ms",
+            "stage_cleanup_ms",
+            "total_ms",
+        ):
+            require_numeric_ms(f"{shard_id} hot-stage {key}", promotion_timing.get(key))
+    summary = run_log.get("summary")
+    require(f"{shard_id} resume gate summary exists", isinstance(summary, dict))
+    manifest_path = Path(str(run_log.get("manifest_path", "")))
+    manifest = read_json(manifest_path)
+    require(f"{shard_id} resume gate manifest passes", manifest.get("passes") is True)
+    require(f"{shard_id} resume gate manifest summary matches run log", manifest.get("summary") == summary)
+    telemetry_path = Path(str(manifest.get("source_of_truth", {}).get("batch_telemetry_jsonl", "")))
+    rows = read_jsonl_rows(telemetry_path)
+    telemetry = validate_batch_telemetry_rows(
+        args,
+        shard_id,
+        summary,
+        rows,
+        run_log.get("resource_before", {}),
+        run_log.get("resource_after", {}),
+    )
+    chunk_count = int(summary.get("chunk_count", 0))
+    expected_pairs = chunk_count * int(summary.get("active_embedder_count", 0))
+    pair_count = int(summary.get("cache_record_count", 0)) + int(summary.get("quarantine_row_count", 0))
+    require(f"{shard_id} resume gate pairs match expected", pair_count == expected_pairs)
+    return {
+        "shard_id": shard_id,
+        "elapsed_seconds": elapsed_seconds,
+        "chunks_per_second": 0.0 if elapsed_seconds == 0.0 else round(chunk_count / elapsed_seconds, 6),
+        "pairs_per_second": 0.0 if elapsed_seconds == 0.0 else round(pair_count / elapsed_seconds, 6),
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": sha256_file(manifest_path),
+        "batch_telemetry_path": str(telemetry_path),
+        "batch_telemetry_sha256": sha256_file(telemetry_path),
+        "summary": summary,
+        "timing_ms": timing,
+        "hot_stage_promotion_timing_ms": None
+        if not isinstance(run_log.get("hot_stage_promotion"), dict)
+        else run_log["hot_stage_promotion"].get("timing_ms"),
+        "resource_before": run_log.get("resource_before"),
+        "resource_after": run_log.get("resource_after"),
+        "telemetry": telemetry,
+        "passes": True,
+    }
+
+
+def resume_gate_edge_checks(args: argparse.Namespace, run_logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    require("resume gate edge checks need at least one run log", bool(run_logs))
+    base_log = run_logs[-1]
+    manifest = read_json(Path(str(base_log["manifest_path"])))
+    telemetry_path = Path(str(manifest["source_of_truth"]["batch_telemetry_jsonl"]))
+    telemetry_rows = read_jsonl_rows(telemetry_path)
+    summary = dict(base_log["summary"])
+    cases: list[dict[str, Any]] = []
+
+    true_batch_rows = [row for row in telemetry_rows if row.get("artifact_kind") == "python_forward_true_batch_telemetry"]
+    require("resume gate has a true-batch telemetry row for missing-GPU edge", bool(true_batch_rows))
+    missing_gpu_rows = json.loads(json.dumps(telemetry_rows))
+    for row in missing_gpu_rows:
+        if row.get("artifact_kind") == "python_forward_true_batch_telemetry":
+            row.pop("vram_plan", None)
+            break
+    try:
+        validate_batch_telemetry_rows(
+            args,
+            str(base_log["shard_id"]),
+            summary,
+            missing_gpu_rows,
+            base_log.get("resource_before", {}),
+            base_log.get("resource_after", {}),
+        )
+    except SchedulerError as exc:
+        cases.append({"case": "missing_gpu_telemetry_rejected", "passes": True, "error": str(exc)})
+    else:
+        raise SchedulerError("missing GPU telemetry edge unexpectedly passed")
+
+    missing_timing_log = json.loads(json.dumps(base_log))
+    if isinstance(missing_timing_log.get("hot_stage_promotion"), dict):
+        missing_timing_log["hot_stage_promotion"].get("timing_ms", {}).pop("durable_readback_ms", None)
+    else:
+        missing_timing_log.get("timing_ms", {}).pop("durable_readback_ms", None)
+    try:
+        validate_run_log_resume_telemetry(args, missing_timing_log)
+    except SchedulerError as exc:
+        cases.append({"case": "missing_promotion_readback_timing_rejected", "passes": True, "error": str(exc)})
+    else:
+        raise SchedulerError("missing promotion/readback timing edge unexpectedly passed")
+
+    mismatched_summary = dict(summary)
+    mismatched_summary["batch_telemetry_row_count"] = int(summary["batch_telemetry_row_count"]) + 1
+    try:
+        validate_batch_telemetry_rows(
+            args,
+            str(base_log["shard_id"]),
+            mismatched_summary,
+            telemetry_rows,
+            base_log.get("resource_before", {}),
+            base_log.get("resource_after", {}),
+        )
+    except SchedulerError as exc:
+        cases.append({"case": "telemetry_row_count_mismatch_blocks_resume", "passes": True, "error": str(exc)})
+    else:
+        raise SchedulerError("telemetry row-count mismatch edge unexpectedly passed")
+
+    return cases
+
+
+def write_resume_gate_fsv(
+    args: argparse.Namespace,
+    started_at: str,
+    event_path: Path,
+    run_logs: list[dict[str, Any]],
+    checkpoint: dict[str, Any],
+    corpus_manifest: dict[str, Any],
+    preflight: dict[str, Any],
+) -> dict[str, Any]:
+    require("resume gate requires executed run logs", bool(run_logs))
+    checkpoint_summary = checkpoint.get("summary")
+    require("resume gate checkpoint summary exists", isinstance(checkpoint_summary, dict))
+    require("resume gate checkpoint summary matches aggregate manifest", checkpoint_summary == corpus_manifest.get("summary"))
+    event_rows = read_jsonl_rows(event_path)
+    require("resume gate event log has rows", bool(event_rows))
+    run_telemetry = [validate_run_log_resume_telemetry(args, log) for log in run_logs]
+    edge_cases = resume_gate_edge_checks(args, run_logs)
+    baseline = None
+    if args.resume_gate_baseline_checkpoint is not None:
+        baseline_path = args.resume_gate_baseline_checkpoint
+        baseline_checkpoint = read_json(baseline_path)
+        require("resume gate baseline checkpoint passes", baseline_checkpoint.get("passes") is True)
+        baseline = {
+            "path": str(baseline_path),
+            "sha256": sha256_file(baseline_path),
+            "progress": baseline_checkpoint.get("progress"),
+            "summary": baseline_checkpoint.get("summary"),
+            "runner_controls": baseline_checkpoint.get("runner_controls"),
+        }
+    total_chunks = sum(int(row["summary"]["chunk_count"]) for row in run_telemetry)
+    total_pairs = sum(
+        int(row["summary"]["cache_record_count"]) + int(row["summary"]["quarantine_row_count"])
+        for row in run_telemetry
+    )
+    total_elapsed = sum(float(row["elapsed_seconds"]) for row in run_telemetry)
+    fsv_path = args.fsv_root / "python_forward_resume_gate_fsv.json"
+    value = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_resume_gate_fsv",
+        "started_at_utc": started_at,
+        "created_at_utc": utc_now(),
+        "source_of_truth": {
+            "resume_gate_fsv": str(fsv_path),
+            "events": str(event_path),
+            "checkpoint_cache": str(args.cache_root / "python_forward_cache_checkpoint.json"),
+            "checkpoint_fsv": str(args.fsv_root / "python_forward_cache_checkpoint.json"),
+            "aggregate_manifest": str(args.cache_root / "python_forward_cache_corpus_manifest.json"),
+            "cache_root": str(args.cache_root),
+            "fsv_root": str(args.fsv_root),
+            "run_log_root": str(args.fsv_root / "run_logs"),
+        },
+        "baseline_checkpoint": baseline,
+        "host_preflight": preflight,
+        "checkpoint_summary": checkpoint_summary,
+        "aggregate_summary": corpus_manifest.get("summary"),
+        "run_count": len(run_logs),
+        "event_row_count": len(event_rows),
+        "throughput": {
+            "total_chunks": total_chunks,
+            "total_pairs": total_pairs,
+            "total_elapsed_seconds": round(total_elapsed, 3),
+            "chunks_per_second": 0.0 if total_elapsed == 0.0 else round(total_chunks / total_elapsed, 6),
+            "pairs_per_second": 0.0 if total_elapsed == 0.0 else round(total_pairs / total_elapsed, 6),
+        },
+        "run_telemetry": run_telemetry,
+        "edge_cases": edge_cases,
+        "passes": True,
+    }
+    json_dump_checked(fsv_path, value)
+    readback = read_json(fsv_path)
+    require("resume gate FSV readback passes", readback.get("passes") is True)
+    require("resume gate edge cases pass", all(case.get("passes") is True for case in edge_cases))
+    value["resume_gate_sha256"] = sha256_file(fsv_path)
+    return value
 
 
 def count_packed_index_rows(packed_root: Path) -> int:
@@ -2791,6 +3185,10 @@ def main() -> int:
         "mode": args.mode,
         "resume_completed_shards": args.resume_completed_shards,
         "retry_failed_partial_shards": args.retry_failed_partial_shards,
+        "write_resume_gate": args.write_resume_gate,
+        "resume_gate_baseline_checkpoint": None
+        if args.resume_gate_baseline_checkpoint is None
+        else str(args.resume_gate_baseline_checkpoint),
         "stage_packed_shards_on_hot": args.stage_packed_shards_on_hot,
         "isolate_embedder_processes": args.isolate_embedder_processes,
         "checkpoint_every_shards": args.checkpoint_every_shards,
@@ -2966,6 +3364,17 @@ def main() -> int:
         },
     )
     edge_cases = edge_checks(args, shards, preflight)
+    resume_gate = None
+    if args.write_resume_gate:
+        resume_gate = write_resume_gate_fsv(
+            args,
+            started_at,
+            event_path,
+            run_logs,
+            checkpoint,
+            corpus_manifest,
+            preflight,
+        )
     after = {
         "cache_root": tree_state(args.cache_root),
         "fsv_root": tree_state(args.fsv_root),
@@ -2998,6 +3407,7 @@ def main() -> int:
         "checkpoint": checkpoint,
         "aggregate_manifest_sha256": sha256_file(aggregate_path),
         "aggregate_summary": corpus_manifest["summary"],
+        "resume_gate": resume_gate,
         "edge_cases": edge_cases,
         "after_state": after,
         "passes": True,
