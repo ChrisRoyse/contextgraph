@@ -231,8 +231,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "In run mode, skip only shards whose manifest, FSV, telemetry, "
-            "index/quarantine, and packed-store readback already pass. "
-            "Partial or corrupt shard state still fails closed."
+            "index/quarantine, and prior run-log readback already pass. "
+            "Resume fast-forward uses bounded manifest readback; the final "
+            "aggregate still performs packed-store validation."
         ),
     )
     parser.add_argument(
@@ -509,6 +510,14 @@ def tree_state(path: Path) -> dict[str, Any]:
     }
 
 
+def directory_state(path: Path) -> dict[str, Any]:
+    return {
+        "path": str(path),
+        "exists": path.exists(),
+        "is_dir": path.is_dir(),
+    }
+
+
 def file_state(path: Path) -> dict[str, Any]:
     state: dict[str, Any] = {
         "path": str(path),
@@ -519,6 +528,91 @@ def file_state(path: Path) -> dict[str, Any]:
         state["byte_count"] = path.stat().st_size
         state["sha256"] = sha256_file(path)
     return state
+
+
+def top_level_entries_state(path: Path, limit: int = 40) -> dict[str, Any]:
+    entries: list[dict[str, Any]] = []
+    count = 0
+    if path.is_dir():
+        for child in sorted(path.iterdir(), key=lambda item: item.name):
+            count += 1
+            if len(entries) < limit:
+                entries.append(
+                    {
+                        "name": child.name,
+                        "is_file": child.is_file(),
+                        "is_dir": child.is_dir(),
+                    }
+                )
+    return {
+        "path": str(path),
+        "exists": path.exists(),
+        "is_dir": path.is_dir(),
+        "entry_count": count,
+        "sample": entries,
+        "sample_truncated": count > len(entries),
+    }
+
+
+def scheduler_cache_root_state(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "path": str(args.cache_root),
+        "scan_mode": "bounded_artifact_readback",
+        "root": directory_state(args.cache_root),
+        "top_level_entries": top_level_entries_state(args.cache_root),
+        "artifacts": {
+            "checkpoint": file_state(args.cache_root / "python_forward_cache_checkpoint.json"),
+            "shard_plan": file_state(args.cache_root / "python_forward_cache_shard_plan.json"),
+            "aggregate_manifest": file_state(args.cache_root / "python_forward_cache_corpus_manifest.json"),
+            "shards_dir": directory_state(args.cache_root / "shards"),
+            "records_dir": directory_state(args.cache_root / "records"),
+        },
+    }
+
+
+def scheduler_fsv_root_state(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "path": str(args.fsv_root),
+        "scan_mode": "bounded_artifact_readback",
+        "root": directory_state(args.fsv_root),
+        "top_level_entries": top_level_entries_state(args.fsv_root),
+        "artifacts": {
+            "checkpoint": file_state(args.fsv_root / "python_forward_cache_checkpoint.json"),
+            "scheduler_fsv": file_state(args.fsv_root / "python_forward_shard_scheduler_fsv.json"),
+            "resume_preflight_fsv": file_state(args.fsv_root / "python_forward_resume_preflight_fsv.json"),
+            "resume_gate_fsv": file_state(args.fsv_root / "python_forward_resume_gate_fsv.json"),
+            "events": file_state(args.fsv_root / "scheduler_events.jsonl"),
+            "run_logs_dir": directory_state(args.fsv_root / "run_logs"),
+            "shards_dir": directory_state(args.fsv_root / "shards"),
+            "failed_partial_shards_dir": directory_state(args.fsv_root / "failed_partial_shards"),
+            "failed_hot_stages_dir": directory_state(args.fsv_root / "failed_hot_stages"),
+        },
+    }
+
+
+def scheduler_hot_root_state(args: argparse.Namespace) -> dict[str, Any]:
+    packed_stage = args.hot_root / "packed-shard-stage"
+    packed_stage_entries = top_level_entries_state(packed_stage)
+    return {
+        "path": str(args.hot_root),
+        "scan_mode": "bounded_artifact_readback",
+        "root": directory_state(args.hot_root),
+        "top_level_entries": top_level_entries_state(args.hot_root),
+        "artifacts": {
+            "packed_shard_stage_dir": directory_state(packed_stage),
+            "packed_shard_stage_entries": packed_stage_entries,
+            "model_artifact_cache_dir": directory_state(args.hot_root / "model-artifact-cache"),
+        },
+        "hot_stage_blocker_count": packed_stage_entries["entry_count"],
+    }
+
+
+def scheduler_root_state(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "cache_root": scheduler_cache_root_state(args),
+        "fsv_root": scheduler_fsv_root_state(args),
+        "hot_root": scheduler_hot_root_state(args),
+    }
 
 
 def run_probe(cmd: list[str]) -> dict[str, Any]:
@@ -1906,6 +2000,66 @@ def completed_shard_readback(args: argparse.Namespace, shard: ShardSpec) -> dict
     }
 
 
+def resume_skip_log_path(args: argparse.Namespace, shard: ShardSpec) -> Path:
+    return args.fsv_root / "resume_skipped_run_logs" / f"{shard.shard_id}.json"
+
+
+def completed_shard_bounded_readback(args: argparse.Namespace, shard: ShardSpec) -> dict[str, Any]:
+    readback = shard_completion_readback(args, shard, require_packed_store=False)
+    summary = readback.get("summary")
+    require(f"{shard.shard_id} bounded completed shard summary exists", isinstance(summary, dict))
+    require_full_scheduler_shard(args, shard, summary)
+
+    existing_run_log_path = shard_run_log_path(args, shard)
+    existing_run_log_state = file_state(existing_run_log_path)
+    require(f"{shard.shard_id} bounded completed shard run log exists", existing_run_log_state.get("exists") is True)
+    existing_run_log = read_json(existing_run_log_path)
+    require(f"{shard.shard_id} bounded completed shard run log exited zero", existing_run_log.get("exit_code") == 0)
+    require(f"{shard.shard_id} bounded completed shard run log id matches", existing_run_log.get("shard_id") == shard.shard_id)
+    require(
+        f"{shard.shard_id} bounded completed shard run log summary matches manifest",
+        existing_run_log.get("summary") == summary,
+    )
+
+    manifest = read_json(shard.manifest_path())
+    source_of_truth = manifest.get("source_of_truth", {})
+    layout = manifest.get("inputs", {}).get("cache_store_layout", "legacy-files")
+    packed_artifacts = None
+    if layout == "packed-jsonl":
+        packed_manifest = Path(str(source_of_truth.get("packed_manifest", "")))
+        packed_record_root = Path(str(source_of_truth.get("packed_record_root", "")))
+        packed_artifacts = {
+            "packed_manifest": file_state(packed_manifest),
+            "packed_record_root": directory_state(packed_record_root),
+        }
+        require(
+            f"{shard.shard_id} bounded completed shard packed manifest exists",
+            packed_artifacts["packed_manifest"].get("exists") is True,
+        )
+        require(
+            f"{shard.shard_id} bounded completed shard packed record root exists",
+            packed_artifacts["packed_record_root"].get("is_dir") is True,
+        )
+
+    return {
+        "shard_id": shard.shard_id,
+        "exit_code": 0,
+        "elapsed_seconds": 0.0,
+        "skipped_completed": True,
+        "resume_readback_mode": "bounded_completed_shard_manifest_readback",
+        "runner_batch_controls": runner_batch_controls(args),
+        "existing_run_log": existing_run_log_state,
+        "bounded_artifacts": {
+            "manifest": file_state(shard.manifest_path()),
+            "fsv": file_state(shard.fsv_path()),
+            "index": file_state(shard.index_path()),
+            "quarantine": file_state(shard.quarantine_path()),
+            "packed": packed_artifacts,
+        },
+        **readback,
+    }
+
+
 def shard_run_log_path(args: argparse.Namespace, shard: ShardSpec) -> Path:
     return args.fsv_root / "run_logs" / f"{shard.shard_id}.json"
 
@@ -2307,20 +2461,33 @@ def write_checkpoint(
     started_at: str,
     preflight: dict[str, Any],
     phase: str,
+    resume_baseline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     checkpoint_started = time.monotonic()
+    resume_prefix = None
+    resume_prefix_count = 0
+    if resume_baseline is not None:
+        resume_prefix = validate_resume_checkpoint_prefix(args, shards, resume_baseline)
+        resume_prefix_count = int(resume_prefix["completed_shards"])
     completed_by_id: dict[str, dict[str, Any]] = {}
-    for log in run_logs:
+    for index, log in enumerate(run_logs):
         shard_id = log.get("shard_id")
         require("checkpoint run log has shard id", isinstance(shard_id, str) and bool(shard_id))
         require(f"checkpoint run log {shard_id} exited zero", log.get("exit_code") == 0)
         require(f"checkpoint run log {shard_id} appears once", shard_id not in completed_by_id)
+        expected_index = resume_prefix_count + index
+        require(f"checkpoint run log {shard_id} does not exceed plan", expected_index < len(shards))
+        require(
+            f"checkpoint run log {shard_id} follows resume prefix order",
+            shards[expected_index].shard_id == shard_id,
+        )
         summary = log.get("summary")
         require(f"checkpoint run log {shard_id} has validated summary", isinstance(summary, dict))
         completed_by_id[shard_id] = log
 
-    completed_shards = [shard for shard in shards if shard.shard_id in completed_by_id]
-    next_shard = next((shard for shard in shards if shard.shard_id not in completed_by_id), None)
+    completed_count = resume_prefix_count + len(run_logs)
+    completed_shards = shards[:completed_count]
+    next_shard = shards[completed_count] if completed_count < len(shards) else None
     totals = {
         "chunk_count": 0,
         "cache_record_count": 0,
@@ -2332,13 +2499,19 @@ def write_checkpoint(
     }
     active_embedder_count = args.active_embedder_count
     active_embedder_locked = False
-    for shard in completed_shards:
-        summary = completed_by_id[shard.shard_id]["summary"]
+    if resume_prefix is not None:
+        prefix_summary = resume_prefix["summary"]
+        active_embedder_count = int(prefix_summary["active_embedder_count"])
+        active_embedder_locked = True
+        for key in totals:
+            totals[key] += int(prefix_summary[key])
+    for log in run_logs:
+        summary = log["summary"]
         if not active_embedder_locked:
             active_embedder_count = int(summary["active_embedder_count"])
             active_embedder_locked = True
         require(
-            f"{shard.shard_id} checkpoint active embedder count stable",
+            f"{log['shard_id']} checkpoint active embedder count stable",
             int(summary["active_embedder_count"]) == active_embedder_count,
         )
         for key in totals:
@@ -2365,6 +2538,7 @@ def write_checkpoint(
         },
         "runner_controls": runner_batch_controls(args),
         "host_preflight": preflight,
+        "resume_prefix": resume_prefix,
         "progress": {
             "completed_shards": len(completed_shards),
             "total_shards": len(shards),
@@ -2457,6 +2631,80 @@ def checkpoint_next_shard(checkpoint: dict[str, Any], shards: list[ShardSpec]) -
     return shard
 
 
+def validate_resume_checkpoint_prefix(
+    args: argparse.Namespace,
+    shards: list[ShardSpec],
+    checkpoint: dict[str, Any],
+) -> dict[str, Any]:
+    progress = checkpoint.get("progress", {})
+    summary = checkpoint.get("summary", {})
+    require("resume checkpoint progress exists", isinstance(progress, dict))
+    require("resume checkpoint summary exists", isinstance(summary, dict))
+    completed_count = int(progress.get("completed_shards", -1))
+    require("resume checkpoint completed shard count is in range", 0 <= completed_count <= len(shards))
+    require("resume checkpoint summary shard count matches progress", int(summary.get("shard_count", -1)) == completed_count)
+    expected_pairs = int(summary.get("chunk_count", 0)) * int(summary.get("active_embedder_count", 0))
+    accounted_pairs = int(summary.get("cache_record_count", 0)) + int(summary.get("quarantine_row_count", 0))
+    require("resume checkpoint summary expected pairs match", int(summary.get("expected_pairs", -1)) == expected_pairs)
+    require("resume checkpoint summary accounted pairs match", int(summary.get("accounted_pairs", -1)) == accounted_pairs)
+    require("resume checkpoint summary accounted equals expected", accounted_pairs == expected_pairs)
+    require(
+        "resume checkpoint summary second pass covers cache records",
+        int(summary.get("second_pass_hits", -1)) == int(summary.get("cache_record_count", -2)),
+    )
+    next_info = progress.get("next_shard")
+    if completed_count < len(shards):
+        require("resume checkpoint next shard exists", isinstance(next_info, dict))
+        planned_next = shards[completed_count]
+        require("resume checkpoint next shard id matches prefix", next_info.get("shard_id") == planned_next.shard_id)
+        require(
+            "resume checkpoint next shard offset matches prefix",
+            int(next_info.get("chunk_offset", -1)) == planned_next.chunk_offset,
+        )
+        require(
+            "resume checkpoint next shard size matches prefix",
+            int(next_info.get("max_chunks", -1)) == planned_next.max_chunks,
+        )
+    else:
+        require("resume complete checkpoint has no next shard", next_info is None)
+
+    last_info = progress.get("last_completed_shard")
+    last_readback = None
+    if completed_count > 0:
+        require("resume checkpoint last completed shard exists", isinstance(last_info, dict))
+        planned_last = shards[completed_count - 1]
+        require("resume checkpoint last shard id matches prefix", last_info.get("shard_id") == planned_last.shard_id)
+        last_manifest = file_state(planned_last.manifest_path())
+        last_fsv = file_state(planned_last.fsv_path())
+        last_run_log = file_state(shard_run_log_path(args, planned_last))
+        require("resume checkpoint last shard manifest exists", last_manifest.get("exists") is True)
+        require("resume checkpoint last shard FSV exists", last_fsv.get("exists") is True)
+        require("resume checkpoint last shard run log exists", last_run_log.get("exists") is True)
+        manifest = read_json(planned_last.manifest_path())
+        require("resume checkpoint last shard manifest passes", manifest.get("passes") is True)
+        last_readback = {
+            "shard_id": planned_last.shard_id,
+            "manifest": last_manifest,
+            "fsv": last_fsv,
+            "run_log": last_run_log,
+            "manifest_summary": manifest.get("summary"),
+        }
+    else:
+        require("resume empty checkpoint has no last completed shard", last_info is None)
+
+    cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
+    return {
+        "completed_shards": completed_count,
+        "summary": summary,
+        "progress": progress,
+        "checkpoint_cache": file_state(cache_checkpoint_path),
+        "checkpoint_fsv": file_state(fsv_checkpoint_path),
+        "last_completed_shard": last_readback,
+        "scan_mode": "checkpoint_prefix_bounded_readback",
+        "passes": True,
+    }
+
+
 def write_resume_decision(
     args: argparse.Namespace,
     shard: ShardSpec,
@@ -2527,7 +2775,7 @@ def scan_checkpoint_next_shard_state(
             },
         )
     try:
-        completed = completed_shard_readback(args, shard)
+        completed = completed_shard_bounded_readback(args, shard)
     except SchedulerError as exc:
         if not args.retry_failed_partial_shards:
             decision = write_resume_decision(
@@ -2582,7 +2830,7 @@ def scan_checkpoint_next_shard_state(
         shard,
         {
             "decision": "exact_resume_proof_accepted",
-            "reason": "completed shard readback passed against D-drive SoT",
+            "reason": "completed shard bounded readback passed against D-drive SoT",
             "before_state": before,
             "completed_readback": completed,
             "after_state": {
@@ -2758,6 +3006,17 @@ def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any
         1,
         chunks_jsonl=args.chunks_jsonl,
     )
+    exact_manifest_summary = read_json(exact_shard.manifest_path())["summary"]
+    json_dump_checked(
+        shard_run_log_path(exact_args, exact_shard),
+        {
+            "shard_id": exact_shard.shard_id,
+            "exit_code": 0,
+            "elapsed_seconds": 1.0,
+            "skipped_completed": False,
+            "summary": exact_manifest_summary,
+        },
+    )
     write_checkpoint_pair(exact_args, checkpoint_for_shard(exact_shard))
     exact_decision = scan_checkpoint_next_shard_state(exact_args, [exact_shard], read_existing_checkpoint(exact_args))
     require("resume exact edge accepts completed proof", exact_decision["decision"] == "exact_resume_proof_accepted")
@@ -2844,9 +3103,7 @@ def write_resume_preflight_fsv(
         "decision": decision,
         "edge_cases": edge_cases,
         "after_state": {
-            "cache_root": tree_state(args.cache_root),
-            "fsv_root": tree_state(args.fsv_root),
-            "hot_root": tree_state(args.hot_root),
+            **scheduler_root_state(args),
             "checkpoint_cache": file_state(cache_checkpoint_path),
             "checkpoint_fsv": file_state(fsv_checkpoint_path),
             "disk": disk_snapshot(),
@@ -3818,11 +4075,11 @@ def preflight_edge_checks(args: argparse.Namespace, preflight: dict[str, Any]) -
     )
     expect_preflight_failure(
         "hot_stage_projected_capacity_overflow_rejected_before_writes",
-        hot_stage_budget_bytes=preflight["host"]["filesystems"]["/"]["available_bytes"] + 1,
+        hot_stage_budget_bytes=preflight["host"]["filesystems"]["/"]["size_bytes"] + 1,
     )
     expect_preflight_failure(
         "d_root_projected_capacity_overflow_rejected_before_writes",
-        projected_output_bytes=preflight["host"]["filesystems"]["/mnt/d"]["available_bytes"] + 1,
+        projected_output_bytes=preflight["host"]["filesystems"]["/mnt/d"]["size_bytes"] + 1,
     )
     expect_preflight_failure(
         "missing_cuda_runtime_rejected_before_writes",
@@ -3970,6 +4227,192 @@ def edge_checks(
         "passes": True,
         "isolated_forward_slugs": list(ISOLATED_FORWARD_SLUGS),
     })
+
+    bounded_args = argparse.Namespace(**vars(args))
+    bounded_args.cache_root = edge_root / "bounded-root-cache"
+    bounded_args.fsv_root = edge_root / "bounded-root-fsv"
+    bounded_args.hot_root = edge_root / "bounded-root-hot"
+    for root in (bounded_args.cache_root, bounded_args.fsv_root, bounded_args.hot_root):
+        root.mkdir(parents=True, exist_ok=True)
+    json_dump_checked(
+        bounded_args.cache_root / "python_forward_cache_checkpoint.json",
+        {"passes": True, "root": "cache"},
+    )
+    json_dump_checked(
+        bounded_args.fsv_root / "python_forward_cache_checkpoint.json",
+        {"passes": True, "root": "fsv"},
+    )
+    json_dump_checked(
+        bounded_args.cache_root / "python_forward_cache_shard_plan.json",
+        {"passes": True, "artifact": "plan"},
+    )
+    unrelated = bounded_args.fsv_root / "unrelated-large-subtree"
+    unrelated.mkdir(parents=True, exist_ok=True)
+    sentinel = unrelated / "sentinel.txt"
+    sentinel.write_text("must not be recursively hashed by scheduler root readback\n", encoding="utf-8")
+    sentinel_sha = sha256_file(sentinel)
+    root_state = scheduler_root_state(bounded_args)
+    root_state_json = json.dumps(root_state, sort_keys=True)
+    require(
+        "bounded scheduler root state records checkpoint artifacts",
+        root_state["cache_root"]["artifacts"]["checkpoint"].get("exists") is True
+        and root_state["fsv_root"]["artifacts"]["checkpoint"].get("exists") is True,
+    )
+    require(
+        "bounded scheduler root state does not hash unrelated FSV subtree",
+        sentinel_sha not in root_state_json,
+    )
+    require(
+        "bounded scheduler root state declares bounded scan mode",
+        root_state["fsv_root"]["scan_mode"] == "bounded_artifact_readback",
+    )
+    cases.append(
+        {
+            "case": "bounded_scheduler_root_state_ignores_unrelated_subtree",
+            "passes": True,
+            "cache_checkpoint": root_state["cache_root"]["artifacts"]["checkpoint"],
+            "fsv_checkpoint": root_state["fsv_root"]["artifacts"]["checkpoint"],
+            "unrelated_subtree": directory_state(unrelated),
+            "sentinel_sha256_not_present": sentinel_sha,
+            "scan_mode": root_state["fsv_root"]["scan_mode"],
+        }
+    )
+
+    prefix_args = argparse.Namespace(**vars(args))
+    prefix_args.cache_root = edge_root / "resume-prefix-cache"
+    prefix_args.fsv_root = edge_root / "resume-prefix-fsv"
+    prefix_args.hot_root = edge_root / "resume-prefix-hot"
+    prefix_shards = [
+        ShardSpec(
+            shard_id="edge-prefix-000",
+            chunk_offset=0,
+            max_chunks=1,
+            cache_root=prefix_args.cache_root / "shards" / "edge-prefix-000",
+            fsv_root=prefix_args.fsv_root / "shards" / "edge-prefix-000",
+        ),
+        ShardSpec(
+            shard_id="edge-prefix-001",
+            chunk_offset=1,
+            max_chunks=1,
+            cache_root=prefix_args.cache_root / "shards" / "edge-prefix-001",
+            fsv_root=prefix_args.fsv_root / "shards" / "edge-prefix-001",
+        ),
+    ]
+    prefix_summary = {
+        "chunk_count": 1,
+        "cache_record_count": 12,
+        "first_pass_hits": 0,
+        "first_pass_writes": 12,
+        "second_pass_hits": 12,
+        "quarantine_row_count": 0,
+        "batch_telemetry_row_count": 12,
+        "active_embedder_count": 12,
+        "expected_pairs": 12,
+        "accounted_pairs": 12,
+        "shard_count": 1,
+    }
+    json_dump_checked(
+        prefix_shards[0].manifest_path(),
+        {"passes": True, "summary": prefix_summary},
+    )
+    json_dump_checked(prefix_shards[0].fsv_path(), {"passes": True})
+    json_dump_checked(
+        shard_run_log_path(prefix_args, prefix_shards[0]),
+        {"shard_id": prefix_shards[0].shard_id, "exit_code": 0, "summary": prefix_summary},
+    )
+    prefix_checkpoint = {
+        "passes": True,
+        "artifact_kind": "python_forward_shard_scheduler_checkpoint",
+        "progress": {
+            "completed_shards": 1,
+            "total_shards": 2,
+            "completed_chunk_capacity": 1,
+            "planned_chunk_capacity": 2,
+            "last_completed_shard": {
+                "shard_id": prefix_shards[0].shard_id,
+                "chunk_offset": 0,
+                "max_chunks": 1,
+            },
+            "next_shard": {
+                "shard_id": prefix_shards[1].shard_id,
+                "chunk_offset": 1,
+                "max_chunks": 1,
+            },
+        },
+        "summary": prefix_summary,
+    }
+    json_dump_checked(prefix_args.cache_root / "python_forward_cache_checkpoint.json", prefix_checkpoint)
+    json_dump_checked(prefix_args.fsv_root / "python_forward_cache_checkpoint.json", prefix_checkpoint)
+    prefix_readback = validate_resume_checkpoint_prefix(prefix_args, prefix_shards, prefix_checkpoint)
+    require(
+        "resume checkpoint prefix uses bounded readback",
+        prefix_readback["scan_mode"] == "checkpoint_prefix_bounded_readback",
+    )
+    cases.append(
+        {
+            "case": "resume_checkpoint_prefix_bounded_readback",
+            "passes": True,
+            "completed_shards": prefix_readback["completed_shards"],
+            "checkpoint_cache": prefix_readback["checkpoint_cache"],
+            "last_completed_shard": prefix_readback["last_completed_shard"],
+            "scan_mode": prefix_readback["scan_mode"],
+        }
+    )
+
+    bounded_completed_args = argparse.Namespace(**vars(args))
+    bounded_completed_args.active_embedder_count = 1
+    bounded_completed_args.cache_root = edge_root / "bounded-completed-cache"
+    bounded_completed_args.fsv_root = edge_root / "bounded-completed-fsv"
+    bounded_completed = write_minimal_packed_shard(
+        bounded_completed_args.cache_root / "shards",
+        "edge-bounded-completed",
+        10_000,
+        1,
+        args.chunks_jsonl,
+    )
+    bounded_summary = read_json(bounded_completed.manifest_path())["summary"]
+    bounded_existing_log = {
+        "shard_id": bounded_completed.shard_id,
+        "exit_code": 0,
+        "elapsed_seconds": 1.0,
+        "skipped_completed": False,
+        "summary": bounded_summary,
+    }
+    json_dump_checked(shard_run_log_path(bounded_completed_args, bounded_completed), bounded_existing_log)
+    existing_run_log_sha = sha256_file(shard_run_log_path(bounded_completed_args, bounded_completed))
+    bounded_completed_readback = completed_shard_bounded_readback(bounded_completed_args, bounded_completed)
+    require(
+        "bounded completed readback does not rewrite canonical run log",
+        sha256_file(shard_run_log_path(bounded_completed_args, bounded_completed)) == existing_run_log_sha,
+    )
+    require(
+        "bounded completed readback skips packed payload scan",
+        bounded_completed_readback.get("packed_store_readback") is None
+        and bounded_completed_readback.get("resume_readback_mode") == "bounded_completed_shard_manifest_readback",
+    )
+    cases.append(
+        {
+            "case": "completed_shard_bounded_readback_preserves_existing_run_log",
+            "passes": True,
+            "scan_mode": bounded_completed_readback["resume_readback_mode"],
+            "existing_run_log": bounded_completed_readback["existing_run_log"],
+            "bounded_artifacts": bounded_completed_readback["bounded_artifacts"],
+        }
+    )
+
+    missing_log_shard = write_minimal_packed_shard(
+        bounded_completed_args.cache_root / "shards",
+        "edge-bounded-completed-missing-log",
+        10_010,
+        1,
+        args.chunks_jsonl,
+    )
+    try:
+        completed_shard_bounded_readback(bounded_completed_args, missing_log_shard)
+    except SchedulerError as exc:
+        cases.append({"case": "completed_shard_bounded_readback_rejects_missing_run_log", "passes": True, "error": str(exc)})
+    else:
+        raise SchedulerError("bounded completed readback missing run log edge unexpectedly passed")
 
     missing = ShardSpec(
         shard_id="edge-missing-manifest",
@@ -4218,9 +4661,7 @@ def main() -> int:
     os.chmod(args.hot_root, 0o700)
 
     before = {
-        "cache_root": tree_state(args.cache_root),
-        "fsv_root": tree_state(args.fsv_root),
-        "hot_root": tree_state(args.hot_root),
+        **scheduler_root_state(args),
         "disk": disk_snapshot(),
         "resource": resource_snapshot(args, "scheduler_before"),
     }
@@ -4294,6 +4735,8 @@ def main() -> int:
         return 0
 
     run_logs = []
+    resume_baseline = None
+    resume_start_index = 0
     cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
     if (
         args.mode == "run"
@@ -4302,6 +4745,9 @@ def main() -> int:
         and fsv_checkpoint_path.exists()
     ):
         checkpoint = read_existing_checkpoint(args)
+        resume_baseline = checkpoint
+        resume_prefix = validate_resume_checkpoint_prefix(args, shards, checkpoint)
+        resume_start_index = int(resume_prefix["completed_shards"])
         event(
             event_path,
             "resume_checkpoint_observed",
@@ -4310,6 +4756,7 @@ def main() -> int:
                 "checkpoint_fsv": file_state(fsv_checkpoint_path),
                 "progress": checkpoint.get("progress"),
                 "summary": checkpoint.get("summary"),
+                "resume_prefix": resume_prefix,
             },
         )
     else:
@@ -4325,7 +4772,7 @@ def main() -> int:
             },
         )
     if args.mode == "run":
-        for shard in shards:
+        for shard in shards[resume_start_index:]:
             if args.resume_completed_shards and (
                 shard.cache_root.exists()
                 or shard.fsv_root.exists()
@@ -4333,14 +4780,17 @@ def main() -> int:
             ):
                 if shard.manifest_path().is_file():
                     try:
-                        run_log = completed_shard_readback(args, shard)
+                        run_log = completed_shard_bounded_readback(args, shard)
                     except SchedulerError as exc:
                         if not args.retry_failed_partial_shards:
                             raise
                         archive = archive_failed_partial_shard(args, shard, str(exc))
                         event(event_path, "failed_partial_shard_archived_for_retry", archive)
                     else:
-                        json_dump_checked(shard_run_log_path(args, shard), run_log)
+                        skip_log_path = resume_skip_log_path(args, shard)
+                        run_log["resume_skip_log_path"] = str(skip_log_path)
+                        json_dump_checked(skip_log_path, run_log)
+                        run_log["resume_skip_log"] = file_state(skip_log_path)
                         event(event_path, "shard_run_skipped_completed", run_log)
                         run_logs.append(run_log)
                         if len(run_logs) % args.checkpoint_every_shards == 0:
@@ -4351,6 +4801,7 @@ def main() -> int:
                                 started_at,
                                 preflight,
                                 "running",
+                                resume_baseline=resume_baseline,
                             )
                             event(
                                 event_path,
@@ -4387,6 +4838,7 @@ def main() -> int:
                     started_at,
                     preflight,
                     "running",
+                    resume_baseline=resume_baseline,
                 )
                 event(
                     event_path,
@@ -4414,7 +4866,15 @@ def main() -> int:
 
     aggregate_path = args.cache_root / "python_forward_cache_corpus_manifest.json"
     corpus_manifest = aggregate(shards, aggregate_path, args.require_packed_store, expected_chunks_jsonl=args.chunks_jsonl)
-    checkpoint = write_checkpoint(args, shards, run_logs, started_at, preflight, "final")
+    checkpoint = write_checkpoint(
+        args,
+        shards,
+        run_logs,
+        started_at,
+        preflight,
+        "final",
+        resume_baseline=resume_baseline,
+    )
     event(
         event_path,
         "checkpoint_written",
@@ -4438,9 +4898,7 @@ def main() -> int:
             preflight,
         )
     after = {
-        "cache_root": tree_state(args.cache_root),
-        "fsv_root": tree_state(args.fsv_root),
-        "hot_root": tree_state(args.hot_root),
+        **scheduler_root_state(args),
         "disk": disk_snapshot(),
         "resource": resource_snapshot(args, "scheduler_after"),
     }

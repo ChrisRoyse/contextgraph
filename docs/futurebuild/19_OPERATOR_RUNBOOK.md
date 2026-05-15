@@ -233,7 +233,9 @@ nvidia-smi --query-gpu=memory.total,memory.used,memory.free,utilization.gpu,util
 Resume/recovery rules:
 
 - A completed shard is skippable only when its manifest, FSV, telemetry,
-  index/quarantine, and packed-store readback pass.
+  index/quarantine, and prior run-log readback pass. Resume fast-forward uses
+  bounded manifest/run-log readback; the final aggregate still performs
+  packed-store validation before success.
 - Partial or corrupt shard state is archived under
   `fsv_root/failed_partial_shards/` before retry.
 - Checkpoint progress is authoritative. Return values and logs are evidence of
@@ -242,28 +244,38 @@ Resume/recovery rules:
   `expected_pairs`, `accounted_pairs`, `cache_record_count`,
   `quarantine_row_count`, `second_pass_hits`, RAM, VRAM, and active PIDs.
 
-As of the 2026-05-15T14:33Z refresh, #199 is still not a training-ready
-full-corpus result. The previous relaunch checkpoint still says
-`status=running`, but independent process readback found no tmux session and no
-scheduler process. The relaunch log exited at `2026-05-15T13:25:30Z` with
-`status=1`. Last durable checkpoint readback: `shard_count=35/3124`,
-`chunk_count=4480/399872`, `expected_pairs=accounted_pairs=53760`,
-`cache_record_count=52176`, and `quarantine_row_count=1584`. Failure SoT:
-`/mnt/d/contextgraph/fsv/task-py-data-016-full-c8117f15-20260515-fsv/run_logs/shard-000035-offset-000004480.json`,
-with `exit_code=1` and `stderr_tail` reporting
-`Error: Os { code: 12, kind: OutOfMemory, message: "Cannot allocate memory" }`.
-Root cause: the isolated path ran per-embedder subruns, then still invoked a
-final canonical all-embedder shard runner. The repaired scheduler now runs all
-12 required embedders (`e1/e10/e12/e13/e14/e2/e3/e4/e6/e7/e8/e9`) in isolated
-processes and consolidates physical index/quarantine/telemetry rows into one
-canonical manifest and FSV without the final all-embedder rerun. Repair FSV SoT:
-`/mnt/d/contextgraph/fsv/task-py-data-016-isolated-consolidation-archive-fix-20260515T1433Z-fsv/python_forward_shard_scheduler_fsv.json`,
-sha256 `65cb4d205c803846648fb18c974d77faffebc8707599ed2ad640ec8da25e5fd9`,
-`passes=true`, 28 edge cases, a passing
-`preflight_resume_archives_hot_stage_before_smoke_gate` edge, and canonical one-chunk readback of
-`expected_pairs=accounted_pairs=12`, `cache_record_count=12`,
-`quarantine_row_count=0`. Resume/recovery must still reach final full-corpus
-`status=passed` before treating #199 as complete evidence.
+As of the 2026-05-15T15:33Z refresh, #199 is still not a training-ready
+full-corpus result. No scheduler/tmux process is live. The current checkpoint
+SoT is
+`/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515/python_forward_cache_checkpoint.json`,
+sha256 `3d868844ba7c35c0ee00357be8ff5f2e3d4f24782a5a379061aeda21a352a507`,
+and reports only `12/3124` shards, `1536` chunks,
+`expected_pairs=accounted_pairs=18432`, `cache_record_count=17808`, and
+`quarantine_row_count=624` after the interrupted resume. Durable shard
+manifests still prove 35 completed shards: `4480` chunks, `52176` cache rows,
+`1584` quarantine rows, and `489` batch-telemetry rows. The partial run already
+shows useful signal-shape facts: all expected pairs are accounted, coverage
+splits into high-coverage embedders (`e2/e3/e4/e7/e9/e14` at `4470/4480`) and
+long-input-limited embedders (`e1/e6/e8/e10/e12/e13` at `4226/4480`), and
+quarantine rows are dominated by `MEJEPA_FORWARD_TOKEN_TOO_LONG` plus
+`MEJEPA_FORWARD_INPUT_TOO_LARGE`. Root cause of the original shard-35 failure
+was the isolated path invoking a final canonical all-embedder shard runner; the
+repair removes that rerun. Current #295 recovery additionally uses bounded
+completed-shard manifest/run-log readback and writes resume skip proofs under
+`resume_skipped_run_logs/` without overwriting canonical run logs. Synthetic
+skip-proof FSV SoT:
+`/mnt/d/contextgraph/fsv/task-py-data-016-skip-proof-selfhash-20260515T152736Z-fsv/python_forward_shard_scheduler_fsv.json`,
+sha256 `306a55f9e36396e3a96d76f4567849996fc0ff8aca0ac596f34bf65fcd41a0e0`,
+`passes=true`, 32 edge cases, unchanged canonical run-log hash
+`660cfc7a2fee3efdbd91ebfd8a13c607beaacf0d029afde314666897a108f4ea`, and
+separate skip proof hash
+`98978dad33fabd82da8dfb2bc287d5ecb161a4a38bdb3d37316650795188fde7`. Real
+#199 preflight SoT:
+`/mnt/d/contextgraph/fsv/task-py-data-016-full-c8117f15-20260515-fsv/python_forward_resume_preflight_fsv.json`,
+sha256 `538a69b7ff742854e35f78aee654b1cbc2101a8508578a0b23f3f28891a7adbb`,
+`passes=true`, decision `exact_resume_proof_accepted`. Resume/recovery must
+still reach final full-corpus `status=passed` before treating #199 as complete
+evidence.
 
 The smoke intelligence-matrix SoT is
 `/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices/summary.json`
@@ -365,7 +377,7 @@ least these edge cases in `/mnt/d/contextgraph/fsv/`:
 | Missing corpus | source corpus path absent | scheduler exits before cache write; checkpoint absent or unchanged |
 | Missing CUDA detector | invalid `--nvidia-smi-command` | structured CUDA-required error; no silent CPU fallback |
 | Failed embedder output | corrupt/missing manifest or output row | quarantine or failed-partial archive; `accounted_pairs == expected_pairs` remains required |
-| Duplicate/resume | rerun with `--resume-completed-shards` | completed shard skipped only after full manifest/FSV/readback proof |
+| Duplicate/resume | rerun with `--resume-completed-shards` | completed shard skipped only after bounded manifest/FSV/prior-run-log proof; final aggregate validates packed store |
 
 When any edge fails unexpectedly, stop the run, inspect the SoT, fix the root
 cause, write or update a GitHub issue, then rerun the adjacent happy path and
