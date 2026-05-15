@@ -44,6 +44,8 @@ from .python_reward_tensors import command_python_reward_tensors
 from .python_reward_field_analysis import command_python_reward_field_analysis
 from .python_data_readiness_gate import add_arguments as add_python_data_readiness_gate_arguments
 from .python_data_readiness_gate import command_python_data_readiness_gate
+from .python_embedder_contribution import add_arguments as add_python_embedder_contribution_arguments
+from .python_embedder_contribution import command_python_embedder_contribution
 from .python_reward_field_sample import add_arguments as add_python_reward_field_sample_arguments
 from .python_reward_field_sample import command_python_reward_field_sample
 
@@ -400,6 +402,13 @@ def build_parser() -> argparse.ArgumentParser:
     reward_analysis.add_argument("--expected-chunk-count", type=int, default=1000)
     reward_analysis.add_argument("--clean-output", action="store_true")
     reward_analysis.set_defaults(func=command_python_reward_field_analysis, evidence_name="python-reward-field-analysis-command-evidence.json")
+
+    embedder_contribution = sub.add_parser(
+        "python-embedder-contribution",
+        help="Quantify smoke-corpus embedder contribution to Q1-Q5 RealityPrediction targets.",
+    )
+    add_python_embedder_contribution_arguments(embedder_contribution)
+    embedder_contribution.set_defaults(func=command_python_embedder_contribution, evidence_name="python-embedder-contribution-command-evidence.json")
 
     data_readiness = sub.add_parser(
         "python-data-readiness-gate",

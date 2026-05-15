@@ -187,7 +187,10 @@ and must not be used for the post-#249 relaunch:
 
 ```bash
 CPU_WORKERS="$(nproc)"
-tmux new-session -d -s cg_pydata016_full "cd /home/cabdru/contextgraph && \
+SESSION="cg_pydata016_full_c8117f15"
+RUNTIME_ROOT="/mnt/d/contextgraph/runtime/task-py-data-016-full-c8117f15-20260515T0956Z"
+mkdir -p "$RUNTIME_ROOT"
+tmux new-session -d -s "$SESSION" "cd /home/cabdru/contextgraph && \
 python3 scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
   --task-id TASK-PY-DATA-016 \
   --cache-root /mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515 \
@@ -213,7 +216,7 @@ python3 scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
   --checkpoint-every-shards 1 \
   --isolate-embedder-processes \
   --cargo-runner target/release/examples/python_forward_cache_fsv \
-  > /mnt/d/contextgraph/runtime/task-py-data-016-full-20260514T172028Z/scheduler.log 2>&1"
+  > $RUNTIME_ROOT/scheduler.log 2>&1"
 ```
 
 Monitor from source-of-truth files:
@@ -222,8 +225,8 @@ Monitor from source-of-truth files:
 tmux list-sessions
 ps -eo pid,ppid,stat,etime,%cpu,%mem,rss,cmd | rg 'python_forward_shard_scheduler|python_forward_cache_fsv|target/release/examples/python_forward_cache_fsv'
 jq '{progress, summary, resource:{phase:.resource.phase, mem_available:.resource.memory.MemAvailable_bytes, gpu_free:.resource.gpu.gpus[0].memory_free_bytes, scheduler_pid:.resource.scheduler_process.pid}}' \
-  /mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514/python_forward_cache_checkpoint.json
-find /mnt/d/contextgraph/fsv/task-py-data-016-full-20260514-fsv/run_logs -maxdepth 1 -name 'shard-*.json' | wc -l
+  /mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515/python_forward_cache_checkpoint.json
+find /mnt/d/contextgraph/fsv/task-py-data-016-full-c8117f15-20260515-fsv/run_logs -maxdepth 1 -name 'shard-*.json' | wc -l
 nvidia-smi --query-gpu=memory.total,memory.used,memory.free,utilization.gpu,utilization.memory,temperature.gpu,power.draw --format=csv,noheader,nounits
 ```
 
@@ -238,6 +241,55 @@ Resume/recovery rules:
 - For every heartbeat, report `completed_shards`, `completed_chunk_capacity`,
   `expected_pairs`, `accounted_pairs`, `cache_record_count`,
   `quarantine_row_count`, `second_pass_hits`, RAM, VRAM, and active PIDs.
+
+As of the 2026-05-15 refresh, #199 is still running and is not a training-ready
+full-corpus result. The live checkpoint readback was:
+`completed_shards=18/3124`, `completed_chunk_capacity=2304/399872`,
+`expected_pairs=accounted_pairs=27648`, `cache_record_count=26754`, and
+`quarantine_row_count=894`.
+
+### 1.5.4a Reward-field sample and training readiness
+
+Use the sample/readiness commands to decide whether a training run is allowed.
+Smoke-dry-run training may proceed from the 1,000-chunk smoke reward field;
+production/full-corpus training must fail closed until #199 is final.
+
+```bash
+python3 scripts/swebench_lite_ops.py python-data-readiness-gate
+jq '{passes, readback}' \
+  /mnt/d/contextgraph/fsv/task-py-data-023-data-readiness-gate-fsv/python_data_readiness_gate_fsv.json
+
+python3 scripts/swebench_lite_ops.py python-reward-field-sample
+jq '{passes, happy_path, edge_cases, readback}' \
+  /mnt/d/contextgraph/fsv/task-py-data-028-reward-field-sample-fsv/python_reward_field_sample_fsv.json
+find /mnt/d/contextgraph/corpus/python-reward-field-sample-v1 -maxdepth 1 -type f -print -exec sha256sum {} \;
+
+python3 scripts/swebench_lite_ops.py python-embedder-contribution
+jq '{passes, readback:{per_head_embedder_contribution, feature_contribution_metrics, shared_contribution_pairs, stratified_contribution, edge_case_states, summary}}' \
+  /mnt/d/contextgraph/fsv/task-py-data-055-embedder-contribution-fsv/python_embedder_contribution_fsv.json
+find /mnt/d/contextgraph/corpus/python-embedder-intelligence-v1/contribution -maxdepth 1 -type f -print -exec sha256sum {} \;
+```
+
+Expected current sample readback:
+
+- output root: `/mnt/d/contextgraph/corpus/python-reward-field-sample-v1`
+- representative failing sample has Q1-Q5 tensor, AST source slice, 12 DDA
+  rows, TCT membership, 12 forward-cache index rows, and patch tensor linkage
+- edge samples: no production-code change, syntax-error mutation, and real
+  oracle timeout event
+- FSV: `/mnt/d/contextgraph/fsv/task-py-data-028-reward-field-sample-fsv/python_reward_field_sample_fsv.json`
+  with `passes=true`
+- embedder contribution SoT:
+  `/mnt/d/contextgraph/corpus/python-embedder-intelligence-v1/contribution/`
+- contribution FSV:
+  `/mnt/d/contextgraph/fsv/task-py-data-055-embedder-contribution-fsv/python_embedder_contribution_fsv.json`
+  with `passes=true`
+- contribution readback: 60 per-head/embedder rows, 840 feature metrics,
+  34 shared-credit pairs, 96 stratified rows, and 5 edge-case records
+- contribution interpretation: Q1 is explicitly invalid in the smoke field
+  because all existence labels are true; Q2-Q5 have usable smoke signal;
+  missing/quarantined rows are masks, not zero-imputed vectors; redundant
+  embedder pairs are marked `share_credit_not_double_count`
 
 ### 1.5.5 Edge cases operators must exercise
 
