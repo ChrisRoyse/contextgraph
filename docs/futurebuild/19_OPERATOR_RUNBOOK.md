@@ -244,9 +244,20 @@ Resume/recovery rules:
 
 As of the 2026-05-15 refresh, #199 is still running and is not a training-ready
 full-corpus result. The live checkpoint readback was:
-`shard_count=26/3124`, `chunk_count=3328`,
-`expected_pairs=accounted_pairs=39936`, `cache_record_count=38574`, and
-`quarantine_row_count=1362`.
+`completed_shards=27/3124`, `completed_chunk_capacity=3456/399872`,
+`expected_pairs=accounted_pairs=41472`, `cache_record_count=40098`, and
+`quarantine_row_count=1374`.
+
+The smoke intelligence-matrix SoT is
+`/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices/summary.json`
+with FSV
+`/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json`.
+Use it to build smoke-dry-run ME-JEPA feature masks before full-corpus
+training: e1/e8 are identical-alignment redundant, e7/e14/e9 carry high Q2-Q5
+smoke contribution, e2/e3/e4 currently produce one unique vector hash each and
+must be masked from semantic-credit claims unless downstream contribution
+evidence proves utility, and missing/quarantined rows must remain explicit
+masks rather than silent defaults.
 
 ### 1.5.4a Python scope guard
 
