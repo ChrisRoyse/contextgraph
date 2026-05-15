@@ -310,6 +310,8 @@ async fn main() -> FsvResult<()> {
         DEFAULT_JSONL_SYNC_EVERY_ROWS,
     )?;
     let cache_store_layout = CacheStoreLayout::from_env()?;
+    let skip_existing_packed_read =
+        env_bool("CG_MEJEPA_PY_FORWARD_SKIP_EXISTING_PACKED_READ", false)?;
     let only_embedder = env_embedder_optional("CG_MEJEPA_PY_FORWARD_ONLY_EMBEDDER")?;
     require("max chunk count is non-zero", max_chunks > 0)?;
     require("max source byte guard is non-zero", max_source_bytes > 0)?;
@@ -331,6 +333,13 @@ async fn main() -> FsvResult<()> {
     fs::create_dir_all(&paths.fsv_root)?;
     fs::create_dir_all(&paths.hot_root)?;
     fs::set_permissions(&paths.hot_root, fs::Permissions::from_mode(0o700))?;
+    if cache_store_layout == CacheStoreLayout::PackedJsonl && skip_existing_packed_read {
+        let packed_root = paths.packed_root();
+        if packed_root.exists() {
+            fs::remove_dir_all(&packed_root)?;
+        }
+        fs::create_dir_all(&packed_root)?;
+    }
 
     let run_started_at = utc_now()?;
     write_json_checked(
@@ -357,6 +366,7 @@ async fn main() -> FsvResult<()> {
                 "max_chunks": max_chunks,
                 "true_batch_size": true_batch_size,
                 "cache_store_layout": cache_store_layout.as_str(),
+                "skip_existing_packed_read": skip_existing_packed_read,
                 "only_embedder": only_embedder.map(|embedder| embedder.slug().to_string()),
             },
             "reason": "run started; final manifest is written only after cache/index/quarantine/FSV readback succeeds",
@@ -563,6 +573,7 @@ async fn main() -> FsvResult<()> {
                 "only_embedder": only_embedder.map(|embedder| embedder.slug().to_string()),
                 "max_forward_source_text_bytes": max_source_bytes,
                 "cache_store_layout": cache_store.layout().as_str(),
+                "skip_existing_packed_read": skip_existing_packed_read,
                 "hot_model_cache_root": paths.hot_model_cache_root().display().to_string(),
                 "hot_model_cache_max_bytes": hot_model_cache_max_bytes,
                 "true_batch_size": true_batch_size,
@@ -711,6 +722,7 @@ async fn main() -> FsvResult<()> {
             "max_forward_source_text_bytes": max_source_bytes,
             "hot_model_cache_max_bytes": hot_model_cache_max_bytes,
             "cache_store_layout": cache_store.layout().as_str(),
+            "skip_existing_packed_read": skip_existing_packed_read,
             "true_batch_size": true_batch_size,
             "per_embedder_batch_controls": batch_controls
                 .values()
@@ -4650,6 +4662,18 @@ fn env_u64_optional(name: &str) -> FsvResult<Option<u64>> {
     match std::env::var(name) {
         Ok(value) => Ok(Some(value.parse()?)),
         Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(err) => Err(format!("{name} could not be read as UTF-8: {err}").into()),
+    }
+}
+
+fn env_bool(name: &str, default: bool) -> FsvResult<bool> {
+    match std::env::var(name) {
+        Ok(value) => match value.trim() {
+            "1" | "true" | "TRUE" | "yes" | "YES" => Ok(true),
+            "0" | "false" | "FALSE" | "no" | "NO" => Ok(false),
+            other => Err(format!("{name} must be boolean-like, got {other:?}").into()),
+        },
+        Err(std::env::VarError::NotPresent) => Ok(default),
         Err(err) => Err(format!("{name} could not be read as UTF-8: {err}").into()),
     }
 }

@@ -22,7 +22,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 # Serializes appends to the scheduler event log (and any other shared JSONL
@@ -1454,6 +1454,7 @@ def run_shard(
     run_log_name: str | None = None,
     event_phase: str = "shard_run_complete",
     require_packed_store: bool | None = None,
+    post_promotion_snapshot: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     stage_promotion: dict[str, Any] | None = None
     stage_setup: dict[str, Any] | None = None
@@ -1548,8 +1549,18 @@ def run_shard(
         # gates the brief mv/archive into the shared durable destination.
         with _PROMOTE_HOT_STAGE_LOCK:
             stage_promotion = promote_hot_stage_shard(args, shard, runner_shard, stage_root, stage_readback)
-        timing_ms["hot_stage_promotion_ms"] = elapsed_ms(promotion_started)
-        run_log["hot_stage_promotion"] = stage_promotion
+            timing_ms["hot_stage_promotion_ms"] = elapsed_ms(promotion_started)
+            run_log["hot_stage_promotion"] = stage_promotion
+            durable_readback_started = time.monotonic()
+            run_log.update(shard_completion_readback(args, shard, require_packed_store))
+            timing_ms["durable_readback_ms"] = elapsed_ms(durable_readback_started)
+            if post_promotion_snapshot is not None:
+                run_log["post_promotion_snapshot"] = post_promotion_snapshot(run_log)
+            run_log["timing_ms"] = timing_ms
+            run_log["skipped_completed"] = False
+            json_dump_checked(run_log_path, run_log)
+        event(event_path, event_phase, run_log)
+        return run_log
     durable_readback_started = time.monotonic()
     run_log.update(shard_completion_readback(args, shard, require_packed_store))
     timing_ms["durable_readback_ms"] = elapsed_ms(durable_readback_started)
@@ -1618,10 +1629,12 @@ def snapshot_isolated_subrun_rows(
         f"{shard.shard_id} {slug} snapshot batch telemetry rows match manifest",
         batch_rows == summary.get("batch_telemetry_row_count"),
     )
+    packed_records = snapshot_isolated_subrun_packed_records(snapshot_root, slug, manifest, index_rows)
     return {
         "embedder_id": slug,
         "snapshot_root": str(snapshot_root),
         "files": files,
+        "packed_records": packed_records,
         "run_log": str(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
         "run_log_sha256": sha256_file(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
         "manifest_summary": summary,
@@ -1631,6 +1644,138 @@ def snapshot_isolated_subrun_rows(
         "quarantine_row_count": quarantine_rows,
         "batch_telemetry_row_count": batch_rows,
         "subrun_elapsed_seconds": subrun.get("elapsed_seconds"),
+        "passes": True,
+    }
+
+
+def snapshot_isolated_subrun_packed_records(
+    snapshot_root: Path,
+    slug: str,
+    manifest: dict[str, Any],
+    expected_rows: int,
+) -> dict[str, Any]:
+    source_of_truth = manifest.get("source_of_truth", {})
+    source_root = Path(str(source_of_truth.get("packed_record_root", "")))
+    require(f"{slug} packed record root exists before snapshot", source_root.is_dir())
+    destination_root = snapshot_root / f"{slug}.packed_records"
+    if destination_root.exists():
+        shutil.rmtree(destination_root)
+    destination_root.mkdir(parents=True, exist_ok=False)
+
+    source_record = source_root / f"{slug}.jsonl"
+    source_index = source_root / f"{slug}.index.jsonl"
+    destination_record = destination_root / f"{slug}.jsonl"
+    destination_index = destination_root / f"{slug}.index.jsonl"
+    if expected_rows > 0:
+        copy_file_with_readback(source_record, destination_record)
+        copy_file_with_readback(source_index, destination_index)
+        rows = read_jsonl_rows(destination_index)
+        require(f"{slug} packed snapshot index rows match current subrun", len(rows) == expected_rows)
+        for row in rows:
+            row["packed_record_path"] = str(destination_record)
+        jsonl_write_checked(destination_index, rows)
+    else:
+        destination_record.write_bytes(b"")
+        require(f"{slug} zero-row packed record snapshot is empty", destination_record.read_bytes() == b"")
+        jsonl_write_checked(destination_index, [])
+    payload_hash_readback = validate_packed_payload_hashes(destination_root)
+    require(
+        f"{slug} packed snapshot payload row count matches current subrun",
+        payload_hash_readback.get("row_count") == expected_rows,
+    )
+    return {
+        "root": str(destination_root),
+        "record": file_state(destination_record),
+        "index": file_state(destination_index),
+        "row_count": expected_rows,
+        "payload_hash_readback": payload_hash_readback,
+        "passes": True,
+    }
+
+
+def merge_isolated_packed_records(
+    shard: ShardSpec,
+    snapshots: list[dict[str, Any]],
+    per_embedder_expected_rows: dict[str, int],
+) -> dict[str, Any]:
+    packed_root = shard.cache_root / "packed_records"
+    if packed_root.exists():
+        shutil.rmtree(packed_root)
+    packed_root.mkdir(parents=True, exist_ok=False)
+    per_embedder: dict[str, Any] = {}
+    merge_inputs: dict[str, Any] = {}
+    total_rows = 0
+    for snapshot in snapshots:
+        slug = snapshot["embedder_id"]
+        expected_rows = per_embedder_expected_rows[slug]
+        packed_snapshot = snapshot.get("packed_records")
+        require(f"{shard.shard_id} {slug} packed snapshot exists", isinstance(packed_snapshot, dict))
+        source_record = Path(str((packed_snapshot.get("record") or {}).get("path", "")))
+        source_index = Path(str((packed_snapshot.get("index") or {}).get("path", "")))
+        require(f"{shard.shard_id} {slug} packed snapshot record exists", source_record.is_file())
+        require(f"{shard.shard_id} {slug} packed snapshot index exists", source_index.is_file())
+
+        destination_record = packed_root / f"{slug}.jsonl"
+        destination_index = packed_root / f"{slug}.index.jsonl"
+        shutil.copy2(source_record, destination_record)
+        require(
+            f"{shard.shard_id} {slug} packed payload copy byte equality",
+            destination_record.read_bytes() == source_record.read_bytes(),
+        )
+        rows = read_jsonl_rows(source_index)
+        require(f"{shard.shard_id} {slug} packed snapshot rows match expected", len(rows) == expected_rows)
+        for row in rows:
+            row["packed_record_path"] = str(destination_record)
+        jsonl_write_checked(destination_index, rows)
+        require(
+            f"{shard.shard_id} {slug} merged packed index rows match expected",
+            count_jsonl_rows(destination_index) == expected_rows,
+        )
+        per_embedder[slug] = {
+            "record_path": str(destination_record),
+            "record_sha256": sha256_file(destination_record),
+            "byte_count": destination_record.stat().st_size,
+            "index_path": str(destination_index),
+            "index_sha256": sha256_file(destination_index),
+            "row_count": expected_rows,
+        }
+        merge_inputs[slug] = {
+            "snapshot_record": str(source_record),
+            "snapshot_index": str(source_index),
+            "snapshot_row_count": expected_rows,
+        }
+        total_rows += expected_rows
+
+    packed_manifest_path = shard.cache_root / "python_forward_cache_packed_manifest.json"
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "artifact_kind": "python_forward_cache_packed_manifest",
+        "created_at_utc": utc_now(),
+        "layout": "packed-jsonl",
+        "packed_record_root": str(packed_root),
+        "row_count": total_rows,
+        "per_embedder": per_embedder,
+        "merge_source": "isolated_subrun_snapshots",
+        "merge_inputs": merge_inputs,
+        "passes": True,
+    }
+    json_dump_checked(packed_manifest_path, manifest)
+    readback = read_json(packed_manifest_path)
+    require(f"{shard.shard_id} merged packed manifest readback passes", readback.get("passes") is True)
+    require(f"{shard.shard_id} merged packed manifest row count matches", readback.get("row_count") == total_rows)
+    payload_hash_readback = validate_packed_payload_hashes(packed_root)
+    require(
+        f"{shard.shard_id} merged packed payload row count matches manifest",
+        payload_hash_readback.get("row_count") == total_rows,
+    )
+    return {
+        "packed_manifest_path": str(packed_manifest_path),
+        "packed_manifest_sha256": sha256_file(packed_manifest_path),
+        "packed_record_root": str(packed_root),
+        "manifest": manifest,
+        "payload_hash_readback": payload_hash_readback,
+        "row_count": total_rows,
+        "per_embedder": per_embedder,
         "passes": True,
     }
 
@@ -1773,7 +1918,8 @@ def consolidate_isolated_subruns(
 
     packed_manifest_path = shard.cache_root / "python_forward_cache_packed_manifest.json"
     packed_root = shard.cache_root / "packed_records"
-    packed_manifest = read_json(packed_manifest_path)
+    packed_merge = merge_isolated_packed_records(shard, snapshots, per_embedder_expected_rows)
+    packed_manifest = packed_merge["manifest"]
     require(f"{shard.shard_id} isolated packed manifest passes", packed_manifest.get("passes") is True)
     require(f"{shard.shard_id} isolated packed layout is packed-jsonl", packed_manifest.get("layout") == "packed-jsonl")
     packed_index_rows = count_packed_index_rows(packed_root)
@@ -1793,7 +1939,7 @@ def consolidate_isolated_subruns(
                 f"{shard.shard_id} isolated packed {slug} zero-row entry matches snapshot",
                 packed_per_embedder[slug].get("row_count") == 0,
             )
-    payload_hash_readback = validate_packed_payload_hashes(packed_root)
+    payload_hash_readback = packed_merge["payload_hash_readback"]
     require(
         f"{shard.shard_id} isolated packed payload row count matches index",
         payload_hash_readback.get("row_count") == len(index_rows),
@@ -1833,6 +1979,11 @@ def consolidate_isolated_subruns(
             "snapshot_manifest_sha256": {
                 snapshot["embedder_id"]: snapshot["manifest_sha256"] for snapshot in snapshots
             },
+            "packed_merge": {
+                "packed_manifest_sha256": packed_merge["packed_manifest_sha256"],
+                "row_count": packed_merge["row_count"],
+                "per_embedder": packed_merge["per_embedder"],
+            },
         },
     }
     json_dump_checked(shard.manifest_path(), final_manifest)
@@ -1853,6 +2004,7 @@ def consolidate_isolated_subruns(
         },
         "summary": final_summary,
         "subrun_snapshots": snapshots,
+        "packed_merge": packed_merge,
         "packed_payload_hash_readback": payload_hash_readback,
         "passes": True,
     }
@@ -1914,19 +2066,44 @@ def run_shard_embedder_isolated(
     except ValueError:
         parallel_workers = 1
     parallel_workers = max(1, min(parallel_workers, len(ISOLATED_FORWARD_SLUGS)))
+    if parallel_workers > 1:
+        require(
+            "parallel isolated embedder mode requires packed hot-stage isolation",
+            use_hot_stage_for_shard(args),
+        )
 
     def _run_one_isolated_subrun(slug: str) -> tuple[str, dict[str, Any], dict[str, Any]]:
+        extra_env = {"CG_MEJEPA_PY_FORWARD_ONLY_EMBEDDER": slug}
+        if parallel_workers > 1:
+            extra_env["CG_MEJEPA_PY_FORWARD_SKIP_EXISTING_PACKED_READ"] = "1"
+        snapshot_holder: dict[str, Any] = {}
+
+        def _snapshot_after_promotion(subrun_log: dict[str, Any]) -> dict[str, Any]:
+            snapshot = snapshot_isolated_subrun_rows(args, shard, slug, subrun_log)
+            snapshot_holder["snapshot"] = snapshot
+            return {
+                "embedder_id": slug,
+                "manifest_sha256": snapshot["manifest_sha256"],
+                "packed_row_count": snapshot["packed_records"]["row_count"],
+                "passes": True,
+            }
+
         subrun_inner = run_shard(
             args,
             shard,
             event_path,
             preflight,
-            extra_env={"CG_MEJEPA_PY_FORWARD_ONLY_EMBEDDER": slug},
+            extra_env=extra_env,
             run_log_name=f"{shard.shard_id}.{slug}.json",
             event_phase="shard_embedder_subrun_complete",
             require_packed_store=False,
+            post_promotion_snapshot=_snapshot_after_promotion if use_hot_stage_for_shard(args) else None,
         )
-        snapshot_inner = snapshot_isolated_subrun_rows(args, shard, slug, subrun_inner)
+        snapshot_inner = snapshot_holder.get("snapshot")
+        if snapshot_inner is None:
+            snapshot_inner = snapshot_isolated_subrun_rows(args, shard, slug, subrun_inner)
+        else:
+            snapshot_inner["run_log_sha256"] = sha256_file(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json")
         return slug, subrun_inner, snapshot_inner
 
     if parallel_workers == 1:
