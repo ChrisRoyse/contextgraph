@@ -10,7 +10,9 @@
 
 ## Reading order
 
-This is one whitepaper split across 14 files so each part can be read, edited, and forensically audited independently. If you only have ten minutes, read `01_EXECUTIVE_SUMMARY.md`. If you only have an hour, read `01` then `04` (Five Questions) then `09` (Training Loop).
+This is one whitepaper split across 15 files so each part can be read, edited, and forensically audited independently. If you only have ten minutes, read `01_EXECUTIVE_SUMMARY.md`. If you only have an hour, read `01` then `14` (Failure-Shape Fingerprints — the canonical methodology) then `09` (Training Loop).
+
+**Reading priority for the methodology**: `01` → `14` → `04` → `09` → `11`. Doc `14` (`14_FAILURE_SHAPE_FINGERPRINTS.md`) is the canonical first-class-object statement; doc `07` is a preamble/cell-level summary that defers to `14`.
 
 | # | File | What it answers | Read first if you care about |
 |---|---|---|---|
@@ -21,13 +23,14 @@ This is one whitepaper split across 14 files so each part can be read, edited, a
 | 04 | [`04_FIVE_OPERATOR_QUESTIONS.md`](04_FIVE_OPERATOR_QUESTIONS.md) | Q1 EXIST, Q2 WORK, Q3 WHY, Q4 WHAT ELSE, Q5 IMPACT | Anyone who wants the user-visible contract |
 | 05 | [`05_FROZEN_INSTRUMENT_PANEL.md`](05_FROZEN_INSTRUMENT_PANEL.md) | The 15-slot target panel + collapse-immunity proof | ML researchers, JEPA specialists |
 | 06 | [`06_EMBEDDER_STACK.md`](06_EMBEDDER_STACK.md) | The 12 active embedders + asymmetric variants | Embedding engineers |
-| 07 | [`07_TELEOLOGICAL_CONSTELLATIONS.md`](07_TELEOLOGICAL_CONSTELLATIONS.md) | Cells, reward signals, 462-signal-per-chunk math | Reward-signal engineers |
+| 07 | [`07_TELEOLOGICAL_CONSTELLATIONS.md`](07_TELEOLOGICAL_CONSTELLATIONS.md) | Cells, reward signals, 462-signal-per-chunk math | Reward-signal engineers (see `14` for the canonical first-class form) |
 | 08 | [`08_TRAINING_CORPUS.md`](08_TRAINING_CORPUS.md) | The 300×8 SWE-bench Lite corpus + mutation operators | Data engineers |
 | 09 | [`09_TRAINING_LOOP.md`](09_TRAINING_LOOP.md) | JEPA learning formula + UTML + online retrain | ML training |
 | 10 | [`10_LIVE_FEEDBACK_LOOP.md`](10_LIVE_FEEDBACK_LOOP.md) | Hooks + MCP + agent-feedback ingestion | Agent integrators |
-| 11 | [`11_SHIP_GATE.md`](11_SHIP_GATE.md) | Convergence criterion: 0.95 oracle correlation × 4 windows | Anyone tracking progress |
+| 11 | [`11_SHIP_GATE.md`](11_SHIP_GATE.md) | Convergence criterion: per-fingerprint accuracy + OOD recall × 4 windows | Anyone tracking progress |
 | 12 | [`12_FUTURE_CAPABILITIES.md`](12_FUTURE_CAPABILITIES.md) | What the corpus unlocks beyond pass/fail prediction | Operator, researchers |
 | 13 | [`13_GLOSSARY.md`](13_GLOSSARY.md) | Every term defined once | Everyone |
+| **14** | [**`14_FAILURE_SHAPE_FINGERPRINTS.md`**](14_FAILURE_SHAPE_FINGERPRINTS.md) | **The canonical first-class ME-JEPA object: typed catalog of KnownGood / KnownBad / Unknown fingerprints + lifelong learning loop** | **Everyone — supersedes the "cell" language in 07** |
 
 ---
 
