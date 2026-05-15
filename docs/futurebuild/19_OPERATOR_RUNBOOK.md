@@ -268,6 +268,11 @@ python3 scripts/swebench_lite_ops.py python-embedder-contribution
 jq '{passes, readback:{per_head_embedder_contribution, feature_contribution_metrics, shared_contribution_pairs, stratified_contribution, edge_case_states, summary}}' \
   /mnt/d/contextgraph/fsv/task-py-data-055-embedder-contribution-fsv/python_embedder_contribution_fsv.json
 find /mnt/d/contextgraph/corpus/python-embedder-intelligence-v1/contribution -maxdepth 1 -type f -print -exec sha256sum {} \;
+
+python3 scripts/swebench_lite_ops.py python-tct-completeness
+jq '{passes, readback:{mutation_category_completeness, cell_completeness, reward_dimension_completeness, missing_signal_completeness, edge_case_states, summary}}' \
+  /mnt/d/contextgraph/fsv/task-py-g-039-tct-completeness-fsv/python_tct_completeness_fsv.json
+find /mnt/d/contextgraph/corpus/python-tct-completeness-v1 -maxdepth 1 -type f -print -exec sha256sum {} \;
 ```
 
 Expected current sample readback:
@@ -290,6 +295,18 @@ Expected current sample readback:
   because all existence labels are true; Q2-Q5 have usable smoke signal;
   missing/quarantined rows are masks, not zero-imputed vectors; redundant
   embedder pairs are marked `share_credit_not_double_count`
+- TCT completeness SoT:
+  `/mnt/d/contextgraph/corpus/python-tct-completeness-v1/`
+- TCT completeness FSV:
+  `/mnt/d/contextgraph/fsv/task-py-g-039-tct-completeness-fsv/python_tct_completeness_fsv.json`
+  with `passes=true`
+- TCT completeness readback: 8 mutation-category rows, 93 cell rows, 8
+  reward-dimension rows, 123 missing-signal rows, and 5 edge-case rows
+- TCT completeness interpretation: all 1,000 smoke reward rows have TCT
+  memberships and all 12,000 expected embedder pairs are accounted as present
+  or missing/quarantined; production/full-corpus training remains blocked
+  because sparse TCT cells and fail-closed cell memberships are still real
+  source-of-truth states
 
 ### 1.5.5 Edge cases operators must exercise
 

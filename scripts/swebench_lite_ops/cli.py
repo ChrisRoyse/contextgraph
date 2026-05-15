@@ -48,6 +48,8 @@ from .python_embedder_contribution import add_arguments as add_python_embedder_c
 from .python_embedder_contribution import command_python_embedder_contribution
 from .python_reward_field_sample import add_arguments as add_python_reward_field_sample_arguments
 from .python_reward_field_sample import command_python_reward_field_sample
+from .python_tct_completeness import add_arguments as add_python_tct_completeness_arguments
+from .python_tct_completeness import command_python_tct_completeness
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -423,6 +425,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_python_reward_field_sample_arguments(reward_sample)
     reward_sample.set_defaults(func=command_python_reward_field_sample, evidence_name="python-reward-field-sample-command-evidence.json")
+
+    tct_completeness = sub.add_parser(
+        "python-tct-completeness",
+        help="Audit Python teleological-constellation reward-signal completeness.",
+    )
+    add_python_tct_completeness_arguments(tct_completeness)
+    tct_completeness.set_defaults(func=command_python_tct_completeness, evidence_name="python-tct-completeness-command-evidence.json")
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")
     registry.add_argument("--models-config", type=Path, default=Path("/mnt/d/cabdru/contextgraph/models/mejepa_models_config.toml"))
