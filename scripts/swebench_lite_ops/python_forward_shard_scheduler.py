@@ -1526,7 +1526,11 @@ def run_shard(
         stage_readback = shard_completion_readback(args, runner_shard, require_packed_store)
         timing_ms["stage_readback_ms"] = elapsed_ms(stage_readback_started)
         promotion_started = time.monotonic()
-        stage_promotion = promote_hot_stage_shard(args, shard, runner_shard, stage_root, stage_readback)
+        # Serialize promotion against concurrent isolated subruns (#302). The
+        # GPU forward work above already completed in parallel; this lock only
+        # gates the brief mv/archive into the shared durable destination.
+        with _PROMOTE_HOT_STAGE_LOCK:
+            stage_promotion = promote_hot_stage_shard(args, shard, runner_shard, stage_root, stage_readback)
         timing_ms["hot_stage_promotion_ms"] = elapsed_ms(promotion_started)
         run_log["hot_stage_promotion"] = stage_promotion
     durable_readback_started = time.monotonic()
