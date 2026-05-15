@@ -4210,9 +4210,12 @@ def preflight_edge_checks(args: argparse.Namespace, preflight: dict[str, Any]) -
         "hot_stage_projected_capacity_overflow_rejected_before_writes",
         hot_stage_budget_bytes=preflight["host"]["filesystems"]["/"]["size_bytes"] + 1,
     )
+    # Use the configured durable-disk target (default /mnt/d for WSL2, /archive
+    # on aiwonder). Same env var as the live preflight (§host_preflight).
+    durable_disk_for_edge = os.environ.get("CG_MEJEPA_DURABLE_DISK_TARGET", "/mnt/d")
     expect_preflight_failure(
-        "d_root_projected_capacity_overflow_rejected_before_writes",
-        projected_output_bytes=preflight["host"]["filesystems"]["/mnt/d"]["size_bytes"] + 1,
+        "durable_root_projected_capacity_overflow_rejected_before_writes",
+        projected_output_bytes=preflight["host"]["filesystems"][durable_disk_for_edge]["size_bytes"] + 1,
     )
     expect_preflight_failure(
         "missing_cuda_runtime_rejected_before_writes",
