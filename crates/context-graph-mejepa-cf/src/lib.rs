@@ -58,6 +58,8 @@ pub const CF_MEJEPA_OPERATOR_OVERRIDES: &str = "CF_MEJEPA_OPERATOR_OVERRIDES";
 pub const CF_MEJEPA_LABEL_TRANSFER_DECISIONS: &str = "CF_MEJEPA_LABEL_TRANSFER_DECISIONS";
 // TASK-FLYWHEEL-007 — fail-closed retry park-list records, keyed by prediction_id.
 pub const CF_MEJEPA_PARK_LIST: &str = "CF_MEJEPA_PARK_LIST";
+// TASK-PY-G-061 — cold constellation cells must abstain and emit durable metrics.
+pub const CF_MEJEPA_COLD_CELL_METRICS: &str = "CF_MEJEPA_COLD_CELL_METRICS";
 
 /// REQ-FLYWHEEL-10 grouping. Daemon openers extend their CF descriptor list
 /// with this slice so the three new CFs land on disk during the first daemon
@@ -120,6 +122,7 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_OPERATOR_OVERRIDES,
     CF_MEJEPA_LABEL_TRANSFER_DECISIONS,
     CF_MEJEPA_PARK_LIST,
+    CF_MEJEPA_COLD_CELL_METRICS,
 ];
 
 pub const EVAL_CFS: &[&str] = &[
@@ -136,6 +139,7 @@ pub const EVAL_CFS: &[&str] = &[
     CF_MEJEPA_FLYWHEEL_JOB_RUNS,
     CF_MEJEPA_LABEL_TRANSFER_DECISIONS,
     CF_MEJEPA_PARK_LIST,
+    CF_MEJEPA_COLD_CELL_METRICS,
 ];
 
 pub const HYGIENE_CFS: &[&str] = &[
@@ -165,6 +169,7 @@ pub const HYGIENE_CFS: &[&str] = &[
     CF_MEJEPA_MODEL_PROMOTIONS,
     CF_MEJEPA_PRODUCTION_TELEMETRY,
     CF_MEJEPA_LABEL_TRANSFER_DECISIONS,
+    CF_MEJEPA_COLD_CELL_METRICS,
 ];
 
 pub const TCT_CFS: &[&str] = &[
@@ -212,6 +217,7 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_OPERATOR_OVERRIDES,
     CF_MEJEPA_LABEL_TRANSFER_DECISIONS,
     CF_MEJEPA_PARK_LIST,
+    CF_MEJEPA_COLD_CELL_METRICS,
     CF_MEJEPA_MUTATION_CORPUS,
     CF_MEJEPA_LIVE_ATTEMPT_CORPUS,
     CF_MEJEPA_QUOTA_STATE,
@@ -292,6 +298,7 @@ mod tests {
             CF_MEJEPA_LABEL_TRANSFER_DECISIONS,
             "CF_MEJEPA_LABEL_TRANSFER_DECISIONS"
         );
+        assert_eq!(CF_MEJEPA_COLD_CELL_METRICS, "CF_MEJEPA_COLD_CELL_METRICS");
     }
 
     #[test]

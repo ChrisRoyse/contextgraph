@@ -1693,6 +1693,12 @@ pub enum FailedGate {
         code: String,
         detail: String,
     },
+    ColdCell {
+        cell_id: String,
+        n_supporting: Option<u32>,
+        threshold: u32,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

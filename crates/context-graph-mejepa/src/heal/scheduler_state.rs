@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use crate::compiler::MejepaStore;
+use crate::compiler::{ColdCellMetric, MejepaStore};
 use crate::conformal::CalibrationExample;
 use crate::eval::{
-    ActiveLearningKind, ProductionTelemetryWindow, RocksDbEvalStore,
+    ActiveLearningKind, ActiveLearningQueueState, ProductionTelemetryWindow, RocksDbEvalStore,
     TRAINING_HOLDOUT_DRIFT_ALERT_CODE,
 };
 use crate::heal::calibration::continuous_calibration_if_due;
@@ -64,6 +64,7 @@ pub const DEFAULT_CONSTELLATION_PERIOD: Duration = Duration::from_secs(3600);
 pub const DEFAULT_EMERGENCY_EVICTION_PERIOD: Duration = Duration::from_secs(600);
 pub const DEFAULT_TELEMETRY_FEEDBACK_PERIOD: Duration = Duration::from_secs(900);
 pub const DEFAULT_EMERGENCY_EVICTION_THRESHOLD_BYTES: u64 = 110 * 1024 * 1024 * 1024;
+pub const COLD_CELL_TARGETED_CORPUS_ABSTAINS_PER_WEEK: u32 = 100;
 
 const TELEMETRY_CONFORMAL_TARGET_COVERAGE: f32 = 0.90;
 const TELEMETRY_CONFORMAL_COVERAGE_MIN: f32 = 0.88;
@@ -333,6 +334,14 @@ struct ActiveLearningFastPathRecord {
     surprise_weight: u8,
     source_queue_cf: String,
     recorded_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ColdCellTargetRecord {
+    cell_id: String,
+    abstain_count: u32,
+    threshold_per_week: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -688,18 +697,29 @@ impl SchedulerState {
     }
 
     fn tick_active_learning(&self) -> Result<TickRunRecord, HealError> {
-        let queue = self.eval_store.load_queue().map_err(map_eval_error)?;
-        let Some(queue) = queue else {
+        let mut queue = match self.eval_store.load_queue().map_err(map_eval_error)? {
+            Some(queue) => queue,
+            None => ActiveLearningQueueState::new(16).map_err(map_eval_error)?,
+        };
+        let cold_cell_targets = self.enqueue_cold_cell_targets(&mut queue)?;
+        if cold_cell_targets.is_empty() && queue.entries.is_empty() {
             return Ok(TickRunRecord::success(
                 TickName::ActiveLearning,
                 "active_learning_queue_absent",
                 json!({
                     "source_of_truth_cf": context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+                    "cold_cell_metric_cf": context_graph_mejepa_cf::CF_MEJEPA_COLD_CELL_METRICS,
+                    "cold_cell_targets": [],
                     "queued_count": 0,
                     "top_tasks": [],
                 }),
             ));
-        };
+        }
+        if !cold_cell_targets.is_empty() {
+            self.eval_store
+                .persist_queue(&queue)
+                .map_err(map_eval_error)?;
+        }
         let mut top_tasks = queue.entries.values().collect::<Vec<_>>();
         // REQ-FLYWHEEL-11: AgentSurprise → OutOfDistribution → Uncertainty,
         // with score as the within-kind tiebreaker. This makes the scheduler
@@ -764,6 +784,8 @@ impl SchedulerState {
             "active_learning_queue_ranked",
             json!({
                 "source_of_truth_cf": context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+                "cold_cell_metric_cf": context_graph_mejepa_cf::CF_MEJEPA_COLD_CELL_METRICS,
+                "cold_cell_targets": cold_cell_targets,
                 "queued_count": queue.entries.len(),
                 "evicted_count": queue.evicted.len(),
                 "ood_escalation_count": queue.ood_escalations.len(),
@@ -771,6 +793,44 @@ impl SchedulerState {
                 "top_tasks": top_tasks,
             }),
         ))
+    }
+
+    fn enqueue_cold_cell_targets(
+        &self,
+        queue: &mut ActiveLearningQueueState,
+    ) -> Result<Vec<ColdCellTargetRecord>, HealError> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let cutoff = now - 7 * 24 * 60 * 60 * 1000;
+        let mut counts: BTreeMap<String, u32> = BTreeMap::new();
+        for value in self
+            .storage
+            .scan_cf_values(context_graph_mejepa_cf::CF_MEJEPA_COLD_CELL_METRICS)?
+        {
+            let metric: ColdCellMetric = bincode::deserialize(&value)?;
+            metric.validate().map_err(|err| {
+                HealError::invalid("cold_cell_metric", format!("{}: {err}", err.code()))
+            })?;
+            if metric.created_at_unix_ms < cutoff {
+                continue;
+            }
+            let count = counts.entry(metric.cell_id).or_insert(0);
+            *count = count.saturating_add(1);
+        }
+        let mut targets = Vec::new();
+        for (cell_id, abstain_count) in counts {
+            if abstain_count <= COLD_CELL_TARGETED_CORPUS_ABSTAINS_PER_WEEK {
+                continue;
+            }
+            queue
+                .enqueue_cold_cell_targeted_corpus(cell_id.clone(), abstain_count)
+                .map_err(map_eval_error)?;
+            targets.push(ColdCellTargetRecord {
+                cell_id,
+                abstain_count,
+                threshold_per_week: COLD_CELL_TARGETED_CORPUS_ABSTAINS_PER_WEEK,
+            });
+        }
+        Ok(targets)
     }
 
     fn tick_promote(&mut self) -> Result<TickRunRecord, HealError> {

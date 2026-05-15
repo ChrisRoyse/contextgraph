@@ -3,6 +3,7 @@ use super::types::EvalObservation;
 use crate::pause_state::prediction_is_operator_paused;
 use crate::types::{OracleOutcome, PredictionId, RealityPrediction, SurpriseSeverity, TaskId};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 /// REQ-FLYWHEEL-11 — discriminates how an entry landed on the active-learning
@@ -19,6 +20,10 @@ pub enum ActiveLearningKind {
     AgentSurprise {
         prediction_id: PredictionId,
         severity_score: f32,
+    },
+    ColdCellTargetedCorpus {
+        cell_id: String,
+        abstain_count: u32,
     },
 }
 
@@ -38,8 +43,9 @@ impl ActiveLearningKind {
     pub fn fast_track_rank(&self) -> u8 {
         match self {
             Self::AgentSurprise { .. } => 0,
-            Self::OutOfDistribution => 1,
-            Self::Uncertainty => 2,
+            Self::ColdCellTargetedCorpus { .. } => 1,
+            Self::OutOfDistribution => 2,
+            Self::Uncertainty => 3,
         }
     }
 }
@@ -201,6 +207,39 @@ impl ActiveLearningQueueState {
         Ok(())
     }
 
+    pub fn enqueue_cold_cell_targeted_corpus(
+        &mut self,
+        cell_id: String,
+        abstain_count: u32,
+    ) -> Result<(), EvalError> {
+        validate_cell_id(&cell_id)?;
+        if abstain_count == 0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidConfig,
+                "cold-cell abstain_count must be greater than zero",
+            ));
+        }
+        let digest = Sha256::digest(cell_id.as_bytes());
+        let task_id = TaskId(format!(
+            "cold-cell-targeted-corpus-{}",
+            hex::encode(&digest[..8])
+        ));
+        let entry = ActiveLearningQueueEntry {
+            task_id: task_id.clone(),
+            score: 1.0,
+            outcome_set_len: 1,
+            ood_score: 0.0,
+            reason: format!("cold_cell_targeted_corpus:{cell_id}"),
+            kind: ActiveLearningKind::ColdCellTargetedCorpus {
+                cell_id,
+                abstain_count,
+            },
+        };
+        self.entries.insert(task_id, entry);
+        self.evict_to_capacity()?;
+        Ok(())
+    }
+
     fn evict_to_capacity(&mut self) -> Result<(), EvalError> {
         while self.entries.len() > self.capacity {
             let lowest = self
@@ -225,6 +264,28 @@ impl ActiveLearningQueueState {
         }
         Ok(())
     }
+}
+
+fn validate_cell_id(cell_id: &str) -> Result<(), EvalError> {
+    if cell_id.trim().is_empty() {
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidConfig,
+            "cold-cell cell_id must be non-empty",
+        ));
+    }
+    if cell_id.len() > 512 {
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidConfig,
+            "cold-cell cell_id exceeds 512 bytes",
+        ));
+    }
+    if cell_id.bytes().any(|byte| byte < 0x20 || byte == 0x7f) {
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidConfig,
+            "cold-cell cell_id contains a control character",
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -311,11 +372,53 @@ mod tests {
                 severity_score: 0.5,
             }
             .fast_track_rank()
+                < ActiveLearningKind::ColdCellTargetedCorpus {
+                    cell_id: "cell-a".to_string(),
+                    abstain_count: 101,
+                }
+                .fast_track_rank()
+        );
+        assert!(
+            ActiveLearningKind::ColdCellTargetedCorpus {
+                cell_id: "cell-a".to_string(),
+                abstain_count: 101,
+            }
+            .fast_track_rank()
                 < ActiveLearningKind::OutOfDistribution.fast_track_rank()
         );
         assert!(
             ActiveLearningKind::OutOfDistribution.fast_track_rank()
                 < ActiveLearningKind::Uncertainty.fast_track_rank()
         );
+    }
+
+    #[test]
+    fn enqueue_cold_cell_targeted_corpus_uses_deterministic_task_id() {
+        let mut queue = ActiveLearningQueueState::new(8).expect("queue");
+        queue
+            .enqueue_cold_cell_targeted_corpus("cell-a".to_string(), 101)
+            .expect("enqueue cold cell");
+        let entry = queue
+            .entries
+            .values()
+            .find(|entry| {
+                matches!(
+                    entry.kind,
+                    ActiveLearningKind::ColdCellTargetedCorpus { .. }
+                )
+            })
+            .expect("cold cell entry present");
+        assert!(entry.task_id.0.starts_with("cold-cell-targeted-corpus-"));
+        assert_eq!(entry.score, 1.0);
+        match &entry.kind {
+            ActiveLearningKind::ColdCellTargetedCorpus {
+                cell_id,
+                abstain_count,
+            } => {
+                assert_eq!(cell_id, "cell-a");
+                assert_eq!(*abstain_count, 101);
+            }
+            other => panic!("expected ColdCellTargetedCorpus variant, got {other:?}"),
+        }
     }
 }

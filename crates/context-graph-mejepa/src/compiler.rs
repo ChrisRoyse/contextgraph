@@ -9,7 +9,7 @@ use context_graph_mejepa_instruments::materialize::{
 };
 use context_graph_mejepa_instruments::{InstrumentSlot, Panel};
 use context_graph_mejepa_tct::{
-    gtau_check, EntityType as TctEntityType, Language as TctLanguage,
+    gtau_check, EmbedderId as TctEmbedderId, EntityType as TctEntityType, Language as TctLanguage,
     MutationCategory as TctMutationCategory, TctConstellation,
 };
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,9 @@ use crate::pause_state::{
     current_unix_ms, read_pause_state, PauseReadOutcome, PauseState, PAUSE_REASON_CODE,
 };
 const PARK_LIST_REASON_CODE: &str = "MEJEPA_PREDICTION_PARKED";
+pub const COLD_CELL_INSUFFICIENT_SUPPORT: &str = "COLD_CELL_INSUFFICIENT_SUPPORT";
+pub const COLD_CELL_LOOKUP_FAILURE: &str = "COLD_CELL_LOOKUP_FAILURE";
+pub const COLD_CELL_Q4_NOTE: &str = "emitted_under_abstain";
 use crate::prediction_surfaces::{covered_chunks_for_patch, infer_phase_b_surfaces};
 use crate::secret_redaction::{redact_patch_bundle, SECRET_REDACTION_ATTESTATION_KEY};
 use crate::system_cost::SystemCostCounters;
@@ -110,6 +113,85 @@ pub struct ConstellationDecision {
     pub age_days: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConstellationCellSupport {
+    pub cell_id: String,
+    pub n_supporting: Option<u32>,
+}
+
+impl ConstellationCellSupport {
+    pub fn try_new(
+        cell_id: impl Into<String>,
+        n_supporting: Option<u32>,
+    ) -> Result<Self, MejepaInferError> {
+        let value = Self {
+            cell_id: cell_id.into(),
+            n_supporting,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_metric_text("constellation_cell_support.cell_id", &self.cell_id)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ColdCellMetric {
+    pub cell_id: String,
+    pub reason: String,
+    pub n_supporting: Option<u32>,
+    pub threshold: u32,
+    pub prediction_id: [u8; 16],
+    pub task_id: String,
+    pub session_id: [u8; 16],
+    pub created_at_unix_ms: i64,
+}
+
+impl ColdCellMetric {
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_new(
+        cell_id: impl Into<String>,
+        reason: impl Into<String>,
+        n_supporting: Option<u32>,
+        threshold: u32,
+        prediction_id: [u8; 16],
+        task_id: impl Into<String>,
+        session_id: [u8; 16],
+        created_at_unix_ms: i64,
+    ) -> Result<Self, MejepaInferError> {
+        let value = Self {
+            cell_id: cell_id.into(),
+            reason: reason.into(),
+            n_supporting,
+            threshold,
+            prediction_id,
+            task_id: task_id.into(),
+            session_id,
+            created_at_unix_ms,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_metric_text("cold_cell_metric.cell_id", &self.cell_id)?;
+        validate_metric_text("cold_cell_metric.reason", &self.reason)?;
+        validate_metric_text("cold_cell_metric.task_id", &self.task_id)?;
+        if self.threshold == 0 {
+            return Err(MejepaInferError::InvalidInput {
+                field: "cold_cell_metric.threshold".to_string(),
+                detail: "threshold must be >= 1".to_string(),
+            });
+        }
+        Ok(())
+    }
+}
+
 pub trait Predictor: Send + Sync {
     fn predict(&self, panel_t0: &Panel, panel_t1: &Panel) -> Result<Panel, MejepaInferError>;
 }
@@ -131,6 +213,11 @@ pub trait ConstellationGuard: Send + Sync {
     ) -> Result<ConstellationDecision, MejepaInferError>;
 
     fn version_id(&self) -> Option<String>;
+
+    fn target_cell_support(
+        &self,
+        context: &TaskContext,
+    ) -> Result<ConstellationCellSupport, MejepaInferError>;
 }
 
 pub trait WitnessChainReader: Send + Sync {
@@ -178,6 +265,8 @@ pub trait MejepaStore: Send + Sync {
     ) -> Result<ParkListEntry, MejepaInferError>;
 
     fn clear_park_list_entry(&self, prediction_id: [u8; 16]) -> Result<(), MejepaInferError>;
+
+    fn record_cold_cell_metric(&self, metric: &ColdCellMetric) -> Result<(), MejepaInferError>;
 }
 
 pub struct MeJepaCompiler {
@@ -538,6 +627,44 @@ impl MeJepaCompiler {
             Err(err) => return Err(err),
         };
 
+        if let Some((cold_prediction, failed_gate)) =
+            self.cold_cell_abstain_prediction(&prediction, context)?
+        {
+            let metric = match &failed_gate {
+                FailedGate::ColdCell {
+                    cell_id,
+                    n_supporting,
+                    threshold,
+                    reason,
+                } => ColdCellMetric::try_new(
+                    cell_id.clone(),
+                    reason.clone(),
+                    *n_supporting,
+                    *threshold,
+                    cold_prediction.prediction_id,
+                    cold_prediction.task_id.0.clone(),
+                    cold_prediction.session_id,
+                    cold_prediction.created_at_unix_ms,
+                )?,
+                _ => unreachable!("cold_cell_abstain_prediction only returns ColdCell gates"),
+            };
+            self.store.record_cold_cell_metric(&metric)?;
+            self.store.write_live_prediction(&cold_prediction)?;
+            self.store.record_park_list_failure(
+                cold_prediction.prediction_id,
+                current_unix_ms(),
+                match &failed_gate {
+                    FailedGate::ColdCell { reason, .. } => reason,
+                    _ => unreachable!("cold_cell_abstain_prediction only returns ColdCell gates"),
+                },
+            )?;
+            return Ok(VerifyVerdict::EscalateToHuman {
+                reality_prediction: Some(cold_prediction),
+                failed_gate,
+                gates_passed: 2,
+            });
+        }
+
         // Persist compiled predictions before downstream gates so escalations remain replayable.
         self.store.write_live_prediction(&prediction)?;
 
@@ -637,6 +764,30 @@ impl MeJepaCompiler {
             reality_prediction: prediction,
             gates_passed: 7,
         })
+    }
+
+    fn cold_cell_abstain_prediction(
+        &self,
+        prediction: &RealityPrediction,
+        context: &TaskContext,
+    ) -> Result<Option<(RealityPrediction, FailedGate)>, MejepaInferError> {
+        let threshold = self.config.min_cell_support_for_verdict;
+        let support = self.constellation_guard.target_cell_support(context)?;
+        support.validate()?;
+        let reason = match support.n_supporting {
+            Some(n_supporting) if n_supporting >= threshold => return Ok(None),
+            Some(_) => COLD_CELL_INSUFFICIENT_SUPPORT,
+            None => COLD_CELL_LOOKUP_FAILURE,
+        };
+        let abstain =
+            abstain_for_cold_cell(prediction, &support, threshold, reason, self.config.alpha)?;
+        let gate = FailedGate::ColdCell {
+            cell_id: support.cell_id,
+            n_supporting: support.n_supporting,
+            threshold,
+            reason: reason.to_string(),
+        };
+        Ok(Some((abstain, gate)))
     }
 
     fn active_pause_state(&self) -> Option<PauseState> {
@@ -1050,6 +1201,57 @@ fn mean_attestation(
     }
 }
 
+fn abstain_for_cold_cell(
+    prediction: &RealityPrediction,
+    support: &ConstellationCellSupport,
+    threshold: u32,
+    reason: &str,
+    alpha: f32,
+) -> Result<RealityPrediction, MejepaInferError> {
+    let mut abstain = prediction.clone();
+    abstain.verdict = Verdict::Abstain;
+    abstain.confidence_interval = ConformalInterval::default();
+    abstain.outcome_set =
+        crate::types::ConformalSet::try_new(vec![OracleOutcome::Abstain], alpha, 1.0)?;
+    abstain.calibrated_confidence = 0.0;
+    abstain.degraded_status = true;
+    abstain.granger_attestations.insert(reason.to_string(), 1.0);
+    abstain
+        .granger_attestations
+        .insert(format!("cold_cell_q4_note:{COLD_CELL_Q4_NOTE}"), 1.0);
+    abstain.provenance.active_pointer = format!(
+        "cold_cell:{}:n={}:threshold={threshold}:note={COLD_CELL_Q4_NOTE}",
+        short_sha(&support.cell_id),
+        support
+            .n_supporting
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "lookup_failure".to_string())
+    );
+    RealityPrediction::try_new(abstain)
+}
+
+fn validate_metric_text(field: &str, value: &str) -> Result<(), MejepaInferError> {
+    if value.trim().is_empty() {
+        return Err(MejepaInferError::InvalidInput {
+            field: field.to_string(),
+            detail: "must be non-empty".to_string(),
+        });
+    }
+    if value.len() > 512 {
+        return Err(MejepaInferError::InvalidInput {
+            field: field.to_string(),
+            detail: "exceeds 512 bytes".to_string(),
+        });
+    }
+    if value.bytes().any(|b| b < 0x20 || b == 0x7f) {
+        return Err(MejepaInferError::InvalidInput {
+            field: field.to_string(),
+            detail: "contains a control character".to_string(),
+        });
+    }
+    Ok(())
+}
+
 #[derive(Default)]
 pub struct PatchWitnessReader;
 
@@ -1108,6 +1310,8 @@ impl OracleHead for DeterministicOracleHead {
 pub struct DeterministicConstellationGuard {
     pub version_id: String,
     pub age_days: u32,
+    pub cell_id: String,
+    pub n_supporting: Option<u32>,
 }
 
 impl Default for DeterministicConstellationGuard {
@@ -1115,6 +1319,8 @@ impl Default for DeterministicConstellationGuard {
         Self {
             version_id: "tct-fsv-v1".to_string(),
             age_days: 0,
+            cell_id: "mutation=known_good:language=python:entity=function".to_string(),
+            n_supporting: Some(100),
         }
     }
 }
@@ -1143,6 +1349,13 @@ impl ConstellationGuard for DeterministicConstellationGuard {
 
     fn version_id(&self) -> Option<String> {
         Some(self.version_id.clone())
+    }
+
+    fn target_cell_support(
+        &self,
+        _context: &TaskContext,
+    ) -> Result<ConstellationCellSupport, MejepaInferError> {
+        ConstellationCellSupport::try_new(self.cell_id.clone(), self.n_supporting)
     }
 }
 
@@ -1215,6 +1428,40 @@ impl ConstellationGuard for TctConstellationGuard {
     fn version_id(&self) -> Option<String> {
         Some(hex::encode(self.constellation.version_id()))
     }
+
+    fn target_cell_support(
+        &self,
+        context: &TaskContext,
+    ) -> Result<ConstellationCellSupport, MejepaInferError> {
+        let language = tct_language(context.language);
+        let mut min_support: Option<u32> = None;
+        for embedder in TctEmbedderId::all() {
+            let Some((_centroid, _origin, sample_count)) = self.constellation.lookup_centroid(
+                self.predicted_class,
+                language,
+                self.entity_type,
+                embedder,
+            ) else {
+                return ConstellationCellSupport::try_new(
+                    tct_cell_id(self.predicted_class, language, self.entity_type),
+                    None,
+                );
+            };
+            let sample_count =
+                u32::try_from(sample_count).map_err(|_| MejepaInferError::InvalidInput {
+                    field: "constellation.sample_count".to_string(),
+                    detail: format!("sample_count {sample_count} exceeds u32::MAX"),
+                })?;
+            min_support = Some(match min_support {
+                Some(current) => current.min(sample_count),
+                None => sample_count,
+            });
+        }
+        ConstellationCellSupport::try_new(
+            tct_cell_id(self.predicted_class, language, self.entity_type),
+            min_support,
+        )
+    }
 }
 
 pub fn residual_norm_sq(predicted: &Panel, target: &Panel) -> Result<f32, MejepaInferError> {
@@ -1258,4 +1505,12 @@ fn constellation_age_days(frozen_at: std::time::SystemTime) -> Result<u32, Mejep
             detail: "constellation frozen_at is in the future".to_string(),
         })?;
     Ok((age.as_secs() / 86_400) as u32)
+}
+
+fn tct_cell_id(
+    mutation: TctMutationCategory,
+    language: TctLanguage,
+    entity_type: TctEntityType,
+) -> String {
+    format!("mutation={mutation:?}:language={language:?}:entity={entity_type:?}")
 }

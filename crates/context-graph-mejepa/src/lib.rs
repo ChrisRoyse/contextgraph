@@ -34,6 +34,7 @@ pub mod pause_state;
 pub mod prediction_replay;
 pub mod prediction_surfaces;
 pub mod predictor;
+pub mod project_cache;
 pub mod provenance;
 pub mod reality_impact;
 pub mod secret_redaction;
@@ -50,11 +51,11 @@ pub use calibration_types::*;
 pub use claim_graph::*;
 pub use cli::*;
 pub use compiler::{
-    materialize_inference_panels, panel_sha, residual_norm_sq, ConstellationDecision,
-    ConstellationGuard, DeterministicConstellationGuard, DeterministicOracleHead,
-    DeterministicPredictor, FrozenTarget, IdentityFrozenTarget, MeJepaCompiler, MejepaStore,
-    OracleScores, PatchWitnessReader, Predictor, TctConstellationGuard, TrainCertSummary,
-    WitnessChainReader,
+    materialize_inference_panels, panel_sha, residual_norm_sq, ColdCellMetric,
+    ConstellationCellSupport, ConstellationDecision, ConstellationGuard,
+    DeterministicConstellationGuard, DeterministicOracleHead, DeterministicPredictor, FrozenTarget,
+    IdentityFrozenTarget, MeJepaCompiler, MejepaStore, OracleScores, PatchWitnessReader, Predictor,
+    TctConstellationGuard, TrainCertSummary, WitnessChainReader,
 };
 pub use config::{
     MeJepaInferConfig, PredictorConfig, CONCAT_INPUT_DIM, DEFAULT_FF_EXPANSION, DEFAULT_HIDDEN_DIM,
@@ -62,11 +63,12 @@ pub use config::{
     INFER_DEFAULT_ALPHA, INFER_DEFAULT_BOOTSTRAP_DELTA_OMEGA, INFER_DEFAULT_BOOTSTRAP_DELTA_XI,
     INFER_DEFAULT_DDA_EXPECTED_EMBEDDER_COUNT, INFER_DEFAULT_INSTRUMENT_CACHE_CAPACITY,
     INFER_DEFAULT_MAX_CALIBRATION_AGE_DAYS, INFER_DEFAULT_MAX_CONSTELLATION_AGE_DAYS,
-    INFER_DEFAULT_OOD_REFUSE_THRESHOLD, INFER_DEFAULT_OUTCOME_SET_MAX,
-    INFER_DEFAULT_P_TEST_THRESHOLD, INFER_DEFAULT_P_THRESHOLD, INFER_DEFAULT_REQUIRE_DDA_FEATURES,
-    INFER_DEFAULT_TRAIN_CERT_WINDOW_STEPS, INFER_MAX_DDA_EXPECTED_EMBEDDER_COUNT, PANEL_DIM,
-    VICREG_COV_LAMBDA, VICREG_GAMMA, VICREG_INV_LAMBDA, VICREG_VAR_LAMBDA,
-    VRAM_STEADY_STATE_TARGET_BYTES, VRAM_WARN_THRESHOLD_BYTES,
+    INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT, INFER_DEFAULT_OOD_REFUSE_THRESHOLD,
+    INFER_DEFAULT_OUTCOME_SET_MAX, INFER_DEFAULT_P_TEST_THRESHOLD, INFER_DEFAULT_P_THRESHOLD,
+    INFER_DEFAULT_REQUIRE_DDA_FEATURES, INFER_DEFAULT_TRAIN_CERT_WINDOW_STEPS,
+    INFER_MAX_DDA_EXPECTED_EMBEDDER_COUNT, PANEL_DIM, VICREG_COV_LAMBDA, VICREG_GAMMA,
+    VICREG_INV_LAMBDA, VICREG_VAR_LAMBDA, VRAM_STEADY_STATE_TARGET_BYTES,
+    VRAM_WARN_THRESHOLD_BYTES,
 };
 pub use conformal::*;
 pub use data_models::{OracleLogits, PredictedPanel, TargetPanel, TargetProvenance};
@@ -95,6 +97,7 @@ pub use pause_state::*;
 pub use prediction_replay::*;
 pub use prediction_surfaces::*;
 pub use predictor::{ArchitectureSummary, MeJepaPredictor, TransformerLayer};
+pub use project_cache::*;
 pub use reality_impact::*;
 pub use secret_redaction::*;
 pub use store::*;

@@ -9,6 +9,7 @@ windows, then aggregates the physical shard manifests it reads back from disk.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -1851,8 +1852,22 @@ def run_shard_embedder_isolated(
     snapshots: list[dict[str, Any]] = []
     isolated_started = time.monotonic()
     first_resource_before: dict[str, Any] | None = None
-    for slug in ISOLATED_FORWARD_SLUGS:
-        subrun = run_shard(
+
+    # Parallel-isolated mode: launch N concurrent isolated embedder subprocesses
+    # on the same GPU. CUDA MPS (Multi-Process Service) should be enabled for
+    # actual kernel overlap; otherwise CUDA time-slices but we still amortise
+    # the subprocess spawn cost across N waves instead of 12 sequential calls.
+    # Configurable via CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS env var; default
+    # 1 preserves the legacy sequential path. Recommended: 4-6 for RTX 5090
+    # (32 GB VRAM, peak ~3.5 GB per embedder process incl. CUDA context).
+    try:
+        parallel_workers = int(os.environ.get("CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS", "1"))
+    except ValueError:
+        parallel_workers = 1
+    parallel_workers = max(1, min(parallel_workers, len(ISOLATED_FORWARD_SLUGS)))
+
+    def _run_one_isolated_subrun(slug: str) -> tuple[str, dict[str, Any], dict[str, Any]]:
+        subrun_inner = run_shard(
             args,
             shard,
             event_path,
@@ -1862,23 +1877,76 @@ def run_shard_embedder_isolated(
             event_phase="shard_embedder_subrun_complete",
             require_packed_store=False,
         )
-        if first_resource_before is None:
-            first_resource_before = subrun.get("resource_before")
-        snapshot = snapshot_isolated_subrun_rows(args, shard, slug, subrun)
-        snapshots.append(snapshot)
-        subruns.append(
+        snapshot_inner = snapshot_isolated_subrun_rows(args, shard, slug, subrun_inner)
+        return slug, subrun_inner, snapshot_inner
+
+    if parallel_workers == 1:
+        # Legacy sequential path — preserves byte-for-byte equivalence with the
+        # pre-2026-05-15 scheduler when env var is unset / set to 1.
+        for slug in ISOLATED_FORWARD_SLUGS:
+            slug_done, subrun, snapshot = _run_one_isolated_subrun(slug)
+            if first_resource_before is None:
+                first_resource_before = subrun.get("resource_before")
+            snapshots.append(snapshot)
+            subruns.append(
+                {
+                    "embedder_id": slug_done,
+                    "run_log": str(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug_done}.json"),
+                    "run_log_sha256": snapshot["run_log_sha256"],
+                    "manifest_sha256": snapshot["manifest_sha256"],
+                    "fsv_sha256": snapshot["fsv_sha256"],
+                    "summary": subrun.get("summary"),
+                    "snapshot": snapshot,
+                    "timing_ms": subrun.get("timing_ms"),
+                    "hot_stage_promotion": subrun.get("hot_stage_promotion"),
+                }
+            )
+    else:
+        # Parallel path: launch up to parallel_workers concurrent embedder
+        # subprocesses. Results are collected, then re-ordered to match
+        # ISOLATED_FORWARD_SLUGS so downstream consolidation sees the same
+        # deterministic order regardless of completion sequence.
+        event(
+            event_path,
+            "shard_embedder_isolation_parallel_dispatch",
             {
-                "embedder_id": slug,
-                "run_log": str(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
-                "run_log_sha256": snapshot["run_log_sha256"],
-                "manifest_sha256": snapshot["manifest_sha256"],
-                "fsv_sha256": snapshot["fsv_sha256"],
-                "summary": subrun.get("summary"),
-                "snapshot": snapshot,
-                "timing_ms": subrun.get("timing_ms"),
-                "hot_stage_promotion": subrun.get("hot_stage_promotion"),
-            }
+                "shard_id": shard.shard_id,
+                "parallel_workers": parallel_workers,
+                "slug_count": len(ISOLATED_FORWARD_SLUGS),
+            },
         )
+        results_by_slug: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=parallel_workers,
+            thread_name_prefix="isolated_subrun",
+        ) as executor:
+            future_to_slug = {
+                executor.submit(_run_one_isolated_subrun, slug): slug
+                for slug in ISOLATED_FORWARD_SLUGS
+            }
+            for future in concurrent.futures.as_completed(future_to_slug):
+                slug_done, subrun_done, snapshot_done = future.result()
+                results_by_slug[slug_done] = (subrun_done, snapshot_done)
+        # Re-order deterministically by ISOLATED_FORWARD_SLUGS so consolidation
+        # is identical to the sequential path.
+        for slug in ISOLATED_FORWARD_SLUGS:
+            subrun, snapshot = results_by_slug[slug]
+            if first_resource_before is None:
+                first_resource_before = subrun.get("resource_before")
+            snapshots.append(snapshot)
+            subruns.append(
+                {
+                    "embedder_id": slug,
+                    "run_log": str(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
+                    "run_log_sha256": snapshot["run_log_sha256"],
+                    "manifest_sha256": snapshot["manifest_sha256"],
+                    "fsv_sha256": snapshot["fsv_sha256"],
+                    "summary": subrun.get("summary"),
+                    "snapshot": snapshot,
+                    "timing_ms": subrun.get("timing_ms"),
+                    "hot_stage_promotion": subrun.get("hot_stage_promotion"),
+                }
+            )
     consolidation = consolidate_isolated_subruns(args, shard, snapshots, subruns)
     final_readback = consolidation["readback"]
     runner_subprocess_ms = round(

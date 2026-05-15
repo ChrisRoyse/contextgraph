@@ -30,6 +30,7 @@ pub fn all_referenced_cf_names() -> Vec<&'static str> {
         context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION,
         context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
         context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
+        context_graph_mejepa_cf::CF_MEJEPA_COLD_CELL_METRICS,
     ] {
         if !names.contains(&cf) {
             names.push(cf);

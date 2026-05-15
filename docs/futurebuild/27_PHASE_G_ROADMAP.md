@@ -25,7 +25,7 @@ The reward field must exist before the predictor can be trained.
 
 | Order | Issue | Title | Status | Blocking |
 |---|---|---|---|---|
-| 1.1 | **#199/#295** | TASK-PY-DATA-016 — Corpus-wide embedder explosion + bounded resume recovery | **in-progress; no live scheduler; current checkpoint regressed to 12/3124 after interrupted resume, durable manifests prove 35 completed shards; bounded resume preflight passed 2026-05-15T15:33Z; relaunch required** | All downstream P2-P8 work |
+| 1.1 | **#199/#295** | TASK-PY-DATA-016 — Corpus-wide embedder explosion + bounded resume recovery | **running; checkpoint SoT at 2026-05-15T16:25Z reports `44/3124` shards, `5632/399872` chunk capacity, `67584/67584` accounted pairs, 12 active embedders, and matching corpus/FSV checkpoint sha256 `c50a0ec844c4fd3390495a796a2264969af7cab18bf9e71d49def472d551feaa`; not training-ready until final `status=passed`** | All downstream P2-P8 work |
 | 1.2 | **#208** | TASK-PY-DATA-025 — Full data-explosion FSV harness | blocked on #199 | P3 calibration |
 | 1.3 | **#236** | TASK-PY-DATA-045 — CUDA 13.2 embedder eligibility audit | blocked on #199 telemetry | GPU correctness |
 | 1.4 | **#237** | TASK-PY-DATA-046 — Cross-embedder alignment matrix | blocked on #199 | #238, #247 |
@@ -77,7 +77,7 @@ Calibrators ride on top of producers; reward-signal density audits ensure no cel
 | 3.11 | **#121** | Conformal RCA classifier |
 | 3.12 | **#130** | Gτ guard audit |
 | 3.13 | **#152** | E_Trace gating |
-| 3.14 | **#280** | Cold-start verdict policy (Abstain when n_supporting<50) |
+| 3.14 | **#280** | Cold-start verdict policy (Abstain when n_supporting<50) — **code/FSV shipped; SoT `/mnt/d/contextgraph/fsv/task-py-g-061-cold-start-verdict-fsv/cold_start_verdict_fsv.json` (`all_passed=true`)** |
 | 3.15 | **#293** | Static-analysis (mypy + pyright + ruff) per-chunk reward signal |
 | 3.16 | **#294** | Composite reward signals: coverage + git churn + complexity + doc-coverage + dep-CVE |
 

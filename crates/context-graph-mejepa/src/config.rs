@@ -123,6 +123,7 @@ pub const INFER_DEFAULT_INSTRUMENT_CACHE_CAPACITY: usize = 4096;
 pub const INFER_DEFAULT_REQUIRE_DDA_FEATURES: bool = false;
 pub const INFER_DEFAULT_DDA_EXPECTED_EMBEDDER_COUNT: usize = 0;
 pub const INFER_MAX_DDA_EXPECTED_EMBEDDER_COUNT: usize = 256;
+pub const INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT: u32 = 50;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -146,6 +147,9 @@ pub struct MeJepaInferConfig {
     /// Pause-state file checked at the start of compile/verify.
     /// `None` disables pause consumption for isolated tests only.
     pub pause_state_path: Option<PathBuf>,
+    /// Minimum targeted constellation-cell support required before ME-JEPA is
+    /// allowed to emit a non-abstain verdict for operator review replacement.
+    pub min_cell_support_for_verdict: u32,
 }
 
 impl Default for MeJepaInferConfig {
@@ -165,6 +169,7 @@ impl Default for MeJepaInferConfig {
             require_dda_features: INFER_DEFAULT_REQUIRE_DDA_FEATURES,
             dda_expected_embedder_count: INFER_DEFAULT_DDA_EXPECTED_EMBEDDER_COUNT,
             pause_state_path: Some(PathBuf::from(DEFAULT_PAUSE_STATE_PATH)),
+            min_cell_support_for_verdict: INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT,
         }
     }
 }
@@ -232,6 +237,11 @@ impl MeJepaInferConfig {
                 detail: "pause_state_path must be non-empty when configured".to_string(),
             });
         }
+        if self.min_cell_support_for_verdict == 0 {
+            return Err(PredictorError::ConfigInvalid {
+                detail: "min_cell_support_for_verdict must be >= 1".to_string(),
+            });
+        }
         Ok(())
     }
 }
@@ -249,6 +259,15 @@ mod tests {
         assert_eq!(config.hidden_dim, 1_024);
         assert_eq!(config.num_heads, 8);
         config.validate().expect("default config must validate");
+
+        let infer = MeJepaInferConfig::default();
+        assert_eq!(
+            infer.min_cell_support_for_verdict,
+            INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT
+        );
+        infer
+            .validate()
+            .expect("default inference config must validate");
     }
 
     #[test]
@@ -260,6 +279,18 @@ mod tests {
         let err = config
             .validate()
             .expect_err("non-divisible heads must fail");
+        assert_eq!(err.code(), "MEJEPA_PRED_CONFIG_INVALID");
+    }
+
+    #[test]
+    fn inference_config_rejects_zero_cold_cell_support_threshold() {
+        let config = MeJepaInferConfig {
+            min_cell_support_for_verdict: 0,
+            ..MeJepaInferConfig::default()
+        };
+        let err = config
+            .validate()
+            .expect_err("zero cold-cell support threshold must fail closed");
         assert_eq!(err.code(), "MEJEPA_PRED_CONFIG_INVALID");
     }
 }

@@ -5,7 +5,7 @@ use rocksdb::{Direction, IteratorMode, WriteOptions, DB};
 use crate::calibration::{
     cf, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_ORACLE_VERDICTS, CF_MEJEPA_TRAIN_CERTS,
 };
-use crate::compiler::{MejepaStore, TrainCertSummary};
+use crate::compiler::{ColdCellMetric, MejepaStore, TrainCertSummary};
 use crate::conformal::CalibrationExample;
 use crate::error::MejepaInferError;
 use crate::park_list::{
@@ -54,6 +54,22 @@ impl RocksDbInferStore {
         key.extend_from_slice(&prediction.created_at_unix_ms.to_be_bytes());
         key.extend_from_slice(&prediction.prediction_id);
         key
+    }
+
+    fn cold_cell_metric_key(metric: &ColdCellMetric) -> Result<Vec<u8>, MejepaInferError> {
+        metric.validate()?;
+        if metric.cell_id.as_bytes().contains(&0) {
+            return Err(MejepaInferError::InvalidInput {
+                field: "cold_cell_metric.cell_id".to_string(),
+                detail: "cell_id must not contain NUL bytes".to_string(),
+            });
+        }
+        let mut key = Vec::with_capacity(metric.cell_id.len() + 1 + 8 + 16);
+        key.extend_from_slice(metric.cell_id.as_bytes());
+        key.push(0);
+        key.extend_from_slice(&metric.created_at_unix_ms.to_be_bytes());
+        key.extend_from_slice(&metric.prediction_id);
+        Ok(key)
     }
 }
 
@@ -278,6 +294,45 @@ impl MejepaStore for RocksDbInferStore {
     fn clear_park_list_entry(&self, prediction_id: [u8; 16]) -> Result<(), MejepaInferError> {
         clear_park_list_entry_row(&self.db, prediction_id)
     }
+
+    fn record_cold_cell_metric(&self, metric: &ColdCellMetric) -> Result<(), MejepaInferError> {
+        metric.validate()?;
+        let cf = cf(
+            &self.db,
+            context_graph_mejepa_cf::CF_MEJEPA_COLD_CELL_METRICS,
+        )?;
+        let key = Self::cold_cell_metric_key(metric)?;
+        let value = bincode::serialize(metric)?;
+        let mut opts = WriteOptions::default();
+        opts.set_sync(true);
+        self.db.put_cf_opt(cf, &key, &value, &opts)?;
+        let readback = self
+            .db
+            .get_cf(cf, &key)?
+            .ok_or_else(|| MejepaInferError::InvalidInput {
+                field: "cold_cell_metrics".to_string(),
+                detail: "read-after-write could not find persisted cold-cell metric row"
+                    .to_string(),
+            })?;
+        if readback != value {
+            return Err(MejepaInferError::InvalidInput {
+                field: "cold_cell_metrics".to_string(),
+                detail: "read-after-write bytes differ from persisted metric payload".to_string(),
+            });
+        }
+        let decoded: ColdCellMetric = bincode::deserialize(&readback)?;
+        decoded.validate()?;
+        if decoded != *metric {
+            return Err(MejepaInferError::InvalidInput {
+                field: "cold_cell_metrics".to_string(),
+                detail: "read-after-write decoded metric does not match input".to_string(),
+            });
+        }
+        if let Some(counters) = &self.system_cost_counters {
+            counters.record_rocksdb_write(value.len() as u64);
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -353,6 +408,41 @@ mod tests {
         assert_eq!(loaded, vec![prediction]);
         assert!(store.session_known([9; 16]).unwrap());
         assert!(!store.session_known([8; 16]).unwrap());
+    }
+
+    #[test]
+    fn cold_cell_metric_write_reads_back_physical_row() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = open_infer_rocksdb(temp.path()).unwrap();
+        let store = RocksDbInferStore::new(db.clone());
+        let metric = ColdCellMetric::try_new(
+            "mutation=KnownGood:language=Python:entity=Function",
+            "COLD_CELL_INSUFFICIENT_SUPPORT",
+            Some(12),
+            50,
+            [7; 16],
+            "task-cold-cell",
+            [8; 16],
+            1_778_000_000_000,
+        )
+        .unwrap();
+
+        let cf = crate::calibration::cf(
+            db.as_ref(),
+            context_graph_mejepa_cf::CF_MEJEPA_COLD_CELL_METRICS,
+        )
+        .unwrap();
+        let before = db.iterator_cf(cf, IteratorMode::Start).count();
+        store.record_cold_cell_metric(&metric).unwrap();
+        let after_rows = db
+            .iterator_cf(cf, IteratorMode::Start)
+            .map(|item| {
+                let (_key, value) = item.unwrap();
+                bincode::deserialize::<ColdCellMetric>(&value).unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(after_rows.len(), before + 1);
+        assert!(after_rows.contains(&metric));
     }
 
     #[test]
