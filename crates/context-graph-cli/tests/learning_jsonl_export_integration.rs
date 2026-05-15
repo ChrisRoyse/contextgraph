@@ -1,9 +1,11 @@
 //! Full-state verification for Learning-as-UTL JSONL exports.
 //!
-//! These tests use a real RocksDB store in a fresh TempDir and then inspect
-//! both the JSONL file and the source column family after export. No mocks.
+//! These tests use real RocksDB stores under the D-root FSV directory and then
+//! inspect both the JSONL file and the source column family after export. No
+//! mocks.
 
 use std::fs;
+use std::path::PathBuf;
 
 use chrono::Utc;
 use context_graph_cli::commands::learning::{
@@ -24,6 +26,8 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use tempfile::TempDir;
 use uuid::Uuid;
+
+const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/issue-259-learning-jsonl-export-fsv";
 
 fn state(value: f32, rank: u32, domain: &str) -> LearningStateSnapshot {
     LearningStateSnapshot {
@@ -80,11 +84,17 @@ fn read_jsonl(path: &std::path::Path) -> Vec<Value> {
         .collect()
 }
 
+fn durable_case_root(case_name: &str) -> PathBuf {
+    let root = PathBuf::from(FSV_ROOT).join(format!("{case_name}-{}", Uuid::new_v4()));
+    fs::create_dir_all(&root).expect("create D-root FSV case directory");
+    root
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn export_events_jsonl_happy_path_and_edges() {
-    let temp = TempDir::new().unwrap();
-    let storage = temp.path().join("store");
-    let out = temp.path().join("events.jsonl");
+    let root = durable_case_root("events");
+    let storage = root.join("store");
+    let out = root.join("events.jsonl");
 
     println!("SOURCE OF TRUTH: RocksDB CF_LEARNING_EVENTS");
     {
@@ -158,9 +168,10 @@ async fn export_events_jsonl_happy_path_and_edges() {
         assert_eq!(count, 1);
     }
 
-    let empty_temp = TempDir::new().unwrap();
-    let empty_storage = empty_temp.path().join("store");
-    let empty_out = empty_temp.path().join("empty.jsonl");
+    let empty_root = root.join("empty");
+    fs::create_dir_all(&empty_root).unwrap();
+    let empty_storage = empty_root.join("store");
+    let empty_out = empty_root.join("empty.jsonl");
     {
         let store = open_store(&empty_storage).await;
         println!(
@@ -203,7 +214,7 @@ async fn export_events_jsonl_happy_path_and_edges() {
             .await
             .unwrap();
     }
-    let limit_out = temp.path().join("limit.jsonl");
+    let limit_out = root.join("limit.jsonl");
     let code = handle_learning_command(LearningCommands::ExportEventsJsonl(
         LearningExportEventsJsonlArgs {
             storage: storage.clone(),
@@ -219,7 +230,7 @@ async fn export_events_jsonl_happy_path_and_edges() {
     println!("EDGE LIMIT AFTER rows={}", read_jsonl(&limit_out).len());
     assert_eq!(read_jsonl(&limit_out).len(), 1);
 
-    let bad_out = temp.path().join("missing-parent").join("bad.jsonl");
+    let bad_out = root.join("missing-parent").join("bad.jsonl");
     println!("EDGE INVALID BEFORE output_exists={}", bad_out.exists());
     let code = handle_learning_command(LearningCommands::ExportEventsJsonl(
         LearningExportEventsJsonlArgs {
@@ -239,13 +250,41 @@ async fn export_events_jsonl_happy_path_and_edges() {
     );
     assert_eq!(code, 1);
     assert!(!bad_out.exists());
+
+    let outside_temp = TempDir::new().unwrap();
+    let outside_storage = outside_temp.path().join("store");
+    let outside_out = outside_temp.path().join("events.jsonl");
+    println!(
+        "EDGE OUTSIDE ROOT BEFORE storage={} out={} output_exists={}",
+        outside_storage.display(),
+        outside_out.display(),
+        outside_out.exists()
+    );
+    let code = handle_learning_command(LearningCommands::ExportEventsJsonl(
+        LearningExportEventsJsonlArgs {
+            storage: outside_storage.clone(),
+            out: outside_out.clone(),
+            limit: None,
+            offset: 0,
+            include_text: true,
+            overwrite: false,
+        },
+    ))
+    .await;
+    println!(
+        "EDGE OUTSIDE ROOT AFTER exit_code={} output_exists={}",
+        code,
+        outside_out.exists()
+    );
+    assert_eq!(code, 1);
+    assert!(!outside_out.exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn export_dataset_jsonl_reads_persisted_matrix_rows() {
-    let temp = TempDir::new().unwrap();
-    let storage = temp.path().join("store");
-    let out = temp.path().join("dataset.jsonl");
+    let root = durable_case_root("dataset");
+    let storage = root.join("store");
+    let out = root.join("dataset.jsonl");
     let dataset_id = Uuid::from_u128(0xcccccccc_cccc_4ccc_8ccc_cccccccccccc);
     let event_id = Uuid::from_u128(0xdddddddd_dddd_4ddd_8ddd_dddddddddddd);
 
