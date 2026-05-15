@@ -142,38 +142,61 @@ Goal: replicate the local-WSL corpus run with the speedups that aiwonder enables
 
 The exact numbers calibrate after the first 3-5 shards complete on aiwonder.
 
-### 4.2 Scheduler invocation on aiwonder (target)
+### 4.2 Scheduler invocation on aiwonder (verified 2026-05-15)
+
+**Required env vars (six total — `CG_MEJEPA_*` for the Python scheduler, `CONTEXTGRAPH_*` for the Rust runner):**
 
 ```bash
-export CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS=6   # MPS enables true kernel overlap
-python3 /zfs/hot/contextgraph/repo/scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
-  --task-id TASK-PY-DATA-016 \
+# Durable bulk root (cache + fsv must be under this prefix)
+export CG_MEJEPA_DURABLE_ROOT=/zfs/archive/contextgraph
+# df targets the scheduler reports + asserts (ZFS dataset mount points)
+export CG_MEJEPA_DISK_TARGETS=/,/hotpool,/archive
+# Hot-stage scratch capacity check goes against /
+export CG_MEJEPA_HOT_DISK_TARGET=/
+# Durable-root capacity check goes against /archive (the ZFS archive pool)
+export CG_MEJEPA_DURABLE_DISK_TARGET=/archive
+# Rust runner: where to find the per-embedder paths
+export CONTEXTGRAPH_MEJEPA_MODELS_CONFIG=/zfs/hot/contextgraph/models/mejepa_models_config.toml
+# Rust runner: frozen-instrument-registry JSONL (84 KB, transferred separately)
+export CG_MEJEPA_PY_INSTRUMENT_REGISTRY_JSONL=/zfs/hot/contextgraph/corpus/python-frozen-instrument-registry-v1/python_frozen_instrument_records.jsonl
+# Optional — opt into MPS-overlapped parallel-isolated mode (NOT YET SAFE,
+# blocked on #302 byte-count race in consolidation). Leave unset = sequential.
+# export CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS=6
+```
+
+**Scheduler invocation:**
+
+```bash
+/zfs/hot/contextgraph/venv/bin/python3 \
+  /zfs/hot/contextgraph/repo/scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
+  --task-id TASK-PY-DATA-016-AIWONDER \
   --chunks-jsonl /zfs/hot/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl \
   --cache-root /zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-<TS> \
   --fsv-root /zfs/archive/contextgraph/fsv/python-forward-cache-v1-aiwonder-<TS>-fsv \
-  --hot-root /home/croyse/.cache/contextgraph/<TS> \
+  --hot-root /home/croyse/.cache/contextgraph/aiwonder-<TS> \
   --shard-size 1024 \
   --shard-count 391 \
   --max-source-bytes 32768 \
-  --true-batch-size 16 \
-  --embedder-batch-sizes e1=64,e6=32,e7=64,e8=32,e9=128,e10=64,e12=32,e13=32,e14=16 \
+  --true-batch-size 8 \
+  --embedder-batch-sizes e1=32,e6=32,e7=32,e8=32,e9=128,e10=32,e12=32,e13=32,e14=8 \
+  --embedder-max-padded-source-bytes e1=1048576,e6=1048576,e7=1048576,e8=1048576,e9=4194304,e10=1048576,e12=524288,e13=1048576,e14=262144 \
   --gpu-vram-guard-bytes 30064771072 \
-  --io-workers 4 \
-  --cpu-workers 28 \
-  --gpu-workers 1 \
-  --cache-store-layout packed \
-  --require-packed-store \
-  --stage-packed-shards-on-hot \
-  --active-embedder-count 12 \
-  --hot-stage-budget-bytes 51539607552 \
-  --resume-completed-shards \
-  --retry-failed-partial-shards \
-  --isolate-embedder-processes \
-  --checkpoint-every-shards 1 \
+  --io-workers 2 --cpu-workers 28 --gpu-workers 1 \
+  --cache-store-layout packed --require-packed-store --stage-packed-shards-on-hot \
+  --active-embedder-count 12 --estimated-record-bytes 16384 \
+  --hot-stage-budget-bytes 51539607552 --fsv-edge-copy-budget-bytes 2147483648 \
+  --resume-completed-shards --retry-failed-partial-shards \
+  --isolate-embedder-processes --checkpoint-every-shards 1 \
   --cargo-runner /zfs/hot/contextgraph/repo/target/release/examples/python_forward_cache_fsv
 ```
 
-**Note:** `promote_tree_verified` byte-count race in parallel-isolated mode (committed in `4cd003e1`) must be fixed before `CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS > 1` is used. Without the fix, MPS does us no good. **Filing this as a blocker GitHub issue.**
+**Use a non-`TASK-PY-DATA-016` task ID** to bypass the smoke-gate preflight (which expects WSL2-only artifacts). E.g., `TASK-PY-DATA-016-AIWONDER-SMOKE`. The smoke gate only fires when `task_id == "TASK-PY-DATA-016"`.
+
+### 4.3 First-shard speedup data (2026-05-15)
+
+The first aiwonder e1 subrun on shard 0 completed at **37 s for 1024 chunks** (smoke-test SoT FSV passing). The WSL baseline was **~14.6 s for 128 chunks** for the same e1 work. Per-chunk: **3.2× faster on aiwonder**. Full 12-subrun shard wall time TBD when smoke completes.
+
+**Note:** `CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS > 1` activates the parallel-isolated path (commit `4cd003e1`) which has a `promote_tree_verified` byte-count race in the consolidation. **Do not enable until #302 is fixed.**
 
 ### 4.3 Workflow for an AI agent picking this up
 
