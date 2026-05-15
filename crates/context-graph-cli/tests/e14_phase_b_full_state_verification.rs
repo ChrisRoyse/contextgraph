@@ -53,6 +53,51 @@ fn subsection(title: &str) {
     println!("\n--- {} ---", title);
 }
 
+fn quantization_metadata_for_slot(slot: u8, method: QuantizationMethod) -> QuantizationMetadata {
+    match method {
+        QuantizationMethod::PQ8 => QuantizationMetadata::PQ8 {
+            codebook_id: slot as u32,
+            num_subvectors: 8,
+        },
+        QuantizationMethod::Float8E4M3 => QuantizationMetadata::Float8 {
+            scale: 1.0,
+            bias: 0.0,
+        },
+        QuantizationMethod::Binary => QuantizationMetadata::Binary { threshold: 0.0 },
+        QuantizationMethod::SparseNative => QuantizationMetadata::Sparse {
+            vocab_size: 30522,
+            nnz: 50,
+        },
+        QuantizationMethod::TokenPruning => QuantizationMetadata::TokenPruning {
+            original_tokens: 128,
+            kept_tokens: 64,
+            threshold: 0.5,
+        },
+    }
+}
+
+fn synthetic_quantized_embedding(slot: u8, data_override: Option<Vec<u8>>) -> QuantizedEmbedding {
+    let model_id = *ModelId::production()
+        .get(slot as usize)
+        .expect("slot must exist in production model mapping");
+    let method = QuantizationMethod::for_model_id(model_id);
+    let original_dim = model_id.dimension();
+    let data = data_override.unwrap_or_else(|| match method {
+        QuantizationMethod::PQ8 => vec![slot.wrapping_mul(17); 8],
+        QuantizationMethod::Float8E4M3 => vec![slot.wrapping_mul(17); original_dim],
+        QuantizationMethod::Binary => vec![0xAA; original_dim.div_ceil(8)],
+        QuantizationMethod::SparseNative => vec![slot; 100],
+        QuantizationMethod::TokenPruning => vec![slot; 64],
+    });
+
+    QuantizedEmbedding {
+        method,
+        original_dim,
+        data,
+        metadata: quantization_metadata_for_slot(slot, method),
+    }
+}
+
 // ============================================================================
 // TRACK 1 — Native model module (Task #34)
 // ============================================================================
@@ -236,6 +281,45 @@ fn fsv_t2_cf_emb_13_physical_persistence_roundtrip() {
     let tmp = TempDir::new().expect("tempdir");
     let db_path = tmp.path().to_path_buf();
 
+    subsection("Edge 0: corrupted Kepler slot fixture fails before RocksDB write");
+    let mut corrupted_map: HashMap<u8, QuantizedEmbedding> = (0..14u8)
+        .map(|slot| (slot, synthetic_quantized_embedding(slot, None)))
+        .collect();
+    corrupted_map.insert(
+        10,
+        QuantizedEmbedding {
+            method: QuantizationMethod::Float8E4M3,
+            original_dim: 512,
+            data: vec![10u8; 512],
+            metadata: quantization_metadata_for_slot(10, QuantizationMethod::Float8E4M3),
+        },
+    );
+    let corrupted_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        StoredQuantizedFingerprint::new(fp_id, corrupted_map, [0.5f32; 14], [0xBEu8; 32])
+    }));
+    let corrupted_msg = corrupted_result.as_ref().err().and_then(|e| {
+        e.downcast_ref::<String>()
+            .cloned()
+            .or_else(|| e.downcast_ref::<&str>().map(|s| (*s).to_string()))
+    });
+    println!(
+        "  corrupted slot 10 rejected? {} msg={:?}",
+        corrupted_result.is_err(),
+        corrupted_msg
+    );
+    assert!(
+        corrupted_result.is_err(),
+        "Kepler slot with Float8E4M3 must fail before storage"
+    );
+    let corrupted_msg = corrupted_msg.unwrap_or_default();
+    assert!(
+        corrupted_msg.contains("Embedder slot 10")
+            && corrupted_msg.contains("Kepler")
+            && corrupted_msg.contains("expected PQ8"),
+        "panic should identify slot 10 Kepler PQ8 invariant, got: {}",
+        corrupted_msg
+    );
+
     // --- Phase 1: WRITE ---
     {
         let store = RocksDbTeleologicalStore::open_with_config(
@@ -244,56 +328,12 @@ fn fsv_t2_cf_emb_13_physical_persistence_roundtrip() {
         )
         .expect("open #1");
 
-        let mut map: HashMap<u8, QuantizedEmbedding> = HashMap::new();
-        for i in 0..14u8 {
-            let (method, dim, data) = match i {
-                0 | 4 | 6 | 9 => (
-                    QuantizationMethod::PQ8,
-                    1024u16,
-                    vec![i.wrapping_mul(17); 8],
-                ),
-                13 => (QuantizationMethod::PQ8, 1024u16, e14_signature.clone()), // E14 — our signature
-                1..=3 | 7 | 10 => (
-                    QuantizationMethod::Float8E4M3,
-                    512,
-                    vec![i.wrapping_mul(17); 512],
-                ),
-                8 => (QuantizationMethod::Binary, 10000, vec![0xAA; 1250]),
-                5 | 12 => (QuantizationMethod::SparseNative, 30522, vec![i; 100]),
-                11 => (QuantizationMethod::TokenPruning, 128, vec![i; 64]),
-                _ => unreachable!(),
-            };
-            map.insert(
-                i,
-                QuantizedEmbedding {
-                    method,
-                    original_dim: dim as usize,
-                    data,
-                    metadata: match method {
-                        QuantizationMethod::PQ8 => QuantizationMetadata::PQ8 {
-                            codebook_id: i as u32,
-                            num_subvectors: 8,
-                        },
-                        QuantizationMethod::Float8E4M3 => QuantizationMetadata::Float8 {
-                            scale: 1.0,
-                            bias: 0.0,
-                        },
-                        QuantizationMethod::Binary => {
-                            QuantizationMetadata::Binary { threshold: 0.0 }
-                        }
-                        QuantizationMethod::SparseNative => QuantizationMetadata::Sparse {
-                            vocab_size: 30522,
-                            nnz: 50,
-                        },
-                        QuantizationMethod::TokenPruning => QuantizationMetadata::TokenPruning {
-                            original_tokens: 128,
-                            kept_tokens: 64,
-                            threshold: 0.5,
-                        },
-                    },
-                },
-            );
-        }
+        let map: HashMap<u8, QuantizedEmbedding> = (0..14u8)
+            .map(|slot| {
+                let data_override = (slot == 13).then(|| e14_signature.clone());
+                (slot, synthetic_quantized_embedding(slot, data_override))
+            })
+            .collect();
 
         let qfp = StoredQuantizedFingerprint::new(fp_id, map, [0.5f32; 14], [0xBEu8; 32]);
         store
