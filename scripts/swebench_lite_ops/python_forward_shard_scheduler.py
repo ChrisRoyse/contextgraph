@@ -2415,6 +2415,43 @@ def rewrite_json_paths_in_tree(root: Path, replacements: dict[str, str]) -> list
     return rewrites
 
 
+def _move_with_readback(src: Path, dst: Path, label: str) -> None:
+    """Move src → dst, then verify both dst.exists() and not src.exists().
+
+    Defensive against NTFS-on-WSL2 and other filesystems where shutil.move /
+    os.rename can return success but the post-rename stat takes a moment to
+    reflect. Retries the existence check briefly with sync(); if still wrong,
+    raises with full path + stat diagnostics so the next agent can root-cause.
+    """
+    shutil.move(str(src), str(dst))
+    # On NTFS-via-WSL2 a directory rename can leave inconsistent stat for a
+    # short window. Retry the existence check up to 5 times with a brief
+    # sync() between attempts. Most callers see success on the first check.
+    for attempt in range(5):
+        if dst.exists() and not src.exists():
+            return
+        try:
+            os.sync()
+        except Exception:
+            pass
+        time.sleep(0.05 * (attempt + 1))
+    # Fail loud with diagnostics so the next agent has data, per doctrine §7.2.
+    diag = {
+        "label": label,
+        "src": str(src),
+        "dst": str(dst),
+        "src_exists_post_move": src.exists(),
+        "dst_exists_post_move": dst.exists(),
+        "src_parent_exists": src.parent.exists(),
+        "dst_parent_exists": dst.parent.exists(),
+        "src_parent_listing": sorted([p.name for p in src.parent.iterdir()][:20]) if src.parent.exists() else None,
+        "dst_parent_listing": sorted([p.name for p in dst.parent.iterdir()][:20]) if dst.parent.exists() else None,
+    }
+    raise SchedulerError(
+        f"python forward shard scheduler move readback failed for {label}: {json.dumps(diag, sort_keys=True)}"
+    )
+
+
 def promote_tree_verified(source: Path, destination: Path, archive_parent: Path, label: str) -> dict[str, Any]:
     require(f"{label} source exists before promotion", source.exists())
     before = {
@@ -2432,10 +2469,10 @@ def promote_tree_verified(source: Path, destination: Path, archive_parent: Path,
             archive_parent,
             f"{utc_now().replace('-', '').replace(':', '')}-{destination.name}",
         )
-        shutil.move(str(destination), str(archived_existing))
+        _move_with_readback(destination, archived_existing, f"{label}-archive")
         require(f"{label} previous destination archived", archived_existing.exists())
         require(f"{label} previous destination removed", not destination.exists())
-    shutil.move(str(temp), str(destination))
+    _move_with_readback(temp, destination, f"{label}-promote")
     require(f"{label} destination exists after promotion", destination.exists())
     require(f"{label} promoted byte count matches source", tree_state(destination)["byte_count"] == before["source"]["byte_count"])
     return {
