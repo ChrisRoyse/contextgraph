@@ -645,9 +645,24 @@ def require_probe_success(label: str, result: dict[str, Any]) -> None:
         )
 
 
+def _disk_snapshot_targets() -> list[str]:
+    """Targets df should report. Default: WSL2 layout (/, /mnt/c, /mnt/d).
+    Override via CG_MEJEPA_DISK_TARGETS env var (comma-separated paths).
+
+    On aiwonder, set e.g. `CG_MEJEPA_DISK_TARGETS=/,/zfs/hot,/zfs/archive` so
+    the preflight reports the actual durable + hot filesystems instead of the
+    WSL2 ones (which don't exist on bare-metal Linux).
+    """
+    raw = os.environ.get("CG_MEJEPA_DISK_TARGETS", "/,/mnt/c,/mnt/d")
+    targets = [t.strip() for t in raw.split(",") if t.strip()]
+    require("MEJEPA_SCHEDULER_DISK_TARGETS_EMPTY: at least one df target required", bool(targets))
+    return targets
+
+
 def disk_snapshot() -> dict[str, Any]:
+    targets = _disk_snapshot_targets()
     return run_probe(
-        ["df", "-B1", "--output=source,size,used,avail,pcent,target", "/", "/mnt/c", "/mnt/d"]
+        ["df", "-B1", "--output=source,size,used,avail,pcent,target", *targets]
     )
 
 
@@ -666,7 +681,7 @@ def parse_disk_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
             "percent_used": percent,
             "target": target,
         }
-    for target in ("/", "/mnt/c", "/mnt/d"):
+    for target in _disk_snapshot_targets():
         require(f"MEJEPA_SCHEDULER_DF_MISSING: df includes {target}", target in rows)
     return rows
 
@@ -1264,21 +1279,27 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
     cache_root = args.cache_root.expanduser().resolve(strict=False)
     fsv_root = args.fsv_root.expanduser().resolve(strict=False)
     runner = validate_release_runner(args)
+    # Durable-root policy. Default is the operator's WSL2 /mnt/d/contextgraph;
+    # override via CG_MEJEPA_DURABLE_ROOT env var to point at another host's
+    # bulk-state filesystem (e.g., /zfs/archive/contextgraph on aiwonder).
+    # The hot-root must NOT be under that durable root; cache_root and fsv_root
+    # MUST be under it. Windows /mnt/c path remains forbidden always.
+    durable_root = Path(os.environ.get("CG_MEJEPA_DURABLE_ROOT", "/mnt/d/contextgraph")).expanduser().resolve(strict=False)
     require(
         "MEJEPA_SCHEDULER_HOT_ROOT_WINDOWS_MOUNT: hot root must not be under /mnt/c",
         not path_is_under(hot_root, Path("/mnt/c")),
     )
     require(
-        "MEJEPA_SCHEDULER_HOT_ROOT_DURABLE_MOUNT: hot root must use WSL ext4, not /mnt/d",
-        not path_is_under(hot_root, Path("/mnt/d")),
+        f"MEJEPA_SCHEDULER_HOT_ROOT_DURABLE_MOUNT: hot root must not be under durable root {durable_root}",
+        not path_is_under(hot_root, durable_root),
     )
     require(
-        "MEJEPA_SCHEDULER_CACHE_ROOT_NOT_D_ROOT: cache root must be durable under /mnt/d/contextgraph",
-        path_is_under(cache_root, Path("/mnt/d/contextgraph")),
+        f"MEJEPA_SCHEDULER_CACHE_ROOT_NOT_DURABLE_ROOT: cache root must be under {durable_root}",
+        path_is_under(cache_root, durable_root),
     )
     require(
-        "MEJEPA_SCHEDULER_FSV_ROOT_NOT_D_ROOT: FSV root must be durable under /mnt/d/contextgraph/fsv",
-        path_is_under(fsv_root, Path("/mnt/d/contextgraph/fsv")),
+        f"MEJEPA_SCHEDULER_FSV_ROOT_NOT_DURABLE_ROOT: FSV root must be under {durable_root}",
+        path_is_under(fsv_root, durable_root),
     )
 
     disks_raw = disk_snapshot()
