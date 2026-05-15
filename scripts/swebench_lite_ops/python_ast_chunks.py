@@ -30,6 +30,7 @@ CHUNK_KINDS = [
     "test_class",
     "fixture",
     "assertion",
+    "syntax_error_file",
 ]
 
 
@@ -296,6 +297,52 @@ def module_empty_chunk(record: dict[str, Any], schema_path: Path, raw: bytes, de
     return build_chunk(record, schema_path, now, fake, kind, span, None, 0, None, encoding, node_kind_override="Module")
 
 
+def syntax_error_chunk(record: dict[str, Any], schema_path: Path, raw: bytes, decoded: str, encoding: str, now: str) -> dict[str, Any]:
+    lines = decoded.splitlines(keepends=True) or [""]
+    diagnostic = record.get("syntax_error") or {}
+    lineno = diagnostic.get("lineno") if isinstance(diagnostic, dict) else None
+    center = lineno if isinstance(lineno, int) and lineno >= 1 else 1
+    start_line = max(1, center - 20)
+    end_line = min(len(lines), center + 20)
+    prefix = "".join(lines[: start_line - 1])
+    text = "".join(lines[start_line - 1 : end_line])
+    byte_start = len(prefix.encode(encoding))
+    source_bytes = text.encode(encoding)
+    byte_end = byte_start + len(source_bytes)
+    if raw[byte_start:byte_end] != source_bytes:
+        raise AstChunkError(
+            "PY_AST_CHUNK_SYNTAX_ERROR_SLICE_MISMATCH",
+            "syntax-error chunk source slice does not re-read to original bytes",
+            "Fix syntax-error span conversion before using compile-error chunks as reward data.",
+            {"relative_path": record["relative_path"], "line_start": start_line, "line_end": end_line},
+        )
+    last_line = lines[end_line - 1] if end_line >= 1 else ""
+    span = {
+        "line_start": start_line,
+        "line_end": max(start_line, end_line),
+        "col_start": 0,
+        "col_end": len(last_line.rstrip("\r\n")),
+        "byte_start": byte_start,
+        "byte_end": byte_end,
+        "source_text": text,
+        "source_sha256": "sha256:" + hashlib.sha256(source_bytes).hexdigest(),
+    }
+    fake = ast.Pass(lineno=start_line, col_offset=0, end_lineno=span["line_end"], end_col_offset=span["col_end"])
+    return build_chunk(
+        record,
+        schema_path,
+        now,
+        fake,
+        "syntax_error_file",
+        span,
+        None,
+        0,
+        None,
+        encoding,
+        node_kind_override="SyntaxError",
+    )
+
+
 def parse_decoded(record: dict[str, Any], decoded: str) -> tuple[ast.Module, list[dict[str, Any]]]:
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", SyntaxWarning)
@@ -316,9 +363,11 @@ def parse_decoded(record: dict[str, Any], decoded: str) -> tuple[ast.Module, lis
 
 
 def chunks_for_record(record: dict[str, Any], schema_path: Path, now: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    if record["parse_status"] not in {"parsed", "empty"}:
+    if record["parse_status"] not in {"parsed", "empty", "syntax_error"}:
         return [], []
     raw, decoded, encoding = decode_source(record)
+    if record["parse_status"] == "syntax_error":
+        return [syntax_error_chunk(record, schema_path, raw, decoded, encoding, now)], []
     tree, diagnostics = parse_decoded(record, decoded)
     if record["parse_status"] == "empty":
         return [module_empty_chunk(record, schema_path, raw, decoded, encoding, now)], diagnostics
@@ -361,4 +410,3 @@ def chunks_for_record(record: dict[str, Any], schema_path: Path, now: str) -> tu
             node_to_chunk[node] = chunk["chunk_id"]
             qualname_by_node[node] = qualname or ""
     return chunks, diagnostics
-

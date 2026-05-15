@@ -29,6 +29,11 @@ from .python_ast_chunk_command import command_ast_chunks
 from .python_ast_parse import command_ast_parse
 from .python_diff_chunk_map import command_diff_chunk_map
 from .python_instrument_registry import command_instrument_registry
+from .smoke_manifest import DEFAULT_SEED, DEFAULT_TARGET_COUNT, EXPECTED_MUTATION_CATEGORIES, command_smoke_manifest
+from .smoke_intelligence_matrices import command_smoke_intelligence
+from .smoke_storage_design import command_smoke_storage_design
+from .full_run_relaunch_gate import command_full_run_relaunch_gate
+from .python_full_ast_corpus import command_full_ast_corpus
 from .python_static_graph import command_static_graph
 from .python_test_intent import command_test_intent
 
@@ -137,6 +142,106 @@ def build_parser() -> argparse.ArgumentParser:
     ast_chunks.add_argument("--hot-budget-bytes", type=int, default=1_073_741_824)
     ast_chunks.set_defaults(func=command_ast_chunks, evidence_name="ast-chunks-command-evidence.json")
 
+    smoke_manifest = sub.add_parser(
+        "smoke-manifest",
+        help="Select a deterministic real Python AST chunk smoke manifest for embedder intelligence runs.",
+    )
+    smoke_manifest.add_argument("--chunks-jsonl", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl"))
+    smoke_manifest.add_argument("--cleaned-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-cleaned-manifest-v1/cleaned_manifest.json"))
+    smoke_manifest.add_argument("--manifest-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest"))
+    smoke_manifest.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv"))
+    smoke_manifest.add_argument("--evidence-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv"))
+    smoke_manifest.add_argument("--target-count", type=int, default=DEFAULT_TARGET_COUNT)
+    smoke_manifest.add_argument("--seed", default=DEFAULT_SEED)
+    smoke_manifest.add_argument("--expected-task-count", type=int, default=300)
+    smoke_manifest.add_argument("--expected-mutation-categories", default=",".join(EXPECTED_MUTATION_CATEGORIES))
+    smoke_manifest.set_defaults(func=command_smoke_manifest, evidence_name="smoke-manifest-command-evidence.json")
+
+    smoke_intelligence = sub.add_parser(
+        "smoke-intelligence-matrices",
+        help="Compute durable representation-alignment matrices for the 1000-chunk Python embedder smoke run.",
+    )
+    smoke_intelligence.add_argument("--forward-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/forward-cache"))
+    smoke_intelligence.add_argument("--smoke-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"))
+    smoke_intelligence.add_argument("--output-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices"))
+    smoke_intelligence.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv"))
+    smoke_intelligence.add_argument("--expected-chunk-count", type=int, default=1000)
+    smoke_intelligence.add_argument("--expected-embedder-count", type=int, default=12)
+    smoke_intelligence.add_argument("--min-overlap", type=int, default=20)
+    smoke_intelligence.add_argument("--neighbor-k", type=int, default=10)
+    smoke_intelligence.add_argument("--clean-output", action="store_true")
+    smoke_intelligence.set_defaults(func=command_smoke_intelligence, evidence_name="smoke-intelligence-matrices-command-evidence.json")
+
+    smoke_storage_design = sub.add_parser(
+        "smoke-storage-design",
+        help="Derive bounded full-run storage and metric policy from the 1000-chunk smoke outputs.",
+    )
+    smoke_storage_design.add_argument("--forward-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/forward-cache"))
+    smoke_storage_design.add_argument("--matrix-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices"))
+    smoke_storage_design.add_argument("--design-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design"))
+    smoke_storage_design.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-063-post249-smoke-storage-design-fsv"))
+    smoke_storage_design.add_argument("--forward-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"))
+    smoke_storage_design.add_argument("--matrix-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"))
+    smoke_storage_design.add_argument("--full-chunks-jsonl", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl"))
+    smoke_storage_design.add_argument("--full-chunk-count", type=int, default=None)
+    smoke_storage_design.add_argument("--smoke-chunk-count", type=int, default=1000)
+    smoke_storage_design.add_argument("--window-chunks", type=int, default=1000)
+    smoke_storage_design.add_argument("--max-durable-forward-bytes", type=int, default=536_870_912_000)
+    smoke_storage_design.add_argument("--clean-output", action="store_true")
+    smoke_storage_design.set_defaults(func=command_smoke_storage_design, evidence_name="smoke-storage-design-command-evidence.json")
+
+    full_run_relaunch_gate = sub.add_parser(
+        "full-run-relaunch-gate",
+        help="Apply accepted post-#249 smoke findings and emit the fail-closed #255 full-run relaunch gate.",
+    )
+    full_run_relaunch_gate.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-064-post249-full-run-relaunch-gate-fsv"))
+    full_run_relaunch_gate.add_argument("--chunks-jsonl", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl"))
+    full_run_relaunch_gate.add_argument("--cache-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514"))
+    full_run_relaunch_gate.add_argument("--run-fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-016-full-20260514-fsv"))
+    full_run_relaunch_gate.add_argument("--hot-root", type=Path, default=Path("/home/cabdru/.cache/contextgraph/task-py-data-016-full-20260514"))
+    full_run_relaunch_gate.add_argument("--smoke-manifest-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json"))
+    full_run_relaunch_gate.add_argument("--smoke-forward-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"))
+    full_run_relaunch_gate.add_argument("--smoke-intelligence-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"))
+    full_run_relaunch_gate.add_argument("--smoke-storage-design-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-063-post249-smoke-storage-design-fsv/smoke_storage_design_fsv.json"))
+    full_run_relaunch_gate.add_argument("--full-ast-corpus-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json"))
+    full_run_relaunch_gate.add_argument("--storage-design-go-no-go", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/go_no_go.json"))
+    full_run_relaunch_gate.add_argument("--storage-policy", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/storage_policy.json"))
+    full_run_relaunch_gate.add_argument("--storage-estimates", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/full_scale_storage_estimates.json"))
+    full_run_relaunch_gate.add_argument("--shard-size", type=int, default=128)
+    full_run_relaunch_gate.add_argument("--shard-count", type=int, default=2933)
+    full_run_relaunch_gate.add_argument("--active-embedder-count", type=int, default=12)
+    full_run_relaunch_gate.add_argument("--true-batch-size", type=int, default=8)
+    full_run_relaunch_gate.add_argument("--io-workers", type=int, default=2)
+    full_run_relaunch_gate.add_argument("--cpu-workers", type=int, default=30)
+    full_run_relaunch_gate.add_argument("--gpu-workers", type=int, default=1)
+    full_run_relaunch_gate.add_argument("--jsonl-sync-every-rows", type=int, default=512)
+    full_run_relaunch_gate.add_argument("--checkpoint-every-shards", type=int, default=1)
+    full_run_relaunch_gate.add_argument("--cargo-runner", default="target/release/examples/python_forward_cache_fsv")
+    full_run_relaunch_gate.add_argument("--expected-next-shard", default="shard-000028-offset-000003584")
+    full_run_relaunch_gate.add_argument("--clean-output", action="store_true")
+    full_run_relaunch_gate.set_defaults(func=command_full_run_relaunch_gate, evidence_name="full-run-relaunch-gate-command-evidence.json")
+
+    full_ast_corpus = sub.add_parser(
+        "full-ast-corpus",
+        help="Regenerate accepted Python AST parse/chunk SoTs with fail-closed 300x8 cleaned-manifest coverage.",
+    )
+    full_ast_corpus.add_argument("--cleaned-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-cleaned-manifest-v1/cleaned_manifest.json"))
+    full_ast_corpus.add_argument("--workspace-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-workspaces-v1/workspace_manifest.json"))
+    full_ast_corpus.add_argument("--repo-object-root", type=Path, default=Path("/mnt/d/contextgraph/cache/mejepa-corpus/repos"))
+    full_ast_corpus.add_argument("--parse-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-parse-v1"))
+    full_ast_corpus.add_argument("--chunk-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1"))
+    full_ast_corpus.add_argument("--source-snapshot-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/source-files"))
+    full_ast_corpus.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv"))
+    full_ast_corpus.add_argument("--evidence-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv"))
+    full_ast_corpus.add_argument("--hot-root", type=Path, default=Path("/home/cabdru/.cache/contextgraph/task-py-data-058-full-ast-corpus"))
+    full_ast_corpus.add_argument("--hot-budget-bytes", type=int, default=85_899_345_920)
+    full_ast_corpus.add_argument("--git-timeout-seconds", type=int, default=900)
+    full_ast_corpus.add_argument("--recommended-shard-size", type=int, default=128)
+    full_ast_corpus.add_argument("--max-tasks", type=int, default=None)
+    full_ast_corpus.add_argument("--allow-partial-coverage", dest="require_full_coverage", action="store_false", default=True)
+    full_ast_corpus.add_argument("--clean-output", action="store_true")
+    full_ast_corpus.set_defaults(func=command_full_ast_corpus, evidence_name="full-ast-corpus-command-evidence.json")
+
     diff_map = sub.add_parser("diff-chunk-map", help="Map Python patch/test hunks to stable AST chunks.")
     diff_map.add_argument("--workspace-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-workspaces-v1/workspace_manifest.json"))
     diff_map.add_argument("--chunks-jsonl", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl"))
@@ -189,14 +294,28 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    evidence_path = args.evidence_root / args.evidence_name
+    evidence_root = getattr(args, "evidence_root", None)
+    evidence_name = getattr(args, "evidence_name", None)
     try:
         payload = args.func(args)
+        if isinstance(payload, int):
+            return payload
+        if evidence_root is None or evidence_name is None:
+            raise SwebenchOpsError(
+                "SWEBENCH_OPS_EVIDENCE_TARGET_MISSING",
+                f"command {args.command} returned payload without evidence_root/evidence_name",
+                "Add evidence arguments for this command or return a process status integer.",
+            )
+        evidence_path = evidence_root / evidence_name
         payload["evidence_path"] = str(evidence_path)
         write_json_checked(evidence_path, payload)
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
     except SwebenchOpsError as exc:
+        if evidence_root is None or evidence_name is None:
+            print(json.dumps({"checked_at": utc_now(), "command": args.command, **exc.to_json()}, indent=2, sort_keys=True), file=sys.stderr)
+            return 2
+        evidence_path = evidence_root / evidence_name
         payload = {
             "checked_at": utc_now(),
             "command": args.command,
@@ -207,16 +326,18 @@ def main() -> int:
         print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
         return 2
     except Exception as exc:
+        evidence_path = (evidence_root / evidence_name) if evidence_root is not None and evidence_name is not None else None
         payload = {
             "checked_at": utc_now(),
             "command": args.command,
-            "evidence_path": str(evidence_path),
+            "evidence_path": str(evidence_path) if evidence_path is not None else None,
             "ok": False,
             "error_code": "SWEBENCH_UNEXPECTED_ERROR",
             "message": str(exc),
             "remediation": "Fix the script defect or unexpected environment issue before continuing.",
             "details": {"type": type(exc).__name__},
         }
-        write_json_checked(evidence_path, payload)
+        if evidence_path is not None:
+            write_json_checked(evidence_path, payload)
         print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
         return 3

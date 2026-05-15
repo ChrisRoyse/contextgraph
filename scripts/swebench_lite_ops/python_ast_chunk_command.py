@@ -142,7 +142,7 @@ def command_ast_chunks(args: Any) -> dict[str, Any]:
     now = utc_now()
     chunks: list[dict[str, Any]] = []
     diagnostics: list[dict[str, Any]] = []
-    parsed_records = [record for record in parse_records if record.get("parse_status") in {"parsed", "empty"}]
+    parsed_records = [record for record in parse_records if record.get("parse_status") in {"parsed", "empty", "syntax_error"}]
     for record in parsed_records:
         record_chunks, record_diagnostics = chunks_for_record(record, schema_path, now)
         chunks.extend(record_chunks)

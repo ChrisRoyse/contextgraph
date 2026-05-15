@@ -27,6 +27,23 @@ DEFAULT_CHUNKS_JSONL = Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/pyt
 DEFAULT_CACHE_ROOT = Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1")
 DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-029-sharded-cuda-scheduler-fsv")
 DEFAULT_HOT_ROOT = Path("/home/cabdru/.cache/contextgraph/python-forward-shard-scheduler")
+DEFAULT_SMOKE_GATE_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-057-smoke-gate-preflight-fsv")
+DEFAULT_SMOKE_MANIFEST_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json")
+DEFAULT_SMOKE_FORWARD_FSV = Path(
+    "/mnt/d/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"
+)
+DEFAULT_SMOKE_INTELLIGENCE_FSV = Path(
+    "/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"
+)
+DEFAULT_SMOKE_STORAGE_DESIGN_FSV = Path(
+    "/mnt/d/contextgraph/fsv/task-py-data-063-post249-smoke-storage-design-fsv/smoke_storage_design_fsv.json"
+)
+DEFAULT_FULL_RELAUNCH_GATE_FSV = Path(
+    "/mnt/d/contextgraph/fsv/task-py-data-064-post249-full-run-relaunch-gate-fsv/full_run_relaunch_gate_fsv.json"
+)
+DEFAULT_FULL_AST_CORPUS_FSV = Path(
+    "/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json"
+)
 DEFAULT_RUNNER_TIMEOUT_SECONDS = 3600
 DEFAULT_CARGO_RUNNER = "target/release/examples/python_forward_cache_fsv"
 SCHEMA_VERSION = 1
@@ -192,6 +209,23 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional stopped-run checkpoint to read and include as the resume-gate comparison baseline.",
     )
+    parser.add_argument(
+        "--require-smoke-gate",
+        action="store_true",
+        help="Require accepted 1000-chunk smoke artifacts before scheduler launch/resume.",
+    )
+    parser.add_argument(
+        "--smoke-gate-fsv-root",
+        type=Path,
+        default=DEFAULT_SMOKE_GATE_FSV_ROOT,
+        help="Where to write the fail-closed smoke-gate preflight FSV artifact.",
+    )
+    parser.add_argument("--smoke-manifest-fsv", type=Path, default=DEFAULT_SMOKE_MANIFEST_FSV)
+    parser.add_argument("--smoke-forward-fsv", type=Path, default=DEFAULT_SMOKE_FORWARD_FSV)
+    parser.add_argument("--smoke-intelligence-fsv", type=Path, default=DEFAULT_SMOKE_INTELLIGENCE_FSV)
+    parser.add_argument("--smoke-storage-design-fsv", type=Path, default=DEFAULT_SMOKE_STORAGE_DESIGN_FSV)
+    parser.add_argument("--full-relaunch-gate-fsv", type=Path, default=DEFAULT_FULL_RELAUNCH_GATE_FSV)
+    parser.add_argument("--full-ast-corpus-fsv", type=Path, default=DEFAULT_FULL_AST_CORPUS_FSV)
     parser.add_argument(
         "--resume-completed-shards",
         action="store_true",
@@ -751,6 +785,232 @@ def projected_capacity(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def smoke_gate_required(args: argparse.Namespace) -> bool:
+    return bool(args.require_smoke_gate or args.task_id == "TASK-PY-DATA-016")
+
+
+def smoke_gate_artifact_specs(args: argparse.Namespace) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": "smoke_manifest",
+            "issue": 251,
+            "task_id": "TASK-PY-DATA-060",
+            "path": args.smoke_manifest_fsv,
+            "expected_chunks_jsonl": args.chunks_jsonl,
+        },
+        {
+            "name": "smoke_forward_cache",
+            "issue": 252,
+            "task_id": "TASK-PY-DATA-061",
+            "path": args.smoke_forward_fsv,
+        },
+        {
+            "name": "smoke_intelligence_matrices",
+            "issue": 253,
+            "task_id": "TASK-PY-DATA-062",
+            "path": args.smoke_intelligence_fsv,
+        },
+        {
+            "name": "smoke_storage_design",
+            "issue": 254,
+            "task_id": "TASK-PY-DATA-063",
+            "path": args.smoke_storage_design_fsv,
+            "expected_chunks_jsonl": args.chunks_jsonl,
+        },
+        {
+            "name": "full_relaunch_gate",
+            "issue": 255,
+            "task_id": "TASK-PY-DATA-064",
+            "path": args.full_relaunch_gate_fsv,
+            "expected_chunks_jsonl": args.chunks_jsonl,
+        },
+        {
+            "name": "full_ast_corpus",
+            "issue": 249,
+            "task_id": "TASK-PY-DATA-058",
+            "path": args.full_ast_corpus_fsv,
+            "expected_chunks_jsonl": args.chunks_jsonl,
+        },
+    ]
+
+
+def validate_smoke_gate_artifact(spec: dict[str, Any]) -> dict[str, Any]:
+    path = Path(spec["path"])
+    state = file_state(path)
+    result = {
+        "name": spec["name"],
+        "issue": spec["issue"],
+        "expected_task_id": spec["task_id"],
+        "path": str(path),
+        "state": state,
+        "passes": False,
+    }
+    if not path.is_file():
+        return {
+            **result,
+            "error_code": "MEJEPA_SMOKE_GATE_ARTIFACT_MISSING",
+            "message": f"{spec['name']} artifact is missing",
+        }
+    try:
+        payload = read_json(path)
+    except SchedulerError as exc:
+        return {
+            **result,
+            "error_code": "MEJEPA_SMOKE_GATE_ARTIFACT_INVALID_JSON",
+            "message": str(exc),
+        }
+    task_id = payload.get("task_id")
+    if task_id != spec["task_id"]:
+        return {
+            **result,
+            "payload_task_id": task_id,
+            "error_code": "MEJEPA_SMOKE_GATE_ARTIFACT_TASK_MISMATCH",
+            "message": f"{spec['name']} task_id mismatch",
+        }
+    if payload.get("passes") is not True:
+        return {
+            **result,
+            "payload_task_id": task_id,
+            "error_code": "MEJEPA_SMOKE_GATE_ARTIFACT_NOT_ACCEPTED",
+            "message": f"{spec['name']} artifact does not have passes=true",
+        }
+    expected_chunks = spec.get("expected_chunks_jsonl")
+    if expected_chunks is not None:
+        expected_chunks = Path(expected_chunks)
+        chunks_state = file_state(expected_chunks)
+        source_of_truth = payload.get("source_of_truth") or {}
+        after_state = payload.get("after_state") or {}
+        recommended = payload.get("recommended_full_run") or {}
+        payload_paths = {
+            source_of_truth.get("chunks_jsonl"),
+            source_of_truth.get("source_chunks_jsonl"),
+            source_of_truth.get("full_chunks_jsonl"),
+            recommended.get("chunks_jsonl"),
+        }
+        payload_hashes = {
+            recommended.get("chunks_sha256"),
+            (after_state.get("chunks") or {}).get("sha256"),
+            (after_state.get("source_chunks") or {}).get("sha256"),
+            ((payload.get("readback") or {}).get("full_chunks_state") or {}).get("sha256"),
+        }
+        if str(expected_chunks) not in payload_paths or chunks_state.get("sha256") not in payload_hashes:
+            return {
+                **result,
+                "payload_task_id": task_id,
+                "error_code": "MEJEPA_SMOKE_GATE_FULL_AST_CORPUS_CHUNK_MISMATCH",
+                "message": f"{spec['name']} artifact does not match requested chunks JSONL source and sha256",
+                "payload_chunks_jsonl_candidates": sorted(str(item) for item in payload_paths if item),
+                "requested_chunks_jsonl": str(expected_chunks),
+                "payload_chunks_sha256_candidates": sorted(str(item) for item in payload_hashes if item),
+                "requested_chunks_state": chunks_state,
+            }
+    return {
+        **result,
+        "payload_task_id": task_id,
+        "payload_artifact_kind": payload.get("artifact_kind"),
+        "passes": True,
+    }
+
+
+def hot_stage_blockers(args: argparse.Namespace) -> list[dict[str, Any]]:
+    stage_root = args.hot_root / "packed-shard-stage"
+    if not stage_root.exists():
+        return []
+    blockers: list[dict[str, Any]] = []
+    for child in sorted(stage_root.iterdir()):
+        if child.is_dir() or child.is_file():
+            blockers.append(
+                {
+                    "path": str(child),
+                    "state": tree_state(child) if child.is_dir() else file_state(child),
+                    "error_code": "MEJEPA_SMOKE_GATE_INTERRUPTED_HOT_STAGE_PRESENT",
+                    "message": "interrupted hot-stage shard state must be archived by #255 before full relaunch",
+                }
+            )
+    return blockers
+
+
+def write_smoke_gate_fsv(
+    args: argparse.Namespace,
+    started_at: str,
+    required: bool,
+    artifact_results: list[dict[str, Any]],
+    hot_stage_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    args.smoke_gate_fsv_root.mkdir(parents=True, exist_ok=True)
+    fsv_path = args.smoke_gate_fsv_root / "python_forward_smoke_gate_preflight_fsv.json"
+    failures = [
+        result
+        for result in artifact_results
+        if result.get("passes") is not True
+    ] + hot_stage_results
+    value = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": "TASK-PY-DATA-057",
+        "artifact_kind": "python_forward_smoke_gate_preflight_fsv",
+        "started_at_utc": started_at,
+        "created_at_utc": utc_now(),
+        "required": required,
+        "full_run_task_detected": args.task_id == "TASK-PY-DATA-016",
+        "source_of_truth": {
+            "smoke_gate_fsv": str(fsv_path),
+            "cache_root": str(args.cache_root),
+            "fsv_root": str(args.fsv_root),
+            "hot_root": str(args.hot_root),
+            "smoke_manifest_fsv": str(args.smoke_manifest_fsv),
+            "smoke_forward_fsv": str(args.smoke_forward_fsv),
+            "smoke_intelligence_fsv": str(args.smoke_intelligence_fsv),
+            "smoke_storage_design_fsv": str(args.smoke_storage_design_fsv),
+            "full_relaunch_gate_fsv": str(args.full_relaunch_gate_fsv),
+            "full_ast_corpus_fsv": str(args.full_ast_corpus_fsv),
+        },
+        "artifact_results": artifact_results,
+        "hot_stage_results": hot_stage_results,
+        "failure_count": len(failures),
+        "failures": failures,
+        "passes": required is False or not failures,
+    }
+    json_dump_checked(fsv_path, value)
+    readback = read_json(fsv_path)
+    require("smoke gate preflight FSV readback has pass flag", readback.get("passes") in (True, False))
+    return {
+        **value,
+        "fsv_path": str(fsv_path),
+        "fsv_sha256": sha256_file(fsv_path),
+    }
+
+
+def smoke_gate_preflight(args: argparse.Namespace) -> dict[str, Any]:
+    started_at = utc_now()
+    required = smoke_gate_required(args)
+    artifact_results: list[dict[str, Any]] = []
+    hot_stage_results: list[dict[str, Any]] = []
+    if not required:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "task_id": "TASK-PY-DATA-057",
+            "artifact_kind": "python_forward_smoke_gate_preflight",
+            "started_at_utc": started_at,
+            "created_at_utc": utc_now(),
+            "required": False,
+            "full_run_task_detected": False,
+            "passes": True,
+        }
+    artifact_results = [validate_smoke_gate_artifact(spec) for spec in smoke_gate_artifact_specs(args)]
+    hot_stage_results = hot_stage_blockers(args)
+    gate = write_smoke_gate_fsv(args, started_at, required, artifact_results, hot_stage_results)
+    if required and gate["passes"] is not True:
+        failure_names = [
+            str(item.get("name") or item.get("path"))
+            for item in gate["failures"]
+        ]
+        raise SchedulerError(
+            "MEJEPA_SCHEDULER_SMOKE_GATE_BLOCKED: full corpus run is blocked "
+            f"until smoke gate artifacts pass; failures={failure_names}; fsv={gate['fsv_path']}"
+        )
+    return gate
+
+
 def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
     hot_root = args.hot_root.expanduser().resolve(strict=False)
     cache_root = args.cache_root.expanduser().resolve(strict=False)
@@ -918,6 +1178,7 @@ def run_shard(
             "CG_MEJEPA_PY_FORWARD_CACHE_ROOT": str(runner_shard.cache_root),
             "CG_MEJEPA_PY_FORWARD_CACHE_FSV_ROOT": str(runner_shard.fsv_root),
             "CG_MEJEPA_PY_FORWARD_CACHE_HOT_ROOT": str(runner_hot_root),
+            "CG_MEJEPA_PY_CHUNKS_JSONL": str(args.chunks_jsonl),
             "CG_MEJEPA_PY_FORWARD_CACHE_CHUNK_OFFSET": str(runner_shard.chunk_offset),
             "CG_MEJEPA_PY_FORWARD_CACHE_MAX_CHUNKS": str(runner_shard.max_chunks),
             "CG_MEJEPA_PY_FORWARD_MAX_SOURCE_BYTES": str(args.max_source_bytes),
@@ -1082,6 +1343,7 @@ def shard_completion_readback(
         shard,
         args.require_packed_store if require_packed_store is None else require_packed_store,
         validate_packed_readback=require_packed_store is not False,
+        expected_chunks_jsonl=args.chunks_jsonl,
     )
     fsv_readback = validate_shard_fsv(shard)
     return {
@@ -1920,6 +2182,7 @@ def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any
         "edge-mismatched-completed-proof",
         500_000_002,
         1,
+        chunks_jsonl=args.chunks_jsonl,
     )
     write_checkpoint_pair(mismatch_args, checkpoint_for_shard(mismatch_shard))
     mismatch_decision = scan_checkpoint_next_shard_state(
@@ -1945,6 +2208,7 @@ def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any
         "edge-exact-completed-proof",
         500_000_003,
         1,
+        chunks_jsonl=args.chunks_jsonl,
     )
     write_checkpoint_pair(exact_args, checkpoint_for_shard(exact_shard))
     exact_decision = scan_checkpoint_next_shard_state(exact_args, [exact_shard], read_existing_checkpoint(exact_args))
@@ -2538,6 +2802,7 @@ def validate_manifest(
     shard: ShardSpec,
     require_packed_store: bool,
     validate_packed_readback: bool = True,
+    expected_chunks_jsonl: Path | None = None,
 ) -> dict[str, Any]:
     manifest = read_json(shard.manifest_path())
     require(f"{shard.shard_id} manifest status passed", manifest.get("status") == "passed")
@@ -2548,6 +2813,13 @@ def validate_manifest(
         inputs.get("chunk_offset") == shard.chunk_offset,
     )
     require(f"{shard.shard_id} max_chunks readback", inputs.get("max_chunks") == shard.max_chunks)
+    if expected_chunks_jsonl is not None:
+        expected_chunks = str(expected_chunks_jsonl)
+        actual_chunks = str(inputs.get("chunks_jsonl") or "")
+        require(
+            f"{shard.shard_id} chunks_jsonl readback matches requested source",
+            actual_chunks == expected_chunks,
+        )
     summary = manifest.get("summary", {})
     require(f"{shard.shard_id} chunk_count positive", summary.get("chunk_count", 0) > 0)
     require(
@@ -2592,7 +2864,13 @@ def validate_manifest(
     return manifest
 
 
-def write_minimal_packed_shard(root: Path, shard_id: str, chunk_offset: int, max_chunks: int) -> ShardSpec:
+def write_minimal_packed_shard(
+    root: Path,
+    shard_id: str,
+    chunk_offset: int,
+    max_chunks: int,
+    chunks_jsonl: Path | None = None,
+) -> ShardSpec:
     cache_root = root / shard_id
     fsv_root = root / f"{shard_id}-fsv"
     if cache_root.exists():
@@ -2661,6 +2939,7 @@ def write_minimal_packed_shard(root: Path, shard_id: str, chunk_offset: int, max
                 "chunk_offset": chunk_offset,
                 "max_chunks": max_chunks,
                 "cache_store_layout": "packed-jsonl",
+                "chunks_jsonl": str(chunks_jsonl or DEFAULT_CHUNKS_JSONL),
             },
             "source_of_truth": {
                 "index_jsonl": str(index_jsonl),
@@ -2737,7 +3016,12 @@ def write_cumulative_isolated_packed_shard(
     return shard
 
 
-def aggregate(shards: list[ShardSpec], output_path: Path, require_packed_store: bool = False) -> dict[str, Any]:
+def aggregate(
+    shards: list[ShardSpec],
+    output_path: Path,
+    require_packed_store: bool = False,
+    expected_chunks_jsonl: Path | None = None,
+) -> dict[str, Any]:
     require("at least one shard in aggregate", bool(shards))
     intervals: list[tuple[int, int, str]] = []
     manifests: list[dict[str, Any]] = []
@@ -2750,7 +3034,7 @@ def aggregate(shards: list[ShardSpec], output_path: Path, require_packed_store: 
                 not overlaps,
             )
         intervals.append((shard.chunk_offset, end, shard.shard_id))
-        manifests.append(validate_manifest(shard, require_packed_store))
+        manifests.append(validate_manifest(shard, require_packed_store, expected_chunks_jsonl=expected_chunks_jsonl))
 
     active_embedder_count = manifests[0]["summary"]["active_embedder_count"]
     totals = {
@@ -3160,7 +3444,9 @@ def main() -> int:
         "--embedder-max-padded-source-bytes",
     )
     shards = build_plan(args)
+    smoke_gate = smoke_gate_preflight(args)
     preflight = host_preflight(args)
+    preflight["smoke_gate"] = smoke_gate
     event_path = args.fsv_root / "scheduler_events.jsonl"
     if args.mode == "run" and event_path.exists():
         event_path.unlink()
@@ -3351,7 +3637,7 @@ def main() -> int:
         )
 
     aggregate_path = args.cache_root / "python_forward_cache_corpus_manifest.json"
-    corpus_manifest = aggregate(shards, aggregate_path, args.require_packed_store)
+    corpus_manifest = aggregate(shards, aggregate_path, args.require_packed_store, expected_chunks_jsonl=args.chunks_jsonl)
     checkpoint = write_checkpoint(args, shards, run_logs, started_at, preflight, "final")
     event(
         event_path,
