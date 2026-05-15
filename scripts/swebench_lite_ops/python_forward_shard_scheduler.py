@@ -1323,13 +1323,20 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
         "MEJEPA_SCHEDULER_GPU_WORKERS_EXCEED_DEVICES: GPU workers fit detected CUDA devices",
         args.gpu_workers <= gpu["gpu_count"] * MAX_GPU_WORKERS_PER_DEVICE,
     )
+    # Hot stage check uses root by default; override with CG_MEJEPA_HOT_DISK_TARGET
+    # if the operator's hot root is on a non-root mount (e.g., /home on aiwonder).
+    hot_disk = os.environ.get("CG_MEJEPA_HOT_DISK_TARGET", "/")
     require(
-        "MEJEPA_SCHEDULER_HOT_CAPACITY: WSL ext4 hot root has planned free bytes",
-        capacity["hot_stage_budget_bytes"] <= disks["/"]["available_bytes"],
+        f"MEJEPA_SCHEDULER_HOT_CAPACITY: hot root disk target {hot_disk} has planned free bytes",
+        capacity["hot_stage_budget_bytes"] <= disks[hot_disk]["available_bytes"],
     )
+    # Durable-root capacity check. WSL2 default is /mnt/d; aiwonder uses /archive
+    # (the ZFS pool mount point for /zfs/archive/contextgraph). Override via
+    # CG_MEJEPA_DURABLE_DISK_TARGET.
+    durable_disk = os.environ.get("CG_MEJEPA_DURABLE_DISK_TARGET", "/mnt/d")
     require(
-        "MEJEPA_SCHEDULER_D_CAPACITY: D-drive durable root has planned free bytes",
-        capacity["required_durable_available_bytes"] <= disks["/mnt/d"]["available_bytes"],
+        f"MEJEPA_SCHEDULER_DURABLE_CAPACITY: durable root disk target {durable_disk} has planned free bytes",
+        capacity["required_durable_available_bytes"] <= disks[durable_disk]["available_bytes"],
     )
     min_gpu_total = min(gpu_row["memory_total_bytes"] for gpu_row in gpu["gpus"])
     require(
