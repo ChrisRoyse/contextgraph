@@ -52,6 +52,8 @@ from .python_tct_completeness import add_arguments as add_python_tct_completenes
 from .python_tct_completeness import command_python_tct_completeness
 from .python_proof_domain_isolation import add_arguments as add_python_proof_domain_isolation_arguments
 from .python_proof_domain_isolation import command_python_proof_domain_isolation
+from .python_secret_redaction import add_arguments as add_python_secret_redaction_arguments
+from .python_secret_redaction import command_python_secret_redaction
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -441,6 +443,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_python_proof_domain_isolation_arguments(proof_domain_isolation)
     proof_domain_isolation.set_defaults(func=command_python_proof_domain_isolation, evidence_name="python-proof-domain-isolation-command-evidence.json")
+
+    secret_redaction = sub.add_parser(
+        "python-secret-redaction",
+        help="TASK-PY-G-059 PHASE 1: redaction library FSV (patterns + invariance + perf + fail-closed).",
+    )
+    add_python_secret_redaction_arguments(secret_redaction)
+    secret_redaction.set_defaults(func=command_python_secret_redaction, evidence_name="python-secret-redaction-command-evidence.json")
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")
     registry.add_argument("--models-config", type=Path, default=Path("/mnt/d/cabdru/contextgraph/models/mejepa_models_config.toml"))
