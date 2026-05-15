@@ -427,10 +427,37 @@ fn fsv_c6_provider_source_wired_for_14_embedders() {
         "provider struct missing e14_bge_m3_dense field"
     );
 
-    // Evidence: the E14 adapter (E14ZeroAdapter) exists for the missing-weights path.
+    // Evidence: E14 is fail-closed when BGE-M3 assets are missing.
+    // A zero-vector fallback would hide a broken neural path, so the provider
+    // must validate the BGE-M3 snapshot before construction and then wrap the
+    // real BGE-M3 model in the dense adapter.
+    let asset_gate = src.contains("fn ensure_bge_m3_assets(models_dir: &Path)")
+        && src.contains("const E14_REQUIRED_FILES")
+        && src.contains("E14_BGE_M3_DENSE_ASSET_INVALID")
+        && src.contains("let bge_dir = ensure_bge_m3_assets(&models_dir)?;");
+    let real_adapter = src
+        .contains("let e14_model = factory.create_model(ModelId::BgeM3Dense, &config)?")
+        && src.contains(
+            "let e14_bge_m3_dense: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(",
+        )
+        && src.contains("ModelId::BgeM3Dense,")
+        && src.contains("E14_DIM,");
+    let obsolete_zero_fallback = src.contains("struct E14ZeroAdapter");
+    println!(
+        "  e14_asset_gate={} real_adapter={} obsolete_zero_fallback={}",
+        asset_gate, real_adapter, obsolete_zero_fallback
+    );
     assert!(
-        src.contains("struct E14ZeroAdapter"),
-        "E14ZeroAdapter fallback struct missing"
+        asset_gate,
+        "provider must fail closed through ensure_bge_m3_assets before E14 construction"
+    );
+    assert!(
+        real_adapter,
+        "provider must construct E14 from ModelId::BgeM3Dense via DenseEmbedderAdapter"
+    );
+    assert!(
+        !obsolete_zero_fallback,
+        "provider must not reintroduce E14ZeroAdapter fallback"
     );
 
     // Evidence: the fingerprint no longer hardcodes e14_bge_m3_dense: Vec::new().
