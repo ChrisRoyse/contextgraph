@@ -244,11 +244,29 @@ Resume/recovery rules:
 
 As of the 2026-05-15 refresh, #199 is still running and is not a training-ready
 full-corpus result. The live checkpoint readback was:
-`completed_shards=18/3124`, `completed_chunk_capacity=2304/399872`,
-`expected_pairs=accounted_pairs=27648`, `cache_record_count=26754`, and
-`quarantine_row_count=894`.
+`shard_count=26/3124`, `chunk_count=3328`,
+`expected_pairs=accounted_pairs=39936`, `cache_record_count=38574`, and
+`quarantine_row_count=1362`.
 
-### 1.5.4a Reward-field sample and training readiness
+### 1.5.4a Python scope guard
+
+Generic CI and operator preflight must reject drift back to proof-domain
+harnesses. Run this guard after editing workflows, futurebuild docs, or Python
+data-explosion entrypoints:
+
+```bash
+python3 scripts/swebench_lite_ops.py python-proof-domain-isolation --clean-output
+jq '{passes, summary, readback_counts, report_sha256}' \
+  /mnt/d/contextgraph/fsv/task-py-g-037-proof-domain-isolation-fsv/python_proof_domain_isolation_fsv.json
+find /mnt/d/contextgraph/corpus/python-proof-domain-isolation-v1 -maxdepth 1 -type f -print -exec sha256sum {} \;
+```
+
+Expected source-of-truth state: `passes=true`, zero forbidden repo/open-issue
+rows, six edge-case rows, and a non-empty active-reference audit. Proof-domain
+mentions are allowed only when they are archived, explicitly excluded from the
+active Python gate, or part of the current guard implementation/issue.
+
+### 1.5.4b Reward-field sample and training readiness
 
 Use the sample/readiness commands to decide whether a training run is allowed.
 Smoke-dry-run training may proceed from the 1,000-chunk smoke reward field;

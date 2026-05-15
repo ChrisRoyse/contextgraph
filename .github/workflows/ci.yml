@@ -1,4 +1,4 @@
-name: CI Local Free Gate
+name: Python ME-JEPA Scope Gate
 
 on:
   push:
@@ -19,17 +19,24 @@ env:
   RUST_BACKTRACE: 1
   CUDA_COMPUTE_CAP: "120"
   CUDA_HOME: /usr/local/cuda-13.2
-  ONET_TEXT_ZIP: tmp/onet_probe/db_30_2_text.zip
-  MEJEPA_CI_RUN_ROOT: tmp/mejepa_local_ci_runs
 
 jobs:
-  local-free-static:
-    name: Local Free Static Gate
-    runs-on: [self-hosted, linux, x64, dynamicjepa-ci]
-    timeout-minutes: 60
+  python-scope:
+    name: Python Ship-Gate Scope Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Run local free static gate
-        run: scripts/5090jepa/local_ci_gate.sh static
+      - name: Reject C-drive path drift
+        run: scripts/ci/check_no_c_drive_paths.sh
+
+      - name: Reject proof-domain Python gate drift
+        run: |
+          python3 scripts/swebench_lite_ops.py python-proof-domain-isolation \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --output-root /tmp/contextgraph-python-proof-domain-isolation \
+            --fsv-root /tmp/contextgraph-python-proof-domain-isolation-fsv \
+            --skip-github \
+            --clean-output

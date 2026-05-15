@@ -50,6 +50,8 @@ from .python_reward_field_sample import add_arguments as add_python_reward_field
 from .python_reward_field_sample import command_python_reward_field_sample
 from .python_tct_completeness import add_arguments as add_python_tct_completeness_arguments
 from .python_tct_completeness import command_python_tct_completeness
+from .python_proof_domain_isolation import add_arguments as add_python_proof_domain_isolation_arguments
+from .python_proof_domain_isolation import command_python_proof_domain_isolation
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -432,6 +434,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_python_tct_completeness_arguments(tct_completeness)
     tct_completeness.set_defaults(func=command_python_tct_completeness, evidence_name="python-tct-completeness-command-evidence.json")
+
+    proof_domain_isolation = sub.add_parser(
+        "python-proof-domain-isolation",
+        help="Fail closed if proof-domain harnesses become active Python ship-gate prerequisites.",
+    )
+    add_python_proof_domain_isolation_arguments(proof_domain_isolation)
+    proof_domain_isolation.set_defaults(func=command_python_proof_domain_isolation, evidence_name="python-proof-domain-isolation-command-evidence.json")
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")
     registry.add_argument("--models-config", type=Path, default=Path("/mnt/d/cabdru/contextgraph/models/mejepa_models_config.toml"))
