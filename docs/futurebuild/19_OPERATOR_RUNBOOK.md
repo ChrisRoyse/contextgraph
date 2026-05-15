@@ -242,11 +242,20 @@ Resume/recovery rules:
   `expected_pairs`, `accounted_pairs`, `cache_record_count`,
   `quarantine_row_count`, `second_pass_hits`, RAM, VRAM, and active PIDs.
 
-As of the 2026-05-15 refresh, #199 is still running and is not a training-ready
-full-corpus result. The live checkpoint readback was:
-`completed_shards=27/3124`, `completed_chunk_capacity=3456/399872`,
-`expected_pairs=accounted_pairs=41472`, `cache_record_count=40098`, and
-`quarantine_row_count=1374`.
+As of the 2026-05-15T13:30Z refresh, #199 is stopped and is not a
+training-ready full-corpus result. The checkpoint still says `status=running`,
+but independent process readback found no tmux session and no scheduler
+process. The relaunch log exited at `2026-05-15T13:25:30Z` with `status=1`.
+Last durable checkpoint readback:
+`shard_count=35/3124`, `chunk_count=4480/399872`,
+`expected_pairs=accounted_pairs=53760`, `cache_record_count=52176`, and
+`quarantine_row_count=1584`. Failure SoT:
+`/mnt/d/contextgraph/fsv/task-py-data-016-full-c8117f15-20260515-fsv/run_logs/shard-000035-offset-000004480.json`,
+with `exit_code=1` and `stderr_tail` reporting
+`Error: Os { code: 12, kind: OutOfMemory, message: "Cannot allocate memory" }`.
+The isolated per-embedder shard-35 logs exited zero, so resume/recovery must
+repair the canonical shard runner allocation path before treating the partial
+records as complete full-corpus evidence.
 
 The smoke intelligence-matrix SoT is
 `/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices/summary.json`
