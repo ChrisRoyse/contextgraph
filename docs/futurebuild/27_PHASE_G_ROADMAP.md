@@ -5,6 +5,8 @@
 > **How to read this file.** Phases are sequential — earlier phases unblock later ones. Within a phase, issues are listed in execution order with explicit dependencies. Every issue has an FSV binding (see §FSV-PROTOCOL). When a Phase is fully resolved, the agent advances to the next.
 >
 > **Authoring date:** 2026-05-15. Living doc — re-pin on major status change.
+>
+> **Substrate migration (2026-05-15):** the Phase 1 data substrate is moving from the operator's local WSL2 box to **aiwonder** (datacenter PC) — EPIC `#296`. Paths in this roadmap that say `/mnt/d/contextgraph/...` now resolve to `/zfs/archive/contextgraph/...` on aiwonder for durable state and `/zfs/hot/contextgraph/...` for hot run state. The downstream Phase G issues stay path-agnostic at the issue level — path binding happens at scheduler invocation time per `docs2/aiwonder.md §4.2`. The local WSL run (tmux `cg_pydata016_full_shardsize-1024-20260515-173510Z`) is kept alive as the calibration baseline; shard 0 completed at 1336 s, confirming the 1024-chunk amortization. aiwonder advantage: NVMe + 8.96 TB HDD mirror + active CUDA MPS for parallel-isolated kernel overlap. See `docs2/aiwonder.md` for full operations reference.
 
 ---
 
