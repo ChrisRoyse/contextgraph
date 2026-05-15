@@ -25,7 +25,7 @@ The reward field must exist before the predictor can be trained.
 
 | Order | Issue | Title | Status | Blocking |
 |---|---|---|---|---|
-| 1.1 | **#199** | TASK-PY-DATA-016 — Corpus-wide embedder explosion | **in-progress (~0.82%, 24/2933 shards)** | All downstream P2-P8 work |
+| 1.1 | **#199** | TASK-PY-DATA-016 — Corpus-wide embedder explosion | **in-progress; stopped at 35/3124 shards; isolated-consolidation repair FSV passed 2026-05-15T14:23Z; full resume required** | All downstream P2-P8 work |
 | 1.2 | **#208** | TASK-PY-DATA-025 — Full data-explosion FSV harness | blocked on #199 | P3 calibration |
 | 1.3 | **#236** | TASK-PY-DATA-045 — CUDA 13.2 embedder eligibility audit | blocked on #199 telemetry | GPU correctness |
 | 1.4 | **#237** | TASK-PY-DATA-046 — Cross-embedder alignment matrix | blocked on #199 | #238, #247 |
@@ -33,7 +33,7 @@ The reward field must exist before the predictor can be trained.
 | 1.6 | **#239** | TASK-PY-DATA-048 — Mine embedder disagreement constellations | blocked on #199, #237/#238 | #247 |
 | 1.7 | **#247** | TASK-PY-DATA-056 — Adaptive embedder weighting | blocked on #237-#239 | P2 head training |
 
-**Gate for Phase 1:** All forward-cache rows present in `/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514`; per-cell DDA signals persisted in `CF_MEJEPA_DDA_SIGNALS`.
+**Gate for Phase 1:** All forward-cache rows present in `/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515`; per-cell DDA signals persisted in `CF_MEJEPA_DDA_SIGNALS`; #199 checkpoint reaches final `status=passed` with D-drive manifest/index/quarantine/packed-store and FSV readback.
 
 ---
 

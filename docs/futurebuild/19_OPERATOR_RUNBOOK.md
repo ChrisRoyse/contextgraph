@@ -242,20 +242,27 @@ Resume/recovery rules:
   `expected_pairs`, `accounted_pairs`, `cache_record_count`,
   `quarantine_row_count`, `second_pass_hits`, RAM, VRAM, and active PIDs.
 
-As of the 2026-05-15T13:30Z refresh, #199 is stopped and is not a
-training-ready full-corpus result. The checkpoint still says `status=running`,
-but independent process readback found no tmux session and no scheduler
-process. The relaunch log exited at `2026-05-15T13:25:30Z` with `status=1`.
-Last durable checkpoint readback:
-`shard_count=35/3124`, `chunk_count=4480/399872`,
-`expected_pairs=accounted_pairs=53760`, `cache_record_count=52176`, and
-`quarantine_row_count=1584`. Failure SoT:
+As of the 2026-05-15T14:23Z refresh, #199 is still not a training-ready
+full-corpus result. The previous relaunch checkpoint still says
+`status=running`, but independent process readback found no tmux session and no
+scheduler process. The relaunch log exited at `2026-05-15T13:25:30Z` with
+`status=1`. Last durable checkpoint readback: `shard_count=35/3124`,
+`chunk_count=4480/399872`, `expected_pairs=accounted_pairs=53760`,
+`cache_record_count=52176`, and `quarantine_row_count=1584`. Failure SoT:
 `/mnt/d/contextgraph/fsv/task-py-data-016-full-c8117f15-20260515-fsv/run_logs/shard-000035-offset-000004480.json`,
 with `exit_code=1` and `stderr_tail` reporting
 `Error: Os { code: 12, kind: OutOfMemory, message: "Cannot allocate memory" }`.
-The isolated per-embedder shard-35 logs exited zero, so resume/recovery must
-repair the canonical shard runner allocation path before treating the partial
-records as complete full-corpus evidence.
+Root cause: the isolated path ran per-embedder subruns, then still invoked a
+final canonical all-embedder shard runner. The repaired scheduler now runs all
+12 required embedders (`e1/e10/e12/e13/e14/e2/e3/e4/e6/e7/e8/e9`) in isolated
+processes and consolidates physical index/quarantine/telemetry rows into one
+canonical manifest and FSV without the final all-embedder rerun. Repair FSV SoT:
+`/mnt/d/contextgraph/fsv/task-py-data-016-isolated-consolidation-20260515T141938Z-fsv/python_forward_shard_scheduler_fsv.json`,
+sha256 `030ed9bd8f7668afc8fc686ad171f5b648bfe81d4fd9b320e3cf797b8a22d077`,
+`passes=true`, 27 edge cases, and canonical one-chunk readback of
+`expected_pairs=accounted_pairs=12`, `cache_record_count=12`,
+`quarantine_row_count=0`. Resume/recovery must still reach final full-corpus
+`status=passed` before treating #199 as complete evidence.
 
 The smoke intelligence-matrix SoT is
 `/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices/summary.json`

@@ -49,7 +49,7 @@ DEFAULT_CARGO_RUNNER = "target/release/examples/python_forward_cache_fsv"
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-029"
 SUPPORTED_TRUE_BATCH_SLUGS = {"e1", "e6", "e7", "e8", "e9", "e10", "e12", "e13", "e14"}
-ISOLATED_FORWARD_SLUGS = ("e1", "e10", "e12", "e13", "e14", "e6", "e7", "e8", "e9")
+ISOLATED_FORWARD_SLUGS = ("e1", "e10", "e12", "e13", "e14", "e2", "e3", "e4", "e6", "e7", "e8", "e9")
 DEFAULT_ACTIVE_EMBEDDER_COUNT = 12
 DEFAULT_ESTIMATED_RECORD_BYTES = 16 * 1024
 DEFAULT_HOT_STAGE_BUDGET_BYTES = 48 * 1024 * 1024 * 1024
@@ -248,9 +248,9 @@ def parse_args() -> argparse.Namespace:
         "--isolate-embedder-processes",
         action="store_true",
         help=(
-            "Run each active embedder in a separate Rust runner process, then run a final "
-            "all-embedder readback pass. This avoids cumulative CUDA model residency inside "
-            "one shard process while still requiring the final shard manifest/FSV to pass."
+            "Run each active embedder in a separate Rust runner process, then consolidate "
+            "the physical per-embedder row files into one full-shard manifest/FSV. This avoids "
+            "cumulative CUDA model residency without a final all-embedder rerun."
         ),
     )
     parser.add_argument(
@@ -433,6 +433,17 @@ def jsonl_append_checked(path: Path, value: Any) -> None:
         os.fsync(handle.fileno())
     last = path.read_text(encoding="utf-8").splitlines()[-1]
     require("event JSONL last-line readback parses", json.loads(last) == value)
+
+
+def jsonl_write_checked(path: Path, rows: list[Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode("utf-8")
+    tmp = path.with_suffix(path.suffix + f".tmp-{os.getpid()}")
+    tmp.write_bytes(data)
+    require(f"{path} JSONL temp byte readback equality", tmp.read_bytes() == data)
+    tmp.replace(path)
+    require(f"{path} JSONL final byte readback equality", path.read_bytes() == data)
+    require(f"{path} JSONL final row count matches write", count_jsonl_rows(path) == len(rows))
 
 
 def read_json(path: Path) -> Any:
@@ -1362,12 +1373,335 @@ def run_shard(
     return run_log
 
 
+def copy_file_with_readback(source: Path, destination: Path) -> dict[str, Any]:
+    require(f"{source} exists before isolated snapshot copy", source.is_file())
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    source_bytes = source.read_bytes()
+    destination_bytes = destination.read_bytes()
+    require(
+        f"{destination} isolated snapshot byte readback matches source",
+        destination_bytes == source_bytes,
+    )
+    return {
+        "source": file_state(source),
+        "destination": file_state(destination),
+    }
+
+
+def isolated_subrun_snapshot_root(args: argparse.Namespace, shard: ShardSpec) -> Path:
+    return args.fsv_root / "isolated_subrun_rows" / shard.shard_id
+
+
+def snapshot_isolated_subrun_rows(
+    args: argparse.Namespace,
+    shard: ShardSpec,
+    slug: str,
+    subrun: dict[str, Any],
+) -> dict[str, Any]:
+    manifest = read_json(shard.manifest_path())
+    inputs = manifest.get("inputs", {})
+    summary = manifest.get("summary", {})
+    require(f"{shard.shard_id} {slug} manifest records only_embedder", inputs.get("only_embedder") == slug)
+    require(f"{shard.shard_id} {slug} manifest active count is one", summary.get("active_embedder_count") == 1)
+    require(f"{shard.shard_id} {slug} manifest offset matches shard", inputs.get("chunk_offset") == shard.chunk_offset)
+    require(f"{shard.shard_id} {slug} manifest size matches shard", inputs.get("max_chunks") == shard.max_chunks)
+    require(
+        f"{shard.shard_id} {slug} manifest chunks source matches scheduler",
+        str(inputs.get("chunks_jsonl") or "") == str(args.chunks_jsonl),
+    )
+    batch_telemetry_path = Path(str(manifest.get("source_of_truth", {}).get("batch_telemetry_jsonl", "")))
+    snapshot_root = isolated_subrun_snapshot_root(args, shard)
+    files = {
+        "manifest": copy_file_with_readback(shard.manifest_path(), snapshot_root / f"{slug}.manifest.json"),
+        "fsv": copy_file_with_readback(shard.fsv_path(), snapshot_root / f"{slug}.fsv.json"),
+        "index": copy_file_with_readback(shard.index_path(), snapshot_root / f"{slug}.index.jsonl"),
+        "quarantine": copy_file_with_readback(shard.quarantine_path(), snapshot_root / f"{slug}.quarantine.jsonl"),
+        "batch_telemetry": copy_file_with_readback(batch_telemetry_path, snapshot_root / f"{slug}.batch_telemetry.jsonl"),
+    }
+    index_rows = count_jsonl_rows(Path(files["index"]["destination"]["path"]))
+    quarantine_rows = count_jsonl_rows(Path(files["quarantine"]["destination"]["path"]))
+    batch_rows = count_jsonl_rows(Path(files["batch_telemetry"]["destination"]["path"]))
+    require(f"{shard.shard_id} {slug} snapshot index rows match manifest", index_rows == summary.get("cache_record_count"))
+    require(
+        f"{shard.shard_id} {slug} snapshot quarantine rows match manifest",
+        quarantine_rows == summary.get("quarantine_row_count"),
+    )
+    require(
+        f"{shard.shard_id} {slug} snapshot batch telemetry rows match manifest",
+        batch_rows == summary.get("batch_telemetry_row_count"),
+    )
+    return {
+        "embedder_id": slug,
+        "snapshot_root": str(snapshot_root),
+        "files": files,
+        "run_log": str(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
+        "run_log_sha256": sha256_file(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
+        "manifest_summary": summary,
+        "manifest_sha256": sha256_file(shard.manifest_path()),
+        "fsv_sha256": sha256_file(shard.fsv_path()),
+        "index_row_count": index_rows,
+        "quarantine_row_count": quarantine_rows,
+        "batch_telemetry_row_count": batch_rows,
+        "subrun_elapsed_seconds": subrun.get("elapsed_seconds"),
+        "passes": True,
+    }
+
+
+def aggregate_hot_stage_promotion(subruns: list[dict[str, Any]]) -> dict[str, Any] | None:
+    promotions = [subrun.get("hot_stage_promotion") for subrun in subruns if isinstance(subrun.get("hot_stage_promotion"), dict)]
+    if not promotions:
+        return None
+    timing_keys = (
+        "path_rewrite_ms",
+        "cache_promotion_ms",
+        "fsv_promotion_ms",
+        "durable_readback_ms",
+        "stage_cleanup_ms",
+        "total_ms",
+    )
+    timing_ms = {
+        key: round(sum(float(promotion.get("timing_ms", {}).get(key, 0.0)) for promotion in promotions), 3)
+        for key in timing_keys
+    }
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_isolated_hot_stage_promotion_summary",
+        "created_at_utc": utc_now(),
+        "subrun_count": len(promotions),
+        "timing_ms": timing_ms,
+        "promotion_artifacts": [
+            {
+                "artifact_kind": promotion.get("artifact_kind"),
+                "stage_root": promotion.get("stage_root"),
+                "passes": promotion.get("passes"),
+            }
+            for promotion in promotions
+        ],
+        "passes": True,
+    }
+
+
+def consolidate_isolated_subruns(
+    args: argparse.Namespace,
+    shard: ShardSpec,
+    snapshots: list[dict[str, Any]],
+    subruns: list[dict[str, Any]],
+) -> dict[str, Any]:
+    started = time.monotonic()
+    observed_slugs = tuple(snapshot["embedder_id"] for snapshot in snapshots)
+    require(
+        f"{shard.shard_id} isolated subrun order matches required embedders",
+        observed_slugs == ISOLATED_FORWARD_SLUGS,
+    )
+    require(
+        f"{shard.shard_id} isolated subrun count matches scheduler active embedders",
+        len(snapshots) == args.active_embedder_count,
+    )
+    index_rows: list[Any] = []
+    quarantine_rows: list[Any] = []
+    batch_telemetry_rows: list[Any] = []
+    summary_totals = {
+        "cache_record_count": 0,
+        "first_pass_hits": 0,
+        "first_pass_writes": 0,
+        "second_pass_hits": 0,
+        "quarantine_row_count": 0,
+        "batch_telemetry_row_count": 0,
+    }
+    chunk_count: int | None = None
+    per_embedder_expected_rows: dict[str, int] = {}
+    per_embedder_coverage: dict[str, Any] = {}
+    source_manifest = read_json(Path(str(snapshots[-1]["files"]["manifest"]["destination"]["path"])))
+    for snapshot in snapshots:
+        slug = snapshot["embedder_id"]
+        manifest = read_json(Path(str(snapshot["files"]["manifest"]["destination"]["path"])))
+        inputs = manifest.get("inputs", {})
+        summary = manifest.get("summary", {})
+        require(f"{shard.shard_id} {slug} snapshot manifest only_embedder matches", inputs.get("only_embedder") == slug)
+        require(f"{shard.shard_id} {slug} snapshot active count is one", summary.get("active_embedder_count") == 1)
+        current_chunk_count = int(summary.get("chunk_count", -1))
+        require(f"{shard.shard_id} {slug} snapshot chunk count positive", current_chunk_count > 0)
+        if chunk_count is None:
+            chunk_count = current_chunk_count
+        require(f"{shard.shard_id} {slug} chunk count matches peer subruns", current_chunk_count == chunk_count)
+        current_index_rows = read_jsonl_rows(Path(str(snapshot["files"]["index"]["destination"]["path"])))
+        current_quarantine_rows = read_jsonl_rows(Path(str(snapshot["files"]["quarantine"]["destination"]["path"])))
+        current_batch_rows = read_jsonl_rows(Path(str(snapshot["files"]["batch_telemetry"]["destination"]["path"])))
+        require(f"{shard.shard_id} {slug} current index rows match snapshot", len(current_index_rows) == snapshot["index_row_count"])
+        require(
+            f"{shard.shard_id} {slug} current quarantine rows match snapshot",
+            len(current_quarantine_rows) == snapshot["quarantine_row_count"],
+        )
+        require(
+            f"{shard.shard_id} {slug} current batch rows match snapshot",
+            len(current_batch_rows) == snapshot["batch_telemetry_row_count"],
+        )
+        per_embedder_expected_rows[slug] = len(current_index_rows)
+        index_rows.extend(current_index_rows)
+        quarantine_rows.extend(current_quarantine_rows)
+        batch_telemetry_rows.extend(current_batch_rows)
+        for key in summary_totals:
+            summary_totals[key] += int(summary.get(key, 0))
+        coverage_value = manifest.get("per_embedder_coverage") or {}
+        if isinstance(coverage_value, dict):
+            coverage_items = coverage_value.items()
+        elif isinstance(coverage_value, list):
+            coverage_items = (
+                (row.get("embedder_id"), row)
+                for row in coverage_value
+                if isinstance(row, dict)
+            )
+        else:
+            raise SchedulerError(f"{shard.shard_id} {slug} per_embedder_coverage has unsupported type")
+        for embedder_id, coverage in coverage_items:
+            if embedder_id == slug:
+                per_embedder_coverage[embedder_id] = coverage
+    require(f"{shard.shard_id} isolated chunk count established", chunk_count is not None)
+    require(
+        f"{shard.shard_id} isolated second pass covers cache records",
+        summary_totals["second_pass_hits"] == summary_totals["cache_record_count"],
+    )
+    require(
+        f"{shard.shard_id} isolated index rows match summed summaries",
+        len(index_rows) == summary_totals["cache_record_count"],
+    )
+    require(
+        f"{shard.shard_id} isolated quarantine rows match summed summaries",
+        len(quarantine_rows) == summary_totals["quarantine_row_count"],
+    )
+    require(
+        f"{shard.shard_id} isolated batch rows match summed summaries",
+        len(batch_telemetry_rows) == summary_totals["batch_telemetry_row_count"],
+    )
+    expected_pairs = int(chunk_count) * args.active_embedder_count
+    accounted_pairs = summary_totals["cache_record_count"] + summary_totals["quarantine_row_count"]
+    require(f"{shard.shard_id} isolated consolidation accounts all pairs", accounted_pairs == expected_pairs)
+
+    jsonl_write_checked(shard.index_path(), index_rows)
+    jsonl_write_checked(shard.quarantine_path(), quarantine_rows)
+    batch_telemetry_path = shard.cache_root / "python_forward_cache_batch_telemetry.jsonl"
+    jsonl_write_checked(batch_telemetry_path, batch_telemetry_rows)
+
+    packed_manifest_path = shard.cache_root / "python_forward_cache_packed_manifest.json"
+    packed_root = shard.cache_root / "packed_records"
+    packed_manifest = read_json(packed_manifest_path)
+    require(f"{shard.shard_id} isolated packed manifest passes", packed_manifest.get("passes") is True)
+    require(f"{shard.shard_id} isolated packed layout is packed-jsonl", packed_manifest.get("layout") == "packed-jsonl")
+    packed_index_rows = count_packed_index_rows(packed_root)
+    require(f"{shard.shard_id} isolated packed rows match index rows", packed_index_rows == len(index_rows))
+    require(f"{shard.shard_id} isolated packed manifest row count matches", packed_manifest.get("row_count") == packed_index_rows)
+    packed_per_embedder = packed_manifest.get("per_embedder", {})
+    require(f"{shard.shard_id} isolated packed per_embedder object exists", isinstance(packed_per_embedder, dict))
+    for slug, expected_rows in per_embedder_expected_rows.items():
+        if expected_rows > 0:
+            require(f"{shard.shard_id} isolated packed manifest includes {slug}", slug in packed_per_embedder)
+            require(
+                f"{shard.shard_id} isolated packed {slug} rows match snapshot",
+                packed_per_embedder[slug].get("row_count") == expected_rows,
+            )
+        elif slug in packed_per_embedder:
+            require(
+                f"{shard.shard_id} isolated packed {slug} zero-row entry matches snapshot",
+                packed_per_embedder[slug].get("row_count") == 0,
+            )
+    payload_hash_readback = validate_packed_payload_hashes(packed_root)
+    require(
+        f"{shard.shard_id} isolated packed payload row count matches index",
+        payload_hash_readback.get("row_count") == len(index_rows),
+    )
+
+    final_summary = {
+        **summary_totals,
+        "chunk_count": int(chunk_count),
+        "active_embedder_count": args.active_embedder_count,
+        "expected_pairs": expected_pairs,
+        "accounted_pairs": accounted_pairs,
+        "global_cache_record_count_at_manifest_write": packed_index_rows,
+    }
+    inputs = dict(source_manifest.get("inputs", {}))
+    inputs.pop("only_embedder", None)
+    inputs["isolated_embedder_processes"] = True
+    inputs["isolated_embedder_order"] = list(ISOLATED_FORWARD_SLUGS)
+    inputs["cache_store_layout"] = "packed-jsonl"
+    source_of_truth = dict(source_manifest.get("source_of_truth", {}))
+    source_of_truth["index_jsonl"] = str(shard.index_path())
+    source_of_truth["quarantine_jsonl"] = str(shard.quarantine_path())
+    source_of_truth["batch_telemetry_jsonl"] = str(batch_telemetry_path)
+    source_of_truth["packed_manifest"] = str(packed_manifest_path)
+    source_of_truth["packed_record_root"] = str(packed_root)
+    final_manifest = {
+        **source_manifest,
+        "status": "passed",
+        "passes": True,
+        "inputs": inputs,
+        "source_of_truth": source_of_truth,
+        "summary": final_summary,
+        "per_embedder_coverage": per_embedder_coverage,
+        "isolated_consolidation": {
+            "embedder_order": list(ISOLATED_FORWARD_SLUGS),
+            "subrun_snapshot_root": str(isolated_subrun_snapshot_root(args, shard)),
+            "subrun_count": len(snapshots),
+            "snapshot_manifest_sha256": {
+                snapshot["embedder_id"]: snapshot["manifest_sha256"] for snapshot in snapshots
+            },
+        },
+    }
+    json_dump_checked(shard.manifest_path(), final_manifest)
+    fsv = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_isolated_shard_consolidation_fsv",
+        "created_at_utc": utc_now(),
+        "shard_id": shard.shard_id,
+        "source_of_truth": {
+            "manifest": str(shard.manifest_path()),
+            "index_jsonl": str(shard.index_path()),
+            "quarantine_jsonl": str(shard.quarantine_path()),
+            "batch_telemetry_jsonl": str(batch_telemetry_path),
+            "packed_manifest": str(packed_manifest_path),
+            "packed_record_root": str(packed_root),
+            "subrun_snapshot_root": str(isolated_subrun_snapshot_root(args, shard)),
+        },
+        "summary": final_summary,
+        "subrun_snapshots": snapshots,
+        "packed_payload_hash_readback": payload_hash_readback,
+        "passes": True,
+    }
+    json_dump_checked(shard.fsv_path(), fsv)
+    durable_readback_started = time.monotonic()
+    readback = shard_completion_readback(args, shard)
+    require_full_scheduler_shard(args, shard, readback["summary"])
+    timing_ms = {
+        "isolated_row_consolidation_ms": elapsed_ms(started),
+        "durable_readback_ms": elapsed_ms(durable_readback_started),
+    }
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_isolated_shard_consolidation",
+        "created_at_utc": utc_now(),
+        "shard_id": shard.shard_id,
+        "summary": final_summary,
+        "subrun_snapshots": snapshots,
+        "packed_payload_hash_readback": payload_hash_readback,
+        "readback": readback,
+        "timing_ms": timing_ms,
+        "passes": True,
+    }
+
+
 def run_shard_embedder_isolated(
     args: argparse.Namespace,
     shard: ShardSpec,
     event_path: Path,
     preflight: dict[str, Any],
 ) -> dict[str, Any]:
+    require(
+        "isolated embedder order covers scheduler active embedder count",
+        len(ISOLATED_FORWARD_SLUGS) == args.active_embedder_count,
+    )
     event(
         event_path,
         "shard_embedder_isolation_start",
@@ -1376,7 +1710,10 @@ def run_shard_embedder_isolated(
             "embedder_order": list(ISOLATED_FORWARD_SLUGS),
         },
     )
-    subruns = []
+    subruns: list[dict[str, Any]] = []
+    snapshots: list[dict[str, Any]] = []
+    isolated_started = time.monotonic()
+    first_resource_before: dict[str, Any] | None = None
     for slug in ISOLATED_FORWARD_SLUGS:
         subrun = run_shard(
             args,
@@ -1388,24 +1725,60 @@ def run_shard_embedder_isolated(
             event_phase="shard_embedder_subrun_complete",
             require_packed_store=False,
         )
+        if first_resource_before is None:
+            first_resource_before = subrun.get("resource_before")
+        snapshot = snapshot_isolated_subrun_rows(args, shard, slug, subrun)
+        snapshots.append(snapshot)
         subruns.append(
             {
                 "embedder_id": slug,
                 "run_log": str(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
-                "manifest_sha256": subrun.get("manifest_sha256"),
-                "fsv_sha256": subrun.get("fsv_sha256"),
+                "run_log_sha256": snapshot["run_log_sha256"],
+                "manifest_sha256": snapshot["manifest_sha256"],
+                "fsv_sha256": snapshot["fsv_sha256"],
                 "summary": subrun.get("summary"),
+                "snapshot": snapshot,
+                "timing_ms": subrun.get("timing_ms"),
+                "hot_stage_promotion": subrun.get("hot_stage_promotion"),
             }
         )
-    final_run = run_shard(
-        args,
-        shard,
-        event_path,
-        preflight,
-        event_phase="shard_run_complete",
+    consolidation = consolidate_isolated_subruns(args, shard, snapshots, subruns)
+    final_readback = consolidation["readback"]
+    runner_subprocess_ms = round(
+        sum(
+            float((subrun.get("timing_ms") or {}).get("runner_subprocess_ms", 0.0))
+            for subrun in subruns
+        ),
+        3,
     )
-    final_run["isolated_embedder_subruns"] = subruns
+    consolidation_timing = consolidation.get("timing_ms", {})
+    final_resource_after = resource_snapshot(args, f"{shard.shard_id}_isolated_after")
+    final_run = {
+        "shard_id": shard.shard_id,
+        "exit_code": 0,
+        "elapsed_seconds": round(time.monotonic() - isolated_started, 3),
+        "runner_batch_controls": runner_batch_controls(args),
+        "runner_extra_env": {"CG_MEJEPA_PY_FORWARD_ONLY_EMBEDDER": "isolated_per_embedder"},
+        "host_preflight": preflight,
+        "resource_before": first_resource_before or resource_snapshot(args, f"{shard.shard_id}_isolated_before_missing"),
+        "resource_after": final_resource_after,
+        "stdout_tail": "",
+        "stderr_tail": "",
+        "timing_ms": {
+            "runner_subprocess_ms": runner_subprocess_ms,
+            "isolated_row_consolidation_ms": consolidation_timing.get("isolated_row_consolidation_ms", 0.0),
+            "durable_readback_ms": consolidation_timing.get("durable_readback_ms", 0.0),
+        },
+        "skipped_completed": False,
+        "isolated_embedder_subruns": subruns,
+        "isolated_consolidation": consolidation,
+        **final_readback,
+    }
+    promotion_summary = aggregate_hot_stage_promotion(subruns)
+    if promotion_summary is not None:
+        final_run["hot_stage_promotion"] = promotion_summary
     json_dump_checked(shard_run_log_path(args, shard), final_run)
+    event(event_path, "shard_run_complete", final_run)
     event(event_path, "shard_run_embedder_isolated_complete", final_run)
     return final_run
 
@@ -3507,15 +3880,19 @@ def edge_checks(
             raise SchedulerError(f"{case_name} edge unexpectedly passed")
 
     require(
-        "isolated process list excludes serial temporal embedders",
-        not {"e2", "e3", "e4"}.intersection(ISOLATED_FORWARD_SLUGS),
+        "isolated process list includes serial algorithmic embedders",
+        {"e2", "e3", "e4"}.issubset(ISOLATED_FORWARD_SLUGS),
     )
     require(
         "isolated process list includes CUDA HDC embedder",
         "e9" in ISOLATED_FORWARD_SLUGS,
     )
+    require(
+        "isolated process list covers all active scheduler embedders",
+        len(ISOLATED_FORWARD_SLUGS) == args.active_embedder_count,
+    )
     cases.append({
-        "case": "isolated_process_list_matches_true_batch_capability",
+        "case": "isolated_process_list_covers_all_required_embedders",
         "passes": True,
         "isolated_forward_slugs": list(ISOLATED_FORWARD_SLUGS),
     })
