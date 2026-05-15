@@ -945,6 +945,49 @@ def hot_stage_blockers(args: argparse.Namespace) -> list[dict[str, Any]]:
     return blockers
 
 
+def archive_hot_stage_blockers_for_preflight(
+    args: argparse.Namespace,
+    shards: list[ShardSpec],
+) -> list[dict[str, Any]]:
+    blockers = hot_stage_blockers(args)
+    if not blockers:
+        return []
+    require(
+        "MEJEPA_SCHEDULER_PREFLIGHT_ARCHIVE_MODE: hot-stage blockers are archived only by preflight-resume",
+        args.mode == "preflight-resume",
+    )
+    require(
+        "MEJEPA_SCHEDULER_PREFLIGHT_ARCHIVE_RETRY: hot-stage blocker archive requires retry-failed-partial-shards",
+        args.retry_failed_partial_shards,
+    )
+    shard_by_id = {shard.shard_id: shard for shard in shards}
+    archives: list[dict[str, Any]] = []
+    for blocker in blockers:
+        stage_root = Path(str(blocker.get("path", "")))
+        require(
+            f"MEJEPA_SCHEDULER_PREFLIGHT_HOT_STAGE_DIR: {stage_root} is a directory",
+            stage_root.is_dir(),
+        )
+        shard = shard_by_id.get(stage_root.name)
+        require(
+            f"MEJEPA_SCHEDULER_PREFLIGHT_HOT_STAGE_PLANNED: {stage_root.name} matches a planned shard",
+            shard is not None,
+        )
+        archive = archive_interrupted_hot_stage(
+            args,
+            shard,
+            stage_root,
+            "preflight-resume archives interrupted hot-stage before smoke gate",
+        )
+        require(
+            f"MEJEPA_SCHEDULER_PREFLIGHT_HOT_STAGE_ARCHIVED: {stage_root} archive exists",
+            isinstance(archive, dict) and Path(str(archive["archive_root"])).exists(),
+        )
+        archives.append(archive)
+    require("MEJEPA_SCHEDULER_PREFLIGHT_HOT_STAGE_CLEAN: hot-stage blockers are empty after archive", not hot_stage_blockers(args))
+    return archives
+
+
 def write_smoke_gate_fsv(
     args: argparse.Namespace,
     started_at: str,
@@ -2886,6 +2929,37 @@ def hot_stage_promotion_edge_checks(args: argparse.Namespace) -> list[dict[str, 
     )
     shutil.rmtree(stage_root)
 
+    preflight_args = argparse.Namespace(**vars(args))
+    preflight_args.mode = "preflight-resume"
+    preflight_args.retry_failed_partial_shards = True
+    preflight_args.hot_root = args.hot_root / "edge-hot-stage-preflight-root"
+    preflight_args.fsv_root = edge_root / "preflight-archive-fsv"
+    preflight_shard = ShardSpec(
+        "edge-hot-stage-preflight-archive",
+        600_000_005,
+        1,
+        edge_root / "preflight-durable-cache",
+        edge_root / "preflight-durable-fsv",
+    )
+    preflight_stage_root = preflight_args.hot_root / "packed-shard-stage" / preflight_shard.shard_id
+    if preflight_args.hot_root.exists():
+        shutil.rmtree(preflight_args.hot_root)
+    if preflight_args.fsv_root.exists():
+        shutil.rmtree(preflight_args.fsv_root)
+    preflight_stage_root.mkdir(parents=True)
+    (preflight_stage_root / "stale-marker.txt").write_text("interrupted", encoding="utf-8")
+    preflight_archives = archive_hot_stage_blockers_for_preflight(preflight_args, [preflight_shard])
+    require("preflight hot-stage archive edge archived one blocker", len(preflight_archives) == 1)
+    require("preflight hot-stage archive edge removed source", not preflight_stage_root.exists())
+    require("preflight hot-stage archive edge leaves no blockers", not hot_stage_blockers(preflight_args))
+    cases.append(
+        {
+            "case": "preflight_resume_archives_hot_stage_before_smoke_gate",
+            "passes": True,
+            "archive": preflight_archives[0],
+        }
+    )
+
     try:
         bad_stage = Path("/mnt/c/contextgraph-hot-stage-edge")
         require("packed hot-stage root is not /mnt/c", not path_is_under(bad_stage, Path("/mnt/c")))
@@ -4129,10 +4203,12 @@ def main() -> int:
     )
     shards = build_plan(args)
     task061_gate = task061_smoke_manifest_gate(args)
+    pre_smoke_hot_stage_archives = archive_hot_stage_blockers_for_preflight(args, shards) if args.mode == "preflight-resume" else []
     smoke_gate = smoke_gate_preflight(args)
     preflight = host_preflight(args)
     preflight["task061_smoke_manifest_gate"] = task061_gate
     preflight["smoke_gate"] = smoke_gate
+    preflight["pre_smoke_hot_stage_archives"] = pre_smoke_hot_stage_archives
     event_path = args.fsv_root / "scheduler_events.jsonl"
     if args.mode == "run" and event_path.exists():
         event_path.unlink()

@@ -25,7 +25,7 @@ The reward field must exist before the predictor can be trained.
 
 | Order | Issue | Title | Status | Blocking |
 |---|---|---|---|---|
-| 1.1 | **#199** | TASK-PY-DATA-016 — Corpus-wide embedder explosion | **in-progress; stopped at 35/3124 shards; isolated-consolidation repair FSV passed 2026-05-15T14:23Z; full resume required** | All downstream P2-P8 work |
+| 1.1 | **#199** | TASK-PY-DATA-016 — Corpus-wide embedder explosion | **in-progress; stopped at 35/3124 shards; isolated-consolidation + preflight hot-stage archive repair FSV passed 2026-05-15T14:33Z; full resume required** | All downstream P2-P8 work |
 | 1.2 | **#208** | TASK-PY-DATA-025 — Full data-explosion FSV harness | blocked on #199 | P3 calibration |
 | 1.3 | **#236** | TASK-PY-DATA-045 — CUDA 13.2 embedder eligibility audit | blocked on #199 telemetry | GPU correctness |
 | 1.4 | **#237** | TASK-PY-DATA-046 — Cross-embedder alignment matrix | blocked on #199 | #238, #247 |
