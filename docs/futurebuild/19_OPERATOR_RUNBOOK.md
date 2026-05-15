@@ -178,21 +178,24 @@ and fail-closed edge cases.
 
 ### 1.5.4 Full corpus run and checkpoints
 
-Run the full 300x8 Python corpus as a resumable shard schedule. The current
-full-run pattern uses 128-chunk shards, packed storage, isolated embedder
-processes, one checkpoint per shard, and failed-partial archiving:
+Run the accepted post-#249 full Python corpus as a resumable shard schedule.
+The active relaunch root is keyed to the accepted `python_ast_chunks.jsonl`
+hash prefix `c8117f15`. The current full-run pattern uses 128-chunk shards,
+packed storage, isolated embedder processes, one checkpoint per shard, and
+failed-partial archiving. The old `20260514` root is historical evidence only
+and must not be used for the post-#249 relaunch:
 
 ```bash
 CPU_WORKERS="$(nproc)"
 tmux new-session -d -s cg_pydata016_full "cd /home/cabdru/contextgraph && \
 python3 scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
   --task-id TASK-PY-DATA-016 \
-  --cache-root /mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514 \
-  --fsv-root /mnt/d/contextgraph/fsv/task-py-data-016-full-20260514-fsv \
-  --hot-root /home/cabdru/.cache/contextgraph/task-py-data-039-e9-cuda-128 \
+  --cache-root /mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515 \
+  --fsv-root /mnt/d/contextgraph/fsv/task-py-data-016-full-c8117f15-20260515-fsv \
+  --hot-root /home/cabdru/.cache/contextgraph/task-py-data-016-full-c8117f15-20260515 \
   --start-offset 0 \
   --shard-size 128 \
-  --shard-count 2933 \
+  --shard-count 3124 \
   --max-source-bytes 32768 \
   --true-batch-size 8 \
   --embedder-batch-sizes e1=32,e6=32,e7=32,e8=32,e10=32,e12=32,e13=32,e14=8,e9=128 \

@@ -410,6 +410,10 @@ def sha256_file(path: Path) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
+def sha256_bytes(data: bytes) -> str:
+    return f"sha256:{hashlib.sha256(data).hexdigest()}"
+
+
 def json_dump_checked(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     data = json.dumps(value, indent=2, sort_keys=True).encode("utf-8")
@@ -1011,6 +1015,101 @@ def smoke_gate_preflight(args: argparse.Namespace) -> dict[str, Any]:
     return gate
 
 
+def task061_smoke_manifest_gate_required(args: argparse.Namespace) -> bool:
+    return args.task_id == "TASK-PY-DATA-061"
+
+
+def require_path_string(payload: dict[str, Any], key: str, context: str) -> Path:
+    value = payload.get(key)
+    require(f"{context} {key} is a non-empty path", isinstance(value, str) and bool(value))
+    return Path(value)
+
+
+def task061_smoke_manifest_gate(args: argparse.Namespace) -> dict[str, Any]:
+    required = task061_smoke_manifest_gate_required(args)
+    base = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": "TASK-PY-DATA-060",
+        "artifact_kind": "task061_smoke_manifest_gate",
+        "created_at_utc": utc_now(),
+        "required": required,
+        "smoke_manifest_fsv": str(args.smoke_manifest_fsv),
+        "requested_chunks_jsonl": str(args.chunks_jsonl),
+    }
+    if not required:
+        return {**base, "passes": True}
+
+    require("TASK061_SMOKE_MANIFEST_FSV_EXISTS: #251 smoke manifest FSV exists", args.smoke_manifest_fsv.is_file())
+    payload = read_json(args.smoke_manifest_fsv)
+    require("TASK061_SMOKE_MANIFEST_TASK_ID: #251 FSV task_id matches", payload.get("task_id") == "TASK-PY-DATA-060")
+    require("TASK061_SMOKE_MANIFEST_PASSES: #251 FSV passes", payload.get("passes") is True)
+    source_of_truth = payload.get("source_of_truth")
+    after_state = payload.get("after_state")
+    summary = payload.get("summary")
+    happy_path = payload.get("happy_path")
+    require("TASK061_SMOKE_MANIFEST_SOURCE_OF_TRUTH_OBJECT: #251 source_of_truth exists", isinstance(source_of_truth, dict))
+    require("TASK061_SMOKE_MANIFEST_AFTER_STATE_OBJECT: #251 after_state exists", isinstance(after_state, dict))
+    require("TASK061_SMOKE_MANIFEST_SUMMARY_OBJECT: #251 summary exists", isinstance(summary, dict))
+    require("TASK061_SMOKE_MANIFEST_HAPPY_PATH_OBJECT: #251 happy_path exists", isinstance(happy_path, dict))
+
+    smoke_chunks = require_path_string(source_of_truth, "smoke_chunks_jsonl", "#251 source_of_truth")
+    smoke_manifest = require_path_string(source_of_truth, "smoke_manifest_jsonl", "#251 source_of_truth")
+    require(
+        "TASK061_SMOKE_CHUNKS_SOURCE_MATCH: scheduler chunks_jsonl is #251 smoke_chunks_jsonl",
+        str(args.chunks_jsonl) == str(smoke_chunks),
+    )
+
+    chunk_state = file_state(smoke_chunks)
+    manifest_state = file_state(smoke_manifest)
+    fsv_state = file_state(args.smoke_manifest_fsv)
+    expected_chunk_sha = (after_state.get("chunks_out") or {}).get("sha256") or summary.get("smoke_chunks_sha256")
+    expected_manifest_sha = (after_state.get("manifest_out") or {}).get("sha256") or summary.get("smoke_manifest_sha256")
+    require("TASK061_SMOKE_CHUNK_SHA_PRESENT: #251 chunk sha exists", isinstance(expected_chunk_sha, str) and expected_chunk_sha.startswith("sha256:"))
+    require("TASK061_SMOKE_MANIFEST_SHA_PRESENT: #251 manifest sha exists", isinstance(expected_manifest_sha, str) and expected_manifest_sha.startswith("sha256:"))
+    require("TASK061_SMOKE_CHUNKS_FILE_EXISTS: #251 smoke chunks file exists", chunk_state.get("is_file") is True)
+    require("TASK061_SMOKE_MANIFEST_FILE_EXISTS: #251 smoke manifest file exists", manifest_state.get("is_file") is True)
+    require(
+        "TASK061_SMOKE_CHUNKS_HASH_MATCH: live smoke chunks hash matches #251 FSV",
+        chunk_state.get("sha256") == expected_chunk_sha,
+    )
+    require(
+        "TASK061_SMOKE_MANIFEST_HASH_MATCH: live smoke manifest hash matches #251 FSV",
+        manifest_state.get("sha256") == expected_manifest_sha,
+    )
+    chunk_count = count_jsonl_rows(smoke_chunks)
+    manifest_count = count_jsonl_rows(smoke_manifest)
+    expected_count = int((happy_path.get("expected") or {}).get("selected_count", 1000))
+    require("TASK061_SMOKE_CHUNK_COUNT: #251 smoke chunks row count matches expected", chunk_count == expected_count)
+    require("TASK061_SMOKE_MANIFEST_COUNT: #251 smoke manifest row count matches expected", manifest_count == expected_count)
+    require("TASK061_SMOKE_HAPPY_PATH_PASSES: #251 happy path passes", happy_path.get("pass") is True)
+    stratification = summary.get("stratification_requirements")
+    require("TASK061_SMOKE_STRATIFICATION_OBJECT: #251 stratification object exists", isinstance(stratification, dict))
+    require("TASK061_SMOKE_STRATIFICATION_PASSES: #251 stratification passes", stratification.get("passes") is True)
+    warnings = summary.get("stratification_warnings")
+    require("TASK061_SMOKE_WARNINGS_EMPTY: #251 has no stratification warnings", isinstance(warnings, list) and len(warnings) == 0)
+
+    return {
+        **base,
+        "source_of_truth": {
+            "smoke_manifest_fsv": str(args.smoke_manifest_fsv),
+            "smoke_chunks_jsonl": str(smoke_chunks),
+            "smoke_manifest_jsonl": str(smoke_manifest),
+        },
+        "fsv_state": fsv_state,
+        "chunk_state": chunk_state,
+        "manifest_state": manifest_state,
+        "chunk_count": chunk_count,
+        "manifest_count": manifest_count,
+        "expected_count": expected_count,
+        "source_hashes": {
+            "smoke_chunks_sha256": expected_chunk_sha,
+            "smoke_manifest_sha256": expected_manifest_sha,
+        },
+        "stratification_requirements": stratification,
+        "passes": True,
+    }
+
+
 def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
     hot_root = args.hot_root.expanduser().resolve(strict=False)
     cache_root = args.cache_root.expanduser().resolve(strict=False)
@@ -1570,6 +1669,22 @@ def prepare_hot_stage(
         shutil.copytree(durable_shard.fsv_root, stage_shard.fsv_root)
     else:
         stage_shard.fsv_root.mkdir(parents=True)
+    stage_path_rewrites = (
+        rewrite_json_paths_in_tree(
+            stage_shard.cache_root,
+            {
+                str(durable_shard.cache_root): str(stage_shard.cache_root),
+                str(durable_shard.fsv_root): str(stage_shard.fsv_root),
+            },
+        )
+        + rewrite_json_paths_in_tree(
+            stage_shard.fsv_root,
+            {
+                str(durable_shard.cache_root): str(stage_shard.cache_root),
+                str(durable_shard.fsv_root): str(stage_shard.fsv_root),
+            },
+        )
+    )
     stage_hot_root = stage_root / "runner-hot"
     stage_hot_root.mkdir(parents=True, exist_ok=True)
     os.chmod(stage_hot_root, 0o700)
@@ -1579,6 +1694,7 @@ def prepare_hot_stage(
         "stage_fsv_root": str(stage_shard.fsv_root),
         "stage_runner_hot_root": str(stage_hot_root),
         "interrupted_stage_archive": archive,
+        "stage_path_rewrites": stage_path_rewrites,
         "before_state": {
             "durable_cache_root": tree_state(durable_shard.cache_root),
             "durable_fsv_root": tree_state(durable_shard.fsv_root),
@@ -1623,6 +1739,22 @@ def rewrite_json_paths_in_tree(root: Path, replacements: dict[str, str]) -> list
             })
         elif path.suffix == ".jsonl":
             before_sha = sha256_file(path)
+            if path.parent.name == "packed_records" and not path.name.endswith(".index.jsonl"):
+                raw = path.read_bytes()
+                stale_paths = [old for old in replacements if old.encode("utf-8") in raw]
+                require(
+                    f"{path} packed payload JSONL has no rewrite-required path",
+                    not stale_paths,
+                )
+                rewrites.append({
+                    "path": str(path),
+                    "kind": "packed_payload_jsonl_preserved",
+                    "row_count": count_jsonl_rows(path),
+                    "before_sha256": before_sha,
+                    "after_sha256": sha256_file(path),
+                    "reason": "byte-addressed packed payload JSONL is immutable; packed index rows hash exact payload bytes",
+                })
+                continue
             rows: list[Any] = []
             with path.open("r", encoding="utf-8") as handle:
                 for line in handle:
@@ -2389,7 +2521,120 @@ def hot_stage_promotion_edge_checks(args: argparse.Namespace) -> list[dict[str, 
     else:
         raise SchedulerError("hot stage /mnt/c edge unexpectedly passed")
 
+    durable_payload_shard = write_minimal_packed_shard(
+        edge_root / "packed-payload-preserve",
+        "edge-hot-stage-packed-payload",
+        600_000_010,
+        1,
+        args.chunks_jsonl,
+    )
+    stage_payload_root = hot_stage_root(args, durable_payload_shard)
+    if stage_payload_root.exists():
+        shutil.rmtree(stage_payload_root)
+    stage_payload_shard = hot_stage_shard(args, durable_payload_shard)
+    stage_setup = prepare_hot_stage(
+        args,
+        durable_payload_shard,
+        stage_payload_shard,
+        stage_payload_root,
+    )
+    stage_payload_path = stage_payload_shard.cache_root / "packed_records" / "e1.jsonl"
+    stage_index_path = stage_payload_shard.cache_root / "packed_records" / "e1.index.jsonl"
+    stage_rows = read_jsonl_rows(stage_index_path)
+    require("packed-payload edge has one staged index row", len(stage_rows) == 1)
+    require(
+        "packed-payload edge rewrites copied index row to staged payload path",
+        str(stage_payload_shard.cache_root) in stage_rows[0].get("packed_record_path", ""),
+    )
+    stage_payload_sha_before = sha256_file(stage_payload_path)
+    stage_hash_readback = validate_packed_payload_hashes(stage_payload_shard.cache_root / "packed_records")
+    stage_readback = shard_completion_readback(args, stage_payload_shard, require_packed_store=False)
+    promotion = promote_hot_stage_shard(
+        args,
+        durable_payload_shard,
+        stage_payload_shard,
+        stage_payload_root,
+        stage_readback,
+    )
+    durable_payload_path = durable_payload_shard.cache_root / "packed_records" / "e1.jsonl"
+    durable_index_path = durable_payload_shard.cache_root / "packed_records" / "e1.index.jsonl"
+    durable_rows = read_jsonl_rows(durable_index_path)
+    require("packed-payload edge has one promoted index row", len(durable_rows) == 1)
+    require(
+        "packed-payload edge promoted index row points to durable payload path",
+        str(durable_payload_shard.cache_root) in durable_rows[0].get("packed_record_path", ""),
+    )
+    require(
+        "packed-payload edge preserved payload bytes across promotion",
+        sha256_file(durable_payload_path) == stage_payload_sha_before,
+    )
+    durable_hash_readback = validate_packed_payload_hashes(durable_payload_shard.cache_root / "packed_records")
+    cases.append(
+        {
+            "case": "hot_stage_promotion_preserves_packed_payload_hashes",
+            "passes": True,
+            "stage_setup": stage_setup,
+            "stage_payload_sha256_before_promotion": stage_payload_sha_before,
+            "stage_payload_hash_readback": stage_hash_readback,
+            "promotion": promotion,
+            "durable_payload_sha256_after_promotion": sha256_file(durable_payload_path),
+            "durable_payload_hash_readback": durable_hash_readback,
+            "durable_index_path": str(durable_index_path),
+            "durable_index_sha256": sha256_file(durable_index_path),
+        }
+    )
+
     return cases
+
+
+def validate_packed_payload_hashes(packed_root: Path) -> dict[str, Any]:
+    require("packed record root exists for payload validation", packed_root.is_dir())
+    per_index: dict[str, Any] = {}
+    total_rows = 0
+    for index_path in sorted(packed_root.glob("*.index.jsonl")):
+        rows = read_jsonl_rows(index_path)
+        for row_index, row in enumerate(rows):
+            require(f"{index_path}:{row_index} packed index row is object", isinstance(row, dict))
+            record_path = Path(str(row.get("packed_record_path", "")))
+            byte_offset = row.get("byte_offset")
+            byte_len = row.get("byte_len")
+            expected_hash = row.get("record_sha256")
+            require(f"{index_path}:{row_index} packed record path exists", record_path.is_file())
+            require(
+                f"{index_path}:{row_index} packed byte offset is valid",
+                isinstance(byte_offset, int) and byte_offset >= 0,
+            )
+            require(
+                f"{index_path}:{row_index} packed byte len is valid",
+                isinstance(byte_len, int) and byte_len > 0,
+            )
+            require(
+                f"{index_path}:{row_index} packed record sha exists",
+                isinstance(expected_hash, str) and expected_hash.startswith("sha256:"),
+            )
+            with record_path.open("rb") as handle:
+                handle.seek(byte_offset)
+                payload = handle.read(byte_len)
+            require(
+                f"{index_path}:{row_index} packed payload byte length matches index",
+                len(payload) == byte_len,
+            )
+            require(
+                f"{index_path}:{row_index} packed payload hash matches index",
+                sha256_bytes(payload) == expected_hash,
+            )
+        per_index[str(index_path)] = {
+            "row_count": len(rows),
+            "sha256": sha256_file(index_path),
+        }
+        total_rows += len(rows)
+    return {
+        "packed_root": str(packed_root),
+        "index_file_count": len(per_index),
+        "row_count": total_rows,
+        "per_index": per_index,
+        "passes": True,
+    }
 
 
 def require_numeric_ms(label: str, value: Any) -> float:
@@ -2768,6 +3013,11 @@ def validate_packed_store_manifest(shard: ShardSpec, manifest: dict[str, Any]) -
         f"{shard.shard_id} packed index rows match manifest",
         packed_index_rows == cumulative_rows,
     )
+    payload_hash_readback = validate_packed_payload_hashes(packed_root)
+    require(
+        f"{shard.shard_id} packed payload hash readback row count matches manifest",
+        payload_hash_readback.get("row_count") == cumulative_rows,
+    )
     per_embedder = packed_manifest.get("per_embedder", {})
     if only_embedder:
         require(
@@ -2794,6 +3044,7 @@ def validate_packed_store_manifest(shard: ShardSpec, manifest: dict[str, Any]) -
         "packed_index_rows": packed_index_rows,
         "current_run_rows": current_run_rows,
         "cumulative_rows": cumulative_rows,
+        "payload_hash_readback": payload_hash_readback,
         "packed_manifest": packed_manifest,
     }
 
@@ -2889,14 +3140,15 @@ def write_minimal_packed_shard(
         "vector_len": 3,
     }
     jsonl_append_checked(record_path, record)
+    record_payload = record_path.read_bytes().rstrip(b"\n")
     index_row = {
         "schema_version": SCHEMA_VERSION,
         "cache_key_sha256": record["cache_key_sha256"],
         "embedder_id": "e1",
         "packed_record_path": str(record_path),
         "byte_offset": 0,
-        "byte_len": len(record_path.read_bytes().rstrip(b"\n")),
-        "record_sha256": sha256_file(record_path),
+        "byte_len": len(record_payload),
+        "record_sha256": sha256_bytes(record_payload),
         "vector_sha256": record["vector_sha256"],
         "vector_len": record["vector_len"],
     }
@@ -2981,14 +3233,15 @@ def write_cumulative_isolated_packed_shard(
         "vector_len": 3,
     }
     jsonl_append_checked(record_path, record)
+    record_payload = record_path.read_bytes().rstrip(b"\n")
     index_row = {
         "schema_version": SCHEMA_VERSION,
         "cache_key_sha256": record["cache_key_sha256"],
         "embedder_id": "e10",
         "packed_record_path": str(record_path),
         "byte_offset": 0,
-        "byte_len": len(record_path.read_bytes().rstrip(b"\n")),
-        "record_sha256": sha256_file(record_path),
+        "byte_len": len(record_payload),
+        "record_sha256": sha256_bytes(record_payload),
         "vector_sha256": record["vector_sha256"],
         "vector_len": record["vector_len"],
     }
@@ -3144,7 +3397,60 @@ def preflight_edge_checks(args: argparse.Namespace, preflight: dict[str, Any]) -
         "debug_cargo_run_rejected_before_writes",
         cargo_runner="cargo run -p context-graph-mejepa-embedders --example python_forward_cache_fsv",
     )
+    expect_preflight_failure(
+        "missing_release_runner_rejected_before_writes",
+        cargo_runner="/definitely/missing/python_forward_cache_fsv",
+    )
     return cases
+
+
+def task061_smoke_manifest_gate_edge_checks(args: argparse.Namespace) -> list[dict[str, Any]]:
+    if not task061_smoke_manifest_gate_required(args):
+        return []
+    edge_root = args.fsv_root / "edge_inputs" / "task061_smoke_manifest_gate"
+    edge_root.mkdir(parents=True, exist_ok=True)
+    real_payload = read_json(args.smoke_manifest_fsv)
+    source_of_truth = real_payload.get("source_of_truth")
+    require("task061 edge source_of_truth object exists", isinstance(source_of_truth, dict))
+    real_manifest = require_path_string(source_of_truth, "smoke_manifest_jsonl", "task061 edge source_of_truth")
+
+    stale_chunks = edge_root / "stale_smoke_chunks.jsonl"
+    stale_manifest = edge_root / "stale_smoke_manifest.jsonl"
+    with args.chunks_jsonl.open("r", encoding="utf-8") as handle:
+        first_chunk_line = next(line for line in handle if line.strip())
+    stale_chunks.write_text(first_chunk_line, encoding="utf-8")
+    with real_manifest.open("r", encoding="utf-8") as handle:
+        first_manifest_line = next(line for line in handle if line.strip())
+    stale_manifest.write_text(first_manifest_line, encoding="utf-8")
+
+    synthetic_payload = json.loads(json.dumps(real_payload))
+    synthetic_payload["source_of_truth"]["smoke_chunks_jsonl"] = str(stale_chunks)
+    synthetic_payload["source_of_truth"]["smoke_manifest_jsonl"] = str(stale_manifest)
+    synthetic_payload["after_state"]["chunks_out"]["path"] = str(stale_chunks)
+    synthetic_payload["after_state"]["manifest_out"]["path"] = str(stale_manifest)
+    synthetic_fsv = edge_root / "synthetic_stale_smoke_manifest_fsv.json"
+    json_dump_checked(synthetic_fsv, synthetic_payload)
+
+    edge_args = argparse.Namespace(**vars(args))
+    edge_args.chunks_jsonl = stale_chunks
+    edge_args.smoke_manifest_fsv = synthetic_fsv
+    try:
+        task061_smoke_manifest_gate(edge_args)
+    except SchedulerError as exc:
+        error = str(exc)
+        require("task061 stale hash edge failed on smoke chunks hash", "TASK061_SMOKE_CHUNKS_HASH_MATCH" in error)
+        return [
+            {
+                "case": "stale_task061_smoke_chunks_hash_rejected",
+                "passes": True,
+                "synthetic_fsv": str(synthetic_fsv),
+                "synthetic_fsv_sha256": sha256_file(synthetic_fsv),
+                "stale_chunks": file_state(stale_chunks),
+                "expected_source_chunks_sha256": (real_payload.get("summary") or {}).get("smoke_chunks_sha256"),
+                "error": error,
+            }
+        ]
+    raise SchedulerError("task061 stale smoke manifest edge unexpectedly passed")
 
 
 def edge_checks(
@@ -3155,6 +3461,7 @@ def edge_checks(
     edge_root = args.fsv_root / "edge_inputs"
     edge_root.mkdir(parents=True, exist_ok=True)
     cases: list[dict[str, Any]] = preflight_edge_checks(args, preflight)
+    cases.extend(task061_smoke_manifest_gate_edge_checks(args))
     resources = resource_snapshot(args, "edge_resource_snapshot")
     require(
         "resource snapshot records RAM total",
@@ -3444,8 +3751,10 @@ def main() -> int:
         "--embedder-max-padded-source-bytes",
     )
     shards = build_plan(args)
+    task061_gate = task061_smoke_manifest_gate(args)
     smoke_gate = smoke_gate_preflight(args)
     preflight = host_preflight(args)
+    preflight["task061_smoke_manifest_gate"] = task061_gate
     preflight["smoke_gate"] = smoke_gate
     event_path = args.fsv_root / "scheduler_events.jsonl"
     if args.mode == "run" and event_path.exists():
@@ -3500,7 +3809,21 @@ def main() -> int:
     event(event_path, "plan_written", {"plan_path": str(plan_path), "plan_sha256": sha256_file(plan_path)})
 
     if args.mode == "preflight-resume":
-        checkpoint = read_existing_checkpoint(args)
+        cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
+        if cache_checkpoint_path.exists() or fsv_checkpoint_path.exists():
+            checkpoint = read_existing_checkpoint(args)
+        else:
+            checkpoint = write_checkpoint(args, shards, [], started_at, preflight, "fresh_preflight")
+            event(
+                event_path,
+                "fresh_preflight_checkpoint_written",
+                {
+                    "checkpoint_cache": file_state(cache_checkpoint_path),
+                    "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                    "progress": checkpoint.get("progress"),
+                    "summary": checkpoint.get("summary"),
+                },
+            )
         decision = scan_checkpoint_next_shard_state(args, shards, checkpoint)
         event(
             event_path,

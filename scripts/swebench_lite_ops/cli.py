@@ -36,6 +36,16 @@ from .full_run_relaunch_gate import command_full_run_relaunch_gate
 from .python_full_ast_corpus import command_full_ast_corpus
 from .python_static_graph import command_static_graph
 from .python_test_intent import command_test_intent
+from .code_constellation_schema import command_code_constellation_schema
+from .python_dda_code_signals import command_python_dda_code_signals
+from .python_pairwise_dda_mi import command_python_pairwise_dda_mi
+from .python_tct_cells import command_python_tct_cells
+from .python_reward_tensors import command_python_reward_tensors
+from .python_reward_field_analysis import command_python_reward_field_analysis
+from .python_data_readiness_gate import add_arguments as add_python_data_readiness_gate_arguments
+from .python_data_readiness_gate import command_python_data_readiness_gate
+from .python_reward_field_sample import add_arguments as add_python_reward_field_sample_arguments
+from .python_reward_field_sample import command_python_reward_field_sample
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -155,20 +165,28 @@ def build_parser() -> argparse.ArgumentParser:
     smoke_manifest.add_argument("--seed", default=DEFAULT_SEED)
     smoke_manifest.add_argument("--expected-task-count", type=int, default=300)
     smoke_manifest.add_argument("--expected-mutation-categories", default=",".join(EXPECTED_MUTATION_CATEGORIES))
+    smoke_manifest.add_argument("--full-ast-corpus-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json"))
     smoke_manifest.set_defaults(func=command_smoke_manifest, evidence_name="smoke-manifest-command-evidence.json")
 
     smoke_intelligence = sub.add_parser(
         "smoke-intelligence-matrices",
-        help="Compute durable representation-alignment matrices for the 1000-chunk Python embedder smoke run.",
+        help="Compute durable representation-alignment matrices for Python embedder smoke or completed-shard runs.",
     )
     smoke_intelligence.add_argument("--forward-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/forward-cache"))
+    smoke_intelligence.add_argument("--input-mode", choices=["smoke-manifest", "completed-shards"], default="smoke-manifest")
     smoke_intelligence.add_argument("--smoke-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"))
+    smoke_intelligence.add_argument("--chunks-jsonl", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl"))
+    smoke_intelligence.add_argument("--checkpoint", type=Path, default=None)
+    smoke_intelligence.add_argument("--shard-plan", type=Path, default=None)
     smoke_intelligence.add_argument("--output-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices"))
     smoke_intelligence.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv"))
+    smoke_intelligence.add_argument("--task-id", default="TASK-PY-DATA-062")
     smoke_intelligence.add_argument("--expected-chunk-count", type=int, default=1000)
     smoke_intelligence.add_argument("--expected-embedder-count", type=int, default=12)
     smoke_intelligence.add_argument("--min-overlap", type=int, default=20)
     smoke_intelligence.add_argument("--neighbor-k", type=int, default=10)
+    smoke_intelligence.add_argument("--min-completed-shards", type=int, default=1)
+    smoke_intelligence.add_argument("--max-completed-shards", type=int, default=None)
     smoke_intelligence.add_argument("--clean-output", action="store_true")
     smoke_intelligence.set_defaults(func=command_smoke_intelligence, evidence_name="smoke-intelligence-matrices-command-evidence.json")
 
@@ -196,9 +214,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     full_run_relaunch_gate.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-064-post249-full-run-relaunch-gate-fsv"))
     full_run_relaunch_gate.add_argument("--chunks-jsonl", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl"))
-    full_run_relaunch_gate.add_argument("--cache-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514"))
-    full_run_relaunch_gate.add_argument("--run-fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-016-full-20260514-fsv"))
-    full_run_relaunch_gate.add_argument("--hot-root", type=Path, default=Path("/home/cabdru/.cache/contextgraph/task-py-data-016-full-20260514"))
+    full_run_relaunch_gate.add_argument("--cache-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515"))
+    full_run_relaunch_gate.add_argument("--run-fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-016-full-c8117f15-20260515-fsv"))
+    full_run_relaunch_gate.add_argument("--hot-root", type=Path, default=Path("/home/cabdru/.cache/contextgraph/task-py-data-016-full-c8117f15-20260515"))
+    full_run_relaunch_gate.add_argument("--stale-cache-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514"))
+    full_run_relaunch_gate.add_argument("--stale-run-fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-016-full-20260514-fsv"))
+    full_run_relaunch_gate.add_argument("--stale-hot-root", type=Path, default=Path("/home/cabdru/.cache/contextgraph/task-py-data-016-full-20260514"))
     full_run_relaunch_gate.add_argument("--smoke-manifest-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json"))
     full_run_relaunch_gate.add_argument("--smoke-forward-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"))
     full_run_relaunch_gate.add_argument("--smoke-intelligence-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"))
@@ -208,7 +229,7 @@ def build_parser() -> argparse.ArgumentParser:
     full_run_relaunch_gate.add_argument("--storage-policy", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/storage_policy.json"))
     full_run_relaunch_gate.add_argument("--storage-estimates", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/full_scale_storage_estimates.json"))
     full_run_relaunch_gate.add_argument("--shard-size", type=int, default=128)
-    full_run_relaunch_gate.add_argument("--shard-count", type=int, default=2933)
+    full_run_relaunch_gate.add_argument("--shard-count", type=int, default=3124)
     full_run_relaunch_gate.add_argument("--active-embedder-count", type=int, default=12)
     full_run_relaunch_gate.add_argument("--true-batch-size", type=int, default=8)
     full_run_relaunch_gate.add_argument("--io-workers", type=int, default=2)
@@ -217,7 +238,7 @@ def build_parser() -> argparse.ArgumentParser:
     full_run_relaunch_gate.add_argument("--jsonl-sync-every-rows", type=int, default=512)
     full_run_relaunch_gate.add_argument("--checkpoint-every-shards", type=int, default=1)
     full_run_relaunch_gate.add_argument("--cargo-runner", default="target/release/examples/python_forward_cache_fsv")
-    full_run_relaunch_gate.add_argument("--expected-next-shard", default="shard-000028-offset-000003584")
+    full_run_relaunch_gate.add_argument("--expected-next-shard", default="auto")
     full_run_relaunch_gate.add_argument("--clean-output", action="store_true")
     full_run_relaunch_gate.set_defaults(func=command_full_run_relaunch_gate, evidence_name="full-run-relaunch-gate-command-evidence.json")
 
@@ -231,6 +252,7 @@ def build_parser() -> argparse.ArgumentParser:
     full_ast_corpus.add_argument("--parse-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-parse-v1"))
     full_ast_corpus.add_argument("--chunk-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1"))
     full_ast_corpus.add_argument("--source-snapshot-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/source-files"))
+    full_ast_corpus.add_argument("--task-checkpoint-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/task-checkpoints-v1"))
     full_ast_corpus.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv"))
     full_ast_corpus.add_argument("--evidence-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv"))
     full_ast_corpus.add_argument("--hot-root", type=Path, default=Path("/home/cabdru/.cache/contextgraph/task-py-data-058-full-ast-corpus"))
@@ -240,6 +262,7 @@ def build_parser() -> argparse.ArgumentParser:
     full_ast_corpus.add_argument("--max-tasks", type=int, default=None)
     full_ast_corpus.add_argument("--allow-partial-coverage", dest="require_full_coverage", action="store_false", default=True)
     full_ast_corpus.add_argument("--clean-output", action="store_true")
+    full_ast_corpus.add_argument("--resume-from-task-checkpoints", action="store_true")
     full_ast_corpus.set_defaults(func=command_full_ast_corpus, evidence_name="full-ast-corpus-command-evidence.json")
 
     diff_map = sub.add_parser("diff-chunk-map", help="Map Python patch/test hunks to stable AST chunks.")
@@ -271,6 +294,126 @@ def build_parser() -> argparse.ArgumentParser:
     test_intent.add_argument("--hot-root", type=Path, default=Path("/home/cabdru/.cache/contextgraph/task-py-data-013-test-intent"))
     test_intent.add_argument("--hot-budget-bytes", type=int, default=1_073_741_824)
     test_intent.set_defaults(func=command_test_intent, evidence_name="test-intent-command-evidence.json")
+
+    code_constellation = sub.add_parser(
+        "code-constellation-schema",
+        help="Define and FSV-verify the Python code teleological constellation schema.",
+    )
+    code_constellation.add_argument("--cleaned-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-cleaned-manifest-v1/cleaned_manifest.json"))
+    code_constellation.add_argument("--chunks-jsonl", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl"))
+    code_constellation.add_argument("--schema-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-code-constellation-schema-v1"))
+    code_constellation.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-019-code-constellation-schema-fsv"))
+    code_constellation.add_argument("--evidence-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-019-code-constellation-schema-fsv"))
+    code_constellation.set_defaults(func=command_code_constellation_schema, evidence_name="code-constellation-schema-command-evidence.json")
+
+    dda_signals = sub.add_parser(
+        "python-dda-code-signals",
+        help="Materialize first-order DDA reward/supervision signals from real Python embedder outputs.",
+    )
+    dda_signals.add_argument("--forward-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/forward-cache"))
+    dda_signals.add_argument("--input-mode", choices=["smoke-manifest", "completed-shards"], default="smoke-manifest")
+    dda_signals.add_argument("--smoke-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"))
+    dda_signals.add_argument("--chunks-jsonl", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl"))
+    dda_signals.add_argument("--checkpoint", type=Path, default=None)
+    dda_signals.add_argument("--shard-plan", type=Path, default=None)
+    dda_signals.add_argument("--output-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/per-embedder"))
+    dda_signals.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-017-dda-signals-fsv"))
+    dda_signals.add_argument("--evidence-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-017-dda-signals-fsv"))
+    dda_signals.add_argument("--constellation-schema", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-code-constellation-schema-v1/code_constellation_schema.json"))
+    dda_signals.add_argument("--expected-embedders", default="e1,e6,e7,e8,e10,e12,e13,e14,e2,e3,e4,e9")
+    dda_signals.add_argument("--min-completed-shards", type=int, default=1)
+    dda_signals.add_argument("--max-completed-shards", type=int, default=None)
+    dda_signals.add_argument("--clean-output", action="store_true")
+    dda_signals.set_defaults(func=command_python_dda_code_signals, evidence_name="python-dda-code-signals-command-evidence.json")
+
+    pairwise_dda = sub.add_parser(
+        "python-pairwise-dda-mi",
+        help="Compute pairwise DDA interaction and mutual-information audit rows from Python DDA signals.",
+    )
+    pairwise_dda.add_argument("--input-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/per-embedder"))
+    pairwise_dda.add_argument("--output-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/pairwise"))
+    pairwise_dda.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-018-pairwise-dda-mi-fsv"))
+    pairwise_dda.add_argument("--expected-embedders", default="e1,e6,e7,e8,e10,e12,e13,e14,e2,e3,e4,e9")
+    pairwise_dda.add_argument("--min-overlap", type=int, default=20)
+    pairwise_dda.add_argument("--min-support", type=int, default=20)
+    pairwise_dda.add_argument("--mi-bins", type=int, default=8)
+    pairwise_dda.add_argument("--top-k", type=int, default=20)
+    pairwise_dda.add_argument("--clean-output", action="store_true")
+    pairwise_dda.set_defaults(func=command_python_pairwise_dda_mi, evidence_name="python-pairwise-dda-mi-command-evidence.json")
+
+    tct_cells = sub.add_parser(
+        "python-tct-cells",
+        help="Build Python teleological constellation cell memberships/support from DDA-enriched smoke outputs.",
+    )
+    tct_cells.add_argument("--constellation-schema", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-code-constellation-schema-v1/code_constellation_schema.json"))
+    tct_cells.add_argument("--smoke-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"))
+    tct_cells.add_argument("--forward-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/forward-cache"))
+    tct_cells.add_argument("--dda-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/per-embedder"))
+    tct_cells.add_argument("--pairwise-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/pairwise"))
+    tct_cells.add_argument("--matrix-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices"))
+    tct_cells.add_argument("--output-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-tct-cells-v1"))
+    tct_cells.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-020-tct-cells-fsv"))
+    tct_cells.add_argument("--full-ast-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json"))
+    tct_cells.add_argument("--smoke-manifest-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json"))
+    tct_cells.add_argument("--forward-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"))
+    tct_cells.add_argument("--dda-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json"))
+    tct_cells.add_argument("--pairwise-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-018-pairwise-dda-mi-fsv/python_pairwise_dda_mi_fsv.json"))
+    tct_cells.add_argument("--matrix-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"))
+    tct_cells.add_argument("--expected-chunk-count", type=int, default=1000)
+    tct_cells.add_argument("--expected-embedders", default="e1,e6,e7,e8,e10,e12,e13,e14,e2,e3,e4,e9")
+    tct_cells.add_argument("--clean-output", action="store_true")
+    tct_cells.set_defaults(func=command_python_tct_cells, evidence_name="python-tct-cells-command-evidence.json")
+
+    reward_tensors = sub.add_parser(
+        "python-reward-tensors",
+        help="Assemble strict Q1-Q5 RealityPrediction reward tensors from Python DDA/TCT artifacts.",
+    )
+    reward_tensors.add_argument("--smoke-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"))
+    reward_tensors.add_argument("--dda-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/per-embedder"))
+    reward_tensors.add_argument("--tct-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-tct-cells-v1"))
+    reward_tensors.add_argument("--output-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-reward-tensors-v1"))
+    reward_tensors.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-021-reward-tensors-fsv"))
+    reward_tensors.add_argument("--constellation-schema", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-code-constellation-schema-v1/code_constellation_schema.json"))
+    reward_tensors.add_argument("--full-ast-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json"))
+    reward_tensors.add_argument("--smoke-manifest-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json"))
+    reward_tensors.add_argument("--dda-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json"))
+    reward_tensors.add_argument("--tct-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json"))
+    reward_tensors.add_argument("--expected-chunk-count", type=int, default=1000)
+    reward_tensors.add_argument("--clean-output", action="store_true")
+    reward_tensors.set_defaults(func=command_python_reward_tensors, evidence_name="python-reward-tensors-command-evidence.json")
+
+    reward_analysis = sub.add_parser(
+        "python-reward-field-analysis",
+        help="Analyze Python reward-field density, gaps, risks, and training readiness.",
+    )
+    reward_analysis.add_argument("--reward-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-reward-tensors-v1"))
+    reward_analysis.add_argument("--dda-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/per-embedder"))
+    reward_analysis.add_argument("--pairwise-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/pairwise"))
+    reward_analysis.add_argument("--tct-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-tct-cells-v1"))
+    reward_analysis.add_argument("--matrix-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices"))
+    reward_analysis.add_argument("--output-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-reward-field-analysis-v1"))
+    reward_analysis.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-022-reward-field-analysis-fsv"))
+    reward_analysis.add_argument("--reward-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-021-reward-tensors-fsv/python_reward_tensors_fsv.json"))
+    reward_analysis.add_argument("--dda-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json"))
+    reward_analysis.add_argument("--tct-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json"))
+    reward_analysis.add_argument("--matrix-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"))
+    reward_analysis.add_argument("--expected-chunk-count", type=int, default=1000)
+    reward_analysis.add_argument("--clean-output", action="store_true")
+    reward_analysis.set_defaults(func=command_python_reward_field_analysis, evidence_name="python-reward-field-analysis-command-evidence.json")
+
+    data_readiness = sub.add_parser(
+        "python-data-readiness-gate",
+        help="Fail closed unless Python ME-JEPA reward data is ready for the requested training preflight.",
+    )
+    add_python_data_readiness_gate_arguments(data_readiness)
+    data_readiness.set_defaults(func=command_python_data_readiness_gate, evidence_name="python-data-readiness-gate-command-evidence.json")
+
+    reward_sample = sub.add_parser(
+        "python-reward-field-sample",
+        help="Persist one end-to-end physical Python ME-JEPA reward-field sample with FSV.",
+    )
+    add_python_reward_field_sample_arguments(reward_sample)
+    reward_sample.set_defaults(func=command_python_reward_field_sample, evidence_name="python-reward-field-sample-command-evidence.json")
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")
     registry.add_argument("--models-config", type=Path, default=Path("/mnt/d/cabdru/contextgraph/models/mejepa_models_config.toml"))

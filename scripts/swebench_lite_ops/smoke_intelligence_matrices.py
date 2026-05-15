@@ -1,4 +1,4 @@
-"""Compute representation-intelligence matrices for the 1,000 chunk smoke run."""
+"""Compute representation-intelligence matrices for Python embedder runs."""
 
 from __future__ import annotations
 
@@ -28,6 +28,11 @@ DEFAULT_OUTPUT_ROOT = Path(
 )
 DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv")
 DEFAULT_TASK_ID = "TASK-PY-DATA-062"
+DEFAULT_FULL_TASK_ID = "TASK-PY-DATA-046"
+DEFAULT_FULL_FORWARD_ROOT = Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515")
+DEFAULT_CHUNKS_JSONL = Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
+DEFAULT_FULL_OUTPUT_ROOT = Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-v1/alignment")
+DEFAULT_FULL_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-046-alignment-fsv")
 DEFAULT_MIN_OVERLAP = 20
 DEFAULT_NEIGHBOR_K = 10
 CCA_MAX_DIM_SUM = 900
@@ -214,6 +219,120 @@ def load_smoke_manifest(path: Path) -> tuple[dict[str, dict[str, Any]], dict[str
     return by_key, summary
 
 
+def completed_shard_entries(
+    forward_root: Path,
+    checkpoint_path: Path | None,
+    shard_plan_path: Path | None,
+    max_completed_shards: int | None,
+    min_completed_shards: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    checkpoint = checkpoint_path or (forward_root / "python_forward_cache_checkpoint.json")
+    plan_path = shard_plan_path or (forward_root / "python_forward_cache_shard_plan.json")
+    checkpoint_doc = read_json(checkpoint)
+    plan_doc = read_json(plan_path)
+    require(checkpoint_doc.get("passes") is True, "source checkpoint must have passes=true")
+    require(plan_doc.get("artifact_kind") == "python_forward_shard_scheduler_plan", "source shard plan has wrong artifact kind")
+    progress = checkpoint_doc.get("progress") or {}
+    completed_count = int(progress.get("completed_shards") or 0)
+    require(completed_count >= min_completed_shards, f"need at least {min_completed_shards} completed shards, found {completed_count}")
+    selected_count = completed_count
+    if max_completed_shards is not None and max_completed_shards > 0:
+        selected_count = min(selected_count, int(max_completed_shards))
+    require(selected_count > 0, "no completed shards selected")
+    plan_shards = list(plan_doc.get("shards") or [])
+    require(len(plan_shards) >= selected_count, "shard plan shorter than completed shard count")
+    selected = plan_shards[:selected_count]
+    for entry in selected:
+        shard_id = str(entry.get("shard_id") or "")
+        require(shard_id, "shard plan entry missing shard_id")
+        require((forward_root / "shards" / shard_id / "python_forward_cache_packed_manifest.json").exists(), f"completed shard missing packed manifest: {shard_id}")
+    fsv_root_raw = plan_doc.get("fsv_root")
+    source_fsv_checkpoint = None
+    source_fsv_checkpoint_sha = None
+    checkpoint_sha = sha256_file(checkpoint)
+    checkpoint_bytes_match = None
+    if fsv_root_raw:
+        candidate = Path(str(fsv_root_raw)) / "python_forward_cache_checkpoint.json"
+        if candidate.exists():
+            source_fsv_checkpoint = candidate
+            source_fsv_checkpoint_sha = sha256_file(candidate)
+            checkpoint_bytes_match = checkpoint.read_bytes() == candidate.read_bytes()
+            require(checkpoint_bytes_match, "cache checkpoint and source FSV checkpoint differ")
+    summary = {
+        "checkpoint_path": str(checkpoint),
+        "checkpoint_sha256": checkpoint_sha,
+        "source_fsv_checkpoint_path": str(source_fsv_checkpoint) if source_fsv_checkpoint else None,
+        "source_fsv_checkpoint_sha256": source_fsv_checkpoint_sha,
+        "checkpoint_bytes_match": checkpoint_bytes_match,
+        "shard_plan_path": str(plan_path),
+        "shard_plan_sha256": sha256_file(plan_path),
+        "completed_shards": completed_count,
+        "selected_shards": selected_count,
+        "progress": progress,
+        "source_summary": checkpoint_doc.get("summary") or {},
+    }
+    return selected, summary
+
+
+def load_chunk_manifest_window(path: Path, shards: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    required_offsets: list[tuple[int, int]] = []
+    for shard in shards:
+        offset = int(shard.get("chunk_offset") or 0)
+        max_chunks = int(shard.get("max_chunks") or 0)
+        require(max_chunks > 0, f"shard {shard.get('shard_id')} has invalid max_chunks")
+        required_offsets.append((offset, offset + max_chunks))
+    max_needed = max(end for _, end in required_offsets)
+    by_index: dict[int, dict[str, Any]] = {}
+    for idx, (_, row) in enumerate(iter_jsonl(path)):
+        if idx >= max_needed:
+            break
+        for start, end in required_offsets:
+            if start <= idx < end:
+                by_index[idx] = row
+                break
+    expected_rows = sum(end - start for start, end in required_offsets)
+    require(len(by_index) == expected_rows, f"chunk manifest window expected {expected_rows} rows, found {len(by_index)}")
+    by_key: dict[str, dict[str, Any]] = {}
+    counts = {
+        "rows": 0,
+        "repos": Counter(),
+        "mutation_categories": Counter(),
+        "chunk_kinds": Counter(),
+        "workspace_states": Counter(),
+        "node_kinds": Counter(),
+    }
+    for idx in sorted(by_index):
+        row = by_index[idx]
+        task_instance_id = str(row.get("task_instance_id") or "")
+        workspace_state = str(row.get("workspace_state") or "")
+        chunk_id = str(row.get("chunk_id") or "")
+        source_sha256 = str(row.get("source_sha256") or "")
+        require(task_instance_id and workspace_state and chunk_id and source_sha256, f"chunk row missing stable key fields: {path}:{idx + 1}")
+        key = row_key_from_fields(task_instance_id, workspace_state, chunk_id, source_sha256)
+        require(key not in by_key, f"duplicate chunk manifest row key: {key}")
+        row["_oracle_all_passed_str"] = str((row.get("oracle_linkage") or {}).get("all_passed"))
+        row["_oracle_resolved_str"] = str((row.get("oracle_linkage") or {}).get("resolved"))
+        by_key[key] = row
+        counts["rows"] += 1
+        counts["repos"][str(row.get("repo") or "unknown")] += 1
+        counts["mutation_categories"][str(row.get("mutation_category") or "unknown")] += 1
+        counts["chunk_kinds"][str(row.get("chunk_kind") or "unknown")] += 1
+        counts["workspace_states"][str(row.get("workspace_state") or "unknown")] += 1
+        counts["node_kinds"][str(row.get("node_kind") or "unknown")] += 1
+    summary = {
+        "rows": counts["rows"],
+        "repos": dict(sorted(counts["repos"].items())),
+        "mutation_categories": dict(sorted(counts["mutation_categories"].items())),
+        "chunk_kinds": dict(sorted(counts["chunk_kinds"].items())),
+        "workspace_states": dict(sorted(counts["workspace_states"].items())),
+        "node_kinds": dict(sorted(counts["node_kinds"].items())),
+        "sha256": sha256_file(path),
+        "path": str(path),
+        "selected_shards": [str(shard.get("shard_id")) for shard in shards],
+    }
+    return by_key, summary
+
+
 def load_quarantine_counts(shard_root: Path) -> Counter:
     counts: Counter = Counter()
     path = shard_root / "python_forward_cache_quarantine.jsonl"
@@ -224,9 +343,16 @@ def load_quarantine_counts(shard_root: Path) -> Counter:
     return counts
 
 
-def load_records(forward_root: Path, manifest_by_key: dict[str, dict[str, Any]]) -> tuple[dict[str, dict[str, VectorRecord]], dict[str, Any]]:
-    corpus_manifest = read_json(forward_root / "python_forward_cache_corpus_manifest.json")
-    require(corpus_manifest.get("passes") is True, "corpus manifest must have passes=true")
+def load_records(
+    forward_root: Path,
+    manifest_by_key: dict[str, dict[str, Any]],
+    shard_entries: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, dict[str, VectorRecord]], dict[str, Any]]:
+    corpus_manifest: dict[str, Any] | None = None
+    if shard_entries is None:
+        corpus_manifest = read_json(forward_root / "python_forward_cache_corpus_manifest.json")
+        require(corpus_manifest.get("passes") is True, "corpus manifest must have passes=true")
+        shard_entries = list(corpus_manifest.get("shards") or [])
     records: dict[str, dict[str, VectorRecord]] = defaultdict(dict)
     telemetry_rows = 0
     quarantine_counts: Counter = Counter()
@@ -234,7 +360,7 @@ def load_records(forward_root: Path, manifest_by_key: dict[str, dict[str, Any]])
     index_rows_verified = 0
     vector_dims: dict[str, set[int]] = defaultdict(set)
     shard_ids: list[str] = []
-    for shard in sorted(corpus_manifest.get("shards") or [], key=lambda s: str(s.get("shard_id"))):
+    for shard in sorted(shard_entries, key=lambda s: str(s.get("shard_id"))):
         shard_id = str(shard.get("shard_id") or "")
         shard_ids.append(shard_id)
         shard_root = forward_root / "shards" / shard_id
@@ -308,9 +434,9 @@ def load_records(forward_root: Path, manifest_by_key: dict[str, dict[str, Any]])
                     verified_record_rows += 1
             require(seen_cache_keys == set(index_by_cache_key), f"packed index rows without record payload in {index_path}")
     load_summary = {
-        "corpus_manifest_path": str(forward_root / "python_forward_cache_corpus_manifest.json"),
-        "corpus_manifest_sha256": sha256_file(forward_root / "python_forward_cache_corpus_manifest.json"),
-        "corpus_manifest_summary": corpus_manifest.get("summary"),
+        "corpus_manifest_path": str(forward_root / "python_forward_cache_corpus_manifest.json") if corpus_manifest is not None else None,
+        "corpus_manifest_sha256": sha256_file(forward_root / "python_forward_cache_corpus_manifest.json") if corpus_manifest is not None else None,
+        "corpus_manifest_summary": corpus_manifest.get("summary") if corpus_manifest is not None else None,
         "embedder_count": len(records),
         "index_rows_verified": index_rows_verified,
         "verified_record_rows": verified_record_rows,
@@ -320,6 +446,76 @@ def load_records(forward_root: Path, manifest_by_key: dict[str, dict[str, Any]])
         "shard_ids": shard_ids,
     }
     return records, load_summary
+
+
+def alignment_edge_cases(
+    records: dict[str, dict[str, VectorRecord]],
+    manifest_by_key: dict[str, dict[str, Any]],
+    coverage: list[dict[str, Any]],
+    min_overlap: int,
+    neighbor_k: int,
+) -> list[dict[str, Any]]:
+    cases: list[dict[str, Any]] = []
+    empty_pairwise, _ = pairwise_rows({"e_empty_left": {}, "e_empty_right": {}}, neighbor_k, min_overlap)
+    cases.append(
+        {
+            "name": "empty_or_insufficient_sample_rejects",
+            "before": {"left_rows": 0, "right_rows": 0, "min_overlap": min_overlap},
+            "action": "pairwise metric precondition check",
+            "after": {"pairwise_rows": empty_pairwise},
+            "expected": "valid=false with TOO_FEW_OVERLAP_ROWS",
+            "passes": bool(empty_pairwise) and all(row.get("valid") is False and row.get("invalid_reason") == "TOO_FEW_OVERLAP_ROWS" for row in empty_pairwise),
+        }
+    )
+    all_record_keys = {key for embedder_rows in records.values() for key in embedder_rows}
+    missing_key = sorted(all_record_keys)[0] if all_record_keys else None
+    corrupt_manifest = dict(manifest_by_key)
+    if missing_key is not None:
+        corrupt_manifest.pop(missing_key, None)
+    missing_detected = missing_key is not None and missing_key not in corrupt_manifest and missing_key in all_record_keys
+    cases.append(
+        {
+            "name": "mismatched_chunk_identity_rejects",
+            "before": {"manifest_rows": len(manifest_by_key), "record_keys": len(all_record_keys), "removed_key": missing_key},
+            "action": "remove one real row identity from manifest map before validation",
+            "after": {"missing_detected": missing_detected},
+            "expected": "real record key absent from manifest is detected before metric computation",
+            "passes": missing_detected,
+        }
+    )
+    missing_total = sum(int(row["missing_or_quarantined_count"]) for row in coverage)
+    coverage_total = sum(int(row["row_count"]) for row in coverage)
+    cases.append(
+        {
+            "name": "missing_or_quarantined_rows_are_accounted",
+            "before": {"manifest_rows": len(manifest_by_key), "coverage_rows": len(coverage)},
+            "action": "sum per-embedder coverage and missing/quarantine counts",
+            "after": {"covered_rows": coverage_total, "missing_or_quarantined_rows": missing_total},
+            "expected": "coverage rows plus missing/quarantine rows equals manifest rows per embedder",
+            "passes": all(int(row["row_count"]) + int(row["missing_or_quarantined_count"]) == len(manifest_by_key) for row in coverage),
+        }
+    )
+    zero = np.zeros((max(min_overlap, 4), 4), dtype=np.float32)
+    _, zero_cka = linear_hsic_and_cka(zero, zero)
+    zero_cosine, zero_cosine_reason = mean_same_dim_cosine(zero, zero)
+    zero_procrustes, zero_procrustes_reason = procrustes_similarity(zero, zero)
+    cases.append(
+        {
+            "name": "zero_variance_vectors_emit_degenerate_reasons",
+            "before": {"rows": int(zero.shape[0]), "dim": int(zero.shape[1])},
+            "action": "run same-dimension metrics on all-zero vectors",
+            "after": {
+                "linear_cka": zero_cka,
+                "mean_same_row_cosine": zero_cosine,
+                "mean_same_row_cosine_reason": zero_cosine_reason,
+                "orthogonal_procrustes": zero_procrustes,
+                "orthogonal_procrustes_reason": zero_procrustes_reason,
+            },
+            "expected": "degenerate metrics do not produce fake numeric success",
+            "passes": zero_cka is None and zero_cosine is None and zero_cosine_reason == "DEGENERATE_ZERO_NORM" and zero_procrustes is None and zero_procrustes_reason == "DEGENERATE_ZERO_NORM",
+        }
+    )
+    return cases
 
 
 def centered(matrix: np.ndarray) -> np.ndarray:
@@ -705,20 +901,40 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
     if args.clean_output:
         if args.output_root.exists():
             shutil.rmtree(args.output_root)
-        if args.fsv_root.exists():
-            shutil.rmtree(args.fsv_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
     args.fsv_root.mkdir(parents=True, exist_ok=True)
 
-    manifest_by_key, manifest_summary = load_smoke_manifest(args.smoke_manifest)
-    records, load_summary = load_records(args.forward_root, manifest_by_key)
+    input_mode = getattr(args, "input_mode", "smoke-manifest")
+    source_checkpoint_summary: dict[str, Any] | None = None
+    if input_mode == "smoke-manifest":
+        task_id = args.task_id
+        artifact_kind = "smoke_intelligence_matrices"
+        manifest_by_key, manifest_summary = load_smoke_manifest(args.smoke_manifest)
+        records, load_summary = load_records(args.forward_root, manifest_by_key)
+        require(manifest_summary["rows"] == args.expected_chunk_count, f"expected {args.expected_chunk_count} manifest rows")
+    elif input_mode == "completed-shards":
+        task_id = args.task_id
+        artifact_kind = "python_full_completed_shard_alignment"
+        completed_shards, source_checkpoint_summary = completed_shard_entries(
+            args.forward_root,
+            args.checkpoint,
+            args.shard_plan,
+            args.max_completed_shards,
+            args.min_completed_shards,
+        )
+        manifest_by_key, manifest_summary = load_chunk_manifest_window(args.chunks_jsonl, completed_shards)
+        records, load_summary = load_records(args.forward_root, manifest_by_key, completed_shards)
+        if args.expected_chunk_count:
+            require(manifest_summary["rows"] == args.expected_chunk_count, f"expected {args.expected_chunk_count} selected chunk rows")
+    else:
+        raise SmokeMatrixError(f"unsupported input mode: {input_mode}")
     require(len(records) == args.expected_embedder_count, f"expected {args.expected_embedder_count} embedders, found {len(records)}")
-    require(manifest_summary["rows"] == args.expected_chunk_count, f"expected {args.expected_chunk_count} manifest rows")
 
     coverage = coverage_rows(records, manifest_summary)
     stratified = stratified_coverage_rows(records, manifest_by_key)
     pairwise, validity = pairwise_rows(records, args.neighbor_k, args.min_overlap)
     projections = per_embedder_projection_rows(records)
+    edge_cases = alignment_edge_cases(records, manifest_by_key, coverage, args.min_overlap, args.neighbor_k)
 
     top_alignment = top_rows(pairwise, "linear_cka", descending=True)
     top_disagreement = top_rows(pairwise, "disagreement_score", descending=True)
@@ -727,13 +943,18 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
 
     summary = {
         "schema_version": SCHEMA_VERSION,
-        "task_id": DEFAULT_TASK_ID,
-        "artifact_kind": "smoke_intelligence_matrices_summary",
+        "task_id": task_id,
+        "artifact_kind": f"{artifact_kind}_summary",
         "source_of_truth": {
             "forward_root": str(args.forward_root),
-            "smoke_manifest": str(args.smoke_manifest),
+            "input_mode": input_mode,
+            "smoke_manifest": str(args.smoke_manifest) if input_mode == "smoke-manifest" else None,
+            "chunks_jsonl": str(args.chunks_jsonl) if input_mode == "completed-shards" else None,
+            "checkpoint": source_checkpoint_summary.get("checkpoint_path") if source_checkpoint_summary else None,
+            "shard_plan": source_checkpoint_summary.get("shard_plan_path") if source_checkpoint_summary else None,
             "output_root": str(args.output_root),
         },
+        "source_checkpoint": source_checkpoint_summary,
         "manifest": manifest_summary,
         "load_summary": load_summary,
         "matrix_summary": {
@@ -812,32 +1033,39 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
         "estimator_validity": sha256_file(args.output_root / "estimator_validity.jsonl"),
         "stratified_coverage": sha256_file(args.output_root / "stratified_coverage.jsonl"),
     }
+    expected_pairwise_rows = args.expected_embedder_count * (args.expected_embedder_count - 1) // 2
     passes = (
-        readback_summary.get("task_id") == DEFAULT_TASK_ID
-        and readback_summary.get("matrix_summary", {}).get("pairwise_rows") == 66
-        and readback_pairwise == 66
+        readback_summary.get("task_id") == task_id
+        and readback_summary.get("matrix_summary", {}).get("pairwise_rows") == expected_pairwise_rows
+        and readback_pairwise == expected_pairwise_rows
         and readback_coverage == args.expected_embedder_count
-        and readback_validity >= 66
+        and readback_validity >= expected_pairwise_rows
         and all(row.get("coverage_ratio", 0.0) > 0 for row in coverage)
+        and all(case.get("passes") is True for case in edge_cases)
     )
     fsv = {
         "schema_version": SCHEMA_VERSION,
-        "task_id": DEFAULT_TASK_ID,
-        "artifact_kind": "smoke_intelligence_matrices_fsv",
+        "task_id": task_id,
+        "artifact_kind": f"{artifact_kind}_fsv",
         "started_at_utc": started,
         "created_at_utc": utc_now(),
         "passes": passes,
         "source_of_truth": {
             "forward_root": str(args.forward_root),
-            "smoke_manifest": str(args.smoke_manifest),
+            "input_mode": input_mode,
+            "smoke_manifest": str(args.smoke_manifest) if input_mode == "smoke-manifest" else None,
+            "chunks_jsonl": str(args.chunks_jsonl) if input_mode == "completed-shards" else None,
+            "checkpoint": source_checkpoint_summary.get("checkpoint_path") if source_checkpoint_summary else None,
+            "shard_plan": source_checkpoint_summary.get("shard_plan_path") if source_checkpoint_summary else None,
             "output_root": str(args.output_root),
             "summary": str(args.output_root / "summary.json"),
             "pairwise_metrics": str(args.output_root / "pairwise_metrics.jsonl"),
             "embedder_coverage": str(args.output_root / "embedder_coverage.jsonl"),
             "estimator_validity": str(args.output_root / "estimator_validity.jsonl"),
             "stratified_coverage": str(args.output_root / "stratified_coverage.jsonl"),
-            "fsv": str(args.fsv_root / "smoke_intelligence_matrices_fsv.json"),
+            "fsv": str(args.fsv_root / f"{artifact_kind}_fsv.json"),
         },
+        "source_checkpoint": source_checkpoint_summary,
         "before_state": before,
         "after_state": after,
         "readback": {
@@ -852,6 +1080,7 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
             "top_disagreement_first": top_disagreement[0] if top_disagreement else None,
             "stable_hashes": stable_hashes,
         },
+        "edge_cases": edge_cases,
         "artifact_hashes": artifact_hashes,
         "research_basis": [
             {
@@ -868,9 +1097,10 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
             },
         ],
     }
-    dump_json(args.fsv_root / "smoke_intelligence_matrices_fsv.json", fsv)
-    final_readback = read_json(args.fsv_root / "smoke_intelligence_matrices_fsv.json")
-    require(final_readback.get("passes") is True, f"FSV failed; see {args.fsv_root / 'smoke_intelligence_matrices_fsv.json'}")
+    fsv_path = args.fsv_root / f"{artifact_kind}_fsv.json"
+    dump_json(fsv_path, fsv)
+    final_readback = read_json(fsv_path)
+    require(final_readback.get("passes") is True, f"FSV failed; see {fsv_path}")
     print(json.dumps(final_readback, sort_keys=True, indent=2))
     return 0
 
@@ -878,13 +1108,20 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--forward-root", type=Path, default=DEFAULT_FORWARD_ROOT)
+    parser.add_argument("--input-mode", choices=["smoke-manifest", "completed-shards"], default="smoke-manifest")
     parser.add_argument("--smoke-manifest", type=Path, default=DEFAULT_SMOKE_MANIFEST)
+    parser.add_argument("--chunks-jsonl", type=Path, default=DEFAULT_CHUNKS_JSONL)
+    parser.add_argument("--checkpoint", type=Path, default=None)
+    parser.add_argument("--shard-plan", type=Path, default=None)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--task-id", default=DEFAULT_TASK_ID)
     parser.add_argument("--expected-chunk-count", type=int, default=1000)
     parser.add_argument("--expected-embedder-count", type=int, default=12)
     parser.add_argument("--min-overlap", type=int, default=DEFAULT_MIN_OVERLAP)
     parser.add_argument("--neighbor-k", type=int, default=DEFAULT_NEIGHBOR_K)
+    parser.add_argument("--min-completed-shards", type=int, default=1)
+    parser.add_argument("--max-completed-shards", type=int, default=None)
     parser.add_argument("--clean-output", action="store_true")
     return parser
 

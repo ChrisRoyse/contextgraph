@@ -89,17 +89,101 @@ def load_jsonl(path: Path, code: str) -> list[dict[str, Any]]:
     return rows
 
 
-def load_cleaned_manifest(path: Path) -> dict[str, dict[str, Any]]:
-    ensure_file(path, "SMOKE_MANIFEST_CLEANED_MANIFEST_MISSING", "cleaned Python corpus manifest")
+def load_json_object(path: Path, code: str, description: str) -> dict[str, Any]:
+    ensure_file(path, code, description)
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise SmokeManifestError(
-            "SMOKE_MANIFEST_CLEANED_MANIFEST_INVALID_JSON",
-            f"cleaned manifest is invalid JSON: {path}",
-            "Regenerate TASK-PY-DATA-004 before selecting a smoke manifest.",
+            code,
+            f"{description} is invalid JSON: {path}",
+            "Regenerate the upstream artifact before selecting a smoke manifest.",
             {"path": str(path), "error": str(exc)},
         ) from exc
+    if not isinstance(payload, dict):
+        raise SmokeManifestError(
+            code,
+            f"{description} must be a JSON object: {path}",
+            "Regenerate the upstream artifact before selecting a smoke manifest.",
+            {"path": str(path), "actual_type": type(payload).__name__},
+        )
+    return payload
+
+
+def require_source_hash_match(expected_sha: str, actual_sha: str, chunks_jsonl: Path, full_ast_corpus_fsv: Path) -> None:
+    if expected_sha != actual_sha:
+        raise SmokeManifestError(
+            "SMOKE_MANIFEST_STALE_SOURCE_CHUNKS_HASH",
+            "smoke manifest source chunks hash does not match #249 FSV",
+            "Regenerate the smoke manifest from the accepted #249 chunk Source of Truth.",
+            {
+                "expected": expected_sha,
+                "actual": actual_sha,
+                "chunks_jsonl": str(chunks_jsonl),
+                "full_ast_corpus_fsv": str(full_ast_corpus_fsv),
+            },
+        )
+
+
+def load_full_ast_corpus_gate(path: Path, chunks_jsonl: Path, expected_task_count: int) -> dict[str, Any]:
+    payload = load_json_object(path, "SMOKE_MANIFEST_FULL_AST_FSV_INVALID", "#249 full AST corpus FSV")
+    if payload.get("passes") is not True:
+        raise SmokeManifestError(
+            "SMOKE_MANIFEST_FULL_AST_FSV_NOT_PASSING",
+            "#249 full AST corpus FSV is not passing",
+            "Resolve #249 before selecting the post-#249 smoke manifest.",
+            {"path": str(path), "passes": payload.get("passes")},
+        )
+    after_state = payload.get("after_state")
+    if not isinstance(after_state, dict):
+        raise SmokeManifestError(
+            "SMOKE_MANIFEST_FULL_AST_FSV_AFTER_STATE_MISSING",
+            "#249 full AST corpus FSV has no after_state object",
+            "Regenerate #249 FSV before selecting the post-#249 smoke manifest.",
+            {"path": str(path)},
+        )
+    chunks_state = after_state.get("chunks")
+    coverage = after_state.get("chunk_coverage")
+    if not isinstance(chunks_state, dict) or not isinstance(coverage, dict):
+        raise SmokeManifestError(
+            "SMOKE_MANIFEST_FULL_AST_FSV_SOURCE_MISSING",
+            "#249 full AST corpus FSV is missing chunk source or coverage state",
+            "Regenerate #249 FSV before selecting the post-#249 smoke manifest.",
+            {"path": str(path), "after_state_keys": sorted(after_state.keys())},
+        )
+    required_sha = chunks_state.get("sha256")
+    required_path = chunks_state.get("path")
+    require_sha(required_sha, "full_ast_corpus_fsv.after_state.chunks.sha256", {"chunk_id": required_sha, "subject": str(path)})
+    if str(chunks_jsonl) != str(required_path):
+        raise SmokeManifestError(
+            "SMOKE_MANIFEST_SOURCE_CHUNKS_PATH_MISMATCH",
+            "smoke manifest source chunks path does not match #249 FSV",
+            "Use the accepted #249 chunk Source of Truth path.",
+            {"expected": required_path, "actual": str(chunks_jsonl), "full_ast_corpus_fsv": str(path)},
+        )
+    actual_sha = sha256_file(chunks_jsonl)
+    require_source_hash_match(required_sha, actual_sha, chunks_jsonl, path)
+    task_count = coverage.get("task_count")
+    pair_count = coverage.get("task_category_pair_count")
+    if task_count != expected_task_count or pair_count != expected_task_count * len(EXPECTED_MUTATION_CATEGORIES):
+        raise SmokeManifestError(
+            "SMOKE_MANIFEST_FULL_AST_COVERAGE_MISMATCH",
+            "#249 full AST corpus FSV does not prove the expected 300x8 coverage",
+            "Resolve #249 coverage before selecting the post-#249 smoke manifest.",
+            {"expected_task_count": expected_task_count, "expected_pair_count": expected_task_count * len(EXPECTED_MUTATION_CATEGORIES), "task_count": task_count, "pair_count": pair_count},
+        )
+    return {
+        "full_ast_corpus_fsv": str(path),
+        "source_chunks_jsonl": str(chunks_jsonl),
+        "source_chunks_sha256": required_sha,
+        "actual_source_chunks_sha256": actual_sha,
+        "source_chunks_bytes": chunks_state.get("bytes"),
+        "coverage": coverage,
+    }
+
+
+def load_cleaned_manifest(path: Path) -> dict[str, dict[str, Any]]:
+    payload = load_json_object(path, "SMOKE_MANIFEST_CLEANED_MANIFEST_INVALID_JSON", "cleaned Python corpus manifest")
     rows = payload.get("rows")
     if not isinstance(rows, list) or not rows:
         raise SmokeManifestError(
@@ -328,6 +412,40 @@ def source_size_bucket(byte_len: int) -> str:
     return "large"
 
 
+def row_source_size_bucket(row: dict[str, Any]) -> str:
+    return source_size_bucket(len(str(row["source_text"]).encode(row.get("encoding") or "utf-8")))
+
+
+def row_dimension_value(row: dict[str, Any], dimension: str) -> str:
+    if dimension == "source_size_bucket":
+        return row_source_size_bucket(row)
+    value = row.get(dimension)
+    if not isinstance(value, str) or not value:
+        raise SmokeManifestError(
+            "SMOKE_MANIFEST_STRATIFICATION_FIELD_INVALID",
+            "chunk candidate has invalid stratification field",
+            "Regenerate AST chunks before selecting a stratified smoke manifest.",
+            {"dimension": dimension, "chunk_id": row.get("chunk_id"), "value": value},
+        )
+    return value
+
+
+def is_syntax_error_row(row: dict[str, Any]) -> bool:
+    return row.get("chunk_kind") == "syntax_error_file" or row.get("node_kind") == "syntax_error_file"
+
+
+def select_representative(
+    rows: list[dict[str, Any]],
+    seed: str,
+    salt: str,
+    selected_ids: set[str],
+) -> dict[str, Any] | None:
+    candidates = [row for row in rows if row["chunk_id"] not in selected_ids]
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda row: stable_sort_key(seed, row, salt))[0]
+
+
 def source_row_id(row: dict[str, Any]) -> str:
     return f"{row['task_instance_id']}::{row['mutation_category']}"
 
@@ -356,6 +474,85 @@ def select_smoke_rows(rows: list[dict[str, Any]], target_count: int, seed: str) 
             {"target_count": target_count, "dedupe": dedupe},
         )
 
+    selected: list[dict[str, Any]] = []
+    selected_ids: set[str] = set()
+    coverage_prefill: list[dict[str, Any]] = []
+    coverage_dimensions = (
+        "task_instance_id",
+        "repo",
+        "mutation_category",
+        "workspace_state",
+        "chunk_kind",
+        "source_size_bucket",
+    )
+    for dimension in coverage_dimensions:
+        dimension_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in deduped:
+            dimension_groups[row_dimension_value(row, dimension)].append(row)
+        for dimension_rows in dimension_groups.values():
+            dimension_rows.sort(key=lambda row: stable_sort_key(seed, row, f"coverage-{dimension}"))
+        values = sorted(dimension_groups)
+        if len(values) > target_count:
+            raise SmokeManifestError(
+                "SMOKE_MANIFEST_COVERAGE_DIMENSION_TOO_WIDE",
+                "target count is too small to represent every value in a required stratification dimension",
+                "Increase target count or narrow the source corpus before selecting a smoke manifest.",
+                {"dimension": dimension, "value_count": len(values), "target_count": target_count},
+            )
+        represented_values = {row_dimension_value(row, dimension) for row in selected}
+        for value in values:
+            if value in represented_values:
+                continue
+            representative = next((row for row in dimension_groups[value] if row["chunk_id"] not in selected_ids), None)
+            if representative is None:
+                raise SmokeManifestError(
+                    "SMOKE_MANIFEST_COVERAGE_PREFILL_EXHAUSTED",
+                    "could not select a unique representative for a required stratification value",
+                    "Inspect chunk_id dedupe and coverage dimensions before using the smoke manifest.",
+                    {"dimension": dimension, "value": value, "selected_count": len(selected)},
+            )
+            selected.append(representative)
+            selected_ids.add(representative["chunk_id"])
+            represented_values.add(value)
+            coverage_prefill.append(
+                {
+                    "dimension": dimension,
+                    "value": value,
+                    "chunk_id": representative["chunk_id"],
+                    "task_instance_id": representative["task_instance_id"],
+                    "mutation_category": representative["mutation_category"],
+                }
+            )
+    syntax_error_candidates = [row for row in deduped if is_syntax_error_row(row)]
+    if syntax_error_candidates and not any(is_syntax_error_row(row) for row in selected):
+        representative = select_representative(syntax_error_candidates, seed, "coverage-syntax-error-file", selected_ids)
+        if representative is None:
+            raise SmokeManifestError(
+                "SMOKE_MANIFEST_SYNTAX_ERROR_PREFILL_EXHAUSTED",
+                "syntax-error chunks exist but no unique syntax-error representative could be selected",
+                "Inspect chunk_id dedupe and syntax-error chunk generation before using the smoke manifest.",
+                {"syntax_error_candidate_count": len(syntax_error_candidates), "selected_count": len(selected)},
+            )
+        selected.append(representative)
+        selected_ids.add(representative["chunk_id"])
+        coverage_prefill.append(
+            {
+                "dimension": "syntax_error_file",
+                "value": "present",
+                "chunk_id": representative["chunk_id"],
+                "task_instance_id": representative["task_instance_id"],
+                "mutation_category": representative["mutation_category"],
+            }
+        )
+
+    if len(selected) > target_count:
+        raise SmokeManifestError(
+            "SMOKE_MANIFEST_COVERAGE_PREFILL_TOO_LARGE",
+            "required stratification representatives exceed target count",
+            "Increase target count before selecting a smoke manifest.",
+            {"target_count": target_count, "prefill_count": len(selected)},
+        )
+
     buckets: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in deduped:
         buckets[(row["repo"], row["mutation_category"], row["chunk_kind"])].append(row)
@@ -365,8 +562,6 @@ def select_smoke_rows(rows: list[dict[str, Any]], target_count: int, seed: str) 
         buckets,
         key=lambda key: hashlib.sha256(canonical_json({"seed": seed, "bucket": key}).encode("utf-8")).hexdigest(),
     )
-    selected: list[dict[str, Any]] = []
-    selected_ids: set[str] = set()
     exhausted = False
     while len(selected) < target_count and not exhausted:
         exhausted = True
@@ -394,7 +589,10 @@ def select_smoke_rows(rows: list[dict[str, Any]], target_count: int, seed: str) 
         "bucket_count": len(bucket_keys),
         "target_count": target_count,
         "selected_count": len(selected),
-        "selection_algorithm": "deterministic round-robin over (repo, mutation_category, chunk_kind) after chunk_id dedupe",
+        "coverage_prefill_count": len(coverage_prefill),
+        "coverage_prefill": coverage_prefill,
+        "coverage_dimensions": list(coverage_dimensions) + ["syntax_error_file_if_present"],
+        "selection_algorithm": "deterministic coverage prefill across required dimensions, then round-robin over (repo, mutation_category, chunk_kind) after chunk_id dedupe",
     }
     return selected, selection_summary
 
@@ -436,9 +634,78 @@ def stratification_counts(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "by_mutation_category": dict(sorted(Counter(row["mutation_category"] for row in rows).items())),
         "by_workspace_state": dict(sorted(Counter(row["workspace_state"] for row in rows).items())),
         "by_chunk_kind": dict(sorted(Counter(row["chunk_kind"] for row in rows).items())),
-        "by_source_size_bucket": dict(
-            sorted(Counter(source_size_bucket(len(str(row["source_text"]).encode(row.get("encoding") or "utf-8"))) for row in rows).items())
-        ),
+        "by_source_size_bucket": dict(sorted(Counter(row_source_size_bucket(row) for row in rows).items())),
+        "syntax_error_file_count": sum(1 for row in rows if is_syntax_error_row(row)),
+    }
+
+
+def stratification_requirements(
+    candidates: list[dict[str, Any]],
+    selected: list[dict[str, Any]],
+    expected_task_count: int,
+    expected_categories: tuple[str, ...],
+) -> dict[str, Any]:
+    dimensions = (
+        "task_instance_id",
+        "repo",
+        "mutation_category",
+        "workspace_state",
+        "chunk_kind",
+        "source_size_bucket",
+    )
+    dimension_results: dict[str, Any] = {}
+    missing_by_dimension: dict[str, list[str]] = {}
+    for dimension in dimensions:
+        candidate_values = sorted({row_dimension_value(row, dimension) for row in candidates})
+        selected_values = sorted({row_dimension_value(row, dimension) for row in selected})
+        missing = sorted(set(candidate_values) - set(selected_values))
+        dimension_results[dimension] = {
+            "candidate_value_count": len(candidate_values),
+            "selected_value_count": len(selected_values),
+            "candidate_values": candidate_values,
+            "selected_values": selected_values,
+            "missing_values": missing,
+            "passes": not missing,
+        }
+        if missing:
+            missing_by_dimension[dimension] = missing
+    candidate_categories = sorted({row["mutation_category"] for row in candidates})
+    selected_categories = sorted({row["mutation_category"] for row in selected})
+    candidate_syntax_error_count = sum(1 for row in candidates if is_syntax_error_row(row))
+    selected_syntax_error_count = sum(1 for row in selected if is_syntax_error_row(row))
+    expected_category_result = {
+        "expected_categories": list(expected_categories),
+        "candidate_categories": candidate_categories,
+        "selected_categories": selected_categories,
+        "missing_from_candidates": sorted(set(expected_categories) - set(candidate_categories)),
+        "missing_from_selected": sorted(set(expected_categories) - set(selected_categories)),
+    }
+    task_result = {
+        "expected_task_count": expected_task_count,
+        "candidate_task_count": len({row["task_instance_id"] for row in candidates}),
+        "selected_task_count": len({row["task_instance_id"] for row in selected}),
+    }
+    syntax_error_result = {
+        "candidate_syntax_error_file_count": candidate_syntax_error_count,
+        "selected_syntax_error_file_count": selected_syntax_error_count,
+        "required": candidate_syntax_error_count > 0,
+        "passes": candidate_syntax_error_count == 0 or selected_syntax_error_count > 0,
+    }
+    expected_category_passes = not expected_category_result["missing_from_candidates"] and not expected_category_result["missing_from_selected"]
+    task_passes = task_result["candidate_task_count"] == expected_task_count and task_result["selected_task_count"] == expected_task_count
+    passes = (
+        all(result["passes"] for result in dimension_results.values())
+        and syntax_error_result["passes"]
+        and expected_category_passes
+        and task_passes
+    )
+    return {
+        "dimensions": dimension_results,
+        "missing_by_dimension": missing_by_dimension,
+        "expected_categories": {**expected_category_result, "passes": expected_category_passes},
+        "task_coverage": {**task_result, "passes": task_passes},
+        "syntax_error_file": syntax_error_result,
+        "passes": passes,
     }
 
 
@@ -543,9 +810,34 @@ def enrich_selected_row(
     }
 
 
-def edge_audits(selected: list[dict[str, Any]], warnings: list[dict[str, Any]], seed: str) -> dict[str, Any]:
+def edge_audits(
+    selected: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+    stratification: dict[str, Any],
+    source_gate: dict[str, Any],
+    chunks_jsonl: Path,
+    full_ast_corpus_fsv: Path,
+    seed: str,
+) -> dict[str, Any]:
     duplicate_probe_rows = selected[:4] + [selected[0], selected[1]]
     duplicate_deduped, duplicate_summary = dedupe_by_chunk_id(duplicate_probe_rows, seed)
+    stale_source_hash_error: dict[str, Any]
+    try:
+        require_source_hash_match(
+            "sha256:" + ("0" * 64),
+            str(source_gate["actual_source_chunks_sha256"]),
+            chunks_jsonl,
+            full_ast_corpus_fsv,
+        )
+    except SmokeManifestError as exc:
+        stale_source_hash_error = exc.to_json()
+    else:
+        raise SmokeManifestError(
+            "SMOKE_MANIFEST_EDGE_AUDIT_FAILED",
+            "stale-source-hash edge audit did not fail",
+            "Fix #249 source hash validation before trusting smoke manifest FSV.",
+            {"chunks_jsonl": str(chunks_jsonl), "full_ast_corpus_fsv": str(full_ast_corpus_fsv)},
+        )
     bad_hash_error: dict[str, Any]
     bad = dict(selected[0])
     bad["source_text"] = f"{bad['source_text']}# synthetic hash mismatch"
@@ -574,6 +866,20 @@ def edge_audits(selected: list[dict[str, Any]], warnings: list[dict[str, Any]], 
             "Fix source validation before trusting smoke manifest FSV.",
             {"chunk_id": selected[0]["chunk_id"]},
         )
+    missing_source_text_error: dict[str, Any]
+    missing = dict(selected[0])
+    missing.pop("source_text", None)
+    try:
+        validate_candidate_source(missing)
+    except SmokeManifestError as exc:
+        missing_source_text_error = exc.to_json()
+    else:
+        raise SmokeManifestError(
+            "SMOKE_MANIFEST_EDGE_AUDIT_FAILED",
+            "missing-source-text edge audit did not fail",
+            "Fix required field validation before trusting smoke manifest FSV.",
+            {"chunk_id": selected[0]["chunk_id"]},
+        )
     empty_error: dict[str, Any]
     try:
         select_smoke_rows([], 1, seed)
@@ -599,6 +905,16 @@ def edge_audits(selected: list[dict[str, Any]], warnings: list[dict[str, Any]], 
             "expected": {"unique_chunk_id_count": len(duplicate_deduped), "duplicate_row_count": 2},
             "pass": duplicate_summary["duplicate_row_count"] == 2 and len(duplicate_deduped) == 4,
         },
+        "stale_full_ast_source_hash": {
+            "before_state": {
+                "full_ast_corpus_fsv": str(full_ast_corpus_fsv),
+                "expected_source_chunks_sha256": "sha256:" + ("0" * 64),
+                "actual_source_chunks_sha256": source_gate["actual_source_chunks_sha256"],
+            },
+            "after_state": {"accepted": False, "error_code": stale_source_hash_error["error_code"]},
+            "expected_error_code": "SMOKE_MANIFEST_STALE_SOURCE_CHUNKS_HASH",
+            "pass": stale_source_hash_error["error_code"] == "SMOKE_MANIFEST_STALE_SOURCE_CHUNKS_HASH",
+        },
         "source_text_hash_mismatch": {
             "before_state": {"chunk_id": selected[0]["chunk_id"], "source_sha256": selected[0]["source_sha256"]},
             "after_state": {"accepted": False, "error_code": bad_hash_error["error_code"]},
@@ -611,11 +927,27 @@ def edge_audits(selected: list[dict[str, Any]], warnings: list[dict[str, Any]], 
             "expected_error_code": "SMOKE_MANIFEST_SOURCE_SLICE_NOT_VERIFIED",
             "pass": unverified_source_error["error_code"] == "SMOKE_MANIFEST_SOURCE_SLICE_NOT_VERIFIED",
         },
-        "stratification_shortfall": {
+        "missing_source_text_field": {
+            "before_state": {"chunk_id": selected[0]["chunk_id"], "source_text_present": False},
+            "after_state": {"accepted": False, "error_code": missing_source_text_error["error_code"]},
+            "expected_error_code": "SMOKE_MANIFEST_CHUNK_FIELD_MISSING",
+            "pass": missing_source_text_error["error_code"] == "SMOKE_MANIFEST_CHUNK_FIELD_MISSING",
+        },
+        "post249_full_coverage_has_no_warning": {
             "before_state": {"warnings": warnings},
             "after_state": {"warning_count": len(warnings), "codes": [warning["code"] for warning in warnings]},
-            "expected": "typed warning if accepted chunk SoT is narrower than intended 300x8 coverage",
-            "pass": bool(warnings),
+            "expected": "no source coverage warnings after accepted #249 full 300x8 corpus",
+            "pass": len(warnings) == 0,
+        },
+        "required_stratification_coverage": {
+            "before_state": {"required_dimensions": sorted(stratification["dimensions"].keys())},
+            "after_state": {
+                "passes": stratification["passes"],
+                "missing_by_dimension": stratification["missing_by_dimension"],
+                "syntax_error_file": stratification["syntax_error_file"],
+            },
+            "expected": "selected 1000 chunks cover every candidate value for required stratification dimensions and at least one syntax-error chunk if present",
+            "pass": stratification["passes"] is True,
         },
     }
 
@@ -642,6 +974,7 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
     before_state = {
         "checked_at": checked_at,
         "source_chunks": file_state(args.chunks_jsonl),
+        "full_ast_corpus_fsv": file_state(args.full_ast_corpus_fsv),
         "cleaned_manifest": file_state(args.cleaned_manifest),
         "chunks_out": file_state(chunks_out),
         "manifest_out": file_state(manifest_out),
@@ -652,6 +985,8 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
         "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
     }
 
+    expected_categories = tuple(category.strip() for category in args.expected_mutation_categories.split(",") if category.strip())
+    source_gate = load_full_ast_corpus_gate(args.full_ast_corpus_fsv, args.chunks_jsonl, args.expected_task_count)
     chunk_rows = load_jsonl(args.chunks_jsonl, "SMOKE_MANIFEST_CHUNKS_JSONL_INVALID")
     cleaned_rows = load_cleaned_manifest(args.cleaned_manifest)
     selected, source_proofs, selection_summary = select_source_verified_smoke_rows(
@@ -667,9 +1002,10 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
         chunk_rows,
         selected,
         args.expected_task_count,
-        tuple(args.expected_mutation_categories.split(",")),
+        expected_categories,
     )
-    edge_results = edge_audits(selected, warnings, args.seed)
+    stratification = stratification_requirements(chunk_rows, selected, args.expected_task_count, expected_categories)
+    edge_results = edge_audits(selected, warnings, stratification, source_gate, args.chunks_jsonl, args.full_ast_corpus_fsv, args.seed)
     assert_edge_pass(edge_results)
 
     chunk_store = write_jsonl_checked(chunks_out, selected)
@@ -679,6 +1015,9 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
     selected_hash = stable_hash(enriched)
     source_hashes = {
         "chunks_jsonl": sha256_file(args.chunks_jsonl),
+        "full_ast_corpus_fsv": sha256_file(args.full_ast_corpus_fsv),
+        "required_source_chunks_sha256": source_gate["source_chunks_sha256"],
+        "actual_source_chunks_sha256": source_gate["actual_source_chunks_sha256"],
         "cleaned_manifest": sha256_file(args.cleaned_manifest),
     }
     summary = {
@@ -689,7 +1028,8 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
         "seed": args.seed,
         "target_count": args.target_count,
         "source_of_truth": {
-            "source_policy": "accepted AST chunk JSONL is the durable source of truth for smoke selection; embedded source_text is validated against source_sha256 and source_slice_verified",
+            "source_policy": "accepted #249 full AST corpus FSV and chunk JSONL are the durable source of truth for smoke selection; embedded source_text is validated against source_sha256 and source_slice_verified",
+            "full_ast_corpus_fsv": str(args.full_ast_corpus_fsv),
             "source_chunks_jsonl": str(args.chunks_jsonl),
             "cleaned_manifest": str(args.cleaned_manifest),
             "smoke_chunks_jsonl": str(chunks_out),
@@ -698,9 +1038,11 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
             "fsv": str(fsv_out),
         },
         "source_hashes": source_hashes,
+        "source_gate": source_gate,
         "selection": selection_summary,
         "candidate_counts": candidate_counts,
         "selected_counts": selected_counts,
+        "stratification_requirements": stratification,
         "stratification_warnings": warnings,
         "selected_manifest_sha256": selected_hash,
         "smoke_chunks_sha256": chunk_store["sha256"],
@@ -711,6 +1053,7 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
     after_state = {
         "checked_at": utc_now(),
         "source_chunks": file_state(args.chunks_jsonl),
+        "full_ast_corpus_fsv": file_state(args.full_ast_corpus_fsv),
         "cleaned_manifest": file_state(args.cleaned_manifest),
         "chunks_out": file_state(chunks_out),
         "manifest_out": file_state(manifest_out),
@@ -730,15 +1073,22 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
             "durable_source_chunks_verified": args.target_count,
             "smoke_chunks_count": args.target_count,
             "smoke_manifest_count": args.target_count,
+            "source_chunks_sha256": source_gate["source_chunks_sha256"],
+            "stratification_requirements_pass": True,
+            "source_coverage_warning_count": 0,
         },
         "observed": {
             "selected_count": len(selected),
             "unique_chunk_ids": len({row["chunk_id"] for row in selected}),
             "durable_source_chunks_verified": len(source_proofs),
+            "source_chunks_sha256": source_hashes["chunks_jsonl"],
+            "full_ast_corpus_required_sha256": source_gate["source_chunks_sha256"],
             "source_mode_counts": selection_summary["source_mode_counts"],
             "smoke_chunks_count": after_state["smoke_chunks_count"],
             "smoke_manifest_count": after_state["smoke_manifest_count"],
             "selected_counts": selected_counts,
+            "stratification_requirements": stratification,
+            "source_coverage_warning_count": len(warnings),
         },
         "pass": (
             len(selected) == args.target_count
@@ -746,6 +1096,9 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
             and len(source_proofs) == args.target_count
             and after_state["smoke_chunks_count"] == args.target_count
             and after_state["smoke_manifest_count"] == args.target_count
+            and source_hashes["chunks_jsonl"] == source_gate["source_chunks_sha256"]
+            and stratification["passes"] is True
+            and len(warnings) == 0
         ),
     }
     if not happy_path["pass"]:

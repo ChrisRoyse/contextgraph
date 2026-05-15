@@ -92,6 +92,27 @@ def append_jsonl_checked(path: Path, row: dict[str, Any]) -> None:
         os.fsync(handle.fileno())
 
 
+def read_jsonl_checked(path: Path, code: str) -> list[dict[str, Any]]:
+    ensure_file(path, code, "required JSONL artifact")
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise FullAstCorpusError(
+                    code,
+                    f"invalid JSONL at {path}:{line_number}",
+                    "Regenerate the task checkpoint before resuming the full AST corpus run.",
+                    {"path": str(path), "line_number": line_number, "error": str(exc)},
+                ) from exc
+            require(isinstance(value, dict), code, f"JSONL row must be an object at {path}:{line_number}", {"path": str(path), "line_number": line_number})
+            rows.append(value)
+    return rows
+
+
 def count_jsonl(path: Path) -> int:
     if not path.is_file():
         return 0
@@ -110,6 +131,105 @@ def read_json(path: Path, code: str) -> Any:
             "Regenerate the upstream artifact before building the full AST corpus.",
             {"path": str(path), "error": str(exc)},
         ) from exc
+
+
+def task_checkpoint_paths(root: Path, task_id: str) -> dict[str, Path]:
+    task_root = root / safe_component(task_id)
+    return {
+        "root": task_root,
+        "states": task_root / "states.jsonl",
+        "parse_records": task_root / "parse_records.jsonl",
+        "chunks": task_root / "chunks.jsonl",
+        "diagnostics": task_root / "diagnostics.jsonl",
+        "patch_logs": task_root / "patch_logs.jsonl",
+        "manifest": task_root / "manifest.json",
+    }
+
+
+def write_task_checkpoint(
+    *,
+    root: Path,
+    task_id: str,
+    task_index: int,
+    task_count: int,
+    states: list[dict[str, Any]],
+    parse_records: list[dict[str, Any]],
+    chunks: list[dict[str, Any]],
+    diagnostics: list[dict[str, Any]],
+    patch_logs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    paths = task_checkpoint_paths(root, task_id)
+    paths["root"].mkdir(parents=True, exist_ok=True)
+    state_store = write_jsonl_checked(paths["states"], states)
+    parse_store = write_jsonl_checked(paths["parse_records"], parse_records)
+    chunk_store = write_jsonl_checked(paths["chunks"], chunks)
+    diagnostic_store = write_jsonl_checked(paths["diagnostics"], diagnostics)
+    patch_store = write_jsonl_checked(paths["patch_logs"], patch_logs)
+    manifest = {
+        "schema_version": 1,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_full_ast_task_checkpoint",
+        "created_at_utc": utc_now(),
+        "task_instance_id": task_id,
+        "task_index": task_index,
+        "task_count": task_count,
+        "source_of_truth": {
+            "states_jsonl": str(paths["states"]),
+            "parse_records_jsonl": str(paths["parse_records"]),
+            "chunks_jsonl": str(paths["chunks"]),
+            "diagnostics_jsonl": str(paths["diagnostics"]),
+            "patch_logs_jsonl": str(paths["patch_logs"]),
+            "manifest": str(paths["manifest"]),
+        },
+        "counts": {
+            "states": len(states),
+            "parse_records": len(parse_records),
+            "chunks": len(chunks),
+            "syntax_warning_diagnostics": len(diagnostics),
+            "patch_logs": len(patch_logs),
+        },
+        "sha256": {
+            "states": state_store["sha256"],
+            "parse_records": parse_store["sha256"],
+            "chunks": chunk_store["sha256"],
+            "diagnostics": diagnostic_store["sha256"],
+            "patch_logs": patch_store["sha256"],
+        },
+        "passes": True,
+    }
+    write_json_checked(paths["manifest"], manifest)
+    return manifest
+
+
+def load_task_checkpoint(
+    *,
+    manifest_path: Path,
+    expected_task_id: str,
+    parse_validator: Any,
+    chunk_validator: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    manifest = read_json(manifest_path, "PY_FULL_AST_TASK_CHECKPOINT_MANIFEST_INVALID")
+    require(manifest.get("task_instance_id") == expected_task_id, "PY_FULL_AST_TASK_CHECKPOINT_ID_MISMATCH", "task checkpoint belongs to a different task", {"expected": expected_task_id, "observed": manifest.get("task_instance_id"), "manifest": str(manifest_path)})
+    source = manifest.get("source_of_truth")
+    require(isinstance(source, dict), "PY_FULL_AST_TASK_CHECKPOINT_SOURCE_INVALID", "task checkpoint source_of_truth is missing", {"manifest": str(manifest_path)})
+    states = read_jsonl_checked(Path(source["states_jsonl"]), "PY_FULL_AST_TASK_CHECKPOINT_STATES_INVALID")
+    parse_records = read_jsonl_checked(Path(source["parse_records_jsonl"]), "PY_FULL_AST_TASK_CHECKPOINT_PARSE_INVALID")
+    chunks = read_jsonl_checked(Path(source["chunks_jsonl"]), "PY_FULL_AST_TASK_CHECKPOINT_CHUNKS_INVALID")
+    diagnostics = read_jsonl_checked(Path(source["diagnostics_jsonl"]), "PY_FULL_AST_TASK_CHECKPOINT_DIAGNOSTICS_INVALID")
+    patch_logs = read_jsonl_checked(Path(source["patch_logs_jsonl"]), "PY_FULL_AST_TASK_CHECKPOINT_PATCH_LOGS_INVALID")
+    validate_records(parse_records, parse_validator)
+    validate_chunks(chunks, chunk_validator)
+    counts = manifest.get("counts")
+    require(isinstance(counts, dict), "PY_FULL_AST_TASK_CHECKPOINT_COUNTS_INVALID", "task checkpoint counts are missing", {"manifest": str(manifest_path)})
+    observed_counts = {
+        "states": len(states),
+        "parse_records": len(parse_records),
+        "chunks": len(chunks),
+        "syntax_warning_diagnostics": len(diagnostics),
+        "patch_logs": len(patch_logs),
+    }
+    require(all(counts.get(key) == value for key, value in observed_counts.items()), "PY_FULL_AST_TASK_CHECKPOINT_COUNT_MISMATCH", "task checkpoint counts do not match JSONL readback", {"manifest": str(manifest_path), "expected": counts, "observed": observed_counts})
+    return states, parse_records, chunks, diagnostics, patch_logs, manifest
 
 
 def patch_text(row: dict[str, Any], field: str) -> str:
@@ -153,7 +273,7 @@ def patch_path_summary(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def load_cleaned_rows(path: Path) -> list[dict[str, Any]]:
+def load_cleaned_rows(path: Path, *, strict_300x8: bool) -> list[dict[str, Any]]:
     payload = read_json(path, "PY_FULL_AST_CLEANED_MANIFEST_INVALID")
     rows = payload.get("rows")
     require(isinstance(rows, list) and rows, "PY_FULL_AST_CLEANED_ROWS_EMPTY", "cleaned manifest has no rows")
@@ -168,12 +288,13 @@ def load_cleaned_rows(path: Path) -> list[dict[str, Any]]:
         "cleaned manifest categories do not match the Python 300x8 contract",
         {"actual": dict(sorted(by_category.items())), "expected": list(EXPECTED_CATEGORIES)},
     )
-    require(
-        all(count == 300 for count in by_category.values()),
-        "PY_FULL_AST_CATEGORY_COUNT_MISMATCH",
-        "each mutation category must have exactly 300 cleaned rows",
-        {"actual": dict(sorted(by_category.items()))},
-    )
+    if strict_300x8:
+        require(
+            all(count == 300 for count in by_category.values()),
+            "PY_FULL_AST_CATEGORY_COUNT_MISMATCH",
+            "each mutation category must have exactly 300 cleaned rows",
+            {"actual": dict(sorted(by_category.items()))},
+        )
     for row in rows:
         for key in ("task_id", "repo", "base_commit", "mutation_category", "row_id"):
             require(isinstance(row.get(key), str) and row[key], "PY_FULL_AST_ROW_FIELD_MISSING", f"cleaned row missing {key}", {"row_id": row.get("row_id")})
@@ -582,6 +703,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
     args.chunk_root.mkdir(parents=True, exist_ok=True)
     args.fsv_root.mkdir(parents=True, exist_ok=True)
     args.hot_root.mkdir(parents=True, exist_ok=True)
+    args.task_checkpoint_root.mkdir(parents=True, exist_ok=True)
     snapshot_root = args.source_snapshot_root
     if args.clean_output:
         for path in (
@@ -594,17 +716,21 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
             args.chunk_root / "python_ast_chunk_schema.json",
             args.chunk_root / "python_ast_chunk_manifest.json",
             args.chunk_root / "python_full_ast_corpus_manifest.json",
+            args.chunk_root / "python_ast_chunk_diagnostics.jsonl",
         ):
             if path.is_file():
                 path.unlink()
+        if args.task_checkpoint_root.exists():
+            shutil.rmtree(args.task_checkpoint_root)
         if snapshot_root.exists():
             shutil.rmtree(snapshot_root)
 
     chunks_path = args.chunk_root / "python_ast_chunks.jsonl"
+    diagnostics_path = args.chunk_root / "python_ast_chunk_diagnostics.jsonl"
     parse_records_path = args.parse_root / "python_ast_parse_records.jsonl"
     fsv_path = args.fsv_root / "full_ast_corpus_fsv.json"
     progress_path = args.fsv_root / "full_ast_corpus_progress.jsonl"
-    if progress_path.is_file():
+    if progress_path.is_file() and not args.resume_from_task_checkpoints:
         progress_path.unlink()
     before_state = {
         "started_at_utc": started,
@@ -612,13 +738,15 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
         "workspace_manifest": file_state(args.workspace_manifest),
         "parse_records": file_state(parse_records_path),
         "chunks": file_state(chunks_path),
+        "diagnostics": file_state(diagnostics_path),
+        "task_checkpoint_root": {"path": str(args.task_checkpoint_root), "exists": args.task_checkpoint_root.exists()},
         "chunk_coverage": coverage_from_jsonl(chunks_path),
         "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
         "hot_bytes": path_bytes(args.hot_root),
         "snapshot_bytes": path_bytes(snapshot_root),
     }
 
-    rows = load_cleaned_rows(args.cleaned_manifest)
+    rows = load_cleaned_rows(args.cleaned_manifest, strict_300x8=args.require_full_coverage)
     grouped = group_rows(rows, max_tasks=args.max_tasks)
     expected_pairs = {(row["task_id"], row["mutation_category"]) for row in rows if args.max_tasks is None or row["task_id"] in grouped}
     require(bool(expected_pairs), "PY_FULL_AST_EXPECTED_PAIRS_EMPTY", "expected coverage pair set is empty")
@@ -640,19 +768,43 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
     patch_logs: list[dict[str, Any]] = []
     ordered_tasks = sorted(grouped)
     for task_index, task_id in enumerate(ordered_tasks, start=1):
-        task_states, task_records, task_chunks, task_diagnostics, task_patch_logs = build_for_task(
-            task_id=task_id,
-            categories=grouped[task_id],
-            repo_root=args.repo_object_root,
-            hot_root=args.hot_root,
-            snapshot_root=snapshot_root,
-            schema_path=parse_schema_path,
-            chunk_schema_path=chunk_schema_path,
-            parse_validator=parse_validator,
-            chunk_validator=chunk_validator,
-            now=now,
-            timeout=args.git_timeout_seconds,
-        )
+        checkpoint_paths = task_checkpoint_paths(args.task_checkpoint_root, task_id)
+        reused_checkpoint = False
+        if args.resume_from_task_checkpoints and checkpoint_paths["manifest"].is_file():
+            task_states, task_records, task_chunks, task_diagnostics, task_patch_logs, task_checkpoint_manifest = load_task_checkpoint(
+                manifest_path=checkpoint_paths["manifest"],
+                expected_task_id=task_id,
+                parse_validator=parse_validator,
+                chunk_validator=chunk_validator,
+            )
+            reused_checkpoint = True
+        else:
+            task_states, task_records, task_chunks, task_diagnostics, task_patch_logs = build_for_task(
+                task_id=task_id,
+                categories=grouped[task_id],
+                repo_root=args.repo_object_root,
+                hot_root=args.hot_root,
+                snapshot_root=snapshot_root,
+                schema_path=parse_schema_path,
+                chunk_schema_path=chunk_schema_path,
+                parse_validator=parse_validator,
+                chunk_validator=chunk_validator,
+                now=now,
+                timeout=args.git_timeout_seconds,
+            )
+            task_checkpoint_manifest = write_task_checkpoint(
+                root=args.task_checkpoint_root,
+                task_id=task_id,
+                task_index=task_index,
+                task_count=len(ordered_tasks),
+                states=task_states,
+                parse_records=task_records,
+                chunks=task_chunks,
+                diagnostics=task_diagnostics,
+                patch_logs=task_patch_logs,
+            )
+        for diagnostic in task_diagnostics:
+            append_jsonl_checked(diagnostics_path, diagnostic)
         states.extend(task_states)
         parse_records.extend(task_records)
         chunks.extend(task_chunks)
@@ -664,7 +816,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
                 "schema_version": 1,
                 "task_id": TASK_ID,
                 "timestamp_utc": utc_now(),
-                "phase": "task_materialized",
+                "phase": "task_checkpoint_reused" if reused_checkpoint else "task_materialized",
                 "task_index": task_index,
                 "task_count": len(ordered_tasks),
                 "task_instance_id": task_id,
@@ -672,8 +824,14 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
                 "parse_record_count_delta": len(task_records),
                 "chunk_count_delta": len(task_chunks),
                 "diagnostic_count_delta": len(task_diagnostics),
+                "syntax_warning_count_delta": len(task_diagnostics),
+                "fatal_error_count_delta": 0,
+                "diagnostic_severity": "warning" if task_diagnostics else "none",
                 "total_parse_records": len(parse_records),
                 "total_chunks": len(chunks),
+                "total_syntax_warnings": len(diagnostics),
+                "task_checkpoint_manifest": str(task_checkpoint_manifest["source_of_truth"]["manifest"]),
+                "diagnostics_jsonl": str(diagnostics_path),
                 "hot_bytes": path_bytes(args.hot_root),
                 "snapshot_bytes": path_bytes(snapshot_root),
             },
@@ -688,6 +846,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
     edge_parse_store = write_jsonl_checked(args.parse_root / "edge_case_parse_records.jsonl", parse_edges)
     chunk_store = write_jsonl_checked(chunks_path, chunks)
     edge_chunk_store = write_jsonl_checked(args.chunk_root / "edge_case_chunks.jsonl", chunk_edges)
+    diagnostic_store = write_jsonl_checked(diagnostics_path, diagnostics)
 
     observed_coverage = coverage(chunks)
     observed_pairs = {(chunk["task_instance_id"], chunk["mutation_category"]) for chunk in chunks}
@@ -714,6 +873,8 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
             "cleaned_manifest": str(args.cleaned_manifest),
             "parse_records_jsonl": str(parse_records_path),
             "chunks_jsonl": str(chunks_path),
+            "diagnostics_jsonl": str(diagnostics_path),
+            "task_checkpoint_root": str(args.task_checkpoint_root),
             "source_snapshot_root": str(snapshot_root),
             "progress_jsonl": str(progress_path),
             "manifest": str(full_manifest_path),
@@ -728,8 +889,10 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
         "state_count": len(states),
         "patch_log_count": len(patch_logs),
         "diagnostic_count": len(diagnostics),
+        "diagnostic_policy": "non-fatal SyntaxWarning diagnostics are persisted as source-quality reward signals and do not fail coverage",
         "parse_records_sha256": parse_store["sha256"],
         "chunks_sha256": chunk_store["sha256"],
+        "diagnostics_sha256": diagnostic_store["sha256"],
         "passes": full_coverage,
     }
     parse_manifest = {
@@ -767,6 +930,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
         "coverage": observed_coverage,
         "diagnostics": {"chunk_reparse_warning_count": len(diagnostics), "sample": diagnostics[:20]},
         "chunks_sha256": chunk_store["sha256"],
+        "diagnostics_sha256": diagnostic_store["sha256"],
         "edge_chunks_sha256": edge_chunk_store["sha256"],
         "passes": True,
     }
@@ -782,6 +946,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
         "created_at_utc": utc_now(),
         "parse_records": file_state(parse_records_path),
         "chunks": file_state(chunks_path),
+        "diagnostics": file_state(diagnostics_path),
         "parse_manifest": file_state(parse_manifest_path),
         "chunk_manifest": file_state(chunk_manifest_path),
         "full_manifest": file_state(full_manifest_path),
@@ -839,6 +1004,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
             "chunks": chunk_summary,
             "coverage": observed_coverage,
             "patch_log_sample": patch_logs[:20],
+            "diagnostic_policy": "non-fatal SyntaxWarning diagnostics are persisted and retained as reward-signal features",
             "diagnostic_sample": diagnostics[:20],
         },
         "passes": True,

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import shutil
 import sys
 from pathlib import Path
@@ -16,9 +17,12 @@ SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-064"
 DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-064-post249-full-run-relaunch-gate-fsv")
 DEFAULT_CHUNKS_JSONL = Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
-DEFAULT_CACHE_ROOT = Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514")
-DEFAULT_RUN_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-016-full-20260514-fsv")
-DEFAULT_HOT_ROOT = Path("/home/cabdru/.cache/contextgraph/task-py-data-016-full-20260514")
+DEFAULT_CACHE_ROOT = Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515")
+DEFAULT_RUN_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-016-full-c8117f15-20260515-fsv")
+DEFAULT_HOT_ROOT = Path("/home/cabdru/.cache/contextgraph/task-py-data-016-full-c8117f15-20260515")
+DEFAULT_STALE_CACHE_ROOT = Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514")
+DEFAULT_STALE_RUN_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-016-full-20260514-fsv")
+DEFAULT_STALE_HOT_ROOT = Path("/home/cabdru/.cache/contextgraph/task-py-data-016-full-20260514")
 DEFAULT_SMOKE_MANIFEST_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json")
 DEFAULT_SMOKE_FORWARD_FSV = Path(
     "/mnt/d/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"
@@ -272,6 +276,7 @@ def relaunch_command(args: argparse.Namespace, *, mode: str | None = None) -> li
         "--retry-failed-partial-shards",
         "--checkpoint-every-shards",
         str(args.checkpoint_every_shards),
+        "--isolate-embedder-processes",
         "--cargo-runner",
         args.cargo_runner,
         "--require-smoke-gate",
@@ -313,6 +318,7 @@ def validate_relaunch_policy(args: argparse.Namespace, command: list[str]) -> di
         {"name": "hot_stage_enabled", "passes": "--stage-packed-shards-on-hot" in command_set, "actual": command},
         {"name": "resume_completed_enabled", "passes": "--resume-completed-shards" in command_set, "actual": command},
         {"name": "partial_retry_enabled", "passes": "--retry-failed-partial-shards" in command_set, "actual": command},
+        {"name": "embedder_process_isolation_enabled", "passes": "--isolate-embedder-processes" in command_set, "actual": command},
         {"name": "smoke_gate_required", "passes": "--require-smoke-gate" in command_set, "actual": command},
         {"name": "full_ast_corpus_gate_required", "passes": "--full-ast-corpus-fsv" in command_set, "actual": command},
         {"name": "gpu_worker_policy", "passes": args.gpu_workers == 1, "actual": args.gpu_workers},
@@ -365,23 +371,126 @@ def validate_storage_design(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def validate_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
+def expected_shard_count(full_chunk_count: int, shard_size: int) -> int:
+    require(shard_size > 0, "FULL_RUN_RELAUNCH_INVALID_SHARD_SIZE", f"shard_size={shard_size}")
+    return int(math.ceil(full_chunk_count / float(shard_size)))
+
+
+def expected_shard_id(shard_number: int, shard_size: int) -> str:
+    return f"shard-{shard_number:06d}-offset-{shard_number * shard_size:09d}"
+
+
+def validate_run_state(args: argparse.Namespace, *, full_chunk_count: int) -> dict[str, Any]:
     cache_checkpoint = args.cache_root / "python_forward_cache_checkpoint.json"
     fsv_checkpoint = args.run_fsv_root / "python_forward_cache_checkpoint.json"
     cache_state = file_state(cache_checkpoint)
     fsv_state = file_state(fsv_checkpoint)
+    cache_tree = tree_state(args.cache_root, hash_files=True)
+    fsv_tree = tree_state(args.run_fsv_root, hash_files=True)
+    expected_total_shards = expected_shard_count(full_chunk_count, args.shard_size)
+    expected_planned_chunk_capacity = expected_total_shards * args.shard_size
+
+    if not cache_checkpoint.exists() and not fsv_checkpoint.exists():
+        actual_next_shard = expected_shard_id(0, args.shard_size)
+        checks = [
+            {"name": "fresh_cache_root_has_no_checkpoint", "passes": True, "actual": cache_state},
+            {"name": "fresh_fsv_root_has_no_checkpoint", "passes": True, "actual": fsv_state},
+            {"name": "cache_root_not_stale_legacy_root", "passes": args.cache_root != args.stale_cache_root, "actual": str(args.cache_root)},
+            {"name": "fsv_root_not_stale_legacy_root", "passes": args.run_fsv_root != args.stale_run_fsv_root, "actual": str(args.run_fsv_root)},
+            {
+                "name": "cache_root_empty_or_absent_for_fresh_start",
+                "passes": cache_tree.get("file_count") == 0,
+                "actual": cache_tree,
+            },
+            {
+                "name": "fsv_root_empty_or_absent_for_fresh_start",
+                "passes": fsv_tree.get("file_count") == 0,
+                "actual": fsv_tree,
+            },
+            {
+                "name": "fresh_next_shard_expected",
+                "passes": args.expected_next_shard == "auto" or args.expected_next_shard == actual_next_shard,
+                "actual": {"expected_next_shard_arg": args.expected_next_shard, "computed_next_shard": actual_next_shard},
+            },
+            {
+                "name": "shard_count_matches_full_chunk_count",
+                "passes": args.shard_count == expected_total_shards,
+                "actual": {
+                    "arg_shard_count": args.shard_count,
+                    "expected_shard_count": expected_total_shards,
+                    "full_chunk_count": full_chunk_count,
+                    "shard_size": args.shard_size,
+                },
+            },
+            {
+                "name": "planned_capacity_covers_full_corpus",
+                "passes": args.shard_count * args.shard_size >= full_chunk_count,
+                "actual": {"planned_chunk_capacity": args.shard_count * args.shard_size, "full_chunk_count": full_chunk_count},
+            },
+            {
+                "name": "planned_capacity_overrun_is_bounded",
+                "passes": args.shard_count * args.shard_size - full_chunk_count < args.shard_size,
+                "actual": {"overrun_chunks": args.shard_count * args.shard_size - full_chunk_count, "shard_size": args.shard_size},
+            },
+        ]
+        return {
+            "mode": "fresh_start",
+            "cache_checkpoint": None,
+            "fsv_checkpoint": None,
+            "cache_tree": cache_tree,
+            "fsv_tree": fsv_tree,
+            "expected_next_shard": actual_next_shard,
+            "expected_total_shards": expected_total_shards,
+            "expected_planned_chunk_capacity": expected_planned_chunk_capacity,
+            "checks": checks,
+            "passes": all(check["passes"] is True for check in checks),
+        }
+
     cache_payload = read_json(cache_checkpoint)
     fsv_payload = read_json(fsv_checkpoint)
+    progress = cache_payload.get("progress") or {}
+    completed_shards = int(progress.get("completed_shards") or 0)
+    actual_next_shard = expected_shard_id(completed_shards, args.shard_size)
     checks = [
         {"name": "cache_checkpoint_present", "passes": cache_checkpoint.is_file(), "actual": cache_state},
         {"name": "fsv_checkpoint_present", "passes": fsv_checkpoint.is_file(), "actual": fsv_state},
         {"name": "checkpoint_hash_equal", "passes": cache_state.get("sha256") == fsv_state.get("sha256"), "actual": {"cache": cache_state, "fsv": fsv_state}},
+        {"name": "cache_root_not_stale_legacy_root", "passes": args.cache_root != args.stale_cache_root, "actual": str(args.cache_root)},
+        {"name": "fsv_root_not_stale_legacy_root", "passes": args.run_fsv_root != args.stale_run_fsv_root, "actual": str(args.run_fsv_root)},
         {"name": "checkpoint_task", "passes": cache_payload.get("task_id") == "TASK-PY-DATA-016", "actual": cache_payload.get("task_id")},
         {"name": "checkpoint_passes", "passes": cache_payload.get("passes") is True, "actual": cache_payload.get("passes")},
         {
             "name": "checkpoint_next_shard_expected",
-            "passes": (cache_payload.get("progress") or {}).get("next_shard", {}).get("shard_id") == args.expected_next_shard,
-            "actual": (cache_payload.get("progress") or {}).get("next_shard"),
+            "passes": (progress.get("next_shard") or {}).get("shard_id") == actual_next_shard
+            and (args.expected_next_shard == "auto" or (progress.get("next_shard") or {}).get("shard_id") == args.expected_next_shard),
+            "actual": {
+                "checkpoint_next_shard": progress.get("next_shard"),
+                "computed_next_shard": actual_next_shard,
+                "expected_next_shard_arg": args.expected_next_shard,
+            },
+        },
+        {
+            "name": "shard_count_matches_full_chunk_count",
+            "passes": args.shard_count == expected_total_shards,
+            "actual": {
+                "arg_shard_count": args.shard_count,
+                "expected_shard_count": expected_total_shards,
+                "full_chunk_count": full_chunk_count,
+                "shard_size": args.shard_size,
+            },
+        },
+        {
+            "name": "checkpoint_total_shards_matches_relaunch",
+            "passes": progress.get("total_shards") == args.shard_count,
+            "actual": {"checkpoint_total_shards": progress.get("total_shards"), "arg_shard_count": args.shard_count},
+        },
+        {
+            "name": "checkpoint_planned_capacity_matches_full_corpus",
+            "passes": progress.get("planned_chunk_capacity") == expected_planned_chunk_capacity,
+            "actual": {
+                "checkpoint_planned_chunk_capacity": progress.get("planned_chunk_capacity"),
+                "expected_planned_chunk_capacity": expected_planned_chunk_capacity,
+            },
         },
         {
             "name": "checkpoint_mirror_equal",
@@ -390,11 +499,77 @@ def validate_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
         },
     ]
     return {
+        "mode": "resume_existing",
         "cache_checkpoint": cache_payload,
         "fsv_checkpoint": fsv_payload,
+        "expected_next_shard": actual_next_shard,
+        "expected_total_shards": expected_total_shards,
+        "expected_planned_chunk_capacity": expected_planned_chunk_capacity,
         "checks": checks,
         "passes": all(check["passes"] is True for check in checks),
     }
+
+
+def invalidate_stale_roots(args: argparse.Namespace, started_at: str) -> dict[str, Any]:
+    stale = {
+        "cache_root": tree_state(args.stale_cache_root, hash_files=True),
+        "run_fsv_root": tree_state(args.stale_run_fsv_root, hash_files=True),
+        "hot_root": tree_state(args.stale_hot_root, hash_files=True),
+    }
+    new_paths = {
+        "cache_root": str(args.cache_root),
+        "run_fsv_root": str(args.run_fsv_root),
+        "hot_root": str(args.hot_root),
+    }
+    old_paths = {
+        "cache_root": str(args.stale_cache_root),
+        "run_fsv_root": str(args.stale_run_fsv_root),
+        "hot_root": str(args.stale_hot_root),
+    }
+    checks = [
+        {
+            "name": "new_cache_root_differs_from_stale_root",
+            "passes": args.cache_root != args.stale_cache_root,
+            "actual": {"new": str(args.cache_root), "stale": str(args.stale_cache_root)},
+        },
+        {
+            "name": "new_fsv_root_differs_from_stale_root",
+            "passes": args.run_fsv_root != args.stale_run_fsv_root,
+            "actual": {"new": str(args.run_fsv_root), "stale": str(args.stale_run_fsv_root)},
+        },
+        {
+            "name": "new_hot_root_differs_from_stale_root",
+            "passes": args.hot_root != args.stale_hot_root,
+            "actual": {"new": str(args.hot_root), "stale": str(args.stale_hot_root)},
+        },
+        {
+            "name": "stale_root_manifested_if_present",
+            "passes": True,
+            "actual": {name: state.get("file_count") for name, state in stale.items()},
+        },
+    ]
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "stale_partial_roots_invalidation_manifest",
+        "started_at_utc": started_at,
+        "created_at_utc": utc_now(),
+        "policy": "stale roots are historical evidence only and are not used by the post-249 relaunch command",
+        "stale_roots": old_paths,
+        "replacement_roots": new_paths,
+        "stale_root_states": stale,
+        "checks": checks,
+        "passes": all(check["passes"] is True for check in checks),
+    }
+    path = args.fsv_root / "stale_partial_roots_invalidation_manifest.json"
+    dump_json(path, manifest)
+    readback = read_json(path)
+    require(
+        readback.get("passes") is True,
+        "FULL_RUN_RELAUNCH_STALE_ROOT_INVALIDATION_FAILED",
+        str(path),
+    )
+    return {**readback, "manifest_state": file_state(path)}
 
 
 def cleanup_hot_stage(args: argparse.Namespace, started_at: str) -> dict[str, Any]:
@@ -527,7 +702,10 @@ def build_fsv(args: argparse.Namespace) -> dict[str, Any]:
         validate_required_artifact("full_ast_corpus", 249, "TASK-PY-DATA-058", args.full_ast_corpus_fsv, expected_chunks_jsonl=args.chunks_jsonl),
     ]
     storage_design = validate_storage_design(args)
-    checkpoint = validate_checkpoint(args)
+    storage_estimates = storage_design.get("storage_estimates") or {}
+    full_chunk_count = int(storage_estimates.get("full_chunk_count") or 0)
+    checkpoint = validate_run_state(args, full_chunk_count=full_chunk_count)
+    stale_invalidation = invalidate_stale_roots(args, started)
     cleanup = cleanup_hot_stage(args, started)
     run_command = relaunch_command(args)
     preflight_command = relaunch_command(args, mode="preflight-resume")
@@ -538,6 +716,7 @@ def build_fsv(args: argparse.Namespace) -> dict[str, Any]:
         all(item.get("passes") is True for item in child_artifacts)
         and storage_design.get("passes") is True
         and checkpoint.get("passes") is True
+        and stale_invalidation.get("passes") is True
         and cleanup.get("passes") is True
         and relaunch_policy.get("passes") is True
         and all(item.get("passes") is True for item in edge_cases)
@@ -561,6 +740,7 @@ def build_fsv(args: argparse.Namespace) -> dict[str, Any]:
             "run_fsv_root": str(args.run_fsv_root),
             "chunks_jsonl": str(args.chunks_jsonl),
             "full_ast_corpus_fsv": str(args.full_ast_corpus_fsv),
+            "stale_partial_roots_invalidation_manifest": str(args.fsv_root / "stale_partial_roots_invalidation_manifest.json"),
             "hot_stage_pre_cleanup_manifest": str(args.fsv_root / "hot_stage_pre_cleanup_manifest.json"),
             "hot_stage_cleanup_manifest": str(args.fsv_root / "hot_stage_cleanup_manifest.json"),
         },
@@ -573,14 +753,20 @@ def build_fsv(args: argparse.Namespace) -> dict[str, Any]:
         "storage_design": storage_design,
         "checkpoint_readback": {
             "passes": checkpoint["passes"],
+            "mode": checkpoint["mode"],
             "checks": checkpoint["checks"],
-            "progress": checkpoint["cache_checkpoint"].get("progress"),
-            "summary": checkpoint["cache_checkpoint"].get("summary"),
+            "expected_next_shard": checkpoint["expected_next_shard"],
+            "expected_total_shards": checkpoint["expected_total_shards"],
+            "expected_planned_chunk_capacity": checkpoint["expected_planned_chunk_capacity"],
+            "progress": (checkpoint["cache_checkpoint"] or {}).get("progress"),
+            "summary": (checkpoint["cache_checkpoint"] or {}).get("summary"),
         },
         "readback": {
             "full_chunks_state": file_state(args.chunks_jsonl),
         },
+        "stale_partial_roots_invalidation": stale_invalidation,
         "hot_stage_cleanup": cleanup,
+        "companion_artifacts_before_fsv_write": artifact_hashes(args.fsv_root),
         "relaunch_policy": relaunch_policy,
         "commands": {
             "preflight_resume": preflight_command,
@@ -611,6 +797,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cache-root", type=Path, default=DEFAULT_CACHE_ROOT)
     parser.add_argument("--run-fsv-root", type=Path, default=DEFAULT_RUN_FSV_ROOT)
     parser.add_argument("--hot-root", type=Path, default=DEFAULT_HOT_ROOT)
+    parser.add_argument("--stale-cache-root", type=Path, default=DEFAULT_STALE_CACHE_ROOT)
+    parser.add_argument("--stale-run-fsv-root", type=Path, default=DEFAULT_STALE_RUN_FSV_ROOT)
+    parser.add_argument("--stale-hot-root", type=Path, default=DEFAULT_STALE_HOT_ROOT)
     parser.add_argument("--smoke-manifest-fsv", type=Path, default=DEFAULT_SMOKE_MANIFEST_FSV)
     parser.add_argument("--smoke-forward-fsv", type=Path, default=DEFAULT_SMOKE_FORWARD_FSV)
     parser.add_argument("--smoke-intelligence-fsv", type=Path, default=DEFAULT_SMOKE_INTELLIGENCE_FSV)
@@ -620,7 +809,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--storage-estimates", type=Path, default=DEFAULT_STORAGE_ESTIMATES)
     parser.add_argument("--full-ast-corpus-fsv", type=Path, default=DEFAULT_FULL_AST_CORPUS_FSV)
     parser.add_argument("--shard-size", type=int, default=128)
-    parser.add_argument("--shard-count", type=int, default=2933)
+    parser.add_argument("--shard-count", type=int, default=3124)
     parser.add_argument("--active-embedder-count", type=int, default=12)
     parser.add_argument("--true-batch-size", type=int, default=8)
     parser.add_argument("--io-workers", type=int, default=2)
@@ -629,7 +818,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--jsonl-sync-every-rows", type=int, default=512)
     parser.add_argument("--checkpoint-every-shards", type=int, default=1)
     parser.add_argument("--cargo-runner", default=DEFAULT_CARGO_RUNNER)
-    parser.add_argument("--expected-next-shard", default="shard-000028-offset-000003584")
+    parser.add_argument("--expected-next-shard", default="auto")
     parser.add_argument("--clean-output", action="store_true")
     return parser
 
