@@ -18,10 +18,24 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+
+# Serializes appends to the scheduler event log (and any other shared JSONL
+# paths) so worker threads in parallel-isolated mode cannot race the
+# write-then-readback-assert in jsonl_append_checked().
+_JSONL_APPEND_LOCK = threading.Lock()
+
+# Serializes promote_hot_stage_shard across parallel-isolated worker threads.
+# Multiple subruns from the SAME shard all promote to the same durable
+# cache_root/fsv_root pair; without this lock they race on tree_state byte
+# counts and trip promote_tree_verified assertions. Forward (GPU) work still
+# happens in parallel; only the brief move/archive step is serialized. #302.
+_PROMOTE_HOT_STAGE_LOCK = threading.Lock()
 
 
 DEFAULT_CHUNKS_JSONL = Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
@@ -429,12 +443,15 @@ def json_dump_checked(path: Path, value: Any) -> None:
 def jsonl_append_checked(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(value, sort_keys=True) + "\n"
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(line)
-        handle.flush()
-        os.fsync(handle.fileno())
-    last = path.read_text(encoding="utf-8").splitlines()[-1]
-    require("event JSONL last-line readback parses", json.loads(last) == value)
+    # Serialize write + readback-assert across parallel-isolated worker threads
+    # so the last-line existence check cannot race against another append.
+    with _JSONL_APPEND_LOCK:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line)
+            handle.flush()
+            os.fsync(handle.fileno())
+        last = path.read_text(encoding="utf-8").splitlines()[-1]
+        require("event JSONL last-line readback parses", json.loads(last) == value)
 
 
 def jsonl_write_checked(path: Path, rows: list[Any]) -> None:
