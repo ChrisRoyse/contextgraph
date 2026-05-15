@@ -159,9 +159,13 @@ export CG_MEJEPA_DURABLE_DISK_TARGET=/archive
 export CONTEXTGRAPH_MEJEPA_MODELS_CONFIG=/zfs/hot/contextgraph/models/mejepa_models_config.toml
 # Rust runner: frozen-instrument-registry JSONL (84 KB, transferred separately)
 export CG_MEJEPA_PY_INSTRUMENT_REGISTRY_JSONL=/zfs/hot/contextgraph/corpus/python-frozen-instrument-registry-v1/python_frozen_instrument_records.jsonl
-# Optional — opt into MPS-overlapped parallel-isolated mode (NOT YET SAFE,
-# blocked on #302 byte-count race in consolidation). Leave unset = sequential.
+# Optional — opt into MPS-overlapped parallel-isolated mode. Leave unset for
+# sequential mode, which remains the default and preserves byte-equivalence.
 # export CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS=6
+#
+# Internal Rust-runner flag auto-set by the scheduler when parallel mode is
+# active. Do not set manually for normal corpus runs.
+# CG_MEJEPA_PY_FORWARD_SKIP_EXISTING_PACKED_READ=1
 ```
 
 **Scheduler invocation:**
@@ -194,11 +198,21 @@ export CG_MEJEPA_PY_INSTRUMENT_REGISTRY_JSONL=/zfs/hot/contextgraph/corpus/pytho
 
 ### 4.3 First-shard speedup data (2026-05-15)
 
-The first aiwonder e1 subrun on shard 0 completed at **37 s for 1024 chunks** (smoke-test SoT FSV passing). The WSL baseline was **~14.6 s for 128 chunks** for the same e1 work. Per-chunk: **3.2× faster on aiwonder**. Full 12-subrun shard wall time TBD when smoke completes.
+The first aiwonder e1 subrun on shard 0 completed at **37 s for 1024 chunks** (smoke-test SoT FSV passing). The WSL baseline was **~14.6 s for 128 chunks** for the same e1 work. Per-chunk: **3.2× faster on aiwonder**. The `#308` one-shard smokes below are the current full-shard calibration data.
 
-**Note:** `CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS > 1` activates the parallel-isolated path (commit `4cd003e1`) which has a `promote_tree_verified` byte-count race in the consolidation. **Do not enable until #302 is fixed.**
+Issue `#308` fixed the parallel-isolated packed-record consolidation path and verified it on aiwonder with the release Rust runner:
 
-### 4.3 Workflow for an AI agent picking this up
+| Mode | FSV root | Wall | Result |
+|---|---|---:|---|
+| Sequential regression | `/zfs/archive/contextgraph/fsv/aiwonder-308-fix-seq-regression-20260515T203800Z-fsv/` | 875.002 s | Pass; 11,880 cache rows, 408 quarantine rows, 12,288 accounted pairs; payload files byte-equal and packed indexes byte-equal after durable-root normalization vs pre-refactor sequential smoke |
+| Parallel=4 | `/zfs/archive/contextgraph/fsv/aiwonder-308-fix-par4-20260515T204800Z-fsv/` | 253.622 s | Pass; 11,880 cache rows, 408 quarantine rows, 12 subrun logs, merged packed manifest from `isolated_subrun_snapshots`, 54.871% faster than the 561.994 s aiwonder sequential smoke |
+| Parallel=6 | `/zfs/archive/contextgraph/fsv/aiwonder-308-fix-par6-20260515T205500Z-fsv/` | 198.924 s | Pass; 11,880 cache rows, 408 quarantine rows, 12 subrun logs, merged packed manifest from `isolated_subrun_snapshots`, 64.604% faster than the 561.994 s aiwonder sequential smoke |
+
+`CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS > 1` now requires packed hot-stage isolation and the scheduler auto-sets `CG_MEJEPA_PY_FORWARD_SKIP_EXISTING_PACKED_READ=1` for each isolated embedder subprocess. That prevents parallel subruns from forward-copying stale durable `packed_records/`; the scheduler snapshots each subrun after lock-serialized promotion and then reconstructs the final packed manifest from those per-embedder snapshots.
+
+Do **not** relaunch the production corpus run into parallel mode after a single smoke. The `#308` handoff requires parallel=6 to pass end-to-end at least three times on different shards before prod cutover.
+
+### 4.4 Workflow for an AI agent picking this up
 
 1. **Read this doc** + `leapablememory/docs2/aiwonder-system.md` + `docs/futurebuild/00_INDEX.md`.
 2. **VPN + SSH preflight** per `leapablememory/docs2/aiwonder-system.md §3`.
@@ -218,7 +232,7 @@ The first aiwonder e1 subrun on shard 0 completed at **37 s for 1024 chunks** (s
 | 2 — Rust toolchain + Python deps | TBD | pending |
 | 3 — Embedder model transfer | TBD | pending |
 | 4 — AST chunks transfer (or regenerate) | TBD | pending |
-| 5 — Fix `promote_tree_verified` race for parallel-isolated | TBD | **BLOCKER** |
+| 5 — Fix parallel-isolated packed-record consolidation | #308 | **complete 2026-05-15**: sequential regression, parallel=4, and parallel=6 FSV smokes passed on aiwonder |
 | 6 — Build release binaries on aiwonder | TBD | pending |
 | 7 — Launch corpus run on aiwonder | TBD | pending |
 | 8 — Calibration: WSL baseline vs aiwonder | TBD | pending |
