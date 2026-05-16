@@ -3,34 +3,40 @@
 //! Generates a deterministic 256D signature from session_id that:
 //! - Same session_id produces identical signature
 //! - Different session_id produces orthogonal signatures (high probability)
+//! - The persisted-vector contract is stable across Rust toolchain changes
 //!
 //! This module enables same-session memories to cluster in E4 embedding space
 //! while the position encoding component preserves fine-grained ordering.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use sha2::{Digest, Sha256};
 
 use super::constants::SESSION_SIGNATURE_DIMENSION;
 
 /// Sentinel value used when no session_id is provided.
 pub const NO_SESSION_SENTINEL: &str = "__no_session__";
 
+const SESSION_SIGNATURE_DOMAIN: &[u8] = b"contextgraph:e4-session-signature:v2";
+const SPLITMIX64_GAMMA: u64 = 0x9E37_79B9_7F4A_7C15;
+
 /// Compute deterministic session signature from session_id.
 ///
-/// Uses hash-based pseudo-random generation to create a stable 256D vector.
+/// Uses a SHA-256-derived seed and SplitMix64 expansion to create a stable
+/// 256D vector. This avoids `DefaultHasher`, whose algorithm is not a durable
+/// on-disk embedding contract.
 /// The signature is L2-normalized to ensure consistent similarity comparisons.
 ///
 /// # Algorithm
 ///
-/// For each of the 256 dimensions:
-/// 1. Hash the session_id combined with the dimension index
-/// 2. Convert the hash to a value in the [-1, 1] range
-/// 3. L2-normalize the final vector
+/// 1. SHA-256(domain || session_id) gives a stable per-session seed.
+/// 2. SplitMix64 expands that seed into one deterministic value per dimension.
+/// 3. Each value maps into [-1, 1].
+/// 4. L2-normalize the final vector.
 ///
 /// This approach ensures:
 /// - Determinism: Same session_id always produces the same signature
 /// - Orthogonality: Different session_ids have low expected similarity
 /// - Uniform distribution: Values span the hypersphere uniformly
+/// - Versionability: The domain string changes when the algorithm changes
 ///
 /// # Arguments
 ///
@@ -41,17 +47,11 @@ pub const NO_SESSION_SENTINEL: &str = "__no_session__";
 /// A 256-dimensional L2-normalized vector
 pub fn compute_session_signature(session_id: &str) -> Vec<f32> {
     let mut signature = Vec::with_capacity(SESSION_SIGNATURE_DIMENSION);
+    let seed = session_signature_seed(session_id);
 
-    // Use multiple hash seeds to generate 256 pseudo-random values
     for i in 0..SESSION_SIGNATURE_DIMENSION {
-        let mut hasher = DefaultHasher::new();
-        session_id.hash(&mut hasher);
-        i.hash(&mut hasher); // Different seed per dimension
-        let hash = hasher.finish();
-
-        // Convert to [-1, 1] range using hash bits
-        // This creates a uniform distribution over the range
-        let value = ((hash as f64 / u64::MAX as f64) * 2.0 - 1.0) as f32;
+        let hash = splitmix64(seed.wrapping_add((i as u64).wrapping_mul(SPLITMIX64_GAMMA)));
+        let value = u64_to_unit_range(hash);
         signature.push(value);
     }
 
@@ -59,6 +59,29 @@ pub fn compute_session_signature(session_id: &str) -> Vec<f32> {
     l2_normalize(&mut signature);
 
     signature
+}
+
+fn session_signature_seed(session_id: &str) -> u64 {
+    let mut hasher = Sha256::new();
+    hasher.update(SESSION_SIGNATURE_DOMAIN);
+    hasher.update([0]);
+    hasher.update(session_id.as_bytes());
+    let digest = hasher.finalize();
+    let mut seed = [0u8; 8];
+    seed.copy_from_slice(&digest[..8]);
+    u64::from_le_bytes(seed)
+}
+
+fn splitmix64(mut value: u64) -> u64 {
+    value = value.wrapping_add(SPLITMIX64_GAMMA);
+    let mut z = value;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+fn u64_to_unit_range(value: u64) -> f32 {
+    ((value as f64 / u64::MAX as f64) * 2.0 - 1.0) as f32
 }
 
 /// Compute session signature with fallback for missing session_id.
@@ -145,6 +168,14 @@ mod tests {
     fn test_session_signature_dimension() {
         let sig = compute_session_signature("session-123");
         assert_eq!(sig.len(), SESSION_SIGNATURE_DIMENSION);
+    }
+
+    #[test]
+    fn test_session_signature_uses_stable_seed() {
+        assert_eq!(
+            session_signature_seed("session-123"),
+            1_864_768_632_477_783_330
+        );
     }
 
     #[test]

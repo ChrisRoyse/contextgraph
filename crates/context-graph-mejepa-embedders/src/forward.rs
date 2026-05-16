@@ -163,13 +163,10 @@ impl AlgorithmicEmbedderForward {
             ));
         }
         let model_id = embedder_model_id(embedder)?;
+        let model_version = algorithmic_model_version(embedder, model_id);
         Ok(Self {
             embedder,
-            model_version: format!(
-                "context-graph-embeddings:{}:{}",
-                env!("CARGO_PKG_VERSION"),
-                model_id.as_str()
-            ),
+            model_version,
             artifact_root: PathBuf::from(format!("algorithmic/{}", model_id.as_str())),
             model,
         })
@@ -497,6 +494,18 @@ pub fn embedder_model_id(embedder: EmbedderId) -> EmbedResult<ModelId> {
     }
 }
 
+fn algorithmic_model_version(embedder: EmbedderId, model_id: ModelId) -> String {
+    let base = format!(
+        "context-graph-embeddings:{}:{}",
+        env!("CARGO_PKG_VERSION"),
+        model_id.as_str()
+    );
+    match embedder {
+        EmbedderId::E4 => format!("{base}:temporal-positional-sha256-session-v2"),
+        _ => base,
+    }
+}
+
 fn construct_model(embedder: EmbedderId, root: &Path) -> EmbedResult<Box<dyn EmbeddingModel>> {
     let config = SingleModelConfig::cuda_fp16();
     let model: Box<dyn EmbeddingModel> = match embedder {
@@ -670,11 +679,11 @@ fn model_input_for_embedder(
         });
     }
     if matches!(embedder, EmbedderId::E2 | EmbedderId::E3 | EmbedderId::E4) {
-        let instruction = temporal_instruction(input).ok_or_else(|| {
+        let instruction = temporal_instruction(embedder, input).ok_or_else(|| {
             EmbedError::forward(
                 embedder,
-                "temporal algorithmic embedder input did not contain an explicit timestamp instruction",
-                "prefix the chunk text or source_id with timestamp:<RFC3339> or epoch:<seconds> so the forward pass is reproducible and cache-safe",
+                "temporal algorithmic embedder input did not contain an explicit supported temporal instruction",
+                "prefix the chunk text or source_id with timestamp:<RFC3339>/epoch:<seconds> for E2/E3, or session:<id> sequence:<n>/sequence:<n>/timestamp:<RFC3339>/epoch:<seconds> for E4",
             )
         })?;
         return ModelInput::text_with_instruction(&input.text, instruction).map_err(|err| {
@@ -694,16 +703,39 @@ fn model_input_for_embedder(
     })
 }
 
-fn temporal_instruction(input: &EmbedderInput) -> Option<&str> {
+fn temporal_instruction(embedder: EmbedderId, input: &EmbedderInput) -> Option<&str> {
     for candidate in [input.source_id.as_str(), input.text.as_str()] {
         for line in candidate.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("timestamp:") || trimmed.starts_with("epoch:") {
+            let is_supported = match embedder {
+                EmbedderId::E2 | EmbedderId::E3 => is_timestamp_instruction(trimmed),
+                EmbedderId::E4 => is_positional_instruction(trimmed),
+                _ => false,
+            };
+            if is_supported {
                 return Some(trimmed);
             }
         }
     }
     None
+}
+
+fn is_timestamp_instruction(value: &str) -> bool {
+    value.starts_with("timestamp:") || value.starts_with("epoch:")
+}
+
+fn is_positional_instruction(value: &str) -> bool {
+    let starts_with_supported_prefix = value.starts_with("session:")
+        || value.starts_with("sequence:")
+        || is_timestamp_instruction(value);
+    if !starts_with_supported_prefix {
+        return false;
+    }
+    value.split_whitespace().any(|part| {
+        part.starts_with("sequence:")
+            || part.starts_with("timestamp:")
+            || part.starts_with("epoch:")
+    })
 }
 
 #[cfg(test)]
@@ -734,6 +766,68 @@ mod tests {
         };
         let err = forward.forward(&input).await.unwrap_err();
         assert_eq!(err.code(), "MEJEPA_EMBED_FORWARD_FAILED");
+    }
+
+    #[tokio::test]
+    async fn algorithmic_e2_rejects_session_sequence_instruction() {
+        let forward = AlgorithmicEmbedderForward::load(EmbedderId::E2).unwrap();
+        let input = EmbedderInput {
+            embedder: EmbedderId::E2,
+            text: "session:attempt-1 sequence:7\nfn temporal_signal() {}".to_string(),
+            source_id: "synthetic.rs#0".to_string(),
+        };
+
+        let err = forward.forward(&input).await.unwrap_err();
+
+        assert_eq!(err.code(), "MEJEPA_EMBED_FORWARD_FAILED");
+    }
+
+    #[tokio::test]
+    async fn algorithmic_e4_accepts_session_sequence_instruction() {
+        let forward = AlgorithmicEmbedderForward::load(EmbedderId::E4).unwrap();
+        let input = EmbedderInput {
+            embedder: EmbedderId::E4,
+            text: "session:attempt-1 sequence:7\nfn temporal_signal() -> i32 { 7 }".to_string(),
+            source_id: "synthetic.rs#0".to_string(),
+        };
+
+        let output = forward.forward(&input).await.unwrap();
+
+        assert_eq!(output.vector.len(), EmbedderId::E4.dimension());
+        assert!(output.vector.iter().any(|value| *value != 0.0));
+        assert!(
+            output
+                .model_version
+                .ends_with(":temporal-positional-sha256-session-v2"),
+            "E4 cache key must be segregated after session-signature algorithm changes"
+        );
+    }
+
+    #[test]
+    fn temporal_instruction_routes_e4_sequence_only_to_e4() {
+        let input = EmbedderInput {
+            embedder: EmbedderId::E4,
+            text: "sequence:42\nfn temporal_signal() {}".to_string(),
+            source_id: "synthetic.rs#0".to_string(),
+        };
+
+        assert_eq!(
+            temporal_instruction(EmbedderId::E4, &input),
+            Some("sequence:42")
+        );
+        assert_eq!(temporal_instruction(EmbedderId::E2, &input), None);
+        assert_eq!(temporal_instruction(EmbedderId::E3, &input), None);
+    }
+
+    #[test]
+    fn temporal_instruction_rejects_session_without_position() {
+        let input = EmbedderInput {
+            embedder: EmbedderId::E4,
+            text: "session:attempt-1\nfn temporal_signal() {}".to_string(),
+            source_id: "synthetic.rs#0".to_string(),
+        };
+
+        assert_eq!(temporal_instruction(EmbedderId::E4, &input), None);
     }
 
     #[tokio::test]
