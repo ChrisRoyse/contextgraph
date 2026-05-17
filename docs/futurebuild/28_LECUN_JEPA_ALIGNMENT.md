@@ -122,9 +122,11 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 
 **LeCun:** *"This system can derive reward signals from durable reality. ... You need to capture all the reward signals possible."*
 
-**ME-JEPA state:** ⚠️ **NEEDS COMPLETENESS AUDIT.** Many reward signals captured (oracle, AST diff, witness, DDA, pairwise MI, blind-spot z-scores). Some tiers partial or missing.
+**ME-JEPA state:** ✅ **SHIPPED.** Companion EPIC #315 closes the reward-signal completeness audit with `mcp__cgreality__mejepa_audit_reward_signals` and fail-closed `CF_MEJEPA_SIGNAL_DROP_LOG` readback. The audit reads durable RocksDB source-of-truth CFs, requires row-backed per-tier coverage, reports fingerprint feature-span / replay / active-learning / freshness readiness, and samples signal-drop rows so missing or corrupt reward-signal evidence fails closed instead of silently zeroing.
 
-**Sub-task tree:** See companion doc [`29_REWARD_SIGNAL_COMPLETENESS.md`](29_REWARD_SIGNAL_COMPLETENESS.md) for the 8-tier audit + TASK-RWD-201..212 sub-tasks.
+**FSV evidence:** `/mnt/d/contextgraph/fsv/task-rwd-315-reward-audit-fsv/run-1779057109495-4009385/reward_signal_audit_fsv.json`, sha256 `9842c16345e4ecaf0994c10139503b1e73df90f7262e0e0699280804667375a7`, `all_passed=true`. The FSV proves 8/8 reward tiers at coverage `1.0`, signal-drop row readback `0 -> 1`, missing CFs block acceptance, corrupt signal-drop rows fail closed, and non-fail-closed signal-drop entries are rejected.
+
+**Sub-task tree:** See companion doc [`29_REWARD_SIGNAL_COMPLETENESS.md`](29_REWARD_SIGNAL_COMPLETENESS.md) for the 8-tier audit + TASK-RWD-201..212 sub-tasks. #315 is closed as complete.
 
 ---
 
@@ -141,7 +143,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 | 7 | Counterfactual best-of-K ranking | ✅ **MCP ranker shipped** | TASK-FP-105 complete |
 | 8 | Calibrated uncertainty | ✅ designed (#309) | — |
 | 9 | System 1 vs System 2 framing | ✅ shipped | whitepaper + MCP descriptions updated |
-| 10 | Reward-signal completeness | spawns full audit | doc [`29_*`](29_REWARD_SIGNAL_COMPLETENESS.md) + EPIC #315 |
+| 10 | Reward-signal completeness | ✅ shipped | #315 + `mejepa_audit_reward_signals` + `CF_MEJEPA_SIGNAL_DROP_LOG` |
 
 ---
 
@@ -155,7 +157,7 @@ ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the follow
 4. **Objective-driven**: explicit cost function + hardwired safety constraint vector; constraint violation hard-blocks `Verdict::Pass` (TASK-FP-104). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-104-objective-safety-fsv/run-1779040194889/objective_safety_fsv.json`.
 5. **Counterfactual ranking**: `mejepa_rank_candidates` MCP tool ships and is exercised by the live integration FSV (TASK-FP-105). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-105-rank-candidates-fsv/run-1779041036578/rank_candidates_fsv.json`.
 6. **System 2 framing**: whitepaper + MCP tool descriptions make the System 1 LLM vs System 2 ME-JEPA separation explicit. ✅ Complete.
-7. **Reward-signal completeness**: per `29_*` audit, ≥ 95% of LeCun-enumerated reward signals are captured to durable storage (EPIC #315).
+7. **Reward-signal completeness**: per `29_*` audit, ≥ 95% of LeCun-enumerated reward signals are captured to durable storage (EPIC #315). ✅ Complete: `/mnt/d/contextgraph/fsv/task-rwd-315-reward-audit-fsv/run-1779057109495-4009385/reward_signal_audit_fsv.json`.
 
 ---
 
@@ -202,4 +204,4 @@ This ordering is captured in `13_TASK_INDEX.md` task DAG.
 
 ---
 
-**TL;DR.** ME-JEPA-Code has pillars 1 through 9 shipped or designed, with FSV-backed evidence where code changed and explicit System 1/System 2 framing in the live docs and MCP tool descriptions. The remaining LeCun pillar is Pillar 10, tracked separately by the #315 reward-signal-completeness audit.
+**TL;DR.** ME-JEPA-Code now has all ten LeCun JEPA pillars shipped or designed, with FSV-backed evidence where code changed and explicit System 1/System 2 framing in the live docs and MCP tool descriptions. Pillar 10 is complete through #315's row-backed reward-signal audit and fail-closed signal-drop log.
