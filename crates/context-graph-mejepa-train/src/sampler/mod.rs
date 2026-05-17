@@ -3,6 +3,9 @@ pub mod cross_task;
 use crate::config::TrainingConfig;
 use crate::error::{TrainerError, TrainerErrorCode};
 use crate::learning_signal::{sampling_weight, should_drop, should_force_include};
+use crate::replay_buffer::{
+    sample_replay_batch, ReplayBatchReport, ReplayBatchRequest, ReplayPriorityConfig,
+};
 use context_graph_mejepa::system_cost::SystemCostCounters;
 use context_graph_mejepa::{
     ActiveLearningQueueEntry, ChunkId, OperatorOverride, PredictionId, RealityPrediction, TaskId,
@@ -261,6 +264,14 @@ impl BatchSampler {
         }
         self.finalize_batch_plan(&mut plan, batch_size);
         Ok(plan)
+    }
+
+    pub fn next_replay_batch(
+        db: &DB,
+        request: ReplayBatchRequest,
+        priority_config: ReplayPriorityConfig,
+    ) -> Result<ReplayBatchReport, TrainerError> {
+        sample_replay_batch(db, request, priority_config)
     }
 
     pub(crate) fn force_prefix(&mut self, batch_size: usize) -> BatchPlan {

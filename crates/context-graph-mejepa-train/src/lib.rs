@@ -22,6 +22,7 @@ pub mod learning_signal;
 pub mod lora_wiring;
 pub mod loss;
 pub mod optim;
+pub mod replay_buffer;
 pub mod sampler;
 pub mod trainer;
 
@@ -33,3 +34,4 @@ pub use learning_signal::{
     DeltaPComponents, DeltaXiComponents, HeadSignalInput, LearningSignal, PerHeadLearningSignal,
     SkipReason, UtmlError, UtmlErrorCode,
 };
+pub use replay_buffer::*;

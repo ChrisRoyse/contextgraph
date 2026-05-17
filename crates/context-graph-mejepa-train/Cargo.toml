@@ -82,3 +82,7 @@ path = "examples/phase_g_adversarial_retrain_fsv.rs"
 [[example]]
 name = "task_fp_101_sigreg_fsv"
 path = "examples/task_fp_101_sigreg_fsv.rs"
+
+[[example]]
+name = "task_rwd_210_replay_buffer_fsv"
+path = "examples/task_rwd_210_replay_buffer_fsv.rs"

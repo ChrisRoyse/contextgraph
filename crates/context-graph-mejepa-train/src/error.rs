@@ -14,6 +14,7 @@ pub enum TrainerErrorCode {
     MejepaTrainDodFailed,
     MejepaTrainConfigInvalid,
     MejepaTrainEmbedderDigestMismatch,
+    ReplayBufferDegeneratePriority,
 }
 
 impl TrainerErrorCode {
@@ -29,6 +30,7 @@ impl TrainerErrorCode {
             Self::MejepaTrainDodFailed => "MEJEPA_TRAIN_DOD_FAILED",
             Self::MejepaTrainConfigInvalid => "MEJEPA_TRAIN_CONFIG_INVALID",
             Self::MejepaTrainEmbedderDigestMismatch => "MEJEPA_TRAIN_EMBEDDER_DIGEST_MISMATCH",
+            Self::ReplayBufferDegeneratePriority => "REPLAY_BUFFER_DEGENERATE_PRIORITY",
         }
     }
 }
