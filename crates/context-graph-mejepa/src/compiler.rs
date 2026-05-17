@@ -29,6 +29,7 @@ use crate::failure_fingerprint::{
     FingerprintClassifierConfig, FingerprintDecisionReason,
 };
 use crate::gates::{check_source_sha_drift, replay_witness_segment};
+use crate::hierarchical::build_hierarchical_prediction;
 use crate::ood::{compute_ood_score, squared_l2};
 use crate::park_list::ParkListEntry;
 use crate::pause_state::{
@@ -43,9 +44,9 @@ use crate::secret_redaction::{redact_patch_bundle, SECRET_REDACTION_ATTESTATION_
 use crate::system_cost::SystemCostCounters;
 use crate::types::{
     validate_probability, AgentClaimGraph, ChunkId, ConformalInterval, ConformalMethod, DdaSignals,
-    EmbedderId, FailedGate, MatchedFingerprintEvidence, OracleOutcome, PanelId, PatchBundle,
-    PredictionProvenance, RealityPrediction, RealityPredictionBuilder, TaskContext, Verdict,
-    VerifyVerdict, WitnessHash,
+    EmbedderId, FailedGate, HierarchicalPredictionRecord, MatchedFingerprintEvidence,
+    OracleOutcome, PanelId, PatchBundle, PredictionProvenance, RealityPrediction,
+    RealityPredictionBuilder, TaskContext, Verdict, VerifyVerdict, WitnessHash,
 };
 use crate::verdict_assembly::{assemble_verdict, VerdictAssemblyInput};
 
@@ -243,6 +244,17 @@ pub trait MejepaStore: Send + Sync {
         session_id: [u8; 16],
         limit: u32,
     ) -> Result<Vec<RealityPrediction>, MejepaInferError>;
+
+    fn write_hierarchical_prediction(
+        &self,
+        record: &HierarchicalPredictionRecord,
+    ) -> Result<(), MejepaInferError>;
+
+    fn read_hierarchical_predictions(
+        &self,
+        session_id: [u8; 16],
+        limit: u32,
+    ) -> Result<Vec<HierarchicalPredictionRecord>, MejepaInferError>;
 
     fn session_known(&self, session_id: [u8; 16]) -> Result<bool, MejepaInferError>;
 
@@ -724,6 +736,9 @@ impl MeJepaCompiler {
             };
             self.store.record_cold_cell_metric(&metric)?;
             self.store.write_live_prediction(&cold_prediction)?;
+            let hierarchy =
+                build_hierarchical_prediction(&cold_prediction, patch, &predicted_panel)?;
+            self.store.write_hierarchical_prediction(&hierarchy)?;
             self.store.record_park_list_failure(
                 cold_prediction.prediction_id,
                 current_unix_ms(),
@@ -741,6 +756,8 @@ impl MeJepaCompiler {
 
         // Persist compiled predictions before downstream gates so escalations remain replayable.
         self.store.write_live_prediction(&prediction)?;
+        let hierarchy = build_hierarchical_prediction(&prediction, patch, &predicted_panel)?;
+        self.store.write_hierarchical_prediction(&hierarchy)?;
 
         if prediction.ood_score > self.config.ood_refuse_threshold {
             self.store.record_park_list_failure(

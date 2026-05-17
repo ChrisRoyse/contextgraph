@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use context_graph_mejepa_cf::CF_MEJEPA_FAILURE_FINGERPRINTS;
+use context_graph_mejepa_cf::{CF_MEJEPA_FAILURE_FINGERPRINTS, CF_MEJEPA_HIERARCHICAL_PREDICTIONS};
 use rocksdb::{Direction, IteratorMode, WriteOptions, DB};
 
 use crate::calibration::{
@@ -16,7 +16,7 @@ use crate::park_list::{
     record_park_list_failure as record_park_list_failure_row, ParkListEntry,
 };
 use crate::system_cost::SystemCostCounters;
-use crate::types::{ChunkId, DdaSignals, PanelId, RealityPrediction};
+use crate::types::{ChunkId, DdaSignals, HierarchicalPredictionRecord, PanelId, RealityPrediction};
 
 #[derive(Clone)]
 pub struct RocksDbInferStore {
@@ -55,6 +55,14 @@ impl RocksDbInferStore {
         key.extend_from_slice(&prediction.session_id);
         key.extend_from_slice(&prediction.created_at_unix_ms.to_be_bytes());
         key.extend_from_slice(&prediction.prediction_id);
+        key
+    }
+
+    fn hierarchical_key(record: &HierarchicalPredictionRecord) -> Vec<u8> {
+        let mut key = Vec::with_capacity(40);
+        key.extend_from_slice(&record.session_id);
+        key.extend_from_slice(&record.created_at_unix_ms.to_be_bytes());
+        key.extend_from_slice(&record.prediction_id);
         key
     }
 
@@ -196,6 +204,112 @@ impl MejepaStore for RocksDbInferStore {
                 });
             }
             out.push(prediction);
+            if out.len() == limit {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
+    fn write_hierarchical_prediction(
+        &self,
+        record: &HierarchicalPredictionRecord,
+    ) -> Result<(), MejepaInferError> {
+        record.validate()?;
+        let cf = cf(&self.db, CF_MEJEPA_HIERARCHICAL_PREDICTIONS)?;
+        let key = Self::hierarchical_key(record);
+        let value = bincode::serialize(record)?;
+        let mut opts = WriteOptions::default();
+        opts.set_sync(true);
+        self.db.put_cf_opt(cf, &key, &value, &opts)?;
+        let readback = self
+            .db
+            .get_cf(cf, &key)?
+            .ok_or_else(|| MejepaInferError::InvalidInput {
+                field: "hierarchical_predictions".to_string(),
+                detail: "read-after-write could not find persisted hierarchy row".to_string(),
+            })?;
+        if readback != value {
+            return Err(MejepaInferError::InvalidInput {
+                field: "hierarchical_predictions".to_string(),
+                detail: "read-after-write bytes differ from persisted hierarchy payload"
+                    .to_string(),
+            });
+        }
+        let decoded: HierarchicalPredictionRecord = bincode::deserialize(&readback)?;
+        decoded.validate()?;
+        if decoded != *record {
+            return Err(MejepaInferError::InvalidInput {
+                field: "hierarchical_predictions".to_string(),
+                detail: "read-after-write decoded hierarchy does not match input".to_string(),
+            });
+        }
+        if let Some(counters) = &self.system_cost_counters {
+            counters.record_rocksdb_write(value.len() as u64);
+        }
+        Ok(())
+    }
+
+    fn read_hierarchical_predictions(
+        &self,
+        session_id: [u8; 16],
+        limit: u32,
+    ) -> Result<Vec<HierarchicalPredictionRecord>, MejepaInferError> {
+        if !(1..=1000).contains(&limit) {
+            return Err(MejepaInferError::InvalidInput {
+                field: "limit".to_string(),
+                detail: format!("limit must be in [1, 1000], got {limit}"),
+            });
+        }
+        let limit = limit as usize;
+        let cf = cf(&self.db, CF_MEJEPA_HIERARCHICAL_PREDICTIONS)?;
+        let mut end = Vec::with_capacity(24);
+        end.extend_from_slice(&session_id);
+        end.extend_from_slice(&i64::MAX.to_be_bytes());
+        let iter = self
+            .db
+            .iterator_cf(cf, IteratorMode::From(&end, Direction::Reverse));
+        let mut out = Vec::with_capacity(limit);
+        for item in iter {
+            let (key, value) = item?;
+            if !key.starts_with(&session_id) {
+                break;
+            }
+            if key.len() != 40 {
+                return Err(MejepaInferError::DimMismatch {
+                    expected: 40,
+                    actual: key.len(),
+                    context:
+                        "hierarchical prediction key must be session_id || created_at || prediction_id"
+                            .to_string(),
+                });
+            }
+            let record: HierarchicalPredictionRecord = bincode::deserialize(&value)?;
+            record.validate()?;
+            if record.session_id != session_id {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "hierarchical_predictions.session_id".to_string(),
+                    detail: "payload session_id does not match key prefix".to_string(),
+                });
+            }
+            let mut key_created_at = [0u8; 8];
+            key_created_at.copy_from_slice(&key[16..24]);
+            let created_at_unix_ms = i64::from_be_bytes(key_created_at);
+            if record.created_at_unix_ms != created_at_unix_ms {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "hierarchical_predictions.created_at_unix_ms".to_string(),
+                    detail: "payload created_at_unix_ms does not match key timestamp".to_string(),
+                });
+            }
+            let mut key_prediction_id = [0u8; 16];
+            key_prediction_id.copy_from_slice(&key[24..40]);
+            if record.prediction_id != key_prediction_id {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "hierarchical_predictions.prediction_id".to_string(),
+                    detail: "payload prediction_id does not match key suffix".to_string(),
+                });
+            }
+            out.push(record);
             if out.len() == limit {
                 break;
             }
@@ -356,8 +470,10 @@ mod tests {
     use super::*;
     use crate::calibration::open_infer_rocksdb;
     use crate::types::{
-        AgentClaimGraph, ConformalInterval, ConformalSet, Language, OracleOutcome,
+        AgentClaimGraph, ConformalInterval, ConformalSet, HierarchicalPredictionLevel,
+        HierarchicalPredictionRecord, Language, OracleOutcome, PredictionHierarchyLevel,
         PredictionProvenance, RealityPrediction, ReasoningClass, TaskId, Verdict, WitnessHash,
+        HIERARCHICAL_PREDICTION_SCHEMA_VERSION,
     };
     use std::collections::BTreeMap;
 
@@ -429,6 +545,17 @@ mod tests {
     }
 
     #[test]
+    fn hierarchical_prediction_write_reads_back_physical_row() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = open_infer_rocksdb(temp.path()).unwrap();
+        let store = RocksDbInferStore::new(db);
+        let record = hierarchical_record([10; 16]);
+        store.write_hierarchical_prediction(&record).unwrap();
+        let loaded = store.read_hierarchical_predictions([10; 16], 1).unwrap();
+        assert_eq!(loaded, vec![record]);
+    }
+
+    #[test]
     fn cold_cell_metric_write_reads_back_physical_row() {
         let temp = tempfile::tempdir().unwrap();
         let db = open_infer_rocksdb(temp.path()).unwrap();
@@ -479,5 +606,69 @@ mod tests {
                 .code(),
             "MEJEPA_INFER_INVALID_INPUT"
         );
+    }
+
+    fn hierarchical_record(session_id: [u8; 16]) -> HierarchicalPredictionRecord {
+        let chunk = ChunkId("src/lib.py#0".to_string());
+        HierarchicalPredictionRecord::try_new(HierarchicalPredictionRecord {
+            schema_version: HIERARCHICAL_PREDICTION_SCHEMA_VERSION,
+            prediction_id: [11; 16],
+            task_id: TaskId("store-hierarchy-task".to_string()),
+            session_id,
+            language: Language::Python,
+            source_panel_sha: [12; 32],
+            calibration_version: "calibration-v1".to_string(),
+            created_at_unix_ms: 1_772_000_000_001,
+            levels: vec![
+                HierarchicalPredictionLevel {
+                    level: PredictionHierarchyLevel::File,
+                    scope_id: "file:src/lib.py".to_string(),
+                    parent_scope_id: None,
+                    covered_chunks: vec![chunk.clone()],
+                    predicted_oracle_pass: 0.9,
+                    calibrated_confidence: 0.8,
+                    ood_score: 0.1,
+                    verdict: Verdict::Pass,
+                    latent_energy: 0.01,
+                },
+                HierarchicalPredictionLevel {
+                    level: PredictionHierarchyLevel::Function,
+                    scope_id: "file:src/lib.py/function:answer#0".to_string(),
+                    parent_scope_id: Some("file:src/lib.py".to_string()),
+                    covered_chunks: vec![chunk.clone()],
+                    predicted_oracle_pass: 0.9,
+                    calibrated_confidence: 0.8,
+                    ood_score: 0.1,
+                    verdict: Verdict::Pass,
+                    latent_energy: 0.01,
+                },
+                HierarchicalPredictionLevel {
+                    level: PredictionHierarchyLevel::AstNode,
+                    scope_id: "file:src/lib.py/function:answer#0/ast:function:abc".to_string(),
+                    parent_scope_id: Some("file:src/lib.py/function:answer#0".to_string()),
+                    covered_chunks: vec![chunk.clone()],
+                    predicted_oracle_pass: 0.9,
+                    calibrated_confidence: 0.8,
+                    ood_score: 0.1,
+                    verdict: Verdict::Pass,
+                    latent_energy: 0.01,
+                },
+                HierarchicalPredictionLevel {
+                    level: PredictionHierarchyLevel::Chunk,
+                    scope_id: "file:src/lib.py/function:answer#0/ast:function:abc/chunk:0"
+                        .to_string(),
+                    parent_scope_id: Some(
+                        "file:src/lib.py/function:answer#0/ast:function:abc".to_string(),
+                    ),
+                    covered_chunks: vec![chunk],
+                    predicted_oracle_pass: 0.9,
+                    calibrated_confidence: 0.8,
+                    ood_score: 0.1,
+                    verdict: Verdict::Pass,
+                    latent_energy: 0.01,
+                },
+            ],
+        })
+        .unwrap()
     }
 }

@@ -23,6 +23,8 @@ const MAX_AGENT_ID_BYTES: usize = 256;
 const MAX_ENTITIES: usize = 4096;
 const MAX_SKILL_CITATIONS: usize = 512;
 const MAX_PATCH_HUNKS: usize = 4096;
+const MAX_HIERARCHY_LEVELS: usize = MAX_PATCH_HUNKS * 4;
+const MAX_HIERARCHY_SCOPE_ID_BYTES: usize = 1024;
 const MAX_HUNK_TEXT_BYTES: usize = 1_048_576;
 const MAX_WITNESS_SEGMENT_BYTES: usize = 73 * 8192;
 const MAX_COMMIT_MESSAGE_BYTES: usize = 8192;
@@ -1277,6 +1279,204 @@ pub struct PhaseBPredictionSurfaces {
     pub predicted_accuracy_degradations: Vec<PredictedAccuracyDegradation>,
     pub predicted_cost_regressions: Vec<PredictedCostRegression>,
     pub predicted_reasoning_class: ReasoningClass,
+}
+
+pub const HIERARCHICAL_PREDICTION_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PredictionHierarchyLevel {
+    File,
+    Function,
+    AstNode,
+    Chunk,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HierarchicalPredictionLevel {
+    pub level: PredictionHierarchyLevel,
+    pub scope_id: String,
+    pub parent_scope_id: Option<String>,
+    pub covered_chunks: Vec<ChunkId>,
+    pub predicted_oracle_pass: f32,
+    pub calibrated_confidence: f32,
+    pub ood_score: f32,
+    pub verdict: Verdict,
+    pub latent_energy: f32,
+}
+
+impl HierarchicalPredictionLevel {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_bounded_id(
+            "hierarchical_prediction.level.scope_id",
+            &self.scope_id,
+            MAX_HIERARCHY_SCOPE_ID_BYTES,
+        )?;
+        if let Some(parent) = &self.parent_scope_id {
+            validate_bounded_id(
+                "hierarchical_prediction.level.parent_scope_id",
+                parent,
+                MAX_HIERARCHY_SCOPE_ID_BYTES,
+            )?;
+        }
+        if self.covered_chunks.is_empty() {
+            return Err(MejepaInferError::InvalidInput {
+                field: "hierarchical_prediction.level.covered_chunks".to_string(),
+                detail: "covered_chunks must be non-empty".to_string(),
+            });
+        }
+        if self.covered_chunks.len() > MAX_CHUNKS {
+            return Err(MejepaInferError::DimMismatch {
+                expected: MAX_CHUNKS,
+                actual: self.covered_chunks.len(),
+                context: "hierarchical_prediction.level.covered_chunks exceeds maximum".to_string(),
+            });
+        }
+        for (idx, chunk) in self.covered_chunks.iter().enumerate() {
+            chunk.validate(&format!(
+                "hierarchical_prediction.level.covered_chunks[{idx}]"
+            ))?;
+        }
+        validate_probability(
+            "hierarchical_prediction.level.predicted_oracle_pass",
+            self.predicted_oracle_pass,
+        )?;
+        validate_probability(
+            "hierarchical_prediction.level.calibrated_confidence",
+            self.calibrated_confidence,
+        )?;
+        validate_probability("hierarchical_prediction.level.ood_score", self.ood_score)?;
+        validate_finite_f32(
+            "hierarchical_prediction.level.latent_energy",
+            self.latent_energy,
+        )?;
+        if self.latent_energy < 0.0 {
+            return Err(MejepaInferError::InvalidInput {
+                field: "hierarchical_prediction.level.latent_energy".to_string(),
+                detail: "latent_energy must be non-negative".to_string(),
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HierarchicalPredictionRecord {
+    pub schema_version: u32,
+    pub prediction_id: [u8; 16],
+    pub task_id: TaskId,
+    pub session_id: [u8; 16],
+    pub language: Language,
+    pub source_panel_sha: [u8; 32],
+    pub calibration_version: String,
+    pub created_at_unix_ms: i64,
+    pub levels: Vec<HierarchicalPredictionLevel>,
+}
+
+impl HierarchicalPredictionRecord {
+    pub fn try_new(mut value: Self) -> Result<Self, MejepaInferError> {
+        value.validate()?;
+        value.levels.shrink_to_fit();
+        Ok(value)
+    }
+
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        if self.schema_version != HIERARCHICAL_PREDICTION_SCHEMA_VERSION {
+            return Err(MejepaInferError::InvalidInput {
+                field: "hierarchical_prediction.schema_version".to_string(),
+                detail: format!(
+                    "expected schema_version {}, got {}",
+                    HIERARCHICAL_PREDICTION_SCHEMA_VERSION, self.schema_version
+                ),
+            });
+        }
+        if self.prediction_id.iter().all(|byte| *byte == 0) {
+            return Err(MejepaInferError::InvalidInput {
+                field: "hierarchical_prediction.prediction_id".to_string(),
+                detail: "prediction_id must be non-zero".to_string(),
+            });
+        }
+        self.task_id.validate("hierarchical_prediction.task_id")?;
+        if self.session_id == [0u8; 16] {
+            return Err(MejepaInferError::InvalidInput {
+                field: "hierarchical_prediction.session_id".to_string(),
+                detail: "session_id must be non-zero".to_string(),
+            });
+        }
+        validate_non_empty_id(
+            "hierarchical_prediction.calibration_version",
+            &self.calibration_version,
+        )?;
+        if self.created_at_unix_ms < 0 {
+            return Err(MejepaInferError::InvalidInput {
+                field: "hierarchical_prediction.created_at_unix_ms".to_string(),
+                detail: "created_at_unix_ms must be non-negative".to_string(),
+            });
+        }
+        if self.levels.len() > MAX_HIERARCHY_LEVELS {
+            return Err(MejepaInferError::DimMismatch {
+                expected: MAX_HIERARCHY_LEVELS,
+                actual: self.levels.len(),
+                context: "hierarchical_prediction.levels exceeds maximum".to_string(),
+            });
+        }
+        validate_items(
+            "hierarchical_prediction.levels",
+            &self.levels,
+            HierarchicalPredictionLevel::validate,
+        )?;
+        let mut seen_scopes = BTreeSet::new();
+        let mut seen_levels = BTreeSet::new();
+        for level in &self.levels {
+            if !seen_scopes.insert(level.scope_id.as_str()) {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "hierarchical_prediction.level.scope_id".to_string(),
+                    detail: format!("duplicate scope_id {}", level.scope_id),
+                });
+            }
+            seen_levels.insert(level.level);
+        }
+        for required in [
+            PredictionHierarchyLevel::File,
+            PredictionHierarchyLevel::Function,
+            PredictionHierarchyLevel::AstNode,
+            PredictionHierarchyLevel::Chunk,
+        ] {
+            if !seen_levels.contains(&required) {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "hierarchical_prediction.levels".to_string(),
+                    detail: format!("missing required {required:?} hierarchy level"),
+                });
+            }
+        }
+        for level in &self.levels {
+            match (&level.level, &level.parent_scope_id) {
+                (PredictionHierarchyLevel::File, None) => {}
+                (PredictionHierarchyLevel::File, Some(_)) => {
+                    return Err(MejepaInferError::InvalidInput {
+                        field: "hierarchical_prediction.level.parent_scope_id".to_string(),
+                        detail: "file levels must not have a parent_scope_id".to_string(),
+                    });
+                }
+                (_, Some(parent)) if seen_scopes.contains(parent.as_str()) => {}
+                (_, Some(parent)) => {
+                    return Err(MejepaInferError::InvalidInput {
+                        field: "hierarchical_prediction.level.parent_scope_id".to_string(),
+                        detail: format!("parent scope {parent} does not exist in record"),
+                    });
+                }
+                (_, None) => {
+                    return Err(MejepaInferError::InvalidInput {
+                        field: "hierarchical_prediction.level.parent_scope_id".to_string(),
+                        detail: "non-file levels must have a parent_scope_id".to_string(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

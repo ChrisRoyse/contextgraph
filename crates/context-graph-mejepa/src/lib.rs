@@ -25,6 +25,7 @@ pub mod fsv_writer;
 pub mod gates;
 pub mod grad_hook;
 pub mod heal;
+pub mod hierarchical;
 pub mod label_transfer_audit;
 pub mod loss;
 pub mod ood;
@@ -91,6 +92,7 @@ pub use grad_hook::{
     run_gradient_hook, GradStore, GradientHookReport, InstrumentGradHandle, NoOpGradHandle,
     TensorId,
 };
+pub use hierarchical::*;
 pub use label_transfer_audit::*;
 pub use loss::{huber_loss_delta_one, vicreg_loss, VarianceFloorHistory};
 pub use ood::*;
