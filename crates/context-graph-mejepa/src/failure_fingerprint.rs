@@ -181,6 +181,14 @@ impl FingerprintKind {
             ),
         }
     }
+
+    pub fn kind_slug(&self) -> &'static str {
+        match self {
+            Self::KnownGood { .. } => "known_good",
+            Self::KnownBad { .. } => "known_bad",
+            Self::Unknown { .. } => "unknown",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -189,6 +197,16 @@ pub enum FingerprintCalibrationState {
     Uncalibrated,
     Calibrated,
     NeedsRecalibration,
+}
+
+impl FingerprintCalibrationState {
+    pub fn slug(self) -> &'static str {
+        match self {
+            Self::Uncalibrated => "uncalibrated",
+            Self::Calibrated => "calibrated",
+            Self::NeedsRecalibration => "needs_recalibration",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

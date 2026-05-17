@@ -409,6 +409,8 @@ mod tests {
             source_panel_sha: [4; 32],
             calibration_version: "calibration-v1".to_string(),
             created_at_unix_ms: 1_772_000_000_000,
+            matched_fingerprint: None,
+            unknown_candidate_id: None,
         })
         .unwrap()
     }

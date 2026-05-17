@@ -26,7 +26,7 @@ use crate::degraded::{
 use crate::error::{MejepaInferError, PredictorError};
 use crate::failure_fingerprint::{
     classify_failure_fingerprint_observation, FailureShapeFingerprint, FingerprintClassification,
-    FingerprintClassifierConfig,
+    FingerprintClassifierConfig, FingerprintDecisionReason,
 };
 use crate::gates::{check_source_sha_drift, replay_witness_segment};
 use crate::ood::{compute_ood_score, squared_l2};
@@ -43,8 +43,9 @@ use crate::secret_redaction::{redact_patch_bundle, SECRET_REDACTION_ATTESTATION_
 use crate::system_cost::SystemCostCounters;
 use crate::types::{
     validate_probability, AgentClaimGraph, ChunkId, ConformalInterval, ConformalMethod, DdaSignals,
-    FailedGate, OracleOutcome, PanelId, PatchBundle, PredictionProvenance, RealityPrediction,
-    RealityPredictionBuilder, TaskContext, Verdict, VerifyVerdict, WitnessHash,
+    EmbedderId, FailedGate, MatchedFingerprintEvidence, OracleOutcome, PanelId, PatchBundle,
+    PredictionProvenance, RealityPrediction, RealityPredictionBuilder, TaskContext, Verdict,
+    VerifyVerdict, WitnessHash,
 };
 use crate::verdict_assembly::{assemble_verdict, VerdictAssemblyInput};
 
@@ -376,6 +377,25 @@ impl MeJepaCompiler {
             .map(|(prediction, _predicted_panel)| prediction)
     }
 
+    pub fn compile_with_fingerprint_observation(
+        &self,
+        patch: &PatchBundle,
+        context: &TaskContext,
+        observation_by_embedder: &BTreeMap<EmbedderId, Vec<f32>>,
+    ) -> Result<RealityPrediction, MejepaInferError> {
+        let (mut prediction, _predicted_panel) = self.compile_with_panel(patch, context)?;
+        let classification = self.classify_failure_fingerprints(observation_by_embedder)?;
+        let evidence = evidence_from_fingerprint_classification(
+            &classification,
+            prediction.verdict,
+            context,
+            prediction.prediction_id,
+        )?;
+        prediction.matched_fingerprint = evidence.matched_fingerprint;
+        prediction.unknown_candidate_id = evidence.unknown_candidate_id;
+        RealityPrediction::try_new(prediction)
+    }
+
     pub fn compile_with_panel(
         &self,
         patch: &PatchBundle,
@@ -470,6 +490,8 @@ impl MeJepaCompiler {
             ood_threshold: self.config.ood_refuse_threshold,
             interval_width_threshold: 0.8,
         });
+        let fingerprint_evidence =
+            self.live_fingerprint_evidence_for_panel(&predicted, verdict, context, prediction_id)?;
         let provenance = PredictionProvenance {
             predictor_version: env!("CARGO_PKG_VERSION").to_string(),
             constellation_version: self
@@ -502,8 +524,38 @@ impl MeJepaCompiler {
         .provenance(provenance)
         .source_panel_sha(source_panel_sha)
         .calibration_version(calibration.version.clone())
+        .matched_fingerprint(fingerprint_evidence.matched_fingerprint)
+        .unknown_candidate_id(fingerprint_evidence.unknown_candidate_id)
         .build()
         .map(|prediction| (prediction, predicted))
+    }
+
+    fn live_fingerprint_evidence_for_panel(
+        &self,
+        predicted: &Panel,
+        verdict: Verdict,
+        context: &TaskContext,
+        prediction_id: [u8; 16],
+    ) -> Result<FingerprintPredictionEvidence, MejepaInferError> {
+        let catalog = self.store.read_failure_fingerprint_catalog()?;
+        if catalog.is_empty() {
+            return Ok(FingerprintPredictionEvidence::default());
+        }
+        let Some(observation_by_embedder) =
+            panel_observation_for_fingerprint_catalog(predicted, &catalog)
+        else {
+            tracing::warn!(
+                catalog_rows = catalog.len(),
+                "failure-fingerprint catalog embedder ids are not panel-slot ids; live matched_fingerprint is unavailable for this prediction"
+            );
+            return Ok(FingerprintPredictionEvidence::default());
+        };
+        let classification = classify_failure_fingerprint_observation(
+            &catalog,
+            &observation_by_embedder,
+            FingerprintClassifierConfig::default(),
+        )?;
+        evidence_from_fingerprint_classification(&classification, verdict, context, prediction_id)
     }
 
     fn load_dda_projection(
@@ -1250,6 +1302,91 @@ fn abstain_for_cold_cell(
             .unwrap_or_else(|| "lookup_failure".to_string())
     );
     RealityPrediction::try_new(abstain)
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+struct FingerprintPredictionEvidence {
+    matched_fingerprint: Option<MatchedFingerprintEvidence>,
+    unknown_candidate_id: Option<[u8; 16]>,
+}
+
+fn evidence_from_fingerprint_classification(
+    classification: &FingerprintClassification,
+    prediction_verdict: Verdict,
+    context: &TaskContext,
+    prediction_id: [u8; 16],
+) -> Result<FingerprintPredictionEvidence, MejepaInferError> {
+    classification.validate()?;
+    if matches!(
+        prediction_verdict,
+        Verdict::OutOfDistribution | Verdict::GuardRejected
+    ) {
+        let unknown_candidate_id = if prediction_verdict == Verdict::OutOfDistribution
+            && classification.reason == FingerprintDecisionReason::NoKnownMatch
+        {
+            Some(unknown_candidate_id_for_prediction(
+                &context.task_id,
+                prediction_id,
+                &context.session_id,
+            ))
+        } else {
+            None
+        };
+        return Ok(FingerprintPredictionEvidence {
+            matched_fingerprint: None,
+            unknown_candidate_id,
+        });
+    }
+
+    let matched_fingerprint = classification
+        .primary_match
+        .as_ref()
+        .map(MatchedFingerprintEvidence::from_candidate)
+        .transpose()?;
+    Ok(FingerprintPredictionEvidence {
+        matched_fingerprint,
+        unknown_candidate_id: None,
+    })
+}
+
+fn panel_observation_for_fingerprint_catalog(
+    predicted: &Panel,
+    catalog: &[FailureShapeFingerprint],
+) -> Option<BTreeMap<EmbedderId, Vec<f32>>> {
+    let mut observation = BTreeMap::new();
+    for fingerprint in catalog {
+        for embedder in fingerprint.centroid_by_embedder.keys() {
+            if observation.contains_key(embedder) {
+                continue;
+            }
+            let slot = InstrumentSlot::all()
+                .iter()
+                .copied()
+                .find(|slot| slot.slug() == embedder.0.as_str())?;
+            observation.insert(embedder.clone(), predicted.slot(slot).to_vec());
+        }
+    }
+    if observation.is_empty() {
+        None
+    } else {
+        Some(observation)
+    }
+}
+
+fn unknown_candidate_id_for_prediction(
+    task_id: &crate::types::TaskId,
+    prediction_id: [u8; 16],
+    session_id: &[u8; 16],
+) -> [u8; 16] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"MEJEPA_LIVE_UNKNOWN_FINGERPRINT_CANDIDATE_V1");
+    hasher.update(task_id.0.as_bytes());
+    hasher.update(prediction_id);
+    hasher.update(session_id);
+    let digest = hasher.finalize();
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&digest[..16]);
+    out
 }
 
 fn validate_metric_text(field: &str, value: &str) -> Result<(), MejepaInferError> {

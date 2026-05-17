@@ -21,15 +21,16 @@ use context_graph_mejepa::operator_override::{
 use context_graph_mejepa::{
     build_deterministic_compiler, open_infer_rocksdb, ActiveLearningQueueState, ActualOutcome,
     AgentId, CalibrationStore, ChunkId, DdaSignals, FailedGate, FeedbackId, FeedbackKind,
-    LabelMethod, MeJepaInferConfig, OracleOutcome, PanelId, PatchBundle, PredictionId,
-    RealityPrediction, RocksDbEvalStore, RocksDbInferStore, SurpriseEvent, SurpriseSeverity,
-    SystemCostCounters, TaskContext, TestId, VerifyVerdict, WitnessHash,
+    FingerprintId, FingerprintReference, LabelMethod, MeJepaInferConfig, OracleOutcome, PanelId,
+    PatchBundle, PredictionId, RealityPrediction, RocksDbEvalStore, RocksDbInferStore,
+    SurpriseEvent, SurpriseSeverity, SystemCostCounters, TaskContext, TestId, VerifyVerdict,
+    WitnessHash,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_CALIBRATION_HISTORY,
-    CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_OOD_ESCALATIONS,
-    CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_LIVE_PREDICTIONS,
+    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
@@ -78,6 +79,10 @@ struct PredictLatestRequest {
     session_id: String,
     #[serde(default = "default_limit")]
     limit: u32,
+    // TASK-FP-010 (#319) — let tests + non-default infer DBs override the path
+    // resolution used by `resolve_optional_infer_db_path` below.
+    #[serde(default)]
+    db_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,6 +97,11 @@ struct PredictWhatIfRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ExplainPredictionRequest {
     prediction_id: String,
+    db_path: Option<PathBuf>,
+    #[serde(default)]
+    include_fingerprint_references: bool,
+    #[serde(default = "default_fingerprint_reference_limit")]
+    fingerprint_reference_limit: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -220,6 +230,10 @@ struct MejepaDaemonStatusRequest {
 
 fn default_limit() -> u32 {
     10
+}
+
+fn default_fingerprint_reference_limit() -> u32 {
+    5
 }
 
 fn default_pause_reason() -> String {
@@ -433,7 +447,7 @@ impl Handlers {
                 "limit must be in [1, 1000]",
             );
         }
-        let db_path = match infer_db_path() {
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
             Ok(path) => path,
             Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
         };
@@ -529,7 +543,7 @@ impl Handlers {
                 );
             }
         };
-        let db_path = match infer_db_path() {
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
             Ok(path) => path,
             Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
         };
@@ -1526,13 +1540,29 @@ fn run_explain_prediction(
     db_path: &Path,
     request: ExplainPredictionRequest,
 ) -> AnyhowResult<Value> {
+    if request.fingerprint_reference_limit > 100 {
+        bail!("fingerprintReferenceLimit must be <= 100");
+    }
     let prediction_id = parse_prediction_id_hex(&request.prediction_id)?;
     let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
     let prediction = find_prediction_by_id(db.as_ref(), prediction_id)?;
     let saliency = saliency_by_chunk(&prediction)?;
+    let fingerprint_references = if request.include_fingerprint_references {
+        fingerprint_references_for_prediction(
+            db.as_ref(),
+            &prediction,
+            request.fingerprint_reference_limit as usize,
+        )?
+    } else {
+        Vec::new()
+    };
     Ok(json!({
         "predictionId": request.prediction_id,
         "verdict": prediction.verdict,
+        "matchedFingerprint": &prediction.matched_fingerprint,
+        "unknownCandidateId": prediction.unknown_candidate_id.map(hex::encode),
+        "fingerprintEvidenceReason": fingerprint_evidence_reason(db.as_ref(), &prediction)?,
+        "fingerprintReferences": fingerprint_references,
         "confidenceInterval": prediction.confidence_interval,
         "calibratedConfidence": prediction.calibrated_confidence,
         "oodScore": prediction.ood_score,
@@ -1995,6 +2025,58 @@ struct PredictionRow {
 
 fn find_prediction_by_id(db: &DB, prediction_id: PredictionId) -> AnyhowResult<RealityPrediction> {
     Ok(find_prediction_row_by_id(db, prediction_id)?.prediction)
+}
+
+fn fingerprint_evidence_reason(
+    db: &DB,
+    prediction: &RealityPrediction,
+) -> AnyhowResult<Option<&'static str>> {
+    if prediction.matched_fingerprint.is_some() {
+        return Ok(None);
+    }
+    if prediction.unknown_candidate_id.is_some() {
+        return Ok(Some("UNKNOWN_OOD"));
+    }
+    if prediction.verdict == context_graph_mejepa::Verdict::GuardRejected {
+        return Ok(Some("GUARD_REJECTED"));
+    }
+    let cf = cf_handle(db, context_graph_mejepa_cf::CF_MEJEPA_FAILURE_FINGERPRINTS)?;
+    let mut iter = db.iterator_cf(cf, IteratorMode::Start);
+    if iter.next().transpose()?.is_none() {
+        return Ok(Some("CATALOG_EMPTY"));
+    }
+    Ok(Some("PREDICTION_BEFORE_CATALOG"))
+}
+
+fn fingerprint_references_for_prediction(
+    db: &DB,
+    prediction: &RealityPrediction,
+    limit: usize,
+) -> AnyhowResult<Vec<FingerprintReference>> {
+    let Some(matched) = &prediction.matched_fingerprint else {
+        return Ok(Vec::new());
+    };
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let target = FingerprintId(matched.fingerprint_id);
+    let cf = cf_handle(db, CF_MEJEPA_FINGERPRINT_REFERENCES)?;
+    let mut out = Vec::new();
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (_key, value) = item?;
+        let reference: FingerprintReference =
+            bincode::deserialize(&value).context("decode CF_MEJEPA_FINGERPRINT_REFERENCES row")?;
+        reference
+            .validate()
+            .map_err(|err| anyhow!("invalid fingerprint reference row: {err}"))?;
+        if reference.fingerprint_id == target {
+            out.push(reference);
+            if out.len() == limit {
+                break;
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn find_prediction_row_by_id(db: &DB, prediction_id: PredictionId) -> AnyhowResult<PredictionRow> {
@@ -3219,6 +3301,8 @@ can_operator_override = {operator}
             source_panel_sha: [0x42; 32],
             calibration_version: "inspect-test-calibration-v1".to_string(),
             created_at_unix_ms: 1_778_644_000_000,
+            matched_fingerprint: None,
+            unknown_candidate_id: None,
         })
         .unwrap()
     }

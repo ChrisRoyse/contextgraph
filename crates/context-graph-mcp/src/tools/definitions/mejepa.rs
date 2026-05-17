@@ -37,6 +37,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "minimum": 1,
                         "maximum": 1000,
                         "default": 10
+                    },
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional Phase 4 inference RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
                     }
                 }
             }),
@@ -60,7 +64,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_EXPLAIN_PREDICTION,
-            "Explain a persisted ME-JEPA Phase B RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS and returning stored verdict, top risks, claim reconciliation, reality impact, provenance, and a saliency map normalized from covered chunks.",
+            "Explain a persisted ME-JEPA Phase B RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS and returning stored verdict, matched failure-shape fingerprint evidence, top risks, claim reconciliation, reality impact, provenance, and a saliency map normalized from covered chunks.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -73,6 +77,16 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "dbPath": {
                         "type": "string",
                         "description": "Optional Phase 4 inference RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    },
+                    "includeFingerprintReferences": {
+                        "type": "boolean",
+                        "description": "When true, return top persisted CF_MEJEPA_FINGERPRINT_REFERENCES rows for the stored matched_fingerprint."
+                    },
+                    "fingerprintReferenceLimit": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "default": 5
                     }
                 }
             }),

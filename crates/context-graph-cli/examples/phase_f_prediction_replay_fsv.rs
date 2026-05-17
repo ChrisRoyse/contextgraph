@@ -199,6 +199,8 @@ fn prediction(id: u8) -> Result<RealityPrediction> {
         source_panel_sha: [id.wrapping_add(2); 32],
         calibration_version: "phase-f-replay-calibration".to_string(),
         created_at_unix_ms: 1_778_660_000_000 + i64::from(id),
+        matched_fingerprint: None,
+        unknown_candidate_id: None,
     })?)
 }
 

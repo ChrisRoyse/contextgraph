@@ -2077,6 +2077,8 @@ mod tests {
             source_panel_sha: [0x5b; 32],
             calibration_version: "scheduler-test-calibration".to_string(),
             created_at_unix_ms: 1_778_000_000_000,
+            matched_fingerprint: None,
+            unknown_candidate_id: None,
         })
         .unwrap()
     }

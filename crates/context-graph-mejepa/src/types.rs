@@ -5,6 +5,7 @@ use context_graph_mejepa_instruments::OracleVerdict;
 use serde::{Deserialize, Serialize};
 
 use crate::error::MejepaInferError;
+use crate::failure_fingerprint::FingerprintCandidateScore;
 
 const MAX_ID_BYTES: usize = 512;
 const MAX_TESTS: usize = 1024;
@@ -440,6 +441,91 @@ pub struct ExemplarMatch {
     pub diff_summary: String,
     pub oracle_outcome: OracleVerdict,
     pub witness_hash: WitnessHash,
+}
+
+/// TASK-FP-010 (#319) — operator/agent-facing evidence that a live
+/// `RealityPrediction` matched a row in the failure-shape fingerprint
+/// catalog. Always paired with one of the five `Verdict` outcomes.
+///
+/// * `Pass` / `Fail` verdicts: `matched_fingerprint = Some(highest-cosine
+///   matched candidate)` and `unknown_candidate_id = None`.
+/// * `Abstain` (KnownGood/KnownBad conflict): `matched_fingerprint = Some(
+///   highest-ranked candidate regardless of kind)` and
+///   `unknown_candidate_id = None`.
+/// * `OutOfDistribution`: `matched_fingerprint = None` and
+///   `unknown_candidate_id = Some(candidate id enqueued for active learning)`.
+/// * `GuardRejected`: both fields `None`.
+///
+/// The struct is intentionally small — the full `FingerprintClassification`
+/// (with `ranked_matches` and per-embedder scores) is fetched separately via
+/// `mejepa_explain_prediction`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MatchedFingerprintEvidence {
+    pub fingerprint_id: [u8; 32],
+    pub name: String,
+    pub kind_slug: String,
+    pub oracle_outcome: Option<OracleOutcome>,
+    pub mean_cosine: f32,
+    pub min_margin: f32,
+    pub n_references: usize,
+    pub calibration_state: String,
+}
+
+impl MatchedFingerprintEvidence {
+    pub fn from_candidate(candidate: &FingerprintCandidateScore) -> Result<Self, MejepaInferError> {
+        let value = Self {
+            fingerprint_id: candidate.fingerprint_id.0,
+            name: candidate.name.clone(),
+            kind_slug: candidate.kind.kind_slug().to_string(),
+            oracle_outcome: candidate.oracle_outcome,
+            mean_cosine: candidate.mean_cosine,
+            min_margin: candidate.min_margin,
+            n_references: candidate.n_references,
+            calibration_state: candidate.calibration_state.slug().to_string(),
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        if self.fingerprint_id.iter().all(|byte| *byte == 0) {
+            return Err(MejepaInferError::InvalidInput {
+                field: "matched_fingerprint.fingerprint_id".to_string(),
+                detail: "fingerprint_id must be non-zero".to_string(),
+            });
+        }
+        validate_bounded_text(
+            "matched_fingerprint.name",
+            &self.name,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )?;
+        validate_bounded_text("matched_fingerprint.kind_slug", &self.kind_slug, 64)?;
+        validate_bounded_text(
+            "matched_fingerprint.calibration_state",
+            &self.calibration_state,
+            64,
+        )?;
+        if !self.mean_cosine.is_finite() {
+            return Err(MejepaInferError::InvalidInput {
+                field: "matched_fingerprint.mean_cosine".to_string(),
+                detail: "mean_cosine must be finite".to_string(),
+            });
+        }
+        if !self.min_margin.is_finite() {
+            return Err(MejepaInferError::InvalidInput {
+                field: "matched_fingerprint.min_margin".to_string(),
+                detail: "min_margin must be finite".to_string(),
+            });
+        }
+        if self.n_references == 0 {
+            return Err(MejepaInferError::InvalidInput {
+                field: "matched_fingerprint.n_references".to_string(),
+                detail: "n_references must be >= 1".to_string(),
+            });
+        }
+        Ok(())
+    }
 }
 
 impl ExemplarMatch {
@@ -1233,6 +1319,13 @@ pub struct RealityPrediction {
     pub source_panel_sha: [u8; 32],
     pub calibration_version: String,
     pub created_at_unix_ms: i64,
+    // TASK-FP-010 (#319) — failure-shape fingerprint catalog evidence.
+    // `serde(default)` so bincode-stored predictions written before this field
+    // landed deserialize cleanly with `None` (additive, no schema bump).
+    #[serde(default)]
+    pub matched_fingerprint: Option<MatchedFingerprintEvidence>,
+    #[serde(default)]
+    pub unknown_candidate_id: Option<[u8; 16]>,
 }
 
 impl RealityPrediction {
@@ -1371,6 +1464,36 @@ impl RealityPrediction {
         }
         self.provenance.validate()?;
         self.outcome_set.validate()?;
+        if let Some(matched) = &self.matched_fingerprint {
+            matched.validate()?;
+        }
+        if self.unknown_candidate_id.is_some() && self.verdict != Verdict::OutOfDistribution {
+            return Err(MejepaInferError::InvalidInput {
+                field: "unknown_candidate_id".to_string(),
+                detail: "unknown_candidate_id is only valid for OutOfDistribution verdicts"
+                    .to_string(),
+            });
+        }
+        if let Some(candidate_id) = &self.unknown_candidate_id {
+            if candidate_id.iter().all(|byte| *byte == 0) {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "unknown_candidate_id".to_string(),
+                    detail: "unknown_candidate_id must be non-zero".to_string(),
+                });
+            }
+        }
+        if self.matched_fingerprint.is_some()
+            && matches!(
+                self.verdict,
+                Verdict::OutOfDistribution | Verdict::GuardRejected
+            )
+        {
+            return Err(MejepaInferError::InvalidInput {
+                field: "matched_fingerprint".to_string(),
+                detail: "matched_fingerprint must be None for OutOfDistribution or GuardRejected"
+                    .to_string(),
+            });
+        }
         if self.calibration_version.is_empty() {
             return Err(MejepaInferError::InvalidInput {
                 field: "calibration_version".to_string(),
@@ -1421,6 +1544,9 @@ pub struct RealityPredictionBuilder {
     source_panel_sha: [u8; 32],
     calibration_version: String,
     created_at_unix_ms: i64,
+    // TASK-FP-010 (#319) — see RealityPrediction docs for verdict→field semantics.
+    matched_fingerprint: Option<MatchedFingerprintEvidence>,
+    unknown_candidate_id: Option<[u8; 16]>,
 }
 
 impl RealityPredictionBuilder {
@@ -1468,6 +1594,8 @@ impl RealityPredictionBuilder {
             source_panel_sha: [0u8; 32],
             calibration_version: String::new(),
             created_at_unix_ms: chrono::Utc::now().timestamp_millis(),
+            matched_fingerprint: None,
+            unknown_candidate_id: None,
         }
     }
 
@@ -1633,7 +1761,22 @@ impl RealityPredictionBuilder {
             source_panel_sha: self.source_panel_sha,
             calibration_version: self.calibration_version,
             created_at_unix_ms: self.created_at_unix_ms,
+            // TASK-FP-010 (#319) — builder defaults to None; live callers
+            // populate via `.matched_fingerprint(...)` and
+            // `.unknown_candidate_id(...)` setters below.
+            matched_fingerprint: self.matched_fingerprint,
+            unknown_candidate_id: self.unknown_candidate_id,
         })
+    }
+
+    pub fn matched_fingerprint(mut self, value: Option<MatchedFingerprintEvidence>) -> Self {
+        self.matched_fingerprint = value;
+        self
+    }
+
+    pub fn unknown_candidate_id(mut self, value: Option<[u8; 16]>) -> Self {
+        self.unknown_candidate_id = value;
+        self
     }
 }
 
