@@ -156,6 +156,9 @@ class Solver:
         for value in values:
             total += value
         return total
+
+solver = Solver()
+answer: int = solver.compute([1, 2], meta=None)
 "#
 }
 
@@ -194,6 +197,18 @@ fn assert_happy_facts(facts: &PythonSemanticFacts) -> FsvResult<()> {
     require(
         "Type graph has union/optional annotation",
         facts.type_union_optional_count >= 1,
+    )?;
+    require(
+        "Type graph has call-site evidence",
+        facts.type_call_site_count >= 2,
+    )?;
+    require(
+        "Type graph has known typed call-site evidence",
+        facts.type_known_call_site_count >= 1 && facts.type_typed_argument_count >= 1,
+    )?;
+    require(
+        "Type graph has return-edge evidence",
+        facts.type_return_edge_count >= 1,
     )?;
     Ok(())
 }

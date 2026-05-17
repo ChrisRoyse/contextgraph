@@ -2,7 +2,8 @@ use context_graph_core::memory::ast::{
     chunk_with_options, AstChunk, AstChunkOptions, AstChunkerError, EntityType, Language,
 };
 use ruff_python_ast::{
-    Arguments, Comprehension, ElifElseClause, ExceptHandler, Expr, ExprContext, Parameters, Stmt,
+    Arguments, Comprehension, ElifElseClause, ExceptHandler, Expr, ExprCall, ExprContext,
+    Parameters, Stmt,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -96,6 +97,16 @@ struct CodeStats {
     type_union_optional_count: usize,
     type_literal_inference_count: usize,
     type_any_like_count: usize,
+    type_signature_count: usize,
+    type_call_site_count: usize,
+    type_known_call_site_count: usize,
+    type_unknown_call_site_count: usize,
+    type_typed_argument_count: usize,
+    type_untyped_argument_count: usize,
+    type_return_edge_count: usize,
+    type_any_call_site_count: usize,
+    type_arity_mismatch_count: usize,
+    type_signatures: BTreeMap<String, PythonTypeSignature>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +115,12 @@ enum CodeAnalyzerKind {
     #[default]
     GenericAstChunker,
     PythonRuffSemanticV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct PythonTypeSignature {
+    parameter_annotations: Vec<Option<String>>,
+    return_annotation: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,6 +158,15 @@ pub struct PythonSemanticFacts {
     pub type_union_optional_count: usize,
     pub type_literal_inference_count: usize,
     pub type_any_like_count: usize,
+    pub type_signature_count: usize,
+    pub type_call_site_count: usize,
+    pub type_known_call_site_count: usize,
+    pub type_unknown_call_site_count: usize,
+    pub type_typed_argument_count: usize,
+    pub type_untyped_argument_count: usize,
+    pub type_return_edge_count: usize,
+    pub type_any_call_site_count: usize,
+    pub type_arity_mismatch_count: usize,
 }
 
 impl From<&CodeStats> for PythonSemanticFacts {
@@ -181,6 +207,15 @@ impl From<&CodeStats> for PythonSemanticFacts {
             type_union_optional_count: stats.type_union_optional_count,
             type_literal_inference_count: stats.type_literal_inference_count,
             type_any_like_count: stats.type_any_like_count,
+            type_signature_count: stats.type_signature_count,
+            type_call_site_count: stats.type_call_site_count,
+            type_known_call_site_count: stats.type_known_call_site_count,
+            type_unknown_call_site_count: stats.type_unknown_call_site_count,
+            type_typed_argument_count: stats.type_typed_argument_count,
+            type_untyped_argument_count: stats.type_untyped_argument_count,
+            type_return_edge_count: stats.type_return_edge_count,
+            type_any_call_site_count: stats.type_any_call_site_count,
+            type_arity_mismatch_count: stats.type_arity_mismatch_count,
         }
     }
 }
@@ -515,6 +550,7 @@ fn parse_python_semantic_code(input: &CodeInstrumentInput) -> InstrumentResult<C
         analyzer: CodeAnalyzerKind::PythonRuffSemanticV1,
         ..CodeStats::default()
     };
+    collect_python_type_signatures(&module.body, None, &mut stats);
     let mut scope = PythonScope::module();
     analyze_python_suite(&module.body, &mut scope, &mut stats, 1);
     scope.finish(&mut stats);
@@ -533,10 +569,65 @@ fn parse_python_semantic_code(input: &CodeInstrumentInput) -> InstrumentResult<C
     Ok(stats)
 }
 
+fn collect_python_type_signatures(
+    suite: &[Stmt],
+    parent_qualname: Option<&str>,
+    stats: &mut CodeStats,
+) {
+    for stmt in suite {
+        match stmt {
+            Stmt::FunctionDef(function) => {
+                let name = function.name.as_str();
+                let qualname = parent_qualname
+                    .map(|parent| format!("{parent}.{name}"))
+                    .unwrap_or_else(|| name.to_string());
+                let signature =
+                    python_type_signature(&function.parameters, function.returns.as_deref());
+                stats.type_signature_count += 1;
+                stats
+                    .type_signatures
+                    .entry(qualname.clone())
+                    .or_insert_with(|| signature.clone());
+                stats
+                    .type_signatures
+                    .entry(name.to_string())
+                    .or_insert_with(|| signature.clone());
+                collect_python_type_signatures(&function.body, Some(&qualname), stats);
+            }
+            Stmt::ClassDef(class_def) => {
+                let name = class_def.name.as_str();
+                let qualname = parent_qualname
+                    .map(|parent| format!("{parent}.{name}"))
+                    .unwrap_or_else(|| name.to_string());
+                stats.type_signatures.entry(qualname.clone()).or_default();
+                stats.type_signatures.entry(name.to_string()).or_default();
+                collect_python_type_signatures(&class_def.body, Some(&qualname), stats);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn python_type_signature(parameters: &Parameters, returns: Option<&Expr>) -> PythonTypeSignature {
+    let mut parameter_annotations = Vec::new();
+    for (idx, param) in parameters.iter().enumerate() {
+        let name = param.name().as_str();
+        if idx == 0 && matches!(name, "self" | "cls") {
+            continue;
+        }
+        parameter_annotations.push(param.annotation().map(annotation_label));
+    }
+    PythonTypeSignature {
+        parameter_annotations,
+        return_annotation: returns.map(annotation_label),
+    }
+}
+
 #[derive(Debug, Default)]
 struct PythonScope {
     defined: BTreeMap<String, usize>,
     read: BTreeMap<String, usize>,
+    type_bindings: BTreeMap<String, String>,
 }
 
 impl PythonScope {
@@ -554,6 +645,10 @@ impl PythonScope {
             define_name(param.name().as_str(), &mut scope, stats);
             stats.data_param_source_count += 1;
             if let Some(annotation) = param.annotation() {
+                scope.type_bindings.insert(
+                    param.name().as_str().to_string(),
+                    annotation_label(annotation),
+                );
                 record_type_annotation(annotation, stats);
             } else {
                 stats.type_unannotated_binding_count += 1;
@@ -665,6 +760,9 @@ fn analyze_python_stmt(
             if let Some(kind) = literal_type_kind(&assign.value) {
                 stats.type_literal_inference_count += 1;
                 add_hashed_pair_to_counts(kind, stats);
+                for target in &assign.targets {
+                    bind_python_target_type(target, kind, scope);
+                }
             }
             for target in &assign.targets {
                 define_python_target(target, scope, stats, depth + 1);
@@ -680,6 +778,11 @@ fn analyze_python_stmt(
         }
         Stmt::AnnAssign(ann_assign) => {
             record_type_annotation(&ann_assign.annotation, stats);
+            bind_python_target_type(
+                &ann_assign.target,
+                &annotation_label(&ann_assign.annotation),
+                scope,
+            );
             if let Some(value) = &ann_assign.value {
                 analyze_python_expr(value, scope, stats, depth + 1);
             }
@@ -921,6 +1024,7 @@ fn analyze_python_expr(expr: &Expr, scope: &mut PythonScope, stats: &mut CodeSta
         Expr::Call(call) => {
             stats.call_count += 1;
             stats.data_call_sink_count += 1;
+            analyze_python_call_type(call, scope, stats);
             analyze_python_expr(&call.func, scope, stats, depth + 1);
             analyze_python_arguments(&call.arguments, scope, stats, depth + 1);
         }
@@ -1059,6 +1163,126 @@ fn read_name(name: &str, scope: &mut PythonScope, stats: &mut CodeStats) {
     }
 }
 
+fn analyze_python_call_type(call: &ExprCall, scope: &PythonScope, stats: &mut CodeStats) {
+    stats.type_call_site_count += 1;
+    let Some(target) = python_call_target_name(&call.func) else {
+        stats.type_unknown_call_site_count += 1;
+        return;
+    };
+    let signature = resolve_python_type_signature(&target, stats).cloned();
+    if let Some(signature) = signature {
+        stats.type_known_call_site_count += 1;
+        if signature.return_annotation.is_some() {
+            stats.type_return_edge_count += 1;
+        }
+        if signature_has_any(&signature) {
+            stats.type_any_call_site_count += 1;
+        }
+        let positional_count = call.arguments.args.len();
+        if positional_count != signature.parameter_annotations.len() {
+            stats.type_arity_mismatch_count += 1;
+        }
+        for (idx, arg) in call.arguments.args.iter().enumerate() {
+            let arg_type = infer_python_expr_type(arg, scope);
+            let parameter_annotation = signature
+                .parameter_annotations
+                .get(idx)
+                .and_then(|annotation| annotation.as_ref());
+            if arg_type.is_some() || parameter_annotation.is_some() {
+                stats.type_typed_argument_count += 1;
+            } else {
+                stats.type_untyped_argument_count += 1;
+            }
+            if arg_type.as_deref().is_some_and(annotation_text_is_any_like)
+                || parameter_annotation
+                    .map(String::as_str)
+                    .is_some_and(annotation_text_is_any_like)
+            {
+                stats.type_any_call_site_count += 1;
+            }
+        }
+    } else {
+        stats.type_unknown_call_site_count += 1;
+        for arg in &call.arguments.args {
+            if infer_python_expr_type(arg, scope).is_some() {
+                stats.type_typed_argument_count += 1;
+            } else {
+                stats.type_untyped_argument_count += 1;
+            }
+        }
+    }
+}
+
+fn python_call_target_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Name(name) => Some(name.id.as_str().to_string()),
+        Expr::Attribute(attribute) => python_call_target_name(&attribute.value)
+            .map(|prefix| format!("{prefix}.{}", attribute.attr.as_str()))
+            .or_else(|| Some(attribute.attr.as_str().to_string())),
+        _ => None,
+    }
+}
+
+fn resolve_python_type_signature<'a>(
+    target: &str,
+    stats: &'a CodeStats,
+) -> Option<&'a PythonTypeSignature> {
+    if let Some(signature) = stats.type_signatures.get(target) {
+        return Some(signature);
+    }
+    let suffix = target.rsplit('.').next().unwrap_or(target);
+    if let Some(signature) = stats.type_signatures.get(suffix) {
+        return Some(signature);
+    }
+    let suffix_key = format!(".{suffix}");
+    let mut matches = stats
+        .type_signatures
+        .iter()
+        .filter(|(name, _)| name.ends_with(&suffix_key));
+    let first = matches.next().map(|(_, signature)| signature)?;
+    if matches.next().is_none() {
+        Some(first)
+    } else {
+        None
+    }
+}
+
+fn infer_python_expr_type(expr: &Expr, scope: &PythonScope) -> Option<String> {
+    if let Some(kind) = literal_type_kind(expr) {
+        return Some(kind.to_string());
+    }
+    match expr {
+        Expr::Name(name) => scope.type_bindings.get(name.id.as_str()).cloned(),
+        Expr::List(_) | Expr::ListComp(_) => Some("list".to_string()),
+        Expr::Tuple(_) => Some("tuple".to_string()),
+        Expr::Dict(_) | Expr::DictComp(_) => Some("dict".to_string()),
+        Expr::Set(_) | Expr::SetComp(_) => Some("set".to_string()),
+        _ => None,
+    }
+}
+
+fn bind_python_target_type(target: &Expr, ty: &str, scope: &mut PythonScope) {
+    match target {
+        Expr::Name(name) => {
+            scope
+                .type_bindings
+                .insert(name.id.as_str().to_string(), ty.to_string());
+        }
+        Expr::Tuple(tuple) => {
+            for elt in &tuple.elts {
+                bind_python_target_type(elt, ty, scope);
+            }
+        }
+        Expr::List(list) => {
+            for elt in &list.elts {
+                bind_python_target_type(elt, ty, scope);
+            }
+        }
+        Expr::Starred(starred) => bind_python_target_type(&starred.value, ty, scope),
+        _ => {}
+    }
+}
+
 fn record_type_annotation(annotation: &Expr, stats: &mut CodeStats) {
     stats.type_annotated_binding_count += 1;
     record_type_annotation_inner(annotation, stats);
@@ -1115,6 +1339,43 @@ fn annotation_is_union_like(expr: &Expr) -> bool {
         Expr::Attribute(attribute) => matches!(attribute.attr.as_str(), "Union" | "Optional"),
         _ => false,
     }
+}
+
+fn annotation_label(annotation: &Expr) -> String {
+    match annotation {
+        Expr::Name(name) => name.id.as_str().to_string(),
+        Expr::Attribute(attribute) => {
+            let prefix = annotation_label(&attribute.value);
+            if prefix.is_empty() {
+                attribute.attr.as_str().to_string()
+            } else {
+                format!("{prefix}.{}", attribute.attr.as_str())
+            }
+        }
+        Expr::Subscript(subscript) => format!("{}[]", annotation_label(&subscript.value)),
+        Expr::BinOp(_) => "union".to_string(),
+        Expr::Tuple(_) => "tuple".to_string(),
+        Expr::List(_) => "list".to_string(),
+        Expr::StringLiteral(_) => "forward_ref".to_string(),
+        Expr::NoneLiteral(_) => "None".to_string(),
+        _ => "unknown".to_string(),
+    }
+}
+
+fn annotation_text_is_any_like(text: &str) -> bool {
+    text == "Any" || text.ends_with(".Any") || text == "unknown"
+}
+
+fn signature_has_any(signature: &PythonTypeSignature) -> bool {
+    signature
+        .parameter_annotations
+        .iter()
+        .flatten()
+        .any(|annotation| annotation_text_is_any_like(annotation))
+        || signature
+            .return_annotation
+            .as_deref()
+            .is_some_and(annotation_text_is_any_like)
 }
 
 fn literal_type_kind(expr: &Expr) -> Option<&'static str> {
@@ -1290,6 +1551,15 @@ fn encode_python_semantic_channel(out: &mut [f32], stats: &CodeStats, slot: Inst
             bounded_ratio(stats.type_union_optional_count as f32, 10_000.0),
             bounded_ratio(stats.type_literal_inference_count as f32, 50_000.0),
             bounded_ratio(stats.type_any_like_count as f32, 10_000.0),
+            bounded_ratio(stats.type_signature_count as f32, 50_000.0),
+            bounded_ratio(stats.type_call_site_count as f32, 100_000.0),
+            bounded_ratio(stats.type_known_call_site_count as f32, 100_000.0),
+            bounded_ratio(stats.type_unknown_call_site_count as f32, 100_000.0),
+            bounded_ratio(stats.type_typed_argument_count as f32, 250_000.0),
+            bounded_ratio(stats.type_untyped_argument_count as f32, 250_000.0),
+            bounded_ratio(stats.type_return_edge_count as f32, 100_000.0),
+            bounded_ratio(stats.type_any_call_site_count as f32, 100_000.0),
+            bounded_ratio(stats.type_arity_mismatch_count as f32, 50_000.0),
         ],
         _ => &[],
     };

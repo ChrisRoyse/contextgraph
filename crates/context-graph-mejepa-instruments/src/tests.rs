@@ -554,6 +554,10 @@ class Solver:
         for value in values:
             total += value
         return total
+
+solver = Solver()
+answer: int = solver.compute([1, 2], meta=None)
+loose = solver.compute([1])
 "#
         .into(),
     };
@@ -576,6 +580,13 @@ class Solver:
     assert!(facts.type_generic_count >= 1, "{facts:?}");
     assert!(facts.type_union_optional_count >= 1, "{facts:?}");
     assert!(facts.type_any_like_count >= 1, "{facts:?}");
+    assert!(facts.type_signature_count >= 1, "{facts:?}");
+    assert!(facts.type_call_site_count >= 3, "{facts:?}");
+    assert!(facts.type_known_call_site_count >= 2, "{facts:?}");
+    assert!(facts.type_typed_argument_count >= 1, "{facts:?}");
+    assert!(facts.type_return_edge_count >= 1, "{facts:?}");
+    assert!(facts.type_any_call_site_count >= 1, "{facts:?}");
+    assert!(facts.type_arity_mismatch_count >= 1, "{facts:?}");
 
     let ast = EAstInstrument.encode(&input).unwrap();
     let cfg = ECfgInstrument.encode(&input).unwrap();
@@ -604,6 +615,14 @@ class Solver:
     assert!(
         type_graph[16] > 0.0,
         "Type-graph semantic feature lane should be populated"
+    );
+    assert!(
+        type_graph[24] > 0.0,
+        "Type-graph signature lane should be populated"
+    );
+    assert!(
+        type_graph[25] > 0.0,
+        "Type-graph call-site lane should be populated"
     );
 }
 

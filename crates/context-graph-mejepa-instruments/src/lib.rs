@@ -53,6 +53,7 @@ pub mod panel_store;
 pub mod q4_security_labels;
 pub mod static_analysis_reward;
 pub mod stdlib_registry;
+pub mod type_graph_signals;
 
 pub type InstrumentResult<T> = Result<T, InstrumentError>;
 
