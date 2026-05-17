@@ -139,6 +139,7 @@ pub struct WatcherStatus {
     pub merkle_root: String,
 }
 
+#[derive(Debug)]
 pub struct ProjectMerkleCache {
     config: ProjectCacheConfig,
     db_path: PathBuf,

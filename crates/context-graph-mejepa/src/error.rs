@@ -193,6 +193,8 @@ pub enum MejepaInferError {
         panel_id: String,
         chunk_id: String,
     },
+    #[error("MEJEPA_FINGERPRINT_FISHER_MISSING: fingerprint_id={fingerprint_id}")]
+    FingerprintFisherMissing { fingerprint_id: String },
     #[error("MEJEPA_INFER_INVALID_INPUT: field={field} detail={detail}")]
     InvalidInput { field: String, detail: String },
     #[error("MEJEPA_INFER_IO: op={op} path={} source={source}", path.display())]
@@ -231,6 +233,7 @@ impl MejepaInferError {
             Self::GtauStaleConstellation { .. } => "MEJEPA_INFER_GTAU_STALE_CONSTELLATION",
             Self::FeatureDisabled { .. } => "MEJEPA_INFER_FEATURE_DISABLED",
             Self::DdaFeatureMissing { .. } => "MEJEPA_INFER_DDA_FEATURE_MISSING",
+            Self::FingerprintFisherMissing { .. } => "MEJEPA_FINGERPRINT_FISHER_MISSING",
             Self::InvalidInput { .. } => "MEJEPA_INFER_INVALID_INPUT",
             Self::Io { .. } => "MEJEPA_INFER_IO",
             Self::Json(_) => "MEJEPA_INFER_JSON",

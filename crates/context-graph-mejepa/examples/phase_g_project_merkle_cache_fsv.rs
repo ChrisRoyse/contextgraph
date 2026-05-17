@@ -1,7 +1,7 @@
 use anyhow::{ensure, Context, Result};
 use context_graph_mejepa::cli::write_json_0600;
 use context_graph_mejepa::{blake3_hex, EmbedderVersion, ProjectCacheConfig, ProjectMerkleCache};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};

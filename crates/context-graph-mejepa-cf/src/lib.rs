@@ -67,6 +67,10 @@ pub const CF_MEJEPA_FINGERPRINT_REVERSE_INDEX: &str = "CF_MEJEPA_FINGERPRINT_REV
 pub const CF_MEJEPA_FINGERPRINT_CALIBRATION: &str = "CF_MEJEPA_FINGERPRINT_CALIBRATION";
 pub const CF_MEJEPA_FINGERPRINT_AUDIT: &str = "CF_MEJEPA_FINGERPRINT_AUDIT";
 pub const CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS: &str = "CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS";
+// TASK-FP-008 — per-fingerprint EWC Fisher diagonal + CBP dormancy snapshots for
+// catalog stability under continual learning (issue #317).
+pub const CF_MEJEPA_FINGERPRINT_FISHER: &str = "CF_MEJEPA_FINGERPRINT_FISHER";
+pub const CF_MEJEPA_FINGERPRINT_DORMANCY: &str = "CF_MEJEPA_FINGERPRINT_DORMANCY";
 
 /// REQ-FLYWHEEL-10 grouping. Daemon openers extend their CF descriptor list
 /// with this slice so the three new CFs land on disk during the first daemon
@@ -86,6 +90,8 @@ pub const FINGERPRINT_CFS: &[&str] = &[
     CF_MEJEPA_FINGERPRINT_CALIBRATION,
     CF_MEJEPA_FINGERPRINT_AUDIT,
     CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
+    CF_MEJEPA_FINGERPRINT_FISHER,
+    CF_MEJEPA_FINGERPRINT_DORMANCY,
 ];
 
 pub const SELF_HEALING_CFS: &[&str] = &[
@@ -131,6 +137,8 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_FINGERPRINT_CALIBRATION,
     CF_MEJEPA_FINGERPRINT_AUDIT,
     CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
+    CF_MEJEPA_FINGERPRINT_FISHER,
+    CF_MEJEPA_FINGERPRINT_DORMANCY,
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
@@ -196,6 +204,8 @@ pub const HYGIENE_CFS: &[&str] = &[
     CF_MEJEPA_FINGERPRINT_CALIBRATION,
     CF_MEJEPA_FINGERPRINT_AUDIT,
     CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
+    CF_MEJEPA_FINGERPRINT_FISHER,
+    CF_MEJEPA_FINGERPRINT_DORMANCY,
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
@@ -244,6 +254,8 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_FINGERPRINT_CALIBRATION,
     CF_MEJEPA_FINGERPRINT_AUDIT,
     CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
+    CF_MEJEPA_FINGERPRINT_FISHER,
+    CF_MEJEPA_FINGERPRINT_DORMANCY,
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
@@ -376,6 +388,30 @@ mod tests {
             CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
             "CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS"
         );
+        assert_eq!(CF_MEJEPA_FINGERPRINT_FISHER, "CF_MEJEPA_FINGERPRINT_FISHER");
+        assert_eq!(
+            CF_MEJEPA_FINGERPRINT_DORMANCY,
+            "CF_MEJEPA_FINGERPRINT_DORMANCY"
+        );
+    }
+
+    #[test]
+    fn fingerprint_fisher_and_dormancy_cfs_are_registered_in_daemon_opener() {
+        // TASK-FP-008 — both new CFs must land on the daemon opener slice or
+        // the fingerprint stability snapshots will be silently dropped at
+        // production runtime.
+        let names = all_hygiene_referenced_cfs();
+        assert!(
+            names.contains(&CF_MEJEPA_FINGERPRINT_FISHER),
+            "CF_MEJEPA_FINGERPRINT_FISHER missing from daemon opener; per-fingerprint EWC Fisher rows would not persist."
+        );
+        assert!(
+            names.contains(&CF_MEJEPA_FINGERPRINT_DORMANCY),
+            "CF_MEJEPA_FINGERPRINT_DORMANCY missing from daemon opener; per-fingerprint CBP dormancy rows would not persist."
+        );
+        // Also confirm the FINGERPRINT_CFS group is the single canonical list.
+        assert!(FINGERPRINT_CFS.contains(&CF_MEJEPA_FINGERPRINT_FISHER));
+        assert!(FINGERPRINT_CFS.contains(&CF_MEJEPA_FINGERPRINT_DORMANCY));
     }
 
     #[test]

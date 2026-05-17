@@ -663,6 +663,21 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_FINGERPRINT_CATALOG_STABILITY,
+            "Read per-fingerprint catalog stability from CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS plus TASK-FP-008 Fisher/dormancy CFs, returning four-window accuracy/precision drift and EWC/CBP readiness.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "windowLimit": {"type": "integer", "minimum": 2, "maximum": 32, "default": 4},
+                    "maxAccuracyDrift": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.02},
+                    "maxPrecisionDrift": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.02},
+                    "dormancyThreshold": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.05}
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_BOOTSTRAP_STATUS,
             "Read ME-JEPA bootstrap stage and source-of-truth CF counts from the configured inference RocksDB. Refuses to guess a database path.",
             json!({

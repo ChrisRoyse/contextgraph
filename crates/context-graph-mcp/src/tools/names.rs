@@ -160,6 +160,9 @@ pub const MEJEPA_FINGERPRINT_PROMOTE_CANONICAL: &str =
     "mcp__cgreality__mejepa_fingerprint_promote_canonical";
 /// Phase G operator-triggered per-fingerprint tau recalibration.
 pub const MEJEPA_FINGERPRINT_RECALIBRATE: &str = "mcp__cgreality__mejepa_fingerprint_recalibrate";
+/// Phase G per-fingerprint EWC/CBP catalog stability readback.
+pub const MEJEPA_FINGERPRINT_CATALOG_STABILITY: &str =
+    "mcp__cgreality__mejepa_fingerprint_catalog_stability";
 /// Phase 8 patch similarity graph builder/readback.
 pub const MEJEPA_EVAL_BUILD_GRAPH: &str = "mcp__cgreality__mejepa_eval_build_graph";
 /// UTML pairwise mutual-information audit with CSV source-of-truth readback.

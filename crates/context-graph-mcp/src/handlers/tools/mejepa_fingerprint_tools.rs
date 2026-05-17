@@ -6,19 +6,21 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result as AnyhowResult};
 use context_graph_mejepa::{
     classify_failure_fingerprint_observation, open_infer_rocksdb, read_fingerprint,
-    read_fingerprint_reference, write_fingerprint_audit_sync_readback,
-    write_fingerprint_calibration_sync_readback, write_fingerprint_reference_sync_readback,
-    write_fingerprint_sync_readback, ActiveLearningKind, ActiveLearningLabel,
-    ActiveLearningQueueState, ChunkId, FailureModeClass, FailureShapeFingerprint,
-    FingerprintAuditAction, FingerprintAuditEntry, FingerprintCalibrationRecord,
-    FingerprintCalibrationState, FingerprintClassifierConfig, FingerprintConfidence, FingerprintId,
-    FingerprintKind, FingerprintReference, LabelMethod, MutationCategory, OracleOutcome,
-    RocksDbEvalStore, TaskId,
+    read_fingerprint_dormancy, read_fingerprint_fisher, read_fingerprint_reference,
+    write_fingerprint_audit_sync_readback, write_fingerprint_calibration_sync_readback,
+    write_fingerprint_reference_sync_readback, write_fingerprint_sync_readback, ActiveLearningKind,
+    ActiveLearningLabel, ActiveLearningQueueState, ChunkId, FailureModeClass,
+    FailureShapeFingerprint, FingerprintAuditAction, FingerprintAuditEntry,
+    FingerprintCalibrationRecord, FingerprintCalibrationState, FingerprintCbpReset,
+    FingerprintClassifierConfig, FingerprintConfidence, FingerprintId, FingerprintKind,
+    FingerprintReference, LabelMethod, MutationCategory, OracleOutcome, RocksDbEvalStore, TaskId,
+    DEFAULT_FINGERPRINT_CBP_DORMANCY_THRESHOLD,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_LABELS, CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
     CF_MEJEPA_FAILURE_FINGERPRINTS, CF_MEJEPA_FINGERPRINT_AUDIT, CF_MEJEPA_FINGERPRINT_CALIBRATION,
-    CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_FINGERPRINT_REVERSE_INDEX,
+    CF_MEJEPA_FINGERPRINT_DORMANCY, CF_MEJEPA_FINGERPRINT_FISHER, CF_MEJEPA_FINGERPRINT_REFERENCES,
+    CF_MEJEPA_FINGERPRINT_REVERSE_INDEX, CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
 };
 use rocksdb::{IteratorMode, DB};
 use serde::de::DeserializeOwned;
@@ -147,6 +149,20 @@ struct FingerprintRecalibrateRequest {
     operator_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FingerprintCatalogStabilityRequest {
+    db_path: Option<PathBuf>,
+    #[serde(default = "default_catalog_stability_window_limit")]
+    window_limit: usize,
+    #[serde(default = "default_max_catalog_stability_drift")]
+    max_accuracy_drift: f32,
+    #[serde(default = "default_max_catalog_stability_drift")]
+    max_precision_drift: f32,
+    #[serde(default = "default_dormancy_threshold")]
+    dormancy_threshold: f32,
+}
+
 impl Handlers {
     pub(crate) async fn call_mejepa_fingerprint_list(
         &self,
@@ -255,6 +271,26 @@ impl Handlers {
         match run_fingerprint_recalibrate(request) {
             Ok(value) => self.tool_result(id, value),
             Err(err) => self.fingerprint_error(id, "MEJEPA_FINGERPRINT_RECALIBRATE_FAILED", err),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_fingerprint_catalog_stability(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request =
+            match parse_tool_request(args, tool_names::MEJEPA_FINGERPRINT_CATALOG_STABILITY) {
+                Ok(value) => value,
+                Err(message) => {
+                    return self.tool_error_typed(id, ToolErrorKind::Validation, &message)
+                }
+            };
+        match run_fingerprint_catalog_stability(request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => {
+                self.fingerprint_error(id, "MEJEPA_FINGERPRINT_CATALOG_STABILITY_FAILED", err)
+            }
         }
     }
 
@@ -644,6 +680,139 @@ fn run_fingerprint_recalibrate(request: FingerprintRecalibrateRequest) -> Anyhow
     }))
 }
 
+fn run_fingerprint_catalog_stability(
+    request: FingerprintCatalogStabilityRequest,
+) -> AnyhowResult<Value> {
+    ensure_limit("windowLimit", request.window_limit, 32)?;
+    if request.window_limit < 2 {
+        bail!("windowLimit must be at least 2");
+    }
+    validate_probability_arg("maxAccuracyDrift", request.max_accuracy_drift)?;
+    validate_probability_arg("maxPrecisionDrift", request.max_precision_drift)?;
+    validate_probability_arg("dormancyThreshold", request.dormancy_threshold)?;
+
+    let db_path = resolve_infer_db_path(request.db_path)?;
+    let db = open_infer_rocksdb(&db_path).context("open inference RocksDB")?;
+    let eval_store = RocksDbEvalStore::new(db.clone()).context("construct eval store")?;
+    let windows = eval_store
+        .load_fingerprint_ship_gate_windows_chronological()
+        .context("load fingerprint ship-gate windows")?;
+    if windows.len() < request.window_limit {
+        bail!(
+            "MEJEPA_FINGERPRINT_STABILITY_INSUFFICIENT_WINDOWS: expected at least {} got {}",
+            request.window_limit,
+            windows.len()
+        );
+    }
+    let recent = &windows[windows.len() - request.window_limit..];
+    let latest = recent
+        .last()
+        .ok_or_else(|| anyhow!("MEJEPA_FINGERPRINT_STABILITY_NO_WINDOWS"))?;
+    let earliest = recent
+        .first()
+        .ok_or_else(|| anyhow!("MEJEPA_FINGERPRINT_STABILITY_NO_WINDOWS"))?;
+
+    let mut entries = Vec::new();
+    let mut blockers = Vec::new();
+    for (fingerprint_id_hex, latest_metrics) in &latest.per_fingerprint {
+        let fingerprint_id = parse_fingerprint_id(fingerprint_id_hex)?;
+        let earliest_metrics = earliest.per_fingerprint.get(fingerprint_id_hex);
+        let Some(earliest_metrics) = earliest_metrics else {
+            blockers.push(format!(
+                "{fingerprint_id_hex}: missing earliest-window metrics in {}",
+                earliest.window_id
+            ));
+            entries.push(json!({
+                "fingerprintId": fingerprint_id_hex,
+                "stable": false,
+                "blockers": ["missing_earliest_window_metrics"]
+            }));
+            continue;
+        };
+        let accuracy_drift = (latest_metrics.accuracy - earliest_metrics.accuracy).abs();
+        let precision_drift = (latest_metrics.precision - earliest_metrics.precision).abs();
+        let fisher = read_fingerprint_fisher(db.as_ref(), fingerprint_id)
+            .context("read fingerprint Fisher snapshot")?;
+        let fisher_present = match &fisher {
+            Some(snapshot) => {
+                snapshot
+                    .validate()
+                    .map_err(|err| anyhow!("invalid Fisher snapshot: {err}"))?;
+                true
+            }
+            None => false,
+        };
+        let dormancy = read_fingerprint_dormancy(db.as_ref(), fingerprint_id)
+            .context("read fingerprint dormancy snapshot")?;
+        let (dormancy_present, cbp_reset_dimensions, cbp_protected_dimensions) = match &dormancy {
+            Some(snapshot) => {
+                snapshot
+                    .validate()
+                    .map_err(|err| anyhow!("invalid dormancy snapshot: {err}"))?;
+                let plan = FingerprintCbpReset::plan(snapshot, request.dormancy_threshold)
+                    .map_err(|err| anyhow!("invalid CBP reset plan: {err}"))?;
+                (true, plan.reset_dimensions, plan.protected_dimensions)
+            }
+            None => (false, Vec::new(), Vec::new()),
+        };
+        let mut entry_blockers = Vec::new();
+        if accuracy_drift > request.max_accuracy_drift {
+            entry_blockers.push("accuracy_drift_exceeded");
+        }
+        if precision_drift > request.max_precision_drift {
+            entry_blockers.push("precision_drift_exceeded");
+        }
+        if !fisher_present {
+            entry_blockers.push("fisher_missing");
+        }
+        if !dormancy_present {
+            entry_blockers.push("dormancy_missing");
+        }
+        let stable = entry_blockers.is_empty();
+        if !stable {
+            blockers.push(format!("{fingerprint_id_hex}:{}", entry_blockers.join(",")));
+        }
+        entries.push(json!({
+            "fingerprintId": fingerprint_id_hex,
+            "stable": stable,
+            "accuracy": {
+                "earliest": earliest_metrics.accuracy,
+                "latest": latest_metrics.accuracy,
+                "absoluteDrift": accuracy_drift,
+                "maxAllowedDrift": request.max_accuracy_drift
+            },
+            "precision": {
+                "earliest": earliest_metrics.precision,
+                "latest": latest_metrics.precision,
+                "absoluteDrift": precision_drift,
+                "maxAllowedDrift": request.max_precision_drift
+            },
+            "fisherSnapshotPresent": fisher_present,
+            "dormancySnapshotPresent": dormancy_present,
+            "cbpResetDimensions": cbp_reset_dimensions,
+            "cbpProtectedDimensions": cbp_protected_dimensions,
+            "blockers": entry_blockers
+        }));
+    }
+
+    Ok(json!({
+        "tool": tool_names::MEJEPA_FINGERPRINT_CATALOG_STABILITY,
+        "stable": blockers.is_empty(),
+        "windowCount": recent.len(),
+        "earliestWindowId": earliest.window_id,
+        "latestWindowId": latest.window_id,
+        "fingerprintCount": entries.len(),
+        "fingerprints": entries,
+        "blockers": blockers,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "shipGateWindowsCf": CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
+            "fisherCf": CF_MEJEPA_FINGERPRINT_FISHER,
+            "dormancyCf": CF_MEJEPA_FINGERPRINT_DORMANCY
+        }
+    }))
+}
+
 fn parse_tool_request<T: DeserializeOwned>(
     args: serde_json::Value,
     tool_name: &str,
@@ -966,6 +1135,13 @@ fn validate_operator(field: &str, value: &str) -> AnyhowResult<()> {
     Ok(())
 }
 
+fn validate_probability_arg(field: &str, value: f32) -> AnyhowResult<()> {
+    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+        bail!("{field} must be finite and in [0,1]");
+    }
+    Ok(())
+}
+
 fn fingerprint_sot(db_path: &Path) -> Value {
     json!({
         "dbPath": db_path.display().to_string(),
@@ -1023,6 +1199,18 @@ fn default_source_corpus() -> String {
 
 fn default_same_session_band_percentile() -> f32 {
     0.10
+}
+
+fn default_catalog_stability_window_limit() -> usize {
+    4
+}
+
+fn default_max_catalog_stability_drift() -> f32 {
+    0.02
+}
+
+fn default_dormancy_threshold() -> f32 {
+    DEFAULT_FINGERPRINT_CBP_DORMANCY_THRESHOLD
 }
 
 #[cfg(test)]
@@ -1123,6 +1311,17 @@ mod test_support {
             operator_id: "operator-fsv".to_string(),
         })
         .expect("recalibrate");
+        seed_catalog_stability_rows(&db_path, known_good.fingerprint_id)
+            .expect("seed catalog stability rows");
+        let catalog_stability =
+            run_fingerprint_catalog_stability(FingerprintCatalogStabilityRequest {
+                db_path: Some(db_path.clone()),
+                window_limit: 2,
+                max_accuracy_drift: 0.02,
+                max_precision_drift: 0.02,
+                dormancy_threshold: DEFAULT_FINGERPRINT_CBP_DORMANCY_THRESHOLD,
+            })
+            .expect("catalog stability");
 
         let boundaries = vec![
             boundary_case(
@@ -1191,6 +1390,7 @@ mod test_support {
             && label["status"] == json!("recorded")
             && promote["fingerprint"]["is_canonical"] == json!(true)
             && recalibrate["fingerprint"]["confidence"]["calibration_state"] == json!("calibrated")
+            && catalog_stability["stable"] == json!(true)
             && reopened_catalog.len() == 2
             && boundaries.iter().all(|case| case["passed"] == json!(true));
 
@@ -1203,7 +1403,8 @@ mod test_support {
                 tool_names::MEJEPA_FINGERPRINT_SUGGEST_NEW,
                 tool_names::MEJEPA_FINGERPRINT_LABEL,
                 tool_names::MEJEPA_FINGERPRINT_PROMOTE_CANONICAL,
-                tool_names::MEJEPA_FINGERPRINT_RECALIBRATE
+                tool_names::MEJEPA_FINGERPRINT_RECALIBRATE,
+                tool_names::MEJEPA_FINGERPRINT_CATALOG_STABILITY
             ],
             "source_of_truth": fingerprint_write_sot(&db_path),
             "trigger": "cargo test -p context-graph-mcp fingerprint_mcp_tools_write_fsv_artifact -- --nocapture",
@@ -1214,7 +1415,8 @@ mod test_support {
                 "suggestNew": suggest,
                 "label": label,
                 "promoteCanonical": promote,
-                "recalibrate": recalibrate
+                "recalibrate": recalibrate,
+                "catalogStability": catalog_stability
             },
             "readback": {
                 "reopenedCatalogCount": reopened_catalog.len(),
@@ -1303,6 +1505,77 @@ mod test_support {
         );
         RocksDbEvalStore::new(db)?.persist_queue(&queue)?;
         Ok(queue)
+    }
+
+    fn seed_catalog_stability_rows(
+        db_path: &Path,
+        fingerprint_id: FingerprintId,
+    ) -> AnyhowResult<()> {
+        let db = open_infer_rocksdb(db_path)?;
+        let store = RocksDbEvalStore::new(db.clone())?;
+        let fp = fingerprint_id.hex();
+        for (idx, (window_id, accuracy, precision, tp, tn, fp_count, fn_count)) in [
+            ("s1", 0.980000, 0.980000, 49, 49, 1, 1),
+            ("s2", 0.970000, 0.980000, 49, 48, 1, 2),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            store.persist_fingerprint_ship_gate_window(
+                &context_graph_mejepa::FingerprintShipGateWindow {
+                    window_id: window_id.to_string(),
+                    report_date: format!("2026-05-1{}", idx + 6),
+                    generated_at_unix_ms: 1_779_000_000_000 + idx as i64,
+                    per_fingerprint: BTreeMap::from([(
+                        fp.clone(),
+                        context_graph_mejepa::FingerprintClassificationMetrics {
+                            fingerprint_id: fp.clone(),
+                            sample_count: 100,
+                            true_positive_count: tp,
+                            true_negative_count: tn,
+                            false_positive_count: fp_count,
+                            false_negative_count: fn_count,
+                            accuracy,
+                            precision,
+                            accuracy_threshold: 0.95,
+                            precision_threshold: 0.95,
+                            passed_threshold: true,
+                        },
+                    )]),
+                    unknown_ood_recall: context_graph_mejepa::UnknownOodRecallMetrics {
+                        actual_unknown_count: 100,
+                        detected_unknown_count: 95,
+                        missed_unknown_count: 5,
+                        recall: 0.95,
+                        recall_threshold: 0.90,
+                        passed_threshold: true,
+                    },
+                    passed_window: true,
+                    failures: Vec::new(),
+                },
+            )?;
+        }
+        context_graph_mejepa::write_fingerprint_fisher_sync_readback(
+            db.as_ref(),
+            &context_graph_mejepa::FingerprintFisherSnapshot {
+                fingerprint_id,
+                calibrated_at_unix_ms: 1_779_000_001_000,
+                sample_count: 32,
+                theta_star_by_dimension: BTreeMap::from([(0, 0.1), (1, -0.1)]),
+                fisher_by_dimension: BTreeMap::from([(0, 0.5), (1, 0.7)]),
+            },
+        )?;
+        context_graph_mejepa::write_fingerprint_dormancy_sync_readback(
+            db.as_ref(),
+            &context_graph_mejepa::FingerprintDormancySnapshot {
+                fingerprint_id,
+                recorded_at_unix_ms: 1_779_000_001_001,
+                window_steps: 32,
+                dormancy_ema_by_dimension: BTreeMap::from([(0, 0.80), (1, 0.75)]),
+                dormancy_reset_count: 0,
+            },
+        )?;
+        Ok(())
     }
 
     fn unknown_entry(id: u8, task_id: &str, vector: Vec<f32>) -> ActiveLearningQueueEntry {

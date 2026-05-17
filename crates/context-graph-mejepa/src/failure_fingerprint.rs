@@ -10,7 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use context_graph_mejepa_cf::{
     CF_MEJEPA_FAILURE_FINGERPRINTS, CF_MEJEPA_FINGERPRINT_AUDIT, CF_MEJEPA_FINGERPRINT_CALIBRATION,
-    CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_FINGERPRINT_REVERSE_INDEX,
+    CF_MEJEPA_FINGERPRINT_DORMANCY, CF_MEJEPA_FINGERPRINT_FISHER, CF_MEJEPA_FINGERPRINT_REFERENCES,
+    CF_MEJEPA_FINGERPRINT_REVERSE_INDEX,
 };
 use context_graph_mejepa_instruments::ExceptionClass;
 use rocksdb::{WriteOptions, DB};
@@ -973,6 +974,398 @@ pub fn write_fingerprint_audit_sync_readback(
     )
 }
 
+// ---------------------------------------------------------------------------
+// TASK-FP-008 (#317) — per-fingerprint EWC Fisher + CBP dormancy snapshots.
+// ---------------------------------------------------------------------------
+//
+// These two record types are how catalog stability under continual learning is
+// enforced. Each snapshot binds to a `FingerprintId` and records, per predictor
+// output dimension, either the EWC Fisher diagonal weight at last calibration
+// (Kirkpatrick 2017) or the CBP utility EMA (Dohare/Sutton/Mahmood 2024).
+// The training loop later reads them to apply a quadratic penalty (EWC) and a
+// dormant-feature reset (CBP) so the catalog's per-fingerprint accuracy on the
+// seed 97-row corpus does not drift as fresh Unknown fingerprints are
+// promoted.
+
+pub const DEFAULT_FINGERPRINT_EWC_LAMBDA: f32 = 2_000.0;
+pub const DEFAULT_FINGERPRINT_CBP_DORMANCY_THRESHOLD: f32 = 0.05;
+pub const FINGERPRINT_DORMANCY_RESET_CODE: &str = "MEJEPA_FINGERPRINT_DORMANCY_RESET";
+
+/// Per-fingerprint EWC Fisher diagonal at last calibration.
+///
+/// `fisher_by_dimension` is keyed by predictor-output dimension index (not by
+/// embedder slot). Values must be finite and non-negative; an all-zero map is
+/// rejected at validation time because a Fisher diagonal with no signal cannot
+/// drive an EWC penalty and would silently disable consolidation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FingerprintFisherSnapshot {
+    pub fingerprint_id: FingerprintId,
+    pub calibrated_at_unix_ms: i64,
+    pub sample_count: usize,
+    pub theta_star_by_dimension: BTreeMap<u32, f32>,
+    pub fisher_by_dimension: BTreeMap<u32, f32>,
+}
+
+impl FingerprintFisherSnapshot {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        if self.calibrated_at_unix_ms <= 0 {
+            return invalid(
+                "fingerprint_fisher.calibrated_at_unix_ms",
+                "fisher snapshot must have a positive calibration timestamp",
+            );
+        }
+        if self.sample_count == 0 {
+            return invalid(
+                "fingerprint_fisher.sample_count",
+                "fisher snapshot requires at least one sample",
+            );
+        }
+        if self.fisher_by_dimension.is_empty() {
+            return invalid(
+                "fingerprint_fisher.fisher_by_dimension",
+                "fisher snapshot must cover at least one predictor dimension",
+            );
+        }
+        if self.theta_star_by_dimension.is_empty() {
+            return invalid(
+                "fingerprint_fisher.theta_star_by_dimension",
+                "fisher snapshot must anchor at least one predictor dimension",
+            );
+        }
+        if self.theta_star_by_dimension.keys().collect::<Vec<_>>()
+            != self.fisher_by_dimension.keys().collect::<Vec<_>>()
+        {
+            return invalid(
+                "fingerprint_fisher.dimensions",
+                "theta_star_by_dimension and fisher_by_dimension must cover the same dimensions",
+            );
+        }
+        for (dim, value) in &self.theta_star_by_dimension {
+            if !value.is_finite() {
+                return invalid(
+                    "fingerprint_fisher.theta_star_by_dimension",
+                    &format!("theta_star value for dim {dim} is not finite"),
+                );
+            }
+        }
+        let mut all_zero = true;
+        for (dim, value) in &self.fisher_by_dimension {
+            if !value.is_finite() {
+                return invalid(
+                    "fingerprint_fisher.fisher_by_dimension",
+                    &format!("fisher value for dim {dim} is not finite"),
+                );
+            }
+            if *value < 0.0 {
+                return invalid(
+                    "fingerprint_fisher.fisher_by_dimension",
+                    &format!("fisher value for dim {dim} must be >= 0"),
+                );
+            }
+            if *value > 0.0 {
+                all_zero = false;
+            }
+        }
+        if all_zero {
+            return invalid(
+                "fingerprint_fisher.fisher_by_dimension",
+                "fisher snapshot rejected: all dimensions zero would silently disable the EWC penalty",
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Per-fingerprint CBP dormancy EMA snapshot.
+///
+/// `dormancy_ema_by_dimension` is a rolling utility score in `[0.0, 1.0]`
+/// per predictor dimension. Values approaching zero mark "dormant" features
+/// that the CBP reset should re-randomize; high values mark load-bearing
+/// dimensions that must be preserved. NaN values must be coerced to 1.0
+/// before persistence (preserve-by-default) and a `dormancy_reset_count`
+/// counter incremented; the record carries that counter for audit.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FingerprintDormancySnapshot {
+    pub fingerprint_id: FingerprintId,
+    pub recorded_at_unix_ms: i64,
+    pub window_steps: u64,
+    pub dormancy_ema_by_dimension: BTreeMap<u32, f32>,
+    pub dormancy_reset_count: u32,
+}
+
+impl FingerprintDormancySnapshot {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        if self.recorded_at_unix_ms <= 0 {
+            return invalid(
+                "fingerprint_dormancy.recorded_at_unix_ms",
+                "dormancy snapshot must have a positive timestamp",
+            );
+        }
+        if self.window_steps == 0 {
+            return invalid(
+                "fingerprint_dormancy.window_steps",
+                "dormancy snapshot must cover at least one training step",
+            );
+        }
+        if self.dormancy_ema_by_dimension.is_empty() {
+            return invalid(
+                "fingerprint_dormancy.dormancy_ema_by_dimension",
+                "dormancy snapshot must cover at least one predictor dimension",
+            );
+        }
+        for (dim, value) in &self.dormancy_ema_by_dimension {
+            if !value.is_finite() {
+                return invalid(
+                    "fingerprint_dormancy.dormancy_ema_by_dimension",
+                    &format!(
+                        "dormancy EMA for dim {dim} is not finite; caller must coerce NaN to 1.0 and bump reset_count"
+                    ),
+                );
+            }
+            if *value < 0.0 || *value > 1.0 {
+                return invalid(
+                    "fingerprint_dormancy.dormancy_ema_by_dimension",
+                    &format!("dormancy EMA for dim {dim} must lie in [0.0, 1.0]"),
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn fingerprint_fisher_key(id: FingerprintId) -> Vec<u8> {
+    id.key_bytes().to_vec()
+}
+
+pub fn fingerprint_dormancy_key(id: FingerprintId) -> Vec<u8> {
+    id.key_bytes().to_vec()
+}
+
+pub fn write_fingerprint_fisher_sync_readback(
+    db: &DB,
+    snapshot: &FingerprintFisherSnapshot,
+) -> Result<(), MejepaInferError> {
+    snapshot.validate()?;
+    write_value_sync_readback(
+        db,
+        CF_MEJEPA_FINGERPRINT_FISHER,
+        &fingerprint_fisher_key(snapshot.fingerprint_id),
+        snapshot,
+    )
+}
+
+pub fn read_fingerprint_fisher(
+    db: &DB,
+    id: FingerprintId,
+) -> Result<Option<FingerprintFisherSnapshot>, MejepaInferError> {
+    read_value(
+        db,
+        CF_MEJEPA_FINGERPRINT_FISHER,
+        &fingerprint_fisher_key(id),
+    )
+}
+
+pub fn write_fingerprint_dormancy_sync_readback(
+    db: &DB,
+    snapshot: &FingerprintDormancySnapshot,
+) -> Result<(), MejepaInferError> {
+    snapshot.validate()?;
+    write_value_sync_readback(
+        db,
+        CF_MEJEPA_FINGERPRINT_DORMANCY,
+        &fingerprint_dormancy_key(snapshot.fingerprint_id),
+        snapshot,
+    )
+}
+
+pub fn read_fingerprint_dormancy(
+    db: &DB,
+    id: FingerprintId,
+) -> Result<Option<FingerprintDormancySnapshot>, MejepaInferError> {
+    read_value(
+        db,
+        CF_MEJEPA_FINGERPRINT_DORMANCY,
+        &fingerprint_dormancy_key(id),
+    )
+}
+
+pub fn require_fingerprint_fisher(
+    db: &DB,
+    id: FingerprintId,
+) -> Result<FingerprintFisherSnapshot, MejepaInferError> {
+    read_fingerprint_fisher(db, id)?.ok_or_else(|| MejepaInferError::FingerprintFisherMissing {
+        fingerprint_id: id.hex(),
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FingerprintEwcPenalty {
+    pub fingerprint_id: FingerprintId,
+    pub lambda: f32,
+    pub parameter_count: usize,
+    pub active_dimension_count: usize,
+    pub raw_quadratic_penalty: f32,
+    pub scaled_penalty: f32,
+}
+
+impl FingerprintEwcPenalty {
+    pub fn compute(
+        predictor_params: &[f32],
+        snapshot: &FingerprintFisherSnapshot,
+        lambda: f32,
+    ) -> Result<Self, MejepaInferError> {
+        snapshot.validate()?;
+        if predictor_params.is_empty() {
+            return invalid(
+                "fingerprint_ewc.predictor_params",
+                "predictor parameter vector must be non-empty",
+            );
+        }
+        if !lambda.is_finite() || lambda < 0.0 {
+            return invalid(
+                "fingerprint_ewc.lambda",
+                "lambda must be finite and non-negative",
+            );
+        }
+        for (idx, value) in predictor_params.iter().enumerate() {
+            validate_finite(&format!("fingerprint_ewc.predictor_params[{idx}]"), *value)?;
+        }
+        let max_dim = *snapshot
+            .fisher_by_dimension
+            .keys()
+            .next_back()
+            .expect("snapshot validation ensures at least one dimension")
+            as usize;
+        if max_dim >= predictor_params.len() {
+            return Err(MejepaInferError::DimMismatch {
+                expected: max_dim + 1,
+                actual: predictor_params.len(),
+                context: "fingerprint_ewc.predictor_params".to_string(),
+            });
+        }
+        let mut raw = 0.0_f32;
+        let mut active_dimension_count = 0_usize;
+        for (dim, fisher) in &snapshot.fisher_by_dimension {
+            let theta_star = snapshot.theta_star_by_dimension.get(dim).ok_or_else(|| {
+                MejepaInferError::InvalidInput {
+                    field: "fingerprint_ewc.theta_star_by_dimension".to_string(),
+                    detail: format!("missing theta star for dim {dim}"),
+                }
+            })?;
+            if *fisher > 0.0 {
+                active_dimension_count += 1;
+            }
+            let theta = predictor_params[*dim as usize];
+            raw += *fisher * (theta - *theta_star).powi(2);
+        }
+        validate_nonnegative_finite("fingerprint_ewc.raw_quadratic_penalty", raw)?;
+        let scaled_penalty = 0.5 * lambda * raw;
+        validate_nonnegative_finite("fingerprint_ewc.scaled_penalty", scaled_penalty)?;
+        Ok(Self {
+            fingerprint_id: snapshot.fingerprint_id,
+            lambda,
+            parameter_count: predictor_params.len(),
+            active_dimension_count,
+            raw_quadratic_penalty: raw,
+            scaled_penalty,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FingerprintDormancySanitization {
+    pub sanitized_ema_by_dimension: BTreeMap<u32, f32>,
+    pub reset_dimensions: Vec<u32>,
+    pub reset_count: u32,
+    pub reset_code: Option<String>,
+}
+
+pub fn sanitize_fingerprint_dormancy_ema(
+    raw_ema_by_dimension: &BTreeMap<u32, f32>,
+) -> Result<FingerprintDormancySanitization, MejepaInferError> {
+    if raw_ema_by_dimension.is_empty() {
+        return invalid(
+            "fingerprint_dormancy.raw_ema_by_dimension",
+            "dormancy EMA input must cover at least one predictor dimension",
+        );
+    }
+    let mut sanitized = BTreeMap::new();
+    let mut reset_dimensions = Vec::new();
+    for (dim, value) in raw_ema_by_dimension {
+        let next = if value.is_finite() {
+            if !(0.0..=1.0).contains(value) {
+                return invalid(
+                    "fingerprint_dormancy.raw_ema_by_dimension",
+                    &format!("dormancy EMA for dim {dim} must lie in [0.0, 1.0]"),
+                );
+            }
+            *value
+        } else {
+            reset_dimensions.push(*dim);
+            1.0
+        };
+        sanitized.insert(*dim, next);
+    }
+    let reset_count = reset_dimensions.len() as u32;
+    Ok(FingerprintDormancySanitization {
+        sanitized_ema_by_dimension: sanitized,
+        reset_dimensions,
+        reset_count,
+        reset_code: (reset_count > 0).then(|| FINGERPRINT_DORMANCY_RESET_CODE.to_string()),
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FingerprintCbpResetPlan {
+    pub fingerprint_id: FingerprintId,
+    pub threshold: f32,
+    pub reset_dimensions: Vec<u32>,
+    pub protected_dimensions: Vec<u32>,
+}
+
+pub struct FingerprintCbpReset;
+
+impl FingerprintCbpReset {
+    pub fn should_reset(
+        dim: u32,
+        dormancy_ema: f32,
+        threshold: f32,
+    ) -> Result<bool, MejepaInferError> {
+        validate_probability("fingerprint_cbp.dormancy_ema", dormancy_ema)?;
+        validate_probability("fingerprint_cbp.threshold", threshold)?;
+        let _ = dim;
+        Ok(dormancy_ema <= threshold)
+    }
+
+    pub fn plan(
+        snapshot: &FingerprintDormancySnapshot,
+        threshold: f32,
+    ) -> Result<FingerprintCbpResetPlan, MejepaInferError> {
+        snapshot.validate()?;
+        validate_probability("fingerprint_cbp.threshold", threshold)?;
+        let mut reset_dimensions = Vec::new();
+        let mut protected_dimensions = Vec::new();
+        for (dim, dormancy_ema) in &snapshot.dormancy_ema_by_dimension {
+            if Self::should_reset(*dim, *dormancy_ema, threshold)? {
+                reset_dimensions.push(*dim);
+            } else {
+                protected_dimensions.push(*dim);
+            }
+        }
+        Ok(FingerprintCbpResetPlan {
+            fingerprint_id: snapshot.fingerprint_id,
+            threshold,
+            reset_dimensions,
+            protected_dimensions,
+        })
+    }
+}
+
 fn write_value_sync_readback<T>(
     db: &DB,
     cf_name: &str,
@@ -1561,5 +1954,186 @@ mod tests {
             .into_iter()
             .map(|(embedder, vector)| (EmbedderId(embedder.to_string()), vector))
             .collect()
+    }
+
+    // ----- TASK-FP-008 (#317) — Fisher / Dormancy snapshot validators -----
+
+    fn sample_fingerprint_id() -> FingerprintId {
+        let kind = FingerprintKind::KnownGood {
+            repo: Some("repo/test".to_string()),
+            gold_patch_count: 1,
+        };
+        FailureShapeFingerprint::canonical_id(&kind, "task-fp-008-test").unwrap()
+    }
+
+    fn theta_for(fisher_dims: &BTreeMap<u32, f32>) -> BTreeMap<u32, f32> {
+        fisher_dims.keys().map(|d| (*d, 0.5_f32)).collect()
+    }
+
+    #[test]
+    fn fisher_snapshot_validates_finite_nonneg_with_signal() {
+        let fisher = BTreeMap::from([(0_u32, 0.1_f32), (1, 0.0), (2, 0.5)]);
+        let snapshot = FingerprintFisherSnapshot {
+            fingerprint_id: sample_fingerprint_id(),
+            calibrated_at_unix_ms: 1_779_000_000_000,
+            sample_count: 32,
+            theta_star_by_dimension: theta_for(&fisher),
+            fisher_by_dimension: fisher,
+        };
+        snapshot.validate().unwrap();
+    }
+
+    #[test]
+    fn fisher_snapshot_rejects_all_zero() {
+        let fisher = BTreeMap::from([(0_u32, 0.0_f32), (1, 0.0)]);
+        let snapshot = FingerprintFisherSnapshot {
+            fingerprint_id: sample_fingerprint_id(),
+            calibrated_at_unix_ms: 1_779_000_000_000,
+            sample_count: 32,
+            theta_star_by_dimension: theta_for(&fisher),
+            fisher_by_dimension: fisher,
+        };
+        let err = snapshot.validate().unwrap_err().to_string();
+        assert!(
+            err.contains("all dimensions zero"),
+            "expected all-zero rejection, got: {err}"
+        );
+    }
+
+    #[test]
+    fn fisher_snapshot_rejects_non_finite() {
+        let fisher = BTreeMap::from([(0_u32, f32::INFINITY)]);
+        let snapshot = FingerprintFisherSnapshot {
+            fingerprint_id: sample_fingerprint_id(),
+            calibrated_at_unix_ms: 1_779_000_000_000,
+            sample_count: 32,
+            theta_star_by_dimension: theta_for(&fisher),
+            fisher_by_dimension: fisher,
+        };
+        assert!(snapshot.validate().is_err());
+    }
+
+    #[test]
+    fn fisher_snapshot_rejects_zero_sample_count() {
+        let fisher = BTreeMap::from([(0_u32, 0.5_f32)]);
+        let snapshot = FingerprintFisherSnapshot {
+            fingerprint_id: sample_fingerprint_id(),
+            calibrated_at_unix_ms: 1_779_000_000_000,
+            sample_count: 0,
+            theta_star_by_dimension: theta_for(&fisher),
+            fisher_by_dimension: fisher,
+        };
+        assert!(snapshot.validate().is_err());
+    }
+
+    #[test]
+    fn fisher_snapshot_rejects_negative_value() {
+        let fisher = BTreeMap::from([(0_u32, -0.1_f32)]);
+        let snapshot = FingerprintFisherSnapshot {
+            fingerprint_id: sample_fingerprint_id(),
+            calibrated_at_unix_ms: 1_779_000_000_000,
+            sample_count: 32,
+            theta_star_by_dimension: theta_for(&fisher),
+            fisher_by_dimension: fisher,
+        };
+        assert!(snapshot.validate().is_err());
+    }
+
+    #[test]
+    fn fisher_snapshot_rejects_theta_dimension_mismatch() {
+        let fisher = BTreeMap::from([(0_u32, 0.1_f32), (1, 0.5)]);
+        let snapshot = FingerprintFisherSnapshot {
+            fingerprint_id: sample_fingerprint_id(),
+            calibrated_at_unix_ms: 1_779_000_000_000,
+            sample_count: 32,
+            theta_star_by_dimension: BTreeMap::from([(0, 0.5_f32)]),
+            fisher_by_dimension: fisher,
+        };
+        let err = snapshot.validate().unwrap_err().to_string();
+        assert!(
+            err.contains("dimensions") || err.contains("cover the same"),
+            "expected theta-vs-fisher dimension-mismatch rejection, got: {err}"
+        );
+    }
+
+    #[test]
+    fn fisher_snapshot_round_trips_bincode() {
+        let fisher = BTreeMap::from([(0_u32, 0.42_f32), (1, 0.0), (2, 1.1)]);
+        let snapshot = FingerprintFisherSnapshot {
+            fingerprint_id: sample_fingerprint_id(),
+            calibrated_at_unix_ms: 1_779_000_000_000,
+            sample_count: 16,
+            theta_star_by_dimension: theta_for(&fisher),
+            fisher_by_dimension: fisher,
+        };
+        let bytes = bincode::serialize(&snapshot).unwrap();
+        let roundtripped: FingerprintFisherSnapshot = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(snapshot, roundtripped);
+    }
+
+    #[test]
+    fn dormancy_snapshot_validates_bounded_finite() {
+        let snapshot = FingerprintDormancySnapshot {
+            fingerprint_id: sample_fingerprint_id(),
+            recorded_at_unix_ms: 1_779_000_000_000,
+            window_steps: 1000,
+            dormancy_ema_by_dimension: BTreeMap::from([(0, 0.0), (1, 0.5), (2, 1.0)]),
+            dormancy_reset_count: 3,
+        };
+        snapshot.validate().unwrap();
+    }
+
+    #[test]
+    fn dormancy_snapshot_rejects_out_of_range() {
+        let snapshot = FingerprintDormancySnapshot {
+            fingerprint_id: sample_fingerprint_id(),
+            recorded_at_unix_ms: 1_779_000_000_000,
+            window_steps: 1000,
+            dormancy_ema_by_dimension: BTreeMap::from([(0, 1.5)]),
+            dormancy_reset_count: 0,
+        };
+        assert!(snapshot.validate().is_err());
+    }
+
+    #[test]
+    fn dormancy_snapshot_rejects_nan_with_reset_guidance() {
+        let snapshot = FingerprintDormancySnapshot {
+            fingerprint_id: sample_fingerprint_id(),
+            recorded_at_unix_ms: 1_779_000_000_000,
+            window_steps: 1000,
+            dormancy_ema_by_dimension: BTreeMap::from([(0, f32::NAN)]),
+            dormancy_reset_count: 0,
+        };
+        let err = snapshot.validate().unwrap_err().to_string();
+        assert!(
+            err.contains("not finite"),
+            "expected NaN-not-finite rejection with reset guidance, got: {err}"
+        );
+    }
+
+    #[test]
+    fn dormancy_snapshot_rejects_empty_dim_map() {
+        let snapshot = FingerprintDormancySnapshot {
+            fingerprint_id: sample_fingerprint_id(),
+            recorded_at_unix_ms: 1_779_000_000_000,
+            window_steps: 1000,
+            dormancy_ema_by_dimension: BTreeMap::new(),
+            dormancy_reset_count: 0,
+        };
+        assert!(snapshot.validate().is_err());
+    }
+
+    #[test]
+    fn dormancy_snapshot_round_trips_bincode() {
+        let snapshot = FingerprintDormancySnapshot {
+            fingerprint_id: sample_fingerprint_id(),
+            recorded_at_unix_ms: 1_779_000_000_000,
+            window_steps: 1_000_000,
+            dormancy_ema_by_dimension: BTreeMap::from([(0, 0.12), (1, 0.99)]),
+            dormancy_reset_count: 7,
+        };
+        let bytes = bincode::serialize(&snapshot).unwrap();
+        let roundtripped: FingerprintDormancySnapshot = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(snapshot, roundtripped);
     }
 }
