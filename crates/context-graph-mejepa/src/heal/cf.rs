@@ -29,6 +29,7 @@ pub fn all_referenced_cf_names() -> Vec<&'static str> {
         context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY,
         context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION,
         context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+        context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_LOG,
         context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
         context_graph_mejepa_cf::CF_MEJEPA_COLD_CELL_METRICS,
     ] {
@@ -257,9 +258,10 @@ mod tests {
         assert!(names.contains(&CF_MEJEPA_WEIGHT_BLOBS));
         assert!(names.contains(&CF_MEJEPA_SHIFT_WATERMARK));
         assert!(names.contains(&CF_MEJEPA_MODEL_PROMOTIONS));
+        assert!(names.contains(&context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_LOG));
         assert_eq!(
             names.len(),
-            context_graph_mejepa_cf::SELF_HEALING_REFERENCED_CFS.len() + 7
+            context_graph_mejepa_cf::SELF_HEALING_REFERENCED_CFS.len() + 8
         );
     }
 }

@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use candle_core::{DType, Device};
 use clap::{Parser, Subcommand};
@@ -19,6 +21,8 @@ use context_graph_mejepa::{
     RocksDbInferStore, TargetProvenance, VicregLambdas, VicregLossEvidence, PANEL_DIM,
     VRAM_STEADY_STATE_TARGET_BYTES,
 };
+use rocksdb::{ColumnFamilyDescriptor, Options, DB};
+use std::sync::Arc;
 use thiserror::Error;
 
 #[path = "mejepa/stress_cli.rs"]
@@ -38,6 +42,7 @@ enum Command {
     Verify(VerifyArgs),
     EvalRun(EvalRunArgs),
     EvalBuildGraph(EvalBuildGraphArgs),
+    Constellation(ConstellationArgs),
     HealDrill(HealDrillCliArgs),
     Stress(StressArgs),
 }
@@ -109,6 +114,30 @@ struct EvalBuildGraphArgs {
 }
 
 #[derive(Debug, Parser)]
+struct ConstellationArgs {
+    #[command(subcommand)]
+    command: ConstellationCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum ConstellationCommand {
+    FreshnessAudit(ConstellationFreshnessAuditArgs),
+}
+
+#[derive(Debug, Parser)]
+struct ConstellationFreshnessAuditArgs {
+    #[arg(long)]
+    db_path: PathBuf,
+    #[arg(
+        long,
+        default_value = "/mnt/d/contextgraph/exports/constellation-freshness-audit"
+    )]
+    output_root: PathBuf,
+    #[arg(long, default_value_t = 10_000)]
+    refresh_log_limit: usize,
+}
+
+#[derive(Debug, Parser)]
 struct StressArgs {
     #[arg(long, default_value = "/tmp/contextgraph-mejepa-hygiene-stress-fsv")]
     output_fsv: PathBuf,
@@ -143,6 +172,14 @@ enum MejepaCliError {
     Io(#[from] std::io::Error),
     #[error("MEJEPA_CLI_ASSERTION: {0}")]
     Assertion(String),
+    #[error("MEJEPA_CLI_INFER: {0}")]
+    Infer(#[from] context_graph_mejepa::MejepaInferError),
+    #[error("MEJEPA_CLI_TCT: {0}")]
+    Tct(#[from] context_graph_mejepa_tct::TctError),
+    #[error("MEJEPA_CLI_JSON: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("MEJEPA_CLI_ROCKSDB: {0}")]
+    RocksDb(#[from] rocksdb::Error),
 }
 
 fn main() -> ExitCode {
@@ -180,6 +217,13 @@ fn main() -> ExitCode {
             Err(err) => {
                 err.log_context(file!());
                 eprintln!("{}: {err}", err.code());
+                ExitCode::from(2)
+            }
+        },
+        Command::Constellation(args) => match run_constellation_command(args) {
+            Ok(code) => code,
+            Err(err) => {
+                eprintln!("{err}");
                 ExitCode::from(2)
             }
         },
@@ -256,6 +300,95 @@ fn main() -> ExitCode {
             }
         },
     }
+}
+
+fn run_constellation_command(args: ConstellationArgs) -> Result<ExitCode, MejepaCliError> {
+    match args.command {
+        ConstellationCommand::FreshnessAudit(args) => run_constellation_freshness_audit(args),
+    }
+}
+
+fn run_constellation_freshness_audit(
+    args: ConstellationFreshnessAuditArgs,
+) -> Result<ExitCode, MejepaCliError> {
+    if args.refresh_log_limit == 0 {
+        return Err(MejepaCliError::Usage(
+            "--refresh-log-limit must be greater than zero".to_string(),
+        ));
+    }
+    let db = open_runtime_rocksdb(&args.db_path)?;
+    let store = context_graph_mejepa_tct::ConstellationStore::new(db)?;
+    let latest_version = store.latest_version()?;
+    let constellation = store.load_without_runtime_checks(latest_version)?;
+    let log_entries = store.load_refresh_log_entries(args.refresh_log_limit)?;
+    let overrides =
+        context_graph_mejepa_tct::overrides_from_refresh_log(latest_version, &log_entries);
+    let cells =
+        context_graph_mejepa_tct::materialize_constellation_cells(&constellation, &overrides)?;
+    let (max_age_days, _allow_stale) = context_graph_mejepa_tct::read_freshness_config()?;
+    let report = context_graph_mejepa_tct::build_freshness_audit(
+        latest_version,
+        &cells,
+        SystemTime::now(),
+        context_graph_mejepa_tct::RefreshPolicyConfig {
+            max_age_days,
+            ..context_graph_mejepa_tct::RefreshPolicyConfig::default()
+        },
+    )?;
+    let run_dir = args
+        .output_root
+        .join(format!("run-{}", chrono::Utc::now().timestamp_millis()));
+    fs::create_dir_all(&run_dir)?;
+    let report_path = run_dir.join("constellation_freshness_audit.json");
+    write_json_0600(&report_path, &report)?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "dbPath": args.db_path,
+            "reportPath": report_path,
+            "constellationVersionHex": hex::encode(latest_version),
+            "totalCells": report.total_cells,
+            "refitRequiredCount": report.refit_required_count,
+            "skipCount": report.skip_count,
+            "failedCellCount": report.failed_cell_count,
+            "histogram": report.histogram,
+            "sourceOfTruth": {
+                "constellationCf": context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION,
+                "refreshLogCf": context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_LOG,
+            }
+        }))?
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+fn open_runtime_rocksdb(path: &std::path::Path) -> Result<Arc<DB>, MejepaCliError> {
+    let mut opts = Options::default();
+    opts.create_if_missing(true);
+    opts.create_missing_column_families(true);
+    opts.set_paranoid_checks(true);
+    let descriptors = context_graph_mejepa_cf::all_hygiene_referenced_cfs()
+        .into_iter()
+        .map(|cf| ColumnFamilyDescriptor::new(cf, Options::default()))
+        .collect::<Vec<_>>();
+    Ok(Arc::new(DB::open_cf_descriptors(&opts, path, descriptors)?))
+}
+
+fn write_json_0600<T: serde::Serialize>(
+    path: &std::path::Path,
+    value: &T,
+) -> Result<(), MejepaCliError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let bytes = serde_json::to_vec_pretty(value)?;
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(&bytes)?;
+    file.write_all(b"\n")?;
+    Ok(())
 }
 
 fn run_eval_run(args: EvalRunArgs) -> Result<ExitCode, context_graph_mejepa::EvalError> {

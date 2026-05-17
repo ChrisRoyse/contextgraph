@@ -124,6 +124,10 @@ name = "task_rwd_211_novel_pattern_fsv"
 path = "examples/task_rwd_211_novel_pattern_fsv.rs"
 
 [[example]]
+name = "task_rwd_212_constellation_freshness_fsv"
+path = "examples/task_rwd_212_constellation_freshness_fsv.rs"
+
+[[example]]
 name = "task_fp_102_hierarchical_jepa_fsv"
 path = "examples/task_fp_102_hierarchical_jepa_fsv.rs"
 

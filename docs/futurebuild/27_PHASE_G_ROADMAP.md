@@ -71,7 +71,7 @@ Calibrators ride on top of producers; reward-signal density audits ensure no cel
 | 3.1 | **refined #122** | 66-cell pairwise MI matrix audit; redundancy/degeneracy flags |
 | 3.2 | **refined #123** | Per-cell TCT signal-saturation matrix (`realized/theoretical`) |
 | 3.3 | **#124** | Frozen instrument coverage audit per Python cell |
-| 3.4 | **#271** | Per-cell constellation freshness audit + scheduler integration |
+| 3.4 | **#271** | ✅ complete — per-cell constellation freshness audit + scheduler integration (`CF_MEJEPA_CONSTELLATION_REFRESH_LOG`, FSV `/mnt/d/contextgraph/fsv/task-py-g-052-constellation-freshness-fsv/run-1779052689893/constellation_freshness_fsv.json`) |
 | 3.5 | **#125** | Q1 claim-existence calibration at corpus scale (consumes #260) |
 | 3.6 | **#126** | Q3 failure-mode calibration (consumes #261 exemplars + #265-#268 labels) |
 | 3.7 | **refined #127** | Q4 confidence calibration per class with Brier/ECE/τ |

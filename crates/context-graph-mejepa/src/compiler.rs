@@ -1626,6 +1626,35 @@ impl ConstellationGuard for TctConstellationGuard {
         context: &TaskContext,
     ) -> Result<ConstellationDecision, MejepaInferError> {
         let language = tct_language(context.language);
+        let (max_age_days, allow_stale) = context_graph_mejepa_tct::read_freshness_config()?;
+        let target_cells = context_graph_mejepa_tct::materialize_target_cells(
+            &self.constellation,
+            self.predicted_class,
+            language,
+            self.entity_type,
+            &BTreeMap::new(),
+        )?;
+        let freshness_audit = context_graph_mejepa_tct::build_freshness_audit(
+            self.constellation.version_id(),
+            &target_cells,
+            std::time::SystemTime::now(),
+            context_graph_mejepa_tct::RefreshPolicyConfig {
+                max_age_days,
+                ..context_graph_mejepa_tct::RefreshPolicyConfig::default()
+            },
+        )?;
+        if !allow_stale {
+            if let Some(stale) = freshness_audit
+                .rows
+                .iter()
+                .find(|row| row.decision.is_refit())
+            {
+                return Err(MejepaInferError::GtauStaleConstellation {
+                    version: hex::encode(self.constellation.version_id()),
+                    age_days: stale.age_days,
+                });
+            }
+        }
         let output = gtau_check(
             predicted_panel,
             self.predicted_class,

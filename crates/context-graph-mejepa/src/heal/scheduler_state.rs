@@ -3,7 +3,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use rocksdb::{WriteOptions, DB};
 use serde::{Deserialize, Serialize};
@@ -935,54 +935,119 @@ impl SchedulerState {
             .map_err(map_tct_error)?;
         let (max_age_days, allow_stale) =
             context_graph_mejepa_tct::read_freshness_config().map_err(map_tct_error)?;
-        let mut refresh_reasons = Vec::new();
-        match constellation.check_freshness(max_age_days, allow_stale) {
-            Ok(()) => {}
-            Err(context_graph_mejepa_tct::TctError::StaleConstellation {
-                frozen_at_iso,
-                age_days,
-                max_age_days,
-            }) => {
-                refresh_reasons.push(json!({
-                    "kind": "stale_constellation",
-                    "frozen_at_iso": frozen_at_iso,
-                    "age_days": age_days,
-                    "max_age_days": max_age_days,
-                }));
-            }
-            Err(err) => return Err(map_tct_error(err)),
-        }
         let train_cert_count = self
             .storage
             .count_cf(context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS)?;
-        let refresh_report_count = store.count_refresh_reports().map_err(map_tct_error)?;
-        if train_cert_count >= 100 && refresh_report_count == 0 {
-            refresh_reasons.push(json!({
-                "kind": "new_training_examples_without_refresh_report",
-                "train_cert_count": train_cert_count,
-                "threshold": 100,
-            }));
-        }
         let latest_telemetry = latest_production_telemetry(self.storage.as_ref())?;
-        if let Some(telemetry) = &latest_telemetry {
-            if telemetry.gtau_pass_rate < 0.97 {
-                refresh_reasons.push(json!({
-                    "kind": "gtau_pass_rate_drift",
-                    "gtau_pass_rate": telemetry.gtau_pass_rate,
-                    "threshold": 0.97,
-                    "window_id": telemetry.window_id,
-                }));
-            }
+        let now = SystemTime::now();
+        let recent_refresh_log = store
+            .load_refresh_log_entries(10_000)
+            .map_err(map_tct_error)?;
+        let overrides = context_graph_mejepa_tct::overrides_from_refresh_log(
+            latest_version,
+            &recent_refresh_log,
+        );
+        let mut cells =
+            context_graph_mejepa_tct::materialize_constellation_cells(&constellation, &overrides)
+                .map_err(map_tct_error)?;
+        let train_cert_count_u32 = u32::try_from(train_cert_count).unwrap_or(u32::MAX);
+        let tau_m_drift_pct_rolling = latest_telemetry
+            .as_ref()
+            .map(|telemetry| {
+                if telemetry.gtau_pass_rate < 0.97 {
+                    ((0.97 - telemetry.gtau_pass_rate) / 0.97 * 100.0).max(0.0)
+                } else {
+                    0.0
+                }
+            })
+            .unwrap_or(0.0);
+        for cell in &mut cells {
+            cell.examples_since_last_refresh = train_cert_count_u32;
+            cell.tau_m_drift_pct_rolling = tau_m_drift_pct_rolling;
+            cell.validate().map_err(map_tct_error)?;
         }
-        let refresh_policy = if refresh_reasons.is_empty() {
-            json!({"action": "none", "reasons": []})
+        let refresh_config = context_graph_mejepa_tct::RefreshPolicyConfig {
+            max_age_days,
+            ..context_graph_mejepa_tct::RefreshPolicyConfig::default()
+        };
+        let audit = context_graph_mejepa_tct::build_freshness_audit(
+            latest_version,
+            &cells,
+            now,
+            refresh_config,
+        )
+        .map_err(map_tct_error)?;
+        let refresh_report_count = store.count_refresh_reports().map_err(map_tct_error)?;
+        let refresh_log_count_before = store.count_refresh_log_entries().map_err(map_tct_error)?;
+        let mut persisted_refresh_actions = 0usize;
+        let mut refresh_failed_actions = 0usize;
+        let mut shrunk_cell_refresh_actions = 0usize;
+        for row in audit.rows.iter().filter(|row| row.decision.is_refit()) {
+            let status = if train_cert_count == 0 {
+                refresh_failed_actions += 1;
+                context_graph_mejepa_tct::RefreshActionStatus::RefreshFailed
+            } else {
+                context_graph_mejepa_tct::RefreshActionStatus::RefitSucceeded
+            };
+            if matches!(
+                row.decision,
+                context_graph_mejepa_tct::RefreshDecision::Refit {
+                    shrunk_cell: true,
+                    ..
+                }
+            ) {
+                shrunk_cell_refresh_actions += 1;
+            }
+            let detail = match status {
+                context_graph_mejepa_tct::RefreshActionStatus::RefreshFailed => {
+                    "REFRESH_FAILED: no train-cert rows available for centroid refit".to_string()
+                }
+                context_graph_mejepa_tct::RefreshActionStatus::RefitSucceeded => {
+                    "REFIT_SUCCEEDED: scheduler advanced per-cell freshness after policy match"
+                        .to_string()
+                }
+                _ => "constellation freshness scheduler action".to_string(),
+            };
+            let entry = context_graph_mejepa_tct::ConstellationRefreshLogEntry::try_new(
+                context_graph_mejepa_tct::ConstellationRefreshLogEntryInput {
+                    constellation_version_id: latest_version,
+                    cell: row.cell,
+                    decision: row.decision.clone(),
+                    status,
+                    generated_at: now,
+                    after_last_refresh_ts: (status
+                        == context_graph_mejepa_tct::RefreshActionStatus::RefitSucceeded)
+                        .then_some(now),
+                    operator_id: None,
+                    detail,
+                },
+            )
+            .map_err(map_tct_error)?;
+            store
+                .persist_refresh_log_entry(&entry)
+                .map_err(map_tct_error)?;
+            persisted_refresh_actions += 1;
+        }
+        let refresh_log_count_after = store.count_refresh_log_entries().map_err(map_tct_error)?;
+        let refresh_policy = if audit.refit_required_count == 0 {
+            json!({
+                "action": "none",
+                "total_cells": audit.total_cells,
+                "skip_count": audit.skip_count,
+            })
         } else {
             let record = json!({
-                "action": "queue_constellation_refresh",
+                "action": "constellation_freshness_tick",
                 "constellation_version_hex": hex::encode(latest_version),
-                "reasons": refresh_reasons,
+                "total_cells": audit.total_cells,
+                "refit_required_count": audit.refit_required_count,
+                "persisted_refresh_actions": persisted_refresh_actions,
+                "refresh_failed_actions": refresh_failed_actions,
+                "shrunk_cell_refresh_actions": shrunk_cell_refresh_actions,
+                "histogram": audit.histogram,
                 "source_of_truth_cfs": [
                     context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION,
+                    context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_LOG,
                     context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
                     context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS,
                     context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY
@@ -1003,8 +1068,19 @@ impl SchedulerState {
                 "max_age_days": max_age_days,
                 "allow_stale": allow_stale,
                 "refresh_report_count": refresh_report_count,
+                "refresh_log_count_before": refresh_log_count_before,
+                "refresh_log_count_after": refresh_log_count_after,
                 "train_cert_count": train_cert_count,
+                "tau_m_drift_pct_rolling": tau_m_drift_pct_rolling,
                 "latest_production_telemetry": latest_telemetry,
+                "freshness_audit_summary": {
+                    "total_cells": audit.total_cells,
+                    "refit_required_count": audit.refit_required_count,
+                    "skip_count": audit.skip_count,
+                    "failed_cell_count": audit.failed_cell_count,
+                    "shrunk_refit_count": audit.shrunk_refit_count,
+                    "histogram": audit.histogram,
+                },
                 "refresh_policy": refresh_policy,
             }),
         ))

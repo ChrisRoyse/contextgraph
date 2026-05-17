@@ -12,12 +12,14 @@ use rocksdb::{
 use crate::constellation::{bincode_options, TctConstellation};
 use crate::error::TctError;
 use crate::freshness::read_freshness_config;
+use crate::freshness_policy::ConstellationRefreshLogEntry;
 use crate::rate_aggregator::CF_MEJEPA_GUARD_DECISIONS;
 use crate::refresh_report::ConstellationRefreshReport;
 use crate::types::EmbedderId;
 
 pub use context_graph_mejepa_cf::{
-    CF_MEJEPA_CONSTELLATION, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS, TCT_CFS as MEJEPA_TCT_CFS,
+    CF_MEJEPA_CONSTELLATION, CF_MEJEPA_CONSTELLATION_REFRESH_LOG,
+    CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS, TCT_CFS as MEJEPA_TCT_CFS,
 };
 
 #[derive(Clone)]
@@ -345,6 +347,89 @@ impl ConstellationStore {
         count_cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS)
     }
 
+    pub fn persist_refresh_log_entry(
+        &self,
+        entry: &ConstellationRefreshLogEntry,
+    ) -> Result<[u8; 32], TctError> {
+        entry.validate_integrity()?;
+        let key = refresh_log_key(entry.generated_at, entry.event_id)?;
+        let bytes = bincode_options().serialize(entry)?;
+        self.db
+            .put_cf_opt(
+                cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_LOG)?,
+                &key,
+                bytes,
+                &durable_write_options(),
+            )
+            .map_err(|err| {
+                TctError::store("put", CF_MEJEPA_CONSTELLATION_REFRESH_LOG, err.to_string())
+            })?;
+        durable_flush_cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_LOG)?;
+        let raw = self
+            .db
+            .get_cf(cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_LOG)?, &key)
+            .map_err(|err| {
+                TctError::store("get", CF_MEJEPA_CONSTELLATION_REFRESH_LOG, err.to_string())
+            })?
+            .ok_or_else(|| {
+                TctError::store(
+                    "read_after_write",
+                    CF_MEJEPA_CONSTELLATION_REFRESH_LOG,
+                    "missing persisted refresh log row",
+                )
+            })?;
+        let readback: ConstellationRefreshLogEntry = bincode_options().deserialize(&raw)?;
+        readback.validate_integrity()?;
+        if readback != *entry {
+            return Err(TctError::FrozenViolation {
+                detail: "refresh log read-after-write payload mismatch".to_string(),
+            });
+        }
+        Ok(entry.event_id)
+    }
+
+    pub fn load_refresh_log_entries(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ConstellationRefreshLogEntry>, TctError> {
+        if limit == 0 {
+            return Err(TctError::invalid(
+                "limit",
+                "refresh log limit must be positive",
+            ));
+        }
+        let cf = cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_LOG)?;
+        let mut entries = Vec::new();
+        for item in self.db.iterator_cf(cf, IteratorMode::End) {
+            let (key, value) = item.map_err(|err| {
+                TctError::store(
+                    "iterate",
+                    CF_MEJEPA_CONSTELLATION_REFRESH_LOG,
+                    err.to_string(),
+                )
+            })?;
+            if key.len() != 40 {
+                return Err(TctError::dim(
+                    40,
+                    key.len(),
+                    "refresh log key must be generated_at_secs || event_id",
+                ));
+            }
+            let entry: ConstellationRefreshLogEntry = bincode_options().deserialize(&value)?;
+            entry.validate_integrity()?;
+            entries.push(entry);
+            if entries.len() == limit {
+                break;
+            }
+        }
+        entries.reverse();
+        Ok(entries)
+    }
+
+    pub fn count_refresh_log_entries(&self) -> Result<usize, TctError> {
+        count_cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_LOG)
+    }
+
     pub fn read_raw_by_version(&self, version_id: [u8; 32]) -> Result<Vec<Vec<u8>>, TctError> {
         self.raw_values_for_version(version_id)
     }
@@ -482,5 +567,21 @@ fn refresh_report_key(finished_at: SystemTime, report_id: [u8; 32]) -> Result<Ve
     let mut key = Vec::with_capacity(40);
     key.extend_from_slice(&secs.to_be_bytes());
     key.extend_from_slice(&report_id);
+    Ok(key)
+}
+
+fn refresh_log_key(generated_at: SystemTime, event_id: [u8; 32]) -> Result<Vec<u8>, TctError> {
+    let secs = generated_at
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| {
+            TctError::invalid(
+                "refresh_log.generated_at",
+                "generated_at must not predate UNIX_EPOCH",
+            )
+        })?
+        .as_secs();
+    let mut key = Vec::with_capacity(40);
+    key.extend_from_slice(&secs.to_be_bytes());
+    key.extend_from_slice(&event_id);
     Ok(key)
 }

@@ -160,7 +160,9 @@ pub struct ConstellationCell {
     pub bayesian_shrunk: bool,                // when N < 50, shrunk toward the marginal
     pub n_supporting: u32,                    // number of training examples in the cell
     pub tau_m: f32,                           // per-embedder threshold calibrated for false-positive rate ≤ 5% on heldout KnownGood
-    pub freshness_ts: SystemTime,             // refresh policy: stale > 90 days → refuse without operator override
+    pub last_refresh_ts: SystemTime,          // refresh policy: stale > 90 days → refuse without operator override
+    pub examples_since_last_refresh: u32,     // refresh policy: >100 new examples → refit
+    pub tau_m_drift_pct_rolling: f32,         // refresh policy: >3% rolling τ_m drift → refit
 }
 ```
 
@@ -173,7 +175,7 @@ pub struct ConstellationCell {
 ≈ 8 × 13 × 11 × 12 = **13,728 cells.** Many will have `N < 50` and be Bayesian-shrunk; some combinations are physically impossible (e.g., `impl` for Python) and are absent. The current `TctConstellation` type already supports this layout per `crates/context-graph-mejepa-tct/src/constellation.rs`.
 
 **Refresh cadence**:
-- The continuous self-optimization daemon refreshes a centroid when (a) > 100 new training examples have landed in that cell since last refresh, OR (b) per-embedder threshold τ_m calibration drifts > 3% on the rolling validation window, OR (c) the cell's freshness is > 90 days. Operator override (via `mejepa_constellation_inspect` MCP tool) can force a refresh at any time.
+- The continuous self-optimization daemon refreshes a centroid when (a) > 100 new training examples have landed in that cell since last refresh, OR (b) per-embedder threshold τ_m calibration drifts > 3% on the rolling validation window, OR (c) the cell's freshness is > 90 days. TASK-RWD-212 materializes this as compatibility-safe per-cell views plus durable `CF_MEJEPA_CONSTELLATION_REFRESH_LOG` rows rather than changing the frozen constellation payload layout. Operator override records `MANUAL_OVERRIDE_FRESHNESS_BYPASS`; stale target cells fail closed at inference without an explicit override.
 
 ---
 
