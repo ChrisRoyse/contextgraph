@@ -118,3 +118,7 @@ path = "examples/phase_f_chaos_failpoints_fsv.rs"
 [[example]]
 name = "phase_f_heal_ticker_telemetry_fsv"
 path = "examples/phase_f_heal_ticker_telemetry_fsv.rs"
+
+[[example]]
+name = "task_fp_102_hierarchical_jepa_fsv"
+path = "examples/task_fp_102_hierarchical_jepa_fsv.rs"
