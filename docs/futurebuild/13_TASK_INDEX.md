@@ -524,7 +524,7 @@ Pillars 1 (frozen panel), 2 (anti-collapse SIGReg), 4 (action-conditioned), 8 (c
 |---|---|---|---|---|---|
 | `TASK-RWD-201` | `E_Cyclomatic` instrument (cyclomatic / cognitive / Halstead / depth) | 4 — static quality | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-rwd-201-cyclomatic-fsv/run-1779042449826/cyclomatic_fsv.json` sha256 `293d939dc2cccf5a70890be1154986e01b21289e1172714b4e694d9a9c68e2e8` | shipped 2026-05-17 |
 | `TASK-RWD-202` | `E_Coverage` instrument (line-level coverage delta per file) | 4 — static quality | G+ | — | 1-2d |
-| `TASK-RWD-203` | `E_DiffTopology` instrument (hunks per file, size distribution, entropy) | 4 — static quality | G+ | — | 1d |
+| `TASK-RWD-203` | `E_DiffTopology` instrument (hunks per file, size distribution, entropy) | 4 — static quality | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-rwd-203-diff-topology-fsv/run-1779043047838/diff_topology_fsv.json` sha256 `749b120421d37413a2ae54d67ad18f755855dcd337d30dbbb75dd99b3aa98c60` | shipped 2026-05-17 |
 | `TASK-RWD-204` | `E_SecuritySignals` instrument (auth / input-sanit / secret patterns) | 4 — static quality | G+ | #265 | 2-3d |
 | `TASK-RWD-205` | `E_TypeGraph` full instrument (currently partial) | 3 — static graph | G+ | — | 2d |
 | `TASK-RWD-206` | `E_Telemetry` instrument (latency / VRAM / cost prediction features) | 5 — runtime telemetry | G+ | — | 3-4d |

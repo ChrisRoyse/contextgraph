@@ -32,6 +32,7 @@ use thiserror::Error;
 
 pub mod e_code;
 pub mod e_cyclomatic;
+pub mod e_diff_topology;
 pub mod e_embedder_heads;
 pub mod e_oracle;
 pub mod e_reasoning;
@@ -528,6 +529,10 @@ pub use e_code::{
 pub use e_cyclomatic::{
     analyze_complexity, ComplexityInput, ComplexityMetrics, ECyclomaticInstrument,
     FunctionComplexity,
+};
+pub use e_diff_topology::{
+    analyze_diff_topology, DiffTopologyInput, DiffTopologyMetrics, EDiffTopologyInstrument,
+    FileTopology, HunkTopology,
 };
 pub use e_oracle::{EOracleInstrument, ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome};
 pub use e_reasoning::{EReasoningInstrument, ReasoningEvent, ReasoningInput};
