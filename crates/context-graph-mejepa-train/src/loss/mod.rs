@@ -2,6 +2,7 @@ pub mod aux;
 pub mod constellation;
 pub mod counterfactual;
 pub mod predict;
+pub mod sigreg;
 pub mod vicreg;
 
 use crate::config::LossCoefficients;
@@ -54,6 +55,7 @@ pub fn compose_l_full(
     let l_variance = vicreg::l_variance(predicted_latent)?;
     let l_covariance = vicreg::l_covariance(predicted_latent)?;
     let l_invariance = vicreg::l_invariance(predicted_latent, predicted_latent)?;
+    let l_sigreg = sigreg::sigreg_loss(predicted_latent, sigreg::SigregConfig::default())?;
     let l_warnings = aux::l_mse(&aux_outputs.warnings, &batch_metadata.actual_warnings)?;
     let l_runtime = aux::l_mse(&aux_outputs.runtime_log, &batch_metadata.actual_runtime_log)?;
     let l_rss = aux::l_mse(&aux_outputs.rss, &batch_metadata.actual_rss)?;
@@ -88,6 +90,7 @@ pub fn compose_l_full(
         ("variance", coefficients.lambda_var, &l_variance),
         ("covariance", coefficients.lambda_cov, &l_covariance),
         ("invariance", coefficients.lambda_inv, &l_invariance),
+        ("sigreg", coefficients.lambda_sigreg, &l_sigreg),
         ("warnings", coefficients.alpha_warn, &l_warnings),
         ("runtime", coefficients.alpha_runtime, &l_runtime),
         ("rss", coefficients.alpha_rss, &l_rss),
@@ -180,7 +183,8 @@ mod tests {
             current_task_centroids: Some(vec![p.clone()]),
         };
         let loss = compose_l_full(&p, &t, &aux, &meta, &LossCoefficients::default()).unwrap();
-        assert_eq!(loss.components.len(), 13);
+        assert_eq!(loss.components.len(), 14);
+        assert!(loss.components["sigreg"].is_finite());
         assert!(loss.total.is_finite());
     }
 }

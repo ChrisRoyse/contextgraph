@@ -30,11 +30,11 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 
 **LeCun:** *"The latest [is] called SIGreg — sketched isotropic gaussian regularization. ... If you want to read one paper, read the LE World Model paper [Bistriero et al.]."*
 
-**ME-JEPA state:** ⚠️ **PARTIAL.** VICReg variance+invariance+covariance is shipped in `crates/context-graph-mejepa-train/src/loss.rs::vicreg_loss()`. REQ-UTML-06 pairwise MI audit is shipped + exposed via `mejepa_audit_pairwise_mi` MCP tool. Predictor redundancy is gated per-head via `ΔΞ_h(t) = (1 − predictor_redundancy_h)^0.3 · (1 − constellation_violation_rate_h)^0.2`.
+**ME-JEPA state:** ✅ **SHIPPED.** VICReg variance+invariance+covariance remains present, and TASK-FP-101 adds a differentiable SIGReg component to `compose_l_full` through `crates/context-graph-mejepa-train/src/loss/sigreg.rs`. The implementation uses deterministic sketched Gaussian projections, Candle tensor `matmul` + `sin`/`cos` characteristic-function matching, and a configurable `lambda_sigreg` coefficient in `LossCoefficients`. REQ-UTML-06 pairwise MI audit is shipped + exposed via `mejepa_audit_pairwise_mi` MCP tool. Predictor redundancy is gated per-head via `ΔΞ_h(t) = (1 − predictor_redundancy_h)^0.3 · (1 − constellation_violation_rate_h)^0.2`.
 
-**Gap:** SIGreg (Bistriero) is a newer, theoretically cleaner regularizer — explicit information-content maximization via forcing the encoder's output distribution to be jointly Gaussian. The LE World Model paper is the canonical implementation reference.
+**FSV evidence:** `/mnt/d/contextgraph/fsv/task-fp-101-sigreg-fsv/run-1779036305137/sigreg_fsv.json`, sha256 `b2d4995d4de9539916558f51cdd1423081af94962868c18077653c0d075e80c7`, `allPassed=true`, 5 cases. The FSV proves collapsed and anisotropic batches score worse than Gaussian-like latents, SIGReg loss descends across an information-content trajectory, invalid inputs fail closed, and the training loss backpropagates a finite non-zero gradient to predicted latents.
 
-**Sub-task:** **TASK-FP-101 — SIGreg regularizer for predictor (upgrade from VICReg).** Acceptance: shipped in `loss.rs::sigreg_loss()`, tested for information-content monotonic increase across training steps, FSV proves it matches LE-World-Model reference behavior on a synthetic toy.
+**Sub-task:** **TASK-FP-101 — COMPLETE.** SIGReg is shipped as an additive regularizer beside VICReg rather than as a destructive replacement, preserving the old anti-collapse path while adding the LeCun/Bistriero-style sketched isotropic Gaussian objective.
 
 ---
 
@@ -133,7 +133,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 | # | Pillar | Status | Sub-task |
 |---|---|---|---|
 | 1 | Frozen target panel | ✅ shipped | — |
-| 2 | Anti-collapse regularizer | ⚠️ VICReg ✅; **SIGreg pending** | TASK-FP-101 |
+| 2 | Anti-collapse regularizer | ✅ VICReg + SIGReg shipped | TASK-FP-101 complete |
 | 3 | Hierarchical JEPA | ⚠️ **flat predictor** | TASK-FP-102 |
 | 4 | Action-conditioned world model | ✅ shipped | — |
 | 5 | Latent-space planning | ⚠️ **missing** | TASK-FP-103 |
@@ -149,7 +149,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 
 ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the following are true:
 
-1. **SIGreg** (or comparable explicit info-max regularizer) is shipped with FSV proving info-content monotonicity (TASK-FP-101).
+1. **SIGreg** (or comparable explicit info-max regularizer) is shipped with FSV proving info-content monotonicity (TASK-FP-101). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-101-sigreg-fsv/run-1779036305137/sigreg_fsv.json`.
 2. **Hierarchical** predictor emits multi-scale predictions across ≥ 3 abstraction levels with per-level calibration (TASK-FP-102).
 3. **Latent-space planning**: `mejepa_search_latent_actions` returns ranked latent vectors, NOT token-by-token regenerated patches (TASK-FP-103).
 4. **Objective-driven**: explicit cost function + hardwired safety constraint vector; constraint violation hard-blocks `Verdict::Pass` (TASK-FP-104).
@@ -163,7 +163,7 @@ ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the follow
 
 | TASK | Title | Pillar | DoD anchor |
 |---|---|---|---|
-| TASK-FP-101 | SIGreg regularizer for predictor | 2 | LE World Model paper behavioral match |
+| TASK-FP-101 | SIGReg regularizer for predictor | 2 | ✅ Complete: differentiable characteristic-function sketch + FSV `b2d4995d4de9539916558f51cdd1423081af94962868c18077653c0d075e80c7` |
 | TASK-FP-102 | Hierarchical JEPA predictor (file → function → AST → chunk) | 3 | `CF_MEJEPA_HIERARCHICAL_PREDICTIONS` per-level calibration |
 | TASK-FP-103 | Latent-space candidate-patch search | 5 | `mejepa_search_latent_actions` MCP tool + synthetic recovery proof |
 | TASK-FP-104 | Objective-driven cost + safety constraints | 6 | Hardwired constraint vector hard-blocks Verdict::Pass on violation |
@@ -175,8 +175,8 @@ Each TASK file follows `prdtospec.md` Level-4 atomic-task format and the FSV pro
 
 ## §6 — Implementation order
 
-1. **TASK-FP-101 (SIGreg)** first — pure substrate-side improvement, doesn't depend on other tasks, immediately benefits all downstream predictor heads.
-2. **TASK-FP-102 (hierarchical)** second — provides the multi-scale substrate that TASK-FP-103 latent search will operate over.
+1. **TASK-FP-101 (SIGReg)** — complete. Pure substrate-side improvement, doesn't depend on other tasks, immediately benefits all downstream predictor heads.
+2. **TASK-FP-102 (hierarchical)** next — provides the multi-scale substrate that TASK-FP-103 latent search will operate over.
 3. **TASK-FP-103 (latent search)** third — depends on hierarchical predictor for richer search space.
 4. **TASK-FP-104 (cost + safety)** fourth — depends on Q4 head emitting cost-like outputs (existing) + adds hard constraint layer.
 5. **TASK-FP-105 (counterfactual rank)** fifth — depends on TASK-FP-103 (uses latent search as the candidate-generation backend).
@@ -202,4 +202,4 @@ This ordering is captured in `13_TASK_INDEX.md` task DAG.
 
 ---
 
-**TL;DR.** ME-JEPA-Code has 5 of 10 LeCun pillars fully shipped (1, 4, 8, plus 9 and 10 with minor doc work). The remaining 5 pillars (2, 3, 5, 6, 7) are tracked under TASK-FP-101..105 in the atomic task DAG. When all five sub-tasks ship, ME-JEPA-Code is the first publicly-known system to instantiate the full LeCun JEPA blueprint for the code-verification problem class.
+**TL;DR.** ME-JEPA-Code has the code-bearing pillars 1, 2, 4, and 8 shipped or designed with FSV-backed evidence where code changed. The remaining #314 pillar gaps are TASK-FP-102..105: hierarchical prediction, latent-space search, objective+safety constraints, and counterfactual best-of-K ranking. Pillar 9 is a framing/documentation update, and pillar 10 is tracked separately by the #315 reward-signal-completeness audit.

@@ -78,3 +78,7 @@ path = "examples/label_transfer_consumer_fsv.rs"
 [[example]]
 name = "phase_g_adversarial_retrain_fsv"
 path = "examples/phase_g_adversarial_retrain_fsv.rs"
+
+[[example]]
+name = "task_fp_101_sigreg_fsv"
+path = "examples/task_fp_101_sigreg_fsv.rs"
