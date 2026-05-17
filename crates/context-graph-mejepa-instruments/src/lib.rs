@@ -30,6 +30,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod composite_reward_signals;
 pub mod e_code;
 pub mod e_coverage;
 pub mod e_cyclomatic;
@@ -525,6 +526,15 @@ fn slot_bit(slot: InstrumentSlot) -> u16 {
 #[path = "tests.rs"]
 mod instrument_tests;
 
+pub use composite_reward_signals::{
+    analyze_churn, analyze_doc_coverage, complexity_label_from_metrics, composite_reward_cfs,
+    coverage_labels_from_metrics, extract_composite_reward_signals, extract_dependency_cve_labels,
+    write_composite_reward_raw_outputs, ChurnCommit, ChurnInput, ChurnLabel, ComplexityLabel,
+    CompositeRewardExtraction, CompositeRewardInput, CompositeRewardQuarantine,
+    CompositeRewardRawOutputPaths, CompositeRewardSignalKind, CompositeRewardSignalRecord,
+    CompositeRewardSignalStore, CompositeRewardStoredKey, CoverageLabel, DepCveInput, DepCveLabel,
+    DocCoverageInput, DocCoverageLabel, FunctionDocCoverage, PersistedCompositeRewardSignal,
+};
 pub use e_code::{
     CodeInstrumentInput, DiffInstrumentInput, EAstInstrument, ECfgInstrument, EDataFlowInstrument,
     EDiffInstrument, ETypeGraphInstrument,

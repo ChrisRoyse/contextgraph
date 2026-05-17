@@ -16,6 +16,7 @@ serde_json = { workspace = true }
 serde_yaml = "0.9"
 sha2 = "0.10"
 thiserror = { workspace = true }
+toml = { workspace = true }
 rocksdb = "0.22"
 ruff_python_ast = { package = "rustpython-ruff_python_ast", version = "0.15.8" }
 ruff_python_parser = { package = "rustpython-ruff_python_parser", version = "0.15.8" }

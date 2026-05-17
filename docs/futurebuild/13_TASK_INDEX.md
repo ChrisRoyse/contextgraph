@@ -530,7 +530,7 @@ Pillars 1 (frozen panel), 2 (anti-collapse SIGReg), 4 (action-conditioned), 8 (c
 | `TASK-RWD-206` | `E_Telemetry` instrument (latency / VRAM / cost prediction features) | 5 — runtime telemetry | G+ | — | 3-4d |
 | `TASK-RWD-207` | `E_LiveSession` instrument (session state + operator-goal embedding) | 7 — live session | G+ | — | 2-3d |
 | `TASK-RWD-208` | Static-analysis (mypy + pyright + ruff) reward signal | 4 — static quality | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-py-g-074-static-analysis-fsv/run-1779045296443/static_analysis_fsv.json` sha256 `16c9ee15273c9df3d5bc03a9bfd7d46113d58266f49fa7af571b3f5f031624b0` | shipped 2026-05-17 |
-| `TASK-RWD-209` | Coverage + churn + complexity + doc + dep-CVE reward | 4 — static quality | G+ | #294 | 3-4d |
+| `TASK-RWD-209` | Coverage + churn + complexity + doc + dep-CVE reward | 4 — static quality | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-py-g-075-composite-reward-fsv/run-1779049005345/composite_reward_fsv.json` sha256 `f0eb9b5c5cf9a401f4911da30ed053db7a948bc8fc72e899d3837415084669db` | shipped 2026-05-17 |
 | `TASK-RWD-210` | Prioritised replay buffer for M(t) consolidation | 7 — live session | G+ | #287 | 2-3d |
 | `TASK-RWD-211` | Novel-pattern detection + auto constellation extension | 6 — constellation | G+ | #286, TASK-FP-002 | 2-3d |
 | `TASK-RWD-212` | Per-cell constellation freshness audit + scheduler | 6 — constellation | G+ | #271, TASK-FP-003 | 2d |

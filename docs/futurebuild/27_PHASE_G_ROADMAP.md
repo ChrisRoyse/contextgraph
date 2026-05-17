@@ -83,7 +83,7 @@ Calibrators ride on top of producers; reward-signal density audits ensure no cel
 | 3.13 | **#152** | E_Trace gating |
 | 3.14 | **#280** | Cold-start verdict policy (Abstain when n_supporting<50) — **code/FSV shipped; SoT `/mnt/d/contextgraph/fsv/task-py-g-061-cold-start-verdict-fsv/cold_start_verdict_fsv.json` (`all_passed=true`)** |
 | 3.15 | **#293** | Static-analysis (mypy + pyright + ruff) per-chunk reward signal |
-| 3.16 | **#294** | Composite reward signals: coverage + git churn + complexity + doc-coverage + dep-CVE |
+| 3.16 | **#294** | Composite reward signals: coverage + git churn + complexity + doc-coverage + dep-CVE — **code/FSV shipped; SoT `/mnt/d/contextgraph/fsv/task-py-g-075-composite-reward-fsv/run-1779049005345/composite_reward_fsv.json` (`all_passed=true`)** |
 
 **Gate for Phase 3:** Per-head Brier ≤ 0.05, ECE ≤ 0.05, conformal coverage 88-92%.
 

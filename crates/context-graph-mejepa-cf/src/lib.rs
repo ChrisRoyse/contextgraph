@@ -66,6 +66,12 @@ pub const CF_MEJEPA_COLD_CELL_METRICS: &str = "CF_MEJEPA_COLD_CELL_METRICS";
 pub const CF_MEJEPA_STATIC_ANALYSIS_SIGNALS: &str = "CF_MEJEPA_STATIC_ANALYSIS_SIGNALS";
 // TASK-RWD-204 / TASK-PY-G-046 — normalized Bandit/Semgrep Q4 security labels.
 pub const CF_MEJEPA_Q4_SECURITY_LABELS: &str = "CF_MEJEPA_Q4_SECURITY_LABELS";
+// TASK-RWD-209 / TASK-PY-G-075 — composite reward-signal labels.
+pub const CF_MEJEPA_COVERAGE_SIGNALS: &str = "CF_MEJEPA_COVERAGE_SIGNALS";
+pub const CF_MEJEPA_COMPLEXITY_SIGNALS: &str = "CF_MEJEPA_COMPLEXITY_SIGNALS";
+pub const CF_MEJEPA_CHURN_SIGNALS: &str = "CF_MEJEPA_CHURN_SIGNALS";
+pub const CF_MEJEPA_DOC_COVERAGE_SIGNALS: &str = "CF_MEJEPA_DOC_COVERAGE_SIGNALS";
+pub const CF_MEJEPA_DEP_CVE_SIGNALS: &str = "CF_MEJEPA_DEP_CVE_SIGNALS";
 // TASK-FP-001/002 — first-class failure-shape fingerprint catalog.
 pub const CF_MEJEPA_FAILURE_FINGERPRINTS: &str = "CF_MEJEPA_FAILURE_FINGERPRINTS";
 pub const CF_MEJEPA_FINGERPRINT_REFERENCES: &str = "CF_MEJEPA_FINGERPRINT_REFERENCES";
@@ -104,6 +110,14 @@ pub const FINGERPRINT_CFS: &[&str] = &[
 ];
 
 pub const ADVERSARIAL_CFS: &[&str] = &[CF_MEJEPA_ADVERSARIAL_CORPUS];
+
+pub const REWARD_SIGNAL_CFS: &[&str] = &[
+    CF_MEJEPA_COVERAGE_SIGNALS,
+    CF_MEJEPA_COMPLEXITY_SIGNALS,
+    CF_MEJEPA_CHURN_SIGNALS,
+    CF_MEJEPA_DOC_COVERAGE_SIGNALS,
+    CF_MEJEPA_DEP_CVE_SIGNALS,
+];
 
 pub const SELF_HEALING_CFS: &[&str] = &[
     CF_MEJEPA_FISHER_SNAPSHOTS,
@@ -168,6 +182,11 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_COLD_CELL_METRICS,
     CF_MEJEPA_STATIC_ANALYSIS_SIGNALS,
     CF_MEJEPA_Q4_SECURITY_LABELS,
+    CF_MEJEPA_COVERAGE_SIGNALS,
+    CF_MEJEPA_COMPLEXITY_SIGNALS,
+    CF_MEJEPA_CHURN_SIGNALS,
+    CF_MEJEPA_DOC_COVERAGE_SIGNALS,
+    CF_MEJEPA_DEP_CVE_SIGNALS,
 ];
 
 pub const EVAL_CFS: &[&str] = &[
@@ -194,6 +213,11 @@ pub const EVAL_CFS: &[&str] = &[
     CF_MEJEPA_COLD_CELL_METRICS,
     CF_MEJEPA_STATIC_ANALYSIS_SIGNALS,
     CF_MEJEPA_Q4_SECURITY_LABELS,
+    CF_MEJEPA_COVERAGE_SIGNALS,
+    CF_MEJEPA_COMPLEXITY_SIGNALS,
+    CF_MEJEPA_CHURN_SIGNALS,
+    CF_MEJEPA_DOC_COVERAGE_SIGNALS,
+    CF_MEJEPA_DEP_CVE_SIGNALS,
 ];
 
 pub const HYGIENE_CFS: &[&str] = &[
@@ -236,6 +260,11 @@ pub const HYGIENE_CFS: &[&str] = &[
     CF_MEJEPA_COLD_CELL_METRICS,
     CF_MEJEPA_STATIC_ANALYSIS_SIGNALS,
     CF_MEJEPA_Q4_SECURITY_LABELS,
+    CF_MEJEPA_COVERAGE_SIGNALS,
+    CF_MEJEPA_COMPLEXITY_SIGNALS,
+    CF_MEJEPA_CHURN_SIGNALS,
+    CF_MEJEPA_DOC_COVERAGE_SIGNALS,
+    CF_MEJEPA_DEP_CVE_SIGNALS,
 ];
 
 pub const TCT_CFS: &[&str] = &[
@@ -296,6 +325,11 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_COLD_CELL_METRICS,
     CF_MEJEPA_STATIC_ANALYSIS_SIGNALS,
     CF_MEJEPA_Q4_SECURITY_LABELS,
+    CF_MEJEPA_COVERAGE_SIGNALS,
+    CF_MEJEPA_COMPLEXITY_SIGNALS,
+    CF_MEJEPA_CHURN_SIGNALS,
+    CF_MEJEPA_DOC_COVERAGE_SIGNALS,
+    CF_MEJEPA_DEP_CVE_SIGNALS,
     CF_MEJEPA_MUTATION_CORPUS,
     CF_MEJEPA_LIVE_ATTEMPT_CORPUS,
     CF_MEJEPA_QUOTA_STATE,
@@ -339,6 +373,7 @@ mod tests {
             .chain(FLYWHEEL_CFS.iter())
             .chain(FINGERPRINT_CFS.iter())
             .chain(ADVERSARIAL_CFS.iter())
+            .chain(REWARD_SIGNAL_CFS.iter())
         {
             if !generated.contains(cf) {
                 generated.push(*cf);
@@ -387,6 +422,15 @@ mod tests {
             CF_MEJEPA_STATIC_ANALYSIS_SIGNALS,
             "CF_MEJEPA_STATIC_ANALYSIS_SIGNALS"
         );
+        assert_eq!(CF_MEJEPA_Q4_SECURITY_LABELS, "CF_MEJEPA_Q4_SECURITY_LABELS");
+        assert_eq!(CF_MEJEPA_COVERAGE_SIGNALS, "CF_MEJEPA_COVERAGE_SIGNALS");
+        assert_eq!(CF_MEJEPA_COMPLEXITY_SIGNALS, "CF_MEJEPA_COMPLEXITY_SIGNALS");
+        assert_eq!(CF_MEJEPA_CHURN_SIGNALS, "CF_MEJEPA_CHURN_SIGNALS");
+        assert_eq!(
+            CF_MEJEPA_DOC_COVERAGE_SIGNALS,
+            "CF_MEJEPA_DOC_COVERAGE_SIGNALS"
+        );
+        assert_eq!(CF_MEJEPA_DEP_CVE_SIGNALS, "CF_MEJEPA_DEP_CVE_SIGNALS");
     }
 
     #[test]
@@ -457,6 +501,17 @@ mod tests {
             assert!(
                 names.contains(cf),
                 "adversarial CF {cf} missing from daemon opener; TASK-PY-G-060 rows would not persist.",
+            );
+        }
+    }
+
+    #[test]
+    fn reward_signal_cfs_are_registered_in_daemon_opener() {
+        let names = all_hygiene_referenced_cfs();
+        for cf in REWARD_SIGNAL_CFS {
+            assert!(
+                names.contains(cf),
+                "reward signal CF {cf} missing from daemon opener; TASK-RWD-209 rows would not persist.",
             );
         }
     }
