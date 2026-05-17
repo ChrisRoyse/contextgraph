@@ -122,6 +122,54 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_RANK_CANDIDATES,
+            "Rank counterfactual repair candidates atomically through ME-JEPA. Uses the latent action search backend, then ranks by predicted oracle pass times in-distribution probability while applying objective/safety reports so hard-blocked repairs remain visible but cannot outrank safe candidates.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["context", "candidates"],
+                "properties": {
+                    "context": {"type": "object", "additionalProperties": true},
+                    "candidates": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 128,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["candidateId", "patch"],
+                            "properties": {
+                                "candidateId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                },
+                                "patch": {"type": "object", "additionalProperties": true}
+                            }
+                        }
+                    },
+                    "config": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "maxCandidates": {
+                                "type": "integer",
+                                "minimum": 2,
+                                "maximum": 128,
+                                "default": 32
+                            },
+                            "goalLatent": {
+                                "type": "array",
+                                "minItems": 16,
+                                "maxItems": 16,
+                                "items": {"type": "number"}
+                            }
+                        }
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_EXPLAIN_PREDICTION,
             "Explain a persisted ME-JEPA Phase B RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS and returning stored verdict, matched failure-shape fingerprint evidence, top risks, claim reconciliation, reality impact, provenance, and a saliency map normalized from covered chunks.",
             json!({

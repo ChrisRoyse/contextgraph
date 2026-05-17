@@ -130,3 +130,7 @@ path = "examples/task_fp_103_latent_search_fsv.rs"
 [[example]]
 name = "task_fp_104_objective_safety_fsv"
 path = "examples/task_fp_104_objective_safety_fsv.rs"
+
+[[example]]
+name = "task_fp_105_rank_candidates_fsv"
+path = "examples/task_fp_105_rank_candidates_fsv.rs"

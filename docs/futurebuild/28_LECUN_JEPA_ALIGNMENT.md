@@ -86,11 +86,11 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 
 **LeCun (via operator §12 future capabilities #7):** *"ME-JEPA can score candidate fixes before execution: 'this edit is more likely to satisfy the oracle and preserve invariants than that edit.' This becomes feedback to coding agents without relying on the LLM's self-assessment."*
 
-**ME-JEPA state:** ⚠️ **INFRASTRUCTURE EXISTS, FORMAL TOOL MISSING.** Agent can manually call `mejepa_predict_what_if(diff)` K times and compare. No `mejepa_rank_candidates(diffs[])` MCP tool that does this atomically with consistent calibration.
+**ME-JEPA state:** ✅ **SHIPPED.** TASK-FP-105 adds `rank_counterfactual_candidates` in `context-graph-mejepa` plus MCP `mcp__cgreality__mejepa_rank_candidates`. The tool evaluates candidate diffs through the TASK-FP-103 latent-action backend, ranks unblocked repairs by `predicted_oracle_pass × (1 − OOD_score)`, applies TASK-FP-104 objective/safety reports so hard-blocked repairs cannot outrank safe candidates, and returns repository SHA readback proving no touched file was modified.
 
-**Gap:** The agent shouldn't have to re-implement the ranking logic. Need an MCP tool that takes N candidate diffs, calls the predictor N times, and returns the ranked list with per-candidate predicted-Pass probability, predicted failure modes, and OOD score.
+**FSV evidence:** `/mnt/d/contextgraph/fsv/task-fp-105-rank-candidates-fsv/run-1779041036578/rank_candidates_fsv.json`, sha256 `9502a7a753df459eabe671c2d8e293b6f5de9a1be5d652a18ea9adde206c5dea`, `all_passed=true`. The FSV proves 6 candidates in one query, clean candidate selected, unblocked pass-in-distribution scores monotonic, the safety-blocked candidate ranked last with 2 violations, single-candidate and duplicate-id requests rejected, and repository files unchanged.
 
-**Sub-task:** **TASK-FP-105 — `mejepa_rank_candidates` MCP tool for counterfactual repair ranking.** Acceptance: MCP tool implemented, tested with 5+ candidates per query, FSV proves ranking is monotonic with predicted oracle-pass × (1 − OOD_score).
+**Sub-task:** **TASK-FP-105 — COMPLETE.**
 
 ---
 
@@ -136,7 +136,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 | 4 | Action-conditioned world model | ✅ shipped | — |
 | 5 | Latent-space planning | ✅ **best-of-K latent action search shipped** | TASK-FP-103 complete |
 | 6 | Objective + safety constraints | ✅ **hardwired safety constraints shipped** | TASK-FP-104 complete |
-| 7 | Counterfactual best-of-K ranking | ⚠️ infra exists, MCP tool missing | TASK-FP-105 |
+| 7 | Counterfactual best-of-K ranking | ✅ **MCP ranker shipped** | TASK-FP-105 complete |
 | 8 | Calibrated uncertainty | ✅ designed (#309) | — |
 | 9 | System 1 vs System 2 framing | doc update needed | (whitepaper edit) |
 | 10 | Reward-signal completeness | spawns full audit | doc [`29_*`](29_REWARD_SIGNAL_COMPLETENESS.md) + EPIC #315 |
@@ -151,7 +151,7 @@ ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the follow
 2. **Hierarchical** predictor emits multi-scale predictions across ≥ 3 abstraction levels with per-level calibration (TASK-FP-102). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-102-hierarchical-jepa-fsv/run-1779037368822/hierarchical_jepa_fsv.json`.
 3. **Latent-space planning**: `mejepa_search_latent_actions` returns ranked latent vectors, NOT token-by-token regenerated patches (TASK-FP-103). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-103-latent-search-fsv/run-1779038591152/latent_search_fsv.json`.
 4. **Objective-driven**: explicit cost function + hardwired safety constraint vector; constraint violation hard-blocks `Verdict::Pass` (TASK-FP-104). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-104-objective-safety-fsv/run-1779040194889/objective_safety_fsv.json`.
-5. **Counterfactual ranking**: `mejepa_rank_candidates` MCP tool ships and is exercised by the live integration FSV (TASK-FP-105).
+5. **Counterfactual ranking**: `mejepa_rank_candidates` MCP tool ships and is exercised by the live integration FSV (TASK-FP-105). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-105-rank-candidates-fsv/run-1779041036578/rank_candidates_fsv.json`.
 6. **System 2 framing**: whitepaper + MCP tool descriptions make the System 1 LLM vs System 2 ME-JEPA separation explicit.
 7. **Reward-signal completeness**: per `29_*` audit, ≥ 95% of LeCun-enumerated reward signals are captured to durable storage (EPIC #315).
 
@@ -165,7 +165,7 @@ ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the follow
 | TASK-FP-102 | Hierarchical JEPA predictor (file → function → AST → chunk) | 3 | ✅ Complete: `CF_MEJEPA_HIERARCHICAL_PREDICTIONS` readback + FSV `5dfce2ebe37d2b52a6ad036ec89e22f659c014fa3ff9c543b123000f2d7f9bf1` |
 | TASK-FP-103 | Latent-space candidate-patch search | 5 | ✅ Complete: `mcp__cgreality__mejepa_search_latent_actions` + FSV `f31de8c1d4a0035731170e4a24640dc04d16095c2525ceacde84e7b0c8167e4e` |
 | TASK-FP-104 | Objective-driven cost + safety constraints | 6 | ✅ Complete: `MejepaObjective` + `FailedGate::SafetyConstraintViolation` + FSV `31cda8fa8c7bb0ce980947786b42d104f6ea1d2cde42a6bef88d6cc1aff288a1` |
-| TASK-FP-105 | `mejepa_rank_candidates` MCP tool | 7 | Monotonic ranking by predicted-Pass × (1 − OOD_score) |
+| TASK-FP-105 | `mejepa_rank_candidates` MCP tool | 7 | ✅ Complete: MCP `mcp__cgreality__mejepa_rank_candidates` + FSV `9502a7a753df459eabe671c2d8e293b6f5de9a1be5d652a18ea9adde206c5dea` |
 
 Each TASK file follows `prdtospec.md` Level-4 atomic-task format and the FSV protocol per [`specs/FSV-PROTOCOL.md`](specs/FSV-PROTOCOL.md).
 
@@ -177,7 +177,7 @@ Each TASK file follows `prdtospec.md` Level-4 atomic-task format and the FSV pro
 2. **TASK-FP-102 (hierarchical)** — complete. It provides the multi-scale substrate that TASK-FP-103 latent search will operate over.
 3. **TASK-FP-103 (latent search)** — complete. Depends on hierarchical predictor for richer search space and now provides the candidate-search backend for TASK-FP-105.
 4. **TASK-FP-104 (cost + safety)** — complete. Depends on Q4 head emitting cost-like outputs (existing) + adds hard constraint layer.
-5. **TASK-FP-105 (counterfactual rank)** next — depends on TASK-FP-103 and should consume TASK-FP-104 objective/safety scores in ranking.
+5. **TASK-FP-105 (counterfactual rank)** — complete. Depends on TASK-FP-103 and consumes TASK-FP-104 objective/safety scores in ranking.
 
 This ordering is captured in `13_TASK_INDEX.md` task DAG.
 
@@ -200,4 +200,4 @@ This ordering is captured in `13_TASK_INDEX.md` task DAG.
 
 ---
 
-**TL;DR.** ME-JEPA-Code has the code-bearing pillars 1, 2, 3, 4, 5, 6, and 8 shipped or designed with FSV-backed evidence where code changed. The remaining #314 code-bearing pillar gap is TASK-FP-105 counterfactual best-of-K ranking. Pillar 9 is a framing/documentation update, and pillar 10 is tracked separately by the #315 reward-signal-completeness audit.
+**TL;DR.** ME-JEPA-Code has the code-bearing pillars 1, 2, 3, 4, 5, 6, 7, and 8 shipped or designed with FSV-backed evidence where code changed. The remaining #314 gap is the Pillar 9 System 1/System 2 framing update, while Pillar 10 is tracked separately by the #315 reward-signal-completeness audit.

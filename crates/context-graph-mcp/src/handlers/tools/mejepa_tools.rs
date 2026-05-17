@@ -19,13 +19,13 @@ use context_graph_mejepa::operator_override::{
     persist_operator_override, OperatorOverride, OverrideVerdict,
 };
 use context_graph_mejepa::{
-    build_deterministic_compiler, open_infer_rocksdb, search_latent_actions,
-    ActiveLearningQueueState, ActualOutcome, AgentId, CalibrationStore, ChunkId, DdaSignals,
-    FailedGate, FeedbackId, FeedbackKind, FingerprintId, FingerprintReference, LabelMethod,
-    LatentActionCandidate, LatentActionSearchConfig, MeJepaInferConfig, OracleOutcome, PanelId,
-    PatchBundle, PredictionId, RealityPrediction, RocksDbEvalStore, RocksDbInferStore,
-    SurpriseEvent, SurpriseSeverity, SystemCostCounters, TaskContext, TestId, VerifyVerdict,
-    WitnessHash,
+    build_deterministic_compiler, open_infer_rocksdb, rank_counterfactual_candidates,
+    search_latent_actions, ActiveLearningQueueState, ActualOutcome, AgentId, CalibrationStore,
+    ChunkId, CounterfactualCandidateRankingConfig, DdaSignals, FailedGate, FeedbackId,
+    FeedbackKind, FingerprintId, FingerprintReference, LabelMethod, LatentActionCandidate,
+    LatentActionSearchConfig, MeJepaInferConfig, OracleOutcome, PanelId, PatchBundle, PredictionId,
+    RealityPrediction, RocksDbEvalStore, RocksDbInferStore, SurpriseEvent, SurpriseSeverity,
+    SystemCostCounters, TaskContext, TestId, VerifyVerdict, WitnessHash,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
@@ -101,6 +101,15 @@ struct SearchLatentActionsRequest {
     candidates: Vec<LatentActionCandidate>,
     #[serde(default)]
     config: LatentActionSearchConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RankCandidatesRequest {
+    context: TaskContext,
+    candidates: Vec<LatentActionCandidate>,
+    #[serde(default)]
+    config: CounterfactualCandidateRankingConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -577,6 +586,54 @@ impl Handlers {
                 id,
                 ToolErrorKind::Execution,
                 "MEJEPA_SEARCH_LATENT_ACTIONS_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_rank_candidates(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: RankCandidatesRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_RANK_CANDIDATES
+                    ),
+                );
+            }
+        };
+        if let Err(err) = request.context.validate().and_then(|_| {
+            request.config.validate()?;
+            for candidate in &request.candidates {
+                candidate.validate()?;
+            }
+            Ok(())
+        }) {
+            return self.tool_error_typed(
+                id,
+                ToolErrorKind::Validation,
+                &format!("{}: {err}", err.code()),
+            );
+        }
+        let db_path = match infer_db_path() {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        let result = run_rank_candidates(&db_path, request);
+        match result {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Execution,
+                "MEJEPA_RANK_CANDIDATES_FAILED",
                 &err.to_string(),
                 json!({"dbPath": db_path}),
             ),
@@ -1638,6 +1695,52 @@ fn run_search_latent_actions(
             "persistedPrediction": false,
             "latentSearch": true,
             "tool": tool_names::MEJEPA_SEARCH_LATENT_ACTIONS
+        }
+    }))
+}
+
+fn run_rank_candidates(db_path: &Path, request: RankCandidatesRequest) -> AnyhowResult<Value> {
+    ensure_deterministic_verify_allowed().map_err(|err| anyhow!("{}: {err}", err.code()))?;
+    let repo_root = request.context.environment.repo_root.clone();
+    let disk_sha_before = file_sha_snapshot_for_candidates(&repo_root, &request.candidates)
+        .context("read repository file SHA snapshot before candidate ranking")?;
+    let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
+    let calibration = CalibrationStore::new(db.clone(), 30)?;
+    let store = Arc::new(RocksDbInferStore::new(db));
+    let compiler = build_deterministic_compiler(
+        repo_root.clone(),
+        store,
+        calibration,
+        MeJepaInferConfig::default(),
+    )
+    .context("build deterministic ME-JEPA compiler")?;
+    let ranking = rank_counterfactual_candidates(
+        &compiler,
+        &request.context,
+        request.candidates.clone(),
+        request.config,
+    )
+    .context("rank counterfactual candidates")?;
+    let disk_sha_after = file_sha_snapshot_for_candidates(&repo_root, &request.candidates)
+        .context("read repository file SHA snapshot after candidate ranking")?;
+    if disk_sha_before != disk_sha_after {
+        bail!("candidate ranking mutated at least one referenced repository file");
+    }
+
+    Ok(json!({
+        "selectedCandidateId": ranking.selected_candidate_id.clone(),
+        "ranking": ranking,
+        "diskShaBefore": disk_sha_before,
+        "diskShaAfter": disk_sha_after,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "calibrationCf": CF_MEJEPA_CALIBRATION_HISTORY,
+            "trainCertCf": CF_MEJEPA_TRAIN_CERTS,
+            "repositoryRoot": repo_root.display().to_string(),
+            "persistedPrediction": false,
+            "latentSearchBackend": true,
+            "objectiveSafetyApplied": true,
+            "tool": tool_names::MEJEPA_RANK_CANDIDATES
         }
     }))
 }

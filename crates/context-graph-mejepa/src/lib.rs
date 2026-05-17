@@ -6,6 +6,7 @@
 pub mod adversarial_corpus;
 pub mod calibration;
 pub mod calibration_types;
+pub mod candidate_ranking;
 pub mod claim_graph;
 pub mod cli;
 pub mod compiler;
@@ -54,6 +55,7 @@ pub mod vram;
 pub use adversarial_corpus::*;
 pub use calibration::*;
 pub use calibration_types::*;
+pub use candidate_ranking::*;
 pub use claim_graph::*;
 pub use cli::*;
 pub use compiler::{
