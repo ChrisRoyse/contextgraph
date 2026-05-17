@@ -74,11 +74,11 @@ Without explicit completeness tracking, the system silently leaves signal on the
 
 | Signal | Source | Status |
 |---|---|---|
-| Predicted latency delta | `E_Telemetry` | 🟡 **TASK-RWD-206** |
-| Predicted VRAM delta | `E_Telemetry` | 🟡 TASK-RWD-206 |
-| Predicted cost delta | `E_Telemetry` | 🟡 TASK-RWD-206 |
-| Per-symbol call-frequency profile | `E_Telemetry` | 🟡 TASK-RWD-206 |
-| Big-O signature shift | `E_Telemetry` | 🟡 TASK-RWD-206 |
+| Predicted latency delta | `E_Telemetry` | ✅ TASK-RWD-206 |
+| Predicted VRAM delta | `E_Telemetry` | ✅ TASK-RWD-206 |
+| Predicted cost delta | `E_Telemetry` | ✅ TASK-RWD-206 |
+| Per-symbol call-frequency profile | `E_Telemetry` | ✅ TASK-RWD-206 |
+| Big-O signature shift | `E_Telemetry` | ✅ TASK-RWD-206 |
 
 ### Tier 6 — Teleological constellation signals (cell-level + per-fingerprint)
 
@@ -126,7 +126,7 @@ Without explicit completeness tracking, the system silently leaves signal on the
 | TASK-RWD-203 | `E_DiffTopology` instrument (hunks per file, size distribution, entropy) | 4 | ✅ complete | none |
 | TASK-RWD-204 | `E_SecuritySignals` instrument (auth / input-sanitization / secret patterns) | 4 | ✅ complete (#265) | Bandit/Semgrep CLI |
 | TASK-RWD-205 | `E_TypeGraph` full instrument (call-site type evidence) | 3 | ✅ complete | Ruff semantic analyzer + static-analysis infrastructure |
-| TASK-RWD-206 | `E_Telemetry` instrument (latency / VRAM / cost prediction features) | 5 | — | runtime profiler integration |
+| TASK-RWD-206 | `E_Telemetry` instrument (latency / VRAM / cost prediction features) | 5 | ✅ complete | runtime profiler integration |
 | TASK-RWD-207 | `E_LiveSession` instrument (session state + operator-goal embedding) | 7 | — | UserPromptSubmit history persistence |
 | TASK-RWD-208 | Static-analysis (mypy + pyright + ruff) reward signal | 4 | ✅ complete (#293) | mypy/pyright/ruff CLI |
 | TASK-RWD-209 | Coverage + churn + complexity + doc + dep-CVE reward | 4 | ✅ complete (#294) | git blame/log input + local CVE feed |
@@ -215,4 +215,4 @@ The reward-signal completeness audit is **GREEN** when ALL of the following hold
 
 ---
 
-**TL;DR.** Eight reward-signal tiers; ~30 distinct signals across them; oracle (1) + DDA (2) + static graph (3) + witness (8) are SHIPPED, including TASK-RWD-205 call-site type-graph labels in `CF_MEJEPA_TYPE_GRAPH_SIGNALS`; static-quality Tier 4 now has `E_Cyclomatic` shipped for complexity/halstead/depth, `E_Coverage` shipped for line-level coverage deltas, `E_DiffTopology` shipped for file/hunk/entropy topology, static-analysis labels shipped for mypy/pyright/ruff via `CF_MEJEPA_STATIC_ANALYSIS_SIGNALS`, Q4 security labels shipped for Bandit/Semgrep via `CF_MEJEPA_Q4_SECURITY_LABELS`, and composite coverage/complexity/churn/doc/dep-CVE CF labels shipped via TASK-RWD-209; Tier 6 now has novel-pattern active-learning plus held-out ontology-growth gating shipped via `CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT` and per-cell constellation freshness shipped via `CF_MEJEPA_CONSTELLATION_REFRESH_LOG`; runtime-telemetry (5) + live-session (7) + TASK-RWD-206/207 remain tracked under #315. ME-JEPA trains on **chains** of these signals, not individual signals. Per-tier coverage ≥ 95% is the acceptance gate.
+**TL;DR.** Eight reward-signal tiers; ~30 distinct signals across them; oracle (1) + DDA (2) + static graph (3) + runtime-telemetry (5) + witness (8) are SHIPPED, including TASK-RWD-205 call-site type-graph labels in `CF_MEJEPA_TYPE_GRAPH_SIGNALS` and TASK-RWD-206 telemetry prediction/profile labels in `CF_MEJEPA_TELEMETRY_SIGNALS`; static-quality Tier 4 now has `E_Cyclomatic` shipped for complexity/halstead/depth, `E_Coverage` shipped for line-level coverage deltas, `E_DiffTopology` shipped for file/hunk/entropy topology, static-analysis labels shipped for mypy/pyright/ruff via `CF_MEJEPA_STATIC_ANALYSIS_SIGNALS`, Q4 security labels shipped for Bandit/Semgrep via `CF_MEJEPA_Q4_SECURITY_LABELS`, and composite coverage/complexity/churn/doc/dep-CVE CF labels shipped via TASK-RWD-209; Tier 6 now has novel-pattern active-learning plus held-out ontology-growth gating shipped via `CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT` and per-cell constellation freshness shipped via `CF_MEJEPA_CONSTELLATION_REFRESH_LOG`; live-session (7) + TASK-RWD-207 remains tracked under #315. ME-JEPA trains on **chains** of these signals, not individual signals. Per-tier coverage ≥ 95% is the acceptance gate.
