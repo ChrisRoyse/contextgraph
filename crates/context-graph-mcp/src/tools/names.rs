@@ -145,6 +145,21 @@ pub const MEJEPA_SHIP_GATE_STATUS: &str = "mcp__cgreality__mejepa_ship_gate_stat
 pub const MEJEPA_WEEKLY_EVAL_DASHBOARD: &str = "mcp__cgreality__mejepa_weekly_eval_dashboard";
 /// Phase 8 active-learning queue status readback.
 pub const MEJEPA_ACTIVE_LEARNING_QUEUE: &str = "mcp__cgreality__mejepa_active_learning_queue";
+/// Phase G fingerprint catalog list readback.
+pub const MEJEPA_FINGERPRINT_LIST: &str = "mcp__cgreality__mejepa_fingerprint_list";
+/// Phase G fingerprint catalog single-record inspection.
+pub const MEJEPA_FINGERPRINT_INSPECT: &str = "mcp__cgreality__mejepa_fingerprint_inspect";
+/// Phase G fingerprint catalog classifier surface.
+pub const MEJEPA_FINGERPRINT_CLASSIFY: &str = "mcp__cgreality__mejepa_fingerprint_classify";
+/// Phase G Unknown/OOD fingerprint cluster proposal readback.
+pub const MEJEPA_FINGERPRINT_SUGGEST_NEW: &str = "mcp__cgreality__mejepa_fingerprint_suggest_new";
+/// Phase G operator label surface for Unknown fingerprint candidates.
+pub const MEJEPA_FINGERPRINT_LABEL: &str = "mcp__cgreality__mejepa_fingerprint_label";
+/// Phase G canonical-reference promotion surface for fingerprint catalog rows.
+pub const MEJEPA_FINGERPRINT_PROMOTE_CANONICAL: &str =
+    "mcp__cgreality__mejepa_fingerprint_promote_canonical";
+/// Phase G operator-triggered per-fingerprint tau recalibration.
+pub const MEJEPA_FINGERPRINT_RECALIBRATE: &str = "mcp__cgreality__mejepa_fingerprint_recalibrate";
 /// Phase 8 patch similarity graph builder/readback.
 pub const MEJEPA_EVAL_BUILD_GRAPH: &str = "mcp__cgreality__mejepa_eval_build_graph";
 /// UTML pairwise mutual-information audit with CSV source-of-truth readback.

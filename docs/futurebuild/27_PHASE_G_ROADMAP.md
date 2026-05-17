@@ -247,3 +247,5 @@ Resolution of any issue in this roadmap requires **Full State Verification**. A 
 - `docs/futurebuild/04_DDA_TCT_CODE_ENRICHMENT.md` — per-head DDA signal table.
 - `docs/futurebuild/15_PREDICTION_TAXONOMY.md` — `RealityPrediction` schema.
 - `docs/futurebuild/22_ADVERSARIAL_ROBUSTNESS.md` — defense layer.
+- [`docs/futurebuild/28_LECUN_JEPA_ALIGNMENT.md`](28_LECUN_JEPA_ALIGNMENT.md) — full ten-pillar LeCun JEPA alignment audit; TASK-FP-101..105 sub-tasks (SIGreg / hierarchical / latent-search / objective+safety / counterfactual-rank). Companion to GitHub EPIC #314.
+- [`docs/futurebuild/29_REWARD_SIGNAL_COMPLETENESS.md`](29_REWARD_SIGNAL_COMPLETENESS.md) — 8-tier reward-signal completeness audit; TASK-RWD-201..212 sub-tasks (static-quality + runtime telemetry + live session + constellation refresh). Companion to GitHub EPIC #315.

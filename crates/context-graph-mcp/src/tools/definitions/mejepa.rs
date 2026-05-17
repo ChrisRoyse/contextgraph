@@ -526,6 +526,143 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_FINGERPRINT_LIST,
+            "Read the Phase G failure-shape fingerprint catalog from CF_MEJEPA_FAILURE_FINGERPRINTS and return compact catalog metadata.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "kind": {"type": "string", "enum": ["known_good", "known_bad", "unknown"]},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 1000}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_FINGERPRINT_INSPECT,
+            "Inspect one failure-shape fingerprint by id, including centroid, variance, tau, references, calibration records, and audit source-of-truth metadata.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["fingerprintId"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "fingerprintId": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+                    "referenceLimit": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 100},
+                    "calibrationLimit": {"type": "integer", "minimum": 0, "maximum": 1000, "default": 20}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_FINGERPRINT_CLASSIFY,
+            "Classify an observation vector map against CF_MEJEPA_FAILURE_FINGERPRINTS using the deterministic per-embedder Gtau fingerprint guard.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["observationByEmbedder"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "observationByEmbedder": {
+                        "type": "object",
+                        "minProperties": 1,
+                        "additionalProperties": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "number"}
+                        }
+                    },
+                    "topK": {"type": "integer", "minimum": 1, "maximum": 100, "default": 3}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_FINGERPRINT_SUGGEST_NEW,
+            "Read CF_MEJEPA_ACTIVE_LEARNING_QUEUE and return deterministic Unknown/OOD cluster suggestions for candidate new fingerprints.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "minClusterSize": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 3},
+                    "cosineThreshold": {"type": "number", "minimum": -1.0, "maximum": 1.0, "default": 0.98}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_FINGERPRINT_LABEL,
+            "Persist an operator label for an Unknown fingerprint queue candidate and add the corresponding fingerprint/reference/audit rows to the catalog source of truth.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["candidateId", "oracleOutcome", "operatorId", "referenceChunkId", "witnessHash", "sourceManifestSha256"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "candidateId": {"type": "string", "pattern": "^[0-9a-fA-F]{32}$"},
+                    "oracleOutcome": {"type": "string", "enum": ["pass", "fail", "out_of_distribution", "abstain"]},
+                    "method": {"type": "string", "enum": ["human", "oracle_replay", "verified_witness"], "default": "human"},
+                    "operatorId": {"type": "string", "minLength": 1, "maxLength": 256},
+                    "catalogKind": {"type": "string", "enum": ["unknown", "known_good", "known_bad"], "default": "unknown"},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "repo": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "mutationCategory": {"type": "string", "enum": ["known_good", "subtle_flip", "off_by_one", "swap_variable", "delete_test_call", "wrong_file", "over_engineer", "compile_error"]},
+                    "failureMode": {"type": "string", "minLength": 1, "maxLength": 128},
+                    "referenceChunkId": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "referenceId": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "witnessHash": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+                    "sourceManifestSha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+                    "sourceCorpus": {"type": "string", "minLength": 1, "maxLength": 512, "default": "mcp-fingerprint-label-v1"},
+                    "tauByEmbedder": {
+                        "type": "object",
+                        "additionalProperties": {"type": "number", "minimum": -1.0, "maximum": 1.0}
+                    },
+                    "allowOverwrite": {"type": "boolean", "default": false}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_FINGERPRINT_PROMOTE_CANONICAL,
+            "Mark a fingerprint as canonical and add a canonical reference chunk, writing CF_MEJEPA_FAILURE_FINGERPRINTS, CF_MEJEPA_FINGERPRINT_REFERENCES, reverse index, and audit readback.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["fingerprintId", "taskId", "repo", "mutationCategory", "chunkId", "oracleOutcome", "witnessHash", "sourceManifestSha256", "operatorId"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "fingerprintId": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+                    "taskId": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "repo": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "mutationCategory": {"type": "string", "enum": ["known_good", "subtle_flip", "off_by_one", "swap_variable", "delete_test_call", "wrong_file", "over_engineer", "compile_error"]},
+                    "chunkId": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "referenceId": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "oracleOutcome": {"type": "string", "enum": ["pass", "fail", "out_of_distribution", "abstain"]},
+                    "witnessHash": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+                    "sourceManifestSha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+                    "operatorId": {"type": "string", "minLength": 1, "maxLength": 256}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_FINGERPRINT_RECALIBRATE,
+            "Force recalibration of one failure-shape fingerprint by replacing tau_by_embedder, writing a calibration record, and verifying readback.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["fingerprintId", "tauByEmbedder", "sampleCount", "operatorId"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "fingerprintId": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+                    "tauByEmbedder": {
+                        "type": "object",
+                        "minProperties": 1,
+                        "additionalProperties": {"type": "number", "minimum": -1.0, "maximum": 1.0}
+                    },
+                    "sameSessionBandPercentile": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.10},
+                    "sampleCount": {"type": "integer", "minimum": 1},
+                    "operatorId": {"type": "string", "minLength": 1, "maxLength": 256}
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_BOOTSTRAP_STATUS,
             "Read ME-JEPA bootstrap stage and source-of-truth CF counts from the configured inference RocksDB. Refuses to guess a database path.",
             json!({

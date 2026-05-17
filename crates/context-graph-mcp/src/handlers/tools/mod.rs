@@ -44,6 +44,7 @@ mod learning_tools;
 mod maintenance_tools;
 mod mejepa_agent_identity;
 pub mod mejepa_eval_tools;
+mod mejepa_fingerprint_tools;
 mod mejepa_hygiene_tools;
 mod mejepa_phase7_storage;
 mod mejepa_phase7_tools;
@@ -79,6 +80,14 @@ pub(super) mod test_env_lock {
 
     pub fn lock() -> MutexGuard<'static, ()> {
         LOCK.lock().unwrap_or_else(|err| err.into_inner())
+    }
+}
+
+#[cfg(test)]
+mod mejepa_fingerprint_tools_fsv_tests {
+    #[test]
+    fn fingerprint_mcp_tools_write_fsv_artifact() {
+        super::mejepa_fingerprint_tools::run_fingerprint_mcp_tools_write_fsv_artifact();
     }
 }
 
