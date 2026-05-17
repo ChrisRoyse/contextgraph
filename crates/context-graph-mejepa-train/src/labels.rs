@@ -9,6 +9,7 @@ use context_graph_mejepa::{
     ChunkId, EdgeCaseClass, FailureModeClass, Language, LatentBugClass, PredictionId,
     ReasoningClass, RootCauseClass, SecurityConcernClass, TestDeltaKind, TestId, TestOutcome,
 };
+use context_graph_mejepa_instruments::{Q4SecurityClass, Q4SecurityLabel};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +22,7 @@ pub enum LabelSource {
     PythonUnittest,
     CargoTest,
     CargoClippy,
+    PythonSecurityAnalyzer,
     AgentResponse,
 }
 
@@ -314,6 +316,46 @@ pub fn extract_cargo_test_labels(
     })
 }
 
+pub fn q4_security_labels_to_phase_b_labels(
+    labels: &[Q4SecurityLabel],
+) -> Result<ExtractedPhaseBLabels, UtmlError> {
+    let mut extracted = ExtractedPhaseBLabels {
+        source: LabelSource::PythonSecurityAnalyzer,
+        failure_modes: Vec::new(),
+        failed_tests: Vec::new(),
+        edge_cases: Vec::new(),
+        latent_bugs: Vec::new(),
+        security_concerns: Vec::new(),
+        reasoning_class: ReasoningClass::Correct,
+        touched_files: Vec::new(),
+    };
+    for label in labels {
+        validate_q4_security_label(label)?;
+        extracted.security_concerns.push(SecurityLabel {
+            class: map_q4_security_class(label.class),
+            evidence_line: format!(
+                "q4_security direction={} detector={} rule={} file={} line={} finding_id={}",
+                if label.introduced_by_patch {
+                    "introduced"
+                } else {
+                    "fixed"
+                },
+                label.detector.as_str(),
+                label.rule_id,
+                label.file,
+                label.line_range.start_line,
+                label.finding_id
+            ),
+        });
+        let path = PathBuf::from(&label.file);
+        if !extracted.touched_files.contains(&path) {
+            extracted.touched_files.push(path);
+        }
+    }
+    validate_extracted_labels(&extracted)?;
+    Ok(extracted)
+}
+
 pub fn apply_phase_b_labels_with_transfer_gate(
     db: &DB,
     labels: &ExtractedPhaseBLabels,
@@ -384,7 +426,9 @@ fn parse_failed_test_id(line: &str, source: &LabelSource) -> Option<TestId> {
                 None
             }
         }
-        LabelSource::CargoClippy | LabelSource::AgentResponse => None,
+        LabelSource::CargoClippy
+        | LabelSource::PythonSecurityAnalyzer
+        | LabelSource::AgentResponse => None,
     }
 }
 
@@ -480,6 +524,48 @@ fn classify_security_line(line: &str) -> Option<SecurityConcernClass> {
     } else {
         None
     }
+}
+
+fn map_q4_security_class(class: Q4SecurityClass) -> SecurityConcernClass {
+    match class {
+        Q4SecurityClass::SqlInjection => SecurityConcernClass::SqlInjection,
+        Q4SecurityClass::CommandInjection => SecurityConcernClass::CommandInjection,
+        Q4SecurityClass::PathTraversal => SecurityConcernClass::PathTraversal,
+        Q4SecurityClass::Xss => SecurityConcernClass::Xss,
+        Q4SecurityClass::Csrf => SecurityConcernClass::Csrf,
+        Q4SecurityClass::Ssrf => SecurityConcernClass::Ssrf,
+        Q4SecurityClass::Deserialization => SecurityConcernClass::Deserialization,
+        Q4SecurityClass::HardcodedSecret => SecurityConcernClass::HardcodedSecret,
+        Q4SecurityClass::LoggingSecret => SecurityConcernClass::LoggingSecret,
+        Q4SecurityClass::InsecureCryptoAlgo => SecurityConcernClass::InsecureCryptoAlgo,
+        Q4SecurityClass::InsufficientCryptoKeyLength => {
+            SecurityConcernClass::InsufficientCryptoKeyLength
+        }
+        Q4SecurityClass::MissingAuth => SecurityConcernClass::MissingAuth,
+        Q4SecurityClass::BrokenAccessControl => SecurityConcernClass::BrokenAccessControl,
+        Q4SecurityClass::OpenRedirect => SecurityConcernClass::OpenRedirect,
+        Q4SecurityClass::MissingTlsVerify => SecurityConcernClass::MissingTlsVerify,
+        Q4SecurityClass::Other => SecurityConcernClass::Other,
+    }
+}
+
+fn validate_q4_security_label(label: &Q4SecurityLabel) -> Result<(), UtmlError> {
+    if label.finding_id.trim().is_empty()
+        || label.rule_id.trim().is_empty()
+        || label.file.trim().is_empty()
+    {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 security label has empty finding_id, rule_id, or file",
+        ));
+    }
+    if label.introduced_by_patch == label.fixed_by_patch {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 security label must have exactly one delta direction",
+        ));
+    }
+    Ok(())
 }
 
 fn parse_file_path(line: &str) -> Option<PathBuf> {
@@ -606,6 +692,7 @@ fn validate_analyzer_config(config: &PhaseBLabelAnalyzerConfig) -> Result<(), Ut
 fn source_supports_language(source: &LabelSource, language: LabelInputLanguage) -> bool {
     match source {
         LabelSource::Pytest | LabelSource::PythonUnittest => language == LabelInputLanguage::Python,
+        LabelSource::PythonSecurityAnalyzer => language == LabelInputLanguage::Python,
         LabelSource::CargoTest | LabelSource::CargoClippy => language == LabelInputLanguage::Rust,
         LabelSource::AgentResponse => false,
     }

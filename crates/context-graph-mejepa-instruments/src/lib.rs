@@ -49,6 +49,7 @@ pub mod linear_probe;
 pub mod materialize;
 pub mod panel_json;
 pub mod panel_store;
+pub mod q4_security_labels;
 pub mod static_analysis_reward;
 pub mod stdlib_registry;
 
@@ -561,6 +562,14 @@ pub use materialize::{
 pub use panel_json::{PanelEnvelope, PanelProvenance, PANEL_JSON_SCHEMA_VERSION};
 pub use panel_store::{
     PanelKey, PanelMeta, PanelStore, CF_MEJEPA_PANELS, CF_MEJEPA_PANEL_META, MEJEPA_PANEL_CFS,
+};
+pub use q4_security_labels::{
+    extract_q4_security_labels, run_q4_security_tools, run_q4_security_tools_with_timeout,
+    write_q4_security_raw_outputs, PersistedQ4SecuritySignal, Q4SecurityClass,
+    Q4SecurityDetector, Q4SecurityExtraction, Q4SecurityLabel, Q4SecurityLabelStore,
+    Q4SecurityLineRange, Q4SecurityQuarantine, Q4SecurityRawOutputPaths, Q4SecurityRawOutputs,
+    Q4SecurityScanPhase, Q4SecuritySeverity, Q4SecuritySignalRecord, Q4SecuritySource,
+    Q4SecurityToolOutput, DEFAULT_Q4_SECURITY_TIMEOUT_SECS,
 };
 pub use static_analysis_reward::{
     extract_static_analysis_labels, run_static_analysis_tools,

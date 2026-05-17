@@ -1,0 +1,43 @@
+rules:
+  - id: contextgraph.python.security.subprocess-shell-true
+    languages:
+      - python
+    severity: ERROR
+    message: subprocess with shell=True can route unsanitized input into a shell.
+    metadata:
+      category: security
+      vulnerability_class:
+        - Command Injection
+      cwe:
+        - "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.call(..., shell=True, ...)
+          - pattern: subprocess.run(..., shell=True, ...)
+          - pattern: subprocess.Popen(..., shell=True, ...)
+
+  - id: contextgraph.python.security.os-system
+    languages:
+      - python
+    severity: ERROR
+    message: os.system executes shell commands and can become command injection with user input.
+    metadata:
+      category: security
+      vulnerability_class:
+        - Command Injection
+      cwe:
+        - "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
+    pattern: os.system(...)
+
+  - id: contextgraph.python.security.hardcoded-secret
+    languages:
+      - python
+    severity: WARNING
+    message: hardcoded secret-like assignment in source.
+    metadata:
+      category: security
+      vulnerability_class:
+        - Hardcoded Secret
+      cwe:
+        - "CWE-798: Use of Hard-coded Credentials"
+    pattern-regex: '(?i)(api[_-]?key|secret|token|password)\s*=\s*["''][A-Za-z0-9_+=./-]{12,}["'']'

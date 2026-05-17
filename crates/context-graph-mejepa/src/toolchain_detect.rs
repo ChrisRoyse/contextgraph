@@ -119,6 +119,18 @@ pub fn default_enabled_label_toolchains() -> Vec<ToolchainBinary> {
             "install pyright for Python type-graph labels",
         ),
         ToolchainBinary::new(
+            "bandit",
+            Language::Python,
+            "python_security_analysis",
+            "install bandit for Python Q4 security labels",
+        ),
+        ToolchainBinary::new(
+            "semgrep",
+            Language::Python,
+            "python_security_analysis",
+            "install semgrep for Python Q4 security labels",
+        ),
+        ToolchainBinary::new(
             "python3",
             Language::Python,
             "python_runtime_compile",

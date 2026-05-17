@@ -152,14 +152,45 @@ pub fn infer_phase_b_surfaces(
             surfaces
                 .predicted_security_concerns
                 .push(PredictedSecurityConcern {
-                class: SecurityConcernClass::HardcodedSecret,
-                chunk: chunk.clone(),
-                line_range,
-                cvss_estimate: Some(7.5),
-                explanation:
-                    "patch text contains a token/key pattern that must be redacted before embedding"
-                        .to_string(),
-            });
+                    class: SecurityConcernClass::HardcodedSecret,
+                    chunk: chunk.clone(),
+                    line_range,
+                    cvss_estimate: Some(7.5),
+                    explanation:
+                        "patch text contains a token/key pattern that must be redacted before embedding"
+                            .to_string(),
+                });
+        }
+        if after_lower.contains("shell=true")
+            || after_lower.contains("os.system(")
+            || after_lower.contains("subprocess.call(")
+            || after_lower.contains("subprocess.run(")
+            || after_lower.contains("subprocess.popen(")
+        {
+            surfaces
+                .predicted_security_concerns
+                .push(PredictedSecurityConcern {
+                    class: SecurityConcernClass::CommandInjection,
+                    chunk: chunk.clone(),
+                    line_range,
+                    cvss_estimate: Some(8.1),
+                    explanation:
+                        "patch executes shell commands; Q4 security SAST labels train this as command-injection risk"
+                            .to_string(),
+                });
+        }
+        let before_lower = hunk.before.to_ascii_lowercase();
+        let before_has_auth = contains_auth_guard(&before_lower);
+        if before_has_auth && !contains_auth_guard(&after_lower) {
+            surfaces
+                .predicted_security_concerns
+                .push(PredictedSecurityConcern {
+                    class: SecurityConcernClass::MissingAuth,
+                    chunk: chunk.clone(),
+                    line_range,
+                    cvss_estimate: Some(8.0),
+                    explanation: "patch removes an authentication/authorization guard".to_string(),
+                });
         }
         if after_lower.contains("md5") || after_lower.contains("sha1") {
             surfaces
@@ -253,6 +284,15 @@ fn contains_secret_like_token(text: &str) -> bool {
         || lower.contains("token =")
         || lower.contains("ghp_")
         || lower.contains("sk-")
+}
+
+fn contains_auth_guard(lower: &str) -> bool {
+    lower.contains("require_auth")
+        || lower.contains("is_authenticated")
+        || lower.contains("has_permission")
+        || lower.contains("check_permission")
+        || lower.contains("authorize(")
+        || lower.contains("authenticated")
 }
 
 fn is_dependency_manifest(path: &std::path::Path) -> bool {
