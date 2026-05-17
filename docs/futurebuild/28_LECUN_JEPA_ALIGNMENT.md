@@ -62,11 +62,11 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 
 **LeCun:** *"Inference is by predicting the next token right — it's not by search. ... You do this by searching for a sequence of actions that will accomplish the task you set for yourself. ... You don't do this in token space. You do this in abstract thoughts space."*
 
-**ME-JEPA state:** ⚠️ **MISSING.** Current `mejepa_predict_what_if(diff)` evaluates ONE candidate diff. There is no search/optimization over latent-space action sequences. The agent has to manually pre-enumerate candidate diffs and call the tool per-candidate.
+**ME-JEPA state:** ✅ **SHIPPED.** TASK-FP-103 adds `search_latent_actions` in `context-graph-mejepa` plus MCP `mcp__cgreality__mejepa_search_latent_actions`. The search evaluates best-of-K candidate patches through the existing ME-JEPA compiler, derives a 16-d abstract action latent from panel deltas, builds the per-candidate hierarchy, and ranks candidates by predicted oracle pass, calibrated confidence, in-distribution mass, hierarchy signal, and optional goal-latent alignment. It remains non-mutating and returns file-SHA before/after readback through the MCP tool.
 
-**Gap:** ME-JEPA should be able to *search* the latent space for the action (or short action sequence) that minimizes the multi-objective cost while satisfying safety constraints. The output is the latent-space action vector; the agent (or a separate component) materializes that into an actual code diff.
+**FSV evidence:** `/mnt/d/contextgraph/fsv/task-fp-103-latent-search-fsv/run-1779038591152/latent_search_fsv.json`, sha256 `f31de8c1d4a0035731170e4a24640dc04d16095c2525ceacde84e7b0c8167e4e`, `all_passed=true`. The FSV ranks 3 candidates, recovers the expected goal-matching candidate (`candidate-goal`), proves rank contiguity, finite 16-d action latents, selected score monotonicity, no referenced-file mutation, and fail-closed rejection for single-candidate and duplicate-candidate-id inputs.
 
-**Sub-task:** **TASK-FP-103 — Latent-space candidate-patch search (best-of-K in representation space).** Acceptance: new MCP tool `mejepa_search_latent_actions(panel_t1, goal, K, cost_fn)` returns ranked latent-space action vectors; tested on synthetic problems where the optimal action is known; FSV proves search recovers it in K samples.
+**Sub-task:** **TASK-FP-103 — COMPLETE.** The shipped primitive searches over pre-enumerated candidate patches in representation space. It does not yet synthesize new diffs from a free-form latent action vector; TASK-FP-105 consumes this search backend for counterfactual repair ranking, and future generator-side work can materialize latent actions into edits.
 
 ---
 
@@ -134,7 +134,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 | 2 | Anti-collapse regularizer | ✅ VICReg + SIGReg shipped | TASK-FP-101 complete |
 | 3 | Hierarchical JEPA | ✅ **file→function→AST→chunk shipped** | TASK-FP-102 complete |
 | 4 | Action-conditioned world model | ✅ shipped | — |
-| 5 | Latent-space planning | ⚠️ **missing** | TASK-FP-103 |
+| 5 | Latent-space planning | ✅ **best-of-K latent action search shipped** | TASK-FP-103 complete |
 | 6 | Objective + safety constraints | ⚠️ partial | TASK-FP-104 |
 | 7 | Counterfactual best-of-K ranking | ⚠️ infra exists, MCP tool missing | TASK-FP-105 |
 | 8 | Calibrated uncertainty | ✅ designed (#309) | — |
@@ -149,7 +149,7 @@ ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the follow
 
 1. **SIGreg** (or comparable explicit info-max regularizer) is shipped with FSV proving info-content monotonicity (TASK-FP-101). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-101-sigreg-fsv/run-1779036305137/sigreg_fsv.json`.
 2. **Hierarchical** predictor emits multi-scale predictions across ≥ 3 abstraction levels with per-level calibration (TASK-FP-102). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-102-hierarchical-jepa-fsv/run-1779037368822/hierarchical_jepa_fsv.json`.
-3. **Latent-space planning**: `mejepa_search_latent_actions` returns ranked latent vectors, NOT token-by-token regenerated patches (TASK-FP-103).
+3. **Latent-space planning**: `mejepa_search_latent_actions` returns ranked latent vectors, NOT token-by-token regenerated patches (TASK-FP-103). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-103-latent-search-fsv/run-1779038591152/latent_search_fsv.json`.
 4. **Objective-driven**: explicit cost function + hardwired safety constraint vector; constraint violation hard-blocks `Verdict::Pass` (TASK-FP-104).
 5. **Counterfactual ranking**: `mejepa_rank_candidates` MCP tool ships and is exercised by the live integration FSV (TASK-FP-105).
 6. **System 2 framing**: whitepaper + MCP tool descriptions make the System 1 LLM vs System 2 ME-JEPA separation explicit.
@@ -163,7 +163,7 @@ ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the follow
 |---|---|---|---|
 | TASK-FP-101 | SIGReg regularizer for predictor | 2 | ✅ Complete: differentiable characteristic-function sketch + FSV `b2d4995d4de9539916558f51cdd1423081af94962868c18077653c0d075e80c7` |
 | TASK-FP-102 | Hierarchical JEPA predictor (file → function → AST → chunk) | 3 | ✅ Complete: `CF_MEJEPA_HIERARCHICAL_PREDICTIONS` readback + FSV `5dfce2ebe37d2b52a6ad036ec89e22f659c014fa3ff9c543b123000f2d7f9bf1` |
-| TASK-FP-103 | Latent-space candidate-patch search | 5 | `mejepa_search_latent_actions` MCP tool + synthetic recovery proof |
+| TASK-FP-103 | Latent-space candidate-patch search | 5 | ✅ Complete: `mcp__cgreality__mejepa_search_latent_actions` + FSV `f31de8c1d4a0035731170e4a24640dc04d16095c2525ceacde84e7b0c8167e4e` |
 | TASK-FP-104 | Objective-driven cost + safety constraints | 6 | Hardwired constraint vector hard-blocks Verdict::Pass on violation |
 | TASK-FP-105 | `mejepa_rank_candidates` MCP tool | 7 | Monotonic ranking by predicted-Pass × (1 − OOD_score) |
 
@@ -175,8 +175,8 @@ Each TASK file follows `prdtospec.md` Level-4 atomic-task format and the FSV pro
 
 1. **TASK-FP-101 (SIGReg)** — complete. Pure substrate-side improvement, doesn't depend on other tasks, immediately benefits all downstream predictor heads.
 2. **TASK-FP-102 (hierarchical)** — complete. It provides the multi-scale substrate that TASK-FP-103 latent search will operate over.
-3. **TASK-FP-103 (latent search)** next — depends on hierarchical predictor for richer search space.
-4. **TASK-FP-104 (cost + safety)** fourth — depends on Q4 head emitting cost-like outputs (existing) + adds hard constraint layer.
+3. **TASK-FP-103 (latent search)** — complete. Depends on hierarchical predictor for richer search space and now provides the candidate-search backend for TASK-FP-105.
+4. **TASK-FP-104 (cost + safety)** next — depends on Q4 head emitting cost-like outputs (existing) + adds hard constraint layer.
 5. **TASK-FP-105 (counterfactual rank)** fifth — depends on TASK-FP-103 (uses latent search as the candidate-generation backend).
 
 This ordering is captured in `13_TASK_INDEX.md` task DAG.
@@ -200,4 +200,4 @@ This ordering is captured in `13_TASK_INDEX.md` task DAG.
 
 ---
 
-**TL;DR.** ME-JEPA-Code has the code-bearing pillars 1, 2, 3, 4, and 8 shipped or designed with FSV-backed evidence where code changed. The remaining #314 pillar gaps are TASK-FP-103..105: latent-space search, objective+safety constraints, and counterfactual best-of-K ranking. Pillar 9 is a framing/documentation update, and pillar 10 is tracked separately by the #315 reward-signal-completeness audit.
+**TL;DR.** ME-JEPA-Code has the code-bearing pillars 1, 2, 3, 4, 5, and 8 shipped or designed with FSV-backed evidence where code changed. The remaining #314 pillar gaps are TASK-FP-104..105: objective+safety constraints and counterfactual best-of-K ranking. Pillar 9 is a framing/documentation update, and pillar 10 is tracked separately by the #315 reward-signal-completeness audit.

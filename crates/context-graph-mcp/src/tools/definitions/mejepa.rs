@@ -63,6 +63,65 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_SEARCH_LATENT_ACTIONS,
+            "Search candidate patches in ME-JEPA latent action space, score each candidate by predicted oracle pass, calibrated confidence, in-distribution mass, hierarchy signal, and optional goal-latent alignment, then return the ranked best-of-K list with repository SHA readback proving no touched file was modified.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["context", "candidates"],
+                "properties": {
+                    "context": {"type": "object", "additionalProperties": true},
+                    "candidates": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 128,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["candidateId", "patch"],
+                            "properties": {
+                                "candidateId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                },
+                                "patch": {"type": "object", "additionalProperties": true}
+                            }
+                        }
+                    },
+                    "config": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "maxCandidates": {
+                                "type": "integer",
+                                "minimum": 2,
+                                "maximum": 128,
+                                "default": 32
+                            },
+                            "goalLatent": {
+                                "type": "array",
+                                "minItems": 16,
+                                "maxItems": 16,
+                                "items": {"type": "number"}
+                            },
+                            "objectiveWeights": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "predictedOraclePass": {"type": "number", "minimum": 0},
+                                    "calibratedConfidence": {"type": "number", "minimum": 0},
+                                    "inDistribution": {"type": "number", "minimum": 0},
+                                    "hierarchy": {"type": "number", "minimum": 0},
+                                    "goalAlignment": {"type": "number", "minimum": 0}
+                                }
+                            }
+                        }
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_EXPLAIN_PREDICTION,
             "Explain a persisted ME-JEPA Phase B RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS and returning stored verdict, matched failure-shape fingerprint evidence, top risks, claim reconciliation, reality impact, provenance, and a saliency map normalized from covered chunks.",
             json!({

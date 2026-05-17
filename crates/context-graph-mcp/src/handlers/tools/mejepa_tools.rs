@@ -19,9 +19,10 @@ use context_graph_mejepa::operator_override::{
     persist_operator_override, OperatorOverride, OverrideVerdict,
 };
 use context_graph_mejepa::{
-    build_deterministic_compiler, open_infer_rocksdb, ActiveLearningQueueState, ActualOutcome,
-    AgentId, CalibrationStore, ChunkId, DdaSignals, FailedGate, FeedbackId, FeedbackKind,
-    FingerprintId, FingerprintReference, LabelMethod, MeJepaInferConfig, OracleOutcome, PanelId,
+    build_deterministic_compiler, open_infer_rocksdb, search_latent_actions,
+    ActiveLearningQueueState, ActualOutcome, AgentId, CalibrationStore, ChunkId, DdaSignals,
+    FailedGate, FeedbackId, FeedbackKind, FingerprintId, FingerprintReference, LabelMethod,
+    LatentActionCandidate, LatentActionSearchConfig, MeJepaInferConfig, OracleOutcome, PanelId,
     PatchBundle, PredictionId, RealityPrediction, RocksDbEvalStore, RocksDbInferStore,
     SurpriseEvent, SurpriseSeverity, SystemCostCounters, TaskContext, TestId, VerifyVerdict,
     WitnessHash,
@@ -91,6 +92,15 @@ struct PredictWhatIfRequest {
     patch: PatchBundle,
     context: TaskContext,
     compare_to_prediction_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SearchLatentActionsRequest {
+    context: TaskContext,
+    candidates: Vec<LatentActionCandidate>,
+    #[serde(default)]
+    config: LatentActionSearchConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -519,6 +529,54 @@ impl Handlers {
                 id,
                 ToolErrorKind::Execution,
                 "MEJEPA_PREDICT_WHAT_IF_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_search_latent_actions(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: SearchLatentActionsRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_SEARCH_LATENT_ACTIONS
+                    ),
+                );
+            }
+        };
+        if let Err(err) = request.context.validate().and_then(|_| {
+            request.config.validate()?;
+            for candidate in &request.candidates {
+                candidate.validate()?;
+            }
+            Ok(())
+        }) {
+            return self.tool_error_typed(
+                id,
+                ToolErrorKind::Validation,
+                &format!("{}: {err}", err.code()),
+            );
+        }
+        let db_path = match infer_db_path() {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        let result = run_search_latent_actions(&db_path, request);
+        match result {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Execution,
+                "MEJEPA_SEARCH_LATENT_ACTIONS_FAILED",
                 &err.to_string(),
                 json!({"dbPath": db_path}),
             ),
@@ -1536,6 +1594,54 @@ fn run_predict_what_if(db_path: &Path, request: PredictWhatIfRequest) -> AnyhowR
     }))
 }
 
+fn run_search_latent_actions(
+    db_path: &Path,
+    request: SearchLatentActionsRequest,
+) -> AnyhowResult<Value> {
+    ensure_deterministic_verify_allowed().map_err(|err| anyhow!("{}: {err}", err.code()))?;
+    let repo_root = request.context.environment.repo_root.clone();
+    let disk_sha_before = file_sha_snapshot_for_candidates(&repo_root, &request.candidates)
+        .context("read repository file SHA snapshot before latent action search")?;
+    let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
+    let calibration = CalibrationStore::new(db.clone(), 30)?;
+    let store = Arc::new(RocksDbInferStore::new(db));
+    let compiler = build_deterministic_compiler(
+        repo_root.clone(),
+        store,
+        calibration,
+        MeJepaInferConfig::default(),
+    )
+    .context("build deterministic ME-JEPA compiler")?;
+    let search = search_latent_actions(
+        &compiler,
+        &request.context,
+        request.candidates.clone(),
+        request.config,
+    )
+    .context("search latent action candidates")?;
+    let disk_sha_after = file_sha_snapshot_for_candidates(&repo_root, &request.candidates)
+        .context("read repository file SHA snapshot after latent action search")?;
+    if disk_sha_before != disk_sha_after {
+        bail!("latent action search mutated at least one referenced repository file");
+    }
+
+    Ok(json!({
+        "selectedCandidateId": search.selected_candidate_id.clone(),
+        "search": search,
+        "diskShaBefore": disk_sha_before,
+        "diskShaAfter": disk_sha_after,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "calibrationCf": CF_MEJEPA_CALIBRATION_HISTORY,
+            "trainCertCf": CF_MEJEPA_TRAIN_CERTS,
+            "repositoryRoot": repo_root.display().to_string(),
+            "persistedPrediction": false,
+            "latentSearch": true,
+            "tool": tool_names::MEJEPA_SEARCH_LATENT_ACTIONS
+        }
+    }))
+}
+
 fn run_explain_prediction(
     db_path: &Path,
     request: ExplainPredictionRequest,
@@ -1696,6 +1802,26 @@ fn file_sha_snapshot(
             }
         };
         out.insert(hunk.path.display().to_string(), value);
+    }
+    Ok(out)
+}
+
+fn file_sha_snapshot_for_candidates(
+    repo_root: &Path,
+    candidates: &[LatentActionCandidate],
+) -> AnyhowResult<BTreeMap<String, BTreeMap<String, Option<String>>>> {
+    let mut out = BTreeMap::new();
+    for candidate in candidates {
+        if out.contains_key(&candidate.candidate_id) {
+            bail!(
+                "duplicate latent action candidate id {}",
+                candidate.candidate_id
+            );
+        }
+        out.insert(
+            candidate.candidate_id.clone(),
+            file_sha_snapshot(repo_root, &candidate.patch)?,
+        );
     }
     Ok(out)
 }

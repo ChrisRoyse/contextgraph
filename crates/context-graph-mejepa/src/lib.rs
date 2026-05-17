@@ -27,6 +27,7 @@ pub mod grad_hook;
 pub mod heal;
 pub mod hierarchical;
 pub mod label_transfer_audit;
+pub mod latent_search;
 pub mod loss;
 pub mod ood;
 pub mod operator_override;
@@ -94,6 +95,7 @@ pub use grad_hook::{
 };
 pub use hierarchical::*;
 pub use label_transfer_audit::*;
+pub use latent_search::*;
 pub use loss::{huber_loss_delta_one, vicreg_loss, VarianceFloorHistory};
 pub use ood::*;
 pub use operator_override::*;
