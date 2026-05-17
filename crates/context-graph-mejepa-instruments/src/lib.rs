@@ -47,6 +47,7 @@ pub mod e_witness;
 mod features;
 pub mod frozen_hook;
 pub mod linear_probe;
+pub mod live_session_signals;
 pub mod materialize;
 pub mod panel_json;
 pub mod panel_store;
