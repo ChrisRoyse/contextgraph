@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod e_code;
+pub mod e_coverage;
 pub mod e_cyclomatic;
 pub mod e_diff_topology;
 pub mod e_embedder_heads;
@@ -525,6 +526,10 @@ mod instrument_tests;
 pub use e_code::{
     CodeInstrumentInput, DiffInstrumentInput, EAstInstrument, ECfgInstrument, EDataFlowInstrument,
     EDiffInstrument, ETypeGraphInstrument,
+};
+pub use e_coverage::{
+    analyze_coverage_delta, coverage_snapshot_from_coverage_py_json, CoverageFileDelta,
+    CoverageInput, CoverageMetrics, CoverageSnapshot, ECoverageInstrument, FileCoverageSnapshot,
 };
 pub use e_cyclomatic::{
     analyze_complexity, ComplexityInput, ComplexityMetrics, ECyclomaticInstrument,
