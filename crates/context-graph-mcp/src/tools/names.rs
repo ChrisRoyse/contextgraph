@@ -167,6 +167,8 @@ pub const MEJEPA_FINGERPRINT_RECALIBRATE: &str = "mcp__cgreality__mejepa_fingerp
 /// Phase G per-fingerprint EWC/CBP catalog stability readback.
 pub const MEJEPA_FINGERPRINT_CATALOG_STABILITY: &str =
     "mcp__cgreality__mejepa_fingerprint_catalog_stability";
+/// Phase G reward-signal completeness audit readback.
+pub const MEJEPA_AUDIT_REWARD_SIGNALS: &str = "mcp__cgreality__mejepa_audit_reward_signals";
 /// Phase 8 patch similarity graph builder/readback.
 pub const MEJEPA_EVAL_BUILD_GRAPH: &str = "mcp__cgreality__mejepa_eval_build_graph";
 /// UTML pairwise mutual-information audit with CSV source-of-truth readback.

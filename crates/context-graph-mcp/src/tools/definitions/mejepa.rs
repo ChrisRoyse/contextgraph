@@ -809,6 +809,32 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_AUDIT_REWARD_SIGNALS,
+            "Read ME-JEPA reward-signal completeness from durable RocksDB source-of-truth CFs. Returns per-tier coverage, fingerprint feature-span status, lifelong-learning loop status, constellation freshness status, and CF_MEJEPA_SIGNAL_DROP_LOG readback.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional ME-JEPA RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    },
+                    "minCoverage": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                        "default": 0.95
+                    },
+                    "signalDropSampleLimit": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1000,
+                        "default": 10
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_EVAL_BUILD_GRAPH,
             "Build and persist the Phase 8 patch-similarity graph into CF_MEJEPA_TASK_GRAPH and verify readback.",
             json!({

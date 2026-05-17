@@ -48,6 +48,7 @@ mod mejepa_fingerprint_tools;
 mod mejepa_hygiene_tools;
 mod mejepa_phase7_storage;
 mod mejepa_phase7_tools;
+mod mejepa_reward_audit_tools;
 mod mejepa_tools;
 mod mejepa_utml_tools;
 mod mejepa_weekly_dashboard_status;
@@ -88,6 +89,14 @@ mod mejepa_fingerprint_tools_fsv_tests {
     #[test]
     fn fingerprint_mcp_tools_write_fsv_artifact() {
         super::mejepa_fingerprint_tools::run_fingerprint_mcp_tools_write_fsv_artifact();
+    }
+}
+
+#[cfg(test)]
+mod mejepa_reward_audit_tools_fsv_tests {
+    #[test]
+    fn reward_signal_audit_writes_fsv_artifact() {
+        super::mejepa_reward_audit_tools::run_reward_signal_audit_write_fsv_artifact();
     }
 }
 

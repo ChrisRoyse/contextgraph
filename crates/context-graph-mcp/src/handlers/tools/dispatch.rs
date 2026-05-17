@@ -247,6 +247,7 @@ impl Handlers {
             tool_names::MEJEPA_FINGERPRINT_RECALIBRATE => call_mejepa_fingerprint_recalibrate(arguments),
             tool_names::MEJEPA_FINGERPRINT_CATALOG_STABILITY => call_mejepa_fingerprint_catalog_stability(arguments),
             tool_names::MEJEPA_BOOTSTRAP_STATUS => call_mejepa_bootstrap_status(arguments),
+            tool_names::MEJEPA_AUDIT_REWARD_SIGNALS => call_mejepa_audit_reward_signals(arguments),
             tool_names::MEJEPA_EVAL_BUILD_GRAPH => call_mejepa_eval_build_graph(arguments),
             tool_names::MEJEPA_AUDIT_PAIRWISE_MI => call_mejepa_audit_pairwise_mi(arguments),
             // Provenance tools (Phase P3)
