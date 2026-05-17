@@ -185,6 +185,10 @@ fn cert(
         .map(|head| (head.as_str().to_string(), signal.l_step))
         .collect();
     let delta_xi_global_min = signal.delta_xi;
+    let conditional_description_length_bits =
+        context_graph_mejepa_train::conditional_description_length_bits_from_probability(
+            signal.delta_p,
+        );
     Ok(TrainingCertificate {
         step,
         epoch: 0,
@@ -192,6 +196,7 @@ fn cert(
         per_head_l_step,
         delta_xi_global_min,
         loss_components: HashMap::from([("predict".to_string(), 0.1)]),
+        conditional_description_length_bits: Some(conditional_description_length_bits),
         training_mode: "edge_case".to_string(),
         distillation_cycle_id: None,
         distillation_loss_mean: None,

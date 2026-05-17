@@ -70,6 +70,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .map(|head| (head.as_str().to_string(), signal.l_step))
             .collect();
         let delta_xi_global_min = signal.delta_xi;
+        let conditional_description_length_bits =
+            context_graph_mejepa_train::conditional_description_length_bits_from_probability(
+                signal.delta_p,
+            );
         let mut cert = TrainingCertificate {
             step,
             epoch: 0,
@@ -77,6 +81,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             per_head_l_step,
             delta_xi_global_min,
             loss_components: HashMap::from([("predict".to_string(), 0.1)]),
+            conditional_description_length_bits: Some(conditional_description_length_bits),
             training_mode: "fsv_chain_stress".to_string(),
             distillation_cycle_id: None,
             distillation_loss_mean: None,

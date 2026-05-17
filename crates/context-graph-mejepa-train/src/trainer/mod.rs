@@ -196,6 +196,10 @@ impl Trainer {
                 ("covariance".to_string(), 0.01),
                 ("invariance".to_string(), 0.0),
             ]);
+            let conditional_description_length_bits =
+                crate::compression_progress::conditional_description_length_bits_from_probability(
+                    signal.delta_p,
+                );
             let mut cert = TrainingCertificate {
                 step: self.step,
                 epoch,
@@ -203,6 +207,7 @@ impl Trainer {
                 per_head_l_step: per_head_signal.l_step_map().into_iter().collect(),
                 delta_xi_global_min: per_head_signal.delta_xi_global_min,
                 loss_components,
+                conditional_description_length_bits: Some(conditional_description_length_bits),
                 training_mode: if self.config.full_finetune {
                     "full_finetune".to_string()
                 } else {

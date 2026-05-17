@@ -12,6 +12,7 @@ pub mod aux;
 pub mod cert;
 pub mod checkpoint;
 pub mod cli;
+pub mod compression_progress;
 pub mod config;
 pub mod dda;
 pub mod distill;
@@ -27,6 +28,14 @@ pub mod sampler;
 pub mod trainer;
 
 pub use cert::{TrainingCertificate, CF_MEJEPA_TRAIN_CERTS};
+pub use compression_progress::{
+    compression_progress_report, compression_progress_report_from_path,
+    conditional_description_length_bits_from_probability,
+    render_compression_progress_weekly_section, CompressionProgressCertEntry,
+    CompressionProgressError, CompressionProgressMonotonicity, CompressionProgressPoint,
+    CompressionProgressReport, CompressionProgressState, DEFAULT_COMPRESSION_PROGRESS_EPSILON_BITS,
+    DEFAULT_COMPRESSION_PROGRESS_WINDOW,
+};
 pub use config::{LossCoefficients, TrainingConfig};
 pub use error::{TrainerError, TrainerErrorCode};
 pub use learning_signal::{

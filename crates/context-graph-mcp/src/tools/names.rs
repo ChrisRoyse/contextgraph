@@ -169,6 +169,8 @@ pub const MEJEPA_FINGERPRINT_CATALOG_STABILITY: &str =
     "mcp__cgreality__mejepa_fingerprint_catalog_stability";
 /// Phase G reward-signal completeness audit readback.
 pub const MEJEPA_AUDIT_REWARD_SIGNALS: &str = "mcp__cgreality__mejepa_audit_reward_signals";
+/// Phase G/EK-001 compression-progress readback from CF_MEJEPA_TRAIN_CERTS.
+pub const MEJEPA_COMPRESSION_PROGRESS: &str = "mcp__cgreality__mejepa_compression_progress";
 /// Phase 8 patch similarity graph builder/readback.
 pub const MEJEPA_EVAL_BUILD_GRAPH: &str = "mcp__cgreality__mejepa_eval_build_graph";
 /// UTML pairwise mutual-information audit with CSV source-of-truth readback.

@@ -334,6 +334,10 @@ fn training_cert(
     signal: LearningSignal,
     training_mode: Option<&str>,
 ) -> TrainingCertificate {
+    let conditional_description_length_bits =
+        context_graph_mejepa_train::conditional_description_length_bits_from_probability(
+            signal.delta_p,
+        );
     TrainingCertificate {
         step,
         epoch: 0,
@@ -343,6 +347,7 @@ fn training_cert(
             .collect(),
         delta_xi_global_min: signal.delta_xi,
         loss_components: signal.components_as_map(),
+        conditional_description_length_bits: Some(conditional_description_length_bits),
         training_mode: training_mode.unwrap_or("utml_l_step_fsv").to_string(),
         distillation_cycle_id: None,
         distillation_loss_mean: None,

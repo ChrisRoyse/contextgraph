@@ -50,6 +50,8 @@ pub struct TrainingCertificate {
     pub per_head_l_step: HashMap<String, f32>,
     pub delta_xi_global_min: f32,
     pub loss_components: HashMap<String, f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conditional_description_length_bits: Option<f64>,
     pub training_mode: String,
     pub distillation_cycle_id: Option<u64>,
     pub distillation_loss_mean: Option<f32>,
@@ -209,6 +211,18 @@ impl TrainingCertificate {
                 return Err(crate::error::TrainerError::new(
                     crate::error::TrainerErrorCode::MejepaTrainLossNan,
                     format!("loss component {key} is non-finite"),
+                )
+                .with_step(self.step));
+            }
+        }
+        if let Some(bits) = self.conditional_description_length_bits {
+            if !bits.is_finite() || bits < 0.0 {
+                return Err(crate::error::TrainerError::new(
+                    crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                    format!(
+                        "conditional_description_length_bits={} at step {} must be finite and non-negative",
+                        bits, self.step
+                    ),
                 )
                 .with_step(self.step));
             }

@@ -54,6 +54,7 @@ pub struct WeeklyOperationalSummary {
     active_learning_queue_rows: usize,
     ood_escalation_rows: usize,
     session_cleanup_gc_events: usize,
+    compression_progress_section: Option<String>,
 }
 
 impl WeeklyOperationalSummary {
@@ -72,7 +73,14 @@ impl WeeklyOperationalSummary {
             active_learning_queue_rows,
             ood_escalation_rows,
             session_cleanup_gc_events,
+            compression_progress_section: None,
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn with_compression_progress_section(mut self, section: String) -> Self {
+        self.compression_progress_section = Some(section);
+        self
     }
 }
 
@@ -1324,6 +1332,13 @@ pub fn write_weekly_eval_markdown(
     let operator_cell_triage = render_operator_cell_triage_table(report);
     let convergence_eta = render_convergence_eta_table(report);
     let per_failure_mode_class = render_failure_mode_class_metrics_table(report);
+    let compression_progress_section = operational
+        .compression_progress_section
+        .clone()
+        .unwrap_or_else(|| {
+            "## Compression Progress\n\n- status: unavailable\n- source_of_truth: CF_MEJEPA_TRAIN_CERTS\n"
+                .to_string()
+        });
     let per_cell_ship_gate = if report.per_cell_correlation.is_empty() {
         "- none".to_string()
     } else {
@@ -1396,6 +1411,7 @@ pub fn write_weekly_eval_markdown(
          - q1_pass_rate: {:.6}\n\
          - q2_report_correlation: {:?}\n\
          - q3_side_effect_agreement: {:?}\n\n\
+         {}\n\
          ## Per-Prediction-Class Calibration\n\n{}\n\n\
          ## Per-Failure-Mode-Class Metrics\n\n{}\n\n\
          ## Catastrophic Events\n\n{}\n\n\
@@ -1432,6 +1448,7 @@ pub fn write_weekly_eval_markdown(
         report.q1_pass_rate,
         report.q2_report_correlation,
         report.q3_side_effect_agreement,
+        compression_progress_section,
         per_prediction_class_calibration,
         per_failure_mode_class,
         catastrophic_events,
@@ -2225,6 +2242,7 @@ mod tests {
             active_learning_queue_rows: 0,
             ood_escalation_rows: 0,
             session_cleanup_gc_events: 1,
+            compression_progress_section: None,
         };
         write_weekly_eval_markdown(&markdown_path, &report, "synthetic-hash", &operational)
             .expect("write weekly markdown");

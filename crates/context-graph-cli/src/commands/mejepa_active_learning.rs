@@ -16,6 +16,7 @@ use serde::Serialize;
 use serde_json::json;
 
 pub(crate) const DEFAULT_MEJEPA_INFER_DB: &str = "/mnt/d/contextgraph/storage/contextgraph-rocksdb";
+pub(crate) const DEFAULT_MEJEPA_TRAIN_DB: &str = "/mnt/d/contextgraph/storage/contextgraph-rocksdb";
 
 #[derive(Subcommand, Debug)]
 pub enum MejepaCommands {
@@ -29,6 +30,9 @@ pub enum MejepaCommands {
     Replay(crate::commands::mejepa_replay::ReplayArgs),
     /// End-to-end Phase G corpus training-pipeline orchestrator.
     Train(crate::commands::mejepa_train::MejepaTrainArgs),
+    /// Read Schmidhuberian compression progress from CF_MEJEPA_TRAIN_CERTS.
+    #[command(name = "compression-progress")]
+    CompressionProgress(CompressionProgressArgs),
     /// Checkpointed Python train/calibration/holdout cycle with eval readback.
     #[command(name = "checkpointed-train")]
     CheckpointedTrain(crate::commands::mejepa_train::MejepaCheckpointedTrainArgs),
@@ -122,6 +126,21 @@ pub struct ActiveLearningDismissArgs {
     pub reason: String,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct CompressionProgressArgs {
+    /// RocksDB path containing CF_MEJEPA_TRAIN_CERTS.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_TRAIN_DB", default_value = DEFAULT_MEJEPA_TRAIN_DB)]
+    pub db_path: PathBuf,
+
+    /// Number of recent training certificates to inspect.
+    #[arg(long, default_value_t = context_graph_mejepa_train::DEFAULT_COMPRESSION_PROGRESS_WINDOW)]
+    pub window: u64,
+
+    /// Allowed floating-point decrease in running mean CP before it is called regressing.
+    #[arg(long, default_value_t = context_graph_mejepa_train::DEFAULT_COMPRESSION_PROGRESS_EPSILON_BITS)]
+    pub epsilon_bits: f64,
+}
+
 #[derive(Clone, Copy, Debug, ValueEnum)]
 #[clap(rename_all = "kebab_case")]
 pub enum OracleOutcomeArg {
@@ -189,6 +208,14 @@ pub struct ActiveLearningDismissOutput {
     pub source_of_truth: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompressionProgressCliOutput {
+    pub tool: &'static str,
+    pub source_of_truth: serde_json::Value,
+    pub report: context_graph_mejepa_train::CompressionProgressReport,
+}
+
 pub async fn handle_mejepa_command(action: MejepaCommands) -> i32 {
     let action = match action {
         MejepaCommands::CellStatus(args) => {
@@ -250,6 +277,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
             serde_json::to_value(crate::commands::mejepa_train::run_mejepa_train(args)?)
                 .context("serialize train")
         }
+        MejepaCommands::CompressionProgress(args) => {
+            serde_json::to_value(compression_progress(args)?)
+                .context("serialize compression-progress")
+        }
         MejepaCommands::CheckpointedTrain(args) => serde_json::to_value(
             crate::commands::mejepa_train::run_checkpointed_python_train(args)?,
         )
@@ -303,6 +334,29 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
                 .context("serialize pause")
         }
     }
+}
+
+pub fn compression_progress(args: CompressionProgressArgs) -> Result<CompressionProgressCliOutput> {
+    let report = context_graph_mejepa_train::compression_progress_report_from_path(
+        &args.db_path,
+        args.window,
+        args.epsilon_bits,
+    )
+    .with_context(|| {
+        format!(
+            "MEJEPA_COMPRESSION_PROGRESS_FAILED: db_path={} window={}",
+            args.db_path.display(),
+            args.window
+        )
+    })?;
+    Ok(CompressionProgressCliOutput {
+        tool: "context-graph-cli mejepa compression-progress",
+        source_of_truth: json!({
+            "dbPath": args.db_path,
+            "trainCertCf": context_graph_mejepa_train::CF_MEJEPA_TRAIN_CERTS,
+        }),
+        report,
+    })
 }
 
 pub async fn list_active_learning(

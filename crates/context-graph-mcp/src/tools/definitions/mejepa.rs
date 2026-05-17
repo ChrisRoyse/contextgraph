@@ -835,6 +835,30 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_COMPRESSION_PROGRESS,
+            "Read Schmidhuberian compression progress from CF_MEJEPA_TRAIN_CERTS. Returns rolling CP_Phi over recent TrainingCertificate rows, monotonicity, and an ASCII sparkline.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional ME-JEPA training RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_TRAIN_DB or CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    },
+                    "window": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "default": 1000
+                    },
+                    "epsilonBits": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "default": 0.000000001
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_EVAL_BUILD_GRAPH,
             "Build and persist the Phase 8 patch-similarity graph into CF_MEJEPA_TASK_GRAPH and verify readback.",
             json!({

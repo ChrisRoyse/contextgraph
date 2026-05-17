@@ -43,6 +43,7 @@ mod learning_tools;
 // this sits next to helpers which consumes it).
 mod maintenance_tools;
 mod mejepa_agent_identity;
+mod mejepa_compression_progress_tools;
 pub mod mejepa_eval_tools;
 mod mejepa_fingerprint_tools;
 mod mejepa_hygiene_tools;
@@ -97,6 +98,14 @@ mod mejepa_reward_audit_tools_fsv_tests {
     #[test]
     fn reward_signal_audit_writes_fsv_artifact() {
         super::mejepa_reward_audit_tools::run_reward_signal_audit_write_fsv_artifact();
+    }
+}
+
+#[cfg(test)]
+mod mejepa_compression_progress_tools_fsv_tests {
+    #[test]
+    fn compression_progress_writes_fsv_artifact() {
+        super::mejepa_compression_progress_tools::run_compression_progress_write_fsv_artifact();
     }
 }
 
