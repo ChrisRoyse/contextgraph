@@ -20,6 +20,8 @@
 | `TASK-CORPUS-NNN` | per-language operators + 300×8 corpus run |
 | `TASK-OBS-NNN` | observability: weekly eval cron, MI heatmap, GPU telemetry, CLI |
 | `TASK-UTML-NNN` | learning-formula extensions: per-head deltas, cert cols, lambda ramp |
+| `TASK-FP-NNN` | failure-shape fingerprint catalog + LeCun JEPA-alignment pillars (per [`28_LECUN_JEPA_ALIGNMENT.md`](28_LECUN_JEPA_ALIGNMENT.md); GitHub EPICs #309 + #314) — TASK-FP-001..010 land the typed fingerprint catalog; TASK-FP-101..105 land the five remaining LeCun JEPA pillars (SIGreg / hierarchical / latent-search / objective+safety / counterfactual-rank) |
+| `TASK-RWD-NNN` | reward-signal completeness from durable reality (per [`29_REWARD_SIGNAL_COMPLETENESS.md`](29_REWARD_SIGNAL_COMPLETENESS.md); GitHub EPIC #315) — TASK-RWD-201..212 close the 8-tier reward-signal-completeness audit (static-quality / runtime-telemetry / live-session / constellation refresh) |
 
 ## Current gate
 
@@ -489,5 +491,46 @@ spec_refs: [SPEC-EXAMPLE.md, TECH-EXAMPLE.md]
 ## FSV evidence path
 - /mnt/d/contextgraph/fsv/mcp-daemon-fsv/...
 ```
+
+The atomic task files are under [`tasks/`](tasks/) — see the directory tree at `tasks/<domain>/`.
+
+---
+
+## Phase G+ — LeCun JEPA Alignment (TASK-FP-101..105)
+
+> Source: [`28_LECUN_JEPA_ALIGNMENT.md`](28_LECUN_JEPA_ALIGNMENT.md) + GitHub EPIC #314 (companion to fingerprint EPIC #309).
+
+| ID | Title | Pillar | Phase | Blocked by | Effort |
+|---|---|---|---|---|---|
+| `TASK-FP-101` | SIGreg regularizer for predictor (upgrade from VICReg) | 2 — anti-collapse info-max | G+ | TASK-FP-004 (live classifier) | 2-3d |
+| `TASK-FP-102` | Hierarchical JEPA predictor (file → function → AST → chunk) | 3 — hierarchical | G+ | TASK-FP-002 (seed catalog) | 4-6d |
+| `TASK-FP-103` | Latent-space candidate-patch search (`mejepa_search_latent_actions`) | 5 — latent planning | G+ | TASK-FP-102 | 3-4d |
+| `TASK-FP-104` | Objective-driven cost + hardwired safety constraints | 6 — objective + safety | G+ | TASK-FP-105 (rank backbone) | 2-3d |
+| `TASK-FP-105` | `mejepa_rank_candidates` MCP tool (counterfactual repair ranking) | 7 — best-of-K | G+ | TASK-FP-103 | 1-2d |
+
+Pillars 1 (frozen panel), 4 (action-conditioned), 8 (calibrated uncertainty) are SHIPPED. Pillars 9 (System 1 vs 2 framing) and 10 (reward-signal completeness) have their own work: 9 is a whitepaper edit; 10 is the TASK-RWD-201..212 set below.
+
+---
+
+## Phase G+ — Reward-Signal Completeness (TASK-RWD-201..212)
+
+> Source: [`29_REWARD_SIGNAL_COMPLETENESS.md`](29_REWARD_SIGNAL_COMPLETENESS.md) + GitHub EPIC #315.
+
+| ID | Title | Tier | Phase | Adopts | Effort |
+|---|---|---|---|---|---|
+| `TASK-RWD-201` | `E_Cyclomatic` instrument (cyclomatic / cognitive / Halstead / depth) | 4 — static quality | G+ | — | 1-2d |
+| `TASK-RWD-202` | `E_Coverage` instrument (line-level coverage delta per file) | 4 — static quality | G+ | — | 1-2d |
+| `TASK-RWD-203` | `E_DiffTopology` instrument (hunks per file, size distribution, entropy) | 4 — static quality | G+ | — | 1d |
+| `TASK-RWD-204` | `E_SecuritySignals` instrument (auth / input-sanit / secret patterns) | 4 — static quality | G+ | #265 | 2-3d |
+| `TASK-RWD-205` | `E_TypeGraph` full instrument (currently partial) | 3 — static graph | G+ | — | 2d |
+| `TASK-RWD-206` | `E_Telemetry` instrument (latency / VRAM / cost prediction features) | 5 — runtime telemetry | G+ | — | 3-4d |
+| `TASK-RWD-207` | `E_LiveSession` instrument (session state + operator-goal embedding) | 7 — live session | G+ | — | 2-3d |
+| `TASK-RWD-208` | Static-analysis (mypy + pyright + ruff) reward signal | 4 — static quality | G+ | #293 | 2d |
+| `TASK-RWD-209` | Coverage + churn + complexity + doc + dep-CVE reward | 4 — static quality | G+ | #294 | 3-4d |
+| `TASK-RWD-210` | Prioritised replay buffer for M(t) consolidation | 7 — live session | G+ | #287 | 2-3d |
+| `TASK-RWD-211` | Novel-pattern detection + auto constellation extension | 6 — constellation | G+ | #286, TASK-FP-002 | 2-3d |
+| `TASK-RWD-212` | Per-cell constellation freshness audit + scheduler | 6 — constellation | G+ | #271, TASK-FP-003 | 2d |
+
+**Completeness gate**: per-tier coverage ≥ 95% verified by `mejepa_audit_reward_signals` MCP tool. See `29_REWARD_SIGNAL_COMPLETENESS.md §5`.
 
 The atomic task files are under [`tasks/`](tasks/) — see the directory tree at `tasks/<domain>/`.

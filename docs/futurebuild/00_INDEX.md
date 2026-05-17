@@ -64,6 +64,9 @@ Legacy proof domains and research fixtures such as gridworld, counter-world, O*N
 | 24 | [`24_API_STABILITY.md`](24_API_STABILITY.md) | Semver / deprecation cycle / replay reproducibility |
 | 25 | [`25_FUTURE_DOMAINS_MEJEPA_X.md`](25_FUTURE_DOMAINS_MEJEPA_X.md) | Template for ME-JEPA-Voice / -Image / new modalities |
 | 26 | [`26_DOCUMENTATION_MAP.md`](26_DOCUMENTATION_MAP.md) | Cross-repo navigation + glossary |
+| 27 | [`27_PHASE_G_ROADMAP.md`](27_PHASE_G_ROADMAP.md) | Phase G critical-path roadmap (Python-first ME-JEPA-Code ship gate) |
+| **28** | [**`28_LECUN_JEPA_ALIGNMENT.md`**](28_LECUN_JEPA_ALIGNMENT.md) | **Full JEPA architectural alignment per Yann LeCun (2026-05-17 transcript) — 10 pillars + TASK-FP-101..105 sub-tasks; companion to GitHub EPIC #314** |
+| **29** | [**`29_REWARD_SIGNAL_COMPLETENESS.md`**](29_REWARD_SIGNAL_COMPLETENESS.md) | **Maximum reward-signal capture from durable reality — 8-tier audit + TASK-RWD-201..212 sub-tasks; companion to GitHub EPIC #315** |
 
 ## Spec hierarchy
 
