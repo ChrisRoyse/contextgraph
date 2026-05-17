@@ -257,6 +257,9 @@ mod tests {
         assert!(names.contains(&CF_MEJEPA_WEIGHT_BLOBS));
         assert!(names.contains(&CF_MEJEPA_SHIFT_WATERMARK));
         assert!(names.contains(&CF_MEJEPA_MODEL_PROMOTIONS));
-        assert_eq!(names.len(), 16);
+        assert_eq!(
+            names.len(),
+            context_graph_mejepa_cf::SELF_HEALING_REFERENCED_CFS.len() + 7
+        );
     }
 }

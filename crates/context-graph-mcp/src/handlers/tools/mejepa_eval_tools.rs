@@ -6,7 +6,8 @@ use context_graph_mejepa::eval::{
     build_eval_compiler, build_patch_similarity_graph, corpus_sha_from_holdout, synthetic_holdout,
     synthetic_patch_embeddings, validate_active_python_ship_gate_report, write_weekly_report,
     EvalConfig, EvalProvenance, EvalRunner, RocksDbEvalStore, ACTIVE_PYTHON_SHIP_GATE_CELL_COUNT,
-    ACTIVE_PYTHON_SHIP_GATE_GRID, ACTIVE_PYTHON_SHIP_GATE_NAME, SHIP_GATE_STABILITY_BLOCKER,
+    ACTIVE_PYTHON_SHIP_GATE_GRID, ACTIVE_PYTHON_SHIP_GATE_NAME,
+    FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER, SHIP_GATE_STABILITY_BLOCKER,
 };
 use context_graph_mejepa::open_infer_rocksdb;
 use serde::Deserialize;
@@ -291,6 +292,8 @@ pub fn mejepa_ship_gate_status_payload_with_exemptions(
         &eval_store,
         &cell_exemptions,
     )?;
+    let fingerprint_stability =
+        context_graph_mejepa::eval::fingerprint_ship_gate_stability_status(&eval_store)?;
     let mut ship_gate_failures =
         context_graph_mejepa::eval::non_exempt_ship_gate_failures(&report, &cell_exemptions);
     if !stability.ready
@@ -303,8 +306,25 @@ pub fn mejepa_ship_gate_status_payload_with_exemptions(
             stability.consecutive_passing_windows, stability.required_consecutive_windows
         ));
     }
+    let mut fingerprint_failures = fingerprint_stability.latest_failures.clone();
+    if !fingerprint_stability.ready
+        && !fingerprint_failures
+            .iter()
+            .any(|failure| failure.starts_with(FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER))
+    {
+        fingerprint_failures.push(format!(
+            "{FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER}: consecutive_passing_windows={}/{}",
+            fingerprint_stability.consecutive_passing_windows,
+            fingerprint_stability.required_consecutive_windows
+        ));
+    }
+    ship_gate_failures.extend(fingerprint_failures.clone());
+    let cell_ship_gate_passed = stability.ready;
+    let fingerprint_ship_gate_passed = fingerprint_stability.ready;
     Ok(json!({
-        "shipGatePassed": stability.ready,
+        "shipGatePassed": cell_ship_gate_passed && fingerprint_ship_gate_passed,
+        "cellShipGatePassed": cell_ship_gate_passed,
+        "fingerprintShipGatePassed": fingerprint_ship_gate_passed,
         "latestWindowShipGatePassed": stability.latest_report_passed_window,
         "latestWindowRawShipGatePassed": report.ship_gate_passed,
         "latestWindowPassedStability": stability.latest_report_passed_window,
@@ -314,6 +334,8 @@ pub fn mejepa_ship_gate_status_payload_with_exemptions(
         "requiredConsecutivePassingWindows": stability.required_consecutive_windows,
         "shipGateCorrelationThreshold": stability.correlation_threshold,
         "shipGateFailures": ship_gate_failures,
+        "fingerprintShipGate": fingerprint_stability,
+        "fingerprintShipGateFailures": fingerprint_failures,
         "stabilityResetReason": stability.latest_reset_reason,
         "stabilityResetUnixMs": stability.latest_reset_unix_ms,
         "modelPromotionResetCount": stability.model_promotion_reset_count,
@@ -330,7 +352,8 @@ pub fn mejepa_ship_gate_status_payload_with_exemptions(
         "lowStateTransferCells": low_state_transfer_cells(&report),
         "perPredictionClassCalibration": report.per_prediction_class_calibration.clone(),
         "perFailureModeClass": report.per_failure_mode_class.clone(),
-        "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS"
+        "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS",
+        "fingerprintSourceOfTruth": "CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS"
     }))
 }
 

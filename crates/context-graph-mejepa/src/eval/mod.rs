@@ -1,6 +1,7 @@
 pub mod cell_exemptions;
 pub mod convergence_tracker;
 pub mod error;
+pub mod fingerprint_ship_gate;
 pub mod fixtures;
 pub mod graph;
 pub mod metrics;
@@ -24,6 +25,14 @@ pub use convergence_tracker::{
     DEFAULT_CONVERGENCE_MIN_POINTS, DEFAULT_CONVERGENCE_TARGET,
 };
 pub use error::{EvalError, EvalErrorCode};
+pub use fingerprint_ship_gate::{
+    fingerprint_ship_gate_stability_status,
+    fingerprint_ship_gate_stability_status_with_requirements, FingerprintClassificationMetrics,
+    FingerprintShipGateStabilityStatus, FingerprintShipGateWindow, UnknownOodRecallMetrics,
+    FINGERPRINT_SHIP_GATE_ACCURACY_THRESHOLD, FINGERPRINT_SHIP_GATE_PRECISION_THRESHOLD,
+    FINGERPRINT_SHIP_GATE_REQUIRED_CONSECUTIVE_WINDOWS, FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER,
+    FINGERPRINT_SHIP_GATE_UNKNOWN_OOD_RECALL_THRESHOLD,
+};
 pub use fixtures::{build_eval_compiler, synthetic_holdout, synthetic_patch_embeddings};
 pub use graph::{
     build_patch_similarity_graph, PatchEmbedding, PatchGraphEdge, PatchSimilarityGraph,

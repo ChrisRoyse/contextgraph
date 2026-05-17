@@ -7,10 +7,12 @@ use context_graph_mcp::handlers::tools::mejepa_eval_tools::mejepa_ship_gate_stat
 use context_graph_mejepa::eval::report::write_json_0600;
 use context_graph_mejepa::eval::{
     required_active_python_ship_gate_cells, ActiveLearningSummary, EvalProvenance, EvalReport,
-    MutationCategory, OpenResearchQuestionStatus,
+    FingerprintClassificationMetrics, FingerprintShipGateWindow, MutationCategory,
+    OpenResearchQuestionStatus, UnknownOodRecallMetrics, FINGERPRINT_SHIP_GATE_ACCURACY_THRESHOLD,
+    FINGERPRINT_SHIP_GATE_PRECISION_THRESHOLD, FINGERPRINT_SHIP_GATE_UNKNOWN_OOD_RECALL_THRESHOLD,
 };
 use context_graph_mejepa::{count_cf, open_infer_rocksdb, Language, RocksDbEvalStore};
-use context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS;
+use context_graph_mejepa_cf::{CF_MEJEPA_EVAL_REPORTS, CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS};
 use serde_json::{json, Value};
 
 const DEFAULT_FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-cell-exemptions-fsv";
@@ -79,6 +81,7 @@ fn run(output_root: &Path) -> Result<Value> {
         "empty_config_low_cell_blocks": empty_status["shipGatePassed"] == false && status_failures_contain_cell(&empty_status, EXEMPT_CELL),
         "expired_exemption_low_cell_blocks": expired_status["shipGatePassed"] == false && status_failures_contain_cell(&expired_status, EXEMPT_CELL),
         "active_report_rows_reopened": active_counts[CF_MEJEPA_EVAL_REPORTS] == 4,
+        "active_fingerprint_window_rows_reopened": active_counts[CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS] == 4,
     });
     ensure!(
         assertions
@@ -101,6 +104,7 @@ fn run(output_root: &Path) -> Result<Value> {
             "empty_config": empty_config,
             "expired_config": expired_config,
             "eval_reports": CF_MEJEPA_EVAL_REPORTS,
+            "fingerprint_ship_gate_windows": CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
             "mcp_response_builder": "context_graph_mcp::handlers::tools::mejepa_ship_gate_status_payload_with_exemptions"
         },
         "active_status": active_status,
@@ -166,6 +170,9 @@ fn persist_reports(db_path: &Path, reports: &[EvalReport]) -> Result<()> {
         store
             .persist_report(report)
             .context("persist eval report")?;
+        store
+            .persist_fingerprint_ship_gate_window(&passing_fingerprint_window_for_report(report))
+            .context("persist fingerprint ship-gate window")?;
     }
     drop(store);
     drop(db);
@@ -176,7 +183,49 @@ fn cf_counts(db_path: &Path) -> Result<Value> {
     let db = open_infer_rocksdb(db_path).context("open inference RocksDB for counts")?;
     Ok(json!({
         CF_MEJEPA_EVAL_REPORTS: count_cf(&db, CF_MEJEPA_EVAL_REPORTS)?,
+        CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS: count_cf(&db, CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS)?,
     }))
+}
+
+const FP_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const FP_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+fn passing_fingerprint_window_for_report(report: &EvalReport) -> FingerprintShipGateWindow {
+    FingerprintShipGateWindow {
+        window_id: format!("{}-fingerprint-window", report.report_date),
+        report_date: report.report_date.clone(),
+        generated_at_unix_ms: report.generated_at_unix_ms,
+        per_fingerprint: BTreeMap::from([
+            (FP_A.to_string(), passing_fingerprint_metrics(FP_A)),
+            (FP_B.to_string(), passing_fingerprint_metrics(FP_B)),
+        ]),
+        unknown_ood_recall: UnknownOodRecallMetrics {
+            actual_unknown_count: 10,
+            detected_unknown_count: 9,
+            missed_unknown_count: 1,
+            recall: 0.9,
+            recall_threshold: FINGERPRINT_SHIP_GATE_UNKNOWN_OOD_RECALL_THRESHOLD,
+            passed_threshold: true,
+        },
+        passed_window: true,
+        failures: Vec::new(),
+    }
+}
+
+fn passing_fingerprint_metrics(fingerprint_id: &str) -> FingerprintClassificationMetrics {
+    FingerprintClassificationMetrics {
+        fingerprint_id: fingerprint_id.to_string(),
+        sample_count: 20,
+        true_positive_count: 18,
+        true_negative_count: 2,
+        false_positive_count: 0,
+        false_negative_count: 0,
+        accuracy: 1.0,
+        precision: 1.0,
+        accuracy_threshold: FINGERPRINT_SHIP_GATE_ACCURACY_THRESHOLD,
+        precision_threshold: FINGERPRINT_SHIP_GATE_PRECISION_THRESHOLD,
+        passed_threshold: true,
+    }
 }
 
 fn status_failures_contain_cell(status: &Value, cell: &str) -> bool {
