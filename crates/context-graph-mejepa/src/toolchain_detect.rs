@@ -107,6 +107,12 @@ pub fn default_enabled_label_toolchains() -> Vec<ToolchainBinary> {
             "install ruff for Python static-analysis labels",
         ),
         ToolchainBinary::new(
+            "mypy",
+            Language::Python,
+            "python_static_analysis",
+            "install mypy for Python static-analysis labels",
+        ),
+        ToolchainBinary::new(
             "pyright",
             Language::Python,
             "python_type_graph",

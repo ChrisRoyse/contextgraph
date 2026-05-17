@@ -201,7 +201,7 @@ The A-F and H implementation issues are closed for the Phase G handoff. Analyzer
 | ID | Title | Status / Evidence |
 |---|---|---|
 | `TASK-PREDICT-012` | Operator override prediction tool | **complete (#60, commit 377f0884)** — `operator_override.rs` + `CF_MEJEPA_OPERATOR_OVERRIDES` + `mejepa_operator_override_prediction` MCP tool; 6.0× sampling-weight multiplier persisted |
-| `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | **complete (#61, commit 0379df9c)** — `crates/context-graph-mejepa/src/toolchain_detect.rs`; 16-binary default catalogue across 11 languages |
+| `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | **complete (#61, commit 0379df9c; updated 2026-05-17 for TASK-RWD-208)** — `crates/context-graph-mejepa/src/toolchain_detect.rs`; 17-binary default catalogue across 11 languages, including mypy/ruff/pyright/python3 for Python static-analysis/type/runtime labels |
 | `TASK-PREDICT-LABEL-011` | Cross-language label gating | **complete (#62, commit 0379df9c)** — `crates/context-graph-mejepa/src/cross_language_label_gating.rs`; same-root-cause + similarity > 0.85 + correlation ≥ 0.60 ⇒ transfer at 0.5× weight |
 | `TASK-PREDICT-LABEL-012` | Cross-language label gating consumer | **complete (#86)** — `label_transfer_audit` + `apply_phase_b_labels_with_transfer_gate()` + `CF_MEJEPA_LABEL_TRANSFER_DECISIONS`; weekly surfaces include accept/reject ratios per language pair |
 | `TASK-UTML-009` | Per-cell state-transfer T in eval reports | **complete (#63)** — weekly eval reports carry per-cell state-transfer diagnostics; FSV sha256:63234e2d |
@@ -529,7 +529,7 @@ Pillars 1 (frozen panel), 2 (anti-collapse SIGReg), 4 (action-conditioned), 8 (c
 | `TASK-RWD-205` | `E_TypeGraph` full instrument (currently partial) | 3 — static graph | G+ | — | 2d |
 | `TASK-RWD-206` | `E_Telemetry` instrument (latency / VRAM / cost prediction features) | 5 — runtime telemetry | G+ | — | 3-4d |
 | `TASK-RWD-207` | `E_LiveSession` instrument (session state + operator-goal embedding) | 7 — live session | G+ | — | 2-3d |
-| `TASK-RWD-208` | Static-analysis (mypy + pyright + ruff) reward signal | 4 — static quality | G+ | #293 | 2d |
+| `TASK-RWD-208` | Static-analysis (mypy + pyright + ruff) reward signal | 4 — static quality | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-py-g-074-static-analysis-fsv/run-1779045296443/static_analysis_fsv.json` sha256 `16c9ee15273c9df3d5bc03a9bfd7d46113d58266f49fa7af571b3f5f031624b0` | shipped 2026-05-17 |
 | `TASK-RWD-209` | Coverage + churn + complexity + doc + dep-CVE reward | 4 — static quality | G+ | #294 | 3-4d |
 | `TASK-RWD-210` | Prioritised replay buffer for M(t) consolidation | 7 — live session | G+ | #287 | 2-3d |
 | `TASK-RWD-211` | Novel-pattern detection + auto constellation extension | 6 — constellation | G+ | #286, TASK-FP-002 | 2-3d |

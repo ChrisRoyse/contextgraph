@@ -47,7 +47,7 @@ fn task_flywheel_009_daemon_toolchain_startup_gate_fsv() {
         "#,
     );
     let missing_config_root = run_root.join("missing-config-root");
-    let shim_path = create_shim_path(&run_root, &["ruff", "pyright", "python3"]);
+    let shim_path = create_shim_path(&run_root, &["ruff", "mypy", "pyright", "python3"]);
 
     let pass = run_case(
         &run_root,
@@ -112,7 +112,7 @@ fn task_flywheel_009_daemon_toolchain_startup_gate_fsv() {
                 "expected": {
                     "exit_success": true,
                     "all_available": true,
-                    "required_count": 3,
+                    "required_count": 4,
                     "no_rocksdb_opened": true,
                     "lock_absent": true
                 },
@@ -123,7 +123,7 @@ fn task_flywheel_009_daemon_toolchain_startup_gate_fsv() {
                 },
                 "pass": pass.output.status.success()
                     && pass_json["allAvailable"] == json!(true)
-                    && pass_json["requiredCount"] == json!(3)
+                    && pass_json["requiredCount"] == json!(4)
                     && pass_json["noRocksdbOpened"] == json!(true)
                     && !pass.lock_exists
             }
@@ -185,7 +185,7 @@ fn task_flywheel_009_daemon_toolchain_startup_gate_fsv() {
                 "expected": {
                     "exit_success": true,
                     "config_source": "default_python_config_missing",
-                    "required_count": 3,
+                    "required_count": 4,
                     "lock_absent": true
                 },
                 "actual": {
@@ -195,7 +195,7 @@ fn task_flywheel_009_daemon_toolchain_startup_gate_fsv() {
                 },
                 "pass": missing_config.output.status.success()
                     && missing_config_json["configSource"] == json!("default_python_config_missing")
-                    && missing_config_json["requiredCount"] == json!(3)
+                    && missing_config_json["requiredCount"] == json!(4)
                     && missing_config_json["noRocksdbOpened"] == json!(true)
                     && !missing_config.lock_exists
             }

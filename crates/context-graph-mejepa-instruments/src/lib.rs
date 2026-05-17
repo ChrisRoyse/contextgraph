@@ -49,6 +49,7 @@ pub mod linear_probe;
 pub mod materialize;
 pub mod panel_json;
 pub mod panel_store;
+pub mod static_analysis_reward;
 pub mod stdlib_registry;
 
 pub type InstrumentResult<T> = Result<T, InstrumentError>;
@@ -560,4 +561,13 @@ pub use materialize::{
 pub use panel_json::{PanelEnvelope, PanelProvenance, PANEL_JSON_SCHEMA_VERSION};
 pub use panel_store::{
     PanelKey, PanelMeta, PanelStore, CF_MEJEPA_PANELS, CF_MEJEPA_PANEL_META, MEJEPA_PANEL_CFS,
+};
+pub use static_analysis_reward::{
+    extract_static_analysis_labels, run_static_analysis_tools,
+    run_static_analysis_tools_with_timeout, write_static_analysis_raw_outputs,
+    PersistedStaticAnalysisSignal, StaticAnalysisDetector, StaticAnalysisExtraction,
+    StaticAnalysisLabel, StaticAnalysisLineRange, StaticAnalysisQuarantine,
+    StaticAnalysisRawOutputPaths, StaticAnalysisRawOutputs, StaticAnalysisSignalKind,
+    StaticAnalysisSignalRecord, StaticAnalysisSignalStore, StaticAnalysisSource,
+    StaticAnalysisToolOutput, DEFAULT_STATIC_ANALYSIS_TIMEOUT_SECS,
 };

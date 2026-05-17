@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 context-graph-core = { path = "../context-graph-core" }
+context-graph-mejepa-cf = { path = "../context-graph-mejepa-cf" }
 context-graph-mejepa-embedders = { path = "../context-graph-mejepa-embedders" }
 context-graph-witness = { path = "../context-graph-witness" }
 serde = { workspace = true }

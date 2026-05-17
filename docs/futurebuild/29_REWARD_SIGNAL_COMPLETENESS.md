@@ -64,7 +64,7 @@ Without explicit completeness tracking, the system silently leaves signal on the
 | Depth-of-nesting delta | `E_Cyclomatic` | ✅ TASK-RWD-201 shipped |
 | Test coverage delta per touched file | `E_Coverage` | ✅ **TASK-RWD-202 shipped** |
 | Diff topology (hunks per file, hunk size distribution, intra-file entropy) | `E_DiffTopology` | ✅ **TASK-RWD-203 shipped** |
-| Static-analysis (mypy, pyright, ruff) reward signal | reward analyzer | 🟡 **TASK-RWD-208** (adopt #293) |
+| Static-analysis (mypy, pyright, ruff) reward signal | reward analyzer + `CF_MEJEPA_STATIC_ANALYSIS_SIGNALS` | ✅ **TASK-RWD-208 shipped** |
 | Security signals (auth-check removed, I/O on unsanitized input, secret exposure) | `E_SecuritySignals` | 🟡 **TASK-RWD-204** (covers #265) |
 | Dependency CVE count | reward signal | 🟡 **TASK-RWD-209** (adopt #294) |
 | Churn (lines changed in last N weeks) | git blame analyzer | 🟡 TASK-RWD-209 |
@@ -128,7 +128,7 @@ Without explicit completeness tracking, the system silently leaves signal on the
 | TASK-RWD-205 | `E_TypeGraph` full instrument (currently partial) | 3 | — | mypy infrastructure |
 | TASK-RWD-206 | `E_Telemetry` instrument (latency / VRAM / cost prediction features) | 5 | — | runtime profiler integration |
 | TASK-RWD-207 | `E_LiveSession` instrument (session state + operator-goal embedding) | 7 | — | UserPromptSubmit history persistence |
-| TASK-RWD-208 | Static-analysis (mypy + pyright + ruff) reward signal | 4 | #293 | mypy/pyright/ruff CLI |
+| TASK-RWD-208 | Static-analysis (mypy + pyright + ruff) reward signal | 4 | ✅ complete (#293) | mypy/pyright/ruff CLI |
 | TASK-RWD-209 | Coverage + churn + complexity + doc + dep-CVE reward | 4 | #294 | git blame + CVE feed |
 | TASK-RWD-210 | Prioritised replay buffer for M(t) consolidation | 7 | #287 | `CF_MEJEPA_REPLAY_BUFFER` schema |
 | TASK-RWD-211 | Novel-pattern detection + auto constellation extension | 6 | #286 | post-corpus fingerprint catalog (#309 TASK-FP-002) |
@@ -141,6 +141,8 @@ All TASK-RWD files follow `prdtospec.md` Level-4 atomic-task format and the FSV 
 **2026-05-17 TASK-RWD-202 completion:** `E_Coverage` is code/FSV-shipped in `context-graph-mejepa-instruments` as a deterministic coverage.py/pytest-cov JSON importer plus typed baseline/candidate line-coverage delta analyzer feeding the existing `E_Runtime` panel slot. It captures aggregate and per-file line coverage, newly covered lines, newly uncovered lines, missing candidate lines, and improved/regressed/unchanged file counts. FSV: `/mnt/d/contextgraph/fsv/task-rwd-202-coverage-fsv/run-1779043488412/coverage_fsv.json` sha256 `dc72ce7768a76dee175bbf4af5131004b421ad999ba699a9ac7a5c50ce98fa0d` (`all_passed=true`, baseline coverage 3/6, candidate coverage 4/6, delta +1/6, 2 newly covered lines, 1 newly uncovered line, invalid coverage edge cases fail closed).
 
 **2026-05-17 TASK-RWD-203 completion:** `E_DiffTopology` is code/FSV-shipped in `context-graph-mejepa-instruments` as a deterministic unified-diff topology analyzer feeding the existing `E_Diff` panel slot. It captures files touched, hunks total, added/removed/context/changed lines, hunk-size distribution, per-file changed-line concentration, and intra-file hunk entropy without shelling out. FSV: `/mnt/d/contextgraph/fsv/task-rwd-203-diff-topology-fsv/run-1779043047838/diff_topology_fsv.json` sha256 `749b120421d37413a2ae54d67ad18f755855dcd337d30dbbb75dd99b3aa98c60` (`all_passed=true`, 2 files, 3 hunks, 5 added lines, 2 removed lines, file-change entropy 0.5916728 bits, invalid diff edge cases fail closed).
+
+**2026-05-17 TASK-RWD-208 completion:** Static-analysis reward labels are code/FSV-shipped in `context-graph-mejepa-instruments` as a fail-closed `mypy`/`pyright`/`ruff` runner plus deterministic mypy text, pyright JSON, and ruff JSON normalization into `StaticAnalysisLabel` records persisted to `CF_MEJEPA_STATIC_ANALYSIS_SIGNALS`. Raw analyzer output wrappers are written under `/mnt/d/contextgraph/corpus/python-static-analysis-v1/<row_id>/{mypy.json,pyright.json,ruff.json}`, labels feed the existing `E_StaticAnalysis` panel slot, and runtime/toolchain failures produce fail-closed quarantine records such as `STATIC_ANALYSIS_RUNTIME_EXCEEDED`. The Python label toolchain gate now includes `mypy` alongside `ruff`, `pyright`, and `python3`. FSV: `/mnt/d/contextgraph/fsv/task-py-g-074-static-analysis-fsv/run-1779045296443/static_analysis_fsv.json` sha256 `16c9ee15273c9df3d5bc03a9bfd7d46113d58266f49fa7af571b3f5f031624b0` (`all_passed=true`, deterministic PATH-shim CLI execution, 3 happy-path labels, CF read-after-write + reopen readback, raw-output readback, `E_StaticAnalysis` vector hash `afcc6587bbfdf9646fa44e31ccc4cc893d4ac61b47b0f8346671fd816f277ffa`, type-ignore and pyright-ignore respected, ruff/pyright disagreement persisted, runtime-exceeded quarantine persisted, malformed pyright JSON fails closed).
 
 ---
 
@@ -201,4 +203,4 @@ The reward-signal completeness audit is **GREEN** when ALL of the following hold
 
 ---
 
-**TL;DR.** Eight reward-signal tiers; ~30 distinct signals across them; oracle (1) + DDA (2) + static graph (3 except type-graph) + witness (8) are SHIPPED; static-quality Tier 4 now has `E_Cyclomatic` shipped for complexity/halstead/depth, `E_Coverage` shipped for line-level coverage deltas, and `E_DiffTopology` shipped for file/hunk/entropy topology while security, static-analysis, churn/doc/dep-CVE remain open; runtime-telemetry (5) + constellation post-corpus (6) + live-session (7) remain tracked under #315. ME-JEPA trains on **chains** of these signals, not individual signals. Per-tier coverage ≥ 95% is the acceptance gate.
+**TL;DR.** Eight reward-signal tiers; ~30 distinct signals across them; oracle (1) + DDA (2) + static graph (3 except type-graph) + witness (8) are SHIPPED; static-quality Tier 4 now has `E_Cyclomatic` shipped for complexity/halstead/depth, `E_Coverage` shipped for line-level coverage deltas, `E_DiffTopology` shipped for file/hunk/entropy topology, and static-analysis labels shipped for mypy/pyright/ruff via `CF_MEJEPA_STATIC_ANALYSIS_SIGNALS`; security and churn/doc/dep-CVE remain open; runtime-telemetry (5) + constellation post-corpus (6) + live-session (7) remain tracked under #315. ME-JEPA trains on **chains** of these signals, not individual signals. Per-tier coverage ≥ 95% is the acceptance gate.
