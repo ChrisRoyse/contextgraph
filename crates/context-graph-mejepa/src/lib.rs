@@ -3,6 +3,7 @@
 //! This crate is intentionally CUDA-only for the production predictor path.
 //! CPU construction is rejected instead of silently falling back.
 
+pub mod adversarial_corpus;
 pub mod calibration;
 pub mod calibration_types;
 pub mod claim_graph;
@@ -47,6 +48,7 @@ pub mod verdict_assembly;
 pub mod verify_cli;
 pub mod vram;
 
+pub use adversarial_corpus::*;
 pub use calibration::*;
 pub use calibration_types::*;
 pub use claim_graph::*;

@@ -71,6 +71,9 @@ pub const CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS: &str = "CF_MEJEPA_FINGERPRINT
 // catalog stability under continual learning (issue #317).
 pub const CF_MEJEPA_FINGERPRINT_FISHER: &str = "CF_MEJEPA_FINGERPRINT_FISHER";
 pub const CF_MEJEPA_FINGERPRINT_DORMANCY: &str = "CF_MEJEPA_FINGERPRINT_DORMANCY";
+// TASK-PY-G-060 / TASK-FP-009 — 30-case adversarial Python corpus rows that
+// feed the first-class failure-shape fingerprint catalog.
+pub const CF_MEJEPA_ADVERSARIAL_CORPUS: &str = "CF_MEJEPA_ADVERSARIAL_CORPUS";
 
 /// REQ-FLYWHEEL-10 grouping. Daemon openers extend their CF descriptor list
 /// with this slice so the three new CFs land on disk during the first daemon
@@ -93,6 +96,8 @@ pub const FINGERPRINT_CFS: &[&str] = &[
     CF_MEJEPA_FINGERPRINT_FISHER,
     CF_MEJEPA_FINGERPRINT_DORMANCY,
 ];
+
+pub const ADVERSARIAL_CFS: &[&str] = &[CF_MEJEPA_ADVERSARIAL_CORPUS];
 
 pub const SELF_HEALING_CFS: &[&str] = &[
     CF_MEJEPA_FISHER_SNAPSHOTS,
@@ -139,6 +144,7 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
     CF_MEJEPA_FINGERPRINT_FISHER,
     CF_MEJEPA_FINGERPRINT_DORMANCY,
+    CF_MEJEPA_ADVERSARIAL_CORPUS,
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
@@ -166,6 +172,7 @@ pub const EVAL_CFS: &[&str] = &[
     CF_MEJEPA_FINGERPRINT_CALIBRATION,
     CF_MEJEPA_FINGERPRINT_AUDIT,
     CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
+    CF_MEJEPA_ADVERSARIAL_CORPUS,
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
@@ -206,6 +213,7 @@ pub const HYGIENE_CFS: &[&str] = &[
     CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
     CF_MEJEPA_FINGERPRINT_FISHER,
     CF_MEJEPA_FINGERPRINT_DORMANCY,
+    CF_MEJEPA_ADVERSARIAL_CORPUS,
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
@@ -256,6 +264,7 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
     CF_MEJEPA_FINGERPRINT_FISHER,
     CF_MEJEPA_FINGERPRINT_DORMANCY,
+    CF_MEJEPA_ADVERSARIAL_CORPUS,
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
@@ -312,6 +321,7 @@ mod tests {
             .chain(TCT_CFS.iter())
             .chain(FLYWHEEL_CFS.iter())
             .chain(FINGERPRINT_CFS.iter())
+            .chain(ADVERSARIAL_CFS.iter())
         {
             if !generated.contains(cf) {
                 generated.push(*cf);
@@ -393,6 +403,7 @@ mod tests {
             CF_MEJEPA_FINGERPRINT_DORMANCY,
             "CF_MEJEPA_FINGERPRINT_DORMANCY"
         );
+        assert_eq!(CF_MEJEPA_ADVERSARIAL_CORPUS, "CF_MEJEPA_ADVERSARIAL_CORPUS");
     }
 
     #[test]
@@ -412,6 +423,17 @@ mod tests {
         // Also confirm the FINGERPRINT_CFS group is the single canonical list.
         assert!(FINGERPRINT_CFS.contains(&CF_MEJEPA_FINGERPRINT_FISHER));
         assert!(FINGERPRINT_CFS.contains(&CF_MEJEPA_FINGERPRINT_DORMANCY));
+    }
+
+    #[test]
+    fn adversarial_cfs_are_registered_in_daemon_opener() {
+        let names = all_hygiene_referenced_cfs();
+        for cf in ADVERSARIAL_CFS {
+            assert!(
+                names.contains(cf),
+                "adversarial CF {cf} missing from daemon opener; TASK-PY-G-060 rows would not persist.",
+            );
+        }
     }
 
     #[test]

@@ -195,6 +195,10 @@ pub enum MejepaInferError {
     },
     #[error("MEJEPA_FINGERPRINT_FISHER_MISSING: fingerprint_id={fingerprint_id}")]
     FingerprintFisherMissing { fingerprint_id: String },
+    #[error(
+        "MEJEPA_ADVERSARIAL_FINGERPRINT_MATERIALIZATION_FAILED: case_id={case_id} reason={reason}"
+    )]
+    AdversarialFingerprintMaterializationFailed { case_id: String, reason: String },
     #[error("MEJEPA_INFER_INVALID_INPUT: field={field} detail={detail}")]
     InvalidInput { field: String, detail: String },
     #[error("MEJEPA_INFER_IO: op={op} path={} source={source}", path.display())]
@@ -234,6 +238,9 @@ impl MejepaInferError {
             Self::FeatureDisabled { .. } => "MEJEPA_INFER_FEATURE_DISABLED",
             Self::DdaFeatureMissing { .. } => "MEJEPA_INFER_DDA_FEATURE_MISSING",
             Self::FingerprintFisherMissing { .. } => "MEJEPA_FINGERPRINT_FISHER_MISSING",
+            Self::AdversarialFingerprintMaterializationFailed { .. } => {
+                "MEJEPA_ADVERSARIAL_FINGERPRINT_MATERIALIZATION_FAILED"
+            }
             Self::InvalidInput { .. } => "MEJEPA_INFER_INVALID_INPUT",
             Self::Io { .. } => "MEJEPA_INFER_IO",
             Self::Json(_) => "MEJEPA_INFER_JSON",

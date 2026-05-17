@@ -548,6 +548,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "properties": {
                     "dbPath": {"type": "string"},
                     "kind": {"type": "string", "enum": ["known_good", "known_bad", "unknown"]},
+                    "sourceCorpus": {"type": "string"},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 1000}
                 }
             }),

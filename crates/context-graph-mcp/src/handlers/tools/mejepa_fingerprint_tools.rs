@@ -53,6 +53,7 @@ enum FingerprintKindFilter {
 struct FingerprintListRequest {
     db_path: Option<PathBuf>,
     kind: Option<FingerprintKindFilter>,
+    source_corpus: Option<String>,
     #[serde(default = "default_list_limit")]
     limit: usize,
 }
@@ -327,6 +328,9 @@ fn run_fingerprint_list(request: FingerprintListRequest) -> AnyhowResult<Value> 
         }
         None => true,
     });
+    if let Some(source_corpus) = request.source_corpus.as_deref() {
+        catalog.retain(|fingerprint| fingerprint.source_corpus == source_corpus);
+    }
     catalog.sort_by(|left, right| {
         left.name
             .cmp(&right.name)
@@ -1246,6 +1250,7 @@ mod test_support {
         let list = run_fingerprint_list(FingerprintListRequest {
             db_path: Some(db_path.clone()),
             kind: None,
+            source_corpus: None,
             limit: 100,
         })
         .expect("list");
