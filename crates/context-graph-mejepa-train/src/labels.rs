@@ -767,6 +767,9 @@ fn bounded_output(field: &str, bytes: &[u8], max_bytes: usize) -> Result<String,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use context_graph_mejepa_instruments::{
+        Q4SecurityDetector, Q4SecurityLineRange, Q4SecuritySeverity,
+    };
 
     #[test]
     fn pytest_extracts_failure_and_empty_edge() {
@@ -788,5 +791,36 @@ mod tests {
     fn empty_output_fails_closed() {
         let err = extract_pytest_labels("", "", 1).unwrap_err();
         assert_eq!(err.code(), "UTML_EMPTY_INPUT");
+    }
+
+    #[test]
+    fn q4_security_labels_feed_phase_b_security_adapter() {
+        let labels = q4_security_labels_to_phase_b_labels(&[Q4SecurityLabel {
+            corpus_row_id: "row-q4".to_string(),
+            chunk_id: "chunk-q4".to_string(),
+            finding_id: "bandit:abc".to_string(),
+            rule_id: "B602".to_string(),
+            severity: Q4SecuritySeverity::High,
+            class: Q4SecurityClass::CommandInjection,
+            file: "app/security.py".to_string(),
+            line_range: Q4SecurityLineRange {
+                start_line: 7,
+                end_line: 7,
+                start_column: 1,
+                end_column: 32,
+            },
+            detector: Q4SecurityDetector::Bandit,
+            message: "shell=True".to_string(),
+            introduced_by_patch: true,
+            fixed_by_patch: false,
+        }])
+        .unwrap();
+        assert_eq!(labels.source, LabelSource::PythonSecurityAnalyzer);
+        assert_eq!(
+            labels.security_concerns[0].class,
+            SecurityConcernClass::CommandInjection
+        );
+        assert_eq!(labels.touched_files[0], PathBuf::from("app/security.py"));
+        require_non_empty_labels(&labels).unwrap();
     }
 }

@@ -152,14 +152,14 @@ pub fn infer_phase_b_surfaces(
             surfaces
                 .predicted_security_concerns
                 .push(PredictedSecurityConcern {
-                    class: SecurityConcernClass::HardcodedSecret,
-                    chunk: chunk.clone(),
-                    line_range,
-                    cvss_estimate: Some(7.5),
-                    explanation:
-                        "patch text contains a token/key pattern that must be redacted before embedding"
-                            .to_string(),
-                });
+                class: SecurityConcernClass::HardcodedSecret,
+                chunk: chunk.clone(),
+                line_range,
+                cvss_estimate: Some(7.5),
+                explanation:
+                    "patch text contains a token/key pattern that must be redacted before embedding"
+                        .to_string(),
+            });
         }
         if after_lower.contains("shell=true")
             || after_lower.contains("os.system(")

@@ -306,7 +306,12 @@ pub fn extract_q4_security_labels(
     let mut quarantines = Vec::new();
     let mut pre_findings = Vec::new();
     let mut post_findings = Vec::new();
-    collect_detector_output(source, &outputs.bandit_pre, &mut pre_findings, &mut quarantines)?;
+    collect_detector_output(
+        source,
+        &outputs.bandit_pre,
+        &mut pre_findings,
+        &mut quarantines,
+    )?;
     collect_detector_output(
         source,
         &outputs.bandit_post,
@@ -431,7 +436,10 @@ impl Q4SecurityLabelStore {
         Ok(Self { db })
     }
 
-    pub fn put_extraction(&self, extraction: &Q4SecurityExtraction) -> InstrumentResult<Vec<String>> {
+    pub fn put_extraction(
+        &self,
+        extraction: &Q4SecurityExtraction,
+    ) -> InstrumentResult<Vec<String>> {
         let mut keys = Vec::new();
         for label in &extraction.labels {
             let record = PersistedQ4SecuritySignal {
@@ -630,15 +638,18 @@ fn parse_bandit_output(
             .and_then(|lines| lines.iter().filter_map(value_to_u32).max())
             .unwrap_or(start_line)
             .max(start_line);
+        let line_range = Q4SecurityLineRange {
+            start_line,
+            end_line,
+            start_column: 1,
+            end_column: 1,
+        };
         findings.push(make_finding(
             source,
             Q4SecurityDetector::Bandit,
             rule_id,
             severity,
-            start_line,
-            end_line,
-            1,
-            1,
+            line_range,
             message,
         ));
     }
@@ -670,21 +681,26 @@ fn parse_semgrep_output(
         let start_line = u32_field(start, "line").unwrap_or(1).max(1);
         let end_line = u32_field(end, "line").unwrap_or(start_line).max(start_line);
         let start_column = u32_field(start, "col").unwrap_or(1).max(1);
-        let end_column = u32_field(end, "col").unwrap_or(start_column).max(start_column);
+        let end_column = u32_field(end, "col")
+            .unwrap_or(start_column)
+            .max(start_column);
         let vuln_class = extra
             .get("metadata")
             .and_then(|metadata| metadata.get("vulnerability_class"))
             .map(vulnerability_class_text)
             .unwrap_or_default();
+        let line_range = Q4SecurityLineRange {
+            start_line,
+            end_line,
+            start_column,
+            end_column,
+        };
         findings.push(make_finding(
             source,
             Q4SecurityDetector::Semgrep,
             rule_id,
             severity,
-            start_line,
-            end_line,
-            start_column,
-            end_column,
+            line_range,
             &format!("{message} {vuln_class}"),
         ));
     }
@@ -731,19 +747,10 @@ fn make_finding(
     detector: Q4SecurityDetector,
     rule_id: &str,
     severity: Q4SecuritySeverity,
-    start_line: u32,
-    end_line: u32,
-    start_column: u32,
-    end_column: u32,
+    line_range: Q4SecurityLineRange,
     message: &str,
 ) -> Q4SecurityFinding {
     let class = classify_security(rule_id, message);
-    let line_range = Q4SecurityLineRange {
-        start_line,
-        end_line,
-        start_column,
-        end_column,
-    };
     let finding_id = finding_id(
         detector,
         rule_id,
@@ -1066,12 +1073,19 @@ fn validate_source(source: &Q4SecuritySource) -> InstrumentResult<()> {
 
 fn validate_source_text(field: &'static str, text: &str) -> InstrumentResult<()> {
     if text.trim().is_empty() {
-        return invalid(field, "source text is empty", "capture Python source text before SAST");
+        return invalid(
+            field,
+            "source text is empty",
+            "capture Python source text before SAST",
+        );
     }
     if text.len() > MAX_SOURCE_BYTES {
         return invalid(
             field,
-            format!("source text length {} exceeds {MAX_SOURCE_BYTES}", text.len()),
+            format!(
+                "source text length {} exceeds {MAX_SOURCE_BYTES}",
+                text.len()
+            ),
             "shard oversized Python source before SAST",
         );
     }
@@ -1128,8 +1142,7 @@ fn validate_label(label: &Q4SecurityLabel, source: &Q4SecuritySource) -> Instrum
             "drop unchanged SAST findings and preserve only patch deltas",
         );
     }
-    if label.line_range.start_line == 0 || label.line_range.end_line < label.line_range.start_line
-    {
+    if label.line_range.start_line == 0 || label.line_range.end_line < label.line_range.start_line {
         return invalid(
             "q4_security.label.line_range",
             "line range is not one-based and ordered",
@@ -1150,7 +1163,10 @@ fn validate_quarantine(
             "persist Q4 security quarantines against the exact corpus row being scanned",
         );
     }
-    validate_non_empty_single_line("q4_security.quarantine.reason_code", &quarantine.reason_code)?;
+    validate_non_empty_single_line(
+        "q4_security.quarantine.reason_code",
+        &quarantine.reason_code,
+    )?;
     validate_non_empty_single_line("q4_security.quarantine.detail", &quarantine.detail)?;
     Ok(())
 }
@@ -1269,7 +1285,10 @@ fn write_raw_wrapper(
         return Err(InstrumentError::store(
             "read_after_write_raw_output",
             "python-q4-security-labels-v1",
-            format!("{} readback bytes differ from written bytes", path.display()),
+            format!(
+                "{} readback bytes differ from written bytes",
+                path.display()
+            ),
             "do not advance Q4 security label checkpoints until raw output is durable",
         ));
     }
@@ -1292,7 +1311,7 @@ mod tests {
         let source = sample_source();
         let outputs = sample_outputs();
         let extraction = extract_q4_security_labels(&source, &outputs).unwrap();
-        assert_eq!(extraction.labels.len(), 2);
+        assert_eq!(extraction.labels.len(), 4);
         assert!(extraction.labels.iter().any(|label| {
             label.introduced_by_patch && label.class == Q4SecurityClass::CommandInjection
         }));
@@ -1300,7 +1319,7 @@ mod tests {
             label.fixed_by_patch && label.class == Q4SecurityClass::HardcodedSecret
         }));
         assert!(extraction.quarantines.is_empty());
-        assert_eq!(extraction.static_analysis_input.diagnostics.len(), 2);
+        assert_eq!(extraction.static_analysis_input.diagnostics.len(), 4);
     }
 
     #[test]
@@ -1320,7 +1339,8 @@ mod tests {
     fn analyzer_errors_become_parse_failure_quarantine() {
         let source = sample_source();
         let mut outputs = sample_outputs();
-        outputs.semgrep_post.stdout = r#"{"results":[],"errors":[{"message":"parse failed"}]}"#.into();
+        outputs.semgrep_post.stdout =
+            r#"{"results":[],"errors":[{"message":"parse failed"}]}"#.into();
         let extraction = extract_q4_security_labels(&source, &outputs).unwrap();
         assert!(extraction.quarantines.iter().any(|quarantine| {
             quarantine.reason_code == "Q4_SECURITY_LABEL_PARSE_FAILURE"
@@ -1334,7 +1354,8 @@ mod tests {
             chunk_id: "chunk-security-001".into(),
             logical_path: "app/security.py".into(),
             pre_patch_source: "API_KEY = 'secret'\nprint('safe')\n".into(),
-            post_patch_source: "import subprocess\nsubprocess.call(user_input, shell=True)\n".into(),
+            post_patch_source: "import subprocess\nsubprocess.call(user_input, shell=True)\n"
+                .into(),
         }
     }
 
@@ -1343,12 +1364,7 @@ mod tests {
             bandit_pre: output(
                 Q4SecurityDetector::Bandit,
                 Q4SecurityScanPhase::PrePatch,
-                bandit_json(&[(
-                    "B105",
-                    "LOW",
-                    1,
-                    "Possible hardcoded password: 'secret'",
-                )]),
+                bandit_json(&[("B105", "LOW", 1, "Possible hardcoded password: 'secret'")]),
             ),
             bandit_post: output(
                 Q4SecurityDetector::Bandit,

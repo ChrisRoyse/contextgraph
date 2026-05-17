@@ -70,7 +70,10 @@ fn main() -> FsvResult<()> {
     )?;
 
     let extraction = extract_q4_security_labels(&source, &outputs)?;
-    require("happy path produced security labels", !extraction.labels.is_empty())?;
+    require(
+        "happy path produced security labels",
+        !extraction.labels.is_empty(),
+    )?;
     require(
         "happy path has no quarantines",
         extraction.quarantines.is_empty(),

@@ -76,7 +76,7 @@ The A-F and H implementation issues are closed for the Phase G handoff. Analyzer
 | `TASK-PREDICT-LABEL-003` | Tech-debt label source (clippy/pylint/eslint warning delta + radon/lizard) | B | none | **partial/code_complete: deterministic text extractor; analyzer deltas open** |
 | `TASK-PREDICT-LABEL-004` | Dead-code label source (vulture/udeps/eslint-no-unused) | B | none | **partial/code_complete: taxonomy/schema exists; analyzer deltas open** |
 | `TASK-PREDICT-LABEL-005` | Perf label source (pytest-benchmark / cargo bench / massif delta extractors) | B | none | **partial/code_complete: patch-surface heuristic; benchmark parsers open** |
-| `TASK-PREDICT-LABEL-006` | Security label source (bandit/cargo-audit/eslint-security/semgrep delta) | B | none | **partial/code_complete: hardcoded secret/crypto text extractor; SAST deltas open** |
+| `TASK-PREDICT-LABEL-006` | Security label source (bandit/cargo-audit/eslint-security/semgrep delta) | B | none | **partial/code_complete: Python Bandit/Semgrep deltas shipped via TASK-RWD-204; non-Python SAST/CVE deltas deferred** |
 | `TASK-PREDICT-LABEL-007` | Accuracy label source (test-output metric regex extractor) | B | none | **partial/code_complete: metric keyword extractor; full regex catalog open** |
 | `TASK-PREDICT-LABEL-008` | Cost label source (CI minute counter + token telemetry + dep-count delta) | B | none | **partial/code_complete: dependency-count delta; CI/token telemetry open** |
 | `TASK-PREDICT-LABEL-009` | Reasoning-class weak supervisor (E_Reasoning ⟂ E_Diff agreement) | B | PREDICT-005 | **partial/code_complete: field/schema present; embedder-agreement supervisor open** |
@@ -201,7 +201,7 @@ The A-F and H implementation issues are closed for the Phase G handoff. Analyzer
 | ID | Title | Status / Evidence |
 |---|---|---|
 | `TASK-PREDICT-012` | Operator override prediction tool | **complete (#60, commit 377f0884)** — `operator_override.rs` + `CF_MEJEPA_OPERATOR_OVERRIDES` + `mejepa_operator_override_prediction` MCP tool; 6.0× sampling-weight multiplier persisted |
-| `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | **complete (#61, commit 0379df9c; updated 2026-05-17 for TASK-RWD-208)** — `crates/context-graph-mejepa/src/toolchain_detect.rs`; 17-binary default catalogue across 11 languages, including mypy/ruff/pyright/python3 for Python static-analysis/type/runtime labels |
+| `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | **complete (#61, commit 0379df9c; updated 2026-05-17 for TASK-RWD-204/208)** — `crates/context-graph-mejepa/src/toolchain_detect.rs`; 19-binary default catalogue across 11 languages, including mypy/ruff/pyright/python3 for Python static-analysis/type/runtime labels plus Bandit/Semgrep for Q4 security labels |
 | `TASK-PREDICT-LABEL-011` | Cross-language label gating | **complete (#62, commit 0379df9c)** — `crates/context-graph-mejepa/src/cross_language_label_gating.rs`; same-root-cause + similarity > 0.85 + correlation ≥ 0.60 ⇒ transfer at 0.5× weight |
 | `TASK-PREDICT-LABEL-012` | Cross-language label gating consumer | **complete (#86)** — `label_transfer_audit` + `apply_phase_b_labels_with_transfer_gate()` + `CF_MEJEPA_LABEL_TRANSFER_DECISIONS`; weekly surfaces include accept/reject ratios per language pair |
 | `TASK-UTML-009` | Per-cell state-transfer T in eval reports | **complete (#63)** — weekly eval reports carry per-cell state-transfer diagnostics; FSV sha256:63234e2d |
@@ -525,7 +525,7 @@ Pillars 1 (frozen panel), 2 (anti-collapse SIGReg), 4 (action-conditioned), 8 (c
 | `TASK-RWD-201` | `E_Cyclomatic` instrument (cyclomatic / cognitive / Halstead / depth) | 4 — static quality | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-rwd-201-cyclomatic-fsv/run-1779042449826/cyclomatic_fsv.json` sha256 `293d939dc2cccf5a70890be1154986e01b21289e1172714b4e694d9a9c68e2e8` | shipped 2026-05-17 |
 | `TASK-RWD-202` | `E_Coverage` instrument (line-level coverage delta per file) | 4 — static quality | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-rwd-202-coverage-fsv/run-1779043488412/coverage_fsv.json` sha256 `dc72ce7768a76dee175bbf4af5131004b421ad999ba699a9ac7a5c50ce98fa0d` | shipped 2026-05-17 |
 | `TASK-RWD-203` | `E_DiffTopology` instrument (hunks per file, size distribution, entropy) | 4 — static quality | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-rwd-203-diff-topology-fsv/run-1779043047838/diff_topology_fsv.json` sha256 `749b120421d37413a2ae54d67ad18f755855dcd337d30dbbb75dd99b3aa98c60` | shipped 2026-05-17 |
-| `TASK-RWD-204` | `E_SecuritySignals` instrument (auth / input-sanit / secret patterns) | 4 — static quality | G+ | #265 | 2-3d |
+| `TASK-RWD-204` | `E_SecuritySignals` instrument (auth / input-sanit / secret patterns) | 4 — static quality | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-py-g-046-q4-security-label-fsv/run-1779047326597/q4_security_label_fsv.json` sha256 `f2481f3c3e7221baf78a2b0654187621dc7bf6d46950373e8e6fcaf281f45ed6` | shipped 2026-05-17 |
 | `TASK-RWD-205` | `E_TypeGraph` full instrument (currently partial) | 3 — static graph | G+ | — | 2d |
 | `TASK-RWD-206` | `E_Telemetry` instrument (latency / VRAM / cost prediction features) | 5 — runtime telemetry | G+ | — | 3-4d |
 | `TASK-RWD-207` | `E_LiveSession` instrument (session state + operator-goal embedding) | 7 — live session | G+ | — | 2-3d |
