@@ -30,6 +30,7 @@ use crate::failure_fingerprint::{
 };
 use crate::gates::{check_source_sha_drift, replay_witness_segment};
 use crate::hierarchical::build_hierarchical_prediction;
+use crate::objective_safety::{evaluate_mejepa_objective, MejepaObjective, ObjectiveSafetyReport};
 use crate::ood::{compute_ood_score, squared_l2};
 use crate::park_list::ParkListEntry;
 use crate::pause_state::{
@@ -45,8 +46,8 @@ use crate::system_cost::SystemCostCounters;
 use crate::types::{
     validate_probability, AgentClaimGraph, ChunkId, ConformalInterval, ConformalMethod, DdaSignals,
     EmbedderId, FailedGate, HierarchicalPredictionRecord, MatchedFingerprintEvidence,
-    OracleOutcome, PanelId, PatchBundle, PredictionProvenance, RealityPrediction,
-    RealityPredictionBuilder, TaskContext, Verdict, VerifyVerdict, WitnessHash,
+    OracleOutcome, PanelId, PatchBundle, PhaseBPredictionSurfaces, PredictionProvenance,
+    RealityPrediction, RealityPredictionBuilder, TaskContext, Verdict, VerifyVerdict, WitnessHash,
 };
 use crate::verdict_assembly::{assemble_verdict, VerdictAssemblyInput};
 
@@ -483,6 +484,12 @@ impl MeJepaCompiler {
         let phase_b_surfaces = run_infer_head("phase_b_surfaces", || {
             infer_phase_b_surfaces(inference_patch, context, &oracle.predicted_test_pass)
         })?;
+        let objective_report = evaluate_mejepa_objective(
+            MejepaObjective::default(),
+            inference_patch,
+            &phase_b_surfaces,
+            oracle.predicted_oracle_pass,
+        )?;
         let confidence_interval = ConformalInterval {
             lower: (confidence - calibration.tau).clamp(0.0, 1.0),
             upper: (confidence + calibration.tau).clamp(0.0, 1.0),
@@ -501,6 +508,9 @@ impl MeJepaCompiler {
             pass_threshold: self.config.p_test_threshold,
             ood_threshold: self.config.ood_refuse_threshold,
             interval_width_threshold: 0.8,
+            safety_constraint_violation_count: objective_report.constraint_violations.len(),
+            objective_total_cost: objective_report.cost.total_cost,
+            objective_cost_ceiling: objective_report.objective.pass_cost_ceiling,
         });
         let fingerprint_evidence =
             self.live_fingerprint_evidence_for_panel(&predicted, verdict, context, prediction_id)?;
@@ -758,6 +768,29 @@ impl MeJepaCompiler {
         self.store.write_live_prediction(&prediction)?;
         let hierarchy = build_hierarchical_prediction(&prediction, patch, &predicted_panel)?;
         self.store.write_hierarchical_prediction(&hierarchy)?;
+
+        let objective_report = objective_report_for_prediction(patch, &prediction)?;
+        if objective_report.pass_blocked {
+            self.store.record_park_list_failure(
+                prediction.prediction_id,
+                current_unix_ms(),
+                "MEJEPA_SAFETY_CONSTRAINT_REJECTED",
+            )?;
+            return Ok(VerifyVerdict::EscalateToHuman {
+                reality_prediction: Some(prediction.clone()),
+                failed_gate: FailedGate::SafetyConstraintViolation {
+                    violation_count: objective_report.constraint_violations.len(),
+                    total_cost: objective_report.cost.total_cost,
+                    cost_ceiling: objective_report.objective.pass_cost_ceiling,
+                    reason: if objective_report.constraint_violations.is_empty() {
+                        "objective cost exceeds pass ceiling".to_string()
+                    } else {
+                        "hardwired safety constraint violation".to_string()
+                    },
+                },
+                gates_passed: 2,
+            });
+        }
 
         if prediction.ood_score > self.config.ood_refuse_threshold {
             self.store.record_park_list_failure(
@@ -1364,6 +1397,34 @@ fn evidence_from_fingerprint_classification(
         matched_fingerprint,
         unknown_candidate_id: None,
     })
+}
+
+fn objective_report_for_prediction(
+    patch: &PatchBundle,
+    prediction: &RealityPrediction,
+) -> Result<ObjectiveSafetyReport, MejepaInferError> {
+    let surfaces = PhaseBPredictionSurfaces {
+        predicted_failure_modes: prediction.predicted_failure_modes.clone(),
+        predicted_failed_tests: prediction.predicted_failed_tests.clone(),
+        guard_violations: prediction.guard_violations.clone(),
+        closest_exemplars: prediction.closest_exemplars.clone(),
+        predicted_edge_cases: prediction.predicted_edge_cases.clone(),
+        predicted_latent_bugs: prediction.predicted_latent_bugs.clone(),
+        predicted_tech_debt_added: prediction.predicted_tech_debt_added.clone(),
+        predicted_dead_code: prediction.predicted_dead_code.clone(),
+        predicted_redundant_code: prediction.predicted_redundant_code.clone(),
+        predicted_perf_regressions: prediction.predicted_perf_regressions.clone(),
+        predicted_security_concerns: prediction.predicted_security_concerns.clone(),
+        predicted_accuracy_degradations: prediction.predicted_accuracy_degradations.clone(),
+        predicted_cost_regressions: prediction.predicted_cost_regressions.clone(),
+        predicted_reasoning_class: prediction.predicted_reasoning_class,
+    };
+    evaluate_mejepa_objective(
+        MejepaObjective::default(),
+        patch,
+        &surfaces,
+        prediction.predicted_oracle_pass,
+    )
 }
 
 fn panel_observation_for_fingerprint_catalog(

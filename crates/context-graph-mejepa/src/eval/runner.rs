@@ -210,7 +210,11 @@ fn verification_state(
                 .transpose()?
                 .unwrap_or(false);
             Ok((
-                !matches!(failed_gate, FailedGate::ConstellationGuardRejected { .. }),
+                !matches!(
+                    failed_gate,
+                    FailedGate::ConstellationGuardRejected { .. }
+                        | FailedGate::SafetyConstraintViolation { .. }
+                ),
                 false,
                 live_prediction_readback,
             ))

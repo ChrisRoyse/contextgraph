@@ -2022,6 +2022,12 @@ pub enum FailedGate {
     ConstellationGuardRejected {
         reason: String,
     },
+    SafetyConstraintViolation {
+        violation_count: usize,
+        total_cost: f32,
+        cost_ceiling: f32,
+        reason: String,
+    },
     PredictionPaused {
         paused_until_unix_ms: i64,
         reason: String,

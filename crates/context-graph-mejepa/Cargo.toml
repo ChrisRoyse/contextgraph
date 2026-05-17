@@ -126,3 +126,7 @@ path = "examples/task_fp_102_hierarchical_jepa_fsv.rs"
 [[example]]
 name = "task_fp_103_latent_search_fsv"
 path = "examples/task_fp_103_latent_search_fsv.rs"
+
+[[example]]
+name = "task_fp_104_objective_safety_fsv"
+path = "examples/task_fp_104_objective_safety_fsv.rs"

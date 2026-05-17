@@ -11,9 +11,15 @@ pub struct VerdictAssemblyInput<'a> {
     pub pass_threshold: f32,
     pub ood_threshold: f32,
     pub interval_width_threshold: f32,
+    pub safety_constraint_violation_count: usize,
+    pub objective_total_cost: f32,
+    pub objective_cost_ceiling: f32,
 }
 
 pub fn assemble_verdict(input: VerdictAssemblyInput<'_>) -> Verdict {
+    if input.safety_constraint_violation_count > 0 {
+        return Verdict::GuardRejected;
+    }
     if input.ood_score >= input.ood_threshold
         || input.confidence_interval.width() > input.interval_width_threshold
     {
@@ -40,6 +46,7 @@ pub fn assemble_verdict(input: VerdictAssemblyInput<'_>) -> Verdict {
         && input.confidence_interval.lower >= input.pass_threshold
         && high_severity_concerns == 0
         && input.security_concern_count == 0
+        && input.objective_total_cost <= input.objective_cost_ceiling
     {
         Verdict::Pass
     } else {
@@ -86,6 +93,9 @@ mod tests {
             pass_threshold: 0.8,
             ood_threshold: 0.9,
             interval_width_threshold: 0.5,
+            safety_constraint_violation_count: 0,
+            objective_total_cost: 0.05,
+            objective_cost_ceiling: 0.65,
         });
         assert_eq!(verdict, Verdict::Abstain);
     }
@@ -102,7 +112,48 @@ mod tests {
             pass_threshold: 0.8,
             ood_threshold: 0.9,
             interval_width_threshold: 0.5,
+            safety_constraint_violation_count: 0,
+            objective_total_cost: 0.05,
+            objective_cost_ceiling: 0.65,
         });
         assert_eq!(verdict, Verdict::Abstain);
+    }
+
+    #[test]
+    fn hard_safety_constraint_rejects_before_pass() {
+        let verdict = assemble_verdict(VerdictAssemblyInput {
+            oracle_pass_confidence: 0.99,
+            failure_modes: &[],
+            security_concern_count: 0,
+            guard_violation_count: 0,
+            ood_score: 0.1,
+            confidence_interval: &interval(0.95, 0.99),
+            pass_threshold: 0.8,
+            ood_threshold: 0.9,
+            interval_width_threshold: 0.5,
+            safety_constraint_violation_count: 1,
+            objective_total_cost: 0.01,
+            objective_cost_ceiling: 0.65,
+        });
+        assert_eq!(verdict, Verdict::GuardRejected);
+    }
+
+    #[test]
+    fn high_objective_cost_blocks_pass() {
+        let verdict = assemble_verdict(VerdictAssemblyInput {
+            oracle_pass_confidence: 0.99,
+            failure_modes: &[],
+            security_concern_count: 0,
+            guard_violation_count: 0,
+            ood_score: 0.1,
+            confidence_interval: &interval(0.95, 0.99),
+            pass_threshold: 0.8,
+            ood_threshold: 0.9,
+            interval_width_threshold: 0.5,
+            safety_constraint_violation_count: 0,
+            objective_total_cost: 0.90,
+            objective_cost_ceiling: 0.65,
+        });
+        assert_eq!(verdict, Verdict::Fail);
     }
 }
