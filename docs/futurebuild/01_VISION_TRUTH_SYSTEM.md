@@ -24,7 +24,13 @@ That means the project optimizes for **reality-prediction accuracy**, not agent 
 - the speed at which prediction mistakes become replay weight, active-learning entries, or self-healing actions;
 - the operator's ability to prove, by source-of-truth readback, that ME-JEPA is functioning as claimed.
 
-## 2.1.1 Phase G is a corpus-driven ME-JEPA training program — not an open-ended observability phase
+## 2.1.1 System 1 generator / System 2 verifier boundary
+
+This product boundary is also the LeCun System 1/System 2 boundary for AI coding. **System 1 is the LLM coding agent**: it reacts to the prompt, proposes edits, narrates intent, and may overclaim because its native output is token-level generation. **System 2 is ME-JEPA-Code**: it deliberately predicts the consequences of each candidate edit in representation space, checks claims against bytes on disk, ranks counterfactual alternatives, applies hardwired objective/safety constraints, and returns calibrated `RealityPrediction` evidence.
+
+The LLM is therefore allowed to be creative, fast, and wrong. ME-JEPA is not allowed to trust that creativity. It treats every System 1 patch as an action candidate whose reality consequences must be predicted against durable sources of truth: repository SHAs, AST chunks, frozen instrument panels, DDA/TCT signals, oracle outcomes, telemetry, witness chains, and operator feedback. When an MCP tool such as `mejepa_verify`, `mejepa_predict_what_if`, `mejepa_search_latent_actions`, or `mejepa_rank_candidates` returns a verdict, it is the System 2 surface evaluating a System 1 proposal.
+
+## 2.1.2 Phase G is a corpus-driven ME-JEPA training program — not an open-ended observability phase
 
 The 0.95 prediction-oracle correlation gate is the *only* metric that closes the truth system. Every other Phase A–F item exists to feed the training loop that closes it. Specifically:
 
@@ -47,6 +53,8 @@ The futurebuild design follows the external lessons from the verifier/evaluation
 ## 3. What ME-JEPA must answer for any agent action
 
 The truth system answers more than pass/fail. Even when oracle prediction is **Pass**, ME-JEPA must surface every other identifiable concern about the change — edge cases the tests do not exercise, latent bugs the change introduces, performance regressions, security-relevant deltas, dead code created or amplified, redundancy with existing code, and cost/efficiency degradations. **The system predicts every issue it can predict, every time it predicts at all.** The full taxonomy of prediction heads is in [`15_PREDICTION_TAXONOMY.md`](15_PREDICTION_TAXONOMY.md); the five operator questions below are how each prediction is anchored to a verifiable reality channel.
+
+The five questions are the System 2 contract. They are not prompts asking the LLM to explain itself; they are deterministic questions ME-JEPA asks about the System 1 agent's claimed edit and its predicted consequences.
 
 | Q | Question | How ME-JEPA answers |
 |---|---|---|

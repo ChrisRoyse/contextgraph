@@ -112,7 +112,9 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 - **System 1 = the AI coding agent (LLM)** — generates patches reactively from prompts.
 - **System 2 = ME-JEPA-Code** — deliberatively predicts whether each candidate patch will satisfy reality, ranks alternatives, surfaces failure modes, and routes Unknown cases to active learning.
 
-**Sub-task:** Documentation update — make this separation explicit in `docs/whitepapermejepasystem/04_FIVE_OPERATOR_QUESTIONS.md` and MCP tool descriptions. (Doc edit, no code.)
+**ME-JEPA state:** ✅ **SHIPPED.** The active Five Questions / product-boundary doc now explicitly defines the System 1 generator / System 2 verifier contract, and the paper-facing `docs/PAPER.md` describes Context Graph's ME-JEPA-Code deployment as the System 2 verifier for AI coding agents. MCP ME-JEPA verification, what-if, latent-search, ranking, explanation, inspection, replay, feedback, shift-observe, capture-audit, and bootstrap/status descriptions identify the tools as System 2 surfaces that evaluate System 1 candidate edits, claims, and feedback against durable source-of-truth state.
+
+**Sub-task:** **Pillar 9 documentation/tool-description update — COMPLETE.** The historical issue path `docs/whitepapermejepasystem/04_FIVE_OPERATOR_QUESTIONS.md` is absent from the current checkout; the live Five Questions content is in `docs/futurebuild/01_VISION_TRUTH_SYSTEM.md`.
 
 ---
 
@@ -138,7 +140,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 | 6 | Objective + safety constraints | ✅ **hardwired safety constraints shipped** | TASK-FP-104 complete |
 | 7 | Counterfactual best-of-K ranking | ✅ **MCP ranker shipped** | TASK-FP-105 complete |
 | 8 | Calibrated uncertainty | ✅ designed (#309) | — |
-| 9 | System 1 vs System 2 framing | doc update needed | (whitepaper edit) |
+| 9 | System 1 vs System 2 framing | ✅ shipped | whitepaper + MCP descriptions updated |
 | 10 | Reward-signal completeness | spawns full audit | doc [`29_*`](29_REWARD_SIGNAL_COMPLETENESS.md) + EPIC #315 |
 
 ---
@@ -152,7 +154,7 @@ ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the follow
 3. **Latent-space planning**: `mejepa_search_latent_actions` returns ranked latent vectors, NOT token-by-token regenerated patches (TASK-FP-103). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-103-latent-search-fsv/run-1779038591152/latent_search_fsv.json`.
 4. **Objective-driven**: explicit cost function + hardwired safety constraint vector; constraint violation hard-blocks `Verdict::Pass` (TASK-FP-104). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-104-objective-safety-fsv/run-1779040194889/objective_safety_fsv.json`.
 5. **Counterfactual ranking**: `mejepa_rank_candidates` MCP tool ships and is exercised by the live integration FSV (TASK-FP-105). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-105-rank-candidates-fsv/run-1779041036578/rank_candidates_fsv.json`.
-6. **System 2 framing**: whitepaper + MCP tool descriptions make the System 1 LLM vs System 2 ME-JEPA separation explicit.
+6. **System 2 framing**: whitepaper + MCP tool descriptions make the System 1 LLM vs System 2 ME-JEPA separation explicit. ✅ Complete.
 7. **Reward-signal completeness**: per `29_*` audit, ≥ 95% of LeCun-enumerated reward signals are captured to durable storage (EPIC #315).
 
 ---
@@ -200,4 +202,4 @@ This ordering is captured in `13_TASK_INDEX.md` task DAG.
 
 ---
 
-**TL;DR.** ME-JEPA-Code has the code-bearing pillars 1, 2, 3, 4, 5, 6, 7, and 8 shipped or designed with FSV-backed evidence where code changed. The remaining #314 gap is the Pillar 9 System 1/System 2 framing update, while Pillar 10 is tracked separately by the #315 reward-signal-completeness audit.
+**TL;DR.** ME-JEPA-Code has pillars 1 through 9 shipped or designed, with FSV-backed evidence where code changed and explicit System 1/System 2 framing in the live docs and MCP tool descriptions. The remaining LeCun pillar is Pillar 10, tracked separately by the #315 reward-signal-completeness audit.

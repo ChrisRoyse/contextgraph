@@ -8,7 +8,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition::new(
             tool_names::MEJEPA_VERIFY,
-            "Verify a candidate patch through the ME-JEPA Phase 4 inference gate ladder. This surface currently exposes the deterministic Phase 4 harness only when CONTEXTGRAPH_MEJEPA_ALLOW_DETERMINISTIC_VERIFY is explicitly enabled; otherwise it fails closed.",
+            "System 2 verifier surface: evaluate a System 1 LLM candidate patch through the ME-JEPA Phase 4 inference gate ladder. This surface currently exposes the deterministic Phase 4 harness only when CONTEXTGRAPH_MEJEPA_ALLOW_DETERMINISTIC_VERIFY is explicitly enabled; otherwise it fails closed.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -22,7 +22,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_PREDICT_LATEST,
-            "Read the latest persisted ME-JEPA RealityPrediction rows for a session from CF_MEJEPA_LIVE_PREDICTIONS.",
+            "Read the latest persisted System 2 ME-JEPA RealityPrediction rows for a System 1 agent session from CF_MEJEPA_LIVE_PREDICTIONS.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -47,7 +47,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_PREDICT_WHAT_IF,
-            "Compile a non-mutating ME-JEPA Phase B what-if prediction for a candidate patch. Reads calibration/train-cert state from the real inference RocksDB, refuses to run unless the deterministic harness is explicitly enabled, and returns repository SHA readback proving no touched file was modified.",
+            "System 2 what-if surface: compile a non-mutating ME-JEPA Phase B prediction for a System 1 candidate patch. Reads calibration/train-cert state from the real inference RocksDB, refuses to run unless the deterministic harness is explicitly enabled, and returns repository SHA readback proving no touched file was modified.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -64,7 +64,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_SEARCH_LATENT_ACTIONS,
-            "Search candidate patches in ME-JEPA latent action space, score each candidate by predicted oracle pass, calibrated confidence, in-distribution mass, hierarchy signal, and optional goal-latent alignment, then return the ranked best-of-K list with repository SHA readback proving no touched file was modified.",
+            "System 2 planning surface: search System 1 candidate patches in ME-JEPA latent action space, score each candidate by predicted oracle pass, calibrated confidence, in-distribution mass, hierarchy signal, and optional goal-latent alignment, then return the ranked best-of-K list with repository SHA readback proving no touched file was modified.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -123,7 +123,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_RANK_CANDIDATES,
-            "Rank counterfactual repair candidates atomically through ME-JEPA. Uses the latent action search backend, then ranks by predicted oracle pass times in-distribution probability while applying objective/safety reports so hard-blocked repairs remain visible but cannot outrank safe candidates.",
+            "System 2 repair-ranking surface: rank System 1 counterfactual repair candidates atomically through ME-JEPA. Uses the latent action search backend, then ranks by predicted oracle pass times in-distribution probability while applying objective/safety reports so hard-blocked repairs remain visible but cannot outrank safe candidates.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -171,7 +171,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_EXPLAIN_PREDICTION,
-            "Explain a persisted ME-JEPA Phase B RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS and returning stored verdict, matched failure-shape fingerprint evidence, top risks, claim reconciliation, reality impact, provenance, and a saliency map normalized from covered chunks.",
+            "Explain a persisted System 2 ME-JEPA Phase B RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS and returning stored verdict, matched failure-shape fingerprint evidence, top risks, claim reconciliation, reality impact, provenance, and a saliency map normalized from covered chunks.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -200,7 +200,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_INSPECT_PREDICTION,
-            "Inspect a persisted ME-JEPA RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS plus required per-chunk CF_MEJEPA_DDA_SIGNALS rows, returning storage provenance, witness/panel identifiers, conformal computation trace, TCT guard cells, and contributing chunk signal vectors.",
+            "Inspect a persisted System 2 ME-JEPA RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS plus required per-chunk CF_MEJEPA_DDA_SIGNALS rows, returning storage provenance, witness/panel identifiers, conformal computation trace, TCT guard cells, and contributing chunk signal vectors.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -219,7 +219,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_REPLAY_PREDICTION,
-            "Replay a persisted ME-JEPA RealityPrediction byte-for-byte from CF_MEJEPA_LIVE_PREDICTIONS by validating the key/payload provenance and reserializing the decoded prediction.",
+            "Replay a persisted System 2 ME-JEPA RealityPrediction byte-for-byte from CF_MEJEPA_LIVE_PREDICTIONS by validating the key/payload provenance and reserializing the decoded prediction.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -238,7 +238,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_RECORD_AGENT_FEEDBACK,
-            "Persist measured agent feedback for a prior ME-JEPA RealityPrediction into CF_MEJEPA_AGENT_FEEDBACK, update the active-learning queue when the feedback is surprise-like, and verify RocksDB readback before returning.",
+            "Persist measured System 1 agent feedback for a prior System 2 ME-JEPA RealityPrediction into CF_MEJEPA_AGENT_FEEDBACK, update the active-learning queue when the feedback is surprise-like, and verify RocksDB readback before returning.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -300,7 +300,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_OBSERVE_SHIFT,
-            "Replay a durable reality-shift log entry through the Phase 7 ME-JEPA subscriber. Fails closed if the subscriber replay channel is not available.",
+            "Replay a durable System 1 reality-shift log entry through the Phase 7 ME-JEPA System 2 subscriber. Fails closed if the subscriber replay channel is not available.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -324,7 +324,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_CAPTURE_AUDIT,
-            "Assemble a Phase 7 ME-JEPA signal-capture audit bundle for an attempt from persisted panel and inference RocksDB sources of truth.",
+            "Assemble a Phase 7 System 2 ME-JEPA signal-capture audit bundle for a System 1 attempt from persisted panel and inference RocksDB sources of truth.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -801,7 +801,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_BOOTSTRAP_STATUS,
-            "Read ME-JEPA bootstrap stage and source-of-truth CF counts from the configured inference RocksDB. Refuses to guess a database path.",
+            "Read ME-JEPA System 2 bootstrap stage and source-of-truth CF counts from the configured inference RocksDB. Refuses to guess a database path.",
             json!({
                 "type": "object",
                 "additionalProperties": false,

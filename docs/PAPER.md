@@ -163,6 +163,8 @@ Retrieval is a weighted Reciprocal Rank Fusion (RRF; Cormack et al., 2009) over 
 
 Context Graph's role is the **labeller role** of Section 3.4: a frozen panel that materialises per-input projections into durable storage, available for downstream constellation construction and per-output geometric verification. The system is not itself the contribution — it is the evidence that production-scale DDA labelling at $N = 13$ is implementable rather than hypothetical.
 
+In the ME-JEPA-Code deployment of Context Graph, this same substrate is also the **System 2 verifier** for AI coding agents. The LLM coding agent is the System 1 generator: it emits candidate patches and natural-language claims. ME-JEPA-Code is the System 2 verifier: it predicts the consequences of those candidate patches in representation space, checks the claims against source-of-truth repository state, ranks counterfactual alternatives, and surfaces calibrated failure, OOD, safety, and impact evidence before the agent can treat the patch as done. This is a deployment role for the TCT guard and DDA labeller machinery, not an additional generator-in-loop training path.
+
 ## 4.2 ClipCannon — a video-side DDA realisation at $N = 7$
 
 ClipCannon is a Python package of roughly **67,585 source lines** running a **23-stage analysis directed acyclic graph** over source video. It extracts seven modalities — visual (SigLIP-SO400M at 1,152-D; Zhai et al., 2023), semantic (nomic-embed-text-v1.5 at 768-D), emotion (wav2vec2-large at 1,024-D), speaker (WavLM-large at 512-D; Chen et al., 2022), prosody (custom 12-D F0/energy/rate/contour), sentiment (MiniLM-L6-v2 at 384-D), and voice identity (ECAPA-TDNN at 192-D; Desplanques et al., 2020) — totalling **4,044 dimensions across seven modalities**. The pipeline is exposed as **58 MCP tools** covering ingest, analysis, editing, rendering, voice cloning, and avatar lip-sync.
@@ -770,4 +772,3 @@ Case 1 Shakespeare base corpus is the public-domain canon available from Project
 ## A.8 Source crosswalk
 
 All measured Case 3 numbers (0.961 mean, 0.975 max, 0.914 min, 9/10 $\geq 0.95$, 3.93/3.93 DNSMOS, 3.012/2.997 UTMOS, bootstrap CI $[0.951, 0.971]$, temperature-sweep table, centroid-size ablation) are drawn from the measurement SITREP at `tasks/newdata/alldata.md` (sections 5.1, 5.4, 5.5, 5.6). The crosswalk is verifiable by line-number against that file.
-
