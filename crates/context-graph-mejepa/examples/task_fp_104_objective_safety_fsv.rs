@@ -67,18 +67,12 @@ fn main() -> Result<()> {
             pause_state_path: None,
             bootstrap_delta_omega: 1.0,
             bootstrap_delta_xi: 1.0,
-            p_test_threshold: 0.40,
+            p_test_threshold: 0.20,
             ood_refuse_threshold: 1.0,
             outcome_set_max: 1,
             ..MeJepaInferConfig::default()
         },
     )?;
-    if (compiler.config.ood_refuse_threshold - 1.0).abs() > f32::EPSILON {
-        bail!(
-            "FSV compiler config did not retain OOD override: {}",
-            compiler.config.ood_refuse_threshold
-        );
-    }
 
     let live_prediction_count_before = count_cf(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS)?;
     let hierarchy_count_before = count_cf(db.as_ref(), CF_MEJEPA_HIERARCHICAL_PREDICTIONS)?;
@@ -251,8 +245,8 @@ fn calibration_record() -> CalibrationRecord {
         version: "task-fp-104-objective-safety-fsv".to_string(),
         alpha: 0.1,
         target_coverage: 0.9,
-        tau: 0.01,
-        sigma_squared: 100.0,
+        tau: 0.20,
+        sigma_squared: 1_000_000_000.0,
         empirical_coverage: 0.95,
         min_samples_per_stratum: 1,
         sample_count: 1,

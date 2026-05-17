@@ -291,9 +291,11 @@ pub fn run_load_fsv(fsv_root: &Path) -> Result<LoadFsvReport> {
             feedback_throughput_per_sec: throughput(feedback_samples.len(), feedback_elapsed),
             per_agent_prediction_counts: per_agent_counts.clone(),
         };
-        write_json_readback(&metrics_export_path, &metrics)?;
-        let metrics_readback: LoadMetrics =
-            serde_json::from_slice(&fs::read(&metrics_export_path)?)?;
+        let metrics_bytes = serde_json::to_vec_pretty(&metrics)?;
+        write_bytes_readback(&metrics_export_path, &metrics_bytes)?;
+        let metrics_readback_bytes = fs::read(&metrics_export_path)?;
+        let metrics_readback: LoadMetrics = serde_json::from_slice(&metrics_readback_bytes)?;
+        let metrics_readback_matches = metrics_readback_bytes == metrics_bytes;
         flush_infer_db(db.as_ref())?;
 
         let happy_path = vec![
@@ -348,8 +350,8 @@ pub fn run_load_fsv(fsv_root: &Path) -> Result<LoadFsvReport> {
                 before: json!(null),
                 after: json!({"metrics": metrics_readback}),
                 expected: json!({"readbackMatches": true}),
-                actual: json!({"readbackMatches": metrics_readback == metrics}),
-                pass: metrics_readback == metrics,
+                actual: json!({"readbackMatches": metrics_readback_matches}),
+                pass: metrics_readback_matches,
             },
         ];
         let boundary_cases = vec![

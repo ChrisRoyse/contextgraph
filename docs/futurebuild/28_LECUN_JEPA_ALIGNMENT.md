@@ -74,11 +74,11 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 
 **LeCun:** *"You give an objective to an AI system... The system has a world model and it predicts the outcome of a sequence of actions it imagines taking. If this outcome satisfies a cost function... [the system] minimizes this cost according to its model. It can do nothing else. You can add ... safety constraints that say 'don't hurt anybody on the way.' The system cannot violate those things by construction."*
 
-**ME-JEPA state:** ⚠️ **PARTIAL.** Q4 head emits cost-like outputs (perf/security/accuracy/cost regressions) per `15_PREDICTION_TAXONOMY.md`, but these are *predictions*, not hardwired *constraints*. There's no construct guaranteeing the predictor must minimize a multi-objective cost function with explicit safety constraint vectors.
+**ME-JEPA state:** ✅ **SHIPPED.** TASK-FP-104 adds `MejepaObjective`, deterministic objective-cost scoring, and a hardwired safety-constraint vector in `context-graph-mejepa/src/objective_safety.rs`. `compiler.compile_with_panel()` evaluates the objective before building the verdict, and `compiler.verify()` escalates `FailedGate::SafetyConstraintViolation` before approval when the objective report blocks pass. This makes test deletion, secret exposure, auth bypass, and unsafe crypto constraints hard blockers by construction.
 
-**Gap:** Need an explicit cost function signature: `Cost = w_oracle · OracleFailScore + w_perf · PerfRegression + w_security · SecurityRegression + ...` + a hardwired safety-constraint vector `Constraints = {no_test_deletion, no_secret_exposure, no_auth_bypass, ...}`. Verdict generation must check constraints first; constraint violation hard-blocks `Verdict::Pass` regardless of other signals.
+**FSV evidence:** `/mnt/d/contextgraph/fsv/task-fp-104-objective-safety-fsv/run-1779040194889/objective_safety_fsv.json`, sha256 `31cda8fa8c7bb0ce980947786b42d104f6ea1d2cde42a6bef88d6cc1aff288a1`, `all_passed=true`. The FSV proves a clean high-oracle patch receives `Verdict::Pass`, while a synthetic no-test-deletion violation receives `Verdict::GuardRejected` plus `FailedGate::SafetyConstraintViolation`, with live prediction and hierarchy CF readback for the safety-rejected prediction.
 
-**Sub-task:** **TASK-FP-104 — Objective-driven cost + hardwired safety constraints.** Acceptance: new struct `MejepaObjective { cost: CostFn, constraints: Vec<SafetyConstraint> }`; verdict emission checks constraints first; FSV proves a synthetic patch that violates `no_test_deletion` constraint cannot pass even with high oracle-pass probability.
+**Sub-task:** **TASK-FP-104 — COMPLETE.** The shipped implementation uses the existing Q4 cost-like heads as inputs to the objective cost and hard-blocks safety constraint violations before `Pass`.
 
 ---
 
@@ -135,7 +135,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 | 3 | Hierarchical JEPA | ✅ **file→function→AST→chunk shipped** | TASK-FP-102 complete |
 | 4 | Action-conditioned world model | ✅ shipped | — |
 | 5 | Latent-space planning | ✅ **best-of-K latent action search shipped** | TASK-FP-103 complete |
-| 6 | Objective + safety constraints | ⚠️ partial | TASK-FP-104 |
+| 6 | Objective + safety constraints | ✅ **hardwired safety constraints shipped** | TASK-FP-104 complete |
 | 7 | Counterfactual best-of-K ranking | ⚠️ infra exists, MCP tool missing | TASK-FP-105 |
 | 8 | Calibrated uncertainty | ✅ designed (#309) | — |
 | 9 | System 1 vs System 2 framing | doc update needed | (whitepaper edit) |
@@ -150,7 +150,7 @@ ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the follow
 1. **SIGreg** (or comparable explicit info-max regularizer) is shipped with FSV proving info-content monotonicity (TASK-FP-101). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-101-sigreg-fsv/run-1779036305137/sigreg_fsv.json`.
 2. **Hierarchical** predictor emits multi-scale predictions across ≥ 3 abstraction levels with per-level calibration (TASK-FP-102). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-102-hierarchical-jepa-fsv/run-1779037368822/hierarchical_jepa_fsv.json`.
 3. **Latent-space planning**: `mejepa_search_latent_actions` returns ranked latent vectors, NOT token-by-token regenerated patches (TASK-FP-103). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-103-latent-search-fsv/run-1779038591152/latent_search_fsv.json`.
-4. **Objective-driven**: explicit cost function + hardwired safety constraint vector; constraint violation hard-blocks `Verdict::Pass` (TASK-FP-104).
+4. **Objective-driven**: explicit cost function + hardwired safety constraint vector; constraint violation hard-blocks `Verdict::Pass` (TASK-FP-104). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-104-objective-safety-fsv/run-1779040194889/objective_safety_fsv.json`.
 5. **Counterfactual ranking**: `mejepa_rank_candidates` MCP tool ships and is exercised by the live integration FSV (TASK-FP-105).
 6. **System 2 framing**: whitepaper + MCP tool descriptions make the System 1 LLM vs System 2 ME-JEPA separation explicit.
 7. **Reward-signal completeness**: per `29_*` audit, ≥ 95% of LeCun-enumerated reward signals are captured to durable storage (EPIC #315).
@@ -164,7 +164,7 @@ ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the follow
 | TASK-FP-101 | SIGReg regularizer for predictor | 2 | ✅ Complete: differentiable characteristic-function sketch + FSV `b2d4995d4de9539916558f51cdd1423081af94962868c18077653c0d075e80c7` |
 | TASK-FP-102 | Hierarchical JEPA predictor (file → function → AST → chunk) | 3 | ✅ Complete: `CF_MEJEPA_HIERARCHICAL_PREDICTIONS` readback + FSV `5dfce2ebe37d2b52a6ad036ec89e22f659c014fa3ff9c543b123000f2d7f9bf1` |
 | TASK-FP-103 | Latent-space candidate-patch search | 5 | ✅ Complete: `mcp__cgreality__mejepa_search_latent_actions` + FSV `f31de8c1d4a0035731170e4a24640dc04d16095c2525ceacde84e7b0c8167e4e` |
-| TASK-FP-104 | Objective-driven cost + safety constraints | 6 | Hardwired constraint vector hard-blocks Verdict::Pass on violation |
+| TASK-FP-104 | Objective-driven cost + safety constraints | 6 | ✅ Complete: `MejepaObjective` + `FailedGate::SafetyConstraintViolation` + FSV `31cda8fa8c7bb0ce980947786b42d104f6ea1d2cde42a6bef88d6cc1aff288a1` |
 | TASK-FP-105 | `mejepa_rank_candidates` MCP tool | 7 | Monotonic ranking by predicted-Pass × (1 − OOD_score) |
 
 Each TASK file follows `prdtospec.md` Level-4 atomic-task format and the FSV protocol per [`specs/FSV-PROTOCOL.md`](specs/FSV-PROTOCOL.md).
@@ -176,8 +176,8 @@ Each TASK file follows `prdtospec.md` Level-4 atomic-task format and the FSV pro
 1. **TASK-FP-101 (SIGReg)** — complete. Pure substrate-side improvement, doesn't depend on other tasks, immediately benefits all downstream predictor heads.
 2. **TASK-FP-102 (hierarchical)** — complete. It provides the multi-scale substrate that TASK-FP-103 latent search will operate over.
 3. **TASK-FP-103 (latent search)** — complete. Depends on hierarchical predictor for richer search space and now provides the candidate-search backend for TASK-FP-105.
-4. **TASK-FP-104 (cost + safety)** next — depends on Q4 head emitting cost-like outputs (existing) + adds hard constraint layer.
-5. **TASK-FP-105 (counterfactual rank)** fifth — depends on TASK-FP-103 (uses latent search as the candidate-generation backend).
+4. **TASK-FP-104 (cost + safety)** — complete. Depends on Q4 head emitting cost-like outputs (existing) + adds hard constraint layer.
+5. **TASK-FP-105 (counterfactual rank)** next — depends on TASK-FP-103 and should consume TASK-FP-104 objective/safety scores in ranking.
 
 This ordering is captured in `13_TASK_INDEX.md` task DAG.
 
@@ -200,4 +200,4 @@ This ordering is captured in `13_TASK_INDEX.md` task DAG.
 
 ---
 
-**TL;DR.** ME-JEPA-Code has the code-bearing pillars 1, 2, 3, 4, 5, and 8 shipped or designed with FSV-backed evidence where code changed. The remaining #314 pillar gaps are TASK-FP-104..105: objective+safety constraints and counterfactual best-of-K ranking. Pillar 9 is a framing/documentation update, and pillar 10 is tracked separately by the #315 reward-signal-completeness audit.
+**TL;DR.** ME-JEPA-Code has the code-bearing pillars 1, 2, 3, 4, 5, 6, and 8 shipped or designed with FSV-backed evidence where code changed. The remaining #314 code-bearing pillar gap is TASK-FP-105 counterfactual best-of-K ranking. Pillar 9 is a framing/documentation update, and pillar 10 is tracked separately by the #315 reward-signal-completeness audit.

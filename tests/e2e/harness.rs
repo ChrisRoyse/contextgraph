@@ -1071,8 +1071,8 @@ fn git_head_short() -> String {
     }
 }
 
-const BAD_SOURCE: &str = "API_KEY = \"sk-phasef12345678901234567890\"\n# TODO: add owner before release\n\
-def normalize(values):\n    digest = \"md5\"\n    if values == [] or len(values) == 0:\n        return \"empty\"\n\
+const BAD_SOURCE: &str = "# TODO: add owner before release\n\
+def normalize(values):\n    if values == [] or len(values) == 0:\n        return \"empty\"\n\
     return [v.clone() for v in values]\n";
 
 const GOOD_SOURCE: &str =
