@@ -775,7 +775,7 @@ impl SchedulerState {
                     "reason": entry.reason,
                     "ood_score": entry.ood_score,
                     "outcome_set_len": entry.outcome_set_len,
-                    "kind": entry.kind,
+                    "kind": active_learning_kind_summary(&entry.kind),
                 })
             })
             .collect::<Vec<_>>();
@@ -1352,6 +1352,40 @@ pub fn write_json_atomic_readback<T: Serialize>(path: &Path, value: &T) -> Resul
         ));
     }
     Ok(())
+}
+
+fn active_learning_kind_summary(kind: &ActiveLearningKind) -> serde_json::Value {
+    match kind {
+        ActiveLearningKind::Uncertainty => json!({"type": "uncertainty"}),
+        ActiveLearningKind::OutOfDistribution => json!({"type": "out_of_distribution"}),
+        ActiveLearningKind::AgentSurprise {
+            prediction_id,
+            severity_score,
+        } => json!({
+            "type": "agent_surprise",
+            "prediction_id": hex::encode(prediction_id.0),
+            "severity_score": severity_score,
+        }),
+        ActiveLearningKind::ColdCellTargetedCorpus {
+            cell_id,
+            abstain_count,
+        } => json!({
+            "type": "cold_cell_targeted_corpus",
+            "cell_id": cell_id,
+            "abstain_count": abstain_count,
+        }),
+        ActiveLearningKind::UnknownFingerprint { candidate } => json!({
+            "type": "unknown_fingerprint",
+            "candidate_id": hex::encode(candidate.candidate_id),
+            "prediction_id": hex::encode(candidate.prediction_id.0),
+            "task_id": candidate.task_id.0,
+            "active_learning_priority": candidate.active_learning_priority,
+            "ood_score": candidate.ood_score,
+            "embedder_disagreement_score": candidate.embedder_disagreement_score,
+            "embedder_count": candidate.observation_by_embedder.len(),
+            "nearest_fingerprint_count": candidate.nearest_fingerprints.len(),
+        }),
+    }
 }
 
 fn tmp_path_for(path: &Path) -> Result<PathBuf, HealError> {

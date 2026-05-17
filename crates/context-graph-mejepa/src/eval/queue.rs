@@ -1,10 +1,135 @@
 use super::error::{EvalError, EvalErrorCode};
 use super::types::EvalObservation;
+use crate::failure_fingerprint::{
+    FingerprintCandidateScore, FingerprintClassification, FingerprintDecisionReason,
+};
 use crate::pause_state::prediction_is_operator_paused;
-use crate::types::{OracleOutcome, PredictionId, RealityPrediction, SurpriseSeverity, TaskId};
+use crate::types::{
+    EmbedderId, OracleOutcome, PredictionId, RealityPrediction, SurpriseSeverity, TaskId, Verdict,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+const MAX_UNKNOWN_FINGERPRINT_EMBEDDERS: usize = 32;
+const MAX_UNKNOWN_FINGERPRINT_VECTOR_DIMS: usize = 65_536;
+const DEFAULT_UNKNOWN_FINGERPRINT_NEAR_MATCH_MARGIN: f32 = -0.02;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnknownFingerprintCandidate {
+    pub candidate_id: [u8; 16],
+    pub prediction_id: PredictionId,
+    pub task_id: TaskId,
+    pub session_id: [u8; 16],
+    pub observed_at_unix_ms: i64,
+    pub ood_score: f32,
+    pub embedder_disagreement_score: f32,
+    pub active_learning_priority: u8,
+    pub observation_by_embedder: BTreeMap<EmbedderId, Vec<f32>>,
+    pub nearest_fingerprints: Vec<FingerprintCandidateScore>,
+}
+
+impl UnknownFingerprintCandidate {
+    pub fn validate(&self) -> Result<(), EvalError> {
+        self.task_id
+            .validate("unknown_fingerprint_candidate.task_id")
+            .map_err(EvalError::from)?;
+        if self.candidate_id.iter().all(|byte| *byte == 0) {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "unknown fingerprint candidate_id must be non-zero",
+            ));
+        }
+        if self.prediction_id.0.iter().all(|byte| *byte == 0) {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "unknown fingerprint prediction_id must be non-zero",
+            ));
+        }
+        if self.session_id.iter().all(|byte| *byte == 0) {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "unknown fingerprint session_id must be non-zero",
+            ));
+        }
+        if self.observed_at_unix_ms <= 0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "unknown fingerprint observed_at_unix_ms must be positive",
+            ));
+        }
+        validate_probability("unknown_fingerprint_candidate.ood_score", self.ood_score)?;
+        validate_nonnegative_finite(
+            "unknown_fingerprint_candidate.embedder_disagreement_score",
+            self.embedder_disagreement_score,
+        )?;
+        if !(1..=5).contains(&self.active_learning_priority) {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "unknown fingerprint active_learning_priority must be in 1..=5",
+            ));
+        }
+        validate_observation_map(&self.observation_by_embedder)?;
+        for candidate in &self.nearest_fingerprints {
+            candidate.validate().map_err(EvalError::from)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnknownFingerprintClusterSuggestion {
+    pub cluster_id: [u8; 16],
+    pub suggested_name: String,
+    pub member_candidate_ids: Vec<[u8; 16]>,
+    pub member_task_ids: Vec<TaskId>,
+    pub centroid_by_embedder: BTreeMap<EmbedderId, Vec<f32>>,
+    pub mean_ood_score: f32,
+    pub mean_embedder_disagreement_score: f32,
+    pub active_learning_priority: u8,
+}
+
+impl UnknownFingerprintClusterSuggestion {
+    pub fn validate(&self) -> Result<(), EvalError> {
+        if self.cluster_id.iter().all(|byte| *byte == 0) {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "unknown fingerprint cluster_id must be non-zero",
+            ));
+        }
+        validate_cell_id(&self.suggested_name)?;
+        if self.member_candidate_ids.is_empty() || self.member_task_ids.is_empty() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "unknown fingerprint cluster must include at least one member",
+            ));
+        }
+        if self.member_candidate_ids.len() != self.member_task_ids.len() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "unknown fingerprint cluster member id/task count mismatch",
+            ));
+        }
+        validate_observation_map(&self.centroid_by_embedder)?;
+        validate_probability(
+            "unknown_fingerprint_cluster.mean_ood_score",
+            self.mean_ood_score,
+        )?;
+        validate_nonnegative_finite(
+            "unknown_fingerprint_cluster.mean_embedder_disagreement_score",
+            self.mean_embedder_disagreement_score,
+        )?;
+        if !(1..=5).contains(&self.active_learning_priority) {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "unknown fingerprint cluster active_learning_priority must be in 1..=5",
+            ));
+        }
+        Ok(())
+    }
+}
 
 /// REQ-FLYWHEEL-11 — discriminates how an entry landed on the active-learning
 /// queue. The Uncertainty / OutOfDistribution variants are the existing
@@ -25,6 +150,9 @@ pub enum ActiveLearningKind {
         cell_id: String,
         abstain_count: u32,
     },
+    UnknownFingerprint {
+        candidate: Box<UnknownFingerprintCandidate>,
+    },
 }
 
 impl ActiveLearningKind {
@@ -43,9 +171,10 @@ impl ActiveLearningKind {
     pub fn fast_track_rank(&self) -> u8 {
         match self {
             Self::AgentSurprise { .. } => 0,
-            Self::ColdCellTargetedCorpus { .. } => 1,
-            Self::OutOfDistribution => 2,
-            Self::Uncertainty => 3,
+            Self::UnknownFingerprint { .. } => 1,
+            Self::ColdCellTargetedCorpus { .. } => 2,
+            Self::OutOfDistribution => 3,
+            Self::Uncertainty => 4,
         }
     }
 }
@@ -240,6 +369,127 @@ impl ActiveLearningQueueState {
         Ok(())
     }
 
+    pub fn enqueue_unknown_fingerprint_candidate(
+        &mut self,
+        prediction: &RealityPrediction,
+        classification: &FingerprintClassification,
+        observation_by_embedder: BTreeMap<EmbedderId, Vec<f32>>,
+        observed_at_unix_ms: i64,
+    ) -> Result<bool, EvalError> {
+        if prediction_is_operator_paused(prediction) {
+            return Ok(false);
+        }
+        prediction.validate().map_err(EvalError::from)?;
+        classification.validate().map_err(EvalError::from)?;
+        if classification.verdict != Verdict::OutOfDistribution
+            || classification.reason != FingerprintDecisionReason::NoKnownMatch
+        {
+            return Ok(false);
+        }
+        validate_observation_map(&observation_by_embedder)?;
+        if observed_at_unix_ms <= 0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "unknown fingerprint observed_at_unix_ms must be positive",
+            ));
+        }
+        let embedder_disagreement_score = embedder_disagreement_score(classification)?;
+        let active_learning_priority = unknown_fingerprint_priority(
+            prediction.ood_score,
+            embedder_disagreement_score,
+            classification,
+        )?;
+        let candidate_id = unknown_candidate_id(
+            &prediction.task_id,
+            PredictionId(prediction.prediction_id),
+            observed_at_unix_ms,
+            &observation_by_embedder,
+        );
+        let candidate = UnknownFingerprintCandidate {
+            candidate_id,
+            prediction_id: PredictionId(prediction.prediction_id),
+            task_id: prediction.task_id.clone(),
+            session_id: prediction.session_id,
+            observed_at_unix_ms,
+            ood_score: prediction.ood_score,
+            embedder_disagreement_score,
+            active_learning_priority,
+            observation_by_embedder,
+            nearest_fingerprints: classification.ranked_matches.clone(),
+        };
+        candidate.validate()?;
+        let entry = ActiveLearningQueueEntry {
+            task_id: prediction.task_id.clone(),
+            score: active_learning_priority_score(active_learning_priority),
+            outcome_set_len: prediction.outcome_set.outcomes.len(),
+            ood_score: prediction.ood_score,
+            reason: "fingerprint_unknown_ood".to_string(),
+            kind: ActiveLearningKind::UnknownFingerprint {
+                candidate: Box::new(candidate),
+            },
+        };
+        self.entries.insert(prediction.task_id.clone(), entry);
+        self.evict_to_capacity()?;
+        Ok(true)
+    }
+
+    pub fn suggest_unknown_fingerprint_clusters(
+        &self,
+        min_cluster_size: usize,
+        cosine_threshold: f32,
+    ) -> Result<Vec<UnknownFingerprintClusterSuggestion>, EvalError> {
+        if min_cluster_size == 0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidConfig,
+                "unknown fingerprint min_cluster_size must be greater than zero",
+            ));
+        }
+        validate_probability(
+            "unknown_fingerprint_cluster.cosine_threshold",
+            cosine_threshold,
+        )?;
+        let candidates = self
+            .entries
+            .values()
+            .filter_map(|entry| match &entry.kind {
+                ActiveLearningKind::UnknownFingerprint { candidate } => Some(candidate.as_ref()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let mut assigned = BTreeSet::new();
+        let mut suggestions = Vec::new();
+        for seed in &candidates {
+            seed.validate()?;
+            if assigned.contains(&seed.candidate_id) {
+                continue;
+            }
+            let mut cluster = vec![*seed];
+            for candidate in &candidates {
+                candidate.validate()?;
+                if candidate.candidate_id == seed.candidate_id
+                    || assigned.contains(&candidate.candidate_id)
+                {
+                    continue;
+                }
+                let similarity = mean_observation_cosine(
+                    &seed.observation_by_embedder,
+                    &candidate.observation_by_embedder,
+                )?;
+                if similarity >= cosine_threshold {
+                    cluster.push(*candidate);
+                }
+            }
+            if cluster.len() < min_cluster_size {
+                continue;
+            }
+            for candidate in &cluster {
+                assigned.insert(candidate.candidate_id);
+            }
+            suggestions.push(build_unknown_cluster_suggestion(&cluster)?);
+        }
+        Ok(suggestions)
+    }
+
     fn evict_to_capacity(&mut self) -> Result<(), EvalError> {
         while self.entries.len() > self.capacity {
             let lowest = self
@@ -286,6 +536,345 @@ fn validate_cell_id(cell_id: &str) -> Result<(), EvalError> {
         ));
     }
     Ok(())
+}
+
+fn validate_probability(field: &str, value: f32) -> Result<(), EvalError> {
+    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidInput,
+            format!("{field} must be finite and in [0,1]; got {value}"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_nonnegative_finite(field: &str, value: f32) -> Result<(), EvalError> {
+    if !value.is_finite() || value < 0.0 {
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidInput,
+            format!("{field} must be finite and non-negative; got {value}"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_observation_map(
+    observation_by_embedder: &BTreeMap<EmbedderId, Vec<f32>>,
+) -> Result<(), EvalError> {
+    if observation_by_embedder.is_empty() {
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidInput,
+            "unknown fingerprint observation map must be non-empty",
+        ));
+    }
+    if observation_by_embedder.len() > MAX_UNKNOWN_FINGERPRINT_EMBEDDERS {
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidInput,
+            format!(
+                "unknown fingerprint observation has {} embedders; max {MAX_UNKNOWN_FINGERPRINT_EMBEDDERS}",
+                observation_by_embedder.len()
+            ),
+        ));
+    }
+    for (embedder, vector) in observation_by_embedder {
+        embedder
+            .validate("unknown_fingerprint.embedder")
+            .map_err(EvalError::from)?;
+        if vector.is_empty() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!("unknown fingerprint vector for {} is empty", embedder.0),
+            ));
+        }
+        if vector.len() > MAX_UNKNOWN_FINGERPRINT_VECTOR_DIMS {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "unknown fingerprint vector for {} exceeds {MAX_UNKNOWN_FINGERPRINT_VECTOR_DIMS} dims",
+                    embedder.0
+                ),
+            ));
+        }
+        let mut norm = 0.0_f64;
+        for value in vector {
+            if !value.is_finite() {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!(
+                        "unknown fingerprint vector for {} contains {value}",
+                        embedder.0
+                    ),
+                ));
+            }
+            norm += f64::from(*value) * f64::from(*value);
+        }
+        if norm <= f64::EPSILON {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "unknown fingerprint vector for {} has zero norm",
+                    embedder.0
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn embedder_disagreement_score(
+    classification: &FingerprintClassification,
+) -> Result<f32, EvalError> {
+    let Some(nearest) = classification.ranked_matches.first() else {
+        return Ok(0.0);
+    };
+    if nearest.embedder_scores.is_empty() {
+        return Ok(0.0);
+    }
+    let mean = nearest
+        .embedder_scores
+        .iter()
+        .map(|score| score.cosine)
+        .sum::<f32>()
+        / nearest.embedder_scores.len() as f32;
+    let variance = nearest
+        .embedder_scores
+        .iter()
+        .map(|score| {
+            let delta = score.cosine - mean;
+            delta * delta
+        })
+        .sum::<f32>()
+        / nearest.embedder_scores.len() as f32;
+    let score = variance.sqrt().clamp(0.0, 1.0);
+    validate_probability("unknown_fingerprint.embedder_disagreement_score", score)?;
+    Ok(score)
+}
+
+fn unknown_fingerprint_priority(
+    ood_score: f32,
+    embedder_disagreement_score: f32,
+    classification: &FingerprintClassification,
+) -> Result<u8, EvalError> {
+    validate_probability("unknown_fingerprint.ood_score", ood_score)?;
+    validate_probability(
+        "unknown_fingerprint.embedder_disagreement_score",
+        embedder_disagreement_score,
+    )?;
+    let near_match = classification
+        .ranked_matches
+        .first()
+        .is_some_and(|candidate| {
+            candidate.min_margin >= DEFAULT_UNKNOWN_FINGERPRINT_NEAR_MATCH_MARGIN
+        });
+    let priority = if near_match {
+        4
+    } else if ood_score >= 0.90 || embedder_disagreement_score >= 0.25 {
+        2
+    } else {
+        3
+    };
+    Ok(priority)
+}
+
+fn active_learning_priority_score(priority: u8) -> f32 {
+    match priority {
+        1 => 1.0,
+        2 => 0.75,
+        3 => 0.50,
+        4 => 0.25,
+        _ => 0.0,
+    }
+}
+
+fn unknown_candidate_id(
+    task_id: &TaskId,
+    prediction_id: PredictionId,
+    observed_at_unix_ms: i64,
+    observation_by_embedder: &BTreeMap<EmbedderId, Vec<f32>>,
+) -> [u8; 16] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"MEJEPA_UNKNOWN_FINGERPRINT_CANDIDATE_V1");
+    hasher.update(task_id.0.as_bytes());
+    hasher.update(prediction_id.0);
+    hasher.update(observed_at_unix_ms.to_be_bytes());
+    for (embedder, vector) in observation_by_embedder {
+        hasher.update(embedder.0.as_bytes());
+        hasher.update((vector.len() as u64).to_be_bytes());
+        for value in vector {
+            hasher.update(value.to_bits().to_be_bytes());
+        }
+    }
+    let digest = hasher.finalize();
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&digest[..16]);
+    out
+}
+
+fn mean_observation_cosine(
+    left: &BTreeMap<EmbedderId, Vec<f32>>,
+    right: &BTreeMap<EmbedderId, Vec<f32>>,
+) -> Result<f32, EvalError> {
+    if left.keys().collect::<Vec<_>>() != right.keys().collect::<Vec<_>>() {
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidInput,
+            "unknown fingerprint observations must have identical embedder sets to cluster",
+        ));
+    }
+    let mut total = 0.0_f32;
+    for (embedder, left_vector) in left {
+        let right_vector = right.get(embedder).ok_or_else(|| {
+            EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!("missing right observation for embedder {}", embedder.0),
+            )
+        })?;
+        total += vector_cosine(left_vector, right_vector, &embedder.0)?;
+    }
+    Ok(total / left.len() as f32)
+}
+
+fn vector_cosine(left: &[f32], right: &[f32], context: &str) -> Result<f32, EvalError> {
+    if left.len() != right.len() {
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidInput,
+            format!(
+                "unknown fingerprint vector dim mismatch for {context}: {} != {}",
+                left.len(),
+                right.len()
+            ),
+        ));
+    }
+    let mut dot = 0.0_f64;
+    let mut left_norm = 0.0_f64;
+    let mut right_norm = 0.0_f64;
+    for (left_value, right_value) in left.iter().zip(right.iter()) {
+        if !left_value.is_finite() || !right_value.is_finite() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!("unknown fingerprint vector for {context} contains a non-finite value"),
+            ));
+        }
+        let left_f64 = f64::from(*left_value);
+        let right_f64 = f64::from(*right_value);
+        dot += left_f64 * right_f64;
+        left_norm += left_f64 * left_f64;
+        right_norm += right_f64 * right_f64;
+    }
+    if left_norm <= f64::EPSILON || right_norm <= f64::EPSILON {
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidInput,
+            format!("unknown fingerprint vector for {context} has zero norm"),
+        ));
+    }
+    Ok((dot / (left_norm.sqrt() * right_norm.sqrt())).clamp(-1.0, 1.0) as f32)
+}
+
+fn build_unknown_cluster_suggestion(
+    cluster: &[&UnknownFingerprintCandidate],
+) -> Result<UnknownFingerprintClusterSuggestion, EvalError> {
+    let first = cluster.first().ok_or_else(|| {
+        EvalError::new(
+            EvalErrorCode::InvalidInput,
+            "unknown fingerprint cluster cannot be empty",
+        )
+    })?;
+    let mut sums = first
+        .observation_by_embedder
+        .iter()
+        .map(|(embedder, vector)| (embedder.clone(), vec![0.0_f64; vector.len()]))
+        .collect::<BTreeMap<_, _>>();
+    let mut member_candidate_ids = Vec::with_capacity(cluster.len());
+    let mut member_task_ids = Vec::with_capacity(cluster.len());
+    let mut mean_ood_score = 0.0_f32;
+    let mut mean_embedder_disagreement_score = 0.0_f32;
+    let mut min_priority = 5_u8;
+    for candidate in cluster {
+        candidate.validate()?;
+        if candidate.observation_by_embedder.keys().collect::<Vec<_>>()
+            != first.observation_by_embedder.keys().collect::<Vec<_>>()
+        {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "unknown fingerprint cluster members have different embedder sets",
+            ));
+        }
+        member_candidate_ids.push(candidate.candidate_id);
+        member_task_ids.push(candidate.task_id.clone());
+        mean_ood_score += candidate.ood_score;
+        mean_embedder_disagreement_score += candidate.embedder_disagreement_score;
+        min_priority = min_priority.min(candidate.active_learning_priority);
+        for (embedder, vector) in &candidate.observation_by_embedder {
+            let Some(sum) = sums.get_mut(embedder) else {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!(
+                        "unknown fingerprint cluster missing embedder {}",
+                        embedder.0
+                    ),
+                ));
+            };
+            if sum.len() != vector.len() {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!(
+                        "unknown fingerprint cluster dim mismatch for {}",
+                        embedder.0
+                    ),
+                ));
+            }
+            for (idx, value) in vector.iter().enumerate() {
+                sum[idx] += f64::from(*value);
+            }
+        }
+    }
+    let centroid_by_embedder = sums
+        .into_iter()
+        .map(|(embedder, mut vector)| {
+            let norm = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
+            if norm <= f64::EPSILON {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!(
+                        "unknown fingerprint cluster centroid for {} has zero norm",
+                        embedder.0
+                    ),
+                ));
+            }
+            let centroid = vector
+                .drain(..)
+                .map(|value| (value / norm) as f32)
+                .collect::<Vec<_>>();
+            Ok((embedder, centroid))
+        })
+        .collect::<Result<BTreeMap<_, _>, EvalError>>()?;
+    let cluster_id = unknown_cluster_id(&member_candidate_ids);
+    let priority = if cluster.len() >= 10 { 1 } else { min_priority };
+    let suggestion = UnknownFingerprintClusterSuggestion {
+        cluster_id,
+        suggested_name: format!("unknown-fingerprint-{}", hex::encode(&cluster_id[..8])),
+        member_candidate_ids,
+        member_task_ids,
+        centroid_by_embedder,
+        mean_ood_score: mean_ood_score / cluster.len() as f32,
+        mean_embedder_disagreement_score: mean_embedder_disagreement_score / cluster.len() as f32,
+        active_learning_priority: priority,
+    };
+    suggestion.validate()?;
+    Ok(suggestion)
+}
+
+fn unknown_cluster_id(member_candidate_ids: &[[u8; 16]]) -> [u8; 16] {
+    let mut ids = member_candidate_ids.to_vec();
+    ids.sort();
+    let mut hasher = Sha256::new();
+    hasher.update(b"MEJEPA_UNKNOWN_FINGERPRINT_CLUSTER_V1");
+    for id in ids {
+        hasher.update(id);
+    }
+    let digest = hasher.finalize();
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&digest[..16]);
+    out
 }
 
 #[cfg(test)]
@@ -372,6 +961,16 @@ mod tests {
                 severity_score: 0.5,
             }
             .fast_track_rank()
+                < ActiveLearningKind::UnknownFingerprint {
+                    candidate: Box::new(unknown_candidate(0, vec![1.0, 0.0])),
+                }
+                .fast_track_rank()
+        );
+        assert!(
+            ActiveLearningKind::UnknownFingerprint {
+                candidate: Box::new(unknown_candidate(0, vec![1.0, 0.0])),
+            }
+            .fast_track_rank()
                 < ActiveLearningKind::ColdCellTargetedCorpus {
                     cell_id: "cell-a".to_string(),
                     abstain_count: 101,
@@ -420,5 +1019,223 @@ mod tests {
             }
             other => panic!("expected ColdCellTargetedCorpus variant, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn enqueue_unknown_fingerprint_candidate_persists_clusterable_entry() {
+        let mut queue = ActiveLearningQueueState::new(8).expect("queue");
+        let prediction = prediction("unknown-task-1", 0x44, 0.91);
+        let enqueued = queue
+            .enqueue_unknown_fingerprint_candidate(
+                &prediction,
+                &ood_classification(),
+                vectors([("e1", vec![1.0, 0.0]), ("e2", vec![0.0, 1.0])]),
+                1,
+            )
+            .expect("enqueue unknown");
+        assert!(enqueued);
+        let entry = queue.entries.get(&prediction.task_id).expect("entry");
+        assert_eq!(entry.reason, "fingerprint_unknown_ood");
+        assert_eq!(entry.score, 0.75);
+        match &entry.kind {
+            ActiveLearningKind::UnknownFingerprint { candidate } => {
+                assert_eq!(candidate.task_id, prediction.task_id);
+                assert_eq!(
+                    candidate.prediction_id,
+                    PredictionId(prediction.prediction_id)
+                );
+                assert_eq!(candidate.active_learning_priority, 2);
+                assert_eq!(candidate.observation_by_embedder.len(), 2);
+                candidate.validate().expect("candidate validates");
+            }
+            other => panic!("expected UnknownFingerprint variant, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_fingerprint_cluster_suggestion_groups_similar_candidates() {
+        let mut queue = ActiveLearningQueueState::new(8).expect("queue");
+        for (idx, vector) in [vec![1.0, 0.0], vec![0.999, 0.010], vec![0.998, 0.020]]
+            .into_iter()
+            .enumerate()
+        {
+            let prediction = prediction(
+                &format!("unknown-cluster-task-{idx}"),
+                0x50 + idx as u8,
+                0.91,
+            );
+            queue
+                .enqueue_unknown_fingerprint_candidate(
+                    &prediction,
+                    &ood_classification(),
+                    vectors([("e1", vector), ("e2", vec![0.0, 1.0])]),
+                    10 + idx as i64,
+                )
+                .expect("enqueue unknown cluster candidate");
+        }
+        let suggestions = queue
+            .suggest_unknown_fingerprint_clusters(3, 0.98)
+            .expect("cluster suggestions");
+        assert_eq!(suggestions.len(), 1);
+        let suggestion = &suggestions[0];
+        suggestion.validate().expect("suggestion validates");
+        assert_eq!(suggestion.member_candidate_ids.len(), 3);
+        assert_eq!(suggestion.member_task_ids.len(), 3);
+        assert_eq!(suggestion.active_learning_priority, 2);
+        assert!(suggestion
+            .centroid_by_embedder
+            .contains_key(&EmbedderId("e1".to_string())));
+    }
+
+    #[test]
+    fn non_ood_fingerprint_classification_is_not_enqueued() {
+        let mut queue = ActiveLearningQueueState::new(8).expect("queue");
+        let prediction = prediction("known-good-task", 0x60, 0.10);
+        let enqueued = queue
+            .enqueue_unknown_fingerprint_candidate(
+                &prediction,
+                &known_good_classification(),
+                vectors([("e1", vec![1.0, 0.0])]),
+                1,
+            )
+            .expect("non-ood classification");
+        assert!(!enqueued);
+        assert!(queue.entries.is_empty());
+    }
+
+    fn prediction(task_id: &str, prediction_id: u8, ood_score: f32) -> RealityPrediction {
+        use crate::types::{ConformalSet, Language, RealityPredictionBuilder};
+
+        let outcome_set = ConformalSet::try_new(vec![OracleOutcome::OutOfDistribution], 0.1, 0.5)
+            .expect("outcome set");
+        RealityPredictionBuilder::from_parts(
+            TaskId(task_id.to_string()),
+            [0x7a; 16],
+            Language::Python,
+            outcome_set,
+        )
+        .prediction_id([prediction_id; 16])
+        .verdict(Verdict::OutOfDistribution)
+        .predicted_oracle_pass(0.5)
+        .predicted_test_pass(vec![0.5])
+        .ood_score(ood_score)
+        .calibrated_confidence(0.5)
+        .calibration_version("queue-test")
+        .build()
+        .expect("prediction")
+    }
+
+    fn ood_classification() -> FingerprintClassification {
+        let classification = FingerprintClassification {
+            verdict: Verdict::OutOfDistribution,
+            reason: FingerprintDecisionReason::NoKnownMatch,
+            primary_match: None,
+            ranked_matches: vec![candidate_score(false, 0x77, -0.40)],
+            matched_known_good_count: 0,
+            matched_known_bad_count: 0,
+            matched_unknown_count: 0,
+            scored_fingerprint_count: 1,
+        };
+        classification.validate().expect("ood classification");
+        classification
+    }
+
+    fn known_good_classification() -> FingerprintClassification {
+        let primary = candidate_score(true, 0x78, 0.10);
+        let classification = FingerprintClassification {
+            verdict: Verdict::Pass,
+            reason: FingerprintDecisionReason::KnownGoodOnly,
+            primary_match: Some(primary.clone()),
+            ranked_matches: vec![primary],
+            matched_known_good_count: 1,
+            matched_known_bad_count: 0,
+            matched_unknown_count: 0,
+            scored_fingerprint_count: 1,
+        };
+        classification
+            .validate()
+            .expect("known-good classification");
+        classification
+    }
+
+    fn candidate_score(matched: bool, id: u8, min_margin: f32) -> FingerprintCandidateScore {
+        use crate::failure_fingerprint::{
+            FingerprintCalibrationState, FingerprintEmbedderScore, FingerprintId, FingerprintKind,
+        };
+        let kind = if matched {
+            FingerprintKind::KnownGood {
+                repo: Some("django__django".to_string()),
+                gold_patch_count: 2,
+            }
+        } else {
+            FingerprintKind::KnownBad {
+                repo: "django__django".to_string(),
+                mutation_category: crate::MutationCategory::OffByOne,
+                failure_mode: crate::FailureModeClass::OffByOne,
+                exception_class: None,
+            }
+        };
+        let score = FingerprintCandidateScore {
+            fingerprint_id: FingerprintId([id; 32]),
+            name: format!("candidate-{id}"),
+            kind,
+            oracle_outcome: if matched {
+                Some(OracleOutcome::Pass)
+            } else {
+                Some(OracleOutcome::Fail)
+            },
+            matched,
+            mean_cosine: if matched { 0.95 } else { 0.50 },
+            min_margin,
+            embedder_scores: vec![
+                FingerprintEmbedderScore {
+                    embedder: EmbedderId("e1".to_string()),
+                    cosine: if matched { 0.95 } else { 0.20 },
+                    tau: 0.90,
+                    margin: if matched { 0.05 } else { -0.70 },
+                    matched,
+                },
+                FingerprintEmbedderScore {
+                    embedder: EmbedderId("e2".to_string()),
+                    cosine: if matched { 0.95 } else { 0.80 },
+                    tau: 0.90,
+                    margin: if matched { 0.05 } else { -0.10 },
+                    matched,
+                },
+            ],
+            n_references: 1,
+            calibration_state: FingerprintCalibrationState::Calibrated,
+        };
+        score.validate().expect("candidate score");
+        score
+    }
+
+    fn unknown_candidate(idx: u8, vector: Vec<f32>) -> UnknownFingerprintCandidate {
+        let prediction = prediction(&format!("unknown-candidate-{idx}"), idx.max(1), 0.91);
+        let observation_by_embedder = vectors([("e1", vector)]);
+        UnknownFingerprintCandidate {
+            candidate_id: unknown_candidate_id(
+                &prediction.task_id,
+                PredictionId(prediction.prediction_id),
+                i64::from(idx) + 1,
+                &observation_by_embedder,
+            ),
+            prediction_id: PredictionId(prediction.prediction_id),
+            task_id: prediction.task_id,
+            session_id: prediction.session_id,
+            observed_at_unix_ms: i64::from(idx) + 1,
+            ood_score: prediction.ood_score,
+            embedder_disagreement_score: 0.1,
+            active_learning_priority: 2,
+            observation_by_embedder,
+            nearest_fingerprints: vec![candidate_score(false, 0x79, -0.40)],
+        }
+    }
+
+    fn vectors<const N: usize>(items: [(&str, Vec<f32>); N]) -> BTreeMap<EmbedderId, Vec<f32>> {
+        items
+            .into_iter()
+            .map(|(embedder, vector)| (EmbedderId(embedder.to_string()), vector))
+            .collect()
     }
 }

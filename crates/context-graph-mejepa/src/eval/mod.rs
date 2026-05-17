@@ -44,7 +44,7 @@ pub use per_head_calibration_tracker::{
 };
 pub use queue::{
     ActiveLearningKind, ActiveLearningLabel, ActiveLearningQueueEntry, ActiveLearningQueueState,
-    LabelMethod,
+    LabelMethod, UnknownFingerprintCandidate, UnknownFingerprintClusterSuggestion,
 };
 pub use report::{seed_open_research_questions, write_weekly_report};
 pub use runner::{corpus_sha_from_holdout, EvalRunner};
