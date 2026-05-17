@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use context_graph_mejepa_cf::CF_MEJEPA_FAILURE_FINGERPRINTS;
 use rocksdb::{Direction, IteratorMode, WriteOptions, DB};
 
 use crate::calibration::{
@@ -8,6 +9,7 @@ use crate::calibration::{
 use crate::compiler::{ColdCellMetric, MejepaStore, TrainCertSummary};
 use crate::conformal::CalibrationExample;
 use crate::error::MejepaInferError;
+use crate::failure_fingerprint::FailureShapeFingerprint;
 use crate::park_list::{
     clear_park_list_entry as clear_park_list_entry_row,
     read_park_list_entry as read_park_list_entry_row,
@@ -332,6 +334,20 @@ impl MejepaStore for RocksDbInferStore {
             counters.record_rocksdb_write(value.len() as u64);
         }
         Ok(())
+    }
+
+    fn read_failure_fingerprint_catalog(
+        &self,
+    ) -> Result<Vec<FailureShapeFingerprint>, MejepaInferError> {
+        let cf = cf(&self.db, CF_MEJEPA_FAILURE_FINGERPRINTS)?;
+        let mut out = Vec::new();
+        for item in self.db.iterator_cf(cf, IteratorMode::Start) {
+            let (_key, value) = item?;
+            let fingerprint: FailureShapeFingerprint = bincode::deserialize(&value)?;
+            fingerprint.validate()?;
+            out.push(fingerprint);
+        }
+        Ok(out)
     }
 }
 

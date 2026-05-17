@@ -24,6 +24,10 @@ use crate::degraded::{
     calibrated_confidence, calibrated_confidence_multiplier, compute_train_health, evidence_factor,
 };
 use crate::error::{MejepaInferError, PredictorError};
+use crate::failure_fingerprint::{
+    classify_failure_fingerprint_observation, FailureShapeFingerprint, FingerprintClassification,
+    FingerprintClassifierConfig,
+};
 use crate::gates::{check_source_sha_drift, replay_witness_segment};
 use crate::ood::{compute_ood_score, squared_l2};
 use crate::park_list::ParkListEntry;
@@ -267,6 +271,12 @@ pub trait MejepaStore: Send + Sync {
     fn clear_park_list_entry(&self, prediction_id: [u8; 16]) -> Result<(), MejepaInferError>;
 
     fn record_cold_cell_metric(&self, metric: &ColdCellMetric) -> Result<(), MejepaInferError>;
+
+    fn read_failure_fingerprint_catalog(
+        &self,
+    ) -> Result<Vec<FailureShapeFingerprint>, MejepaInferError> {
+        Ok(Vec::new())
+    }
 }
 
 pub struct MeJepaCompiler {
@@ -343,6 +353,18 @@ impl MeJepaCompiler {
 
     pub fn store(&self) -> &dyn MejepaStore {
         self.store.as_ref()
+    }
+
+    pub fn classify_failure_fingerprints(
+        &self,
+        observation_by_embedder: &BTreeMap<crate::types::EmbedderId, Vec<f32>>,
+    ) -> Result<FingerprintClassification, MejepaInferError> {
+        let catalog = self.store.read_failure_fingerprint_catalog()?;
+        classify_failure_fingerprint_observation(
+            &catalog,
+            observation_by_embedder,
+            FingerprintClassifierConfig::default(),
+        )
     }
 
     pub fn compile(

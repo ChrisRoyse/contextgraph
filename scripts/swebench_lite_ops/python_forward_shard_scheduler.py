@@ -1455,6 +1455,7 @@ def run_shard(
     event_phase: str = "shard_run_complete",
     require_packed_store: bool | None = None,
     post_promotion_snapshot: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    seed_hot_stage_from_durable: bool = True,
 ) -> dict[str, Any]:
     stage_promotion: dict[str, Any] | None = None
     stage_setup: dict[str, Any] | None = None
@@ -1463,7 +1464,13 @@ def run_shard(
     if use_hot_stage_for_shard(args):
         stage_root = hot_stage_root(args, shard, run_log_name)
         runner_shard = hot_stage_shard(args, shard, run_log_name)
-        stage_setup = prepare_hot_stage(args, shard, runner_shard, stage_root)
+        stage_setup = prepare_hot_stage(
+            args,
+            shard,
+            runner_shard,
+            stage_root,
+            seed_from_durable=seed_hot_stage_from_durable,
+        )
         runner_hot_root = stage_root / "runner-hot"
 
     env = os.environ.copy()
@@ -2098,6 +2105,7 @@ def run_shard_embedder_isolated(
             event_phase="shard_embedder_subrun_complete",
             require_packed_store=False,
             post_promotion_snapshot=_snapshot_after_promotion if use_hot_stage_for_shard(args) else None,
+            seed_hot_stage_from_durable=parallel_workers == 1,
         )
         snapshot_inner = snapshot_holder.get("snapshot")
         if snapshot_inner is None:
@@ -2515,6 +2523,7 @@ def prepare_hot_stage(
     durable_shard: ShardSpec,
     stage_shard: ShardSpec,
     stage_root: Path,
+    seed_from_durable: bool = True,
 ) -> dict[str, Any]:
     require("packed hot-stage root is not /mnt/c", not path_is_under(stage_root.resolve(strict=False), Path("/mnt/c")))
     require("packed hot-stage root is WSL ext4, not /mnt/d", not path_is_under(stage_root.resolve(strict=False), Path("/mnt/d")))
@@ -2525,11 +2534,13 @@ def prepare_hot_stage(
         "new hot-stage run refuses to reuse stale interrupted stage state",
     )
     stage_root.mkdir(parents=True, exist_ok=False)
-    if durable_shard.cache_root.exists():
+    cache_seeded = seed_from_durable and durable_shard.cache_root.exists()
+    fsv_seeded = seed_from_durable and durable_shard.fsv_root.exists()
+    if cache_seeded:
         shutil.copytree(durable_shard.cache_root, stage_shard.cache_root)
     else:
         stage_shard.cache_root.mkdir(parents=True)
-    if durable_shard.fsv_root.exists():
+    if fsv_seeded:
         shutil.copytree(durable_shard.fsv_root, stage_shard.fsv_root)
     else:
         stage_shard.fsv_root.mkdir(parents=True)
@@ -2557,6 +2568,11 @@ def prepare_hot_stage(
         "stage_cache_root": str(stage_shard.cache_root),
         "stage_fsv_root": str(stage_shard.fsv_root),
         "stage_runner_hot_root": str(stage_hot_root),
+        "seed_from_durable": seed_from_durable,
+        "durable_seed": {
+            "cache_root": cache_seeded,
+            "fsv_root": fsv_seeded,
+        },
         "interrupted_stage_archive": archive,
         "stage_path_rewrites": stage_path_rewrites,
         "before_state": {
@@ -3516,6 +3532,52 @@ def hot_stage_promotion_edge_checks(args: argparse.Namespace) -> list[dict[str, 
         }
     )
     shutil.rmtree(stage_root)
+
+    parallel_stage_durable = write_minimal_packed_shard(
+        edge_root / "parallel-empty-hot-stage",
+        "edge-parallel-empty-hot-stage",
+        600_000_006,
+        1,
+        args.chunks_jsonl,
+    )
+    parallel_stage_name = f"{parallel_stage_durable.shard_id}.e4.json"
+    parallel_stage_root = hot_stage_root(args, parallel_stage_durable, parallel_stage_name)
+    if parallel_stage_root.exists():
+        shutil.rmtree(parallel_stage_root)
+    parallel_stage_shard = hot_stage_shard(args, parallel_stage_durable, parallel_stage_name)
+    parallel_stage_setup = prepare_hot_stage(
+        args,
+        parallel_stage_durable,
+        parallel_stage_shard,
+        parallel_stage_root,
+        seed_from_durable=False,
+    )
+    require(
+        "parallel isolated hot-stage edge keeps durable packed records out of worker stage",
+        not (parallel_stage_shard.cache_root / "packed_records").exists(),
+    )
+    require(
+        "parallel isolated hot-stage edge leaves durable packed records intact",
+        (parallel_stage_durable.cache_root / "packed_records" / "e1.jsonl").is_file(),
+    )
+    require(
+        "parallel isolated hot-stage edge records disabled durable seed",
+        parallel_stage_setup.get("seed_from_durable") is False
+        and parallel_stage_setup.get("durable_seed") == {"cache_root": False, "fsv_root": False},
+    )
+    cases.append(
+        {
+            "case": "parallel_isolated_hot_stage_starts_empty_without_durable_copy",
+            "passes": True,
+            "durable_cache_root": tree_state(parallel_stage_durable.cache_root),
+            "stage_setup": parallel_stage_setup,
+            "stage_after_prepare": {
+                "cache_root": tree_state(parallel_stage_shard.cache_root),
+                "fsv_root": tree_state(parallel_stage_shard.fsv_root),
+            },
+        }
+    )
+    shutil.rmtree(parallel_stage_root)
 
     preflight_args = argparse.Namespace(**vars(args))
     preflight_args.mode = "preflight-resume"

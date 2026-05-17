@@ -17,6 +17,7 @@ pub mod degraded;
 pub mod error;
 pub mod eval;
 pub mod evidence;
+pub mod failure_fingerprint;
 pub mod fixtures;
 pub mod frozen_target;
 pub mod fsv_writer;
@@ -80,6 +81,7 @@ pub use evidence::{
     AdversarialEvidence, DeterminismEvidence, ForwardPassEvidence, LossOutputs, VicregLambdas,
     VicregLossEvidence,
 };
+pub use failure_fingerprint::*;
 pub use fixtures::*;
 pub use frozen_target::FrozenTargetAdapter;
 pub use gates::*;

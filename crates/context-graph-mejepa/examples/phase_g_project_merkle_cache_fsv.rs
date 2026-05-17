@@ -1,8 +1,6 @@
 use anyhow::{ensure, Context, Result};
 use context_graph_mejepa::cli::write_json_0600;
-use context_graph_mejepa::{
-    blake3_hex, EmbedderVersion, ProjectCacheConfig, ProjectMerkleCache,
-};
+use context_graph_mejepa::{blake3_hex, EmbedderVersion, ProjectCacheConfig, ProjectMerkleCache};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::fs;
@@ -215,9 +213,14 @@ fn same_content_moved_case(root: &Path) -> Result<Value> {
     fs::copy(repo.join("src/a.py"), repo.join("src/a_moved.py"))?;
     let report = cache.scan_project(&embedder_versions("v1", "v1"))?;
     let after = db_counts(cache.db_path())?;
-    let src_hash = sqlite3_scalar(cache.db_path(), "SELECT blake3 FROM files WHERE path='src/a.py';")?;
-    let moved_hash =
-        sqlite3_scalar(cache.db_path(), "SELECT blake3 FROM files WHERE path='src/a_moved.py';")?;
+    let src_hash = sqlite3_scalar(
+        cache.db_path(),
+        "SELECT blake3 FROM files WHERE path='src/a.py';",
+    )?;
+    let moved_hash = sqlite3_scalar(
+        cache.db_path(),
+        "SELECT blake3 FROM files WHERE path='src/a_moved.py';",
+    )?;
     let shared_chunks = sqlite3_scalar(
         cache.db_path(),
         "\
@@ -250,14 +253,30 @@ fn embedder_version_bump_case(root: &Path) -> Result<Value> {
     let report = cache.scan_project(&embedder_versions("v1", "v2"))?;
     let after_e1 = embedding_digest(cache.db_path(), "e1")?;
     let after_e7 = embedding_versions(cache.db_path(), "e7")?;
-    let e7_v1_count = after_e7.iter().filter(|version| version.as_str() == "v1").count();
-    let e7_v2_count = after_e7.iter().filter(|version| version.as_str() == "v2").count();
+    let e7_v1_count = after_e7
+        .iter()
+        .filter(|version| version.as_str() == "v1")
+        .count();
+    let e7_v2_count = after_e7
+        .iter()
+        .filter(|version| version.as_str() == "v2")
+        .count();
     let pass = before_e1 == after_e1
         && before_e7.iter().all(|version| version == "v1")
         && e7_v1_count == 0
         && e7_v2_count == after_e7.len()
-        && report.per_embedder_reembedded.get("e1").copied().unwrap_or(0) == 0
-        && report.per_embedder_reembedded.get("e7").copied().unwrap_or(0) == after_e7.len();
+        && report
+            .per_embedder_reembedded
+            .get("e1")
+            .copied()
+            .unwrap_or(0)
+            == 0
+        && report
+            .per_embedder_reembedded
+            .get("e7")
+            .copied()
+            .unwrap_or(0)
+            == after_e7.len();
     Ok(json!({
         "case": "embedder_version_bump_reembeds_only_stale_embedder",
         "trigger": "rescan with e7 v2 while e1 remains v1",
@@ -290,7 +309,10 @@ fn open_cache(repo: &Path) -> Result<ProjectMerkleCache> {
 }
 
 fn embedder_versions(e1: &str, e7: &str) -> Vec<EmbedderVersion> {
-    vec![EmbedderVersion::new("e1", e1), EmbedderVersion::new("e7", e7)]
+    vec![
+        EmbedderVersion::new("e1", e1),
+        EmbedderVersion::new("e7", e7),
+    ]
 }
 
 fn write_initial_project(repo: &Path) -> Result<()> {
@@ -302,12 +324,18 @@ fn write_initial_project(repo: &Path) -> Result<()> {
         "ignored.py\n__pycache__/\n.venv/\nnode_modules/\n",
     )?;
     fs::write(repo.join("ignored.py"), "def ignored():\n    return 0\n")?;
-    fs::write(repo.join("__pycache__/ignored.py"), "def ignored_cache():\n    return 0\n")?;
+    fs::write(
+        repo.join("__pycache__/ignored.py"),
+        "def ignored_cache():\n    return 0\n",
+    )?;
     fs::write(
         repo.join("src/a.py"),
         "import b\n\ndef alpha(x: int) -> int:\n    return b.beta(x) + 1\n",
     )?;
-    fs::write(repo.join("src/b.py"), "def beta(x: int) -> int:\n    return x * 2\n")?;
+    fs::write(
+        repo.join("src/b.py"),
+        "def beta(x: int) -> int:\n    return x * 2\n",
+    )?;
     fs::write(
         repo.join("tests/test_a.py"),
         "from src.a import alpha\n\ndef test_alpha():\n    assert alpha(2) == 5\n",
@@ -320,8 +348,12 @@ fn write_initial_project(repo: &Path) -> Result<()> {
 fn init_git_repo(repo: &Path) -> Result<()> {
     fs::create_dir_all(repo)?;
     run(Command::new("git").arg("init").arg("-q").current_dir(repo))?;
-    run(Command::new("git").args(["config", "user.email", "fsv@example.invalid"]).current_dir(repo))?;
-    run(Command::new("git").args(["config", "user.name", "FSV"]).current_dir(repo))?;
+    run(Command::new("git")
+        .args(["config", "user.email", "fsv@example.invalid"])
+        .current_dir(repo))?;
+    run(Command::new("git")
+        .args(["config", "user.name", "FSV"])
+        .current_dir(repo))?;
     Ok(())
 }
 

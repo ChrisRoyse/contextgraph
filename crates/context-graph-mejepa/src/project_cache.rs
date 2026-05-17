@@ -15,7 +15,9 @@ const WATCHER_STATUS_FILE: &str = "watcher.status";
 pub enum ProjectCacheError {
     #[error("MEJEPA_PROJECT_CACHE_INVALID_PATH: {path} must be an existing git repository")]
     InvalidRepoPath { path: String },
-    #[error("MEJEPA_PROJECT_CACHE_D_ROOT_REQUIRED: {path} must live under /mnt/d/contextgraph/projects")]
+    #[error(
+        "MEJEPA_PROJECT_CACHE_D_ROOT_REQUIRED: {path} must live under /mnt/d/contextgraph/projects"
+    )]
     InvalidCacheRoot { path: String },
     #[error("MEJEPA_PROJECT_CACHE_IO: {path}: {source}")]
     Io {
@@ -145,13 +147,12 @@ pub struct ProjectMerkleCache {
 
 impl ProjectMerkleCache {
     pub fn open(config: ProjectCacheConfig) -> Result<Self, ProjectCacheError> {
-        let repo_path =
-            canonicalize_existing_dir(&config.repo_path).map_err(|source| {
-                ProjectCacheError::Io {
-                    path: config.repo_path.display().to_string(),
-                    source,
-                }
-            })?;
+        let repo_path = canonicalize_existing_dir(&config.repo_path).map_err(|source| {
+            ProjectCacheError::Io {
+                path: config.repo_path.display().to_string(),
+                source,
+            }
+        })?;
         require_git_repo(&repo_path)?;
         require_d_project_cache_root(&config.cache_dir)?;
         fs::create_dir_all(&config.cache_dir).map_err(|source| ProjectCacheError::Io {
@@ -217,7 +218,13 @@ impl ProjectMerkleCache {
             if changed {
                 changed_files.push(rel_path.clone());
             }
-            persist_file(&conn, rel_path, &file_hash, size_bytes, scan_started_unix_ms)?;
+            persist_file(
+                &conn,
+                rel_path,
+                &file_hash,
+                size_bytes,
+                scan_started_unix_ms,
+            )?;
             delete_chunk_paths_for_file(&conn, rel_path)?;
             delete_imports_for_file(&conn, rel_path)?;
             for imported in python_imports(rel_path, &bytes) {
@@ -430,7 +437,13 @@ fn require_d_project_cache_root(path: &Path) -> Result<(), ProjectCacheError> {
 
 fn git_tracked_files(repo_path: &Path) -> Result<Vec<String>, ProjectCacheError> {
     let output = Command::new("git")
-        .args(["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ])
         .current_dir(repo_path)
         .output()
         .map_err(|source| ProjectCacheError::Io {
@@ -478,7 +491,10 @@ fn role_for_path(path: &str) -> ChunkRole {
         ChunkRole::Config
     } else if path.starts_with("tests/")
         || path.contains("/tests/")
-        || path.rsplit('/').next().is_some_and(|name| name.starts_with("test_"))
+        || path
+            .rsplit('/')
+            .next()
+            .is_some_and(|name| name.starts_with("test_"))
     {
         ChunkRole::Test
     } else {
@@ -498,12 +514,13 @@ fn chunks_for_file(
             file_path: rel_path.to_string(),
             max_non_ws_chars: 500,
         };
-        let chunks = ast::chunk_with_options(bytes, ast::Language::Python, &options).map_err(
-            |err| ProjectCacheError::ChunkFailed {
-                path: rel_path.to_string(),
-                reason: format!("{}: {err}", err.code()),
-            },
-        )?;
+        let chunks =
+            ast::chunk_with_options(bytes, ast::Language::Python, &options).map_err(|err| {
+                ProjectCacheError::ChunkFailed {
+                    path: rel_path.to_string(),
+                    reason: format!("{}: {err}", err.code()),
+                }
+            })?;
         return chunks
             .iter()
             .map(|chunk| cache_chunk_from_ast(rel_path, &file_blake3, schema_version, chunk))
@@ -518,7 +535,13 @@ fn chunks_for_file(
     })?;
     let content_sha256 = sha256_hex(text.as_bytes());
     Ok(vec![CacheChunk {
-        chunk_key: chunk_key(schema_version, &file_blake3, 0, bytes.len() as u64, "whole_file"),
+        chunk_key: chunk_key(
+            schema_version,
+            &file_blake3,
+            0,
+            bytes.len() as u64,
+            "whole_file",
+        ),
         file_blake3,
         role,
         kind: "whole_file".to_string(),
@@ -565,12 +588,10 @@ fn load_existing_files(
             context: "prepare existing files query",
             source,
         })?;
-    let mut rows = stmt
-        .query([])
-        .map_err(|source| ProjectCacheError::Sqlite {
-            context: "query existing files",
-            source,
-        })?;
+    let mut rows = stmt.query([]).map_err(|source| ProjectCacheError::Sqlite {
+        context: "query existing files",
+        source,
+    })?;
     let mut out = BTreeMap::new();
     while let Some(row) = rows.next().map_err(|source| ProjectCacheError::Sqlite {
         context: "read existing file row",
@@ -747,7 +768,11 @@ fn refresh_embeddings(
             if existing.as_deref() == Some(embedder.embedder_version.as_str()) {
                 continue;
             }
-            let vector = deterministic_vector_blob(chunk_key, &embedder.embedder_id, &embedder.embedder_version);
+            let vector = deterministic_vector_blob(
+                chunk_key,
+                &embedder.embedder_id,
+                &embedder.embedder_version,
+            );
             conn.execute(
                 "\
                 INSERT INTO embeddings(chunk_key, embedder_id, embedder_version, vector_blob, updated_at)
@@ -768,7 +793,9 @@ fn refresh_embeddings(
                 context: "upsert embedding row",
                 source,
             })?;
-            *per_embedder.entry(embedder.embedder_id.clone()).or_insert(0) += 1;
+            *per_embedder
+                .entry(embedder.embedder_id.clone())
+                .or_insert(0) += 1;
         }
     }
     Ok(per_embedder)
@@ -866,7 +893,11 @@ fn merkle_root(tracked: &[String], files_by_hash: &BTreeMap<String, Vec<(String,
     for path in tracked {
         let hash = files_by_hash
             .iter()
-            .find_map(|(hash, rows)| rows.iter().any(|(row_path, _)| row_path == path).then_some(hash))
+            .find_map(|(hash, rows)| {
+                rows.iter()
+                    .any(|(row_path, _)| row_path == path)
+                    .then_some(hash)
+            })
             .cloned()
             .unwrap_or_default();
         leaves.push(format!("{path}\0{hash}"));

@@ -60,6 +60,12 @@ pub const CF_MEJEPA_LABEL_TRANSFER_DECISIONS: &str = "CF_MEJEPA_LABEL_TRANSFER_D
 pub const CF_MEJEPA_PARK_LIST: &str = "CF_MEJEPA_PARK_LIST";
 // TASK-PY-G-061 — cold constellation cells must abstain and emit durable metrics.
 pub const CF_MEJEPA_COLD_CELL_METRICS: &str = "CF_MEJEPA_COLD_CELL_METRICS";
+// TASK-FP-001/002 — first-class failure-shape fingerprint catalog.
+pub const CF_MEJEPA_FAILURE_FINGERPRINTS: &str = "CF_MEJEPA_FAILURE_FINGERPRINTS";
+pub const CF_MEJEPA_FINGERPRINT_REFERENCES: &str = "CF_MEJEPA_FINGERPRINT_REFERENCES";
+pub const CF_MEJEPA_FINGERPRINT_REVERSE_INDEX: &str = "CF_MEJEPA_FINGERPRINT_REVERSE_INDEX";
+pub const CF_MEJEPA_FINGERPRINT_CALIBRATION: &str = "CF_MEJEPA_FINGERPRINT_CALIBRATION";
+pub const CF_MEJEPA_FINGERPRINT_AUDIT: &str = "CF_MEJEPA_FINGERPRINT_AUDIT";
 
 /// REQ-FLYWHEEL-10 grouping. Daemon openers extend their CF descriptor list
 /// with this slice so the three new CFs land on disk during the first daemon
@@ -70,6 +76,14 @@ pub const FLYWHEEL_CFS: &[&str] = &[
     CF_MEJEPA_AGENT_FEEDBACK,
     CF_MEJEPA_FLYWHEEL_JOB_RUNS,
     CF_MEJEPA_PARK_LIST,
+];
+
+pub const FINGERPRINT_CFS: &[&str] = &[
+    CF_MEJEPA_FAILURE_FINGERPRINTS,
+    CF_MEJEPA_FINGERPRINT_REFERENCES,
+    CF_MEJEPA_FINGERPRINT_REVERSE_INDEX,
+    CF_MEJEPA_FINGERPRINT_CALIBRATION,
+    CF_MEJEPA_FINGERPRINT_AUDIT,
 ];
 
 pub const SELF_HEALING_CFS: &[&str] = &[
@@ -109,6 +123,11 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_TASK_GRAPH,
     CF_MEJEPA_TASK_GRAPH_HISTORY,
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+    CF_MEJEPA_FAILURE_FINGERPRINTS,
+    CF_MEJEPA_FINGERPRINT_REFERENCES,
+    CF_MEJEPA_FINGERPRINT_REVERSE_INDEX,
+    CF_MEJEPA_FINGERPRINT_CALIBRATION,
+    CF_MEJEPA_FINGERPRINT_AUDIT,
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
@@ -130,6 +149,11 @@ pub const EVAL_CFS: &[&str] = &[
     CF_MEJEPA_TASK_GRAPH,
     CF_MEJEPA_TASK_GRAPH_HISTORY,
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+    CF_MEJEPA_FAILURE_FINGERPRINTS,
+    CF_MEJEPA_FINGERPRINT_REFERENCES,
+    CF_MEJEPA_FINGERPRINT_REVERSE_INDEX,
+    CF_MEJEPA_FINGERPRINT_CALIBRATION,
+    CF_MEJEPA_FINGERPRINT_AUDIT,
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
@@ -162,6 +186,11 @@ pub const HYGIENE_CFS: &[&str] = &[
     CF_MEJEPA_TASK_GRAPH,
     CF_MEJEPA_TASK_GRAPH_HISTORY,
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+    CF_MEJEPA_FAILURE_FINGERPRINTS,
+    CF_MEJEPA_FINGERPRINT_REFERENCES,
+    CF_MEJEPA_FINGERPRINT_REVERSE_INDEX,
+    CF_MEJEPA_FINGERPRINT_CALIBRATION,
+    CF_MEJEPA_FINGERPRINT_AUDIT,
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
@@ -204,6 +233,11 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_TASK_GRAPH,
     CF_MEJEPA_TASK_GRAPH_HISTORY,
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+    CF_MEJEPA_FAILURE_FINGERPRINTS,
+    CF_MEJEPA_FINGERPRINT_REFERENCES,
+    CF_MEJEPA_FINGERPRINT_REVERSE_INDEX,
+    CF_MEJEPA_FINGERPRINT_CALIBRATION,
+    CF_MEJEPA_FINGERPRINT_AUDIT,
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
@@ -259,6 +293,7 @@ mod tests {
             .chain(HYGIENE_CFS.iter())
             .chain(TCT_CFS.iter())
             .chain(FLYWHEEL_CFS.iter())
+            .chain(FINGERPRINT_CFS.iter())
         {
             if !generated.contains(cf) {
                 generated.push(*cf);
@@ -299,6 +334,38 @@ mod tests {
             "CF_MEJEPA_LABEL_TRANSFER_DECISIONS"
         );
         assert_eq!(CF_MEJEPA_COLD_CELL_METRICS, "CF_MEJEPA_COLD_CELL_METRICS");
+    }
+
+    #[test]
+    fn fingerprint_cfs_are_registered_in_daemon_opener() {
+        let names = all_hygiene_referenced_cfs();
+        for cf in FINGERPRINT_CFS {
+            assert!(
+                names.contains(cf),
+                "fingerprint CF {cf} missing from daemon opener; seed catalog writes would miss the source-of-truth column family.",
+            );
+        }
+    }
+
+    #[test]
+    fn fingerprint_cf_names_match_const_idents() {
+        assert_eq!(
+            CF_MEJEPA_FAILURE_FINGERPRINTS,
+            "CF_MEJEPA_FAILURE_FINGERPRINTS"
+        );
+        assert_eq!(
+            CF_MEJEPA_FINGERPRINT_REFERENCES,
+            "CF_MEJEPA_FINGERPRINT_REFERENCES"
+        );
+        assert_eq!(
+            CF_MEJEPA_FINGERPRINT_REVERSE_INDEX,
+            "CF_MEJEPA_FINGERPRINT_REVERSE_INDEX"
+        );
+        assert_eq!(
+            CF_MEJEPA_FINGERPRINT_CALIBRATION,
+            "CF_MEJEPA_FINGERPRINT_CALIBRATION"
+        );
+        assert_eq!(CF_MEJEPA_FINGERPRINT_AUDIT, "CF_MEJEPA_FINGERPRINT_AUDIT");
     }
 
     #[test]

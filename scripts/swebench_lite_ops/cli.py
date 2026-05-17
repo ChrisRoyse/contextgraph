@@ -54,6 +54,10 @@ from .python_proof_domain_isolation import add_arguments as add_python_proof_dom
 from .python_proof_domain_isolation import command_python_proof_domain_isolation
 from .python_secret_redaction import add_arguments as add_python_secret_redaction_arguments
 from .python_secret_redaction import command_python_secret_redaction
+from .python_failure_fingerprint_materializer import add_arguments as add_python_failure_fingerprint_arguments
+from .python_failure_fingerprint_materializer import command_python_failure_fingerprint_materializer
+from .python_failure_fingerprint_calibrator import add_arguments as add_python_failure_fingerprint_calibration_arguments
+from .python_failure_fingerprint_calibrator import command_python_failure_fingerprint_calibrator
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -450,6 +454,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_python_secret_redaction_arguments(secret_redaction)
     secret_redaction.set_defaults(func=command_python_secret_redaction, evidence_name="python-secret-redaction-command-evidence.json")
+
+    failure_fingerprints = sub.add_parser(
+        "python-failure-fingerprint-materialize",
+        help="TASK-FP-002: materialize seed failure-shape fingerprint centroids and variance from packed forwards.",
+    )
+    add_python_failure_fingerprint_arguments(failure_fingerprints)
+    failure_fingerprints.set_defaults(
+        func=command_python_failure_fingerprint_materializer,
+        evidence_name="python-failure-fingerprint-materialize-command-evidence.json",
+    )
+
+    calibrate_fingerprints = sub.add_parser(
+        "python-failure-fingerprint-calibrate",
+        help="TASK-FP-003: calibrate per-fingerprint G-tau thresholds from a seed fingerprint catalog.",
+    )
+    add_python_failure_fingerprint_calibration_arguments(calibrate_fingerprints)
+    calibrate_fingerprints.set_defaults(
+        func=command_python_failure_fingerprint_calibrator,
+        evidence_name="python-failure-fingerprint-calibrate-command-evidence.json",
+    )
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")
     registry.add_argument("--models-config", type=Path, default=Path("/mnt/d/cabdru/contextgraph/models/mejepa_models_config.toml"))
