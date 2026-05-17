@@ -59,9 +59,9 @@ Without explicit completeness tracking, the system silently leaves signal on the
 
 | Signal | Source | Status |
 |---|---|---|
-| Cyclomatic complexity delta | `E_Cyclomatic` instrument | 🟡 **TASK-RWD-201** |
-| Cognitive complexity + Halstead | `E_Cyclomatic` | 🟡 TASK-RWD-201 |
-| Depth-of-nesting delta | `E_Cyclomatic` | 🟡 TASK-RWD-201 |
+| Cyclomatic complexity delta | `E_Cyclomatic` instrument | ✅ **TASK-RWD-201 shipped** |
+| Cognitive complexity + Halstead | `E_Cyclomatic` | ✅ TASK-RWD-201 shipped |
+| Depth-of-nesting delta | `E_Cyclomatic` | ✅ TASK-RWD-201 shipped |
 | Test coverage delta per touched file | `E_Coverage` | 🟡 **TASK-RWD-202** |
 | Diff topology (hunks per file, hunk size distribution, intra-file entropy) | `E_DiffTopology` | 🟡 **TASK-RWD-203** |
 | Static-analysis (mypy, pyright, ruff) reward signal | reward analyzer | 🟡 **TASK-RWD-208** (adopt #293) |
@@ -136,6 +136,8 @@ Without explicit completeness tracking, the system silently leaves signal on the
 
 All TASK-RWD files follow `prdtospec.md` Level-4 atomic-task format and the FSV protocol per [`specs/FSV-PROTOCOL.md`](specs/FSV-PROTOCOL.md).
 
+**2026-05-17 TASK-RWD-201 completion:** `E_Cyclomatic` is code/FSV-shipped in `context-graph-mejepa-instruments` as a deterministic Python complexity analyzer feeding the existing `E_StaticAnalysis` panel slot. It computes per-function cyclomatic complexity, cognitive complexity, Halstead-style operator/operand counts and volume, and max nesting depth using the in-process Ruff Python parser. FSV: `/mnt/d/contextgraph/fsv/task-rwd-201-cyclomatic-fsv/run-1779042449826/cyclomatic_fsv.json` sha256 `293d939dc2cccf5a70890be1154986e01b21289e1172714b4e694d9a9c68e2e8` (`all_passed=true`, ladder cyclomatic complexity 7, nested depth 4, positive Halstead volume, invalid-input edge cases fail closed).
+
 ---
 
 ## §4 — Mapping to teleological constellation chain
@@ -195,4 +197,4 @@ The reward-signal completeness audit is **GREEN** when ALL of the following hold
 
 ---
 
-**TL;DR.** Eight reward-signal tiers; ~30 distinct signals across them; oracle (1) + DDA (2) + static graph (3 except type-graph) + witness (8) are SHIPPED; static-quality (4) + runtime-telemetry (5) + constellation post-corpus (6) + live-session (7) tiers have 12 atomic sub-tasks (TASK-RWD-201..212) tracked under #315. ME-JEPA trains on **chains** of these signals, not individual signals. Per-tier coverage ≥ 95% is the acceptance gate.
+**TL;DR.** Eight reward-signal tiers; ~30 distinct signals across them; oracle (1) + DDA (2) + static graph (3 except type-graph) + witness (8) are SHIPPED; static-quality Tier 4 now has `E_Cyclomatic` shipped for complexity/halstead/depth while coverage, diff-topology, security, static-analysis, churn/doc/dep-CVE remain open; runtime-telemetry (5) + constellation post-corpus (6) + live-session (7) remain tracked under #315. ME-JEPA trains on **chains** of these signals, not individual signals. Per-tier coverage ≥ 95% is the acceptance gate.

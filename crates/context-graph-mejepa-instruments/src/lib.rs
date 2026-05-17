@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod e_code;
+pub mod e_cyclomatic;
 pub mod e_embedder_heads;
 pub mod e_oracle;
 pub mod e_reasoning;
@@ -523,6 +524,10 @@ mod instrument_tests;
 pub use e_code::{
     CodeInstrumentInput, DiffInstrumentInput, EAstInstrument, ECfgInstrument, EDataFlowInstrument,
     EDiffInstrument, ETypeGraphInstrument,
+};
+pub use e_cyclomatic::{
+    analyze_complexity, ComplexityInput, ComplexityMetrics, ECyclomaticInstrument,
+    FunctionComplexity,
 };
 pub use e_oracle::{EOracleInstrument, ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome};
 pub use e_reasoning::{EReasoningInstrument, ReasoningEvent, ReasoningInput};
