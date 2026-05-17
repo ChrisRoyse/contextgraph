@@ -6,6 +6,7 @@ pub mod fixtures;
 pub mod graph;
 pub mod metrics;
 pub mod mi_heatmap_renderer;
+pub mod novel_pattern;
 pub mod per_head_calibration_tracker;
 pub mod queue;
 pub mod report;
@@ -45,6 +46,16 @@ pub use metrics::{
 pub use mi_heatmap_renderer::{
     load_pairwise_mi_heatmap_csv, render_pairwise_mi_heatmap, PairwiseMiHeatmapMatrix,
     PairwiseMiHeatmapRender,
+};
+pub use novel_pattern::{
+    admit_novel_pattern_clusters, candidate_audit_entry, evaluate_novel_pattern_promotion,
+    ontology_growth_audit_key, proposal_inputs_from_ontology_audit, ConstellationCentroid,
+    HeldoutImprovementEvidence, NovelInstrumentProposalInput, NovelPatternCandidate,
+    NovelPatternClusterAdmission, NovelPatternClusterState, NovelPatternDetectorConfig,
+    OntologyGrowthAuditEntry, OntologyGrowthAuditOutcome, OntologyGrowthInitiatedBy,
+    DEFAULT_NOVEL_PATTERN_HELDOUT_DELTA, DEFAULT_NOVEL_PATTERN_MIN_CLUSTER_SIZE,
+    DEFAULT_NOVEL_PATTERN_TAU_FAR, DEFAULT_NOVEL_PATTERN_TAU_INTRA,
+    DEFAULT_NOVEL_PATTERN_TAU_NOVEL, NOVEL_PATTERN_SOURCE_CORPUS,
 };
 pub use per_head_calibration_tracker::{
     compute_calibration_for_samples, compute_prediction_class_calibration, CalibrationSample,

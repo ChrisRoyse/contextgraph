@@ -1,4 +1,8 @@
 use super::error::{EvalError, EvalErrorCode};
+use super::novel_pattern::{
+    admit_novel_pattern_clusters, ConstellationCentroid, NovelPatternCandidate,
+    NovelPatternClusterAdmission, NovelPatternDetectorConfig,
+};
 use super::types::EvalObservation;
 use crate::failure_fingerprint::{
     FingerprintCandidateScore, FingerprintClassification, FingerprintDecisionReason,
@@ -153,6 +157,9 @@ pub enum ActiveLearningKind {
     UnknownFingerprint {
         candidate: Box<UnknownFingerprintCandidate>,
     },
+    NovelCluster {
+        candidate: Box<NovelPatternCandidate>,
+    },
 }
 
 impl ActiveLearningKind {
@@ -171,10 +178,11 @@ impl ActiveLearningKind {
     pub fn fast_track_rank(&self) -> u8 {
         match self {
             Self::AgentSurprise { .. } => 0,
-            Self::UnknownFingerprint { .. } => 1,
-            Self::ColdCellTargetedCorpus { .. } => 2,
-            Self::OutOfDistribution => 3,
-            Self::Uncertainty => 4,
+            Self::NovelCluster { .. } => 1,
+            Self::UnknownFingerprint { .. } => 2,
+            Self::ColdCellTargetedCorpus { .. } => 3,
+            Self::OutOfDistribution => 4,
+            Self::Uncertainty => 5,
         }
     }
 }
@@ -431,6 +439,58 @@ impl ActiveLearningQueueState {
         self.entries.insert(prediction.task_id.clone(), entry);
         self.evict_to_capacity()?;
         Ok(true)
+    }
+
+    pub fn enqueue_novel_pattern_candidate(
+        &mut self,
+        prediction: &RealityPrediction,
+        observation_by_embedder: BTreeMap<EmbedderId, Vec<f32>>,
+        existing_cells: &[ConstellationCentroid],
+        observed_at_unix_ms: i64,
+        config: NovelPatternDetectorConfig,
+    ) -> Result<bool, EvalError> {
+        if prediction_is_operator_paused(prediction) {
+            return Ok(false);
+        }
+        let Some(candidate) = NovelPatternCandidate::from_prediction(
+            prediction,
+            observation_by_embedder,
+            existing_cells,
+            observed_at_unix_ms,
+            config,
+        )?
+        else {
+            return Ok(false);
+        };
+        let entry = ActiveLearningQueueEntry {
+            task_id: prediction.task_id.clone(),
+            score: active_learning_priority_score(candidate.active_learning_priority),
+            outcome_set_len: prediction.outcome_set.outcomes.len(),
+            ood_score: prediction.ood_score,
+            reason: "novel_pattern".to_string(),
+            kind: ActiveLearningKind::NovelCluster {
+                candidate: Box::new(candidate),
+            },
+        };
+        self.entries.insert(prediction.task_id.clone(), entry);
+        self.evict_to_capacity()?;
+        Ok(true)
+    }
+
+    pub fn admit_novel_pattern_clusters(
+        &self,
+        existing_cells: &[ConstellationCentroid],
+        config: NovelPatternDetectorConfig,
+    ) -> Result<Vec<NovelPatternClusterAdmission>, EvalError> {
+        let candidates = self
+            .entries
+            .values()
+            .filter_map(|entry| match &entry.kind {
+                ActiveLearningKind::NovelCluster { candidate } => Some((**candidate).clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        admit_novel_pattern_clusters(&candidates, existing_cells, config)
     }
 
     pub fn suggest_unknown_fingerprint_clusters(
@@ -961,6 +1021,16 @@ mod tests {
                 severity_score: 0.5,
             }
             .fast_track_rank()
+                < ActiveLearningKind::NovelCluster {
+                    candidate: Box::new(novel_candidate(0, vec![0.0, 1.0])),
+                }
+                .fast_track_rank()
+        );
+        assert!(
+            ActiveLearningKind::NovelCluster {
+                candidate: Box::new(novel_candidate(0, vec![0.0, 1.0])),
+            }
+            .fast_track_rank()
                 < ActiveLearningKind::UnknownFingerprint {
                     candidate: Box::new(unknown_candidate(0, vec![1.0, 0.0])),
                 }
@@ -1085,6 +1155,40 @@ mod tests {
         assert!(suggestion
             .centroid_by_embedder
             .contains_key(&EmbedderId("e1".to_string())));
+    }
+
+    #[test]
+    fn novel_pattern_candidate_enqueues_and_admits_cluster() {
+        let mut queue = ActiveLearningQueueState::new(8).expect("queue");
+        let config = NovelPatternDetectorConfig::default();
+        let existing_cells = vec![ConstellationCentroid {
+            cell_id: "known-cell-a".to_string(),
+            centroid_by_embedder: vectors([("e1", vec![1.0, 0.0]), ("e2", vec![1.0, 0.0])]),
+            variance_by_embedder: BTreeMap::from([
+                (EmbedderId("e1".to_string()), 0.01),
+                (EmbedderId("e2".to_string()), 0.01),
+            ]),
+        }];
+        for idx in 0..3 {
+            let prediction = prediction(&format!("novel-task-{idx}"), 0x90 + idx as u8, 0.88);
+            let enqueued = queue
+                .enqueue_novel_pattern_candidate(
+                    &prediction,
+                    vectors([("e1", vec![0.0, 1.0]), ("e2", vec![0.0, 1.0])]),
+                    &existing_cells,
+                    100 + idx,
+                    config,
+                )
+                .expect("enqueue novel pattern");
+            assert!(enqueued);
+        }
+        let admissions = queue
+            .admit_novel_pattern_clusters(&existing_cells, config)
+            .expect("admit novel cluster");
+        assert_eq!(admissions.len(), 1);
+        assert_eq!(admissions[0].member_candidate_ids.len(), 3);
+        assert!(admissions[0].min_distance_to_existing_centroid >= config.tau_far);
+        assert!(admissions[0].intra_cluster_min_cosine >= config.tau_intra);
     }
 
     #[test]
@@ -1229,6 +1333,23 @@ mod tests {
             active_learning_priority: 2,
             observation_by_embedder,
             nearest_fingerprints: vec![candidate_score(false, 0x79, -0.40)],
+        }
+    }
+
+    fn novel_candidate(idx: u8, vector: Vec<f32>) -> NovelPatternCandidate {
+        let prediction = prediction(&format!("novel-candidate-{idx}"), idx.max(1), 0.91);
+        let observation_by_embedder = vectors([("e1", vector)]);
+        NovelPatternCandidate {
+            candidate_id: [idx.max(1); 16],
+            prediction_id: PredictionId(prediction.prediction_id),
+            task_id: prediction.task_id,
+            session_id: prediction.session_id,
+            observed_at_unix_ms: i64::from(idx) + 1,
+            novelty_score: 3.0,
+            nearest_existing_cell_id: "known-cell".to_string(),
+            nearest_existing_distance: 0.9,
+            active_learning_priority: 2,
+            observation_by_embedder,
         }
     }
 

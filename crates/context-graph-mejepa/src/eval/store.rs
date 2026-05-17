@@ -1,6 +1,7 @@
 use super::error::{EvalError, EvalErrorCode};
 use super::fingerprint_ship_gate::{fingerprint_ship_gate_window_key, FingerprintShipGateWindow};
 use super::graph::PatchSimilarityGraph;
+use super::novel_pattern::{ontology_growth_audit_key, OntologyGrowthAuditEntry};
 use super::queue::{ActiveLearningLabel, ActiveLearningQueueEntry, ActiveLearningQueueState};
 use super::telemetry::ProductionTelemetryWindow;
 use super::types::{EvalReport, OpenResearchQuestionStatus};
@@ -14,9 +15,9 @@ use std::sync::Arc;
 pub use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_EVAL_REPORTS,
-    CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS, CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_OOD_ESCALATIONS,
-    CF_MEJEPA_PRODUCTION_TELEMETRY, CF_MEJEPA_RESEARCH_QUESTIONS, CF_MEJEPA_TASK_GRAPH,
-    CF_MEJEPA_TASK_GRAPH_HISTORY,
+    CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS, CF_MEJEPA_MODEL_PROMOTIONS,
+    CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT, CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_PRODUCTION_TELEMETRY,
+    CF_MEJEPA_RESEARCH_QUESTIONS, CF_MEJEPA_TASK_GRAPH, CF_MEJEPA_TASK_GRAPH_HISTORY,
 };
 
 #[derive(Clone)]
@@ -255,6 +256,42 @@ impl RocksDbEvalStore {
 
     pub fn count_production_telemetry(&self) -> Result<usize, EvalError> {
         let cf_handle = cf(&self.db, CF_MEJEPA_PRODUCTION_TELEMETRY).map_err(EvalError::from)?;
+        let mut count = 0usize;
+        for item in self.db.iterator_cf(cf_handle, IteratorMode::Start) {
+            item?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    pub fn persist_ontology_growth_audit(
+        &self,
+        entry: &OntologyGrowthAuditEntry,
+    ) -> Result<(), EvalError> {
+        entry.validate()?;
+        self.put_readback_bin(
+            CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
+            &ontology_growth_audit_key(entry),
+            entry,
+        )
+    }
+
+    pub fn load_ontology_growth_audit_entries(
+        &self,
+    ) -> Result<Vec<OntologyGrowthAuditEntry>, EvalError> {
+        let cf_handle = cf(&self.db, CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT).map_err(EvalError::from)?;
+        let mut entries = Vec::new();
+        for item in self.db.iterator_cf(cf_handle, IteratorMode::Start) {
+            let (_key, value) = item?;
+            let entry: OntologyGrowthAuditEntry = bincode::deserialize(&value)?;
+            entry.validate()?;
+            entries.push(entry);
+        }
+        Ok(entries)
+    }
+
+    pub fn count_ontology_growth_audit(&self) -> Result<usize, EvalError> {
+        let cf_handle = cf(&self.db, CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT).map_err(EvalError::from)?;
         let mut count = 0usize;
         for item in self.db.iterator_cf(cf_handle, IteratorMode::Start) {
             item?;

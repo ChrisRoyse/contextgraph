@@ -721,9 +721,8 @@ impl SchedulerState {
                 .map_err(map_eval_error)?;
         }
         let mut top_tasks = queue.entries.values().collect::<Vec<_>>();
-        // REQ-FLYWHEEL-11: AgentSurprise → OutOfDistribution → Uncertainty,
-        // with score as the within-kind tiebreaker. This makes the scheduler
-        // drain agent-flagged surprises before any uncertainty backlog.
+        // REQ-FLYWHEEL-11 / TASK-RWD-211: fast-track agent surprise and
+        // novel-pattern rows before generic uncertainty backlog.
         top_tasks.sort_by(|left, right| {
             left.kind
                 .fast_track_rank()
@@ -1384,6 +1383,17 @@ fn active_learning_kind_summary(kind: &ActiveLearningKind) -> serde_json::Value 
             "embedder_disagreement_score": candidate.embedder_disagreement_score,
             "embedder_count": candidate.observation_by_embedder.len(),
             "nearest_fingerprint_count": candidate.nearest_fingerprints.len(),
+        }),
+        ActiveLearningKind::NovelCluster { candidate } => json!({
+            "type": "novel_cluster",
+            "candidate_id": hex::encode(candidate.candidate_id),
+            "prediction_id": hex::encode(candidate.prediction_id.0),
+            "task_id": candidate.task_id.0,
+            "active_learning_priority": candidate.active_learning_priority,
+            "novelty_score": candidate.novelty_score,
+            "nearest_existing_cell_id": candidate.nearest_existing_cell_id,
+            "nearest_existing_distance": candidate.nearest_existing_distance,
+            "embedder_count": candidate.observation_by_embedder.len(),
         }),
     }
 }

@@ -532,7 +532,7 @@ Pillars 1 (frozen panel), 2 (anti-collapse SIGReg), 4 (action-conditioned), 8 (c
 | `TASK-RWD-208` | Static-analysis (mypy + pyright + ruff) reward signal | 4 — static quality | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-py-g-074-static-analysis-fsv/run-1779045296443/static_analysis_fsv.json` sha256 `16c9ee15273c9df3d5bc03a9bfd7d46113d58266f49fa7af571b3f5f031624b0` | shipped 2026-05-17 |
 | `TASK-RWD-209` | Coverage + churn + complexity + doc + dep-CVE reward | 4 — static quality | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-py-g-075-composite-reward-fsv/run-1779049005345/composite_reward_fsv.json` sha256 `f0eb9b5c5cf9a401f4911da30ed053db7a948bc8fc72e899d3837415084669db` | shipped 2026-05-17 |
 | `TASK-RWD-210` | Prioritised replay buffer for M(t) consolidation | 7 — live session | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-py-g-068-replay-buffer-fsv/run-1779049993557-3834881/replay_buffer_fsv.json` sha256 `cf4f4a68080b127d7af07e5ae66c85d99c585fd999442063fc256f15d0689b77` | shipped 2026-05-17 |
-| `TASK-RWD-211` | Novel-pattern detection + auto constellation extension | 6 — constellation | G+ | #286, TASK-FP-002 | 2-3d |
+| `TASK-RWD-211` | Novel-pattern detection + auto constellation extension | 6 — constellation | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-py-g-067-novel-pattern-fsv/run-1779051462932/novel_pattern_fsv.json` sha256 `6043269fa9340a611939e454e358f4b4437a82c6ff5afb3c990247749a288743` | shipped 2026-05-17 |
 | `TASK-RWD-212` | Per-cell constellation freshness audit + scheduler | 6 — constellation | G+ | #271, TASK-FP-003 | 2d |
 
 **Completeness gate**: per-tier coverage ≥ 95% verified by `mejepa_audit_reward_signals` MCP tool. See `29_REWARD_SIGNAL_COMPLETENESS.md §5`.

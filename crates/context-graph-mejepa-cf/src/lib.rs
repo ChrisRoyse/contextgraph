@@ -74,6 +74,9 @@ pub const CF_MEJEPA_DOC_COVERAGE_SIGNALS: &str = "CF_MEJEPA_DOC_COVERAGE_SIGNALS
 pub const CF_MEJEPA_DEP_CVE_SIGNALS: &str = "CF_MEJEPA_DEP_CVE_SIGNALS";
 // TASK-RWD-210 / TASK-PY-G-068 — prioritized M(t) replay buffer rows.
 pub const CF_MEJEPA_REPLAY_BUFFER: &str = "CF_MEJEPA_REPLAY_BUFFER";
+// TASK-RWD-211 / TASK-PY-G-067 — accepted/refuted system-proposed
+// constellation/fingerprint growth rows from the novel-pattern gate.
+pub const CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT: &str = "CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT";
 // TASK-FP-001/002 — first-class failure-shape fingerprint catalog.
 pub const CF_MEJEPA_FAILURE_FINGERPRINTS: &str = "CF_MEJEPA_FAILURE_FINGERPRINTS";
 pub const CF_MEJEPA_FINGERPRINT_REFERENCES: &str = "CF_MEJEPA_FINGERPRINT_REFERENCES";
@@ -120,6 +123,7 @@ pub const REWARD_SIGNAL_CFS: &[&str] = &[
     CF_MEJEPA_DOC_COVERAGE_SIGNALS,
     CF_MEJEPA_DEP_CVE_SIGNALS,
     CF_MEJEPA_REPLAY_BUFFER,
+    CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
 ];
 
 pub const SELF_HEALING_CFS: &[&str] = &[
@@ -191,6 +195,7 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_DOC_COVERAGE_SIGNALS,
     CF_MEJEPA_DEP_CVE_SIGNALS,
     CF_MEJEPA_REPLAY_BUFFER,
+    CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
 ];
 
 pub const EVAL_CFS: &[&str] = &[
@@ -223,6 +228,7 @@ pub const EVAL_CFS: &[&str] = &[
     CF_MEJEPA_DOC_COVERAGE_SIGNALS,
     CF_MEJEPA_DEP_CVE_SIGNALS,
     CF_MEJEPA_REPLAY_BUFFER,
+    CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
 ];
 
 pub const HYGIENE_CFS: &[&str] = &[
@@ -337,6 +343,7 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_DOC_COVERAGE_SIGNALS,
     CF_MEJEPA_DEP_CVE_SIGNALS,
     CF_MEJEPA_REPLAY_BUFFER,
+    CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
     CF_MEJEPA_MUTATION_CORPUS,
     CF_MEJEPA_LIVE_ATTEMPT_CORPUS,
     CF_MEJEPA_QUOTA_STATE,
@@ -439,6 +446,10 @@ mod tests {
         );
         assert_eq!(CF_MEJEPA_DEP_CVE_SIGNALS, "CF_MEJEPA_DEP_CVE_SIGNALS");
         assert_eq!(CF_MEJEPA_REPLAY_BUFFER, "CF_MEJEPA_REPLAY_BUFFER");
+        assert_eq!(
+            CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
+            "CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT"
+        );
     }
 
     #[test]
