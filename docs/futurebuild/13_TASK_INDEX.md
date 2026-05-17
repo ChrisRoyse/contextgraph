@@ -507,9 +507,9 @@ The atomic task files are under [`tasks/`](tasks/) — see the directory tree at
 | ID | Title | Pillar | Phase | Blocked by | Effort |
 |---|---|---|---|---|---|
 | `TASK-FP-101` | SIGReg regularizer for predictor (differentiable characteristic-function sketch beside VICReg) | 2 — anti-collapse info-max | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-fp-101-sigreg-fsv/run-1779036305137/sigreg_fsv.json` sha256 `b2d4995d4de9539916558f51cdd1423081af94962868c18077653c0d075e80c7` | shipped 2026-05-17 |
-| `TASK-FP-102` | Hierarchical JEPA predictor (file → function → AST → chunk) | 3 — hierarchical | G+ | TASK-FP-002 (seed catalog) | 4-6d |
+| `TASK-FP-102` | Hierarchical JEPA predictor (file → function → AST → chunk) | 3 — hierarchical | G+ | ✅ complete; FSV `/mnt/d/contextgraph/fsv/task-fp-102-hierarchical-jepa-fsv/run-1779037368822/hierarchical_jepa_fsv.json` sha256 `5dfce2ebe37d2b52a6ad036ec89e22f659c014fa3ff9c543b123000f2d7f9bf1` | shipped 2026-05-17 |
 | `TASK-FP-103` | Latent-space candidate-patch search (`mejepa_search_latent_actions`) | 5 — latent planning | G+ | TASK-FP-102 | 3-4d |
-| `TASK-FP-104` | Objective-driven cost + hardwired safety constraints | 6 — objective + safety | G+ | TASK-FP-105 (rank backbone) | 2-3d |
+| `TASK-FP-104` | Objective-driven cost + hardwired safety constraints | 6 — objective + safety | G+ | TASK-FP-103 + existing Q4 cost heads | 2-3d |
 | `TASK-FP-105` | `mejepa_rank_candidates` MCP tool (counterfactual repair ranking) | 7 — best-of-K | G+ | TASK-FP-103 | 1-2d |
 
 Pillars 1 (frozen panel), 2 (anti-collapse SIGReg), 4 (action-conditioned), and 8 (calibrated uncertainty) are SHIPPED/DESIGNED with FSV-backed implementation where code changed. Pillars 9 (System 1 vs 2 framing) and 10 (reward-signal completeness) have their own work: 9 is a whitepaper edit; 10 is the TASK-RWD-201..212 set below.

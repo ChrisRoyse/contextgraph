@@ -44,7 +44,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 
 **ME-JEPA state:** ✅ **SHIPPED.** TASK-FP-102 (commit 62501579) lands a durable per-prediction hierarchy row written beside each live `RealityPrediction`. Each row carries File-, Function-, AstNode-, and Chunk-level entries with parent-link validation, persisted in `CF_MEJEPA_HIERARCHICAL_PREDICTIONS` via `read_hierarchical_predictions` / `write_hierarchical_prediction` (sync_all + reopen readback). `compiler.verify()` produces the hierarchy alongside the live prediction.
 
-**Sub-task:** **TASK-FP-102 — COMPLETE.** Hierarchical predictor emits 4 abstraction levels (File / Function / AstNode / Chunk) per query, persisted to `CF_MEJEPA_HIERARCHICAL_PREDICTIONS`, FSV `/mnt/d/contextgraph/fsv/task-fp-102-hierarchical-jepa-fsv/run-1779037345192/hierarchical_jepa_fsv.json` sha256 `bc879d615e413e4f17f3fc1230a1638af91a3e7e93c3b78527befa927920b7ed` (`all_passed=true`; 8 levels across 2 changed files; parent links validated; live + hierarchy readback equal).
+**Sub-task:** **TASK-FP-102 — COMPLETE.** Hierarchical predictor emits 4 abstraction levels (File / Function / AstNode / Chunk) per query, persisted to `CF_MEJEPA_HIERARCHICAL_PREDICTIONS`, FSV `/mnt/d/contextgraph/fsv/task-fp-102-hierarchical-jepa-fsv/run-1779037368822/hierarchical_jepa_fsv.json` sha256 `5dfce2ebe37d2b52a6ad036ec89e22f659c014fa3ff9c543b123000f2d7f9bf1` (`all_passed=true`; 8 levels across 2 changed files; parent links validated; live + hierarchy readback equal).
 
 ---
 
@@ -148,7 +148,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the following are true:
 
 1. **SIGreg** (or comparable explicit info-max regularizer) is shipped with FSV proving info-content monotonicity (TASK-FP-101). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-101-sigreg-fsv/run-1779036305137/sigreg_fsv.json`.
-2. **Hierarchical** predictor emits multi-scale predictions across ≥ 3 abstraction levels with per-level calibration (TASK-FP-102). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-102-hierarchical-jepa-fsv/run-1779037345192/hierarchical_jepa_fsv.json`.
+2. **Hierarchical** predictor emits multi-scale predictions across ≥ 3 abstraction levels with per-level calibration (TASK-FP-102). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-102-hierarchical-jepa-fsv/run-1779037368822/hierarchical_jepa_fsv.json`.
 3. **Latent-space planning**: `mejepa_search_latent_actions` returns ranked latent vectors, NOT token-by-token regenerated patches (TASK-FP-103).
 4. **Objective-driven**: explicit cost function + hardwired safety constraint vector; constraint violation hard-blocks `Verdict::Pass` (TASK-FP-104).
 5. **Counterfactual ranking**: `mejepa_rank_candidates` MCP tool ships and is exercised by the live integration FSV (TASK-FP-105).
@@ -162,7 +162,7 @@ ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the follow
 | TASK | Title | Pillar | DoD anchor |
 |---|---|---|---|
 | TASK-FP-101 | SIGReg regularizer for predictor | 2 | ✅ Complete: differentiable characteristic-function sketch + FSV `b2d4995d4de9539916558f51cdd1423081af94962868c18077653c0d075e80c7` |
-| TASK-FP-102 | Hierarchical JEPA predictor (file → function → AST → chunk) | 3 | `CF_MEJEPA_HIERARCHICAL_PREDICTIONS` per-level calibration |
+| TASK-FP-102 | Hierarchical JEPA predictor (file → function → AST → chunk) | 3 | ✅ Complete: `CF_MEJEPA_HIERARCHICAL_PREDICTIONS` readback + FSV `5dfce2ebe37d2b52a6ad036ec89e22f659c014fa3ff9c543b123000f2d7f9bf1` |
 | TASK-FP-103 | Latent-space candidate-patch search | 5 | `mejepa_search_latent_actions` MCP tool + synthetic recovery proof |
 | TASK-FP-104 | Objective-driven cost + safety constraints | 6 | Hardwired constraint vector hard-blocks Verdict::Pass on violation |
 | TASK-FP-105 | `mejepa_rank_candidates` MCP tool | 7 | Monotonic ranking by predicted-Pass × (1 − OOD_score) |
@@ -174,8 +174,8 @@ Each TASK file follows `prdtospec.md` Level-4 atomic-task format and the FSV pro
 ## §6 — Implementation order
 
 1. **TASK-FP-101 (SIGReg)** — complete. Pure substrate-side improvement, doesn't depend on other tasks, immediately benefits all downstream predictor heads.
-2. **TASK-FP-102 (hierarchical)** next — provides the multi-scale substrate that TASK-FP-103 latent search will operate over.
-3. **TASK-FP-103 (latent search)** third — depends on hierarchical predictor for richer search space.
+2. **TASK-FP-102 (hierarchical)** — complete. It provides the multi-scale substrate that TASK-FP-103 latent search will operate over.
+3. **TASK-FP-103 (latent search)** next — depends on hierarchical predictor for richer search space.
 4. **TASK-FP-104 (cost + safety)** fourth — depends on Q4 head emitting cost-like outputs (existing) + adds hard constraint layer.
 5. **TASK-FP-105 (counterfactual rank)** fifth — depends on TASK-FP-103 (uses latent search as the candidate-generation backend).
 
@@ -200,4 +200,4 @@ This ordering is captured in `13_TASK_INDEX.md` task DAG.
 
 ---
 
-**TL;DR.** ME-JEPA-Code has the code-bearing pillars 1, 2, 4, and 8 shipped or designed with FSV-backed evidence where code changed. The remaining #314 pillar gaps are TASK-FP-102..105: hierarchical prediction, latent-space search, objective+safety constraints, and counterfactual best-of-K ranking. Pillar 9 is a framing/documentation update, and pillar 10 is tracked separately by the #315 reward-signal-completeness audit.
+**TL;DR.** ME-JEPA-Code has the code-bearing pillars 1, 2, 3, 4, and 8 shipped or designed with FSV-backed evidence where code changed. The remaining #314 pillar gaps are TASK-FP-103..105: latent-space search, objective+safety constraints, and counterfactual best-of-K ranking. Pillar 9 is a framing/documentation update, and pillar 10 is tracked separately by the #315 reward-signal-completeness audit.
