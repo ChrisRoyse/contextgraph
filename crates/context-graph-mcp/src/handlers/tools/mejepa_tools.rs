@@ -3578,6 +3578,203 @@ can_operator_override = {operator}
         assert_eq!(fs::read(path).unwrap(), bytes);
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn mejepa_predict_latest_reads_live_prediction_for_injection_fsv() {
+        let _guard = env_guard();
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
+        let fsv_root =
+            PathBuf::from("/mnt/d/contextgraph/fsv/task-py-g-055-prediction-injection-fsv");
+        fs::create_dir_all(&fsv_root).unwrap();
+        let run_root = fsv_root.join(format!(
+            "mcp-readback-run-{}-{}",
+            started_at_unix_ms,
+            std::process::id()
+        ));
+        fs::create_dir_all(&run_root).unwrap();
+        let artifact_path = run_root.join("mcp_predict_latest_fsv.json");
+        let infer_db = run_root.join("infer-db");
+
+        let mut prediction = inspect_prediction_fixture([0x55; 16], "src/live.py#fn#prediction");
+        prediction.session_id = [0x55; 16];
+        prediction.verdict = context_graph_mejepa::Verdict::Fail;
+        prediction.predicted_oracle_pass = 0.07;
+        prediction.calibrated_confidence = 0.93;
+        prediction.ood_score = 0.02;
+        let db = open_infer_rocksdb(&infer_db).unwrap();
+        let cf_counts_before = json!({
+            CF_MEJEPA_LIVE_PREDICTIONS: count_cf_any(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS).unwrap()
+        });
+        persist_prediction_and_dda(db.clone(), &prediction);
+        let cf_counts_after = json!({
+            CF_MEJEPA_LIVE_PREDICTIONS: count_cf_any(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS).unwrap()
+        });
+        drop(db);
+
+        let session_id = hex::encode(prediction.session_id);
+        let happy_response = handlers
+            .call_mejepa_predict_latest(
+                Some(JsonRpcId::Number(550)),
+                json!({
+                    "sessionId": session_id,
+                    "limit": 1,
+                    "dbPath": infer_db.display().to_string()
+                }),
+            )
+            .await;
+        assert!(happy_response.error.is_none());
+        let happy_result = happy_response.result.unwrap();
+        let happy_structured = happy_result["structuredContent"].clone();
+
+        let cold_response = handlers
+            .call_mejepa_predict_latest(
+                Some(JsonRpcId::Number(551)),
+                json!({
+                    "sessionId": hex::encode([0x56; 16]),
+                    "limit": 1,
+                    "dbPath": infer_db.display().to_string()
+                }),
+            )
+            .await;
+        let cold_result = cold_response.result.unwrap();
+
+        let invalid_session_response = handlers
+            .call_mejepa_predict_latest(
+                Some(JsonRpcId::Number(552)),
+                json!({
+                    "sessionId": "not-hex",
+                    "limit": 1,
+                    "dbPath": infer_db.display().to_string()
+                }),
+            )
+            .await;
+        let invalid_session_result = invalid_session_response.result.unwrap();
+
+        let invalid_limit_response = handlers
+            .call_mejepa_predict_latest(
+                Some(JsonRpcId::Number(553)),
+                json!({
+                    "sessionId": session_id,
+                    "limit": 1001,
+                    "dbPath": infer_db.display().to_string()
+                }),
+            )
+            .await;
+        let invalid_limit_result = invalid_limit_response.result.unwrap();
+
+        let reopened = open_infer_rocksdb(&infer_db).unwrap();
+        let store = RocksDbInferStore::new(reopened.clone());
+        let persisted_predictions = context_graph_mejepa::MejepaStore::read_live_predictions(
+            &store,
+            prediction.session_id,
+            1,
+        )
+        .unwrap();
+        let session_known =
+            context_graph_mejepa::MejepaStore::session_known(&store, prediction.session_id)
+                .unwrap();
+        let independent_readback_equal = persisted_predictions == vec![prediction.clone()]
+            && session_known
+            && count_cf_any(reopened.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS).unwrap() == 1;
+        drop(store);
+        drop(reopened);
+
+        let happy_pass = happy_result["isError"] == false
+            && happy_structured["session_known"] == json!(true)
+            && happy_structured["predictions"]
+                .as_array()
+                .map(|items| items.len())
+                == Some(1)
+            && happy_structured["predictions"][0]["verdict"] == json!("fail")
+            && (happy_structured["predictions"][0]["predicted_oracle_pass"]
+                .as_f64()
+                .unwrap_or_default()
+                - 0.07)
+                .abs()
+                < 0.001
+            && (happy_structured["predictions"][0]["calibrated_confidence"]
+                .as_f64()
+                .unwrap_or_default()
+                - 0.93)
+                .abs()
+                < 0.001;
+        let boundary_cases = vec![
+            json!({
+                "case": "cold_start_session_returns_empty_prediction_list",
+                "expected": {"predictions": [], "session_known": false},
+                "actual": cold_result,
+                "pass": cold_result["isError"] == false
+                    && cold_result["structuredContent"]["session_known"] == json!(false)
+                    && cold_result["structuredContent"]["predictions"]
+                        .as_array()
+                        .map(|items| items.is_empty())
+                        == Some(true)
+            }),
+            json!({
+                "case": "invalid_session_id_fails_schema_guard",
+                "expected": "sessionId must be exactly 32 hexadecimal characters",
+                "actual": invalid_session_result,
+                "pass": invalid_session_result["isError"] == true
+                    && invalid_session_result["content"][0]["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("sessionId must be exactly 32 hexadecimal characters")
+            }),
+            json!({
+                "case": "invalid_limit_fails_schema_guard",
+                "expected": "limit must be in [1, 1000]",
+                "actual": invalid_limit_result,
+                "pass": invalid_limit_result["isError"] == true
+                    && invalid_limit_result["content"][0]["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("limit must be in [1, 1000]")
+            }),
+        ];
+        let all_boundaries_pass = boundary_cases
+            .iter()
+            .all(|case| case["pass"].as_bool() == Some(true));
+        let report = json!({
+            "task_id": "TASK-PY-G-055",
+            "issue": 274,
+            "started_at_unix_ms": started_at_unix_ms,
+            "run_root": run_root.display().to_string(),
+            "source_of_truth": {
+                "infer_db": infer_db.display().to_string(),
+                "live_prediction_cf": CF_MEJEPA_LIVE_PREDICTIONS,
+                "mcp_tool": tool_names::MEJEPA_PREDICT_LATEST
+            },
+            "trigger": "cargo test -p context-graph-mcp mejepa_predict_latest_reads_live_prediction_for_injection_fsv -- --nocapture",
+            "happy_path": [{
+                "case": "mcp_predict_latest_reads_cf_mejepa_live_predictions_for_session",
+                "expected": {
+                    "session_known": true,
+                    "prediction_count": 1,
+                    "verdict": "fail",
+                    "predicted_oracle_pass": 0.07,
+                    "calibrated_confidence": 0.93
+                },
+                "actual": happy_structured,
+                "pass": happy_pass
+            }],
+            "boundary_cases": boundary_cases,
+            "cf_counts_before": cf_counts_before,
+            "cf_counts_after": cf_counts_after,
+            "independent_readback_equal": independent_readback_equal,
+            "all_passed": happy_pass && all_boundaries_pass && independent_readback_equal
+        });
+        write_fsv_json(&artifact_path, &report);
+        let report_readback: Value =
+            serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
+        assert_eq!(
+            report_readback["all_passed"],
+            json!(true),
+            "{}",
+            serde_json::to_string_pretty(&report_readback).unwrap()
+        );
+    }
+
     fn physical_file_summary(root: &Path) -> Value {
         let mut file_count = 0u64;
         let mut total_bytes = 0u64;

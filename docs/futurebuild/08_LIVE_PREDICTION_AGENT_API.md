@@ -266,7 +266,7 @@ The hooks layer captures shifts, runs cargo check + git diff on writes, and now 
 
 Implementation: a new shell script `scripts/cc/hook_user_prompt_submit_inject_prediction.sh` wired into `.claude/settings.json` under `hooks.UserPromptSubmit`. It calls a small `mcp__cgreality__mejepa_predict_latest` request and renders the response.
 
-Remaining work: refresh the renderer so every Phase B Q1-Q5 field is surfaced usefully under the 4 KB hook budget, and complete fresh-host daemon enablement proof.
+2026-05-17 hardening (#274): the hook now writes per-session injection source-of-truth rows under `runtime/agent-history/<session>-injections.jsonl`, injects the cold-start observing block for empty prediction lists, emits `MEJEPA_INJECT_MCP_UNREACHABLE` when transport fails, fails closed on malformed/tool-error responses, and escapes adversarial markdown patterns (`system:`, `>>>`, template delimiters, triple backticks, and secrets). The renderer surfaces verdict, confidence, top failure modes and edge cases, Q4 concerns by category, claim reconciliation, closest exemplars, and Abstain reasons under the 4 KB budget. FSV: `/mnt/d/contextgraph/fsv/task-py-g-055-prediction-injection-fsv/hook-run-1779060791-4146443/prediction_injection_hook_fsv.json` sha256 `cebbf132d5652859d73e584cd16c3a2084fcae2f8a7e3465d4c66328c27245c1`; MCP CF readback FSV: `/mnt/d/contextgraph/fsv/task-py-g-055-prediction-injection-fsv/mcp-readback-run-1779060540122-4131605/mcp_predict_latest_fsv.json` sha256 `c8785b9ffb4bafe9f21ae6d87821a48768eacb50b1cafa3db8fc0866eaf217f3`. Fresh-host daemon enablement proof remains separate from the renderer/hook contract.
 
 ---
 
@@ -395,7 +395,7 @@ The CUDA queue is shared between training (during periodic full-retrain) and inf
 
 ## 9. What this API spec commits us to
 
-1. `TASK-PREDICT-001-prediction-injection-hook.md` — complete; renderer hardening remains.
+1. `TASK-PREDICT-001-prediction-injection-hook.md` — complete; #274 renderer/hook hardening FSV passed 2026-05-17.
 2. `TASK-PREDICT-002-record-agent-feedback-tool.md` — complete.
 3. `TASK-PREDICT-003-predict-what-if-tool.md` — complete.
 4. `TASK-PREDICT-004-explain-prediction-tool.md` — complete for persisted prediction explanations; exemplar/counterfactual enrichment remains.

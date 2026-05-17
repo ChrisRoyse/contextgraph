@@ -50,7 +50,7 @@ The A-F and H implementation issues are closed for the Phase G handoff. Analyzer
 | `TASK-FLYWHEEL-005` | `ActiveLearningKind::AgentSurprise` variant + queue extension | A | none | **complete (2026-05-11)** |
 | `TASK-FLYWHEEL-006` | New CFs: `CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_FAILURE_EXEMPLARS`, `CF_MEJEPA_AGENT_FEEDBACK` | A | none | **complete (2026-05-11)** |
 | `TASK-FLYWHEEL-010` | Unified supervised-task health registry powering `/ready` | F | FLYWHEEL-001, OBS-014 | **complete (#87)** — `supervised_task_health.json` records heartbeat/restart health for all daemon tasks; `/ready` aggregates it |
-| `TASK-PREDICT-001` | UserPromptSubmit prediction-injection hook | A | FLYWHEEL-001 | **complete (2026-05-12)** |
+| `TASK-PREDICT-001` | UserPromptSubmit prediction-injection hook | A | FLYWHEEL-001 | **complete (2026-05-12; #274 hardening FSV 2026-05-17)** — ≤4 KB renderer, agent-history source-of-truth, cold-start block, adversarial escaping, Abstain reason, and fail-closed MCP/malformed behavior |
 | `TASK-PREDICT-002` | `mejepa_record_agent_feedback` MCP tool + sampling-weight bump wiring | A | FLYWHEEL-005, FLYWHEEL-006 | **complete (2026-05-12; no feedback rate limit)** |
 | `TASK-LOOP-001` | Apply new `.claude/loop.md` content from `14_NEW_LOOP_MD.md` | A | FLYWHEEL-001 | **complete (already applied)** |
 | `TASK-LOOP-002` | Update CLAUDE.md §11.11/§13/§3 + agent README retirements | H | LOOP-001 | moved to Phase H residue cleanup; not an A-D ME-JEPA substrate blocker |
