@@ -100,7 +100,7 @@ This is the operator-facing capability: point ME-JEPA at any permitted Python pr
 | Order | Issue | Capability |
 |---|---|---|
 | 4.1 | **#281** | Merkle-tree per-project chunk/embed cache + 250 ms debounced watcher-status scan + transitive-invalidation + schema-version-aware re-embed — **code/FSV-shipped 2026-05-18** |
-| 4.2 | **#282** | Project-ingestion MCP tool with source/test scoping — **complete**: `mcp__cgreality__mejepa_project_ingest` accepts git/non-git directory trees and direct files, persists project-local predictions only, and proves physical CF key readback; FSV `/mnt/d/contextgraph/fsv/task-py-g-063-project-ingest-fsv/run-20260518T133058Z/project_ingest_fsv.json` sha256 `7514bfb3c49b3a490761fb08f817ce7b9594209f0675e3dbe28e6d90381446b8` |
+| 4.2 | **#282** | Project-ingestion MCP tool with source/test scoping — **complete**: `mcp__cgreality__mejepa_project_ingest` accepts git/non-git directory trees and direct files, persists project-local predictions only, and proves physical CF key readback; FSV `/mnt/d/contextgraph/fsv/task-py-g-063-project-ingest-fsv/run-20260518T135521Z/project_ingest_fsv.json` sha256 `d3b8bc988498976b0db0dd16dd1024250ac0428935c28cdc2b63fe4962a6408b` |
 | 4.3 | **#283** | Per-project reality compile report (top-N likely-broken areas, edge cases, dep risks) |
 
 **Gate for Phase 4:** Fresh ingest of a 50-file Python project completes < 60 s on RTX 5090; re-ingest after a 1-file edit < 5 s; report renders end-to-end.
