@@ -354,10 +354,18 @@ Wrapping these in a single `mejepa_daemon_status` aggregator tool would be conve
 
 [Agent runs pytest]
   > Bash hook captures the exit + the parsed test results
-  > TestOutcomeEvent persisted to CF_MEJEPA_ORACLE_VERDICTS
+  > TestOutcomeEvent persisted under runtime/test-outcomes/<session>.jsonl
+  > PredictionVerification row persisted to CF_MEJEPA_PREDICTION_VERIFICATIONS
   > Self-optim scheduler picks it up on next observe_tick (≤250ms)
   > observe(panel, action, panel_after_test, oracle=Pass) called
   > Training cert written; ΔP/ΔK/ΔΩ/ΔΞ logged
+
+[Agent tries to stop]
+  > Stop hook reads CF_MEJEPA_LIVE_PREDICTIONS and
+    CF_MEJEPA_PREDICTION_VERIFICATIONS for the session
+  > If any non-Abstain prediction lacks Confirmed/Refuted verification, the
+    hook exits 2 and prints the prediction_ids plus top recommended test
+    commands; after pytest has bound the verification row, Stop exits 0.
 
 [Agent UserPromptSubmit] -- user asks for a summary
   > Hook injects updated prediction. Verdict now: Pass (oracle confidence 0.94)
@@ -367,7 +375,7 @@ Wrapping these in a single `mejepa_daemon_status` aggregator tool would be conve
  noted tech debt items I'll address in follow-up"]
 ```
 
-This is now the intended production experience. The daemon mode, injection hook, feedback tool, what-if tool, and explain tool exist; the remaining risk is operational burn-in and quality gates, not missing first-class API surface.
+This is now the intended production experience. The daemon mode, injection hook, PostToolUse verification binding, Stop self-verification gate, feedback tool, what-if tool, and explain tool exist; the remaining risk is operational burn-in and quality gates, not missing first-class API surface.
 
 ---
 

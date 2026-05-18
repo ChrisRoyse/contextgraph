@@ -96,7 +96,7 @@ run_hook() {
   printf '%s' "${ec}"
 }
 
-FAKE_MODE=fail
+export FAKE_MODE=fail
 EC="$(run_hook "${ACTIVE_JSON}" "${TMPROOT}/active.out" "${TMPROOT}/active.err")"
 assert_exit 0 "${EC}" "stop_self_verify_active_bypass"
 if [ -f "${FAKE_CALLS}" ]; then
@@ -113,19 +113,19 @@ if [ -f "${FAKE_CALLS}" ]; then
 fi
 rm -f "${MEJEPA_DAEMON_CONFIG}"
 
-FAKE_MODE=fail
+export FAKE_MODE=fail
 EC="$(run_hook "${STOP_JSON}" "${TMPROOT}/unreachable.out" "${TMPROOT}/unreachable.err")"
 assert_exit 0 "${EC}" "stop_self_verify_unreachable_exit"
 assert_jq "$(cat "${TMPROOT}/unreachable.err")" '.error_code' "MEJEPA_STOP_HOOK_DAEMON_UNREACHABLE" "stop_self_verify_unreachable_error"
 
-FAKE_MODE=unverified
+export FAKE_MODE=unverified
 EC="$(run_hook "${STOP_JSON}" "${TMPROOT}/blocked.out" "${TMPROOT}/blocked.err")"
 assert_exit 2 "${EC}" "stop_self_verify_block_exit"
 assert_jq "$(cat "${TMPROOT}/blocked.err")" '.error_code' "MEJEPA_STOP_HOOK_UNVERIFIED_PREDICTIONS" "stop_self_verify_block_error"
 assert_jq "$(cat "${TMPROOT}/blocked.err")" '.prediction_ids[0]' "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "stop_self_verify_block_prediction_id"
 assert_jq "$(cat "${TMPROOT}/blocked.err")" '.recommended_commands[0]' "pytest tests/test_stop.py::test_gate -q" "stop_self_verify_block_command"
 
-FAKE_MODE=allowed
+export FAKE_MODE=allowed
 EC="$(run_hook "${STOP_JSON}" "${TMPROOT}/allowed.out" "${TMPROOT}/allowed.err")"
 assert_exit 0 "${EC}" "stop_self_verify_allowed_exit"
 

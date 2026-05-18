@@ -132,7 +132,7 @@ Hook-based capture so every test outcome and agent claim becomes ME-JEPA trainin
 |---|---|---|---|
 | 6.1 | **#274** | UserPromptSubmit | Inject latest RealityPrediction into agent context |
 | 6.2 | **#288** | PostToolUse (Bash matcher) | **complete** — captures pytest/cargo-test/unittest/jest/vitest output, binds covered-chunk-overlap matches to current `prediction_id`, writes `CF_MEJEPA_PREDICTION_VERIFICATIONS`, logs `/mnt/d/contextgraph/runtime/posttooluse-mejepa-capture.jsonl`, and enqueues Refuted rows at 6x active-learning weight; FSV `/mnt/d/contextgraph/fsv/task-py-g-069-posttooluse-capture-fsv/run-1779062220556-12961/posttooluse_capture_fsv.json` |
-| 6.3 | **#289** | Stop | Block agent stop until pending predictions are verified-confirmed or verified-rejected (exit code 2 gate) |
+| 6.3 | **#289** | Stop | **complete** — `scripts/cc/stop-mejepa-self-verify.sh` invokes `context-graph-cli mejepa stop-self-verify`, blocks Stop with exit code 2 when non-Abstain predictions lack Confirmed/Refuted rows in `CF_MEJEPA_PREDICTION_VERIFICATIONS`, honors `stop_hook_active` and `~/.config/mejepa/daemon.toml::stop_hook_enabled = false`, logs `/mnt/d/contextgraph/runtime/stop-mejepa-self-verify.jsonl`, and proves blocked-to-verified-to-allowed plus all-Abstain/50-unverified/daemon-unreachable edges; FSV `/mnt/d/contextgraph/fsv/task-py-g-070-stop-self-verify-fsv/run-1779063364468-91155/stop_self_verify_fsv.json` sha256 `70e1ab51c6f2a8dac0ad7d5a5781ccc23f529decd2b87db1a9a6a9cb7caf30d0` |
 | 6.4 | **refined #154** | Active-learning consumer | Multi-source queue: surprise / contradiction / OOD / agent / operator |
 | 6.5 | **#275** | End-to-end | Live Claude Code session integration FSV |
 | 6.6 | **#276** | OOD | Live-session OOD corpus harvest |
