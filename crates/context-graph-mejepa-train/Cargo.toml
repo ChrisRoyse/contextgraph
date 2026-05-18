@@ -72,6 +72,10 @@ name = "operator_override_sampler_fsv"
 path = "examples/operator_override_sampler_fsv.rs"
 
 [[example]]
+name = "task_py_g_053_online_observe_fsv"
+path = "examples/task_py_g_053_online_observe_fsv.rs"
+
+[[example]]
 name = "task_ek_015_credibility_override_fsv"
 path = "examples/task_ek_015_credibility_override_fsv.rs"
 

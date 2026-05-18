@@ -13,11 +13,13 @@ pub const CF_MEJEPA_TRAIN_CERTS: &str = "CF_MEJEPA_TRAIN_CERTS";
 pub const CF_MEJEPA_HOLDOUT_REPORTS: &str = "CF_MEJEPA_HOLDOUT_REPORTS";
 pub const CF_MEJEPA_WEIGHT_BLOBS: &str = "CF_MEJEPA_WEIGHT_BLOBS";
 pub const CF_MEJEPA_EPOCH_WITNESS: &str = "CF_MEJEPA_EPOCH_WITNESS";
+pub const CF_MEJEPA_SAMPLER_REWARDS: &str = context_graph_mejepa_cf::CF_MEJEPA_SAMPLER_REWARDS;
 pub const MEJEPA_TRAIN_CFS: &[&str] = &[
     CF_MEJEPA_TRAIN_CERTS,
     CF_MEJEPA_HOLDOUT_REPORTS,
     CF_MEJEPA_WEIGHT_BLOBS,
     CF_MEJEPA_EPOCH_WITNESS,
+    CF_MEJEPA_SAMPLER_REWARDS,
 ];
 
 pub fn open_train_rocksdb(path: impl AsRef<Path>) -> Result<Arc<DB>, crate::error::TrainerError> {

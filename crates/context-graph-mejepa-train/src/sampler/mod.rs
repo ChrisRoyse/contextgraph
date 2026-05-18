@@ -11,8 +11,9 @@ use crate::replay_buffer::{
 };
 use context_graph_mejepa::system_cost::SystemCostCounters;
 use context_graph_mejepa::{
-    operator_contribution_report_from_db, ActiveLearningQueueEntry, ChunkId,
-    OperatorContributionError, OperatorOverride, PredictionId, RealityPrediction, TaskId,
+    operator_contribution_report_from_db, read_all_sampler_reward_signals,
+    ActiveLearningQueueEntry, ChunkId, OperatorContributionError, OperatorOverride, PredictionId,
+    RealityPrediction, SamplerRewardSignal, SamplerRewardStatus, TaskId,
     OPERATOR_OVERRIDE_SAMPLING_WEIGHT,
 };
 use context_graph_mejepa_corpus::prng::SplitMix64;
@@ -39,6 +40,8 @@ pub struct BatchPlan {
     pub cross_task_fallback_count: usize,
     pub operator_override_sampler_applied_count: usize,
     pub operator_override_boost_audit: Vec<OperatorOverrideBoostAuditRow>,
+    pub online_reward_signals_applied_count: usize,
+    pub online_reward_boost_audit: Vec<SamplerRewardBoostAuditRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +88,32 @@ pub struct OperatorOverrideBoostAuditRow {
     pub downstream_linked_count: usize,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SamplerRewardSamplerReport {
+    pub reward_rows_scanned: usize,
+    pub awaiting_oracle_count: usize,
+    pub quarantined_non_finite_count: usize,
+    pub stale_count: usize,
+    pub applied_count: usize,
+    pub boosted_indices: Vec<usize>,
+    pub index_weight_multiplier_micros: BTreeMap<usize, u32>,
+    pub boost_audit: Vec<SamplerRewardBoostAuditRow>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SamplerRewardBoostAuditRow {
+    pub example_index: usize,
+    pub prediction_id_hex: String,
+    pub chunk_id: String,
+    pub cell_id: String,
+    pub surprise_z_micros: u32,
+    pub sampling_weight_multiplier_micros: u32,
+    pub oracle_observed_at_unix_ms: i64,
+    pub status_code: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SamplerWarning {
     AllWeightsBelowDropThreshold,
@@ -100,6 +129,7 @@ pub struct BatchSampler {
     pub weights: Vec<f32>,
     pub overrides: Vec<bool>,
     pub operator_override_weight_multipliers: Vec<f32>,
+    pub online_reward_weight_multipliers: Vec<f32>,
     pub ages_days: Vec<f32>,
     pub l_steps: Vec<f32>,
     pub foundationality_scores: Vec<f32>,
@@ -113,9 +143,12 @@ pub struct BatchSampler {
     pub force_cursor: usize,
     pub adversarial_cursor: usize,
     pub operator_override_sampler_applied_count: usize,
+    pub online_reward_signals_applied_count: usize,
     adversarial_index_set: BTreeSet<usize>,
     operator_override_boosted_indices: BTreeSet<usize>,
     operator_override_boost_audit_by_index: BTreeMap<usize, Vec<OperatorOverrideBoostAuditRow>>,
+    online_reward_boosted_indices: BTreeSet<usize>,
+    online_reward_boost_audit_by_index: BTreeMap<usize, Vec<SamplerRewardBoostAuditRow>>,
     system_cost_counters: Option<Arc<SystemCostCounters>>,
 }
 
@@ -204,6 +237,7 @@ impl BatchSampler {
             weights: vec![0.0; n],
             overrides,
             operator_override_weight_multipliers,
+            online_reward_weight_multipliers: vec![1.0; n],
             ages_days,
             l_steps,
             foundationality_scores,
@@ -216,9 +250,12 @@ impl BatchSampler {
             force_cursor: 0,
             adversarial_cursor: 0,
             operator_override_sampler_applied_count: 0,
+            online_reward_signals_applied_count: 0,
             adversarial_index_set,
             operator_override_boosted_indices: BTreeSet::new(),
             operator_override_boost_audit_by_index: BTreeMap::new(),
+            online_reward_boosted_indices: BTreeSet::new(),
+            online_reward_boost_audit_by_index: BTreeMap::new(),
             system_cost_counters: None,
         };
         sampler.recompute_weights()?;
@@ -267,6 +304,49 @@ impl BatchSampler {
         Ok((sampler, report))
     }
 
+    pub fn new_with_reward_signals(
+        input: OperatorOverrideSamplerInput,
+        db: &DB,
+        last_consumed_oracle_ts: i64,
+        system_cost_counters: Option<Arc<SystemCostCounters>>,
+    ) -> Result<(Self, SamplerRewardSamplerReport), TrainerError> {
+        validate_operator_override_input(&input)?;
+        let mut report = apply_sampler_reward_rows(&input, db, last_consumed_oracle_ts)?;
+        let boosted_index_set = report
+            .boosted_indices
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let index_weight_multiplier_micros = report.index_weight_multiplier_micros.clone();
+        let boost_audit_by_index = report.boost_audit.iter().cloned().fold(
+            BTreeMap::<usize, Vec<SamplerRewardBoostAuditRow>>::new(),
+            |mut acc, row| {
+                acc.entry(row.example_index).or_default().push(row);
+                acc
+            },
+        );
+        let mut sampler = Self::new(
+            input.config,
+            input.l_steps,
+            input.overrides,
+            input.ages_days,
+            input.task_ids,
+            input.patch_similarity_graph,
+        )?;
+        for (idx, micros) in index_weight_multiplier_micros {
+            if idx < sampler.online_reward_weight_multipliers.len() {
+                sampler.online_reward_weight_multipliers[idx] = micros_to_multiplier(micros);
+            }
+        }
+        sampler.recompute_weights()?;
+        report.boosted_indices.sort_unstable();
+        sampler.online_reward_signals_applied_count = report.applied_count;
+        sampler.online_reward_boosted_indices = boosted_index_set;
+        sampler.online_reward_boost_audit_by_index = boost_audit_by_index;
+        sampler.system_cost_counters = system_cost_counters;
+        Ok((sampler, report))
+    }
+
     pub fn recompute_weights(&mut self) -> Result<Vec<SamplerWarning>, TrainerError> {
         if self.operator_override_weight_multipliers.len() != self.l_steps.len() {
             return Err(Self::config_error(
@@ -278,12 +358,31 @@ impl BatchSampler {
                 ),
             ));
         }
+        if self.online_reward_weight_multipliers.len() != self.l_steps.len() {
+            return Err(Self::config_error(
+                "online_reward_weight_multipliers",
+                format!(
+                    "length {} does not match l_steps length {}",
+                    self.online_reward_weight_multipliers.len(),
+                    self.l_steps.len()
+                ),
+            ));
+        }
         self.weights.clear();
         self.force_indices.clear();
         self.drop_indices.clear();
         self.regular_indices.clear();
         for i in 0..self.l_steps.len() {
-            let weight = sampling_weight_checked_with_operator_override_multiplier(
+            let online_reward_multiplier = self.online_reward_weight_multipliers[i];
+            if !online_reward_multiplier.is_finite() || online_reward_multiplier < 1.0 {
+                return Err(Self::config_error(
+                    "online_reward_weight_multipliers",
+                    format!(
+                        "index {i}: multiplier must be finite and >= 1.0; got {online_reward_multiplier}"
+                    ),
+                ));
+            }
+            let base_weight = sampling_weight_checked_with_operator_override_multiplier(
                 SamplingWeightComponents {
                     base_weight: 1.0,
                     l_step: self.l_steps[i],
@@ -299,6 +398,13 @@ impl BatchSampler {
                 self.operator_override_weight_multipliers[i],
             )
             .map_err(|err| Self::config_error("weights", format!("index {i}: {err}")))?;
+            let weight = base_weight * online_reward_multiplier;
+            if !weight.is_finite() || weight < 0.0 {
+                return Err(Self::config_error(
+                    "weights",
+                    format!("index {i}: online reward multiplier produced invalid weight {weight}"),
+                ));
+            }
             self.weights.push(weight);
             if should_drop(weight, self.config.sampling_drop_threshold) {
                 self.drop_indices.push(i);
@@ -369,6 +475,8 @@ impl BatchSampler {
             cross_task_fallback_count: 0,
             operator_override_sampler_applied_count: 0,
             operator_override_boost_audit: Vec::new(),
+            online_reward_signals_applied_count: 0,
+            online_reward_boost_audit: Vec::new(),
         };
         if self.force_indices.is_empty() {
             return plan;
@@ -454,9 +562,30 @@ impl BatchSampler {
         }
     }
 
+    pub(crate) fn record_online_reward_sampler_batch(&self, plan: &mut BatchPlan) {
+        let count = plan
+            .indices
+            .iter()
+            .filter(|idx| self.online_reward_boosted_indices.contains(idx))
+            .count();
+        plan.online_reward_signals_applied_count = count;
+        plan.online_reward_boost_audit = plan
+            .indices
+            .iter()
+            .filter_map(|idx| self.online_reward_boost_audit_by_index.get(idx))
+            .flat_map(|rows| rows.iter().cloned())
+            .collect();
+        if count > 0 {
+            if let Some(counters) = &self.system_cost_counters {
+                counters.record_online_reward_signals_applied(count as u64);
+            }
+        }
+    }
+
     pub(crate) fn finalize_batch_plan(&self, plan: &mut BatchPlan, requested_batch_size: usize) {
         self.record_adversarial_mix_batch(plan, requested_batch_size);
         self.record_operator_override_sampler_batch(plan);
+        self.record_online_reward_sampler_batch(plan);
     }
 
     pub(crate) fn adversarial_quota(&self, batch_size: usize) -> usize {
@@ -673,6 +802,74 @@ fn apply_operator_override_rows(
     })
 }
 
+fn apply_sampler_reward_rows(
+    input: &OperatorOverrideSamplerInput,
+    db: &DB,
+    last_consumed_oracle_ts: i64,
+) -> Result<SamplerRewardSamplerReport, TrainerError> {
+    let reward_rows = read_all_sampler_reward_signals(db).map_err(|err| {
+        BatchSampler::config_error("sampler_rewards", format!("{}: {err}", err.code()))
+    })?;
+    let mut index_weight_multiplier_micros: BTreeMap<usize, u32> = BTreeMap::new();
+    let mut boost_audit = Vec::new();
+    let mut boosted_indices = BTreeSet::new();
+    let mut awaiting_oracle_count = 0_usize;
+    let mut quarantined_non_finite_count = 0_usize;
+    let mut stale_count = 0_usize;
+
+    for row in &reward_rows {
+        match row.status {
+            SamplerRewardStatus::AwaitingOracle => {
+                awaiting_oracle_count += 1;
+                continue;
+            }
+            SamplerRewardStatus::QuarantinedNonFinite => {
+                quarantined_non_finite_count += 1;
+                continue;
+            }
+            SamplerRewardStatus::Ready | SamplerRewardStatus::ClampedExtremeSurprise => {}
+        }
+        validate_sampler_reward_multiplier(row)?;
+        if row.oracle_observed_at_unix_ms <= last_consumed_oracle_ts {
+            stale_count += 1;
+            continue;
+        }
+        let multiplier_micros = multiplier_to_micros(row.sampling_weight_multiplier);
+        let surprise_z_micros = multiplier_to_micros(row.surprise_z);
+        for (idx, source) in input.example_sources.iter().enumerate() {
+            if source.prediction_id == row.prediction_id {
+                index_weight_multiplier_micros
+                    .entry(idx)
+                    .and_modify(|current| *current = (*current).max(multiplier_micros))
+                    .or_insert(multiplier_micros);
+                boost_audit.push(SamplerRewardBoostAuditRow {
+                    example_index: idx,
+                    prediction_id_hex: hex::encode(row.prediction_id.0),
+                    chunk_id: source.chunk_id.0.clone(),
+                    cell_id: row.cell_id.clone(),
+                    surprise_z_micros,
+                    sampling_weight_multiplier_micros: multiplier_micros,
+                    oracle_observed_at_unix_ms: row.oracle_observed_at_unix_ms,
+                    status_code: row.status_code().to_string(),
+                });
+                boosted_indices.insert(idx);
+            }
+        }
+    }
+
+    let boosted_indices = boosted_indices.into_iter().collect::<Vec<_>>();
+    Ok(SamplerRewardSamplerReport {
+        reward_rows_scanned: reward_rows.len(),
+        awaiting_oracle_count,
+        quarantined_non_finite_count,
+        stale_count,
+        applied_count: boosted_indices.len(),
+        boosted_indices,
+        index_weight_multiplier_micros,
+        boost_audit,
+    })
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct OperatorQualitySnapshot {
     quality_score_micros: u32,
@@ -866,6 +1063,16 @@ fn validate_override_multiplier(record: &OperatorOverride) -> Result<(), Trainer
         return Err(BatchSampler::config_error(
             "operator_overrides.sampling_weight_multiplier",
             "sampling_weight_multiplier must be exactly 6.0",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_sampler_reward_multiplier(row: &SamplerRewardSignal) -> Result<(), TrainerError> {
+    if !row.sampling_weight_multiplier.is_finite() || row.sampling_weight_multiplier < 1.0 {
+        return Err(BatchSampler::config_error(
+            "sampler_rewards.sampling_weight_multiplier",
+            "sampling_weight_multiplier must be finite and >= 1.0",
         ));
     }
     Ok(())

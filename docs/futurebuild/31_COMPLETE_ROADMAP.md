@@ -61,7 +61,7 @@ This roadmap is organised by **phase** then by **deliverable**. Each deliverable
 |---|---|---|---|
 | 3.1 | Per-cell constellation freshness audit + scheduler | #271 | pending |
 | 3.2 | Multi-head contradiction calibration | #263 | pending |
-| 3.3 | Online observe loop reward signals | #272 | pending |
+| 3.3 | Online observe loop reward signals | #272 | TASK-PY-G-053 shipped 2026-05-18; SoT `/mnt/d/contextgraph/fsv/task-py-g-053-online-observe-fsv/run-20260518T163259Z-3847047/online_observe_fsv.json` sha256 `a6d685ca375a4c2ccb26c141aeffec38dc6b1ae224c53ef91ab868e31aee5222` |
 | 3.4 | Negative-action ablation falsifier | #273 | pending |
 | 3.5 | Q5 impact vs shift-log | #128 | pending |
 | 3.6 | Q4 concern confidence calibration | #127 | pending |

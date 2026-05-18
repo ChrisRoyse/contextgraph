@@ -274,6 +274,7 @@ fn restart_delta_clamps_to_zero() -> Result<serde_json::Value, Box<dyn std::erro
         rocksdb_writes_total: 20,
         heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
         operator_override_sampler_applied_count_total: 12,
+        online_reward_signals_applied_count_total: 0,
         ewc_violations_total: 3,
         dormant_units_reinit_total: 0,
     };

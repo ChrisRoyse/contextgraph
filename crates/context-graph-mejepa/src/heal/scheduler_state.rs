@@ -55,8 +55,13 @@ use crate::heal::store::HealRocksStore;
 use crate::reward_signal_audit::{
     persist_signal_drop_log_entry, SignalDropLogEntry, SignalDropSeverity,
 };
+use crate::sampler_reward::{
+    persist_sampler_reward_signal_readback, sampler_reward_from_prediction_outcome,
+    sampler_reward_key,
+};
 use crate::store::RocksDbInferStore;
 use crate::system_cost::{HealTickerTelemetrySnapshot, SystemCostCounters};
+use crate::types::OracleOutcome;
 
 pub const DEFAULT_OBSERVE_PERIOD: Duration = Duration::from_millis(250);
 pub const DEFAULT_DRIFT_PERIOD: Duration = Duration::from_secs(60);
@@ -328,6 +333,9 @@ struct TestOutcomeBindingReport {
     events_skipped_non_hard_label: usize,
     bound_keys: Vec<String>,
     verification_keys: Vec<String>,
+    sampler_reward_keys: Vec<String>,
+    sampler_reward_statuses: Vec<String>,
+    sampler_reward_write_dispositions: Vec<String>,
     signal_drop_event_ids: Vec<String>,
 }
 
@@ -616,6 +624,9 @@ impl SchedulerState {
         let shift_watermarks = self
             .storage
             .count_cf(context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK)?;
+        let sampler_rewards = self
+            .storage
+            .count_cf(context_graph_mejepa_cf::CF_MEJEPA_SAMPLER_REWARDS)?;
         Ok(TickRunRecord::success(
             TickName::Observe,
             "observed_sources_inspected",
@@ -623,12 +634,14 @@ impl SchedulerState {
                 "oracle_verdict_rows": oracle_verdicts,
                 "live_prediction_rows": live_predictions,
                 "shift_watermark_rows": shift_watermarks,
+                "sampler_reward_rows": sampler_rewards,
                 "test_outcome_bindings": test_outcome_bindings,
                 "witness_integrity": witness_integrity,
                 "source_of_truth_cfs": [
                     context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS,
                     context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
                     context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK,
+                    context_graph_mejepa_cf::CF_MEJEPA_SAMPLER_REWARDS,
                     context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS
                 ],
             }),
@@ -1546,6 +1559,9 @@ fn bind_test_outcomes(
         events_skipped_non_hard_label: 0,
         bound_keys: Vec::new(),
         verification_keys: Vec::new(),
+        sampler_reward_keys: Vec::new(),
+        sampler_reward_statuses: Vec::new(),
+        sampler_reward_write_dispositions: Vec::new(),
         signal_drop_event_ids: Vec::new(),
     };
     if !source_root.exists() {
@@ -1627,9 +1643,46 @@ fn bind_test_outcomes(
                 scheduler_prediction_verification_record(prediction, &event, &path, event.ts);
             let verification_key =
                 put_prediction_verification_readback(db.as_ref(), &verification)?;
+            let observed_oracle_outcome =
+                scheduler_observed_oracle_outcome(&event).ok_or_else(|| {
+                    HealError::invalid(
+                        "test_outcome_event.reward_outcome",
+                        "hard-label event did not map to an oracle outcome",
+                    )
+                })?;
+            let reward = sampler_reward_from_prediction_outcome(
+                prediction,
+                observed_oracle_outcome,
+                event.event_id.clone(),
+                event.ts,
+            )
+            .map_err(|err| {
+                HealError::invalid(
+                    "test_outcome_event.sampler_reward",
+                    format!("{}: {err}", err.code()),
+                )
+            })?;
+            let reward_readback = persist_sampler_reward_signal_readback(db.as_ref(), &reward)
+                .map_err(|err| {
+                    HealError::invalid(
+                        "test_outcome_event.sampler_reward",
+                        format!("{}: {err}", err.code()),
+                    )
+                })?;
             report.events_bound += 1;
             report.bound_keys.push(key);
             report.verification_keys.push(verification_key);
+            report
+                .sampler_reward_keys
+                .push(hex::encode(sampler_reward_key(
+                    reward_readback.row.prediction_id,
+                )));
+            report
+                .sampler_reward_statuses
+                .push(reward_readback.row.status_code().to_string());
+            report
+                .sampler_reward_write_dispositions
+                .push(format!("{:?}", reward_readback.disposition));
         }
     }
     Ok(report)
@@ -1874,6 +1927,14 @@ fn scheduler_observed_outcome(event: &TestOutcomeEvent) -> Option<String> {
     match event.outcome.as_str() {
         "pass" => Some("pass".to_string()),
         "fail" => Some("fail".to_string()),
+        _ => None,
+    }
+}
+
+fn scheduler_observed_oracle_outcome(event: &TestOutcomeEvent) -> Option<OracleOutcome> {
+    match event.outcome.as_str() {
+        "pass" => Some(OracleOutcome::Pass),
+        "fail" => Some(OracleOutcome::Fail),
         _ => None,
     }
 }
@@ -2369,7 +2430,7 @@ fn map_hygiene_error(err: context_graph_mejepa_hygiene::OpsError) -> HealError {
 mod tests {
     use super::*;
     use crate::types::{
-        AgentClaimGraph, ConformalInterval, ConformalSet, Language, OracleOutcome,
+        AgentClaimGraph, ConformalInterval, ConformalSet, Language, OracleOutcome, PredictionId,
         PredictionProvenance, RealityPrediction, ReasoningClass, TaskId, Verdict, WitnessHash,
     };
     use rocksdb::{ColumnFamilyDescriptor, Options};
@@ -2570,12 +2631,31 @@ mod tests {
             observe.details["test_outcome_bindings"]["verification_keys"][0],
             format!("{session_hex}:{event_id}:{prediction_id}")
         );
+        assert_eq!(observe.details["sampler_reward_rows"], json!(1));
+        assert_eq!(
+            observe.details["test_outcome_bindings"]["sampler_reward_keys"][0],
+            prediction_id
+        );
+        assert_eq!(
+            observe.details["test_outcome_bindings"]["sampler_reward_statuses"][0],
+            "READY"
+        );
+        assert_eq!(
+            observe.details["test_outcome_bindings"]["sampler_reward_write_dispositions"][0],
+            "Inserted"
+        );
 
         let storage = HealRocksStore::from_db(db.clone()).expect("heal store");
         assert_eq!(
             storage
                 .count_cf(context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)
                 .expect("oracle count"),
+            1
+        );
+        assert_eq!(
+            storage
+                .count_cf(context_graph_mejepa_cf::CF_MEJEPA_SAMPLER_REWARDS)
+                .expect("sampler rewards count"),
             1
         );
         let cf = db
@@ -2608,6 +2688,17 @@ mod tests {
         assert_eq!(verification.observed_outcome, "fail");
         assert_eq!(verification.predicted_outcome, "pass");
         assert_eq!(verification.agreement, "refuted");
+
+        let reward = crate::sampler_reward::read_sampler_reward_signal(
+            db.as_ref(),
+            PredictionId([0x46; 16]),
+        )
+        .expect("sampler reward read")
+        .expect("sampler reward row");
+        assert_eq!(reward.status_code(), "READY");
+        assert_eq!(reward.cell_id, "scheduler-bind-test-task::python");
+        assert!((reward.surprise_z - 3.8).abs() < 1e-6);
+        assert!((reward.sampling_weight_multiplier - 4.8).abs() < 1e-6);
     }
 
     #[test]
@@ -2679,6 +2770,12 @@ mod tests {
             storage
                 .count_cf(context_graph_mejepa_cf::CF_MEJEPA_PREDICTION_VERIFICATIONS)
                 .expect("verification count"),
+            0
+        );
+        assert_eq!(
+            storage
+                .count_cf(context_graph_mejepa_cf::CF_MEJEPA_SAMPLER_REWARDS)
+                .expect("sampler rewards count"),
             0
         );
         let signal_drops =

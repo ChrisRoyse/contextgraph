@@ -30,6 +30,7 @@ pub struct SystemCostCounters {
     heal_ticker_telemetry_total: Mutex<BTreeMap<String, HealTickerTelemetryTotals>>,
     heal_scheduler_restart_count_total: AtomicU64,
     operator_override_sampler_applied_count_total: AtomicU64,
+    online_reward_signals_applied_count_total: AtomicU64,
     ewc_violations_total: AtomicU64,
     dormant_units_reinit_total: AtomicU64,
 }
@@ -43,6 +44,7 @@ pub struct SystemCostSnapshot {
     pub rocksdb_writes_total: u64,
     pub heal_ticker_telemetry_total: HealTickerTelemetrySnapshot,
     pub operator_override_sampler_applied_count_total: u64,
+    pub online_reward_signals_applied_count_total: u64,
     pub ewc_violations_total: u64,
     pub dormant_units_reinit_total: u64,
 }
@@ -116,6 +118,9 @@ impl SystemCostSnapshot {
             operator_override_sampler_applied_count_total: self
                 .operator_override_sampler_applied_count_total
                 .saturating_sub(earlier.operator_override_sampler_applied_count_total),
+            online_reward_signals_applied_count_total: self
+                .online_reward_signals_applied_count_total
+                .saturating_sub(earlier.online_reward_signals_applied_count_total),
             ewc_violations_total: self
                 .ewc_violations_total
                 .saturating_sub(earlier.ewc_violations_total),
@@ -283,6 +288,11 @@ impl SystemCostCounters {
             .fetch_add(count, Ordering::Relaxed);
     }
 
+    pub fn record_online_reward_signals_applied(&self, count: u64) {
+        self.online_reward_signals_applied_count_total
+            .fetch_add(count, Ordering::Relaxed);
+    }
+
     pub fn record_ewc_violation(&self) {
         self.ewc_violations_total.fetch_add(1, Ordering::Relaxed);
     }
@@ -312,6 +322,9 @@ impl SystemCostCounters {
             },
             operator_override_sampler_applied_count_total: self
                 .operator_override_sampler_applied_count_total
+                .load(Ordering::Relaxed),
+            online_reward_signals_applied_count_total: self
+                .online_reward_signals_applied_count_total
                 .load(Ordering::Relaxed),
             ewc_violations_total: self.ewc_violations_total.load(Ordering::Relaxed),
             dormant_units_reinit_total: self.dormant_units_reinit_total.load(Ordering::Relaxed),
@@ -353,6 +366,7 @@ mod tests {
         assert_eq!(snapshot.cuda_kernel_microseconds_total, 0);
         assert_eq!(snapshot.rocksdb_writes_total, 0);
         assert_eq!(snapshot.operator_override_sampler_applied_count_total, 0);
+        assert_eq!(snapshot.online_reward_signals_applied_count_total, 0);
         assert_eq!(snapshot.dormant_units_reinit_total, 0);
     }
 
@@ -399,6 +413,7 @@ mod tests {
             rocksdb_writes_total: 0,
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
             operator_override_sampler_applied_count_total: 0,
+            online_reward_signals_applied_count_total: 0,
             ewc_violations_total: 0,
             dormant_units_reinit_total: 0,
         };
@@ -437,6 +452,7 @@ mod tests {
             rocksdb_writes_total: 1,
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
             operator_override_sampler_applied_count_total: 2,
+            online_reward_signals_applied_count_total: 4,
             ewc_violations_total: 4,
             dormant_units_reinit_total: 6,
         };
@@ -447,6 +463,7 @@ mod tests {
             rocksdb_writes_total: 3,
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
             operator_override_sampler_applied_count_total: 5,
+            online_reward_signals_applied_count_total: 9,
             ewc_violations_total: 7,
             dormant_units_reinit_total: 11,
         };
@@ -464,6 +481,10 @@ mod tests {
         assert_eq!(
             extended["systemCost"]["windowDelta"]["operatorOverrideSamplerAppliedCountTotal"],
             3
+        );
+        assert_eq!(
+            extended["systemCost"]["windowDelta"]["onlineRewardSignalsAppliedCountTotal"],
+            5
         );
         assert_eq!(
             extended["systemCost"]["windowDelta"]["ewcViolationsTotal"],
@@ -534,6 +555,16 @@ mod tests {
         counters.record_operator_override_sampler_applied(2);
         let delta = counters.snapshot().delta(&earlier);
         assert_eq!(delta.operator_override_sampler_applied_count_total, 5);
+    }
+
+    #[test]
+    fn online_reward_signals_counter_accumulates() {
+        let counters = SystemCostCounters::new();
+        let earlier = counters.snapshot();
+        counters.record_online_reward_signals_applied(3);
+        counters.record_online_reward_signals_applied(2);
+        let delta = counters.snapshot().delta(&earlier);
+        assert_eq!(delta.online_reward_signals_applied_count_total, 5);
     }
 
     #[test]
