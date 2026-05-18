@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::dynamic_embedder_vram::MEJEPA_DYNAMIC_EMBEDDER_VRAM_BUDGET_EXCEEDED;
 use crate::heal::errors::HealError;
 use crate::heal::policy::{
     load_policy_record, persist_policy_record, policy_key, scan_policy_records,
@@ -643,7 +644,7 @@ fn dynamic_embedder_promotion_block_reasons(
         reasons.push("redundant_with_existing_embedder".to_string());
     }
     if !request.within_vram_budget {
-        reasons.push("vram_budget_exceeded".to_string());
+        reasons.push(MEJEPA_DYNAMIC_EMBEDDER_VRAM_BUDGET_EXCEEDED.to_string());
     }
     reasons
 }

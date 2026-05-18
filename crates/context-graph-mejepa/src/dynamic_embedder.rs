@@ -89,6 +89,40 @@ pub fn count_active_dynamic_embedders(db: &DB) -> Result<usize, MejepaInferError
     Ok(read_dynamic_embedder_registry_snapshot(db)?.active_dynamic_count())
 }
 
+pub fn deactivate_dynamic_embedder_registry_sync_readback(
+    db: &DB,
+    id: &RuntimeEmbedderId,
+    registry_version: u64,
+) -> Result<DynamicEmbedderRegistryRecord, MejepaInferError> {
+    if registry_version == 0 {
+        return Err(MejepaInferError::InvalidInput {
+            field: "dynamic_embedder_registry.registry_version".to_string(),
+            detail: "registry_version must be non-zero".to_string(),
+        });
+    }
+    let mut record =
+        read_dynamic_embedder_registry(db, id)?.ok_or_else(|| MejepaInferError::InvalidInput {
+            field: "dynamic_embedder_registry.id".to_string(),
+            detail: format!("dynamic embedder {id} not found"),
+        })?;
+    if registry_version <= record.registry_version {
+        return Err(MejepaInferError::InvalidInput {
+            field: "dynamic_embedder_registry.registry_version".to_string(),
+            detail: format!(
+                "deactivation registry_version {registry_version} must exceed current {}",
+                record.registry_version
+            ),
+        });
+    }
+    record.registry_version = registry_version;
+    record.active = false;
+    write_dynamic_embedder_registry_sync_readback(db, &record)?;
+    read_dynamic_embedder_registry(db, id)?.ok_or_else(|| MejepaInferError::InvalidInput {
+        field: "dynamic_embedder_registry.readback".to_string(),
+        detail: format!("dynamic embedder {id} missing after deactivation"),
+    })
+}
+
 fn dynamic_embedder_key(id: &RuntimeEmbedderId) -> Result<String, MejepaInferError> {
     id.validate().map_err(embed_error)?;
     Ok(id.slug().into_owned())

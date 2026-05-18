@@ -17,6 +17,7 @@ pub mod data_models;
 pub mod dda_features;
 pub mod degraded;
 pub mod dynamic_embedder;
+pub mod dynamic_embedder_vram;
 pub mod embedder_falsification;
 pub mod embedder_proposal;
 pub mod entity_kge_embedder;
@@ -96,6 +97,7 @@ pub use data_models::{
 pub use dda_features::*;
 pub use degraded::*;
 pub use dynamic_embedder::*;
+pub use dynamic_embedder_vram::*;
 pub use embedder_falsification::*;
 pub use embedder_proposal::*;
 pub use entity_kge_embedder::*;
