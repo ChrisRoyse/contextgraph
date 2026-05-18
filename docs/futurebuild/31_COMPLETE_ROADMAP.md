@@ -198,31 +198,37 @@ To make TASK-EK-018 implementable as parallel work, decompose into atomic sub-is
 
 | # | Sub-task | Issue | Piece | Effort |
 |---|---|---|---|---|
-| 018A | Dynamic-registration scaffolding (EDynamic enum + CFs + hot-swap) | TBD on filing | Piece 5 | ~2-3 weeks |
-| 018B | Absence-detection priority queue (compose existing signals) | TBD on filing | Piece 1 | ~1 week |
-| 018C | Falsification gate (per-cell + global, reuse TASK-G-016 promotion gate) | TBD on filing | Piece 4 | ~1-2 weeks |
-| 018D | Sub-case (a) algorithmic-embedder synthesis loop | TBD on filing | Piece 2a + Piece 3 ii/iii | ~2-3 weeks |
-| 018E | Sub-case (b) learned-head synthesis loop on E7 | TBD on filing | Piece 2b | ~2-3 weeks |
-| 018F | First concrete instance: TransE-on-corpus-entity-graph (E11 replacement) | TBD on filing | Piece 3 i | ~1-2 weeks |
-| 018G | Freeze + audit machinery (provenance CFs + JEPA invariant check) | TBD on filing | Piece 6 | ~1 week |
-| 018H | Operator-in-the-loop gates (first-promotion approval + catastrophic-class) | TBD on filing | §4 | ~1 week |
-| 018I | VRAM budget integration for dynamic embedders | TBD on filing | — | ~0.5 week |
-| 018J | Adversarial-embedder-injection threat mitigation (extends TASK-EK-007) | TBD on filing | §7 risk 4 | ~1 week |
+| 018A | Dynamic-registration scaffolding (EDynamic enum + CFs + hot-swap) | #342 | Piece 5 | ~2-3 weeks |
+| 018B | Absence-detection priority queue (compose existing signals) | #344 | Piece 1 | ~1 week |
+| 018C | Falsification gate (per-cell + global, reuse TASK-G-016 promotion gate) | #343 | Piece 4 | ~1-2 weeks |
+| 018D | Sub-case (a) algorithmic-embedder synthesis loop | #345 | Piece 2a + Piece 3 ii/iii | ~2-3 weeks |
+| 018E | Sub-case (b) learned-head synthesis loop on E7 | #347 | Piece 2b | ~2-3 weeks |
+| 018F | First concrete instance: TransE-on-corpus-entity-graph (E11 replacement) | #348 | Piece 3 i | ~1-2 weeks |
+| 018G | Freeze + audit machinery (provenance CFs + JEPA invariant check) | #346 | Piece 6 | ~1 week |
+| 018H | Operator-in-the-loop gates (first-promotion approval + catastrophic-class) | #350 | §4 | ~1 week |
+| 018I | VRAM budget integration for dynamic embedders | #353 | — | ~0.5 week |
+| 018J | Adversarial-embedder-injection threat mitigation (extends TASK-EK-007) | #351 | §7 risk 4 | ~1 week |
 
 ### §3.3 — TASK-EK-018 v2 stub issues (file as separate epic when v1 is green)
 
 | # | Sub-task | Issue | Effort |
 |---|---|---|---|
-| 018-v2-A | Sub-case (c) fully neural embedder via NAS | TBD | ~3-6 months |
-| 018-v2-B | Cross-library candidate proposals | TBD | ~1-2 months |
-| 018-v2-C | Self-rewriting absence-detection priors | TBD | ~2-3 months |
-| 018-v2-D | Status-reallocation extension for embedder-review attribution | TBD | ~1 month |
+| 018-v2-A | Sub-case (c) fully neural embedder via NAS | #356 | ~3-6 months |
+| 018-v2-B | Cross-library candidate proposals | #357 | ~1-2 months |
+| 018-v2-C | Self-rewriting absence-detection priors | #355 | ~2-3 months |
+| 018-v2-D | Status-reallocation extension for embedder-review attribution | #354 | ~1 month |
 
 ### §3.4 — Embedder-foundationality extension to TASK-EK-016
 
 | # | Sub-task | Issue | Effort |
 |---|---|---|---|
-| 016-ext | PageRank on embedder-dependency-graph (including TASK-EK-018 dynamic embedders) | TBD | ~1-2 weeks |
+| 016-ext | PageRank on embedder-dependency-graph (including TASK-EK-018 dynamic embedders) | #349 | ~1-2 weeks |
+
+### §3.5 — TASK-EK-015 (filed 2026-05-17 as stretch under TASK-EK-014)
+
+| # | Sub-task | Issue | Effort |
+|---|---|---|---|
+| 015 | Credibility-weighted operator override (BatchSampler weight = 4 + 4 × operator_quality_score) | #352 | ~3-5 days once EK-014 green |
 
 ---
 

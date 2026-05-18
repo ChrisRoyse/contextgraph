@@ -94,3 +94,13 @@ After applying this audit:
 - Phases stay at 8 (A-H), but Phase H absorbs the cleanup tasks AND the security/runbook/DR/testing tasks land across phases as new entries in `13_TASK_INDEX.md` (NB: `13` is updated separately in `TASK-INDEX-PATCH-001`).
 
 Every blind spot listed above is now either fixed (new doc/spec/task), or explicitly accepted (out of scope, with rationale). No gaps left silent.
+
+---
+
+## Update 2026-05-17: Universal-explainer / ontology-extension blind spot
+
+Today's most important blind-spot closure: the **universal-explainer / ontology-extension gap** identified in `docs/explanatory_knowledge_and_mejepaupdated.md §10.2(II)+(II-bis)+(II-ter)+(XI)–(XV)` is now formally addressed by the **TASK-EK-018 apex deliverable (#341)** with the canonical reference at [`docs/futurebuild/30_SELF_DESIGNED_EMBEDDERS.md`](30_SELF_DESIGNED_EMBEDDERS.md).
+
+The gap as previously stated: *"ME-JEPA can never propose that a new instrument is needed; it can only reveal — through OOD scores, unexplained variance, or active-learning surprise — that something is missing."* The operator pushback (2026-05-17) collapsed this gap into a single primitive: the embedder panel is no longer fixed at instrument-bind time; it grows under the system's own operation, gated by reality-anchored falsification, preserving the JEPA `ΔΞ.target_collapse = 0` invariant by freezing promoted candidates.
+
+**Gap status:** addressed by TASK-EK-018 / #341 with v1 sub-issues #342, #343, #344, #345, #346, #347, #348, #349, #350, #351, #352, #353 and v2 stubs #354-#357. Full task inventory in [`docs/futurebuild/31_COMPLETE_ROADMAP.md §3`](31_COMPLETE_ROADMAP.md). Tracked under GitHub EPIC #321 explanatory-knowledge programme.

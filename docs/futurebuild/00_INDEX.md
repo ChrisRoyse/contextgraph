@@ -67,6 +67,8 @@ Legacy proof domains and research fixtures such as gridworld, counter-world, O*N
 | 27 | [`27_PHASE_G_ROADMAP.md`](27_PHASE_G_ROADMAP.md) | Phase G critical-path roadmap (Python-first ME-JEPA-Code ship gate) |
 | **28** | [**`28_LECUN_JEPA_ALIGNMENT.md`**](28_LECUN_JEPA_ALIGNMENT.md) | **Full JEPA architectural alignment per Yann LeCun (2026-05-17 transcript) — 10 pillars + TASK-FP-101..105 sub-tasks; companion to GitHub EPIC #314** |
 | **29** | [**`29_REWARD_SIGNAL_COMPLETENESS.md`**](29_REWARD_SIGNAL_COMPLETENESS.md) | **Maximum reward-signal capture from durable reality — 8-tier audit + TASK-RWD-201..212 sub-tasks; companion to GitHub EPIC #315** |
+| **30** | [**`30_SELF_DESIGNED_EMBEDDERS.md`**](30_SELF_DESIGNED_EMBEDDERS.md) | **APEX DELIVERABLE of EPIC #321: self-designed, self-trained, self-promoted embedders. Collapses TASK-EK-002 / TASK-EK-016 / TASK-EK-017 / the entire E11-replacement question / §10.2 ontology-extension framing into one underlying primitive. Companion to GitHub issue #341.** |
+| **31** | [**`31_COMPLETE_ROADMAP.md`**](31_COMPLETE_ROADMAP.md) | **Single canonical reference for *every* open task across Phase G (current 0.95 ship gate), Phase H (closed), Phase I (EPIC #321), Phase J (post-018 generalisation). When this doc and any other futurebuild doc disagree, this one wins for the *task inventory*. Filed 2026-05-17.** |
 
 ## Spec hierarchy
 

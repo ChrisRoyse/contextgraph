@@ -233,3 +233,31 @@ Acceptance source of truth: `mcp__cgreality__mejepa_audit_reward_signals` over R
 ---
 
 **TL;DR.** Eight reward-signal tiers; ~30 distinct signals across them; oracle (1) + DDA (2) + static graph (3) + runtime-telemetry (5) + live-session core (7) + witness (8) are SHIPPED, including TASK-RWD-205 call-site type-graph labels in `CF_MEJEPA_TYPE_GRAPH_SIGNALS`, TASK-RWD-206 telemetry prediction/profile labels in `CF_MEJEPA_TELEMETRY_SIGNALS`, and TASK-RWD-207 session/goal rows in `CF_MEJEPA_LIVE_SESSION_SIGNALS`; static-quality Tier 4 now has `E_Cyclomatic` shipped for complexity/halstead/depth, `E_Coverage` shipped for line-level coverage deltas, `E_DiffTopology` shipped for file/hunk/entropy topology, static-analysis labels shipped for mypy/pyright/ruff via `CF_MEJEPA_STATIC_ANALYSIS_SIGNALS`, Q4 security labels shipped for Bandit/Semgrep via `CF_MEJEPA_Q4_SECURITY_LABELS`, and composite coverage/complexity/churn/doc/dep-CVE CF labels shipped via TASK-RWD-209; Tier 6 now has novel-pattern active-learning plus held-out ontology-growth gating shipped via `CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT` and per-cell constellation freshness shipped via `CF_MEJEPA_CONSTELLATION_REFRESH_LOG`. ME-JEPA trains on **chains** of these signals, not individual signals. #315 final acceptance is shipped through `mcp__cgreality__mejepa_audit_reward_signals` plus fail-closed `CF_MEJEPA_SIGNAL_DROP_LOG` readback.
+
+---
+
+## §8 — Tier 2 becomes time-varying under TASK-EK-018 (added 2026-05-17)
+
+Per [`docs/futurebuild/30_SELF_DESIGNED_EMBEDDERS.md`](30_SELF_DESIGNED_EMBEDDERS.md) and the EPIC #321 apex deliverable TASK-EK-018 / #341:
+
+**Tier 2 (embedder-derived signals, DDA) is no longer fixed-cardinality.** When the system auto-promotes a new embedder via TASK-EK-018, Tier 2 gains:
+
+- 1 new per-embedder-cosine-to-cell-centroid signal per chunk.
+- `N(t)` new pairwise-cosine signals per chunk (cross-product with the existing `N(t)` embedders).
+- `N(t)` new pairwise-MI signals per chunk.
+- `N_enhancer` new blind-spot z-score signals (depending on the new embedder's enhancer-vs-primary classification).
+
+The DDA counting identity from `PAPER.md §3.1` Identity (1) becomes time-varying: `|D'(t)| = n · (N(t) + binom(N(t), 2) + foundationality_term)` where `N(t)` is the active embedder count at time `t`. The "up to 91 signals per input at N=13" headline becomes a time-graded curve.
+
+**Tier 8 (witness chain signals) gains a new event class.** Per-embedder promotion provenance (TASK-EK-018G / #346) writes a witness-chain entry per promotion, with the row schema:
+- `dynamic_embedder_id: EDynamic(seq, name)`
+- `residual_signal_source: AbsenceSignalRef` (which TASK-EK-018B / #344 priority-queue row triggered this)
+- `architecture_generator: ConjectureSource` (LLM model + prompt hash for sub-case (a); training config hash for sub-case (b))
+- `training_cert_chain_hash: WitnessHash`
+- `holdout_improvement: PerCellHoldoutDelta`
+- `operator_approval: Option<OperatorApprovalRow>`
+- `forward_pass_artefact_hash: Sha256`
+
+**Acceptance gate addition.** The §5 acceptance gate is extended: when a TASK-EK-018 promotion occurs, the per-tier coverage audit must re-confirm ≥ 95% within 24 hours. The `mejepa_audit_reward_signals` MCP tool gains a `--include-dynamic-embedders` flag that walks the new tier-2 cardinality.
+
+**Companion task:** #341 TASK-EK-018 apex, sub-issues #342-#357. **Task inventory:** [`31_COMPLETE_ROADMAP.md §3`](31_COMPLETE_ROADMAP.md).

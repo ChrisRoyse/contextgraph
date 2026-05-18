@@ -205,3 +205,16 @@ This ordering is captured in `13_TASK_INDEX.md` task DAG.
 ---
 
 **TL;DR.** ME-JEPA-Code now has all ten LeCun JEPA pillars shipped or designed, with FSV-backed evidence where code changed and explicit System 1/System 2 framing in the live docs and MCP tool descriptions. Pillar 10 is complete through #315's row-backed reward-signal audit and fail-closed signal-drop log.
+
+---
+
+## §8 — Pillars 1 and 9 become self-extending under TASK-EK-018 (added 2026-05-17)
+
+Per [`docs/futurebuild/30_SELF_DESIGNED_EMBEDDERS.md`](30_SELF_DESIGNED_EMBEDDERS.md) and the EPIC #321 apex deliverable TASK-EK-018 / #341:
+
+- **Pillar 1 (frozen target panel)** becomes **self-extending**. The static base of 21 declared embedders + 15 instrument slots remains frozen by construction; the panel now grows under the system's own operation via TASK-EK-018. Each new embedder enters as `EmbedderId::EDynamic(seq_no, name)`, is frozen permanently on promotion, and preserves `ΔΞ.target_collapse = 0` because (a) algorithmic candidates are deterministic functions and (b) learned-head candidates are trained with the backbone frozen and the head itself frozen on promotion. **The collapse-immunity invariant holds across the dynamic panel.**
+- **Pillar 9 (System 1 vs System 2 framing)** becomes **operator-correct in a stronger sense**. The LLM (System 1, untrusted) is the *conjecturer of candidate embedder architectures* in TASK-EK-018D / #345 (algorithmic) and TASK-EK-018E / #347 (learned-head). The deterministic evaluator (System 2) is the falsification gate TASK-EK-018C / #343 that decides whether the candidate gets to be a permanent part of the panel. The System 1 / System 2 division that applies at the per-patch verdict level now also applies at the per-embedder design level. **The operator-boundary discipline (CLAUDE.md §15.1, no inner LLM in the trust boundary) is preserved by construction: the LLM never enters the predictor's forward pass; it only proposes architecture candidates which the deterministic evaluator then accepts or rejects.**
+
+**Implication for the §3 pillar-status table.** Pillars 1 and 9 are upgraded from "shipped" to "shipped and self-extending under TASK-EK-018 / #341". The other eight pillars remain as documented.
+
+**Companion EPIC:** #321. **Companion doc:** [`30_SELF_DESIGNED_EMBEDDERS.md`](30_SELF_DESIGNED_EMBEDDERS.md). **Task inventory:** [`31_COMPLETE_ROADMAP.md §3`](31_COMPLETE_ROADMAP.md).
