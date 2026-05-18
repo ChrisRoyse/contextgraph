@@ -131,7 +131,7 @@ Hook-based capture so every test outcome and agent claim becomes ME-JEPA trainin
 | Order | Issue | Hook event | Capability |
 |---|---|---|---|
 | 6.1 | **#274** | UserPromptSubmit | Inject latest RealityPrediction into agent context |
-| 6.2 | **#288** | PostToolUse (Bash matcher) | Capture pytest/cargo-test stdout, bind to current prediction_id, write to `CF_MEJEPA_PREDICTION_VERIFICATIONS` |
+| 6.2 | **#288** | PostToolUse (Bash matcher) | **complete** — captures pytest/cargo-test/unittest/jest/vitest output, binds covered-chunk-overlap matches to current `prediction_id`, writes `CF_MEJEPA_PREDICTION_VERIFICATIONS`, logs `/mnt/d/contextgraph/runtime/posttooluse-mejepa-capture.jsonl`, and enqueues Refuted rows at 6x active-learning weight; FSV `/mnt/d/contextgraph/fsv/task-py-g-069-posttooluse-capture-fsv/run-1779062220556-12961/posttooluse_capture_fsv.json` |
 | 6.3 | **#289** | Stop | Block agent stop until pending predictions are verified-confirmed or verified-rejected (exit code 2 gate) |
 | 6.4 | **refined #154** | Active-learning consumer | Multi-source queue: surprise / contradiction / OOD / agent / operator |
 | 6.5 | **#275** | End-to-end | Live Claude Code session integration FSV |

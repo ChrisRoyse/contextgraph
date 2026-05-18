@@ -20,6 +20,7 @@ pub mod hooks;
 pub mod learning;
 pub mod mejepa_active_learning;
 pub mod mejepa_oracle_flakiness;
+pub mod mejepa_prediction_verification;
 pub mod mejepa_public_ci_cross_validate;
 pub mod mejepa_replay;
 pub mod mejepa_runbook;

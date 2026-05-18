@@ -16,9 +16,9 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_FINGERPRINT_CALIBRATION, CF_MEJEPA_FINGERPRINT_REFERENCES,
     CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_LIVE_SESSION_SIGNALS, CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
     CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_ORACLE_VERDICTS, CF_MEJEPA_PANELS,
-    CF_MEJEPA_Q4_SECURITY_LABELS, CF_MEJEPA_REPLAY_BUFFER, CF_MEJEPA_SIGNAL_DROP_LOG,
-    CF_MEJEPA_STATIC_ANALYSIS_SIGNALS, CF_MEJEPA_TELEMETRY_SIGNALS, CF_MEJEPA_TYPE_GRAPH_SIGNALS,
-    CF_MEJEPA_WITNESS_CHAIN,
+    CF_MEJEPA_PREDICTION_VERIFICATIONS, CF_MEJEPA_Q4_SECURITY_LABELS, CF_MEJEPA_REPLAY_BUFFER,
+    CF_MEJEPA_SIGNAL_DROP_LOG, CF_MEJEPA_STATIC_ANALYSIS_SIGNALS, CF_MEJEPA_TELEMETRY_SIGNALS,
+    CF_MEJEPA_TYPE_GRAPH_SIGNALS, CF_MEJEPA_WITNESS_CHAIN,
 };
 use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
@@ -193,6 +193,8 @@ pub struct RewardSignalLoopStatus {
     pub operator_override_multiplier: u8,
     pub active_learning_ready: bool,
     pub active_learning_queue_rows: u64,
+    pub prediction_verification_ready: bool,
+    pub prediction_verification_rows: u64,
     pub ontology_growth_rows: u64,
     pub constellation_freshness_ready: bool,
     pub constellation_refresh_rows: u64,
@@ -451,6 +453,9 @@ pub fn audit_reward_signals(
             && db.cf_handle(CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT).is_some(),
         active_learning_queue_rows: count_cf_optional(db, CF_MEJEPA_ACTIVE_LEARNING_QUEUE)?
             .unwrap_or(0),
+        prediction_verification_ready: db.cf_handle(CF_MEJEPA_PREDICTION_VERIFICATIONS).is_some(),
+        prediction_verification_rows: count_cf_optional(db, CF_MEJEPA_PREDICTION_VERIFICATIONS)?
+            .unwrap_or(0),
         ontology_growth_rows: count_cf_optional(db, CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT)?.unwrap_or(0),
         constellation_freshness_ready: db.cf_handle(CF_MEJEPA_CONSTELLATION_REFRESH_LOG).is_some(),
         constellation_refresh_rows: count_cf_optional(db, CF_MEJEPA_CONSTELLATION_REFRESH_LOG)?
@@ -474,6 +479,7 @@ pub fn audit_reward_signals(
         && fingerprint_feature_span.spans_all_eight_tiers
         && lifelong_learning.replay_buffer_ready
         && lifelong_learning.active_learning_ready
+        && lifelong_learning.prediction_verification_ready
         && lifelong_learning.constellation_freshness_ready
         && signal_drop_log.registered;
 
@@ -818,9 +824,13 @@ fn reward_signal_definition_table() -> Vec<SignalDefinition> {
         signal!(
             7,
             "prediction_actual_reconciliation",
-            "agent/operator feedback",
-            "CF_MEJEPA_AGENT_FEEDBACK + CF_MEJEPA_OPERATOR_OVERRIDES",
-            [CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_OPERATOR_OVERRIDES]
+            "PostToolUse prediction verification + agent/operator feedback",
+            "CF_MEJEPA_PREDICTION_VERIFICATIONS + CF_MEJEPA_AGENT_FEEDBACK + CF_MEJEPA_OPERATOR_OVERRIDES",
+            [
+                CF_MEJEPA_PREDICTION_VERIFICATIONS,
+                CF_MEJEPA_AGENT_FEEDBACK,
+                CF_MEJEPA_OPERATOR_OVERRIDES
+            ]
         ),
         signal!(
             7,

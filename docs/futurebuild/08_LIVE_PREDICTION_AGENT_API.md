@@ -307,7 +307,9 @@ Wrapping these in a single `mejepa_daemon_status` aggregator tool would be conve
 [Agent reads, plans, calls Edit on src/foo.py]
   > PreToolUse hook records pre_sha=abc...
   > Edit returns
-  > PostToolUse hook records after_sha=def..., shift-log line appended
+  > PostToolUse Edit hook records after_sha=def..., shift-log line appended
+  > PostToolUse Bash hook later binds pytest/cargo/unittest/jest/vitest output to
+    CF_MEJEPA_PREDICTION_VERIFICATIONS for the active prediction_id
 
   ~250ms later, daemon's shift subscriber consumes the line:
   - chunks src/foo.py

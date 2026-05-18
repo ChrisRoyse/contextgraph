@@ -124,7 +124,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 
 **ME-JEPA state:** ✅ **SHIPPED.** Companion EPIC #315 closes the reward-signal completeness audit with `mcp__cgreality__mejepa_audit_reward_signals` and fail-closed `CF_MEJEPA_SIGNAL_DROP_LOG` readback. The audit reads durable RocksDB source-of-truth CFs, requires row-backed per-tier coverage, reports fingerprint feature-span / replay / active-learning / freshness readiness, and samples signal-drop rows so missing or corrupt reward-signal evidence fails closed instead of silently zeroing.
 
-**FSV evidence:** `/mnt/d/contextgraph/fsv/task-rwd-315-reward-audit-fsv/run-1779057109495-4009385/reward_signal_audit_fsv.json`, sha256 `9842c16345e4ecaf0994c10139503b1e73df90f7262e0e0699280804667375a7`, `all_passed=true`. The FSV proves 8/8 reward tiers at coverage `1.0`, signal-drop row readback `0 -> 1`, missing CFs block acceptance, corrupt signal-drop rows fail closed, and non-fail-closed signal-drop entries are rejected.
+**FSV evidence:** `/mnt/d/contextgraph/fsv/task-rwd-315-reward-audit-fsv/run-1779062502366-35012/reward_signal_audit_fsv.json`, sha256 `c271752d7177a4bf40588fda0c8eedef53f404f0e68155e801db8a57da4467e8`, `all_passed=true`. The FSV proves 8/8 reward tiers at coverage `1.0`, signal-drop row readback `0 -> 1`, missing CFs block acceptance, corrupt signal-drop rows fail closed, and non-fail-closed signal-drop entries are rejected.
 
 **Sub-task tree:** See companion doc [`29_REWARD_SIGNAL_COMPLETENESS.md`](29_REWARD_SIGNAL_COMPLETENESS.md) for the 8-tier audit + TASK-RWD-201..212 sub-tasks. #315 is closed as complete.
 
@@ -157,7 +157,7 @@ ME-JEPA-Code is fully JEPA-aligned per LeCun's transcript when ALL of the follow
 4. **Objective-driven**: explicit cost function + hardwired safety constraint vector; constraint violation hard-blocks `Verdict::Pass` (TASK-FP-104). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-104-objective-safety-fsv/run-1779040194889/objective_safety_fsv.json`.
 5. **Counterfactual ranking**: `mejepa_rank_candidates` MCP tool ships and is exercised by the live integration FSV (TASK-FP-105). ✅ Complete: `/mnt/d/contextgraph/fsv/task-fp-105-rank-candidates-fsv/run-1779041036578/rank_candidates_fsv.json`.
 6. **System 2 framing**: whitepaper + MCP tool descriptions make the System 1 LLM vs System 2 ME-JEPA separation explicit. ✅ Complete.
-7. **Reward-signal completeness**: per `29_*` audit, ≥ 95% of LeCun-enumerated reward signals are captured to durable storage (EPIC #315). ✅ Complete: `/mnt/d/contextgraph/fsv/task-rwd-315-reward-audit-fsv/run-1779057109495-4009385/reward_signal_audit_fsv.json`.
+7. **Reward-signal completeness**: per `29_*` audit, ≥ 95% of LeCun-enumerated reward signals are captured to durable storage (EPIC #315). ✅ Complete: `/mnt/d/contextgraph/fsv/task-rwd-315-reward-audit-fsv/run-1779062502366-35012/reward_signal_audit_fsv.json`.
 
 ---
 

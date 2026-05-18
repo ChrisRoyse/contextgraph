@@ -33,6 +33,9 @@ pub enum MejepaCommands {
     /// Read Schmidhuberian compression progress from CF_MEJEPA_TRAIN_CERTS.
     #[command(name = "compression-progress")]
     CompressionProgress(CompressionProgressArgs),
+    /// Bind PostToolUse Bash test outcomes back to live RealityPrediction rows.
+    #[command(name = "bind-test-outcomes")]
+    BindTestOutcomes(crate::commands::mejepa_prediction_verification::BindTestOutcomesArgs),
     /// Checkpointed Python train/calibration/holdout cycle with eval readback.
     #[command(name = "checkpointed-train")]
     CheckpointedTrain(crate::commands::mejepa_train::MejepaCheckpointedTrainArgs),
@@ -281,6 +284,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
             serde_json::to_value(compression_progress(args)?)
                 .context("serialize compression-progress")
         }
+        MejepaCommands::BindTestOutcomes(args) => serde_json::to_value(
+            crate::commands::mejepa_prediction_verification::bind_test_outcomes(args)?,
+        )
+        .context("serialize bind-test-outcomes"),
         MejepaCommands::CheckpointedTrain(args) => serde_json::to_value(
             crate::commands::mejepa_train::run_checkpointed_python_train(args)?,
         )

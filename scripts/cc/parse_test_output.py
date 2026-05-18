@@ -15,6 +15,7 @@ from typing import Any, Iterable
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 PYTEST_RE = re.compile(r"^(?P<id>\S+::\S+)\s+(?P<outcome>PASSED|FAILED|SKIPPED|ERROR)\b")
 CARGO_RE = re.compile(r"^test\s+(?P<id>\S+)\s+\.\.\.\s+(?P<outcome>ok|FAILED|ignored)\b")
+UNITTEST_RE = re.compile(r"^(?P<id>[\w.]+)\s+\([^)]+\)\s+\.\.\.\s+(?P<outcome>ok|FAIL|ERROR|skipped)\b")
 JEST_FILE_RE = re.compile(r"^(?P<outcome>PASS|FAIL)\s+(?P<id>\S+)")
 JEST_TEST_RE = re.compile(r"^\s*(?:\u2713|\u2714|PASS)\s+(?P<id>.+?)(?:\s+\((?P<ms>\d+)\s*ms\))?$")
 JEST_FAIL_TEST_RE = re.compile(r"^\s*(?:\u2715|\u2716|FAIL)\s+(?P<id>.+?)(?:\s+\((?P<ms>\d+)\s*ms\))?$")
@@ -47,8 +48,12 @@ def framework_for_command(command: str) -> str:
     lowered = command.lower()
     if "cargo test" in lowered:
         return "cargo_test"
+    if "vitest" in lowered:
+        return "vitest"
     if "jest" in lowered or "npm test" in lowered or "pnpm test" in lowered:
         return "jest"
+    if "unittest" in lowered or "python -m unittest" in lowered:
+        return "unittest"
     if "pytest" in lowered:
         return "pytest"
     return "unknown"
@@ -64,10 +69,13 @@ def parse_lines(text: str, framework: str) -> Iterable[dict[str, Any]]:
             matches.append(("pytest", PYTEST_RE.match(line)))
         if framework in {"cargo_test", "unknown"}:
             matches.append(("cargo_test", CARGO_RE.match(line)))
-        if framework in {"jest", "unknown"}:
-            matches.append(("jest", JEST_FILE_RE.match(line)))
-            matches.append(("jest", JEST_TEST_RE.match(line)))
-            matches.append(("jest", JEST_FAIL_TEST_RE.match(line)))
+        if framework in {"unittest", "unknown"}:
+            matches.append(("unittest", UNITTEST_RE.match(line)))
+        if framework in {"jest", "vitest", "unknown"}:
+            js_framework = "vitest" if framework == "vitest" else "jest"
+            matches.append((js_framework, JEST_FILE_RE.match(line)))
+            matches.append((js_framework, JEST_TEST_RE.match(line)))
+            matches.append((js_framework, JEST_FAIL_TEST_RE.match(line)))
         for matched_framework, match in matches:
             if not match:
                 continue
