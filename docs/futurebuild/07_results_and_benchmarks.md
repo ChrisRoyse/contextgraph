@@ -2,7 +2,7 @@
 
 **Last refreshed:** 2026-05-18.
 
-Source: `/mnt/d/contextgraph/fsv/` (327 FSV directories, local legacy SoT), git log (`git log --oneline --all`), GitHub closed issues (298 closed as of 2026-05-18), `MEMORY.md` (operator notes with sha256 evidence pins), per-issue RESOLVED comments.
+Source: aiwonder `/zfs/archive/contextgraph/fsv/` for post-migration production evidence; `/mnt/d/contextgraph/fsv/` only for legacy/local evidence; git log (`git log --oneline --all`); GitHub issue comments; per-issue RESOLVED comments. #369 tracks remaining legacy-local revalidation.
 
 **Purpose:** preserve the proof-of-work that future agents would otherwise lose to time. Every entry here references a physical artifact (FSV JSON, sha256, CF) that can be re-verified.
 
@@ -14,6 +14,7 @@ Source: `/mnt/d/contextgraph/fsv/` (327 FSV directories, local legacy SoT), git 
 |---|---|---|---|
 | `prediction_oracle_correlation` | ≥ 0.95 (stable × 4 rolling windows × all Python mutation cells) | **0.866667** (8/30 holdout) | `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json` (pre-aiwonder evidence; #369 to revalidate post-migration) |
 | Per-fingerprint ship-gate windows | 4 consecutive green per fingerprint | 4 windows materialized over 30 adversarial KnownBad fingerprints with `source_corpus=python-adversarial-v1` | `CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS` |
+| Live-session integration (TASK-PY-G-056 / #275 via #366) | 5 real SWE-bench session traces, ≥4/5 oracle agreement, p99 <30s, edge cases green | PASS: `allPassed=true`, 9 trace rows, 12 live prediction rows, 1 active-learning row, 9 runtime JSONL files | `/zfs/archive/contextgraph/fsv/task-py-g-056-live-session-fsv/run-20260518T212128Z/live_session_fsv.json` (sha256 `4fe5d4af…`); runtime `/zfs/archive/contextgraph/runtime/live-session-fsv/`; readback mode in `task_py_g_056_live_session_fsv` |
 | Bidirectional ablation result (TASK-EK-012) | `λ_inv = 0` baseline vs `{0.25, 0.5, 1.0}` | All variants measured `0.8666666746139526`; best Δ vs baseline `0.0`; production stays `λ_inv = 0.0` | `/mnt/d/contextgraph/fsv/task-ek-012-bidirectional-ablation-fsv/run-20260518T123249Z/bidirectional_ablation_fsv.json` (sha256 `a98f9e04…`); report `/mnt/d/contextgraph/exports/ek-012/bidirectional-ablation-report.md` (sha256 `8da50218…`) |
 | Patch-similarity holdout top-1 same-failure-mode accuracy (TASK-PY-G-042) | — | **1.0** (`status=pass`) | `/mnt/d/contextgraph/fsv/task-py-g-042-patch-similarity-exemplar-fsv/run-1779075407903/patch_similarity_exemplar_fsv.json` (sha256 `177cc3a7…`) |
 | Adversarial corpus refusal rate (TASK-PY-G-060 / TASK-FP-009) | 0 `Pass@conf > 0.95` on lookalikes | 30/30 adversarial rows persist in `CF_MEJEPA_ADVERSARIAL_CORPUS`; 30 adversarial KnownBad fingerprints persisted | `phase-f-adversarial-corpus-fsv/`, `task-fp-009-adversarial-fingerprint-integration-fsv/` |
@@ -29,8 +30,8 @@ Source: `/mnt/d/contextgraph/fsv/` (327 FSV directories, local legacy SoT), git 
 | Compression-progress CPΦ (TASK-EK-001) | monotonicity over window | shipped | `/mnt/d/contextgraph/fsv/task-ek-001-compression-progress-fsv/run-1779059471712-4091732/compression_progress_fsv.json` (sha256 `e810d2a0…`) |
 | Instrument proposal (TASK-EK-002) | absence-as-existence surface live | shipped | `/mnt/d/contextgraph/fsv/task-ek-002-propose-instrument-fsv/propose_instrument_fsv.json` (sha256 `a9a5c08f…`) |
 | Curiosity reward (TASK-EK-006) | per-window distributions + calibration | shipped | `/mnt/d/contextgraph/fsv/task-ek-006-curiosity-fsv/curiosity_fsv.json` (sha256 `cef7b6e5…`) |
-| Project-ingest (TASK-PY-G-063) | physical CF readback proven | PASS | `/mnt/d/contextgraph/fsv/task-py-g-063-project-ingest-fsv/run-20260518T135521Z/project_ingest_fsv.json` (sha256 `d3b8bc98…`) |
-| Project-report (TASK-PY-G-064) | report.json + report.md + CF row | PASS | `/mnt/d/contextgraph/fsv/task-py-g-064-reality-report-fsv/run-20260518T145033Z/project_report_fsv.json` (sha256 `853fe46e…`) |
+| Project-ingest locality (TASK-AIWONDER-016 / #367) | physical CF readback proven under aiwonder project roots | PASS | `/zfs/archive/contextgraph/fsv/task-aiwonder-016-project-ingest-locality-fsv/run-20260518T204439Z/project_ingest_fsv.json` (sha256 `f1f013b5…`) |
+| Project-report locality (TASK-AIWONDER-016 / #367) | report.json + report.md + CF row under aiwonder project roots | PASS | `/zfs/archive/contextgraph/fsv/task-aiwonder-016-project-report-locality-fsv/run-20260518T210045Z/project_report_fsv.json` (sha256 `00011920…`) |
 | Synthetic-Python stress (TASK-PY-G-071) | 30 known-answer cases | PASS | `/mnt/d/contextgraph/fsv/task-py-g-071-synthetic-corpus-fsv/run-20260518T184812Z/synthetic_stress_fsv.json` (sha256 `b8e5c712…`) |
 | PostToolUse capture (TASK-PY-G-069) | bind ≥90% test outcomes to a prediction | shipped | `/mnt/d/contextgraph/fsv/task-py-g-069-posttooluse-capture-fsv/run-1779062220556-12961/posttooluse_capture_fsv.json` |
 | Stop self-verify (TASK-PY-G-070) | blocks unverified Stop with exit code 2 | shipped | `/mnt/d/contextgraph/fsv/task-py-g-070-stop-self-verify-fsv/run-1779063364468-91155/stop_self_verify_fsv.json` (sha256 `70e1ab51…`) |
@@ -74,14 +75,14 @@ Source: `/mnt/d/contextgraph/fsv/` (327 FSV directories, local legacy SoT), git 
 
 **Status:** code/FSV-complete; all Phase F implementation issues CLOSED as of 2026-05-13; `phase:f-followup` empty as of 2026-05-13.
 
-**Phase F FSV inventory** (`/mnt/d/contextgraph/fsv/phase-f-*`):
+**Phase F FSV inventory** (legacy `/mnt/d/contextgraph/fsv/phase-f-*`; historical unless revalidated under a current aiwonder issue):
 `phase-f-active-learning-cli-fsv`, `phase-f-adversarial-corpus-fsv`, `phase-f-agent-identity-fsv`, `phase-f-catastrophic-event-fsv`, `phase-f-chaos-failpoints-fsv`, `phase-f-closure-ledger-fsv`, `phase-f-cross-language-label-gating-fsv`, `phase-f-daemon-status-fsv`, `phase-f-deprecation-framework-fsv`, `phase-f-e2e-happy-path-fsv`, `phase-f-gpu-wsl-telemetry-fsv`, `phase-f-heal-ticker-telemetry-fsv`, `phase-f-health-probe-fsv`, `phase-f-inspect-prediction-fsv`, `phase-f-label-transfer-gating-fsv`, `phase-f-load-test-fsv`, `phase-f-mi-heatmap-fsv`, `phase-f-multi-agent-fsv`, `phase-f-operator-override-fsv`, `phase-f-override-sampler-fsv`, `phase-f-pause-active-learning-fsv`, `phase-f-pause-cli-fsv`, `phase-f-pause-consumer-fsv`, `phase-f-per-head-calibration-fsv`, `phase-f-prediction-replay-fsv`, `phase-f-renderers-fsv`, `phase-f-restart-safety-fsv`, `phase-f-retention-fsv`, `phase-f-runbook-actionability-fsv`, `phase-f-runbook-cli-fsv`, `phase-f-runbook-coverage-fsv`, `phase-f-soak-test-fsv`, `phase-f-storage-exhaustion-fsv`, `phase-f-system-cost-fsv`, `phase-f-system-cost-producers-fsv`, `phase-f-toolchain-availability-fsv`, `phase-f-toolchain-startup-gate-fsv`, `phase-f-weekly-dashboard-fsv`, `phase-f-weekly-eval-fsv`, `phase-f-witness-quarantine-fsv`, `phase-f-workflow-sha-pins-fsv`.
 
 ### 2.7 Phase G (ship-gate convergence — IN FLIGHT)
 
 **Status:** 21 Phase G tasks code/FSV shipped (TASK-G-001 through TASK-G-021 plus TASK-PY-G-* shipping continuously). 160 phase:g-labeled issues closed; 66 open as of 2026-05-18.
 
-**Phase G FSV directories** (`/mnt/d/contextgraph/fsv/phase-g-*`):
+**Phase G FSV directories** (legacy `/mnt/d/contextgraph/fsv/phase-g-*`; #369 classifies each as legacy-local, aiwonder-current, or needs-aiwonder-rerun):
 `phase-g-adversarial-retrain-fsv`, `phase-g-cell-exemptions-fsv`, `phase-g-cell-status-fsv`, `phase-g-cli-github-curl-403-fsv`, `phase-g-conformal-recalibration-fsv`, `phase-g-convergence-eta-fsv`, `phase-g-failing-cell-root-cause-fsv`, `phase-g-failure-fingerprint-fsv`, `phase-g-failure-mode-class-metrics-fsv`, `phase-g-fingerprint-classifier-fsv`, `phase-g-fingerprint-mcp-tools-fsv`, `phase-g-fingerprint-ship-gate-fsv`, `phase-g-holdout-rotation-fsv`, `phase-g-label-quality-fsv`, `phase-g-operator-override-recalibration-fsv`, `phase-g-oracle-flakiness-quarantine-fsv`, `phase-g-per-cell-promotion-gate-fsv`, `phase-g-public-ci-cross-validation-fsv`, `phase-g-ship-gate-dashboard-fsv`, `phase-g-ship-gate-stability-fsv`, `phase-g-state-transfer-weekly-markdown-fsv`, `phase-g-targeted-mutation-expansion-fsv`, `phase-g-telemetry-feedback-fsv`, `phase-g-training-holdout-drift-fsv`, `phase-g-training-pipeline-orchestrator-fsv`, `phase-g-unknown-fingerprint-active-learning-fsv`, `phase-g-weekly-cell-triage-fsv`.
 
 **TASK-G-001 through TASK-G-021** (per phase-g-roadmap §7 inventory):
@@ -277,7 +278,7 @@ Documents (where retained): `docs/HIDDEN_BROKENNESS_AUDIT_*.md`, `docs/MEMORY_RE
 
 ---
 
-## 7. Aggregate FSV directory inventory (327 entries on `/mnt/d/contextgraph/fsv/`)
+## 7. Aggregate Legacy FSV Directory Inventory (327 entries on `/mnt/d/contextgraph/fsv/`)
 
 Categorized:
 

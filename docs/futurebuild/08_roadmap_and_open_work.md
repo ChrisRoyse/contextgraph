@@ -15,7 +15,7 @@ prediction_oracle_correlation ≥ 0.95
   on the 300×8 Python SWE-bench Lite corpus
 ```
 
-**Last holdout measurement:** `0.866667` (legacy `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; #369 to revalidate post-migration on aiwonder).
+**Last holdout measurement:** `0.866667` (legacy `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; not current production evidence until revalidated on aiwonder under #369).
 
 **Gap to ship:** 0.083 correlation points. Bridging this is the entire job of Phase G's remaining open work (66 issues).
 
@@ -89,7 +89,7 @@ By priority:
 |---|---|---|
 | #274 / TASK-PY-G-055 | UserPromptSubmit hook live RealityPrediction injection | ✅ closed |
 | #154 / TASK-PY-G-023 | Active-learning consumer (multi-source queue: surprise / contradiction / OOD / agent / operator) | open |
-| #275 / TASK-PY-G-056 | Live Claude Code session integration FSV (end-to-end) | open / in-progress |
+| #275 / TASK-PY-G-056 | Live Claude Code session integration FSV (end-to-end) | ✅ closed 2026-05-18 via aiwonder FSV #366 |
 | #276 / TASK-PY-G-057 | Live-session OOD corpus harvest | open |
 | #131 / TASK-PY-G-016 | Feedback cooldown (prevent reward thrashing) | open |
 | #163 / TASK-PY-G-024 | Feedback retrain consumer | open |
@@ -150,8 +150,8 @@ By priority:
 | Issue | Task | Status |
 |---|---|---|
 | #310 | META — Issue refactor (2026-05-15) | in-progress p0 |
-| #366 / TASK-AIWONDER-015 | Rerun TASK-PY-G-056 live-session FSV on aiwonder | open p0 |
-| #367 / TASK-AIWONDER-016 | Project-ingest/runtime data locality audit for arbitrary repo folders | in-progress p1 |
+| #366 / TASK-AIWONDER-015 | Rerun TASK-PY-G-056 live-session FSV on aiwonder | ✅ closed 2026-05-18 |
+| #367 / TASK-AIWONDER-016 | Project-ingest/runtime data locality audit for arbitrary repo folders | ✅ closed 2026-05-18 |
 | #368 / TASK-AIWONDER-017 | Host capability utilization audit + scheduler profile | open p1 |
 | #369 / TASK-AIWONDER-018 | Revalidate post-migration Phase G FSV artifacts on aiwonder | open p0 (blocks transition of all Phase G FSV from `/mnt/d` to `/zfs/archive`) |
 | #295 | PERF — #199 resume launch scans full D-drive FSV root | in-progress |
