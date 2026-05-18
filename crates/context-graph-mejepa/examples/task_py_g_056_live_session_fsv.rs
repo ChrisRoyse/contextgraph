@@ -21,9 +21,9 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-056-live-session-fsv";
-const RUNTIME_ROOT: &str = "/mnt/d/contextgraph/runtime/live-session-fsv";
-const CORPUS_ROOT: &str = "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511";
+const FSV_SUBDIR: &str = "fsv/task-py-g-056-live-session-fsv";
+const RUNTIME_SUBDIR: &str = "runtime/live-session-fsv";
+const CORPUS_SUBDIR: &str = "corpus/swebench-lite-python-300x8-v1-20260511";
 const REPORT_NAME: &str = "live_session_fsv.json";
 
 #[derive(Debug, Clone)]
@@ -61,10 +61,12 @@ struct PersistedTraceSummary {
 
 fn main() -> Result<()> {
     let run_id = format!("run-{}", chrono::Utc::now().format("%Y%m%dT%H%M%SZ"));
-    let run_dir = PathBuf::from(FSV_ROOT).join(&run_id);
+    let fsv_root = fsv_root()?;
+    let run_dir = fsv_root.join(&run_id);
     fs::create_dir_all(&run_dir).context("create FSV run dir")?;
-    let runtime_root = PathBuf::from(RUNTIME_ROOT);
+    let runtime_root = runtime_root()?;
     fs::create_dir_all(&runtime_root).context("create runtime live-session root")?;
+    let corpus_root = corpus_root()?;
     let db_path = run_dir.join("live-session-traces.rocksdb");
     let db = open_infer_rocksdb(&db_path).context("open trace db")?;
     let infer_store = RocksDbInferStore::new(db.clone());
@@ -81,7 +83,7 @@ fn main() -> Result<()> {
     let mut happy_summaries = Vec::new();
     let mut all_summaries = Vec::new();
     for (idx, spec) in specs.iter().enumerate() {
-        let materialized = materialize_patch_as_project(&run_dir, spec, idx)?;
+        let materialized = materialize_patch_as_project(&run_dir, &corpus_root, spec, idx)?;
         let trace = build_completed_trace(&run_id, idx, spec, &materialized)?;
         let predictions =
             persist_trace_bundle(&infer_store, db.as_ref(), &runtime_root, &trace, spec)?;
@@ -242,7 +244,9 @@ fn main() -> Result<()> {
     let report = json!({
         "schemaVersion": 1,
         "taskId": "TASK-PY-G-056",
+        "aiwonderTaskId": "TASK-AIWONDER-015",
         "issue": 275,
+        "aiwonderIssue": 366,
         "runId": run_id,
         "allPassed": all_passed,
         "sourceOfTruth": {
@@ -252,7 +256,7 @@ fn main() -> Result<()> {
             "dbPath": db_path,
             "runtimeJsonlRoot": runtime_root,
             "fsvReport": report_path,
-            "swebenchCorpusRoot": CORPUS_ROOT
+            "swebenchCorpusRoot": corpus_root
         },
         "before": before,
         "happyPath": {
@@ -276,6 +280,25 @@ fn main() -> Result<()> {
     ensure!(all_passed, "TASK-PY-G-056 FSV failed");
     println!("{}", serde_json::to_string_pretty(&readback)?);
     Ok(())
+}
+
+fn fsv_root() -> Result<PathBuf> {
+    Ok(context_graph_paths::production_data_root()?.join(FSV_SUBDIR))
+}
+
+fn runtime_root() -> Result<PathBuf> {
+    Ok(context_graph_paths::production_data_root()?.join(RUNTIME_SUBDIR))
+}
+
+fn corpus_root() -> Result<PathBuf> {
+    Ok(context_graph_paths::production_data_root()?.join(CORPUS_SUBDIR))
+}
+
+fn runtime_jsonl_path_string(session_id: &str) -> Result<String> {
+    Ok(runtime_root()?
+        .join(format!("{session_id}.jsonl"))
+        .display()
+        .to_string())
 }
 
 fn real_session_specs() -> Vec<RealSessionSpec> {
@@ -320,10 +343,11 @@ fn real_session_specs() -> Vec<RealSessionSpec> {
 
 fn materialize_patch_as_project(
     run_dir: &Path,
+    corpus_root: &Path,
     spec: &RealSessionSpec,
     idx: usize,
 ) -> Result<MaterializedEdit> {
-    let patch_path = PathBuf::from(CORPUS_ROOT)
+    let patch_path = corpus_root
         .join("mutations")
         .join(spec.instance_id)
         .join(format!("{}.patch", spec.mutation));
@@ -420,7 +444,7 @@ fn build_completed_trace(
             prediction_id,
             injected_at_unix_ms: base + 100 + spec.latency_ms as i64 + 150,
             markdown_sha256: sha256_prefixed(&format!("{session_id}:markdown:{prediction_id:?}")),
-            history_jsonl_path: format!("{RUNTIME_ROOT}/{session_id}.jsonl"),
+            history_jsonl_path: runtime_jsonl_path_string(&session_id)?,
             agent_read_at_unix_ms: base + 100 + spec.latency_ms as i64 + 250,
         }],
         stage_events: stage_events(
@@ -699,7 +723,7 @@ fn build_fix_loop_edge(run_id: &str, run_dir: &Path) -> Result<LiveSessionTrace>
             prediction_id,
             injected_at_unix_ms: t + 1_450,
             markdown_sha256: sha256_prefixed(&format!("{session_id}:markdown:{idx}")),
-            history_jsonl_path: format!("{RUNTIME_ROOT}/{session_id}.jsonl"),
+            history_jsonl_path: runtime_jsonl_path_string(&session_id)?,
             agent_read_at_unix_ms: t + 1_520,
         });
         stage_event_rows.extend(stage_events(
