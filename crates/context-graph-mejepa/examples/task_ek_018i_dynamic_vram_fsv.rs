@@ -218,6 +218,7 @@ fn gate_request(
         redundant_with_existing: false,
         within_vram_budget,
         first_dynamic_promotion: false,
+        adversarial_injection_risk: false,
         would_cross_ship_gate: false,
         modifies_below_threshold_cell: false,
         heldout_global_delta: 0.006,

@@ -183,6 +183,7 @@ fn request(
         redundant_with_existing: false,
         within_vram_budget: true,
         first_dynamic_promotion,
+        adversarial_injection_risk: false,
         would_cross_ship_gate,
         modifies_below_threshold_cell,
         heldout_global_delta: 0.006,

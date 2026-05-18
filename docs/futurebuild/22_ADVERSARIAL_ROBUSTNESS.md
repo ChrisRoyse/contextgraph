@@ -189,3 +189,26 @@ Tasks (in `tasks/security/`):
 - `TASK-SEC-005` — two-person-rule config option for catastrophic promotion
 - `TASK-SEC-006` — markdown render hardening (escape adversarial patterns)
 - `TASK-SEC-007` — D-drive permissions documented + verified at startup
+- `TASK-EK-018J` / #351 — adversarial-embedder-injection threat mitigation (extends TASK-EK-007 / #328)
+- `TASK-SEC-008` — codify §6 threat model in `SPEC-SECURITY.md` and operator runbook
+
+---
+
+## §6 — Adversarial-embedder-injection threat model (added 2026-05-17)
+
+**Threat:** with TASK-EK-018 / #341 shipping the apex *self-designed-embedders* primitive (see `docs/futurebuild/30_SELF_DESIGNED_EMBEDDERS.md`), a malicious actor could engineer an absence-signal pattern that, when fed to the system, causes it to propose a candidate embedder serving the attacker's purpose. The attack surface is the absence-detection priority queue (TASK-EK-018B / #344) and the LLM-as-conjecturer architecture-synthesis loop (TASK-EK-018D / #345).
+
+**Concrete attack vectors:**
+1. **Synthetic OOD chunks** crafted to register as Unknown clusters with coherent but malicious cross-embedder signatures, biasing the absence queue toward a particular embedder direction.
+2. **Synthetic chunk-dependency edges** in the corpus that create artificial structural holes in the mincut output, causing the system to propose embedders capturing attacker-preferred axes.
+3. **LLM prompt injection** in chunks that get fed to the architecture-synthesis loop's LLM, causing it to produce a candidate embedder kernel encoding attacker-chosen biases.
+4. **Slow-drift poisoning** where many small adversarial signals individually pass the falsification gate but cumulatively shift the panel's effective coverage.
+
+**Mitigations (all required):**
+1. **Falsification gate (TASK-EK-018C / #343)** must dominate. A candidate that does not measurably improve per-cell holdout correlation by ≥ 0.005 on a window the proposing module did not see is rejected, full stop. This catches single-shot attacks.
+2. **Operator-in-the-loop gate (TASK-EK-018H / #350)** catches first-of-its-kind embedders and any promotion that would cross the ship-gate threshold. This catches attacks that get the candidate past the falsification gate.
+3. **Adversarial-injection falsifier (TASK-EK-018J / #351)** extends TASK-EK-007 / #328 to deliberately try the above attack vectors as a CI/cron job. Any survival is treated as a critical security finding.
+4. **Sandbox + compile + fuzz of synthesised algorithmic kernels (TASK-EK-018D / #345)** prevents arbitrary code execution from compromised LLM outputs.
+5. **Slow-drift detection** via the operator-contribution surface (TASK-EK-014 / #336) and the ontology-growth audit (TASK-EK-009 / #330): if system-proposed promotions accelerate beyond a per-week threshold, surface for operator review.
+
+**TASK-EK-018J executable gate:** `task_ek_018j_adversarial_injection_fsv` must prove synthetic OOD, centroid-poisoning, and holdout-leakage candidates are rejected by TASK-EK-018C, while any adversarial-risk survivor is marked `adversarial_injection_risk` and forced into the TASK-EK-018H two-person operator-approval path before promotion.

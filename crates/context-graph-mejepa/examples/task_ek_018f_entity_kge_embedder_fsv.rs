@@ -126,6 +126,7 @@ fn main() -> Result<()> {
             redundant_with_existing: false,
             within_vram_budget: true,
             first_dynamic_promotion: before_registry_count == 0,
+            adversarial_injection_risk: false,
             would_cross_ship_gate: false,
             modifies_below_threshold_cell: false,
             heldout_global_delta: falsification_decision.global_delta,

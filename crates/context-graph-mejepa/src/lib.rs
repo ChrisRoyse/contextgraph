@@ -4,6 +4,7 @@
 //! CPU construction is rejected instead of silently falling back.
 
 pub mod adversarial_corpus;
+pub mod adversarial_embedder_injection;
 pub mod calibration;
 pub mod calibration_types;
 pub mod candidate_ranking;
@@ -66,6 +67,7 @@ pub mod verify_cli;
 pub mod vram;
 
 pub use adversarial_corpus::*;
+pub use adversarial_embedder_injection::*;
 pub use calibration::*;
 pub use calibration_types::*;
 pub use candidate_ranking::*;

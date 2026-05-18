@@ -33,6 +33,8 @@ pub enum PendingPromotionKind {
         candidate_name: String,
         proposal_id_hex: String,
         first_dynamic_promotion: bool,
+        #[serde(default)]
+        adversarial_injection_risk: bool,
         would_cross_ship_gate: bool,
         modifies_below_threshold_cell: bool,
         heldout_global_delta: f32,
@@ -143,6 +145,8 @@ pub struct DynamicEmbedderPromotionGateRequest {
     pub redundant_with_existing: bool,
     pub within_vram_budget: bool,
     pub first_dynamic_promotion: bool,
+    #[serde(default)]
+    pub adversarial_injection_risk: bool,
     pub would_cross_ship_gate: bool,
     pub modifies_below_threshold_cell: bool,
     pub heldout_global_delta: f32,
@@ -160,6 +164,8 @@ pub struct DynamicEmbedderPromotionGateDecision {
     pub queued_promotion_id: Option<String>,
     pub required_distinct_approvals: u8,
     pub catastrophic_class: bool,
+    #[serde(default)]
+    pub adversarial_injection_risk: bool,
     pub block_reasons: Vec<String>,
     pub source_of_truth_cf: String,
     pub source_of_truth_key_hex: Option<String>,
@@ -199,7 +205,9 @@ pub fn gate_dynamic_embedder_promotion(
 ) -> Result<DynamicEmbedderPromotionGateDecision, HealError> {
     validate_dynamic_embedder_gate_request(&request)?;
     let block_reasons = dynamic_embedder_promotion_block_reasons(&request);
-    let catastrophic_class = request.would_cross_ship_gate || request.modifies_below_threshold_cell;
+    let catastrophic_class = request.would_cross_ship_gate
+        || request.modifies_below_threshold_cell
+        || request.adversarial_injection_risk;
     let required_distinct_approvals = if !block_reasons.is_empty() {
         0
     } else {
@@ -207,6 +215,7 @@ pub fn gate_dynamic_embedder_promotion(
             request.first_dynamic_promotion,
             request.would_cross_ship_gate,
             request.modifies_below_threshold_cell,
+            request.adversarial_injection_risk,
         )
     };
     if !block_reasons.is_empty() {
@@ -218,6 +227,7 @@ pub fn gate_dynamic_embedder_promotion(
             queued_promotion_id: None,
             required_distinct_approvals,
             catastrophic_class,
+            adversarial_injection_risk: request.adversarial_injection_risk,
             block_reasons,
             source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS.to_string(),
             source_of_truth_key_hex: None,
@@ -233,6 +243,7 @@ pub fn gate_dynamic_embedder_promotion(
             queued_promotion_id: None,
             required_distinct_approvals,
             catastrophic_class,
+            adversarial_injection_risk: request.adversarial_injection_risk,
             block_reasons,
             source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS.to_string(),
             source_of_truth_key_hex: None,
@@ -244,6 +255,7 @@ pub fn gate_dynamic_embedder_promotion(
         candidate_name: request.candidate_name.clone(),
         proposal_id_hex: request.proposal_id_hex,
         first_dynamic_promotion: request.first_dynamic_promotion,
+        adversarial_injection_risk: request.adversarial_injection_risk,
         would_cross_ship_gate: request.would_cross_ship_gate,
         modifies_below_threshold_cell: request.modifies_below_threshold_cell,
         heldout_global_delta: request.heldout_global_delta,
@@ -272,6 +284,7 @@ pub fn gate_dynamic_embedder_promotion(
         queued_promotion_id: Some(promotion_id),
         required_distinct_approvals,
         catastrophic_class,
+        adversarial_injection_risk: request.adversarial_injection_risk,
         block_reasons,
         source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS.to_string(),
         source_of_truth_key_hex: Some(hex::encode(key)),
@@ -491,8 +504,9 @@ fn required_dynamic_embedder_approvals(
     first_dynamic_promotion: bool,
     would_cross_ship_gate: bool,
     modifies_below_threshold_cell: bool,
+    adversarial_injection_risk: bool,
 ) -> u8 {
-    if would_cross_ship_gate || modifies_below_threshold_cell {
+    if would_cross_ship_gate || modifies_below_threshold_cell || adversarial_injection_risk {
         CATASTROPHIC_REQUIRED_DISTINCT_APPROVALS
     } else if first_dynamic_promotion {
         1
@@ -879,6 +893,40 @@ mod tests {
         );
     }
 
+    #[test]
+    fn adversarial_dynamic_embedder_risk_requires_operator_gate() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = HealRocksStore::open(temp.path().join("db")).unwrap();
+        let mut request = dynamic_request("edynamic:4:adversarial_risk_v1", false, false, false);
+        request.adversarial_injection_risk = true;
+        let decision = gate_dynamic_embedder_promotion(storage.as_ref(), request).unwrap();
+
+        assert!(!decision.may_promote_now);
+        assert!(decision.approval_required);
+        assert!(decision.adversarial_injection_risk);
+        assert!(decision.catastrophic_class);
+        assert_eq!(
+            decision.required_distinct_approvals,
+            CATASTROPHIC_REQUIRED_DISTINCT_APPROVALS
+        );
+        assert!(decision.queued_promotion_id.is_some());
+        let rows = pending_dynamic_embedder_promotions(storage.as_ref()).unwrap();
+        assert_eq!(rows.len(), 1);
+        let PendingPromotionKind::DynamicEmbedderPromotion {
+            adversarial_injection_risk,
+            required_distinct_approvals,
+            ..
+        } = &rows[0].kind
+        else {
+            panic!("expected dynamic embedder promotion row");
+        };
+        assert!(*adversarial_injection_risk);
+        assert_eq!(
+            *required_distinct_approvals,
+            CATASTROPHIC_REQUIRED_DISTINCT_APPROVALS
+        );
+    }
+
     fn dynamic_request(
         candidate_id_slug: &str,
         first_dynamic_promotion: bool,
@@ -893,6 +941,7 @@ mod tests {
             redundant_with_existing: false,
             within_vram_budget: true,
             first_dynamic_promotion,
+            adversarial_injection_risk: false,
             would_cross_ship_gate,
             modifies_below_threshold_cell,
             heldout_global_delta: 0.006,
