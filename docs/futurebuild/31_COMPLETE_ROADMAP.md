@@ -178,7 +178,7 @@ The Phase-I queue is **the new post-Phase-G work**. None blocks the 0.95 ship ga
 | EK.003 | `mejepa_mincut_panel` | TASK-EK-003 / #324 | substrate shipped (commit `35b270ec`) | absence-detection substrate |
 | EK.004 | Mechanism-conjecture surface | TASK-EK-004 / #325 | pending | Popperian witness loop |
 | EK.005 | Counterfactual under invariant | TASK-EK-005 / #326 | pending | Pearl Rung-3 |
-| EK.006 | Curiosity reward | TASK-EK-006 / #327 | pending | TASK-EK-018 priority queue input |
+| EK.006 | Curiosity reward | TASK-EK-006 / #327 | code/FSV-shipped | `curiosity_score`, ranked queue, telemetry, weekly table; TASK-EK-018 priority queue input |
 | EK.007 | Held-out failure-mode class falsification | TASK-EK-007 / #328 | pending | extended to also cover adversarial-embedder-injection per TASK-EK-018J |
 | EK.008 | AlphaEvolve bridge | TASK-EK-008 / #329 | pending | pattern reused by TASK-EK-018D for algorithmic-embedder synthesis |
 | EK.009 | Ontology-growth audit | TASK-EK-009 / #330 | pending | tracks TASK-EK-018 promotions as ontology growth |
@@ -278,7 +278,7 @@ These do not block the gate but their substrate is needed for TASK-EK-018. Sched
 6. **TASK-EK-003 / #324** (mincut panel) — substrate shipped commit `35b270ec`; MCP tool + CLI wiring + FSV pending. Effort: 3–5 days.
 7. **TASK-EK-016 / #339** (chunk foundationality scoring) — substrate exists (`crates/context-graph-solver/src/pagerank.rs`); wiring + FSV pending. Effort: 3–5 weeks.
 8. **TASK-EK-010 / #332** (north-star intent surface) — substrate shipped commit `6829983f`; MCP tool wiring + FSV pending. Effort: 2–3 weeks for full elicitation-mode coverage.
-9. **TASK-EK-006 / #327** (curiosity reward) — blocked by EK-001 publication. Effort: ~1 week once unblocked.
+9. **TASK-EK-006 / #327** (curiosity reward) — code/FSV-shipped; now available as a TASK-EK-018 priority-queue input. FSV `/mnt/d/contextgraph/fsv/task-ek-006-curiosity-fsv/curiosity_fsv.json` sha256 `cef7b6e576875fd1df8d92f849c4e4adf032ac6d834ac967e94b6eaddb30646f`.
 
 ### §6.3 — Tier 3 (Phase I apex: TASK-EK-018 atomic sub-issues)
 
