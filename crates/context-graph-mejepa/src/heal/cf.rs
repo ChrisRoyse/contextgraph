@@ -9,10 +9,11 @@ use crate::heal::drift::{DriftSample, DriftSeverity};
 use crate::heal::errors::HealError;
 
 pub use context_graph_mejepa_cf::{
-    CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_CALIBRATION_HISTORY, CF_MEJEPA_DISTILL_STEPS,
-    CF_MEJEPA_DRIFT_HISTORY, CF_MEJEPA_DRIFT_WINDOW, CF_MEJEPA_FISHER_SNAPSHOTS,
-    CF_MEJEPA_HEAL_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_PRODUCTION_TELEMETRY,
-    CF_MEJEPA_SHIFT_WATERMARK, CF_MEJEPA_TRAIN_CERTS, CF_MEJEPA_WEIGHT_BLOBS,
+    CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_CALIBRATION_HISTORY, CF_MEJEPA_CHUNK_DEPENDENCY_GRAPH,
+    CF_MEJEPA_CHUNK_FOUNDATIONALITY, CF_MEJEPA_DISTILL_STEPS, CF_MEJEPA_DRIFT_HISTORY,
+    CF_MEJEPA_DRIFT_WINDOW, CF_MEJEPA_FISHER_SNAPSHOTS, CF_MEJEPA_HEAL_REPORTS,
+    CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_PRODUCTION_TELEMETRY, CF_MEJEPA_SHIFT_WATERMARK,
+    CF_MEJEPA_TRAIN_CERTS, CF_MEJEPA_WEIGHT_BLOBS,
 };
 
 pub fn all_self_healing_cf_names() -> [&'static str; 7] {
@@ -32,6 +33,8 @@ pub fn all_referenced_cf_names() -> Vec<&'static str> {
         context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_LOG,
         context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
         context_graph_mejepa_cf::CF_MEJEPA_COLD_CELL_METRICS,
+        context_graph_mejepa_cf::CF_MEJEPA_CHUNK_DEPENDENCY_GRAPH,
+        context_graph_mejepa_cf::CF_MEJEPA_CHUNK_FOUNDATIONALITY,
     ] {
         if !names.contains(&cf) {
             names.push(cf);
@@ -259,9 +262,11 @@ mod tests {
         assert!(names.contains(&CF_MEJEPA_SHIFT_WATERMARK));
         assert!(names.contains(&CF_MEJEPA_MODEL_PROMOTIONS));
         assert!(names.contains(&context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_LOG));
+        assert!(names.contains(&CF_MEJEPA_CHUNK_DEPENDENCY_GRAPH));
+        assert!(names.contains(&CF_MEJEPA_CHUNK_FOUNDATIONALITY));
         assert_eq!(
             names.len(),
-            context_graph_mejepa_cf::SELF_HEALING_REFERENCED_CFS.len() + 8
+            context_graph_mejepa_cf::SELF_HEALING_REFERENCED_CFS.len() + 10
         );
     }
 }

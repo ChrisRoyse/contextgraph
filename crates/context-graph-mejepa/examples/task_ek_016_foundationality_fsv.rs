@@ -2,6 +2,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{ensure, Context, Result};
+use context_graph_mejepa::heal::{
+    consume_persisted_chunk_foundationality_fisher, list_foundationality_weighted_fisher_reports,
+    HealRocksStore, FOUNDATIONALITY_FISHER_MULTIPLIER_SOURCE,
+};
 use context_graph_mejepa::{
     apply_foundationality_fisher_multiplier, bedrock_consistency_for_chunks,
     compression_aggressiveness_from_foundationality, compute_chunk_foundationality, count_cf,
@@ -24,6 +28,7 @@ fn main() -> Result<()> {
     let run_root = PathBuf::from(FSV_ROOT).join(format!("run-{started_at_unix_ms}"));
     let db_path = run_root.join("infer-rocksdb");
     let source_db_path = run_root.join("python-source-rocksdb");
+    let production_fisher_db_path = run_root.join("production-fisher-rocksdb");
     let fsv_path = run_root.join("foundationality_fsv.json");
     let canonical_path = PathBuf::from(FSV_ROOT).join("foundationality_fsv.json");
     fs::create_dir_all(&run_root).context("create TASK-EK-016 FSV dir")?;
@@ -97,6 +102,46 @@ fn main() -> Result<()> {
     let core_compression =
         compression_aggressiveness_from_foundationality(top.foundationality_score)?;
     let leaf_compression = compression_aggressiveness_from_foundationality(leaf_score)?;
+
+    let production_fisher_store =
+        HealRocksStore::open(&production_fisher_db_path).context("open production Fisher store")?;
+    let fisher_foundationality_report = compute_chunk_foundationality(
+        &edges,
+        started_at_unix_ms,
+        ChunkFoundationalityConfig {
+            lambda_fisher: 2.0,
+            ..ChunkFoundationalityConfig::default()
+        },
+    )
+    .context("compute lambda_fisher=2 foundationality report")?;
+    let fisher_store_db = production_fisher_store.db();
+    persist_chunk_foundationality_report_sync_readback(
+        fisher_store_db.as_ref(),
+        &edges,
+        &fisher_foundationality_report,
+    )
+    .context("persist production Fisher foundationality rows")?;
+    let fisher_core = read_chunk_foundationality_score(fisher_store_db.as_ref(), "core:contract")?
+        .context("production Fisher core foundationality row")?;
+    let production_fisher_chunk_ids = vec!["core:contract".to_string(), low_chunk_id.clone()];
+    let production_fisher_readback = consume_persisted_chunk_foundationality_fisher(
+        production_fisher_store.as_ref(),
+        &production_fisher_chunk_ids,
+        &[2.0, 2.0],
+        fisher_foundationality_report.computed_at_unix_ms as u64,
+    )
+    .context("consume persisted chunk foundationality Fisher multipliers")?;
+    let production_fisher_reports =
+        list_foundationality_weighted_fisher_reports(production_fisher_store.as_ref())
+            .context("list production Fisher consumer reports")?;
+    let production_fisher_ok = production_fisher_readback.readback_matches
+        && production_fisher_reports == vec![production_fisher_readback.report.clone()]
+        && (fisher_core.fisher_multiplier - 3.0).abs() < 1e-6
+        && (production_fisher_readback.report.weighted_diagonal[0] - 6.0).abs() < 1e-6
+        && production_fisher_readback.report.multiplier_source
+            == FOUNDATIONALITY_FISHER_MULTIPLIER_SOURCE
+        && production_fisher_readback.report.source_foundationality_cf
+            == CF_MEJEPA_CHUNK_FOUNDATIONALITY;
 
     let python_sources = real_python_sources();
     let python_extraction =
@@ -185,6 +230,7 @@ fn main() -> Result<()> {
         && bedrock_ok
         && sampler_ok
         && fisher_ok
+        && production_fisher_ok
         && compression_ok
         && source_extractor_ok
         && disconnected_rejected;
@@ -200,6 +246,7 @@ fn main() -> Result<()> {
             "db_path": db_path,
             "fsv_path": fsv_path,
             "canonical_path": canonical_path,
+            "production_fisher_db_path": production_fisher_db_path,
             "inner_llm_invoked": false
         },
         "graph": {
@@ -244,7 +291,13 @@ fn main() -> Result<()> {
         "fisher": {
             "core_weighted": weighted_fisher,
             "leaf_weighted": leaf_fisher,
-            "fisher_ok": fisher_ok
+            "helper_fisher_ok": fisher_ok,
+            "production_consumer": {
+                "readback": production_fisher_readback,
+                "persisted_report_count": production_fisher_reports.len(),
+                "core_persisted_multiplier": fisher_core.fisher_multiplier,
+                "production_fisher_ok": production_fisher_ok
+            }
         },
         "compression": {
             "core_aggressiveness": core_compression,
@@ -256,7 +309,8 @@ fn main() -> Result<()> {
         },
         "checks": {
             "hierarchy_matches": hierarchy_matches,
-            "sampler_ok": sampler_ok
+            "sampler_ok": sampler_ok,
+            "production_fisher_ok": production_fisher_ok
         }
     });
     write_json_0600(&fsv_path, &evidence).context("write TASK-EK-016 run FSV JSON")?;
