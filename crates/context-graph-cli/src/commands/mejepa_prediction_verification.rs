@@ -853,14 +853,14 @@ mod tests {
             delta_kind: TestDeltaKind::PassToFail,
             confidence: 0.91,
             why: PredictedFailureMode {
-                failure_class: FailureModeClass::Behavior,
+                failure_class: FailureModeClass::WrongAlgorithm,
                 chunk: ChunkId(chunk.to_string()),
                 line_range: (1, 2),
                 confidence: 0.91,
                 severity: Severity::High,
                 explanation: "synthetic stop self-verify predicted failure".to_string(),
                 contributing_embedders: Vec::new(),
-                root_cause_class: RootCauseClass::LogicRegression,
+                root_cause_class: RootCauseClass::LogicError,
             },
         }
     }
@@ -1179,6 +1179,244 @@ mod tests {
                 }
             },
             "rows": rows
+        });
+        fs::write(&report_path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+        assert!(all_passed, "FSV report: {}", report_path.display());
+    }
+
+    #[test]
+    fn stop_self_verify_blocks_until_confirmed_or_refuted() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("infer-db");
+        let evidence_path = temp.path().join("events.jsonl");
+        let session_id = [0x66; 16];
+        let db = open_infer_rocksdb(&db_path).unwrap();
+        let store = RocksDbInferStore::new(db.clone());
+        store
+            .write_live_prediction(&prediction_with_verdict(
+                session_id,
+                [0x21; 16],
+                "src/stop_gate.py#fn#broken",
+                0.1,
+                Verdict::Fail,
+                vec![predicted_failed_test(
+                    "tests/test_stop_gate.py::test_broken",
+                    "src/stop_gate.py#fn#broken",
+                )],
+            ))
+            .unwrap();
+        drop(store);
+        drop(db);
+
+        let before = stop_self_verify(StopSelfVerifyArgs {
+            db_path: db_path.clone(),
+            session_id: hex::encode(session_id),
+            max_predictions: 50,
+        })
+        .unwrap();
+        assert!(before.block);
+        assert_eq!(before.unverified_count, 1);
+        assert_eq!(
+            before.recommended_commands,
+            vec!["pytest tests/test_stop_gate.py::test_broken -q".to_string()]
+        );
+
+        fs::write(
+            &evidence_path,
+            format!(
+                "{}\n",
+                event_json(
+                    session_id,
+                    "dddddddddddddddddddddddddddddddd",
+                    "pytest tests/test_stop_gate.py::test_broken -q",
+                    "tests/test_stop_gate.py::test_broken",
+                    "fail",
+                )
+            ),
+        )
+        .unwrap();
+        bind_test_outcomes(BindTestOutcomesArgs {
+            db_path: db_path.clone(),
+            events_jsonl: evidence_path.clone(),
+            evidence_path,
+            edited_files: vec!["src/stop_gate.py".to_string()],
+            ambiguous: false,
+            session_id: None,
+            tool_use_id: None,
+            command: None,
+            now_ms: Some(1_779_002_000_001),
+        })
+        .unwrap();
+
+        let after = stop_self_verify(StopSelfVerifyArgs {
+            db_path,
+            session_id: hex::encode(session_id),
+            max_predictions: 50,
+        })
+        .unwrap();
+        assert!(!after.block);
+        assert_eq!(after.unverified_count, 0);
+        assert_eq!(after.verified_prediction_count, 1);
+    }
+
+    #[test]
+    fn task_py_g_070_stop_self_verify_fsv() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("infer-db");
+        let evidence_path = temp.path().join("verified.jsonl");
+        let session_id = [0x70; 16];
+        let abstain_session_id = [0x71; 16];
+        let bulk_session_id = [0x72; 16];
+        let db = open_infer_rocksdb(&db_path).unwrap();
+        let store = RocksDbInferStore::new(db.clone());
+        store
+            .write_live_prediction(&prediction_with_verdict(
+                session_id,
+                [0x30; 16],
+                "src/stop_fsv.py#fn#broken",
+                0.1,
+                Verdict::Fail,
+                vec![predicted_failed_test(
+                    "tests/test_stop_fsv.py::test_broken",
+                    "src/stop_fsv.py#fn#broken",
+                )],
+            ))
+            .unwrap();
+        store
+            .write_live_prediction(&prediction_with_verdict(
+                abstain_session_id,
+                [0x31; 16],
+                "src/abstain.py#fn#x",
+                0.5,
+                Verdict::Abstain,
+                Vec::new(),
+            ))
+            .unwrap();
+        for idx in 1u8..=50 {
+            let test_id = format!("tests/test_bulk_{idx:02}.py::test_case_{idx:02}");
+            let chunk = format!("src/bulk_{idx:02}.py#fn#case");
+            store
+                .write_live_prediction(&prediction_with_verdict(
+                    bulk_session_id,
+                    [idx; 16],
+                    &chunk,
+                    0.1,
+                    Verdict::Fail,
+                    vec![predicted_failed_test(&test_id, &chunk)],
+                ))
+                .unwrap();
+        }
+        drop(store);
+        drop(db);
+
+        let blocked_before = stop_self_verify(StopSelfVerifyArgs {
+            db_path: db_path.clone(),
+            session_id: hex::encode(session_id),
+            max_predictions: 50,
+        })
+        .unwrap();
+        assert!(blocked_before.block);
+        assert_eq!(blocked_before.unverified_count, 1);
+
+        fs::write(
+            &evidence_path,
+            format!(
+                "{}\n",
+                event_json(
+                    session_id,
+                    "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                    "pytest tests/test_stop_fsv.py::test_broken -q",
+                    "tests/test_stop_fsv.py::test_broken",
+                    "fail",
+                )
+            ),
+        )
+        .unwrap();
+        let bind = bind_test_outcomes(BindTestOutcomesArgs {
+            db_path: db_path.clone(),
+            events_jsonl: evidence_path.clone(),
+            evidence_path: evidence_path.clone(),
+            edited_files: vec!["src/stop_fsv.py".to_string()],
+            ambiguous: false,
+            session_id: None,
+            tool_use_id: None,
+            command: None,
+            now_ms: Some(1_779_003_000_001),
+        })
+        .unwrap();
+
+        let allowed_after = stop_self_verify(StopSelfVerifyArgs {
+            db_path: db_path.clone(),
+            session_id: hex::encode(session_id),
+            max_predictions: 50,
+        })
+        .unwrap();
+        assert!(!allowed_after.block);
+        assert_eq!(allowed_after.unverified_count, 0);
+
+        let abstain = stop_self_verify(StopSelfVerifyArgs {
+            db_path: db_path.clone(),
+            session_id: hex::encode(abstain_session_id),
+            max_predictions: 50,
+        })
+        .unwrap();
+        assert!(!abstain.block);
+        assert_eq!(abstain.abstained_prediction_count, 1);
+
+        let bulk = stop_self_verify(StopSelfVerifyArgs {
+            db_path: db_path.clone(),
+            session_id: hex::encode(bulk_session_id),
+            max_predictions: 50,
+        })
+        .unwrap();
+        assert!(bulk.block);
+        assert_eq!(bulk.unverified_count, 50);
+        assert_eq!(bulk.unverified_predictions.len(), 50);
+        assert_eq!(bulk.recommended_commands.len(), 10);
+        assert_eq!(bulk.truncated_recommended_command_count, 40);
+
+        let all_passed = blocked_before.block
+            && blocked_before.unverified_count == 1
+            && bind.verifications_written == 1
+            && allowed_after.unverified_count == 0
+            && !allowed_after.block
+            && !abstain.block
+            && abstain.abstained_prediction_count == 1
+            && bulk.unverified_predictions.len() == 50
+            && bulk.recommended_commands.len() == 10
+            && bulk.truncated_recommended_command_count == 40;
+        let fsv_root = std::env::var("CONTEXTGRAPH_FSV_ROOT")
+            .unwrap_or_else(|_| "/mnt/d/contextgraph/fsv".to_string());
+        let fsv_dir = PathBuf::from(fsv_root)
+            .join("task-py-g-070-stop-self-verify-fsv")
+            .join(format!(
+                "run-{}-{}",
+                chrono::Utc::now().timestamp_millis(),
+                std::process::id()
+            ));
+        fs::create_dir_all(&fsv_dir).unwrap();
+        let report_path = fsv_dir.join("stop_self_verify_fsv.json");
+        let report = json!({
+            "task": "TASK-PY-G-070",
+            "issue": 289,
+            "all_passed": all_passed,
+            "source_of_truth": {
+                "db_path": db_path,
+                "live_prediction_cf": context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
+                "verification_cf": context_graph_mejepa_cf::CF_MEJEPA_PREDICTION_VERIFICATIONS,
+                "hook_log": "/mnt/d/contextgraph/runtime/stop-mejepa-self-verify.jsonl",
+                "fsv_path": report_path.display().to_string()
+            },
+            "cases": {
+                "fail_prediction_blocks_before_test": blocked_before,
+                "posttooluse_verification_row_written": {
+                    "verifications_written": bind.verifications_written,
+                    "agreements": bind.rows.iter().map(|row| row.agreement.clone()).collect::<Vec<_>>()
+                },
+                "same_prediction_allows_after_confirmed_verification": allowed_after,
+                "all_abstain_allows": abstain,
+                "fifty_unverified_lists_all_predictions_truncates_commands": bulk
+            }
         });
         fs::write(&report_path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
         assert!(all_passed, "FSV report: {}", report_path.display());
