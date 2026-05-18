@@ -14,6 +14,19 @@ use std::sync::Arc;
 
 pub trait PredictorForward {
     fn forward(&self, panel_t01: &Tensor) -> Result<Tensor, TrainerError>;
+
+    fn forward_with_options(
+        &self,
+        panel_t01: &Tensor,
+        _options: PredictorForwardOptions,
+    ) -> Result<Tensor, TrainerError> {
+        self.forward(panel_t01)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PredictorForwardOptions {
+    pub disable_action_conditioning: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -167,6 +180,30 @@ impl HoldoutEvaluator {
         is_final_step: bool,
         phase3_dod_min: f32,
     ) -> Result<HoldoutReport, TrainerError> {
+        self.evaluate_with_forward_options(
+            predictor,
+            oracle_head,
+            dataset,
+            calibration,
+            current_step,
+            is_final_step,
+            phase3_dod_min,
+            PredictorForwardOptions::default(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn evaluate_with_forward_options(
+        &self,
+        predictor: &dyn PredictorForward,
+        oracle_head: &dyn OracleHead,
+        dataset: &HoldoutDataset,
+        calibration: &CalibrationDataset,
+        current_step: u64,
+        is_final_step: bool,
+        phase3_dod_min: f32,
+        forward_options: PredictorForwardOptions,
+    ) -> Result<HoldoutReport, TrainerError> {
         if dataset.examples.is_empty() {
             return Err(TrainerError::new(
                 TrainerErrorCode::MejepaTrainConfigInvalid,
@@ -178,7 +215,7 @@ impl HoldoutEvaluator {
         let mut lang_predictions = Vec::new();
         let mut probability_vectors = Vec::new();
         for ex in &dataset.examples {
-            let latent = predictor.forward(&ex.panel_t01)?;
+            let latent = predictor.forward_with_options(&ex.panel_t01, forward_options)?;
             let prediction = oracle_head.predict(&latent)?;
             if prediction.pass_to_pass_resolved == ex.actual_oracle_pass {
                 correct += 1;
@@ -198,7 +235,7 @@ impl HoldoutEvaluator {
         let agreement = correct as f32 / dataset.examples.len() as f32;
         let per_cat = per_mutation_category_accuracy(&cat_predictions);
         let per_lang = per_language_accuracy(&lang_predictions);
-        let conformal = conformal_coverage(predictor, oracle_head, calibration)?;
+        let conformal = conformal_coverage(predictor, oracle_head, calibration, forward_options)?;
         let redundancy = pairwise_mi_audit(&probability_vectors)?;
         let warning = detect_generic_only_warning(&per_cat, &per_lang, GENERIC_ONLY_GAP_THRESHOLD);
         let report = HoldoutReport {
@@ -228,13 +265,15 @@ fn conformal_coverage(
     predictor: &dyn PredictorForward,
     oracle_head: &dyn OracleHead,
     calibration: &CalibrationDataset,
+    forward_options: PredictorForwardOptions,
 ) -> Result<f32, TrainerError> {
     if calibration.examples.is_empty() {
         return Ok(1.0);
     }
     let mut hits = 0u64;
     for ex in &calibration.examples {
-        let pred = oracle_head.predict(&predictor.forward(&ex.panel_t01)?)?;
+        let pred = oracle_head
+            .predict(&predictor.forward_with_options(&ex.panel_t01, forward_options)?)?;
         let actual_class = if ex.actual_oracle_pass {
             OracleClass::Pass
         } else {

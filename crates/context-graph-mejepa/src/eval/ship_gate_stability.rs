@@ -2,6 +2,10 @@ use rocksdb::IteratorMode;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use super::ablation::{
+    negative_action_ablation_gate_status, AblationReport, NegativeActionAblationGateStatus,
+    NEGATIVE_ACTION_ABLATION_BLOCKER,
+};
 use super::cell_exemptions::CellExemption;
 use super::error::{EvalError, EvalErrorCode};
 use super::store::{RocksDbEvalStore, CF_MEJEPA_EVAL_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS};
@@ -32,6 +36,8 @@ pub struct ShipGateStabilityStatus {
     pub model_promotion_reset_count: usize,
     pub latest_reset_reason: Option<String>,
     pub latest_reset_unix_ms: Option<i64>,
+    pub negative_action_ablation_ready: bool,
+    pub negative_action_ablation: NegativeActionAblationGateStatus,
 }
 
 pub fn ship_gate_stability_status(
@@ -72,9 +78,11 @@ pub fn ship_gate_stability_status_with_requirements(
     }
     let reports = load_eval_reports_chronological(store)?;
     let resets = load_model_promotion_reset_events(store)?;
+    let ablation_reports = store.load_ablation_reports_chronological()?;
     Ok(compute_ship_gate_stability(
         &reports,
         &resets,
+        &ablation_reports,
         required_consecutive_windows,
         correlation_threshold,
         cell_exemptions,
@@ -126,6 +134,7 @@ fn load_model_promotion_reset_events(
 fn compute_ship_gate_stability(
     reports: &[EvalReport],
     resets: &[ModelPromotionResetEvent],
+    ablation_reports: &[AblationReport],
     required_consecutive_windows: usize,
     correlation_threshold: f32,
     cell_exemptions: &BTreeMap<String, CellExemption>,
@@ -171,10 +180,39 @@ fn compute_ship_gate_stability(
         reset_idx += 1;
     }
 
+    let negative_action_ablation = negative_action_ablation_gate_status(ablation_reports)
+        .unwrap_or_else(|err| NegativeActionAblationGateStatus {
+            source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_ABLATION_REPORTS.to_string(),
+            ready: false,
+            latest_report_id: None,
+            latest_report_date: None,
+            latest_verdict: None,
+            effective_report_id: None,
+            effective_report_date: None,
+            effective_verdict: None,
+            effective_score_drop_pct: None,
+            blocker: Some(format!("{NEGATIVE_ACTION_ABLATION_BLOCKER}: {err}")),
+            warning: None,
+            incomplete_warning_count: 0,
+        });
+    if let Some(blocker) = &negative_action_ablation.blocker {
+        latest_reset_reason = Some(format!("negative_action_ablation:{blocker}"));
+        if let Some(timestamp_millis) = ablation_reports
+            .iter()
+            .rev()
+            .find(|report| report.verdict.blocks_ship_gate())
+            .map(|report| report.generated_at_unix_ms)
+        {
+            latest_reset_unix_ms = Some(timestamp_millis);
+        }
+    }
+    let ready = consecutive_passing_windows >= required_consecutive_windows
+        && negative_action_ablation.ready;
+
     ShipGateStabilityStatus {
         consecutive_passing_windows,
         required_consecutive_windows,
-        ready: consecutive_passing_windows >= required_consecutive_windows,
+        ready,
         latest_report_date,
         latest_report_passed_window,
         latest_report_correlation,
@@ -184,6 +222,8 @@ fn compute_ship_gate_stability(
         model_promotion_reset_count: resets.len(),
         latest_reset_reason,
         latest_reset_unix_ms,
+        negative_action_ablation_ready: negative_action_ablation.ready,
+        negative_action_ablation,
     }
 }
 
@@ -277,13 +317,13 @@ mod tests {
             report("2026-05-14", 2_000, 0.96, true),
             report("2026-05-15", 3_000, 0.96, true),
         ];
-        let status = compute_ship_gate_stability(&reports, &[], 4, 0.95, &BTreeMap::new());
+        let status = compute_ship_gate_stability(&reports, &[], &[], 4, 0.95, &BTreeMap::new());
         assert_eq!(status.consecutive_passing_windows, 3);
         assert!(!status.ready);
 
         let mut reports = reports;
         reports.push(report("2026-05-16", 4_000, 0.96, true));
-        let status = compute_ship_gate_stability(&reports, &[], 4, 0.95, &BTreeMap::new());
+        let status = compute_ship_gate_stability(&reports, &[], &[], 4, 0.95, &BTreeMap::new());
         assert_eq!(status.consecutive_passing_windows, 4);
         assert!(status.ready);
     }
@@ -295,7 +335,7 @@ mod tests {
             report("2026-05-14", 2_000, 0.96, true),
             report("2026-05-15", 3_000, 0.90, false),
         ];
-        let status = compute_ship_gate_stability(&reports, &[], 4, 0.95, &BTreeMap::new());
+        let status = compute_ship_gate_stability(&reports, &[], &[], 4, 0.95, &BTreeMap::new());
         assert_eq!(status.consecutive_passing_windows, 0);
         assert_eq!(
             status.latest_reset_reason,
@@ -310,7 +350,7 @@ mod tests {
             timestamp_millis: 3_000,
             key: "phase_e/per-cell-promotion/00000000000000003000".to_string(),
         }];
-        let status = compute_ship_gate_stability(&reports, &resets, 4, 0.95, &BTreeMap::new());
+        let status = compute_ship_gate_stability(&reports, &resets, &[], 4, 0.95, &BTreeMap::new());
         assert_eq!(status.consecutive_passing_windows, 0);
         assert_eq!(status.model_promotion_reset_count, 1);
         assert_eq!(
@@ -337,7 +377,7 @@ mod tests {
             },
         )]);
 
-        let status = compute_ship_gate_stability(&[report], &[], 1, 0.95, &exemptions);
+        let status = compute_ship_gate_stability(&[report], &[], &[], 1, 0.95, &exemptions);
         assert_eq!(status.consecutive_passing_windows, 1);
         assert!(status.ready);
         assert_eq!(status.latest_effective_correlation, Some(0.96));

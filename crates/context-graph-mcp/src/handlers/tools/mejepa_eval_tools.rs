@@ -7,7 +7,8 @@ use context_graph_mejepa::eval::{
     synthetic_patch_embeddings, validate_active_python_ship_gate_report, write_weekly_report,
     EvalConfig, EvalProvenance, EvalRunner, RocksDbEvalStore, ACTIVE_PYTHON_SHIP_GATE_CELL_COUNT,
     ACTIVE_PYTHON_SHIP_GATE_GRID, ACTIVE_PYTHON_SHIP_GATE_NAME,
-    FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER, SHIP_GATE_STABILITY_BLOCKER,
+    FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER, NEGATIVE_ACTION_ABLATION_BLOCKER,
+    SHIP_GATE_STABILITY_BLOCKER,
 };
 use context_graph_mejepa::{open_infer_rocksdb, ActiveLearningRankBy};
 use serde::Deserialize;
@@ -341,7 +342,7 @@ pub fn mejepa_ship_gate_status_payload_with_exemptions(
         context_graph_mejepa::eval::fingerprint_ship_gate_stability_status(&eval_store)?;
     let mut ship_gate_failures =
         context_graph_mejepa::eval::non_exempt_ship_gate_failures(&report, &cell_exemptions);
-    if !stability.ready
+    if stability.consecutive_passing_windows < stability.required_consecutive_windows
         && !ship_gate_failures
             .iter()
             .any(|failure| failure.starts_with(SHIP_GATE_STABILITY_BLOCKER))
@@ -350,6 +351,14 @@ pub fn mejepa_ship_gate_status_payload_with_exemptions(
             "{SHIP_GATE_STABILITY_BLOCKER}: consecutive_passing_windows={}/{}",
             stability.consecutive_passing_windows, stability.required_consecutive_windows
         ));
+    }
+    if let Some(blocker) = &stability.negative_action_ablation.blocker {
+        if !ship_gate_failures
+            .iter()
+            .any(|failure| failure.starts_with(NEGATIVE_ACTION_ABLATION_BLOCKER))
+        {
+            ship_gate_failures.push(blocker.clone());
+        }
     }
     let mut fingerprint_failures = fingerprint_stability.latest_failures.clone();
     if !fingerprint_stability.ready
@@ -381,6 +390,8 @@ pub fn mejepa_ship_gate_status_payload_with_exemptions(
         "shipGateFailures": ship_gate_failures,
         "fingerprintShipGate": fingerprint_stability,
         "fingerprintShipGateFailures": fingerprint_failures,
+        "negativeActionAblationGate": stability.negative_action_ablation,
+        "negativeActionAblationPassed": stability.negative_action_ablation_ready,
         "stabilityResetReason": stability.latest_reset_reason,
         "stabilityResetUnixMs": stability.latest_reset_unix_ms,
         "modelPromotionResetCount": stability.model_promotion_reset_count,
@@ -398,6 +409,7 @@ pub fn mejepa_ship_gate_status_payload_with_exemptions(
         "perPredictionClassCalibration": report.per_prediction_class_calibration.clone(),
         "perFailureModeClass": report.per_failure_mode_class.clone(),
         "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS",
+        "ablationSourceOfTruth": context_graph_mejepa_cf::CF_MEJEPA_ABLATION_REPORTS,
         "fingerprintSourceOfTruth": "CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS"
     }))
 }

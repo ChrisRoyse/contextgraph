@@ -1,3 +1,4 @@
+use super::ablation::{ablation_report_key, AblationReport};
 use super::error::{EvalError, EvalErrorCode};
 use super::fingerprint_ship_gate::{fingerprint_ship_gate_window_key, FingerprintShipGateWindow};
 use super::graph::PatchSimilarityGraph;
@@ -17,11 +18,12 @@ use serde::Serialize;
 use std::sync::Arc;
 
 pub use context_graph_mejepa_cf::{
-    CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
-    CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_CURIOSITY_TELEMETRY, CF_MEJEPA_EVAL_REPORTS,
-    CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS, CF_MEJEPA_MODEL_PROMOTIONS,
-    CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT, CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_PRODUCTION_TELEMETRY,
-    CF_MEJEPA_RESEARCH_QUESTIONS, CF_MEJEPA_TASK_GRAPH, CF_MEJEPA_TASK_GRAPH_HISTORY,
+    CF_MEJEPA_ABLATION_REPORTS, CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
+    CF_MEJEPA_ACTIVE_LEARNING_LABELS, CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+    CF_MEJEPA_CURIOSITY_TELEMETRY, CF_MEJEPA_EVAL_REPORTS, CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
+    CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT, CF_MEJEPA_OOD_ESCALATIONS,
+    CF_MEJEPA_PRODUCTION_TELEMETRY, CF_MEJEPA_RESEARCH_QUESTIONS, CF_MEJEPA_TASK_GRAPH,
+    CF_MEJEPA_TASK_GRAPH_HISTORY,
 };
 
 #[derive(Clone)]
@@ -124,6 +126,53 @@ impl RocksDbEvalStore {
         let report: EvalReport = bincode::deserialize(&value)?;
         report.validate()?;
         Ok(Some(report))
+    }
+
+    pub fn persist_ablation_report(&self, report: &AblationReport) -> Result<(), EvalError> {
+        report.validate()?;
+        let key = ablation_report_key(report);
+        self.put_readback_bin(CF_MEJEPA_ABLATION_REPORTS, &key, report)?;
+        let readback = self.load_ablation_report_by_key(&key)?.ok_or_else(|| {
+            EvalError::new(EvalErrorCode::ReportPersistFail, "missing ablation report")
+        })?;
+        if readback != *report {
+            return Err(EvalError::new(
+                EvalErrorCode::ReadbackMismatch,
+                "persisted ablation report differs from input",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn load_ablation_report_by_key(
+        &self,
+        key: &[u8],
+    ) -> Result<Option<AblationReport>, EvalError> {
+        let cf_handle = cf(&self.db, CF_MEJEPA_ABLATION_REPORTS).map_err(EvalError::from)?;
+        let Some(value) = self.db.get_cf(cf_handle, key)? else {
+            return Ok(None);
+        };
+        let report: AblationReport = bincode::deserialize(&value)?;
+        report.validate()?;
+        Ok(Some(report))
+    }
+
+    pub fn load_ablation_reports_chronological(&self) -> Result<Vec<AblationReport>, EvalError> {
+        let cf_handle = cf(&self.db, CF_MEJEPA_ABLATION_REPORTS).map_err(EvalError::from)?;
+        let mut reports = Vec::new();
+        for item in self.db.iterator_cf(cf_handle, IteratorMode::Start) {
+            let (_key, value) = item?;
+            let report: AblationReport = bincode::deserialize(&value)?;
+            report.validate()?;
+            reports.push(report);
+        }
+        reports.sort_by(|left, right| {
+            left.generated_at_unix_ms
+                .cmp(&right.generated_at_unix_ms)
+                .then_with(|| left.report_date.cmp(&right.report_date))
+                .then_with(|| left.report_id.cmp(&right.report_id))
+        });
+        Ok(reports)
     }
 
     pub fn persist_fingerprint_ship_gate_window(

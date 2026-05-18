@@ -135,5 +135,5 @@ pub struct EpochWitnessChain {
 pub use epoch_witness::{shake256_32, EpochWitnessReplay};
 pub use holdout::{
     CalibrationDataset, HoldoutDataset, HoldoutExample, OracleClass, OracleHead, OraclePrediction,
-    PredictorForward, TrainSplit,
+    PredictorForward, PredictorForwardOptions, TrainSplit,
 };

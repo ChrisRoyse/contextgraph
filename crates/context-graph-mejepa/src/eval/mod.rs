@@ -1,3 +1,4 @@
+pub mod ablation;
 pub mod cell_exemptions;
 pub mod convergence_tracker;
 pub mod error;
@@ -16,6 +17,15 @@ pub mod store;
 pub mod telemetry;
 pub mod types;
 
+pub use ablation::{
+    ablation_report_key, build_negative_action_ablation_report,
+    incomplete_negative_action_ablation_report, negative_action_ablation_gate_status,
+    render_ablation_weekly_markdown, write_ablation_weekly_markdown, AblationCellDrop,
+    AblationReport, AblationRunInput, AblationVerdict, NegativeActionAblationGateStatus,
+    ABLATION_INCOMPLETE, ABLATION_NUMERICAL_INSTABILITY, NEGATIVE_ACTION_ABLATION_BLOCKER,
+    NEGATIVE_ACTION_ABLATION_CELL_DROP_THRESHOLD_PCT,
+    NEGATIVE_ACTION_ABLATION_GLOBAL_DROP_THRESHOLD_PCT, NEGATIVE_ACTION_ABLATION_WARNING,
+};
 pub use cell_exemptions::{
     default_cell_exemptions_path, load_cell_exemptions, CellExemption, CellExemptionConfig,
     DEFAULT_CELL_EXEMPTIONS_PATH,

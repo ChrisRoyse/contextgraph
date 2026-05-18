@@ -100,6 +100,7 @@ libc = "0.2"
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.10"
+candle-core = { workspace = true }
 # Enable test-utils for stubs access in tests (AP-007 compliant)
 context-graph-core = { path = "../context-graph-core", features = ["test-utils"] }
 [features]

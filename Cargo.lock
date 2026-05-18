@@ -1135,6 +1135,7 @@ dependencies = [
  "async-trait",
  "axum",
  "bincode",
+ "candle-core",
  "chrono",
  "context-graph-cli",
  "context-graph-core",
