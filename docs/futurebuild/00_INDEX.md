@@ -14,7 +14,7 @@
 
 ---
 
-## North star invariant
+## Product Boundary Invariant
 
 ME-JEPA-Code is the product. LLM agents are untrusted edit producers; hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, and docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`.
 

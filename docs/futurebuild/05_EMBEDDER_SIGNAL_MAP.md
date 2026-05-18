@@ -12,7 +12,7 @@ Per `crates/context-graph-mejepa-embedders/`. Slots E5 and E11 are **retired** p
 
 | ID | Name | Dim | Family | Active for code? | Primary code-signal class |
 |---|---|---|---|---|---|
-| E1 | e5-large-v2 (general semantic) | 1024 | dense general-purpose | YES | semantic intent / docstring meaning |
+| E1 | e5-large-v2 (general semantic) | 1024 | dense general-purpose | YES | declared behavior / docstring meaning |
 | E2 | sinusoidal-time-PE | 512 | temporal positional | partial | recency of edit / git blame age |
 | E3 | recurrence-time-PE | 512 | temporal cycle | partial | within-day / within-week edit pattern |
 | E4 | session-position-PE | 512 | session ordering | partial | ordering of edits within agent session |
@@ -21,7 +21,7 @@ Per `crates/context-graph-mejepa-embedders/`. Slots E5 and E11 are **retired** p
 | E7 | Qodo-Embed (code-specific) | 1536 | dense code | YES | code semantics, function-level meaning, AST-token-aware |
 | E8 | E11-style graph-attention (code graph) | 1024 | graph | YES | call graph / def-use / control flow |
 | E9 | HDC (hyperdimensional) | 1024 | binary high-dim | YES | typo-robust, surface-form fingerprint |
-| E10 | multimodal-paraphrase (doc/query asymmetric) | 1024 | dense paraphrase | YES | comment / docstring / commit message intent |
+| E10 | multimodal-paraphrase (doc/query asymmetric) | 1024 | dense paraphrase | YES | comment / docstring / commit message stated behavior |
 | E11 | (KEPLER entity) | 768 | retired | **NO** | — |
 | E12 | ColBERT (token-level multi-vec) | 128/token | late-interaction | YES (selective) | fine-grained per-token matching for symbol resolution |
 | E13 | SPLADE (sparse expansion) | 30k sparse | sparse expansion | YES (sparse) | term expansion for keyword-based queries |
@@ -54,7 +54,7 @@ This is the "what would we lose if we dropped this embedder" section. Each row i
 | **E7** (Qodo-Embed code) | Captures *code semantics* with code-specific tokenization; the workhorse for code prediction | "this implementation matches a known buggy implementation pattern at 0.91 cosine to corpus exemplar `psf__requests-2317`" |
 | **E8** (graph-attention code graph) | Captures *call-graph / def-use / control-flow* structure; surfaces interface mismatches | "the new function calls `helper(a, b, c)` but `helper` expects `(b, c, a)` — signature shape mismatch" |
 | **E9** (HDC) | Captures *surface-form fingerprint*; robust to typos but sensitive to copy-paste duplication | "this 30-line block is a 0.97 surface-form match to a block in another file — duplicated code" |
-| **E10** (multimodal-paraphrase) | Captures *intent/documentation*; doc ↔ code alignment, commit-message ↔ diff alignment | "the commit message says 'fix off-by-one' but the diff shows a renaming — message-diff drift" |
+| **E10** (multimodal-paraphrase) | Captures *stated behavior/documentation*; doc ↔ code alignment, commit-message ↔ diff alignment | "the commit message says 'fix off-by-one' but the diff shows a renaming — message-diff drift" |
 | **E12** (ColBERT) | Captures *fine-grained per-token matching*; useful for symbol resolution and exact-substring queries | "the new code references `Model.coeff_` (with trailing underscore) but the class only has `coeff` — symbol resolution miss" |
 | **E13** (SPLADE) | Captures *term expansion*; broadens keyword search | "the new function uses `sklearn.linear_model` patterns; expansion finds 12 related calls in the file that may need updating" |
 | **E14** (semantic-code, ensemble diversity) | Captures *complementary code semantics* with different inductive bias than E7; the "second opinion" | "E7 says this is fine; E14 disagrees — pairwise cosine[E7][E14] = 0.62, blind-spot suspected" |
@@ -76,7 +76,7 @@ This is the "which embedders surface which failure" cross-reference. Reading dir
 | **SyntaxError** (Q3) | E_AST instrument (deterministic, parse-fail) — embedder-independent | parse failure in chunker is structurally caught before embedding |
 | **ResourceLeak / RaceCondition / DeadlockPotential** (Q3) | E8 (call graph) + E_StaticAnalysis instrument | analyzer signal dominates; E8 helps with cross-chunk leak |
 | **InfiniteLoop / StackOverflow** (Q3) | E8 (loop pattern) + E_CFG instrument | CFG instrument catches the loop topology |
-| **AssertionViolation / ContractViolation** (Q3) | E1 (intent) + E10 (doc/code paraphrase alignment) | contract is in the docstring; E1/E10 catch when impl drifts from contract |
+| **AssertionViolation / ContractViolation** (Q3) | E1 (doc semantics) + E10 (doc/code paraphrase alignment) | contract is in the docstring; E1/E10 catch when impl drifts from contract |
 | **EmptyInput / SingleElement / BoundaryValue** (Q4 edge case) | E_DataFlow instrument + symbolic-execution proxy + E8 | branch coverage diff is dominant; E8 helps locate the missing branch |
 | **UnicodeEdge / Locale / TimezoneTransition** (Q4 edge) | E1 + E10 (doc-level signal that the code handles or claims to handle this) + E_StaticAnalysis | weak per-language pattern catalogs feed scalar features |
 | **DeepNesting / ConcurrentAccess** (Q4 edge) | E_CFG + E8 | structural; CFG dominates |
