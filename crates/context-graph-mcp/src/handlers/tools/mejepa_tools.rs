@@ -32,8 +32,8 @@ use context_graph_mejepa::{
     FingerprintReference, InstrumentProposalConfig, InstrumentProposalDecision, LabelMethod,
     LatentActionCandidate, LatentActionSearchConfig, LibraryId, MeJepaInferConfig, MincutOptions,
     OracleOutcome, PanelGraphSource, PanelId, PatchBundle, PredictionId, ProjectIngestRequest,
-    RealityPrediction, RocksDbEvalStore, RocksDbInferStore, SurpriseEvent, SurpriseSeverity,
-    SystemCostCounters, TaskContext, TestId, VerifyVerdict, WitnessHash,
+    ProjectReportRequest, RealityPrediction, RocksDbEvalStore, RocksDbInferStore, SurpriseEvent,
+    SurpriseSeverity, SystemCostCounters, TaskContext, TestId, VerifyVerdict, WitnessHash,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
@@ -651,6 +651,34 @@ impl Handlers {
             }
         };
         match context_graph_mejepa::run_project_ingest(request) {
+            Ok(report) => self.tool_result(id, json!(report)),
+            Err(err) => self.tool_error_typed(
+                id,
+                ToolErrorKind::Execution,
+                &format!("{}: {err}", err.code()),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_project_report(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: ProjectReportRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_PROJECT_REPORT
+                    ),
+                );
+            }
+        };
+        match context_graph_mejepa::run_project_report(request) {
             Ok(report) => self.tool_result(id, json!(report)),
             Err(err) => self.tool_error_typed(
                 id,

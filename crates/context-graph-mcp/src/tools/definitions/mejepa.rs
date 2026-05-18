@@ -58,6 +58,31 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_PROJECT_REPORT,
+            "TASK-PY-G-064 reality-compiler report: read an ingested project's local CF_MEJEPA_LIVE_PREDICTIONS rows, render durable report.json/report.md under /mnt/d/contextgraph/projects/<project_id>/report/, persist CF_MEJEPA_PROJECT_REPORTS, and return the JSON report.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["projectId"],
+                "properties": {
+                    "projectId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 96,
+                        "pattern": "^(?!\\.)(?!.*\\.\\.)[A-Za-z0-9_.-]+$"
+                    },
+                    "section": {
+                        "type": "string",
+                        "enum": ["predictions"]
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_PREDICT_LATEST,
             "Read the latest persisted System 2 ME-JEPA RealityPrediction rows for a System 1 agent session from CF_MEJEPA_LIVE_PREDICTIONS.",
             json!({

@@ -34,6 +34,7 @@ pub fn resolve_alias(name: &str) -> &str {
         // Merged tools - backward compatibility
         "inject_context" => "store_memory",
         "mejepa_project_ingest" => crate::tools::names::MEJEPA_PROJECT_INGEST,
+        "mejepa_project_report" => crate::tools::names::MEJEPA_PROJECT_REPORT,
         other => other,
     }
 }
@@ -61,6 +62,14 @@ mod tests {
         assert_eq!(
             resolve_alias("mejepa_project_ingest"),
             crate::tools::names::MEJEPA_PROJECT_INGEST
+        );
+    }
+
+    #[test]
+    fn test_project_report_alias() {
+        assert_eq!(
+            resolve_alias("mejepa_project_report"),
+            crate::tools::names::MEJEPA_PROJECT_REPORT
         );
     }
 

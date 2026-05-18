@@ -441,6 +441,14 @@ pub fn project_prediction_live_key(
     key
 }
 
+pub fn project_prediction_created_at_unix_ms(
+    project_id: &str,
+    file_path: &str,
+    file_blake3: &str,
+) -> i64 {
+    stable_prediction_timestamp(project_id, file_path, file_blake3)
+}
+
 fn verify_retained_prediction_rows(
     db: &DB,
     project_id: &str,
@@ -780,14 +788,18 @@ fn is_binary(bytes: &[u8]) -> bool {
     !bytes.is_empty() && control * 100 / bytes.len() > 20
 }
 
-fn validate_project_id(value: &str) -> Result<String, ProjectIngestError> {
-    let valid = !value.is_empty()
+pub fn is_valid_project_id(value: &str) -> bool {
+    !value.is_empty()
         && value.len() <= 96
+        && value != "."
         && !value.contains("..")
         && value
             .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'));
-    if valid {
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+}
+
+fn validate_project_id(value: &str) -> Result<String, ProjectIngestError> {
+    if is_valid_project_id(value) {
         Ok(value.to_string())
     } else {
         Err(ProjectIngestError::InvalidProjectId {
