@@ -39,7 +39,6 @@ pub mod head_projection;
 pub mod heal;
 pub mod hierarchical;
 pub mod instrument_proposal;
-pub mod intent_north_star;
 pub mod label_transfer_audit;
 pub mod latent_search;
 pub mod learned_head_synthesis;
@@ -131,7 +130,6 @@ pub use grad_hook::{
 pub use head_projection::*;
 pub use hierarchical::*;
 pub use instrument_proposal::*;
-pub use intent_north_star::*;
 pub use label_transfer_audit::*;
 pub use latent_search::*;
 pub use learned_head_synthesis::*;

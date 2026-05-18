@@ -182,8 +182,8 @@ The Phase-I queue is **the new post-Phase-G work**. None blocks the 0.95 ship ga
 | EK.007 | Held-out failure-mode class falsification | TASK-EK-007 / #328 | pending | extended to also cover adversarial-embedder-injection per TASK-EK-018J |
 | EK.008 | AlphaEvolve bridge | TASK-EK-008 / #329 | pending | pattern reused by TASK-EK-018D for algorithmic-embedder synthesis |
 | EK.009 | Ontology-growth audit | TASK-EK-009 / #330 | pending | tracks TASK-EK-018 promotions as ontology growth |
-| EK.010 | `mejepa_elicit_intent` (north-star) | TASK-EK-010 / #332 | substrate shipped (commit `6829983f`) | construct 4 forward direction |
-| EK.011 | `mejepa_synthesise_goal` (destination inverse) | TASK-EK-011 / #333 | pending | construct 4 inverse direction |
+| EK.010 | Retired north-star / intent elicitation surface | TASK-EK-010 / #332 | retired by #358/#359 | not active; do not model, classify, synthesize, infer, or embed private human intention |
+| EK.011 | Retired destination-goal synthesis | TASK-EK-011 / #333 | retired by #358/#361 | not active; do not synthesize human goals |
 | EK.012 | Bidirectional corpus training | TASK-EK-012 / #334 | substrate shipped (commits `e4167cf0` + `e1ce10fa`) | highest-ROI Phase-G ship-gate experiment |
 | EK.013 | `mejepa_reverse_prediction` | TASK-EK-013 / #335 | pending | inverse verifier for AlphaEvolve priors |
 | EK.014 | Operator-contribution surface | TASK-EK-014 / #336 | pending | extended for embedder-review attribution per TASK-EK-018 |
@@ -283,8 +283,7 @@ These do not block the gate but their substrate is needed for TASK-EK-018. Sched
 
 6. **TASK-EK-003 / #324** (mincut panel) — substrate shipped commit `35b270ec`; MCP tool + CLI wiring + FSV pending. Effort: 3–5 days.
 7. **TASK-EK-016 / #339** (chunk foundationality scoring) — substrate exists (`crates/context-graph-solver/src/pagerank.rs`); wiring + FSV pending. Effort: 3–5 weeks.
-8. **TASK-EK-010 / #332** (north-star intent surface) — substrate shipped commit `6829983f`; MCP tool wiring + FSV pending. Effort: 2–3 weeks for full elicitation-mode coverage.
-9. **TASK-EK-006 / #327** (curiosity reward) — code/FSV-shipped; now available as a TASK-EK-018 priority-queue input. FSV `/mnt/d/contextgraph/fsv/task-ek-006-curiosity-fsv/curiosity_fsv.json` sha256 `cef7b6e576875fd1df8d92f849c4e4adf032ac6d834ac967e94b6eaddb30646f`.
+8. **TASK-EK-006 / #327** (curiosity reward) — code/FSV-shipped; now available as a TASK-EK-018 priority-queue input. FSV `/mnt/d/contextgraph/fsv/task-ek-006-curiosity-fsv/curiosity_fsv.json` sha256 `cef7b6e576875fd1df8d92f849c4e4adf032ac6d834ac967e94b6eaddb30646f`.
 
 ### §6.3 — Tier 3 (Phase I apex: TASK-EK-018 atomic sub-issues)
 
@@ -305,9 +304,8 @@ Filed under #341. Execute roughly in this order:
 19. **TASK-EK-007 / #328** (held-out failure-mode class falsification) — extends to TASK-EK-018J
 20. **TASK-EK-008 / #329** (AlphaEvolve bridge) — pattern reused by TASK-EK-018D
 21. **TASK-EK-009 / #330** (ontology-growth audit) — companion to TASK-EK-018 promotion audit
-22. **TASK-EK-011 / #333** (synthesise-goal destination inverse)
-23. **TASK-EK-013 / #335** (reverse-prediction)
-24. **TASK-EK-014 / #336** (operator-contribution surface)
+22. **TASK-EK-013 / #335** (reverse-prediction)
+23. **TASK-EK-014 / #336** (operator-contribution surface)
 25. **TASK-EK-015** (credibility-weighted operator override; file when EK-014 green)
 26. **TASK-EK-017 / #340** (library-level foundationality) — per-library deployment of TASK-EK-018
 27. **016-ext** (embedder-foundationality)

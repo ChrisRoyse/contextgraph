@@ -217,8 +217,6 @@ impl Handlers {
             tool_names::MEJEPA_PREDICT_WHAT_IF => call_mejepa_predict_what_if(arguments),
             tool_names::MEJEPA_SEARCH_LATENT_ACTIONS => call_mejepa_search_latent_actions(arguments),
             tool_names::MEJEPA_RANK_CANDIDATES => call_mejepa_rank_candidates(arguments),
-            tool_names::MEJEPA_ELICIT_INTENT => call_mejepa_elicit_intent(arguments),
-            tool_names::MEJEPA_ALIGN_TO_INTENT => call_mejepa_align_to_intent(arguments),
             tool_names::MEJEPA_MINCUT_PANEL => call_mejepa_mincut_panel(arguments),
             tool_names::MEJEPA_CHECK_BEDROCK_CONSISTENCY => call_mejepa_check_bedrock_consistency(arguments),
             tool_names::MEJEPA_LIBRARY_FOUNDATIONALITY => call_mejepa_library_foundationality(arguments),

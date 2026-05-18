@@ -106,10 +106,6 @@ pub const MEJEPA_PREDICT_WHAT_IF: &str = "mcp__cgreality__mejepa_predict_what_if
 pub const MEJEPA_SEARCH_LATENT_ACTIONS: &str = "mcp__cgreality__mejepa_search_latent_actions";
 /// Phase G counterfactual repair ranking across candidate patches.
 pub const MEJEPA_RANK_CANDIDATES: &str = "mcp__cgreality__mejepa_rank_candidates";
-/// TASK-EK-010 operator-specified north-star / teleological intent elicitation.
-pub const MEJEPA_ELICIT_INTENT: &str = "mcp__cgreality__mejepa_elicit_intent";
-/// TASK-EK-010 candidate alignment against a persisted or supplied north-star.
-pub const MEJEPA_ALIGN_TO_INTENT: &str = "mcp__cgreality__mejepa_align_to_intent";
 /// TASK-EK-003 structural-hole mincut panel over ME-JEPA embedder/constellation/fingerprint graphs.
 pub const MEJEPA_MINCUT_PANEL: &str = "mcp__cgreality__mejepa_mincut_panel";
 /// TASK-EK-016 bedrock consistency verifier over patch diffs and chunk foundationality scores.

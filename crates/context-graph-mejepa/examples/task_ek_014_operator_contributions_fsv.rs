@@ -71,21 +71,21 @@ fn main() -> Result<()> {
         .collect::<BTreeMap<_, _>>();
     let hundred_operator_counts_ok = hundred_operator_counts == expected_operator_counts;
 
-    let north_star_quality_score = operator_quality_score(&hundred_report, "operator-alpha")
+    let proposal_quality_score = operator_quality_score(&hundred_report, "operator-alpha")
         .context("operator-alpha quality score")?;
-    let north_star_linkage = hundred_report
+    let proposal_linkage = hundred_report
         .linked_outcomes
         .iter()
         .find(|outcome| outcome.contribution_id == "window-000")
         .cloned();
-    let downstream_outcome_ok = north_star_linkage
+    let downstream_outcome_ok = proposal_linkage
         .as_ref()
         .map(|outcome| {
             outcome.outcome_kind == "CP_Phi"
-                && outcome.event_kind == "NorthStarDefined"
+                && outcome.event_kind == "ProposalAccepted"
                 && outcome.delta_value > 0.0
                 && outcome.quality_score >= 0.90
-                && north_star_quality_score > 0.0
+                && proposal_quality_score > 0.0
         })
         .unwrap_or(false);
 
@@ -137,7 +137,7 @@ fn main() -> Result<()> {
             "inner_llm_invoked": false
         },
         "sot_cases": {
-            "all_8_event_kinds_x_3_operators_identical_readback": {
+            "all_6_event_kinds_x_3_operators_identical_readback": {
                 "passed": coverage_readback_identical,
                 "event_kind_count": OperatorContributionEventKind::all().len(),
                 "operator_count": 3,
@@ -152,8 +152,8 @@ fn main() -> Result<()> {
             },
             "downstream_outcome_linkage_and_quality_score": {
                 "passed": downstream_outcome_ok,
-                "linked_outcome": north_star_linkage,
-                "operator_alpha_quality_score": north_star_quality_score
+                "linked_outcome": proposal_linkage,
+                "operator_alpha_quality_score": proposal_quality_score
             },
             "four_week_burn_in_migration_rate_trend": {
                 "passed": burn_in_trend_ok,
@@ -308,7 +308,7 @@ fn expected_hundred_event_distribution() -> BTreeMap<String, usize> {
         .into_iter()
         .enumerate()
         .map(|(idx, kind)| {
-            let expected = if idx < 4 { 13 } else { 12 };
+            let expected = if idx < 4 { 17 } else { 16 };
             (kind.as_str().to_string(), expected)
         })
         .collect()

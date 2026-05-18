@@ -809,8 +809,8 @@ fn reward_signal_definition_table() -> Vec<SignalDefinition> {
         ),
         signal!(
             7,
-            "operator_goal_embedding",
-            "UserPromptSubmit history",
+            "prompt_history_session_context",
+            "E_LiveSession",
             "CF_MEJEPA_LIVE_SESSION_SIGNALS",
             [CF_MEJEPA_LIVE_SESSION_SIGNALS]
         ),

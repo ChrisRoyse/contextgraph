@@ -87,7 +87,7 @@ pub const CF_MEJEPA_DEP_CVE_SIGNALS: &str = "CF_MEJEPA_DEP_CVE_SIGNALS";
 pub const CF_MEJEPA_TYPE_GRAPH_SIGNALS: &str = "CF_MEJEPA_TYPE_GRAPH_SIGNALS";
 // TASK-RWD-206 — runtime telemetry prediction labels and symbol profiles.
 pub const CF_MEJEPA_TELEMETRY_SIGNALS: &str = "CF_MEJEPA_TELEMETRY_SIGNALS";
-// TASK-RWD-207 — live-session state and operator-goal embedding rows.
+// TASK-RWD-207 — live-session state rows.
 pub const CF_MEJEPA_LIVE_SESSION_SIGNALS: &str = "CF_MEJEPA_LIVE_SESSION_SIGNALS";
 // TASK-RWD-315 — fail-closed signal-drop events for reward-signal auditability.
 pub const CF_MEJEPA_SIGNAL_DROP_LOG: &str = "CF_MEJEPA_SIGNAL_DROP_LOG";
@@ -96,8 +96,6 @@ pub const CF_MEJEPA_REPLAY_BUFFER: &str = "CF_MEJEPA_REPLAY_BUFFER";
 // TASK-RWD-211 / TASK-PY-G-067 — accepted/refuted system-proposed
 // constellation/fingerprint growth rows from the novel-pattern gate.
 pub const CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT: &str = "CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT";
-// TASK-EK-010 — operator-specified north-star / teleological intent vectors.
-pub const CF_MEJEPA_NORTH_STARS: &str = "CF_MEJEPA_NORTH_STARS";
 // TASK-EK-003 — structural-hole mincut reports over ME-JEPA panel graphs.
 pub const CF_MEJEPA_MINCUT_REPORTS: &str = "CF_MEJEPA_MINCUT_REPORTS";
 // TASK-PY-G-007 — durable pairwise-MI matrix rows for embedder-panel audits.
@@ -181,7 +179,6 @@ pub const REWARD_SIGNAL_CFS: &[&str] = &[
 ];
 
 pub const EXPLANATORY_KNOWLEDGE_CFS: &[&str] = &[
-    CF_MEJEPA_NORTH_STARS,
     CF_MEJEPA_MINCUT_REPORTS,
     CF_MEJEPA_PAIRWISE_MI,
     CF_MEJEPA_PATCH_SIMILARITY_META,
@@ -280,7 +277,6 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_SIGNAL_DROP_LOG,
     CF_MEJEPA_REPLAY_BUFFER,
     CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
-    CF_MEJEPA_NORTH_STARS,
     CF_MEJEPA_MINCUT_REPORTS,
     CF_MEJEPA_PAIRWISE_MI,
     CF_MEJEPA_PATCH_SIMILARITY_META,
@@ -335,7 +331,6 @@ pub const EVAL_CFS: &[&str] = &[
     CF_MEJEPA_SIGNAL_DROP_LOG,
     CF_MEJEPA_REPLAY_BUFFER,
     CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
-    CF_MEJEPA_NORTH_STARS,
     CF_MEJEPA_MINCUT_REPORTS,
     CF_MEJEPA_PAIRWISE_MI,
     CF_MEJEPA_PATCH_SIMILARITY_META,
@@ -406,7 +401,6 @@ pub const HYGIENE_CFS: &[&str] = &[
     CF_MEJEPA_LIVE_SESSION_SIGNALS,
     CF_MEJEPA_SIGNAL_DROP_LOG,
     CF_MEJEPA_REPLAY_BUFFER,
-    CF_MEJEPA_NORTH_STARS,
     CF_MEJEPA_MINCUT_REPORTS,
     CF_MEJEPA_PAIRWISE_MI,
     CF_MEJEPA_PATCH_SIMILARITY_META,
@@ -500,7 +494,6 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_SIGNAL_DROP_LOG,
     CF_MEJEPA_REPLAY_BUFFER,
     CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
-    CF_MEJEPA_NORTH_STARS,
     CF_MEJEPA_MINCUT_REPORTS,
     CF_MEJEPA_PAIRWISE_MI,
     CF_MEJEPA_PATCH_SIMILARITY_META,
@@ -643,7 +636,6 @@ mod tests {
             CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
             "CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT"
         );
-        assert_eq!(CF_MEJEPA_NORTH_STARS, "CF_MEJEPA_NORTH_STARS");
         assert_eq!(CF_MEJEPA_MINCUT_REPORTS, "CF_MEJEPA_MINCUT_REPORTS");
         assert_eq!(CF_MEJEPA_PAIRWISE_MI, "CF_MEJEPA_PAIRWISE_MI");
         assert_eq!(

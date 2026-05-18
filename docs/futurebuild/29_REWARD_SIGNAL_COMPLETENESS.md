@@ -98,7 +98,7 @@ Without explicit completeness tracking, the system silently leaves signal on the
 | Signal | Source | Status |
 |---|---|---|
 | Session state (prior verdicts, prior overrides in this session) | `E_LiveSession` | ✅ TASK-RWD-207 |
-| Operator goal embedding (from UserPromptSubmit history) | `E_LiveSession` | ✅ TASK-RWD-207 |
+| Prompt/session context (UserPromptSubmit transcript hash + dominant prompt terms) | `E_LiveSession` | ✅ TASK-RWD-207; corrected by #360 to avoid goal/intent embedding |
 | Agent claim graph + reconciliation | deterministic Q1 parser + bytes-on-disk/AST readback | ✅ shipped (#260 / TASK-PY-G-041), persisted in `CF_MEJEPA_CLAIM_RECONCILIATION` |
 | Active-learning queue entries (Unknown OOD candidates) | `CF_MEJEPA_ACTIVE_LEARNING_QUEUE` | 🟡 partial (CLI shipped, full lifecycle pending) |
 | Prediction-vs-actual reconciliation | `CF_MEJEPA_PREDICTION_VERIFICATIONS` | ✅ shipped (#288 / TASK-PY-G-069) |
@@ -129,7 +129,7 @@ Without explicit completeness tracking, the system silently leaves signal on the
 | TASK-RWD-204 | `E_SecuritySignals` instrument (auth / input-sanitization / secret patterns) | 4 | ✅ complete (#265) | Bandit/Semgrep CLI |
 | TASK-RWD-205 | `E_TypeGraph` full instrument (call-site type evidence) | 3 | ✅ complete | Ruff semantic analyzer + static-analysis infrastructure |
 | TASK-RWD-206 | `E_Telemetry` instrument (latency / VRAM / cost prediction features) | 5 | ✅ complete | runtime profiler integration |
-| TASK-RWD-207 | `E_LiveSession` instrument (session state + operator-goal embedding) | 7 | ✅ complete | UserPromptSubmit history persistence |
+| TASK-RWD-207 | `E_LiveSession` instrument (session state + prompt/session context) | 7 | ✅ complete; corrected by #360 | UserPromptSubmit history persistence without goal/intent embedding |
 | TASK-RWD-208 | Static-analysis (mypy + pyright + ruff) reward signal | 4 | ✅ complete (#293) | mypy/pyright/ruff CLI |
 | TASK-RWD-209 | Coverage + churn + complexity + doc + dep-CVE reward | 4 | ✅ complete (#294) | git blame/log input + local CVE feed |
 | TASK-RWD-210 | Prioritised replay buffer for M(t) consolidation | 7 | ✅ complete (#287) | `CF_MEJEPA_REPLAY_BUFFER` schema |
@@ -156,7 +156,7 @@ All TASK-RWD files follow `prdtospec.md` Level-4 atomic-task format and the FSV 
 
 **2026-05-17 TASK-RWD-206 completion:** `E_Telemetry` is code/FSV-shipped in `context-graph-mejepa-instruments::telemetry_signals`. It derives deterministic before/after Python runtime side-effect features from source shape plus profiler symbol observations, then persists predicted latency, VRAM, cost deltas, per-symbol call-frequency rows, and Big-O shift labels to `CF_MEJEPA_TELEMETRY_SIGNALS`. Raw artifacts write/read back under `/mnt/d/contextgraph/corpus/python-telemetry-signals-v1/<row_id>/telemetry.json`, and the label feeds the existing `E_Runtime` panel slot. FSV: `/mnt/d/contextgraph/fsv/task-rwd-206-telemetry-fsv/run-1779055248001/telemetry_fsv.json` sha256 `9006bdcc1e5376e39e2ecddccc8c3b78061f2bb18eee7b9956a196694a753016` (`all_passed=true`, O(n) to O(n^2) Big-O regression, latency delta `+111 ms`, VRAM delta `+2103680 bytes`, cost delta `+50 micro-usd`, 901 observed after-calls, hot symbol `score_pair`, raw-output readback, reopened CF label equality, and six fail-closed/static-only edge cases).
 
-**2026-05-17 TASK-RWD-207 completion:** `E_LiveSession` is code/FSV-shipped in `context-graph-mejepa-instruments::live_session_signals`. `UserPromptSubmit` history is encoded through the existing `E_Reasoning` slot as an operator-goal embedding, while prior verdicts and operator overrides are captured as durable live-session state rows in `CF_MEJEPA_LIVE_SESSION_SIGNALS`. Raw artifacts write/read back under `/mnt/d/contextgraph/corpus/python-live-session-signals-v1/<row_id>/live_session.json`. FSV: `/mnt/d/contextgraph/fsv/task-rwd-207-live-session-fsv/run-1779055666755/live_session_fsv.json` sha256 `5303b57211152666d147e662fb708f5b5d37642f38e7036b73f442341af66516` (`all_passed=true`, 2 prompt events, 384-d goal embedding, 4 prior verdict rows, 3 operator override rows, refuted override fraction `0.33333334`, dominant goal terms, raw-output readback, reopened CF label equality, and seven fail-closed/minimal-session edge cases).
+**2026-05-17 TASK-RWD-207 completion; corrected 2026-05-18 by #360:** `E_LiveSession` is code/FSV-shipped in `context-graph-mejepa-instruments::live_session_signals`. `UserPromptSubmit` history is retained as observable prompt/session context: prompt transcript SHA-256, dominant prompt terms, prior verdict rows, and operator override rows in `CF_MEJEPA_LIVE_SESSION_SIGNALS`. It does not encode, infer, classify, or embed operator goals or private intent. Raw artifacts write/read back under `/mnt/d/contextgraph/corpus/python-live-session-signals-v1/<row_id>/live_session.json`.
 
 **2026-05-17 TASK-RWD-208 completion:** Static-analysis reward labels are code/FSV-shipped in `context-graph-mejepa-instruments` as a fail-closed `mypy`/`pyright`/`ruff` runner plus deterministic mypy text, pyright JSON, and ruff JSON normalization into `StaticAnalysisLabel` records persisted to `CF_MEJEPA_STATIC_ANALYSIS_SIGNALS`. Raw analyzer output wrappers are written under `/mnt/d/contextgraph/corpus/python-static-analysis-v1/<row_id>/{mypy.json,pyright.json,ruff.json}`, labels feed the existing `E_StaticAnalysis` panel slot, and runtime/toolchain failures produce fail-closed quarantine records such as `STATIC_ANALYSIS_RUNTIME_EXCEEDED`. The Python label toolchain gate now includes `mypy` alongside `ruff`, `pyright`, and `python3`. FSV: `/mnt/d/contextgraph/fsv/task-py-g-074-static-analysis-fsv/run-1779045296443/static_analysis_fsv.json` sha256 `16c9ee15273c9df3d5bc03a9bfd7d46113d58266f49fa7af571b3f5f031624b0` (`all_passed=true`, deterministic PATH-shim CLI execution, 3 happy-path labels, CF read-after-write + reopen readback, raw-output readback, `E_StaticAnalysis` vector hash `afcc6587bbfdf9646fa44e31ccc4cc893d4ac61b47b0f8346671fd816f277ffa`, type-ignore and pyright-ignore respected, ruff/pyright disagreement persisted, runtime-exceeded quarantine persisted, malformed pyright JSON fails closed).
 
@@ -176,11 +176,11 @@ All TASK-RWD files follow `prdtospec.md` Level-4 atomic-task format and the FSV 
 
 ## §4 — Mapping to teleological constellation chain
 
-Per the operator's framing (and LeCun's emphasis), teleological constellations are intent-linked chains. Each arrow in the chain is one or more reward signals from §2:
+Per #358, reward-signal chains must stay grounded in observable code-reality events rather than inferred human intent. Each arrow in the chain is one or more reward signals from §2:
 
 | Chain arrow | Reward signal(s) | Tier |
 |---|---|---|
-| Operator goal | UserPromptSubmit text embedding | 7 (TASK-RWD-207) |
+| Observable prompt/session context | UserPromptSubmit transcript hash, dominant prompt terms, prior verdicts, and overrides | 7 (TASK-RWD-207) |
 | Agent claim | Atomic-claim parser output plus `CF_MEJEPA_CLAIM_RECONCILIATION` readback (Q1 head input) | 7 |
 | Edit event | Pre/Post SHA + AST diff (E_AST + E_Witness) | 3 + 8 |
 | AST delta | Typed structural delta (`python_diff_chunk_map`) | 3 |

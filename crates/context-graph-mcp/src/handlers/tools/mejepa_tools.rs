@@ -19,20 +19,18 @@ use context_graph_mejepa::operator_override::{
     persist_operator_override, OperatorOverride, OverrideVerdict,
 };
 use context_graph_mejepa::{
-    align_to_intent, bedrock_consistency_for_patch_diff, build_deterministic_compiler,
-    elicit_intent, mejepa_mincut_panel, open_infer_rocksdb, open_mincut_rocksdb,
-    operator_contribution_report_from_db, promote_instrument_proposal,
-    propose_embedder_proposals_from_db, propose_instruments_from_db,
+    bedrock_consistency_for_patch_diff, build_deterministic_compiler, mejepa_mincut_panel,
+    open_infer_rocksdb, open_mincut_rocksdb, operator_contribution_report_from_db,
+    promote_instrument_proposal, propose_embedder_proposals_from_db, propose_instruments_from_db,
     rank_counterfactual_candidates, read_embedder_proposals, read_instrument_proposal,
     read_instrument_proposals, read_library_foundationality_report, read_mincut_report,
-    read_north_star, render_operator_contributions_weekly_section, search_latent_actions,
+    render_operator_contributions_weekly_section, search_latent_actions,
     write_embedder_proposals_sync_readback, write_instrument_proposals_sync_readback,
-    write_mincut_report_sync_readback, write_north_star_sync_readback, ActiveLearningQueueState,
-    ActualOutcome, AgentId, CalibrationStore, ChunkId, CounterfactualCandidateRankingConfig,
-    DdaSignals, ElicitationOptions, EmbedderProposalConfig, FailedGate, FeedbackId, FeedbackKind,
-    FingerprintId, FingerprintReference, InstrumentProposalConfig, InstrumentProposalDecision,
-    IntentCandidate, IntentSpecification, LabelMethod, LatentActionCandidate,
-    LatentActionSearchConfig, LibraryId, MeJepaInferConfig, MincutOptions, NorthStarVector,
+    write_mincut_report_sync_readback, ActiveLearningQueueState, ActualOutcome, AgentId,
+    CalibrationStore, ChunkId, CounterfactualCandidateRankingConfig, DdaSignals,
+    EmbedderProposalConfig, FailedGate, FeedbackId, FeedbackKind, FingerprintId,
+    FingerprintReference, InstrumentProposalConfig, InstrumentProposalDecision, LabelMethod,
+    LatentActionCandidate, LatentActionSearchConfig, LibraryId, MeJepaInferConfig, MincutOptions,
     OracleOutcome, PanelGraphSource, PanelId, PatchBundle, PredictionId, RealityPrediction,
     RocksDbEvalStore, RocksDbInferStore, SurpriseEvent, SurpriseSeverity, SystemCostCounters,
     TaskContext, TestId, VerifyVerdict, WitnessHash,
@@ -43,9 +41,8 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_CHUNK_FOUNDATIONALITY, CF_MEJEPA_CROSS_LIBRARY_REFERENCES, CF_MEJEPA_DDA_SIGNALS,
     CF_MEJEPA_EMBEDDER_PROPOSALS, CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_INSTRUMENT_PROPOSALS,
     CF_MEJEPA_LIBRARY_FOUNDATIONALITY, CF_MEJEPA_LIBRARY_REGISTRY, CF_MEJEPA_LIVE_PREDICTIONS,
-    CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_NORTH_STARS,
-    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_CONTRIBUTIONS, CF_MEJEPA_OPERATOR_OVERRIDES,
-    CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_OOD_ESCALATIONS,
+    CF_MEJEPA_OPERATOR_CONTRIBUTIONS, CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
@@ -124,30 +121,6 @@ struct RankCandidatesRequest {
     candidates: Vec<LatentActionCandidate>,
     #[serde(default)]
     config: CounterfactualCandidateRankingConfig,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ElicitIntentRequest {
-    spec: IntentSpecification,
-    #[serde(default)]
-    options: ElicitationOptions,
-    #[serde(default)]
-    db_path: Option<PathBuf>,
-    #[serde(default = "default_persist_north_star")]
-    persist: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct AlignToIntentRequest {
-    candidate: IntentCandidate,
-    #[serde(default)]
-    north_star: Option<NorthStarVector>,
-    #[serde(default)]
-    north_star_id: Option<String>,
-    #[serde(default)]
-    db_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -397,10 +370,6 @@ fn default_two_person_rule() -> bool {
 }
 
 fn default_include_vram() -> bool {
-    true
-}
-
-fn default_persist_north_star() -> bool {
     true
 }
 
@@ -801,76 +770,6 @@ impl Handlers {
                 "MEJEPA_RANK_CANDIDATES_FAILED",
                 &err.to_string(),
                 json!({"dbPath": db_path}),
-            ),
-        }
-    }
-
-    pub(crate) async fn call_mejepa_elicit_intent(
-        &self,
-        id: Option<JsonRpcId>,
-        args: serde_json::Value,
-    ) -> JsonRpcResponse {
-        let request: ElicitIntentRequest = match serde_json::from_value(args) {
-            Ok(value) => value,
-            Err(err) => {
-                return self.tool_error_typed(
-                    id,
-                    ToolErrorKind::Validation,
-                    &format!(
-                        "{} schema validation failed: {err}",
-                        tool_names::MEJEPA_ELICIT_INTENT
-                    ),
-                );
-            }
-        };
-        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
-            Ok(path) => path,
-            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
-        };
-        let result = run_elicit_intent(&db_path, request);
-        match result {
-            Ok(value) => self.tool_result(id, value),
-            Err(err) => self.tool_error_structured(
-                id,
-                ToolErrorKind::Execution,
-                "MEJEPA_ELICIT_INTENT_FAILED",
-                &err.to_string(),
-                json!({"dbPath": db_path, "northStarCf": CF_MEJEPA_NORTH_STARS}),
-            ),
-        }
-    }
-
-    pub(crate) async fn call_mejepa_align_to_intent(
-        &self,
-        id: Option<JsonRpcId>,
-        args: serde_json::Value,
-    ) -> JsonRpcResponse {
-        let request: AlignToIntentRequest = match serde_json::from_value(args) {
-            Ok(value) => value,
-            Err(err) => {
-                return self.tool_error_typed(
-                    id,
-                    ToolErrorKind::Validation,
-                    &format!(
-                        "{} schema validation failed: {err}",
-                        tool_names::MEJEPA_ALIGN_TO_INTENT
-                    ),
-                );
-            }
-        };
-        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
-            Ok(path) => path,
-            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
-        };
-        let result = run_align_to_intent(&db_path, request);
-        match result {
-            Ok(value) => self.tool_result(id, value),
-            Err(err) => self.tool_error_structured(
-                id,
-                ToolErrorKind::Execution,
-                "MEJEPA_ALIGN_TO_INTENT_FAILED",
-                &err.to_string(),
-                json!({"dbPath": db_path, "northStarCf": CF_MEJEPA_NORTH_STARS}),
             ),
         }
     }
@@ -2256,72 +2155,6 @@ fn run_rank_candidates(db_path: &Path, request: RankCandidatesRequest) -> Anyhow
             "latentSearchBackend": true,
             "objectiveSafetyApplied": true,
             "tool": tool_names::MEJEPA_RANK_CANDIDATES
-        }
-    }))
-}
-
-fn run_elicit_intent(db_path: &Path, request: ElicitIntentRequest) -> AnyhowResult<Value> {
-    let created_at_unix_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system clock before UNIX epoch")?
-        .as_millis() as i64;
-    let north_star = elicit_intent(request.spec, request.options, created_at_unix_ms)
-        .context("elicit north-star intent")?;
-    let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
-    if request.persist {
-        write_north_star_sync_readback(db.as_ref(), &north_star)
-            .context("persist north-star vector")?;
-    }
-    let persisted_readback_equal = if request.persist {
-        let readback = read_north_star(db.as_ref(), &north_star.intent_id)
-            .context("read persisted north-star")?
-            .ok_or_else(|| anyhow!("north-star row missing after write"))?;
-        readback == north_star
-    } else {
-        false
-    };
-    Ok(json!({
-        "northStar": north_star,
-        "persistedReadbackEqual": persisted_readback_equal,
-        "sourceOfTruth": {
-            "dbPath": db_path.display().to_string(),
-            "northStarCf": CF_MEJEPA_NORTH_STARS,
-            "persisted": request.persist,
-            "tool": tool_names::MEJEPA_ELICIT_INTENT,
-            "innerLlmInvoked": false
-        }
-    }))
-}
-
-fn run_align_to_intent(db_path: &Path, request: AlignToIntentRequest) -> AnyhowResult<Value> {
-    let has_inline = request.north_star.is_some();
-    let has_id = request.north_star_id.is_some();
-    if has_inline == has_id {
-        bail!("exactly one of northStar or northStarId must be supplied");
-    }
-    let mut loaded_from_cf = false;
-    let north_star = match (request.north_star, request.north_star_id) {
-        (Some(north_star), None) => north_star,
-        (None, Some(intent_id)) => {
-            let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
-            loaded_from_cf = true;
-            read_north_star(db.as_ref(), &intent_id)
-                .context("read persisted north-star")?
-                .ok_or_else(|| {
-                    anyhow!("north-star id {intent_id} not found in {CF_MEJEPA_NORTH_STARS}")
-                })?
-        }
-        _ => unreachable!("exclusive request shape checked above"),
-    };
-    let report = align_to_intent(&north_star, request.candidate).context("align to north-star")?;
-    Ok(json!({
-        "alignment": report,
-        "northStarId": north_star.intent_id,
-        "sourceOfTruth": {
-            "dbPath": db_path.display().to_string(),
-            "northStarCf": CF_MEJEPA_NORTH_STARS,
-            "loadedFromCf": loaded_from_cf,
-            "tool": tool_names::MEJEPA_ALIGN_TO_INTENT
         }
     }))
 }

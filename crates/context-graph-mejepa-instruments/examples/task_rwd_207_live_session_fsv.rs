@@ -48,10 +48,6 @@ fn main() -> FsvResult<()> {
         extraction.labels.len() == 1,
     )?;
     require(
-        "happy extraction emits one goal",
-        extraction.goals.len() == 1,
-    )?;
-    require(
         "happy extraction emits four verdicts",
         extraction.verdicts.len() == 4,
     )?;
@@ -79,15 +75,14 @@ fn main() -> FsvResult<()> {
         "refuted fraction is one third",
         (label.refuted_override_fraction - (1.0 / 3.0)).abs() < 0.0001,
     )?;
-    require("goal embedding dim is 384", label.goal_embedding_dim == 384)?;
     require(
-        "goal embedding hash is sha256-prefixed",
-        label.goal_embedding_sha256.starts_with("sha256:"),
+        "prompt text hash is sha256-prefixed",
+        label.prompt_text_sha256.starts_with("sha256:"),
     )?;
     require(
-        "dominant goal terms include reward",
+        "dominant prompt terms include reward",
         label
-            .dominant_goal_terms
+            .dominant_prompt_terms
             .iter()
             .any(|term| term == "reward"),
     )?;
@@ -182,11 +177,10 @@ fn main() -> FsvResult<()> {
             "cf": "CF_MEJEPA_LIVE_SESSION_SIGNALS",
         },
         "before_state": before_state,
-        "trigger": "extract E_LiveSession goal/session evidence, persist raw output, sync-write CF rows, drop and reopen RocksDB",
+        "trigger": "extract E_LiveSession prompt/session evidence, persist raw output, sync-write CF rows, drop and reopen RocksDB",
         "after_state": after_state,
         "happy_path": {
             "label": label,
-            "goal": extraction.goals.first(),
             "reopened_label": reopened_label,
             "raw_readback": raw_readback,
         },
@@ -216,7 +210,7 @@ fn happy_source() -> LiveSessionSource {
             UserPromptEvent {
                 event_id: "prompt-2".to_string(),
                 unix_secs: 1_779_055_060,
-                prompt: "Finish the live-session reward signal with operator goal evidence."
+                prompt: "Finish the live-session reward signal with prompt-context evidence."
                     .to_string(),
             },
         ],

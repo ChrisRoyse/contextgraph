@@ -7,9 +7,8 @@ use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::e_reasoning::{EReasoningInstrument, ReasoningEvent, ReasoningInput};
 use crate::features::{fnv1a64, validate_single_line, validate_text_field};
-use crate::{Instrument, InstrumentError, InstrumentResult};
+use crate::{InstrumentError, InstrumentResult};
 
 const LIVE_SESSION_SCHEMA_VERSION: u32 = 1;
 const MAX_PROMPTS: usize = 10_000;
@@ -86,20 +85,8 @@ pub struct LiveSessionLabel {
     pub inconclusive_override_count: u32,
     pub refuted_override_fraction: f32,
     pub latest_prompt_unix_secs: i64,
-    pub dominant_goal_terms: Vec<String>,
-    pub goal_embedding_dim: u32,
-    pub goal_embedding_sha256: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OperatorGoalSignal {
-    pub session_id: String,
-    pub turn_id: String,
-    pub prompt_event_count: u32,
     pub prompt_text_sha256: String,
-    pub dominant_goal_terms: Vec<String>,
-    pub goal_embedding_sha256: String,
+    pub dominant_prompt_terms: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,7 +114,6 @@ pub struct OperatorOverrideSignal {
 #[serde(tag = "record_kind", content = "record", rename_all = "snake_case")]
 pub enum LiveSessionSignalRecord {
     Label(LiveSessionLabel),
-    OperatorGoal(OperatorGoalSignal),
     PriorVerdict(PriorVerdictSignal),
     OperatorOverride(OperatorOverrideSignal),
 }
@@ -143,7 +129,6 @@ pub struct PersistedLiveSessionSignal {
 #[serde(deny_unknown_fields)]
 pub struct LiveSessionExtraction {
     pub labels: Vec<LiveSessionLabel>,
-    pub goals: Vec<OperatorGoalSignal>,
     pub verdicts: Vec<PriorVerdictSignal>,
     pub overrides: Vec<OperatorOverrideSignal>,
 }
@@ -165,15 +150,6 @@ impl LiveSessionExtraction {
                 schema_version: LIVE_SESSION_SCHEMA_VERSION,
                 signal: LiveSessionSignalRecord::Label(label),
             })
-            .chain(
-                self.goals
-                    .iter()
-                    .cloned()
-                    .map(|goal| PersistedLiveSessionSignal {
-                        schema_version: LIVE_SESSION_SCHEMA_VERSION,
-                        signal: LiveSessionSignalRecord::OperatorGoal(goal),
-                    }),
-            )
             .chain(
                 self.verdicts
                     .iter()
@@ -197,7 +173,6 @@ impl LiveSessionSignalRecord {
     fn identity_parts(&self) -> (&str, &str, &str) {
         match self {
             Self::Label(label) => (&label.session_id, &label.turn_id, "label"),
-            Self::OperatorGoal(goal) => (&goal.session_id, &goal.turn_id, "operator_goal"),
             Self::PriorVerdict(verdict) => (
                 &verdict.session_id,
                 &verdict.turn_id,
@@ -217,15 +192,8 @@ pub fn extract_live_session_signals(
 ) -> InstrumentResult<LiveSessionExtraction> {
     validate_source(source)?;
     let transcript = prompt_transcript(&source.prompt_history);
-    let events = reasoning_events(source);
-    let reasoning = ReasoningInput {
-        task_id: format!("live_session::{}::{}", source.session_id, source.turn_id),
-        transcript: transcript.clone(),
-        events,
-    };
-    let goal_vector = EReasoningInstrument.encode(&reasoning)?;
-    let goal_hash = sha256_f32_vector(&goal_vector);
-    let dominant_terms = dominant_goal_terms(&transcript, 8);
+    let prompt_text_hash = sha256_text(&transcript);
+    let dominant_terms = dominant_prompt_terms(&transcript, 8);
     let prompt_token_count = token_count(&transcript);
     let verdict_counts = count_verdicts(&source.prior_verdicts);
     let override_counts = count_overrides(&source.operator_overrides);
@@ -257,17 +225,8 @@ pub fn extract_live_session_signals(
         inconclusive_override_count: override_counts.inconclusive,
         refuted_override_fraction: refuted_fraction,
         latest_prompt_unix_secs,
-        dominant_goal_terms: dominant_terms.clone(),
-        goal_embedding_dim: to_u32("goal_embedding_dim", goal_vector.len())?,
-        goal_embedding_sha256: goal_hash.clone(),
-    };
-    let goal = OperatorGoalSignal {
-        session_id: source.session_id.clone(),
-        turn_id: source.turn_id.clone(),
-        prompt_event_count: label.prompt_event_count,
-        prompt_text_sha256: sha256_text(&transcript),
-        dominant_goal_terms: dominant_terms,
-        goal_embedding_sha256: goal_hash,
+        prompt_text_sha256: prompt_text_hash,
+        dominant_prompt_terms: dominant_terms,
     };
     let verdicts = source
         .prior_verdicts
@@ -294,7 +253,6 @@ pub fn extract_live_session_signals(
         .collect();
     Ok(LiveSessionExtraction {
         labels: vec![label],
-        goals: vec![goal],
         verdicts,
         overrides,
     })
@@ -664,35 +622,9 @@ fn prompt_transcript(prompts: &[UserPromptEvent]) -> String {
         .join("\n")
 }
 
-fn reasoning_events(source: &LiveSessionSource) -> Vec<ReasoningEvent> {
-    let mut events = Vec::new();
-    for prompt in &source.prompt_history {
-        events.push(ReasoningEvent {
-            actor: "operator".to_string(),
-            event_type: "user_prompt_submit".to_string(),
-            text: prompt.prompt.clone(),
-        });
-    }
-    for verdict in &source.prior_verdicts {
-        events.push(ReasoningEvent {
-            actor: "mejepa".to_string(),
-            event_type: format!("prior_verdict::{:?}", verdict.verdict).to_lowercase(),
-            text: verdict.prediction_id.clone(),
-        });
-    }
-    for override_signal in &source.operator_overrides {
-        events.push(ReasoningEvent {
-            actor: "operator".to_string(),
-            event_type: format!("operator_override::{:?}", override_signal.outcome).to_lowercase(),
-            text: override_signal.reason.clone(),
-        });
-    }
-    events
-}
-
-fn dominant_goal_terms(transcript: &str, limit: usize) -> Vec<String> {
+fn dominant_prompt_terms(transcript: &str, limit: usize) -> Vec<String> {
     let mut counts: BTreeMap<String, u32> = BTreeMap::new();
-    for token in goal_tokens(transcript) {
+    for token in prompt_tokens(transcript) {
         *counts.entry(token).or_default() += 1;
     }
     let mut pairs: Vec<(String, u32)> = counts.into_iter().collect();
@@ -709,10 +641,10 @@ fn dominant_goal_terms(transcript: &str, limit: usize) -> Vec<String> {
 }
 
 fn token_count(transcript: &str) -> usize {
-    goal_tokens(transcript).count()
+    prompt_tokens(transcript).count()
 }
 
-fn goal_tokens(transcript: &str) -> impl Iterator<Item = String> + '_ {
+fn prompt_tokens(transcript: &str) -> impl Iterator<Item = String> + '_ {
     transcript
         .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
         .map(str::trim)
@@ -809,14 +741,6 @@ fn sha256_text(text: &str) -> String {
     format!("sha256:{:x}", hasher.finalize())
 }
 
-fn sha256_f32_vector(vector: &[f32]) -> String {
-    let mut hasher = Sha256::new();
-    for value in vector {
-        hasher.update(value.to_le_bytes());
-    }
-    format!("sha256:{:x}", hasher.finalize())
-}
-
 fn write_json_readback<T: Serialize>(path: &Path, value: &T) -> InstrumentResult<()> {
     let bytes = serde_json::to_vec_pretty(value).map_err(|err| {
         InstrumentError::store(
@@ -880,7 +804,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn live_session_extracts_goal_and_session_state() {
+    fn live_session_extracts_prompt_and_session_state() {
         let extraction = extract_live_session_signals(&sample_source()).unwrap();
         let label = extraction.labels.first().unwrap();
         assert_eq!(label.prompt_event_count, 2);
@@ -888,13 +812,12 @@ mod tests {
         assert_eq!(label.prior_fail_count, 1);
         assert_eq!(label.operator_override_count, 3);
         assert_eq!(label.refuted_override_count, 1);
-        assert_eq!(label.goal_embedding_dim, 384);
-        assert!(label.goal_embedding_sha256.starts_with("sha256:"));
+        assert!(label.prompt_text_sha256.starts_with("sha256:"));
         assert!(label
-            .dominant_goal_terms
+            .dominant_prompt_terms
             .iter()
             .any(|term| term == "reward"));
-        assert_eq!(extraction.persisted_records().len(), 9);
+        assert_eq!(extraction.persisted_records().len(), 8);
     }
 
     #[test]
@@ -919,7 +842,7 @@ mod tests {
                 UserPromptEvent {
                     event_id: "prompt-2".to_string(),
                     unix_secs: 1_779_055_060,
-                    prompt: "Finish the live-session reward signal with operator goal evidence."
+                    prompt: "Finish the live-session reward signal with prompt-context evidence."
                         .to_string(),
                 },
             ],

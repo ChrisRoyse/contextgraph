@@ -1,8 +1,8 @@
 //! TASK-EK-014 — operator-contribution surface.
 //!
 //! Operator contributions are durable records of human work that has moved
-//! into the ME-JEPA loop: north-star definition, accepted/rejected proposals,
-//! falsifications, probes, critiques, and downstream outcome links.
+//! into the ME-JEPA loop: accepted/rejected proposals, falsifications, probes,
+//! critiques, and downstream outcome links.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -22,25 +22,21 @@ const WEEK_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum OperatorContributionEventKind {
-    NorthStarDefined,
     ProposalAccepted,
     ProposalRejected,
     FalsificationDiscovered,
     CandidateInstrumentAccepted,
-    CandidateNorthStarAccepted,
     MechanismConjectureCritiqued,
     AdversarialProbeAuthored,
 }
 
 impl OperatorContributionEventKind {
-    pub const fn all() -> [Self; 8] {
+    pub const fn all() -> [Self; 6] {
         [
-            Self::NorthStarDefined,
             Self::ProposalAccepted,
             Self::ProposalRejected,
             Self::FalsificationDiscovered,
             Self::CandidateInstrumentAccepted,
-            Self::CandidateNorthStarAccepted,
             Self::MechanismConjectureCritiqued,
             Self::AdversarialProbeAuthored,
         ]
@@ -48,12 +44,10 @@ impl OperatorContributionEventKind {
 
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::NorthStarDefined => "NorthStarDefined",
             Self::ProposalAccepted => "ProposalAccepted",
             Self::ProposalRejected => "ProposalRejected",
             Self::FalsificationDiscovered => "FalsificationDiscovered",
             Self::CandidateInstrumentAccepted => "CandidateInstrumentAccepted",
-            Self::CandidateNorthStarAccepted => "CandidateNorthStarAccepted",
             Self::MechanismConjectureCritiqued => "MechanismConjectureCritiqued",
             Self::AdversarialProbeAuthored => "AdversarialProbeAuthored",
         }
@@ -756,10 +750,10 @@ mod tests {
     fn invalid_operator_contribution_rejected() {
         let err = OperatorContribution::new(
             "",
-            OperatorContributionEventKind::NorthStarDefined,
+            OperatorContributionEventKind::ProposalAccepted,
             "operator-a",
             1_700_000_000_000,
-            payload("north-star"),
+            payload("proposal"),
             None,
         )
         .unwrap_err();
@@ -774,10 +768,10 @@ mod tests {
         let rows = vec![
             OperatorContribution::new(
                 "c1",
-                OperatorContributionEventKind::NorthStarDefined,
+                OperatorContributionEventKind::ProposalAccepted,
                 "operator-a",
                 1_700_000_000_000,
-                payload("north-star"),
+                payload("proposal"),
                 Some(DownstreamOutcomeRef::new(
                     DownstreamOutcomeKind::CpPhi,
                     "train-cert:1",
@@ -811,7 +805,7 @@ mod tests {
         let report = operator_contribution_report_for_rows(rows, 10, None).unwrap();
         assert_eq!(report.returned_count, 3);
         assert_eq!(
-            report.event_kind_distribution["NorthStarDefined"], 1,
+            report.event_kind_distribution["ProposalAccepted"], 1,
             "distribution must include exact event counts"
         );
         assert_eq!(report.per_operator.len(), 2);
