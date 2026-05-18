@@ -25,6 +25,7 @@ pub mod frozen_target;
 pub mod fsv_writer;
 pub mod gates;
 pub mod grad_hook;
+pub mod head_projection;
 pub mod heal;
 pub mod hierarchical;
 pub mod intent_north_star;
@@ -39,6 +40,7 @@ pub mod oracle_head;
 pub mod pairwise_mi;
 pub mod panel_source;
 pub mod park_list;
+pub mod patch_similarity;
 pub mod pause_state;
 pub mod prediction_replay;
 pub mod prediction_surfaces;
@@ -102,6 +104,7 @@ pub use grad_hook::{
     run_gradient_hook, GradStore, GradientHookReport, InstrumentGradHandle, NoOpGradHandle,
     TensorId,
 };
+pub use head_projection::*;
 pub use hierarchical::*;
 pub use intent_north_star::*;
 pub use label_transfer_audit::*;
@@ -114,6 +117,7 @@ pub use operator_override::*;
 pub use oracle_head::OracleHead;
 pub use pairwise_mi::*;
 pub use park_list::*;
+pub use patch_similarity::*;
 pub use pause_state::*;
 pub use prediction_replay::*;
 pub use prediction_surfaces::*;

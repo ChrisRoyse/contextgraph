@@ -4,7 +4,7 @@
 >
 > **The slogan:** **every byte of reality becomes hundreds of labeled training examples.** This document specifies the exact pipeline that delivers that.
 
-**Status snapshot (2026-05-12):** The storage substrate (`CF_MEJEPA_DDA_SIGNALS`) and Phase B typed prediction surfaces are shipped. Phase D now also ships the DDA compute/store/readback API, persistent embedder cache, 12-slot content forward surface, full pretrained/routing forward FSV, inference CF opener fix, stdlib registry FSV, and live shift-subscriber DDA persistence for real algorithmic forward outputs. Current Phase B predictions still use deterministic patch/panel surfaces; trained heads do not yet consume persisted DDA features.
+**Status snapshot (2026-05-18):** The storage substrate (`CF_MEJEPA_DDA_SIGNALS`) and Phase B typed prediction surfaces are shipped. Phase D also ships the DDA compute/store/readback API, persistent embedder cache, 12-slot content forward surface, full pretrained/routing forward FSV, inference CF opener fix, stdlib registry FSV, and live shift-subscriber DDA persistence for real algorithmic forward outputs. TASK-PY-G-043/#262 now ships the per-head DDA projection table from §3 plus durable schema rows in `CF_MEJEPA_HEAD_PROJECTION_REGISTRY`; trained-head model-quality gains remain Phase G convergence work.
 
 ---
 
@@ -121,7 +121,7 @@ These signals are persisted to `CF_MEJEPA_DDA_SIGNALS` keyed by `(panel_id, chun
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Steps 1, 2, 5, and 6 are shipped. Step 3's real forward surface and Step 4's DDA compute/store/readback substrate are now code/FSV-shipped, and the live shift subscriber writes DDA rows for the real algorithmic forward set. The remaining production work is feeding persisted DDA features into trained prediction heads.
+Steps 1, 2, 5, and 6 are shipped. Step 3's real forward surface and Step 4's DDA compute/store/readback substrate are code/FSV-shipped, and the live shift subscriber writes DDA rows for the real algorithmic forward set. TASK-PY-G-043/#262 adds the deterministic per-head feature projection/registry layer over those rows; the remaining production work is proving trained-head quality improvement during Phase G convergence.
 
 ---
 
@@ -143,6 +143,8 @@ The multi-head prediction stack from `03_ARCHITECTURE_BLUEPRINT.md §3` consumes
 | Reasoning head | pairwise_cosine[E_Reasoning][E_Diff], pairwise_cosine[E_Reasoning][E_Oracle] | does the agent's prose match the change + the outcome? |
 
 **Architectural note.** Each head reads the same shared trunk output AND a small head-specific projection of the DDA signals it cares about. The DDA signals act as auxiliary features that the trunk transformer cross-attends to via a learned attention head. The trunk's parameter count doesn't grow with the signal count; only the head-side projections do.
+
+**TASK-PY-G-043/#262 implementation note (2026-05-18).** `context_graph_mejepa::head_projection` materializes this table as a `PerHeadProjection` surface with fail-closed `HEAD_PROJECTION_MISSING_SLICE`, `HEAD_PROJECTION_SCHEMA_MISMATCH`, and `HEAD_PROJECTION_NO_DDA` errors. The source-of-truth schema registry is `CF_MEJEPA_HEAD_PROJECTION_REGISTRY`. FSV: `/mnt/d/contextgraph/fsv/task-py-g-043-per-head-dda-projection-fsv/run-1779078323947/head_projection_fsv.json` sha256 `dff41ba10cffa744eaa7921e78b359ca4f022fd5945b0b8cc18b7ee639201784`.
 
 ---
 

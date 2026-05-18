@@ -37,6 +37,7 @@ toml = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+usearch = "2"
 
 [dev-dependencies]
 context-graph-mejepa-shift-subscriber = { path = "../context-graph-mejepa-shift-subscriber" }
@@ -151,3 +152,15 @@ path = "examples/task_ek_010_elicit_intent_fsv.rs"
 [[example]]
 name = "task_ek_003_mincut_panel_fsv"
 path = "examples/task_ek_003_mincut_panel_fsv.rs"
+
+[[example]]
+name = "task_py_g_042_patch_similarity_exemplar_fsv"
+path = "examples/task_py_g_042_patch_similarity_exemplar_fsv.rs"
+
+[[example]]
+name = "task_py_g_041_claim_graph_extractor_fsv"
+path = "examples/task_py_g_041_claim_graph_extractor_fsv.rs"
+
+[[example]]
+name = "task_py_g_043_per_head_dda_projection_fsv"
+path = "examples/task_py_g_043_per_head_dda_projection_fsv.rs"

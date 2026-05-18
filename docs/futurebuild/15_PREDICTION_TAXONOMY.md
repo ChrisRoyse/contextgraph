@@ -200,16 +200,19 @@ This is the TCT-side reasoning: "the predicted panel for this chunk's E_TypeGrap
 
 ```rust
 pub struct ExemplarMatch {
+    pub exemplar_prediction_id: Option<[u8; 16]>,
     pub task_id: SwebenchTaskId,
     pub mutation_kind: MutationKind,
     pub similarity_score: f32,               // patch-similarity-graph edge weight
     pub diff_summary: String,
     pub oracle_outcome: OracleVerdict,       // what happened to the exemplar
+    pub failure_mode_class: Option<FailureModeClass>,
+    pub evidence_path: Option<String>,
     pub witness_hash: WitnessHash,
 }
 ```
 
-Retrieved from `CF_MEJEPA_FAILURE_EXEMPLARS` keyed by (failure_mode_class, embedder_violation_signature). The agent sees "the closest known case is `psf__requests-2317`, which failed in the same way."
+Produced by TASK-PY-G-042 from the schema-versioned patch-similarity HNSW index. The active index metadata lives in `CF_MEJEPA_PATCH_SIMILARITY_META`; graph/records/meta files live under `/mnt/d/contextgraph/storage/patch-similarity-index-v1/`. The agent sees "the closest known case is `psf__requests-2317`, which failed in the same way," with the exemplar prediction id and evidence path available for replay.
 
 ---
 
@@ -553,7 +556,10 @@ pub enum ClaimKind {
     Modified(SymbolRef),         // "I changed function X in file Y"
     Removed(SymbolRef),
     Renamed(SymbolRef, String),
+    Fixed(SymbolRef),
     Tested(TestId),              // "I added a test for X"
+    WillPass(TestId),            // "tests/test_x.py::test_y will pass"
+    WillFail(TestId),            // "tests/test_x.py::test_y should fail"
     Verified(String),            // "I verified that X works"
     Refactored(String),
     Documented(SymbolRef),
@@ -567,7 +573,7 @@ pub struct ClaimReference {
 }
 ```
 
-**Extraction:** a deterministic rule-based parser over the agent's response (`response.md` produced by Claude Code) extracting noun-phrases that match `(added|modified|removed|renamed|tested|verified|refactored|documented) <symbol> in <file>`. No LLM call. Free-text claims become `ClaimKind::Other`.
+**Extraction:** a deterministic rule-based parser over the agent's response (`response.md` produced by Claude Code) extracting noun-phrases that match `(added|modified|removed|renamed|fixed|tested|verified|refactored|documented) <symbol> in <file>` plus `will pass` / `will fail` test claims. No LLM call. Qualified Python test ids such as `tests/test_auth.py::test_login` split into file and symbol references.
 
 ### 5.2 ClaimReconciliation
 
@@ -580,10 +586,13 @@ pub struct ClaimReconciliation {
 
 pub enum ReconciliationStatus {
     Confirmed,
+    Matched,                     // claim and bytes agree under the active hardening path
     Missing,                     // claim says added X; X is not present
     Modified,                    // claim says modified X to do Y; X exists but doesn't do Y
+    ModifiedUnexpectedly,        // symbol exists but not at the claimed line/window
     UnexpectedSideEffect,        // X exists but file Z was also modified — not claimed
     SuperficialMatch,            // symbol exists but signature/body diverges
+    Ambiguous,                   // line hint is outside file or target cannot be disambiguated
     AmbiguousRef,                // claim references "the helper function" — multiple matches
     Unverifiable,                // claim is too vague to bind to bytes
 }
@@ -597,7 +606,7 @@ pub struct EvidenceRow {
 }
 ```
 
-The reconciliation reads the shift log + the AST chunker; for `Confirmed`, the agent's claim and the SHA-bound evidence agree. For `Missing` / `Modified` / `UnexpectedSideEffect` / `SuperficialMatch`, the agent's words don't match the bytes — surfaced to the agent via the next prompt injection.
+The reconciliation reads the shift log + bytes-on-disk + the AST chunker; for `Matched` / `Confirmed`, the agent's claim and the SHA-bound evidence agree. For `Missing` / `ModifiedUnexpectedly` / `Modified` / `UnexpectedSideEffect` / `SuperficialMatch`, the agent's words do not match the bytes and are surfaced to the agent via the next prompt injection. TASK-PY-G-041 persists schema-versioned `ClaimReconciliationRecord` rows to `CF_MEJEPA_CLAIM_RECONCILIATION` keyed by `prediction_id x claim_id`; FSV `/mnt/d/contextgraph/fsv/task-py-g-041-claim-graph-extractor-fsv/run-1779077268576/claim_graph_extractor_fsv.json` sha256 `ff5ade6a7b410e2d46a48eca245b9514239b3eae28de65c7578cf49536c37cb9` proves 50 real response samples, `1.0` Added/Modified match rate on green Python rows, and required fail-closed edges.
 
 ---
 

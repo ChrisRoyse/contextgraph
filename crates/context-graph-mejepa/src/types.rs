@@ -437,11 +437,19 @@ impl GuardViolation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExemplarMatch {
+    /// TASK-PY-G-042 (#261) — stable id of the exemplar prediction row.
+    /// `serde(default)` preserves deserialization of pre-index live rows.
+    #[serde(default)]
+    pub exemplar_prediction_id: Option<[u8; 16]>,
     pub task_id: TaskId,
     pub mutation_kind: crate::eval::MutationCategory,
     pub similarity_score: f32,
     pub diff_summary: String,
     pub oracle_outcome: OracleVerdict,
+    #[serde(default)]
+    pub failure_mode_class: Option<FailureModeClass>,
+    #[serde(default)]
+    pub evidence_path: Option<String>,
     pub witness_hash: WitnessHash,
 }
 
@@ -538,7 +546,23 @@ impl ExemplarMatch {
             "exemplar_match.diff_summary",
             &self.diff_summary,
             MAX_COMMIT_MESSAGE_BYTES,
-        )
+        )?;
+        if let Some(prediction_id) = self.exemplar_prediction_id {
+            if prediction_id.iter().all(|byte| *byte == 0) {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "exemplar_match.exemplar_prediction_id".to_string(),
+                    detail: "exemplar_prediction_id must be non-zero when present".to_string(),
+                });
+            }
+        }
+        if let Some(path) = &self.evidence_path {
+            validate_bounded_text(
+                "exemplar_match.evidence_path",
+                path,
+                MAX_COMMIT_MESSAGE_BYTES,
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -1057,6 +1081,9 @@ pub enum ClaimKind {
     Refactored(String),
     Documented(SymbolRef),
     Other(String),
+    Fixed(SymbolRef),
+    WillPass(TestId),
+    WillFail(TestId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1121,6 +1148,9 @@ pub enum ReconciliationStatus {
     SuperficialMatch,
     AmbiguousRef,
     Unverifiable,
+    Matched,
+    ModifiedUnexpectedly,
+    Ambiguous,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

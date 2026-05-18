@@ -4,9 +4,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use bincode::Options as BincodeOptions;
-use context_graph_mejepa_cf::{
-    CF_MEJEPA_FAILURE_FINGERPRINTS, CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_PAIRWISE_MI,
-};
+use context_graph_mejepa_cf::{CF_MEJEPA_FAILURE_FINGERPRINTS, CF_MEJEPA_MINCUT_REPORTS};
 use context_graph_mincut::{stoer_wagner, CutPartition, MincutError, StoerWagnerConfig};
 use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
@@ -24,8 +22,7 @@ pub const MAX_MINCUT_NODES: usize = 512;
 pub const MAX_MINCUT_DIRECTIONS: u32 = 16;
 pub const MEJEPA_MINCUT_DEGENERATE: &str = "MEJEPA_MINCUT_DEGENERATE";
 pub const MEJEPA_MINCUT_DDA_EMBEDDER_IDS_IMPUTED: &str = "MEJEPA_MINCUT_DDA_EMBEDDER_IDS_IMPUTED";
-pub const MEJEPA_MINCUT_PAIRWISE_MI_EPSILON_FLOOR: &str =
-    "MEJEPA_MINCUT_PAIRWISE_MI_EPSILON_FLOOR";
+pub const MEJEPA_MINCUT_PAIRWISE_MI_EPSILON_FLOOR: &str = "MEJEPA_MINCUT_PAIRWISE_MI_EPSILON_FLOOR";
 const PAIRWISE_MI_CONNECTIVITY_EPSILON: f32 = 1.0e-6;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -627,14 +624,19 @@ fn resolve_pairwise_mi_graph(
     )?;
     let mut weights_matrix = matrix.values;
     let mut epsilon_edges = 0usize;
-    for row_idx in 0..weights_matrix.len() {
-        for col_idx in (row_idx + 1)..weights_matrix.len() {
-            if weights_matrix[row_idx][col_idx] == 0.0 {
-                weights_matrix[row_idx][col_idx] = PAIRWISE_MI_CONNECTIVITY_EPSILON;
-                weights_matrix[col_idx][row_idx] = PAIRWISE_MI_CONNECTIVITY_EPSILON;
+    let mut row_idx = 0usize;
+    while row_idx < weights_matrix.len() {
+        let (head, tail) = weights_matrix.split_at_mut(row_idx + 1);
+        let row = &mut head[row_idx];
+        for (offset, col_row) in tail.iter_mut().enumerate() {
+            let col_idx = row_idx + 1 + offset;
+            if row[col_idx] == 0.0 {
+                row[col_idx] = PAIRWISE_MI_CONNECTIVITY_EPSILON;
+                col_row[row_idx] = PAIRWISE_MI_CONNECTIVITY_EPSILON;
                 epsilon_edges += 1;
             }
         }
+        row_idx += 1;
     }
     for (idx, row) in weights_matrix.iter_mut().enumerate() {
         row[idx] = 0.0;

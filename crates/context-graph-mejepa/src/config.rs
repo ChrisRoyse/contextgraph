@@ -125,6 +125,7 @@ pub const INFER_DEFAULT_REQUIRE_DDA_FEATURES: bool = false;
 pub const INFER_DEFAULT_DDA_EXPECTED_EMBEDDER_COUNT: usize = 0;
 pub const INFER_MAX_DDA_EXPECTED_EMBEDDER_COUNT: usize = 256;
 pub const INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT: u32 = 50;
+pub const PATCH_SIMILARITY_CORPUS_SNAPSHOT_HASH_LEN: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -151,6 +152,11 @@ pub struct MeJepaInferConfig {
     /// Minimum targeted constellation-cell support required before ME-JEPA is
     /// allowed to emit a non-abstain verdict for operator review replacement.
     pub min_cell_support_for_verdict: u32,
+    /// Optional TASK-PY-G-042 patch-similarity index root. When set, compile()
+    /// loads the persisted HNSW graph and writes `closest_exemplars`.
+    pub patch_similarity_index_dir: Option<PathBuf>,
+    /// Expected 64-hex corpus snapshot hash for the configured exemplar index.
+    pub patch_similarity_corpus_snapshot_hash: Option<String>,
 }
 
 impl Default for MeJepaInferConfig {
@@ -171,6 +177,8 @@ impl Default for MeJepaInferConfig {
             dda_expected_embedder_count: INFER_DEFAULT_DDA_EXPECTED_EMBEDDER_COUNT,
             pause_state_path: Some(PathBuf::from(DEFAULT_PAUSE_STATE_PATH)),
             min_cell_support_for_verdict: INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT,
+            patch_similarity_index_dir: None,
+            patch_similarity_corpus_snapshot_hash: None,
         }
     }
 }
@@ -242,6 +250,33 @@ impl MeJepaInferConfig {
             return Err(PredictorError::ConfigInvalid {
                 detail: "min_cell_support_for_verdict must be >= 1".to_string(),
             });
+        }
+        match (
+            self.patch_similarity_index_dir.as_ref(),
+            self.patch_similarity_corpus_snapshot_hash.as_ref(),
+        ) {
+            (Some(path), Some(hash)) => {
+                if path.as_os_str().is_empty() {
+                    return Err(PredictorError::ConfigInvalid {
+                        detail: "patch_similarity_index_dir must be non-empty when configured"
+                            .to_string(),
+                    });
+                }
+                if hash.len() != PATCH_SIMILARITY_CORPUS_SNAPSHOT_HASH_LEN
+                    || !hash.chars().all(|c| c.is_ascii_hexdigit())
+                {
+                    return Err(PredictorError::ConfigInvalid {
+                        detail: "patch_similarity_corpus_snapshot_hash must be 64 hex chars"
+                            .to_string(),
+                    });
+                }
+            }
+            (None, None) => {}
+            _ => {
+                return Err(PredictorError::ConfigInvalid {
+                    detail: "patch_similarity_index_dir and patch_similarity_corpus_snapshot_hash must be configured together".to_string(),
+                });
+            }
         }
         Ok(())
     }

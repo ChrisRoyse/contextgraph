@@ -1216,6 +1216,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "usearch",
 ]
 
 [[package]]

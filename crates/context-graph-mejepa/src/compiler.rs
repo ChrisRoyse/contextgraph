@@ -33,6 +33,10 @@ use crate::hierarchical::build_hierarchical_prediction;
 use crate::objective_safety::{evaluate_mejepa_objective, MejepaObjective, ObjectiveSafetyReport};
 use crate::ood::{compute_ood_score, squared_l2};
 use crate::park_list::ParkListEntry;
+use crate::patch_similarity::{
+    closest_exemplars, load_patch_similarity_index, patch_structural_signature_from_panel,
+    PatchSimilarityQuery, PATCH_SIMILARITY_DEFAULT_K,
+};
 use crate::pause_state::{
     current_unix_ms, read_pause_state, PauseReadOutcome, PauseState, PAUSE_REASON_CODE,
 };
@@ -45,9 +49,10 @@ use crate::secret_redaction::{redact_patch_bundle, SECRET_REDACTION_ATTESTATION_
 use crate::system_cost::SystemCostCounters;
 use crate::types::{
     validate_probability, AgentClaimGraph, ChunkId, ConformalInterval, ConformalMethod, DdaSignals,
-    EmbedderId, FailedGate, HierarchicalPredictionRecord, MatchedFingerprintEvidence,
-    OracleOutcome, PanelId, PatchBundle, PhaseBPredictionSurfaces, PredictionProvenance,
-    RealityPrediction, RealityPredictionBuilder, TaskContext, Verdict, VerifyVerdict, WitnessHash,
+    EmbedderId, ExemplarMatch, FailedGate, HierarchicalPredictionRecord,
+    MatchedFingerprintEvidence, OracleOutcome, PanelId, PatchBundle, PhaseBPredictionSurfaces,
+    PredictionProvenance, RealityPrediction, RealityPredictionBuilder, TaskContext, Verdict,
+    VerifyVerdict, WitnessHash,
 };
 use crate::verdict_assembly::{assemble_verdict, VerdictAssemblyInput};
 
@@ -481,9 +486,10 @@ impl MeJepaCompiler {
             train_health.delta_xi_mean,
         )?;
         let prediction_id = prediction_id(context, patch, &calibration);
-        let phase_b_surfaces = run_infer_head("phase_b_surfaces", || {
+        let mut phase_b_surfaces = run_infer_head("phase_b_surfaces", || {
             infer_phase_b_surfaces(inference_patch, context, &oracle.predicted_test_pass)
         })?;
+        phase_b_surfaces.closest_exemplars = self.closest_exemplars_for_panel(&predicted)?;
         let objective_report = evaluate_mejepa_objective(
             MejepaObjective::default(),
             inference_patch,
@@ -578,6 +584,28 @@ impl MeJepaCompiler {
             FingerprintClassifierConfig::default(),
         )?;
         evidence_from_fingerprint_classification(&classification, verdict, context, prediction_id)
+    }
+
+    fn closest_exemplars_for_panel(
+        &self,
+        predicted: &Panel,
+    ) -> Result<Vec<ExemplarMatch>, MejepaInferError> {
+        let Some(index_dir) = self.config.patch_similarity_index_dir.as_ref() else {
+            return Ok(Vec::new());
+        };
+        let expected_hash = self
+            .config
+            .patch_similarity_corpus_snapshot_hash
+            .as_deref()
+            .ok_or_else(|| MejepaInferError::InvalidInput {
+                field: "patch_similarity_corpus_snapshot_hash".to_string(),
+                detail: "configured patch-similarity index requires an expected snapshot hash"
+                    .to_string(),
+            })?;
+        let index = load_patch_similarity_index(index_dir, expected_hash)?;
+        let query_vector = patch_structural_signature_from_panel(predicted)?;
+        let query = PatchSimilarityQuery::new(query_vector, PATCH_SIMILARITY_DEFAULT_K, true)?;
+        Ok(closest_exemplars(&index, query)?.exemplars)
     }
 
     fn load_dda_projection(

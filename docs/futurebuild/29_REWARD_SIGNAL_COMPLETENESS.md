@@ -38,7 +38,7 @@ Without explicit completeness tracking, the system silently leaves signal on the
 |---|---|---|
 | Per-embedder cosine to cell centroid (12 signals per chunk) | DDA pipeline (`python_pairwise_dda_mi.py`) | ✅ shipped |
 | Pairwise cosine across 66 embedder pairs | DDA pipeline | ✅ shipped |
-| Pairwise mutual information across embedder pairs | DDA pipeline + REQ-UTML-06 audit + `CF_MEJEPA_PAIRWISE_MI` readback | ✅ shipped; TASK-PY-G-007 now persists 13-slot/78-pair Python-panel audits with redundancy histogram, adaptive weights, and `N_eff` |
+| Pairwise mutual information across embedder pairs | DDA pipeline + REQ-UTML-06 audit + `CF_MEJEPA_PAIRWISE_MI` readback | ✅ shipped; TASK-PY-G-007 now persists real aiwonder 12-active-embedder/66-pair Python-panel audits with redundancy histogram, adaptive weights, and `N_eff` |
 | Blind-spot z-scores (11 enhancer-vs-primary pairs per chunk) | DDA pipeline | ✅ shipped |
 | Embedder agreement / disagreement vectors | DDA | ✅ shipped |
 
@@ -99,6 +99,7 @@ Without explicit completeness tracking, the system silently leaves signal on the
 |---|---|---|
 | Session state (prior verdicts, prior overrides in this session) | `E_LiveSession` | ✅ TASK-RWD-207 |
 | Operator goal embedding (from UserPromptSubmit history) | `E_LiveSession` | ✅ TASK-RWD-207 |
+| Agent claim graph + reconciliation | deterministic Q1 parser + bytes-on-disk/AST readback | ✅ shipped (#260 / TASK-PY-G-041), persisted in `CF_MEJEPA_CLAIM_RECONCILIATION` |
 | Active-learning queue entries (Unknown OOD candidates) | `CF_MEJEPA_ACTIVE_LEARNING_QUEUE` | 🟡 partial (CLI shipped, full lifecycle pending) |
 | Prediction-vs-actual reconciliation | `CF_MEJEPA_PREDICTION_VERIFICATIONS` | ✅ shipped (#288 / TASK-PY-G-069) |
 | Stop-time verification enforcement | `scripts/cc/stop-mejepa-self-verify.sh` + `context-graph-cli mejepa stop-self-verify` | ✅ shipped (#289 / TASK-PY-G-070) |
@@ -178,7 +179,7 @@ Per the operator's framing (and LeCun's emphasis), teleological constellations a
 | Chain arrow | Reward signal(s) | Tier |
 |---|---|---|
 | Operator goal | UserPromptSubmit text embedding | 7 (TASK-RWD-207) |
-| Agent claim | Atomic-claim parser output (Q1 head input) | 7 |
+| Agent claim | Atomic-claim parser output plus `CF_MEJEPA_CLAIM_RECONCILIATION` readback (Q1 head input) | 7 |
 | Edit event | Pre/Post SHA + AST diff (E_AST + E_Witness) | 3 + 8 |
 | AST delta | Typed structural delta (`python_diff_chunk_map`) | 3 |
 | Embedded chunk constellation | 12-embedder forward cache | 2 |
