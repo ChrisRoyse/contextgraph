@@ -594,7 +594,10 @@ fn stop_prediction_severity_score(prediction: &RealityPrediction) -> f32 {
     };
     let predicted_failure_weight = (prediction.predicted_failed_tests.len().min(8) as f32) * 0.25;
     let oracle_fail_weight = (1.0 - prediction.predicted_oracle_pass).clamp(0.0, 1.0);
-    verdict_weight + predicted_failure_weight + prediction.ood_score.clamp(0.0, 1.0) + oracle_fail_weight
+    verdict_weight
+        + predicted_failure_weight
+        + prediction.ood_score.clamp(0.0, 1.0)
+        + oracle_fail_weight
 }
 
 fn top_recommended_commands(views: &[StopSelfVerifyPredictionView]) -> Vec<String> {
