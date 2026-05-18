@@ -19,6 +19,69 @@ pub const MEJEPA_FOUNDATIONALITY_GRAPH_DISCONNECTED: &str =
     "MEJEPA_FOUNDATIONALITY_GRAPH_DISCONNECTED";
 pub const MEJEPA_FOUNDATIONALITY_SATURATED: &str = "MEJEPA_FOUNDATIONALITY_SATURATED";
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum LibraryId {
+    #[default]
+    PythonSweBenchLite,
+    NonPythonFixtures,
+    ShakespeareCanon,
+    SantaTrainingVideo,
+    CustomerServiceTranscripts,
+    Custom(String),
+}
+
+impl LibraryId {
+    pub fn slug(&self) -> String {
+        match self {
+            Self::PythonSweBenchLite => "python-swe-bench-lite".to_string(),
+            Self::NonPythonFixtures => "non-python-fixtures".to_string(),
+            Self::ShakespeareCanon => "shakespeare-canon".to_string(),
+            Self::SantaTrainingVideo => "santa-training-video".to_string(),
+            Self::CustomerServiceTranscripts => "customer-service-transcripts".to_string(),
+            Self::Custom(value) => format!("custom:{value}"),
+        }
+    }
+
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::PythonSweBenchLite => "Python SWE-bench Lite".to_string(),
+            Self::NonPythonFixtures => "Non-Python Fixtures".to_string(),
+            Self::ShakespeareCanon => "Shakespeare Canon".to_string(),
+            Self::SantaTrainingVideo => "Santa Training Video".to_string(),
+            Self::CustomerServiceTranscripts => "Customer-Service Transcripts".to_string(),
+            Self::Custom(value) => value.clone(),
+        }
+    }
+
+    pub fn parse_slug(value: &str) -> Result<Self, MejepaInferError> {
+        validate_single_line("library_id", value, 128)?;
+        Ok(match value {
+            "python-swe-bench-lite" | "Python-SWE-bench-Lite" => Self::PythonSweBenchLite,
+            "non-python-fixtures" | "Non-Python-Fixtures" => Self::NonPythonFixtures,
+            "shakespeare-canon" | "Shakespeare-Canon" => Self::ShakespeareCanon,
+            "santa-training-video" | "Santa-Training-Video" => Self::SantaTrainingVideo,
+            "customer-service-transcripts" | "Customer-Service-Transcripts" => {
+                Self::CustomerServiceTranscripts
+            }
+            other if other.starts_with("custom:") => {
+                let custom = other.trim_start_matches("custom:");
+                validate_single_line("library_id.custom", custom, 96)?;
+                Self::Custom(custom.to_string())
+            }
+            other => Self::Custom(other.to_string()),
+        })
+    }
+
+    pub fn validate(&self, field: &str) -> Result<(), MejepaInferError> {
+        validate_single_line(field, &self.slug(), 128)?;
+        if let Self::Custom(value) = self {
+            validate_single_line(field, value, 96)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ChunkFoundationalityConfig {
@@ -49,7 +112,11 @@ impl ChunkFoundationalityConfig {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct ChunkDependencyEdge {
     pub schema_version: u32,
+    #[serde(default)]
+    pub from_library_id: LibraryId,
     pub from_chunk_id: String,
+    #[serde(default)]
+    pub to_library_id: LibraryId,
     pub to_chunk_id: String,
     pub edge_kind: String,
     pub weight: f64,
@@ -136,9 +203,31 @@ impl ChunkDependencyEdge {
         weight: f64,
         evidence_ref: impl Into<String>,
     ) -> Self {
+        Self::new_with_libraries(
+            LibraryId::default(),
+            from_chunk_id,
+            LibraryId::default(),
+            to_chunk_id,
+            edge_kind,
+            weight,
+            evidence_ref,
+        )
+    }
+
+    pub fn new_with_libraries(
+        from_library_id: LibraryId,
+        from_chunk_id: impl Into<String>,
+        to_library_id: LibraryId,
+        to_chunk_id: impl Into<String>,
+        edge_kind: impl Into<String>,
+        weight: f64,
+        evidence_ref: impl Into<String>,
+    ) -> Self {
         Self {
             schema_version: CHUNK_FOUNDATIONALITY_SCHEMA_VERSION,
+            from_library_id,
             from_chunk_id: from_chunk_id.into(),
+            to_library_id,
             to_chunk_id: to_chunk_id.into(),
             edge_kind: edge_kind.into(),
             weight,
@@ -156,11 +245,15 @@ impl ChunkDependencyEdge {
                 ),
             );
         }
+        self.from_library_id
+            .validate("chunk_dependency_edge.from_library_id")?;
         validate_single_line(
             "chunk_dependency_edge.from_chunk_id",
             &self.from_chunk_id,
             512,
         )?;
+        self.to_library_id
+            .validate("chunk_dependency_edge.to_library_id")?;
         validate_single_line("chunk_dependency_edge.to_chunk_id", &self.to_chunk_id, 512)?;
         validate_single_line("chunk_dependency_edge.edge_kind", &self.edge_kind, 64)?;
         validate_single_line(
@@ -529,10 +622,16 @@ pub fn write_chunk_dependency_edge_sync_readback(
 pub fn read_all_chunk_dependency_edges(
     db: &DB,
 ) -> Result<Vec<ChunkDependencyEdge>, MejepaInferError> {
-    read_all_values(
+    let cf = cf(
         db,
         context_graph_mejepa_cf::CF_MEJEPA_CHUNK_DEPENDENCY_GRAPH,
-    )
+    )?;
+    let mut rows = Vec::new();
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (_key, value) = item?;
+        rows.push(decode_chunk_dependency_edge(&value)?);
+    }
+    Ok(rows)
 }
 
 pub fn write_chunk_foundationality_score_sync_readback(
@@ -2308,6 +2407,53 @@ fn dependency_graph_sha256(
 ) -> Result<String, MejepaInferError> {
     let bytes = serde_json::to_vec(&(nodes, edges))?;
     Ok(sha256_hex(&bytes))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LegacyChunkDependencyEdgeV1 {
+    schema_version: u32,
+    from_chunk_id: String,
+    to_chunk_id: String,
+    edge_kind: String,
+    weight: f64,
+    evidence_ref: String,
+}
+
+fn decode_chunk_dependency_edge(bytes: &[u8]) -> Result<ChunkDependencyEdge, MejepaInferError> {
+    match bincode::deserialize::<ChunkDependencyEdge>(bytes) {
+        Ok(edge) => {
+            edge.validate()?;
+            Ok(edge)
+        }
+        Err(current_err) => {
+            let legacy = bincode::deserialize::<LegacyChunkDependencyEdgeV1>(bytes)
+                .map_err(|legacy_err| MejepaInferError::InvalidInput {
+                    field: context_graph_mejepa_cf::CF_MEJEPA_CHUNK_DEPENDENCY_GRAPH.to_string(),
+                    detail: format!(
+                        "failed to decode chunk dependency edge as current ({current_err}) or legacy v1 ({legacy_err})"
+                    ),
+                })?;
+            let edge = ChunkDependencyEdge::new(
+                legacy.from_chunk_id,
+                legacy.to_chunk_id,
+                legacy.edge_kind,
+                legacy.weight,
+                legacy.evidence_ref,
+            );
+            if legacy.schema_version != CHUNK_FOUNDATIONALITY_SCHEMA_VERSION {
+                return invalid(
+                    "chunk_dependency_edge.schema_version",
+                    format!(
+                        "expected {CHUNK_FOUNDATIONALITY_SCHEMA_VERSION}, got {}",
+                        legacy.schema_version
+                    ),
+                );
+            }
+            edge.validate()?;
+            Ok(edge)
+        }
+    }
 }
 
 fn chunk_dependency_edge_key(edge: &ChunkDependencyEdge) -> Result<Vec<u8>, MejepaInferError> {

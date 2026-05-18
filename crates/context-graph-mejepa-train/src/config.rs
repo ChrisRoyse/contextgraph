@@ -67,6 +67,7 @@ pub struct TrainingConfig {
     pub cross_task_transfer_probability: f32,
     pub cross_task_cosine_threshold: f32,
     pub adversarial_mix_ratio: f32,
+    pub default_library_id: context_graph_mejepa::LibraryId,
     pub sampling_foundationality_lambda: f32,
     pub sampling_drop_threshold: f32,
     pub sampling_force_threshold: f32,
@@ -101,6 +102,7 @@ impl Default for TrainingConfig {
             cross_task_transfer_probability: 0.3,
             cross_task_cosine_threshold: 0.7,
             adversarial_mix_ratio: 0.20,
+            default_library_id: context_graph_mejepa::LibraryId::PythonSweBenchLite,
             sampling_foundationality_lambda: 1.0,
             sampling_drop_threshold: 0.05,
             sampling_force_threshold: 1.0,
@@ -177,6 +179,17 @@ impl TrainingConfig {
             || !(0.0..=1.0).contains(&self.sampling_drop_threshold)
         {
             return bad("sampling_drop_threshold", "must be in [0, 1]");
+        }
+        if let Err(err) = self.default_library_id.validate("default_library_id") {
+            return Err(TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                format!("default_library_id: {err}"),
+            )
+            .with_context(json!({
+                "file": "file:crates/context-graph-mejepa-train/src/config.rs",
+                "field": "default_library_id",
+                "remediation": "use a built-in library id or a non-empty custom library slug"
+            })));
         }
         if !self.sampling_foundationality_lambda.is_finite()
             || self.sampling_foundationality_lambda < 0.0

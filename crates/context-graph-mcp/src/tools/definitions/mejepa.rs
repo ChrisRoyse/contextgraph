@@ -292,6 +292,30 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_LIBRARY_FOUNDATIONALITY,
+            "TASK-EK-017 library-level foundationality surface: read registered libraries, per-library PageRank scores, cross-library PageRank scores, and cross-library reference counts from RocksDB. No inner LLM is invoked.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "libraryId": {
+                        "type": "string",
+                        "description": "Optional library slug: python-swe-bench-lite, non-python-fixtures, shakespeare-canon, santa-training-video, customer-service-transcripts, or custom:<name>."
+                    },
+                    "topK": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 10
+                    },
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional ME-JEPA RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_PROPOSE_INSTRUMENT,
             "TASK-EK-002 ontology-extension surface: compose Unknown active-learning clusters, pairwise-MI health, and mincut structural-hole evidence into deterministic candidate frozen-instrument proposals. No inner LLM is invoked.",
             json!({

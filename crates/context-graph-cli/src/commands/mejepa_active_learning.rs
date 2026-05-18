@@ -11,11 +11,12 @@ use anyhow::{anyhow, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
 use context_graph_mejepa::{
     bedrock_consistency_for_patch_diff, elicit_intent, mejepa_mincut_panel, open_infer_rocksdb,
-    open_mincut_rocksdb, read_mincut_report, read_north_star, write_mincut_report_sync_readback,
-    write_north_star_sync_readback, ActiveLearningLabel, ActiveLearningQueueEntry,
-    ActiveLearningRankBy, BedrockConsistencyReport, ElicitationOptions, IntentSpecification,
-    LabelMethod, MincutOptions, MincutReport, NorthStarVector, OracleOutcome, PanelGraphSource,
-    RawIntentInput, RocksDbEvalStore, TaskId,
+    open_mincut_rocksdb, read_library_foundationality_report, read_mincut_report, read_north_star,
+    write_mincut_report_sync_readback, write_north_star_sync_readback, ActiveLearningLabel,
+    ActiveLearningQueueEntry, ActiveLearningRankBy, BedrockConsistencyReport, ElicitationOptions,
+    IntentSpecification, LabelMethod, LibraryFoundationalityQueryReport, LibraryId, MincutOptions,
+    MincutReport, NorthStarVector, OracleOutcome, PanelGraphSource, RawIntentInput,
+    RocksDbEvalStore, TaskId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -47,6 +48,9 @@ pub enum MejepaCommands {
     /// TASK-EK-016 bedrock verifier over a patch diff and persisted foundationality scores.
     #[command(name = "check-bedrock")]
     CheckBedrock(CheckBedrockArgs),
+    /// TASK-EK-017 per-library and cross-library foundationality readback.
+    #[command(name = "library-foundationality")]
+    LibraryFoundationality(LibraryFoundationalityArgs),
     /// Bind PostToolUse Bash test outcomes back to live RealityPrediction rows.
     #[command(name = "bind-test-outcomes")]
     BindTestOutcomes(crate::commands::mejepa_prediction_verification::BindTestOutcomesArgs),
@@ -218,6 +222,21 @@ pub struct CheckBedrockArgs {
     pub top_k: usize,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct LibraryFoundationalityArgs {
+    /// Inference RocksDB path containing TASK-EK-017 library foundationality CFs.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// Optional library slug: python-swe-bench-lite, non-python-fixtures, shakespeare-canon, santa-training-video, customer-service-transcripts, or custom:<name>.
+    #[arg(long)]
+    pub library_id: Option<String>,
+
+    /// Maximum rows to return in each ranking.
+    #[arg(long, default_value_t = 10)]
+    pub top_k: usize,
+}
+
 #[derive(Clone, Copy, Debug, ValueEnum)]
 #[clap(rename_all = "kebab_case")]
 pub enum ElicitIntentModeArg {
@@ -347,6 +366,14 @@ pub struct CheckBedrockCliOutput {
     pub source_of_truth: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryFoundationalityCliOutput {
+    pub tool: &'static str,
+    pub report: LibraryFoundationalityQueryReport,
+    pub source_of_truth: serde_json::Value,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ElicitIntentInputEnvelope {
@@ -454,6 +481,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
         }
         MejepaCommands::CheckBedrock(args) => {
             serde_json::to_value(check_bedrock_cli(args)?).context("serialize check-bedrock")
+        }
+        MejepaCommands::LibraryFoundationality(args) => {
+            serde_json::to_value(library_foundationality_cli(args)?)
+                .context("serialize library-foundationality")
         }
         MejepaCommands::BindTestOutcomes(args) => serde_json::to_value(
             crate::commands::mejepa_prediction_verification::bind_test_outcomes(args)?,
@@ -666,6 +697,33 @@ pub fn check_bedrock_cli(args: CheckBedrockArgs) -> Result<CheckBedrockCliOutput
             "dbPath": args.db_path,
             "patch": args.patch,
             "foundationalityCf": context_graph_mejepa_cf::CF_MEJEPA_CHUNK_FOUNDATIONALITY,
+            "innerLlmInvoked": false
+        }),
+    })
+}
+
+pub fn library_foundationality_cli(
+    args: LibraryFoundationalityArgs,
+) -> Result<LibraryFoundationalityCliOutput> {
+    let db = open_infer_rocksdb(&args.db_path)
+        .with_context(|| format!("open ME-JEPA RocksDB {}", args.db_path.display()))?;
+    let library_id = args
+        .library_id
+        .as_deref()
+        .map(LibraryId::parse_slug)
+        .transpose()
+        .context("parse library id")?;
+    let report = read_library_foundationality_report(db.as_ref(), library_id.as_ref(), args.top_k)
+        .context("MEJEPA_LIBRARY_FOUNDATIONALITY_FAILED")?;
+    Ok(LibraryFoundationalityCliOutput {
+        tool: "context-graph-cli mejepa library-foundationality",
+        report,
+        source_of_truth: json!({
+            "dbPath": args.db_path,
+            "libraryId": args.library_id,
+            "libraryRegistryCf": context_graph_mejepa_cf::CF_MEJEPA_LIBRARY_REGISTRY,
+            "libraryFoundationalityCf": context_graph_mejepa_cf::CF_MEJEPA_LIBRARY_FOUNDATIONALITY,
+            "crossLibraryReferencesCf": context_graph_mejepa_cf::CF_MEJEPA_CROSS_LIBRARY_REFERENCES,
             "innerLlmInvoked": false
         }),
     })

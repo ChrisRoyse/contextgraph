@@ -23,23 +23,25 @@ use context_graph_mejepa::{
     elicit_intent, mejepa_mincut_panel, open_infer_rocksdb, open_mincut_rocksdb,
     promote_instrument_proposal, propose_embedder_proposals_from_db, propose_instruments_from_db,
     rank_counterfactual_candidates, read_embedder_proposals, read_instrument_proposal,
-    read_instrument_proposals, read_mincut_report, read_north_star, search_latent_actions,
-    write_embedder_proposals_sync_readback, write_instrument_proposals_sync_readback,
-    write_mincut_report_sync_readback, write_north_star_sync_readback, ActiveLearningQueueState,
-    ActualOutcome, AgentId, CalibrationStore, ChunkId, CounterfactualCandidateRankingConfig,
-    DdaSignals, ElicitationOptions, EmbedderProposalConfig, FailedGate, FeedbackId, FeedbackKind,
+    read_instrument_proposals, read_library_foundationality_report, read_mincut_report,
+    read_north_star, search_latent_actions, write_embedder_proposals_sync_readback,
+    write_instrument_proposals_sync_readback, write_mincut_report_sync_readback,
+    write_north_star_sync_readback, ActiveLearningQueueState, ActualOutcome, AgentId,
+    CalibrationStore, ChunkId, CounterfactualCandidateRankingConfig, DdaSignals,
+    ElicitationOptions, EmbedderProposalConfig, FailedGate, FeedbackId, FeedbackKind,
     FingerprintId, FingerprintReference, InstrumentProposalConfig, InstrumentProposalDecision,
     IntentCandidate, IntentSpecification, LabelMethod, LatentActionCandidate,
-    LatentActionSearchConfig, MeJepaInferConfig, MincutOptions, NorthStarVector, OracleOutcome,
-    PanelGraphSource, PanelId, PatchBundle, PredictionId, RealityPrediction, RocksDbEvalStore,
-    RocksDbInferStore, SurpriseEvent, SurpriseSeverity, SystemCostCounters, TaskContext, TestId,
-    VerifyVerdict, WitnessHash,
+    LatentActionSearchConfig, LibraryId, MeJepaInferConfig, MincutOptions, NorthStarVector,
+    OracleOutcome, PanelGraphSource, PanelId, PatchBundle, PredictionId, RealityPrediction,
+    RocksDbEvalStore, RocksDbInferStore, SurpriseEvent, SurpriseSeverity, SystemCostCounters,
+    TaskContext, TestId, VerifyVerdict, WitnessHash,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_CALIBRATION_HISTORY,
-    CF_MEJEPA_CHUNK_FOUNDATIONALITY, CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_EMBEDDER_PROPOSALS,
-    CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_INSTRUMENT_PROPOSALS, CF_MEJEPA_LIVE_PREDICTIONS,
+    CF_MEJEPA_CHUNK_FOUNDATIONALITY, CF_MEJEPA_CROSS_LIBRARY_REFERENCES, CF_MEJEPA_DDA_SIGNALS,
+    CF_MEJEPA_EMBEDDER_PROPOSALS, CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_INSTRUMENT_PROPOSALS,
+    CF_MEJEPA_LIBRARY_FOUNDATIONALITY, CF_MEJEPA_LIBRARY_REGISTRY, CF_MEJEPA_LIVE_PREDICTIONS,
     CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_NORTH_STARS,
     CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
 };
@@ -165,6 +167,17 @@ struct CheckBedrockConsistencyRequest {
     #[serde(default = "default_bedrock_threshold")]
     threshold: f32,
     #[serde(default = "default_bedrock_top_k")]
+    top_k: usize,
+    #[serde(default)]
+    db_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LibraryFoundationalityRequest {
+    #[serde(default)]
+    library_id: Option<String>,
+    #[serde(default = "default_library_foundationality_top_k")]
     top_k: usize,
     #[serde(default)]
     db_path: Option<PathBuf>,
@@ -393,6 +406,10 @@ fn default_bedrock_threshold() -> f32 {
 
 fn default_bedrock_top_k() -> usize {
     5
+}
+
+fn default_library_foundationality_top_k() -> usize {
+    10
 }
 
 impl Handlers {
@@ -902,6 +919,45 @@ impl Handlers {
                 "MEJEPA_CHECK_BEDROCK_CONSISTENCY_FAILED",
                 &err.to_string(),
                 json!({"dbPath": db_path, "foundationalityCf": CF_MEJEPA_CHUNK_FOUNDATIONALITY}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_library_foundationality(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: LibraryFoundationalityRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_LIBRARY_FOUNDATIONALITY
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_library_foundationality(&db_path, request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Execution,
+                "MEJEPA_LIBRARY_FOUNDATIONALITY_FAILED",
+                &err.to_string(),
+                json!({
+                    "dbPath": db_path,
+                    "libraryRegistryCf": CF_MEJEPA_LIBRARY_REGISTRY,
+                    "libraryFoundationalityCf": CF_MEJEPA_LIBRARY_FOUNDATIONALITY,
+                    "crossLibraryReferencesCf": CF_MEJEPA_CROSS_LIBRARY_REFERENCES
+                }),
             ),
         }
     }
@@ -2269,6 +2325,34 @@ fn run_check_bedrock_consistency(
             "dbPath": db_path.display().to_string(),
             "foundationalityCf": CF_MEJEPA_CHUNK_FOUNDATIONALITY,
             "tool": tool_names::MEJEPA_CHECK_BEDROCK_CONSISTENCY,
+            "innerLlmInvoked": false
+        }
+    }))
+}
+
+fn run_library_foundationality(
+    db_path: &Path,
+    request: LibraryFoundationalityRequest,
+) -> AnyhowResult<Value> {
+    let db = open_infer_rocksdb(db_path).context("open ME-JEPA inference RocksDB")?;
+    let library_id = request
+        .library_id
+        .as_deref()
+        .map(LibraryId::parse_slug)
+        .transpose()
+        .context("parse library id")?;
+    let report =
+        read_library_foundationality_report(db.as_ref(), library_id.as_ref(), request.top_k)
+            .context("read persisted library foundationality report")?;
+    Ok(json!({
+        "report": report,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "libraryId": request.library_id,
+            "libraryRegistryCf": CF_MEJEPA_LIBRARY_REGISTRY,
+            "libraryFoundationalityCf": CF_MEJEPA_LIBRARY_FOUNDATIONALITY,
+            "crossLibraryReferencesCf": CF_MEJEPA_CROSS_LIBRARY_REFERENCES,
+            "tool": tool_names::MEJEPA_LIBRARY_FOUNDATIONALITY,
             "innerLlmInvoked": false
         }
     }))
