@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
-pub const STRESS_TRACE_ROOT: &str = "/mnt/d/contextgraph/runtime/stress-runs";
+pub const STRESS_TRACE_ROOT: &str = "/zfs/archive/contextgraph/runtime/stress-runs";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -196,6 +196,8 @@ pub enum ProjectStressError {
         source: serde_json::Error,
     },
     #[error("{0}")]
+    Path(#[from] context_graph_paths::PathError),
+    #[error("{0}")]
     Ingest(#[from] ProjectIngestError),
     #[error("{0}")]
     Report(#[from] ProjectReportError),
@@ -213,6 +215,7 @@ impl ProjectStressError {
             Self::InvalidInput { .. } => "MEJEPA_STRESS_INVALID_INPUT",
             Self::Io { .. } => "MEJEPA_STRESS_IO",
             Self::Json { .. } => "MEJEPA_STRESS_JSON",
+            Self::Path(err) => err.code,
             Self::Ingest(err) => err.code(),
             Self::Report(err) => err.code(),
             Self::RocksDb(_) => "MEJEPA_STRESS_ROCKSDB",
@@ -229,7 +232,8 @@ pub fn run_project_stress(request: ProjectStressRequest) -> Result<StressRun, Pr
         .unwrap_or_else(|| default_run_id(request.size));
     validate_run_id(&run_id)?;
     let project_id = project_id_for_run(&run_id, request.size);
-    let trace_dir = request.trace_root.join(&run_id);
+    let trace_root = require_stress_trace_root(&request.trace_root)?;
+    let trace_dir = trace_root.join(&run_id);
     remove_dir_if_exists(&trace_dir)?;
     fs::create_dir_all(&trace_dir).map_err(|source| ProjectStressError::Io {
         path: trace_dir.display().to_string(),
@@ -812,6 +816,29 @@ fn default_seed() -> u64 {
 
 fn default_trace_root() -> PathBuf {
     PathBuf::from(STRESS_TRACE_ROOT)
+}
+
+fn require_stress_trace_root(path: &Path) -> Result<PathBuf, ProjectStressError> {
+    let normalized = context_graph_paths::require_production_durable_root_or_named_local_smoke(
+        path,
+        "project_stress.trace_root",
+    )?;
+    let production_runtime = Path::new(context_graph_paths::AIWONDER_DURABLE_ROOT).join("runtime");
+    let legacy_runtime = Path::new(context_graph_paths::LEGACY_LOCAL_DATA_ROOT).join("runtime");
+    if normalized.starts_with(&production_runtime)
+        || (context_graph_paths::named_local_smoke_issue().is_some()
+            && normalized.starts_with(&legacy_runtime))
+    {
+        Ok(normalized)
+    } else {
+        Err(ProjectStressError::InvalidInput {
+            field: "trace_root".to_string(),
+            detail: format!(
+                "{} must live under /zfs/archive/contextgraph/runtime in production",
+                normalized.display()
+            ),
+        })
+    }
 }
 
 fn elapsed_ms(started: Instant) -> u64 {

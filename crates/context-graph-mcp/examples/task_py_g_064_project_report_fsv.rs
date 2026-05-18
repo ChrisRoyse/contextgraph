@@ -31,7 +31,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-064-reality-report-fsv";
+const FSV_ROOT: &str =
+    "/zfs/archive/contextgraph/fsv/task-aiwonder-016-project-report-locality-fsv";
 const REPORT_NAME: &str = "project_report_fsv.json";
 
 fn main() -> Result<()> {
@@ -45,8 +46,8 @@ fn main() -> Result<()> {
         "taskId": "TASK-PY-G-064",
         "issue": 283,
         "sourceOfTruth": {
-            "reportJson": "/mnt/d/contextgraph/projects/<project_id>/report/report.json",
-            "reportMarkdown": "/mnt/d/contextgraph/projects/<project_id>/report/report.md",
+            "reportJson": "/zfs/archive/contextgraph/projects/<project_id>/report/report.json",
+            "reportMarkdown": "/zfs/archive/contextgraph/projects/<project_id>/report/report.md",
             "reportCf": CF_MEJEPA_PROJECT_REPORTS,
             "predictionCf": CF_MEJEPA_LIVE_PREDICTIONS
         },
@@ -361,9 +362,7 @@ fn manifest_path_mismatch_case() -> Result<Value> {
     )?;
     manifest.predictions_db_path = "/tmp/contextgraph-tampered-report.rocksdb".to_string();
     context_graph_mejepa::write_json_0600(
-        &PathBuf::from(format!(
-            "/mnt/d/contextgraph/projects/{project_id}/manifest.json"
-        )),
+        &project_root(project_id)?.join("manifest.json"),
         &manifest,
     )?;
     let err = run_project_report(report_request(project_id))
@@ -439,7 +438,7 @@ fn write_manual_project(
     project_id: &str,
     specs: Vec<SyntheticPredictionSpec>,
 ) -> Result<ProjectIngestManifest> {
-    let project_root = PathBuf::from(format!("/mnt/d/contextgraph/projects/{project_id}"));
+    let project_root = project_root(project_id)?;
     fs::create_dir_all(project_root.join("predictions"))?;
     fs::create_dir_all(project_root.join("report"))?;
     let predictions_db_path = project_root.join("predictions/live-predictions.rocksdb");
@@ -478,7 +477,7 @@ fn write_manual_project(
     let manifest = ProjectIngestManifest {
         schema_version: 1,
         project_id: project_id.to_string(),
-        repo_path: format!("/mnt/d/contextgraph/projects/{project_id}/synthetic"),
+        repo_path: project_root.join("synthetic").display().to_string(),
         project_root: project_root.display().to_string(),
         mode: ProjectIngestMode::Full,
         scope: ProjectIngestScope::SourceOnly,
@@ -643,7 +642,7 @@ struct ProjectReportState {
 }
 
 fn inspect_state(project_id: &str) -> Result<ProjectReportState> {
-    let root = PathBuf::from(format!("/mnt/d/contextgraph/projects/{project_id}"));
+    let root = project_root(project_id)?;
     let manifest = root.join("manifest.json");
     let report_json = root.join("report/report.json");
     let report_md = root.join("report/report.md");
@@ -678,9 +677,8 @@ fn read_report_json(path: &str) -> Result<ProjectRealityReport> {
 }
 
 fn reopened_report_cf(project_id: &str, report_version: &str) -> Result<ProjectRealityReport> {
-    let db = open_infer_rocksdb(format!(
-        "/mnt/d/contextgraph/projects/{project_id}/predictions/live-predictions.rocksdb"
-    ))?;
+    let db =
+        open_infer_rocksdb(project_root(project_id)?.join("predictions/live-predictions.rocksdb"))?;
     Ok(read_project_report_cf(
         db.as_ref(),
         project_id,
@@ -700,11 +698,15 @@ fn write_python_project(root: &Path, files: &[(&str, &str)]) -> Result<()> {
 }
 
 fn reset_project(project_id: &str) -> Result<()> {
-    let root = PathBuf::from(format!("/mnt/d/contextgraph/projects/{project_id}"));
+    let root = project_root(project_id)?;
     if root.exists() {
         fs::remove_dir_all(&root)?;
     }
     Ok(())
+}
+
+fn project_root(project_id: &str) -> Result<PathBuf> {
+    Ok(context_graph_mejepa::project_root(project_id)?)
 }
 
 fn call_project_report_via_mcp(root: &Path, tool_name: &str, project_id: &str) -> Result<Value> {

@@ -17,9 +17,11 @@ pub enum ProjectCacheError {
     #[error("MEJEPA_PROJECT_CACHE_INVALID_PATH: {path} must be an existing git repository")]
     InvalidRepoPath { path: String },
     #[error(
-        "MEJEPA_PROJECT_CACHE_D_ROOT_REQUIRED: {path} must live under /mnt/d/contextgraph/projects"
+        "MEJEPA_PROJECT_CACHE_ROOT_NOT_AIWONDER: {path} must live under /zfs/archive/contextgraph/projects in production"
     )]
     InvalidCacheRoot { path: String },
+    #[error("{0}")]
+    Path(#[from] context_graph_paths::PathError),
     #[error("MEJEPA_PROJECT_CACHE_IO: {path}: {source}")]
     Io {
         path: String,
@@ -46,7 +48,8 @@ impl ProjectCacheError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::InvalidRepoPath { .. } => "MEJEPA_PROJECT_CACHE_INVALID_PATH",
-            Self::InvalidCacheRoot { .. } => "MEJEPA_PROJECT_CACHE_D_ROOT_REQUIRED",
+            Self::InvalidCacheRoot { .. } => "MEJEPA_PROJECT_CACHE_ROOT_NOT_AIWONDER",
+            Self::Path(err) => err.code,
             Self::Io { .. } => "MEJEPA_PROJECT_CACHE_IO",
             Self::Sqlite { .. } => "MEJEPA_PROJECT_CACHE_SQLITE",
             Self::GitFailed { .. } => "MEJEPA_PROJECT_CACHE_GIT_FAILED",
@@ -71,7 +74,10 @@ impl ProjectCacheConfig {
     pub fn new(project_id: impl Into<String>, repo_path: PathBuf) -> Self {
         let project_id = project_id.into();
         Self {
-            cache_dir: PathBuf::from(format!("/mnt/d/contextgraph/projects/{project_id}/cache")),
+            cache_dir: PathBuf::from(context_graph_paths::DEFAULT_DATA_ROOT)
+                .join("projects")
+                .join(&project_id)
+                .join("cache"),
             project_id,
             repo_path,
             chunk_schema_version: "python-ast-v1".to_string(),
@@ -192,16 +198,17 @@ impl ProjectMerkleCache {
                 source,
             }
         })?;
-        require_d_project_cache_root(&config.cache_dir)?;
-        fs::create_dir_all(&config.cache_dir).map_err(|source| ProjectCacheError::Io {
-            path: config.cache_dir.display().to_string(),
+        let cache_dir = require_project_cache_root(&config.cache_dir)?;
+        fs::create_dir_all(&cache_dir).map_err(|source| ProjectCacheError::Io {
+            path: cache_dir.display().to_string(),
             source,
         })?;
-        let db_path = config.cache_dir.join("cache.db");
-        let status_path = config.cache_dir.join(WATCHER_STATUS_FILE);
+        let db_path = cache_dir.join("cache.db");
+        let status_path = cache_dir.join(WATCHER_STATUS_FILE);
         let cache = Self {
             config: ProjectCacheConfig {
                 repo_path,
+                cache_dir,
                 ..config
             },
             db_path,
@@ -659,12 +666,22 @@ fn canonicalize_existing_dir(path: &Path) -> Result<PathBuf, std::io::Error> {
     }
 }
 
-fn require_d_project_cache_root(path: &Path) -> Result<(), ProjectCacheError> {
-    if path.starts_with("/mnt/d/contextgraph/projects") {
-        Ok(())
+fn require_project_cache_root(path: &Path) -> Result<PathBuf, ProjectCacheError> {
+    let normalized = context_graph_paths::require_production_durable_root_or_named_local_smoke(
+        path,
+        "project_cache.cache_dir",
+    )?;
+    let production_projects =
+        Path::new(context_graph_paths::AIWONDER_DURABLE_ROOT).join("projects");
+    let legacy_projects = Path::new(context_graph_paths::LEGACY_LOCAL_DATA_ROOT).join("projects");
+    if normalized.starts_with(&production_projects)
+        || (context_graph_paths::named_local_smoke_issue().is_some()
+            && normalized.starts_with(&legacy_projects))
+    {
+        Ok(normalized)
     } else {
         Err(ProjectCacheError::InvalidCacheRoot {
-            path: path.display().to_string(),
+            path: normalized.display().to_string(),
         })
     }
 }

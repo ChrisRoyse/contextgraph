@@ -25,7 +25,6 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
-const PROJECT_ROOT: &str = "/mnt/d/contextgraph/projects";
 const PREDICTOR_VERSION: &str = "task-py-g-063-project-ingest-v1";
 
 #[derive(Debug, Clone)]
@@ -66,6 +65,8 @@ pub enum ProjectIngestError {
         #[source]
         source: std::io::Error,
     },
+    #[error("{0}")]
+    Path(#[from] context_graph_paths::PathError),
     #[error("MEJEPA_PROJECT_INGEST_SQLITE: {context}: {source}")]
     Sqlite {
         context: &'static str,
@@ -102,6 +103,7 @@ impl ProjectIngestError {
             Self::MissingPredictionRow { .. } => "MEJEPA_PROJECT_INGEST_MISSING_PREDICTION_ROW",
             Self::GitFailed { .. } => "MEJEPA_PROJECT_INGEST_GIT_FAILED",
             Self::Io { .. } => "MEJEPA_PROJECT_INGEST_IO",
+            Self::Path(err) => err.code,
             Self::Sqlite { .. } => "MEJEPA_PROJECT_INGEST_SQLITE",
             Self::Json { .. } => "MEJEPA_PROJECT_INGEST_JSON",
             Self::Cache(err) => err.code(),
@@ -253,7 +255,7 @@ pub fn run_project_ingest(
         Some(value) => validate_project_id(value)?,
         None => derive_project_id(&source.input_path),
     };
-    let project_root = PathBuf::from(PROJECT_ROOT).join(&project_id);
+    let project_root = project_root(&project_id)?;
     let manifest_path = project_root.join("manifest.json");
     let previous_manifest = read_manifest_if_present(&manifest_path)?;
     validate_collision_policy(
@@ -437,6 +439,12 @@ pub fn run_project_ingest(
     })
 }
 
+pub fn project_root(project_id: &str) -> Result<PathBuf, ProjectIngestError> {
+    Ok(context_graph_paths::production_data_root()?
+        .join("projects")
+        .join(project_id))
+}
+
 pub fn count_project_predictions(db: &DB, project_id: &str) -> Result<usize, ProjectIngestError> {
     let cf =
         db.cf_handle(CF_MEJEPA_LIVE_PREDICTIONS)
@@ -606,13 +614,18 @@ fn canonicalize_source_path(path: &Path) -> Result<ProjectSourcePath, ProjectIng
 }
 
 fn require_operator_permitted_root(path: &Path) -> Result<(), ProjectIngestError> {
-    let allowed = [
-        Path::new("/home/cabdru"),
-        Path::new("/mnt/d/contextgraph"),
+    let aiwonder_allowed = [
         Path::new("/zfs/hot/contextgraph"),
         Path::new("/zfs/archive/contextgraph"),
+        Path::new("/home/croyse"),
     ];
-    if allowed.iter().any(|root| path.starts_with(root)) {
+    let local_smoke_allowed = [Path::new("/home/cabdru"), Path::new("/mnt/d/contextgraph")];
+    if aiwonder_allowed.iter().any(|root| path.starts_with(root))
+        || (context_graph_paths::named_local_smoke_issue().is_some()
+            && local_smoke_allowed
+                .iter()
+                .any(|root| path.starts_with(root)))
+    {
         Ok(())
     } else {
         Err(ProjectIngestError::RepoPathDenied {

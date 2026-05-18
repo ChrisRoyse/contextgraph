@@ -11,13 +11,18 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-062-merkle-cache-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-aiwonder-016-merkle-cache-locality-fsv";
 const PROJECT_ID: &str = "task-py-g-062-synthetic";
 const REPORT_NAME: &str = "project_merkle_cache_fsv.json";
 
 fn main() -> Result<()> {
     let root = PathBuf::from(FSV_ROOT);
-    let project_cache_root = PathBuf::from(format!("/mnt/d/contextgraph/projects/{PROJECT_ID}"));
+    let project_cache_root =
+        context_graph_mejepa::ProjectCacheConfig::new(PROJECT_ID, PathBuf::new())
+            .cache_dir
+            .parent()
+            .context("cache dir missing project root")?
+            .to_path_buf();
     remove_if_exists(&root)?;
     remove_if_exists(&project_cache_root)?;
     fs::create_dir_all(&root)?;

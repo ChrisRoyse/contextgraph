@@ -16,7 +16,6 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
-const PROJECT_ROOT: &str = "/mnt/d/contextgraph/projects";
 const REPORT_SCHEMA_VERSION: u32 = 1;
 const BROKEN_LIMIT: usize = 20;
 const EDGE_LIMIT: usize = 10;
@@ -58,6 +57,8 @@ pub enum ProjectReportError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("{0}")]
+    Path(#[from] context_graph_paths::PathError),
     #[error("MEJEPA_PROJECT_REPORT_ROCKSDB: {0}")]
     RocksDb(#[from] rocksdb::Error),
     #[error("MEJEPA_PROJECT_REPORT_BINCODE: {0}")]
@@ -75,6 +76,7 @@ impl ProjectReportError {
             Self::ManifestPathMismatch { .. } => "MEJEPA_PROJECT_REPORT_MANIFEST_PATH_MISMATCH",
             Self::Io { .. } => "MEJEPA_PROJECT_REPORT_IO",
             Self::Json { .. } => "MEJEPA_PROJECT_REPORT_JSON",
+            Self::Path(err) => err.code,
             Self::RocksDb(_) => "MEJEPA_PROJECT_REPORT_ROCKSDB",
             Self::Bincode(_) => "MEJEPA_PROJECT_REPORT_BINCODE",
             Self::Infer(err) => err.code(),
@@ -313,7 +315,7 @@ pub fn run_project_report(
     request: ProjectReportRequest,
 ) -> Result<ProjectReportRun, ProjectReportError> {
     let project_id = validate_project_id(&request.project_id)?;
-    let project_root = project_root(&project_id);
+    let project_root = project_root(&project_id)?;
     let manifest_path = project_root.join("manifest.json");
     if !manifest_path.exists() {
         return Err(ProjectReportError::IngestRequired { project_id });
@@ -400,8 +402,8 @@ pub fn read_project_report_cf(
     serde_json::from_slice(&bytes).map_err(|source| ProjectReportError::Json { path: key, source })
 }
 
-pub fn project_report_db_path(project_id: &str) -> PathBuf {
-    project_root(project_id).join("predictions/live-predictions.rocksdb")
+pub fn project_report_db_path(project_id: &str) -> Result<PathBuf, ProjectReportError> {
+    Ok(project_root(project_id)?.join("predictions/live-predictions.rocksdb"))
 }
 
 fn build_report(
@@ -1207,16 +1209,18 @@ fn validate_project_id(value: &str) -> Result<String, ProjectReportError> {
     Ok(value.to_string())
 }
 
-fn project_root(project_id: &str) -> PathBuf {
-    PathBuf::from(PROJECT_ROOT).join(project_id)
+fn project_root(project_id: &str) -> Result<PathBuf, ProjectReportError> {
+    Ok(context_graph_paths::production_data_root()?
+        .join("projects")
+        .join(project_id))
 }
 
 fn validate_manifest_paths(
     project_id: &str,
     manifest: &ProjectIngestManifest,
 ) -> Result<PathBuf, ProjectReportError> {
-    let expected_root = project_root(project_id);
-    let expected_db = project_report_db_path(project_id);
+    let expected_root = project_root(project_id)?;
+    let expected_db = project_report_db_path(project_id)?;
     let actual_root = PathBuf::from(&manifest.project_root);
     let actual_db = PathBuf::from(&manifest.predictions_db_path);
     if actual_root != expected_root {

@@ -22,7 +22,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_PROJECT_INGEST,
-            "TASK-PY-G-063 reality-compiler ingest: scan a permitted project file or directory tree, materialize the per-project cache/manifest directory under /mnt/d/contextgraph/projects/<project_id>/, route Python files through the AST chunker, and persist per-file RealityPrediction rows to CF_MEJEPA_LIVE_PREDICTIONS with source-of-truth readback.",
+            "TASK-PY-G-063 reality-compiler ingest: scan a permitted project file or directory tree, materialize the per-project cache/manifest directory under /zfs/archive/contextgraph/projects/<project_id>/ in production, route Python files through the AST chunker, and persist per-file RealityPrediction rows to CF_MEJEPA_LIVE_PREDICTIONS with source-of-truth readback.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -68,7 +68,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_PROJECT_REPORT,
-            "TASK-PY-G-064 reality-compiler report: read an ingested project's local CF_MEJEPA_LIVE_PREDICTIONS rows, render durable report.json/report.md under /mnt/d/contextgraph/projects/<project_id>/report/, persist CF_MEJEPA_PROJECT_REPORTS, and return the JSON report.",
+            "TASK-PY-G-064 reality-compiler report: read an ingested project's local CF_MEJEPA_LIVE_PREDICTIONS rows, render durable report.json/report.md under /zfs/archive/contextgraph/projects/<project_id>/report/ in production, persist CF_MEJEPA_PROJECT_REPORTS, and return the JSON report.",
             json!({
                 "type": "object",
                 "additionalProperties": false,

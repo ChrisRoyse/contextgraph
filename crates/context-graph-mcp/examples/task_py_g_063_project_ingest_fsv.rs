@@ -10,11 +10,12 @@ use context_graph_core::{CoreError, CoreResult};
 use context_graph_mcp::handlers::Handlers;
 use context_graph_mcp::protocol::{JsonRpcId, JsonRpcRequest};
 use context_graph_mejepa::{
-    count_project_predictions, open_infer_rocksdb, project_prediction_live_key, run_project_ingest,
-    ProjectIngestManifest, ProjectIngestMode, ProjectIngestRequest, ProjectIngestScope,
+    count_project_predictions, count_project_reports, open_infer_rocksdb,
+    project_prediction_live_key, run_project_ingest, run_project_report, ProjectIngestManifest,
+    ProjectIngestMode, ProjectIngestRequest, ProjectIngestScope, ProjectReportRequest,
     RealityPrediction,
 };
-use context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS;
+use context_graph_mejepa_cf::{CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_PROJECT_REPORTS};
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use context_graph_storage::{BackgroundGraphBuilder, EdgeRepository, GraphBuilderConfig};
 use rocksdb::IteratorMode;
@@ -29,7 +30,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-063-project-ingest-fsv";
+const FSV_ROOT: &str =
+    "/zfs/archive/contextgraph/fsv/task-aiwonder-016-project-ingest-locality-fsv";
 const REPORT_NAME: &str = "project_ingest_fsv.json";
 
 fn main() -> Result<()> {
@@ -47,17 +49,39 @@ fn main() -> Result<()> {
     let mixed = mixed_encoding_binary_case(&root)?;
     let scope_switch = scope_switch_case(&root)?;
     let plain_source = plain_directory_and_single_file_case(&root)?;
-    let edge_cases = vec![empty, incremental, large, mixed, scope_switch, plain_source];
+    let outside_allowed = outside_allowed_root_case()?;
+    let local_d_absence = local_d_artifact_absence_case(&[
+        "task-py-g-063-mcp-canonical",
+        "task-py-g-063-mcp-alias",
+        "task-py-g-063-happy",
+        "task-py-g-063-empty",
+        "task-py-g-063-incremental",
+        "task-py-g-063-large",
+        "task-py-g-063-mixed",
+        "task-py-g-063-scope",
+        "task-py-g-063-plain-dir",
+        "task-py-g-063-single-file",
+    ]);
+    let edge_cases = vec![
+        empty,
+        incremental,
+        large,
+        mixed,
+        scope_switch,
+        plain_source,
+        outside_allowed,
+        local_d_absence,
+    ];
     let all_passed =
         case_pass(&mcp_surface) && case_pass(&happy) && edge_cases.iter().all(case_pass);
     let report_path = root.join(REPORT_NAME);
     let report = json!({
         "schemaVersion": 1,
-        "taskId": "TASK-PY-G-063",
-        "issue": 282,
+        "taskId": "TASK-AIWONDER-016",
+        "issue": 367,
         "sourceOfTruth": {
-            "projectManifests": "/mnt/d/contextgraph/projects/<project_id>/manifest.json",
-            "cacheSqlite": "/mnt/d/contextgraph/projects/<project_id>/cache/cache.db",
+            "projectManifests": "/zfs/archive/contextgraph/projects/<project_id>/manifest.json",
+            "cacheSqlite": "/zfs/archive/contextgraph/projects/<project_id>/cache/cache.db",
             "livePredictionCf": CF_MEJEPA_LIVE_PREDICTIONS,
             "fsvReport": report_path
         },
@@ -157,7 +181,7 @@ fn happy_path_case(root: &Path) -> Result<Value> {
         "def run(expr):\n    return eval(expr)\n",
     )?;
     let before = inspect_state(project_id)?;
-    let report = run_project_ingest(ProjectIngestRequest {
+    let ingest_report = run_project_ingest(ProjectIngestRequest {
         repo_path: repo.clone(),
         project_id: Some(project_id.to_string()),
         mode: ProjectIngestMode::Full,
@@ -165,13 +189,29 @@ fn happy_path_case(root: &Path) -> Result<Value> {
         overwrite: false,
         changed_paths: Vec::new(),
     })?;
+    let project_report = run_project_report(ProjectReportRequest {
+        project_id: project_id.to_string(),
+        section: None,
+        offset: None,
+    })?;
     let after = inspect_state(project_id)?;
     let predictions = read_project_predictions(&default_db_path(project_id)?, project_id)?;
-    let physical_keys =
-        verify_manifest_physical_keys(&default_db_path(project_id)?, project_id, &report.manifest)?;
-    let bug = prediction_by_file(&report.manifest, &predictions, "src/bug.py")?;
-    let clean = prediction_by_file(&report.manifest, &predictions, "src/clean.py")?;
-    let security = prediction_by_file(&report.manifest, &predictions, "src/security.py")?;
+    let physical_keys = verify_manifest_physical_keys(
+        &default_db_path(project_id)?,
+        project_id,
+        &ingest_report.manifest,
+    )?;
+    let ast_chunks =
+        python_ast_chunk_summary(Path::new(&ingest_report.cache_db_path), "src/bug.py")?;
+    let report_readback: Value =
+        serde_json::from_slice(&fs::read(&project_report.report_json_path)?)?;
+    let report_cf_rows = {
+        let db = open_infer_rocksdb(&project_report.report_db_path)?;
+        count_project_reports(db.as_ref(), project_id)?
+    };
+    let bug = prediction_by_file(&ingest_report.manifest, &predictions, "src/bug.py")?;
+    let clean = prediction_by_file(&ingest_report.manifest, &predictions, "src/clean.py")?;
+    let security = prediction_by_file(&ingest_report.manifest, &predictions, "src/security.py")?;
     let pass = !before.manifest_exists
         && after
             .manifest
@@ -179,7 +219,17 @@ fn happy_path_case(root: &Path) -> Result<Value> {
             .is_some_and(|manifest| manifest.file_count == 3)
         && after.sqlite.files == 3
         && after.project_prediction_rows == 3
-        && report.predictions_written == 3
+        && ingest_report.predictions_written == 3
+        && ast_chunks.rows > 0
+        && ast_chunks.whole_file_rows == 0
+        && report_cf_rows == 1
+        && report_readback["projectId"].as_str() == Some(project_id)
+        && project_report
+            .report_json_path
+            .starts_with("/zfs/archive/contextgraph/projects/")
+        && project_report
+            .report_md_path
+            .starts_with("/zfs/archive/contextgraph/projects/")
         && bug
             .predicted_failure_modes
             .iter()
@@ -191,13 +241,21 @@ fn happy_path_case(root: &Path) -> Result<Value> {
         "before": before,
         "trigger": "Full SourceOnly ingest on clean, DivisionByZero, eval files",
         "after": after,
-        "reportSummary": summarize_report(&report),
+        "reportSummary": summarize_report(&ingest_report),
         "directPredictionReadback": {
             "rows": predictions.len(),
             "physicalKeys": physical_keys,
+            "pythonAstChunker": ast_chunks,
             "bugFailureModes": bug.predicted_failure_modes,
             "cleanPredictedWorks": clean.predicted_works,
             "securityConcerns": security.predicted_security_concerns
+        },
+        "projectReportReadback": {
+            "jsonPath": project_report.report_json_path,
+            "markdownPath": project_report.report_md_path,
+            "reportCf": CF_MEJEPA_PROJECT_REPORTS,
+            "reportCfRows": report_cf_rows,
+            "jsonProjectId": report_readback["projectId"]
         },
         "pass": pass
     }))
@@ -250,7 +308,7 @@ fn unchanged_incremental_case(root: &Path) -> Result<Value> {
     })?;
     thread::sleep(Duration::from_millis(5));
     let chunk_digest_before =
-        chunk_updated_at_digest(&project_root(project_id).join("cache/cache.db"))?;
+        chunk_updated_at_digest(&project_root(project_id)?.join("cache/cache.db"))?;
     let before = inspect_state(project_id)?;
     let second = run_project_ingest(ProjectIngestRequest {
         repo_path: repo,
@@ -262,7 +320,7 @@ fn unchanged_incremental_case(root: &Path) -> Result<Value> {
     })?;
     let after = inspect_state(project_id)?;
     let chunk_digest_after =
-        chunk_updated_at_digest(&project_root(project_id).join("cache/cache.db"))?;
+        chunk_updated_at_digest(&project_root(project_id)?.join("cache/cache.db"))?;
     let before_ts = first.manifest.last_ingest_unix_ms;
     let after_ts = second.manifest.last_ingest_unix_ms;
     let pass = before.project_prediction_rows == 1
@@ -500,6 +558,54 @@ fn plain_directory_and_single_file_case(root: &Path) -> Result<Value> {
     }))
 }
 
+fn outside_allowed_root_case() -> Result<Value> {
+    let project_id = "task-py-g-063-denied-root";
+    reset_project(project_id)?;
+    let denied = PathBuf::from("/tmp/contextgraph-aiwonder-016-denied-project");
+    remove_if_exists(&denied)?;
+    fs::create_dir_all(&denied)?;
+    fs::write(denied.join("denied.py"), "def denied():\n    return 1\n")?;
+    let before = inspect_state(project_id)?;
+    let err = run_project_ingest(ProjectIngestRequest {
+        repo_path: denied.clone(),
+        project_id: Some(project_id.to_string()),
+        mode: ProjectIngestMode::Full,
+        scope: ProjectIngestScope::SourceOnly,
+        overwrite: false,
+        changed_paths: Vec::new(),
+    })
+    .expect_err("outside allowed source root must fail closed");
+    let after = inspect_state(project_id)?;
+    remove_if_exists(&denied)?;
+    let pass = err.code() == "MEJEPA_PROJECT_INGEST_REPO_PATH_DENIED"
+        && !after.manifest_exists
+        && after.project_prediction_rows == 0;
+    Ok(json!({
+        "case": "outside_allowed_project_root_fails_closed",
+        "before": before,
+        "trigger": "Full ingest from /tmp source path outside aiwonder/contextgraph permitted roots",
+        "after": after,
+        "errorCode": err.code(),
+        "pass": pass
+    }))
+}
+
+fn local_d_artifact_absence_case(project_ids: &[&str]) -> Value {
+    let existing = project_ids
+        .iter()
+        .map(|project_id| format!("/mnt/d/contextgraph/projects/{project_id}"))
+        .filter(|path| Path::new(path).exists())
+        .collect::<Vec<_>>();
+    let pass = existing.is_empty();
+    json!({
+        "case": "no_production_project_artifacts_written_to_local_d",
+        "before": {"checkedProjectIds": project_ids},
+        "trigger": "physical existence check for issue-scoped project ids under /mnt/d/contextgraph/projects",
+        "after": {"existingLocalDProjectRoots": existing},
+        "pass": pass
+    })
+}
+
 fn prediction_by_file<'a>(
     manifest: &ProjectIngestManifest,
     predictions: &'a [RealityPrediction],
@@ -584,6 +690,43 @@ fn verify_manifest_physical_keys(
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct PythonAstChunkSummary {
+    file_path: String,
+    rows: usize,
+    whole_file_rows: usize,
+    kinds: BTreeMap<String, usize>,
+}
+
+fn python_ast_chunk_summary(db_path: &Path, file_path: &str) -> Result<PythonAstChunkSummary> {
+    let conn = Connection::open(db_path)?;
+    let mut stmt = conn.prepare(
+        "\
+        SELECT c.kind, COUNT(*)
+        FROM chunks c
+        JOIN chunk_paths cp ON cp.chunk_key = c.chunk_key
+        WHERE cp.path = ?1
+        GROUP BY c.kind
+        ORDER BY c.kind",
+    )?;
+    let rows = stmt.query_map([file_path], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+    })?;
+    let mut kinds = BTreeMap::new();
+    for row in rows {
+        let (kind, count) = row?;
+        kinds.insert(kind, count);
+    }
+    let total = kinds.values().sum();
+    Ok(PythonAstChunkSummary {
+        file_path: file_path.to_string(),
+        rows: total,
+        whole_file_rows: kinds.get("whole_file").copied().unwrap_or(0),
+        kinds,
+    })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct StateSnapshot {
     manifest_exists: bool,
     manifest: Option<ManifestSummary>,
@@ -614,7 +757,7 @@ struct SqliteCounts {
 }
 
 fn inspect_state(project_id: &str) -> Result<StateSnapshot> {
-    let project_root = project_root(project_id);
+    let project_root = project_root(project_id)?;
     let manifest_path = project_root.join("manifest.json");
     let manifest = if manifest_path.exists() {
         let manifest: ProjectIngestManifest = serde_json::from_slice(&fs::read(&manifest_path)?)?;
@@ -828,16 +971,16 @@ fn run(command: &mut Command) -> Result<()> {
     Ok(())
 }
 
-fn project_root(project_id: &str) -> PathBuf {
-    PathBuf::from("/mnt/d/contextgraph/projects").join(project_id)
+fn project_root(project_id: &str) -> Result<PathBuf> {
+    Ok(context_graph_mejepa::project_root(project_id)?)
 }
 
 fn default_db_path(project_id: &str) -> Result<PathBuf> {
-    Ok(project_root(project_id).join("predictions/live-predictions.rocksdb"))
+    Ok(project_root(project_id)?.join("predictions/live-predictions.rocksdb"))
 }
 
 fn reset_project(project_id: &str) -> Result<()> {
-    remove_if_exists(&project_root(project_id))
+    remove_if_exists(&project_root(project_id)?)
 }
 
 fn remove_if_exists(path: &Path) -> Result<()> {
