@@ -197,7 +197,7 @@ def parse_args() -> argparse.Namespace:
         "--hot-stage-budget-bytes",
         type=int,
         default=DEFAULT_HOT_STAGE_BUDGET_BYTES,
-        help="Required free bytes on WSL ext4 hot storage before any writes.",
+        help="Required free bytes on aiwonder hot storage before any writes.",
     )
     parser.add_argument(
         "--fsv-edge-copy-budget-bytes",
@@ -1437,7 +1437,7 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
         args.io_workers <= MAX_D_DRIVE_IO_WORKERS,
     )
     require(
-        "MEJEPA_SCHEDULER_CPU_WORKERS_EXCEED_POLICY: CPU workers fit live WSL thread policy",
+        "MEJEPA_SCHEDULER_CPU_WORKERS_EXCEED_POLICY: CPU workers fit live host thread policy",
         args.cpu_workers <= worker_ceiling,
     )
     require(
@@ -1478,9 +1478,11 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
             "hot_root": str(hot_root),
             "cache_root": str(cache_root),
             "fsv_root": str(fsv_root),
-            "hot_root_on_wsl_ext4": True,
-            "cache_root_on_durable_d": True,
-            "fsv_root_on_durable_d": True,
+            "durable_root": str(durable_root),
+            "hot_root_on_aiwonder_hot_or_scratch": path_is_under(hot_root, AIWONDER_HOT_ROOT)
+            or path_is_under(hot_root, AIWONDER_SCRATCH_ROOT),
+            "cache_root_on_durable_root": path_is_under(cache_root, durable_root),
+            "fsv_root_on_durable_root": path_is_under(fsv_root, durable_root),
         },
         "runner": runner,
         "capacity_policy": capacity,
