@@ -5,6 +5,7 @@
 
 pub mod adversarial_corpus;
 pub mod adversarial_embedder_injection;
+pub mod algorithmic_embedder_synthesis;
 pub mod calibration;
 pub mod calibration_types;
 pub mod candidate_ranking;
@@ -72,6 +73,7 @@ pub mod vram;
 
 pub use adversarial_corpus::*;
 pub use adversarial_embedder_injection::*;
+pub use algorithmic_embedder_synthesis::*;
 pub use calibration::*;
 pub use calibration_types::*;
 pub use candidate_ranking::*;

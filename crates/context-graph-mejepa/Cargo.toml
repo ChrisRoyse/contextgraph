@@ -210,6 +210,10 @@ name = "task_ek_018j_adversarial_injection_fsv"
 path = "examples/task_ek_018j_adversarial_injection_fsv.rs"
 
 [[example]]
+name = "task_ek_018d_algorithmic_embedder_synthesis_fsv"
+path = "examples/task_ek_018d_algorithmic_embedder_synthesis_fsv.rs"
+
+[[example]]
 name = "task_py_g_042_patch_similarity_exemplar_fsv"
 path = "examples/task_py_g_042_patch_similarity_exemplar_fsv.rs"
 
