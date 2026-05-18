@@ -218,6 +218,10 @@ name = "task_ek_018e_learned_head_synthesis_fsv"
 path = "examples/task_ek_018e_learned_head_synthesis_fsv.rs"
 
 [[example]]
+name = "task_ek_018_self_designed_embedders_fsv"
+path = "examples/task_ek_018_self_designed_embedders_fsv.rs"
+
+[[example]]
 name = "task_py_g_042_patch_similarity_exemplar_fsv"
 path = "examples/task_py_g_042_patch_similarity_exemplar_fsv.rs"
 
