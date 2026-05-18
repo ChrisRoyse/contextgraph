@@ -206,7 +206,7 @@ Acceptance source of truth: `mcp__cgreality__mejepa_audit_reward_signals` over R
 ## §6 — How to use this doc
 
 1. **Before claiming a TASK-RWD-NNN issue**, read this doc top-to-bottom to understand which tier the signal belongs to and which other signals it interacts with.
-2. **When implementing a new instrument**, register it in §2 (this doc) AND in `05_EMBEDDER_SIGNAL_MAP.md` + `docs/whitepapermejepasystem/05_FROZEN_INSTRUMENT_PANEL.md`. The instrument is part of the frozen target panel by construction; its computation must be deterministic and have zero trainable parameters.
+2. **When implementing a new instrument**, register it in §2 (this doc), [`05_EMBEDDER_SIGNAL_MAP.md`](05_EMBEDDER_SIGNAL_MAP.md), [`03_ARCHITECTURE_BLUEPRINT.md`](03_ARCHITECTURE_BLUEPRINT.md), and [`04_DDA_TCT_CODE_ENRICHMENT.md`](04_DDA_TCT_CODE_ENRICHMENT.md). The instrument is part of the frozen target panel by construction; its computation must be deterministic and have zero trainable parameters.
 3. **When adding a new reward signal that wasn't anticipated** (e.g., from an operator-directed expansion), file it as a new TASK-RWD-NNN sub-task under #315 + add it to the §2 tier table.
 4. **At the per-cell stratified evaluation step** (Phase G ship gate), verify that every cell's training data spans tiers 1-7 (tier 8 is audit-only, doesn't enter training loss). Cells missing tier coverage are flagged for completeness backfill before the per-cell correlation ≥ 0.95 check.
 
@@ -217,11 +217,10 @@ Acceptance source of truth: `mcp__cgreality__mejepa_audit_reward_signals` over R
 - LeCun transcript (2026-05-17): operator-supplied, archived in conversation log.
 - [GitHub issue #315](https://github.com/ChrisRoyse/contextgraph/issues/315) — companion EPIC.
 - Sibling alignment doc: [`28_LECUN_JEPA_ALIGNMENT.md`](28_LECUN_JEPA_ALIGNMENT.md).
-- Fingerprint methodology: [`docs/whitepapermejepasystem/14_FAILURE_SHAPE_FINGERPRINTS.md`](../whitepapermejepasystem/14_FAILURE_SHAPE_FINGERPRINTS.md) + [#309](https://github.com/ChrisRoyse/contextgraph/issues/309).
+- Fingerprint methodology: [`27_PHASE_G_ROADMAP.md`](27_PHASE_G_ROADMAP.md), [`13_TASK_INDEX.md`](13_TASK_INDEX.md), and [#309](https://github.com/ChrisRoyse/contextgraph/issues/309).
 - Embedder signal map: [`05_EMBEDDER_SIGNAL_MAP.md`](05_EMBEDDER_SIGNAL_MAP.md).
 - DDA / TCT enrichment: [`04_DDA_TCT_CODE_ENRICHMENT.md`](04_DDA_TCT_CODE_ENRICHMENT.md).
-- TCT detailed theory: [`docs/ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md`](../ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md).
-- Whitepaper teleological constellations chapter: [`docs/whitepapermejepasystem/07_TELEOLOGICAL_CONSTELLATIONS.md`](../whitepapermejepasystem/07_TELEOLOGICAL_CONSTELLATIONS.md).
+- TCT / constellation detailed theory: [`04_DDA_TCT_CODE_ENRICHMENT.md`](04_DDA_TCT_CODE_ENRICHMENT.md), [`docs2/contextgraphspecs/13_teleological_subsystem.md`](../../docs2/contextgraphspecs/13_teleological_subsystem.md), and [`docs2/contextgraphspecs/17_constellation_subsystem.md`](../../docs2/contextgraphspecs/17_constellation_subsystem.md).
 - Atomic task DAG: [`13_TASK_INDEX.md`](13_TASK_INDEX.md).
 - Phase G roadmap: [`27_PHASE_G_ROADMAP.md`](27_PHASE_G_ROADMAP.md).
 - FSV protocol: [`specs/FSV-PROTOCOL.md`](specs/FSV-PROTOCOL.md).

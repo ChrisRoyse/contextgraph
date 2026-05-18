@@ -3,7 +3,7 @@
 > **Authority.** This document captures the operator-directed alignment between ME-JEPA-Code's architecture and Yann LeCun's full JEPA blueprint as articulated in his 2026-05-17 transcript on AMI (Advanced Machine Intelligence). Where LeCun's blueprint and ME-JEPA-Code's current implementation diverge, this doc enumerates the gap and the sub-task that closes it.
 >
 > **Companion EPIC:** [GitHub issue #314](https://github.com/ChrisRoyse/contextgraph/issues/314).
-> **Source theory:** [`docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md`](../ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md), [`docs/whitepapermejepasystem/14_FAILURE_SHAPE_FINGERPRINTS.md`](../whitepapermejepasystem/14_FAILURE_SHAPE_FINGERPRINTS.md).
+> **Source theory:** [`10_LEARNING_FORMULA_MEJEPA_TRUTH.md`](10_LEARNING_FORMULA_MEJEPA_TRUTH.md), [`27_PHASE_G_ROADMAP.md`](27_PHASE_G_ROADMAP.md), and the fingerprint methodology EPIC [#309](https://github.com/ChrisRoyse/contextgraph/issues/309).
 > **Reward-signal companion:** [`29_REWARD_SIGNAL_COMPLETENESS.md`](29_REWARD_SIGNAL_COMPLETENESS.md).
 
 ---
@@ -20,7 +20,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 
 **LeCun:** *"All the generative ones — VAE / masked autoencoder — basically have been failures. JEPA works much better for representing images and video."* — *"You want to train a system to make prediction in representation space."*
 
-**ME-JEPA state:** ✅ **SHIPPED.** 15-slot frozen instrument panel; `ΔΞ.target_collapse = 0` by construction per `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md §5.2`. Per-instrument deterministic functions of typed events, zero trainable parameters. This is the central architectural innovation that distinguishes ME-JEPA from learnable-target JEPA/BYOL/I-JEPA.
+**ME-JEPA state:** ✅ **SHIPPED.** 15-slot frozen instrument panel; `ΔΞ.target_collapse = 0` by construction per [`10_LEARNING_FORMULA_MEJEPA_TRUTH.md`](10_LEARNING_FORMULA_MEJEPA_TRUTH.md) and the frozen-instrument architecture in [`03_ARCHITECTURE_BLUEPRINT.md`](03_ARCHITECTURE_BLUEPRINT.md). Per-instrument deterministic functions of typed events, zero trainable parameters. This is the central architectural innovation that distinguishes ME-JEPA from learnable-target JEPA/BYOL/I-JEPA.
 
 **No new work needed.**
 
@@ -98,7 +98,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 
 **LeCun (implicit):** *"It should emit lower confidence and point to the missing evidence, instead of overclaiming."*
 
-**ME-JEPA state:** ✅ **DESIGNED.** `Verdict::OutOfDistribution` + `Unknown` fingerprint kind + active-learning queue per [#309 fingerprint methodology EPIC] and [`docs/whitepapermejepasystem/14_FAILURE_SHAPE_FINGERPRINTS.md`](../whitepapermejepasystem/14_FAILURE_SHAPE_FINGERPRINTS.md). Conformal calibration per-fingerprint.
+**ME-JEPA state:** ✅ **DESIGNED.** `Verdict::OutOfDistribution` + `Unknown` fingerprint kind + active-learning queue per the [#309 fingerprint methodology EPIC](https://github.com/ChrisRoyse/contextgraph/issues/309), [`27_PHASE_G_ROADMAP.md`](27_PHASE_G_ROADMAP.md), and [`13_TASK_INDEX.md`](13_TASK_INDEX.md). Conformal calibration per-fingerprint.
 
 **No new work needed beyond #309 sub-tasks.**
 
@@ -114,7 +114,7 @@ ME-JEPA-Code is already a JEPA-class system. It already has frozen instruments, 
 
 **ME-JEPA state:** ✅ **SHIPPED.** The active Five Questions / product-boundary doc now explicitly defines the System 1 generator / System 2 verifier contract, and the paper-facing `docs/PAPER.md` describes Context Graph's ME-JEPA-Code deployment as the System 2 verifier for AI coding agents. MCP ME-JEPA verification, what-if, latent-search, ranking, explanation, inspection, replay, feedback, shift-observe, capture-audit, and bootstrap/status descriptions identify the tools as System 2 surfaces that evaluate System 1 candidate edits, claims, and feedback against durable source-of-truth state.
 
-**Sub-task:** **Pillar 9 documentation/tool-description update — COMPLETE.** The historical issue path `docs/whitepapermejepasystem/04_FIVE_OPERATOR_QUESTIONS.md` is absent from the current checkout; the live Five Questions content is in `docs/futurebuild/01_VISION_TRUTH_SYSTEM.md`.
+**Sub-task:** **Pillar 9 documentation/tool-description update — COMPLETE.** The live Five Questions / product-boundary content is in [`01_VISION_TRUTH_SYSTEM.md`](01_VISION_TRUTH_SYSTEM.md).
 
 ---
 
@@ -193,7 +193,7 @@ This ordering is captured in `13_TASK_INDEX.md` task DAG.
 - [GitHub issue #314](https://github.com/ChrisRoyse/contextgraph/issues/314) — companion EPIC.
 - [`docs/futurebuild/27_PHASE_G_ROADMAP.md`](27_PHASE_G_ROADMAP.md) — overall Phase G roadmap (TASK-FP-101..105 are part of Phase G).
 - [`docs/futurebuild/29_REWARD_SIGNAL_COMPLETENESS.md`](29_REWARD_SIGNAL_COMPLETENESS.md) — Pillar 10 companion.
-- [`docs/whitepapermejepasystem/14_FAILURE_SHAPE_FINGERPRINTS.md`](../whitepapermejepasystem/14_FAILURE_SHAPE_FINGERPRINTS.md) — fingerprint-first methodology (#309) that this aligns to.
+- [GitHub issue #309](https://github.com/ChrisRoyse/contextgraph/issues/309), [`27_PHASE_G_ROADMAP.md`](27_PHASE_G_ROADMAP.md), and [`13_TASK_INDEX.md`](13_TASK_INDEX.md) — fingerprint-first methodology and task DAG that this aligns to.
 - [`docs/futurebuild/10_LEARNING_FORMULA_MEJEPA_TRUTH.md`](10_LEARNING_FORMULA_MEJEPA_TRUTH.md) — current VICReg implementation that SIGreg upgrades.
 - [`docs/futurebuild/15_PREDICTION_TAXONOMY.md`](15_PREDICTION_TAXONOMY.md) — `RealityPrediction` schema that TASK-FP-104 extends with `Constraints`.
 - [`docs/futurebuild/13_TASK_INDEX.md`](13_TASK_INDEX.md) — atomic task DAG.
