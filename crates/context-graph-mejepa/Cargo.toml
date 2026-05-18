@@ -179,6 +179,10 @@ name = "task_ek_018f_entity_kge_embedder_fsv"
 path = "examples/task_ek_018f_entity_kge_embedder_fsv.rs"
 
 [[example]]
+name = "task_ek_018g_freeze_audit_fsv"
+path = "examples/task_ek_018g_freeze_audit_fsv.rs"
+
+[[example]]
 name = "task_ek_018i_dynamic_vram_fsv"
 path = "examples/task_ek_018i_dynamic_vram_fsv.rs"
 
