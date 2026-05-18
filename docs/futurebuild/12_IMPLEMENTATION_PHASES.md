@@ -12,11 +12,13 @@ Phase E started when the Phase A-D substrate became source-of-truth verified: da
 
 This does **not** mean the system can replace human code review yet. The latest rolling holdout evidence reports `prediction_oracle_correlation = 0.866667` against the `0.95` ship gate. That is Phase G model-quality convergence. Phase E's job is now to keep feeding durable-reality reward signals back into ME-JEPA so the Phase G gate can eventually become true.
 
+**Post-migration storage rule (2026-05-18, #363):** production Phase G and later durable SoT lives on aiwonder under `/zfs/archive/contextgraph/...`; hot work lives under `/zfs/hot/contextgraph/...` or explicitly budgeted aiwonder scratch. Older `/mnt/d/contextgraph/...` evidence in this file remains historical/local unless #369 revalidates it or a task explicitly scopes a local-only smoke.
+
 ## Phase summary
 
 | Phase | Goal | Effort | Dependencies | Ship gate |
 |---|---|---|---|---|
-| **A. Operational unblock** | Daemon mode + prediction injection + agent-feedback channel + D-drive enforcement | code/FSV closure 2026-05-12; fresh-host operator burn-in remains | none | Daemon task set runs; GC/eval job-run rows persist; first prediction injected; first SurpriseEvent recorded; cargo lint passes |
+| **A. Operational unblock** | Daemon mode + prediction injection + agent-feedback channel + durable-root enforcement; production root is now aiwonder `/zfs/archive/contextgraph/...` per #363 | code/FSV closure 2026-05-12; fresh-host operator burn-in remains | none | Daemon task set runs; GC/eval job-run rows persist; first prediction injected; first SurpriseEvent recorded; cargo lint passes |
 | **B. Multi-head extension** | Q1-Q5 `RealityPrediction` schema, what-if/explain APIs, auxiliary heads, deterministic label extractors, per-head UTML accounting | code + FSV complete 2026-05-12; training/eval hardening remains | Phase A | Code/FSV gate passed; production holdout metrics and remaining per-head self-healing tasks still open |
 | **C. Corpus expansion** | Completed Python 300×8 corpus; 10-language fixture corpus archived for later generalization | complete 2026-05-12 | Phase A | 2,400 Python entries verified as the active ship corpus; non-Python fixture evidence exists but is not in the current gate |
 | **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV substrate shipped 2026-05-12 | Phase A | Forward wrappers, full pretrained/routing FSV, DDA compute/store, live shift DDA rows, cache, stdlib registry, TCT refresh, semantic-head evidence, production telemetry, and UTML carrier FSV pass |
@@ -42,7 +44,7 @@ This does **not** mean the system can replace human code review yet. The latest 
 
 ## Phase A — Operational Unblock (5-7 days)
 
-**Goal:** Turn the daemon on. Close the prediction-injection loop. Open the agent-feedback channel. Migrate to D-drive everywhere. Without Phase A, the truth system is theoretical — code shipped but not running as a service.
+**Goal:** Turn the daemon on. Close the prediction-injection loop. Open the agent-feedback channel. The original Phase A target was D-drive durability; post-migration production durability is aiwonder `/zfs/archive/contextgraph/...` per #363. Without this durable runtime root, the truth system is theoretical — code shipped but not running as a service.
 
 **Deliverables (TASK IDs):**
 
@@ -58,7 +60,7 @@ This does **not** mean the system can replace human code review yet. The latest 
 | `TASK-PREDICT-002` | `mejepa_record_agent_feedback` MCP tool + sampling-weight bump wiring | complete (2026-05-12; no feedback rate limit by operator directive) |
 | `TASK-LOOP-001` | Apply new `.claude/loop.md` content from `14_NEW_LOOP_MD.md` | complete (already applied) |
 | `TASK-LOOP-002` | Update CLAUDE.md §11.11/§13/§3 + `agents/README.md` retirements | 0.25 day |
-| `TASK-LOOP-007` | Hook output paths → `/mnt/d/contextgraph/runtime/cgreality-shift-log/` | complete |
+| `TASK-LOOP-007` | Hook output paths → durable runtime shift log; production writes now belong under aiwonder `/zfs/archive/contextgraph/runtime/` per #363 | complete for the D-drive-era implementation; aiwonder production locality is tracked by #365/#367 |
 | `TASK-OBS-005` | C-drive lint in CI | complete (2026-05-12) |
 | `TASK-OBS-006` | FSV path migration sweep across `crates/*/examples/*_fsv.rs` | complete (2026-05-12) |
 | `TASK-OBS-007` | Per-slice quota observability extension | 0.5 day |
@@ -143,8 +145,8 @@ This does **not** mean the system can replace human code review yet. The latest 
 **Ship gate result:** passed 2026-05-12.
 
 **Risks / mitigations:**
-- *Risk:* Docker eval times are long (each task ~20-30s × 300 × 8 = ~16 hours wall time). *Mitigation:* parallelize across cores; checkpoint per row to the D-backed corpus root; write index/evidence files atomically; make reruns resumable from the RocksDB/index source of truth.
-- *Risk:* corpus evidence is written to ephemeral storage and lost after reboot. *Mitigation:* corpus CLI and library generation reject any output outside `/mnt/d/contextgraph/corpus/`; storage docs and FSV commands name the D-backed source of truth explicitly.
+- *Risk:* Docker eval times are long (each task ~20-30s × 300 × 8 = ~16 hours wall time). *Mitigation:* parallelize across aiwonder cores; checkpoint per row to the aiwonder durable corpus root; write index/evidence files atomically; make reruns resumable from the RocksDB/index source of truth.
+- *Risk:* corpus evidence is written to ephemeral storage and lost after reboot. *Mitigation:* production corpus CLI and library generation must reject durable outputs outside `/zfs/archive/contextgraph/corpus/`; storage docs and FSV commands name the aiwonder source of truth explicitly.
 - *Risk:* archived per-language operator implementations have subtle bugs. *Mitigation:* Phase C generation runs each non-Python row through the real language toolchain and fails closed on mismatch. This caught and fixed Rust arrow mutation, declaration-site swap, assertion substring deletion, C# helper deletion, and Go unused/local declaration failures before the final corpus was accepted.
 
 ---

@@ -4,6 +4,8 @@
 >
 > **Status:** living document. This is the single canonical reference for *every* open task across Phase G (current 0.95 ship gate), Phase H (residue cleanup, already closed), Phase I (EPIC #321 explanatory-knowledge programme), and Phase J (post-018 generalisation). When this doc and any other futurebuild doc disagree, this one wins for the *task inventory*; the other doc wins for the *spec detail*.
 
+> **Storage correction (2026-05-18):** #363 is binding for post-migration production work. Durable production evidence belongs on aiwonder under `/zfs/archive/contextgraph/...`; hot work belongs under `/zfs/hot/contextgraph/...` or explicitly budgeted aiwonder scratch. `/mnt/d/contextgraph/...` references in task-status prose are historical/local until #369 classifies or revalidates them.
+
 ---
 
 ## §0 — Reading order

@@ -67,7 +67,7 @@ Cap per issue: 1 `type:*` + 1 `priority:*` (default `priority:p2`) + 1 `status:*
 - **Ship gate:** `prediction_oracle_correlation ≥ 0.95` stably across 4 rolling windows on 300×8 SWE-bench Lite.
 - **Workspace:** Rust, 27+ crates under `crates/`.
 - **Build:** `cargo build --release -p <crate>` → `cargo test -p <crate>` → `cargo clippy -p <crate> --no-deps --tests --examples -- -D warnings`.
-- **D-drive:** `/mnt/d/contextgraph/` for bulk durable state (corpus, FSV evidence, shift log, runtime, exports). Code/docs/config stay on the source tree.
+- **aiwonder production SoT:** post-migration durable corpus/runtime/project/FSV state lives on aiwonder under `/zfs/archive/contextgraph/`; hot work lives under `/zfs/hot/contextgraph/` or explicitly budgeted aiwonder scratch. Local `/mnt/d/contextgraph/` references are legacy/local evidence unless an issue explicitly requests a local-only smoke. See #363.
 - **MCP server:** the only network surface for runtime work. No HTTP from action paths.
 - **No inner LLM.** Retired 2026-05-09. Do not reanimate without explicit operator authorization.
 

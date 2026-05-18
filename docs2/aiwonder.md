@@ -16,7 +16,7 @@ ContextGraph training was originally on the operator's WSL2 box (`/mnt/d/context
 2. **HD space limit.** The operator's local disk can't hold the full corpus reward field (~73 GB projected) + the Q3 SWE-bench Lite Python Docker images (~1-2 TB future requirement).
 3. **No CUDA MPS in WSL2.** Multi-process kernel overlap on the GPU is not supported on WSL2 → parallel-isolated mode in the scheduler can't actually deliver kernel-level concurrency. aiwonder runs `nvidia-cuda-mps-control.service` → MPS is active → parallel-isolated **does** get true kernel overlap on aiwonder.
 
-The aiwonder migration is in flight as of 2026-05-15. The local WSL run on `cg_pydata016_full_shardsize-1024-20260515-173510Z` remains alive as a **calibration baseline** for comparing per-shard wall once aiwonder is producing real data.
+The aiwonder migration completed on 2026-05-17 (#296). The 2026-05-18 storage correction (#363) makes aiwonder the production durable source of truth for Phase G and later work. Local `/mnt/d/contextgraph/...` paths are legacy/local calibration evidence unless a GitHub issue explicitly scopes a local-only smoke.
 
 ---
 
@@ -54,7 +54,7 @@ The aiwonder migration is in flight as of 2026-05-15. The local WSL run on `cg_p
 
 ## 3. ContextGraph layout on aiwonder
 
-**Isolation rule (operator directive 2026-05-15):** ContextGraph work lives entirely under `/zfs/hot/contextgraph/`. Nothing under `/zfs/hot/marketplace/`, `/zfs/hot/postgres/`, `/zfs/hot/models/`, `/opt/leapable/`, or any other leapable path is touched.
+**Isolation rule (operator directive 2026-05-15, reinforced by #363):** ContextGraph hot work lives under `/zfs/hot/contextgraph/`, and durable production state lives under `/zfs/archive/contextgraph/`. Nothing under `/zfs/hot/marketplace/`, `/zfs/hot/postgres/`, `/zfs/hot/models/`, `/opt/leapable/`, or any other leapable path is touched.
 
 ### 3.1 Filesystem layout
 
@@ -228,16 +228,25 @@ Do **not** relaunch the production corpus run into parallel mode after a single 
 | Phase | Issue | Status |
 |---|---|---|
 | 0 — Preflight + recon | — | **complete 2026-05-15**: VPN ok, SSH ok, MPS confirmed, disk available, Docker + NVIDIA runtime verified |
-| 1 — Isolated workspace + repo clone | TBD on filing | pending |
-| 2 — Rust toolchain + Python deps | TBD | pending |
-| 3 — Embedder model transfer | TBD | pending |
-| 4 — AST chunks transfer (or regenerate) | TBD | pending |
+| 1 — Isolated workspace + repo clone | #297 | complete |
+| 2 — Rust toolchain + Python deps | #298, #299 | complete |
+| 3 — Embedder model transfer | #300 | complete |
+| 4 — AST chunks transfer (or regenerate) | #301 | complete |
 | 5 — Fix parallel-isolated packed-record consolidation | #308 | **complete 2026-05-15**: sequential regression, parallel=4, and parallel=6 FSV smokes passed on aiwonder |
-| 6 — Build release binaries on aiwonder | TBD | pending |
-| 7 — Launch corpus run on aiwonder | TBD | pending |
-| 8 — Calibration: WSL baseline vs aiwonder | TBD | pending |
-| 9 — Cutover decision after calibration | TBD | pending |
-| Future — SWE-bench Lite Python Docker images | TBD | not yet needed for embedding pipeline |
+| 6 — Build release binaries on aiwonder | #303 | complete |
+| 7 — Launch corpus run on aiwonder | #304 | complete |
+| 8 — Calibration: WSL baseline vs aiwonder | #305 | complete |
+| 9 — Cutover decision after calibration | #296, #363 | complete: production durable SoT is aiwonder `/zfs/archive/contextgraph/...` |
+| Future — SWE-bench Lite Python Docker images | #306 | not yet needed for embedding pipeline |
+
+Current corrective work after the #363 storage decision:
+
+- #364 updates docs/context so agents stop treating `/mnt/d/contextgraph` as production SoT.
+- #365 adds fail-closed production-root guards.
+- #366 reruns TASK-PY-G-056 on aiwonder.
+- #367 audits project-ingest/runtime locality.
+- #368 audits aiwonder capability utilization.
+- #369 revalidates post-migration Phase G FSV artifacts that still cite `/mnt/d`.
 
 ---
 
@@ -248,8 +257,9 @@ Do **not** relaunch the production corpus run into parallel mode after a single 
 3. **Never disable MPS.** `nvidia-cuda-mps-control.service` is load-bearing for the leapable-tei warm contexts and our own parallel-isolated mode benefits from it.
 4. **Never write secrets into this repo.** Use Infisical CLI or env-var names; see `leapablememory/docs2/infisical-secrets-guide.md §0`.
 5. **`/zfs/hot/` has no redundancy** (single NVMe). The corpus run's checkpoint + cache should go to `/zfs/archive/` (HDD mirror) for durability; only the in-flight hot-stage scratch should live on `/zfs/hot/contextgraph/` or `/home/croyse/.cache/`.
-6. **Verify by SoT readback.** Per doctrine §4. Remote `systemctl is-active`, `du -sh`, `df -B1`, file hashes, RocksDB read-only reopen — not just SSH return codes.
-7. **Comment on the relevant GitHub Issue at every milestone.** Per doctrine §3.5.
+6. **Production SoT is aiwonder.** Durable production corpus, runtime, project, cache, export, and FSV outputs go under `/zfs/archive/contextgraph/...`; local `/mnt/d/contextgraph` output is local-only unless an issue explicitly asks for it.
+7. **Verify by SoT readback.** Per doctrine §4. Remote `systemctl is-active`, `du -sh`, `df -B1`, file hashes, RocksDB read-only reopen — not just SSH return codes.
+8. **Comment on the relevant GitHub Issue at every milestone.** Per doctrine §3.5.
 
 ---
 
