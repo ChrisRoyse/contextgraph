@@ -405,6 +405,124 @@ impl PredictedTestOutcome {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct PredictedWorks {
+    pub chunk: ChunkId,
+    pub line_range: (u32, u32),
+    pub claim: String,
+    pub confidence: f32,
+    pub supporting_embedders: Vec<EmbedderId>,
+    pub similar_known_good_exemplars: Vec<ExemplarMatch>,
+    pub evidence_strength: f32,
+}
+
+impl PredictedWorks {
+    pub fn is_high_confidence(&self) -> bool {
+        self.confidence >= 0.8 && self.evidence_strength >= 0.7
+    }
+
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.chunk.validate("predicted_works.chunk")?;
+        validate_line_range("predicted_works.line_range", self.line_range)?;
+        validate_bounded_text(
+            "predicted_works.claim",
+            &self.claim,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )?;
+        validate_probability("predicted_works.confidence", self.confidence)?;
+        validate_probability("predicted_works.evidence_strength", self.evidence_strength)?;
+        if self.supporting_embedders.is_empty() {
+            return Err(MejepaInferError::InvalidInput {
+                field: "predicted_works.supporting_embedders".to_string(),
+                detail: "supporting_embedders must be non-empty".to_string(),
+            });
+        }
+        if self.supporting_embedders.len() > MAX_EMBEDDERS_PER_PANEL {
+            return Err(MejepaInferError::DimMismatch {
+                expected: MAX_EMBEDDERS_PER_PANEL,
+                actual: self.supporting_embedders.len(),
+                context: "predicted_works.supporting_embedders exceeds maximum".to_string(),
+            });
+        }
+        for (idx, embedder) in self.supporting_embedders.iter().enumerate() {
+            embedder.validate(&format!("predicted_works.supporting_embedders[{idx}]"))?;
+        }
+        if self.similar_known_good_exemplars.len() > MAX_EXEMPLARS_PER_BUCKET {
+            return Err(MejepaInferError::DimMismatch {
+                expected: MAX_EXEMPLARS_PER_BUCKET,
+                actual: self.similar_known_good_exemplars.len(),
+                context: "predicted_works.similar_known_good_exemplars exceeds maximum".to_string(),
+            });
+        }
+        validate_items(
+            "predicted_works.similar_known_good_exemplars",
+            &self.similar_known_good_exemplars,
+            ExemplarMatch::validate,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UncoveredPath {
+    pub chunk: ChunkId,
+    pub line_range: (u32, u32),
+    pub path_description: String,
+    pub defect_probability: f32,
+    pub confidence: f32,
+    pub evidence: String,
+}
+
+impl UncoveredPath {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.chunk.validate("uncovered_path.chunk")?;
+        validate_line_range("uncovered_path.line_range", self.line_range)?;
+        validate_bounded_text(
+            "uncovered_path.path_description",
+            &self.path_description,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )?;
+        validate_probability("uncovered_path.defect_probability", self.defect_probability)?;
+        validate_probability("uncovered_path.confidence", self.confidence)?;
+        validate_bounded_text(
+            "uncovered_path.evidence",
+            &self.evidence,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FlakyTestCandidate {
+    pub test_id: TestId,
+    pub serial_pass_probability: f32,
+    pub parallel_pass_probability: f32,
+    pub confidence: f32,
+    pub evidence: String,
+}
+
+impl FlakyTestCandidate {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.test_id.validate("flaky_test_candidate.test_id")?;
+        validate_probability(
+            "flaky_test_candidate.serial_pass_probability",
+            self.serial_pass_probability,
+        )?;
+        validate_probability(
+            "flaky_test_candidate.parallel_pass_probability",
+            self.parallel_pass_probability,
+        )?;
+        validate_probability("flaky_test_candidate.confidence", self.confidence)?;
+        validate_bounded_text(
+            "flaky_test_candidate.evidence",
+            &self.evidence,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GuardViolation {
     pub embedder: EmbedderId,
     pub chunk: ChunkId,
@@ -1297,6 +1415,9 @@ impl PredictionProvenance {
 pub struct PhaseBPredictionSurfaces {
     pub predicted_failure_modes: Vec<PredictedFailureMode>,
     pub predicted_failed_tests: Vec<PredictedTestOutcome>,
+    pub predicted_works: Vec<PredictedWorks>,
+    pub predicted_uncovered_paths: Vec<UncoveredPath>,
+    pub predicted_flaky_tests: Vec<FlakyTestCandidate>,
     pub guard_violations: Vec<GuardViolation>,
     pub closest_exemplars: Vec<ExemplarMatch>,
     pub predicted_edge_cases: Vec<PredictedEdgeCase>,
@@ -1530,6 +1651,12 @@ pub struct RealityPrediction {
     pub granger_attestations: BTreeMap<String, f32>,
     pub predicted_failure_modes: Vec<PredictedFailureMode>,
     pub predicted_failed_tests: Vec<PredictedTestOutcome>,
+    #[serde(default)]
+    pub predicted_works: Vec<PredictedWorks>,
+    #[serde(default)]
+    pub predicted_uncovered_paths: Vec<UncoveredPath>,
+    #[serde(default)]
+    pub predicted_flaky_tests: Vec<FlakyTestCandidate>,
     pub guard_violations: Vec<GuardViolation>,
     pub closest_exemplars: Vec<ExemplarMatch>,
     pub predicted_edge_cases: Vec<PredictedEdgeCase>,
@@ -1565,6 +1692,9 @@ impl RealityPrediction {
         value.predicted_test_pass.shrink_to_fit();
         value.predicted_failure_modes.shrink_to_fit();
         value.predicted_failed_tests.shrink_to_fit();
+        value.predicted_works.shrink_to_fit();
+        value.predicted_uncovered_paths.shrink_to_fit();
+        value.predicted_flaky_tests.shrink_to_fit();
         value.guard_violations.shrink_to_fit();
         value.closest_exemplars.shrink_to_fit();
         value.predicted_edge_cases.shrink_to_fit();
@@ -1627,6 +1757,21 @@ impl RealityPrediction {
             "predicted_failed_tests",
             &self.predicted_failed_tests,
             PredictedTestOutcome::validate,
+        )?;
+        validate_items(
+            "predicted_works",
+            &self.predicted_works,
+            PredictedWorks::validate,
+        )?;
+        validate_items(
+            "predicted_uncovered_paths",
+            &self.predicted_uncovered_paths,
+            UncoveredPath::validate,
+        )?;
+        validate_items(
+            "predicted_flaky_tests",
+            &self.predicted_flaky_tests,
+            FlakyTestCandidate::validate,
         )?;
         validate_items(
             "guard_violations",
@@ -1755,6 +1900,9 @@ pub struct RealityPredictionBuilder {
     granger_attestations: BTreeMap<String, f32>,
     predicted_failure_modes: Vec<PredictedFailureMode>,
     predicted_failed_tests: Vec<PredictedTestOutcome>,
+    predicted_works: Vec<PredictedWorks>,
+    predicted_uncovered_paths: Vec<UncoveredPath>,
+    predicted_flaky_tests: Vec<FlakyTestCandidate>,
     guard_violations: Vec<GuardViolation>,
     closest_exemplars: Vec<ExemplarMatch>,
     predicted_edge_cases: Vec<PredictedEdgeCase>,
@@ -1805,6 +1953,9 @@ impl RealityPredictionBuilder {
             granger_attestations: BTreeMap::new(),
             predicted_failure_modes: Vec::new(),
             predicted_failed_tests: Vec::new(),
+            predicted_works: Vec::new(),
+            predicted_uncovered_paths: Vec::new(),
+            predicted_flaky_tests: Vec::new(),
             guard_violations: Vec::new(),
             closest_exemplars: Vec::new(),
             predicted_edge_cases: Vec::new(),
@@ -1899,6 +2050,21 @@ impl RealityPredictionBuilder {
         self
     }
 
+    pub fn predicted_works(mut self, value: Vec<PredictedWorks>) -> Self {
+        self.predicted_works = value;
+        self
+    }
+
+    pub fn predicted_uncovered_paths(mut self, value: Vec<UncoveredPath>) -> Self {
+        self.predicted_uncovered_paths = value;
+        self
+    }
+
+    pub fn predicted_flaky_tests(mut self, value: Vec<FlakyTestCandidate>) -> Self {
+        self.predicted_flaky_tests = value;
+        self
+    }
+
     pub fn predicted_reasoning_class(mut self, value: ReasoningClass) -> Self {
         self.predicted_reasoning_class = value;
         self
@@ -1922,6 +2088,9 @@ impl RealityPredictionBuilder {
     pub fn phase_b_surfaces(mut self, value: PhaseBPredictionSurfaces) -> Self {
         self.predicted_failure_modes = value.predicted_failure_modes;
         self.predicted_failed_tests = value.predicted_failed_tests;
+        self.predicted_works = value.predicted_works;
+        self.predicted_uncovered_paths = value.predicted_uncovered_paths;
+        self.predicted_flaky_tests = value.predicted_flaky_tests;
         self.guard_violations = value.guard_violations;
         self.closest_exemplars = value.closest_exemplars;
         self.predicted_edge_cases = value.predicted_edge_cases;
@@ -1972,6 +2141,9 @@ impl RealityPredictionBuilder {
             granger_attestations: self.granger_attestations,
             predicted_failure_modes: self.predicted_failure_modes,
             predicted_failed_tests: self.predicted_failed_tests,
+            predicted_works: self.predicted_works,
+            predicted_uncovered_paths: self.predicted_uncovered_paths,
+            predicted_flaky_tests: self.predicted_flaky_tests,
             guard_violations: self.guard_violations,
             closest_exemplars: self.closest_exemplars,
             predicted_edge_cases: self.predicted_edge_cases,

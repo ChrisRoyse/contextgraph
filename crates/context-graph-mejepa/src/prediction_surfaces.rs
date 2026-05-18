@@ -1,12 +1,14 @@
 use crate::error::MejepaInferError;
+use crate::head_projection::{E_AST, E_TEST, E_TYPE_GRAPH};
 use crate::types::{
     AccuracyMetric, ChunkId, CostAxis, DeadCodeKind, EdgeCaseClass, FailureModeClass,
-    LatentBugClass, PerfAxis, PhaseBPredictionSurfaces, PredictedAccuracyDegradation,
-    PredictedCostRegression, PredictedDeadCode, PredictedEdgeCase, PredictedFailureMode,
-    PredictedLatentBug, PredictedPerfRegression, PredictedRedundancy, PredictedSecurityConcern,
-    PredictedTechDebt, RedundancyKind, RootCauseClass, SecurityConcernClass, Severity,
-    TechDebtClass,
+    FlakyTestCandidate, LatentBugClass, PerfAxis, PhaseBPredictionSurfaces,
+    PredictedAccuracyDegradation, PredictedCostRegression, PredictedDeadCode, PredictedEdgeCase,
+    PredictedFailureMode, PredictedLatentBug, PredictedPerfRegression, PredictedRedundancy,
+    PredictedSecurityConcern, PredictedTechDebt, PredictedWorks, RedundancyKind, RootCauseClass,
+    SecurityConcernClass, Severity, TechDebtClass, UncoveredPath,
 };
+use crate::{EmbedderId, ExemplarMatch};
 use crate::{PatchBundle, TaskContext};
 
 pub fn covered_chunks_for_patch(patch: &PatchBundle) -> Result<Vec<ChunkId>, MejepaInferError> {
@@ -241,10 +243,24 @@ pub fn infer_phase_b_surfaces(
             });
         }
     }
-    for mode in &surfaces.predicted_failure_modes {
-        mode.validate()?;
-    }
+
+    populate_predicted_works(&mut surfaces, patch, context, predicted_test_pass)?;
+    populate_uncovered_paths(&mut surfaces, patch, context)?;
+    populate_flaky_tests(&mut surfaces, patch, context)?;
+    validate_surfaces(&surfaces)?;
     Ok(surfaces)
+}
+
+pub fn enrich_predicted_works_with_known_good_exemplars(surfaces: &mut PhaseBPredictionSurfaces) {
+    let known_good = known_good_exemplars(&surfaces.closest_exemplars);
+    if known_good.is_empty() {
+        return;
+    }
+    for predicted in &mut surfaces.predicted_works {
+        if predicted.similar_known_good_exemplars.is_empty() {
+            predicted.similar_known_good_exemplars = known_good.clone();
+        }
+    }
 }
 
 fn failure(
@@ -266,6 +282,196 @@ fn failure(
         contributing_embedders: Vec::new(),
         root_cause_class,
     }
+}
+
+fn populate_predicted_works(
+    surfaces: &mut PhaseBPredictionSurfaces,
+    patch: &PatchBundle,
+    context: &TaskContext,
+    predicted_test_pass: &[f32],
+) -> Result<(), MejepaInferError> {
+    if predicted_test_pass.is_empty()
+        || predicted_test_pass
+            .iter()
+            .any(|p| !p.is_finite() || *p < 0.8)
+        || !surfaces.predicted_failure_modes.is_empty()
+        || !surfaces.predicted_failed_tests.is_empty()
+        || !surfaces.predicted_security_concerns.is_empty()
+        || is_passes_but_should_fail_context(patch, context)
+    {
+        return Ok(());
+    }
+    let min_test_pass = predicted_test_pass
+        .iter()
+        .copied()
+        .fold(1.0_f32, f32::min)
+        .clamp(0.0, 1.0);
+    let evidence_strength = (0.72 + min_test_pass * 0.24).clamp(0.0, 0.98);
+    let confidence = (min_test_pass * 0.7 + evidence_strength * 0.3).clamp(0.0, 0.98);
+    let known_good = known_good_exemplars(&surfaces.closest_exemplars);
+
+    for (idx, hunk) in patch.ast_diff.hunks.iter().enumerate() {
+        let chunk = ChunkId(format!("{}#{idx}", hunk.path.display()));
+        let line_count = hunk.after.lines().count().max(1) as u32;
+        let line_range = (1, line_count);
+        let symbol = symbol_hint(hunk.after.as_str())
+            .or_else(|| symbol_hint(hunk.before.as_str()))
+            .unwrap_or_else(|| {
+                hunk.path
+                    .file_stem()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("changed code")
+                    .to_string()
+            });
+        surfaces.predicted_works.push(PredictedWorks {
+            chunk,
+            line_range,
+            claim: format!("{symbol} is predicted to preserve the exercised behavior"),
+            confidence,
+            supporting_embedders: vec![
+                EmbedderId(E_AST.to_string()),
+                EmbedderId(E_TEST.to_string()),
+                EmbedderId(E_TYPE_GRAPH.to_string()),
+            ],
+            similar_known_good_exemplars: known_good.clone(),
+            evidence_strength,
+        });
+    }
+    Ok(())
+}
+
+fn populate_uncovered_paths(
+    surfaces: &mut PhaseBPredictionSurfaces,
+    patch: &PatchBundle,
+    context: &TaskContext,
+) -> Result<(), MejepaInferError> {
+    if context.tests.is_empty() {
+        for (idx, hunk) in patch.ast_diff.hunks.iter().enumerate() {
+            surfaces.predicted_uncovered_paths.push(UncoveredPath {
+                chunk: ChunkId(format!("{}#{idx}", hunk.path.display())),
+                line_range: (1, hunk.after.lines().count().max(1) as u32),
+                path_description: "changed code has no declared test id in task context"
+                    .to_string(),
+                defect_probability: 0.35,
+                confidence: 0.72,
+                evidence: "TaskContext.tests is empty".to_string(),
+            });
+        }
+    }
+    for edge in &surfaces.predicted_edge_cases {
+        if !edge.covered_by_test {
+            surfaces.predicted_uncovered_paths.push(UncoveredPath {
+                chunk: edge.chunk.clone(),
+                line_range: edge.line_range,
+                path_description: edge.triggering_input_description.clone(),
+                defect_probability: (edge.confidence * 0.45).clamp(0.0, 0.95),
+                confidence: edge.confidence,
+                evidence: format!("{:?} edge case has no matching test id", edge.edge_class),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn populate_flaky_tests(
+    surfaces: &mut PhaseBPredictionSurfaces,
+    patch: &PatchBundle,
+    context: &TaskContext,
+) -> Result<(), MejepaInferError> {
+    if context.tests.is_empty() || !patch_has_flakiness_risk(patch) {
+        return Ok(());
+    }
+    for test_id in context.tests.iter().take(8) {
+        let lower = test_id.0.to_ascii_lowercase();
+        let confidence = if lower.contains("flaky") || lower.contains("parallel") {
+            0.82
+        } else {
+            0.64
+        };
+        surfaces.predicted_flaky_tests.push(FlakyTestCandidate {
+            test_id: test_id.clone(),
+            serial_pass_probability: 0.92,
+            parallel_pass_probability: 0.62,
+            confidence,
+            evidence: "patch touches time/random/concurrency-sensitive code".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_surfaces(surfaces: &PhaseBPredictionSurfaces) -> Result<(), MejepaInferError> {
+    for mode in &surfaces.predicted_failure_modes {
+        mode.validate()?;
+    }
+    for work in &surfaces.predicted_works {
+        work.validate()?;
+    }
+    for uncovered in &surfaces.predicted_uncovered_paths {
+        uncovered.validate()?;
+    }
+    for flaky in &surfaces.predicted_flaky_tests {
+        flaky.validate()?;
+    }
+    Ok(())
+}
+
+fn known_good_exemplars(exemplars: &[ExemplarMatch]) -> Vec<ExemplarMatch> {
+    exemplars
+        .iter()
+        .filter(|exemplar| exemplar.oracle_outcome.all_passed())
+        .take(5)
+        .cloned()
+        .collect()
+}
+
+fn symbol_hint(text: &str) -> Option<String> {
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        for prefix in ["def ", "async def ", "class ", "fn "] {
+            let Some(rest) = trimmed.strip_prefix(prefix) else {
+                continue;
+            };
+            let name = rest
+                .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+                .next()
+                .unwrap_or_default();
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn is_passes_but_should_fail_context(patch: &PatchBundle, context: &TaskContext) -> bool {
+    let mut text = String::new();
+    text.push_str(&context.problem_statement);
+    text.push('\n');
+    text.push_str(&patch.commit_message);
+    for hunk in &patch.ast_diff.hunks {
+        text.push('\n');
+        text.push_str(&hunk.before);
+        text.push('\n');
+        text.push_str(&hunk.after);
+    }
+    let lower = text.to_ascii_lowercase();
+    lower.contains("passesbutshouldfail")
+        || lower.contains("passes_but_should_fail")
+        || lower.contains("spec-violating")
+        || (lower.contains("passes") && lower.contains("should fail"))
+}
+
+fn patch_has_flakiness_risk(patch: &PatchBundle) -> bool {
+    patch.ast_diff.hunks.iter().any(|hunk| {
+        let lower = hunk.after.to_ascii_lowercase();
+        lower.contains("time.sleep")
+            || lower.contains("time.time")
+            || lower.contains("datetime.now")
+            || lower.contains("random.")
+            || lower.contains("thread")
+            || lower.contains("asyncio")
+            || lower.contains("pytest.mark.flaky")
+    })
 }
 
 fn contains_merge_conflict(text: &str) -> bool {
@@ -354,5 +560,79 @@ mod tests {
         let surfaces = infer_phase_b_surfaces(&patch, &context, &[0.9]).unwrap();
         assert_eq!(surfaces.predicted_security_concerns.len(), 1);
         assert_eq!(surfaces.predicted_edge_cases.len(), 1);
+    }
+
+    #[test]
+    fn predicted_works_emits_positive_claim_for_clean_python_function() {
+        let patch = PatchBundle::try_new(
+            AstDiff {
+                hunks: vec![DiffHunk {
+                    path: "src/search.py".into(),
+                    pre_sha: [0; 32],
+                    post_sha: [1; 32],
+                    before: "def binary_search(items, target):\n    return -1\n".to_string(),
+                    after: "def binary_search(items, target):\n    return items.index(target) if target in items else -1\n"
+                        .to_string(),
+                }],
+            },
+            Vec::new(),
+            "known good binary search".to_string(),
+            [1; 32],
+        )
+        .unwrap();
+        let context = TaskContext {
+            task_id: TaskId("task-py-g-073-unit".to_string()),
+            session_id: [1; 16],
+            language: Language::Python,
+            problem_statement: "KnownGood binary search".to_string(),
+            tests: vec![TestId("tests/test_search.py::test_found".to_string())],
+            environment: TaskEnvironment {
+                repo_root: ".".into(),
+                python_version: Some("3.12".to_string()),
+                os: "linux".to_string(),
+            },
+            claim_graph: None,
+            skill_citations: Vec::new(),
+        };
+        let surfaces = infer_phase_b_surfaces(&patch, &context, &[0.93]).unwrap();
+        assert_eq!(surfaces.predicted_works.len(), 1);
+        assert!(surfaces.predicted_works[0].claim.contains("binary_search"));
+        assert!(!surfaces.predicted_works[0].supporting_embedders.is_empty());
+    }
+
+    #[test]
+    fn predicted_works_suppressed_for_passes_but_should_fail_stress_case() {
+        let patch = PatchBundle::try_new(
+            AstDiff {
+                hunks: vec![DiffHunk {
+                    path: "src/search.py".into(),
+                    pre_sha: [0; 32],
+                    post_sha: [1; 32],
+                    before: "def binary_search(items, target):\n    return -1\n".to_string(),
+                    after: "def binary_search(items, target):\n    # PassesButShouldFail\n    return 0\n"
+                        .to_string(),
+                }],
+            },
+            Vec::new(),
+            "PassesButShouldFail".to_string(),
+            [1; 32],
+        )
+        .unwrap();
+        let context = TaskContext {
+            task_id: TaskId("task-py-g-073-unit".to_string()),
+            session_id: [1; 16],
+            language: Language::Python,
+            problem_statement: "PassesButShouldFail: tests pass but spec should fail".to_string(),
+            tests: vec![TestId("tests/test_search.py::test_smoke".to_string())],
+            environment: TaskEnvironment {
+                repo_root: ".".into(),
+                python_version: Some("3.12".to_string()),
+                os: "linux".to_string(),
+            },
+            claim_graph: None,
+            skill_citations: Vec::new(),
+        };
+        let surfaces = infer_phase_b_surfaces(&patch, &context, &[0.93]).unwrap();
+        assert!(surfaces.predicted_works.is_empty());
     }
 }

@@ -551,6 +551,9 @@ pub fn objective_report_for_prediction(
     let surfaces = PhaseBPredictionSurfaces {
         predicted_failure_modes: prediction.predicted_failure_modes.clone(),
         predicted_failed_tests: prediction.predicted_failed_tests.clone(),
+        predicted_works: prediction.predicted_works.clone(),
+        predicted_uncovered_paths: prediction.predicted_uncovered_paths.clone(),
+        predicted_flaky_tests: prediction.predicted_flaky_tests.clone(),
         guard_violations: prediction.guard_violations.clone(),
         closest_exemplars: prediction.closest_exemplars.clone(),
         predicted_edge_cases: prediction.predicted_edge_cases.clone(),

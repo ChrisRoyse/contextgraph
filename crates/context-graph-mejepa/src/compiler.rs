@@ -44,7 +44,10 @@ const PARK_LIST_REASON_CODE: &str = "MEJEPA_PREDICTION_PARKED";
 pub const COLD_CELL_INSUFFICIENT_SUPPORT: &str = "COLD_CELL_INSUFFICIENT_SUPPORT";
 pub const COLD_CELL_LOOKUP_FAILURE: &str = "COLD_CELL_LOOKUP_FAILURE";
 pub const COLD_CELL_Q4_NOTE: &str = "emitted_under_abstain";
-use crate::prediction_surfaces::{covered_chunks_for_patch, infer_phase_b_surfaces};
+use crate::prediction_surfaces::{
+    covered_chunks_for_patch, enrich_predicted_works_with_known_good_exemplars,
+    infer_phase_b_surfaces,
+};
 use crate::secret_redaction::{redact_patch_bundle, SECRET_REDACTION_ATTESTATION_KEY};
 use crate::system_cost::SystemCostCounters;
 use crate::types::{
@@ -490,6 +493,7 @@ impl MeJepaCompiler {
             infer_phase_b_surfaces(inference_patch, context, &oracle.predicted_test_pass)
         })?;
         phase_b_surfaces.closest_exemplars = self.closest_exemplars_for_panel(&predicted)?;
+        enrich_predicted_works_with_known_good_exemplars(&mut phase_b_surfaces);
         let objective_report = evaluate_mejepa_objective(
             MejepaObjective::default(),
             inference_patch,
@@ -507,6 +511,8 @@ impl MeJepaCompiler {
         let verdict = assemble_verdict(VerdictAssemblyInput {
             oracle_pass_confidence: oracle.predicted_oracle_pass,
             failure_modes: &phase_b_surfaces.predicted_failure_modes,
+            predicted_failed_test_count: phase_b_surfaces.predicted_failed_tests.len(),
+            predicted_works: &phase_b_surfaces.predicted_works,
             security_concern_count: phase_b_surfaces.predicted_security_concerns.len(),
             guard_violation_count: phase_b_surfaces.guard_violations.len(),
             ood_score,
@@ -1434,6 +1440,9 @@ fn objective_report_for_prediction(
     let surfaces = PhaseBPredictionSurfaces {
         predicted_failure_modes: prediction.predicted_failure_modes.clone(),
         predicted_failed_tests: prediction.predicted_failed_tests.clone(),
+        predicted_works: prediction.predicted_works.clone(),
+        predicted_uncovered_paths: prediction.predicted_uncovered_paths.clone(),
+        predicted_flaky_tests: prediction.predicted_flaky_tests.clone(),
         guard_violations: prediction.guard_violations.clone(),
         closest_exemplars: prediction.closest_exemplars.clone(),
         predicted_edge_cases: prediction.predicted_edge_cases.clone(),

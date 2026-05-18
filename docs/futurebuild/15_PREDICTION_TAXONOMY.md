@@ -35,6 +35,13 @@ pub struct RealityPrediction {
     pub predicted_failure_modes: Vec<PredictedFailureMode>,
     /// per-test predicted flip from PASS→FAIL (or new failure)
     pub predicted_failed_tests: Vec<PredictedTestOutcome>,
+    /// =========== Q2: WORKS (positive evidence, not absence of failure) ===========
+    /// explicit positive "this code works" claims with chunk citations
+    pub predicted_works: Vec<PredictedWorks>,
+    /// branches/paths the model expects to be under-tested
+    pub predicted_uncovered_paths: Vec<UncoveredPath>,
+    /// tests likely to diverge between serial and parallel execution
+    pub predicted_flaky_tests: Vec<FlakyTestCandidate>,
     /// TCT Gτ guard violations: which embedders + chunks fell below threshold
     pub guard_violations: Vec<GuardViolation>,
     /// nearest-exemplar retrieval from corpus via patch-similarity graph
@@ -83,6 +90,8 @@ Every field is **always populated**. When a category has no predictions, the vec
 ```rust
 pub enum Verdict {
     /// confidence_interval lower bound ≥ ship_gate_threshold
+    /// AND at least one high-confidence predicted_works row
+    /// AND predicted_failed_tests is empty
     /// AND no high-severity Q4 concerns
     /// AND every claim reconciles
     Pass,
@@ -98,6 +107,41 @@ pub enum Verdict {
 ```
 
 `Pass` is the strict case. `Fail / OOD / Abstain / GuardRejected` are all "not Pass" with different remediation paths; the agent should treat them as distinct because the underlying issue is different.
+
+## 2.1 The Q2 surface — WHAT WORKS
+
+Q2 is explicit positive evidence. It prevents the old asymmetry where the operator had to infer "it works" from "no failure mode was emitted." A `Pass` verdict now requires at least one high-confidence `PredictedWorks` row and zero `predicted_failed_tests`.
+
+```rust
+pub struct PredictedWorks {
+    pub chunk: ChunkId,
+    pub line_range: (u32, u32),
+    pub claim: String,
+    pub confidence: f32,
+    pub supporting_embedders: Vec<EmbedderId>,
+    pub similar_known_good_exemplars: Vec<ExemplarMatch>,
+    pub evidence_strength: f32,
+}
+
+pub struct UncoveredPath {
+    pub chunk: ChunkId,
+    pub line_range: (u32, u32),
+    pub path_description: String,
+    pub defect_probability: f32,
+    pub confidence: f32,
+    pub evidence: String,
+}
+
+pub struct FlakyTestCandidate {
+    pub test_id: TestId,
+    pub serial_pass_probability: f32,
+    pub parallel_pass_probability: f32,
+    pub confidence: f32,
+    pub evidence: String,
+}
+```
+
+**Producer status (2026-05-18):** TASK-PY-G-073 / #292 adds the additive schema, deterministic source-backed producer, verdict assembly gate, MCP explain surfacing, and FSV readback through `CF_MEJEPA_LIVE_PREDICTIONS`. The positive head uses observable patch/test/exemplar signals only; it does not infer operator intent.
 
 ---
 

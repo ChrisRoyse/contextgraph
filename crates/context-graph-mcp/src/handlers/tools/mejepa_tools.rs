@@ -2408,6 +2408,9 @@ fn run_explain_prediction(
         "saliencyByChunk": saliency,
         "topFailureModes": prediction.predicted_failure_modes,
         "predictedFailedTests": prediction.predicted_failed_tests,
+        "predictedWorks": prediction.predicted_works,
+        "predictedUncoveredPaths": prediction.predicted_uncovered_paths,
+        "predictedFlakyTests": prediction.predicted_flaky_tests,
         "guardViolations": prediction.guard_violations,
         "edgeCases": prediction.predicted_edge_cases,
         "latentBugs": prediction.predicted_latent_bugs,
@@ -2573,6 +2576,12 @@ fn saliency_by_chunk(prediction: &RealityPrediction) -> AnyhowResult<BTreeMap<St
     }
     for failed in &prediction.predicted_failed_tests {
         *weights.entry(failed.why.chunk.0.clone()).or_insert(0.0) += 3.0;
+    }
+    for item in &prediction.predicted_works {
+        *weights.entry(item.chunk.0.clone()).or_insert(0.0) += 1.5;
+    }
+    for item in &prediction.predicted_uncovered_paths {
+        *weights.entry(item.chunk.0.clone()).or_insert(0.0) += 2.0;
     }
     for item in &prediction.predicted_edge_cases {
         *weights.entry(item.chunk.0.clone()).or_insert(0.0) += 2.0;
@@ -4231,6 +4240,9 @@ can_operator_override = {operator}
             granger_attestations: BTreeMap::from([("dda:mean_cosine".to_string(), 0.81)]),
             predicted_failure_modes: Vec::new(),
             predicted_failed_tests: Vec::new(),
+            predicted_works: Vec::new(),
+            predicted_uncovered_paths: Vec::new(),
+            predicted_flaky_tests: Vec::new(),
             guard_violations: vec![context_graph_mejepa::GuardViolation {
                 embedder: context_graph_mejepa::EmbedderId("E7".to_string()),
                 chunk: ChunkId(chunk.to_string()),
