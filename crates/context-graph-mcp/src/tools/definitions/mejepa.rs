@@ -260,6 +260,38 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_CHECK_BEDROCK_CONSISTENCY,
+            "TASK-EK-016 bedrock consistency verifier: parse a unified patch diff, read persisted chunk foundationality scores from CF_MEJEPA_CHUNK_FOUNDATIONALITY, and report whether the patch touches load-bearing chunks. No inner LLM is invoked.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["patch"],
+                "properties": {
+                    "patch": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Unified diff text to check against persisted chunk foundationality scores."
+                    },
+                    "threshold": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "default": 0.75
+                    },
+                    "topK": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 5
+                    },
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional ME-JEPA RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_PROPOSE_INSTRUMENT,
             "TASK-EK-002 ontology-extension surface: compose Unknown active-learning clusters, pairwise-MI health, and mincut structural-hole evidence into deterministic candidate frozen-instrument proposals. No inner LLM is invoked.",
             json!({

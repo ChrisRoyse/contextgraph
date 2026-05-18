@@ -220,6 +220,7 @@ impl Handlers {
             tool_names::MEJEPA_ELICIT_INTENT => call_mejepa_elicit_intent(arguments),
             tool_names::MEJEPA_ALIGN_TO_INTENT => call_mejepa_align_to_intent(arguments),
             tool_names::MEJEPA_MINCUT_PANEL => call_mejepa_mincut_panel(arguments),
+            tool_names::MEJEPA_CHECK_BEDROCK_CONSISTENCY => call_mejepa_check_bedrock_consistency(arguments),
             tool_names::MEJEPA_PROPOSE_INSTRUMENT => call_mejepa_propose_instrument(arguments),
             tool_names::MEJEPA_PENDING_EMBEDDER_PROPOSALS => call_mejepa_pending_embedder_proposals(arguments),
             tool_names::MEJEPA_PENDING_EMBEDDER_APPROVALS => call_mejepa_pending_embedder_approvals(arguments),

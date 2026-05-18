@@ -641,6 +641,75 @@ pub fn bedrock_consistency_for_chunks(
     })
 }
 
+pub fn bedrock_consistency_for_patch_diff(
+    db: &DB,
+    patch_diff: &str,
+    threshold: f32,
+    top_k: usize,
+) -> Result<BedrockConsistencyReport, MejepaInferError> {
+    validate_unit("bedrock_consistency.threshold", threshold)?;
+    if top_k == 0 {
+        return invalid("bedrock_consistency.top_k", "top_k must be positive");
+    }
+    if patch_diff.trim().is_empty() {
+        return invalid(
+            "bedrock_consistency.patch_diff",
+            "patch diff must be non-empty",
+        );
+    }
+    let touched_paths = extract_patch_touched_paths(patch_diff)?;
+    if touched_paths.is_empty() {
+        return invalid(
+            "bedrock_consistency.patch_paths",
+            "patch diff did not contain any touched file paths",
+        );
+    }
+    let scores = read_all_chunk_foundationality_scores(db)?;
+    let mut touched = Vec::new();
+    let mut matched_paths = BTreeSet::new();
+    for score in scores {
+        score.validate()?;
+        if let Some(path) = touched_paths
+            .iter()
+            .find(|path| chunk_id_matches_patch_path(&score.chunk_id, path))
+        {
+            matched_paths.insert(path.clone());
+            touched.push(BedrockTouchedChunk {
+                chunk_id: score.chunk_id,
+                foundationality_score: score.foundationality_score,
+                raw_pagerank: score.raw_pagerank,
+                rank: score.rank,
+                upstream_count: score.upstream_count,
+                downstream_count: score.downstream_count,
+            });
+        }
+    }
+    touched.sort_by(|left, right| {
+        right
+            .foundationality_score
+            .partial_cmp(&left.foundationality_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.rank.cmp(&right.rank))
+            .then_with(|| left.chunk_id.cmp(&right.chunk_id))
+    });
+    let missing_chunk_ids = touched_paths
+        .iter()
+        .filter(|path| !matched_paths.contains(*path))
+        .map(|path| format!("{path}::*"))
+        .collect::<Vec<_>>();
+    let bedrock_touched = touched
+        .iter()
+        .any(|chunk| chunk.foundationality_score >= threshold);
+    touched.truncate(top_k);
+    Ok(BedrockConsistencyReport {
+        threshold,
+        bedrock_touched,
+        predicted_foundationality_only: !missing_chunk_ids.is_empty(),
+        missing_chunk_ids,
+        top_touched_chunks: touched,
+    })
+}
+
 pub fn foundationality_fisher_multiplier(
     foundationality_score: f32,
     lambda_fisher: f32,
@@ -2116,6 +2185,50 @@ fn sanitize_evidence_fragment(value: &str) -> String {
         .collect()
 }
 
+fn extract_patch_touched_paths(patch_diff: &str) -> Result<BTreeSet<String>, MejepaInferError> {
+    let mut paths = BTreeSet::new();
+    for line in patch_diff.lines() {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            let parts = rest.split_whitespace().collect::<Vec<_>>();
+            for part in parts.iter().take(2) {
+                if let Some(path) = normalize_patch_path(part) {
+                    paths.insert(path);
+                }
+            }
+            continue;
+        }
+        for prefix in ["+++ ", "--- ", "rename from ", "rename to "] {
+            if let Some(path) = line.strip_prefix(prefix).and_then(normalize_patch_path) {
+                paths.insert(path);
+            }
+        }
+    }
+    for path in &paths {
+        validate_single_line("bedrock_consistency.patch_path", path, 512)?;
+    }
+    Ok(paths)
+}
+
+fn normalize_patch_path(raw: &str) -> Option<String> {
+    let mut path = raw.trim();
+    if path.is_empty() || path == "/dev/null" {
+        return None;
+    }
+    path = path.strip_prefix("a/").unwrap_or(path);
+    path = path.strip_prefix("b/").unwrap_or(path);
+    path = path.strip_prefix("./").unwrap_or(path);
+    if path.is_empty() || path == "/dev/null" {
+        return None;
+    }
+    Some(path.replace('\\', "/"))
+}
+
+fn chunk_id_matches_patch_path(chunk_id: &str, path: &str) -> bool {
+    let chunk_id = chunk_id.replace('\\', "/");
+    let path = path.replace('\\', "/");
+    chunk_id == path || chunk_id.starts_with(&format!("{path}::"))
+}
+
 fn graph_nodes(edges: &[ChunkDependencyEdge]) -> Vec<String> {
     let mut nodes = BTreeSet::new();
     for edge in edges {
@@ -2437,6 +2550,34 @@ mod tests {
             .scores
             .iter()
             .any(|score| score.chunk_id.starts_with("pkg/core.py::")));
+    }
+
+    #[test]
+    fn patch_diff_bedrock_report_matches_touched_python_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = crate::open_infer_rocksdb(temp.path()).unwrap();
+        let extraction = extract_python_chunk_dependency_edges(&python_sources()).unwrap();
+        let report = compute_chunk_foundationality(
+            &extraction.edges,
+            1,
+            ChunkFoundationalityConfig::default(),
+        )
+        .unwrap();
+        persist_chunk_foundationality_report_sync_readback(db.as_ref(), &extraction.edges, &report)
+            .unwrap();
+        let patch = r#"diff --git a/pkg/core.py b/pkg/core.py
+--- a/pkg/core.py
++++ b/pkg/core.py
+@@ -1,2 +1,2 @@
+-BASE_LIMIT = 10
++BASE_LIMIT = 11
+"#;
+        let bedrock = bedrock_consistency_for_patch_diff(db.as_ref(), patch, 0.75, 5).unwrap();
+        assert!(bedrock.bedrock_touched);
+        assert!(bedrock
+            .top_touched_chunks
+            .iter()
+            .any(|chunk| chunk.chunk_id.starts_with("pkg/core.py::")));
     }
 
     fn fixture_edges() -> Vec<ChunkDependencyEdge> {

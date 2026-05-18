@@ -10,12 +10,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
 use context_graph_mejepa::{
-    elicit_intent, mejepa_mincut_panel, open_infer_rocksdb, open_mincut_rocksdb,
-    read_mincut_report, read_north_star, write_mincut_report_sync_readback,
+    bedrock_consistency_for_patch_diff, elicit_intent, mejepa_mincut_panel, open_infer_rocksdb,
+    open_mincut_rocksdb, read_mincut_report, read_north_star, write_mincut_report_sync_readback,
     write_north_star_sync_readback, ActiveLearningLabel, ActiveLearningQueueEntry,
-    ActiveLearningRankBy, ElicitationOptions, IntentSpecification, LabelMethod, MincutOptions,
-    MincutReport, NorthStarVector, OracleOutcome, PanelGraphSource, RawIntentInput,
-    RocksDbEvalStore, TaskId,
+    ActiveLearningRankBy, BedrockConsistencyReport, ElicitationOptions, IntentSpecification,
+    LabelMethod, MincutOptions, MincutReport, NorthStarVector, OracleOutcome, PanelGraphSource,
+    RawIntentInput, RocksDbEvalStore, TaskId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -44,6 +44,9 @@ pub enum MejepaCommands {
     /// Build and persist a TASK-EK-003 structural-hole mincut panel.
     #[command(name = "mincut-panel")]
     MincutPanel(MincutPanelArgs),
+    /// TASK-EK-016 bedrock verifier over a patch diff and persisted foundationality scores.
+    #[command(name = "check-bedrock")]
+    CheckBedrock(CheckBedrockArgs),
     /// Bind PostToolUse Bash test outcomes back to live RealityPrediction rows.
     #[command(name = "bind-test-outcomes")]
     BindTestOutcomes(crate::commands::mejepa_prediction_verification::BindTestOutcomesArgs),
@@ -196,6 +199,25 @@ pub struct MincutPanelArgs {
     pub persist: bool,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct CheckBedrockArgs {
+    /// Inference RocksDB path containing CF_MEJEPA_CHUNK_FOUNDATIONALITY.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// Unified diff file to check against persisted foundationality scores.
+    #[arg(long)]
+    pub patch: PathBuf,
+
+    /// Foundationality threshold at or above which a touched chunk is considered bedrock.
+    #[arg(long, default_value_t = 0.75)]
+    pub threshold: f32,
+
+    /// Maximum touched chunks to return.
+    #[arg(long, default_value_t = 5)]
+    pub top_k: usize,
+}
+
 #[derive(Clone, Copy, Debug, ValueEnum)]
 #[clap(rename_all = "kebab_case")]
 pub enum ElicitIntentModeArg {
@@ -317,6 +339,14 @@ pub struct MincutPanelCliOutput {
     pub source_of_truth: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckBedrockCliOutput {
+    pub tool: &'static str,
+    pub report: BedrockConsistencyReport,
+    pub source_of_truth: serde_json::Value,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ElicitIntentInputEnvelope {
@@ -421,6 +451,9 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
         }
         MejepaCommands::MincutPanel(args) => {
             serde_json::to_value(mincut_panel_cli(args)?).context("serialize mincut-panel")
+        }
+        MejepaCommands::CheckBedrock(args) => {
+            serde_json::to_value(check_bedrock_cli(args)?).context("serialize check-bedrock")
         }
         MejepaCommands::BindTestOutcomes(args) => serde_json::to_value(
             crate::commands::mejepa_prediction_verification::bind_test_outcomes(args)?,
@@ -608,6 +641,31 @@ pub fn mincut_panel_cli(args: MincutPanelArgs) -> Result<MincutPanelCliOutput> {
             "inputPath": args.input,
             "mincutReportCf": context_graph_mejepa_cf::CF_MEJEPA_MINCUT_REPORTS,
             "persisted": args.persist,
+            "innerLlmInvoked": false
+        }),
+    })
+}
+
+pub fn check_bedrock_cli(args: CheckBedrockArgs) -> Result<CheckBedrockCliOutput> {
+    let patch = fs::read_to_string(&args.patch)
+        .with_context(|| format!("read patch diff {}", args.patch.display()))?;
+    let db = open_infer_rocksdb(&args.db_path)
+        .with_context(|| format!("open ME-JEPA RocksDB {}", args.db_path.display()))?;
+    let report =
+        bedrock_consistency_for_patch_diff(db.as_ref(), &patch, args.threshold, args.top_k)
+            .with_context(|| {
+                format!(
+                    "MEJEPA_CHECK_BEDROCK_FAILED: patch={}",
+                    args.patch.display()
+                )
+            })?;
+    Ok(CheckBedrockCliOutput {
+        tool: "context-graph-cli mejepa check-bedrock",
+        report,
+        source_of_truth: json!({
+            "dbPath": args.db_path,
+            "patch": args.patch,
+            "foundationalityCf": context_graph_mejepa_cf::CF_MEJEPA_CHUNK_FOUNDATIONALITY,
             "innerLlmInvoked": false
         }),
     })
@@ -883,7 +941,11 @@ fn source_of_truth(db_path: &Path, cf_name: &str) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use context_graph_mejepa::{ActiveLearningKind, ActiveLearningQueueState, PredictionId};
+    use context_graph_mejepa::{
+        compute_chunk_foundationality, persist_chunk_foundationality_report_sync_readback,
+        ActiveLearningKind, ActiveLearningQueueState, ChunkDependencyEdge,
+        ChunkFoundationalityConfig, PredictionId,
+    };
 
     fn entry(task_id: &str, score: f32, kind: ActiveLearningKind) -> ActiveLearningQueueEntry {
         ActiveLearningQueueEntry {
@@ -947,5 +1009,45 @@ mod tests {
     fn zero_top_n_fails_closed() {
         let err = validate_top_n(0).unwrap_err().to_string();
         assert!(err.contains("MEJEPA_ACTIVE_LEARNING_TOP_N_INVALID"));
+    }
+
+    #[test]
+    fn check_bedrock_cli_reads_foundationality_scores() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db_path = tmp.path().join("infer-rocksdb");
+        let patch_path = tmp.path().join("patch.diff");
+        let db = open_infer_rocksdb(&db_path).unwrap();
+        let edges = vec![
+            ChunkDependencyEdge::new("app.py::handler", "pkg/core.py::Base", "call", 1.0, "test"),
+            ChunkDependencyEdge::new(
+                "tests/test_core.py::test_base",
+                "pkg/core.py::Base",
+                "test_verifies",
+                1.0,
+                "test",
+            ),
+        ];
+        let report =
+            compute_chunk_foundationality(&edges, 1, ChunkFoundationalityConfig::default())
+                .unwrap();
+        persist_chunk_foundationality_report_sync_readback(db.as_ref(), &edges, &report).unwrap();
+        drop(db);
+        fs::write(
+            &patch_path,
+            "diff --git a/pkg/core.py b/pkg/core.py\n--- a/pkg/core.py\n+++ b/pkg/core.py\n",
+        )
+        .unwrap();
+        let output = check_bedrock_cli(CheckBedrockArgs {
+            db_path,
+            patch: patch_path,
+            threshold: 0.75,
+            top_k: 5,
+        })
+        .unwrap();
+        assert!(output.report.bedrock_touched);
+        assert_eq!(
+            output.report.top_touched_chunks[0].chunk_id,
+            "pkg/core.py::Base"
+        );
     }
 }

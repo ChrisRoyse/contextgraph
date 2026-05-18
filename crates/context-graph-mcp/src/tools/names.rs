@@ -112,6 +112,9 @@ pub const MEJEPA_ELICIT_INTENT: &str = "mcp__cgreality__mejepa_elicit_intent";
 pub const MEJEPA_ALIGN_TO_INTENT: &str = "mcp__cgreality__mejepa_align_to_intent";
 /// TASK-EK-003 structural-hole mincut panel over ME-JEPA embedder/constellation/fingerprint graphs.
 pub const MEJEPA_MINCUT_PANEL: &str = "mcp__cgreality__mejepa_mincut_panel";
+/// TASK-EK-016 bedrock consistency verifier over patch diffs and chunk foundationality scores.
+pub const MEJEPA_CHECK_BEDROCK_CONSISTENCY: &str =
+    "mcp__cgreality__mejepa_check_bedrock_consistency";
 /// TASK-EK-002 frozen-instrument proposal surface from residual absence signals.
 pub const MEJEPA_PROPOSE_INSTRUMENT: &str = "mcp__cgreality__mejepa_propose_instrument";
 /// TASK-EK-018B ranked dynamic-embedder proposal queue from absence signals.

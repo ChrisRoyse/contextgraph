@@ -19,9 +19,9 @@ use context_graph_mejepa::operator_override::{
     persist_operator_override, OperatorOverride, OverrideVerdict,
 };
 use context_graph_mejepa::{
-    align_to_intent, build_deterministic_compiler, elicit_intent, mejepa_mincut_panel,
-    open_infer_rocksdb, open_mincut_rocksdb, promote_instrument_proposal,
-    propose_embedder_proposals_from_db, propose_instruments_from_db,
+    align_to_intent, bedrock_consistency_for_patch_diff, build_deterministic_compiler,
+    elicit_intent, mejepa_mincut_panel, open_infer_rocksdb, open_mincut_rocksdb,
+    promote_instrument_proposal, propose_embedder_proposals_from_db, propose_instruments_from_db,
     rank_counterfactual_candidates, read_embedder_proposals, read_instrument_proposal,
     read_instrument_proposals, read_mincut_report, read_north_star, search_latent_actions,
     write_embedder_proposals_sync_readback, write_instrument_proposals_sync_readback,
@@ -38,10 +38,10 @@ use context_graph_mejepa::{
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_CALIBRATION_HISTORY,
-    CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_EMBEDDER_PROPOSALS, CF_MEJEPA_FINGERPRINT_REFERENCES,
-    CF_MEJEPA_INSTRUMENT_PROPOSALS, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_MINCUT_REPORTS,
-    CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_NORTH_STARS, CF_MEJEPA_OOD_ESCALATIONS,
-    CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_CHUNK_FOUNDATIONALITY, CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_EMBEDDER_PROPOSALS,
+    CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_INSTRUMENT_PROPOSALS, CF_MEJEPA_LIVE_PREDICTIONS,
+    CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_NORTH_STARS,
+    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
@@ -156,6 +156,18 @@ struct MincutPanelRequest {
     db_path: Option<PathBuf>,
     #[serde(default = "default_persist_mincut_report")]
     persist: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CheckBedrockConsistencyRequest {
+    patch: String,
+    #[serde(default = "default_bedrock_threshold")]
+    threshold: f32,
+    #[serde(default = "default_bedrock_top_k")]
+    top_k: usize,
+    #[serde(default)]
+    db_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -373,6 +385,14 @@ fn default_instrument_min_delta_required() -> f32 {
 
 fn default_persist_mincut_report() -> bool {
     true
+}
+
+fn default_bedrock_threshold() -> f32 {
+    0.75
+}
+
+fn default_bedrock_top_k() -> usize {
+    5
 }
 
 impl Handlers {
@@ -848,6 +868,40 @@ impl Handlers {
                 "MEJEPA_MINCUT_PANEL_FAILED",
                 &err.to_string(),
                 json!({"dbPath": db_path, "mincutReportCf": CF_MEJEPA_MINCUT_REPORTS}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_check_bedrock_consistency(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: CheckBedrockConsistencyRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_CHECK_BEDROCK_CONSISTENCY
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_check_bedrock_consistency(&db_path, request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Execution,
+                "MEJEPA_CHECK_BEDROCK_CONSISTENCY_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path, "foundationalityCf": CF_MEJEPA_CHUNK_FOUNDATIONALITY}),
             ),
         }
     }
@@ -2197,6 +2251,29 @@ fn run_mincut_panel(db_path: &Path, request: MincutPanelRequest) -> AnyhowResult
     }))
 }
 
+fn run_check_bedrock_consistency(
+    db_path: &Path,
+    request: CheckBedrockConsistencyRequest,
+) -> AnyhowResult<Value> {
+    let db = open_infer_rocksdb(db_path).context("open ME-JEPA inference RocksDB")?;
+    let report = bedrock_consistency_for_patch_diff(
+        db.as_ref(),
+        &request.patch,
+        request.threshold,
+        request.top_k,
+    )
+    .context("run deterministic bedrock consistency verifier")?;
+    Ok(json!({
+        "report": report,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "foundationalityCf": CF_MEJEPA_CHUNK_FOUNDATIONALITY,
+            "tool": tool_names::MEJEPA_CHECK_BEDROCK_CONSISTENCY,
+            "innerLlmInvoked": false
+        }
+    }))
+}
+
 fn run_propose_instrument(
     db_path: &Path,
     request: ProposeInstrumentRequest,
@@ -3440,6 +3517,60 @@ mod mejepa_constellation_inspect_tests {
         let err =
             write_pause_state(&tmp.path().join("pause-state.json"), 0, "unit-test").unwrap_err();
         assert!(err.to_string().contains("MEJEPA_PAUSE_DURATION_ZERO"));
+    }
+
+    #[test]
+    fn check_bedrock_consistency_reads_foundationality_cf() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("infer-rocksdb");
+        let db = open_infer_rocksdb(&db_path).unwrap();
+        let edges = vec![
+            context_graph_mejepa::ChunkDependencyEdge::new(
+                "app.py::handler",
+                "pkg/core.py::Base",
+                "call",
+                1.0,
+                "test",
+            ),
+            context_graph_mejepa::ChunkDependencyEdge::new(
+                "tests/test_core.py::test_base",
+                "pkg/core.py::Base",
+                "test_verifies",
+                1.0,
+                "test",
+            ),
+        ];
+        let report = context_graph_mejepa::compute_chunk_foundationality(
+            &edges,
+            1,
+            context_graph_mejepa::ChunkFoundationalityConfig::default(),
+        )
+        .unwrap();
+        context_graph_mejepa::persist_chunk_foundationality_report_sync_readback(
+            db.as_ref(),
+            &edges,
+            &report,
+        )
+        .unwrap();
+        drop(db);
+
+        let value = run_check_bedrock_consistency(
+            &db_path,
+            CheckBedrockConsistencyRequest {
+                patch:
+                    "diff --git a/pkg/core.py b/pkg/core.py\n--- a/pkg/core.py\n+++ b/pkg/core.py\n"
+                        .to_string(),
+                threshold: 0.75,
+                top_k: 5,
+                db_path: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(value["report"]["bedrockTouched"], true);
+        assert_eq!(
+            value["sourceOfTruth"]["foundationalityCf"],
+            CF_MEJEPA_CHUNK_FOUNDATIONALITY
+        );
     }
 
     #[test]
