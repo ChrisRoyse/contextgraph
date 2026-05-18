@@ -291,6 +291,35 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_PENDING_EMBEDDER_PROPOSALS,
+            "TASK-EK-018B absence-detection queue: compose mincut, Unknown/OOD active learning, pairwise-MI residual, curiosity, and foundationality signals into ranked dynamic-embedder absence-shape descriptors in CF_MEJEPA_EMBEDDER_PROPOSALS. No inner LLM is invoked.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional ME-JEPA RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    },
+                    "persist": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "When true, write pending proposals to CF_MEJEPA_EMBEDDER_PROPOSALS with read-after-write validation."
+                    },
+                    "config": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "maxProposals": {"type": "integer", "minimum": 1, "maximum": 1024, "default": 32},
+                            "minSignalMagnitude": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.01},
+                            "minCompositeScore": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.0},
+                            "pairwiseMiMaxRows": {"type": "integer", "minimum": 1, "default": 1000000}
+                        }
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_PROMOTE_INSTRUMENT_PROPOSAL,
             "TASK-EK-002 operator/falsification gate: mark an instrument proposal under review, accept it if held-out delta clears threshold, or persist a rejected proposal decision in CF_MEJEPA_INSTRUMENT_PROPOSALS.",
             json!({

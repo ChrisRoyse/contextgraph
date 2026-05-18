@@ -114,6 +114,9 @@ pub const MEJEPA_ALIGN_TO_INTENT: &str = "mcp__cgreality__mejepa_align_to_intent
 pub const MEJEPA_MINCUT_PANEL: &str = "mcp__cgreality__mejepa_mincut_panel";
 /// TASK-EK-002 frozen-instrument proposal surface from residual absence signals.
 pub const MEJEPA_PROPOSE_INSTRUMENT: &str = "mcp__cgreality__mejepa_propose_instrument";
+/// TASK-EK-018B ranked dynamic-embedder proposal queue from absence signals.
+pub const MEJEPA_PENDING_EMBEDDER_PROPOSALS: &str =
+    "mcp__cgreality__mejepa_pending_embedder_proposals";
 /// TASK-EK-002 operator/falsification decision gate for instrument proposals.
 pub const MEJEPA_PROMOTE_INSTRUMENT_PROPOSAL: &str =
     "mcp__cgreality__mejepa_promote_instrument_proposal";

@@ -2276,6 +2276,7 @@ mod tests {
             ood_escalation_rows: 0,
             session_cleanup_gc_events: 1,
             compression_progress_section: None,
+            curiosity_ranking_section: None,
         };
         write_weekly_eval_markdown(&markdown_path, &report, "synthetic-hash", &operational)
             .expect("write weekly markdown");

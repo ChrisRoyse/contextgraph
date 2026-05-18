@@ -21,24 +21,27 @@ use context_graph_mejepa::operator_override::{
 use context_graph_mejepa::{
     align_to_intent, build_deterministic_compiler, elicit_intent, mejepa_mincut_panel,
     open_infer_rocksdb, open_mincut_rocksdb, promote_instrument_proposal,
-    propose_instruments_from_db, rank_counterfactual_candidates, read_instrument_proposal,
+    propose_embedder_proposals_from_db, propose_instruments_from_db,
+    rank_counterfactual_candidates, read_embedder_proposals, read_instrument_proposal,
     read_instrument_proposals, read_mincut_report, read_north_star, search_latent_actions,
-    write_instrument_proposals_sync_readback, write_mincut_report_sync_readback,
-    write_north_star_sync_readback, ActiveLearningQueueState, ActualOutcome, AgentId,
-    CalibrationStore, ChunkId, CounterfactualCandidateRankingConfig, DdaSignals,
-    ElicitationOptions, FailedGate, FeedbackId, FeedbackKind, FingerprintId, FingerprintReference,
-    InstrumentProposalConfig, InstrumentProposalDecision, IntentCandidate, IntentSpecification,
-    LabelMethod, LatentActionCandidate, LatentActionSearchConfig, MeJepaInferConfig, MincutOptions,
-    NorthStarVector, OracleOutcome, PanelGraphSource, PanelId, PatchBundle, PredictionId,
-    RealityPrediction, RocksDbEvalStore, RocksDbInferStore, SurpriseEvent, SurpriseSeverity,
-    SystemCostCounters, TaskContext, TestId, VerifyVerdict, WitnessHash,
+    write_embedder_proposals_sync_readback, write_instrument_proposals_sync_readback,
+    write_mincut_report_sync_readback, write_north_star_sync_readback, ActiveLearningQueueState,
+    ActualOutcome, AgentId, CalibrationStore, ChunkId, CounterfactualCandidateRankingConfig,
+    DdaSignals, ElicitationOptions, EmbedderProposalConfig, FailedGate, FeedbackId, FeedbackKind,
+    FingerprintId, FingerprintReference, InstrumentProposalConfig, InstrumentProposalDecision,
+    IntentCandidate, IntentSpecification, LabelMethod, LatentActionCandidate,
+    LatentActionSearchConfig, MeJepaInferConfig, MincutOptions, NorthStarVector, OracleOutcome,
+    PanelGraphSource, PanelId, PatchBundle, PredictionId, RealityPrediction, RocksDbEvalStore,
+    RocksDbInferStore, SurpriseEvent, SurpriseSeverity, SystemCostCounters, TaskContext, TestId,
+    VerifyVerdict, WitnessHash,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_CALIBRATION_HISTORY,
-    CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_INSTRUMENT_PROPOSALS,
-    CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_NORTH_STARS,
-    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_EMBEDDER_PROPOSALS, CF_MEJEPA_FINGERPRINT_REFERENCES,
+    CF_MEJEPA_INSTRUMENT_PROPOSALS, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_MINCUT_REPORTS,
+    CF_MEJEPA_NORTH_STARS, CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_OVERRIDES,
+    CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
@@ -164,6 +167,17 @@ struct ProposeInstrumentRequest {
     persist: bool,
     #[serde(default)]
     config: InstrumentProposalConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PendingEmbedderProposalsRequest {
+    #[serde(default)]
+    db_path: Option<PathBuf>,
+    #[serde(default = "default_persist_embedder_proposals")]
+    persist: bool,
+    #[serde(default)]
+    config: EmbedderProposalConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -339,6 +353,10 @@ fn default_persist_north_star() -> bool {
 }
 
 fn default_persist_instrument_proposals() -> bool {
+    true
+}
+
+fn default_persist_embedder_proposals() -> bool {
     true
 }
 
@@ -857,6 +875,40 @@ impl Handlers {
                 "MEJEPA_PROPOSE_INSTRUMENT_FAILED",
                 &err.to_string(),
                 json!({"dbPath": db_path, "instrumentProposalCf": CF_MEJEPA_INSTRUMENT_PROPOSALS}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_pending_embedder_proposals(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: PendingEmbedderProposalsRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_PENDING_EMBEDDER_PROPOSALS
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_pending_embedder_proposals(&db_path, request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Execution,
+                "MEJEPA_PENDING_EMBEDDER_PROPOSALS_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path, "embedderProposalCf": CF_MEJEPA_EMBEDDER_PROPOSALS}),
             ),
         }
     }
@@ -2135,6 +2187,44 @@ fn run_propose_instrument(
             "persisted": request.persist,
             "persistedReadbackCount": persisted_readback_count,
             "tool": tool_names::MEJEPA_PROPOSE_INSTRUMENT,
+            "innerLlmInvoked": false
+        }
+    }))
+}
+
+fn run_pending_embedder_proposals(
+    db_path: &Path,
+    request: PendingEmbedderProposalsRequest,
+) -> AnyhowResult<Value> {
+    let created_at_unix_ms = now_unix_ms()?;
+    let db = open_infer_rocksdb(db_path).context("open ME-JEPA inference RocksDB")?;
+    let report =
+        propose_embedder_proposals_from_db(db.as_ref(), request.config, created_at_unix_ms)
+            .context("compose pending ME-JEPA embedder proposals")?;
+    let write_summary = if request.persist && !report.proposals.is_empty() {
+        Some(
+            write_embedder_proposals_sync_readback(db.as_ref(), &report.proposals)
+                .context("persist embedder proposals")?,
+        )
+    } else {
+        None
+    };
+    let persisted_readback_count = if request.persist {
+        read_embedder_proposals(db.as_ref())
+            .context("read persisted embedder proposals")?
+            .len()
+    } else {
+        0
+    };
+    Ok(json!({
+        "report": report,
+        "writeSummary": write_summary,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "embedderProposalCf": CF_MEJEPA_EMBEDDER_PROPOSALS,
+            "persisted": request.persist,
+            "persistedReadbackCount": persisted_readback_count,
+            "tool": tool_names::MEJEPA_PENDING_EMBEDDER_PROPOSALS,
             "innerLlmInvoked": false
         }
     }))
