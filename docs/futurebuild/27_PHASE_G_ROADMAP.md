@@ -99,7 +99,7 @@ This is the operator-facing capability: point ME-JEPA at any Python repo and it 
 
 | Order | Issue | Capability |
 |---|---|---|
-| 4.1 | **#281** | Merkle-tree per-project chunk/embed cache + file watcher + transitive-invalidation + schema-version-aware re-embed |
+| 4.1 | **#281** | Merkle-tree per-project chunk/embed cache + 250 ms debounced watcher-status scan + transitive-invalidation + schema-version-aware re-embed — **code/FSV-shipped 2026-05-18** |
 | 4.2 | **#282** | Project-ingestion MCP tool with source/test scoping |
 | 4.3 | **#283** | Per-project reality compile report (top-N likely-broken areas, edge cases, dep risks) |
 

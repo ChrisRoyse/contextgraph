@@ -1,11 +1,15 @@
 use anyhow::{ensure, Context, Result};
 use context_graph_mejepa::cli::write_json_0600;
-use context_graph_mejepa::{blake3_hex, EmbedderVersion, ProjectCacheConfig, ProjectMerkleCache};
+use context_graph_mejepa::{
+    blake3_hex, EmbedderVersion, ProjectCacheConfig, ProjectMerkleCache, PROJECT_CACHE_DEBOUNCE_MS,
+};
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-062-merkle-cache-fsv";
 const PROJECT_ID: &str = "task-py-g-062-synthetic";
@@ -27,6 +31,16 @@ fn main() -> Result<()> {
     let move_same_content = same_content_moved_case(&root)?;
     let version_bump = embedder_version_bump_case(&root)?;
     let fail_closed = fail_closed_non_git_case(&root)?;
+    let edge_cases = vec![
+        empty,
+        edit_one,
+        delete_one,
+        add_many,
+        move_same_content,
+        version_bump,
+        fail_closed,
+    ];
+    let all_passed = case_pass(&happy) && edge_cases.iter().all(case_pass);
 
     let db_path = project_cache_root.join("cache/cache.db");
     let watcher_status_path = project_cache_root.join("cache/watcher.status");
@@ -41,20 +55,16 @@ fn main() -> Result<()> {
             "report_path": report_path,
         },
         "happy_path": happy,
-        "edge_cases": [
-            empty,
-            edit_one,
-            delete_one,
-            add_many,
-            move_same_content,
-            version_bump,
-            fail_closed
-        ],
-        "all_passed": true
+        "edge_cases": edge_cases,
+        "all_passed": all_passed
     });
     write_json_0600(&report_path, &report)?;
     let readback: Value = serde_json::from_slice(&fs::read(&report_path)?)?;
     ensure!(readback == report, "FSV report readback mismatch");
+    ensure!(
+        all_passed,
+        "one or more project Merkle cache FSV cases failed"
+    );
     println!("{}", serde_json::to_string_pretty(&readback)?);
     Ok(())
 }
@@ -129,14 +139,19 @@ fn edit_one_file_case(root: &Path) -> Result<Value> {
         repo.join("src/a.py"),
         "import b\n\ndef alpha(x: int) -> int:\n    return b.beta(x) + 2\n",
     )?;
-    let report = cache.scan_project(&embedder_versions("v1", "v1"))?;
+    let debounce_started = Instant::now();
+    let report = cache.scan_after_debounce(&embedder_versions("v1", "v1"))?;
+    let debounce_elapsed_ms = debounce_started.elapsed().as_millis() as u64;
     let after = per_file_last_seen(cache.db_path(), "src/a.py", "src/b.py")?;
     let pass = report.changed_files == vec!["src/a.py".to_string()]
         && after.first > before.first
-        && after.second == before.second;
+        && after.second == before.second
+        && debounce_elapsed_ms >= PROJECT_CACHE_DEBOUNCE_MS;
     Ok(json!({
         "case": "edit_one_file_rechunks_only_changed_file",
-        "trigger": "modify src/a.py then scan",
+        "trigger": "modify src/a.py then debounced scan",
+        "debounce_target_ms": PROJECT_CACHE_DEBOUNCE_MS,
+        "debounce_elapsed_ms": debounce_elapsed_ms,
         "before": before,
         "after": after,
         "changed_files": report.changed_files,
@@ -249,22 +264,19 @@ fn embedder_version_bump_case(root: &Path) -> Result<Value> {
     let repo = root.join("synthetic_repo");
     let cache = open_cache(&repo)?;
     let before_e1 = embedding_digest(cache.db_path(), "e1")?;
-    let before_e7 = embedding_versions(cache.db_path(), "e7")?;
+    let before_e7_counts = embedding_version_counts(cache.db_path(), "e7")?;
     let report = cache.scan_project(&embedder_versions("v1", "v2"))?;
     let after_e1 = embedding_digest(cache.db_path(), "e1")?;
-    let after_e7 = embedding_versions(cache.db_path(), "e7")?;
-    let e7_v1_count = after_e7
-        .iter()
-        .filter(|version| version.as_str() == "v1")
-        .count();
-    let e7_v2_count = after_e7
-        .iter()
-        .filter(|version| version.as_str() == "v2")
-        .count();
+    let after_e7_counts = embedding_version_counts(cache.db_path(), "e7")?;
+    let before_e7_total: usize = before_e7_counts.values().sum();
+    let after_e7_total: usize = after_e7_counts.values().sum();
     let pass = before_e1 == after_e1
-        && before_e7.iter().all(|version| version == "v1")
-        && e7_v1_count == 0
-        && e7_v2_count == after_e7.len()
+        && before_e7_total > 0
+        && after_e7_total == before_e7_total
+        && before_e7_counts.get("v1").copied().unwrap_or(0) == before_e7_total
+        && !before_e7_counts.contains_key("v2")
+        && !after_e7_counts.contains_key("v1")
+        && after_e7_counts.get("v2").copied().unwrap_or(0) == after_e7_total
         && report
             .per_embedder_reembedded
             .get("e1")
@@ -276,14 +288,14 @@ fn embedder_version_bump_case(root: &Path) -> Result<Value> {
             .get("e7")
             .copied()
             .unwrap_or(0)
-            == after_e7.len();
+            == after_e7_total;
     Ok(json!({
         "case": "embedder_version_bump_reembeds_only_stale_embedder",
         "trigger": "rescan with e7 v2 while e1 remains v1",
         "before_e1_digest": before_e1,
         "after_e1_digest": after_e1,
-        "before_e7_versions": before_e7,
-        "after_e7_versions": after_e7,
+        "before_e7_version_counts": before_e7_counts,
+        "after_e7_version_counts": after_e7_counts,
         "per_embedder_reembedded": report.per_embedder_reembedded,
         "pass": pass
     }))
@@ -427,17 +439,29 @@ fn embedding_digest(db_path: &Path, embedder_id: &str) -> Result<String> {
     Ok(blake3_hex(joined.as_bytes()))
 }
 
-fn embedding_versions(db_path: &Path, embedder_id: &str) -> Result<Vec<String>> {
+fn embedding_version_counts(db_path: &Path, embedder_id: &str) -> Result<BTreeMap<String, usize>> {
     let conn = Connection::open(db_path)?;
     let mut stmt = conn.prepare(
-        "SELECT DISTINCT embedder_version FROM embeddings WHERE embedder_id = ?1 ORDER BY embedder_version",
+        "\
+        SELECT embedder_version, COUNT(*)
+        FROM embeddings
+        WHERE embedder_id = ?1
+        GROUP BY embedder_version
+        ORDER BY embedder_version",
     )?;
-    let rows = stmt.query_map(params![embedder_id], |row| row.get::<_, String>(0))?;
-    let mut versions = Vec::new();
+    let rows = stmt.query_map(params![embedder_id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+    })?;
+    let mut counts = BTreeMap::new();
     for row in rows {
-        versions.push(row?);
+        let (version, count) = row?;
+        counts.insert(version, count);
     }
-    Ok(versions)
+    Ok(counts)
+}
+
+fn case_pass(value: &Value) -> bool {
+    value.get("pass").and_then(Value::as_bool).unwrap_or(false)
 }
 
 fn sqlite3_scalar(db_path: &Path, sql: &str) -> Result<String> {

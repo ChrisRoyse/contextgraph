@@ -5,11 +5,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 const CACHE_SCHEMA_VERSION: u32 = 1;
 const WATCHER_STATUS_FILE: &str = "watcher.status";
+pub const PROJECT_CACHE_DEBOUNCE_MS: u64 = 250;
 
 #[derive(Debug, Error)]
 pub enum ProjectCacheError {
@@ -293,6 +294,14 @@ impl ProjectMerkleCache {
             per_embedder_reembedded,
         };
         Ok(report)
+    }
+
+    pub fn scan_after_debounce(
+        &self,
+        embedder_versions: &[EmbedderVersion],
+    ) -> Result<ProjectCacheReport, ProjectCacheError> {
+        std::thread::sleep(Duration::from_millis(PROJECT_CACHE_DEBOUNCE_MS));
+        self.scan_project(embedder_versions)
     }
 
     fn init_schema(&self) -> Result<(), ProjectCacheError> {

@@ -81,7 +81,7 @@ This roadmap is organised by **phase** then by **deliverable**. Each deliverable
 
 | # | Task | Issue | Status |
 |---|---|---|---|
-| 4.1 | Merkle-tree per-project chunk/embed cache | #281 | in-progress |
+| 4.1 | Merkle-tree per-project chunk/embed cache | #281 | shipped 2026-05-18 |
 | 4.2 | Project-ingestion MCP tool | #282 | pending |
 | 4.3 | Per-project reality compile report | #283 | pending |
 
