@@ -31,6 +31,7 @@ pub struct SystemCostCounters {
     heal_scheduler_restart_count_total: AtomicU64,
     operator_override_sampler_applied_count_total: AtomicU64,
     ewc_violations_total: AtomicU64,
+    dormant_units_reinit_total: AtomicU64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -43,6 +44,7 @@ pub struct SystemCostSnapshot {
     pub heal_ticker_telemetry_total: HealTickerTelemetrySnapshot,
     pub operator_override_sampler_applied_count_total: u64,
     pub ewc_violations_total: u64,
+    pub dormant_units_reinit_total: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -117,6 +119,9 @@ impl SystemCostSnapshot {
             ewc_violations_total: self
                 .ewc_violations_total
                 .saturating_sub(earlier.ewc_violations_total),
+            dormant_units_reinit_total: self
+                .dormant_units_reinit_total
+                .saturating_sub(earlier.dormant_units_reinit_total),
         }
     }
 }
@@ -282,6 +287,11 @@ impl SystemCostCounters {
         self.ewc_violations_total.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn record_dormant_units_reinit(&self, count: u64) {
+        self.dormant_units_reinit_total
+            .fetch_add(count, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> SystemCostSnapshot {
         SystemCostSnapshot {
             cuda_kernel_microseconds_total: self
@@ -304,6 +314,7 @@ impl SystemCostCounters {
                 .operator_override_sampler_applied_count_total
                 .load(Ordering::Relaxed),
             ewc_violations_total: self.ewc_violations_total.load(Ordering::Relaxed),
+            dormant_units_reinit_total: self.dormant_units_reinit_total.load(Ordering::Relaxed),
         }
     }
 }
@@ -342,6 +353,7 @@ mod tests {
         assert_eq!(snapshot.cuda_kernel_microseconds_total, 0);
         assert_eq!(snapshot.rocksdb_writes_total, 0);
         assert_eq!(snapshot.operator_override_sampler_applied_count_total, 0);
+        assert_eq!(snapshot.dormant_units_reinit_total, 0);
     }
 
     #[test]
@@ -388,6 +400,7 @@ mod tests {
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
             operator_override_sampler_applied_count_total: 0,
             ewc_violations_total: 0,
+            dormant_units_reinit_total: 0,
         };
         let now = counters.snapshot();
         let delta = now.delta(&earlier);
@@ -425,6 +438,7 @@ mod tests {
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
             operator_override_sampler_applied_count_total: 2,
             ewc_violations_total: 4,
+            dormant_units_reinit_total: 6,
         };
         let current = SystemCostSnapshot {
             cuda_kernel_microseconds_total: 250,
@@ -434,6 +448,7 @@ mod tests {
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
             operator_override_sampler_applied_count_total: 5,
             ewc_violations_total: 7,
+            dormant_units_reinit_total: 11,
         };
         let breakdown = SystemCostBreakdown::from_snapshots(&earlier, &current);
         let report = serde_json::json!({
@@ -453,6 +468,10 @@ mod tests {
         assert_eq!(
             extended["systemCost"]["windowDelta"]["ewcViolationsTotal"],
             3
+        );
+        assert_eq!(
+            extended["systemCost"]["windowDelta"]["dormantUnitsReinitTotal"],
+            5
         );
     }
 
@@ -525,6 +544,16 @@ mod tests {
         counters.record_ewc_violation();
         let delta = counters.snapshot().delta(&earlier);
         assert_eq!(delta.ewc_violations_total, 2);
+    }
+
+    #[test]
+    fn dormant_unit_reinit_counter_accumulates() {
+        let counters = SystemCostCounters::new();
+        let earlier = counters.snapshot();
+        counters.record_dormant_units_reinit(3);
+        counters.record_dormant_units_reinit(4);
+        let delta = counters.snapshot().delta(&earlier);
+        assert_eq!(delta.dormant_units_reinit_total, 7);
     }
 
     #[test]

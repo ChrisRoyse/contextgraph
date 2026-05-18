@@ -90,7 +90,7 @@ This roadmap is organised by **phase** then by **deliverable**. Each deliverable
 | # | Task | Issue | Status |
 |---|---|---|---|
 | 5.1 | EWC catastrophic-forgetting protection | #284 | shipped 2026-05-18 - predictor-wide EWC gradient, per-cell lambda decay, Fisher-budget violation gate, active-learning requeue, `ewc_violations_total`, 1k-update Fisher snapshots, FSV sha256 `7c9cd8fc37889c4176fd590ae4f2182b2d6abaf83386b474199b68629c8af4d4` |
-| 5.2 | Continual backprop plasticity prevention | #285 | pending |
+| 5.2 | Continual backprop plasticity prevention | #285 | shipped 2026-05-18 - predictor-wide dormancy/rank/GSNR measurement, `CF_MEJEPA_PLASTICITY_HISTORY`, selective dormant-unit reinit, regression/collapse alerts, EWC precedence, `dormant_units_reinit_total`, FSV sha256 `d38c978106f9838d11f82fbb35ca62e3381a8b96a7fc6d64a08957e628d9e6b0` |
 | 5.3 | Novel-pattern detection + auto constellation extension | #286 | refactored 2026-05-17 as TASK-EK-002 prerequisite |
 | 5.4 | Prioritised replay buffer | #287 | pending |
 | 5.5 | Active-learning consumer | #154 | pending |

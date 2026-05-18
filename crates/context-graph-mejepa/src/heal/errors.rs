@@ -86,6 +86,12 @@ pub enum HealError {
         rank: usize,
         dim: usize,
     },
+    PlasticityCollapse {
+        training_tick: u64,
+        dormancy_fraction: f32,
+        dormant_unit_count: usize,
+        parameter_count: usize,
+    },
     LoraRefreshFail {
         embedder_id: u32,
         cause: String,
@@ -153,6 +159,7 @@ impl HealError {
             Self::FisherRankDeficient { .. } => "MEJEPA_HEAL_FISHER_RANK_DEFICIENT",
             Self::EwcProtectionViolation { .. } => "MEJEPA_EWC_PROTECTION_VIOLATION",
             Self::EwcFisherDegenerate { .. } => "EWC_FISHER_DEGENERATE",
+            Self::PlasticityCollapse { .. } => "MEJEPA_PLASTICITY_COLLAPSE",
             Self::LoraRefreshFail { .. } => "MEJEPA_HEAL_LORA_REFRESH_FAIL",
             Self::PromotionDeadlock { .. } => "MEJEPA_HEAL_PROMOTION_DEADLOCK",
             Self::ConformalInsufficientSamples { .. } => "MEJEPA_CALIBRATION_INSUFFICIENT_SAMPLES",
@@ -299,6 +306,12 @@ mod tests {
                 requeued: true,
             },
             HealError::EwcFisherDegenerate { rank: 0, dim: 2 },
+            HealError::PlasticityCollapse {
+                training_tick: 1,
+                dormancy_fraction: 1.0,
+                dormant_unit_count: 2,
+                parameter_count: 2,
+            },
             HealError::LoraRefreshFail {
                 embedder_id: 7,
                 cause: "oom".into(),

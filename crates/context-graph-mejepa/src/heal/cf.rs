@@ -12,8 +12,8 @@ pub use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_CALIBRATION_HISTORY, CF_MEJEPA_CHUNK_DEPENDENCY_GRAPH,
     CF_MEJEPA_CHUNK_FOUNDATIONALITY, CF_MEJEPA_DISTILL_STEPS, CF_MEJEPA_DRIFT_HISTORY,
     CF_MEJEPA_DRIFT_WINDOW, CF_MEJEPA_FISHER_SNAPSHOTS, CF_MEJEPA_HEAL_REPORTS,
-    CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_PRODUCTION_TELEMETRY, CF_MEJEPA_SHIFT_WATERMARK,
-    CF_MEJEPA_TRAIN_CERTS, CF_MEJEPA_WEIGHT_BLOBS,
+    CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_PLASTICITY_HISTORY, CF_MEJEPA_PRODUCTION_TELEMETRY,
+    CF_MEJEPA_SHIFT_WATERMARK, CF_MEJEPA_TRAIN_CERTS, CF_MEJEPA_WEIGHT_BLOBS,
 };
 
 pub fn all_self_healing_cf_names() -> [&'static str; 7] {
@@ -46,6 +46,10 @@ pub fn all_referenced_cf_names() -> Vec<&'static str> {
 
 pub fn encode_fisher_snapshot_key(boundary_step: u64) -> [u8; 8] {
     boundary_step.to_be_bytes()
+}
+
+pub fn encode_plasticity_history_key(training_tick: u64) -> [u8; 8] {
+    training_tick.to_be_bytes()
 }
 
 pub fn decode_fisher_snapshot_key(bytes: &[u8]) -> Result<u64, HealError> {
@@ -225,6 +229,12 @@ pub fn cf_retention_descriptor(cf_name: &str) -> Option<RetentionPolicy> {
             byte_capped_gb: None,
             single_row_per_key: false,
         }),
+        CF_MEJEPA_PLASTICITY_HISTORY => Some(RetentionPolicy {
+            time_capped_days: Some(365),
+            count_capped: None,
+            byte_capped_gb: None,
+            single_row_per_key: false,
+        }),
         _ => None,
     }
 }
@@ -262,6 +272,7 @@ mod tests {
         assert!(names.contains(&CF_MEJEPA_WEIGHT_BLOBS));
         assert!(names.contains(&CF_MEJEPA_SHIFT_WATERMARK));
         assert!(names.contains(&CF_MEJEPA_MODEL_PROMOTIONS));
+        assert!(names.contains(&CF_MEJEPA_PLASTICITY_HISTORY));
         assert!(names.contains(&context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_LOG));
         assert!(names.contains(&CF_MEJEPA_CHUNK_DEPENDENCY_GRAPH));
         assert!(names.contains(&CF_MEJEPA_CHUNK_FOUNDATIONALITY));

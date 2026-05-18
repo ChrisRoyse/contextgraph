@@ -935,7 +935,8 @@ impl SchedulerState {
             json!({
                 "source_of_truth_cfs": [
                     context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS,
-                    context_graph_mejepa_cf::CF_MEJEPA_WEIGHT_BLOBS
+                    context_graph_mejepa_cf::CF_MEJEPA_WEIGHT_BLOBS,
+                    context_graph_mejepa_cf::CF_MEJEPA_PLASTICITY_HISTORY
                 ],
                 "train_cert_source_step_count": window.source_step_count,
                 "substrate_breakdown": breakdown,
@@ -944,6 +945,7 @@ impl SchedulerState {
                 "lambda_ramp_report": lambda_ramp,
                 "per_head_fisher_report": per_head_fisher,
                 "per_head_dormancy_report": per_head_dormancy,
+                "predictor_plasticity_state": &self.pipeline.plasticity_state,
             }),
         ))
     }

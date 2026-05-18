@@ -18,7 +18,7 @@ pub const EWC_SNAPSHOT_INTERVAL_UPDATES: u64 = 1000;
 pub const DEFAULT_EWC_FISHER_BUDGET: f32 = 1.0e-3;
 pub const EWC_VALIDATION_REGRESSION_DECAY_THRESHOLD: f32 = 0.02;
 pub const EWC_LAMBDA_DECAY_FACTOR: f32 = 0.5;
-const EWC_FISHER_DEGENERATE_EPSILON: f32 = 1.0e-12;
+pub const EWC_FISHER_DEGENERATE_EPSILON: f32 = 1.0e-12;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -557,6 +557,43 @@ impl EwcPlusPlus {
         }
         self.snapshot_current_task(predictor_params, corpus_sha, store)
             .map(Some)
+    }
+
+    pub fn protected_parameter_indices(&self, min_fisher: f32) -> Result<Vec<usize>, HealError> {
+        if !min_fisher.is_finite() || min_fisher < 0.0 {
+            return Err(HealError::invalid(
+                "ewc.protected_min_fisher",
+                "min_fisher must be finite and non-negative",
+            ));
+        }
+        let mut protected = vec![false; self.predictor_dim];
+        for (idx, value) in self.fisher_matrix.diagonal.iter().enumerate() {
+            if *value > min_fisher {
+                protected[idx] = true;
+            }
+        }
+        for snapshot in &self.task_snapshots {
+            if snapshot.fisher_diag_at_boundary.len() != self.predictor_dim {
+                return Err(HealError::invalid(
+                    "ewc.snapshot_fisher_dim",
+                    format!(
+                        "snapshot fisher len {} != dim {}",
+                        snapshot.fisher_diag_at_boundary.len(),
+                        self.predictor_dim
+                    ),
+                ));
+            }
+            for (idx, value) in snapshot.fisher_diag_at_boundary.iter().enumerate() {
+                if *value > min_fisher {
+                    protected[idx] = true;
+                }
+            }
+        }
+        Ok(protected
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, is_protected)| is_protected.then_some(idx))
+            .collect())
     }
 
     pub fn fisher_rank(&self) -> usize {

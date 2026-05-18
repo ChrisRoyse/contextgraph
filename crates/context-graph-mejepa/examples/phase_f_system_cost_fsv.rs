@@ -275,6 +275,7 @@ fn restart_delta_clamps_to_zero() -> Result<serde_json::Value, Box<dyn std::erro
         heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
         operator_override_sampler_applied_count_total: 12,
         ewc_violations_total: 3,
+        dormant_units_reinit_total: 0,
     };
     let current = SystemCostSnapshot::default();
     let breakdown = SystemCostBreakdown::from_snapshots(&earlier, &current);

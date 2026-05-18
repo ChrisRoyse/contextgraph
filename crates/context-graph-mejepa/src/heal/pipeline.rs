@@ -22,6 +22,9 @@ use crate::heal::ewc::{
 };
 use crate::heal::integrity::{ChainIntegrityChecker, WitnessChainAppender};
 use crate::heal::lora_refresh::{CorpusSlice, LoraRefresher};
+use crate::heal::plasticity::{
+    tick_predictor_plasticity, PlasticityConfig, PlasticityRuntimeState,
+};
 use crate::heal::promote::{
     AbcPromoter, HoldoutDataset, HoldoutExample, PromotionGate, PromotionLockState,
     RetrainPromoteRequest, TriggerReason,
@@ -213,6 +216,8 @@ pub struct SelfHealingPipeline {
     pub active_embedders: Vec<EmbedderHandle>,
     pub oracle_handle: OracleHandle,
     pub dormant_activation_window: Vec<Vec<f32>>,
+    pub plasticity_config: PlasticityConfig,
+    pub plasticity_state: PlasticityRuntimeState,
 }
 
 impl SelfHealingPipeline {
@@ -264,6 +269,8 @@ impl SelfHealingPipeline {
                 fail_score: 0.05,
             },
             dormant_activation_window: Vec::new(),
+            plasticity_config: PlasticityConfig::default(),
+            plasticity_state: PlasticityRuntimeState::default(),
         })
     }
 
@@ -360,6 +367,7 @@ impl SelfHealingPipeline {
                 witness_chain_offset: witness_chain_offset_in,
             });
         }
+        tick_predictor_plasticity(self, &gradient)?;
         self.predictor
             .apply_gradient(&gradient, self.config.learning_rate)?;
         let (post_update_loss, _) = self.predictor.loss_and_gradient(panel, oracle_outcome)?;
@@ -571,7 +579,7 @@ impl SelfHealingPipeline {
         }
     }
 
-    pub(crate) fn capture_dormant_activation_from_panel(
+    pub fn capture_dormant_activation_from_panel(
         &mut self,
         panel: &Panel,
     ) -> Result<(), HealError> {
@@ -678,6 +686,26 @@ impl LinearHealPredictor {
         let mean = panel.data().iter().take(128).map(|v| v.abs()).sum::<f32>() / 128.0;
         Ok(mean.clamp(0.0, 1.0))
     }
+
+    pub fn reinitialize_units_from_init_distribution(
+        &mut self,
+        units: &[usize],
+        seed: u64,
+    ) -> Result<(), HealError> {
+        if units.is_empty() {
+            return Ok(());
+        }
+        for &unit in units {
+            if unit >= self.weights.len() {
+                return Err(HealError::invalid(
+                    "linear_heal_predictor.reinit_units",
+                    format!("unit {unit} outside weight len {}", self.weights.len()),
+                ));
+            }
+            self.weights[unit] = deterministic_init_weight(unit, seed);
+        }
+        Ok(())
+    }
 }
 
 impl PredictorGradAccessor for LinearHealPredictor {
@@ -732,6 +760,11 @@ fn feature(panel: &Panel, idx: usize) -> f32 {
     } else {
         base
     }
+}
+
+fn deterministic_init_weight(idx: usize, seed: u64) -> f32 {
+    let mixed = seed.wrapping_add((idx as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    ((mixed as f64 * 0.000_000_013).sin() as f32) * 0.01
 }
 
 pub fn multiplicative_l_step(p: f32, k: f32, omega: f32, xi: f32) -> Result<f32, HealError> {
