@@ -53,6 +53,15 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "boolean",
                         "default": false,
                         "description": "Required for a Full ingest when manifest.json already exists for the project_id."
+                    },
+                    "changedPaths": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "default": [],
+                        "description": "Optional repo-relative paths supplied by a watcher/hook for fast Incremental ingest. When omitted, Incremental mode performs discovery."
                     }
                 }
             }),

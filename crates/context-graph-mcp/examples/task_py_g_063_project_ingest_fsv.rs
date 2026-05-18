@@ -163,6 +163,7 @@ fn happy_path_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Full,
         scope: ProjectIngestScope::SourceOnly,
         overwrite: false,
+        changed_paths: Vec::new(),
     })?;
     let after = inspect_state(project_id)?;
     let predictions = read_project_predictions(&default_db_path(project_id)?, project_id)?;
@@ -215,6 +216,7 @@ fn empty_repo_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Full,
         scope: ProjectIngestScope::SourceOnly,
         overwrite: false,
+        changed_paths: Vec::new(),
     })?;
     let after = inspect_state(project_id)?;
     let pass = report.manifest.file_count == 0
@@ -244,6 +246,7 @@ fn unchanged_incremental_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Full,
         scope: ProjectIngestScope::SourceOnly,
         overwrite: false,
+        changed_paths: Vec::new(),
     })?;
     thread::sleep(Duration::from_millis(5));
     let chunk_digest_before =
@@ -255,6 +258,7 @@ fn unchanged_incremental_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Incremental,
         scope: ProjectIngestScope::SourceOnly,
         overwrite: false,
+        changed_paths: Vec::new(),
     })?;
     let after = inspect_state(project_id)?;
     let chunk_digest_after =
@@ -303,6 +307,7 @@ fn large_repo_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Full,
         scope: ProjectIngestScope::SourceOnly,
         overwrite: false,
+        changed_paths: Vec::new(),
     })?;
     let after = inspect_state(project_id)?;
     let pass = report.manifest.file_count == 5001
@@ -343,6 +348,7 @@ fn mixed_encoding_binary_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Full,
         scope: ProjectIngestScope::SourceOnly,
         overwrite: false,
+        changed_paths: Vec::new(),
     })?;
     let after_text = inspect_state(project_id)?;
     fs::write(repo.join("pkg/binary.py"), [0, 1, 2, 3, 255])?;
@@ -352,6 +358,7 @@ fn mixed_encoding_binary_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Incremental,
         scope: ProjectIngestScope::SourceOnly,
         overwrite: false,
+        changed_paths: Vec::new(),
     })
     .expect_err("binary scoped file must fail closed");
     let after_binary = inspect_state(project_id)?;
@@ -393,6 +400,7 @@ fn scope_switch_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Full,
         scope: ProjectIngestScope::SourceOnly,
         overwrite: false,
+        changed_paths: Vec::new(),
     })?;
     let before = inspect_state(project_id)?;
     let source_prediction_id = source_only.manifest.predictions[0]
@@ -404,6 +412,7 @@ fn scope_switch_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Incremental,
         scope: ProjectIngestScope::SourceAndTests,
         overwrite: false,
+        changed_paths: Vec::new(),
     })?;
     let after = inspect_state(project_id)?;
     let source_after = source_and_tests
@@ -458,6 +467,7 @@ fn plain_directory_and_single_file_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Full,
         scope: ProjectIngestScope::SourceOnly,
         overwrite: false,
+        changed_paths: Vec::new(),
     })?;
     let single_file = project_dir.join("pkg/sub/nested.py");
     let file_report = run_project_ingest(ProjectIngestRequest {
@@ -466,6 +476,7 @@ fn plain_directory_and_single_file_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Full,
         scope: ProjectIngestScope::SourceOnly,
         overwrite: false,
+        changed_paths: Vec::new(),
     })?;
     let dir_after = inspect_state(dir_project_id)?;
     let file_after = inspect_state(file_project_id)?;

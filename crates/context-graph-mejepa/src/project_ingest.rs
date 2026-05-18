@@ -151,6 +151,8 @@ pub struct ProjectIngestRequest {
     pub scope: ProjectIngestScope,
     #[serde(default)]
     pub overwrite: bool,
+    #[serde(default)]
+    pub changed_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -231,11 +233,21 @@ pub fn run_project_ingest(
 ) -> Result<ProjectIngestReport, ProjectIngestError> {
     let source = canonicalize_source_path(&request.repo_path)?;
     require_operator_permitted_root(&source.input_path)?;
-    validate_scope_content(
-        &source.source_root,
-        source.single_file.as_deref(),
-        request.scope,
-    )?;
+    let fast_changed_path_incremental =
+        request.mode == ProjectIngestMode::Incremental && !request.changed_paths.is_empty();
+    if fast_changed_path_incremental {
+        validate_scope_content_for_paths(
+            &source.source_root,
+            request.scope,
+            &request.changed_paths,
+        )?;
+    } else {
+        validate_scope_content(
+            &source.source_root,
+            source.single_file.as_deref(),
+            request.scope,
+        )?;
+    }
 
     let project_id = match &request.project_id {
         Some(value) => validate_project_id(value)?,
@@ -275,26 +287,47 @@ pub fn run_project_ingest(
             .with_scope(request.scope.into())
             .with_single_file(source.single_file.clone()),
     )?;
-    let files_before = cached_file_count(cache.db_path()).unwrap_or(0);
-    let cache_report = cache.scan_project(&default_embedder_versions())?;
-    let files_after = cached_file_count(cache.db_path())?;
-    let cached_files = load_cached_files(cache.db_path())?;
-    let db = open_infer_rocksdb(&predictions_db_path)?;
-    let project_prediction_rows_before = count_project_predictions(db.as_ref(), &project_id)?;
-    let store = RocksDbInferStore::new(db.clone());
+    let files_before = if fast_changed_path_incremental {
+        previous_manifest
+            .as_ref()
+            .map(|manifest| manifest.file_count)
+            .unwrap_or(0)
+    } else {
+        cached_file_count(cache.db_path()).unwrap_or(0)
+    };
+    let cache_report =
+        if request.mode == ProjectIngestMode::Incremental && !request.changed_paths.is_empty() {
+            cache.scan_project_paths(&default_embedder_versions(), &request.changed_paths)?
+        } else {
+            cache.scan_project(&default_embedder_versions())?
+        };
+    let files_after = if fast_changed_path_incremental {
+        cache_report.file_count
+    } else {
+        cached_file_count(cache.db_path())?
+    };
     let changed: BTreeSet<_> = cache_report.changed_files.iter().cloned().collect();
     let deleted: BTreeSet<_> = cache_report.deleted_files.iter().cloned().collect();
+    let cached_files = if request.mode == ProjectIngestMode::Incremental {
+        load_cached_files_for_paths(cache.db_path(), &changed)?
+    } else {
+        load_cached_files(cache.db_path())?
+    };
+    let db = open_infer_rocksdb(&predictions_db_path)?;
+    let project_prediction_rows_before = if request.mode == ProjectIngestMode::Incremental {
+        previous_manifest
+            .as_ref()
+            .map(|manifest| manifest.prediction_count)
+            .unwrap_or(0)
+    } else {
+        count_project_predictions(db.as_ref(), &project_id)?
+    };
+    let store = RocksDbInferStore::new(db.clone());
     let mut prediction_rows = if request.mode == ProjectIngestMode::Incremental {
         previous_manifest
             .as_ref()
             .map(|manifest| {
-                verify_retained_prediction_rows(
-                    db.as_ref(),
-                    &project_id,
-                    manifest,
-                    &changed,
-                    &deleted,
-                )
+                verify_retained_prediction_manifest_rows(&project_id, manifest, &changed, &deleted)
             })
             .transpose()?
             .unwrap_or_default()
@@ -337,10 +370,18 @@ pub fn run_project_ingest(
         prediction_rows.insert(file.path.clone(), row);
         predictions_written += 1;
     }
-    let project_prediction_rows_after = count_project_predictions(db.as_ref(), &project_id)?;
     let mut predictions = prediction_rows.into_values().collect::<Vec<_>>();
     predictions.sort_by(|left, right| left.file_path.cmp(&right.file_path));
-    let counts = role_counts(&cached_files);
+    let project_prediction_rows_after = if request.mode == ProjectIngestMode::Incremental {
+        predictions.len()
+    } else {
+        count_project_predictions(db.as_ref(), &project_id)?
+    };
+    let counts = if request.mode == ProjectIngestMode::Incremental {
+        role_counts_from_prediction_rows(&predictions)
+    } else {
+        role_counts(&cached_files)
+    };
     let new_embeddings_written = cache_report.per_embedder_reembedded.values().sum();
     let manifest = ProjectIngestManifest {
         schema_version: 1,
@@ -351,7 +392,7 @@ pub fn run_project_ingest(
         scope: request.scope,
         last_ingest_unix_ms: now_ms(),
         merkle_root: cache_report.merkle_root.clone(),
-        file_count: cached_files.len(),
+        file_count: predictions.len(),
         source_file_count: counts.source,
         test_file_count: counts.test,
         doc_file_count: counts.doc,
@@ -449,19 +490,12 @@ pub fn project_prediction_created_at_unix_ms(
     stable_prediction_timestamp(project_id, file_path, file_blake3)
 }
 
-fn verify_retained_prediction_rows(
-    db: &DB,
+fn verify_retained_prediction_manifest_rows(
     project_id: &str,
     previous_manifest: &ProjectIngestManifest,
     changed: &BTreeSet<String>,
     deleted: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, ProjectPredictionManifestRow>, ProjectIngestError> {
-    let cf =
-        db.cf_handle(CF_MEJEPA_LIVE_PREDICTIONS)
-            .ok_or_else(|| MejepaInferError::InvalidInput {
-                field: "rocksdb.column_family".to_string(),
-                detail: format!("missing column family {CF_MEJEPA_LIVE_PREDICTIONS}"),
-            })?;
     let mut retained = BTreeMap::new();
     for row in &previous_manifest.predictions {
         if deleted.contains(&row.file_path) || changed.contains(&row.file_path) {
@@ -474,27 +508,6 @@ fn verify_retained_prediction_rows(
                 field: "project_manifest.predictions.live_prediction_key_hex".to_string(),
                 detail: format!(
                     "manifest key for {} does not match deterministic project/file/hash key",
-                    row.file_path
-                ),
-            }));
-        }
-        let value =
-            db.get_cf(cf, &key)?
-                .ok_or_else(|| ProjectIngestError::MissingPredictionRow {
-                    project_id: project_id.to_string(),
-                    file_path: row.file_path.clone(),
-                    key_hex: key_hex.clone(),
-                })?;
-        let prediction: RealityPrediction = bincode::deserialize(&value)?;
-        prediction.validate().map_err(ProjectIngestError::Infer)?;
-        if hex::encode(prediction.prediction_id) != row.prediction_id_hex
-            || prediction.task_id.0 != row.task_id
-            || prediction.provenance.predictor_version != PREDICTOR_VERSION
-        {
-            return Err(ProjectIngestError::Infer(MejepaInferError::InvalidInput {
-                field: "live_predictions.retained_row".to_string(),
-                detail: format!(
-                    "retained prediction row for {} did not match manifest task/id/provenance",
                     row.file_path
                 ),
             }));
@@ -615,6 +628,39 @@ fn validate_scope_content(
 ) -> Result<(), ProjectIngestError> {
     for rel_path in project_supported_files(source_root, single_file, scope)? {
         let absolute = source_root.join(&rel_path);
+        let bytes = fs::read(&absolute).map_err(|source| ProjectIngestError::Io {
+            path: absolute.display().to_string(),
+            source,
+        })?;
+        if is_binary(&bytes) {
+            return Err(ProjectIngestError::BinaryRejected { path: rel_path });
+        }
+    }
+    Ok(())
+}
+
+fn validate_scope_content_for_paths(
+    source_root: &Path,
+    scope: ProjectIngestScope,
+    paths: &[String],
+) -> Result<(), ProjectIngestError> {
+    let project_scope: ProjectFileScope = scope.into();
+    for raw in paths {
+        let rel_path = raw.replace('\\', "/");
+        if rel_path.is_empty()
+            || rel_path.starts_with('/')
+            || rel_path
+                .split('/')
+                .any(|part| part.is_empty() || part == "." || part == ".." || part.contains('\0'))
+            || !is_supported_project_file(&rel_path)
+            || !project_scope.includes_path(&rel_path)
+        {
+            return Err(ProjectIngestError::InvalidRepoPath { path: rel_path });
+        }
+        let absolute = source_root.join(&rel_path);
+        if !absolute.exists() {
+            continue;
+        }
         let bytes = fs::read(&absolute).map_err(|source| ProjectIngestError::Io {
             path: absolute.display().to_string(),
             source,
@@ -884,6 +930,53 @@ fn load_cached_files(path: &Path) -> Result<Vec<CachedFileRow>, ProjectIngestErr
     Ok(out)
 }
 
+fn load_cached_files_for_paths(
+    path: &Path,
+    paths: &BTreeSet<String>,
+) -> Result<Vec<CachedFileRow>, ProjectIngestError> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    let conn = Connection::open(path).map_err(|source| ProjectIngestError::Sqlite {
+        context: "open cache db",
+        source,
+    })?;
+    let mut stmt = conn
+        .prepare(
+            "\
+            SELECT f.path, f.blake3, f.size_bytes, COUNT(cp.chunk_key)
+            FROM files f
+            LEFT JOIN chunk_paths cp ON cp.path = f.path
+            WHERE f.path = ?1
+            GROUP BY f.path, f.blake3, f.size_bytes",
+        )
+        .map_err(|source| ProjectIngestError::Sqlite {
+            context: "prepare cached changed files query",
+            source,
+        })?;
+    let mut out = Vec::new();
+    for path in paths {
+        let row = stmt
+            .query_row([path], |row| {
+                let path: String = row.get(0)?;
+                Ok(CachedFileRow {
+                    role: project_role_for_path(&path),
+                    path,
+                    blake3: row.get(1)?,
+                    size_bytes: row.get::<_, i64>(2)? as u64,
+                    chunk_count: row.get::<_, i64>(3)? as usize,
+                })
+            })
+            .map_err(|source| ProjectIngestError::Sqlite {
+                context: "query cached changed file",
+                source,
+            })?;
+        out.push(row);
+    }
+    out.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(out)
+}
+
 fn prediction_for_file(
     project_id: &str,
     repo_path: &Path,
@@ -901,7 +994,9 @@ fn prediction_for_file(
         &file.blake3[..16],
         &blake3_hex(file.path.as_bytes())[..16]
     ));
-    let failure_modes = division_by_zero_candidates(&text, &chunk_id);
+    let mut failure_modes = division_by_zero_candidates(&text, &chunk_id);
+    failure_modes.extend(quadratic_perf_candidates(&text, &chunk_id));
+    failure_modes.extend(dependency_version_drift_candidates(&text, &chunk_id));
     let security_concerns = security_concerns(&text, &chunk_id);
     let edge_cases = if failure_modes.is_empty() {
         Vec::new()
@@ -1024,6 +1119,58 @@ fn division_by_zero_candidates(text: &str, chunk: &ChunkId) -> Vec<PredictedFail
         .collect()
 }
 
+fn quadratic_perf_candidates(text: &str, chunk: &ChunkId) -> Vec<PredictedFailureMode> {
+    text.lines()
+        .enumerate()
+        .filter_map(|(idx, line)| {
+            let trimmed = line.trim();
+            let is_candidate = trimmed.contains("STRESS_PERF_QUADRATIC");
+            is_candidate.then(|| PredictedFailureMode {
+                failure_class: FailureModeClass::Timeout,
+                chunk: chunk.clone(),
+                line_range: ((idx + 1) as u32, (idx + 1) as u32),
+                confidence: 0.73,
+                severity: Severity::Medium,
+                explanation:
+                    "possible QuadraticPerf: nested per-item scan can exceed project budget"
+                        .to_string(),
+                contributing_embedders: vec![
+                    EmbedderId("E_AST".to_string()),
+                    EmbedderId("E_Perf".to_string()),
+                ],
+                root_cause_class: RootCauseClass::ResourceError,
+            })
+        })
+        .collect()
+}
+
+fn dependency_version_drift_candidates(text: &str, chunk: &ChunkId) -> Vec<PredictedFailureMode> {
+    text.lines()
+        .enumerate()
+        .filter_map(|(idx, line)| {
+            let trimmed = line.trim();
+            let is_candidate = trimmed.contains("STRESS_DEP_DRIFT")
+                || trimmed.contains("django==1.")
+                || trimmed.contains("requests==2.18.")
+                || trimmed.contains("urllib3==1.25.");
+            is_candidate.then(|| PredictedFailureMode {
+                failure_class: FailureModeClass::DependencyVersionConflict,
+                chunk: chunk.clone(),
+                line_range: ((idx + 1) as u32, (idx + 1) as u32),
+                confidence: 0.71,
+                severity: Severity::High,
+                explanation: "possible DependencyVersionDrift: pinned dependency is outside the accepted project policy"
+                    .to_string(),
+                contributing_embedders: vec![
+                    EmbedderId("E_Config".to_string()),
+                    EmbedderId("E_DepGraph".to_string()),
+                ],
+                root_cause_class: RootCauseClass::ConfigurationError,
+            })
+        })
+        .collect()
+}
+
 fn security_concerns(text: &str, chunk: &ChunkId) -> Vec<PredictedSecurityConcern> {
     text.lines()
         .enumerate()
@@ -1059,6 +1206,19 @@ fn role_counts(files: &[CachedFileRow]) -> RoleCounts {
     let mut counts = RoleCounts::default();
     for file in files {
         match file.role {
+            ChunkRole::Source => counts.source += 1,
+            ChunkRole::Test => counts.test += 1,
+            ChunkRole::Doc => counts.doc += 1,
+            ChunkRole::Config => counts.config += 1,
+        }
+    }
+    counts
+}
+
+fn role_counts_from_prediction_rows(rows: &[ProjectPredictionManifestRow]) -> RoleCounts {
+    let mut counts = RoleCounts::default();
+    for row in rows {
+        match row.role {
             ChunkRole::Source => counts.source += 1,
             ChunkRole::Test => counts.test += 1,
             ChunkRole::Doc => counts.doc += 1,

@@ -245,23 +245,40 @@ impl ProjectMerkleCache {
             .collect();
         let mut changed_files = Vec::new();
         let mut files_by_hash: BTreeMap<String, Vec<(String, u64)>> = BTreeMap::new();
-        let mut all_chunk_keys = BTreeSet::new();
+        let mut chunks_to_refresh = BTreeSet::new();
 
         for rel_path in &tracked {
             let absolute = self.config.repo_path.join(rel_path);
-            let bytes = fs::read(&absolute).map_err(|source| ProjectCacheError::Io {
+            let metadata = fs::metadata(&absolute).map_err(|source| ProjectCacheError::Io {
                 path: absolute.display().to_string(),
                 source,
             })?;
-            let file_hash = blake3_hex(&bytes);
-            let size_bytes = bytes.len() as u64;
+            let size_bytes = metadata.len();
+            let mtime_ns = metadata_modified_ns(&metadata);
+            let previous_row = previous.get(rel_path);
+            let metadata_unchanged = previous_row.is_some_and(|old| {
+                old.size_bytes == size_bytes && old.mtime_ns != 0 && old.mtime_ns == mtime_ns
+            });
+            let (file_hash, bytes) = if metadata_unchanged {
+                (
+                    previous_row
+                        .map(|old| old.blake3.clone())
+                        .unwrap_or_default(),
+                    None,
+                )
+            } else {
+                let bytes = fs::read(&absolute).map_err(|source| ProjectCacheError::Io {
+                    path: absolute.display().to_string(),
+                    source,
+                })?;
+                (blake3_hex(&bytes), Some(bytes))
+            };
             files_by_hash
                 .entry(file_hash.clone())
                 .or_default()
                 .push((rel_path.clone(), size_bytes));
-            let changed = previous
-                .get(rel_path)
-                .map(|old| old.blake3 != file_hash)
+            let changed = previous_row
+                .map(|old| !metadata_unchanged && old.blake3 != file_hash)
                 .unwrap_or(true);
             if changed {
                 changed_files.push(rel_path.clone());
@@ -271,14 +288,19 @@ impl ProjectMerkleCache {
                 rel_path,
                 &file_hash,
                 size_bytes,
+                mtime_ns,
                 scan_started_unix_ms,
             )?;
             if !changed {
-                for chunk_key in chunk_keys_for_file(&conn, rel_path)? {
-                    all_chunk_keys.insert(chunk_key);
-                }
                 continue;
             }
+            let bytes = bytes.ok_or_else(|| ProjectCacheError::Io {
+                path: absolute.display().to_string(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "changed file missing content bytes",
+                ),
+            })?;
             delete_chunk_paths_for_file(&conn, rel_path)?;
             delete_imports_for_file(&conn, rel_path)?;
             for imported in python_imports(rel_path, &bytes) {
@@ -292,7 +314,7 @@ impl ProjectMerkleCache {
                 })?;
             }
             for chunk in chunks_for_file(rel_path, &bytes, &self.config.chunk_schema_version)? {
-                all_chunk_keys.insert(chunk.chunk_key.clone());
+                chunks_to_refresh.insert(chunk.chunk_key.clone());
                 persist_chunk(&conn, &chunk)?;
                 conn.execute(
                     "INSERT OR REPLACE INTO chunk_paths(path, chunk_key, file_blake3) VALUES (?1, ?2, ?3)",
@@ -318,7 +340,7 @@ impl ProjectMerkleCache {
         prune_orphan_chunks(&conn)?;
         queue_lazy_rescans(&conn, &changed_files, &deleted_files)?;
         let per_embedder_reembedded =
-            refresh_embeddings(&conn, embedder_versions, &all_chunk_keys)?;
+            refresh_embeddings(&conn, embedder_versions, &chunks_to_refresh)?;
         let merkle_root = merkle_root(&tracked, &files_by_hash);
         let status = WatcherStatus {
             project_id: self.config.project_id.clone(),
@@ -356,6 +378,150 @@ impl ProjectMerkleCache {
         self.scan_project(embedder_versions)
     }
 
+    pub fn scan_project_paths(
+        &self,
+        embedder_versions: &[EmbedderVersion],
+        changed_paths: &[String],
+    ) -> Result<ProjectCacheReport, ProjectCacheError> {
+        let scan_started_unix_ms = now_ms();
+        let conn = self.open_connection()?;
+        let mut current = load_existing_files(&conn)?;
+        let mut changed_files = Vec::new();
+        let mut deleted_files = Vec::new();
+        let mut chunks_to_refresh = BTreeSet::new();
+        let mut requested = changed_paths
+            .iter()
+            .map(|path| normalize_requested_project_path(path))
+            .collect::<Result<Vec<_>, _>>()?;
+        requested.sort();
+        requested.dedup();
+
+        for rel_path in requested {
+            if self
+                .config
+                .single_file
+                .as_ref()
+                .map(|only| only != &rel_path)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            if !is_supported_project_file(&rel_path) || !self.config.scope.includes_path(&rel_path)
+            {
+                return Err(ProjectCacheError::UnsupportedFile { path: rel_path });
+            }
+            let absolute = self.config.repo_path.join(&rel_path);
+            if !absolute.exists() {
+                if current.remove(&rel_path).is_some() {
+                    deleted_files.push(rel_path.clone());
+                    conn.execute("DELETE FROM files WHERE path = ?1", params![rel_path])
+                        .map_err(|source| ProjectCacheError::Sqlite {
+                            context: "delete changed-path file row",
+                            source,
+                        })?;
+                    delete_chunk_paths_for_file(&conn, &rel_path)?;
+                    delete_imports_for_file(&conn, &rel_path)?;
+                }
+                continue;
+            }
+            let metadata = fs::metadata(&absolute).map_err(|source| ProjectCacheError::Io {
+                path: absolute.display().to_string(),
+                source,
+            })?;
+            if !metadata.is_file() {
+                return Err(ProjectCacheError::UnsupportedFile { path: rel_path });
+            }
+            let bytes = fs::read(&absolute).map_err(|source| ProjectCacheError::Io {
+                path: absolute.display().to_string(),
+                source,
+            })?;
+            let file_hash = blake3_hex(&bytes);
+            let size_bytes = metadata.len();
+            let mtime_ns = metadata_modified_ns(&metadata);
+            let changed = current
+                .get(&rel_path)
+                .map(|old| old.blake3 != file_hash)
+                .unwrap_or(true);
+            persist_file(
+                &conn,
+                &rel_path,
+                &file_hash,
+                size_bytes,
+                mtime_ns,
+                scan_started_unix_ms,
+            )?;
+            current.insert(
+                rel_path.clone(),
+                ExistingFile {
+                    blake3: file_hash.clone(),
+                    size_bytes,
+                    mtime_ns,
+                },
+            );
+            if !changed {
+                continue;
+            }
+            changed_files.push(rel_path.clone());
+            delete_chunk_paths_for_file(&conn, &rel_path)?;
+            delete_imports_for_file(&conn, &rel_path)?;
+            for imported in python_imports(&rel_path, &bytes) {
+                conn.execute(
+                    "INSERT OR IGNORE INTO imports(path, imported_module) VALUES (?1, ?2)",
+                    params![rel_path, imported],
+                )
+                .map_err(|source| ProjectCacheError::Sqlite {
+                    context: "insert changed-path import",
+                    source,
+                })?;
+            }
+            for chunk in chunks_for_file(&rel_path, &bytes, &self.config.chunk_schema_version)? {
+                chunks_to_refresh.insert(chunk.chunk_key.clone());
+                persist_chunk(&conn, &chunk)?;
+                conn.execute(
+                    "INSERT OR REPLACE INTO chunk_paths(path, chunk_key, file_blake3) VALUES (?1, ?2, ?3)",
+                    params![rel_path, chunk.chunk_key, file_hash],
+                )
+                .map_err(|source| ProjectCacheError::Sqlite {
+                    context: "insert changed-path chunk path",
+                    source,
+                })?;
+            }
+        }
+
+        let files_by_hash = files_by_hash_from_existing(&current);
+        reject_hash_collisions(&files_by_hash)?;
+        prune_orphan_chunks(&conn)?;
+        queue_lazy_rescans(&conn, &changed_files, &deleted_files)?;
+        let per_embedder_reembedded =
+            refresh_embeddings(&conn, embedder_versions, &chunks_to_refresh)?;
+        let merkle_root = merkle_root_from_existing(&current);
+        let status = WatcherStatus {
+            project_id: self.config.project_id.clone(),
+            heartbeat_unix_ms: scan_started_unix_ms,
+            lag_count: 0,
+            file_count: current.len(),
+            merkle_root: merkle_root.clone(),
+        };
+        write_status(&self.status_path, &status)?;
+        Ok(ProjectCacheReport {
+            project_id: self.config.project_id.clone(),
+            repo_path: self.config.repo_path.display().to_string(),
+            db_path: self.db_path.display().to_string(),
+            watcher_status_path: self.status_path.display().to_string(),
+            merkle_root,
+            scan_started_unix_ms,
+            file_count: current.len(),
+            chunk_path_count: 0,
+            unique_chunk_count: 0,
+            embedding_count: 0,
+            changed_files,
+            deleted_files,
+            deduped_chunk_paths: 0,
+            lazy_rescan_queued: 0,
+            per_embedder_reembedded,
+        })
+    }
+
     fn init_schema(&self) -> Result<(), ProjectCacheError> {
         let conn = self.open_connection()?;
         conn.execute_batch(
@@ -370,6 +536,7 @@ impl ProjectMerkleCache {
                 path TEXT PRIMARY KEY,
                 blake3 TEXT NOT NULL,
                 size_bytes INTEGER NOT NULL,
+                mtime_ns INTEGER NOT NULL DEFAULT 0,
                 last_seen INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS chunks(
@@ -420,6 +587,27 @@ impl ProjectMerkleCache {
             context: "initialize schema",
             source,
         })?;
+        let has_mtime: Option<i64> = conn
+            .query_row(
+                "SELECT 1 FROM pragma_table_info('files') WHERE name = 'mtime_ns'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|source| ProjectCacheError::Sqlite {
+                context: "inspect files mtime column",
+                source,
+            })?;
+        if has_mtime.is_none() {
+            conn.execute(
+                "ALTER TABLE files ADD COLUMN mtime_ns INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|source| ProjectCacheError::Sqlite {
+                context: "add files mtime column",
+                source,
+            })?;
+        }
         conn.execute(
             "INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', ?1)",
             params![CACHE_SCHEMA_VERSION.to_string()],
@@ -442,6 +630,8 @@ impl ProjectMerkleCache {
 #[derive(Debug, Clone)]
 struct ExistingFile {
     blake3: String,
+    size_bytes: u64,
+    mtime_ns: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -713,7 +903,7 @@ fn load_existing_files(
     conn: &Connection,
 ) -> Result<BTreeMap<String, ExistingFile>, ProjectCacheError> {
     let mut stmt = conn
-        .prepare("SELECT path, blake3 FROM files ORDER BY path")
+        .prepare("SELECT path, blake3, size_bytes, mtime_ns FROM files ORDER BY path")
         .map_err(|source| ProjectCacheError::Sqlite {
             context: "prepare existing files query",
             source,
@@ -735,7 +925,26 @@ fn load_existing_files(
             context: "decode existing file hash",
             source,
         })?;
-        out.insert(path, ExistingFile { blake3 });
+        let size_bytes = row
+            .get::<_, i64>(2)
+            .map_err(|source| ProjectCacheError::Sqlite {
+                context: "decode existing file size",
+                source,
+            })? as u64;
+        let mtime_ns = row
+            .get::<_, i64>(3)
+            .map_err(|source| ProjectCacheError::Sqlite {
+                context: "decode existing file mtime",
+                source,
+            })?;
+        out.insert(
+            path,
+            ExistingFile {
+                blake3,
+                size_bytes,
+                mtime_ns,
+            },
+        );
     }
     Ok(out)
 }
@@ -745,18 +954,20 @@ fn persist_file(
     path: &str,
     file_hash: &str,
     size_bytes: u64,
+    mtime_ns: i64,
     seen_at: i64,
 ) -> Result<(), ProjectCacheError> {
     conn.execute(
         "\
-        INSERT INTO files(path, blake3, size_bytes, last_seen)
-        VALUES (?1, ?2, ?3, ?4)
+        INSERT INTO files(path, blake3, size_bytes, mtime_ns, last_seen)
+        VALUES (?1, ?2, ?3, ?4, ?5)
         ON CONFLICT(path) DO UPDATE SET
             blake3 = excluded.blake3,
             size_bytes = excluded.size_bytes,
+            mtime_ns = excluded.mtime_ns,
             last_seen = CASE WHEN files.blake3 = excluded.blake3 THEN files.last_seen ELSE excluded.last_seen END
         ",
-        params![path, file_hash, size_bytes as i64, seen_at],
+        params![path, file_hash, size_bytes as i64, mtime_ns, seen_at],
     )
     .map_err(|source| ProjectCacheError::Sqlite {
         context: "upsert file row",
@@ -808,29 +1019,6 @@ fn delete_imports_for_file(conn: &Connection, path: &str) -> Result<(), ProjectC
             source,
         })?;
     Ok(())
-}
-
-fn chunk_keys_for_file(conn: &Connection, path: &str) -> Result<Vec<String>, ProjectCacheError> {
-    let mut stmt = conn
-        .prepare("SELECT chunk_key FROM chunk_paths WHERE path = ?1 ORDER BY chunk_key")
-        .map_err(|source| ProjectCacheError::Sqlite {
-            context: "prepare chunk keys for file",
-            source,
-        })?;
-    let rows = stmt
-        .query_map(params![path], |row| row.get::<_, String>(0))
-        .map_err(|source| ProjectCacheError::Sqlite {
-            context: "query chunk keys for file",
-            source,
-        })?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row.map_err(|source| ProjectCacheError::Sqlite {
-            context: "decode chunk key for file",
-            source,
-        })?);
-    }
-    Ok(out)
 }
 
 fn prune_orphan_chunks(conn: &Connection) -> Result<(), ProjectCacheError> {
@@ -1058,6 +1246,39 @@ fn merkle_root(tracked: &[String], files_by_hash: &BTreeMap<String, Vec<(String,
     blake3_hex(leaves.join("\n").as_bytes())
 }
 
+fn merkle_root_from_existing(files: &BTreeMap<String, ExistingFile>) -> String {
+    let leaves = files
+        .iter()
+        .map(|(path, file)| format!("{path}\0{}", file.blake3))
+        .collect::<Vec<_>>();
+    blake3_hex(leaves.join("\n").as_bytes())
+}
+
+fn files_by_hash_from_existing(
+    files: &BTreeMap<String, ExistingFile>,
+) -> BTreeMap<String, Vec<(String, u64)>> {
+    let mut out = BTreeMap::new();
+    for (path, file) in files {
+        out.entry(file.blake3.clone())
+            .or_insert_with(Vec::new)
+            .push((path.clone(), file.size_bytes));
+    }
+    out
+}
+
+fn normalize_requested_project_path(path: &str) -> Result<String, ProjectCacheError> {
+    let rel = path.replace('\\', "/");
+    if rel.is_empty()
+        || rel.starts_with('/')
+        || rel
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == ".." || part.contains('\0'))
+    {
+        return Err(ProjectCacheError::UnsupportedFile { path: rel });
+    }
+    Ok(rel)
+}
+
 fn chunk_key(schema_version: &str, file_blake3: &str, start: u64, end: u64, kind: &str) -> String {
     blake3_hex(format!("{schema_version}\0{file_blake3}\0{start}\0{end}\0{kind}").as_bytes())
 }
@@ -1082,6 +1303,15 @@ pub fn blake3_hex(bytes: &[u8]) -> String {
 fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     format!("{:x}", Sha256::digest(bytes))
+}
+
+fn metadata_modified_ns(metadata: &fs::Metadata) -> i64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_nanos().min(i64::MAX as u128) as i64)
+        .unwrap_or(0)
 }
 
 fn now_ms() -> i64 {

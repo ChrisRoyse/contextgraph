@@ -45,6 +45,7 @@ enum Command {
     Constellation(ConstellationArgs),
     HealDrill(HealDrillCliArgs),
     Stress(StressArgs),
+    StressTest(StressTestArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -145,6 +146,18 @@ struct StressArgs {
     entries: u64,
     #[arg(long, default_value_t = 7)]
     gc_passes: u32,
+}
+
+#[derive(Debug, Parser)]
+struct StressTestArgs {
+    #[arg(long, default_value = "tiny")]
+    size: String,
+    #[arg(long)]
+    run_id: Option<String>,
+    #[arg(long, default_value_t = 72)]
+    seed: u64,
+    #[arg(long, default_value = context_graph_mejepa::STRESS_TRACE_ROOT)]
+    trace_root: PathBuf,
 }
 
 #[derive(Debug)]
@@ -299,7 +312,40 @@ fn main() -> ExitCode {
                 ExitCode::from(1)
             }
         },
+        Command::StressTest(args) => match run_stress_test_command(args) {
+            Ok(code) => code,
+            Err(err) => {
+                eprintln!("{}: {err}", err.code());
+                ExitCode::from(1)
+            }
+        },
     }
+}
+
+fn run_stress_test_command(
+    args: StressTestArgs,
+) -> Result<ExitCode, context_graph_mejepa::ProjectStressError> {
+    let size = context_graph_mejepa::ProjectStressSize::parse(&args.size)?;
+    let run =
+        context_graph_mejepa::run_project_stress(context_graph_mejepa::ProjectStressRequest {
+            size,
+            run_id: args.run_id,
+            seed: args.seed,
+            trace_root: args.trace_root,
+            fault: context_graph_mejepa::StressFaultInjection::None,
+        })?;
+    let json = serde_json::to_string_pretty(&run).map_err(|source| {
+        context_graph_mejepa::ProjectStressError::Json {
+            path: "stdout".to_string(),
+            source,
+        }
+    })?;
+    println!("{json}");
+    Ok(if run.acceptance_passed {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
 }
 
 fn run_constellation_command(args: ConstellationArgs) -> Result<ExitCode, MejepaCliError> {

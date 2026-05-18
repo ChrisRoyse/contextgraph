@@ -97,6 +97,7 @@ fn mcp_surface_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Full,
         scope: ProjectIngestScope::SourceOnly,
         overwrite: false,
+        changed_paths: Vec::new(),
     })?;
     let before = inspect_state(project_id)?;
     let canonical = context_graph_mcp::tools::names::MEJEPA_PROJECT_REPORT;
@@ -155,6 +156,7 @@ fn happy_path_known_bug_case(root: &Path) -> Result<Value> {
         mode: ProjectIngestMode::Full,
         scope: ProjectIngestScope::SourceOnly,
         overwrite: false,
+        changed_paths: Vec::new(),
     })?;
     let run = run_project_report(report_request(project_id))?;
     let after = inspect_state(project_id)?;
