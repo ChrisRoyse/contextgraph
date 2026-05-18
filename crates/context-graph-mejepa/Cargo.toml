@@ -142,3 +142,7 @@ path = "examples/task_fp_104_objective_safety_fsv.rs"
 [[example]]
 name = "task_fp_105_rank_candidates_fsv"
 path = "examples/task_fp_105_rank_candidates_fsv.rs"
+
+[[example]]
+name = "task_ek_010_elicit_intent_fsv"
+path = "examples/task_ek_010_elicit_intent_fsv.rs"

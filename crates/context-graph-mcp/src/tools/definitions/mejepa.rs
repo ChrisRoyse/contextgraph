@@ -170,6 +170,54 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_ELICIT_INTENT,
+            "TASK-EK-010 north-star surface: deterministically encode an operator intent as frozen per-embedder teleological centroids, calibrate tau_intent thresholds, persist the NorthStarVector in CF_MEJEPA_NORTH_STARS, and return readback provenance. No inner LLM is invoked by this trust-boundary tool.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["spec"],
+                "properties": {
+                    "spec": intent_specification_schema(),
+                    "options": elicitation_options_schema(),
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional inference RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    },
+                    "persist": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "When true, write the north-star to CF_MEJEPA_NORTH_STARS with read-after-write validation."
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_ALIGN_TO_INTENT,
+            "TASK-EK-010 alignment surface: compare a candidate panel input or per-embedder vector map against a supplied or persisted NorthStarVector and return per-embedder cosine, tau pass/fail, and violating embedders.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["candidate"],
+                "properties": {
+                    "candidate": intent_candidate_schema(),
+                    "northStar": {"type": "object", "additionalProperties": true},
+                    "northStarId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{32}$",
+                        "description": "Persisted NorthStarVector id to load from CF_MEJEPA_NORTH_STARS."
+                    },
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional inference RocksDB path used when northStarId is supplied. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    }
+                },
+                "oneOf": [
+                    {"required": ["northStar"]},
+                    {"required": ["northStarId"]}
+                ]
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_EXPLAIN_PREDICTION,
             "Explain a persisted System 2 ME-JEPA Phase B RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS and returning stored verdict, matched failure-shape fingerprint evidence, top risks, claim reconciliation, reality impact, provenance, and a saliency map normalized from covered chunks.",
             json!({
@@ -907,6 +955,154 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
     ]
+}
+
+fn intent_specification_schema() -> Value {
+    let mut variants = base_intent_specification_variants();
+    variants.push(json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "initial", "maxRounds"],
+        "properties": {
+            "kind": {"const": "interactiveRefinement"},
+            "initial": {"oneOf": base_intent_specification_variants()},
+            "rounds": {
+                "type": "array",
+                "maxItems": 64,
+                "default": [],
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["roundId", "critique"],
+                    "properties": {
+                        "roundId": {"type": "string", "minLength": 1, "maxLength": 256},
+                        "critique": {"type": "string", "minLength": 1, "maxLength": 65536},
+                        "accepted": {"type": "boolean", "default": false}
+                    }
+                }
+            },
+            "maxRounds": {"type": "integer", "minimum": 1, "maximum": 64}
+        }
+    }));
+    json!({"oneOf": variants})
+}
+
+fn base_intent_specification_variants() -> Vec<Value> {
+    vec![
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "description"],
+            "properties": {
+                "kind": {"const": "freeText"},
+                "description": {"type": "string", "minLength": 1, "maxLength": 65536}
+            }
+        }),
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "positive"],
+            "properties": {
+                "kind": {"const": "positiveAndNegativeExemplars"},
+                "positive": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4096,
+                    "items": raw_intent_input_schema()
+                },
+                "negative": {
+                    "type": "array",
+                    "default": [],
+                    "maxItems": 4096,
+                    "items": raw_intent_input_schema()
+                }
+            }
+        }),
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "subject", "references"],
+            "properties": {
+                "kind": {"const": "constellationOfOutcome"},
+                "subject": {"type": "string", "minLength": 1, "maxLength": 1024},
+                "references": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4096,
+                    "items": raw_intent_input_schema()
+                }
+            }
+        }),
+    ]
+}
+
+fn raw_intent_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["inputId", "text"],
+        "properties": {
+            "inputId": {"type": "string", "minLength": 1, "maxLength": 256},
+            "text": {"type": "string", "minLength": 1, "maxLength": 65536}
+        }
+    })
+}
+
+fn elicitation_options_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "panelId": {"type": "string", "minLength": 1, "maxLength": 512},
+            "corpusShardHash": {"type": "string", "minLength": 1, "maxLength": 512},
+            "embedderIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 256,
+                "items": {"type": "string", "minLength": 1, "maxLength": 128}
+            },
+            "vectorDim": {"type": "integer", "minimum": 1, "maximum": 256, "default": 16},
+            "tauMargin": {"type": "number", "minimum": 0.0, "exclusiveMaximum": 0.5, "default": 0.05},
+            "convergenceCosineThreshold": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.98},
+            "driftRollbackCosineFloor": {"type": "number", "minimum": -1.0, "maximum": 1.0, "default": -1.0}
+        }
+    })
+}
+
+fn intent_candidate_schema() -> Value {
+    json!({
+        "oneOf": [
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "candidateId", "text"],
+                "properties": {
+                    "kind": {"const": "rawInput"},
+                    "candidateId": {"type": "string", "minLength": 1, "maxLength": 256},
+                    "text": {"type": "string", "minLength": 1, "maxLength": 65536}
+                }
+            },
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "candidateId", "vectors"],
+                "properties": {
+                    "kind": {"const": "vectorMap"},
+                    "candidateId": {"type": "string", "minLength": 1, "maxLength": 256},
+                    "vectors": {
+                        "type": "object",
+                        "minProperties": 1,
+                        "additionalProperties": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 256,
+                            "items": {"type": "number"}
+                        }
+                    }
+                }
+            }
+        ]
+    })
 }
 
 fn identity_attestation_schema() -> Value {

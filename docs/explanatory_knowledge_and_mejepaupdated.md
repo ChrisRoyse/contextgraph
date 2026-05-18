@@ -382,10 +382,12 @@ The composition for the ME-JEPA case:
 - (b) An LLM acting as path-finder against that centroid (existing — Claude Code, Codex, Cursor, any AlphaEvolve-style outer loop).
 - (c) The existing TCT Gτ guard checking cosine to centroid per candidate.
 
-All three pieces of (b) and (c) already ship in the operator's framework. The missing piece is (a) — the intent-elicitation surface.
+All three pieces of (b) and (c) already ship in the operator's framework. The missing piece was (a) — the intent-elicitation surface.
+
+**Implementation status (2026-05-18):** TASK-EK-010 / #332 is code/FSV-shipped as the deterministic base surface. `CF_MEJEPA_NORTH_STARS` persists frozen `NorthStarVector` rows, `mcp__cgreality__mejepa_elicit_intent` constructs and writes them, `mcp__cgreality__mejepa_align_to_intent` scores raw/vector candidates against inline or persisted north-stars, and `context-graph-cli mejepa elicit-intent --mode <free-text|exemplars|constellation|interactive>` mirrors the elicitation side. This shipped trust-boundary implementation intentionally invokes no inner LLM; future LLM-assisted proposal rounds must remain outside the daemon action path unless explicitly authorized. FSV: `/mnt/d/contextgraph/fsv/task-ek-010-elicit-intent-fsv/run-1779069629967/elicit_intent_fsv.json`, sha256 `e21f764d5487448f2c2067f058a3b779c4217dc7fa0ba04bbbcc1fd0a7af9d94`, `all_passed=true`.
 
 **The atomic primitive.**
-A new MCP tool `mejepa_elicit_intent(user_specification: IntentSpecification) -> NorthStarVector` that takes one of:
+The shipped MCP tool `mejepa_elicit_intent(user_specification: IntentSpecification) -> NorthStarVector` takes one of:
 - A free-text description of the desired end-state.
 - A set of in-distribution exemplars (positive references) and out-of-distribution counter-exemplars (negative references) — the operator's customer-service demo idiom.
 - A constellation reference (per `PAPER.md §5.1`) with a `subject` of "the desired outcome" rather than "an identity."
@@ -405,7 +407,7 @@ The intent vector then plugs into the existing constellation guard `G_τ(\hat y;
 **Operator-question implication.**
 With (VI) shipped on top of (I)–(V), the answer to *"can ME-JEPA-Code create explanatory knowledge?"* refines further: **yes, in the operator-defined sense of "produce paths to user-specified teleological vectors with calibrated guarantees of intent-alignment by construction."** The Deutschian harder-case "no" survives only for the genuinely-foundational-discovery setting that no system in the published 2026 literature addresses anyway. The intelligence-explosion thesis's *engineering* form is now plausibly achievable through the (I)–(VI) composition on the existing operator-deployed substrate, with the only remaining caveat being the intent-elicitation fidelity gate — i.e., how good the user's specification can be made before the path-finder searches against it.
 
-The corresponding implementation issue is TASK-EK-010 (filed under EPIC #321 as the sixth addition).
+The corresponding implementation issue is TASK-EK-010 (#332 under EPIC #321 as the sixth addition); the deterministic base surface is complete, while AlphaEvolve consumption through TASK-EK-008 remains a downstream integration.
 
 **(VII) Destination-construction inverse — `mejepa_synthesise_goal` MCP tool (added 2026-05-17 after re-reading construct 4).**
 *Bidirectional Epistemology* (construct 4 from *The Symmetry of Knowing*) is symmetric: TASK-EK-010 / (VI) covers *user specifies end-state → LLM finds path*; the inverse move *user specifies the available means and constraints → system constructs candidate destinations the user might productively want* is also licenced. This is the partial answer to the Deutsch-harder-case "the user does not yet know what they want" carve-out from §10.2(VI). The system reads its own high-residual-variance directions (mincut gaps from TASK-EK-003, curiosity-score peaks from TASK-EK-006, Unknown clusters from TASK-EK-002), the LLM (System 1, untrusted) drafts candidate goal statements that *would* fill those structural absences, each candidate is encoded into a teleological vector via the same elicitation pipeline as TASK-EK-010, ranked by expected $\\Delta\\mathrm{CP}_\\Phi$ × constraint-compliance × novelty-vs-existing-north-stars, and surfaced to the operator for accept/reject. Accepted candidates materialise as first-class `NorthStarVector`s consumable by TASK-EK-010 downstream. The corresponding implementation issue is TASK-EK-011 (#333).

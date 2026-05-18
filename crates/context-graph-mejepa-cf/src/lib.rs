@@ -88,6 +88,8 @@ pub const CF_MEJEPA_REPLAY_BUFFER: &str = "CF_MEJEPA_REPLAY_BUFFER";
 // TASK-RWD-211 / TASK-PY-G-067 — accepted/refuted system-proposed
 // constellation/fingerprint growth rows from the novel-pattern gate.
 pub const CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT: &str = "CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT";
+// TASK-EK-010 — operator-specified north-star / teleological intent vectors.
+pub const CF_MEJEPA_NORTH_STARS: &str = "CF_MEJEPA_NORTH_STARS";
 // TASK-FP-001/002 — first-class failure-shape fingerprint catalog.
 pub const CF_MEJEPA_FAILURE_FINGERPRINTS: &str = "CF_MEJEPA_FAILURE_FINGERPRINTS";
 pub const CF_MEJEPA_FINGERPRINT_REFERENCES: &str = "CF_MEJEPA_FINGERPRINT_REFERENCES";
@@ -141,6 +143,8 @@ pub const REWARD_SIGNAL_CFS: &[&str] = &[
     CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
     CF_MEJEPA_CONSTELLATION_REFRESH_LOG,
 ];
+
+pub const EXPLANATORY_KNOWLEDGE_CFS: &[&str] = &[CF_MEJEPA_NORTH_STARS];
 
 pub const SELF_HEALING_CFS: &[&str] = &[
     CF_MEJEPA_FISHER_SNAPSHOTS,
@@ -217,6 +221,7 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_SIGNAL_DROP_LOG,
     CF_MEJEPA_REPLAY_BUFFER,
     CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
+    CF_MEJEPA_NORTH_STARS,
     CF_MEJEPA_CONSTELLATION_REFRESH_LOG,
 ];
 
@@ -255,6 +260,7 @@ pub const EVAL_CFS: &[&str] = &[
     CF_MEJEPA_SIGNAL_DROP_LOG,
     CF_MEJEPA_REPLAY_BUFFER,
     CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
+    CF_MEJEPA_NORTH_STARS,
 ];
 
 pub const HYGIENE_CFS: &[&str] = &[
@@ -308,6 +314,7 @@ pub const HYGIENE_CFS: &[&str] = &[
     CF_MEJEPA_LIVE_SESSION_SIGNALS,
     CF_MEJEPA_SIGNAL_DROP_LOG,
     CF_MEJEPA_REPLAY_BUFFER,
+    CF_MEJEPA_NORTH_STARS,
     CF_MEJEPA_CONSTELLATION_REFRESH_LOG,
 ];
 
@@ -382,6 +389,7 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_SIGNAL_DROP_LOG,
     CF_MEJEPA_REPLAY_BUFFER,
     CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
+    CF_MEJEPA_NORTH_STARS,
     CF_MEJEPA_CONSTELLATION_REFRESH_LOG,
     CF_MEJEPA_MUTATION_CORPUS,
     CF_MEJEPA_LIVE_ATTEMPT_CORPUS,
@@ -427,6 +435,7 @@ mod tests {
             .chain(FINGERPRINT_CFS.iter())
             .chain(ADVERSARIAL_CFS.iter())
             .chain(REWARD_SIGNAL_CFS.iter())
+            .chain(EXPLANATORY_KNOWLEDGE_CFS.iter())
         {
             if !generated.contains(cf) {
                 generated.push(*cf);
@@ -500,6 +509,7 @@ mod tests {
             CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
             "CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT"
         );
+        assert_eq!(CF_MEJEPA_NORTH_STARS, "CF_MEJEPA_NORTH_STARS");
     }
 
     #[test]

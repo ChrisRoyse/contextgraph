@@ -371,6 +371,7 @@ mod test_support {
             delta_xi_global_min,
             loss_components: HashMap::from([("predict_nll_bits".to_string(), bits as f32)]),
             conditional_description_length_bits: Some(bits),
+            inverse_map_quality_bits: None,
             training_mode: "task-ek-001-fsv".to_string(),
             distillation_cycle_id: None,
             distillation_loss_mean: None,

@@ -4,15 +4,17 @@
 //! `CF_MEJEPA_ACTIVE_LEARNING_QUEUE`, `CF_MEJEPA_ACTIVE_LEARNING_LABELS`,
 //! and `CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS`.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
 use context_graph_mejepa::{
-    open_infer_rocksdb, ActiveLearningLabel, ActiveLearningQueueEntry, LabelMethod, OracleOutcome,
-    RocksDbEvalStore, TaskId,
+    elicit_intent, open_infer_rocksdb, read_north_star, write_north_star_sync_readback,
+    ActiveLearningLabel, ActiveLearningQueueEntry, ElicitationOptions, IntentSpecification,
+    LabelMethod, NorthStarVector, OracleOutcome, RawIntentInput, RocksDbEvalStore, TaskId,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 pub(crate) const DEFAULT_MEJEPA_INFER_DB: &str = "/mnt/d/contextgraph/storage/contextgraph-rocksdb";
@@ -33,6 +35,9 @@ pub enum MejepaCommands {
     /// Read Schmidhuberian compression progress from CF_MEJEPA_TRAIN_CERTS.
     #[command(name = "compression-progress")]
     CompressionProgress(CompressionProgressArgs),
+    /// Elicit and persist a TASK-EK-010 north-star intent vector.
+    #[command(name = "elicit-intent")]
+    ElicitIntent(ElicitIntentArgs),
     /// Bind PostToolUse Bash test outcomes back to live RealityPrediction rows.
     #[command(name = "bind-test-outcomes")]
     BindTestOutcomes(crate::commands::mejepa_prediction_verification::BindTestOutcomesArgs),
@@ -147,6 +152,34 @@ pub struct CompressionProgressArgs {
     pub epsilon_bits: f64,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct ElicitIntentArgs {
+    /// Inference RocksDB path containing CF_MEJEPA_NORTH_STARS.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// Intent elicitation mode. The JSON input must match this mode or contain a top-level spec.
+    #[arg(long, value_enum)]
+    pub mode: ElicitIntentModeArg,
+
+    /// JSON file containing either a full IntentSpecification or mode-specific fields.
+    #[arg(long)]
+    pub input: PathBuf,
+
+    /// Persist the resulting NorthStarVector to CF_MEJEPA_NORTH_STARS.
+    #[arg(long, default_value_t = true)]
+    pub persist: bool,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+#[clap(rename_all = "kebab_case")]
+pub enum ElicitIntentModeArg {
+    FreeText,
+    Exemplars,
+    Constellation,
+    Interactive,
+}
+
 #[derive(Clone, Copy, Debug, ValueEnum)]
 #[clap(rename_all = "kebab_case")]
 pub enum OracleOutcomeArg {
@@ -222,6 +255,40 @@ pub struct CompressionProgressCliOutput {
     pub report: context_graph_mejepa_train::CompressionProgressReport,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ElicitIntentCliOutput {
+    pub tool: &'static str,
+    pub north_star: NorthStarVector,
+    pub persisted_readback_equal: bool,
+    pub source_of_truth: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ElicitIntentInputEnvelope {
+    #[serde(default)]
+    spec: Option<IntentSpecification>,
+    #[serde(default)]
+    options: Option<ElicitationOptions>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    positive: Option<Vec<RawIntentInput>>,
+    #[serde(default)]
+    negative: Option<Vec<RawIntentInput>>,
+    #[serde(default)]
+    subject: Option<String>,
+    #[serde(default)]
+    references: Option<Vec<RawIntentInput>>,
+    #[serde(default)]
+    initial: Option<IntentSpecification>,
+    #[serde(default)]
+    rounds: Vec<context_graph_mejepa::InteractiveRefinementRound>,
+    #[serde(default)]
+    max_rounds: Option<u32>,
+}
+
 pub async fn handle_mejepa_command(action: MejepaCommands) -> i32 {
     let action = match action {
         MejepaCommands::CellStatus(args) => {
@@ -286,6 +353,9 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
         MejepaCommands::CompressionProgress(args) => {
             serde_json::to_value(compression_progress(args)?)
                 .context("serialize compression-progress")
+        }
+        MejepaCommands::ElicitIntent(args) => {
+            serde_json::to_value(elicit_intent_cli(args)?).context("serialize elicit-intent")
         }
         MejepaCommands::BindTestOutcomes(args) => serde_json::to_value(
             crate::commands::mejepa_prediction_verification::bind_test_outcomes(args)?,
@@ -371,6 +441,123 @@ pub fn compression_progress(args: CompressionProgressArgs) -> Result<Compression
         }),
         report,
     })
+}
+
+pub fn elicit_intent_cli(args: ElicitIntentArgs) -> Result<ElicitIntentCliOutput> {
+    let bytes = fs::read(&args.input)
+        .with_context(|| format!("read elicit-intent input {}", args.input.display()))?;
+    let spec_is_top_level = serde_json::from_slice::<IntentSpecification>(&bytes).ok();
+    let (spec, options) = if let Some(spec) = spec_is_top_level {
+        ensure_mode_matches(args.mode, &spec)?;
+        (spec, ElicitationOptions::default())
+    } else {
+        let envelope: ElicitIntentInputEnvelope =
+            serde_json::from_slice(&bytes).context("parse elicit-intent JSON input")?;
+        let options = envelope.options.clone().unwrap_or_default();
+        let spec = if let Some(spec) = envelope.spec {
+            ensure_mode_matches(args.mode, &spec)?;
+            spec
+        } else {
+            spec_from_envelope(args.mode, envelope)?
+        };
+        (spec, options)
+    };
+    let created_at_unix_ms = chrono::Utc::now().timestamp_millis();
+    let north_star = elicit_intent(spec, options, created_at_unix_ms).with_context(|| {
+        format!(
+            "MEJEPA_ELICIT_INTENT_FAILED: input={}",
+            args.input.display()
+        )
+    })?;
+    let db = open_infer_rocksdb(&args.db_path)
+        .with_context(|| format!("open inference RocksDB {}", args.db_path.display()))?;
+    if args.persist {
+        write_north_star_sync_readback(db.as_ref(), &north_star)
+            .context("write CF_MEJEPA_NORTH_STARS")?;
+    }
+    let persisted_readback_equal = if args.persist {
+        read_north_star(db.as_ref(), &north_star.intent_id)
+            .context("read CF_MEJEPA_NORTH_STARS")?
+            .map(|row| row == north_star)
+            .unwrap_or(false)
+    } else {
+        false
+    };
+    Ok(ElicitIntentCliOutput {
+        tool: "context-graph-cli mejepa elicit-intent",
+        north_star,
+        persisted_readback_equal,
+        source_of_truth: json!({
+            "dbPath": args.db_path,
+            "inputPath": args.input,
+            "northStarCf": context_graph_mejepa_cf::CF_MEJEPA_NORTH_STARS,
+            "persisted": args.persist,
+            "innerLlmInvoked": false
+        }),
+    })
+}
+
+fn spec_from_envelope(
+    mode: ElicitIntentModeArg,
+    envelope: ElicitIntentInputEnvelope,
+) -> Result<IntentSpecification> {
+    match mode {
+        ElicitIntentModeArg::FreeText => Ok(IntentSpecification::FreeText {
+            description: envelope.description.ok_or_else(|| {
+                anyhow!("free-text input must contain description or top-level spec")
+            })?,
+        }),
+        ElicitIntentModeArg::Exemplars => Ok(IntentSpecification::PositiveAndNegativeExemplars {
+            positive: envelope.positive.ok_or_else(|| {
+                anyhow!("exemplars input must contain positive or top-level spec")
+            })?,
+            negative: envelope.negative.unwrap_or_default(),
+        }),
+        ElicitIntentModeArg::Constellation => Ok(IntentSpecification::ConstellationOfOutcome {
+            subject: envelope.subject.ok_or_else(|| {
+                anyhow!("constellation input must contain subject or top-level spec")
+            })?,
+            references: envelope.references.ok_or_else(|| {
+                anyhow!("constellation input must contain references or top-level spec")
+            })?,
+        }),
+        ElicitIntentModeArg::Interactive => Ok(IntentSpecification::InteractiveRefinement {
+            initial: Box::new(envelope.initial.ok_or_else(|| {
+                anyhow!("interactive input must contain initial or top-level spec")
+            })?),
+            rounds: envelope.rounds,
+            max_rounds: envelope.max_rounds.ok_or_else(|| {
+                anyhow!("interactive input must contain maxRounds or top-level spec")
+            })?,
+        }),
+    }
+}
+
+fn ensure_mode_matches(mode: ElicitIntentModeArg, spec: &IntentSpecification) -> Result<()> {
+    let matches = matches!(
+        (mode, spec),
+        (
+            ElicitIntentModeArg::FreeText,
+            IntentSpecification::FreeText { .. }
+        ) | (
+            ElicitIntentModeArg::Exemplars,
+            IntentSpecification::PositiveAndNegativeExemplars { .. }
+        ) | (
+            ElicitIntentModeArg::Constellation,
+            IntentSpecification::ConstellationOfOutcome { .. }
+        ) | (
+            ElicitIntentModeArg::Interactive,
+            IntentSpecification::InteractiveRefinement { .. }
+        )
+    );
+    if matches {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "input IntentSpecification kind does not match --mode {:?}",
+            mode
+        ))
+    }
 }
 
 pub async fn list_active_learning(

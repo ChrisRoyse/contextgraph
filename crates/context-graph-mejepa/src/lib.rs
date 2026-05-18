@@ -27,6 +27,7 @@ pub mod gates;
 pub mod grad_hook;
 pub mod heal;
 pub mod hierarchical;
+pub mod intent_north_star;
 pub mod label_transfer_audit;
 pub mod latent_search;
 pub mod loss;
@@ -100,6 +101,7 @@ pub use grad_hook::{
     TensorId,
 };
 pub use hierarchical::*;
+pub use intent_north_star::*;
 pub use label_transfer_audit::*;
 pub use latent_search::*;
 pub use loss::{huber_loss_delta_one, vicreg_loss, VarianceFloorHistory};
