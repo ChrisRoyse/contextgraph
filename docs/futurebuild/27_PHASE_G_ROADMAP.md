@@ -19,7 +19,7 @@
 ## §0 — The Operator Goals This Roadmap Serves
 
 1. **Reality prediction** — Given a code change + context, ME-JEPA returns a calibrated `RealityPrediction` (Q1-Q5: existence / works / why / what-else / impact) so AI-generated patches don't need human review.
-2. **Reality compiler** — Operator points ME-JEPA at any Python codebase. The system chunks, embeds, materializes panels, computes DDA/TCT, and emits a per-project reality report. Subsequent compiles only re-process changed files (Merkle-tree cache).
+2. **Reality compiler** — Operator points ME-JEPA at any permitted Python project directory tree or direct project file. The system discovers relevant source/test/doc/config files, routes Python files through the AST chunker, chunks, embeds, materializes panels, computes DDA/TCT, and emits a per-project reality report. Subsequent compiles only re-process changed files (Merkle-tree cache).
 3. **Continuous self-improvement** — Every Edit, every test outcome, every operator override updates the predictor online. The more the system is used, the better its predictions become. Catastrophic forgetting is prevented (EWC); plasticity loss is prevented (continual backprop); novel patterns extend the constellation.
 4. **Tight AI-agent feedback loop** — Claude Code hooks (PostToolUse, Stop, UserPromptSubmit) capture every test outcome, every claim, every verdict-confirmation/refutation; ME-JEPA's accuracy on past predictions is itself observable.
 5. **Adversarial robustness** — The predictor cannot be gamed into emitting a confident `Pass` on a broken patch. Negative-action ablation, multi-head contradiction, OOD gating, and conformal interval floors all stand structurally outside the predictor's loss.
@@ -95,12 +95,12 @@ Calibrators ride on top of producers; reward-signal density audits ensure no cel
 
 ## §4 — Phase 4: Reality Compiler (NEW — usability for arbitrary user codebases)
 
-This is the operator-facing capability: point ME-JEPA at any Python repo and it predicts reality. Subsequent compiles only re-embed changed files.
+This is the operator-facing capability: point ME-JEPA at any permitted Python project directory or direct project file and it predicts reality. Subsequent compiles only re-embed changed files.
 
 | Order | Issue | Capability |
 |---|---|---|
 | 4.1 | **#281** | Merkle-tree per-project chunk/embed cache + 250 ms debounced watcher-status scan + transitive-invalidation + schema-version-aware re-embed — **code/FSV-shipped 2026-05-18** |
-| 4.2 | **#282** | Project-ingestion MCP tool with source/test scoping |
+| 4.2 | **#282** | Project-ingestion MCP tool with source/test scoping — **complete**: `mcp__cgreality__mejepa_project_ingest` accepts git/non-git directory trees and direct files, persists project-local predictions only, and proves physical CF key readback; FSV `/mnt/d/contextgraph/fsv/task-py-g-063-project-ingest-fsv/run-20260518T133058Z/project_ingest_fsv.json` sha256 `7514bfb3c49b3a490761fb08f817ce7b9594209f0675e3dbe28e6d90381446b8` |
 | 4.3 | **#283** | Per-project reality compile report (top-N likely-broken areas, edge cases, dep risks) |
 
 **Gate for Phase 4:** Fresh ingest of a 50-file Python project completes < 60 s on RTX 5090; re-ingest after a 1-file edit < 5 s; report renders end-to-end.

@@ -21,6 +21,10 @@ test = false
 name = "phase_f_gpu_wsl_fsv"
 path = "examples/phase_f_gpu_wsl_fsv.rs"
 
+[[example]]
+name = "task_py_g_063_project_ingest_fsv"
+path = "examples/task_py_g_063_project_ingest_fsv.rs"
+
 [dependencies]
 context-graph-core = { path = "../context-graph-core" }
 context-graph-paths = { path = "../context-graph-paths" }

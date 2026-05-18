@@ -213,6 +213,7 @@ impl Handlers {
             tool_names::REPAIR_CAUSAL_RELATIONSHIPS => call_repair_causal_relationships(),
             // ME-JEPA Phase 4 inference tools
             tool_names::MEJEPA_VERIFY => call_mejepa_verify(arguments),
+            tool_names::MEJEPA_PROJECT_INGEST => call_mejepa_project_ingest(arguments),
             tool_names::MEJEPA_PREDICT_LATEST => call_mejepa_predict_latest(arguments),
             tool_names::MEJEPA_PREDICT_WHAT_IF => call_mejepa_predict_what_if(arguments),
             tool_names::MEJEPA_SEARCH_LATENT_ACTIONS => call_mejepa_search_latent_actions(arguments),

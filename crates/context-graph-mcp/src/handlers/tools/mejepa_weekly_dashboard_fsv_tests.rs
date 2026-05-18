@@ -356,6 +356,7 @@ fn weekly_markdown_with_required_sections() -> &'static str {
      |---|---:|---|---:|---|---:|---:|---:|---:|\n\
      | known_good::python | 0.960000 | already_passing | 0 | 0..0 | unavailable | unavailable | 1 | 1 |\n\n\
      ## Active-Learning Queue Summary\n\n- queued_count: 1\n\n\
+     ## Curiosity Ranking\n\n- no curiosity-ranked entries\n\n\
      ## Agent-Feedback Summary\n\n- surprise: 1\n\n\
      ## Drift Events Of The Week\n\n- none\n\n\
      ## Promotions / Rollbacks Of The Week\n\n- none\n\n\

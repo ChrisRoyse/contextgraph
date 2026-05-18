@@ -82,7 +82,7 @@ This roadmap is organised by **phase** then by **deliverable**. Each deliverable
 | # | Task | Issue | Status |
 |---|---|---|---|
 | 4.1 | Merkle-tree per-project chunk/embed cache | #281 | shipped 2026-05-18 |
-| 4.2 | Project-ingestion MCP tool | #282 | pending |
+| 4.2 | Project-ingestion MCP tool | #282 | shipped 2026-05-18 — directory/direct-file source paths, MCP canonical+alias dispatch, physical CF key readback, FSV sha256 `7514bfb3c49b3a490761fb08f817ce7b9594209f0675e3dbe28e6d90381446b8` |
 | 4.3 | Per-project reality compile report | #283 | pending |
 
 ### §1.5 — Continuous self-improvement (Phase 5 of roadmap 27)

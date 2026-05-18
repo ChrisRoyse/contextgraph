@@ -63,6 +63,8 @@ pub struct ProjectCacheConfig {
     pub repo_path: PathBuf,
     pub cache_dir: PathBuf,
     pub chunk_schema_version: String,
+    pub scope: ProjectFileScope,
+    pub single_file: Option<String>,
 }
 
 impl ProjectCacheConfig {
@@ -73,7 +75,19 @@ impl ProjectCacheConfig {
             project_id,
             repo_path,
             chunk_schema_version: "python-ast-v1".to_string(),
+            scope: ProjectFileScope::All,
+            single_file: None,
         }
+    }
+
+    pub fn with_scope(mut self, scope: ProjectFileScope) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    pub fn with_single_file(mut self, rel_path: Option<String>) -> Self {
+        self.single_file = rel_path;
+        self
     }
 }
 
@@ -93,6 +107,29 @@ impl ChunkRole {
             Self::Test => "test",
             Self::Doc => "doc",
             Self::Config => "config",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum ProjectFileScope {
+    SourceOnly,
+    SourceAndTests,
+    All,
+}
+
+impl ProjectFileScope {
+    pub fn includes_path(self, path: &str) -> bool {
+        match self {
+            Self::SourceOnly => project_role_for_path(path) == ChunkRole::Source,
+            Self::SourceAndTests => {
+                matches!(
+                    project_role_for_path(path),
+                    ChunkRole::Source | ChunkRole::Test
+                )
+            }
+            Self::All => true,
         }
     }
 }
@@ -155,7 +192,6 @@ impl ProjectMerkleCache {
                 source,
             }
         })?;
-        require_git_repo(&repo_path)?;
         require_d_project_cache_root(&config.cache_dir)?;
         fs::create_dir_all(&config.cache_dir).map_err(|source| ProjectCacheError::Io {
             path: config.cache_dir.display().to_string(),
@@ -190,7 +226,17 @@ impl ProjectMerkleCache {
         let scan_started_unix_ms = now_ms();
         let conn = self.open_connection()?;
         let previous = load_existing_files(&conn)?;
-        let tracked = git_tracked_files(&self.config.repo_path)?;
+        let tracked = project_files(&self.config.repo_path)?
+            .into_iter()
+            .filter(|path| {
+                self.config
+                    .single_file
+                    .as_ref()
+                    .map(|only| only == path)
+                    .unwrap_or(true)
+            })
+            .filter(|path| self.config.scope.includes_path(path))
+            .collect::<Vec<_>>();
         let tracked_set: BTreeSet<String> = tracked.iter().cloned().collect();
         let deleted_files: Vec<String> = previous
             .keys()
@@ -227,6 +273,12 @@ impl ProjectMerkleCache {
                 size_bytes,
                 scan_started_unix_ms,
             )?;
+            if !changed {
+                for chunk_key in chunk_keys_for_file(&conn, rel_path)? {
+                    all_chunk_keys.insert(chunk_key);
+                }
+                continue;
+            }
             delete_chunk_paths_for_file(&conn, rel_path)?;
             delete_imports_for_file(&conn, rel_path)?;
             for imported in python_imports(rel_path, &bytes) {
@@ -417,24 +469,6 @@ fn canonicalize_existing_dir(path: &Path) -> Result<PathBuf, std::io::Error> {
     }
 }
 
-fn require_git_repo(path: &Path) -> Result<(), ProjectCacheError> {
-    let output = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .current_dir(path)
-        .output()
-        .map_err(|source| ProjectCacheError::Io {
-            path: path.display().to_string(),
-            source,
-        })?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(ProjectCacheError::InvalidRepoPath {
-            path: path.display().to_string(),
-        })
-    }
-}
-
 fn require_d_project_cache_root(path: &Path) -> Result<(), ProjectCacheError> {
     if path.starts_with("/mnt/d/contextgraph/projects") {
         Ok(())
@@ -443,6 +477,25 @@ fn require_d_project_cache_root(path: &Path) -> Result<(), ProjectCacheError> {
             path: path.display().to_string(),
         })
     }
+}
+
+fn project_files(repo_path: &Path) -> Result<Vec<String>, ProjectCacheError> {
+    if is_git_work_tree(repo_path)? {
+        return git_tracked_files(repo_path);
+    }
+    recursive_supported_files(repo_path)
+}
+
+fn is_git_work_tree(path: &Path) -> Result<bool, ProjectCacheError> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(path)
+        .output()
+        .map_err(|source| ProjectCacheError::Io {
+            path: path.display().to_string(),
+            source,
+        })?;
+    Ok(output.status.success() && String::from_utf8_lossy(&output.stdout).trim().eq("true"))
 }
 
 fn git_tracked_files(repo_path: &Path) -> Result<Vec<String>, ProjectCacheError> {
@@ -479,6 +532,72 @@ fn git_tracked_files(repo_path: &Path) -> Result<Vec<String>, ProjectCacheError>
     Ok(files)
 }
 
+fn recursive_supported_files(root: &Path) -> Result<Vec<String>, ProjectCacheError> {
+    let mut files = Vec::new();
+    recursive_supported_files_inner(root, root, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+fn recursive_supported_files_inner(
+    root: &Path,
+    dir: &Path,
+    files: &mut Vec<String>,
+) -> Result<(), ProjectCacheError> {
+    for entry in fs::read_dir(dir).map_err(|source| ProjectCacheError::Io {
+        path: dir.display().to_string(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| ProjectCacheError::Io {
+            path: dir.display().to_string(),
+            source,
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|source| ProjectCacheError::Io {
+            path: path.display().to_string(),
+            source,
+        })?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if file_type.is_dir() {
+            if ignored_project_dir(&name) {
+                continue;
+            }
+            recursive_supported_files_inner(root, &path, files)?;
+        } else if file_type.is_file() {
+            let rel = path
+                .strip_prefix(root)
+                .map_err(|source| ProjectCacheError::Io {
+                    path: path.display().to_string(),
+                    source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
+                })?
+                .to_string_lossy()
+                .replace('\\', "/");
+            if is_supported_project_file(&rel) {
+                files.push(rel);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn ignored_project_dir(name: &str) -> bool {
+    matches!(
+        name,
+        ".git"
+            | "target"
+            | "__pycache__"
+            | ".mypy_cache"
+            | ".pytest_cache"
+            | ".tox"
+            | ".venv"
+            | "venv"
+            | "node_modules"
+            | "dist"
+            | "build"
+    )
+}
+
 fn is_supported_project_file(path: &str) -> bool {
     path.ends_with(".py")
         || path.ends_with(".md")
@@ -489,7 +608,7 @@ fn is_supported_project_file(path: &str) -> bool {
         || path.ends_with(".txt")
 }
 
-fn role_for_path(path: &str) -> ChunkRole {
+pub fn project_role_for_path(path: &str) -> ChunkRole {
     if path.ends_with(".md") {
         ChunkRole::Doc
     } else if path.ends_with(".toml")
@@ -504,12 +623,16 @@ fn role_for_path(path: &str) -> ChunkRole {
         || path
             .rsplit('/')
             .next()
-            .is_some_and(|name| name.starts_with("test_"))
+            .is_some_and(|name| name.starts_with("test_") || name.contains("_test"))
     {
         ChunkRole::Test
     } else {
         ChunkRole::Source
     }
+}
+
+fn role_for_path(path: &str) -> ChunkRole {
+    project_role_for_path(path)
 }
 
 fn chunks_for_file(
@@ -524,13 +647,13 @@ fn chunks_for_file(
             file_path: rel_path.to_string(),
             max_non_ws_chars: 500,
         };
+        let normalized = decode_utf8_or_latin1(bytes);
         let chunks =
-            ast::chunk_with_options(bytes, ast::Language::Python, &options).map_err(|err| {
-                ProjectCacheError::ChunkFailed {
+            ast::chunk_with_options(normalized.as_bytes(), ast::Language::Python, &options)
+                .map_err(|err| ProjectCacheError::ChunkFailed {
                     path: rel_path.to_string(),
                     reason: format!("{}: {err}", err.code()),
-                }
-            })?;
+                })?;
         return chunks
             .iter()
             .map(|chunk| cache_chunk_from_ast(rel_path, &file_blake3, schema_version, chunk))
@@ -539,10 +662,7 @@ fn chunks_for_file(
     if bytes.is_empty() {
         return Ok(Vec::new());
     }
-    let text = std::str::from_utf8(bytes).map_err(|err| ProjectCacheError::ChunkFailed {
-        path: rel_path.to_string(),
-        reason: format!("MEJEPA_PROJECT_CACHE_NON_UTF8: {err}"),
-    })?;
+    let text = decode_utf8_or_latin1(bytes);
     let content_sha256 = sha256_hex(text.as_bytes());
     Ok(vec![CacheChunk {
         chunk_key: chunk_key(
@@ -688,6 +808,29 @@ fn delete_imports_for_file(conn: &Connection, path: &str) -> Result<(), ProjectC
             source,
         })?;
     Ok(())
+}
+
+fn chunk_keys_for_file(conn: &Connection, path: &str) -> Result<Vec<String>, ProjectCacheError> {
+    let mut stmt = conn
+        .prepare("SELECT chunk_key FROM chunk_paths WHERE path = ?1 ORDER BY chunk_key")
+        .map_err(|source| ProjectCacheError::Sqlite {
+            context: "prepare chunk keys for file",
+            source,
+        })?;
+    let rows = stmt
+        .query_map(params![path], |row| row.get::<_, String>(0))
+        .map_err(|source| ProjectCacheError::Sqlite {
+            context: "query chunk keys for file",
+            source,
+        })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row.map_err(|source| ProjectCacheError::Sqlite {
+            context: "decode chunk key for file",
+            source,
+        })?);
+    }
+    Ok(out)
 }
 
 fn prune_orphan_chunks(conn: &Connection) -> Result<(), ProjectCacheError> {
@@ -923,6 +1066,13 @@ fn deterministic_vector_blob(chunk_key: &str, embedder_id: &str, version: &str) 
     blake3::hash(format!("{chunk_key}\0{embedder_id}\0{version}").as_bytes())
         .as_bytes()
         .to_vec()
+}
+
+fn decode_utf8_or_latin1(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => text.to_string(),
+        Err(_) => bytes.iter().map(|byte| *byte as char).collect(),
+    }
 }
 
 pub fn blake3_hex(bytes: &[u8]) -> String {

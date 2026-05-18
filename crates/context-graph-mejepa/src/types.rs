@@ -2065,6 +2065,21 @@ impl RealityPredictionBuilder {
         self
     }
 
+    pub fn predicted_edge_cases(mut self, value: Vec<PredictedEdgeCase>) -> Self {
+        self.predicted_edge_cases = value;
+        self
+    }
+
+    pub fn predicted_latent_bugs(mut self, value: Vec<PredictedLatentBug>) -> Self {
+        self.predicted_latent_bugs = value;
+        self
+    }
+
+    pub fn predicted_security_concerns(mut self, value: Vec<PredictedSecurityConcern>) -> Self {
+        self.predicted_security_concerns = value;
+        self
+    }
+
     pub fn predicted_reasoning_class(mut self, value: ReasoningClass) -> Self {
         self.predicted_reasoning_class = value;
         self
@@ -2118,6 +2133,11 @@ impl RealityPredictionBuilder {
 
     pub fn calibration_version(mut self, value: impl Into<String>) -> Self {
         self.calibration_version = value.into();
+        self
+    }
+
+    pub fn created_at_unix_ms(mut self, value: i64) -> Self {
+        self.created_at_unix_ms = value;
         self
     }
 

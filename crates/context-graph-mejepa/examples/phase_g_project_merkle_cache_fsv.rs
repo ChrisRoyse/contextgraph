@@ -30,7 +30,7 @@ fn main() -> Result<()> {
     let add_many = add_1000_files_case(&root)?;
     let move_same_content = same_content_moved_case(&root)?;
     let version_bump = embedder_version_bump_case(&root)?;
-    let fail_closed = fail_closed_non_git_case(&root)?;
+    let non_git = non_git_directory_case(&root)?;
     let edge_cases = vec![
         empty,
         edit_one,
@@ -38,7 +38,7 @@ fn main() -> Result<()> {
         add_many,
         move_same_content,
         version_bump,
-        fail_closed,
+        non_git,
     ];
     let all_passed = case_pass(&happy) && edge_cases.iter().all(case_pass);
 
@@ -301,16 +301,20 @@ fn embedder_version_bump_case(root: &Path) -> Result<Value> {
     }))
 }
 
-fn fail_closed_non_git_case(root: &Path) -> Result<Value> {
+fn non_git_directory_case(root: &Path) -> Result<Value> {
     let non_git = root.join("not_git");
     fs::create_dir_all(&non_git)?;
-    let err = ProjectMerkleCache::open(ProjectCacheConfig::new("not-git", non_git))
-        .expect_err("non-git path must fail closed");
-    let pass = err.code() == "MEJEPA_PROJECT_CACHE_INVALID_PATH";
+    fs::write(non_git.join("plain.py"), "def plain():\n    return 1\n")?;
+    let cache = ProjectMerkleCache::open(ProjectCacheConfig::new("not-git", non_git))
+        .context("non-git directories are valid project-ingest source paths")?;
+    let report = cache.scan_project(&embedder_versions("v1", "v1"))?;
+    let counts = db_counts(cache.db_path())?;
+    let pass = report.file_count == 1 && counts.files == 1 && counts.embeddings == 2;
     Ok(json!({
-        "case": "non_git_repo_fails_closed",
-        "trigger": "ProjectMerkleCache::open on non-git directory",
-        "error_code": err.code(),
+        "case": "non_git_directory_recurses_supported_files",
+        "trigger": "ProjectMerkleCache::open + scan_project on non-git directory",
+        "report": report,
+        "counts": counts,
         "pass": pass
     }))
 }

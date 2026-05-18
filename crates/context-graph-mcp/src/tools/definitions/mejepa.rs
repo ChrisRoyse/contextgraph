@@ -21,6 +21,43 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_PROJECT_INGEST,
+            "TASK-PY-G-063 reality-compiler ingest: scan a permitted project file or directory tree, materialize the per-project cache/manifest directory under /mnt/d/contextgraph/projects/<project_id>/, route Python files through the AST chunker, and persist per-file RealityPrediction rows to CF_MEJEPA_LIVE_PREDICTIONS with source-of-truth readback.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["repoPath"],
+                "properties": {
+                    "repoPath": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Existing operator-permitted project file or directory path. Directories are scanned recursively; git repositories use git-tracked plus untracked non-ignored file discovery."
+                    },
+                    "projectId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 96,
+                        "pattern": "^[A-Za-z0-9_.-]+$"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["Full", "Incremental"],
+                        "default": "Full"
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": ["SourceOnly", "SourceAndTests", "All"],
+                        "default": "SourceOnly"
+                    },
+                    "overwrite": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Required for a Full ingest when manifest.json already exists for the project_id."
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_PREDICT_LATEST,
             "Read the latest persisted System 2 ME-JEPA RealityPrediction rows for a System 1 agent session from CF_MEJEPA_LIVE_PREDICTIONS.",
             json!({

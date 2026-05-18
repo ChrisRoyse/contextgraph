@@ -33,6 +33,7 @@ pub fn resolve_alias(name: &str) -> &str {
         "consolidate_memories" => "trigger_consolidation",
         // Merged tools - backward compatibility
         "inject_context" => "store_memory",
+        "mejepa_project_ingest" => crate::tools::names::MEJEPA_PROJECT_INGEST,
         other => other,
     }
 }
@@ -53,6 +54,14 @@ mod tests {
     fn test_inject_context_alias() {
         // inject_context merged into store_memory
         assert_eq!(resolve_alias("inject_context"), "store_memory");
+    }
+
+    #[test]
+    fn test_project_ingest_alias() {
+        assert_eq!(
+            resolve_alias("mejepa_project_ingest"),
+            crate::tools::names::MEJEPA_PROJECT_INGEST
+        );
     }
 
     #[test]
