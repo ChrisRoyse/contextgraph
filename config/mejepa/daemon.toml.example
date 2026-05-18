@@ -1,5 +1,5 @@
 [daemon]
-d_root = "/mnt/d/contextgraph"
+d_root = "/zfs/archive/contextgraph"
 transport = "http"
 host = "127.0.0.1"
 mcp_port = 3100
@@ -9,5 +9,5 @@ enabled_languages = ["python"]
 
 [scheduler]
 enabled = true
-status_path = "/mnt/d/contextgraph/state/schedulers/self_optimization_status.json"
-test_outcome_root = "/mnt/d/contextgraph/runtime/test-outcomes"
+status_path = "/zfs/archive/contextgraph/state/schedulers/self_optimization_status.json"
+test_outcome_root = "/zfs/archive/contextgraph/runtime/test-outcomes"

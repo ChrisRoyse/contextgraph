@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BINARY="/home/cabdru/contextgraph/target/release/context-graph-mcp"
 MODE="${CONTEXT_GRAPH_MCP_MODE:-reality-loop}"
 DAEMON_PORT="${CONTEXT_GRAPH_DAEMON_PORT:-3100}"
-DATA_ROOT="${CONTEXTGRAPH_DATA_ROOT:-/mnt/d/contextgraph}"
+DATA_ROOT="${CONTEXTGRAPH_DATA_ROOT:-/zfs/archive/contextgraph}"
 
 # Ensure daemon is running (idempotent, blocks until ready)
 "$SCRIPT_DIR/ensure_daemon.sh"

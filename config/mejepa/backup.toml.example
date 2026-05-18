@@ -1,7 +1,6 @@
 [backup]
-d_root = "/mnt/d/contextgraph"
-snapshot_root = "/mnt/d/contextgraph/backups"
+d_root = "/zfs/archive/contextgraph"
+snapshot_root = "/zfs/archive/contextgraph/backups"
 include_rocksdb = true
 include_runtime_logs = true
 retention_days = 30
-

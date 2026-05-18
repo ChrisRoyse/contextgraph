@@ -9,24 +9,24 @@ StartLimitBurst=5
 Type=simple
 WorkingDirectory=/home/cabdru/contextgraph
 UMask=0077
-Environment=CONTEXTGRAPH_DATA_ROOT=/mnt/d/contextgraph
-Environment=CONTEXT_GRAPH_STORAGE_PATH=/mnt/d/contextgraph/storage/contextgraph-rocksdb
-Environment=CONTEXT_GRAPH_DB_PATH=/mnt/d/contextgraph/storage/contextgraph-rocksdb
-Environment=CONTEXT_GRAPH_MODELS_PATH=/mnt/d/cabdru/contextgraph/models
+Environment=CONTEXTGRAPH_DATA_ROOT=/zfs/archive/contextgraph
+Environment=CONTEXT_GRAPH_STORAGE_PATH=/zfs/archive/contextgraph/storage/contextgraph-rocksdb
+Environment=CONTEXT_GRAPH_DB_PATH=/zfs/archive/contextgraph/storage/contextgraph-rocksdb
+Environment=CONTEXT_GRAPH_MODELS_PATH=/zfs/hot/contextgraph/models
 Environment=RUST_LOG=info,context_graph_mejepa=debug
 ExecStartPre=/usr/bin/test -x /home/cabdru/contextgraph/target/release/context-graph-mcp
-ExecStartPre=/usr/bin/test -d /mnt/d/contextgraph
-ExecStartPre=/usr/bin/test -w /mnt/d/contextgraph
-ExecStartPre=/usr/bin/test -f /mnt/d/cabdru/contextgraph/models/bge-m3-dense/model.safetensors
-ExecStartPre=/usr/bin/mkdir -p /mnt/d/contextgraph/logs /mnt/d/contextgraph/state/locks
-ExecStart=/home/cabdru/contextgraph/target/release/context-graph-mcp --mode reality-loop --daemon-server-only --d-root /mnt/d/contextgraph --daemon-port 3100 --http-port 3101
+ExecStartPre=/usr/bin/test -d /zfs/archive/contextgraph
+ExecStartPre=/usr/bin/test -w /zfs/archive/contextgraph
+ExecStartPre=/usr/bin/test -f /zfs/hot/contextgraph/models/bge-m3-dense/model.safetensors
+ExecStartPre=/usr/bin/mkdir -p /zfs/archive/contextgraph/logs /zfs/archive/contextgraph/state/locks
+ExecStart=/home/cabdru/contextgraph/target/release/context-graph-mcp --mode reality-loop --daemon-server-only --d-root /zfs/archive/contextgraph --daemon-port 3100 --http-port 3101
 Restart=on-failure
 RestartSec=5s
 TimeoutStartSec=300s
 TimeoutStopSec=45s
 KillSignal=SIGTERM
-StandardOutput=append:/mnt/d/contextgraph/logs/mejepa-daemon.stdout.log
-StandardError=append:/mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
+StandardOutput=append:/zfs/archive/contextgraph/logs/mejepa-daemon.stdout.log
+StandardError=append:/zfs/archive/contextgraph/logs/mejepa-daemon.stderr.log
 
 [Install]
 WantedBy=default.target

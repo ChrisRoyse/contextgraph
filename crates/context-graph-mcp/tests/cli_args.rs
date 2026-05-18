@@ -9,8 +9,29 @@ fn run_mcp(args: &[&str]) -> Output {
         .env_remove("CONTEXT_GRAPH_HTTP_PORT")
         .env_remove("CONTEXT_GRAPH_BIND_ADDRESS")
         .env_remove("CONTEXT_GRAPH_DAEMON_PORT")
-        .env_remove("CONTEXT_GRAPH_DAEMON");
+        .env_remove("CONTEXT_GRAPH_DAEMON")
+        .env_remove("CONTEXTGRAPH_DATA_ROOT")
+        .env_remove("CONTEXTGRAPH_LOCAL_SMOKE_ISSUE");
     command.output().expect("run context-graph-mcp binary")
+}
+
+#[test]
+fn cli_daemon_rejects_local_d_root_in_production_mode() {
+    let output = run_mcp(&[
+        "--daemon-toolchain-audit-only",
+        "--d-root",
+        "/mnt/d/contextgraph",
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        !output.status.success(),
+        "production daemon root must reject local D-drive"
+    );
+    assert!(
+        stderr.contains("MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER"),
+        "stderr must include production-root guard code; got: {stderr}"
+    );
 }
 
 #[test]

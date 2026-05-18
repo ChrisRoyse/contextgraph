@@ -5,10 +5,10 @@
 
 PORT=3100
 HTTP_PORT="${CONTEXT_GRAPH_HTTP_PORT:-3101}"
-DATA_ROOT="${CONTEXTGRAPH_DATA_ROOT:-/mnt/d/contextgraph}"
+DATA_ROOT="${CONTEXTGRAPH_DATA_ROOT:-/zfs/archive/contextgraph}"
 STORAGE="${CONTEXT_GRAPH_STORAGE_PATH:-${DATA_ROOT}/storage/contextgraph-rocksdb}"
 MODE="${CONTEXT_GRAPH_MCP_MODE:-reality-loop}"
-MODELS="${CONTEXT_GRAPH_MODELS_PATH:-/mnt/d/cabdru/contextgraph/models}"
+MODELS="${CONTEXT_GRAPH_MODELS_PATH:-/zfs/hot/contextgraph/models}"
 BINARY="/home/cabdru/contextgraph/target/release/context-graph-mcp"
 LOGFILE="${DATA_ROOT}/logs/context-graph-daemon.log"
 PIDFILE="${DATA_ROOT}/state/locks/context-graph-daemon.pid"
@@ -38,6 +38,35 @@ rotate_log_if_needed() {
     mv "$path" "${path}.1"
 }
 
+validate_production_data_root() {
+    if [ -z "$DATA_ROOT" ]; then
+        echo "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER: CONTEXTGRAPH_DATA_ROOT is empty" >&2
+        exit 1
+    fi
+
+    case "$DATA_ROOT" in
+        /*) ;;
+        *)
+            echo "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER: CONTEXTGRAPH_DATA_ROOT must be an absolute aiwonder path: $DATA_ROOT" >&2
+            exit 1
+            ;;
+    esac
+
+    case "$DATA_ROOT" in
+        /zfs/archive/contextgraph|/zfs/archive/contextgraph/*) ;;
+        /mnt/d/contextgraph|/mnt/d/contextgraph/*)
+            if [ -z "${CONTEXTGRAPH_LOCAL_SMOKE_ISSUE:-}" ]; then
+                echo "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER: production daemon root cannot be local /mnt/d without CONTEXTGRAPH_LOCAL_SMOKE_ISSUE" >&2
+                exit 1
+            fi
+            ;;
+        *)
+            echo "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER: production daemon root must be under /zfs/archive/contextgraph: $DATA_ROOT" >&2
+            exit 1
+            ;;
+    esac
+}
+
 terminate_daemon_pid() {
     local pid="$1"
     local elapsed=0
@@ -54,6 +83,8 @@ terminate_daemon_pid() {
     echo "MEJEPA_DAEMON_SHUTDOWN_STUCK: PID $pid ignored SIGTERM for 30s; sending SIGKILL" >&2
     kill -KILL "$pid" 2>/dev/null || true
 }
+
+validate_production_data_root
 
 # Check if already listening
 if is_daemon_ready; then
@@ -84,26 +115,13 @@ if [ ! -x "$BINARY" ]; then
     exit 1
 fi
 
-if [ -z "$DATA_ROOT" ]; then
-    echo "MEJEPA_D_DRIVE_PATH_INVALID: CONTEXTGRAPH_DATA_ROOT is empty" >&2
-    exit 1
-fi
-
-case "$DATA_ROOT" in
-    /*) ;;
-    *)
-        echo "MEJEPA_D_DRIVE_PATH_INVALID: CONTEXTGRAPH_DATA_ROOT must be an absolute path: $DATA_ROOT" >&2
-        exit 1
-        ;;
-esac
-
 if [ ! -d "$DATA_ROOT" ]; then
-    echo "MEJEPA_D_DRIVE_UNAVAILABLE: $DATA_ROOT does not exist" >&2
+    echo "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER: $DATA_ROOT does not exist" >&2
     exit 1
 fi
 
 if [ ! -w "$DATA_ROOT" ]; then
-    echo "MEJEPA_D_DRIVE_NOT_WRITABLE: $DATA_ROOT is not writable" >&2
+    echo "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER: $DATA_ROOT is not writable" >&2
     exit 1
 fi
 

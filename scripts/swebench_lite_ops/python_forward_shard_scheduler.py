@@ -38,26 +38,32 @@ _JSONL_APPEND_LOCK = threading.Lock()
 _PROMOTE_HOT_STAGE_LOCK = threading.Lock()
 
 
-DEFAULT_CHUNKS_JSONL = Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
-DEFAULT_CACHE_ROOT = Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1")
-DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-029-sharded-cuda-scheduler-fsv")
-DEFAULT_HOT_ROOT = Path("/home/cabdru/.cache/contextgraph/python-forward-shard-scheduler")
-DEFAULT_SMOKE_GATE_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-057-smoke-gate-preflight-fsv")
-DEFAULT_SMOKE_MANIFEST_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json")
+AIWONDER_DURABLE_ROOT = Path("/zfs/archive/contextgraph")
+AIWONDER_HOT_ROOT = Path("/zfs/hot/contextgraph")
+AIWONDER_SCRATCH_ROOT = Path("/home/croyse/.cache/contextgraph")
+LEGACY_LOCAL_ROOT = Path("/mnt/d/contextgraph")
+ENV_LOCAL_SMOKE_ISSUE = "CONTEXTGRAPH_LOCAL_SMOKE_ISSUE"
+
+DEFAULT_CHUNKS_JSONL = Path("/zfs/hot/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
+DEFAULT_CACHE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1")
+DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-029-sharded-cuda-scheduler-fsv")
+DEFAULT_HOT_ROOT = Path("/zfs/hot/contextgraph/runtime/python-forward-shard-scheduler")
+DEFAULT_SMOKE_GATE_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-057-smoke-gate-preflight-fsv")
+DEFAULT_SMOKE_MANIFEST_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json")
 DEFAULT_SMOKE_FORWARD_FSV = Path(
-    "/mnt/d/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"
+    "/zfs/archive/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"
 )
 DEFAULT_SMOKE_INTELLIGENCE_FSV = Path(
-    "/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"
+    "/zfs/archive/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"
 )
 DEFAULT_SMOKE_STORAGE_DESIGN_FSV = Path(
-    "/mnt/d/contextgraph/fsv/task-py-data-063-post249-smoke-storage-design-fsv/smoke_storage_design_fsv.json"
+    "/zfs/archive/contextgraph/fsv/task-py-data-063-post249-smoke-storage-design-fsv/smoke_storage_design_fsv.json"
 )
 DEFAULT_FULL_RELAUNCH_GATE_FSV = Path(
-    "/mnt/d/contextgraph/fsv/task-py-data-064-post249-full-run-relaunch-gate-fsv/full_run_relaunch_gate_fsv.json"
+    "/zfs/archive/contextgraph/fsv/task-py-data-064-post249-full-run-relaunch-gate-fsv/full_run_relaunch_gate_fsv.json"
 )
 DEFAULT_FULL_AST_CORPUS_FSV = Path(
-    "/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json"
+    "/zfs/archive/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json"
 )
 DEFAULT_RUNNER_TIMEOUT_SECONDS = 3600
 DEFAULT_CARGO_RUNNER = "target/release/examples/python_forward_cache_fsv"
@@ -109,6 +115,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-root", type=Path, default=DEFAULT_CACHE_ROOT)
     parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
     parser.add_argument("--hot-root", type=Path, default=DEFAULT_HOT_ROOT)
+    parser.add_argument(
+        "--local-smoke-issue",
+        default=os.environ.get(ENV_LOCAL_SMOKE_ISSUE, ""),
+        help=(
+            "Explicit issue id that allows local /mnt/d smoke roots. Empty means "
+            "production mode, where /mnt/d is rejected before writes."
+        ),
+    )
     parser.add_argument("--task-id", default=TASK_ID)
     parser.add_argument("--start-offset", type=int, default=0)
     parser.add_argument("--shard-size", type=int, required=True)
@@ -157,8 +171,8 @@ def parse_args() -> argparse.Namespace:
         "--stage-packed-shards-on-hot",
         action="store_true",
         help=(
-            "For packed layout, run shard cache/FSV assembly in a bounded WSL ext4 hot stage, "
-            "then promote verified artifacts to the D-drive SoT."
+            "For packed layout, run shard cache/FSV assembly in a bounded aiwonder hot stage, "
+            "then promote verified artifacts to the durable aiwonder SoT."
         ),
     )
     parser.add_argument(
@@ -171,7 +185,7 @@ def parse_args() -> argparse.Namespace:
         "--estimated-record-bytes",
         type=int,
         default=DEFAULT_ESTIMATED_RECORD_BYTES,
-        help="Projected durable bytes per chunk/embedder output for pre-run D-drive capacity checks.",
+        help="Projected durable bytes per chunk/embedder output for pre-run aiwonder capacity checks.",
     )
     parser.add_argument(
         "--projected-output-bytes",
@@ -189,7 +203,7 @@ def parse_args() -> argparse.Namespace:
         "--fsv-edge-copy-budget-bytes",
         type=int,
         default=DEFAULT_FSV_EDGE_COPY_BUDGET_BYTES,
-        help="Required temporary D-drive bytes reserved for FSV edge/readback artifacts.",
+        help="Required temporary durable bytes reserved for FSV edge/readback artifacts.",
     )
     parser.add_argument(
         "--nvidia-smi-command",
@@ -321,6 +335,96 @@ def format_cpu_affinity() -> str | None:
 def require(label: str, condition: bool) -> None:
     if not condition:
         raise SchedulerError(f"python forward shard scheduler assertion failed: {label}")
+
+
+def normalize_guard_path(path: Path) -> Path:
+    expanded = path.expanduser()
+    if expanded.is_absolute():
+        return expanded.resolve(strict=False)
+    return (Path.cwd() / expanded).resolve(strict=False)
+
+
+def path_is_under(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def production_root_error(label: str, path: Path, expected: str) -> SchedulerError:
+    return SchedulerError(
+        f"MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER: {label}={path} is not an aiwonder production root; {expected}"
+    )
+
+
+def require_production_durable_path(path: Path, label: str, local_smoke_issue: str) -> Path:
+    normalized = normalize_guard_path(path)
+    if path_is_under(normalized, LEGACY_LOCAL_ROOT.resolve(strict=False)):
+        if local_smoke_issue.strip():
+            return normalized
+        raise production_root_error(
+            label,
+            normalized,
+            f"use {AIWONDER_DURABLE_ROOT} or pass --local-smoke-issue for an issue-scoped local smoke",
+        )
+    if path_is_under(normalized, AIWONDER_DURABLE_ROOT):
+        return normalized
+    raise production_root_error(label, normalized, f"use {AIWONDER_DURABLE_ROOT}")
+
+
+def require_aiwonder_hot_or_scratch_path(path: Path, label: str) -> Path:
+    normalized = normalize_guard_path(path)
+    if path_is_under(normalized, AIWONDER_HOT_ROOT) or path_is_under(normalized, AIWONDER_SCRATCH_ROOT):
+        return normalized
+    raise production_root_error(
+        label,
+        normalized,
+        f"use {AIWONDER_HOT_ROOT} or explicitly budgeted aiwonder scratch under {AIWONDER_SCRATCH_ROOT}",
+    )
+
+
+def require_aiwonder_input_path(path: Path, label: str, local_smoke_issue: str) -> Path:
+    normalized = normalize_guard_path(path)
+    if path_is_under(normalized, LEGACY_LOCAL_ROOT.resolve(strict=False)):
+        if local_smoke_issue.strip():
+            return normalized
+        raise production_root_error(
+            label,
+            normalized,
+            "inputs for production corpus runs must live on aiwonder, not local /mnt/d",
+        )
+    if path_is_under(normalized, AIWONDER_DURABLE_ROOT) or path_is_under(normalized, AIWONDER_HOT_ROOT):
+        return normalized
+    raise production_root_error(
+        label,
+        normalized,
+        f"use {AIWONDER_HOT_ROOT} for hot inputs or {AIWONDER_DURABLE_ROOT} for durable inputs",
+    )
+
+
+def validate_production_roots(args: argparse.Namespace) -> dict[str, Any]:
+    local_smoke_issue = args.local_smoke_issue.strip()
+    checked = {
+        "local_smoke_issue": local_smoke_issue or None,
+        "chunks_jsonl": str(require_aiwonder_input_path(args.chunks_jsonl, "chunks_jsonl", local_smoke_issue)),
+        "cache_root": str(require_production_durable_path(args.cache_root, "cache_root", local_smoke_issue)),
+        "fsv_root": str(require_production_durable_path(args.fsv_root, "fsv_root", local_smoke_issue)),
+        "hot_root": str(require_aiwonder_hot_or_scratch_path(args.hot_root, "hot_root")),
+    }
+    for attr in (
+        "smoke_gate_fsv_root",
+        "smoke_manifest_fsv",
+        "smoke_forward_fsv",
+        "smoke_intelligence_fsv",
+        "smoke_storage_design_fsv",
+        "full_relaunch_gate_fsv",
+        "full_ast_corpus_fsv",
+    ):
+        checked[attr] = str(
+            require_production_durable_path(getattr(args, attr), attr, local_smoke_issue)
+        )
+    return checked
 
 
 def parse_embedder_int_map(raw: str, flag_name: str) -> dict[str, int]:
@@ -1296,12 +1400,12 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
     cache_root = args.cache_root.expanduser().resolve(strict=False)
     fsv_root = args.fsv_root.expanduser().resolve(strict=False)
     runner = validate_release_runner(args)
-    # Durable-root policy. Default is the operator's WSL2 /mnt/d/contextgraph;
-    # override via CG_MEJEPA_DURABLE_ROOT env var to point at another host's
-    # bulk-state filesystem (e.g., /zfs/archive/contextgraph on aiwonder).
+    # Durable-root policy. Default production root is aiwonder
+    # /zfs/archive/contextgraph; override via CG_MEJEPA_DURABLE_ROOT only for
+    # explicitly issue-scoped smoke/revalidation work.
     # The hot-root must NOT be under that durable root; cache_root and fsv_root
     # MUST be under it. Windows /mnt/c path remains forbidden always.
-    durable_root = Path(os.environ.get("CG_MEJEPA_DURABLE_ROOT", "/mnt/d/contextgraph")).expanduser().resolve(strict=False)
+    durable_root = Path(os.environ.get("CG_MEJEPA_DURABLE_ROOT", str(AIWONDER_DURABLE_ROOT))).expanduser().resolve(strict=False)
     require(
         "MEJEPA_SCHEDULER_HOT_ROOT_WINDOWS_MOUNT: hot root must not be under /mnt/c",
         not path_is_under(hot_root, Path("/mnt/c")),
@@ -1325,11 +1429,11 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
     gpu = gpu_snapshot(args)
     capacity = projected_capacity(args)
     worker_ceiling = min(int(cpu["logical_threads"]), int(cpu["affinity_logical_threads"]))
-    require("MEJEPA_SCHEDULER_IO_WORKERS_INVALID: D-drive I/O workers is positive", args.io_workers > 0)
+    require("MEJEPA_SCHEDULER_IO_WORKERS_INVALID: durable I/O workers is positive", args.io_workers > 0)
     require("MEJEPA_SCHEDULER_CPU_WORKERS_INVALID: CPU workers is positive", args.cpu_workers > 0)
     require("MEJEPA_SCHEDULER_GPU_WORKERS_INVALID: GPU workers is positive", args.gpu_workers > 0)
     require(
-        "MEJEPA_SCHEDULER_IO_WORKERS_EXCEED_POLICY: D-drive/Docker I/O workers stay bounded",
+        "MEJEPA_SCHEDULER_IO_WORKERS_EXCEED_POLICY: durable/Docker I/O workers stay bounded",
         args.io_workers <= MAX_D_DRIVE_IO_WORKERS,
     )
     require(
@@ -1409,7 +1513,7 @@ def build_plan(args: argparse.Namespace) -> list[ShardSpec]:
         args.embedder_max_padded_source_byte_map,
     )
     require("GPU VRAM guard bytes is positive", args.gpu_vram_guard_bytes > 0)
-    require("D-drive I/O worker count is positive", args.io_workers > 0)
+    require("durable I/O worker count is positive", args.io_workers > 0)
     require("CPU worker count is positive", args.cpu_workers > 0)
     require("GPU worker count is positive", args.gpu_workers > 0)
     require("JSONL sync interval is positive", args.jsonl_sync_every_rows > 0)
@@ -3177,7 +3281,7 @@ def scan_checkpoint_next_shard_state(
         shard,
         {
             "decision": "exact_resume_proof_accepted",
-            "reason": "completed shard bounded readback passed against D-drive SoT",
+            "reason": "completed shard bounded readback passed against durable aiwonder SoT",
             "before_state": before,
             "completed_readback": completed,
             "after_state": {
@@ -5032,6 +5136,7 @@ def main() -> int:
     global TASK_ID
     args = parse_args()
     TASK_ID = args.task_id
+    production_root_guard = validate_production_roots(args)
     args.embedder_batch_size_map = parse_embedder_int_map(
         args.embedder_batch_sizes,
         "--embedder-batch-sizes",
@@ -5045,6 +5150,7 @@ def main() -> int:
     pre_smoke_hot_stage_archives = archive_hot_stage_blockers_for_preflight(args, shards) if args.mode == "preflight-resume" else []
     smoke_gate = smoke_gate_preflight(args)
     preflight = host_preflight(args)
+    preflight["production_root_guard"] = production_root_guard
     preflight["task061_smoke_manifest_gate"] = task061_gate
     preflight["smoke_gate"] = smoke_gate
     preflight["pre_smoke_hot_stage_archives"] = pre_smoke_hot_stage_archives

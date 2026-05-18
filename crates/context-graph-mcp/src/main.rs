@@ -104,7 +104,7 @@ struct CliArgs {
     daemon: bool,
     /// Daemon TCP port (--daemon-port, default: 3100)
     daemon_port: u16,
-    /// Durable D-drive data root (--d-root, default: /mnt/d/contextgraph)
+    /// Durable production data root (--d-root, default: /zfs/archive/contextgraph)
     d_root: Option<PathBuf>,
     /// Whether --daemon-port was explicitly passed on CLI
     explicit_daemon_port: bool,
@@ -279,7 +279,7 @@ fn parse_port_number(source: &str, value: &str) -> Result<u16> {
 fn parse_d_root_arg(value: &str) -> Result<PathBuf> {
     if value.trim().is_empty() || value.chars().any(|ch| ch.is_control()) {
         return Err(anyhow::anyhow!(
-            "MEJEPA_D_DRIVE_PATH_INVALID: --d-root must be a non-empty path without control characters"
+            "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER: --d-root must be a non-empty aiwonder path without control characters"
         ));
     }
     Ok(PathBuf::from(value))
@@ -304,7 +304,7 @@ OPTIONS:
     --no-warm            Skip blocking warmup (embeddings fail until background load completes)
     --daemon             Share one server across multiple terminals (RECOMMENDED)
     --daemon-port <PORT> Daemon TCP port (default: 3100)
-    --d-root <PATH>      Durable data root (default: /mnt/d/contextgraph)
+    --d-root <PATH>      Durable production data root (default: /zfs/archive/contextgraph)
     --version, -V        Show version and exit
     --help, -h           Show this help message
 
@@ -318,7 +318,9 @@ ENVIRONMENT VARIABLES:
     CONTEXT_GRAPH_HEALTH_PROBE  Set to "1" to enable /health and /ready probe listener
     CONTEXT_GRAPH_HEALTH_PROBE_PORT Probe port when enabled (default: 9111)
     CONTEXT_GRAPH_HEALTH_PROBE_BIND Probe bind address when enabled (default: 127.0.0.1)
-    CONTEXTGRAPH_DATA_ROOT      Durable D-drive root (default: /mnt/d/contextgraph)
+    CONTEXTGRAPH_DATA_ROOT      Durable production root (default: /zfs/archive/contextgraph)
+    CONTEXTGRAPH_LOCAL_SMOKE_ISSUE
+                                Explicit issue id allowing local /mnt/d smoke roots only
     RUST_LOG                    Log level (error, warn, info, debug, trace)
 
 PRIORITY:
@@ -528,7 +530,7 @@ fn apply_overrides(config: &mut Config, cli: &CliArgs) -> Result<()> {
         config.mcp.request_timeout = timeout;
     }
 
-    // CRITICAL: use D-backed RocksDB storage. If no explicit storage path is
+    // CRITICAL: use durable RocksDB storage. If no explicit storage path is
     // provided, the project default is CONTEXTGRAPH_DATA_ROOT/storage/contextgraph-rocksdb.
     let storage_path = match env::var("CONTEXT_GRAPH_STORAGE_PATH") {
         Ok(path) => {
@@ -542,7 +544,7 @@ fn apply_overrides(config: &mut Config, cli: &CliArgs) -> Result<()> {
         Err(env::VarError::NotPresent) => {
             let path = context_graph_paths::durable_storage_path()?;
             let rendered = path.display().to_string();
-            info!("Default D-backed storage.path = {}", rendered);
+            info!("Default durable storage.path = {}", rendered);
             rendered
         }
         Err(err) => {
@@ -1436,7 +1438,7 @@ async fn kill_stale_standalone_holder(db_path: &Path) -> bool {
 
 /// Compute the lockfile path for the reality-loop stdio singleton.
 ///
-/// Returns the D-backed cgreality singleton lock path.
+/// Returns the configured durable cgreality singleton lock path.
 #[cfg(unix)]
 fn reality_loop_singleton_lock_path() -> Result<PathBuf> {
     context_graph_paths::cgreality_singleton_lock_path().map_err(Into::into)
@@ -2728,7 +2730,7 @@ async fn async_main() -> Result<()> {
     // ROOT-CAUSE FIX (zombie prevention): install kernel-level parent-death
     // tracking only for client-owned stdio/proxy processes. A detached
     // --daemon-server-only process is intentionally allowed to outlive the
-    // launcher so reconnects can share one warm D-backed server.
+    // launcher so reconnects can share one warm production server.
     //
     // This is Linux-specific (PR_SET_PDEATHSIG) but the project already
     // targets x86_64-unknown-linux-gnu per rust-toolchain.toml.
@@ -2744,8 +2746,8 @@ async fn async_main() -> Result<()> {
             .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
     let daemon_paths = if daemon_mode_requested {
-        let data_root = context_graph_paths::data_root()
-            .map_err(|err| anyhow::anyhow!("MEJEPA_D_DRIVE_UNAVAILABLE: {}", err))?;
+        let data_root = context_graph_paths::production_data_root()
+            .map_err(|err| anyhow::anyhow!("{}: {}", err.code, err))?;
         Some(daemon_validate::validate_d_drive_root(&data_root)?)
     } else {
         None
@@ -2833,7 +2835,7 @@ async fn async_main() -> Result<()> {
             None
         };
         let daemon_paths = daemon_paths.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("MEJEPA_D_DRIVE_UNAVAILABLE: daemon validation did not run")
+            anyhow::anyhow!("MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER: daemon validation did not run")
         })?;
         let _daemon_pid_lock = daemon_validate::DaemonPidLock::acquire(&daemon_paths.pid_file)?;
 
