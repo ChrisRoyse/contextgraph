@@ -8,6 +8,7 @@ use crate::eval::{Lang, MutationCategory};
 use crate::trainer::{Trainer, TrainingDataset};
 use candle_core::{Device, Tensor};
 use clap::Args;
+use context_graph_mejepa::PANEL_DIM;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -231,6 +232,7 @@ pub fn load_corpus_index_dataset(corpus: &Path) -> Result<TrainingDataset, Train
         }))
     })?;
     let root: serde_json::Value = serde_json::from_slice(&bytes)?;
+    let corpus_root = index.parent().unwrap_or_else(|| Path::new("."));
     let entries = root
         .get("entries")
         .and_then(|v| v.as_array())
@@ -269,7 +271,7 @@ pub fn load_corpus_index_dataset(corpus: &Path) -> Result<TrainingDataset, Train
                 .ok_or_else(|| corpus_field(i, "bucket"))?,
         )?;
         let panel = corpus_feature_panel(&task_id, cat)?;
-        let inverse_action_target = parse_optional_inverse_action_target(i, entry)?;
+        let inverse_action_target = parse_optional_inverse_action_target(i, entry, corpus_root)?;
         let example = HoldoutExample {
             task_id,
             category: cat,
@@ -306,12 +308,31 @@ pub fn load_corpus_index_dataset(corpus: &Path) -> Result<TrainingDataset, Train
 fn parse_optional_inverse_action_target(
     index: usize,
     entry: &serde_json::Value,
+    corpus_root: &Path,
 ) -> Result<Option<InverseActionTarget>, TrainerError> {
-    let patch_diff = ["patch", "patch_text", "diff", "test_patch"]
+    let mut patch_parts = ["patch", "patch_text", "diff", "test_patch"]
         .iter()
         .filter_map(|field| optional_text_field(entry.get(*field)))
-        .collect::<Vec<_>>()
-        .join("\n");
+        .collect::<Vec<_>>();
+    for field in ["patch_path", "test_patch_path", "diff_path"] {
+        if let Some(path) = entry.get(field).and_then(|value| value.as_str()) {
+            let path = corpus_root.join(path);
+            let text = std::fs::read_to_string(&path).map_err(|err| {
+                TrainerError::new(
+                    TrainerErrorCode::MejepaTrainConfigInvalid,
+                    format!("corpus entry {index} {field} failed to read {}: {err}", path.display()),
+                )
+                .with_context(json!({
+                    "index": index,
+                    "field": field,
+                    "path": path,
+                    "remediation": "promote the verified patch file beside the corpus index before enabling inverse-map ablations"
+                }))
+            })?;
+            patch_parts.push(text);
+        }
+    }
+    let patch_diff = patch_parts.join("\n");
     let tool_calls = parse_optional_tool_calls(index, entry)?;
     if patch_diff.trim().is_empty() && tool_calls.is_empty() {
         return Ok(None);
@@ -412,11 +433,27 @@ pub fn corpus_feature_panel(
     let task_hash =
         u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) as f32 / u32::MAX as f32;
     let category_code = category_feature_code(category);
-    Ok(Tensor::from_slice(
-        &[task_hash, category_code],
-        2,
-        &Device::Cpu,
-    )?)
+    let mut data = Vec::with_capacity(PANEL_DIM);
+    data.push(task_hash);
+    data.push(category_code);
+    let mut counter = 0_u64;
+    while data.len() < PANEL_DIM {
+        let mut hasher = Sha256::new();
+        hasher.update(task_id.as_bytes());
+        hasher.update([category as u8]);
+        hasher.update(counter.to_be_bytes());
+        let block = hasher.finalize();
+        for chunk in block.chunks_exact(4) {
+            if data.len() == PANEL_DIM {
+                break;
+            }
+            let raw = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) as f32
+                / u32::MAX as f32;
+            data.push(raw.mul_add(2.0, -1.0));
+        }
+        counter += 1;
+    }
+    Ok(Tensor::from_slice(&data, PANEL_DIM, &Device::Cpu)?)
 }
 
 fn parse_optional_foundationality_score(

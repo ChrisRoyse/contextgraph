@@ -460,11 +460,11 @@ impl CategoryMajorityOracle {
 impl OracleHead for CategoryMajorityOracle {
     fn predict(&self, predicted_latent: &Tensor) -> Result<OraclePrediction, TrainerError> {
         let values = tensor_values(predicted_latent)?;
-        if values.len() != 2 {
+        if values.len() < 2 {
             return Err(TrainerError::new(
                 TrainerErrorCode::MejepaTrainConfigInvalid,
                 format!(
-                    "expected 2-value corpus feature panel, got {}",
+                    "expected corpus feature panel with at least 2 values, got {}",
                     values.len()
                 ),
             ));

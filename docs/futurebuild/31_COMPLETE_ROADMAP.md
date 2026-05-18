@@ -184,7 +184,7 @@ The Phase-I queue is **the new post-Phase-G work**. None blocks the 0.95 ship ga
 | EK.009 | Ontology-growth audit | TASK-EK-009 / #330 | pending | tracks TASK-EK-018 promotions as ontology growth |
 | EK.010 | Retired north-star / intent elicitation surface | TASK-EK-010 / #332 | retired by #358/#359 | not active; do not model, classify, synthesize, infer, or embed private human intention |
 | EK.011 | Retired destination-goal synthesis | TASK-EK-011 / #333 | retired by #358/#361 | not active; do not synthesize human goals |
-| EK.012 | Bidirectional corpus training | TASK-EK-012 / #334 | substrate shipped (commits `e4167cf0` + `e1ce10fa`) | highest-ROI Phase-G ship-gate experiment |
+| EK.012 | Bidirectional corpus training | TASK-EK-012 / #334 | code/FSV-shipped, neutral ablation | four-variant 300x8 ablation complete; no measured gain, keep `lambda_inv=0.0` |
 | EK.013 | `mejepa_reverse_prediction` | TASK-EK-013 / #335 | pending | inverse verifier for AlphaEvolve priors |
 | EK.014 | Operator-contribution surface | TASK-EK-014 / #336 | pending | extended for embedder-review attribution per TASK-EK-018 |
 | EK.015 | Credibility-weighted operator override | not yet filed | stretch (file when EK-014 green) | uses EK-014 quality scores in BatchSampler |
@@ -271,11 +271,11 @@ The single most important ordering question: **what should ship next?**
 
 These directly attack the 0.95 metric. Prioritise compute and operator attention here.
 
-1. **TASK-EK-012 / #334** (bidirectional corpus training ablation) — substrate shipped; the ablation has not yet run. If $\lambda_\text{inv} = 1.0$ improves the gate by even 1%, this is the highest-ROI single experiment available. Predicted effort: 2–5 weeks total (substrate done; experiment days; analysis days).
-2. **TASK-EK-001 / #322** (compression-progress telemetry surfacing) — substrate shipped; the weekly-report + PAPER.md §3.2bis publication is the visibility deliverable. Effort: 1–3 days.
-3. **§1.3 calibration tasks** (#121, #122, #123, #124, #126, #127, #128, #129, #130) — these are the per-head per-cell calibration tasks that the per-cell ship-gate audit depends on. Effort: ~2–4 weeks each, parallelisable.
-4. **#199 / #295** (corpus-wide embedder explosion) — currently in-flight on aiwonder. Until the forward cache is `status=ready_for_final_aggregate` and the manifest is `passed`, downstream Phase G work has a substrate ceiling.
-5. **§1.7 adversarial defense tasks** (#290, #291) — synthetic-Python stress corpus + end-to-end stress harness need to ship before the 0.95 gate can be claimed defensibly.
+1. **§1.3 calibration tasks** (#121, #122, #123, #124, #126, #127, #128, #129, #130) — these are the per-head per-cell calibration tasks that the per-cell ship-gate audit depends on. Effort: ~2–4 weeks each, parallelisable.
+2. **TASK-EK-008 / #329** (AlphaEvolve-pattern outer loop) — now higher ROI than #334 because the #334 ablation was neutral.
+3. **§1.7 adversarial defense tasks** (#290, #291) — synthetic-Python stress corpus + end-to-end stress harness need to ship before the 0.95 gate can be claimed defensibly.
+4. **TASK-EK-014 / #336** (operator-contribution surface) — measure source-backed operator critique/override work without modeling private intention.
+5. **TASK-EK-013 / #335** (reverse-prediction patch-shape constraints) — useful for search priors, but must stay constrained to desired observable `RealityPrediction` states and explicit safety constraints.
 
 ### §6.2 — Tier 2 (Phase I after gate closes; build the substrate for TASK-EK-018 in parallel)
 
@@ -334,8 +334,8 @@ Filed under #341. Execute roughly in this order:
 **Current state:** `0.866667 < 0.95`. **Approximately 9.7% gap to close.**
 
 **Closing levers (in expected ROI order):**
-1. TASK-EK-012 / #334 bidirectional training ablation.
-2. §1.3 calibration tasks completion.
+1. §1.3 calibration tasks completion.
+2. TASK-EK-008 / #329 AlphaEvolve-pattern search over code candidates using source-backed `RealityPrediction` fitness.
 3. §1.7 adversarial defense to ensure the claimed gate is defensible against adversarial probes.
 4. Continued corpus-cadence Phase E self-optimization (already running).
 

@@ -3,7 +3,7 @@ use crate::cert::chain::{
     last_cert_hash, FSYNC_INTERVAL, GENESIS_PARENT_HASH,
 };
 use crate::cert::TrainingCertificate;
-use crate::error::TrainerError;
+use crate::error::{TrainerError, TrainerErrorCode};
 use rocksdb::{WriteOptions, DB};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -72,7 +72,7 @@ impl TrainCertWriter {
         cert.self_hash.clear();
         cert.merkle_root = compute_merkle_root(&cert.loss_components);
         cert.validate_phase3()?;
-        let canonical = body_canonical_json(cert)?;
+        let canonical = stable_body_canonical_json(cert)?;
         cert.self_hash = compute_self_hash(&canonical);
         let final_body = canonical_json(cert)?;
         let cf = cf(&self.rocksdb, &self.cf_train_certs_name)?;
@@ -96,11 +96,12 @@ impl TrainCertWriter {
             })?;
         if readback != final_body.as_bytes() {
             return Err(TrainerError::new(
-                crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                TrainerErrorCode::MejepaTrainCertChainBroken,
                 format!("training cert readback bytes differ for step {}", cert.step),
             )
             .with_step(cert.step));
         }
+        verify_readback_self_hash(cert.step, &readback)?;
         self.last_self_hash = cert.self_hash.clone();
         self.cert_count_since_fsync += 1;
         if self.cert_count_since_fsync >= FSYNC_INTERVAL {
@@ -113,4 +114,29 @@ impl TrainCertWriter {
     pub fn last_self_hash(&self) -> &str {
         &self.last_self_hash
     }
+}
+
+fn stable_body_canonical_json(cert: &TrainingCertificate) -> Result<String, TrainerError> {
+    let body = body_canonical_json(cert)?;
+    let roundtripped: TrainingCertificate = serde_json::from_str(&body)?;
+    body_canonical_json(&roundtripped)
+}
+
+fn verify_readback_self_hash(step: u64, readback: &[u8]) -> Result<(), TrainerError> {
+    let stored: TrainingCertificate = serde_json::from_slice(readback)?;
+    let body = body_canonical_json(&stored)?;
+    let expected = compute_self_hash(&body);
+    if stored.self_hash != expected {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainCertChainBroken,
+            format!("training cert readback self_hash mismatch for step {step}"),
+        )
+        .with_step(step)
+        .with_context(serde_json::json!({
+            "expected": expected,
+            "observed": stored.self_hash,
+            "remediation": "certificate writer must hash the same canonical body produced by readback deserialization"
+        })));
+    }
+    Ok(())
 }

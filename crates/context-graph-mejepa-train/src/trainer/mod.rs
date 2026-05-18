@@ -374,6 +374,24 @@ impl Trainer {
         })
     }
 
+    pub fn run_full_training_with_inverse_head(
+        &mut self,
+        dataset: &TrainingDataset,
+        inverse_forward: &dyn InverseMapForward,
+    ) -> Result<TrainingResult, TrainerError> {
+        let start = Instant::now();
+        for epoch in 0..self.config.epochs {
+            self.train_one_epoch_with_inverse_head(dataset, epoch, inverse_forward)?;
+        }
+        Ok(TrainingResult {
+            final_holdout_agreement: None,
+            total_walltime_seconds: start.elapsed().as_secs(),
+            total_steps: self.step,
+            total_certs: self.step,
+            best_safetensors_path: None,
+        })
+    }
+
     pub fn current_step(&self) -> u64 {
         self.step
     }

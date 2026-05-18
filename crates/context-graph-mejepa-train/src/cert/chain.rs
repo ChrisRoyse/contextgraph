@@ -16,6 +16,12 @@ pub struct ChainVerificationReport {
     pub to: u64,
     pub verified: u64,
     pub broken_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed: Option<String>,
 }
 
 pub fn body_canonical_json(cert: &TrainingCertificate) -> Result<String, TrainerError> {
@@ -100,6 +106,9 @@ pub fn verify_chain(
                 to: to_step,
                 verified,
                 broken_at: Some(step),
+                failure_reason: Some("parent_witness_hash_mismatch".to_string()),
+                expected: Some(expected_parent),
+                observed: Some(cert.parent_witness_hash),
             });
         }
         let body = body_canonical_json(&cert)?;
@@ -110,14 +119,21 @@ pub fn verify_chain(
                 to: to_step,
                 verified,
                 broken_at: Some(step),
+                failure_reason: Some("self_hash_mismatch".to_string()),
+                expected: Some(recomputed),
+                observed: Some(cert.self_hash),
             });
         }
-        if cert.merkle_root != compute_merkle_root(&cert.loss_components) {
+        let recomputed_merkle_root = compute_merkle_root(&cert.loss_components);
+        if cert.merkle_root != recomputed_merkle_root {
             return Ok(ChainVerificationReport {
                 from: from_step,
                 to: to_step,
                 verified,
                 broken_at: Some(step),
+                failure_reason: Some("merkle_root_mismatch".to_string()),
+                expected: Some(recomputed_merkle_root),
+                observed: Some(cert.merkle_root),
             });
         }
         expected_parent = cert.self_hash;
@@ -128,6 +144,9 @@ pub fn verify_chain(
         to: to_step,
         verified,
         broken_at: None,
+        failure_reason: None,
+        expected: None,
+        observed: None,
     })
 }
 
