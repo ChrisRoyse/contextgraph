@@ -29,6 +29,7 @@ fn main() -> Result<()> {
     let db_path = run_root.join("infer-rocksdb");
     let source_db_path = run_root.join("python-source-rocksdb");
     let production_fisher_db_path = run_root.join("production-fisher-rocksdb");
+    let lambda_fisher_ablation_db_path = run_root.join("lambda-fisher-ablation-rocksdb");
     let fsv_path = run_root.join("foundationality_fsv.json");
     let canonical_path = PathBuf::from(FSV_ROOT).join("foundationality_fsv.json");
     fs::create_dir_all(&run_root).context("create TASK-EK-016 FSV dir")?;
@@ -143,6 +144,15 @@ fn main() -> Result<()> {
         && production_fisher_readback.report.source_foundationality_cf
             == CF_MEJEPA_CHUNK_FOUNDATIONALITY;
 
+    let lambda_fisher_ablation = synthetic_lambda_fisher_ablation(
+        &lambda_fisher_ablation_db_path,
+        &edges,
+        &low_chunk_id,
+        started_at_unix_ms,
+    )
+    .context("run synthetic lambda_fisher ablation")?;
+    let lambda_fisher_ablation_ok = lambda_fisher_ablation.passes;
+
     let python_sources = real_python_sources();
     let python_extraction =
         extract_python_chunk_dependency_edges(&python_sources).context("extract Python edges")?;
@@ -231,6 +241,7 @@ fn main() -> Result<()> {
         && sampler_ok
         && fisher_ok
         && production_fisher_ok
+        && lambda_fisher_ablation_ok
         && compression_ok
         && source_extractor_ok
         && disconnected_rejected;
@@ -247,6 +258,7 @@ fn main() -> Result<()> {
             "fsv_path": fsv_path,
             "canonical_path": canonical_path,
             "production_fisher_db_path": production_fisher_db_path,
+            "lambda_fisher_ablation_db_path": lambda_fisher_ablation_db_path,
             "inner_llm_invoked": false
         },
         "graph": {
@@ -297,7 +309,8 @@ fn main() -> Result<()> {
                 "persisted_report_count": production_fisher_reports.len(),
                 "core_persisted_multiplier": fisher_core.fisher_multiplier,
                 "production_fisher_ok": production_fisher_ok
-            }
+            },
+            "lambda_fisher_ablation": lambda_fisher_ablation
         },
         "compression": {
             "core_aggressiveness": core_compression,
@@ -310,7 +323,8 @@ fn main() -> Result<()> {
         "checks": {
             "hierarchy_matches": hierarchy_matches,
             "sampler_ok": sampler_ok,
-            "production_fisher_ok": production_fisher_ok
+            "production_fisher_ok": production_fisher_ok,
+            "lambda_fisher_ablation_ok": lambda_fisher_ablation_ok
         }
     });
     write_json_0600(&fsv_path, &evidence).context("write TASK-EK-016 run FSV JSON")?;
@@ -335,6 +349,36 @@ struct SamplerAblationCase {
     observed_leaf_weight: f32,
     observed_bedrock_weight: f32,
     expected_bedrock_weight: f32,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LambdaFisherAblationReport {
+    lambda_values: Vec<f32>,
+    synthetic_task_a_theta_star: Vec<f32>,
+    synthetic_task_b_target: Vec<f32>,
+    ewc_lambda: f32,
+    flat_baseline_core_forgetting: f32,
+    flat_baseline_leaf_task_b_error: f32,
+    recommended_lambda_fisher: f32,
+    recommended_reason: String,
+    cases: Vec<LambdaFisherAblationCase>,
+    passes: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LambdaFisherAblationCase {
+    lambda_fisher: f32,
+    core_persisted_multiplier: f32,
+    leaf_persisted_multiplier: f32,
+    weighted_fisher_diagonal: Vec<f32>,
+    solved_theta_after_task_b: Vec<f32>,
+    core_forgetting: f32,
+    leaf_task_b_error: f32,
+    retention_gain_vs_flat: f32,
+    leaf_plasticity_regression_vs_flat: f32,
+    consumer_readback_matches: bool,
 }
 
 fn foundationality_sampler_ablation(bedrock_score: f32) -> Result<Vec<SamplerAblationCase>> {
@@ -366,6 +410,115 @@ fn foundationality_sampler_ablation(bedrock_score: f32) -> Result<Vec<SamplerAbl
         });
     }
     Ok(cases)
+}
+
+fn synthetic_lambda_fisher_ablation(
+    db_path: &Path,
+    edges: &[ChunkDependencyEdge],
+    leaf_chunk_id: &str,
+    started_at_unix_ms: i64,
+) -> Result<LambdaFisherAblationReport> {
+    let task_a_theta_star = vec![1.0_f32, 1.0_f32];
+    let task_b_target = vec![0.0_f32, 0.0_f32];
+    let base_fisher = vec![1.0_f32, 1.0_f32];
+    let ewc_lambda = 1.0_f32;
+    let flat_theta =
+        solve_quadratic_ewc(&task_a_theta_star, &task_b_target, &base_fisher, ewc_lambda);
+    let flat_baseline_core_forgetting = (flat_theta[0] - task_a_theta_star[0]).powi(2);
+    let flat_baseline_leaf_task_b_error = (flat_theta[1] - task_b_target[1]).powi(2);
+
+    let storage = HealRocksStore::open(db_path).context("open lambda_fisher ablation RocksDB")?;
+    let chunk_ids = vec!["core:contract".to_string(), leaf_chunk_id.to_string()];
+    let mut cases = Vec::new();
+    for (idx, lambda_fisher) in [0.0_f32, 0.5, 1.0, 2.0].into_iter().enumerate() {
+        let report = compute_chunk_foundationality(
+            edges,
+            started_at_unix_ms + idx as i64 + 10,
+            ChunkFoundationalityConfig {
+                lambda_fisher,
+                ..ChunkFoundationalityConfig::default()
+            },
+        )
+        .with_context(|| format!("compute lambda_fisher={lambda_fisher} foundationality"))?;
+        let db = storage.db();
+        persist_chunk_foundationality_report_sync_readback(db.as_ref(), edges, &report)
+            .with_context(|| format!("persist lambda_fisher={lambda_fisher} rows"))?;
+        let readback = consume_persisted_chunk_foundationality_fisher(
+            storage.as_ref(),
+            &chunk_ids,
+            &base_fisher,
+            report.computed_at_unix_ms as u64,
+        )
+        .with_context(|| format!("consume lambda_fisher={lambda_fisher} Fisher multipliers"))?;
+        let weighted_fisher = readback.report.weighted_diagonal.clone();
+        let solved_theta = solve_quadratic_ewc(
+            &task_a_theta_star,
+            &task_b_target,
+            &weighted_fisher,
+            ewc_lambda,
+        );
+        let core_forgetting = (solved_theta[0] - task_a_theta_star[0]).powi(2);
+        let leaf_task_b_error = (solved_theta[1] - task_b_target[1]).powi(2);
+        let retention_gain_vs_flat =
+            (flat_baseline_core_forgetting - core_forgetting) / flat_baseline_core_forgetting;
+        let leaf_plasticity_regression_vs_flat =
+            leaf_task_b_error - flat_baseline_leaf_task_b_error;
+        cases.push(LambdaFisherAblationCase {
+            lambda_fisher,
+            core_persisted_multiplier: readback.report.entries[0].fisher_multiplier,
+            leaf_persisted_multiplier: readback.report.entries[1].fisher_multiplier,
+            weighted_fisher_diagonal: weighted_fisher,
+            solved_theta_after_task_b: solved_theta,
+            core_forgetting,
+            leaf_task_b_error,
+            retention_gain_vs_flat,
+            leaf_plasticity_regression_vs_flat,
+            consumer_readback_matches: readback.readback_matches,
+        });
+    }
+    let recommended = cases
+        .iter()
+        .filter(|case| case.leaf_plasticity_regression_vs_flat <= 0.05)
+        .max_by(|left, right| {
+            left.retention_gain_vs_flat
+                .partial_cmp(&right.retention_gain_vs_flat)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .context("no bounded-plasticity lambda_fisher candidate")?;
+    let passes = cases.iter().all(|case| case.consumer_readback_matches)
+        && recommended.lambda_fisher > 0.0
+        && recommended.retention_gain_vs_flat >= 0.5
+        && recommended.leaf_plasticity_regression_vs_flat <= 0.05;
+    Ok(LambdaFisherAblationReport {
+        lambda_values: cases.iter().map(|case| case.lambda_fisher).collect(),
+        synthetic_task_a_theta_star: task_a_theta_star,
+        synthetic_task_b_target: task_b_target,
+        ewc_lambda,
+        flat_baseline_core_forgetting,
+        flat_baseline_leaf_task_b_error,
+        recommended_lambda_fisher: recommended.lambda_fisher,
+        recommended_reason:
+            "max retention gain among candidates with leaf plasticity regression <= 0.05"
+                .to_string(),
+        cases,
+        passes,
+    })
+}
+
+fn solve_quadratic_ewc(
+    theta_star: &[f32],
+    target: &[f32],
+    fisher: &[f32],
+    ewc_lambda: f32,
+) -> Vec<f32> {
+    theta_star
+        .iter()
+        .zip(target)
+        .zip(fisher)
+        .map(|((star, target), fisher)| {
+            (target + ewc_lambda * fisher * star) / (1.0 + ewc_lambda * fisher)
+        })
+        .collect()
 }
 
 fn fixture_edges() -> Vec<ChunkDependencyEdge> {
