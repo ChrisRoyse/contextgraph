@@ -192,5 +192,5 @@ Anything less is not FSV; it is a claim waiting to be verified.
 
 - `docs2/AICodingAgentSuperPrompt.md` - universal doctrine and issue protocol.
 - `CLAUDE.md` - repository-level operating rules.
-- `docs/futurebuild/00_INDEX.md` - futurebuild doc map.
-- `docs/futurebuild/13_TASK_INDEX.md` - task DAG and inheritance statement.
+- `docs/futurebuild/README.md` - current futurebuild doc map.
+- `docs/futurebuild/08_roadmap_and_open_work.md` - locally synced roadmap and current open-work summary.

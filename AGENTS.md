@@ -27,7 +27,7 @@ gh issue list --state open --label "status:in-progress" --json number,title,assi
 gh issue list --state open --label "status:blocked" --json number,title,assignees
 
 # 4. Unclaimed queue (your candidates)
-gh issue list --state open --label "source:agent" --search "no:assignee" --sort updated
+gh issue list --state open --label "source:agent" --search "no:assignee" --json number,title,labels,updatedAt
 
 # 5. Active decisions binding you (closed = locked in)
 gh issue list --state closed --label "type:decision" --limit 20
@@ -36,7 +36,7 @@ gh issue list --state closed --label "type:decision" --limit 20
 gh issue list --state closed --label "type:discovery,type:pattern" --search "<keywords>" --limit 20
 ```
 
-Then read `docs/futurebuild/02_CURRENT_STATE_HONEST.md`, `12_IMPLEMENTATION_PHASES.md`, `13_TASK_INDEX.md` for current build state.
+Then read `docs/futurebuild/README.md` for the current 8-doc map, plus `docs/futurebuild/01_overview.md`, `07_results_and_benchmarks.md`, and `08_roadmap_and_open_work.md` for current build state and open work.
 
 ---
 
@@ -71,4 +71,4 @@ Cap per issue: 1 `type:*` + 1 `priority:*` (default `priority:p2`) + 1 `status:*
 - **MCP server:** the only network surface for runtime work. No HTTP from action paths.
 - **No inner LLM.** Retired 2026-05-09. Do not reanimate without explicit operator authorization.
 
-Full detail in `CLAUDE.md` and `docs/futurebuild/00_INDEX.md`.
+Full detail in `CLAUDE.md` and `docs/futurebuild/README.md`.

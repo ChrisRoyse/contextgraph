@@ -151,7 +151,7 @@ gh issue list --repo $REPO --state open --label "status:blocked" \
 
 # 4. Unclaimed queue (priority asc, updated asc)
 gh issue list --repo $REPO --state open --label "source:agent" \
-  --search "no:assignee" --sort updated --json number,title,labels,updatedAt
+  --search "no:assignee" --json number,title,labels,updatedAt
 
 # 5. Active decisions binding you (must not contradict)
 gh issue list --repo $REPO --state closed --label "type:decision" \

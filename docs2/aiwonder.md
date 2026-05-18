@@ -214,7 +214,7 @@ Do **not** relaunch the production corpus run into parallel mode after a single 
 
 ### 4.4 Workflow for an AI agent picking this up
 
-1. **Read this doc** + `leapablememory/docs2/aiwonder-system.md` + `docs/futurebuild/00_INDEX.md`.
+1. **Read this doc** + `leapablememory/docs2/aiwonder-system.md` + `docs/futurebuild/README.md` and `docs/futurebuild/08_roadmap_and_open_work.md`.
 2. **VPN + SSH preflight** per `leapablememory/docs2/aiwonder-system.md §3`.
 3. **Check the open migration issues** in this repo with labels `area:aiwonder` + `phase:migration`. Pick the lowest-numbered unclaimed one.
 4. **Claim it per doctrine §3.4.** Do not touch leapable paths.
@@ -282,6 +282,6 @@ If the local WSL corpus run is still alive, do not kill it — the calibration b
 - **Infisical secrets guide**: `/home/cabdru/leapablememory/docs2/infisical-secrets-guide.md`
 - **ContextGraph project doctrine**: `/home/cabdru/contextgraph/CLAUDE.md`
 - **Universal coding doctrine**: `/home/cabdru/contextgraph/docs2/AICodingAgentSuperPrompt.md`
-- **Phase G roadmap**: `/home/cabdru/contextgraph/docs/futurebuild/27_PHASE_G_ROADMAP.md`
+- **Phase G roadmap / open work**: `/home/cabdru/contextgraph/docs/futurebuild/08_roadmap_and_open_work.md`
 - **Scheduler source**: `/home/cabdru/contextgraph/scripts/swebench_lite_ops/python_forward_shard_scheduler.py`
 - **Parallel-isolated patch + race bug**: commit `4cd003e1`

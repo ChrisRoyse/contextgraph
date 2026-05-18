@@ -36,10 +36,10 @@ The only outstanding gate is `prediction_oracle_correlation = 0.866667 < 0.95`; 
 
 **Post-migration storage correction (2026-05-18):** #363 supersedes the old D-drive durable-SoT rule for production Phase G work. Current production corpus, runtime, project-ingest, cache, model-output, and FSV artifacts must live on aiwonder under `/zfs/archive/contextgraph/...`; hot work must live under `/zfs/hot/contextgraph/...` or explicitly budgeted aiwonder scratch. Local `/mnt/d/contextgraph/...` is legacy/local calibration evidence unless a GitHub issue explicitly scopes a local-only smoke. #369 tracks revalidation of post-migration artifacts that still cite `/mnt/d`.
 
-**Next-up tasks** (`docs/futurebuild/13_TASK_INDEX.md` Phase E section):
+**Current work source.** GitHub Issues are the live source of truth for next work. Read the pinned `type:context` issues first, then `docs/futurebuild/README.md` for the current 8-doc map and `docs/futurebuild/08_roadmap_and_open_work.md` for the latest locally synced roadmap.
 
-- `TASK-HEAL-001..007` — Self-optimization scheduler full implementation; per-cell stratified drift; dissipation detection; Bayesian small-window drift; constellation refresh policy; `mejepa_promote_approval` MCP tool; emergency eviction validation.
-- `TASK-UTML-005..008` — Per-head Fisher / dormancy / lambda ramp / dissipation.
+- #310 is the active meta/context issue for Phase G queue ordering.
+- #227 is the active runtime-policy context issue for Python ME-JEPA data work.
 
 The historical 2026-05-12 audit trail lived at `./memory/discoveries/2026-05-12--phase-a-d-independent-audit-zero-gaps.md`. That namespace is now archived under `./memory.archive/`. Any audit-trail entries needed going forward become `type:discovery` GitHub issues per the doctrine §3.
 
@@ -171,7 +171,7 @@ CI lint `scripts/ci/check_no_c_drive_paths.sh` enforces no C-drive paths in code
 ## 9. Per-turn protocol (project overlay on doctrine §12)
 
 1. **READ** (doctrine §3.3 + §12.1) — Run the six issue queries to see pinned context / in-progress / blocked / unclaimed agent queue / active decisions / discoveries touching your task area. Skim `AGENTS.md` and this file.
-2. **Read phase docs.** `docs/futurebuild/{00_INDEX, 02_CURRENT_STATE_HONEST, 12_IMPLEMENTATION_PHASES, 13_TASK_INDEX}.md`.
+2. **Read current futurebuild docs.** `docs/futurebuild/README.md` maps the current 8-doc suite; read `01_overview.md`, `07_results_and_benchmarks.md`, and `08_roadmap_and_open_work.md` for current state, proof history, and open work.
 3. **Check GitHub state** — `gh issue list --state open --label "status:in-progress"` (avoid these), `--label "source:agent" --search "no:assignee"` (your candidate queue).
 4. **Pick** the highest-priority incomplete deliverable. Or follow operator direction.
 5. **Claim** the issue (if existing) per doctrine §3.4: atomic `gh issue edit` assigning self + flipping `status:needs-triage` → `status:in-progress` + CLAIM comment listing files-touched and ETA.
@@ -311,7 +311,7 @@ All independent tool calls in a single response MUST be made in one message. Bat
 
 - **Doctrine (master):** [`docs2/AICodingAgentSuperPrompt.md`](docs2/AICodingAgentSuperPrompt.md)
 - **Project pointers:** [`AGENTS.md`](AGENTS.md)
-- **Futurebuild plan:** [`docs/futurebuild/00_INDEX.md`](docs/futurebuild/00_INDEX.md)
+- **Futurebuild plan:** [`docs/futurebuild/README.md`](docs/futurebuild/README.md)
 - **FSV contract:** [`docs/futurebuild/specs/FSV-PROTOCOL.md`](docs/futurebuild/specs/FSV-PROTOCOL.md)
 - **14-axis hardening deep-dive:** [`docs2/hardeningprompt.md`](docs2/hardeningprompt.md)
 - **Per-tick prompt:** [`.claude/loop.md`](.claude/loop.md)

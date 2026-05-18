@@ -2,7 +2,7 @@
 
 **Last refreshed:** 2026-05-18.
 
-Source: `gh issue list --state open` (65 open issues after closing #369), recent `type:decision` closes, git log, GitHub issue comments, the 27-roadmap legacy doc.
+Source: `gh issue list --state open` (65 open issues after closing #369), recent `type:decision` closes, git log, GitHub issue comments, and archived roadmap history.
 
 ---
 
@@ -189,13 +189,13 @@ By priority:
 | #149 / TASK-PY-G-018 | SWE-bench Verified subset — separate dataset; ship gate uses Lite 300×8 (priority dropped p2→p3 2026-05-15) |
 | #150 / TASK-PY-G-019 | Python sample-efficiency analysis (post-ship-gate) |
 | #354–#357 | TASK-EK-018 v2 stretch (NAS embedder from scratch / cross-library proposals / self-rewriting absence priors / status reallocation extension) |
-| Non-Python ship-gate cells (Rust/JS/TS/Go/Java/C/Cpp/CSharp/Ruby/Php) | Active execution is Python-first (`CLAUDE.md §6.3`); non-Python deferred until Python truth system is green (`27_phase_g_roadmap` legacy doc) |
+| Non-Python ship-gate cells (Rust/JS/TS/Go/Java/C/Cpp/CSharp/Ruby/Php) | Active execution is Python-first (`CLAUDE.md §6.3`); non-Python deferred until Python truth system is green (archived roadmap history) |
 
 ---
 
 ## 9. Post-ship roadmap (Phase J — only relevant after `≥ 0.95 × 4 windows` closes)
 
-From legacy 31_COMPLETE_ROADMAP doc (now archived) + open `type:architecture` p3 issues:
+From archived post-ship roadmap history + open `type:architecture` p3 issues:
 
 - Non-Python language activation (one language at a time; each language re-engages the four-window stability cycle on its own corpus rows).
 - Future modalities (`ME-JEPA-Voice`, `ME-JEPA-Image`) — template was 25_FUTURE_DOMAINS_MEJEPA_X in the archived suite; methodology to be revisited in a new GitHub `type:context` issue when ship gate green.
@@ -211,11 +211,11 @@ From legacy 31_COMPLETE_ROADMAP doc (now archived) + open `type:architecture` p3
    gh issue list --state open --label "type:context" --json number,title,body
    gh issue list --state open --label "status:in-progress" --json number,title,assignees
    gh issue list --state open --label "status:blocked" --json number,title
-   gh issue list --state open --label "source:agent" --search "no:assignee" --sort updated
+   gh issue list --state open --label "source:agent" --search "no:assignee" --json number,title,labels,updatedAt
    gh issue list --state closed --label "type:decision" --limit 20
    gh issue list --state closed --label "type:discovery,type:pattern" --search "<kw>" --limit 20
    ```
-2. Read `02_current_state` equivalent → `01_overview.md §1-2` + `07_results_and_benchmarks.md §1`.
+2. Read `README.md` for the current doc map, then `01_overview.md §1-2`, `07_results_and_benchmarks.md §1`, and this roadmap.
 3. Find the highest-priority open issue you can usefully unblock that does NOT have an in-progress assignee.
 4. CLAIM (assign self + flip `status:needs-triage` → `status:in-progress` + post CLAIM comment with files-you-will-touch + ETA).
 5. Audit-the-task before writing code (`06_operations_and_fsv.md §1.6`).
