@@ -1209,6 +1209,8 @@ dependencies = [
  "hex",
  "rocksdb",
  "rusqlite",
+ "rustpython-ruff_python_ast",
+ "rustpython-ruff_python_parser",
  "serde",
  "serde_json",
  "sha2",

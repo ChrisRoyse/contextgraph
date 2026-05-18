@@ -2,6 +2,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use context_graph_solver::{CsrMatrix, ForwardPushConfig, ForwardPushSolver, MatrixKind};
 use rocksdb::{IteratorMode, WriteOptions, DB};
+use ruff_python_ast::{
+    Arguments, Comprehension, ElifElseClause, ExceptHandler, Expr, ExprContext, ModModule,
+    Parameters, Stmt,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -10,6 +14,7 @@ use crate::error::MejepaInferError;
 
 pub const CHUNK_FOUNDATIONALITY_SCHEMA_VERSION: u32 = 1;
 pub const DEFAULT_FOUNDATIONALITY_LAMBDA_FISHER: f32 = 1.0;
+const MAX_PYTHON_DEPENDENCY_SOURCE_BYTES: usize = 5_000_000;
 pub const MEJEPA_FOUNDATIONALITY_GRAPH_DISCONNECTED: &str =
     "MEJEPA_FOUNDATIONALITY_GRAPH_DISCONNECTED";
 pub const MEJEPA_FOUNDATIONALITY_SATURATED: &str = "MEJEPA_FOUNDATIONALITY_SATURATED";
@@ -49,6 +54,78 @@ pub struct ChunkDependencyEdge {
     pub edge_kind: String,
     pub weight: f64,
     pub evidence_ref: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PythonChunkSource {
+    pub chunk_id: String,
+    pub module: String,
+    pub path: String,
+    pub source: String,
+}
+
+impl PythonChunkSource {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_single_line("python_chunk_source.chunk_id", &self.chunk_id, 512)?;
+        validate_single_line("python_chunk_source.module", &self.module, 256)?;
+        validate_single_line("python_chunk_source.path", &self.path, 512)?;
+        if self.source.is_empty() || self.source.len() > MAX_PYTHON_DEPENDENCY_SOURCE_BYTES {
+            return invalid(
+                "python_chunk_source.source",
+                format!(
+                    "source must be non-empty and <= {MAX_PYTHON_DEPENDENCY_SOURCE_BYTES} bytes"
+                ),
+            );
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PythonChunkDependencyExtraction {
+    pub schema_version: u32,
+    pub analyzer: String,
+    pub source_count: usize,
+    pub edge_count: usize,
+    pub edge_kind_counts: BTreeMap<String, usize>,
+    pub edges: Vec<ChunkDependencyEdge>,
+}
+
+impl PythonChunkDependencyExtraction {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        if self.schema_version != CHUNK_FOUNDATIONALITY_SCHEMA_VERSION {
+            return invalid(
+                "python_chunk_dependency_extraction.schema_version",
+                format!(
+                    "expected {CHUNK_FOUNDATIONALITY_SCHEMA_VERSION}, got {}",
+                    self.schema_version
+                ),
+            );
+        }
+        validate_single_line(
+            "python_chunk_dependency_extraction.analyzer",
+            &self.analyzer,
+            128,
+        )?;
+        if self.source_count == 0 {
+            return invalid(
+                "python_chunk_dependency_extraction.source_count",
+                "at least one Python source is required",
+            );
+        }
+        if self.edge_count != self.edges.len() {
+            return invalid(
+                "python_chunk_dependency_extraction.edge_count",
+                "edge_count must equal edges length",
+            );
+        }
+        for edge in &self.edges {
+            edge.validate()?;
+        }
+        Ok(())
+    }
 }
 
 impl ChunkDependencyEdge {
@@ -99,6 +176,53 @@ impl ChunkDependencyEdge {
         }
         Ok(())
     }
+}
+
+pub fn extract_python_chunk_dependency_edges(
+    sources: &[PythonChunkSource],
+) -> Result<PythonChunkDependencyExtraction, MejepaInferError> {
+    if sources.is_empty() {
+        return invalid(
+            "python_chunk_dependency_sources",
+            "at least one Python source is required",
+        );
+    }
+    let mut index = PythonSymbolIndex::default();
+    for source in sources {
+        source.validate()?;
+        index.add_module(source);
+        let module = parse_python_module(source)?;
+        collect_python_definitions(source, &module.body, None, &mut index);
+    }
+
+    let mut builder = PythonDependencyEdgeBuilder::default();
+    for source in sources {
+        let module = parse_python_module(source)?;
+        collect_python_dependency_edges(
+            source,
+            &module.body,
+            &source.chunk_id,
+            None,
+            &index,
+            &mut builder,
+        );
+    }
+
+    let edges = builder.into_edges();
+    let mut edge_kind_counts = BTreeMap::new();
+    for edge in &edges {
+        *edge_kind_counts.entry(edge.edge_kind.clone()).or_insert(0) += 1;
+    }
+    let extraction = PythonChunkDependencyExtraction {
+        schema_version: CHUNK_FOUNDATIONALITY_SCHEMA_VERSION,
+        analyzer: "python_ruff_chunk_dependency_v1".to_string(),
+        source_count: sources.len(),
+        edge_count: edges.len(),
+        edge_kind_counts,
+        edges,
+    };
+    extraction.validate()?;
+    Ok(extraction)
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -550,6 +674,1448 @@ pub fn compression_aggressiveness_from_foundationality(
     Ok((1.0 - 0.75 * foundationality_score).clamp(0.25, 1.0))
 }
 
+#[derive(Default)]
+struct PythonSymbolIndex {
+    modules: BTreeMap<String, String>,
+    qualified_symbols: BTreeMap<String, String>,
+    simple_symbols: BTreeMap<String, BTreeSet<String>>,
+    qualified_variables: BTreeMap<String, String>,
+    simple_variables: BTreeMap<String, BTreeSet<String>>,
+}
+
+impl PythonSymbolIndex {
+    fn add_module(&mut self, source: &PythonChunkSource) {
+        self.modules
+            .insert(source.module.clone(), source.chunk_id.clone());
+    }
+
+    fn add_symbol(&mut self, source: &PythonChunkSource, qualname: &str) {
+        let chunk_id = python_symbol_chunk_id(source, qualname);
+        self.qualified_symbols
+            .insert(format!("{}.{}", source.module, qualname), chunk_id.clone());
+        self.qualified_symbols
+            .entry(qualname.to_string())
+            .or_insert_with(|| chunk_id.clone());
+        let simple = qualname.rsplit('.').next().unwrap_or(qualname);
+        self.simple_symbols
+            .entry(simple.to_string())
+            .or_default()
+            .insert(chunk_id);
+    }
+
+    fn add_variable(&mut self, source: &PythonChunkSource, name: &str) {
+        let chunk_id = python_variable_chunk_id(source, name);
+        self.qualified_variables
+            .insert(format!("{}.{}", source.module, name), chunk_id.clone());
+        self.qualified_variables
+            .entry(name.to_string())
+            .or_insert_with(|| chunk_id.clone());
+        self.simple_variables
+            .entry(name.to_string())
+            .or_default()
+            .insert(chunk_id);
+    }
+
+    fn resolve_module(&self, module: &str) -> Option<String> {
+        if let Some(chunk_id) = self.modules.get(module) {
+            return Some(chunk_id.clone());
+        }
+        let suffix = format!(".{module}");
+        unique_suffix_match(&self.modules, &suffix)
+    }
+
+    fn resolve_symbol(&self, current_module: &str, target: &str) -> Option<String> {
+        let target = target.trim();
+        if target.is_empty() {
+            return None;
+        }
+        if let Some(chunk_id) = self.qualified_symbols.get(target) {
+            return Some(chunk_id.clone());
+        }
+        let local = format!("{current_module}.{target}");
+        if let Some(chunk_id) = self.qualified_symbols.get(&local) {
+            return Some(chunk_id.clone());
+        }
+        if target.contains('.') {
+            let suffix = format!(".{target}");
+            if let Some(chunk_id) = unique_suffix_match(&self.qualified_symbols, &suffix) {
+                return Some(chunk_id);
+            }
+        }
+        let simple = target.rsplit('.').next().unwrap_or(target);
+        self.simple_symbols.get(simple).and_then(unique_set_value)
+    }
+
+    fn resolve_variable(&self, current_module: &str, target: &str) -> Option<String> {
+        let target = target.trim();
+        if target.is_empty() {
+            return None;
+        }
+        if let Some(chunk_id) = self.qualified_variables.get(target) {
+            return Some(chunk_id.clone());
+        }
+        let local = format!("{current_module}.{target}");
+        if let Some(chunk_id) = self.qualified_variables.get(&local) {
+            return Some(chunk_id.clone());
+        }
+        if target.contains('.') {
+            let suffix = format!(".{target}");
+            if let Some(chunk_id) = unique_suffix_match(&self.qualified_variables, &suffix) {
+                return Some(chunk_id);
+            }
+        }
+        let simple = target.rsplit('.').next().unwrap_or(target);
+        self.simple_variables.get(simple).and_then(unique_set_value)
+    }
+}
+
+#[derive(Default)]
+struct PythonDependencyEdgeBuilder {
+    edges: BTreeMap<(String, String, String), ChunkDependencyEdge>,
+}
+
+impl PythonDependencyEdgeBuilder {
+    fn add(
+        &mut self,
+        source: &PythonChunkSource,
+        from_chunk_id: &str,
+        to_chunk_id: &str,
+        edge_kind: &str,
+        weight: f64,
+        detail: &str,
+    ) {
+        if from_chunk_id.is_empty() || to_chunk_id.is_empty() {
+            return;
+        }
+        let key = (
+            from_chunk_id.to_string(),
+            to_chunk_id.to_string(),
+            edge_kind.to_string(),
+        );
+        if let Some(existing) = self.edges.get_mut(&key) {
+            existing.weight += weight;
+            return;
+        }
+        let evidence_ref = format!(
+            "python:{}:{}:{}",
+            sanitize_evidence_fragment(&source.path),
+            edge_kind,
+            sanitize_evidence_fragment(detail)
+        );
+        self.edges.insert(
+            key,
+            ChunkDependencyEdge::new(
+                from_chunk_id.to_string(),
+                to_chunk_id.to_string(),
+                edge_kind.to_string(),
+                weight,
+                evidence_ref,
+            ),
+        );
+    }
+
+    fn into_edges(self) -> Vec<ChunkDependencyEdge> {
+        self.edges.into_values().collect()
+    }
+}
+
+fn parse_python_module(source: &PythonChunkSource) -> Result<ModModule, MejepaInferError> {
+    ruff_python_parser::parse_module(&source.source)
+        .map(|parsed| parsed.into_syntax())
+        .map_err(|err| MejepaInferError::InvalidInput {
+            field: "python_chunk_source.source".to_string(),
+            detail: format!(
+                "ruff-python-parser rejected {} (module {}): {err}",
+                source.path, source.module
+            ),
+        })
+}
+
+fn collect_python_definitions(
+    source: &PythonChunkSource,
+    suite: &[Stmt],
+    parent_qualname: Option<&str>,
+    index: &mut PythonSymbolIndex,
+) {
+    for stmt in suite {
+        match stmt {
+            Stmt::FunctionDef(function) => {
+                let qualname = nested_qualname(parent_qualname, function.name.as_str());
+                index.add_symbol(source, &qualname);
+                collect_python_definitions(source, &function.body, Some(&qualname), index);
+            }
+            Stmt::ClassDef(class_def) => {
+                let qualname = nested_qualname(parent_qualname, class_def.name.as_str());
+                index.add_symbol(source, &qualname);
+                collect_python_definitions(source, &class_def.body, Some(&qualname), index);
+            }
+            Stmt::Assign(assign) if parent_qualname.is_none() => {
+                let mut names = BTreeSet::new();
+                for target in &assign.targets {
+                    collect_python_target_names(target, &mut names);
+                }
+                for name in names {
+                    index.add_variable(source, &name);
+                }
+            }
+            Stmt::AnnAssign(ann_assign) if parent_qualname.is_none() => {
+                let mut names = BTreeSet::new();
+                collect_python_target_names(&ann_assign.target, &mut names);
+                for name in names {
+                    index.add_variable(source, &name);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_python_dependency_edges(
+    source: &PythonChunkSource,
+    suite: &[Stmt],
+    current_chunk_id: &str,
+    current_qualname: Option<&str>,
+    index: &PythonSymbolIndex,
+    builder: &mut PythonDependencyEdgeBuilder,
+) {
+    for stmt in suite {
+        collect_python_stmt_edges(
+            source,
+            stmt,
+            current_chunk_id,
+            current_qualname,
+            index,
+            builder,
+        );
+    }
+}
+
+fn collect_python_stmt_edges(
+    source: &PythonChunkSource,
+    stmt: &Stmt,
+    current_chunk_id: &str,
+    current_qualname: Option<&str>,
+    index: &PythonSymbolIndex,
+    builder: &mut PythonDependencyEdgeBuilder,
+) {
+    match stmt {
+        Stmt::FunctionDef(function) => {
+            let qualname = nested_qualname(current_qualname, function.name.as_str());
+            let function_chunk_id = python_symbol_chunk_id(source, &qualname);
+            collect_python_parameters_type_edges(
+                source,
+                &function.parameters,
+                &function_chunk_id,
+                index,
+                builder,
+            );
+            if let Some(returns) = &function.returns {
+                collect_python_annotation_edges(
+                    source,
+                    returns,
+                    &function_chunk_id,
+                    index,
+                    builder,
+                );
+            }
+            for decorator in &function.decorator_list {
+                collect_python_expr_edges(
+                    source,
+                    &decorator.expression,
+                    &function_chunk_id,
+                    Some(&qualname),
+                    index,
+                    builder,
+                );
+            }
+            collect_python_dependency_edges(
+                source,
+                &function.body,
+                &function_chunk_id,
+                Some(&qualname),
+                index,
+                builder,
+            );
+        }
+        Stmt::ClassDef(class_def) => {
+            let qualname = nested_qualname(current_qualname, class_def.name.as_str());
+            let class_chunk_id = python_symbol_chunk_id(source, &qualname);
+            for decorator in &class_def.decorator_list {
+                collect_python_expr_edges(
+                    source,
+                    &decorator.expression,
+                    &class_chunk_id,
+                    Some(&qualname),
+                    index,
+                    builder,
+                );
+            }
+            if let Some(arguments) = &class_def.arguments {
+                for base in &arguments.args {
+                    if let Some(target) = python_expr_reference_name(base) {
+                        if let Some(target_chunk_id) = index.resolve_symbol(&source.module, &target)
+                        {
+                            builder.add(
+                                source,
+                                &class_chunk_id,
+                                &target_chunk_id,
+                                "inheritance",
+                                1.2,
+                                &format!("{qualname}->{target}"),
+                            );
+                        }
+                    }
+                    collect_python_annotation_edges(source, base, &class_chunk_id, index, builder);
+                }
+                collect_python_arguments_edges(
+                    source,
+                    arguments,
+                    &class_chunk_id,
+                    Some(&qualname),
+                    index,
+                    builder,
+                );
+            }
+            collect_python_dependency_edges(
+                source,
+                &class_def.body,
+                &class_chunk_id,
+                Some(&qualname),
+                index,
+                builder,
+            );
+        }
+        Stmt::Import(stmt_import) => {
+            for alias in &stmt_import.names {
+                let imported = alias.name.as_str();
+                if let Some(target_chunk_id) = index.resolve_module(imported) {
+                    builder.add(
+                        source,
+                        current_chunk_id,
+                        &target_chunk_id,
+                        "import",
+                        0.8,
+                        imported,
+                    );
+                }
+            }
+        }
+        Stmt::ImportFrom(stmt_import_from) => {
+            let imported_module = resolve_python_import_from_module(
+                &source.module,
+                stmt_import_from
+                    .module
+                    .as_ref()
+                    .map(|module| module.as_str()),
+                stmt_import_from.level,
+            );
+            if let Some(module_name) = imported_module.as_deref() {
+                if let Some(target_chunk_id) = index.resolve_module(module_name) {
+                    builder.add(
+                        source,
+                        current_chunk_id,
+                        &target_chunk_id,
+                        "import",
+                        0.8,
+                        module_name,
+                    );
+                }
+                for alias in &stmt_import_from.names {
+                    let alias_name = alias.name.as_str();
+                    if alias_name == "*" {
+                        continue;
+                    }
+                    let target = format!("{module_name}.{alias_name}");
+                    if let Some(target_chunk_id) = index.resolve_symbol(&source.module, &target) {
+                        builder.add(
+                            source,
+                            current_chunk_id,
+                            &target_chunk_id,
+                            "import",
+                            0.8,
+                            &target,
+                        );
+                    }
+                }
+            }
+        }
+        Stmt::Return(stmt_return) => {
+            if let Some(value) = &stmt_return.value {
+                collect_python_expr_edges(
+                    source,
+                    value,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Stmt::Delete(stmt_delete) => {
+            for target in &stmt_delete.targets {
+                collect_python_expr_edges(
+                    source,
+                    target,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Stmt::TypeAlias(type_alias) => {
+            collect_python_annotation_edges(
+                source,
+                &type_alias.value,
+                current_chunk_id,
+                index,
+                builder,
+            );
+        }
+        Stmt::Assign(assign) => {
+            collect_python_expr_edges(
+                source,
+                &assign.value,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            for target in &assign.targets {
+                collect_python_expr_edges(
+                    source,
+                    target,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Stmt::AugAssign(aug_assign) => {
+            collect_python_expr_edges(
+                source,
+                &aug_assign.target,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_expr_edges(
+                source,
+                &aug_assign.value,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Stmt::AnnAssign(ann_assign) => {
+            collect_python_annotation_edges(
+                source,
+                &ann_assign.annotation,
+                current_chunk_id,
+                index,
+                builder,
+            );
+            if let Some(value) = &ann_assign.value {
+                collect_python_expr_edges(
+                    source,
+                    value,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+            collect_python_expr_edges(
+                source,
+                &ann_assign.target,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Stmt::For(stmt_for) => {
+            collect_python_expr_edges(
+                source,
+                &stmt_for.iter,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_expr_edges(
+                source,
+                &stmt_for.target,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_dependency_edges(
+                source,
+                &stmt_for.body,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_dependency_edges(
+                source,
+                &stmt_for.orelse,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Stmt::While(stmt_while) => {
+            collect_python_expr_edges(
+                source,
+                &stmt_while.test,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_dependency_edges(
+                source,
+                &stmt_while.body,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_dependency_edges(
+                source,
+                &stmt_while.orelse,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Stmt::If(stmt_if) => {
+            collect_python_expr_edges(
+                source,
+                &stmt_if.test,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_dependency_edges(
+                source,
+                &stmt_if.body,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            for clause in &stmt_if.elif_else_clauses {
+                collect_python_elif_else_edges(
+                    source,
+                    clause,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Stmt::With(stmt_with) => {
+            for item in &stmt_with.items {
+                collect_python_expr_edges(
+                    source,
+                    &item.context_expr,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+                if let Some(optional_vars) = &item.optional_vars {
+                    collect_python_expr_edges(
+                        source,
+                        optional_vars,
+                        current_chunk_id,
+                        current_qualname,
+                        index,
+                        builder,
+                    );
+                }
+            }
+            collect_python_dependency_edges(
+                source,
+                &stmt_with.body,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Stmt::Match(stmt_match) => {
+            collect_python_expr_edges(
+                source,
+                &stmt_match.subject,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            for case in &stmt_match.cases {
+                if let Some(guard) = &case.guard {
+                    collect_python_expr_edges(
+                        source,
+                        guard,
+                        current_chunk_id,
+                        current_qualname,
+                        index,
+                        builder,
+                    );
+                }
+                collect_python_dependency_edges(
+                    source,
+                    &case.body,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Stmt::Raise(stmt_raise) => {
+            if let Some(exc) = &stmt_raise.exc {
+                collect_python_expr_edges(
+                    source,
+                    exc,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+            if let Some(cause) = &stmt_raise.cause {
+                collect_python_expr_edges(
+                    source,
+                    cause,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Stmt::Try(stmt_try) => {
+            collect_python_dependency_edges(
+                source,
+                &stmt_try.body,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            for handler in &stmt_try.handlers {
+                let ExceptHandler::ExceptHandler(handler) = handler;
+                if let Some(type_) = &handler.type_ {
+                    collect_python_expr_edges(
+                        source,
+                        type_,
+                        current_chunk_id,
+                        current_qualname,
+                        index,
+                        builder,
+                    );
+                    collect_python_annotation_edges(
+                        source,
+                        type_,
+                        current_chunk_id,
+                        index,
+                        builder,
+                    );
+                }
+                collect_python_dependency_edges(
+                    source,
+                    &handler.body,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+            collect_python_dependency_edges(
+                source,
+                &stmt_try.orelse,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_dependency_edges(
+                source,
+                &stmt_try.finalbody,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Stmt::Assert(stmt_assert) => {
+            collect_python_expr_edges(
+                source,
+                &stmt_assert.test,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            if let Some(msg) = &stmt_assert.msg {
+                collect_python_expr_edges(
+                    source,
+                    msg,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Stmt::Expr(stmt_expr) => collect_python_expr_edges(
+            source,
+            &stmt_expr.value,
+            current_chunk_id,
+            current_qualname,
+            index,
+            builder,
+        ),
+        Stmt::Global(_)
+        | Stmt::Nonlocal(_)
+        | Stmt::Pass(_)
+        | Stmt::Break(_)
+        | Stmt::Continue(_)
+        | Stmt::IpyEscapeCommand(_) => {}
+    }
+}
+
+fn collect_python_expr_edges(
+    source: &PythonChunkSource,
+    expr: &Expr,
+    current_chunk_id: &str,
+    current_qualname: Option<&str>,
+    index: &PythonSymbolIndex,
+    builder: &mut PythonDependencyEdgeBuilder,
+) {
+    match expr {
+        Expr::BoolOp(bool_op) => {
+            for value in &bool_op.values {
+                collect_python_expr_edges(
+                    source,
+                    value,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Expr::Named(named) => {
+            collect_python_expr_edges(
+                source,
+                &named.value,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_expr_edges(
+                source,
+                &named.target,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Expr::BinOp(bin_op) => {
+            collect_python_expr_edges(
+                source,
+                &bin_op.left,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_expr_edges(
+                source,
+                &bin_op.right,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Expr::UnaryOp(unary_op) => collect_python_expr_edges(
+            source,
+            &unary_op.operand,
+            current_chunk_id,
+            current_qualname,
+            index,
+            builder,
+        ),
+        Expr::Lambda(lambda) => {
+            if let Some(parameters) = &lambda.parameters {
+                collect_python_parameters_type_edges(
+                    source,
+                    parameters,
+                    current_chunk_id,
+                    index,
+                    builder,
+                );
+            }
+            collect_python_expr_edges(
+                source,
+                &lambda.body,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Expr::If(expr_if) => {
+            collect_python_expr_edges(
+                source,
+                &expr_if.test,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_expr_edges(
+                source,
+                &expr_if.body,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_expr_edges(
+                source,
+                &expr_if.orelse,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Expr::Dict(dict) => {
+            for item in &dict.items {
+                if let Some(key) = &item.key {
+                    collect_python_expr_edges(
+                        source,
+                        key,
+                        current_chunk_id,
+                        current_qualname,
+                        index,
+                        builder,
+                    );
+                }
+                collect_python_expr_edges(
+                    source,
+                    &item.value,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Expr::Set(set) => {
+            for elt in &set.elts {
+                collect_python_expr_edges(
+                    source,
+                    elt,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Expr::ListComp(comp) => {
+            collect_python_comprehension_edges(
+                source,
+                &comp.generators,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_expr_edges(
+                source,
+                &comp.elt,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Expr::SetComp(comp) => {
+            collect_python_comprehension_edges(
+                source,
+                &comp.generators,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_expr_edges(
+                source,
+                &comp.elt,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Expr::DictComp(comp) => {
+            collect_python_comprehension_edges(
+                source,
+                &comp.generators,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_expr_edges(
+                source,
+                &comp.key,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_expr_edges(
+                source,
+                &comp.value,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Expr::Generator(generator) => {
+            collect_python_comprehension_edges(
+                source,
+                &generator.generators,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_expr_edges(
+                source,
+                &generator.elt,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Expr::Await(await_expr) => collect_python_expr_edges(
+            source,
+            &await_expr.value,
+            current_chunk_id,
+            current_qualname,
+            index,
+            builder,
+        ),
+        Expr::Yield(yield_expr) => {
+            if let Some(value) = &yield_expr.value {
+                collect_python_expr_edges(
+                    source,
+                    value,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Expr::YieldFrom(yield_from) => collect_python_expr_edges(
+            source,
+            &yield_from.value,
+            current_chunk_id,
+            current_qualname,
+            index,
+            builder,
+        ),
+        Expr::Compare(compare) => {
+            collect_python_expr_edges(
+                source,
+                &compare.left,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            for comparator in &compare.comparators {
+                collect_python_expr_edges(
+                    source,
+                    comparator,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Expr::Call(call) => {
+            if let Some(target) = python_expr_reference_name(&call.func) {
+                if let Some(target_chunk_id) = index.resolve_symbol(&source.module, &target) {
+                    builder.add(
+                        source,
+                        current_chunk_id,
+                        &target_chunk_id,
+                        "call",
+                        1.0,
+                        &format!("{}->{target}", current_qualname.unwrap_or("<module>")),
+                    );
+                    if python_context_is_test(source, current_qualname) {
+                        builder.add(
+                            source,
+                            current_chunk_id,
+                            &target_chunk_id,
+                            "test_verifies",
+                            1.1,
+                            &format!("{}->{target}", current_qualname.unwrap_or("<module>")),
+                        );
+                    }
+                }
+            }
+            collect_python_expr_edges(
+                source,
+                &call.func,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_arguments_edges(
+                source,
+                &call.arguments,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Expr::Attribute(attribute) => {
+            if matches!(attribute.ctx, ExprContext::Load) {
+                let target = python_expr_reference_name(expr)
+                    .unwrap_or_else(|| attribute.attr.as_str().to_string());
+                if let Some(target_chunk_id) = index.resolve_variable(&source.module, &target) {
+                    builder.add(
+                        source,
+                        current_chunk_id,
+                        &target_chunk_id,
+                        "data_flow",
+                        0.6,
+                        &format!("read:{target}"),
+                    );
+                }
+            }
+            collect_python_expr_edges(
+                source,
+                &attribute.value,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Expr::Subscript(subscript) => {
+            collect_python_expr_edges(
+                source,
+                &subscript.value,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+            collect_python_expr_edges(
+                source,
+                &subscript.slice,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+        Expr::Starred(starred) => collect_python_expr_edges(
+            source,
+            &starred.value,
+            current_chunk_id,
+            current_qualname,
+            index,
+            builder,
+        ),
+        Expr::Name(name) => {
+            if matches!(name.ctx, ExprContext::Load) {
+                let target = name.id.as_str();
+                if let Some(target_chunk_id) = index.resolve_variable(&source.module, target) {
+                    builder.add(
+                        source,
+                        current_chunk_id,
+                        &target_chunk_id,
+                        "data_flow",
+                        0.6,
+                        &format!("read:{target}"),
+                    );
+                }
+            }
+        }
+        Expr::List(list) => {
+            for elt in &list.elts {
+                collect_python_expr_edges(
+                    source,
+                    elt,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Expr::Tuple(tuple) => {
+            for elt in &tuple.elts {
+                collect_python_expr_edges(
+                    source,
+                    elt,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Expr::Slice(slice) => {
+            if let Some(lower) = &slice.lower {
+                collect_python_expr_edges(
+                    source,
+                    lower,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+            if let Some(upper) = &slice.upper {
+                collect_python_expr_edges(
+                    source,
+                    upper,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+            if let Some(step) = &slice.step {
+                collect_python_expr_edges(
+                    source,
+                    step,
+                    current_chunk_id,
+                    current_qualname,
+                    index,
+                    builder,
+                );
+            }
+        }
+        Expr::FString(_)
+        | Expr::TString(_)
+        | Expr::StringLiteral(_)
+        | Expr::BytesLiteral(_)
+        | Expr::NumberLiteral(_)
+        | Expr::BooleanLiteral(_)
+        | Expr::NoneLiteral(_)
+        | Expr::EllipsisLiteral(_)
+        | Expr::IpyEscapeCommand(_) => {}
+    }
+}
+
+fn collect_python_arguments_edges(
+    source: &PythonChunkSource,
+    arguments: &Arguments,
+    current_chunk_id: &str,
+    current_qualname: Option<&str>,
+    index: &PythonSymbolIndex,
+    builder: &mut PythonDependencyEdgeBuilder,
+) {
+    for arg in &arguments.args {
+        collect_python_expr_edges(
+            source,
+            arg,
+            current_chunk_id,
+            current_qualname,
+            index,
+            builder,
+        );
+    }
+    for keyword in &arguments.keywords {
+        collect_python_expr_edges(
+            source,
+            &keyword.value,
+            current_chunk_id,
+            current_qualname,
+            index,
+            builder,
+        );
+    }
+}
+
+fn collect_python_comprehension_edges(
+    source: &PythonChunkSource,
+    comprehensions: &[Comprehension],
+    current_chunk_id: &str,
+    current_qualname: Option<&str>,
+    index: &PythonSymbolIndex,
+    builder: &mut PythonDependencyEdgeBuilder,
+) {
+    for comprehension in comprehensions {
+        collect_python_expr_edges(
+            source,
+            &comprehension.iter,
+            current_chunk_id,
+            current_qualname,
+            index,
+            builder,
+        );
+        collect_python_expr_edges(
+            source,
+            &comprehension.target,
+            current_chunk_id,
+            current_qualname,
+            index,
+            builder,
+        );
+        for if_expr in &comprehension.ifs {
+            collect_python_expr_edges(
+                source,
+                if_expr,
+                current_chunk_id,
+                current_qualname,
+                index,
+                builder,
+            );
+        }
+    }
+}
+
+fn collect_python_elif_else_edges(
+    source: &PythonChunkSource,
+    clause: &ElifElseClause,
+    current_chunk_id: &str,
+    current_qualname: Option<&str>,
+    index: &PythonSymbolIndex,
+    builder: &mut PythonDependencyEdgeBuilder,
+) {
+    if let Some(test) = &clause.test {
+        collect_python_expr_edges(
+            source,
+            test,
+            current_chunk_id,
+            current_qualname,
+            index,
+            builder,
+        );
+    }
+    collect_python_dependency_edges(
+        source,
+        &clause.body,
+        current_chunk_id,
+        current_qualname,
+        index,
+        builder,
+    );
+}
+
+fn collect_python_parameters_type_edges(
+    source: &PythonChunkSource,
+    parameters: &Parameters,
+    current_chunk_id: &str,
+    index: &PythonSymbolIndex,
+    builder: &mut PythonDependencyEdgeBuilder,
+) {
+    for parameter in parameters.iter() {
+        if let Some(annotation) = parameter.annotation() {
+            collect_python_annotation_edges(source, annotation, current_chunk_id, index, builder);
+        }
+    }
+}
+
+fn collect_python_annotation_edges(
+    source: &PythonChunkSource,
+    annotation: &Expr,
+    current_chunk_id: &str,
+    index: &PythonSymbolIndex,
+    builder: &mut PythonDependencyEdgeBuilder,
+) {
+    let mut labels = BTreeSet::new();
+    collect_python_annotation_labels(annotation, &mut labels);
+    for label in labels {
+        if let Some(target_chunk_id) = index.resolve_symbol(&source.module, &label) {
+            builder.add(
+                source,
+                current_chunk_id,
+                &target_chunk_id,
+                "type",
+                0.7,
+                &format!("type:{label}"),
+            );
+        }
+    }
+}
+
+fn collect_python_annotation_labels(expr: &Expr, labels: &mut BTreeSet<String>) {
+    match expr {
+        Expr::Name(name) => {
+            labels.insert(name.id.as_str().to_string());
+        }
+        Expr::Attribute(attribute) => {
+            if let Some(label) = python_expr_reference_name(expr) {
+                labels.insert(label);
+            }
+            collect_python_annotation_labels(&attribute.value, labels);
+        }
+        Expr::Subscript(subscript) => {
+            collect_python_annotation_labels(&subscript.value, labels);
+            collect_python_annotation_labels(&subscript.slice, labels);
+        }
+        Expr::BinOp(bin_op) => {
+            collect_python_annotation_labels(&bin_op.left, labels);
+            collect_python_annotation_labels(&bin_op.right, labels);
+        }
+        Expr::Tuple(tuple) => {
+            for elt in &tuple.elts {
+                collect_python_annotation_labels(elt, labels);
+            }
+        }
+        Expr::List(list) => {
+            for elt in &list.elts {
+                collect_python_annotation_labels(elt, labels);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_python_target_names(expr: &Expr, names: &mut BTreeSet<String>) {
+    match expr {
+        Expr::Name(name) => {
+            if matches!(name.ctx, ExprContext::Store | ExprContext::Load) {
+                names.insert(name.id.as_str().to_string());
+            }
+        }
+        Expr::Tuple(tuple) => {
+            for elt in &tuple.elts {
+                collect_python_target_names(elt, names);
+            }
+        }
+        Expr::List(list) => {
+            for elt in &list.elts {
+                collect_python_target_names(elt, names);
+            }
+        }
+        Expr::Starred(starred) => collect_python_target_names(&starred.value, names),
+        _ => {}
+    }
+}
+
+fn python_expr_reference_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Name(name) => Some(name.id.as_str().to_string()),
+        Expr::Attribute(attribute) => python_expr_reference_name(&attribute.value)
+            .map(|prefix| format!("{prefix}.{}", attribute.attr.as_str()))
+            .or_else(|| Some(attribute.attr.as_str().to_string())),
+        _ => None,
+    }
+}
+
+fn python_context_is_test(source: &PythonChunkSource, current_qualname: Option<&str>) -> bool {
+    let file = source.path.rsplit('/').next().unwrap_or(&source.path);
+    file.starts_with("test_")
+        || source.path.contains("/tests/")
+        || source.path.contains("/test/")
+        || current_qualname
+            .and_then(|qualname| qualname.rsplit('.').next())
+            .is_some_and(|name| name.starts_with("test_") || name.ends_with("_test"))
+}
+
+fn resolve_python_import_from_module(
+    current_module: &str,
+    module: Option<&str>,
+    level: u32,
+) -> Option<String> {
+    if level == 0 {
+        return module.map(str::to_string);
+    }
+    let mut parts = current_module.split('.').collect::<Vec<_>>();
+    if !parts.is_empty() {
+        parts.pop();
+    }
+    for _ in 1..level {
+        parts.pop()?;
+    }
+    if let Some(module) = module {
+        if !module.is_empty() {
+            parts.extend(module.split('.').filter(|part| !part.is_empty()));
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join("."))
+}
+
+fn nested_qualname(parent_qualname: Option<&str>, name: &str) -> String {
+    parent_qualname
+        .map(|parent| format!("{parent}.{name}"))
+        .unwrap_or_else(|| name.to_string())
+}
+
+fn python_symbol_chunk_id(source: &PythonChunkSource, qualname: &str) -> String {
+    format!("{}::{qualname}", source.chunk_id)
+}
+
+fn python_variable_chunk_id(source: &PythonChunkSource, name: &str) -> String {
+    format!("{}::var:{name}", source.chunk_id)
+}
+
+fn unique_set_value(values: &BTreeSet<String>) -> Option<String> {
+    let mut iter = values.iter();
+    let first = iter.next()?;
+    iter.next().is_none().then(|| first.clone())
+}
+
+fn unique_suffix_match(values: &BTreeMap<String, String>, suffix: &str) -> Option<String> {
+    let mut matches = values
+        .iter()
+        .filter(|(key, _)| key.ends_with(suffix))
+        .map(|(_, value)| value);
+    let first = matches.next()?;
+    matches.next().is_none().then(|| first.clone())
+}
+
+fn sanitize_evidence_fragment(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| match ch {
+            '\n' | '\r' => ' ',
+            _ => ch,
+        })
+        .collect::<String>()
+        .chars()
+        .take(256)
+        .collect()
+}
+
 fn graph_nodes(edges: &[ChunkDependencyEdge]) -> Vec<String> {
     let mut nodes = BTreeSet::new();
     for edge in edges {
@@ -844,6 +2410,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn python_extractor_emits_source_derived_edge_kinds() {
+        let extraction = extract_python_chunk_dependency_edges(&python_sources()).unwrap();
+        for kind in [
+            "call",
+            "data_flow",
+            "import",
+            "inheritance",
+            "test_verifies",
+            "type",
+        ] {
+            assert!(
+                extraction.edge_kind_counts.get(kind).copied().unwrap_or(0) > 0,
+                "missing edge kind {kind}: {:?}",
+                extraction.edge_kind_counts
+            );
+        }
+        let report = compute_chunk_foundationality(
+            &extraction.edges,
+            1,
+            ChunkFoundationalityConfig::default(),
+        )
+        .unwrap();
+        assert!(report
+            .scores
+            .iter()
+            .any(|score| score.chunk_id.starts_with("pkg/core.py::")));
+    }
+
     fn fixture_edges() -> Vec<ChunkDependencyEdge> {
         vec![
             ChunkDependencyEdge::new("api:handler", "core:contract", "call", 1.0, "fixture"),
@@ -853,6 +2448,53 @@ mod tests {
             ChunkDependencyEdge::new("leaf:test_a", "api:handler", "test", 1.0, "fixture"),
             ChunkDependencyEdge::new("leaf:test_b", "worker:sync", "test", 1.0, "fixture"),
             ChunkDependencyEdge::new("core:types", "core:contract", "type", 0.5, "fixture"),
+        ]
+    }
+
+    fn python_sources() -> Vec<PythonChunkSource> {
+        vec![
+            PythonChunkSource {
+                chunk_id: "pkg/core.py".to_string(),
+                module: "pkg.core".to_string(),
+                path: "pkg/core.py".to_string(),
+                source: r#"
+BASE_LIMIT = 10
+
+class Base:
+    def validate(self, value: int) -> int:
+        return value
+
+def normalize(value: int) -> int:
+    return value + BASE_LIMIT
+"#
+                .to_string(),
+            },
+            PythonChunkSource {
+                chunk_id: "pkg/service.py".to_string(),
+                module: "pkg.service".to_string(),
+                path: "pkg/service.py".to_string(),
+                source: r#"
+from .core import BASE_LIMIT, Base, normalize
+
+class Service(Base):
+    def score(self, raw: Base) -> int:
+        adjusted = normalize(raw.validate(BASE_LIMIT))
+        return adjusted + BASE_LIMIT
+"#
+                .to_string(),
+            },
+            PythonChunkSource {
+                chunk_id: "tests/test_service.py".to_string(),
+                module: "tests.test_service".to_string(),
+                path: "tests/test_service.py".to_string(),
+                source: r#"
+from pkg.service import Service
+
+def test_score() -> None:
+    assert Service().score(2) == 12
+"#
+                .to_string(),
+            },
         ]
     }
 }

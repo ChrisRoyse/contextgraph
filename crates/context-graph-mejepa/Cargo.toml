@@ -29,6 +29,8 @@ context-graph-solver = { path = "../context-graph-solver" }
 context-graph-witness = { path = "../context-graph-witness" }
 hex = "0.4"
 rocksdb = "0.22"
+ruff_python_ast = { package = "rustpython-ruff_python_ast", version = "0.15.8" }
+ruff_python_parser = { package = "rustpython-ruff_python_parser", version = "0.15.8" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

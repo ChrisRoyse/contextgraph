@@ -5,10 +5,11 @@ use anyhow::{ensure, Context, Result};
 use context_graph_mejepa::{
     apply_foundationality_fisher_multiplier, bedrock_consistency_for_chunks,
     compression_aggressiveness_from_foundationality, compute_chunk_foundationality, count_cf,
-    current_unix_ms, open_infer_rocksdb, persist_chunk_foundationality_report_sync_readback,
-    read_all_chunk_dependency_edges, read_all_chunk_foundationality_scores,
-    read_chunk_foundationality_score, write_json_0600, ChunkDependencyEdge,
-    ChunkFoundationalityConfig, MEJEPA_FOUNDATIONALITY_GRAPH_DISCONNECTED,
+    current_unix_ms, extract_python_chunk_dependency_edges, open_infer_rocksdb,
+    persist_chunk_foundationality_report_sync_readback, read_all_chunk_dependency_edges,
+    read_all_chunk_foundationality_scores, read_chunk_foundationality_score, write_json_0600,
+    ChunkDependencyEdge, ChunkFoundationalityConfig, PythonChunkSource,
+    MEJEPA_FOUNDATIONALITY_GRAPH_DISCONNECTED,
 };
 use context_graph_mejepa_cf::{CF_MEJEPA_CHUNK_DEPENDENCY_GRAPH, CF_MEJEPA_CHUNK_FOUNDATIONALITY};
 use context_graph_mejepa_train::config::TrainingConfig;
@@ -22,6 +23,7 @@ fn main() -> Result<()> {
     let started_at_unix_ms = current_unix_ms();
     let run_root = PathBuf::from(FSV_ROOT).join(format!("run-{started_at_unix_ms}"));
     let db_path = run_root.join("infer-rocksdb");
+    let source_db_path = run_root.join("python-source-rocksdb");
     let fsv_path = run_root.join("foundationality_fsv.json");
     let canonical_path = PathBuf::from(FSV_ROOT).join("foundationality_fsv.json");
     fs::create_dir_all(&run_root).context("create TASK-EK-016 FSV dir")?;
@@ -96,6 +98,57 @@ fn main() -> Result<()> {
         compression_aggressiveness_from_foundationality(top.foundationality_score)?;
     let leaf_compression = compression_aggressiveness_from_foundationality(leaf_score)?;
 
+    let python_sources = real_python_sources();
+    let python_extraction =
+        extract_python_chunk_dependency_edges(&python_sources).context("extract Python edges")?;
+    let expected_edge_kinds = [
+        "call",
+        "data_flow",
+        "import",
+        "inheritance",
+        "test_verifies",
+        "type",
+    ];
+    let edge_kinds_ok = expected_edge_kinds.iter().all(|kind| {
+        python_extraction
+            .edge_kind_counts
+            .get(*kind)
+            .copied()
+            .unwrap_or(0)
+            > 0
+    });
+    ensure!(
+        edge_kinds_ok,
+        "Python extraction missed one or more required edge kinds"
+    );
+    let source_report = compute_chunk_foundationality(
+        &python_extraction.edges,
+        started_at_unix_ms,
+        ChunkFoundationalityConfig::default(),
+    )
+    .context("compute Python-source foundationality")?;
+    let source_db = open_infer_rocksdb(&source_db_path).context("open source-edge RocksDB")?;
+    persist_chunk_foundationality_report_sync_readback(
+        source_db.as_ref(),
+        &python_extraction.edges,
+        &source_report,
+    )
+    .context("persist Python-source foundationality report")?;
+    let source_direct_edges = read_all_chunk_dependency_edges(source_db.as_ref())?;
+    let source_direct_scores = read_all_chunk_foundationality_scores(source_db.as_ref())?;
+    drop(source_db);
+    let source_reopened = open_infer_rocksdb(&source_db_path).context("reopen source RocksDB")?;
+    let source_reopened_edges = read_all_chunk_dependency_edges(source_reopened.as_ref())?;
+    let source_reopened_scores = read_all_chunk_foundationality_scores(source_reopened.as_ref())?;
+    let source_cf_readback_ok = source_direct_edges == source_reopened_edges
+        && source_direct_scores == source_reopened_scores
+        && source_reopened_edges.len() == python_extraction.edges.len()
+        && source_reopened_scores.len() == source_report.scores.len();
+    let source_core_foundational = source_report.scores.iter().any(|score| {
+        score.chunk_id.starts_with("pkg/core.py::") && score.foundationality_score >= 0.5
+    });
+    let source_extractor_ok = edge_kinds_ok && source_cf_readback_ok && source_core_foundational;
+
     let disconnected_rejected = compute_chunk_foundationality(
         &[
             ChunkDependencyEdge::new("a", "b", "call", 1.0, "fixture:disc-a"),
@@ -133,6 +186,7 @@ fn main() -> Result<()> {
         && sampler_ok
         && fisher_ok
         && compression_ok
+        && source_extractor_ok
         && disconnected_rejected;
 
     let evidence = json!({
@@ -166,6 +220,20 @@ fn main() -> Result<()> {
             "reopened_scores": reopened_scores.len(),
             "core_direct_equals_reopen": reopened_core == direct_core,
             "cf_readback_ok": cf_readback_ok
+        },
+        "python_source_extractor": {
+            "analyzer": python_extraction.analyzer,
+            "source_count": python_extraction.source_count,
+            "edge_count": python_extraction.edge_count,
+            "edge_kind_counts": python_extraction.edge_kind_counts,
+            "source_db_path": source_db_path,
+            "source_dependency_graph_sha256": source_report.dependency_graph_sha256,
+            "source_node_count": source_report.node_count,
+            "source_score_count": source_report.scores.len(),
+            "source_top_chunk": source_report.scores.first(),
+            "source_core_foundational": source_core_foundational,
+            "source_cf_readback_ok": source_cf_readback_ok,
+            "source_extractor_ok": source_extractor_ok
         },
         "bedrock_consistency": {
             "high_report": high_report,
@@ -255,6 +323,66 @@ fn fixture_edges() -> Vec<ChunkDependencyEdge> {
         ChunkDependencyEdge::new("leaf:test_a", "api:handler", "test", 1.0, "fixture"),
         ChunkDependencyEdge::new("leaf:test_b", "worker:sync", "test", 1.0, "fixture"),
         ChunkDependencyEdge::new("core:types", "core:contract", "type", 0.5, "fixture"),
+    ]
+}
+
+fn real_python_sources() -> Vec<PythonChunkSource> {
+    vec![
+        PythonChunkSource {
+            chunk_id: "pkg/core.py".to_string(),
+            module: "pkg.core".to_string(),
+            path: "pkg/core.py".to_string(),
+            source: r#"
+BASE_LIMIT = 10
+
+class Base:
+    def validate(self, value: int) -> int:
+        return value
+
+def normalize(value: int) -> int:
+    return value + BASE_LIMIT
+"#
+            .to_string(),
+        },
+        PythonChunkSource {
+            chunk_id: "pkg/service.py".to_string(),
+            module: "pkg.service".to_string(),
+            path: "pkg/service.py".to_string(),
+            source: r#"
+from .core import BASE_LIMIT, Base, normalize
+
+class Service(Base):
+    def score(self, raw: Base) -> int:
+        adjusted = normalize(raw.validate(BASE_LIMIT))
+        return adjusted + BASE_LIMIT
+"#
+            .to_string(),
+        },
+        PythonChunkSource {
+            chunk_id: "pkg/api.py".to_string(),
+            module: "pkg.api".to_string(),
+            path: "pkg/api.py".to_string(),
+            source: r#"
+from .service import Service
+
+def handle(value: int) -> int:
+    service = Service()
+    return service.score(value)
+"#
+            .to_string(),
+        },
+        PythonChunkSource {
+            chunk_id: "tests/test_service.py".to_string(),
+            module: "tests.test_service".to_string(),
+            path: "tests/test_service.py".to_string(),
+            source: r#"
+from pkg.service import Service
+
+def test_score() -> None:
+    assert Service().score(2) == 12
+"#
+            .to_string(),
+        },
     ]
 }
 
