@@ -605,6 +605,13 @@ pub fn sampling_weight(l_step: f32, operator_override: bool, age_days: f32, age_
 }
 
 pub fn sampling_weight_checked(c: SamplingWeightComponents) -> Result<f32, UtmlError> {
+    sampling_weight_checked_with_operator_override_multiplier(c, 6.0)
+}
+
+pub fn sampling_weight_checked_with_operator_override_multiplier(
+    c: SamplingWeightComponents,
+    operator_override_multiplier: f32,
+) -> Result<f32, UtmlError> {
     validate_nonnegative("sampling.base_weight", c.base_weight)?;
     validate_unit("sampling.l_step", c.l_step)?;
     validate_nonnegative("sampling.age_days", c.age_days)?;
@@ -617,7 +624,23 @@ pub fn sampling_weight_checked(c: SamplingWeightComponents) -> Result<f32, UtmlE
     validate_nonnegative("sampling.lambda_foundationality", c.lambda_foundationality)?;
     validate_unit("sampling.curiosity_score", c.curiosity_score)?;
     validate_nonnegative("sampling.lambda_curiosity", c.lambda_curiosity)?;
-    let override_factor = if c.operator_override { 6.0 } else { 1.0 };
+    validate_nonnegative(
+        "sampling.operator_override_multiplier",
+        operator_override_multiplier,
+    )?;
+    if c.operator_override && operator_override_multiplier < 1.0 {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            format!(
+                "sampling.operator_override_multiplier must be >= 1.0 when operator_override=true; got {operator_override_multiplier}"
+            ),
+        ));
+    }
+    let override_factor = if c.operator_override {
+        operator_override_multiplier
+    } else {
+        1.0
+    };
     let surprise_factor = 1.0 + 2.0 * c.agent_surprise_severity_score;
     let foundationality_factor = 1.0 + c.lambda_foundationality * c.foundationality_score;
     let curiosity_factor = 1.0 + c.lambda_curiosity * c.curiosity_score;

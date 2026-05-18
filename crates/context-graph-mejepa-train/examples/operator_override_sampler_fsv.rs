@@ -215,6 +215,8 @@ fn build_sampler(
     let cfg = TrainingConfig {
         random_seed: 83,
         batch_size: 4,
+        operator_override_min_multiplier: OPERATOR_OVERRIDE_SAMPLING_WEIGHT,
+        operator_override_max_multiplier: OPERATOR_OVERRIDE_SAMPLING_WEIGHT,
         ..TrainingConfig::default()
     };
     let prediction_id = PredictionId([0x83; 16]);

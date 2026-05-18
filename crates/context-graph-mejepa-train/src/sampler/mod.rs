@@ -3,14 +3,16 @@ pub mod cross_task;
 use crate::config::TrainingConfig;
 use crate::error::{TrainerError, TrainerErrorCode};
 use crate::learning_signal::{
-    sampling_weight_checked, should_drop, should_force_include, SamplingWeightComponents,
+    sampling_weight_checked_with_operator_override_multiplier, should_drop, should_force_include,
+    SamplingWeightComponents,
 };
 use crate::replay_buffer::{
     sample_replay_batch, ReplayBatchReport, ReplayBatchRequest, ReplayPriorityConfig,
 };
 use context_graph_mejepa::system_cost::SystemCostCounters;
 use context_graph_mejepa::{
-    ActiveLearningQueueEntry, ChunkId, OperatorOverride, PredictionId, RealityPrediction, TaskId,
+    operator_contribution_report_from_db, ActiveLearningQueueEntry, ChunkId,
+    OperatorContributionError, OperatorOverride, PredictionId, RealityPrediction, TaskId,
     OPERATOR_OVERRIDE_SAMPLING_WEIGHT,
 };
 use context_graph_mejepa_corpus::prng::SplitMix64;
@@ -36,6 +38,7 @@ pub struct BatchPlan {
     pub cross_task_indices: Vec<usize>,
     pub cross_task_fallback_count: usize,
     pub operator_override_sampler_applied_count: usize,
+    pub operator_override_boost_audit: Vec<OperatorOverrideBoostAuditRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,9 +64,25 @@ pub struct OperatorOverrideSamplerInput {
 pub struct OperatorOverrideSamplerReport {
     pub override_rows_scanned: usize,
     pub live_prediction_rows_scanned: usize,
+    pub operator_quality_rows_scanned: usize,
     pub dismissed_override_count: usize,
     pub applied_count: usize,
     pub boosted_indices: Vec<usize>,
+    pub index_weight_multiplier_micros: BTreeMap<usize, u32>,
+    pub boost_audit: Vec<OperatorOverrideBoostAuditRow>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct OperatorOverrideBoostAuditRow {
+    pub example_index: usize,
+    pub prediction_id_hex: String,
+    pub chunk_id: String,
+    pub operator_id: String,
+    pub operator_quality_score_micros: u32,
+    pub sampling_weight_multiplier_micros: u32,
+    pub contribution_count: usize,
+    pub downstream_linked_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,6 +99,7 @@ pub struct BatchSampler {
     pub config: TrainingConfig,
     pub weights: Vec<f32>,
     pub overrides: Vec<bool>,
+    pub operator_override_weight_multipliers: Vec<f32>,
     pub ages_days: Vec<f32>,
     pub l_steps: Vec<f32>,
     pub foundationality_scores: Vec<f32>,
@@ -95,6 +115,7 @@ pub struct BatchSampler {
     pub operator_override_sampler_applied_count: usize,
     adversarial_index_set: BTreeSet<usize>,
     operator_override_boosted_indices: BTreeSet<usize>,
+    operator_override_boost_audit_by_index: BTreeMap<usize, Vec<OperatorOverrideBoostAuditRow>>,
     system_cost_counters: Option<Arc<SystemCostCounters>>,
 }
 
@@ -173,6 +194,8 @@ impl BatchSampler {
                 ));
             }
         }
+        let operator_override_weight_multipliers =
+            default_operator_override_weight_multipliers(&overrides);
         let (adversarial_indices, adversarial_index_set) =
             Self::validate_adversarial_indices(n, adversarial_indices)?;
         let mut sampler = Self {
@@ -180,6 +203,7 @@ impl BatchSampler {
             config,
             weights: vec![0.0; n],
             overrides,
+            operator_override_weight_multipliers,
             ages_days,
             l_steps,
             foundationality_scores,
@@ -194,6 +218,7 @@ impl BatchSampler {
             operator_override_sampler_applied_count: 0,
             adversarial_index_set,
             operator_override_boosted_indices: BTreeSet::new(),
+            operator_override_boost_audit_by_index: BTreeMap::new(),
             system_cost_counters: None,
         };
         sampler.recompute_weights()?;
@@ -212,6 +237,14 @@ impl BatchSampler {
             .iter()
             .copied()
             .collect::<BTreeSet<_>>();
+        let index_weight_multiplier_micros = report.index_weight_multiplier_micros.clone();
+        let boost_audit_by_index = report.boost_audit.iter().cloned().fold(
+            BTreeMap::<usize, Vec<OperatorOverrideBoostAuditRow>>::new(),
+            |mut acc, row| {
+                acc.entry(row.example_index).or_default().push(row);
+                acc
+            },
+        );
         let mut sampler = Self::new(
             input.config,
             input.l_steps,
@@ -220,31 +253,51 @@ impl BatchSampler {
             input.task_ids,
             input.patch_similarity_graph,
         )?;
+        for (idx, micros) in index_weight_multiplier_micros {
+            if idx < sampler.operator_override_weight_multipliers.len() {
+                sampler.operator_override_weight_multipliers[idx] = micros_to_multiplier(micros);
+            }
+        }
+        sampler.recompute_weights()?;
         report.boosted_indices.sort_unstable();
         sampler.operator_override_sampler_applied_count = report.applied_count;
         sampler.operator_override_boosted_indices = boosted_index_set;
+        sampler.operator_override_boost_audit_by_index = boost_audit_by_index;
         sampler.system_cost_counters = system_cost_counters;
         Ok((sampler, report))
     }
 
     pub fn recompute_weights(&mut self) -> Result<Vec<SamplerWarning>, TrainerError> {
+        if self.operator_override_weight_multipliers.len() != self.l_steps.len() {
+            return Err(Self::config_error(
+                "operator_override_weight_multipliers",
+                format!(
+                    "length {} does not match l_steps length {}",
+                    self.operator_override_weight_multipliers.len(),
+                    self.l_steps.len()
+                ),
+            ));
+        }
         self.weights.clear();
         self.force_indices.clear();
         self.drop_indices.clear();
         self.regular_indices.clear();
         for i in 0..self.l_steps.len() {
-            let weight = sampling_weight_checked(SamplingWeightComponents {
-                base_weight: 1.0,
-                l_step: self.l_steps[i],
-                operator_override: self.overrides[i],
-                age_days: self.ages_days[i],
-                age_decay: self.config.sampling_age_decay,
-                agent_surprise_severity_score: 0.0,
-                foundationality_score: self.foundationality_scores[i],
-                lambda_foundationality: self.config.sampling_foundationality_lambda,
-                curiosity_score: 0.0,
-                lambda_curiosity: 1.0,
-            })
+            let weight = sampling_weight_checked_with_operator_override_multiplier(
+                SamplingWeightComponents {
+                    base_weight: 1.0,
+                    l_step: self.l_steps[i],
+                    operator_override: self.overrides[i],
+                    age_days: self.ages_days[i],
+                    age_decay: self.config.sampling_age_decay,
+                    agent_surprise_severity_score: 0.0,
+                    foundationality_score: self.foundationality_scores[i],
+                    lambda_foundationality: self.config.sampling_foundationality_lambda,
+                    curiosity_score: 0.0,
+                    lambda_curiosity: 1.0,
+                },
+                self.operator_override_weight_multipliers[i],
+            )
             .map_err(|err| Self::config_error("weights", format!("index {i}: {err}")))?;
             self.weights.push(weight);
             if should_drop(weight, self.config.sampling_drop_threshold) {
@@ -315,6 +368,7 @@ impl BatchSampler {
             cross_task_indices: Vec::new(),
             cross_task_fallback_count: 0,
             operator_override_sampler_applied_count: 0,
+            operator_override_boost_audit: Vec::new(),
         };
         if self.force_indices.is_empty() {
             return plan;
@@ -387,6 +441,12 @@ impl BatchSampler {
             .filter(|idx| self.operator_override_boosted_indices.contains(idx))
             .count();
         plan.operator_override_sampler_applied_count = count;
+        plan.operator_override_boost_audit = plan
+            .indices
+            .iter()
+            .filter_map(|idx| self.operator_override_boost_audit_by_index.get(idx))
+            .flat_map(|rows| rows.iter().cloned())
+            .collect();
         if count > 0 {
             if let Some(counters) = &self.system_cost_counters {
                 counters.record_operator_override_sampler_applied(count as u64);
@@ -541,6 +601,9 @@ fn apply_operator_override_rows(
 ) -> Result<OperatorOverrideSamplerReport, TrainerError> {
     let overrides = load_operator_overrides(db)?;
     let live_predictions = load_live_prediction_rows(db)?;
+    let operator_quality = load_operator_quality_rows(db)?;
+    let mut index_weight_multiplier_micros: BTreeMap<usize, u32> = BTreeMap::new();
+    let mut boost_audit = Vec::new();
     let mut boosted_indices = BTreeSet::new();
     let mut dismissed_override_count = 0_usize;
 
@@ -559,6 +622,17 @@ fn apply_operator_override_rows(
             dismissed_override_count += 1;
             continue;
         }
+        let quality = operator_quality
+            .get(&override_record.operator_id)
+            .cloned()
+            .unwrap_or_default();
+        let multiplier = operator_quality_multiplier(
+            input.config.operator_override_min_multiplier,
+            input.config.operator_override_max_multiplier,
+            quality.quality_score(),
+        )?;
+        let multiplier_micros = multiplier_to_micros(multiplier);
+        let quality_score_micros = multiplier_to_micros(quality.quality_score());
         for (idx, source) in input.example_sources.iter().enumerate() {
             if source.prediction_id == *prediction_id
                 && prediction
@@ -567,6 +641,20 @@ fn apply_operator_override_rows(
                     .any(|chunk| chunk == &source.chunk_id)
             {
                 input.overrides[idx] = true;
+                index_weight_multiplier_micros
+                    .entry(idx)
+                    .and_modify(|current| *current = (*current).max(multiplier_micros))
+                    .or_insert(multiplier_micros);
+                boost_audit.push(OperatorOverrideBoostAuditRow {
+                    example_index: idx,
+                    prediction_id_hex: hex::encode(prediction_id.0),
+                    chunk_id: source.chunk_id.0.clone(),
+                    operator_id: override_record.operator_id.clone(),
+                    operator_quality_score_micros: quality_score_micros,
+                    sampling_weight_multiplier_micros: multiplier_micros,
+                    contribution_count: quality.contribution_count,
+                    downstream_linked_count: quality.downstream_linked_count,
+                });
                 boosted_indices.insert(idx);
             }
         }
@@ -576,10 +664,104 @@ fn apply_operator_override_rows(
     Ok(OperatorOverrideSamplerReport {
         override_rows_scanned: overrides.len(),
         live_prediction_rows_scanned: live_predictions.len(),
+        operator_quality_rows_scanned: operator_quality.len(),
         dismissed_override_count,
         applied_count: boosted_indices.len(),
         boosted_indices,
+        index_weight_multiplier_micros,
+        boost_audit,
     })
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct OperatorQualitySnapshot {
+    quality_score_micros: u32,
+    contribution_count: usize,
+    downstream_linked_count: usize,
+}
+
+impl OperatorQualitySnapshot {
+    fn quality_score(self) -> f32 {
+        micros_to_multiplier(self.quality_score_micros)
+    }
+}
+
+fn load_operator_quality_rows(
+    db: &DB,
+) -> Result<BTreeMap<String, OperatorQualitySnapshot>, TrainerError> {
+    let report = match operator_contribution_report_from_db(db, usize::MAX, None) {
+        Ok(report) => report,
+        Err(OperatorContributionError::CfMissing) => {
+            return Ok(BTreeMap::new());
+        }
+        Err(err) => {
+            return Err(BatchSampler::config_error(
+                "operator_contributions",
+                err.to_string(),
+            ));
+        }
+    };
+    Ok(report
+        .quality_ranking
+        .into_iter()
+        .map(|row| {
+            (
+                row.operator_id,
+                OperatorQualitySnapshot {
+                    quality_score_micros: multiplier_to_micros(row.quality_score),
+                    contribution_count: row.contribution_count,
+                    downstream_linked_count: row.downstream_linked_count,
+                },
+            )
+        })
+        .collect())
+}
+
+fn operator_quality_multiplier(
+    min: f32,
+    max: f32,
+    quality_score: f32,
+) -> Result<f32, TrainerError> {
+    if !min.is_finite() || !max.is_finite() || !quality_score.is_finite() {
+        return Err(BatchSampler::config_error(
+            "operator_override_quality_multiplier",
+            "min, max, and quality_score must be finite",
+        ));
+    }
+    if min < 1.0 || max < min {
+        return Err(BatchSampler::config_error(
+            "operator_override_quality_multiplier",
+            "must satisfy 1 <= min <= max",
+        ));
+    }
+    if !(0.0..=1.0).contains(&quality_score) {
+        return Err(BatchSampler::config_error(
+            "operator_override_quality_multiplier",
+            "quality_score must be in [0,1]",
+        ));
+    }
+    Ok(min + (max - min) * quality_score)
+}
+
+fn default_operator_override_weight_multipliers(overrides: &[bool]) -> Vec<f32> {
+    overrides
+        .iter()
+        .map(|override_active| {
+            if *override_active {
+                OPERATOR_OVERRIDE_SAMPLING_WEIGHT
+            } else {
+                1.0
+            }
+        })
+        .collect()
+}
+
+fn multiplier_to_micros(value: f32) -> u32 {
+    (value * 1_000_000.0).round().clamp(0.0, u32::MAX as f32) as u32
+}
+
+fn micros_to_multiplier(value: u32) -> f32 {
+    value as f32 / 1_000_000.0
 }
 
 fn load_operator_overrides(

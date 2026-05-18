@@ -72,6 +72,8 @@ pub struct TrainingConfig {
     pub sampling_drop_threshold: f32,
     pub sampling_force_threshold: f32,
     pub sampling_age_decay: f32,
+    pub operator_override_min_multiplier: f32,
+    pub operator_override_max_multiplier: f32,
     pub holdout_promotion_threshold: f32,
     pub holdout_regression_threshold: f32,
     pub phase3_dod_min_agreement: f32,
@@ -107,6 +109,8 @@ impl Default for TrainingConfig {
             sampling_drop_threshold: 0.05,
             sampling_force_threshold: 1.0,
             sampling_age_decay: 0.995,
+            operator_override_min_multiplier: 4.0,
+            operator_override_max_multiplier: 12.0,
             holdout_promotion_threshold: 0.005,
             holdout_regression_threshold: 0.02,
             phase3_dod_min_agreement: 0.75,
@@ -197,6 +201,16 @@ impl TrainingConfig {
             return bad(
                 "sampling_foundationality_lambda",
                 "must be finite and non-negative",
+            );
+        }
+        if !self.operator_override_min_multiplier.is_finite()
+            || !self.operator_override_max_multiplier.is_finite()
+            || self.operator_override_min_multiplier < 1.0
+            || self.operator_override_max_multiplier < self.operator_override_min_multiplier
+        {
+            return bad(
+                "operator_override_min_multiplier/operator_override_max_multiplier",
+                "must satisfy 1 <= min <= max",
             );
         }
         if self.sampling_force_threshold <= self.sampling_drop_threshold {

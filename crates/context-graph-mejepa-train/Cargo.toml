@@ -72,6 +72,10 @@ name = "operator_override_sampler_fsv"
 path = "examples/operator_override_sampler_fsv.rs"
 
 [[example]]
+name = "task_ek_015_credibility_override_fsv"
+path = "examples/task_ek_015_credibility_override_fsv.rs"
+
+[[example]]
 name = "label_transfer_consumer_fsv"
 path = "examples/label_transfer_consumer_fsv.rs"
 
