@@ -17,6 +17,7 @@ pub mod data_models;
 pub mod dda_features;
 pub mod degraded;
 pub mod dynamic_embedder;
+pub mod embedder_falsification;
 pub mod embedder_proposal;
 pub mod error;
 pub mod eval;
@@ -94,6 +95,7 @@ pub use data_models::{
 pub use dda_features::*;
 pub use degraded::*;
 pub use dynamic_embedder::*;
+pub use embedder_falsification::*;
 pub use embedder_proposal::*;
 pub use error::{LossError, MejepaInferError, NanSource, PredictorError};
 pub use eval::*;
