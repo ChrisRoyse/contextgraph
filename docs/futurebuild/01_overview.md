@@ -82,7 +82,7 @@ Source files covered: `Cargo.toml`, `CLAUDE.md`, `AGENTS.md`, `crates/context-gr
 | `context-graph-mejepa` | **Predictor trunk** (compiler, conformal, OOD, claim graph, patch similarity, project-ingest, ...) | 175 (lib); 73 module files |
 | `context-graph-mejepa-cf` | Canonical column-family name registry (zero-dep) | 819 |
 | `context-graph-mejepa-corpus` | 8× mutation operators + SWE-bench bridge | 822 |
-| `context-graph-mejepa-instruments` | 15-slot 5,120-d panel + frozen instruments | 595 |
+| `context-graph-mejepa-instruments` | 15-slot typed panel storage layout + frozen instruments | 595 |
 | `context-graph-mejepa-embedders` | 21 embedder slots, dynamic registry, calibration | 63 |
 | `context-graph-mejepa-train` | UTML trainer, replay buffer, certificates | 51 |
 | `context-graph-mejepa-tct` | Teleological constellations + Gτ guard | 49 |
@@ -187,7 +187,7 @@ Every crate defines its own `Error` enum with `SCREAMING_SNAKE_CASE` code via `.
 
 **Predictor (`context-graph-mejepa`).** CUDA-only production predictor. 73 modules covering claim graph (Q1), patch-similarity HNSW exemplars (Q3), Q4 security/perf/cost/accuracy heads, Q5 shift-log replay impact, multi-head VICReg + Huber loss, conformal calibration, OOD detection, claim-vs-reality reconciliation, project-ingest reality compiler, synthetic-stress evaluator, adversarial corpus, dynamic embedder registration, foundationality (PageRank on chunk/library/embedder dep graphs), label transfer audit, operator override surface. `compile()` and `compile_with_fingerprint_observation()` are the canonical Q1-Q5 entry points.
 
-**Frozen instruments (`context-graph-mejepa-instruments`).** 15-slot 5,120-d joint embedding panel: `E_AST (384)`, `E_CFG (256)`, `E_DataFlow (256)`, `E_TypeGraph (256)`, `E_Test (384)`, `E_Trace (512)`, `E_Diff (256)`, `E_Witness (256)`, `E_Oracle (128)`, `E_Problem (1024)`, `E_CommitMsg (384)`, `E_StaticAnalysis (256)`, `E_Runtime (256)`, `E_Reasoning (384)`, `Scalars (128)`. `Panel`/`PanelBuilder` enforce fail-closed dim+finite+double-fill validation. Instrument trait carries zero trainable params (structural collapse-immunity invariant `ΔΞ.target_collapse = 0`).
+**Frozen instruments (`context-graph-mejepa-instruments`).** 15-slot typed panel storage layout: `E_AST (384)`, `E_CFG (256)`, `E_DataFlow (256)`, `E_TypeGraph (256)`, `E_Test (384)`, `E_Trace (512)`, `E_Diff (256)`, `E_Witness (256)`, `E_Oracle (128)`, `E_Problem (1024)`, `E_CommitMsg (384)`, `E_StaticAnalysis (256)`, `E_Runtime (256)`, `E_Reasoning (384)`, `Scalars (128)`. These slots are independent evidence surfaces inside a Teleological Constellation, not one fused semantic embedding. `Panel`/`PanelBuilder` enforce fail-closed dim+finite+double-fill validation. Instrument trait carries zero trainable params (structural collapse-immunity invariant `ΔΞ.target_collapse = 0`).
 
 **Embedders (`context-graph-mejepa-embedders`).** 21 slots (E5 retired). 12 active content embedders (8 pretrained + 4 algorithmic). Frozen-by-design weights: E1, E6, E7, E8, E10, E12, E13, E14. Dynamic-registration scaffolding (`dynamic_registry.rs`) + VRAM budget enforcement (`vram.rs`) + falsification gate + freeze audit + adversarial-injection mitigation. SHA-256 manifest pins for every pretrained weight. CUDA-required for production; CPU construction rejected.
 

@@ -2,7 +2,7 @@
 
 **Last refreshed:** 2026-05-18.
 
-Source: `gh issue list --state open` (65 open issues after closing #369), recent `type:decision` closes, git log, GitHub issue comments, and archived roadmap history.
+Source: `gh issue list --state open`, recent `type:decision` closes, git log, GitHub issue comments, and archived roadmap history.
 
 ---
 
@@ -17,13 +17,15 @@ prediction_oracle_correlation ≥ 0.95
 
 **Last holdout measurement:** `0.866667` (legacy `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; not current production evidence until revalidated on aiwonder under #369).
 
-**Gap to ship:** 0.083 correlation points. Bridging this is the entire job of Phase G's remaining open work (62 issues).
+**Gap to ship:** 0.083 correlation points. Bridging this is the entire job of Phase G's remaining open work.
+
+**P0 architecture correction before more metric chasing:** #385 / TASK-PY-G-085 now blocks the gate. ME-JEPA must treat the panel as a typed per-embedder/per-instrument Teleological Constellation. The 5,120-d panel is a storage layout, not a single compensable embedding space. Predictor, OOD, heads, persistence, DDA, and FSV evidence must prove that a weak slot cannot be hidden by strong values in other slots.
 
 Once met → human review of AI-generated Python patches is statistically unjustified. Auto-trust policy gates engage (TASK-PY-G-058 / #277).
 
 ---
 
-## 2. Open Issue Snapshot (65 open after the #369 closeout on 2026-05-18)
+## 2. Open Issue Snapshot (live issue tracker is authoritative)
 
 By phase label:
 
@@ -40,7 +42,7 @@ By priority:
 
 | Priority | Open count | Examples |
 |---|---|---|
-| `priority:p0` | 1 | #310 META issue refactor |
+| `priority:p0` | 2+ | #385 slot-preserving constellation refactor, #310 META issue refactor, plus any migration blockers still labeled p0 |
 | `priority:p1` | 18 | Calibration, adversarial defense, and Q4 head training |
 | `priority:p2` | 37 | EK series tail, post-ship policies, refined sub-tasks |
 | `priority:p3` | 9 | Deferred (SWE-bench Verified subset, sample-efficiency, v2 stretch tasks) |
@@ -48,6 +50,35 @@ By priority:
 ---
 
 ## 3. Critical Path (the issues whose resolution moves the ship-gate needle)
+
+### 3.0 Slot-preserving constellation architecture (#385 / TASK-PY-G-085)
+
+This is now first in the queue. The code already has typed `Panel` slots, but the current predictor/head/OOD paths still include flat `PANEL_DIM` / `CONCAT_INPUT_DIM` projections and flat residual scoring. That can let one embedder or instrument surface compensate for another, which contradicts the TCT contract in `docs/PAPER.md` and `docs/alldata.md`.
+
+Required before any new `0.95` claim:
+
+- Predictor inputs/outputs preserve slot identity through the product path.
+- Q3/Q4/Q5 heads expose slot-level evidence or attribution; flat `linear(PANEL_DIM, classes)` heads cannot be accepted as ship-gate proof by themselves.
+- OOD, residual, Gtau, and calibration metrics compute per-slot/per-embedder scores first and aggregate through fail-closed conjunction or explicit violation records.
+- Persisted panel rows carry per-slot metadata/provenance sufficient for independent aiwonder readback.
+- DDA signals come from real active embedder outputs and pairwise relationships, not seeded placeholders.
+- FSV includes adversarial panels where one slot is wrong while global flat distance would look acceptable.
+
+Child issue split:
+
+| Issue | Purpose | Why it matters for `0.95` |
+|---|---|---|
+| #386 / TASK-PY-G-086 | Slot-map `ConstellationObservation` schema | Makes each slot/embedder independently addressable at prediction time |
+| #387 / TASK-PY-G-087 | Slot-preserving late-fusion predictor | Removes early flat fusion as the predictor's semantic bottleneck |
+| #388 / TASK-PY-G-088 | Real aiwonder cross-embedder correlation tensors | Turns the completed corpus substrate into relationship features |
+| #389 / TASK-PY-G-089 | Per-slot calibration, uncertainty, and OOD | Prevents weak slots from being hidden by aggregate scores |
+| #390 / TASK-PY-G-090 | Consensus/contradiction intelligence heads | Makes disagreement, redundancy, novelty, and blind spots first-class predictors |
+| #391 / TASK-PY-G-091 | Slot-level attribution surfaces | Explains which evidence surfaces caused a verdict |
+| #392 / TASK-PY-G-092 | Temporal constellation trajectory features | Tracks exact-state constellation movement across time/windows |
+| #393 / TASK-PY-G-093 | Capability-discovery ablation suite | Measures which constellation features move oracle correlation |
+| #394 / TASK-PY-G-094 | Anti-compensation FSV suite | Prevents regressions back to flat-vector scoring |
+| #395 / TASK-PY-G-095 | Real-corpus constellation smoke | Starts from the completed 391/391 aiwonder forward-cache substrate, not synthetic data |
+| #396 / TASK-PY-G-096 | Constellation fine-tuning objective | Trains on per-slot vectors, pairwise tensors, contradiction/consensus features, temporal metadata, and oracle labels as separate loss components |
 
 ### 3.1 Q4 head training (Phase G §2 producers — heads exist as schema fields but lack training data pipelines)
 
@@ -66,6 +97,8 @@ By priority:
 `reality_impact.rs` exists as a scaffold; the shift-log replay engine that drives Q5 `RealityImpact` for production traffic is the remaining work.
 
 ### 3.3 Phase G calibration sweep (Phase G §3)
+
+All calibration items below are now qualified by #385: their evidence must be per-slot/per-embedder constellation evidence, not a flat panel aggregate.
 
 | Issue | Task | Purpose |
 |---|---|---|
@@ -190,17 +223,13 @@ By priority:
 | #150 / TASK-PY-G-019 | Python sample-efficiency analysis (post-ship-gate) |
 | #354–#357 | TASK-EK-018 v2 stretch (NAS embedder from scratch / cross-library proposals / self-rewriting absence priors / status reallocation extension) |
 | Non-Python ship-gate cells (Rust/JS/TS/Go/Java/C/Cpp/CSharp/Ruby/Php) | Active execution is Python-first (`CLAUDE.md §6.3`); non-Python deferred until Python truth system is green (archived roadmap history) |
+| Phase J post-ship roadmap | Archived at `_archived/09_POST_SHIP_ROADMAP_PHASE_J_20260518.md`; inactive until the Python `>=0.95 x 4 windows` gate closes |
 
 ---
 
-## 9. Post-ship roadmap (Phase J — only relevant after `≥ 0.95 × 4 windows` closes)
+## 9. Archived Post-Ship Roadmap
 
-From archived post-ship roadmap history + open `type:architecture` p3 issues:
-
-- Non-Python language activation (one language at a time; each language re-engages the four-window stability cycle on its own corpus rows).
-- Future modalities (`ME-JEPA-Voice`, `ME-JEPA-Image`) — template was 25_FUTURE_DOMAINS_MEJEPA_X in the archived suite; methodology to be revisited in a new GitHub `type:context` issue when ship gate green.
-- Hardening axis maturation (see `docs2/hardeningprompt.md`) — supply chain, observability uplift, scalability tests, soak-test cadence.
-- API stability commitments — currently pre-production; locks engage post-ship.
+Phase J is archived and inactive until the Python `>= 0.95 x 4 windows` gate is green. See `_archived/09_POST_SHIP_ROADMAP_PHASE_J_20260518.md` for the parked ideas. Current execution bandwidth stays on the 0.083 correlation gap, starting with #385 because flat-panel compensation can invalidate downstream calibration evidence.
 
 ---
 

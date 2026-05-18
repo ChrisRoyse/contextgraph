@@ -29,7 +29,7 @@ Source files covered: `crates/context-graph-mejepa-embedders/src/lib.rs` + modul
       plus dynamic embedders behind freeze gate)
                  │
                  ▼
-      15 frozen instruments → 5,120-d Panel
+      15 frozen instruments → typed 5,120-d Panel storage layout
         E_AST 384 | E_CFG 256 | E_DataFlow 256 | E_TypeGraph 256 |
         E_Test 384 | E_Trace 512 | E_Diff 256 | E_Witness 256 |
         E_Oracle 128 | E_Problem 1024 | E_CommitMsg 384 |
@@ -120,9 +120,11 @@ Source files covered: `crates/context-graph-mejepa-embedders/src/lib.rs` + modul
 
 ---
 
-## 3. Instrument Panel (15 slots, 5,120-d total)
+## 3. Instrument Panel (15 slots, 5,120-d storage layout)
 
 `crates/context-graph-mejepa-instruments/src/lib.rs:158-199`. `PANEL_DIM = 5_120`. `SLOT_COUNT = 15`. Layout MUST sum to PANEL_DIM (asserted at debug build via `debug_assert_eq!`).
+
+**Semantic contract:** the panel is a typed constellation carrier, not one fused embedding space. Each slot remains an independent evidence surface with its own encoder, dimension, filled bit, and downstream violation attribution. Cross-slot correlations and pairwise MI are valid signals; cross-slot compensation is not. A wrong/weak slot must fail closed even when the aggregate 5,120-d distance looks acceptable.
 
 | # | Slot | Variant | Dim | Offset | Encoder source | Encodes |
 |---|---|---|---|---|---|---|
@@ -162,6 +164,8 @@ Source files covered: `crates/context-graph-mejepa-embedders/src/lib.rs` + modul
 ## 4. Predictor Architecture
 
 `crates/context-graph-mejepa/src/predictor/` — `MeJepaPredictor`, `TransformerLayer`, `ArchitectureSummary`. CUDA-required.
+
+**P0 correction (#385):** the current predictor/head implementation still contains flat `PANEL_DIM` and `CONCAT_INPUT_DIM` projections. That is acceptable only as a storage-compatible implementation detail while #385 is open; it is not acceptable ship-gate evidence. The production architecture must preserve per-slot/per-embedder constellation semantics through predictor input, output, heads, OOD scoring, calibration, and FSV readback.
 
 Default architecture (`config.rs`):
 - `PANEL_DIM` = 5,120 input
