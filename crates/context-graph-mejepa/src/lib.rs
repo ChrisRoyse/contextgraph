@@ -19,6 +19,7 @@ pub mod degraded;
 pub mod dynamic_embedder;
 pub mod embedder_falsification;
 pub mod embedder_proposal;
+pub mod entity_kge_embedder;
 pub mod error;
 pub mod eval;
 pub mod evidence;
@@ -97,6 +98,7 @@ pub use degraded::*;
 pub use dynamic_embedder::*;
 pub use embedder_falsification::*;
 pub use embedder_proposal::*;
+pub use entity_kge_embedder::*;
 pub use error::{LossError, MejepaInferError, NanSource, PredictorError};
 pub use eval::*;
 pub use evidence::{
