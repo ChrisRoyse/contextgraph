@@ -76,6 +76,16 @@ pub enum HealError {
         rank: usize,
         dim: usize,
     },
+    EwcProtectionViolation {
+        violation_id: String,
+        projected_fisher_displacement: f32,
+        budget: f32,
+        requeued: bool,
+    },
+    EwcFisherDegenerate {
+        rank: usize,
+        dim: usize,
+    },
     LoraRefreshFail {
         embedder_id: u32,
         cause: String,
@@ -141,6 +151,8 @@ impl HealError {
             Self::PromotionCellRegression { .. } => "MEJEPA_PROMOTION_CELL_REGRESSION",
             Self::QuotaExceeded { .. } => "MEJEPA_RETRAIN_QUOTA_EXCEEDED",
             Self::FisherRankDeficient { .. } => "MEJEPA_HEAL_FISHER_RANK_DEFICIENT",
+            Self::EwcProtectionViolation { .. } => "MEJEPA_EWC_PROTECTION_VIOLATION",
+            Self::EwcFisherDegenerate { .. } => "EWC_FISHER_DEGENERATE",
             Self::LoraRefreshFail { .. } => "MEJEPA_HEAL_LORA_REFRESH_FAIL",
             Self::PromotionDeadlock { .. } => "MEJEPA_HEAL_PROMOTION_DEADLOCK",
             Self::ConformalInsufficientSamples { .. } => "MEJEPA_CALIBRATION_INSUFFICIENT_SAMPLES",
@@ -280,6 +292,13 @@ mod tests {
                 quota_gb: 115.0,
             },
             HealError::FisherRankDeficient { rank: 1, dim: 2 },
+            HealError::EwcProtectionViolation {
+                violation_id: "ewc-test".to_string(),
+                projected_fisher_displacement: 2.0,
+                budget: 1.0,
+                requeued: true,
+            },
+            HealError::EwcFisherDegenerate { rank: 0, dim: 2 },
             HealError::LoraRefreshFail {
                 embedder_id: 7,
                 cause: "oom".into(),
@@ -315,7 +334,7 @@ mod tests {
             HealError::FeatureDisabled,
         ];
         for err in cases {
-            assert!(err.code().starts_with("MEJEPA_"));
+            assert!(err.code().starts_with("MEJEPA_") || err.code() == "EWC_FISHER_DEGENERATE");
         }
     }
 

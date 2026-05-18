@@ -30,6 +30,7 @@ pub struct SystemCostCounters {
     heal_ticker_telemetry_total: Mutex<BTreeMap<String, HealTickerTelemetryTotals>>,
     heal_scheduler_restart_count_total: AtomicU64,
     operator_override_sampler_applied_count_total: AtomicU64,
+    ewc_violations_total: AtomicU64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -41,6 +42,7 @@ pub struct SystemCostSnapshot {
     pub rocksdb_writes_total: u64,
     pub heal_ticker_telemetry_total: HealTickerTelemetrySnapshot,
     pub operator_override_sampler_applied_count_total: u64,
+    pub ewc_violations_total: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -112,6 +114,9 @@ impl SystemCostSnapshot {
             operator_override_sampler_applied_count_total: self
                 .operator_override_sampler_applied_count_total
                 .saturating_sub(earlier.operator_override_sampler_applied_count_total),
+            ewc_violations_total: self
+                .ewc_violations_total
+                .saturating_sub(earlier.ewc_violations_total),
         }
     }
 }
@@ -273,6 +278,10 @@ impl SystemCostCounters {
             .fetch_add(count, Ordering::Relaxed);
     }
 
+    pub fn record_ewc_violation(&self) {
+        self.ewc_violations_total.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> SystemCostSnapshot {
         SystemCostSnapshot {
             cuda_kernel_microseconds_total: self
@@ -294,6 +303,7 @@ impl SystemCostCounters {
             operator_override_sampler_applied_count_total: self
                 .operator_override_sampler_applied_count_total
                 .load(Ordering::Relaxed),
+            ewc_violations_total: self.ewc_violations_total.load(Ordering::Relaxed),
         }
     }
 }
@@ -377,6 +387,7 @@ mod tests {
             rocksdb_writes_total: 0,
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
             operator_override_sampler_applied_count_total: 0,
+            ewc_violations_total: 0,
         };
         let now = counters.snapshot();
         let delta = now.delta(&earlier);
@@ -413,6 +424,7 @@ mod tests {
             rocksdb_writes_total: 1,
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
             operator_override_sampler_applied_count_total: 2,
+            ewc_violations_total: 4,
         };
         let current = SystemCostSnapshot {
             cuda_kernel_microseconds_total: 250,
@@ -421,6 +433,7 @@ mod tests {
             rocksdb_writes_total: 3,
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
             operator_override_sampler_applied_count_total: 5,
+            ewc_violations_total: 7,
         };
         let breakdown = SystemCostBreakdown::from_snapshots(&earlier, &current);
         let report = serde_json::json!({
@@ -435,6 +448,10 @@ mod tests {
         assert_eq!(extended["systemCost"]["noSpendCaps"], true);
         assert_eq!(
             extended["systemCost"]["windowDelta"]["operatorOverrideSamplerAppliedCountTotal"],
+            3
+        );
+        assert_eq!(
+            extended["systemCost"]["windowDelta"]["ewcViolationsTotal"],
             3
         );
     }
@@ -498,6 +515,16 @@ mod tests {
         counters.record_operator_override_sampler_applied(2);
         let delta = counters.snapshot().delta(&earlier);
         assert_eq!(delta.operator_override_sampler_applied_count_total, 5);
+    }
+
+    #[test]
+    fn ewc_violation_counter_accumulates() {
+        let counters = SystemCostCounters::new();
+        let earlier = counters.snapshot();
+        counters.record_ewc_violation();
+        counters.record_ewc_violation();
+        let delta = counters.snapshot().delta(&earlier);
+        assert_eq!(delta.ewc_violations_total, 2);
     }
 
     #[test]

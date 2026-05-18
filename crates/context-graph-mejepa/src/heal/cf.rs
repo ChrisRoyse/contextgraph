@@ -35,6 +35,7 @@ pub fn all_referenced_cf_names() -> Vec<&'static str> {
         context_graph_mejepa_cf::CF_MEJEPA_COLD_CELL_METRICS,
         context_graph_mejepa_cf::CF_MEJEPA_CHUNK_DEPENDENCY_GRAPH,
         context_graph_mejepa_cf::CF_MEJEPA_CHUNK_FOUNDATIONALITY,
+        context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
     ] {
         if !names.contains(&cf) {
             names.push(cf);
@@ -264,9 +265,10 @@ mod tests {
         assert!(names.contains(&context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_LOG));
         assert!(names.contains(&CF_MEJEPA_CHUNK_DEPENDENCY_GRAPH));
         assert!(names.contains(&CF_MEJEPA_CHUNK_FOUNDATIONALITY));
+        assert!(names.contains(&context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE));
         assert_eq!(
             names.len(),
-            context_graph_mejepa_cf::SELF_HEALING_REFERENCED_CFS.len() + 10
+            context_graph_mejepa_cf::SELF_HEALING_REFERENCED_CFS.len() + 11
         );
     }
 }

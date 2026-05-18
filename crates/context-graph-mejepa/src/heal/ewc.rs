@@ -1,17 +1,24 @@
 // Inspired by ruvnet/RuVector crates/sona/src/ewc.rs at HEAD ef5274c2
 // (clean-room reimplementation; no code copied).
 
+use std::collections::BTreeMap;
+
 use context_graph_mejepa_instruments::Panel;
 use serde::{Deserialize, Serialize};
 
 use crate::heal::errors::HealError;
 use crate::types::OracleOutcome;
 
-pub const DEFAULT_INITIAL_LAMBDA: f32 = 2000.0;
+pub const DEFAULT_INITIAL_LAMBDA: f32 = 1000.0;
 pub const DEFAULT_MAX_LAMBDA: f32 = 15000.0;
 pub const DEFAULT_BOUNDARY_THRESHOLD_Z: f32 = 3.0;
 pub const DEFAULT_FISHER_EMA_DECAY: f32 = 0.01;
 pub const PER_EMBEDDER_SNAPSHOT_CAP_BASE_PLUS_DELTAS: usize = 5;
+pub const EWC_SNAPSHOT_INTERVAL_UPDATES: u64 = 1000;
+pub const DEFAULT_EWC_FISHER_BUDGET: f32 = 1.0e-3;
+pub const EWC_VALIDATION_REGRESSION_DECAY_THRESHOLD: f32 = 0.02;
+pub const EWC_LAMBDA_DECAY_FACTOR: f32 = 0.5;
+const EWC_FISHER_DEGENERATE_EPSILON: f32 = 1.0e-12;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -154,6 +161,27 @@ impl Default for BoundaryDetectorState {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct EwcCellLambdaState {
+    pub cell_id: String,
+    pub lambda: f32,
+    pub validation_loss_before: f32,
+    pub validation_loss_after: f32,
+    pub regression_fraction: f32,
+    pub decay_count: u32,
+    pub updated_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EwcGuardDecision {
+    pub projected_fisher_displacement: f32,
+    pub budget: f32,
+    pub cold_start_exemption: bool,
+    pub violation: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct EwcPlusPlus {
     pub fisher_matrix: FisherMatrix,
     pub lambda: f32,
@@ -162,6 +190,7 @@ pub struct EwcPlusPlus {
     pub initial_lambda: f32,
     pub max_lambda: f32,
     pub predictor_dim: usize,
+    pub cell_lambda_states: BTreeMap<String, EwcCellLambdaState>,
 }
 
 impl EwcPlusPlus {
@@ -193,6 +222,7 @@ impl EwcPlusPlus {
             initial_lambda,
             max_lambda,
             predictor_dim,
+            cell_lambda_states: BTreeMap::new(),
         })
     }
 
@@ -304,6 +334,7 @@ impl EwcPlusPlus {
                 dim: self.predictor_dim,
             });
         }
+        self.ensure_non_degenerate()?;
         let snapshot = TaskSnapshot::try_new(
             predictor_params.to_vec(),
             self.fisher_matrix.diagonal.clone(),
@@ -320,7 +351,17 @@ impl EwcPlusPlus {
     }
 
     pub fn current_lambda(&self) -> f32 {
-        self.lambda.clamp(self.initial_lambda, self.max_lambda)
+        self.lambda.clamp(0.0, self.max_lambda)
+    }
+
+    pub fn current_lambda_for_cell(&self, cell_id: &str) -> Result<f32, HealError> {
+        validate_cell_id(cell_id)?;
+        Ok(self
+            .cell_lambda_states
+            .get(cell_id)
+            .map(|state| state.lambda)
+            .unwrap_or(self.initial_lambda)
+            .clamp(0.0, self.max_lambda))
     }
 
     pub fn ewc_penalty(&self, theta_flat: &[f32]) -> Result<f32, HealError> {
@@ -352,6 +393,170 @@ impl EwcPlusPlus {
             });
         }
         Ok(penalty)
+    }
+
+    pub fn ewc_gradient(&self, theta_flat: &[f32]) -> Result<Vec<f32>, HealError> {
+        validate_finite_vec("ewc.theta_flat", theta_flat)?;
+        if theta_flat.len() != self.predictor_dim {
+            return Err(HealError::invalid(
+                "ewc.theta_flat",
+                format!(
+                    "theta len {} != dim {}",
+                    theta_flat.len(),
+                    self.predictor_dim
+                ),
+            ));
+        }
+        let mut out = vec![0.0f32; theta_flat.len()];
+        for snapshot in &self.task_snapshots {
+            for (((accum, theta), theta_star), fisher) in out
+                .iter_mut()
+                .zip(theta_flat)
+                .zip(&snapshot.theta_star)
+                .zip(&snapshot.fisher_diag_at_boundary)
+            {
+                *accum += 2.0 * *fisher * (*theta - *theta_star);
+            }
+        }
+        validate_finite_vec("ewc.gradient_penalty", &out)?;
+        Ok(out)
+    }
+
+    pub fn guard_projected_update(
+        &self,
+        gradient: &[f32],
+        learning_rate: f32,
+        budget: f32,
+    ) -> Result<EwcGuardDecision, HealError> {
+        validate_finite_vec("ewc.projected_gradient", gradient)?;
+        if gradient.len() != self.predictor_dim {
+            return Err(HealError::invalid(
+                "ewc.projected_gradient",
+                format!(
+                    "gradient len {} != dim {}",
+                    gradient.len(),
+                    self.predictor_dim
+                ),
+            ));
+        }
+        if !learning_rate.is_finite() || learning_rate <= 0.0 {
+            return Err(HealError::invalid(
+                "ewc.learning_rate",
+                "learning rate must be finite and positive",
+            ));
+        }
+        if !budget.is_finite() || budget <= 0.0 {
+            return Err(HealError::invalid(
+                "ewc.fisher_budget",
+                "budget must be finite and positive",
+            ));
+        }
+        if self.task_snapshots.is_empty() {
+            return Ok(EwcGuardDecision {
+                projected_fisher_displacement: 0.0,
+                budget,
+                cold_start_exemption: true,
+                violation: false,
+            });
+        }
+        self.ensure_non_degenerate()?;
+        let mut projected = 0.0f32;
+        for snapshot in &self.task_snapshots {
+            for (grad, fisher) in gradient.iter().zip(&snapshot.fisher_diag_at_boundary) {
+                let delta = learning_rate * *grad;
+                projected += *fisher * delta * delta;
+            }
+        }
+        if !projected.is_finite() {
+            return Err(HealError::BatchNan {
+                component: "ewc.projected_fisher_displacement".to_string(),
+                witness_chain_offset: self.fisher_matrix.step_count,
+            });
+        }
+        Ok(EwcGuardDecision {
+            projected_fisher_displacement: projected,
+            budget,
+            cold_start_exemption: false,
+            violation: projected > budget,
+        })
+    }
+
+    pub fn auto_tune_lambda_for_cell(
+        &mut self,
+        cell_id: &str,
+        validation_loss_before: f32,
+        validation_loss_after: f32,
+    ) -> Result<EwcCellLambdaState, HealError> {
+        validate_cell_id(cell_id)?;
+        validate_nonnegative_finite("ewc.validation_loss_before", validation_loss_before)?;
+        validate_nonnegative_finite("ewc.validation_loss_after", validation_loss_after)?;
+        if !self.task_snapshots.is_empty() {
+            self.ensure_non_degenerate()?;
+        }
+        let previous = self
+            .cell_lambda_states
+            .get(cell_id)
+            .map(|state| state.lambda)
+            .unwrap_or(self.initial_lambda);
+        let regression_fraction = if validation_loss_before <= f32::EPSILON {
+            if validation_loss_after > validation_loss_before {
+                1.0
+            } else {
+                0.0
+            }
+        } else {
+            ((validation_loss_after - validation_loss_before) / validation_loss_before).max(0.0)
+        };
+        let should_decay = regression_fraction > EWC_VALIDATION_REGRESSION_DECAY_THRESHOLD;
+        let lambda = if should_decay {
+            (previous * EWC_LAMBDA_DECAY_FACTOR).max(0.0)
+        } else {
+            previous
+        };
+        let decay_count = self
+            .cell_lambda_states
+            .get(cell_id)
+            .map(|state| state.decay_count)
+            .unwrap_or(0)
+            + u32::from(should_decay);
+        let state = EwcCellLambdaState {
+            cell_id: cell_id.to_string(),
+            lambda,
+            validation_loss_before,
+            validation_loss_after,
+            regression_fraction,
+            decay_count,
+            updated_at_unix_ms: chrono::Utc::now().timestamp_millis(),
+        };
+        self.cell_lambda_states
+            .insert(cell_id.to_string(), state.clone());
+        self.lambda = lambda.clamp(0.0, self.max_lambda);
+        Ok(state)
+    }
+
+    pub fn snapshot_current_task_if_due<S: SnapshotStore>(
+        &mut self,
+        predictor_params: &[f32],
+        corpus_sha: [u8; 32],
+        store: &S,
+    ) -> Result<Option<TaskSnapshot>, HealError> {
+        if self.fisher_matrix.step_count == 0
+            || !self
+                .fisher_matrix
+                .step_count
+                .is_multiple_of(EWC_SNAPSHOT_INTERVAL_UPDATES)
+        {
+            return Ok(None);
+        }
+        if self
+            .task_snapshots
+            .last()
+            .is_some_and(|snapshot| snapshot.boundary_step == self.fisher_matrix.step_count)
+        {
+            return Ok(None);
+        }
+        self.snapshot_current_task(predictor_params, corpus_sha, store)
+            .map(Some)
     }
 
     pub fn fisher_rank(&self) -> usize {
@@ -404,6 +609,28 @@ impl EwcPlusPlus {
             second.frozen_at,
         )?;
         self.task_snapshots.insert(0, merged);
+        Ok(())
+    }
+
+    fn ensure_non_degenerate(&self) -> Result<(), HealError> {
+        let max_fisher = self
+            .task_snapshots
+            .iter()
+            .flat_map(|snapshot| snapshot.fisher_diag_at_boundary.iter().copied())
+            .fold(0.0f32, f32::max)
+            .max(
+                self.fisher_matrix
+                    .diagonal
+                    .iter()
+                    .copied()
+                    .fold(0.0f32, f32::max),
+            );
+        if max_fisher <= EWC_FISHER_DEGENERATE_EPSILON {
+            return Err(HealError::EwcFisherDegenerate {
+                rank: self.fisher_rank(),
+                dim: self.predictor_dim,
+            });
+        }
         Ok(())
     }
 }
@@ -466,6 +693,38 @@ fn validate_finite_vec(field: &str, values: &[f32]) -> Result<(), HealError> {
             component: field.to_string(),
             witness_chain_offset: 0,
         });
+    }
+    Ok(())
+}
+
+fn validate_nonnegative_finite(field: &str, value: f32) -> Result<(), HealError> {
+    if !value.is_finite() || value < 0.0 {
+        return Err(HealError::invalid(
+            field,
+            format!("value must be finite and non-negative, got {value}"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_cell_id(cell_id: &str) -> Result<(), HealError> {
+    if cell_id.trim().is_empty() {
+        return Err(HealError::invalid(
+            "ewc.cell_id",
+            "cell id must be non-empty",
+        ));
+    }
+    if cell_id.len() > 512 {
+        return Err(HealError::invalid(
+            "ewc.cell_id",
+            "cell id exceeds 512 bytes",
+        ));
+    }
+    if cell_id.bytes().any(|byte| byte < 0x20 || byte == 0x7f) {
+        return Err(HealError::invalid(
+            "ewc.cell_id",
+            "cell id contains a control character",
+        ));
     }
     Ok(())
 }

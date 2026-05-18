@@ -94,6 +94,10 @@ impl HealRocksStore {
         self.db.clone()
     }
 
+    pub fn system_cost_counters(&self) -> Option<Arc<SystemCostCounters>> {
+        self.system_cost_counters.clone()
+    }
+
     pub fn put_cf_readback(
         &self,
         cf_name: &str,

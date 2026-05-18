@@ -119,7 +119,7 @@ Per UTML v1.0 (`docs2/TheoryOfMachineLearning.md`): `L_step = ΔP × ΔK × ΔΩ
 |---|---|---|---|
 | 5.1 | **#272** | Online observe loop reward signals | M(t) feedback |
 | 5.2 | **#273** | Negative-action ablation falsifier | ΔΞ collapse detection |
-| 5.3 | **#284** | EWC catastrophic-forgetting protection | ΔK.fisher_violation |
+| 5.3 | **#284** | EWC catastrophic-forgetting protection — **code/FSV shipped; SoT `/mnt/d/contextgraph/fsv/task-py-g-065-ewc-fsv/run-20260518T151520Z/ewc_fsv.json` (`allPassed=true`, sha256 `7c9cd8fc37889c4176fd590ae4f2182b2d6abaf83386b474199b68629c8af4d4`)** | ΔK.fisher_violation |
 | 5.4 | **#285** | Continual backprop (Dohare 2024) plasticity prevention | ΔΩ.effective_plasticity |
 | 5.5 | **#286** | Novel-pattern detection + automatic constellation cell extension — **code/FSV shipped; SoT `/mnt/d/contextgraph/fsv/task-py-g-067-novel-pattern-fsv/run-1779051462932/novel_pattern_fsv.json` (`all_passed=true`)** | learn unseen situations |
 | 5.6 | **#287** | Replay buffer prioritized by surprise + per-cell coverage gap — **code/FSV shipped; SoT `/mnt/d/contextgraph/fsv/task-py-g-068-replay-buffer-fsv/run-1779049993557-3834881/replay_buffer_fsv.json` (`all_passed=true`)** | M(t) k_replay multiplier |

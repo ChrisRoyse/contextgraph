@@ -151,6 +151,12 @@ pub enum ActiveLearningKind {
         prediction_id: PredictionId,
         severity_score: f32,
     },
+    EwcProtectionViolation {
+        violation_id: String,
+        cell_id: String,
+        projected_fisher_displacement: f32,
+        budget: f32,
+    },
     ColdCellTargetedCorpus {
         cell_id: String,
         abstain_count: u32,
@@ -179,11 +185,73 @@ impl ActiveLearningKind {
     pub fn fast_track_rank(&self) -> u8 {
         match self {
             Self::AgentSurprise { .. } => 0,
-            Self::NovelCluster { .. } => 1,
-            Self::UnknownFingerprint { .. } => 2,
-            Self::ColdCellTargetedCorpus { .. } => 3,
-            Self::OutOfDistribution => 4,
-            Self::Uncertainty => 5,
+            Self::EwcProtectionViolation { .. } => 1,
+            Self::NovelCluster { .. } => 2,
+            Self::UnknownFingerprint { .. } => 3,
+            Self::ColdCellTargetedCorpus { .. } => 4,
+            Self::OutOfDistribution => 5,
+            Self::Uncertainty => 6,
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), EvalError> {
+        match self {
+            Self::Uncertainty | Self::OutOfDistribution => Ok(()),
+            Self::AgentSurprise {
+                prediction_id,
+                severity_score,
+            } => {
+                if prediction_id.0.iter().all(|byte| *byte == 0) {
+                    return Err(EvalError::new(
+                        EvalErrorCode::InvalidInput,
+                        "agent surprise prediction_id must be non-zero",
+                    ));
+                }
+                validate_probability(
+                    "active_learning.agent_surprise.severity_score",
+                    *severity_score,
+                )
+            }
+            Self::EwcProtectionViolation {
+                violation_id,
+                cell_id,
+                projected_fisher_displacement,
+                budget,
+            } => {
+                if violation_id.trim().is_empty() {
+                    return Err(EvalError::new(
+                        EvalErrorCode::InvalidInput,
+                        "EWC violation_id must be non-empty",
+                    ));
+                }
+                validate_cell_id(cell_id)?;
+                validate_nonnegative_finite(
+                    "active_learning.ewc.projected_fisher_displacement",
+                    *projected_fisher_displacement,
+                )?;
+                if !budget.is_finite() || *budget <= 0.0 {
+                    return Err(EvalError::new(
+                        EvalErrorCode::InvalidInput,
+                        "EWC budget must be finite and positive",
+                    ));
+                }
+                Ok(())
+            }
+            Self::ColdCellTargetedCorpus {
+                cell_id,
+                abstain_count,
+            } => {
+                validate_cell_id(cell_id)?;
+                if *abstain_count == 0 {
+                    return Err(EvalError::new(
+                        EvalErrorCode::InvalidInput,
+                        "cold-cell abstain_count must be greater than zero",
+                    ));
+                }
+                Ok(())
+            }
+            Self::UnknownFingerprint { candidate } => candidate.validate(),
+            Self::NovelCluster { candidate } => candidate.validate(),
         }
     }
 }
@@ -237,6 +305,7 @@ impl ActiveLearningQueueEntry {
                 "active-learning reason must be non-empty",
             ));
         }
+        self.kind.validate()?;
         Ok(())
     }
 }
@@ -687,6 +756,53 @@ impl ActiveLearningQueueState {
         Ok(())
     }
 
+    pub fn enqueue_ewc_protection_violation(
+        &mut self,
+        violation_id: String,
+        cell_id: String,
+        projected_fisher_displacement: f32,
+        budget: f32,
+    ) -> Result<(), EvalError> {
+        if violation_id.trim().is_empty() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "EWC violation_id must be non-empty",
+            ));
+        }
+        validate_cell_id(&cell_id)?;
+        validate_nonnegative_finite(
+            "active_learning.ewc.projected_fisher_displacement",
+            projected_fisher_displacement,
+        )?;
+        if !budget.is_finite() || budget <= 0.0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "EWC budget must be finite and positive",
+            ));
+        }
+        let digest = Sha256::digest(violation_id.as_bytes());
+        let task_id = TaskId(format!("ewc-protection-{}", hex::encode(&digest[..8])));
+        let severity_score = (projected_fisher_displacement / budget).clamp(0.0, 1.0);
+        let entry = ActiveLearningQueueEntry {
+            task_id: task_id.clone(),
+            score: severity_score,
+            outcome_set_len: 0,
+            ood_score: 0.0,
+            curiosity_score: curiosity_score_from_proxy(0.0, 0.0, 1.0)?,
+            reason: format!("ewc_protection_violation:{violation_id}"),
+            kind: ActiveLearningKind::EwcProtectionViolation {
+                violation_id,
+                cell_id,
+                projected_fisher_displacement,
+                budget,
+            },
+        };
+        entry.validate()?;
+        self.entries.insert(task_id, entry);
+        self.evict_to_capacity()?;
+        Ok(())
+    }
+
     pub fn enqueue_cold_cell_targeted_corpus(
         &mut self,
         cell_id: String,
@@ -973,6 +1089,7 @@ pub(super) struct LegacyActiveLearningQueueEntry {
 impl From<LegacyActiveLearningQueueEntry> for ActiveLearningQueueEntry {
     fn from(entry: LegacyActiveLearningQueueEntry) -> Self {
         let support_gap = match &entry.kind {
+            ActiveLearningKind::EwcProtectionViolation { .. } => 1.0,
             ActiveLearningKind::UnknownFingerprint { candidate } => {
                 active_learning_priority_score(candidate.active_learning_priority)
             }

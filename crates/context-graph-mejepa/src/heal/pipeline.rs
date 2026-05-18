@@ -4,16 +4,22 @@ use context_graph_mejepa_instruments::Panel;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::eval::ActiveLearningQueueState;
 use crate::heal::calibration::{
     CalibrationExample, CalibrationWriter, DEFAULT_CALIBRATION_WINDOW_SIZE,
 };
-use crate::heal::cf::{decode_value, CF_MEJEPA_DRIFT_WINDOW, CF_MEJEPA_SHIFT_WATERMARK};
+use crate::heal::cf::{
+    decode_value, encode_value, CF_MEJEPA_DRIFT_WINDOW, CF_MEJEPA_SHIFT_WATERMARK,
+};
 use crate::heal::distill::{consume, EmbedderHandle, OnlineDistiller, OracleHandle};
 use crate::heal::drift::{
     DriftDetector, DriftSample, DriftSeverity, NoopDriftSurface, SeverityTable,
 };
 use crate::heal::errors::{CriticalBugKind, HealError};
-use crate::heal::ewc::{EwcPlusPlus, HessianTraceProbe, PredictorGradAccessor};
+use crate::heal::ewc::{
+    EwcGuardDecision, EwcPlusPlus, HessianTraceProbe, PredictorGradAccessor,
+    DEFAULT_EWC_FISHER_BUDGET,
+};
 use crate::heal::integrity::{ChainIntegrityChecker, WitnessChainAppender};
 use crate::heal::lora_refresh::{CorpusSlice, LoraRefresher};
 use crate::heal::promote::{
@@ -321,7 +327,33 @@ impl SelfHealingPipeline {
             .update_fisher_online(panel, oracle_outcome, &self.predictor)?;
         let params_before = self.predictor.parameters_flat();
         let penalty = self.ewc.ewc_penalty(&params_before)?;
-        let l_total = loss + self.ewc.current_lambda() * penalty * signal_clarity;
+        let cell_id = observe_cell_id(session_id);
+        let lambda = self.ewc.current_lambda_for_cell(&cell_id)?;
+        let ewc_gradient = self.ewc.ewc_gradient(&params_before)?;
+        for (grad, ewc_grad) in gradient.iter_mut().zip(ewc_gradient) {
+            *grad += lambda * ewc_grad * signal_clarity;
+        }
+        let guard = self.ewc.guard_projected_update(
+            &gradient,
+            self.config.learning_rate,
+            DEFAULT_EWC_FISHER_BUDGET,
+        )?;
+        if guard.violation {
+            let violation_id = ewc_violation_id(
+                session_id,
+                self.ewc.fisher_matrix.step_count,
+                guard.projected_fisher_displacement,
+                guard.budget,
+            );
+            self.requeue_ewc_violation(&violation_id, &cell_id, guard)?;
+            return Err(HealError::EwcProtectionViolation {
+                violation_id,
+                projected_fisher_displacement: guard.projected_fisher_displacement,
+                budget: guard.budget,
+                requeued: true,
+            });
+        }
+        let l_total = loss + lambda * penalty * signal_clarity;
         if !l_total.is_finite() {
             return Err(HealError::BatchNan {
                 component: "observe.l_total".to_string(),
@@ -330,6 +362,9 @@ impl SelfHealingPipeline {
         }
         self.predictor
             .apply_gradient(&gradient, self.config.learning_rate)?;
+        let (post_update_loss, _) = self.predictor.loss_and_gradient(panel, oracle_outcome)?;
+        self.ewc
+            .auto_tune_lambda_for_cell(&cell_id, loss, post_update_loss)?;
         if self
             .ewc
             .detect_task_boundary(loss + breakdown.boundary_loss_lift(), &self.predictor)?
@@ -340,6 +375,11 @@ impl SelfHealingPipeline {
                 self.storage.as_ref(),
             )?;
         }
+        self.ewc.snapshot_current_task_if_due(
+            &self.predictor.parameters_flat(),
+            self.corpus_sha,
+            self.storage.as_ref(),
+        )?;
         let predicted_set = self.predictor.predicted_set(panel)?;
         let sample = DriftSample::try_new(
             predicted_set,
@@ -415,6 +455,39 @@ impl SelfHealingPipeline {
             status_change: StatusChange::Active,
             witness_chain_offset_after: next_offset,
         })
+    }
+
+    fn requeue_ewc_violation(
+        &self,
+        violation_id: &str,
+        cell_id: &str,
+        guard: EwcGuardDecision,
+    ) -> Result<(), HealError> {
+        let active_key = b"active";
+        let mut queue = match self.storage.get_cf(
+            context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+            active_key,
+        )? {
+            Some(bytes) => decode_value::<ActiveLearningQueueState>(&bytes)?,
+            None => ActiveLearningQueueState::new(1024).map_err(map_eval_error)?,
+        };
+        queue
+            .enqueue_ewc_protection_violation(
+                violation_id.to_string(),
+                cell_id.to_string(),
+                guard.projected_fisher_displacement,
+                guard.budget,
+            )
+            .map_err(map_eval_error)?;
+        self.storage.put_cf_readback(
+            context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+            active_key,
+            &encode_value(&queue)?,
+        )?;
+        if let Some(counters) = self.storage.system_cost_counters() {
+            counters.record_ewc_violation();
+        }
+        Ok(())
     }
 
     pub fn read_train_cert_window(&self) -> Result<TrainCertWindowMeans, HealError> {
@@ -699,6 +772,36 @@ pub fn sha_f32s(values: &[f32]) -> [u8; 32] {
         hasher.update(value.to_le_bytes());
     }
     hasher.finalize().into()
+}
+
+fn observe_cell_id(session_id: &str) -> String {
+    let trimmed = session_id.trim();
+    if trimmed.is_empty() {
+        "session:unknown".to_string()
+    } else {
+        format!("session:{trimmed}")
+    }
+}
+
+fn ewc_violation_id(
+    session_id: &str,
+    step_count: u64,
+    projected_fisher_displacement: f32,
+    budget: f32,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(session_id.as_bytes());
+    hasher.update(step_count.to_be_bytes());
+    hasher.update(projected_fisher_displacement.to_le_bytes());
+    hasher.update(budget.to_le_bytes());
+    hex::encode(&hasher.finalize()[..16])
+}
+
+fn map_eval_error(err: crate::eval::EvalError) -> HealError {
+    HealError::invalid(
+        "self_healing.active_learning",
+        format!("{}: {err}", err.code()),
+    )
 }
 
 pub fn bootstrap_pipeline_for_path(

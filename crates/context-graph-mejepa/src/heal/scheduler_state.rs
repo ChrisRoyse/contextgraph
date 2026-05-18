@@ -1474,6 +1474,18 @@ fn active_learning_kind_summary(kind: &ActiveLearningKind) -> serde_json::Value 
             "prediction_id": hex::encode(prediction_id.0),
             "severity_score": severity_score,
         }),
+        ActiveLearningKind::EwcProtectionViolation {
+            violation_id,
+            cell_id,
+            projected_fisher_displacement,
+            budget,
+        } => json!({
+            "type": "ewc_protection_violation",
+            "violation_id": violation_id,
+            "cell_id": cell_id,
+            "projected_fisher_displacement": projected_fisher_displacement,
+            "budget": budget,
+        }),
         ActiveLearningKind::ColdCellTargetedCorpus {
             cell_id,
             abstain_count,
