@@ -8,12 +8,10 @@ use anyhow::{anyhow, Context, Result};
 use clap::Args;
 use context_graph_mejepa::{
     open_infer_rocksdb, ActiveLearningKind, ActiveLearningQueueEntry, ActiveLearningQueueState,
-    MejepaStore, PredictionId, RealityPrediction, RocksDbEvalStore, RocksDbInferStore,
+    Language, MejepaStore, PredictionId, RealityPrediction, RocksDbEvalStore, RocksDbInferStore,
     SurpriseSeverity, TaskId, TestOutcome, Verdict,
 };
-#[cfg(test)]
-use rocksdb::IteratorMode;
-use rocksdb::{WriteOptions, DB};
+use rocksdb::{IteratorMode, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -58,6 +56,21 @@ pub struct BindTestOutcomesArgs {
     /// Deterministic timestamp override for FSV.
     #[arg(long)]
     pub now_ms: Option<i64>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct StopSelfVerifyArgs {
+    /// Inference RocksDB path containing live predictions and verification rows.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// Current Claude session id as 32 lowercase hex chars.
+    #[arg(long)]
+    pub session_id: String,
+
+    /// Number of recent predictions to inspect for the session.
+    #[arg(long, default_value_t = 50)]
+    pub max_predictions: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,6 +135,34 @@ pub struct BindTestOutcomesOutput {
     pub refuted_queue_entries: usize,
     pub rows: Vec<PredictionVerificationRecord>,
     pub boundary: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StopSelfVerifyPredictionView {
+    pub prediction_id: String,
+    pub task_id: String,
+    pub verdict: String,
+    pub language: String,
+    pub created_at_unix_ms: i64,
+    pub severity_score: f32,
+    pub recommended_commands: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StopSelfVerifyOutput {
+    pub tool: String,
+    pub source_of_truth: serde_json::Value,
+    pub session_id: String,
+    pub predictions_scanned: usize,
+    pub verified_prediction_count: usize,
+    pub abstained_prediction_count: usize,
+    pub unverified_count: usize,
+    pub unverified_predictions: Vec<StopSelfVerifyPredictionView>,
+    pub recommended_commands: Vec<String>,
+    pub truncated_recommended_command_count: usize,
+    pub block: bool,
 }
 
 pub fn bind_test_outcomes(args: BindTestOutcomesArgs) -> Result<BindTestOutcomesOutput> {
@@ -192,6 +233,76 @@ pub fn bind_test_outcomes(args: BindTestOutcomesArgs) -> Result<BindTestOutcomes
             "edited_files": edited_files,
             "ambiguous": args.ambiguous,
         }),
+    })
+}
+
+pub fn stop_self_verify(args: StopSelfVerifyArgs) -> Result<StopSelfVerifyOutput> {
+    if !(1..=1000).contains(&args.max_predictions) {
+        return Err(anyhow!(
+            "MEJEPA_STOP_SELF_VERIFY_LIMIT_INVALID: {}",
+            args.max_predictions
+        ));
+    }
+    let session_id_bytes = decode_hex16(&args.session_id)?;
+    let db = open_infer_rocksdb(&args.db_path).with_context(|| {
+        format!(
+            "MEJEPA_STOP_SELF_VERIFY_DB_OPEN_FAILED: {}",
+            args.db_path.display()
+        )
+    })?;
+    let infer_store = RocksDbInferStore::new(db.clone());
+    let predictions = infer_store
+        .read_live_predictions(session_id_bytes, args.max_predictions)
+        .with_context(|| {
+            format!(
+                "MEJEPA_STOP_SELF_VERIFY_PREDICTION_LOOKUP_FAILED: {}",
+                args.session_id
+            )
+        })?;
+    let verified = confirmed_or_refuted_prediction_ids(db.as_ref(), &args.session_id)?;
+
+    let mut unverified_predictions = Vec::new();
+    let mut verified_prediction_count = 0usize;
+    let mut abstained_prediction_count = 0usize;
+    for prediction in &predictions {
+        let prediction_id = hex::encode(prediction.prediction_id);
+        if prediction.verdict == Verdict::Abstain {
+            abstained_prediction_count += 1;
+            continue;
+        }
+        if verified.contains(&prediction_id) {
+            verified_prediction_count += 1;
+            continue;
+        }
+        unverified_predictions.push(stop_prediction_view(prediction));
+    }
+    unverified_predictions.sort_by(|left, right| {
+        right
+            .severity_score
+            .total_cmp(&left.severity_score)
+            .then_with(|| left.prediction_id.cmp(&right.prediction_id))
+    });
+    let all_recommended = top_recommended_commands(&unverified_predictions);
+    let top_recommended = all_recommended.iter().take(10).cloned().collect::<Vec<_>>();
+    let block = !unverified_predictions.is_empty();
+    Ok(StopSelfVerifyOutput {
+        tool: "context-graph-cli mejepa stop-self-verify".to_string(),
+        source_of_truth: json!({
+            "db_path": args.db_path,
+            "live_prediction_cf": context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
+            "verification_cf": context_graph_mejepa_cf::CF_MEJEPA_PREDICTION_VERIFICATIONS,
+            "session_id": args.session_id,
+            "max_predictions": args.max_predictions,
+        }),
+        session_id: args.session_id,
+        predictions_scanned: predictions.len(),
+        verified_prediction_count,
+        abstained_prediction_count,
+        unverified_count: unverified_predictions.len(),
+        unverified_predictions,
+        truncated_recommended_command_count: all_recommended.len().saturating_sub(10),
+        recommended_commands: top_recommended,
+        block,
     })
 }
 
@@ -444,6 +555,144 @@ fn verification_key(record: &PredictionVerificationRecord) -> Vec<u8> {
     .into_bytes()
 }
 
+fn confirmed_or_refuted_prediction_ids(db: &DB, session_id: &str) -> Result<BTreeSet<String>> {
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_PREDICTION_VERIFICATIONS)
+        .ok_or_else(|| anyhow!("MEJEPA_STOP_SELF_VERIFY_VERIFICATION_CF_MISSING"))?;
+    let mut ids = BTreeSet::new();
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (_key, value) = item.context("MEJEPA_STOP_SELF_VERIFY_VERIFICATION_ITER_FAILED")?;
+        let row: PredictionVerificationRecord = serde_json::from_slice(&value)
+            .context("MEJEPA_STOP_SELF_VERIFY_VERIFICATION_DECODE_FAILED")?;
+        if row.session_id == session_id && matches!(row.agreement.as_str(), "confirmed" | "refuted")
+        {
+            ids.insert(row.prediction_id);
+        }
+    }
+    Ok(ids)
+}
+
+fn stop_prediction_view(prediction: &RealityPrediction) -> StopSelfVerifyPredictionView {
+    StopSelfVerifyPredictionView {
+        prediction_id: hex::encode(prediction.prediction_id),
+        task_id: prediction.task_id.0.clone(),
+        verdict: verdict_label(prediction.verdict).to_string(),
+        language: language_label(prediction.language).to_string(),
+        created_at_unix_ms: prediction.created_at_unix_ms,
+        severity_score: stop_prediction_severity_score(prediction),
+        recommended_commands: recommended_commands_for_prediction(prediction),
+    }
+}
+
+fn stop_prediction_severity_score(prediction: &RealityPrediction) -> f32 {
+    let verdict_weight = match prediction.verdict {
+        Verdict::GuardRejected => 10.0,
+        Verdict::Fail => 9.0,
+        Verdict::OutOfDistribution => 8.0,
+        Verdict::Pass => 4.0,
+        Verdict::Abstain => 0.0,
+    };
+    let predicted_failure_weight = (prediction.predicted_failed_tests.len().min(8) as f32) * 0.25;
+    let oracle_fail_weight = (1.0 - prediction.predicted_oracle_pass).clamp(0.0, 1.0);
+    verdict_weight + predicted_failure_weight + prediction.ood_score.clamp(0.0, 1.0) + oracle_fail_weight
+}
+
+fn top_recommended_commands(views: &[StopSelfVerifyPredictionView]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    for view in views {
+        for command in &view.recommended_commands {
+            if seen.insert(command.clone()) {
+                out.push(command.clone());
+            }
+        }
+    }
+    out
+}
+
+fn recommended_commands_for_prediction(prediction: &RealityPrediction) -> Vec<String> {
+    let mut commands = BTreeSet::new();
+    for predicted in &prediction.predicted_failed_tests {
+        if let Some(command) = command_for_test_id(prediction.language, &predicted.test_id.0) {
+            commands.insert(command);
+        }
+    }
+    if commands.is_empty() {
+        commands.insert(fallback_test_command(prediction));
+    }
+    commands.into_iter().collect()
+}
+
+fn command_for_test_id(language: Language, test_id: &str) -> Option<String> {
+    let test_id = test_id.trim();
+    if test_id.is_empty() {
+        return None;
+    }
+    let command = match language {
+        Language::Python => format!("pytest {test_id} -q"),
+        Language::Rust => {
+            let test_name = test_id.rsplit("::").next().unwrap_or(test_id);
+            format!("cargo test {test_name}")
+        }
+        Language::Javascript | Language::Typescript => format!("npm test -- {test_id}"),
+        Language::Go => format!("go test ./... -run {test_id}"),
+        Language::Java => format!("mvn test -Dtest={test_id}"),
+        Language::C | Language::Cpp | Language::CSharp | Language::Ruby | Language::Php => {
+            format!("run project tests for {test_id}")
+        }
+    };
+    Some(command)
+}
+
+fn fallback_test_command(prediction: &RealityPrediction) -> String {
+    match prediction.language {
+        Language::Python => first_chunk_path(prediction)
+            .filter(|path| path.starts_with("tests/") && path.ends_with(".py"))
+            .map(|path| format!("pytest {path} -q"))
+            .unwrap_or_else(|| "pytest -q".to_string()),
+        Language::Rust => "cargo test".to_string(),
+        Language::Javascript | Language::Typescript => "npm test".to_string(),
+        Language::Go => "go test ./...".to_string(),
+        Language::Java => "mvn test".to_string(),
+        Language::C | Language::Cpp | Language::CSharp | Language::Ruby | Language::Php => {
+            "run project test suite".to_string()
+        }
+    }
+}
+
+fn first_chunk_path(prediction: &RealityPrediction) -> Option<&str> {
+    prediction.covered_chunks.first().map(|chunk| {
+        let raw = chunk.0.as_str();
+        raw.split('#').next().unwrap_or(raw)
+    })
+}
+
+fn verdict_label(verdict: Verdict) -> &'static str {
+    match verdict {
+        Verdict::Pass => "pass",
+        Verdict::Fail => "fail",
+        Verdict::OutOfDistribution => "out_of_distribution",
+        Verdict::Abstain => "abstain",
+        Verdict::GuardRejected => "guard_rejected",
+    }
+}
+
+fn language_label(language: Language) -> &'static str {
+    match language {
+        Language::Rust => "rust",
+        Language::Python => "python",
+        Language::Javascript => "javascript",
+        Language::Typescript => "typescript",
+        Language::Go => "go",
+        Language::Java => "java",
+        Language::C => "c",
+        Language::Cpp => "cpp",
+        Language::CSharp => "csharp",
+        Language::Ruby => "ruby",
+        Language::Php => "php",
+    }
+}
+
 #[cfg(test)]
 fn count_cf(db: &DB, cf_name: &str) -> Result<usize> {
     let cf = db
@@ -490,9 +739,10 @@ fn source_of_truth(db_path: &Path, evidence_path: &Path) -> serde_json::Value {
 mod tests {
     use super::*;
     use context_graph_mejepa::{
-        ChunkId, ConformalInterval, ConformalMethod, ConformalSet, Language, OracleOutcome,
-        PredictionProvenance, RealityPrediction, ReasoningClass, RocksDbInferStore, TaskId,
-        WitnessHash,
+        ChunkId, ConformalInterval, ConformalMethod, ConformalSet, FailureModeClass, Language,
+        OracleOutcome, PredictedFailureMode, PredictedTestOutcome, PredictionProvenance,
+        RealityPrediction, ReasoningClass, RocksDbInferStore, RootCauseClass, Severity, TaskId,
+        TestDeltaKind, TestId, WitnessHash,
     };
     use tempfile::TempDir;
 
@@ -568,6 +818,51 @@ mod tests {
             unknown_candidate_id: None,
         })
         .unwrap()
+    }
+
+    fn prediction_with_verdict(
+        session_id: [u8; 16],
+        prediction_id: [u8; 16],
+        chunk: &str,
+        pass: f32,
+        verdict: Verdict,
+        predicted_failed_tests: Vec<PredictedTestOutcome>,
+    ) -> RealityPrediction {
+        let mut prediction = prediction(session_id, prediction_id, chunk, pass);
+        prediction.verdict = verdict;
+        prediction.outcome_set = ConformalSet::try_new(
+            vec![match verdict {
+                Verdict::Pass => OracleOutcome::Pass,
+                Verdict::Fail | Verdict::GuardRejected => OracleOutcome::Fail,
+                Verdict::OutOfDistribution => OracleOutcome::OutOfDistribution,
+                Verdict::Abstain => OracleOutcome::Abstain,
+            }],
+            0.1,
+            0.2,
+        )
+        .unwrap();
+        prediction.predicted_failed_tests = predicted_failed_tests;
+        RealityPrediction::try_new(prediction).unwrap()
+    }
+
+    fn predicted_failed_test(test_id: &str, chunk: &str) -> PredictedTestOutcome {
+        PredictedTestOutcome {
+            test_id: TestId(test_id.to_string()),
+            current_outcome: TestOutcome::Pass,
+            predicted_outcome: TestOutcome::Fail,
+            delta_kind: TestDeltaKind::PassToFail,
+            confidence: 0.91,
+            why: PredictedFailureMode {
+                failure_class: FailureModeClass::Behavior,
+                chunk: ChunkId(chunk.to_string()),
+                line_range: (1, 2),
+                confidence: 0.91,
+                severity: Severity::High,
+                explanation: "synthetic stop self-verify predicted failure".to_string(),
+                contributing_embedders: Vec::new(),
+                root_cause_class: RootCauseClass::LogicRegression,
+            },
+        }
     }
 
     fn event_json(

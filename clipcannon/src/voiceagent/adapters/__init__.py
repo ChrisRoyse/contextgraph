@@ -1,1 +1,0 @@
-"""Voice Agent adapters module."""

@@ -36,6 +36,9 @@ pub enum MejepaCommands {
     /// Bind PostToolUse Bash test outcomes back to live RealityPrediction rows.
     #[command(name = "bind-test-outcomes")]
     BindTestOutcomes(crate::commands::mejepa_prediction_verification::BindTestOutcomesArgs),
+    /// Stop-hook gate: list non-Abstain predictions missing Confirmed/Refuted verification.
+    #[command(name = "stop-self-verify")]
+    StopSelfVerify(crate::commands::mejepa_prediction_verification::StopSelfVerifyArgs),
     /// Checkpointed Python train/calibration/holdout cycle with eval readback.
     #[command(name = "checkpointed-train")]
     CheckpointedTrain(crate::commands::mejepa_train::MejepaCheckpointedTrainArgs),
@@ -288,6 +291,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
             crate::commands::mejepa_prediction_verification::bind_test_outcomes(args)?,
         )
         .context("serialize bind-test-outcomes"),
+        MejepaCommands::StopSelfVerify(args) => serde_json::to_value(
+            crate::commands::mejepa_prediction_verification::stop_self_verify(args)?,
+        )
+        .context("serialize stop-self-verify"),
         MejepaCommands::CheckpointedTrain(args) => serde_json::to_value(
             crate::commands::mejepa_train::run_checkpointed_python_train(args)?,
         )
