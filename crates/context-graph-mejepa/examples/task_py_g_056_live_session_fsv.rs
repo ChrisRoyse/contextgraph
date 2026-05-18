@@ -308,12 +308,24 @@ fn readback_existing_report(report_path: &Path) -> Result<()> {
         &fs::read(report_path).with_context(|| format!("read {}", report_path.display()))?,
     )
     .context("decode FSV report")?;
-    let db_path = json_path_str(&report, &["sourceOfTruth", "dbPath"])?;
-    let runtime_root = PathBuf::from(json_path_str(
-        &report,
-        &["sourceOfTruth", "runtimeJsonlRoot"],
-    )?);
-    let db = open_infer_rocksdb(Path::new(db_path)).context("open readback RocksDB")?;
+    ensure!(
+        report.get("allPassed").and_then(Value::as_bool) == Some(true),
+        "readback report did not pass all FSV checks"
+    );
+    let report_path =
+        context_graph_paths::require_production_durable_root(report_path, "readback.reportPath")?;
+    let db_path = context_graph_paths::require_production_durable_root(
+        Path::new(json_path_str(&report, &["sourceOfTruth", "dbPath"])?),
+        "sourceOfTruth.dbPath",
+    )?;
+    let runtime_root = context_graph_paths::require_production_durable_root(
+        Path::new(json_path_str(
+            &report,
+            &["sourceOfTruth", "runtimeJsonlRoot"],
+        )?),
+        "sourceOfTruth.runtimeJsonlRoot",
+    )?;
+    let db = open_infer_rocksdb(&db_path).context("open readback RocksDB")?;
     let traces = scan_live_session_traces(db.as_ref()).context("scan live-session traces")?;
     let trace_rows = count_live_session_traces(db.as_ref()).context("count trace CF rows")?;
     let live_prediction_rows =
@@ -338,6 +350,16 @@ fn readback_existing_report(report_path: &Path) -> Result<()> {
         &report,
         &["after", "activeLearningRows"],
         active_learning_rows,
+    )?;
+    assert_report_count(
+        &report,
+        &["after", "reopenedTraceCount"],
+        traces.len() as u64,
+    )?;
+    assert_report_count(
+        &report,
+        &["after", "activeQueueEntries"],
+        active_queue_entries as u64,
     )?;
 
     let mut jsonl_files = Vec::new();

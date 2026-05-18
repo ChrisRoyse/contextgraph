@@ -2,7 +2,7 @@
 
 **Last refreshed:** 2026-05-18.
 
-Source: `gh issue list --state open` (69 open issues), recent `type:decision` closes, git log, `MEMORY.md`, the 27-roadmap legacy doc.
+Source: `gh issue list --state open` (65 open issues after closing #369), recent `type:decision` closes, git log, GitHub issue comments, the 27-roadmap legacy doc.
 
 ---
 
@@ -17,20 +17,20 @@ prediction_oracle_correlation ≥ 0.95
 
 **Last holdout measurement:** `0.866667` (legacy `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; not current production evidence until revalidated on aiwonder under #369).
 
-**Gap to ship:** 0.083 correlation points. Bridging this is the entire job of Phase G's remaining open work (66 issues).
+**Gap to ship:** 0.083 correlation points. Bridging this is the entire job of Phase G's remaining open work (62 issues).
 
 Once met → human review of AI-generated Python patches is statistically unjustified. Auto-trust policy gates engage (TASK-PY-G-058 / #277).
 
 ---
 
-## 2. Open Issue Snapshot (69 open as of 2026-05-18)
+## 2. Open Issue Snapshot (65 open after the #369 closeout on 2026-05-18)
 
 By phase label:
 
 | Label | Open count | Notes |
 |---|---|---|
-| `phase:g` | 66 | Ship-gate convergence work (this is the critical path) |
-| `phase:migration` | (mostly closed) | Aiwonder migration — closing out; #366/#367/#368/#369 still open |
+| `phase:g` | 62 | Ship-gate convergence work (this is the critical path) |
+| `phase:migration` | 2 | Aiwonder migration — closing out; #368 and #306 still open |
 | `phase:f-followup` | 1 | #312 hot_root on ext4 throughput (perf followup) |
 | `phase:f` | 0 (closed as of 2026-05-13) | — |
 | `phase:h` | 0 (closed) | — |
@@ -40,10 +40,10 @@ By priority:
 
 | Priority | Open count | Examples |
 |---|---|---|
-| `priority:p0` | ~5 | #310 META issue refactor; #366, #369 aiwonder revalidation |
-| `priority:p1` | ~30 | Most TASK-PY-DATA-* + TASK-PY-G-* shipped; remaining p1 are calibration + adversarial defense + Q4 head training |
-| `priority:p2` | ~25 | EK series tail, post-ship policies, refined sub-tasks |
-| `priority:p3` | ~9 | Deferred (SWE-bench Verified subset, sample-efficiency, v2 stretch tasks) |
+| `priority:p0` | 1 | #310 META issue refactor |
+| `priority:p1` | 18 | Calibration, adversarial defense, and Q4 head training |
+| `priority:p2` | 37 | EK series tail, post-ship policies, refined sub-tasks |
+| `priority:p3` | 9 | Deferred (SWE-bench Verified subset, sample-efficiency, v2 stretch tasks) |
 
 ---
 
