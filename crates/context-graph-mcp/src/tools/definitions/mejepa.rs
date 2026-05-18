@@ -218,6 +218,48 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_MINCUT_PANEL,
+            "TASK-EK-003 structural-hole surface: build an embedder, pairwise-MI, TCT constellation, failure-fingerprint, or inline weighted graph, run a deterministic mincut/sparsest-cut panel, persist MincutReport rows in CF_MEJEPA_MINCUT_REPORTS, and return readback provenance.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["graphSource"],
+                "properties": {
+                    "graphSource": {
+                        "type": "object",
+                        "description": "PanelGraphSource: kind=inlineWeightedGraph, embedderSimilarity, pairwiseMiMatrix, constellationInternal, or failureFingerprintGraph.",
+                        "additionalProperties": true
+                    },
+                    "options": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "algorithm": {
+                                "type": "string",
+                                "enum": ["stoer_wagner", "sparsest_cut_approx"],
+                                "default": "stoer_wagner"
+                            },
+                            "returnTopKCandidateDirections": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 16,
+                                "default": 1
+                            }
+                        }
+                    },
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional ME-JEPA RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    },
+                    "persist": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "When true, write the report to CF_MEJEPA_MINCUT_REPORTS with read-after-write validation."
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_EXPLAIN_PREDICTION,
             "Explain a persisted System 2 ME-JEPA Phase B RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS and returning stored verdict, matched failure-shape fingerprint evidence, top risks, claim reconciliation, reality impact, provenance, and a saliency map normalized from covered chunks.",
             json!({
@@ -923,7 +965,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_AUDIT_PAIRWISE_MI,
-            "Compute the UTML pairwise mutual-information audit from real per-slot series, persist the CSV matrix, reload the CSV, and return the readback summary.",
+            "Compute the UTML pairwise mutual-information audit from real per-slot series, persist the CSV matrix, optionally persist CF_MEJEPA_PAIRWISE_MI rows, reload both sources of truth, and return redundancy/effective-signal summaries.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -941,6 +983,23 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "integer",
                         "minimum": 1,
                         "default": 1
+                    },
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional ME-JEPA RocksDB path; when supplied the audit persists pair rows to CF_MEJEPA_PAIRWISE_MI"
+                    },
+                    "persistToCf": {
+                        "type": "boolean",
+                        "default": false
+                    },
+                    "corpusShardHash": {
+                        "type": "string",
+                        "pattern": "^[0-9A-Fa-f]{64}$",
+                        "description": "Optional held-out corpus shard hash; defaults to a deterministic digest of the audited matrix"
+                    },
+                    "createdAtUnixMs": {
+                        "type": "integer",
+                        "minimum": 1
                     },
                     "seriesBySlot": {
                         "type": "object",

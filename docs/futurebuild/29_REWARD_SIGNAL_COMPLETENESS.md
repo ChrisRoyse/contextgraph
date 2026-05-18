@@ -38,7 +38,7 @@ Without explicit completeness tracking, the system silently leaves signal on the
 |---|---|---|
 | Per-embedder cosine to cell centroid (12 signals per chunk) | DDA pipeline (`python_pairwise_dda_mi.py`) | ✅ shipped |
 | Pairwise cosine across 66 embedder pairs | DDA pipeline | ✅ shipped |
-| Pairwise mutual information across 66 embedder pairs | DDA pipeline + REQ-UTML-06 audit | ✅ shipped |
+| Pairwise mutual information across embedder pairs | DDA pipeline + REQ-UTML-06 audit + `CF_MEJEPA_PAIRWISE_MI` readback | ✅ shipped; TASK-PY-G-007 now persists 13-slot/78-pair Python-panel audits with redundancy histogram, adaptive weights, and `N_eff` |
 | Blind-spot z-scores (11 enhancer-vs-primary pairs per chunk) | DDA pipeline | ✅ shipped |
 | Embedder agreement / disagreement vectors | DDA | ✅ shipped |
 

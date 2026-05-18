@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 const MI_BINS: usize = 10;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PairwiseMiMatrix {
     pub slots: Vec<String>,
@@ -141,7 +141,8 @@ impl PairwiseMiAuditor {
             .join(format!("utml-pairwise-mi-matrix-{step:08}.csv"));
         write_matrix_csv_0600(&path, &matrix)?;
         let readback = load_pairwise_mi_matrix_csv(&path)?;
-        if readback.slots != matrix.slots || readback.values != matrix.values {
+        if readback.slots != matrix.slots || !matrix_values_close(&readback.values, &matrix.values)
+        {
             return Err(UtmlError::new(
                 UtmlErrorCode::ReadbackMismatch,
                 format!("pairwise MI CSV readback mismatch at {}", path.display()),
@@ -192,24 +193,23 @@ pub fn compute_pairwise_mi_matrix(
     }
     let mut values = vec![vec![0.0; slots.len()]; slots.len()];
     for row in 0..slots.len() {
-        for col in 0..slots.len() {
-            values[row][col] = if row == col {
-                1.0
-            } else {
-                let left = series_by_slot.get(&slots[row]).ok_or_else(|| {
-                    UtmlError::new(
-                        UtmlErrorCode::MissingSourceOfTruth,
-                        format!("pairwise MI missing slot {}", slots[row]),
-                    )
-                })?;
-                let right = series_by_slot.get(&slots[col]).ok_or_else(|| {
-                    UtmlError::new(
-                        UtmlErrorCode::MissingSourceOfTruth,
-                        format!("pairwise MI missing slot {}", slots[col]),
-                    )
-                })?;
-                normalized_mutual_information(left, right)?
-            };
+        values[row][row] = 1.0;
+        for col in (row + 1)..slots.len() {
+            let left = series_by_slot.get(&slots[row]).ok_or_else(|| {
+                UtmlError::new(
+                    UtmlErrorCode::MissingSourceOfTruth,
+                    format!("pairwise MI missing slot {}", slots[row]),
+                )
+            })?;
+            let right = series_by_slot.get(&slots[col]).ok_or_else(|| {
+                UtmlError::new(
+                    UtmlErrorCode::MissingSourceOfTruth,
+                    format!("pairwise MI missing slot {}", slots[col]),
+                )
+            })?;
+            let mi = normalized_mutual_information(left, right)?;
+            values[row][col] = mi;
+            values[col][row] = mi;
         }
     }
     let matrix = PairwiseMiMatrix { slots, values };
@@ -418,6 +418,19 @@ fn off_diagonal_stats(matrix: &PairwiseMiMatrix) -> (f32, f32) {
         }
     }
     (if count == 0 { 0.0 } else { sum / count as f32 }, max_value)
+}
+
+fn matrix_values_close(left: &[Vec<f32>], right: &[Vec<f32>]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.iter().zip(right).all(|(left_row, right_row)| {
+        left_row.len() == right_row.len()
+            && left_row
+                .iter()
+                .zip(right_row)
+                .all(|(left, right)| (*left - *right).abs() <= 1.0e-6)
+    })
 }
 
 fn csv_write_err(err: std::io::Error) -> UtmlError {

@@ -19,6 +19,7 @@ context-graph-cuda = { path = "../context-graph-cuda" }
 context-graph-core = { workspace = true }
 context-graph-embeddings = { path = "../context-graph-embeddings" }
 context-graph-mejepa-corpus = { path = "../context-graph-mejepa-corpus" }
+context-graph-mincut = { path = "../context-graph-mincut" }
 context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }
 context-graph-mejepa-tct = { path = "../context-graph-mejepa-tct" }
 context-graph-mejepa-cf = { path = "../context-graph-mejepa-cf" }
@@ -146,3 +147,7 @@ path = "examples/task_fp_105_rank_candidates_fsv.rs"
 [[example]]
 name = "task_ek_010_elicit_intent_fsv"
 path = "examples/task_ek_010_elicit_intent_fsv.rs"
+
+[[example]]
+name = "task_ek_003_mincut_panel_fsv"
+path = "examples/task_ek_003_mincut_panel_fsv.rs"

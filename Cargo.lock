@@ -1201,6 +1201,7 @@ dependencies = [
  "context-graph-mejepa-shift-subscriber",
  "context-graph-mejepa-tct",
  "context-graph-mejepa-train",
+ "context-graph-mincut",
  "context-graph-witness",
  "fail",
  "hex",

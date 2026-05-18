@@ -219,6 +219,7 @@ impl Handlers {
             tool_names::MEJEPA_RANK_CANDIDATES => call_mejepa_rank_candidates(arguments),
             tool_names::MEJEPA_ELICIT_INTENT => call_mejepa_elicit_intent(arguments),
             tool_names::MEJEPA_ALIGN_TO_INTENT => call_mejepa_align_to_intent(arguments),
+            tool_names::MEJEPA_MINCUT_PANEL => call_mejepa_mincut_panel(arguments),
             tool_names::MEJEPA_EXPLAIN_PREDICTION => call_mejepa_explain_prediction(arguments),
             tool_names::MEJEPA_INSPECT_PREDICTION => call_mejepa_inspect_prediction(arguments),
             tool_names::MEJEPA_REPLAY_PREDICTION => call_mejepa_replay_prediction(arguments),

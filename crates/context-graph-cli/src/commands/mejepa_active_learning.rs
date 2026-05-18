@@ -10,9 +10,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
 use context_graph_mejepa::{
-    elicit_intent, open_infer_rocksdb, read_north_star, write_north_star_sync_readback,
-    ActiveLearningLabel, ActiveLearningQueueEntry, ElicitationOptions, IntentSpecification,
-    LabelMethod, NorthStarVector, OracleOutcome, RawIntentInput, RocksDbEvalStore, TaskId,
+    elicit_intent, mejepa_mincut_panel, open_infer_rocksdb, open_mincut_rocksdb,
+    read_mincut_report, read_north_star, write_mincut_report_sync_readback,
+    write_north_star_sync_readback, ActiveLearningLabel, ActiveLearningQueueEntry,
+    ElicitationOptions, IntentSpecification, LabelMethod, MincutOptions, MincutReport,
+    NorthStarVector, OracleOutcome, PanelGraphSource, RawIntentInput, RocksDbEvalStore, TaskId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -38,6 +40,9 @@ pub enum MejepaCommands {
     /// Elicit and persist a TASK-EK-010 north-star intent vector.
     #[command(name = "elicit-intent")]
     ElicitIntent(ElicitIntentArgs),
+    /// Build and persist a TASK-EK-003 structural-hole mincut panel.
+    #[command(name = "mincut-panel")]
+    MincutPanel(MincutPanelArgs),
     /// Bind PostToolUse Bash test outcomes back to live RealityPrediction rows.
     #[command(name = "bind-test-outcomes")]
     BindTestOutcomes(crate::commands::mejepa_prediction_verification::BindTestOutcomesArgs),
@@ -171,6 +176,21 @@ pub struct ElicitIntentArgs {
     pub persist: bool,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct MincutPanelArgs {
+    /// ME-JEPA RocksDB path containing the graph-source CFs and CF_MEJEPA_MINCUT_REPORTS.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// JSON file containing graphSource plus optional options, or a top-level PanelGraphSource.
+    #[arg(long)]
+    pub input: PathBuf,
+
+    /// Persist the resulting MincutReport to CF_MEJEPA_MINCUT_REPORTS.
+    #[arg(long, default_value_t = true)]
+    pub persist: bool,
+}
+
 #[derive(Clone, Copy, Debug, ValueEnum)]
 #[clap(rename_all = "kebab_case")]
 pub enum ElicitIntentModeArg {
@@ -264,6 +284,15 @@ pub struct ElicitIntentCliOutput {
     pub source_of_truth: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MincutPanelCliOutput {
+    pub tool: &'static str,
+    pub report: MincutReport,
+    pub persisted_readback_equal: bool,
+    pub source_of_truth: serde_json::Value,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ElicitIntentInputEnvelope {
@@ -287,6 +316,15 @@ struct ElicitIntentInputEnvelope {
     rounds: Vec<context_graph_mejepa::InteractiveRefinementRound>,
     #[serde(default)]
     max_rounds: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MincutPanelInputEnvelope {
+    #[serde(default)]
+    graph_source: Option<PanelGraphSource>,
+    #[serde(default)]
+    options: Option<MincutOptions>,
 }
 
 pub async fn handle_mejepa_command(action: MejepaCommands) -> i32 {
@@ -356,6 +394,9 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
         }
         MejepaCommands::ElicitIntent(args) => {
             serde_json::to_value(elicit_intent_cli(args)?).context("serialize elicit-intent")
+        }
+        MejepaCommands::MincutPanel(args) => {
+            serde_json::to_value(mincut_panel_cli(args)?).context("serialize mincut-panel")
         }
         MejepaCommands::BindTestOutcomes(args) => serde_json::to_value(
             crate::commands::mejepa_prediction_verification::bind_test_outcomes(args)?,
@@ -491,6 +532,57 @@ pub fn elicit_intent_cli(args: ElicitIntentArgs) -> Result<ElicitIntentCliOutput
             "dbPath": args.db_path,
             "inputPath": args.input,
             "northStarCf": context_graph_mejepa_cf::CF_MEJEPA_NORTH_STARS,
+            "persisted": args.persist,
+            "innerLlmInvoked": false
+        }),
+    })
+}
+
+pub fn mincut_panel_cli(args: MincutPanelArgs) -> Result<MincutPanelCliOutput> {
+    let bytes = fs::read(&args.input)
+        .with_context(|| format!("read mincut-panel input {}", args.input.display()))?;
+    let (graph_source, options) =
+        if let Ok(graph_source) = serde_json::from_slice::<PanelGraphSource>(&bytes) {
+            (graph_source, MincutOptions::default())
+        } else {
+            let envelope: MincutPanelInputEnvelope =
+                serde_json::from_slice(&bytes).context("parse mincut-panel JSON input")?;
+            let graph_source = envelope
+                .graph_source
+                .ok_or_else(|| anyhow!("mincut-panel input must contain graphSource"))?;
+            (graph_source, envelope.options.unwrap_or_default())
+        };
+    let created_at_unix_ms = chrono::Utc::now().timestamp_millis();
+    let db = open_mincut_rocksdb(&args.db_path)
+        .with_context(|| format!("open ME-JEPA RocksDB {}", args.db_path.display()))?;
+    let report = mejepa_mincut_panel(Some(db.as_ref()), graph_source, options, created_at_unix_ms)
+        .with_context(|| format!("MEJEPA_MINCUT_PANEL_FAILED: input={}", args.input.display()))?;
+    if args.persist {
+        write_mincut_report_sync_readback(db.as_ref(), &report)
+            .context("write CF_MEJEPA_MINCUT_REPORTS")?;
+    }
+    let persisted_readback_equal = if args.persist {
+        read_mincut_report(db.as_ref(), &report.report_id)
+            .context("read CF_MEJEPA_MINCUT_REPORTS")?
+            .map(|row| row == report)
+            .unwrap_or(false)
+    } else {
+        false
+    };
+    if args.persist && !persisted_readback_equal {
+        return Err(anyhow!(
+            "MEJEPA_MINCUT_REPORT_READBACK_MISMATCH: report_id={}",
+            report.report_id
+        ));
+    }
+    Ok(MincutPanelCliOutput {
+        tool: "context-graph-cli mejepa mincut-panel",
+        report,
+        persisted_readback_equal,
+        source_of_truth: json!({
+            "dbPath": args.db_path,
+            "inputPath": args.input,
+            "mincutReportCf": context_graph_mejepa_cf::CF_MEJEPA_MINCUT_REPORTS,
             "persisted": args.persist,
             "innerLlmInvoked": false
         }),

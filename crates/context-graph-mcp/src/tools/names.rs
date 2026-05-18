@@ -110,6 +110,8 @@ pub const MEJEPA_RANK_CANDIDATES: &str = "mcp__cgreality__mejepa_rank_candidates
 pub const MEJEPA_ELICIT_INTENT: &str = "mcp__cgreality__mejepa_elicit_intent";
 /// TASK-EK-010 candidate alignment against a persisted or supplied north-star.
 pub const MEJEPA_ALIGN_TO_INTENT: &str = "mcp__cgreality__mejepa_align_to_intent";
+/// TASK-EK-003 structural-hole mincut panel over ME-JEPA embedder/constellation/fingerprint graphs.
+pub const MEJEPA_MINCUT_PANEL: &str = "mcp__cgreality__mejepa_mincut_panel";
 /// Phase B persisted-prediction explanation tool.
 pub const MEJEPA_EXPLAIN_PREDICTION: &str = "mcp__cgreality__mejepa_explain_prediction";
 /// Phase F per-prediction provenance inspection tool.
