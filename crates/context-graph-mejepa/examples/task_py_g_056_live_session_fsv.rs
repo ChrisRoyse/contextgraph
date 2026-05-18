@@ -60,6 +60,10 @@ struct PersistedTraceSummary {
 }
 
 fn main() -> Result<()> {
+    if let Some(report_path) = readback_arg()? {
+        return readback_existing_report(&report_path);
+    }
+
     let run_id = format!("run-{}", chrono::Utc::now().format("%Y%m%dT%H%M%SZ"));
     let fsv_root = fsv_root()?;
     let run_dir = fsv_root.join(&run_id);
@@ -279,6 +283,133 @@ fn main() -> Result<()> {
     ensure!(readback == report, "FSV report readback mismatch");
     ensure!(all_passed, "TASK-PY-G-056 FSV failed");
     println!("{}", serde_json::to_string_pretty(&readback)?);
+    Ok(())
+}
+
+fn readback_arg() -> Result<Option<PathBuf>> {
+    let mut args = std::env::args().skip(1);
+    let Some(flag) = args.next() else {
+        return Ok(None);
+    };
+    ensure!(
+        flag == "--readback",
+        "unsupported argument {flag}; expected --readback <live_session_fsv.json>"
+    );
+    let report = args.next().context("--readback requires a report path")?;
+    ensure!(
+        args.next().is_none(),
+        "--readback accepts exactly one report path"
+    );
+    Ok(Some(PathBuf::from(report)))
+}
+
+fn readback_existing_report(report_path: &Path) -> Result<()> {
+    let report: Value = serde_json::from_slice(
+        &fs::read(report_path).with_context(|| format!("read {}", report_path.display()))?,
+    )
+    .context("decode FSV report")?;
+    let db_path = json_path_str(&report, &["sourceOfTruth", "dbPath"])?;
+    let runtime_root = PathBuf::from(json_path_str(
+        &report,
+        &["sourceOfTruth", "runtimeJsonlRoot"],
+    )?);
+    let db = open_infer_rocksdb(Path::new(db_path)).context("open readback RocksDB")?;
+    let traces = scan_live_session_traces(db.as_ref()).context("scan live-session traces")?;
+    let trace_rows = count_live_session_traces(db.as_ref()).context("count trace CF rows")?;
+    let live_prediction_rows =
+        count_cf(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS).context("count live predictions")?;
+    let active_learning_rows = count_cf(db.as_ref(), CF_MEJEPA_ACTIVE_LEARNING_QUEUE)
+        .context("count active-learning rows")?;
+    let eval_store = RocksDbEvalStore::new(db.clone()).context("open eval readback store")?;
+    let active_queue_entries = eval_store
+        .load_queue()
+        .context("load active-learning queue")?
+        .map(|queue| queue.entries.len())
+        .unwrap_or_default();
+    drop(eval_store);
+
+    assert_report_count(&report, &["after", "traceRows"], trace_rows)?;
+    assert_report_count(
+        &report,
+        &["after", "livePredictionRows"],
+        live_prediction_rows,
+    )?;
+    assert_report_count(
+        &report,
+        &["after", "activeLearningRows"],
+        active_learning_rows,
+    )?;
+
+    let mut jsonl_files = Vec::new();
+    for trace in &traces {
+        let jsonl_path = runtime_root.join(format!("{}.jsonl", trace.session_id));
+        ensure!(
+            jsonl_path.is_file(),
+            "missing runtime JSONL {}",
+            jsonl_path.display()
+        );
+        jsonl_files.push(json!({
+            "sessionId": trace.session_id,
+            "status": trace.status,
+            "predictionEvents": trace.prediction_events.len(),
+            "structuredErrors": trace.structured_errors.iter().map(|err| err.code.as_str()).collect::<Vec<_>>(),
+            "contradictionEvents": trace.contradiction_events.len(),
+            "jsonlPath": jsonl_path,
+            "jsonlSha256": sha256_file(&jsonl_path)?
+        }));
+    }
+
+    let readback = json!({
+        "readbackReport": report_path,
+        "sourceOfTruth": {
+            "dbPath": db_path,
+            "traceCf": CF_MEJEPA_LIVE_SESSION_TRACES,
+            "livePredictionCf": CF_MEJEPA_LIVE_PREDICTIONS,
+            "activeLearningCf": CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+            "runtimeJsonlRoot": runtime_root,
+        },
+        "actual": {
+            "traceRows": trace_rows,
+            "livePredictionRows": live_prediction_rows,
+            "activeLearningRows": active_learning_rows,
+            "activeQueueEntries": active_queue_entries,
+            "runtimeJsonlFiles": jsonl_files.len(),
+            "sessions": jsonl_files,
+        },
+        "reportExpected": report["after"].clone(),
+        "readbackOk": true,
+    });
+    println!("{}", serde_json::to_string_pretty(&readback)?);
+    Ok(())
+}
+
+fn json_path_str<'a>(value: &'a Value, path: &[&str]) -> Result<&'a str> {
+    let mut cursor = value;
+    for key in path {
+        cursor = cursor
+            .get(*key)
+            .with_context(|| format!("missing report key {}", path.join(".")))?;
+    }
+    cursor
+        .as_str()
+        .with_context(|| format!("report key {} is not a string", path.join(".")))
+}
+
+fn assert_report_count(report: &Value, path: &[&str], actual: u64) -> Result<()> {
+    let mut cursor = report;
+    for key in path {
+        cursor = cursor
+            .get(*key)
+            .with_context(|| format!("missing report key {}", path.join(".")))?;
+    }
+    let expected = cursor
+        .as_u64()
+        .with_context(|| format!("report key {} is not a u64", path.join(".")))?;
+    ensure!(
+        actual == expected,
+        "readback mismatch for {}: expected {expected}, actual {actual}",
+        path.join(".")
+    );
     Ok(())
 }
 
