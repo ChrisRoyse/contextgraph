@@ -1,10 +1,12 @@
 use chrono::{DateTime, SecondsFormat, Utc};
 use context_graph_embeddings::get_memory_estimate;
+use context_graph_mejepa_cf::CF_MEJEPA_REDACTION_LOG;
 use context_graph_mejepa_embedders::{
     digest_manifest_for_embedder, embedder_model_id, AlgorithmicEmbedderForward, EmbedderForward,
     EmbedderId, EmbedderInput, EmbedderOutput, EmbedderRegistration, ModelsConfig,
     PretrainedEmbedderForward, SUPPORTED_FORWARD_EMBEDDERS, SUPPORTED_PRETRAINED_FORWARD_EMBEDDERS,
 };
+use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -50,12 +52,70 @@ struct AstChunk {
     source_sha256: String,
     file_sha256: String,
     source_text: String,
+    #[serde(default)]
+    redacted_source_text: Option<String>,
+    #[serde(default)]
+    redacted_source_sha256: Option<String>,
+    #[serde(default)]
+    redaction_count: Option<usize>,
+    #[serde(default)]
+    redaction_events: Vec<AstChunkRedactionEvent>,
     absolute_path: String,
     relative_path: String,
     task_instance_id: String,
     workspace_state: String,
     repo: String,
     time: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct AstChunkRedactionEvent {
+    schema_version: u16,
+    task_id: String,
+    artifact_kind: String,
+    chunk_id: String,
+    source_sha256: String,
+    redacted_source_sha256: String,
+    event_index: usize,
+    redaction_count: usize,
+    pattern_id: String,
+    description: String,
+    byte_offset: usize,
+    byte_length: usize,
+    redacted_length: usize,
+}
+
+impl AstChunk {
+    fn forward_source_text(&self) -> &str {
+        self.redacted_source_text
+            .as_deref()
+            .unwrap_or(&self.source_text)
+    }
+
+    fn forward_source_sha256(&self) -> FsvResult<String> {
+        if let Some(redacted_sha) = &self.redacted_source_sha256 {
+            let actual = sha256_prefixed_bytes(self.forward_source_text().as_bytes());
+            require(
+                "redacted_source_sha256 matches redacted_source_text",
+                &actual == redacted_sha,
+            )?;
+            Ok(redacted_sha.clone())
+        } else {
+            Ok(self.source_sha256.clone())
+        }
+    }
+
+    fn redaction_status(&self) -> &'static str {
+        if self.redacted_source_text.is_some() {
+            "redacted_view_present"
+        } else {
+            "legacy_no_redacted_view"
+        }
+    }
+
+    fn redaction_count_value(&self) -> usize {
+        self.redaction_count.unwrap_or(0)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -263,6 +323,20 @@ struct StoreState {
     durable_root_bytes: u64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct RedactionLogState {
+    db_path: String,
+    source_of_truth_cf: &'static str,
+    before_row_count: usize,
+    after_row_count: usize,
+    attempted_row_count: usize,
+    redaction_event_count: usize,
+    clean_log_row_count: usize,
+    legacy_fallback_row_count: usize,
+    chunks_with_redacted_view: usize,
+    sample: Vec<Value>,
+}
+
 #[derive(Debug, Default, Clone)]
 struct EmbedderCoverageStats {
     first_pass_hits: usize,
@@ -357,6 +431,8 @@ async fn main() -> FsvResult<()> {
                 "schema": paths.schema_path().display().to_string(),
                 "quarantine_jsonl": paths.quarantine_path().display().to_string(),
                 "batch_telemetry_jsonl": paths.batch_telemetry_path().display().to_string(),
+                "redaction_log_db": paths.redaction_log_db_path().display().to_string(),
+                "redaction_log_cf": CF_MEJEPA_REDACTION_LOG,
                 "packed_manifest": paths.packed_manifest_path().display().to_string(),
                 "packed_record_root": paths.packed_root().display().to_string(),
             },
@@ -378,6 +454,7 @@ async fn main() -> FsvResult<()> {
 
     let before = store_state("before", &paths)?;
     let chunks = load_chunks(&paths.chunks_jsonl, chunk_offset, max_chunks)?;
+    let redaction_log_state = persist_redaction_log(&paths, &chunks)?;
     let registry = load_active_embedder_records(&paths.registry_jsonl, only_embedder)?;
     verify_registry_matches_runtime(&registry, only_embedder)?;
     let batch_controls = build_true_batch_controls(&registry, true_batch_size, max_source_bytes)?;
@@ -456,10 +533,11 @@ async fn main() -> FsvResult<()> {
                 index_sink.write_row(&row)?;
                 coverage_tracker.record_first(record, &action)?;
                 first_pass_count += 1;
+                let forward_source_len = chunk.forward_source_text().len();
                 serial_source_byte_total = serial_source_byte_total
-                    .checked_add(chunk.source_text.len())
+                    .checked_add(forward_source_len)
                     .ok_or("serial algorithmic source byte total overflow")?;
-                serial_source_byte_max = serial_source_byte_max.max(chunk.source_text.len());
+                serial_source_byte_max = serial_source_byte_max.max(forward_source_len);
                 if serial_row_summaries.len() < SAMPLE_LIMIT {
                     serial_row_summaries.push(json!({
                         "chunk_id": chunk.chunk_id,
@@ -561,6 +639,8 @@ async fn main() -> FsvResult<()> {
                 "schema": paths.schema_path().display().to_string(),
                 "quarantine_jsonl": paths.quarantine_path().display().to_string(),
                 "batch_telemetry_jsonl": paths.batch_telemetry_path().display().to_string(),
+                "redaction_log_db": paths.redaction_log_db_path().display().to_string(),
+                "redaction_log_cf": CF_MEJEPA_REDACTION_LOG,
                 "packed_manifest": paths.packed_manifest_path().display().to_string(),
                 "packed_record_root": paths.packed_root().display().to_string(),
             },
@@ -598,7 +678,11 @@ async fn main() -> FsvResult<()> {
                 "quarantine_row_count": coverage_tracker.quarantined_pairs(),
                 "global_cache_record_count_at_manifest_write": manifest_state.cache_record_count,
                 "batch_telemetry_row_count": batch_telemetry_write_state.row_count,
+                "chunks_with_redacted_view": redaction_log_state.chunks_with_redacted_view,
+                "chunk_redaction_event_count": redaction_log_state.redaction_event_count,
+                "redaction_log_row_count": redaction_log_state.after_row_count,
             },
+        "redaction_log": redaction_log_state,
         "per_embedder_coverage": coverage,
         "jsonl_write_state": {
             "index": index_write_state,
@@ -609,8 +693,8 @@ async fn main() -> FsvResult<()> {
         },
         "packed_store": cache_store.write_manifest(&paths)?,
         "quarantine_policy": {
-            "MEJEPA_FORWARD_EMPTY_CHUNK": "accepted Python file has empty or whitespace-only source_text; no text embedding can be computed, so every embedder pair is explicitly quarantined",
-            "MEJEPA_FORWARD_INPUT_TOO_LARGE": "accepted Python AST chunk exceeds max_forward_source_text_bytes; chunk must be split or explicitly accepted as missing-output quarantine before full corpus success",
+            "MEJEPA_FORWARD_EMPTY_CHUNK": "accepted Python file has empty or whitespace-only forward source text; no text embedding can be computed, so every embedder pair is explicitly quarantined",
+            "MEJEPA_FORWARD_INPUT_TOO_LARGE": "accepted Python AST chunk exceeds max_forward_source_text_bytes after redaction view selection; chunk must be split or explicitly accepted as missing-output quarantine before full corpus success",
             "MEJEPA_FORWARD_TOKEN_TOO_LONG": "model tokenizer rejected this chunk under the active pretrained embedder token limit; the row is isolated from the true batch and explicitly quarantined with no vector output",
             "MEJEPA_FORWARD_GPU_OOM": "GPU memory exhaustion remained after true-batch binary isolation reached a single row; no CPU or deterministic vector fallback is permitted, so the missing embedder pair is explicitly quarantined with full error evidence",
         },
@@ -792,6 +876,12 @@ impl Paths {
     fn batch_telemetry_path(&self) -> PathBuf {
         self.cache_root
             .join("python_forward_cache_batch_telemetry.jsonl")
+    }
+
+    fn redaction_log_db_path(&self) -> PathBuf {
+        std::env::var("CG_MEJEPA_PY_REDACTION_LOG_DB")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| self.cache_root.join("redaction-log-rocksdb"))
     }
 
     fn packed_root(&self) -> PathBuf {
@@ -2220,6 +2310,9 @@ fn write_progress(
             "absolute_path": chunk.absolute_path,
             "relative_path": chunk.relative_path,
             "source_text_bytes": chunk.source_text.len(),
+            "forward_source_text_bytes": chunk.forward_source_text().len(),
+            "redaction_status": chunk.redaction_status(),
+            "redaction_count": chunk.redaction_count_value(),
             "hot_progress_path": paths.progress_path().display().to_string(),
             "durable_cache_root": paths.cache_root.display().to_string(),
             "detail": detail,
@@ -2293,21 +2386,24 @@ fn input_for_chunk(
     chunk: &AstChunk,
     max_source_bytes: usize,
 ) -> FsvResult<EmbedderInput> {
-    if chunk.source_text.trim().is_empty() {
-        return Err("AST chunk source_text is empty; refusing to forward an empty chunk".into());
+    let forward_text = chunk.forward_source_text();
+    if forward_text.trim().is_empty() {
+        return Err(
+            "AST chunk forward source text is empty; refusing to forward an empty chunk".into(),
+        );
     }
-    if chunk.source_text.len() > max_source_bytes {
+    if forward_text.len() > max_source_bytes {
         return Err(format!(
-            "AST chunk source_text has {} bytes, exceeding max forward guard of {} bytes",
-            chunk.source_text.len(),
+            "AST chunk forward source text has {} bytes, exceeding max forward guard of {} bytes",
+            forward_text.len(),
             max_source_bytes
         )
         .into());
     }
     let text = if matches!(embedder, EmbedderId::E2 | EmbedderId::E3 | EmbedderId::E4) {
-        format!("timestamp:{}\n{}", chunk.time, chunk.source_text)
+        format!("timestamp:{}\n{}", chunk.time, forward_text)
     } else {
-        chunk.source_text.clone()
+        forward_text.to_string()
     };
     Ok(EmbedderInput {
         embedder,
@@ -2334,6 +2430,7 @@ fn load_chunks(path: &Path, chunk_offset: usize, max_chunks: usize) -> FsvResult
             "source_sha256 is sha256-prefixed",
             is_prefixed_sha256(&chunk.source_sha256),
         )?;
+        let _ = chunk.forward_source_sha256()?;
         if accepted_index < chunk_offset {
             accepted_index += 1;
             continue;
@@ -2919,6 +3016,9 @@ fn index_row(chunk: &AstChunk, record: &RegistryRecord, action: &CacheAction) ->
         "instrument_id": record.instrument_id,
         "chunk_id": chunk.chunk_id,
         "source_sha256": chunk.source_sha256,
+        "redacted_source_sha256": chunk.redacted_source_sha256,
+        "redaction_status": chunk.redaction_status(),
+        "redaction_count": chunk.redaction_count_value(),
         "file_sha256": chunk.file_sha256,
         "task_instance_id": chunk.task_instance_id,
         "workspace_state": chunk.workspace_state,
@@ -2970,6 +3070,9 @@ fn quarantine_row(
         "absolute_path": chunk.absolute_path,
         "relative_path": chunk.relative_path,
         "source_text_bytes": chunk.source_text.len(),
+        "forward_source_text_bytes": chunk.forward_source_text().len(),
+        "redaction_status": chunk.redaction_status(),
+        "redaction_count": chunk.redaction_count_value(),
         "max_forward_source_text_bytes": max_source_bytes,
     }))
 }
@@ -2978,15 +3081,15 @@ fn chunk_non_forwardable_reason(
     chunk: &AstChunk,
     max_source_bytes: usize,
 ) -> Option<(&'static str, &'static str)> {
-    if chunk.source_text.trim().is_empty() {
+    if chunk.forward_source_text().trim().is_empty() {
         Some((
             "MEJEPA_FORWARD_EMPTY_CHUNK",
-            "accepted Python AST chunk source_text is empty or whitespace-only",
+            "accepted Python AST chunk forward source text is empty or whitespace-only",
         ))
-    } else if chunk.source_text.len() > max_source_bytes {
+    } else if chunk.forward_source_text().len() > max_source_bytes {
         Some((
             "MEJEPA_FORWARD_INPUT_TOO_LARGE",
-            "accepted Python AST chunk source_text exceeds max forward byte guard",
+            "accepted Python AST chunk forward source text exceeds max forward byte guard",
         ))
     } else {
         None
@@ -3143,12 +3246,16 @@ fn edge_empty_chunk(paths: &Paths, registry: &RegistryRecord) -> FsvResult<Value
     let before = store_state("edge_empty_before", paths)?;
     let mut chunk = load_chunks(&paths.chunks_jsonl, 0, 1)?.remove(0);
     chunk.source_text.clear();
+    chunk.redacted_source_text = None;
+    chunk.redacted_source_sha256 = None;
+    chunk.redaction_count = None;
+    chunk.redaction_events.clear();
     let err = build_key(&chunk, registry, DEFAULT_MAX_FORWARD_SOURCE_TEXT_BYTES).unwrap_err();
     let quarantine = quarantine_row(
         &chunk,
         registry,
         "MEJEPA_FORWARD_EMPTY_CHUNK",
-        "accepted Python AST chunk source_text is empty or whitespace-only",
+        "accepted Python AST chunk forward source text is empty or whitespace-only",
         DEFAULT_MAX_FORWARD_SOURCE_TEXT_BYTES,
     )?;
     let evidence_path = paths.hot_root.join("edge-empty-quarantine.json");
@@ -3166,7 +3273,7 @@ fn edge_empty_chunk(paths: &Paths, registry: &RegistryRecord) -> FsvResult<Value
     Ok(json!({
         "case": "empty_chunk_rejected",
         "before_state": before,
-        "trigger": "attempt to build a forward-cache key for an empty AST chunk source_text",
+        "trigger": "attempt to build a forward-cache key for an empty AST chunk forward source text",
         "after_state": after,
         "error": err.to_string(),
         "quarantine_evidence_path": evidence_path.display().to_string(),
@@ -4043,7 +4150,7 @@ async fn edge_maximum_size_chunk(
         return Ok(json!({
             "case": "maximum_size_chunk_quarantined",
             "before_state": before,
-            "trigger": "stream full accepted Python AST chunk corpus, select largest source_text chunk, and apply fail-closed forwardability guard",
+            "trigger": "stream full accepted Python AST chunk corpus, select largest forward source text chunk, and apply fail-closed forwardability guard",
             "evidence_path": evidence_path.display().to_string(),
             "evidence_sha256": sha256_file(&evidence_path)?,
             "evidence_readback": readback,
@@ -4076,6 +4183,9 @@ async fn edge_maximum_size_chunk(
         "repo": chunk.repo,
         "relative_path": chunk.relative_path,
         "source_text_bytes": chunk.source_text.len(),
+        "forward_source_text_bytes": chunk.forward_source_text().len(),
+        "redaction_status": chunk.redaction_status(),
+        "redaction_count": chunk.redaction_count_value(),
         "scanned_chunk_count": max_scan.scanned,
         "skipped_empty_chunk_count": max_scan.skipped_empty,
         "input_sha256": sha256_prefixed_bytes(input.text.as_bytes()),
@@ -4103,7 +4213,7 @@ async fn edge_maximum_size_chunk(
     Ok(json!({
         "case": "maximum_size_chunk_forwarded",
         "before_state": before,
-        "trigger": "stream full accepted Python AST chunk corpus, select largest source_text chunk, and forward it through E9",
+        "trigger": "stream full accepted Python AST chunk corpus, select largest forward source text chunk, and forward it through E9",
         "evidence_path": evidence_path.display().to_string(),
         "evidence_sha256": sha256_file(&evidence_path)?,
         "evidence_readback": readback,
@@ -4140,13 +4250,15 @@ fn load_max_source_chunk(path: &Path) -> FsvResult<MaxChunkScan> {
             is_prefixed_sha256(&chunk.source_sha256),
         )?;
         seen += 1;
-        if chunk.source_text.trim().is_empty() {
+        if chunk.forward_source_text().trim().is_empty() {
             skipped_empty += 1;
             continue;
         }
         let replace = best
             .as_ref()
-            .map(|current: &AstChunk| chunk.source_text.len() > current.source_text.len())
+            .map(|current: &AstChunk| {
+                chunk.forward_source_text().len() > current.forward_source_text().len()
+            })
             .unwrap_or(true);
         if replace {
             best = Some(chunk);
@@ -4227,6 +4339,166 @@ fn store_state(label: &str, paths: &Paths) -> FsvResult<StoreState> {
         hot_root_bytes: path_bytes(&paths.hot_root)?,
         durable_root_bytes: byte_count,
     })
+}
+
+fn persist_redaction_log(paths: &Paths, chunks: &[AstChunk]) -> FsvResult<RedactionLogState> {
+    let db_path = paths.redaction_log_db_path();
+    if let Some(parent) = db_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut opts = Options::default();
+    opts.create_if_missing(true);
+    opts.create_missing_column_families(true);
+    let db = DB::open_cf_descriptors(
+        &opts,
+        &db_path,
+        vec![
+            ColumnFamilyDescriptor::new("default", Options::default()),
+            ColumnFamilyDescriptor::new(CF_MEJEPA_REDACTION_LOG, Options::default()),
+        ],
+    )?;
+    let cf = db
+        .cf_handle(CF_MEJEPA_REDACTION_LOG)
+        .ok_or_else(|| format!("missing {CF_MEJEPA_REDACTION_LOG}"))?;
+    let before = count_redaction_cf(&db)?;
+    let mut write_opts = WriteOptions::default();
+    write_opts.set_sync(true);
+    let mut attempted = 0usize;
+    let mut redaction_events = 0usize;
+    let mut clean_rows = 0usize;
+    let mut legacy_rows = 0usize;
+    let mut chunks_with_redacted_view = 0usize;
+    let mut sample = Vec::new();
+
+    for chunk in chunks {
+        if chunk.redacted_source_text.is_some() {
+            chunks_with_redacted_view += 1;
+        }
+        let rows = redaction_log_rows_for_chunk(chunk)?;
+        for row in rows {
+            if row["redaction_status"] == Value::String("redacted_view_present".to_string()) {
+                if row["redaction_count"].as_u64().unwrap_or(0) > 0 {
+                    redaction_events += 1;
+                } else {
+                    clean_rows += 1;
+                }
+            } else {
+                legacy_rows += 1;
+            }
+            let event_id = row["event_id"]
+                .as_str()
+                .ok_or("redaction log row missing event_id")?;
+            let bytes = serde_json::to_vec(&row)?;
+            db.put_cf_opt(cf, event_id.as_bytes(), &bytes, &write_opts)?;
+            let readback = db
+                .get_cf(cf, event_id.as_bytes())?
+                .ok_or("missing redaction log row after put")?;
+            require("redaction log CF readback bytes match", readback == bytes)?;
+            attempted += 1;
+            push_sample(&mut sample, row);
+        }
+    }
+    db.flush_cf(cf)?;
+    drop(db);
+
+    let reopened = DB::open_cf_descriptors(
+        &opts,
+        &db_path,
+        vec![
+            ColumnFamilyDescriptor::new("default", Options::default()),
+            ColumnFamilyDescriptor::new(CF_MEJEPA_REDACTION_LOG, Options::default()),
+        ],
+    )?;
+    let after = count_redaction_cf(&reopened)?;
+    require(
+        "redaction log row count covers attempted writes",
+        after >= before && after >= attempted,
+    )?;
+    Ok(RedactionLogState {
+        db_path: db_path.display().to_string(),
+        source_of_truth_cf: CF_MEJEPA_REDACTION_LOG,
+        before_row_count: before,
+        after_row_count: after,
+        attempted_row_count: attempted,
+        redaction_event_count: redaction_events,
+        clean_log_row_count: clean_rows,
+        legacy_fallback_row_count: legacy_rows,
+        chunks_with_redacted_view,
+        sample,
+    })
+}
+
+fn redaction_log_rows_for_chunk(chunk: &AstChunk) -> FsvResult<Vec<Value>> {
+    let redacted_sha = chunk.forward_source_sha256()?;
+    if !chunk.redaction_events.is_empty() {
+        return chunk
+            .redaction_events
+            .iter()
+            .map(|event| {
+                let event_id = sha256_prefixed_bytes(
+                    format!("redaction-log:{}:{}", chunk.chunk_id, event.event_index).as_bytes(),
+                );
+                Ok(json!({
+                    "schema_version": CACHE_SCHEMA_VERSION,
+                    "task_id": "TASK-PY-G-059",
+                    "artifact_kind": "python_forward_redaction_log",
+                    "event_id": event_id,
+                    "source_of_truth_cf": CF_MEJEPA_REDACTION_LOG,
+                    "chunk_id": chunk.chunk_id,
+                    "source_sha256": chunk.source_sha256,
+                    "redacted_source_sha256": redacted_sha,
+                    "redaction_status": chunk.redaction_status(),
+                    "event_index": event.event_index,
+                    "redaction_count": event.redaction_count,
+                    "pattern_id": event.pattern_id,
+                    "description": event.description,
+                    "byte_offset": event.byte_offset,
+                    "byte_length": event.byte_length,
+                    "redacted_length": event.redacted_length,
+                    "legacy_fallback": false,
+                }))
+            })
+            .collect();
+    }
+
+    let legacy = chunk.redacted_source_text.is_none();
+    let event_id =
+        sha256_prefixed_bytes(format!("redaction-log:{}:clean", chunk.chunk_id).as_bytes());
+    Ok(vec![json!({
+        "schema_version": CACHE_SCHEMA_VERSION,
+        "task_id": "TASK-PY-G-059",
+        "artifact_kind": "python_forward_redaction_log",
+        "event_id": event_id,
+        "source_of_truth_cf": CF_MEJEPA_REDACTION_LOG,
+        "chunk_id": chunk.chunk_id,
+        "source_sha256": chunk.source_sha256,
+        "redacted_source_sha256": redacted_sha,
+        "redaction_status": chunk.redaction_status(),
+        "event_index": 0,
+        "redaction_count": if legacy { Value::Null } else { Value::from(0) },
+        "pattern_id": Value::Null,
+        "description": if legacy {
+            Value::String("legacy chunk had no redacted_source_text field; forward runner used source_text compatibility fallback".to_string())
+        } else {
+            Value::String("chunk contained no redaction matches".to_string())
+        },
+        "byte_offset": Value::Null,
+        "byte_length": Value::Null,
+        "redacted_length": Value::Null,
+        "legacy_fallback": legacy,
+    })])
+}
+
+fn count_redaction_cf(db: &DB) -> FsvResult<usize> {
+    let cf = db
+        .cf_handle(CF_MEJEPA_REDACTION_LOG)
+        .ok_or_else(|| format!("missing {CF_MEJEPA_REDACTION_LOG}"))?;
+    let mut count = 0usize;
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let _ = item?;
+        count += 1;
+    }
+    Ok(count)
 }
 
 fn schema_json() -> Value {

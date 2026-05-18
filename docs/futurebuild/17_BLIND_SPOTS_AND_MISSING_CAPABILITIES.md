@@ -24,7 +24,7 @@
 |---|---|---|
 | D1 | Schema migration path when CFs evolve | Already CLAUDE.md says "no backwards compat" but storage 4 needs explicit guidance for the moment we DO need it (post-1.0) | `24_API_STABILITY.md §5` |
 | D2 | Per-language toolchain availability detection (agent's environment may lack `cargo`, `tsc`, `dotnet`) | `SPEC-PREDICT.md` REQ-PREDICT-LABEL-* depend on toolchains; missing required toolchains must fail closed with exact diagnostics | `18 §6` + `TASK-PREDICT-LABEL-010-toolchain-availability-fail-closed` |
-| D3 | Privacy / secret redaction for code being embedded | Not addressed; sensitive material in patches | `22 §4` + new `TASK-PREDICT-010-secret-redaction-pre-embed` |
+| D3 | Privacy / secret redaction for code being embedded | Sensitive material in patches must not become embedder input | Complete 2026-05-18 via `TASK-PY-G-059` / #278; see `22 §5.4` |
 | D4 | Drift attribution: when drift fires, which root cause (data shift / model stale / spec change)? | `09_SELF_HEALING_AUTONOMY.md` mentions but doesn't specify | new `TASK-HEAL-008-drift-attribution` |
 | D5 | Cross-version reproducibility: predictor v0.4 → v0.5 should reproduce predictions | mentioned via `provenance` field; needs replay tool | new `TASK-OBS-011-prediction-replay-tool` |
 | D6 | Reasoning-trace visualization for operators | `SPEC-OBSERVABILITY.md` REQ-OBS-FB-06 mentions inspect; needs HTML/markdown render | new `TASK-OBS-012-reasoning-trace-renderer` |

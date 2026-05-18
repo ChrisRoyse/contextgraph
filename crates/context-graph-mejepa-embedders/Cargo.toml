@@ -21,5 +21,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
+context-graph-mejepa-cf = { path = "../context-graph-mejepa-cf" }
+rocksdb = "0.22"
 tempfile = "3.10"
 tokio = { workspace = true }

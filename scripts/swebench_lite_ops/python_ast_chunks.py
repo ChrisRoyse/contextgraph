@@ -13,9 +13,10 @@ from .oracle_events import (
     sha256_prefixed_text,
 )
 from .python_ast_parse import detect_and_decode, line_byte_offset
+from .python_secret_redaction import SecretRedactionError, redact_text
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 TASK_ID = "TASK-PY-DATA-010"
 PRODUCER = "contextgraph.swebench_lite_ops.python_ast_chunks"
 DATACONTENTTYPE = "application/json"
@@ -42,6 +43,40 @@ def chunk_schema(schema_path: Path) -> dict[str, Any]:
     nullable_string = {"type": ["string", "null"]}
     nullable_int = {"type": ["integer", "null"]}
     sha = {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+    redaction_event = {
+        "type": "object",
+        "properties": {
+            "schema_version": {"const": 1},
+            "task_id": {"const": "TASK-PY-G-059"},
+            "artifact_kind": {"const": "python_secret_redaction_event"},
+            "chunk_id": sha,
+            "source_sha256": sha,
+            "redacted_source_sha256": sha,
+            "event_index": {"type": "integer", "minimum": 0},
+            "redaction_count": {"type": "integer", "minimum": 1},
+            "pattern_id": {"type": "string", "minLength": 1},
+            "description": {"type": "string", "minLength": 1},
+            "byte_offset": {"type": "integer", "minimum": 0},
+            "byte_length": {"type": "integer", "minimum": 1},
+            "redacted_length": {"type": "integer", "minimum": 1},
+        },
+        "required": [
+            "artifact_kind",
+            "byte_length",
+            "byte_offset",
+            "chunk_id",
+            "description",
+            "event_index",
+            "pattern_id",
+            "redacted_length",
+            "redacted_source_sha256",
+            "redaction_count",
+            "schema_version",
+            "source_sha256",
+            "task_id",
+        ],
+        "additionalProperties": False,
+    }
     props = {
         "schema_version": {"const": SCHEMA_VERSION},
         "chunk_id": sha,
@@ -75,6 +110,10 @@ def chunk_schema(schema_path: Path) -> dict[str, Any]:
         "byte_end": {"type": "integer", "minimum": 0},
         "source_sha256": sha,
         "source_text": {"type": "string"},
+        "redacted_source_text": {"type": "string"},
+        "redacted_source_sha256": sha,
+        "redaction_count": {"type": "integer", "minimum": 0},
+        "redaction_events": {"type": "array", "items": redaction_event},
         "decorators": {"type": "array", "items": {"type": "string"}},
         "source_slice_verified": {"const": True},
     }
@@ -242,6 +281,7 @@ def build_chunk(
     name = getattr(node, "name", None)
     node_kind = node_kind_override or type(node).__name__
     chunk_id = chunk_identity(record, chunk_kind, node_kind, span, name)
+    redaction = redaction_payload(chunk_id, span["source_sha256"], span["source_text"])
     return {
         "schema_version": SCHEMA_VERSION,
         "chunk_id": chunk_id,
@@ -275,8 +315,49 @@ def build_chunk(
         "byte_end": span["byte_end"],
         "source_sha256": span["source_sha256"],
         "source_text": span["source_text"],
+        "redacted_source_text": redaction["redacted_source_text"],
+        "redacted_source_sha256": redaction["redacted_source_sha256"],
+        "redaction_count": redaction["redaction_count"],
+        "redaction_events": redaction["redaction_events"],
         "decorators": decorator_names(node),
         "source_slice_verified": True,
+    }
+
+
+def redaction_payload(chunk_id: str, source_sha256: str, source_text: str) -> dict[str, Any]:
+    try:
+        redacted = redact_text(source_text)
+    except SecretRedactionError as exc:
+        raise AstChunkError(
+            exc.code,
+            f"secret redaction failed for chunk {chunk_id}: {exc.message}",
+            "Reject the chunk from embedding and fix the redaction pipeline before emitting AST chunks.",
+            {"chunk_id": chunk_id, "source_sha256": source_sha256, **exc.details},
+        ) from exc
+
+    redacted_sha = "sha256:" + hashlib.sha256(redacted.content.encode("utf-8")).hexdigest()
+    events = []
+    redaction_count = redacted.redaction_count
+    for index, event in enumerate(redacted.events):
+        row = event.to_json()
+        row.update(
+            {
+                "schema_version": 1,
+                "task_id": "TASK-PY-G-059",
+                "artifact_kind": "python_secret_redaction_event",
+                "chunk_id": chunk_id,
+                "source_sha256": source_sha256,
+                "redacted_source_sha256": redacted_sha,
+                "event_index": index,
+                "redaction_count": redaction_count,
+            }
+        )
+        events.append(row)
+    return {
+        "redacted_source_text": redacted.content,
+        "redacted_source_sha256": redacted_sha,
+        "redaction_count": redaction_count,
+        "redaction_events": events,
     }
 
 

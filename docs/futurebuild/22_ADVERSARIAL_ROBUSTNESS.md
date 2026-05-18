@@ -130,7 +130,9 @@ fn redact_before_embed(content: &str) -> String {
 }
 ```
 
-`TASK-PREDICT-010-secret-redaction-pre-embed.md` covers this. The redaction is applied before chunks are passed to embedders + before being stored in `CF_MEJEPA_PANELS`.
+`TASK-PY-G-059` / #278 covers this. The Python AST chunker now emits schema-v2 chunks with a raw `source_text` provenance field plus a separate `redacted_source_text` / `redacted_source_sha256` embedding view and source-bound `redaction_events`. Raw source text is retained only for slice verification and must not be used as the forward-cache embedder input.
+
+The Python forward-cache runner consumes the redacted view for embedder input, input hashes, cache keys, packed-record summaries, quarantine size guards, and manifests. It also persists `CF_MEJEPA_REDACTION_LOG` rows for each redaction event plus zero-count clean rows, with sync writes and reopened readback. The shipped FSVs are `/mnt/d/contextgraph/fsv/task-py-g-059-secret-redaction-fsv/python_secret_redaction_fsv.json` and `/mnt/d/contextgraph/fsv/task-py-g-059-secret-redaction-fsv/secret_redaction_forward_runner_fsv.json`.
 
 ### 5.5 Prompt-injection defense in markdown render
 
@@ -182,7 +184,7 @@ Adversarial-event signature in the weekly report:
 
 Tasks (in `tasks/security/`):
 
-- `TASK-SEC-001` — secret redaction module + integration into chunk pipeline (D3)
+- `TASK-SEC-001` — secret redaction module + integration into chunk/forward-cache pipeline (D3) — complete 2026-05-18 via `TASK-PY-G-059` / #278
 - `TASK-SEC-002` — adversarial test corpus (10 + 10 + 10 cases) + integration into CI (D14, `TASK-TEST-010`)
 - `TASK-SEC-003` — multi-head contradiction detection in verdict assembly (§2.5) — complete 2026-05-12
 - `TASK-SEC-004` — cross-language label gating (D10, `TASK-PREDICT-LABEL-011`)

@@ -153,7 +153,7 @@ External references: Claude Code PostToolUse Bash matcher with `CLAUDE_TOOL_OUTP
 
 | Order | Issue | Purpose |
 |---|---|---|
-| 7.1 | **#278** | Secret redaction before embedding |
+| 7.1 | **#278** | Secret redaction before embedding — **code/FSV-shipped 2026-05-18** |
 | 7.2 | **#279/#318** | 30-case adversarial Python corpus and fingerprint-catalog integration — **code/FSV-shipped 2026-05-17** |
 | 7.3 | **#290** | Synthetic-Python stress test (operator-authored programs with known expected verdicts) |
 | 7.4 | **#291** | End-to-end stress harness over synthetic projects of varying complexity |

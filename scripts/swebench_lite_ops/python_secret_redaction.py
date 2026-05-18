@@ -594,6 +594,114 @@ def _bytes_input_round_trip() -> dict[str, Any]:
     }
 
 
+def _chunker_wiring_fsv(output_root: Path) -> dict[str, Any]:
+    """Prove PHASE 2 chunker wiring without relying on the large corpus."""
+    from .oracle_events import load_jsonschema_validator, write_jsonl_checked
+    from .python_ast_chunks import SCHEMA_VERSION as AST_CHUNK_SCHEMA_VERSION
+    from .python_ast_chunks import chunk_schema, chunks_for_record
+
+    wiring_root = output_root / "chunker_wiring"
+    source_root = wiring_root / "src"
+    source_root.mkdir(parents=True, exist_ok=True)
+    schema_path = wiring_root / "python_ast_chunk_schema.json"
+    chunks_path = wiring_root / "redacted_python_ast_chunks.jsonl"
+    report_path = wiring_root / "chunker_wiring_report.json"
+
+    cases = {
+        "secret.py": (
+            "AWS_SECRET_ACCESS_KEY = \"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"\n"
+            "GITHUB_PAT = 'ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789'\n"
+        ),
+        "comment_secret.py": "# docs mention ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789 and must still redact\n",
+        "clean.py": "def clean(value):\n    return value + 1\n",
+    }
+    records = []
+    for name, text in cases.items():
+        path = source_root / name
+        path.write_text(text, encoding="utf-8")
+        raw = path.read_bytes()
+        records.append(
+            {
+                "parse_status": "empty" if name == "comment_secret.py" else "parsed",
+                "absolute_path": str(path),
+                "relative_path": name,
+                "file_sha256": "sha256:" + hashlib.sha256(raw).hexdigest(),
+                "task_instance_id": "task_py_g_059_redaction_wiring",
+                "workspace_state": "synthetic",
+                "mutation_category": "secret_redaction",
+                "repo": "synthetic/secret-redaction",
+                "workspace_tree_hash": "1" * 40,
+            }
+        )
+
+    schema = chunk_schema(schema_path)
+    validator = load_jsonschema_validator(schema)
+    chunks: list[dict[str, Any]] = []
+    diagnostics: list[dict[str, Any]] = []
+    for record in records:
+        record_chunks, record_diagnostics = chunks_for_record(record, schema_path, _utc_now())
+        chunks.extend(record_chunks)
+        diagnostics.extend(record_diagnostics)
+    validation_errors = []
+    for chunk in chunks:
+        validation_errors.extend(error.message for error in validator.iter_errors(chunk))
+    chunk_store = write_jsonl_checked(chunks_path, chunks)
+
+    secret_chunks = [chunk for chunk in chunks if chunk["relative_path"] == "secret.py"]
+    comment_chunks = [chunk for chunk in chunks if chunk["relative_path"] == "comment_secret.py"]
+    clean_chunks = [chunk for chunk in chunks if chunk["relative_path"] == "clean.py"]
+    redacted_text = "\n".join(chunk["redacted_source_text"] for chunk in chunks)
+    raw_secret_text = "\n".join(chunk["source_text"] for chunk in chunks)
+    total_redactions = sum(chunk["redaction_count"] for chunk in chunks)
+    clean_preserved = all(
+        chunk["redacted_source_text"] == chunk["source_text"] and chunk["redaction_count"] == 0
+        for chunk in clean_chunks
+    )
+    observed = {
+        "ast_chunk_schema_version": AST_CHUNK_SCHEMA_VERSION,
+        "chunk_count": len(chunks),
+        "validation_error_count": len(validation_errors),
+        "total_redactions": total_redactions,
+        "secret_file_redactions": sum(chunk["redaction_count"] for chunk in secret_chunks),
+        "comment_secret_redactions": sum(chunk["redaction_count"] for chunk in comment_chunks),
+        "clean_chunks_preserved": clean_preserved,
+        "raw_secret_remains_in_source_text": "wJalrXUtnFEMI" in raw_secret_text
+        and "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" in raw_secret_text,
+        "raw_secret_absent_from_redacted_source_text": "wJalrXUtnFEMI" not in redacted_text
+        and "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" not in redacted_text,
+        "markers_present": "[REDACTED_AWS_SECRET_ACCESS_KEY]" in redacted_text
+        and "[REDACTED_GITHUB_PAT]" in redacted_text,
+    }
+    passes = (
+        observed["ast_chunk_schema_version"] == 2
+        and observed["validation_error_count"] == 0
+        and observed["secret_file_redactions"] >= 2
+        and observed["comment_secret_redactions"] >= 1
+        and observed["clean_chunks_preserved"]
+        and observed["raw_secret_remains_in_source_text"]
+        and observed["raw_secret_absent_from_redacted_source_text"]
+        and observed["markers_present"]
+    )
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_secret_redaction_chunker_wiring_fsv",
+        "created_at_utc": _utc_now(),
+        "source_of_truth": {
+            "schema": str(schema_path),
+            "chunks_jsonl": str(chunks_path),
+            "report": str(report_path),
+        },
+        "chunk_store": chunk_store,
+        "observed": observed,
+        "diagnostics": diagnostics,
+        "validation_errors": validation_errors[:20],
+        "passes": passes,
+    }
+    _write_json(report_path, report)
+    return report
+
+
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
@@ -633,6 +741,7 @@ def command_python_secret_redaction(args: argparse.Namespace) -> int:
     nonutf8 = _nonutf8_edge_case()
     perf = _performance_benchmark(target_us=args.p99_budget_us)
     bytes_rt = _bytes_input_round_trip()
+    chunker_wiring = _chunker_wiring_fsv(output_root)
 
     fixture_jsonl = output_root / "fixture_results.jsonl"
     invariance_path = output_root / "invariance_proof.json"
@@ -663,6 +772,7 @@ def command_python_secret_redaction(args: argparse.Namespace) -> int:
          "detail": {"distinct_redacted_hashes": invariance["github_pat_redacted_hash_count"]}},
         {"name": "p99_under_1ms_for_10kb", "pass": perf["passes"], "detail": perf},
         {"name": "bytes_input_equals_str_input", "pass": bytes_rt["passes"], "detail": bytes_rt},
+        {"name": "chunker_emits_redacted_source_text", "pass": chunker_wiring["passes"], "detail": chunker_wiring["observed"]},
     ]
 
     all_fixtures_pass = all(r["passes"] for r in fixture_rows)
@@ -676,6 +786,9 @@ def command_python_secret_redaction(args: argparse.Namespace) -> int:
         "edge_case_count": len(edge_cases),
         "edge_cases_passed": sum(1 for e in edge_cases if e["pass"]),
         "edge_cases_failed": sum(1 for e in edge_cases if not e["pass"]),
+        "chunker_wiring_passes": chunker_wiring["passes"],
+        "chunker_wiring_chunk_count": chunker_wiring["observed"]["chunk_count"],
+        "chunker_wiring_redaction_count": chunker_wiring["observed"]["total_redactions"],
         "pattern_count": len(PATTERNS),
         "p99_us": perf["p99_us"],
         "p99_budget_us": perf["target_p99_us"],
@@ -688,8 +801,8 @@ def command_python_secret_redaction(args: argparse.Namespace) -> int:
         "formula_version": FORMULA_VERSION,
         "producer": PRODUCER,
         "created_at_utc": _utc_now(),
-        "phase": "PHASE_1_LIBRARY_ONLY",
-        "phase_2_wiring": "chunker emits redacted_source_text + redaction_events alongside source_text",
+        "phase": "PHASE_1_LIBRARY_AND_PHASE_2_CHUNKER_WIRING",
+        "phase_2_wiring": "chunker emits redacted_source_text + redacted_source_sha256 + redaction_events alongside source_text",
         "phase_3_persistence": "CF_MEJEPA_REDACTION_LOG + Rust runner consumes redacted_source_text",
         "source_of_truth": {
             "fixture_jsonl": str(fixture_jsonl),
@@ -698,6 +811,7 @@ def command_python_secret_redaction(args: argparse.Namespace) -> int:
             "performance_benchmark": str(perf_path),
             "bytes_round_trip": str(bytes_path),
             "pattern_catalog": str(pattern_path),
+            "chunker_wiring": chunker_wiring["source_of_truth"],
         },
         "summary": summary,
         "passes": passes,
