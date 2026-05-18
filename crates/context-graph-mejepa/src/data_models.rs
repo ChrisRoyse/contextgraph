@@ -12,6 +12,14 @@ pub struct PredictedPanel {
 }
 
 #[derive(Debug, Clone)]
+pub struct PredictedInverseMap {
+    pub predicted_input_panel: PredictedPanel,
+    pub predicted_action: Tensor,
+    pub action_dim: usize,
+    pub dtype: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct OracleLogits {
     pub tensor: Tensor,
     pub batch_size: usize,

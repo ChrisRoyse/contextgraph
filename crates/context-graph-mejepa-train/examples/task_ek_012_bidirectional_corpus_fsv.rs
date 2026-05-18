@@ -1,13 +1,21 @@
 use candle_core::{Device, Tensor};
-use context_graph_mejepa::HeadId;
+use context_graph_mejepa::{
+    FrozenTargetAdapter, HeadId, MeJepaPredictor, PredictorConfig, TargetProvenance,
+    INVERSE_ACTION_DIM, PANEL_DIM,
+};
 use context_graph_mejepa_train::cert::{
     open_train_rocksdb, verify_chain, TrainCertWriter, TrainingCertificate, CF_MEJEPA_TRAIN_CERTS,
 };
+use context_graph_mejepa_train::eval::holdout::{
+    CalibrationDataset, HoldoutDataset, HoldoutExample, TrainSplit,
+};
+use context_graph_mejepa_train::eval::{Lang, MutationCategory};
 use context_graph_mejepa_train::learning_signal::{
     compute_l_step, DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents,
     DeltaXiComponents, LearningSignal,
 };
 use context_graph_mejepa_train::loss::LossBreakdown;
+use context_graph_mejepa_train::trainer::{Trainer, TrainingDataset};
 use context_graph_mejepa_train::{
     compose_bidirectional_l_full, inverse_map_loss, InverseMapOutputs, InverseMapTargets,
     TrainingConfig,
@@ -111,6 +119,7 @@ fn run() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let invalid_cert_error = invalid_cert
         .validate_phase3()
         .expect_err("negative inverse bits must fail");
+    let real_inverse_head = real_inverse_head_trainer_case(&run_dir)?;
 
     let zero_exact = (lambda_zero.total - forward.total).abs() < 1e-6
         && !lambda_zero.components.contains_key("inverse_map");
@@ -133,7 +142,8 @@ fn run() -> Result<PathBuf, Box<dyn std::error::Error>> {
         && historical.inverse_map_quality_bits.is_none()
         && chain.verified == 2
         && chain.broken_at.is_none()
-        && cert_count == 2;
+        && cert_count == 2
+        && real_inverse_head["passes"].as_bool() == Some(true);
 
     let evidence_without_hash = json!({
         "task": "TASK-EK-012",
@@ -146,10 +156,11 @@ fn run() -> Result<PathBuf, Box<dyn std::error::Error>> {
                 "crates/context-graph-mejepa-train/src/config.rs",
                 "crates/context-graph-mejepa-train/src/cert/mod.rs",
                 "crates/context-graph-mejepa-train/src/loss/inverse.rs",
-                "crates/context-graph-mejepa-train/src/trainer/mod.rs"
+                "crates/context-graph-mejepa-train/src/trainer/mod.rs",
+                "crates/context-graph-mejepa/src/predictor/mod.rs"
             ]
         },
-        "scope": "first implementation slice: config/schema/loss/cert readback for bidirectional training; real 300x8 four-variant ablation remains open",
+        "scope": "second implementation slice: real shared-trunk inverse head plus fail-closed trainer consumption; real 300x8 four-variant ablation remains open",
         "config": {
             "default_inverse_map_coefficient": config_default.inverse_map_coefficient,
             "enabled_inverse_map_coefficient": config_inverse.inverse_map_coefficient,
@@ -180,8 +191,9 @@ fn run() -> Result<PathBuf, Box<dyn std::error::Error>> {
             "invalidCertError": invalid_cert_error.code(),
             "passes": readback_passes
         },
+        "realInverseHead": real_inverse_head,
         "remainingIssueWork": [
-            "wire real inverse-head outputs from the shared trunk instead of the synthetic cert harness",
+            "replace the deterministic metadata action-latent proxy with structured patch-diff/tool-call action targets before any production default",
             "run lambda in {0,0.25,0.5,1.0} on the real 300x8 Python corpus",
             "publish per-cell/global ablation report at /mnt/d/contextgraph/exports/ek-012/bidirectional-ablation-report.md",
             "apply per-cell regression-prevention gate to every ablation variant"
@@ -215,6 +227,124 @@ fn synthetic_inverse_loss(
         action: Tensor::from_slice(&[0.0f32, 1.0, 0.0, 1.0], (2, 2), device)?,
     };
     Ok(inverse_map_loss(&outputs, &targets)?)
+}
+
+fn real_inverse_head_trainer_case(
+    run_dir: &Path,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let device = Device::new_cuda(0)?;
+    let db_dir = run_dir.join("real-inverse-head-rocksdb");
+    let db = open_train_rocksdb(&db_dir)?;
+    let config = TrainingConfig {
+        epochs: 1,
+        batch_size: 2,
+        inverse_map_coefficient: 1.0,
+        ..TrainingConfig::default()
+    };
+    config.validate()?;
+    let adapter = FrozenTargetAdapter::new(TargetProvenance::new(
+        "task-ek-012-real-inverse-head-fsv",
+        std::collections::BTreeMap::new(),
+        0,
+        None,
+    ));
+    let predictor = MeJepaPredictor::new(PredictorConfig::default(), adapter, device.clone(), 2)?;
+    let dataset = full_panel_training_dataset(&device)?;
+
+    let missing_db_dir = run_dir.join("missing-inverse-head-rocksdb");
+    let missing_db = open_train_rocksdb(&missing_db_dir)?;
+    let mut missing_trainer = Trainer::new(config.clone(), missing_db, device.clone())?;
+    let missing_error = missing_trainer
+        .train_one_epoch(&dataset, 0)
+        .expect_err("positive lambda without real inverse head must fail");
+
+    let mut trainer = Trainer::new(config, db.clone(), device.clone())?;
+    let epoch_report = trainer.train_one_epoch_with_inverse_head(&dataset, 0, &predictor)?;
+    db.flush()?;
+    let cert = read_cert(&db, 0)?;
+    let cert_count = count_cf(&db, CF_MEJEPA_TRAIN_CERTS)?;
+    let inverse_bits = cert.inverse_map_quality_bits.unwrap_or(f64::NAN);
+    let inverse_loss = *cert.loss_components.get("inverse_map").unwrap_or(&f32::NAN);
+    let inverse_weighted = *cert
+        .loss_components
+        .get("inverse_map_weighted")
+        .unwrap_or(&f32::NAN);
+    let summary = predictor.architecture_summary();
+    let passes = missing_error.code() == "MEJEPA_TRAIN_CONFIG_INVALID"
+        && cert_count == 1
+        && epoch_report.summary.total_steps_this_epoch == 1
+        && inverse_bits.is_finite()
+        && inverse_bits >= 0.0
+        && inverse_loss.is_finite()
+        && inverse_weighted.is_finite()
+        && summary.bidirectional_inverse_head
+        && summary.inverse_action_dim == INVERSE_ACTION_DIM;
+    Ok(json!({
+        "gpu": "cuda:0",
+        "rocksdb": db_dir.display().to_string(),
+        "missingInverseHeadError": missing_error.code(),
+        "certCount": cert_count,
+        "inverseMapQualityBits": inverse_bits,
+        "inverseMapLoss": inverse_loss,
+        "inverseMapWeightedLoss": inverse_weighted,
+        "totalStepsThisEpoch": epoch_report.summary.total_steps_this_epoch,
+        "panelDim": PANEL_DIM,
+        "inverseActionDim": INVERSE_ACTION_DIM,
+        "architecture": {
+            "bidirectionalInverseHead": summary.bidirectional_inverse_head,
+            "inverseActionDim": summary.inverse_action_dim,
+            "sharedLayerCount": summary.num_layers
+        },
+        "passes": passes
+    }))
+}
+
+fn full_panel_training_dataset(
+    device: &Device,
+) -> Result<TrainingDataset, Box<dyn std::error::Error>> {
+    let examples = vec![
+        full_panel_example("ek012-real-inverse-000", 0.001, false, device)?,
+        full_panel_example("ek012-real-inverse-001", 0.002, true, device)?,
+    ];
+    Ok(TrainingDataset {
+        train: TrainSplit { examples },
+        calibration: CalibrationDataset {
+            examples: Vec::new(),
+        },
+        holdout: HoldoutDataset {
+            examples: Vec::new(),
+        },
+    })
+}
+
+fn full_panel_example(
+    task_id: &str,
+    offset: f32,
+    adversarial: bool,
+    device: &Device,
+) -> Result<HoldoutExample, Box<dyn std::error::Error>> {
+    let input = full_panel_tensor(offset, device)?;
+    let target = full_panel_tensor(offset + 0.01, device)?;
+    Ok(HoldoutExample {
+        task_id: task_id.to_string(),
+        category: if adversarial {
+            MutationCategory::SubtleFlip
+        } else {
+            MutationCategory::KnownGood
+        },
+        language: Lang::Python,
+        panel_t01: input,
+        panel_t2: target,
+        actual_oracle_pass: !adversarial,
+        adversarial,
+    })
+}
+
+fn full_panel_tensor(offset: f32, device: &Device) -> Result<Tensor, candle_core::Error> {
+    let values = (0..PANEL_DIM)
+        .map(|idx| ((idx % 257) as f32 * 0.0001) + offset)
+        .collect::<Vec<_>>();
+    Tensor::from_slice(&values, PANEL_DIM, device)
 }
 
 fn training_cert(

@@ -8,6 +8,7 @@ use crate::error::PredictorError;
 
 pub const PANEL_DIM: usize = context_graph_mejepa_instruments::PANEL_DIM;
 pub const CONCAT_INPUT_DIM: usize = PANEL_DIM * 2;
+pub const INVERSE_ACTION_DIM: usize = 16;
 
 pub const DEFAULT_NUM_LAYERS: u8 = 6;
 pub const DEFAULT_HIDDEN_DIM: u32 = 1_024;
@@ -255,6 +256,7 @@ mod tests {
         let config = PredictorConfig::default();
         assert_eq!(PANEL_DIM, 5_120);
         assert_eq!(CONCAT_INPUT_DIM, 10_240);
+        assert_eq!(INVERSE_ACTION_DIM, 16);
         assert_eq!(config.num_layers, 6);
         assert_eq!(config.hidden_dim, 1_024);
         assert_eq!(config.num_heads, 8);

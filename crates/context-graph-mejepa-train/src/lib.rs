@@ -48,3 +48,4 @@ pub use loss::inverse::{
     InverseMapLossBreakdown, InverseMapOutputs, InverseMapTargets,
 };
 pub use replay_buffer::*;
+pub use trainer::InverseMapForward;

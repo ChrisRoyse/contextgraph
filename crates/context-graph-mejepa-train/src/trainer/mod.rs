@@ -17,9 +17,11 @@ use crate::learning_signal::{
 use crate::loss::inverse::{inverse_map_loss, InverseMapOutputs, InverseMapTargets};
 use crate::sampler::{BatchSampler, PatchSimilarityGraph};
 use candle_core::{DType, Device, Tensor};
-use context_graph_mejepa::HeadId;
+use context_graph_mejepa::{HeadId, MeJepaPredictor, INVERSE_ACTION_DIM};
 use ed25519_dalek::SigningKey;
 use rocksdb::DB;
+use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -55,6 +57,33 @@ pub struct TrainingResult {
     pub total_steps: u64,
     pub total_certs: u64,
     pub best_safetensors_path: Option<PathBuf>,
+}
+
+pub trait InverseMapForward {
+    fn predict_inverse(&self, target_panel: &Tensor) -> Result<InverseMapOutputs, TrainerError>;
+}
+
+impl InverseMapForward for MeJepaPredictor {
+    fn predict_inverse(&self, target_panel: &Tensor) -> Result<InverseMapOutputs, TrainerError> {
+        let prediction = self.forward_inverse_dryrun(target_panel).map_err(|err| {
+            TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                format!("real inverse-head forward failed: {err}"),
+            )
+            .with_context(json!({
+                "predictor_error_code": err.code(),
+                "target_panel_shape": target_panel.dims(),
+                "remediation": "inspect predictor inverse target/input/action projections and target panel dimensionality"
+            }))
+        })?;
+        Ok(InverseMapOutputs {
+            predicted_input_panel: prediction
+                .predicted_input_panel
+                .tensor
+                .to_dtype(DType::F32)?,
+            predicted_action: prediction.predicted_action.to_dtype(DType::F32)?,
+        })
+    }
 }
 
 impl Trainer {
@@ -113,6 +142,24 @@ impl Trainer {
         &mut self,
         dataset: &TrainingDataset,
         epoch: u32,
+    ) -> Result<EpochReport, TrainerError> {
+        self.train_one_epoch_inner(dataset, epoch, None)
+    }
+
+    pub fn train_one_epoch_with_inverse_head(
+        &mut self,
+        dataset: &TrainingDataset,
+        epoch: u32,
+        inverse_forward: &dyn InverseMapForward,
+    ) -> Result<EpochReport, TrainerError> {
+        self.train_one_epoch_inner(dataset, epoch, Some(inverse_forward))
+    }
+
+    fn train_one_epoch_inner(
+        &mut self,
+        dataset: &TrainingDataset,
+        epoch: u32,
+        inverse_forward: Option<&dyn InverseMapForward>,
     ) -> Result<EpochReport, TrainerError> {
         if dataset.train.examples.is_empty() {
             return Err(TrainerError::new(
@@ -202,7 +249,19 @@ impl Trainer {
                     signal.delta_p,
                 );
             let inverse_map_quality_bits = if self.config.inverse_map_coefficient > 0.0 {
-                let inverse_loss = batch_inverse_map_loss(dataset, &plan.indices, &self.device)?;
+                let inverse_forward = inverse_forward.ok_or_else(|| {
+                    TrainerError::new(
+                        TrainerErrorCode::MejepaTrainConfigInvalid,
+                        "inverse_map_coefficient > 0 requires real inverse-head outputs",
+                    )
+                    .with_context(json!({
+                        "inverse_map_coefficient": self.config.inverse_map_coefficient,
+                        "required_call": "Trainer::train_one_epoch_with_inverse_head",
+                        "remediation": "pass a predictor implementing InverseMapForward; synthetic target-as-output inverse losses are forbidden"
+                    }))
+                })?;
+                let inverse_loss =
+                    batch_inverse_map_loss(dataset, &plan.indices, &self.device, inverse_forward)?;
                 loss_components.insert("inverse_map".to_string(), inverse_loss.loss);
                 loss_components.insert(
                     "inverse_map_weighted".to_string(),
@@ -394,6 +453,7 @@ fn batch_inverse_map_loss(
     dataset: &TrainingDataset,
     indices: &[usize],
     device: &Device,
+    inverse_forward: &dyn InverseMapForward,
 ) -> Result<crate::loss::inverse::InverseMapLossBreakdown, TrainerError> {
     if indices.is_empty() {
         return Err(TrainerError::new(
@@ -403,7 +463,7 @@ fn batch_inverse_map_loss(
     }
     let mut input_rows = Vec::with_capacity(indices.len());
     let mut target_rows = Vec::with_capacity(indices.len());
-    let mut action_rows = Vec::with_capacity(indices.len() * 3);
+    let mut action_rows = Vec::with_capacity(indices.len() * INVERSE_ACTION_DIM);
     let mut panel_dim = None;
     for idx in indices {
         let example = dataset.train.examples.get(*idx).ok_or_else(|| {
@@ -447,7 +507,7 @@ fn batch_inverse_map_loss(
         }
         input_rows.extend(input);
         target_rows.extend(target);
-        action_rows.extend(action_proxy(example));
+        action_rows.extend(action_latent_proxy(example));
     }
     let rows = indices.len();
     let dim = panel_dim.ok_or_else(|| {
@@ -456,14 +516,12 @@ fn batch_inverse_map_loss(
             "inverse-map batch has no panel dimension",
         )
     })?;
-    let predicted_input_panel = Tensor::from_slice(&target_rows, (rows, dim), device)?;
+    let target_panel = Tensor::from_slice(&target_rows, (rows, dim), device)?;
     let input_panel = Tensor::from_slice(&input_rows, (rows, dim), device)?;
-    let action = Tensor::from_slice(&action_rows, (rows, 3), device)?;
+    let action = Tensor::from_slice(&action_rows, (rows, INVERSE_ACTION_DIM), device)?;
+    let outputs = inverse_forward.predict_inverse(&target_panel)?;
     inverse_map_loss(
-        &InverseMapOutputs {
-            predicted_input_panel,
-            predicted_action: action.clone(),
-        },
+        &outputs,
         &InverseMapTargets {
             input_panel,
             action,
@@ -471,12 +529,38 @@ fn batch_inverse_map_loss(
     )
 }
 
-fn action_proxy(example: &crate::eval::holdout::HoldoutExample) -> [f32; 3] {
-    [
-        example.category as u8 as f32,
-        example.language as u8 as f32,
-        if example.adversarial { 1.0 } else { 0.0 },
-    ]
+fn action_latent_proxy(
+    example: &crate::eval::holdout::HoldoutExample,
+) -> [f32; INVERSE_ACTION_DIM] {
+    let mut action = [0.0_f32; INVERSE_ACTION_DIM];
+    action[0] = category_index(example.category) as f32
+        / (crate::eval::MutationCategory::ALL
+            .len()
+            .saturating_sub(1)
+            .max(1) as f32);
+    action[1] = language_index(example.language) as f32
+        / (crate::eval::Lang::ALL.len().saturating_sub(1).max(1) as f32);
+    action[2] = if example.adversarial { 1.0 } else { 0.0 };
+    let digest = Sha256::digest(example.task_id.as_bytes());
+    for (slot, chunk) in action[3..].iter_mut().zip(digest.chunks_exact(2)) {
+        let raw = u16::from_be_bytes([chunk[0], chunk[1]]) as f32 / u16::MAX as f32;
+        *slot = raw.mul_add(2.0, -1.0);
+    }
+    action
+}
+
+fn category_index(category: crate::eval::MutationCategory) -> usize {
+    crate::eval::MutationCategory::ALL
+        .iter()
+        .position(|candidate| *candidate == category)
+        .unwrap_or(0)
+}
+
+fn language_index(language: crate::eval::Lang) -> usize {
+    crate::eval::Lang::ALL
+        .iter()
+        .position(|candidate| *candidate == language)
+        .unwrap_or(0)
 }
 
 fn default_embedder_versions() -> HashMap<String, String> {

@@ -11,7 +11,7 @@ use crate::types::{
     validate_probability, HierarchicalPredictionRecord, PatchBundle, RealityPrediction, TaskContext,
 };
 
-pub const LATENT_ACTION_VECTOR_DIM: usize = 16;
+pub const LATENT_ACTION_VECTOR_DIM: usize = crate::config::INVERSE_ACTION_DIM;
 pub const DEFAULT_LATENT_SEARCH_MAX_CANDIDATES: usize = 32;
 pub const ABSOLUTE_LATENT_SEARCH_MAX_CANDIDATES: usize = 128;
 
