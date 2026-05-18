@@ -154,6 +154,10 @@ name = "task_ek_003_mincut_panel_fsv"
 path = "examples/task_ek_003_mincut_panel_fsv.rs"
 
 [[example]]
+name = "task_ek_002_propose_instrument_fsv"
+path = "examples/task_ek_002_propose_instrument_fsv.rs"
+
+[[example]]
 name = "task_py_g_042_patch_similarity_exemplar_fsv"
 path = "examples/task_py_g_042_patch_similarity_exemplar_fsv.rs"
 

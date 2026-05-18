@@ -262,9 +262,7 @@ impl MejepaInferError {
             Self::HeadProjectionSchemaMismatch { .. } => "HEAD_PROJECTION_SCHEMA_MISMATCH",
             Self::HeadProjectionNoDda { .. } => "HEAD_PROJECTION_NO_DDA",
             Self::InstrumentProposalNotFound { .. } => "MEJEPA_INSTRUMENT_PROPOSAL_NOT_FOUND",
-            Self::InstrumentProposalUnderReview { .. } => {
-                "MEJEPA_INSTRUMENT_PROPOSAL_UNDER_REVIEW"
-            }
+            Self::InstrumentProposalUnderReview { .. } => "MEJEPA_INSTRUMENT_PROPOSAL_UNDER_REVIEW",
             Self::FingerprintFisherMissing { .. } => "MEJEPA_FINGERPRINT_FISHER_MISSING",
             Self::AdversarialFingerprintMaterializationFailed { .. } => {
                 "MEJEPA_ADVERSARIAL_FINGERPRINT_MATERIALIZATION_FAILED"

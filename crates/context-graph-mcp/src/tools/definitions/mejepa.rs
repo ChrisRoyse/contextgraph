@@ -260,6 +260,72 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_PROPOSE_INSTRUMENT,
+            "TASK-EK-002 ontology-extension surface: compose Unknown active-learning clusters, pairwise-MI health, and mincut structural-hole evidence into deterministic candidate frozen-instrument proposals. No inner LLM is invoked.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional ME-JEPA RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    },
+                    "persist": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "When true, write proposals to CF_MEJEPA_INSTRUMENT_PROPOSALS with read-after-write validation."
+                    },
+                    "config": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "minClusterSize": {"type": "integer", "minimum": 1, "default": 30},
+                            "tauIntra": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.85},
+                            "tauFar": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.4},
+                            "minExpectedHoldoutImprovement": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.01},
+                            "maxProposals": {"type": "integer", "minimum": 1, "maximum": 1024, "default": 16},
+                            "pairwiseMiMaxRows": {"type": "integer", "minimum": 1, "default": 1000000}
+                        }
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_PROMOTE_INSTRUMENT_PROPOSAL,
+            "TASK-EK-002 operator/falsification gate: mark an instrument proposal under review, accept it if held-out delta clears threshold, or persist a rejected proposal decision in CF_MEJEPA_INSTRUMENT_PROPOSALS.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["proposalId", "decision"],
+                "properties": {
+                    "proposalId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{32}$"
+                    },
+                    "decision": {
+                        "type": "string",
+                        "enum": ["accept", "reject", "mark_under_review"]
+                    },
+                    "observedHoldoutDelta": {
+                        "type": "number",
+                        "minimum": -1,
+                        "maximum": 1,
+                        "default": 0
+                    },
+                    "minDeltaRequired": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "default": 0.01
+                    },
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional ME-JEPA RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_EXPLAIN_PREDICTION,
             "Explain a persisted System 2 ME-JEPA Phase B RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS and returning stored verdict, matched failure-shape fingerprint evidence, top risks, claim reconciliation, reality impact, provenance, and a saliency map normalized from covered chunks.",
             json!({

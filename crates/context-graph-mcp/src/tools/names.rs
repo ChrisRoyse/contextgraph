@@ -112,6 +112,11 @@ pub const MEJEPA_ELICIT_INTENT: &str = "mcp__cgreality__mejepa_elicit_intent";
 pub const MEJEPA_ALIGN_TO_INTENT: &str = "mcp__cgreality__mejepa_align_to_intent";
 /// TASK-EK-003 structural-hole mincut panel over ME-JEPA embedder/constellation/fingerprint graphs.
 pub const MEJEPA_MINCUT_PANEL: &str = "mcp__cgreality__mejepa_mincut_panel";
+/// TASK-EK-002 frozen-instrument proposal surface from residual absence signals.
+pub const MEJEPA_PROPOSE_INSTRUMENT: &str = "mcp__cgreality__mejepa_propose_instrument";
+/// TASK-EK-002 operator/falsification decision gate for instrument proposals.
+pub const MEJEPA_PROMOTE_INSTRUMENT_PROPOSAL: &str =
+    "mcp__cgreality__mejepa_promote_instrument_proposal";
 /// Phase B persisted-prediction explanation tool.
 pub const MEJEPA_EXPLAIN_PREDICTION: &str = "mcp__cgreality__mejepa_explain_prediction";
 /// Phase F per-prediction provenance inspection tool.

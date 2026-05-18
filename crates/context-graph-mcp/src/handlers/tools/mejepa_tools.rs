@@ -20,23 +20,25 @@ use context_graph_mejepa::operator_override::{
 };
 use context_graph_mejepa::{
     align_to_intent, build_deterministic_compiler, elicit_intent, mejepa_mincut_panel,
-    open_infer_rocksdb, open_mincut_rocksdb, rank_counterfactual_candidates, read_mincut_report,
-    read_north_star, search_latent_actions, write_mincut_report_sync_readback,
+    open_infer_rocksdb, open_mincut_rocksdb, promote_instrument_proposal,
+    propose_instruments_from_db, rank_counterfactual_candidates, read_instrument_proposal,
+    read_instrument_proposals, read_mincut_report, read_north_star, search_latent_actions,
+    write_instrument_proposals_sync_readback, write_mincut_report_sync_readback,
     write_north_star_sync_readback, ActiveLearningQueueState, ActualOutcome, AgentId,
     CalibrationStore, ChunkId, CounterfactualCandidateRankingConfig, DdaSignals,
     ElicitationOptions, FailedGate, FeedbackId, FeedbackKind, FingerprintId, FingerprintReference,
-    IntentCandidate, IntentSpecification, LabelMethod, LatentActionCandidate,
-    LatentActionSearchConfig, MeJepaInferConfig, MincutOptions, NorthStarVector, OracleOutcome,
-    PanelGraphSource, PanelId, PatchBundle, PredictionId, RealityPrediction, RocksDbEvalStore,
-    RocksDbInferStore, SurpriseEvent, SurpriseSeverity, SystemCostCounters, TaskContext, TestId,
-    VerifyVerdict, WitnessHash,
+    InstrumentProposalConfig, InstrumentProposalDecision, IntentCandidate, IntentSpecification,
+    LabelMethod, LatentActionCandidate, LatentActionSearchConfig, MeJepaInferConfig, MincutOptions,
+    NorthStarVector, OracleOutcome, PanelGraphSource, PanelId, PatchBundle, PredictionId,
+    RealityPrediction, RocksDbEvalStore, RocksDbInferStore, SurpriseEvent, SurpriseSeverity,
+    SystemCostCounters, TaskContext, TestId, VerifyVerdict, WitnessHash,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_CALIBRATION_HISTORY,
-    CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_LIVE_PREDICTIONS,
-    CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_NORTH_STARS, CF_MEJEPA_OOD_ESCALATIONS,
-    CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_INSTRUMENT_PROPOSALS,
+    CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_NORTH_STARS,
+    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
@@ -151,6 +153,30 @@ struct MincutPanelRequest {
     db_path: Option<PathBuf>,
     #[serde(default = "default_persist_mincut_report")]
     persist: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProposeInstrumentRequest {
+    #[serde(default)]
+    db_path: Option<PathBuf>,
+    #[serde(default = "default_persist_instrument_proposals")]
+    persist: bool,
+    #[serde(default)]
+    config: InstrumentProposalConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PromoteInstrumentProposalRequest {
+    proposal_id: String,
+    decision: InstrumentProposalDecision,
+    #[serde(default)]
+    observed_holdout_delta: f32,
+    #[serde(default = "default_instrument_min_delta_required")]
+    min_delta_required: f32,
+    #[serde(default)]
+    db_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -310,6 +336,14 @@ fn default_include_vram() -> bool {
 
 fn default_persist_north_star() -> bool {
     true
+}
+
+fn default_persist_instrument_proposals() -> bool {
+    true
+}
+
+fn default_instrument_min_delta_required() -> f32 {
+    context_graph_mejepa::DEFAULT_INSTRUMENT_PROPOSAL_MIN_DELTA
 }
 
 fn default_persist_mincut_report() -> bool {
@@ -789,6 +823,74 @@ impl Handlers {
                 "MEJEPA_MINCUT_PANEL_FAILED",
                 &err.to_string(),
                 json!({"dbPath": db_path, "mincutReportCf": CF_MEJEPA_MINCUT_REPORTS}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_propose_instrument(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: ProposeInstrumentRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_PROPOSE_INSTRUMENT
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_propose_instrument(&db_path, request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Execution,
+                "MEJEPA_PROPOSE_INSTRUMENT_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path, "instrumentProposalCf": CF_MEJEPA_INSTRUMENT_PROPOSALS}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_promote_instrument_proposal(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: PromoteInstrumentProposalRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_PROMOTE_INSTRUMENT_PROPOSAL
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_promote_instrument_proposal(&db_path, request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Execution,
+                "MEJEPA_PROMOTE_INSTRUMENT_PROPOSAL_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path, "instrumentProposalCf": CF_MEJEPA_INSTRUMENT_PROPOSALS}),
             ),
         }
     }
@@ -2001,6 +2103,79 @@ fn run_mincut_panel(db_path: &Path, request: MincutPanelRequest) -> AnyhowResult
     }))
 }
 
+fn run_propose_instrument(
+    db_path: &Path,
+    request: ProposeInstrumentRequest,
+) -> AnyhowResult<Value> {
+    let created_at_unix_ms = now_unix_ms()?;
+    let db = open_infer_rocksdb(db_path).context("open ME-JEPA inference RocksDB")?;
+    let report = propose_instruments_from_db(db.as_ref(), request.config, created_at_unix_ms)
+        .context("propose ME-JEPA instrument candidates")?;
+    let write_summary = if request.persist && !report.proposals.is_empty() {
+        Some(
+            write_instrument_proposals_sync_readback(db.as_ref(), &report.proposals)
+                .context("persist instrument proposals")?,
+        )
+    } else {
+        None
+    };
+    let persisted_readback_count = if request.persist {
+        read_instrument_proposals(db.as_ref())
+            .context("read persisted instrument proposals")?
+            .len()
+    } else {
+        0
+    };
+    Ok(json!({
+        "report": report,
+        "writeSummary": write_summary,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "instrumentProposalCf": CF_MEJEPA_INSTRUMENT_PROPOSALS,
+            "persisted": request.persist,
+            "persistedReadbackCount": persisted_readback_count,
+            "tool": tool_names::MEJEPA_PROPOSE_INSTRUMENT,
+            "innerLlmInvoked": false
+        }
+    }))
+}
+
+fn run_promote_instrument_proposal(
+    db_path: &Path,
+    request: PromoteInstrumentProposalRequest,
+) -> AnyhowResult<Value> {
+    let proposal_id = parse_instrument_proposal_id_hex(&request.proposal_id)?;
+    let decided_at_unix_ms = now_unix_ms()?;
+    let db = open_infer_rocksdb(db_path).context("open ME-JEPA inference RocksDB")?;
+    let proposal = promote_instrument_proposal(
+        db.as_ref(),
+        proposal_id,
+        request.decision,
+        request.observed_holdout_delta,
+        request.min_delta_required,
+        decided_at_unix_ms,
+    )
+    .context("promote instrument proposal")?;
+    let readback = read_instrument_proposal(db.as_ref(), proposal_id)
+        .context("read promoted instrument proposal")?
+        .ok_or_else(|| anyhow!("instrument proposal missing after promotion"))?;
+    let persisted_readback_equal = readback == proposal;
+    if !persisted_readback_equal {
+        bail!("MEJEPA_INSTRUMENT_PROPOSAL_READBACK_MISMATCH");
+    }
+    Ok(json!({
+        "proposal": proposal,
+        "persistedReadbackEqual": persisted_readback_equal,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "instrumentProposalCf": CF_MEJEPA_INSTRUMENT_PROPOSALS,
+            "proposalId": request.proposal_id,
+            "tool": tool_names::MEJEPA_PROMOTE_INSTRUMENT_PROPOSAL,
+            "innerLlmInvoked": false
+        }
+    }))
+}
+
 fn run_explain_prediction(
     db_path: &Path,
     request: ExplainPredictionRequest,
@@ -2499,6 +2674,18 @@ fn parse_prediction_id_hex(raw: &str) -> AnyhowResult<PredictionId> {
     let mut bytes = [0u8; 16];
     hex::decode_to_slice(raw, &mut bytes).context("decode predictionId")?;
     Ok(PredictionId(bytes))
+}
+
+fn parse_instrument_proposal_id_hex(raw: &str) -> AnyhowResult<[u8; 16]> {
+    if raw.len() != 32 || !raw.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+        bail!("proposalId must be exactly 32 hexadecimal characters");
+    }
+    let mut bytes = [0u8; 16];
+    hex::decode_to_slice(raw, &mut bytes).context("decode proposalId")?;
+    if bytes.iter().all(|byte| *byte == 0) {
+        bail!("proposalId must be non-zero");
+    }
+    Ok(bytes)
 }
 
 struct PredictionRow {
