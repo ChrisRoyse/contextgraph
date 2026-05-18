@@ -171,6 +171,10 @@ name = "task_ek_018c_falsification_gate_fsv"
 path = "examples/task_ek_018c_falsification_gate_fsv.rs"
 
 [[example]]
+name = "task_ek_018h_operator_gates_fsv"
+path = "examples/task_ek_018h_operator_gates_fsv.rs"
+
+[[example]]
 name = "task_py_g_042_patch_similarity_exemplar_fsv"
 path = "examples/task_py_g_042_patch_similarity_exemplar_fsv.rs"
 

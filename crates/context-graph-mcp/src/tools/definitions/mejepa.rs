@@ -320,6 +320,20 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_PENDING_EMBEDDER_APPROVALS,
+            "TASK-EK-018H operator gate readback: list pending dynamic-embedder promotions awaiting operator review from CF_MEJEPA_MODEL_PROMOTIONS. Approval and rejection still flow through mcp__cgreality__mejepa_promote_approval.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Self-healing RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_HEAL_DB is required."
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_PROMOTE_INSTRUMENT_PROPOSAL,
             "TASK-EK-002 operator/falsification gate: mark an instrument proposal under review, accept it if held-out delta clears threshold, or persist a rejected proposal decision in CF_MEJEPA_INSTRUMENT_PROPOSALS.",
             json!({

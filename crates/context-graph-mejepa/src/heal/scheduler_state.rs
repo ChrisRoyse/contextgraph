@@ -864,7 +864,12 @@ impl SchedulerState {
         approved.sort_by_key(|record| record.updated_at_unix_ms);
         let mut witness_repair = None;
         let mut catastrophic_promotion = None;
-        if let Some(record) = approved.pop() {
+        if let Some(record) = approved.into_iter().rev().find(|record| {
+            !matches!(
+                record.kind,
+                PendingPromotionKind::DynamicEmbedderPromotion { .. }
+            )
+        }) {
             match &record.kind {
                 PendingPromotionKind::WitnessChainRepairRequired { .. } => {
                     let cleared = complete_witness_quarantine_repair(
@@ -889,6 +894,7 @@ impl SchedulerState {
                         "heal_report": report,
                     }));
                 }
+                PendingPromotionKind::DynamicEmbedderPromotion { .. } => {}
             }
         }
         let calibration = continuous_calibration_if_due(&mut self.pipeline)?;

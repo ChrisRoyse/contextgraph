@@ -117,6 +117,9 @@ pub const MEJEPA_PROPOSE_INSTRUMENT: &str = "mcp__cgreality__mejepa_propose_inst
 /// TASK-EK-018B ranked dynamic-embedder proposal queue from absence signals.
 pub const MEJEPA_PENDING_EMBEDDER_PROPOSALS: &str =
     "mcp__cgreality__mejepa_pending_embedder_proposals";
+/// TASK-EK-018H pending dynamic-embedder promotions awaiting operator approval.
+pub const MEJEPA_PENDING_EMBEDDER_APPROVALS: &str =
+    "mcp__cgreality__mejepa_pending_embedder_approvals";
 /// TASK-EK-002 operator/falsification decision gate for instrument proposals.
 pub const MEJEPA_PROMOTE_INSTRUMENT_PROPOSAL: &str =
     "mcp__cgreality__mejepa_promote_instrument_proposal";

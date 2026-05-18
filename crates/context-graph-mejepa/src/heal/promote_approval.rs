@@ -27,6 +27,17 @@ pub enum PendingPromotionKind {
         broken_at_offset: Option<usize>,
         quarantine_recorded_at_unix_ms: i64,
     },
+    DynamicEmbedderPromotion {
+        candidate_id_slug: String,
+        candidate_name: String,
+        proposal_id_hex: String,
+        first_dynamic_promotion: bool,
+        would_cross_ship_gate: bool,
+        modifies_below_threshold_cell: bool,
+        heldout_global_delta: f32,
+        min_cell_delta: f32,
+        required_distinct_approvals: u8,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -89,6 +100,7 @@ impl PendingPromotion {
                 "required approvals must be greater than zero",
             ));
         }
+        validate_pending_promotion_kind(&self.kind)?;
         Ok(())
     }
 
@@ -120,6 +132,39 @@ pub struct PromotionApprovalResponse {
     pub readback_verified: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DynamicEmbedderPromotionGateRequest {
+    pub candidate_id_slug: String,
+    pub candidate_name: String,
+    pub proposal_id_hex: String,
+    pub falsification_passed: bool,
+    pub redundant_with_existing: bool,
+    pub within_vram_budget: bool,
+    pub first_dynamic_promotion: bool,
+    pub would_cross_ship_gate: bool,
+    pub modifies_below_threshold_cell: bool,
+    pub heldout_global_delta: f32,
+    pub min_cell_delta: f32,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DynamicEmbedderPromotionGateDecision {
+    pub candidate_id_slug: String,
+    pub candidate_name: String,
+    pub may_promote_now: bool,
+    pub approval_required: bool,
+    pub queued_promotion_id: Option<String>,
+    pub required_distinct_approvals: u8,
+    pub catastrophic_class: bool,
+    pub block_reasons: Vec<String>,
+    pub source_of_truth_cf: String,
+    pub source_of_truth_key_hex: Option<String>,
+    pub readback_verified: bool,
+}
+
 pub fn queue_pending_retrain_request(
     storage: &HealRocksStore,
     kind: PendingPromotionKind,
@@ -145,6 +190,92 @@ pub fn queue_pending_retrain_request(
     promotion.validate()?;
     persist_policy_record(storage, &promotion.key()?, &promotion)?;
     Ok(promotion_id)
+}
+
+pub fn gate_dynamic_embedder_promotion(
+    storage: &HealRocksStore,
+    request: DynamicEmbedderPromotionGateRequest,
+) -> Result<DynamicEmbedderPromotionGateDecision, HealError> {
+    validate_dynamic_embedder_gate_request(&request)?;
+    let block_reasons = dynamic_embedder_promotion_block_reasons(&request);
+    let catastrophic_class = request.would_cross_ship_gate || request.modifies_below_threshold_cell;
+    let required_distinct_approvals = if !block_reasons.is_empty() {
+        0
+    } else {
+        required_dynamic_embedder_approvals(
+            request.first_dynamic_promotion,
+            request.would_cross_ship_gate,
+            request.modifies_below_threshold_cell,
+        )
+    };
+    if !block_reasons.is_empty() {
+        return Ok(DynamicEmbedderPromotionGateDecision {
+            candidate_id_slug: request.candidate_id_slug,
+            candidate_name: request.candidate_name,
+            may_promote_now: false,
+            approval_required: false,
+            queued_promotion_id: None,
+            required_distinct_approvals,
+            catastrophic_class,
+            block_reasons,
+            source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS.to_string(),
+            source_of_truth_key_hex: None,
+            readback_verified: true,
+        });
+    }
+    if required_distinct_approvals == 0 {
+        return Ok(DynamicEmbedderPromotionGateDecision {
+            candidate_id_slug: request.candidate_id_slug,
+            candidate_name: request.candidate_name,
+            may_promote_now: true,
+            approval_required: false,
+            queued_promotion_id: None,
+            required_distinct_approvals,
+            catastrophic_class,
+            block_reasons,
+            source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS.to_string(),
+            source_of_truth_key_hex: None,
+            readback_verified: true,
+        });
+    }
+    let kind = PendingPromotionKind::DynamicEmbedderPromotion {
+        candidate_id_slug: request.candidate_id_slug.clone(),
+        candidate_name: request.candidate_name.clone(),
+        proposal_id_hex: request.proposal_id_hex,
+        first_dynamic_promotion: request.first_dynamic_promotion,
+        would_cross_ship_gate: request.would_cross_ship_gate,
+        modifies_below_threshold_cell: request.modifies_below_threshold_cell,
+        heldout_global_delta: request.heldout_global_delta,
+        min_cell_delta: request.min_cell_delta,
+        required_distinct_approvals,
+    };
+    let promotion_id = queue_pending_retrain_request(
+        storage,
+        kind,
+        TriggerReason::OperatorTriggered,
+        request.reason,
+    )?;
+    let key = promotion_key(&promotion_id)?;
+    let readback: PendingPromotion = load_policy_record(storage, &key)?.ok_or_else(|| {
+        HealError::invalid(
+            "dynamic_embedder_approval.readback",
+            "pending dynamic embedder promotion missing after queue write",
+        )
+    })?;
+    readback.validate()?;
+    Ok(DynamicEmbedderPromotionGateDecision {
+        candidate_id_slug: request.candidate_id_slug,
+        candidate_name: request.candidate_name,
+        may_promote_now: false,
+        approval_required: true,
+        queued_promotion_id: Some(promotion_id),
+        required_distinct_approvals,
+        catastrophic_class,
+        block_reasons,
+        source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS.to_string(),
+        source_of_truth_key_hex: Some(hex::encode(key)),
+        readback_verified: true,
+    })
 }
 
 pub fn apply_promotion_approval(
@@ -252,6 +383,32 @@ pub fn pending_promotions(storage: &HealRocksStore) -> Result<Vec<PendingPromoti
     )
 }
 
+pub fn pending_dynamic_embedder_promotions(
+    storage: &HealRocksStore,
+) -> Result<Vec<PendingPromotion>, HealError> {
+    Ok(all_dynamic_embedder_promotions(storage)?
+        .into_iter()
+        .filter(|value| value.state == PromotionApprovalState::Pending)
+        .collect())
+}
+
+pub fn all_dynamic_embedder_promotions(
+    storage: &HealRocksStore,
+) -> Result<Vec<PendingPromotion>, HealError> {
+    let mut rows = Vec::new();
+    for (_, value) in scan_policy_records::<PendingPromotion>(storage, PENDING_PROMOTION_PREFIX)? {
+        if matches!(
+            value.kind,
+            PendingPromotionKind::DynamicEmbedderPromotion { .. }
+        ) {
+            value.validate()?;
+            rows.push(value);
+        }
+    }
+    rows.sort_by(|left, right| left.promotion_id.cmp(&right.promotion_id));
+    Ok(rows)
+}
+
 pub fn approved_promotions(storage: &HealRocksStore) -> Result<Vec<PendingPromotion>, HealError> {
     Ok(
         scan_policy_records::<PendingPromotion>(storage, PENDING_PROMOTION_PREFIX)?
@@ -322,6 +479,24 @@ fn required_approvals_for_kind(kind: &PendingPromotionKind) -> u8 {
             CATASTROPHIC_REQUIRED_DISTINCT_APPROVALS
         }
         PendingPromotionKind::WitnessChainRepairRequired { .. } => 1,
+        PendingPromotionKind::DynamicEmbedderPromotion {
+            required_distinct_approvals,
+            ..
+        } => *required_distinct_approvals,
+    }
+}
+
+fn required_dynamic_embedder_approvals(
+    first_dynamic_promotion: bool,
+    would_cross_ship_gate: bool,
+    modifies_below_threshold_cell: bool,
+) -> u8 {
+    if would_cross_ship_gate || modifies_below_threshold_cell {
+        CATASTROPHIC_REQUIRED_DISTINCT_APPROVALS
+    } else if first_dynamic_promotion {
+        1
+    } else {
+        0
     }
 }
 
@@ -333,6 +508,162 @@ fn validate_operator(operator_id: &str) -> Result<(), HealError> {
         return Err(HealError::invalid(
             "promote_approval.operator_id",
             "operator id must be non-empty single-line text up to 256 bytes",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_pending_promotion_kind(kind: &PendingPromotionKind) -> Result<(), HealError> {
+    match kind {
+        PendingPromotionKind::CatastrophicFullRetrainRequired {
+            cell_key,
+            metric_value,
+        } => {
+            validate_single_line("promote_approval.cell_key", cell_key, 256)?;
+            if !metric_value.is_finite() || *metric_value < 0.0 {
+                return Err(HealError::invalid(
+                    "promote_approval.metric_value",
+                    "metric value must be finite and non-negative",
+                ));
+            }
+        }
+        PendingPromotionKind::CatastrophicAbcCandidate {
+            candidate_sha_hex,
+            eval_report_key_hex,
+        } => {
+            validate_single_line("promote_approval.candidate_sha_hex", candidate_sha_hex, 64)?;
+            validate_single_line(
+                "promote_approval.eval_report_key_hex",
+                eval_report_key_hex,
+                4096,
+            )?;
+        }
+        PendingPromotionKind::WitnessChainRepairRequired {
+            chain_path,
+            quarantine_recorded_at_unix_ms,
+            ..
+        } => {
+            validate_single_line("promote_approval.chain_path", chain_path, 4096)?;
+            if *quarantine_recorded_at_unix_ms <= 0 {
+                return Err(HealError::invalid(
+                    "promote_approval.quarantine_recorded_at_unix_ms",
+                    "must be positive",
+                ));
+            }
+        }
+        PendingPromotionKind::DynamicEmbedderPromotion {
+            candidate_id_slug,
+            candidate_name,
+            proposal_id_hex,
+            heldout_global_delta,
+            min_cell_delta,
+            required_distinct_approvals,
+            ..
+        } => {
+            validate_single_line(
+                "dynamic_embedder_approval.candidate_id_slug",
+                candidate_id_slug,
+                256,
+            )?;
+            validate_single_line(
+                "dynamic_embedder_approval.candidate_name",
+                candidate_name,
+                256,
+            )?;
+            validate_single_line(
+                "dynamic_embedder_approval.proposal_id_hex",
+                proposal_id_hex,
+                64,
+            )?;
+            validate_unit_delta(
+                "dynamic_embedder_approval.heldout_global_delta",
+                *heldout_global_delta,
+            )?;
+            validate_unit_delta("dynamic_embedder_approval.min_cell_delta", *min_cell_delta)?;
+            if *required_distinct_approvals == 0 {
+                return Err(HealError::invalid(
+                    "dynamic_embedder_approval.required_distinct_approvals",
+                    "queued dynamic embedder approval must require at least one approval",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_dynamic_embedder_gate_request(
+    request: &DynamicEmbedderPromotionGateRequest,
+) -> Result<(), HealError> {
+    validate_single_line(
+        "dynamic_embedder_approval.candidate_id_slug",
+        &request.candidate_id_slug,
+        256,
+    )?;
+    validate_single_line(
+        "dynamic_embedder_approval.candidate_name",
+        &request.candidate_name,
+        256,
+    )?;
+    validate_single_line(
+        "dynamic_embedder_approval.proposal_id_hex",
+        &request.proposal_id_hex,
+        64,
+    )?;
+    if request.proposal_id_hex.len() != 32
+        || !request
+            .proposal_id_hex
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(HealError::invalid(
+            "dynamic_embedder_approval.proposal_id_hex",
+            "proposal id must be 16-byte lowercase-or-uppercase hex",
+        ));
+    }
+    validate_unit_delta(
+        "dynamic_embedder_approval.heldout_global_delta",
+        request.heldout_global_delta,
+    )?;
+    validate_unit_delta(
+        "dynamic_embedder_approval.min_cell_delta",
+        request.min_cell_delta,
+    )?;
+    validate_single_line("dynamic_embedder_approval.reason", &request.reason, 4096)?;
+    Ok(())
+}
+
+fn dynamic_embedder_promotion_block_reasons(
+    request: &DynamicEmbedderPromotionGateRequest,
+) -> Vec<String> {
+    let mut reasons = Vec::new();
+    if !request.falsification_passed {
+        reasons.push("falsification_gate_failed".to_string());
+    }
+    if request.redundant_with_existing {
+        reasons.push("redundant_with_existing_embedder".to_string());
+    }
+    if !request.within_vram_budget {
+        reasons.push("vram_budget_exceeded".to_string());
+    }
+    reasons
+}
+
+fn validate_unit_delta(field: &str, value: f32) -> Result<(), HealError> {
+    if !value.is_finite() || !(-1.0..=1.0).contains(&value) {
+        return Err(HealError::invalid(field, "delta must be finite in [-1, 1]"));
+    }
+    Ok(())
+}
+
+fn validate_single_line(field: &str, value: &str, max_len: usize) -> Result<(), HealError> {
+    if value.trim().is_empty()
+        || value.trim() != value
+        || value.len() > max_len
+        || value.bytes().any(|byte| byte == 0 || byte == b'\n')
+    {
+        return Err(HealError::invalid(
+            field,
+            format!("must be non-empty trimmed single-line text up to {max_len} bytes"),
         ));
     }
     Ok(())
@@ -444,5 +775,128 @@ mod tests {
         .unwrap();
         assert_eq!(second.state_after, PromotionApprovalState::Approved);
         assert_eq!(second.distinct_approval_count, 2);
+    }
+
+    #[test]
+    fn first_dynamic_embedder_promotion_requires_single_operator_approval() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = HealRocksStore::open(temp.path().join("db")).unwrap();
+        let decision = gate_dynamic_embedder_promotion(
+            storage.as_ref(),
+            dynamic_request("edynamic:1:corpus_transe_v1", true, false, false),
+        )
+        .unwrap();
+
+        assert!(!decision.may_promote_now);
+        assert!(decision.approval_required);
+        assert_eq!(decision.required_distinct_approvals, 1);
+        assert_eq!(
+            pending_dynamic_embedder_promotions(storage.as_ref())
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let approval = apply_promotion_approval(
+            storage.as_ref(),
+            PromotionApprovalRequest {
+                promotion_id: decision.queued_promotion_id.unwrap(),
+                operator_id: "operator-a".to_string(),
+                action: PromotionApprovalAction::Approve,
+                reason: "reviewed first dynamic embedder".to_string(),
+                two_person_rule: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(approval.state_after, PromotionApprovalState::Approved);
+        assert_eq!(approval.distinct_approval_count, 1);
+    }
+
+    #[test]
+    fn catastrophic_dynamic_embedder_promotion_requires_two_distinct_operators() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = HealRocksStore::open(temp.path().join("db")).unwrap();
+        let decision = gate_dynamic_embedder_promotion(
+            storage.as_ref(),
+            dynamic_request("edynamic:2:ship_gate_crossing_v1", false, true, false),
+        )
+        .unwrap();
+
+        assert!(!decision.may_promote_now);
+        assert!(decision.approval_required);
+        assert!(decision.catastrophic_class);
+        assert_eq!(
+            decision.required_distinct_approvals,
+            CATASTROPHIC_REQUIRED_DISTINCT_APPROVALS
+        );
+        let promotion_id = decision.queued_promotion_id.unwrap();
+        let first = apply_promotion_approval(
+            storage.as_ref(),
+            PromotionApprovalRequest {
+                promotion_id: promotion_id.clone(),
+                operator_id: "operator-a".to_string(),
+                action: PromotionApprovalAction::Approve,
+                reason: "reviewed catastrophic dynamic embedder".to_string(),
+                two_person_rule: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(first.state_after, PromotionApprovalState::Pending);
+        let second = apply_promotion_approval(
+            storage.as_ref(),
+            PromotionApprovalRequest {
+                promotion_id,
+                operator_id: "operator-b".to_string(),
+                action: PromotionApprovalAction::Approve,
+                reason: "second dynamic embedder approval".to_string(),
+                two_person_rule: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(second.state_after, PromotionApprovalState::Approved);
+        assert_eq!(second.distinct_approval_count, 2);
+    }
+
+    #[test]
+    fn non_catastrophic_non_first_dynamic_embedder_auto_promotes() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = HealRocksStore::open(temp.path().join("db")).unwrap();
+        let decision = gate_dynamic_embedder_promotion(
+            storage.as_ref(),
+            dynamic_request("edynamic:3:auto_v1", false, false, false),
+        )
+        .unwrap();
+
+        assert!(decision.may_promote_now);
+        assert!(!decision.approval_required);
+        assert!(decision.queued_promotion_id.is_none());
+        assert_eq!(
+            pending_dynamic_embedder_promotions(storage.as_ref())
+                .unwrap()
+                .len(),
+            0
+        );
+    }
+
+    fn dynamic_request(
+        candidate_id_slug: &str,
+        first_dynamic_promotion: bool,
+        would_cross_ship_gate: bool,
+        modifies_below_threshold_cell: bool,
+    ) -> DynamicEmbedderPromotionGateRequest {
+        DynamicEmbedderPromotionGateRequest {
+            candidate_id_slug: candidate_id_slug.to_string(),
+            candidate_name: candidate_id_slug.replace(':', "_"),
+            proposal_id_hex: "01010101010101010101010101010101".to_string(),
+            falsification_passed: true,
+            redundant_with_existing: false,
+            within_vram_budget: true,
+            first_dynamic_promotion,
+            would_cross_ship_gate,
+            modifies_below_threshold_cell,
+            heldout_global_delta: 0.006,
+            min_cell_delta: 0.0,
+            reason: "dynamic embedder promotion gate fixture".to_string(),
+        }
     }
 }

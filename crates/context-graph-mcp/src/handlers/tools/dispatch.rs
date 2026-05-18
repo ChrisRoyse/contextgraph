@@ -222,6 +222,7 @@ impl Handlers {
             tool_names::MEJEPA_MINCUT_PANEL => call_mejepa_mincut_panel(arguments),
             tool_names::MEJEPA_PROPOSE_INSTRUMENT => call_mejepa_propose_instrument(arguments),
             tool_names::MEJEPA_PENDING_EMBEDDER_PROPOSALS => call_mejepa_pending_embedder_proposals(arguments),
+            tool_names::MEJEPA_PENDING_EMBEDDER_APPROVALS => call_mejepa_pending_embedder_approvals(arguments),
             tool_names::MEJEPA_PROMOTE_INSTRUMENT_PROPOSAL => call_mejepa_promote_instrument_proposal(arguments),
             tool_names::MEJEPA_EXPLAIN_PREDICTION => call_mejepa_explain_prediction(arguments),
             tool_names::MEJEPA_INSPECT_PREDICTION => call_mejepa_inspect_prediction(arguments),

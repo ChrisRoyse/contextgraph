@@ -9,8 +9,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, bail, Context, Result as AnyhowResult};
 use context_graph_mejepa::heal::{
     all_referenced_cf_names, apply_promotion_approval, decode_value, encode_active_pointer_key,
-    is_holdout_rotation_event_key, AbcPromoter, ActivePointerValue, HealError, HealReport,
-    HealRocksStore, PromotionApprovalAction,
+    is_holdout_rotation_event_key, pending_dynamic_embedder_promotions, AbcPromoter,
+    ActivePointerValue, HealError, HealReport, HealRocksStore, PromotionApprovalAction,
     PromotionApprovalRequest as HealPromotionApprovalRequest, PromotionGate, PromotionLockState,
     WitnessChainAppender, CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_HEAL_REPORTS,
 };
@@ -40,8 +40,8 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_CALIBRATION_HISTORY,
     CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_EMBEDDER_PROPOSALS, CF_MEJEPA_FINGERPRINT_REFERENCES,
     CF_MEJEPA_INSTRUMENT_PROPOSALS, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_MINCUT_REPORTS,
-    CF_MEJEPA_NORTH_STARS, CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_OVERRIDES,
-    CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_NORTH_STARS, CF_MEJEPA_OOD_ESCALATIONS,
+    CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
@@ -178,6 +178,13 @@ struct PendingEmbedderProposalsRequest {
     persist: bool,
     #[serde(default)]
     config: EmbedderProposalConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PendingEmbedderApprovalsRequest {
+    #[serde(default)]
+    db_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -910,6 +917,41 @@ impl Handlers {
                 &err.to_string(),
                 json!({"dbPath": db_path, "embedderProposalCf": CF_MEJEPA_EMBEDDER_PROPOSALS}),
             ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_pending_embedder_approvals(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: PendingEmbedderApprovalsRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_PENDING_EMBEDDER_APPROVALS
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_heal_db_path(request.db_path) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_pending_embedder_approvals(&db_path) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => {
+                err.log_context(file!());
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("{}: {err}", err.code()),
+                )
+            }
         }
     }
 
@@ -2225,6 +2267,23 @@ fn run_pending_embedder_proposals(
             "persisted": request.persist,
             "persistedReadbackCount": persisted_readback_count,
             "tool": tool_names::MEJEPA_PENDING_EMBEDDER_PROPOSALS,
+            "innerLlmInvoked": false
+        }
+    }))
+}
+
+fn run_pending_embedder_approvals(
+    db_path: &Path,
+) -> Result<serde_json::Value, Box<context_graph_mejepa::heal::HealError>> {
+    let store = HealRocksStore::open(db_path)?;
+    let pending = pending_dynamic_embedder_promotions(&store)?;
+    Ok(json!({
+        "pendingApprovals": pending,
+        "pendingCount": pending.len(),
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "cf": CF_MEJEPA_MODEL_PROMOTIONS,
+            "tool": tool_names::MEJEPA_PENDING_EMBEDDER_APPROVALS,
             "innerLlmInvoked": false
         }
     }))
