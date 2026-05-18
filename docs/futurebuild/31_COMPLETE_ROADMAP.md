@@ -115,7 +115,7 @@ This roadmap is organised by **phase** then by **deliverable**. Each deliverable
 |---|---|---|---|
 | 7.1 | Secret redaction before embedding | #278 | TASK-PY-G-059 PHASE 1 shipped |
 | 7.2 | Adversarial fingerprint integration | #279 / #318 | TASK-FP-009 shipped 2026-05-17 |
-| 7.3 | Synthetic-Python operator-authored stress corpus | #290 | pending |
+| 7.3 | Synthetic-Python operator-authored stress corpus | #290 | TASK-PY-G-071 shipped 2026-05-18 — `mejepa eval synthetic-stress`, 30 known-answer cases, `CF_MEJEPA_SYNTHETIC_STRESS_RESULTS`, FSV sha256 `b8e5c71283e466682a158e9d630e0b90495a092939064f1fb32ba7141896989c` |
 | 7.4 | End-to-end reality-compiler stress harness | #291 | TASK-PY-G-072 shipped 2026-05-18 |
 | 7.5 | Catastrophic Python cell quarantine | #120 | pending |
 | 7.6 | Python leakage detector | #148 | pending |
@@ -273,7 +273,7 @@ These directly attack the 0.95 metric. Prioritise compute and operator attention
 
 1. **§1.3 calibration tasks** (#121, #122, #123, #124, #126, #127, #128, #129, #130) — these are the per-head per-cell calibration tasks that the per-cell ship-gate audit depends on. Effort: ~2–4 weeks each, parallelisable.
 2. **TASK-EK-008 / #329** (AlphaEvolve-pattern outer loop) — now higher ROI than #334 because the #334 ablation was neutral.
-3. **§1.7 adversarial defense tasks** (#290; #291 shipped) — synthetic-Python stress corpus still needs to ship before the 0.95 gate can be claimed defensibly.
+3. **§1.7 adversarial defense tasks** (#290 and #291 shipped) — the synthetic and project-scale stress harnesses are now available; the remaining adversarial-defense queue is catastrophic-cell quarantine, leakage/oracle audits, and the final 0.95/four-window gate.
 4. **TASK-EK-014 / #336** (operator-contribution surface) — measure source-backed operator critique/override work without modeling private intention.
 5. **TASK-EK-013 / #335** (reverse-prediction patch-shape constraints) — useful for search priors, but must stay constrained to desired observable `RealityPrediction` states and explicit safety constraints.
 

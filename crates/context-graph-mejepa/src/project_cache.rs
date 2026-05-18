@@ -810,10 +810,9 @@ pub fn project_role_for_path(path: &str) -> ChunkRole {
         ChunkRole::Config
     } else if path.starts_with("tests/")
         || path.contains("/tests/")
-        || path
-            .rsplit('/')
-            .next()
-            .is_some_and(|name| name.starts_with("test_") || name.contains("_test"))
+        || path.rsplit('/').next().is_some_and(|name| {
+            name == "test.py" || name.starts_with("test_") || name.contains("_test")
+        })
     {
         ChunkRole::Test
     } else {

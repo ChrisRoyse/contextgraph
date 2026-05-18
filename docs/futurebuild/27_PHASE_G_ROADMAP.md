@@ -157,7 +157,7 @@ External references: Claude Code PostToolUse Bash matcher with `CLAUDE_TOOL_OUTP
 |---|---|---|
 | 7.1 | **#278** | Secret redaction before embedding — **code/FSV-shipped 2026-05-18** |
 | 7.2 | **#279/#318** | 30-case adversarial Python corpus and fingerprint-catalog integration — **code/FSV-shipped 2026-05-17** |
-| 7.3 | **#290** | Synthetic-Python stress test (operator-authored programs with known expected verdicts) |
+| 7.3 | **#290** | Synthetic-Python stress test — **code/FSV-shipped 2026-05-18**; `mejepa eval synthetic-stress`, 30 known-answer cases, `CF_MEJEPA_SYNTHETIC_STRESS_RESULTS`, FSV `/mnt/d/contextgraph/fsv/task-py-g-071-synthetic-corpus-fsv/run-20260518T184812Z/synthetic_stress_fsv.json` sha256 `b8e5c71283e466682a158e9d630e0b90495a092939064f1fb32ba7141896989c` |
 | 7.4 | **#291** | End-to-end stress harness over synthetic projects of varying complexity — **code/FSV-shipped 2026-05-18** |
 | 7.5 | **#292** | Predicted-Works head + test-coverage + test-flakiness sub-heads (explicit positive assertions with confidence + citations) |
 | 7.6 | **refined #178** | Cell taxonomy with Active/Exempt/Uncovered tri-state |

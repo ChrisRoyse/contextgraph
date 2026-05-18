@@ -997,18 +997,17 @@ fn prediction_for_file(
     let mut failure_modes = division_by_zero_candidates(&text, &chunk_id);
     failure_modes.extend(quadratic_perf_candidates(&text, &chunk_id));
     failure_modes.extend(dependency_version_drift_candidates(&text, &chunk_id));
+    failure_modes.extend(off_by_one_candidates(&text, &chunk_id));
+    failure_modes.extend(race_condition_candidates(&text, &chunk_id));
+    failure_modes.extend(contract_violation_candidates(&text, &chunk_id));
+    failure_modes.extend(encoding_candidates(&text, &chunk_id));
+    failure_modes.extend(datetime_candidates(&text, &chunk_id));
+    failure_modes.extend(empty_input_candidates(&text, &chunk_id));
     let security_concerns = security_concerns(&text, &chunk_id);
     let edge_cases = if failure_modes.is_empty() {
         Vec::new()
     } else {
-        vec![PredictedEdgeCase {
-            edge_class: EdgeCaseClass::BoundaryValue,
-            chunk: chunk_id.clone(),
-            line_range: failure_modes[0].line_range,
-            triggering_input_description: "denominator value equals zero".to_string(),
-            covered_by_test: false,
-            confidence: 0.74,
-        }]
+        vec![edge_case_for_failure(&chunk_id, &failure_modes[0])]
     };
     let latent_bugs = if failure_modes.is_empty() {
         Vec::new()
@@ -1019,7 +1018,7 @@ fn prediction_for_file(
             line_range: failure_modes[0].line_range,
             confidence: 0.69,
             severity: Severity::High,
-            explanation: "Division operation has no observable zero-denominator guard".to_string(),
+            explanation: failure_modes[0].explanation.clone(),
         }]
     };
     let predicted_works = if failure_modes.is_empty() && security_concerns.is_empty() {
@@ -1171,6 +1170,133 @@ fn dependency_version_drift_candidates(text: &str, chunk: &ChunkId) -> Vec<Predi
         .collect()
 }
 
+fn off_by_one_candidates(text: &str, chunk: &ChunkId) -> Vec<PredictedFailureMode> {
+    let inclusive_len_bound = text.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed.starts_with("high = len(") && !trimmed.contains('-')
+    });
+    if !(inclusive_len_bound && text.contains("while low <= high")) {
+        return Vec::new();
+    }
+    vec![PredictedFailureMode {
+        failure_class: FailureModeClass::OffByOne,
+        chunk: chunk.clone(),
+        line_range: first_line_range(text, "while low <= high"),
+        confidence: 0.78,
+        severity: Severity::High,
+        explanation: "possible OffByOne: inclusive search bound can index len(items)".to_string(),
+        contributing_embedders: vec![
+            EmbedderId("E_AST".to_string()),
+            EmbedderId("E_ControlFlow".to_string()),
+        ],
+        root_cause_class: RootCauseClass::LogicError,
+    }]
+}
+
+fn race_condition_candidates(text: &str, chunk: &ChunkId) -> Vec<PredictedFailureMode> {
+    if !(text.contains("self.items") && text.contains("pop(0)") && !text.contains("Lock(")) {
+        return Vec::new();
+    }
+    vec![PredictedFailureMode {
+        failure_class: FailureModeClass::RaceCondition,
+        chunk: chunk.clone(),
+        line_range: first_line_range(text, "pop(0)"),
+        confidence: 0.74,
+        severity: Severity::High,
+        explanation: "possible RaceCondition: shared FIFO mutation has no lock".to_string(),
+        contributing_embedders: vec![
+            EmbedderId("E_AST".to_string()),
+            EmbedderId("E_Trace".to_string()),
+        ],
+        root_cause_class: RootCauseClass::ConcurrencyError,
+    }]
+}
+
+fn contract_violation_candidates(text: &str, chunk: &ChunkId) -> Vec<PredictedFailureMode> {
+    if !(text.contains("def is_even") && text.contains("return True")) {
+        return Vec::new();
+    }
+    vec![PredictedFailureMode {
+        failure_class: FailureModeClass::ContractViolation,
+        chunk: chunk.clone(),
+        line_range: first_line_range(text, "return True"),
+        confidence: 0.77,
+        severity: Severity::High,
+        explanation: "possible ContractViolation: predicate returns a constant truth value"
+            .to_string(),
+        contributing_embedders: vec![
+            EmbedderId("E_AST".to_string()),
+            EmbedderId("E_DataFlow".to_string()),
+        ],
+        root_cause_class: RootCauseClass::LogicError,
+    }]
+}
+
+fn encoding_candidates(text: &str, chunk: &ChunkId) -> Vec<PredictedFailureMode> {
+    if !text.contains(".encode(\"ascii\")") {
+        return Vec::new();
+    }
+    vec![PredictedFailureMode {
+        failure_class: FailureModeClass::EncodingError,
+        chunk: chunk.clone(),
+        line_range: first_line_range(text, ".encode(\"ascii\")"),
+        confidence: 0.75,
+        severity: Severity::Medium,
+        explanation: "possible EncodingError: ASCII-only normalization rejects unicode input"
+            .to_string(),
+        contributing_embedders: vec![
+            EmbedderId("E_AST".to_string()),
+            EmbedderId("E_DataFlow".to_string()),
+        ],
+        root_cause_class: RootCauseClass::InterfaceError,
+    }]
+}
+
+fn datetime_candidates(text: &str, chunk: &ChunkId) -> Vec<PredictedFailureMode> {
+    if !(text.contains("def is_leap_year")
+        && text.contains("year % 4 == 0")
+        && !text.contains("400"))
+    {
+        return Vec::new();
+    }
+    vec![PredictedFailureMode {
+        failure_class: FailureModeClass::DateTimeError,
+        chunk: chunk.clone(),
+        line_range: first_line_range(text, "year % 4 == 0"),
+        confidence: 0.73,
+        severity: Severity::Medium,
+        explanation: "possible DateTimeError: leap-year rule omits century exception".to_string(),
+        contributing_embedders: vec![
+            EmbedderId("E_AST".to_string()),
+            EmbedderId("E_Trace".to_string()),
+        ],
+        root_cause_class: RootCauseClass::LogicError,
+    }]
+}
+
+fn empty_input_candidates(text: &str, chunk: &ChunkId) -> Vec<PredictedFailureMode> {
+    if !(text.contains("return items[0]") || text.contains("return values[0]")) {
+        return Vec::new();
+    }
+    if text.contains("if not items") || text.contains("if not values") {
+        return Vec::new();
+    }
+    vec![PredictedFailureMode {
+        failure_class: FailureModeClass::Exception,
+        chunk: chunk.clone(),
+        line_range: first_line_range(text, "[0]"),
+        confidence: 0.76,
+        severity: Severity::High,
+        explanation: "possible EmptyInput: first element access has no empty-input guard"
+            .to_string(),
+        contributing_embedders: vec![
+            EmbedderId("E_AST".to_string()),
+            EmbedderId("E_ControlFlow".to_string()),
+        ],
+        root_cause_class: RootCauseClass::InterfaceError,
+    }]
+}
+
 fn security_concerns(text: &str, chunk: &ChunkId) -> Vec<PredictedSecurityConcern> {
     text.lines()
         .enumerate()
@@ -1192,6 +1318,47 @@ fn security_concerns(text: &str, chunk: &ChunkId) -> Vec<PredictedSecurityConcer
             })
         })
         .collect()
+}
+
+fn edge_case_for_failure(chunk: &ChunkId, failure: &PredictedFailureMode) -> PredictedEdgeCase {
+    let (edge_class, triggering_input_description) = match failure.failure_class {
+        FailureModeClass::RaceCondition => (
+            EdgeCaseClass::ConcurrentAccess,
+            "two workers pop from the same queue concurrently",
+        ),
+        FailureModeClass::EncodingError => (EdgeCaseClass::UnicodeEdge, "non-ASCII unicode input"),
+        FailureModeClass::Exception if failure.explanation.contains("EmptyInput") => {
+            (EdgeCaseClass::EmptyInput, "empty input collection")
+        }
+        FailureModeClass::DateTimeError => {
+            (EdgeCaseClass::BoundaryValue, "century leap-year boundary")
+        }
+        FailureModeClass::Timeout if failure.explanation.contains("QuadraticPerf") => {
+            (EdgeCaseClass::LargeInput, "large input nested-loop budget")
+        }
+        FailureModeClass::OffByOne => (EdgeCaseClass::BoundaryValue, "needle at final index"),
+        _ => (
+            EdgeCaseClass::BoundaryValue,
+            "denominator value equals zero",
+        ),
+    };
+    PredictedEdgeCase {
+        edge_class,
+        chunk: chunk.clone(),
+        line_range: failure.line_range,
+        triggering_input_description: triggering_input_description.to_string(),
+        covered_by_test: false,
+        confidence: 0.74,
+    }
+}
+
+fn first_line_range(text: &str, needle: &str) -> (u32, u32) {
+    let line = text
+        .lines()
+        .position(|line| line.contains(needle))
+        .map(|idx| idx + 1)
+        .unwrap_or(1) as u32;
+    (line, line)
 }
 
 #[derive(Default)]

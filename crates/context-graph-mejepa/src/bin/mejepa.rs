@@ -40,6 +40,7 @@ enum Command {
     Train(TrainArgs),
     InferTest(InferTestArgs),
     Verify(VerifyArgs),
+    Eval(EvalArgs),
     EvalRun(EvalRunArgs),
     EvalBuildGraph(EvalBuildGraphArgs),
     Constellation(ConstellationArgs),
@@ -88,6 +89,31 @@ struct VerifyArgs {
     evidence_dir: PathBuf,
     #[arg(long, default_value_t = 0.05)]
     holdout_sample_pct: f32,
+}
+
+#[derive(Debug, Parser)]
+struct EvalArgs {
+    #[command(subcommand)]
+    command: EvalCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum EvalCommand {
+    SyntheticStress(SyntheticStressCliArgs),
+}
+
+#[derive(Debug, Parser)]
+struct SyntheticStressCliArgs {
+    #[arg(long, default_value = context_graph_mejepa::SYNTHETIC_STRESS_ROOT)]
+    corpus_root: PathBuf,
+    #[arg(long)]
+    results_db_path: Option<PathBuf>,
+    #[arg(long)]
+    project_id_prefix: Option<String>,
+    #[arg(long)]
+    overwrite_corpus: bool,
+    #[arg(long)]
+    no_materialize_corpus: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -217,6 +243,13 @@ fn main() -> ExitCode {
             &args.evidence_dir,
             args.holdout_sample_pct,
         ),
+        Command::Eval(args) => match run_eval_command(args) {
+            Ok(code) => code,
+            Err(err) => {
+                eprintln!("{}: {err}", err.code());
+                ExitCode::from(2)
+            }
+        },
         Command::EvalRun(args) => match run_eval_run(args) {
             Ok(code) => code,
             Err(err) => {
@@ -320,6 +353,48 @@ fn main() -> ExitCode {
             }
         },
     }
+}
+
+fn run_eval_command(
+    args: EvalArgs,
+) -> Result<ExitCode, context_graph_mejepa::SyntheticStressError> {
+    match args.command {
+        EvalCommand::SyntheticStress(args) => run_synthetic_stress_command(args),
+    }
+}
+
+fn run_synthetic_stress_command(
+    args: SyntheticStressCliArgs,
+) -> Result<ExitCode, context_graph_mejepa::SyntheticStressError> {
+    let results_db_path = args
+        .results_db_path
+        .unwrap_or_else(|| PathBuf::from(context_graph_mejepa::SYNTHETIC_STRESS_RESULTS_DB));
+    let project_id_prefix = args
+        .project_id_prefix
+        .unwrap_or_else(|| format!("task-py-g-071-{}", chrono::Utc::now().timestamp_millis()));
+    let report = context_graph_mejepa::run_synthetic_stress_eval(
+        context_graph_mejepa::SyntheticStressEvalRequest {
+            corpus_root: args.corpus_root,
+            results_db_path,
+            project_id_prefix,
+            materialize_corpus: !args.no_materialize_corpus,
+            overwrite_corpus: args.overwrite_corpus,
+        },
+    )?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).map_err(|source| {
+            context_graph_mejepa::SyntheticStressError::Json {
+                path: "stdout".to_string(),
+                source,
+            }
+        })?
+    );
+    Ok(if report.ship_gate_passed {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
 }
 
 fn run_stress_test_command(

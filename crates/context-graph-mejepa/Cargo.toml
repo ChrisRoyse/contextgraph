@@ -232,3 +232,7 @@ path = "examples/task_py_g_043_per_head_dda_projection_fsv.rs"
 [[example]]
 name = "task_py_g_072_stress_harness_fsv"
 path = "examples/task_py_g_072_stress_harness_fsv.rs"
+
+[[example]]
+name = "task_py_g_071_synthetic_stress_fsv"
+path = "examples/task_py_g_071_synthetic_stress_fsv.rs"
