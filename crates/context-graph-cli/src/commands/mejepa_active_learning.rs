@@ -11,12 +11,13 @@ use anyhow::{anyhow, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
 use context_graph_mejepa::{
     bedrock_consistency_for_patch_diff, elicit_intent, mejepa_mincut_panel, open_infer_rocksdb,
-    open_mincut_rocksdb, read_library_foundationality_report, read_mincut_report, read_north_star,
+    open_mincut_rocksdb, operator_contribution_report_from_db, read_library_foundationality_report,
+    read_mincut_report, read_north_star, render_operator_contributions_weekly_section,
     write_mincut_report_sync_readback, write_north_star_sync_readback, ActiveLearningLabel,
     ActiveLearningQueueEntry, ActiveLearningRankBy, BedrockConsistencyReport, ElicitationOptions,
     IntentSpecification, LabelMethod, LibraryFoundationalityQueryReport, LibraryId, MincutOptions,
-    MincutReport, NorthStarVector, OracleOutcome, PanelGraphSource, RawIntentInput,
-    RocksDbEvalStore, TaskId,
+    MincutReport, NorthStarVector, OperatorContributionReport, OracleOutcome, PanelGraphSource,
+    RawIntentInput, RocksDbEvalStore, TaskId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -51,6 +52,9 @@ pub enum MejepaCommands {
     /// TASK-EK-017 per-library and cross-library foundationality readback.
     #[command(name = "library-foundationality")]
     LibraryFoundationality(LibraryFoundationalityArgs),
+    /// TASK-EK-014 operator-contribution report and weekly section renderer.
+    #[command(name = "operator-contributions")]
+    OperatorContributions(OperatorContributionsArgs),
     /// Bind PostToolUse Bash test outcomes back to live RealityPrediction rows.
     #[command(name = "bind-test-outcomes")]
     BindTestOutcomes(crate::commands::mejepa_prediction_verification::BindTestOutcomesArgs),
@@ -237,6 +241,25 @@ pub struct LibraryFoundationalityArgs {
     pub top_k: usize,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct OperatorContributionsArgs {
+    /// Inference RocksDB path containing CF_MEJEPA_OPERATOR_CONTRIBUTIONS.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// Number of latest contribution rows to include after filtering.
+    #[arg(long)]
+    pub window: usize,
+
+    /// Optional operator id filter.
+    #[arg(long)]
+    pub operator: Option<String>,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OperatorContributionFormatArg::Json)]
+    pub format: OperatorContributionFormatArg,
+}
+
 #[derive(Clone, Copy, Debug, ValueEnum)]
 #[clap(rename_all = "kebab_case")]
 pub enum ElicitIntentModeArg {
@@ -272,6 +295,14 @@ impl OracleOutcomeArg {
 pub enum ActiveLearningRankByArg {
     SchedulerPriority,
     Curiosity,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Serialize)]
+#[clap(rename_all = "kebab_case")]
+#[serde(rename_all = "snake_case")]
+pub enum OperatorContributionFormatArg {
+    Json,
+    Markdown,
 }
 
 impl ActiveLearningRankByArg {
@@ -374,6 +405,16 @@ pub struct LibraryFoundationalityCliOutput {
     pub source_of_truth: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperatorContributionsCliOutput {
+    pub tool: &'static str,
+    pub format: OperatorContributionFormatArg,
+    pub report: OperatorContributionReport,
+    pub markdown: Option<String>,
+    pub source_of_truth: serde_json::Value,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ElicitIntentInputEnvelope {
@@ -423,6 +464,25 @@ pub async fn handle_mejepa_command(action: MejepaCommands) -> i32 {
                     } else {
                         1
                     }
+                }
+                Err(err) => {
+                    eprintln!("mejepa command FAILED: {err:#}");
+                    1
+                }
+            };
+        }
+        MejepaCommands::OperatorContributions(args)
+            if args.format == OperatorContributionFormatArg::Markdown =>
+        {
+            return match operator_contributions_cli(args) {
+                Ok(output) => {
+                    if let Some(markdown) = output.markdown {
+                        println!("{markdown}");
+                    } else {
+                        eprintln!("mejepa command FAILED: markdown output missing");
+                        return 1;
+                    }
+                    0
                 }
                 Err(err) => {
                     eprintln!("mejepa command FAILED: {err:#}");
@@ -485,6 +545,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
         MejepaCommands::LibraryFoundationality(args) => {
             serde_json::to_value(library_foundationality_cli(args)?)
                 .context("serialize library-foundationality")
+        }
+        MejepaCommands::OperatorContributions(args) => {
+            serde_json::to_value(operator_contributions_cli(args)?)
+                .context("serialize operator-contributions")
         }
         MejepaCommands::BindTestOutcomes(args) => serde_json::to_value(
             crate::commands::mejepa_prediction_verification::bind_test_outcomes(args)?,
@@ -724,6 +788,36 @@ pub fn library_foundationality_cli(
             "libraryRegistryCf": context_graph_mejepa_cf::CF_MEJEPA_LIBRARY_REGISTRY,
             "libraryFoundationalityCf": context_graph_mejepa_cf::CF_MEJEPA_LIBRARY_FOUNDATIONALITY,
             "crossLibraryReferencesCf": context_graph_mejepa_cf::CF_MEJEPA_CROSS_LIBRARY_REFERENCES,
+            "innerLlmInvoked": false
+        }),
+    })
+}
+
+pub fn operator_contributions_cli(
+    args: OperatorContributionsArgs,
+) -> Result<OperatorContributionsCliOutput> {
+    let db = open_infer_rocksdb(&args.db_path)
+        .with_context(|| format!("open ME-JEPA RocksDB {}", args.db_path.display()))?;
+    let report =
+        operator_contribution_report_from_db(db.as_ref(), args.window, args.operator.as_deref())
+            .context("MEJEPA_OPERATOR_CONTRIBUTIONS_FAILED")?;
+    let markdown = if args.format == OperatorContributionFormatArg::Markdown {
+        Some(
+            render_operator_contributions_weekly_section(&report)
+                .context("render operator-contributions markdown")?,
+        )
+    } else {
+        None
+    };
+    Ok(OperatorContributionsCliOutput {
+        tool: "context-graph-cli mejepa operator-contributions",
+        format: args.format,
+        report,
+        markdown,
+        source_of_truth: json!({
+            "dbPath": args.db_path,
+            "operatorContributionCf": context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_CONTRIBUTIONS,
+            "operatorFilter": args.operator,
             "innerLlmInvoked": false
         }),
     })

@@ -21,14 +21,15 @@ use context_graph_mejepa::operator_override::{
 use context_graph_mejepa::{
     align_to_intent, bedrock_consistency_for_patch_diff, build_deterministic_compiler,
     elicit_intent, mejepa_mincut_panel, open_infer_rocksdb, open_mincut_rocksdb,
-    promote_instrument_proposal, propose_embedder_proposals_from_db, propose_instruments_from_db,
+    operator_contribution_report_from_db, promote_instrument_proposal,
+    propose_embedder_proposals_from_db, propose_instruments_from_db,
     rank_counterfactual_candidates, read_embedder_proposals, read_instrument_proposal,
     read_instrument_proposals, read_library_foundationality_report, read_mincut_report,
-    read_north_star, search_latent_actions, write_embedder_proposals_sync_readback,
-    write_instrument_proposals_sync_readback, write_mincut_report_sync_readback,
-    write_north_star_sync_readback, ActiveLearningQueueState, ActualOutcome, AgentId,
-    CalibrationStore, ChunkId, CounterfactualCandidateRankingConfig, DdaSignals,
-    ElicitationOptions, EmbedderProposalConfig, FailedGate, FeedbackId, FeedbackKind,
+    read_north_star, render_operator_contributions_weekly_section, search_latent_actions,
+    write_embedder_proposals_sync_readback, write_instrument_proposals_sync_readback,
+    write_mincut_report_sync_readback, write_north_star_sync_readback, ActiveLearningQueueState,
+    ActualOutcome, AgentId, CalibrationStore, ChunkId, CounterfactualCandidateRankingConfig,
+    DdaSignals, ElicitationOptions, EmbedderProposalConfig, FailedGate, FeedbackId, FeedbackKind,
     FingerprintId, FingerprintReference, InstrumentProposalConfig, InstrumentProposalDecision,
     IntentCandidate, IntentSpecification, LabelMethod, LatentActionCandidate,
     LatentActionSearchConfig, LibraryId, MeJepaInferConfig, MincutOptions, NorthStarVector,
@@ -43,7 +44,8 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_EMBEDDER_PROPOSALS, CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_INSTRUMENT_PROPOSALS,
     CF_MEJEPA_LIBRARY_FOUNDATIONALITY, CF_MEJEPA_LIBRARY_REGISTRY, CF_MEJEPA_LIVE_PREDICTIONS,
     CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_NORTH_STARS,
-    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_CONTRIBUTIONS, CF_MEJEPA_OPERATOR_OVERRIDES,
+    CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
@@ -293,6 +295,24 @@ struct OperatorOverridePredictionRequest {
     reason: String,
     operator_id: String,
     identity_attestation: Option<IdentityAttestationRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct OperatorContributionsRequest {
+    db_path: Option<PathBuf>,
+    window: usize,
+    operator_id: Option<String>,
+    #[serde(default)]
+    format: OperatorContributionsFormat,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum OperatorContributionsFormat {
+    #[default]
+    Json,
+    Markdown,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1542,6 +1562,42 @@ impl Handlers {
                     &message,
                     ToolErrorKind::Storage,
                     "MEJEPA_OPERATOR_OVERRIDE_FAILED",
+                );
+                self.tool_error_structured(id, kind, code, &message, json!({"dbPath": db_path}))
+            }
+        }
+    }
+
+    pub(crate) async fn call_mejepa_operator_contributions(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: OperatorContributionsRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_OPERATOR_CONTRIBUTIONS
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match operator_contributions_report_in_db(&db_path, request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => {
+                let message = err.to_string();
+                let (kind, code) = mejepa_write_error_classification(
+                    &message,
+                    ToolErrorKind::Storage,
+                    "MEJEPA_OPERATOR_CONTRIBUTIONS_FAILED",
                 );
                 self.tool_error_structured(id, kind, code, &message, json!({"dbPath": db_path}))
             }
@@ -2935,6 +2991,42 @@ fn record_operator_override_in_db(
             "override": override_readback,
             "activeLearningLabel": label_readback,
             "overrideFlagForNextBatch": flags[0]
+        }
+    }))
+}
+
+fn operator_contributions_report_in_db(
+    db_path: &Path,
+    request: OperatorContributionsRequest,
+) -> AnyhowResult<Value> {
+    let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
+    let report = operator_contribution_report_from_db(
+        db.as_ref(),
+        request.window,
+        request.operator_id.as_deref(),
+    )
+    .map_err(|err| anyhow!("{err}"))?;
+    let markdown = if request.format == OperatorContributionsFormat::Markdown {
+        Some(
+            render_operator_contributions_weekly_section(&report)
+                .map_err(|err| anyhow!("{err}"))?,
+        )
+    } else {
+        None
+    };
+    Ok(json!({
+        "status": "ok",
+        "format": match request.format {
+            OperatorContributionsFormat::Json => "json",
+            OperatorContributionsFormat::Markdown => "markdown",
+        },
+        "report": report,
+        "markdown": markdown,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "operatorContributionCf": CF_MEJEPA_OPERATOR_CONTRIBUTIONS,
+            "operatorFilter": request.operator_id,
+            "innerLlmInvoked": false
         }
     }))
 }

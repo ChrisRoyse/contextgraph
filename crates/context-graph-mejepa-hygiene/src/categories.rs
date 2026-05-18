@@ -91,6 +91,7 @@ impl StorageCategory {
             Self::AgentFeedbackAndOverrides => &[
                 CF_MEJEPA_AGENT_FEEDBACK,
                 CF_MEJEPA_OPERATOR_OVERRIDES,
+                CF_MEJEPA_OPERATOR_CONTRIBUTIONS,
                 CF_MEJEPA_LABEL_TRANSFER_DECISIONS,
             ],
             Self::ShiftLogSubscriberState => {
@@ -118,6 +119,10 @@ mod tests {
         );
         assert_eq!(
             StorageCategory::from_cf(context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_OVERRIDES),
+            Some(StorageCategory::AgentFeedbackAndOverrides)
+        );
+        assert_eq!(
+            StorageCategory::from_cf(context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_CONTRIBUTIONS),
             Some(StorageCategory::AgentFeedbackAndOverrides)
         );
         assert_eq!(

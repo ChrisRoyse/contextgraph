@@ -56,6 +56,7 @@ pub struct WeeklyOperationalSummary {
     session_cleanup_gc_events: usize,
     compression_progress_section: Option<String>,
     curiosity_ranking_section: Option<String>,
+    operator_contributions_section: Option<String>,
 }
 
 impl WeeklyOperationalSummary {
@@ -76,6 +77,7 @@ impl WeeklyOperationalSummary {
             session_cleanup_gc_events,
             compression_progress_section: None,
             curiosity_ranking_section: None,
+            operator_contributions_section: None,
         }
     }
 
@@ -88,6 +90,12 @@ impl WeeklyOperationalSummary {
     #[allow(dead_code)]
     pub fn with_curiosity_ranking_section(mut self, section: String) -> Self {
         self.curiosity_ranking_section = Some(section);
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn with_operator_contributions_section(mut self, section: String) -> Self {
+        self.operator_contributions_section = Some(section);
         self
     }
 }
@@ -1354,6 +1362,13 @@ pub fn write_weekly_eval_markdown(
             "## Curiosity Ranking\n\n- status: unavailable\n- source_of_truth: CF_MEJEPA_CURIOSITY_TELEMETRY / CF_MEJEPA_ACTIVE_LEARNING_QUEUE\n"
                 .to_string()
         });
+    let operator_contributions_section = operational
+        .operator_contributions_section
+        .clone()
+        .unwrap_or_else(|| {
+            "## Operator Contributions\n\n- status: unavailable\n- source_of_truth: CF_MEJEPA_OPERATOR_CONTRIBUTIONS\n"
+                .to_string()
+        });
     let per_cell_ship_gate = if report.per_cell_correlation.is_empty() {
         "- none".to_string()
     } else {
@@ -1445,6 +1460,7 @@ pub fn write_weekly_eval_markdown(
          ## Agent-Feedback Summary\n\n\
          - feedback_rows: {}\n\
          - source_of_truth: CF_MEJEPA_AGENT_FEEDBACK\n\n\
+         {}\n\n\
          ## Drift Events Of The Week\n\n\
          - drift_window_rows: {}\n\
          - drift_history_rows: {}\n\n{}\n\n\
@@ -1480,6 +1496,7 @@ pub fn write_weekly_eval_markdown(
         operational.ood_escalation_rows,
         curiosity_ranking_section,
         operational.agent_feedback_rows,
+        operator_contributions_section,
         operational.drift_window_rows,
         operational.drift_history_rows,
         regression_checks,
@@ -1788,6 +1805,7 @@ fn weekly_operational_summary(db: &DB) -> Result<WeeklyOperationalSummary> {
         weekly_session_cleanup_gc_event_count(db)?,
     );
     summary.curiosity_ranking_section = weekly_curiosity_ranking_section(db).ok();
+    summary.operator_contributions_section = weekly_operator_contributions_section(db).ok();
     Ok(summary)
 }
 
@@ -1802,6 +1820,13 @@ fn weekly_curiosity_ranking_section(db: &DB) -> Result<String> {
         bincode::deserialize(&bytes).context("decode active-learning queue")?;
     context_graph_mejepa::render_curiosity_ranking_weekly_section(&queue, 10)
         .context("render curiosity ranking")
+}
+
+fn weekly_operator_contributions_section(db: &DB) -> Result<String> {
+    let report = context_graph_mejepa::operator_contribution_report_from_db(db, 100, None)
+        .context("read operator-contribution report")?;
+    context_graph_mejepa::render_operator_contributions_weekly_section(&report)
+        .context("render operator contributions")
 }
 
 fn weekly_count_cf(db: &DB, cf_name: &str) -> Result<usize> {
@@ -2277,6 +2302,7 @@ mod tests {
             session_cleanup_gc_events: 1,
             compression_progress_section: None,
             curiosity_ranking_section: None,
+            operator_contributions_section: None,
         };
         write_weekly_eval_markdown(&markdown_path, &report, "synthetic-hash", &operational)
             .expect("write weekly markdown");

@@ -178,6 +178,10 @@ name = "task_ek_017_library_foundationality_fsv"
 path = "examples/task_ek_017_library_foundationality_fsv.rs"
 
 [[example]]
+name = "task_ek_014_operator_contributions_fsv"
+path = "examples/task_ek_014_operator_contributions_fsv.rs"
+
+[[example]]
 name = "task_ek_018b_absence_queue_fsv"
 path = "examples/task_ek_018b_absence_queue_fsv.rs"
 

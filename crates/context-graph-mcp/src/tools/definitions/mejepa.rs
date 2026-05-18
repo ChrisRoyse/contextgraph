@@ -739,6 +739,36 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_OPERATOR_CONTRIBUTIONS,
+            "Read TASK-EK-014 operator-contribution activity, quality ranking, downstream-outcome links, and migration-rate trend from CF_MEJEPA_OPERATOR_CONTRIBUTIONS.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["window"],
+                "properties": {
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional Phase 4 inference RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    },
+                    "window": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000
+                    },
+                    "operatorId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["json", "markdown"],
+                        "default": "json"
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_ROLLBACK_TO,
             "Rollback ME-JEPA active weights to a previously promoted witness-chain offset. The target must exist in CF_MEJEPA_HEAL_REPORTS and the weight blob must exist in CF_MEJEPA_WEIGHT_BLOBS; otherwise the tool fails closed.",
             json!({

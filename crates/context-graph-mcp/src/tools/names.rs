@@ -153,6 +153,8 @@ pub const MEJEPA_PAUSE_PREDICTIONS: &str = "mcp__cgreality__mejepa_pause_predict
 /// Phase F operator override surface for gold-labeling a specific ME-JEPA prediction.
 pub const MEJEPA_OPERATOR_OVERRIDE_PREDICTION: &str =
     "mcp__cgreality__mejepa_operator_override_prediction";
+/// TASK-EK-014 operator-contribution reporting surface.
+pub const MEJEPA_OPERATOR_CONTRIBUTIONS: &str = "mcp__cgreality__mejepa_operator_contributions";
 /// Phase 5 operator-locked rollback to a promoted witness-chain offset.
 pub const MEJEPA_ROLLBACK_TO: &str = "mcp__cgreality__mejepa_rollback_to";
 /// Phase E approval gate for catastrophic ME-JEPA self-optimization promotions.
