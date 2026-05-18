@@ -13,8 +13,8 @@ use sha2::{Digest, Sha256};
 use crate::compiler::{ColdCellMetric, MejepaStore};
 use crate::conformal::CalibrationExample;
 use crate::eval::{
-    ActiveLearningKind, ActiveLearningQueueState, ProductionTelemetryWindow, RocksDbEvalStore,
-    TRAINING_HOLDOUT_DRIFT_ALERT_CODE,
+    ActiveLearningKind, ActiveLearningQueueState, ActiveLearningRankBy, ProductionTelemetryWindow,
+    RocksDbEvalStore, TRAINING_HOLDOUT_DRIFT_ALERT_CODE,
 };
 use crate::heal::calibration::continuous_calibration_if_due;
 use crate::heal::cf::{decode_value, encode_value, CF_MEJEPA_DRIFT_WINDOW};
@@ -749,16 +749,13 @@ impl SchedulerState {
                 .persist_queue(&queue)
                 .map_err(map_eval_error)?;
         }
-        let mut top_tasks = queue.entries.values().collect::<Vec<_>>();
         // REQ-FLYWHEEL-11 / TASK-RWD-211: fast-track agent surprise and
         // novel-pattern rows before generic uncertainty backlog.
-        top_tasks.sort_by(|left, right| {
-            left.kind
-                .fast_track_rank()
-                .cmp(&right.kind.fast_track_rank())
-                .then_with(|| right.score.total_cmp(&left.score))
-        });
-        let selected = top_tasks.into_iter().take(10).collect::<Vec<_>>();
+        let selected = queue
+            .ranked_entries(ActiveLearningRankBy::SchedulerPriority)
+            .into_iter()
+            .take(10)
+            .collect::<Vec<_>>();
         let mut fast_path_records = Vec::new();
         for entry in &selected {
             if let ActiveLearningKind::AgentSurprise {
@@ -799,6 +796,7 @@ impl SchedulerState {
                 json!({
                     "task_id": entry.task_id.0,
                     "score": entry.score,
+                    "curiosity_score": entry.curiosity_score,
                     "surprise_weight": surprise_weight,
                     "reason": entry.reason,
                     "ood_score": entry.ood_score,

@@ -127,6 +127,7 @@ fn main() -> Result<()> {
             score: 0.99,
             outcome_set_len: 4,
             ood_score: 0.05,
+            curiosity_score: 0.0375,
             reason: "wide_conformal_set".to_string(),
             kind: ActiveLearningKind::Uncertainty,
         },

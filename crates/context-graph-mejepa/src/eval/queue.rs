@@ -18,6 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 const MAX_UNKNOWN_FINGERPRINT_EMBEDDERS: usize = 32;
 const MAX_UNKNOWN_FINGERPRINT_VECTOR_DIMS: usize = 65_536;
 const DEFAULT_UNKNOWN_FINGERPRINT_NEAR_MATCH_MARGIN: f32 = -0.02;
+pub const CURIOSITY_TELEMETRY_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -187,6 +188,14 @@ impl ActiveLearningKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActiveLearningRankBy {
+    #[default]
+    SchedulerPriority,
+    Curiosity,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ActiveLearningQueueEntry {
@@ -194,8 +203,336 @@ pub struct ActiveLearningQueueEntry {
     pub score: f32,
     pub outcome_set_len: usize,
     pub ood_score: f32,
+    pub curiosity_score: f32,
     pub reason: String,
     pub kind: ActiveLearningKind,
+}
+
+impl ActiveLearningQueueEntry {
+    pub fn recompute_curiosity_score(&mut self, support_gap: f32) -> Result<(), EvalError> {
+        self.curiosity_score = curiosity_score_from_proxy(
+            conformal_width_proxy(self.outcome_set_len),
+            self.ood_score,
+            support_gap,
+        )?;
+        Ok(())
+    }
+
+    pub fn with_curiosity_score(mut self, curiosity_score: f32) -> Result<Self, EvalError> {
+        validate_probability("active_learning.curiosity_score", curiosity_score)?;
+        self.curiosity_score = curiosity_score;
+        Ok(self)
+    }
+
+    pub fn validate(&self) -> Result<(), EvalError> {
+        self.task_id
+            .validate("active_learning.task_id")
+            .map_err(EvalError::from)?;
+        validate_nonnegative_finite("active_learning.score", self.score)?;
+        validate_probability("active_learning.ood_score", self.ood_score)?;
+        validate_probability("active_learning.curiosity_score", self.curiosity_score)?;
+        if self.reason.trim().is_empty() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "active-learning reason must be non-empty",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CuriosityDistribution {
+    pub count: usize,
+    pub min: f32,
+    pub mean: f32,
+    pub p50: f32,
+    pub p90: f32,
+    pub max: f32,
+}
+
+impl CuriosityDistribution {
+    pub fn from_scores(scores: impl IntoIterator<Item = f32>) -> Result<Self, EvalError> {
+        let mut scores = scores.into_iter().collect::<Vec<_>>();
+        for score in &scores {
+            validate_probability("curiosity_distribution.score", *score)?;
+        }
+        if scores.is_empty() {
+            return Ok(Self {
+                count: 0,
+                min: 0.0,
+                mean: 0.0,
+                p50: 0.0,
+                p90: 0.0,
+                max: 0.0,
+            });
+        }
+        scores.sort_by(|left, right| left.total_cmp(right));
+        let count = scores.len();
+        let mean = scores.iter().sum::<f32>() / count as f32;
+        let p50 = scores[count / 2];
+        let p90 = scores[((count - 1) as f32 * 0.90).ceil() as usize];
+        Ok(Self {
+            count,
+            min: scores[0],
+            mean,
+            p50,
+            p90,
+            max: scores[count - 1],
+        })
+    }
+
+    pub fn validate(&self) -> Result<(), EvalError> {
+        validate_probability("curiosity_distribution.min", self.min)?;
+        validate_probability("curiosity_distribution.mean", self.mean)?;
+        validate_probability("curiosity_distribution.p50", self.p50)?;
+        validate_probability("curiosity_distribution.p90", self.p90)?;
+        validate_probability("curiosity_distribution.max", self.max)?;
+        if self.min > self.mean || self.mean > self.max {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "curiosity distribution must satisfy min <= mean <= max",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CuriosityRankedEntry {
+    pub rank: usize,
+    pub task_id: TaskId,
+    pub curiosity_score: f32,
+    pub scheduler_score: f32,
+    pub ood_score: f32,
+    pub outcome_set_len: usize,
+    pub reason: String,
+}
+
+impl CuriosityRankedEntry {
+    pub fn validate(&self) -> Result<(), EvalError> {
+        if self.rank == 0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "curiosity ranked entry rank must be one-based",
+            ));
+        }
+        self.task_id
+            .validate("curiosity_ranked_entry.task_id")
+            .map_err(EvalError::from)?;
+        validate_probability(
+            "curiosity_ranked_entry.curiosity_score",
+            self.curiosity_score,
+        )?;
+        validate_nonnegative_finite(
+            "curiosity_ranked_entry.scheduler_score",
+            self.scheduler_score,
+        )?;
+        validate_probability("curiosity_ranked_entry.ood_score", self.ood_score)?;
+        if self.reason.trim().is_empty() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "curiosity ranked entry reason must be non-empty",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CuriosityCalibrationEvidence {
+    pub task_id: TaskId,
+    pub predicted_delta_cp: f32,
+    pub actual_delta_cp: f32,
+    pub tolerance: f32,
+    pub within_tolerance: bool,
+}
+
+impl CuriosityCalibrationEvidence {
+    pub fn new(
+        task_id: TaskId,
+        predicted_delta_cp: f32,
+        actual_delta_cp: f32,
+        tolerance: f32,
+    ) -> Result<Self, EvalError> {
+        validate_probability(
+            "curiosity_calibration.predicted_delta_cp",
+            predicted_delta_cp,
+        )?;
+        validate_probability("curiosity_calibration.actual_delta_cp", actual_delta_cp)?;
+        validate_probability("curiosity_calibration.tolerance", tolerance)?;
+        let within_tolerance =
+            curiosity_delta_matches(predicted_delta_cp, actual_delta_cp, tolerance)?;
+        Ok(Self {
+            task_id,
+            predicted_delta_cp,
+            actual_delta_cp,
+            tolerance,
+            within_tolerance,
+        })
+    }
+
+    pub fn validate(&self) -> Result<(), EvalError> {
+        self.task_id
+            .validate("curiosity_calibration.task_id")
+            .map_err(EvalError::from)?;
+        validate_probability(
+            "curiosity_calibration.predicted_delta_cp",
+            self.predicted_delta_cp,
+        )?;
+        validate_probability(
+            "curiosity_calibration.actual_delta_cp",
+            self.actual_delta_cp,
+        )?;
+        validate_probability("curiosity_calibration.tolerance", self.tolerance)?;
+        if self.within_tolerance
+            != curiosity_delta_matches(
+                self.predicted_delta_cp,
+                self.actual_delta_cp,
+                self.tolerance,
+            )?
+        {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "curiosity calibration within_tolerance does not match predicted/actual delta",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CuriosityTelemetryWindow {
+    pub schema_version: u32,
+    pub window_id: String,
+    pub generated_at_unix_ms: i64,
+    pub entry_count: usize,
+    pub curiosity_distribution: CuriosityDistribution,
+    pub top_entries: Vec<CuriosityRankedEntry>,
+    pub calibration_evidence: Vec<CuriosityCalibrationEvidence>,
+    pub source_queue_cf: String,
+    pub source_label_cf: String,
+}
+
+impl CuriosityTelemetryWindow {
+    pub fn from_queue(
+        window_id: impl Into<String>,
+        generated_at_unix_ms: i64,
+        queue: &ActiveLearningQueueState,
+        top_n: usize,
+    ) -> Result<Self, EvalError> {
+        if top_n == 0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "curiosity telemetry top_n must be greater than zero",
+            ));
+        }
+        let window_id = window_id.into();
+        if window_id.trim().is_empty() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "curiosity telemetry window_id must be non-empty",
+            ));
+        }
+        if generated_at_unix_ms <= 0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "curiosity telemetry generated_at_unix_ms must be positive",
+            ));
+        }
+        for entry in queue.entries.values() {
+            entry.validate()?;
+        }
+        let curiosity_distribution = CuriosityDistribution::from_scores(
+            queue.entries.values().map(|entry| entry.curiosity_score),
+        )?;
+        let top_entries = queue
+            .ranked_entries(ActiveLearningRankBy::Curiosity)
+            .into_iter()
+            .take(top_n)
+            .enumerate()
+            .map(|(idx, entry)| CuriosityRankedEntry {
+                rank: idx + 1,
+                task_id: entry.task_id.clone(),
+                curiosity_score: entry.curiosity_score,
+                scheduler_score: entry.score,
+                ood_score: entry.ood_score,
+                outcome_set_len: entry.outcome_set_len,
+                reason: entry.reason.clone(),
+            })
+            .collect::<Vec<_>>();
+        let window = Self {
+            schema_version: CURIOSITY_TELEMETRY_SCHEMA_VERSION,
+            window_id,
+            generated_at_unix_ms,
+            entry_count: queue.entries.len(),
+            curiosity_distribution,
+            top_entries,
+            calibration_evidence: Vec::new(),
+            source_queue_cf: context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE.to_string(),
+            source_label_cf: context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_LABELS.to_string(),
+        };
+        window.validate()?;
+        Ok(window)
+    }
+
+    pub fn with_calibration_evidence(
+        mut self,
+        evidence: Vec<CuriosityCalibrationEvidence>,
+    ) -> Result<Self, EvalError> {
+        self.calibration_evidence = evidence;
+        self.validate()?;
+        Ok(self)
+    }
+
+    pub fn validate(&self) -> Result<(), EvalError> {
+        if self.schema_version != CURIOSITY_TELEMETRY_SCHEMA_VERSION {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "curiosity telemetry schema_version must be {CURIOSITY_TELEMETRY_SCHEMA_VERSION}"
+                ),
+            ));
+        }
+        if self.window_id.trim().is_empty() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "curiosity telemetry window_id must be non-empty",
+            ));
+        }
+        if self.generated_at_unix_ms <= 0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "curiosity telemetry generated_at_unix_ms must be positive",
+            ));
+        }
+        self.curiosity_distribution.validate()?;
+        if self.entry_count != self.curiosity_distribution.count {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "curiosity telemetry entry_count must match distribution count",
+            ));
+        }
+        let mut previous_score = f32::INFINITY;
+        for entry in &self.top_entries {
+            entry.validate()?;
+            if entry.curiosity_score > previous_score {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    "curiosity telemetry top_entries must be sorted descending",
+                ));
+            }
+            previous_score = entry.curiosity_score;
+        }
+        for evidence in &self.calibration_evidence {
+            evidence.validate()?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -271,6 +608,11 @@ impl ActiveLearningQueueState {
             score: ((outcome_set_len as f32 / max_len) * (1.0 - ood_score)).clamp(0.0, 1.0),
             outcome_set_len,
             ood_score,
+            curiosity_score: curiosity_score_from_proxy(
+                conformal_width_proxy(outcome_set_len),
+                ood_score,
+                1.0,
+            )?,
             reason: if is_ood {
                 "ood_escalation".to_string()
             } else {
@@ -333,6 +675,7 @@ impl ActiveLearningQueueState {
             score: severity_score,
             outcome_set_len: 0,
             ood_score: 0.0,
+            curiosity_score: curiosity_score_from_proxy(0.0, 0.0, 1.0)?,
             reason: format!("agent_surprise:{severity:?}"),
             kind: ActiveLearningKind::AgentSurprise {
                 prediction_id,
@@ -366,6 +709,7 @@ impl ActiveLearningQueueState {
             score: 1.0,
             outcome_set_len: 1,
             ood_score: 0.0,
+            curiosity_score: curiosity_score_from_proxy(0.0, 0.0, 1.0)?,
             reason: format!("cold_cell_targeted_corpus:{cell_id}"),
             kind: ActiveLearningKind::ColdCellTargetedCorpus {
                 cell_id,
@@ -431,6 +775,11 @@ impl ActiveLearningQueueState {
             score: active_learning_priority_score(active_learning_priority),
             outcome_set_len: prediction.outcome_set.outcomes.len(),
             ood_score: prediction.ood_score,
+            curiosity_score: curiosity_score_from_proxy(
+                conformal_width_proxy(prediction.outcome_set.outcomes.len()),
+                prediction.ood_score,
+                active_learning_priority_score(active_learning_priority),
+            )?,
             reason: "fingerprint_unknown_ood".to_string(),
             kind: ActiveLearningKind::UnknownFingerprint {
                 candidate: Box::new(candidate),
@@ -467,6 +816,11 @@ impl ActiveLearningQueueState {
             score: active_learning_priority_score(candidate.active_learning_priority),
             outcome_set_len: prediction.outcome_set.outcomes.len(),
             ood_score: prediction.ood_score,
+            curiosity_score: curiosity_score_from_proxy(
+                conformal_width_proxy(prediction.outcome_set.outcomes.len()),
+                prediction.ood_score,
+                active_learning_priority_score(candidate.active_learning_priority),
+            )?,
             reason: "novel_pattern".to_string(),
             kind: ActiveLearningKind::NovelCluster {
                 candidate: Box::new(candidate),
@@ -550,6 +904,35 @@ impl ActiveLearningQueueState {
         Ok(suggestions)
     }
 
+    pub fn ranked_entries(
+        &self,
+        ranked_by: ActiveLearningRankBy,
+    ) -> Vec<&ActiveLearningQueueEntry> {
+        let mut rows = self.entries.values().collect::<Vec<_>>();
+        match ranked_by {
+            ActiveLearningRankBy::SchedulerPriority => rows.sort_by(|left, right| {
+                left.kind
+                    .fast_track_rank()
+                    .cmp(&right.kind.fast_track_rank())
+                    .then_with(|| right.score.total_cmp(&left.score))
+                    .then_with(|| left.task_id.cmp(&right.task_id))
+            }),
+            ActiveLearningRankBy::Curiosity => rows.sort_by(|left, right| {
+                right
+                    .curiosity_score
+                    .total_cmp(&left.curiosity_score)
+                    .then_with(|| {
+                        left.kind
+                            .fast_track_rank()
+                            .cmp(&right.kind.fast_track_rank())
+                    })
+                    .then_with(|| right.score.total_cmp(&left.score))
+                    .then_with(|| left.task_id.cmp(&right.task_id))
+            }),
+        }
+        rows
+    }
+
     fn evict_to_capacity(&mut self) -> Result<(), EvalError> {
         while self.entries.len() > self.capacity {
             let lowest = self
@@ -574,6 +957,153 @@ impl ActiveLearningQueueState {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct LegacyActiveLearningQueueEntry {
+    pub task_id: TaskId,
+    pub score: f32,
+    pub outcome_set_len: usize,
+    pub ood_score: f32,
+    pub reason: String,
+    pub kind: ActiveLearningKind,
+}
+
+impl From<LegacyActiveLearningQueueEntry> for ActiveLearningQueueEntry {
+    fn from(entry: LegacyActiveLearningQueueEntry) -> Self {
+        let support_gap = match &entry.kind {
+            ActiveLearningKind::UnknownFingerprint { candidate } => {
+                active_learning_priority_score(candidate.active_learning_priority)
+            }
+            ActiveLearningKind::NovelCluster { candidate } => {
+                active_learning_priority_score(candidate.active_learning_priority)
+            }
+            _ => 1.0,
+        };
+        let curiosity_score = curiosity_score_from_proxy(
+            conformal_width_proxy(entry.outcome_set_len),
+            entry.ood_score,
+            support_gap,
+        )
+        .unwrap_or(0.0);
+        Self {
+            task_id: entry.task_id,
+            score: entry.score,
+            outcome_set_len: entry.outcome_set_len,
+            ood_score: entry.ood_score,
+            curiosity_score,
+            reason: entry.reason,
+            kind: entry.kind,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct LegacyActiveLearningQueueState {
+    pub capacity: usize,
+    pub entries: BTreeMap<TaskId, LegacyActiveLearningQueueEntry>,
+    pub evicted: Vec<LegacyActiveLearningQueueEntry>,
+    pub ood_escalations: Vec<LegacyActiveLearningQueueEntry>,
+}
+
+impl From<LegacyActiveLearningQueueState> for ActiveLearningQueueState {
+    fn from(state: LegacyActiveLearningQueueState) -> Self {
+        Self {
+            capacity: state.capacity,
+            entries: state
+                .entries
+                .into_iter()
+                .map(|(task_id, entry)| (task_id, entry.into()))
+                .collect(),
+            evicted: state.evicted.into_iter().map(Into::into).collect(),
+            ood_escalations: state.ood_escalations.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+pub fn conformal_width_proxy(outcome_set_len: usize) -> f32 {
+    if outcome_set_len <= 1 {
+        0.0
+    } else {
+        ((outcome_set_len - 1) as f32 / outcome_set_len as f32).clamp(0.0, 1.0)
+    }
+}
+
+pub fn curiosity_score_from_proxy(
+    conformal_interval_width: f32,
+    ood_score: f32,
+    support_gap: f32,
+) -> Result<f32, EvalError> {
+    validate_probability(
+        "curiosity.conformal_interval_width",
+        conformal_interval_width,
+    )?;
+    validate_probability("curiosity.ood_score", ood_score)?;
+    validate_probability("curiosity.support_gap", support_gap)?;
+    Ok((conformal_interval_width * ood_score * support_gap).clamp(0.0, 1.0))
+}
+
+pub fn curiosity_delta_matches(
+    predicted_delta_cp: f32,
+    actual_delta_cp: f32,
+    tolerance: f32,
+) -> Result<bool, EvalError> {
+    validate_probability("curiosity.predicted_delta_cp", predicted_delta_cp)?;
+    validate_probability("curiosity.actual_delta_cp", actual_delta_cp)?;
+    validate_probability("curiosity.tolerance", tolerance)?;
+    Ok((predicted_delta_cp - actual_delta_cp).abs() <= tolerance)
+}
+
+pub fn curiosity_telemetry_window_key(
+    window: &CuriosityTelemetryWindow,
+) -> Result<Vec<u8>, EvalError> {
+    window.validate()?;
+    Ok(format!("{:020}::{}", window.generated_at_unix_ms, window.window_id).into_bytes())
+}
+
+pub fn render_curiosity_ranking_weekly_section(
+    queue: &ActiveLearningQueueState,
+    top_n: usize,
+) -> Result<String, EvalError> {
+    if top_n == 0 {
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidInput,
+            "curiosity weekly top_n must be greater than zero",
+        ));
+    }
+    let rows = queue
+        .ranked_entries(ActiveLearningRankBy::Curiosity)
+        .into_iter()
+        .take(top_n)
+        .enumerate()
+        .map(|(idx, entry)| {
+            entry.validate()?;
+            Ok(format!(
+                "| {} | {} | {:.6} | {:.6} | {:.6} | {} |",
+                idx + 1,
+                entry.task_id.0,
+                entry.curiosity_score,
+                entry.score,
+                entry.ood_score,
+                entry.reason.replace('|', "/")
+            ))
+        })
+        .collect::<Result<Vec<_>, EvalError>>()?;
+    let mut section = String::from(
+        "## Curiosity Ranking\n\n| rank | task_id | curiosity_score | scheduler_score | ood_score | reason |\n| --- | --- | ---: | ---: | ---: | --- |\n",
+    );
+    if rows.is_empty() {
+        section.push_str("| 0 | none | 0.000000 | 0.000000 | 0.000000 | empty_queue |\n");
+    } else {
+        section.push_str(&rows.join("\n"));
+        section.push('\n');
+    }
+    section.push_str(
+        "\n- source_of_truth: CF_MEJEPA_CURIOSITY_TELEMETRY / CF_MEJEPA_ACTIVE_LEARNING_QUEUE\n",
+    );
+    Ok(section)
 }
 
 fn validate_cell_id(cell_id: &str) -> Result<(), EvalError> {
@@ -993,6 +1523,7 @@ mod tests {
                 score: 0.99,
                 outcome_set_len: 4,
                 ood_score: 0.1,
+                curiosity_score: 0.075,
                 reason: "wide_conformal_set".to_string(),
                 kind: ActiveLearningKind::Uncertainty,
             },
@@ -1205,6 +1736,76 @@ mod tests {
             .expect("non-ood classification");
         assert!(!enqueued);
         assert!(queue.entries.is_empty());
+    }
+
+    #[test]
+    fn curiosity_proxy_matches_expected_delta_and_zero_width() {
+        let expected = 0.75 * 0.80 * 0.50;
+        let observed = curiosity_score_from_proxy(0.75, 0.80, 0.50).expect("curiosity score");
+        assert!((observed - expected).abs() <= 0.000001);
+        assert_eq!(
+            curiosity_score_from_proxy(0.0, 1.0, 1.0).expect("zero width"),
+            0.0
+        );
+    }
+
+    #[test]
+    fn curiosity_ranking_uses_curiosity_before_scheduler_score() {
+        let mut queue = ActiveLearningQueueState::new(8).expect("queue");
+        queue.entries.insert(
+            TaskId("scheduler-high".to_string()),
+            synthetic_entry("scheduler-high", 0.99, 0.10),
+        );
+        queue.entries.insert(
+            TaskId("curiosity-high".to_string()),
+            synthetic_entry("curiosity-high", 0.20, 0.90),
+        );
+        let rows = queue.ranked_entries(ActiveLearningRankBy::Curiosity);
+        assert_eq!(rows[0].task_id.0, "curiosity-high");
+        assert_eq!(rows[1].task_id.0, "scheduler-high");
+    }
+
+    #[test]
+    fn curiosity_telemetry_window_captures_distribution_and_calibration() {
+        let mut queue = ActiveLearningQueueState::new(8).expect("queue");
+        queue.entries.insert(
+            TaskId("low".to_string()),
+            synthetic_entry("low", 0.90, 0.10),
+        );
+        queue.entries.insert(
+            TaskId("high".to_string()),
+            synthetic_entry("high", 0.20, 0.80),
+        );
+        let evidence =
+            CuriosityCalibrationEvidence::new(TaskId("high".to_string()), 0.80, 0.78, 0.05)
+                .expect("calibration evidence");
+        let window = CuriosityTelemetryWindow::from_queue("window-1", 1, &queue, 10)
+            .expect("telemetry")
+            .with_calibration_evidence(vec![evidence])
+            .expect("calibrated telemetry");
+        assert_eq!(window.entry_count, 2);
+        assert_eq!(window.curiosity_distribution.count, 2);
+        assert_eq!(window.top_entries[0].task_id.0, "high");
+        assert!(window.calibration_evidence[0].within_tolerance);
+        assert!(curiosity_telemetry_window_key(&window)
+            .expect("key")
+            .starts_with(b"00000000000000000001::window-1"));
+    }
+
+    fn synthetic_entry(
+        task_id: &str,
+        scheduler_score: f32,
+        curiosity_score: f32,
+    ) -> ActiveLearningQueueEntry {
+        ActiveLearningQueueEntry {
+            task_id: TaskId(task_id.to_string()),
+            score: scheduler_score,
+            outcome_set_len: 4,
+            ood_score: 0.80,
+            curiosity_score,
+            reason: "synthetic_curiosity".to_string(),
+            kind: ActiveLearningKind::Uncertainty,
+        }
     }
 
     fn prediction(task_id: &str, prediction_id: u8, ood_score: f32) -> RealityPrediction {

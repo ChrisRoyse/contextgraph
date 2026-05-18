@@ -402,6 +402,7 @@ fn required_weekly_sections_status(exports_root: &Path, report_date: &str) -> Va
         "## Per-Cell Ship Gate Status",
         "## Convergence ETA Per Cell",
         "## Active-Learning Queue Summary",
+        "## Curiosity Ranking",
         "## Agent-Feedback Summary",
         "## Drift Events Of The Week",
         "## Promotions / Rollbacks Of The Week",

@@ -6,7 +6,8 @@ use anyhow::{anyhow, ensure, Context, Result};
 use chrono::Utc;
 use context_graph_cli::commands::mejepa_active_learning::{
     dismiss_active_learning, label_active_learning, list_active_learning,
-    ActiveLearningDismissArgs, ActiveLearningLabelArgs, ActiveLearningListArgs, OracleOutcomeArg,
+    ActiveLearningDismissArgs, ActiveLearningLabelArgs, ActiveLearningListArgs,
+    ActiveLearningRankByArg, OracleOutcomeArg,
 };
 use context_graph_mejepa::eval::store::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
@@ -44,6 +45,7 @@ async fn main() -> Result<()> {
     let list_output = list_active_learning(ActiveLearningListArgs {
         db_path: db_path.clone(),
         top_n: 2,
+        ranked_by: ActiveLearningRankByArg::SchedulerPriority,
     })
     .await
     .context("list active-learning queue")?;
@@ -241,6 +243,7 @@ fn queue_entry(
         score,
         outcome_set_len: 3,
         ood_score: 0.2,
+        curiosity_score: 0.2,
         reason: reason.to_string(),
         kind,
     }
@@ -254,6 +257,7 @@ async fn run_boundary_cases(db_path: &Path) -> Result<Vec<Value>> {
     let missing_queue = list_active_learning(ActiveLearningListArgs {
         db_path: missing_db,
         top_n: 1,
+        ranked_by: ActiveLearningRankByArg::SchedulerPriority,
     })
     .await
     .expect_err("missing queue must fail closed");
@@ -261,6 +265,7 @@ async fn run_boundary_cases(db_path: &Path) -> Result<Vec<Value>> {
     let zero_top_n = list_active_learning(ActiveLearningListArgs {
         db_path: db_path.to_path_buf(),
         top_n: 0,
+        ranked_by: ActiveLearningRankByArg::SchedulerPriority,
     })
     .await
     .expect_err("zero top_n must fail closed");

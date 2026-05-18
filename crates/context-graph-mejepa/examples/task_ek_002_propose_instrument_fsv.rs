@@ -511,6 +511,7 @@ fn insert_candidate(queue: &mut ActiveLearningQueueState, candidate: UnknownFing
         score: 1.0,
         outcome_set_len: 1,
         ood_score: candidate.ood_score,
+        curiosity_score: 0.0,
         reason: "fingerprint_unknown_ood".to_string(),
         kind: ActiveLearningKind::UnknownFingerprint {
             candidate: Box::new(candidate),

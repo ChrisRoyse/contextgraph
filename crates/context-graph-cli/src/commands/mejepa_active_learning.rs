@@ -13,8 +13,9 @@ use context_graph_mejepa::{
     elicit_intent, mejepa_mincut_panel, open_infer_rocksdb, open_mincut_rocksdb,
     read_mincut_report, read_north_star, write_mincut_report_sync_readback,
     write_north_star_sync_readback, ActiveLearningLabel, ActiveLearningQueueEntry,
-    ElicitationOptions, IntentSpecification, LabelMethod, MincutOptions, MincutReport,
-    NorthStarVector, OracleOutcome, PanelGraphSource, RawIntentInput, RocksDbEvalStore, TaskId,
+    ActiveLearningRankBy, ElicitationOptions, IntentSpecification, LabelMethod, MincutOptions,
+    MincutReport, NorthStarVector, OracleOutcome, PanelGraphSource, RawIntentInput,
+    RocksDbEvalStore, TaskId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -110,6 +111,10 @@ pub struct ActiveLearningListArgs {
     /// Maximum queue entries to show.
     #[arg(long, default_value_t = 10)]
     pub top_n: usize,
+
+    /// Queue ordering to use.
+    #[arg(long, value_enum, default_value_t = ActiveLearningRankByArg::SchedulerPriority)]
+    pub ranked_by: ActiveLearningRankByArg,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -220,6 +225,23 @@ impl OracleOutcomeArg {
     }
 }
 
+#[derive(Clone, Copy, Debug, ValueEnum, Serialize)]
+#[clap(rename_all = "kebab_case")]
+#[serde(rename_all = "snake_case")]
+pub enum ActiveLearningRankByArg {
+    SchedulerPriority,
+    Curiosity,
+}
+
+impl ActiveLearningRankByArg {
+    fn into_rank_by(self) -> ActiveLearningRankBy {
+        match self {
+            Self::SchedulerPriority => ActiveLearningRankBy::SchedulerPriority,
+            Self::Curiosity => ActiveLearningRankBy::Curiosity,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveLearningEntryView {
@@ -227,6 +249,7 @@ pub struct ActiveLearningEntryView {
     pub score: f32,
     pub outcome_set_len: usize,
     pub ood_score: f32,
+    pub curiosity_score: f32,
     pub reason: String,
     pub kind: serde_json::Value,
 }
@@ -239,6 +262,7 @@ pub struct ActiveLearningListOutput {
     pub evicted_count: usize,
     pub ood_escalation_count: usize,
     pub top_n: usize,
+    pub ranked_by: ActiveLearningRankByArg,
     pub entries: Vec<ActiveLearningEntryView>,
     pub source_of_truth: serde_json::Value,
 }
@@ -658,7 +682,8 @@ pub async fn list_active_learning(
     validate_top_n(args.top_n)?;
     let store = open_store(&args.db_path)?;
     let queue = load_required_queue(&store)?;
-    let entries = sorted_entries(&queue.entries)
+    let entries = queue
+        .ranked_entries(args.ranked_by.into_rank_by())
         .into_iter()
         .take(args.top_n)
         .map(entry_view)
@@ -669,6 +694,7 @@ pub async fn list_active_learning(
         evicted_count: queue.evicted.len(),
         ood_escalation_count: queue.ood_escalations.len(),
         top_n: args.top_n,
+        ranked_by: args.ranked_by,
         entries,
         source_of_truth: source_of_truth(&args.db_path, "CF_MEJEPA_ACTIVE_LEARNING_QUEUE"),
     })
@@ -809,26 +835,13 @@ fn load_required_queue(
     })
 }
 
-fn sorted_entries(
-    entries: &std::collections::BTreeMap<TaskId, ActiveLearningQueueEntry>,
-) -> Vec<&ActiveLearningQueueEntry> {
-    let mut rows = entries.values().collect::<Vec<_>>();
-    rows.sort_by(|lhs, rhs| {
-        lhs.kind
-            .fast_track_rank()
-            .cmp(&rhs.kind.fast_track_rank())
-            .then_with(|| rhs.score.total_cmp(&lhs.score))
-            .then_with(|| lhs.task_id.cmp(&rhs.task_id))
-    });
-    rows
-}
-
 fn entry_view(entry: &ActiveLearningQueueEntry) -> Result<ActiveLearningEntryView> {
     Ok(ActiveLearningEntryView {
         task_id: entry.task_id.0.clone(),
         score: entry.score,
         outcome_set_len: entry.outcome_set_len,
         ood_score: entry.ood_score,
+        curiosity_score: entry.curiosity_score,
         reason: entry.reason.clone(),
         kind: serde_json::to_value(&entry.kind).context("serialize active-learning kind")?,
     })
@@ -878,6 +891,7 @@ mod tests {
             score,
             outcome_set_len: 2,
             ood_score: 0.1,
+            curiosity_score: 0.0,
             reason: "test".to_string(),
             kind,
         }
@@ -901,9 +915,26 @@ mod tests {
                 },
             ),
         );
-        let rows = sorted_entries(&queue.entries);
+        let rows = queue.ranked_entries(ActiveLearningRankBy::SchedulerPriority);
         assert_eq!(rows[0].task_id.0, "surprise-low");
         assert_eq!(rows[1].task_id.0, "uncertain-high");
+    }
+
+    #[test]
+    fn curiosity_ranking_orders_by_curiosity_score() {
+        let mut queue = ActiveLearningQueueState::new(8).unwrap();
+        queue.entries.insert(
+            TaskId("scheduler-high".to_string()),
+            entry("scheduler-high", 0.99, ActiveLearningKind::Uncertainty),
+        );
+        queue.entries.insert(
+            TaskId("curiosity-high".to_string()),
+            entry("curiosity-high", 0.10, ActiveLearningKind::Uncertainty)
+                .with_curiosity_score(0.88)
+                .unwrap(),
+        );
+        let rows = queue.ranked_entries(ActiveLearningRankBy::Curiosity);
+        assert_eq!(rows[0].task_id.0, "curiosity-high");
     }
 
     #[test]

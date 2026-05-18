@@ -2,7 +2,11 @@ use super::error::{EvalError, EvalErrorCode};
 use super::fingerprint_ship_gate::{fingerprint_ship_gate_window_key, FingerprintShipGateWindow};
 use super::graph::PatchSimilarityGraph;
 use super::novel_pattern::{ontology_growth_audit_key, OntologyGrowthAuditEntry};
-use super::queue::{ActiveLearningLabel, ActiveLearningQueueEntry, ActiveLearningQueueState};
+use super::queue::{
+    curiosity_telemetry_window_key, ActiveLearningLabel, ActiveLearningQueueEntry,
+    ActiveLearningQueueState, CuriosityTelemetryWindow, LegacyActiveLearningQueueEntry,
+    LegacyActiveLearningQueueState,
+};
 use super::telemetry::ProductionTelemetryWindow;
 use super::types::{EvalReport, OpenResearchQuestionStatus};
 use crate::calibration::cf;
@@ -14,7 +18,7 @@ use std::sync::Arc;
 
 pub use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
-    CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_EVAL_REPORTS,
+    CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_CURIOSITY_TELEMETRY, CF_MEJEPA_EVAL_REPORTS,
     CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS, CF_MEJEPA_MODEL_PROMOTIONS,
     CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT, CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_PRODUCTION_TELEMETRY,
     CF_MEJEPA_RESEARCH_QUESTIONS, CF_MEJEPA_TASK_GRAPH, CF_MEJEPA_TASK_GRAPH_HISTORY,
@@ -167,7 +171,17 @@ impl RocksDbEvalStore {
     }
 
     pub fn load_queue(&self) -> Result<Option<ActiveLearningQueueState>, EvalError> {
-        self.get_bin(CF_MEJEPA_ACTIVE_LEARNING_QUEUE, b"active")
+        let Some(bytes) = self.get_raw(CF_MEJEPA_ACTIVE_LEARNING_QUEUE, b"active")? else {
+            return Ok(None);
+        };
+        match bincode::deserialize::<ActiveLearningQueueState>(&bytes) {
+            Ok(queue) => Ok(Some(queue)),
+            Err(current_err) => {
+                let legacy: LegacyActiveLearningQueueState =
+                    bincode::deserialize(&bytes).map_err(|_| EvalError::from(current_err))?;
+                Ok(Some(legacy.into()))
+            }
+        }
     }
 
     pub fn persist_label(&self, label: &ActiveLearningLabel) -> Result<(), EvalError> {
@@ -199,7 +213,47 @@ impl RocksDbEvalStore {
         task_id
             .validate("active_learning_eviction.task_id")
             .map_err(EvalError::from)?;
-        self.get_bin(CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, task_id.0.as_bytes())
+        let Some(bytes) =
+            self.get_raw(CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, task_id.0.as_bytes())?
+        else {
+            return Ok(None);
+        };
+        match bincode::deserialize::<ActiveLearningQueueEntry>(&bytes) {
+            Ok(entry) => Ok(Some(entry)),
+            Err(current_err) => {
+                let legacy: LegacyActiveLearningQueueEntry =
+                    bincode::deserialize(&bytes).map_err(|_| EvalError::from(current_err))?;
+                Ok(Some(legacy.into()))
+            }
+        }
+    }
+
+    pub fn persist_curiosity_telemetry_window(
+        &self,
+        window: &CuriosityTelemetryWindow,
+    ) -> Result<(), EvalError> {
+        window.validate()?;
+        let key = curiosity_telemetry_window_key(window)?;
+        self.put_readback_bin(CF_MEJEPA_CURIOSITY_TELEMETRY, &key, window)
+    }
+
+    pub fn load_curiosity_telemetry_windows_chronological(
+        &self,
+    ) -> Result<Vec<CuriosityTelemetryWindow>, EvalError> {
+        let cf_handle = cf(&self.db, CF_MEJEPA_CURIOSITY_TELEMETRY).map_err(EvalError::from)?;
+        let mut windows = Vec::new();
+        for item in self.db.iterator_cf(cf_handle, IteratorMode::Start) {
+            let (_key, value) = item?;
+            let window: CuriosityTelemetryWindow = bincode::deserialize(&value)?;
+            window.validate()?;
+            windows.push(window);
+        }
+        windows.sort_by(|left, right| {
+            left.generated_at_unix_ms
+                .cmp(&right.generated_at_unix_ms)
+                .then_with(|| left.window_id.cmp(&right.window_id))
+        });
+        Ok(windows)
     }
 
     pub fn persist_graph(&self, graph: &PatchSimilarityGraph) -> Result<(), EvalError> {
@@ -340,11 +394,18 @@ impl RocksDbEvalStore {
         cf_name: &str,
         key: &[u8],
     ) -> Result<Option<T>, EvalError> {
+        let Some(bytes) = self.get_raw(cf_name, key)? else {
+            return Ok(None);
+        };
+        Ok(Some(bincode::deserialize(&bytes)?))
+    }
+
+    fn get_raw(&self, cf_name: &str, key: &[u8]) -> Result<Option<Vec<u8>>, EvalError> {
         let cf_handle = cf(&self.db, cf_name).map_err(EvalError::from)?;
         let Some(bytes) = self.db.get_cf(cf_handle, key)? else {
             return Ok(None);
         };
-        Ok(Some(bincode::deserialize(&bytes)?))
+        Ok(Some(bytes))
     }
 }
 

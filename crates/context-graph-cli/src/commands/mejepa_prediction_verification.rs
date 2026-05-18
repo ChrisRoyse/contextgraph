@@ -534,6 +534,7 @@ fn enqueue_refuted_prediction(
         score: 6.0,
         outcome_set_len: prediction.outcome_set.outcomes.len(),
         ood_score: prediction.ood_score,
+        curiosity_score: 0.0,
         reason: "prediction_verification_refuted".to_string(),
         kind: ActiveLearningKind::AgentSurprise {
             prediction_id: PredictionId(prediction.prediction_id),

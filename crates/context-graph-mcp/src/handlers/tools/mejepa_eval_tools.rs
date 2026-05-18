@@ -9,7 +9,7 @@ use context_graph_mejepa::eval::{
     ACTIVE_PYTHON_SHIP_GATE_GRID, ACTIVE_PYTHON_SHIP_GATE_NAME,
     FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER, SHIP_GATE_STABILITY_BLOCKER,
 };
-use context_graph_mejepa::open_infer_rocksdb;
+use context_graph_mejepa::{open_infer_rocksdb, ActiveLearningRankBy};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -31,6 +31,34 @@ struct EvalRunRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct EvalDbRequest {
     db_path: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ActiveLearningRankByRequest {
+    SchedulerPriority,
+    Curiosity,
+}
+
+impl From<ActiveLearningRankByRequest> for ActiveLearningRankBy {
+    fn from(value: ActiveLearningRankByRequest) -> Self {
+        match value {
+            ActiveLearningRankByRequest::SchedulerPriority => Self::SchedulerPriority,
+            ActiveLearningRankByRequest::Curiosity => Self::Curiosity,
+        }
+    }
+}
+
+fn default_active_learning_rank_by() -> ActiveLearningRankByRequest {
+    ActiveLearningRankByRequest::SchedulerPriority
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ActiveLearningQueueRequest {
+    db_path: PathBuf,
+    #[serde(default = "default_active_learning_rank_by")]
+    ranked_by: ActiveLearningRankByRequest,
 }
 
 #[derive(Debug, Deserialize)]
@@ -158,7 +186,7 @@ impl Handlers {
         id: Option<JsonRpcId>,
         args: serde_json::Value,
     ) -> JsonRpcResponse {
-        let request: EvalDbRequest = match serde_json::from_value(args) {
+        let request: ActiveLearningQueueRequest = match serde_json::from_value(args) {
             Ok(value) => value,
             Err(err) => {
                 return self.tool_error_typed(
@@ -180,12 +208,29 @@ impl Handlers {
                     "active-learning queue missing in CF_MEJEPA_ACTIVE_LEARNING_QUEUE",
                 )
             })?;
+            let ranked_by = ActiveLearningRankBy::from(request.ranked_by);
+            let entries = queue
+                .ranked_entries(ranked_by)
+                .into_iter()
+                .map(|entry| {
+                    json!({
+                        "taskId": entry.task_id.0.clone(),
+                        "score": entry.score,
+                        "outcomeSetLen": entry.outcome_set_len,
+                        "oodScore": entry.ood_score,
+                        "curiosityScore": entry.curiosity_score,
+                        "reason": entry.reason.clone(),
+                        "kind": entry.kind.clone(),
+                    })
+                })
+                .collect::<Vec<_>>();
             Ok(json!({
                 "capacity": queue.capacity,
                 "queuedCount": queue.entries.len(),
                 "evictedCount": queue.evicted.len(),
                 "oodEscalationCount": queue.ood_escalations.len(),
-                "entries": queue.entries,
+                "rankedBy": ranked_by,
+                "entries": entries,
                 "sourceOfTruth": "CF_MEJEPA_ACTIVE_LEARNING_QUEUE"
             }))
         })();

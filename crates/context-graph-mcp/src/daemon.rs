@@ -55,6 +55,7 @@ pub struct WeeklyOperationalSummary {
     ood_escalation_rows: usize,
     session_cleanup_gc_events: usize,
     compression_progress_section: Option<String>,
+    curiosity_ranking_section: Option<String>,
 }
 
 impl WeeklyOperationalSummary {
@@ -74,12 +75,19 @@ impl WeeklyOperationalSummary {
             ood_escalation_rows,
             session_cleanup_gc_events,
             compression_progress_section: None,
+            curiosity_ranking_section: None,
         }
     }
 
     #[allow(dead_code)]
     pub fn with_compression_progress_section(mut self, section: String) -> Self {
         self.compression_progress_section = Some(section);
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn with_curiosity_ranking_section(mut self, section: String) -> Self {
+        self.curiosity_ranking_section = Some(section);
         self
     }
 }
@@ -1339,6 +1347,13 @@ pub fn write_weekly_eval_markdown(
             "## Compression Progress\n\n- status: unavailable\n- source_of_truth: CF_MEJEPA_TRAIN_CERTS\n"
                 .to_string()
         });
+    let curiosity_ranking_section = operational
+        .curiosity_ranking_section
+        .clone()
+        .unwrap_or_else(|| {
+            "## Curiosity Ranking\n\n- status: unavailable\n- source_of_truth: CF_MEJEPA_CURIOSITY_TELEMETRY / CF_MEJEPA_ACTIVE_LEARNING_QUEUE\n"
+                .to_string()
+        });
     let per_cell_ship_gate = if report.per_cell_correlation.is_empty() {
         "- none".to_string()
     } else {
@@ -1425,6 +1440,8 @@ pub fn write_weekly_eval_markdown(
          - ood_escalation_count: {}\n\
          - active_learning_queue_rows: {}\n\
          - ood_escalation_rows: {}\n\n\
+         {}\n\
+         \n\
          ## Agent-Feedback Summary\n\n\
          - feedback_rows: {}\n\
          - source_of_truth: CF_MEJEPA_AGENT_FEEDBACK\n\n\
@@ -1461,6 +1478,7 @@ pub fn write_weekly_eval_markdown(
         report.active_learning.ood_escalation_count,
         operational.active_learning_queue_rows,
         operational.ood_escalation_rows,
+        curiosity_ranking_section,
         operational.agent_feedback_rows,
         operational.drift_window_rows,
         operational.drift_history_rows,
@@ -1761,14 +1779,29 @@ fn escape_markdown_table_cell(value: &str) -> String {
 }
 
 fn weekly_operational_summary(db: &DB) -> Result<WeeklyOperationalSummary> {
-    Ok(WeeklyOperationalSummary::new(
+    let mut summary = WeeklyOperationalSummary::new(
         weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_AGENT_FEEDBACK)?,
         weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_DRIFT_WINDOW)?,
         weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_DRIFT_HISTORY)?,
         weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE)?,
         weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_OOD_ESCALATIONS)?,
         weekly_session_cleanup_gc_event_count(db)?,
-    ))
+    );
+    summary.curiosity_ranking_section = weekly_curiosity_ranking_section(db).ok();
+    Ok(summary)
+}
+
+fn weekly_curiosity_ranking_section(db: &DB) -> Result<String> {
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE)
+        .context("CF_MEJEPA_ACTIVE_LEARNING_QUEUE missing")?;
+    let Some(bytes) = db.get_cf(cf, b"active")? else {
+        return Ok("## Curiosity Ranking\n\n- status: no_queue\n- source_of_truth: CF_MEJEPA_ACTIVE_LEARNING_QUEUE\n".to_string());
+    };
+    let queue: context_graph_mejepa::ActiveLearningQueueState =
+        bincode::deserialize(&bytes).context("decode active-learning queue")?;
+    context_graph_mejepa::render_curiosity_ranking_weekly_section(&queue, 10)
+        .context("render curiosity ranking")
 }
 
 fn weekly_count_cf(db: &DB, cf_name: &str) -> Result<usize> {

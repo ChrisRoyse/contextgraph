@@ -63,8 +63,12 @@ pub use per_head_calibration_tracker::{
     DEFAULT_ECE_TOLERANCE,
 };
 pub use queue::{
-    ActiveLearningKind, ActiveLearningLabel, ActiveLearningQueueEntry, ActiveLearningQueueState,
-    LabelMethod, UnknownFingerprintCandidate, UnknownFingerprintClusterSuggestion,
+    conformal_width_proxy, curiosity_delta_matches, curiosity_score_from_proxy,
+    curiosity_telemetry_window_key, render_curiosity_ranking_weekly_section, ActiveLearningKind,
+    ActiveLearningLabel, ActiveLearningQueueEntry, ActiveLearningQueueState, ActiveLearningRankBy,
+    CuriosityCalibrationEvidence, CuriosityDistribution, CuriosityRankedEntry,
+    CuriosityTelemetryWindow, LabelMethod, UnknownFingerprintCandidate,
+    UnknownFingerprintClusterSuggestion, CURIOSITY_TELEMETRY_SCHEMA_VERSION,
 };
 pub use report::{seed_open_research_questions, write_weekly_report};
 pub use runner::{corpus_sha_from_holdout, EvalRunner};

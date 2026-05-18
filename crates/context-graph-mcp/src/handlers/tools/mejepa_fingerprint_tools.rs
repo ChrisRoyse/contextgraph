@@ -1605,6 +1605,7 @@ mod test_support {
             score: 0.8,
             outcome_set_len: 1,
             ood_score: 0.92,
+            curiosity_score: 0.0,
             reason: "fingerprint_unknown_ood".to_string(),
             kind: ActiveLearningKind::UnknownFingerprint {
                 candidate: Box::new(candidate),

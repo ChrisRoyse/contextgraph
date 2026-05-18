@@ -796,6 +796,10 @@ fn validate_entry(entry: &ActiveLearningQueueEntry) -> Result<(), MejepaInferErr
     entry.task_id.validate("active_learning_entry.task_id")?;
     validate_unit_or_more("active_learning_entry.score", entry.score)?;
     validate_unit("active_learning_entry.ood_score", entry.ood_score)?;
+    validate_unit(
+        "active_learning_entry.curiosity_score",
+        entry.curiosity_score,
+    )?;
     Ok(())
 }
 

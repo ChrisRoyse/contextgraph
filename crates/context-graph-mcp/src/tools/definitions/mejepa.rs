@@ -792,13 +792,18 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_ACTIVE_LEARNING_QUEUE,
-            "Read the Phase 8 active-learning queue from CF_MEJEPA_ACTIVE_LEARNING_QUEUE.",
+            "Read the Phase 8 active-learning queue from CF_MEJEPA_ACTIVE_LEARNING_QUEUE, ordered by scheduler priority or TASK-EK-006 curiosity.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["dbPath"],
                 "properties": {
-                    "dbPath": {"type": "string"}
+                    "dbPath": {"type": "string"},
+                    "rankedBy": {
+                        "type": "string",
+                        "enum": ["scheduler_priority", "curiosity"],
+                        "default": "scheduler_priority"
+                    }
                 }
             }),
         ),

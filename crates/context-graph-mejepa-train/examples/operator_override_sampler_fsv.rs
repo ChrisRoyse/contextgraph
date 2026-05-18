@@ -295,6 +295,7 @@ fn write_dismissal(db: &DB, task_id: &TaskId) -> Result<()> {
         score: 1.0,
         outcome_set_len: 1,
         ood_score: 0.0,
+        curiosity_score: 0.0,
         reason: "operator_dismissed: stale override".to_string(),
         kind: ActiveLearningKind::Uncertainty,
     };
