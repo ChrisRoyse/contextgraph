@@ -258,6 +258,7 @@ pub fn load_corpus_index_dataset(corpus: &Path) -> Result<TrainingDataset, Train
             .and_then(|v| v.as_bool())
             .ok_or_else(|| corpus_field(i, "oracle_all_passed"))?;
         let adversarial = parse_optional_adversarial_flag(i, entry)?;
+        let foundationality_score = parse_optional_foundationality_score(i, entry)?;
         let bucket = parse_bucket(
             i,
             entry
@@ -274,6 +275,7 @@ pub fn load_corpus_index_dataset(corpus: &Path) -> Result<TrainingDataset, Train
             panel_t2: panel,
             actual_oracle_pass: actual,
             adversarial,
+            foundationality_score,
         };
         match bucket {
             CorpusBucket::Train => train.push(example),
@@ -316,6 +318,30 @@ pub fn corpus_feature_panel(
         2,
         &Device::Cpu,
     )?)
+}
+
+fn parse_optional_foundationality_score(
+    index: usize,
+    entry: &serde_json::Value,
+) -> Result<f32, TrainerError> {
+    let Some(value) = entry.get("foundationality_score") else {
+        return Ok(0.0);
+    };
+    let Some(score) = value.as_f64() else {
+        return Err(corpus_field(index, "foundationality_score"));
+    };
+    if !score.is_finite() || !(0.0..=1.0).contains(&score) {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            format!("corpus entry {index} foundationality_score must be finite in [0, 1]"),
+        )
+        .with_context(json!({
+            "index": index,
+            "foundationality_score": score,
+            "remediation": "materialize chunk foundationality from CF_MEJEPA_CHUNK_FOUNDATIONALITY before enabling lambda_found"
+        })));
+    }
+    Ok(score as f32)
 }
 
 fn validate_dataset_splits(

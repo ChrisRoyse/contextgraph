@@ -42,6 +42,7 @@ pub struct HoldoutExample {
     pub panel_t2: Tensor,
     pub actual_oracle_pass: bool,
     pub adversarial: bool,
+    pub foundationality_score: f32,
 }
 
 #[derive(Debug, Clone)]

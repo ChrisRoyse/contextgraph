@@ -195,6 +195,7 @@ fn synthetic_training_dataset() -> Result<TrainingDataset> {
             panel_t2: panel,
             actual_oracle_pass: !adversarial,
             adversarial,
+            foundationality_score: 0.0,
         });
     }
     Ok(TrainingDataset {

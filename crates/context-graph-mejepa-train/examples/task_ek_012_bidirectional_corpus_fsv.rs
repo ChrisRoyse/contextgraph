@@ -337,6 +337,7 @@ fn full_panel_example(
         panel_t2: target,
         actual_oracle_pass: !adversarial,
         adversarial,
+        foundationality_score: 0.0,
     })
 }
 

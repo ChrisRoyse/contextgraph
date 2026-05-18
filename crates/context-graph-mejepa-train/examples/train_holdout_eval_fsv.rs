@@ -132,6 +132,7 @@ fn synthetic_examples(n: usize) -> Result<Vec<HoldoutExample>, candle_core::Erro
             panel_t2: panel,
             actual_oracle_pass: i % 2 == 1,
             adversarial: false,
+            foundationality_score: 0.0,
         });
     }
     Ok(out)

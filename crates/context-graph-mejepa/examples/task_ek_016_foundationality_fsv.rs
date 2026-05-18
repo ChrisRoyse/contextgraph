@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -16,12 +17,19 @@ use context_graph_mejepa::{
     MEJEPA_FOUNDATIONALITY_GRAPH_DISCONNECTED,
 };
 use context_graph_mejepa_cf::{CF_MEJEPA_CHUNK_DEPENDENCY_GRAPH, CF_MEJEPA_CHUNK_FOUNDATIONALITY};
+use context_graph_mejepa_train::cli::load_corpus_index_dataset;
 use context_graph_mejepa_train::config::TrainingConfig;
+use context_graph_mejepa_train::eval::holdout::HoldoutExample;
+use context_graph_mejepa_train::eval::{Lang, MutationCategory};
 use context_graph_mejepa_train::sampler::{BatchSampler, PatchSimilarityGraph};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
 const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-016-foundationality-fsv";
+const SWE_300X8_CORPUS_DIR: &str =
+    "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511";
+const SWE_300X8_INDEX_PATH: &str =
+    "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
 
 fn main() -> Result<()> {
     let started_at_unix_ms = current_unix_ms();
@@ -30,6 +38,7 @@ fn main() -> Result<()> {
     let source_db_path = run_root.join("python-source-rocksdb");
     let production_fisher_db_path = run_root.join("production-fisher-rocksdb");
     let lambda_fisher_ablation_db_path = run_root.join("lambda-fisher-ablation-rocksdb");
+    let lambda_found_ablation_db_path = run_root.join("lambda-found-300x8-rocksdb");
     let fsv_path = run_root.join("foundationality_fsv.json");
     let canonical_path = PathBuf::from(FSV_ROOT).join("foundationality_fsv.json");
     fs::create_dir_all(&run_root).context("create TASK-EK-016 FSV dir")?;
@@ -152,6 +161,10 @@ fn main() -> Result<()> {
     )
     .context("run synthetic lambda_fisher ablation")?;
     let lambda_fisher_ablation_ok = lambda_fisher_ablation.passes;
+    let lambda_found_300x8_ablation =
+        lambda_found_300x8_swebench_ablation(&lambda_found_ablation_db_path, started_at_unix_ms)
+            .context("run 300x8 lambda_found ablation")?;
+    let lambda_found_ablation_ok = lambda_found_300x8_ablation.passes;
 
     let python_sources = real_python_sources();
     let python_extraction =
@@ -242,6 +255,7 @@ fn main() -> Result<()> {
         && fisher_ok
         && production_fisher_ok
         && lambda_fisher_ablation_ok
+        && lambda_found_ablation_ok
         && compression_ok
         && source_extractor_ok
         && disconnected_rejected;
@@ -259,6 +273,7 @@ fn main() -> Result<()> {
             "canonical_path": canonical_path,
             "production_fisher_db_path": production_fisher_db_path,
             "lambda_fisher_ablation_db_path": lambda_fisher_ablation_db_path,
+            "lambda_found_ablation_db_path": lambda_found_ablation_db_path,
             "inner_llm_invoked": false
         },
         "graph": {
@@ -300,6 +315,7 @@ fn main() -> Result<()> {
             "bedrock_ok": bedrock_ok
         },
         "sampler_ablation": ablation,
+        "lambda_found_300x8_ablation": lambda_found_300x8_ablation,
         "fisher": {
             "core_weighted": weighted_fisher,
             "leaf_weighted": leaf_fisher,
@@ -323,6 +339,7 @@ fn main() -> Result<()> {
         "checks": {
             "hierarchy_matches": hierarchy_matches,
             "sampler_ok": sampler_ok,
+            "lambda_found_ablation_ok": lambda_found_ablation_ok,
             "production_fisher_ok": production_fisher_ok,
             "lambda_fisher_ablation_ok": lambda_fisher_ablation_ok
         }
@@ -381,6 +398,72 @@ struct LambdaFisherAblationCase {
     consumer_readback_matches: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LambdaFound300x8AblationReport {
+    corpus_index: String,
+    corpus_entries: usize,
+    train_count: usize,
+    calibration_count: usize,
+    holdout_count: usize,
+    patch_modifies_edge_count: usize,
+    patch_graph_node_count: usize,
+    weak_component_count: usize,
+    score_count: usize,
+    score_readback_ok: bool,
+    foundationality_score_min: f32,
+    foundationality_score_max: f32,
+    foundationality_score_mean: f32,
+    lambda_values: Vec<f32>,
+    baseline_lambda_found: f32,
+    recommended_lambda_found: f32,
+    recommended_reason: String,
+    cases: Vec<LambdaFound300x8Case>,
+    passes: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LambdaFound300x8Case {
+    lambda_found: f32,
+    selected_total: u64,
+    selected_unique_examples: usize,
+    selected_mean_foundationality_score: f32,
+    global_holdout_correlation: Option<f32>,
+    global_holdout_accuracy: f32,
+    mean_defined_per_cell_correlation: Option<f32>,
+    global_correlation_delta_vs_baseline: Option<f32>,
+    global_accuracy_delta_vs_baseline: f32,
+    mean_per_cell_correlation_delta_vs_baseline: Option<f32>,
+    per_cell: BTreeMap<String, PerCellLambdaFoundMetric>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PerCellLambdaFoundMetric {
+    sample_count: usize,
+    correlation: Option<f32>,
+    accuracy: f32,
+    correlation_delta_vs_baseline: Option<f32>,
+    accuracy_delta_vs_baseline: f32,
+}
+
+#[derive(Debug, Clone)]
+struct SwebenchPatchEntry {
+    task_id: String,
+    category_slug: String,
+    bucket: String,
+    patch_path: PathBuf,
+    touched_chunk_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PredictionRow {
+    cell: String,
+    probability: f32,
+    actual: bool,
+}
+
 fn foundationality_sampler_ablation(bedrock_score: f32) -> Result<Vec<SamplerAblationCase>> {
     let mut cases = Vec::new();
     for lambda_found in [0.0_f32, 0.5, 1.0, 2.0] {
@@ -410,6 +493,638 @@ fn foundationality_sampler_ablation(bedrock_score: f32) -> Result<Vec<SamplerAbl
         });
     }
     Ok(cases)
+}
+
+fn lambda_found_300x8_swebench_ablation(
+    db_path: &Path,
+    started_at_unix_ms: i64,
+) -> Result<LambdaFound300x8AblationReport> {
+    let entries = load_swebench_patch_entries(Path::new(SWE_300X8_INDEX_PATH))?;
+    ensure!(
+        entries.len() == 2400,
+        "300x8 lambda_found ablation requires the verified 2400-entry corpus"
+    );
+    let edges = entries
+        .iter()
+        .flat_map(|entry| {
+            entry.touched_chunk_ids.iter().map(move |chunk_id| {
+                ChunkDependencyEdge::new(
+                    format!("patch:{}:{}", entry.task_id, entry.category_slug),
+                    chunk_id.clone(),
+                    "patch_modifies",
+                    1.0,
+                    format!(
+                        "swebench_300x8:{}:{}",
+                        entry.bucket,
+                        entry.patch_path.display()
+                    ),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let weak_components = weak_component_count(&edges);
+    let report = compute_chunk_foundationality(
+        &edges,
+        started_at_unix_ms + 100,
+        ChunkFoundationalityConfig {
+            connected_required: false,
+            ..ChunkFoundationalityConfig::default()
+        },
+    )
+    .context("compute 300x8 patch-modifies foundationality")?;
+    let db = open_infer_rocksdb(db_path).context("open lambda_found 300x8 RocksDB")?;
+    persist_chunk_foundationality_report_sync_readback(db.as_ref(), &edges, &report)
+        .context("persist 300x8 patch-modifies foundationality")?;
+    let persisted_scores = read_all_chunk_foundationality_scores(db.as_ref())
+        .context("read back 300x8 foundationality scores")?;
+    let report_score_by_chunk = report
+        .scores
+        .iter()
+        .map(|score| (score.chunk_id.clone(), score.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let score_readback_ok = persisted_scores.len() == report.scores.len()
+        && persisted_scores
+            .iter()
+            .all(|score| report_score_by_chunk.get(&score.chunk_id) == Some(score));
+    let score_by_chunk = persisted_scores
+        .iter()
+        .map(|score| (score.chunk_id.clone(), score.foundationality_score))
+        .collect::<BTreeMap<_, _>>();
+    let mut score_by_entry = BTreeMap::new();
+    for entry in &entries {
+        let score = entry
+            .touched_chunk_ids
+            .iter()
+            .filter_map(|chunk_id| score_by_chunk.get(chunk_id).copied())
+            .fold(None, |best: Option<f32>, score| {
+                Some(best.map_or(score, |current| current.max(score)))
+            })
+            .with_context(|| {
+                format!(
+                    "missing foundationality score for touched chunks in {}",
+                    entry.patch_path.display()
+                )
+            })?;
+        score_by_entry.insert(
+            swebench_entry_key(&entry.bucket, &entry.task_id, &entry.category_slug),
+            score,
+        );
+    }
+
+    let mut dataset = load_corpus_index_dataset(Path::new(SWE_300X8_INDEX_PATH))
+        .context("load 300x8 training dataset")?;
+    assign_foundationality_scores(&mut dataset.train.examples, "train", &score_by_entry)?;
+    assign_foundationality_scores(
+        &mut dataset.calibration.examples,
+        "calibration",
+        &score_by_entry,
+    )?;
+    assign_foundationality_scores(&mut dataset.holdout.examples, "holdout", &score_by_entry)?;
+
+    let all_example_scores = dataset
+        .train
+        .examples
+        .iter()
+        .chain(dataset.calibration.examples.iter())
+        .chain(dataset.holdout.examples.iter())
+        .map(|example| example.foundationality_score)
+        .collect::<Vec<_>>();
+    let foundationality_score_min = all_example_scores
+        .iter()
+        .copied()
+        .fold(f32::INFINITY, f32::min);
+    let foundationality_score_max = all_example_scores
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, f32::max);
+    let foundationality_score_mean =
+        all_example_scores.iter().sum::<f32>() / all_example_scores.len() as f32;
+
+    let mut cases = Vec::new();
+    for lambda_found in [0.0_f32, 0.5, 1.0, 2.0] {
+        cases.push(run_lambda_found_300x8_case(&dataset, lambda_found)?);
+    }
+    apply_lambda_found_baseline_deltas(&mut cases)?;
+    let (recommended_lambda_found, recommended_reason) =
+        recommend_lambda_found(&cases).context("recommend lambda_found")?;
+
+    let cases_ok = cases.len() == 4
+        && cases.iter().all(|case| {
+            case.selected_total > 0
+                && case.global_holdout_correlation.is_some()
+                && case.per_cell.len() == MutationCategory::ALL.len()
+        });
+    let passes = score_readback_ok
+        && report.node_count > entries.len()
+        && weak_components > 1
+        && (foundationality_score_max - foundationality_score_min) > 1e-6
+        && dataset.train.examples.len() == 1920
+        && dataset.calibration.examples.len() == 240
+        && dataset.holdout.examples.len() == 240
+        && cases_ok;
+
+    Ok(LambdaFound300x8AblationReport {
+        corpus_index: SWE_300X8_INDEX_PATH.to_string(),
+        corpus_entries: entries.len(),
+        train_count: dataset.train.examples.len(),
+        calibration_count: dataset.calibration.examples.len(),
+        holdout_count: dataset.holdout.examples.len(),
+        patch_modifies_edge_count: edges.len(),
+        patch_graph_node_count: report.node_count,
+        weak_component_count: weak_components,
+        score_count: persisted_scores.len(),
+        score_readback_ok,
+        foundationality_score_min,
+        foundationality_score_max,
+        foundationality_score_mean,
+        lambda_values: cases.iter().map(|case| case.lambda_found).collect(),
+        baseline_lambda_found: 0.0,
+        recommended_lambda_found,
+        recommended_reason,
+        cases,
+        passes,
+    })
+}
+
+fn load_swebench_patch_entries(index_path: &Path) -> Result<Vec<SwebenchPatchEntry>> {
+    let root: serde_json::Value = serde_json::from_slice(
+        &fs::read(index_path)
+            .with_context(|| format!("read corpus index {}", index_path.display()))?,
+    )?;
+    let entries = root
+        .get("entries")
+        .and_then(|value| value.as_array())
+        .context("corpus index missing entries array")?;
+    let mut out = Vec::with_capacity(entries.len());
+    for (idx, entry) in entries.iter().enumerate() {
+        let field = |name: &str| -> Result<&str> {
+            entry
+                .get(name)
+                .and_then(|value| value.as_str())
+                .with_context(|| format!("corpus entry {idx} missing string field {name}"))
+        };
+        let task_id = field("task_id")?.to_string();
+        let category_slug = field("category")?.to_string();
+        let bucket = field("bucket")?.to_string();
+        let repo = field("repo")?.to_string();
+        let patch_rel = field("patch_path")?;
+        let patch_path = Path::new(SWE_300X8_CORPUS_DIR).join(patch_rel);
+        let patch_text = fs::read_to_string(&patch_path)
+            .with_context(|| format!("read patch {}", patch_path.display()))?;
+        let touched_chunk_ids = parse_touched_patch_files(&repo, &patch_text);
+        ensure!(
+            !touched_chunk_ids.is_empty(),
+            "patch {} did not expose any touched files",
+            patch_path.display()
+        );
+        out.push(SwebenchPatchEntry {
+            task_id,
+            category_slug,
+            bucket,
+            patch_path,
+            touched_chunk_ids,
+        });
+    }
+    Ok(out)
+}
+
+fn parse_touched_patch_files(repo: &str, patch_text: &str) -> Vec<String> {
+    let mut files = BTreeSet::new();
+    for line in patch_text.lines() {
+        if let Some(rest) = line.strip_prefix("diff --git a/") {
+            if let Some((left, _right)) = rest.split_once(" b/") {
+                files.insert(chunk_id_for_patch_file(repo, left));
+            }
+        } else if let Some(path) = line.strip_prefix("+++ ") {
+            if let Some(path) = normalize_diff_path(path) {
+                files.insert(chunk_id_for_patch_file(repo, path));
+            }
+        } else if let Some(path) = line.strip_prefix("--- ") {
+            if let Some(path) = normalize_diff_path(path) {
+                files.insert(chunk_id_for_patch_file(repo, path));
+            }
+        }
+    }
+    files.into_iter().collect()
+}
+
+fn normalize_diff_path(path: &str) -> Option<&str> {
+    if path == "/dev/null" {
+        return None;
+    }
+    path.strip_prefix("a/")
+        .or_else(|| path.strip_prefix("b/"))
+        .or(Some(path))
+}
+
+fn chunk_id_for_patch_file(repo: &str, path: &str) -> String {
+    format!("file:{repo}:{path}")
+}
+
+fn swebench_entry_key(bucket: &str, task_id: &str, category_slug: &str) -> String {
+    format!("{bucket}\t{task_id}\t{category_slug}")
+}
+
+fn assign_foundationality_scores(
+    examples: &mut [HoldoutExample],
+    bucket: &str,
+    score_by_entry: &BTreeMap<String, f32>,
+) -> Result<()> {
+    for example in examples {
+        let key = swebench_entry_key(bucket, &example.task_id, category_slug(example.category));
+        example.foundationality_score = *score_by_entry
+            .get(&key)
+            .with_context(|| format!("missing 300x8 foundationality score for {key}"))?;
+    }
+    Ok(())
+}
+
+fn run_lambda_found_300x8_case(
+    dataset: &context_graph_mejepa_train::trainer::TrainingDataset,
+    lambda_found: f32,
+) -> Result<LambdaFound300x8Case> {
+    let train = &dataset.train.examples;
+    let mut sampler = BatchSampler::new_with_foundationality_scores(
+        TrainingConfig {
+            epochs: 1,
+            batch_size: 64,
+            random_seed: 0x2026_0518,
+            cross_task_transfer_probability: 0.0,
+            adversarial_mix_ratio: 0.0,
+            sampling_foundationality_lambda: lambda_found,
+            ..TrainingConfig::default()
+        },
+        (0..train.len())
+            .map(|i| 0.1 + (i % 10) as f32 * 0.05)
+            .collect(),
+        (0..train.len()).map(|i| i % 17 == 0).collect(),
+        vec![0.0; train.len()],
+        train.iter().map(|ex| ex.task_id.clone()).collect(),
+        train.iter().map(|ex| ex.foundationality_score).collect(),
+        Vec::new(),
+        PatchSimilarityGraph {
+            neighbors: vec![Vec::new(); train.len()],
+        },
+    )
+    .context("construct 300x8 lambda_found sampler")?;
+    let mut selected_counts = vec![0_u64; train.len()];
+    let batches = train.len().div_ceil(sampler.config.batch_size);
+    for batch_idx in 0..batches {
+        let plan = sampler
+            .next_batch_with_cross_task(batch_idx % train.len(), sampler.config.batch_size)?;
+        for idx in plan.indices {
+            selected_counts[idx] += 1;
+        }
+    }
+    let selected_total = selected_counts.iter().sum::<u64>();
+    let selected_unique_examples = selected_counts.iter().filter(|count| **count > 0).count();
+    let selected_mean_foundationality_score = train
+        .iter()
+        .zip(&selected_counts)
+        .map(|(example, count)| example.foundationality_score * *count as f32)
+        .sum::<f32>()
+        / selected_total.max(1) as f32;
+    let predictions = weighted_knn_predictions(train, &selected_counts, &dataset.holdout.examples)?;
+    let (global_holdout_correlation, global_holdout_accuracy, mut per_cell) =
+        evaluate_lambda_found_predictions(&predictions);
+    Ok(LambdaFound300x8Case {
+        lambda_found,
+        selected_total,
+        selected_unique_examples,
+        selected_mean_foundationality_score,
+        global_holdout_correlation,
+        global_holdout_accuracy,
+        mean_defined_per_cell_correlation: mean_defined_per_cell_correlation(&per_cell),
+        global_correlation_delta_vs_baseline: None,
+        global_accuracy_delta_vs_baseline: 0.0,
+        mean_per_cell_correlation_delta_vs_baseline: None,
+        per_cell: {
+            for metric in per_cell.values_mut() {
+                metric.correlation_delta_vs_baseline = None;
+                metric.accuracy_delta_vs_baseline = 0.0;
+            }
+            per_cell
+        },
+    })
+}
+
+fn weighted_knn_predictions(
+    train: &[HoldoutExample],
+    selected_counts: &[u64],
+    holdout: &[HoldoutExample],
+) -> Result<Vec<PredictionRow>> {
+    ensure!(
+        train.len() == selected_counts.len(),
+        "selected-count vector length must match train split"
+    );
+    let train_hashes = train
+        .iter()
+        .map(|example| task_hash_unit(&example.task_id))
+        .collect::<Vec<_>>();
+    let mut rows = Vec::with_capacity(holdout.len());
+    for holdout_example in holdout {
+        let holdout_hash = task_hash_unit(&holdout_example.task_id);
+        let mut numerator = 0.0_f32;
+        let mut denominator = 0.0_f32;
+        for ((train_example, selected_count), train_hash) in
+            train.iter().zip(selected_counts).zip(&train_hashes)
+        {
+            if *selected_count == 0 {
+                continue;
+            }
+            let category_penalty = if train_example.category == holdout_example.category {
+                0.0
+            } else {
+                0.75
+            };
+            let language_penalty = if train_example.language == holdout_example.language {
+                0.0
+            } else {
+                0.5
+            };
+            let similarity = 1.0
+                / (0.05
+                    + (train_hash - holdout_hash).abs()
+                    + (train_example.foundationality_score
+                        - holdout_example.foundationality_score)
+                        .abs()
+                        * 0.25
+                    + category_penalty
+                    + language_penalty);
+            let weight = *selected_count as f32 * similarity;
+            denominator += weight;
+            if train_example.actual_oracle_pass {
+                numerator += weight;
+            }
+        }
+        ensure!(
+            denominator > 0.0,
+            "weighted KNN denominator must be positive for {}",
+            holdout_example.task_id
+        );
+        rows.push(PredictionRow {
+            cell: cell_key(holdout_example.category, holdout_example.language),
+            probability: (numerator / denominator).clamp(0.0, 1.0),
+            actual: holdout_example.actual_oracle_pass,
+        });
+    }
+    Ok(rows)
+}
+
+fn evaluate_lambda_found_predictions(
+    rows: &[PredictionRow],
+) -> (Option<f32>, f32, BTreeMap<String, PerCellLambdaFoundMetric>) {
+    let global_correlation = pearson_probability_label(
+        rows.iter().map(|row| row.probability),
+        rows.iter().map(|row| row.actual),
+    );
+    let global_accuracy = accuracy(rows);
+    let mut by_cell = BTreeMap::<String, Vec<&PredictionRow>>::new();
+    for row in rows {
+        by_cell.entry(row.cell.clone()).or_default().push(row);
+    }
+    let mut per_cell = BTreeMap::new();
+    for category in MutationCategory::ALL {
+        let key = cell_key(category, Lang::Python);
+        let cell_rows = by_cell.remove(&key).unwrap_or_default();
+        let correlation = pearson_probability_label(
+            cell_rows.iter().map(|row| row.probability),
+            cell_rows.iter().map(|row| row.actual),
+        );
+        let accuracy = accuracy_refs(&cell_rows);
+        per_cell.insert(
+            key,
+            PerCellLambdaFoundMetric {
+                sample_count: cell_rows.len(),
+                correlation,
+                accuracy,
+                correlation_delta_vs_baseline: None,
+                accuracy_delta_vs_baseline: 0.0,
+            },
+        );
+    }
+    (global_correlation, global_accuracy, per_cell)
+}
+
+fn apply_lambda_found_baseline_deltas(cases: &mut [LambdaFound300x8Case]) -> Result<()> {
+    let baseline = cases
+        .iter()
+        .find(|case| (case.lambda_found - 0.0).abs() < f32::EPSILON)
+        .context("missing lambda_found=0 baseline")?
+        .clone();
+    for case in cases {
+        case.global_correlation_delta_vs_baseline = match (
+            case.global_holdout_correlation,
+            baseline.global_holdout_correlation,
+        ) {
+            (Some(current), Some(base)) => Some(current - base),
+            _ => None,
+        };
+        case.global_accuracy_delta_vs_baseline =
+            case.global_holdout_accuracy - baseline.global_holdout_accuracy;
+        case.mean_per_cell_correlation_delta_vs_baseline = match (
+            case.mean_defined_per_cell_correlation,
+            baseline.mean_defined_per_cell_correlation,
+        ) {
+            (Some(current), Some(base)) => Some(current - base),
+            _ => None,
+        };
+        for (key, metric) in &mut case.per_cell {
+            let base = baseline
+                .per_cell
+                .get(key)
+                .with_context(|| format!("baseline missing per-cell metric for {key}"))?;
+            metric.correlation_delta_vs_baseline = match (metric.correlation, base.correlation) {
+                (Some(current), Some(base)) => Some(current - base),
+                _ => None,
+            };
+            metric.accuracy_delta_vs_baseline = metric.accuracy - base.accuracy;
+        }
+    }
+    Ok(())
+}
+
+fn recommend_lambda_found(cases: &[LambdaFound300x8Case]) -> Result<(f32, String)> {
+    let baseline = cases
+        .iter()
+        .find(|case| (case.lambda_found - 0.0).abs() < f32::EPSILON)
+        .context("missing lambda_found=0 baseline")?;
+    let best = cases
+        .iter()
+        .filter(|case| case.global_accuracy_delta_vs_baseline >= -0.005)
+        .max_by(|left, right| {
+            let left_score = left
+                .mean_defined_per_cell_correlation
+                .or(left.global_holdout_correlation)
+                .unwrap_or(f32::NEG_INFINITY);
+            let right_score = right
+                .mean_defined_per_cell_correlation
+                .or(right.global_holdout_correlation)
+                .unwrap_or(f32::NEG_INFINITY);
+            left_score
+                .partial_cmp(&right_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    left.global_holdout_accuracy
+                        .partial_cmp(&right.global_holdout_accuracy)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+        })
+        .context("no lambda_found candidate survived accuracy guard")?;
+    let best_delta = best
+        .mean_per_cell_correlation_delta_vs_baseline
+        .or(best.global_correlation_delta_vs_baseline)
+        .unwrap_or(0.0);
+    if best.lambda_found == baseline.lambda_found || best_delta.abs() < 0.001 {
+        Ok((
+            baseline.lambda_found,
+            "300x8 patch-modifies ablation was null within 0.001 correlation; keep flat sampler lambda_found=0 until a stronger signal clears promotion guard".to_string(),
+        ))
+    } else {
+        Ok((
+            best.lambda_found,
+            "best mean defined per-cell holdout correlation with global accuracy regression guard >= -0.005".to_string(),
+        ))
+    }
+}
+
+fn mean_defined_per_cell_correlation(
+    per_cell: &BTreeMap<String, PerCellLambdaFoundMetric>,
+) -> Option<f32> {
+    let values = per_cell
+        .values()
+        .filter_map(|metric| metric.correlation)
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        None
+    } else {
+        Some(values.iter().sum::<f32>() / values.len() as f32)
+    }
+}
+
+fn pearson_probability_label(
+    probabilities: impl Iterator<Item = f32>,
+    actuals: impl Iterator<Item = bool>,
+) -> Option<f32> {
+    let xs = probabilities.collect::<Vec<_>>();
+    let ys = actuals
+        .map(|actual| if actual { 1.0_f32 } else { 0.0 })
+        .collect::<Vec<_>>();
+    if xs.len() != ys.len() || xs.len() < 2 {
+        return None;
+    }
+    let x_mean = xs.iter().sum::<f32>() / xs.len() as f32;
+    let y_mean = ys.iter().sum::<f32>() / ys.len() as f32;
+    let mut numerator = 0.0_f32;
+    let mut x_var = 0.0_f32;
+    let mut y_var = 0.0_f32;
+    for (x, y) in xs.iter().zip(&ys) {
+        let dx = *x - x_mean;
+        let dy = *y - y_mean;
+        numerator += dx * dy;
+        x_var += dx * dx;
+        y_var += dy * dy;
+    }
+    let denom = (x_var * y_var).sqrt();
+    if denom <= 1e-8 {
+        None
+    } else {
+        Some((numerator / denom).clamp(-1.0, 1.0))
+    }
+}
+
+fn accuracy(rows: &[PredictionRow]) -> f32 {
+    if rows.is_empty() {
+        return 0.0;
+    }
+    rows.iter()
+        .filter(|row| (row.probability >= 0.5) == row.actual)
+        .count() as f32
+        / rows.len() as f32
+}
+
+fn accuracy_refs(rows: &[&PredictionRow]) -> f32 {
+    if rows.is_empty() {
+        return 0.0;
+    }
+    rows.iter()
+        .filter(|row| (row.probability >= 0.5) == row.actual)
+        .count() as f32
+        / rows.len() as f32
+}
+
+fn weak_component_count(edges: &[ChunkDependencyEdge]) -> usize {
+    let mut adjacency = BTreeMap::<String, BTreeSet<String>>::new();
+    for edge in edges {
+        adjacency
+            .entry(edge.from_chunk_id.clone())
+            .or_default()
+            .insert(edge.to_chunk_id.clone());
+        adjacency
+            .entry(edge.to_chunk_id.clone())
+            .or_default()
+            .insert(edge.from_chunk_id.clone());
+    }
+    let mut visited = BTreeSet::new();
+    let mut components = 0;
+    for node in adjacency.keys() {
+        if visited.contains(node) {
+            continue;
+        }
+        components += 1;
+        let mut stack = vec![node.clone()];
+        while let Some(current) = stack.pop() {
+            if !visited.insert(current.clone()) {
+                continue;
+            }
+            if let Some(neighbors) = adjacency.get(&current) {
+                for neighbor in neighbors {
+                    if !visited.contains(neighbor) {
+                        stack.push(neighbor.clone());
+                    }
+                }
+            }
+        }
+    }
+    components
+}
+
+fn task_hash_unit(task_id: &str) -> f32 {
+    let digest = Sha256::digest(task_id.as_bytes());
+    u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) as f32 / u32::MAX as f32
+}
+
+fn cell_key(category: MutationCategory, language: Lang) -> String {
+    format!("{}::{}", category_slug(category), lang_slug(language))
+}
+
+fn category_slug(category: MutationCategory) -> &'static str {
+    match category {
+        MutationCategory::KnownGood => "known_good",
+        MutationCategory::SubtleFlip => "subtle_flip",
+        MutationCategory::OffByOne => "off_by_one",
+        MutationCategory::SwapVariable => "swap_variable",
+        MutationCategory::DeleteTestCall => "delete_test_call",
+        MutationCategory::WrongFile => "wrong_file",
+        MutationCategory::OverEngineer => "over_engineer",
+        MutationCategory::CompileError => "compile_error",
+    }
+}
+
+fn lang_slug(language: Lang) -> &'static str {
+    match language {
+        Lang::Rust => "rust",
+        Lang::Python => "python",
+        Lang::JavaScript => "javascript",
+        Lang::TypeScript => "typescript",
+        Lang::Go => "go",
+        Lang::Java => "java",
+        Lang::C => "c",
+        Lang::Cpp => "cpp",
+        Lang::CSharp => "csharp",
+        Lang::Ruby => "ruby",
+        Lang::Php => "php",
+    }
 }
 
 fn synthetic_lambda_fisher_ablation(

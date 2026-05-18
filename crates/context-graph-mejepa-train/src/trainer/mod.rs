@@ -391,7 +391,7 @@ impl Trainer {
             .enumerate()
             .filter_map(|(idx, example)| example.adversarial.then_some(idx))
             .collect::<Vec<_>>();
-        self.sampler = BatchSampler::new_with_adversarial_indices(
+        self.sampler = BatchSampler::new_with_foundationality_scores(
             self.config.clone(),
             (0..n).map(|i| 0.1 + (i % 10) as f32 * 0.05).collect(),
             (0..n).map(|i| i % 17 == 0).collect(),
@@ -401,6 +401,12 @@ impl Trainer {
                 .examples
                 .iter()
                 .map(|ex| ex.task_id.clone())
+                .collect(),
+            dataset
+                .train
+                .examples
+                .iter()
+                .map(|ex| ex.foundationality_score)
                 .collect(),
             adversarial_indices,
             PatchSimilarityGraph {
