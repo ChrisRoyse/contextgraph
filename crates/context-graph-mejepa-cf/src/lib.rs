@@ -53,6 +53,9 @@ pub const CF_MEJEPA_ACTIVE_LEARNING_QUEUE: &str = "CF_MEJEPA_ACTIVE_LEARNING_QUE
 pub const CF_MEJEPA_ACTIVE_LEARNING_LABELS: &str = "CF_MEJEPA_ACTIVE_LEARNING_LABELS";
 pub const CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS: &str = "CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS";
 pub const CF_MEJEPA_OOD_ESCALATIONS: &str = "CF_MEJEPA_OOD_ESCALATIONS";
+// TASK-PY-G-057 — live-session OOD harvest rows and weekly OOD calibration reports.
+pub const CF_MEJEPA_OOD_HARVEST: &str = "CF_MEJEPA_OOD_HARVEST";
+pub const CF_MEJEPA_OOD_CALIBRATIONS: &str = "CF_MEJEPA_OOD_CALIBRATIONS";
 // TASK-EK-006 — per-window compression-progress curiosity distributions.
 pub const CF_MEJEPA_CURIOSITY_TELEMETRY: &str = "CF_MEJEPA_CURIOSITY_TELEMETRY";
 pub const CF_MEJEPA_RESEARCH_QUESTIONS: &str = "CF_MEJEPA_RESEARCH_QUESTIONS";
@@ -178,6 +181,8 @@ pub const FINGERPRINT_CFS: &[&str] = &[
 
 pub const ADVERSARIAL_CFS: &[&str] = &[CF_MEJEPA_ADVERSARIAL_CORPUS];
 
+pub const OOD_HARVEST_CFS: &[&str] = &[CF_MEJEPA_OOD_HARVEST, CF_MEJEPA_OOD_CALIBRATIONS];
+
 pub const REWARD_SIGNAL_CFS: &[&str] = &[
     CF_MEJEPA_COVERAGE_SIGNALS,
     CF_MEJEPA_COMPLEXITY_SIGNALS,
@@ -274,6 +279,8 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
+    CF_MEJEPA_OOD_HARVEST,
+    CF_MEJEPA_OOD_CALIBRATIONS,
     CF_MEJEPA_CURIOSITY_TELEMETRY,
     CF_MEJEPA_RESEARCH_QUESTIONS,
     CF_MEJEPA_MODEL_PROMOTIONS,
@@ -338,6 +345,8 @@ pub const EVAL_CFS: &[&str] = &[
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
+    CF_MEJEPA_OOD_HARVEST,
+    CF_MEJEPA_OOD_CALIBRATIONS,
     CF_MEJEPA_CURIOSITY_TELEMETRY,
     CF_MEJEPA_RESEARCH_QUESTIONS,
     CF_MEJEPA_MODEL_PROMOTIONS,
@@ -417,6 +426,8 @@ pub const HYGIENE_CFS: &[&str] = &[
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
+    CF_MEJEPA_OOD_HARVEST,
+    CF_MEJEPA_OOD_CALIBRATIONS,
     CF_MEJEPA_CURIOSITY_TELEMETRY,
     CF_MEJEPA_RESEARCH_QUESTIONS,
     CF_MEJEPA_MODEL_PROMOTIONS,
@@ -510,6 +521,8 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
     CF_MEJEPA_OOD_ESCALATIONS,
+    CF_MEJEPA_OOD_HARVEST,
+    CF_MEJEPA_OOD_CALIBRATIONS,
     CF_MEJEPA_CURIOSITY_TELEMETRY,
     CF_MEJEPA_RESEARCH_QUESTIONS,
     CF_MEJEPA_MODEL_PROMOTIONS,
@@ -598,6 +611,7 @@ mod tests {
             .chain(FLYWHEEL_CFS.iter())
             .chain(FINGERPRINT_CFS.iter())
             .chain(ADVERSARIAL_CFS.iter())
+            .chain(OOD_HARVEST_CFS.iter())
             .chain(REWARD_SIGNAL_CFS.iter())
             .chain(EXPLANATORY_KNOWLEDGE_CFS.iter())
         {
@@ -689,6 +703,8 @@ mod tests {
         assert_eq!(CF_MEJEPA_REDACTION_LOG, "CF_MEJEPA_REDACTION_LOG");
         assert_eq!(CF_MEJEPA_SIGNAL_DROP_LOG, "CF_MEJEPA_SIGNAL_DROP_LOG");
         assert_eq!(CF_MEJEPA_REPLAY_BUFFER, "CF_MEJEPA_REPLAY_BUFFER");
+        assert_eq!(CF_MEJEPA_OOD_HARVEST, "CF_MEJEPA_OOD_HARVEST");
+        assert_eq!(CF_MEJEPA_OOD_CALIBRATIONS, "CF_MEJEPA_OOD_CALIBRATIONS");
         assert_eq!(
             CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT,
             "CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT"
@@ -791,6 +807,17 @@ mod tests {
             assert!(
                 names.contains(cf),
                 "adversarial CF {cf} missing from daemon opener; TASK-PY-G-060 rows would not persist.",
+            );
+        }
+    }
+
+    #[test]
+    fn ood_harvest_cfs_are_registered_in_daemon_opener() {
+        let names = all_hygiene_referenced_cfs();
+        for cf in OOD_HARVEST_CFS {
+            assert!(
+                names.contains(cf),
+                "OOD harvest CF {cf} missing from daemon opener; TASK-PY-G-057 rows would not persist.",
             );
         }
     }

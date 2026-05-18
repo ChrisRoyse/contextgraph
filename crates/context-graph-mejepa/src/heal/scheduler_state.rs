@@ -1531,6 +1531,14 @@ fn active_learning_kind_summary(kind: &ActiveLearningKind) -> serde_json::Value 
             "nearest_existing_distance": candidate.nearest_existing_distance,
             "embedder_count": candidate.observation_by_embedder.len(),
         }),
+        ActiveLearningKind::OodHarvest {
+            prediction_id,
+            priority_weight,
+        } => json!({
+            "type": "ood_harvest",
+            "prediction_id": hex::encode(prediction_id.0),
+            "priority_weight": priority_weight,
+        }),
     }
 }
 

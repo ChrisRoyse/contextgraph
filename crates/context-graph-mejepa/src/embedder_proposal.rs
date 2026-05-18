@@ -636,6 +636,7 @@ fn signals_from_active_learning_entry(
         }
         ActiveLearningKind::Uncertainty
         | ActiveLearningKind::OutOfDistribution
+        | ActiveLearningKind::OodHarvest { .. }
         | ActiveLearningKind::EwcProtectionViolation { .. }
         | ActiveLearningKind::AgentSurprise { .. } => {}
     }

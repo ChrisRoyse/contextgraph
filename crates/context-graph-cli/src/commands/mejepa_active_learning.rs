@@ -12,11 +12,11 @@ use clap::{Args, Subcommand, ValueEnum};
 use context_graph_mejepa::{
     bedrock_consistency_for_patch_diff, mejepa_mincut_panel, open_infer_rocksdb,
     open_mincut_rocksdb, operator_contribution_report_from_db, read_library_foundationality_report,
-    read_mincut_report, render_operator_contributions_weekly_section,
+    read_mincut_report, render_operator_contributions_weekly_section, review_ood_harvest,
     write_mincut_report_sync_readback, ActiveLearningLabel, ActiveLearningQueueEntry,
     ActiveLearningRankBy, BedrockConsistencyReport, LabelMethod, LibraryFoundationalityQueryReport,
-    LibraryId, MincutOptions, MincutReport, OperatorContributionReport, OracleOutcome,
-    PanelGraphSource, RocksDbEvalStore, TaskId,
+    LibraryId, MincutOptions, MincutReport, OodHarvestReviewRow, OperatorContributionReport,
+    OracleOutcome, PanelGraphSource, RocksDbEvalStore, TaskId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -31,6 +31,12 @@ pub enum MejepaCommands {
     ActiveLearning {
         #[command(subcommand)]
         action: ActiveLearningCommands,
+    },
+    /// Live-session OOD harvest review commands.
+    #[command(name = "ood-harvest")]
+    OodHarvest {
+        #[command(subcommand)]
+        action: OodHarvestCommands,
     },
     /// Replay a persisted ME-JEPA prediction byte-for-byte from RocksDB.
     Replay(crate::commands::mejepa_replay::ReplayArgs),
@@ -109,6 +115,12 @@ pub enum ActiveLearningCommands {
     Dismiss(ActiveLearningDismissArgs),
 }
 
+#[derive(Subcommand, Debug)]
+pub enum OodHarvestCommands {
+    /// List top harvested OOD rows with bytes-on-disk anchors.
+    Review(OodHarvestReviewArgs),
+}
+
 #[derive(Args, Debug, Clone)]
 pub struct ActiveLearningListArgs {
     /// Inference RocksDB path containing CF_MEJEPA_ACTIVE_LEARNING_QUEUE.
@@ -152,6 +164,17 @@ pub struct ActiveLearningDismissArgs {
 
     /// Operator reason for dismissal.
     pub reason: String,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct OodHarvestReviewArgs {
+    /// Inference RocksDB path containing CF_MEJEPA_OOD_HARVEST.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// Maximum harvested rows to show.
+    #[arg(long, default_value_t = 10)]
+    pub top_n: usize,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -333,6 +356,15 @@ pub struct ActiveLearningDismissOutput {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OodHarvestReviewOutput {
+    pub tool: &'static str,
+    pub top_n: usize,
+    pub rows: Vec<OodHarvestReviewRow>,
+    pub source_of_truth: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CompressionProgressCliOutput {
     pub tool: &'static str,
     pub source_of_truth: serde_json::Value,
@@ -454,6 +486,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
                 serde_json::to_value(dismiss_active_learning(args).await?)
                     .context("serialize dismiss")
             }
+        },
+        MejepaCommands::OodHarvest { action } => match action {
+            OodHarvestCommands::Review(args) => serde_json::to_value(review_ood_harvest_cli(args)?)
+                .context("serialize ood-harvest review"),
         },
         MejepaCommands::Replay(args) => {
             serde_json::to_value(crate::commands::mejepa_replay::replay_prediction_cli(args).await?)
@@ -695,6 +731,25 @@ pub fn operator_contributions_cli(
             "dbPath": args.db_path,
             "operatorContributionCf": context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_CONTRIBUTIONS,
             "operatorFilter": args.operator,
+            "innerLlmInvoked": false
+        }),
+    })
+}
+
+pub fn review_ood_harvest_cli(args: OodHarvestReviewArgs) -> Result<OodHarvestReviewOutput> {
+    validate_top_n(args.top_n)?;
+    let db = open_infer_rocksdb(&args.db_path)
+        .with_context(|| format!("open ME-JEPA RocksDB {}", args.db_path.display()))?;
+    let rows = review_ood_harvest(db.as_ref(), Some(&args.db_path), args.top_n)
+        .context("MEJEPA_OOD_HARVEST_REVIEW_FAILED")?;
+    Ok(OodHarvestReviewOutput {
+        tool: "context-graph-cli mejepa ood-harvest review",
+        top_n: args.top_n,
+        rows,
+        source_of_truth: json!({
+            "dbPath": args.db_path,
+            "harvestCf": context_graph_mejepa_cf::CF_MEJEPA_OOD_HARVEST,
+            "calibrationCf": context_graph_mejepa_cf::CF_MEJEPA_OOD_CALIBRATIONS,
             "innerLlmInvoked": false
         }),
     })

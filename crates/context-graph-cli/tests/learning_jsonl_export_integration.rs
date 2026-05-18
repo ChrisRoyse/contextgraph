@@ -1,8 +1,8 @@
 //! Full-state verification for Learning-as-UTL JSONL exports.
 //!
-//! These tests use real RocksDB stores under the D-root FSV directory and then
-//! inspect both the JSONL file and the source column family after export. No
-//! mocks.
+//! These tests use real RocksDB stores under an issue-scoped local FSV root and
+//! then inspect both the JSONL file and the source column family after export.
+//! No mocks.
 
 use std::fs;
 use std::path::PathBuf;
@@ -23,11 +23,32 @@ use context_graph_core::training::NUM_CROSS_CORRELATIONS;
 use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 use context_graph_storage::teleological::{RocksDbTeleologicalStore, TeleologicalStoreConfig};
 use serde_json::Value;
+use serial_test::serial;
 use std::collections::BTreeMap;
 use tempfile::TempDir;
 use uuid::Uuid;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/issue-259-learning-jsonl-export-fsv";
+const FSV_ROOT: &str = "/tmp/contextgraph/fsv/issue-259-learning-jsonl-export-fsv";
+
+struct DataRootGuard {
+    prior: Option<String>,
+}
+
+impl Drop for DataRootGuard {
+    fn drop(&mut self) {
+        match &self.prior {
+            Some(value) => std::env::set_var(context_graph_paths::ENV_DATA_ROOT, value),
+            None => std::env::remove_var(context_graph_paths::ENV_DATA_ROOT),
+        }
+    }
+}
+
+fn configure_local_data_root() -> DataRootGuard {
+    fs::create_dir_all(FSV_ROOT).expect("create local FSV data root");
+    let prior = std::env::var(context_graph_paths::ENV_DATA_ROOT).ok();
+    std::env::set_var(context_graph_paths::ENV_DATA_ROOT, FSV_ROOT);
+    DataRootGuard { prior }
+}
 
 fn state(value: f32, rank: u32, domain: &str) -> LearningStateSnapshot {
     LearningStateSnapshot {
@@ -91,7 +112,9 @@ fn durable_case_root(case_name: &str) -> PathBuf {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[serial]
 async fn export_events_jsonl_happy_path_and_edges() {
+    let _data_root = configure_local_data_root();
     let root = durable_case_root("events");
     let storage = root.join("store");
     let out = root.join("events.jsonl");
@@ -281,7 +304,9 @@ async fn export_events_jsonl_happy_path_and_edges() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[serial]
 async fn export_dataset_jsonl_reads_persisted_matrix_rows() {
+    let _data_root = configure_local_data_root();
     let root = durable_case_root("dataset");
     let storage = root.join("store");
     let out = root.join("dataset.jsonl");

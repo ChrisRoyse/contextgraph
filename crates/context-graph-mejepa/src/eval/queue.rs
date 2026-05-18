@@ -142,6 +142,9 @@ impl UnknownFingerprintClusterSuggestion {
 /// (TASK-PREDICT-002) that fast-tracks observe() for predictions the agent
 /// flagged as wrong. The `severity_score` on AgentSurprise feeds the
 /// REQ-FLYWHEEL-12 sampling-weight bump (`1 + 2 * severity_score`).
+///
+/// Additive variants must stay appended: bincode stores enum variant indexes,
+/// and production queue rows must keep decoding after schema extension.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActiveLearningKind {
@@ -167,6 +170,10 @@ pub enum ActiveLearningKind {
     NovelCluster {
         candidate: Box<NovelPatternCandidate>,
     },
+    OodHarvest {
+        prediction_id: PredictionId,
+        priority_weight: f32,
+    },
 }
 
 impl ActiveLearningKind {
@@ -186,11 +193,12 @@ impl ActiveLearningKind {
         match self {
             Self::AgentSurprise { .. } => 0,
             Self::EwcProtectionViolation { .. } => 1,
-            Self::NovelCluster { .. } => 2,
-            Self::UnknownFingerprint { .. } => 3,
-            Self::ColdCellTargetedCorpus { .. } => 4,
-            Self::OutOfDistribution => 5,
-            Self::Uncertainty => 6,
+            Self::OodHarvest { .. } => 2,
+            Self::NovelCluster { .. } => 3,
+            Self::UnknownFingerprint { .. } => 4,
+            Self::ColdCellTargetedCorpus { .. } => 5,
+            Self::OutOfDistribution => 6,
+            Self::Uncertainty => 7,
         }
     }
 
@@ -252,6 +260,24 @@ impl ActiveLearningKind {
             }
             Self::UnknownFingerprint { candidate } => candidate.validate(),
             Self::NovelCluster { candidate } => candidate.validate(),
+            Self::OodHarvest {
+                prediction_id,
+                priority_weight,
+            } => {
+                if prediction_id.0.iter().all(|byte| *byte == 0) {
+                    return Err(EvalError::new(
+                        EvalErrorCode::InvalidInput,
+                        "OOD harvest prediction_id must be non-zero",
+                    ));
+                }
+                if !priority_weight.is_finite() || *priority_weight <= 0.0 {
+                    return Err(EvalError::new(
+                        EvalErrorCode::InvalidInput,
+                        "OOD harvest priority_weight must be finite and positive",
+                    ));
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -906,6 +932,31 @@ impl ActiveLearningQueueState {
         Ok(true)
     }
 
+    pub fn enqueue_ood_harvest(
+        &mut self,
+        harvest: &crate::ood_harvest::OodHarvestRow,
+    ) -> Result<bool, EvalError> {
+        harvest.validate()?;
+        let task_id =
+            crate::ood_harvest::ood_harvest_active_learning_task_id(harvest.prediction_id);
+        let entry = ActiveLearningQueueEntry {
+            task_id: task_id.clone(),
+            score: crate::ood_harvest::OOD_HARVEST_ACTIVE_LEARNING_WEIGHT,
+            outcome_set_len: harvest.affected_chunk_ids.len().max(1),
+            ood_score: harvest.ood_score,
+            curiosity_score: 1.0,
+            reason: format!("ood_harvest:{}", hex::encode(harvest.prediction_id.0)),
+            kind: ActiveLearningKind::OodHarvest {
+                prediction_id: harvest.prediction_id,
+                priority_weight: crate::ood_harvest::OOD_HARVEST_ACTIVE_LEARNING_WEIGHT,
+            },
+        };
+        entry.validate()?;
+        self.entries.insert(task_id, entry);
+        self.evict_to_capacity()?;
+        Ok(true)
+    }
+
     pub fn enqueue_novel_pattern_candidate(
         &mut self,
         prediction: &RealityPrediction,
@@ -1096,6 +1147,9 @@ impl From<LegacyActiveLearningQueueEntry> for ActiveLearningQueueEntry {
             ActiveLearningKind::NovelCluster { candidate } => {
                 active_learning_priority_score(candidate.active_learning_priority)
             }
+            ActiveLearningKind::OodHarvest {
+                priority_weight, ..
+            } => *priority_weight,
             _ => 1.0,
         };
         let curiosity_score = curiosity_score_from_proxy(
