@@ -52,6 +52,8 @@ pub struct TrainingCertificate {
     pub loss_components: HashMap<String, f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conditional_description_length_bits: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inverse_map_quality_bits: Option<f64>,
     pub training_mode: String,
     pub distillation_cycle_id: Option<u64>,
     pub distillation_loss_mean: Option<f32>,
@@ -221,6 +223,18 @@ impl TrainingCertificate {
                     crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
                     format!(
                         "conditional_description_length_bits={} at step {} must be finite and non-negative",
+                        bits, self.step
+                    ),
+                )
+                .with_step(self.step));
+            }
+        }
+        if let Some(bits) = self.inverse_map_quality_bits {
+            if !bits.is_finite() || bits < 0.0 {
+                return Err(crate::error::TrainerError::new(
+                    crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                    format!(
+                        "inverse_map_quality_bits={} at step {} must be finite and non-negative",
                         bits, self.step
                     ),
                 )

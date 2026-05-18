@@ -58,6 +58,7 @@ pub struct TrainingConfig {
     pub lora_dropout: f32,
     pub full_finetune: bool,
     pub loss_coefficients: LossCoefficients,
+    pub inverse_map_coefficient: f32,
     pub checkpoint_interval_steps: u64,
     pub holdout_eval_interval_steps: u64,
     pub counterfactual_interval_steps: u64,
@@ -90,6 +91,7 @@ impl Default for TrainingConfig {
             lora_dropout: 0.05,
             full_finetune: false,
             loss_coefficients: LossCoefficients::default(),
+            inverse_map_coefficient: 0.0,
             checkpoint_interval_steps: 2_000,
             holdout_eval_interval_steps: 1_000,
             counterfactual_interval_steps: 5,
@@ -176,6 +178,11 @@ impl TrainingConfig {
                 "must be greater than sampling_drop_threshold",
             );
         }
+        if !(0.0..=1.0).contains(&self.inverse_map_coefficient)
+            || !self.inverse_map_coefficient.is_finite()
+        {
+            return bad("inverse_map_coefficient", "must be finite and in [0, 1]");
+        }
         for (field, value) in [
             ("checkpoint_interval_steps", self.checkpoint_interval_steps),
             (
@@ -253,6 +260,16 @@ mod tests {
     fn invalid_lr_fails_closed() {
         let cfg = TrainingConfig {
             lr: -1.0,
+            ..TrainingConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
+    }
+
+    #[test]
+    fn invalid_inverse_map_coefficient_fails_closed() {
+        let cfg = TrainingConfig {
+            inverse_map_coefficient: 1.25,
             ..TrainingConfig::default()
         };
         let err = cfg.validate().unwrap_err();

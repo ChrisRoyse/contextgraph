@@ -348,6 +348,7 @@ fn training_cert(
         delta_xi_global_min: signal.delta_xi,
         loss_components: signal.components_as_map(),
         conditional_description_length_bits: Some(conditional_description_length_bits),
+        inverse_map_quality_bits: None,
         training_mode: training_mode.unwrap_or("utml_l_step_fsv").to_string(),
         distillation_cycle_id: None,
         distillation_loss_mean: None,

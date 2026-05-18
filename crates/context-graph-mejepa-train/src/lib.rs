@@ -43,4 +43,8 @@ pub use learning_signal::{
     DeltaPComponents, DeltaXiComponents, HeadSignalInput, LearningSignal, PerHeadLearningSignal,
     SkipReason, UtmlError, UtmlErrorCode,
 };
+pub use loss::inverse::{
+    compose_bidirectional_l_full, inverse_map_loss, unit_gaussian_nll_bits,
+    InverseMapLossBreakdown, InverseMapOutputs, InverseMapTargets,
+};
 pub use replay_buffer::*;

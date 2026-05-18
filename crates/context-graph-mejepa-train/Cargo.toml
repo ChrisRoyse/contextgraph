@@ -86,3 +86,7 @@ path = "examples/task_fp_101_sigreg_fsv.rs"
 [[example]]
 name = "task_rwd_210_replay_buffer_fsv"
 path = "examples/task_rwd_210_replay_buffer_fsv.rs"
+
+[[example]]
+name = "task_ek_012_bidirectional_corpus_fsv"
+path = "examples/task_ek_012_bidirectional_corpus_fsv.rs"

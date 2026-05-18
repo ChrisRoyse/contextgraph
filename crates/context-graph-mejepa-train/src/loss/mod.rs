@@ -1,6 +1,7 @@
 pub mod aux;
 pub mod constellation;
 pub mod counterfactual;
+pub mod inverse;
 pub mod predict;
 pub mod sigreg;
 pub mod vicreg;

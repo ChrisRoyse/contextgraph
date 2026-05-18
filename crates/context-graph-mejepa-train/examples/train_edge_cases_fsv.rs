@@ -197,6 +197,7 @@ fn cert(
         delta_xi_global_min,
         loss_components: HashMap::from([("predict".to_string(), 0.1)]),
         conditional_description_length_bits: Some(conditional_description_length_bits),
+        inverse_map_quality_bits: None,
         training_mode: "edge_case".to_string(),
         distillation_cycle_id: None,
         distillation_loss_mean: None,

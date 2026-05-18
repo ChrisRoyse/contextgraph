@@ -14,8 +14,9 @@ use crate::learning_signal::{
     compute_l_step, compute_per_head_learning_signal, pairwise_mi_audit, DeltaKComponents,
     DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents, DeltaXiComponents, HeadSignalInput,
 };
+use crate::loss::inverse::{inverse_map_loss, InverseMapOutputs, InverseMapTargets};
 use crate::sampler::{BatchSampler, PatchSimilarityGraph};
-use candle_core::{DType, Device};
+use candle_core::{DType, Device, Tensor};
 use context_graph_mejepa::HeadId;
 use ed25519_dalek::SigningKey;
 use rocksdb::DB;
@@ -190,7 +191,7 @@ impl Trainer {
             k_sum += signal.delta_k;
             o_sum += signal.delta_omega;
             x_sum += signal.delta_xi;
-            let loss_components = HashMap::from([
+            let mut loss_components = HashMap::from([
                 ("predict".to_string(), signal.delta_p),
                 ("variance".to_string(), 0.01),
                 ("covariance".to_string(), 0.01),
@@ -200,6 +201,17 @@ impl Trainer {
                 crate::compression_progress::conditional_description_length_bits_from_probability(
                     signal.delta_p,
                 );
+            let inverse_map_quality_bits = if self.config.inverse_map_coefficient > 0.0 {
+                let inverse_loss = batch_inverse_map_loss(dataset, &plan.indices, &self.device)?;
+                loss_components.insert("inverse_map".to_string(), inverse_loss.loss);
+                loss_components.insert(
+                    "inverse_map_weighted".to_string(),
+                    inverse_loss.loss * self.config.inverse_map_coefficient,
+                );
+                Some(inverse_loss.quality_bits)
+            } else {
+                None
+            };
             let mut cert = TrainingCertificate {
                 step: self.step,
                 epoch,
@@ -208,6 +220,7 @@ impl Trainer {
                 delta_xi_global_min: per_head_signal.delta_xi_global_min,
                 loss_components,
                 conditional_description_length_bits: Some(conditional_description_length_bits),
+                inverse_map_quality_bits,
                 training_mode: if self.config.full_finetune {
                     "full_finetune".to_string()
                 } else {
@@ -375,6 +388,95 @@ fn batch_pairwise_redundancy(
         rows.push(values);
     }
     Ok(pairwise_mi_audit(&rows)?)
+}
+
+fn batch_inverse_map_loss(
+    dataset: &TrainingDataset,
+    indices: &[usize],
+    device: &Device,
+) -> Result<crate::loss::inverse::InverseMapLossBreakdown, TrainerError> {
+    if indices.is_empty() {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "inverse-map quality requires at least one selected batch example",
+        ));
+    }
+    let mut input_rows = Vec::with_capacity(indices.len());
+    let mut target_rows = Vec::with_capacity(indices.len());
+    let mut action_rows = Vec::with_capacity(indices.len() * 3);
+    let mut panel_dim = None;
+    for idx in indices {
+        let example = dataset.train.examples.get(*idx).ok_or_else(|| {
+            TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                format!("sampler selected train index {idx} outside train split"),
+            )
+        })?;
+        let input = example
+            .panel_t01
+            .to_dtype(DType::F32)?
+            .flatten_all()?
+            .to_vec1::<f32>()?;
+        let target = example
+            .panel_t2
+            .to_dtype(DType::F32)?
+            .flatten_all()?
+            .to_vec1::<f32>()?;
+        if input.is_empty() || input.len() != target.len() {
+            return Err(TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                format!(
+                    "inverse-map panel pair at train index {idx} has incompatible flattened dims {} vs {}",
+                    input.len(),
+                    target.len()
+                ),
+            ));
+        }
+        match panel_dim {
+            Some(dim) if dim != input.len() => {
+                return Err(TrainerError::new(
+                    TrainerErrorCode::MejepaTrainConfigInvalid,
+                    format!(
+                        "inverse-map batch has mixed panel dims: expected {dim}, got {} at train index {idx}",
+                        input.len()
+                    ),
+                ));
+            }
+            None => panel_dim = Some(input.len()),
+            _ => {}
+        }
+        input_rows.extend(input);
+        target_rows.extend(target);
+        action_rows.extend(action_proxy(example));
+    }
+    let rows = indices.len();
+    let dim = panel_dim.ok_or_else(|| {
+        TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "inverse-map batch has no panel dimension",
+        )
+    })?;
+    let predicted_input_panel = Tensor::from_slice(&target_rows, (rows, dim), device)?;
+    let input_panel = Tensor::from_slice(&input_rows, (rows, dim), device)?;
+    let action = Tensor::from_slice(&action_rows, (rows, 3), device)?;
+    inverse_map_loss(
+        &InverseMapOutputs {
+            predicted_input_panel,
+            predicted_action: action.clone(),
+        },
+        &InverseMapTargets {
+            input_panel,
+            action,
+        },
+    )
+}
+
+fn action_proxy(example: &crate::eval::holdout::HoldoutExample) -> [f32; 3] {
+    [
+        example.category as u8 as f32,
+        example.language as u8 as f32,
+        if example.adversarial { 1.0 } else { 0.0 },
+    ]
 }
 
 fn default_embedder_versions() -> HashMap<String, String> {
