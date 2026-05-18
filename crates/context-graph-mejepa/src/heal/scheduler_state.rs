@@ -52,6 +52,9 @@ use crate::heal::promote_approval::{
 };
 use crate::heal::regulate::{assess_substrate, regulate_substrate};
 use crate::heal::store::HealRocksStore;
+use crate::reward_signal_audit::{
+    persist_signal_drop_log_entry, SignalDropLogEntry, SignalDropSeverity,
+};
 use crate::store::RocksDbInferStore;
 use crate::system_cost::{HealTickerTelemetrySnapshot, SystemCostCounters};
 
@@ -321,8 +324,34 @@ struct TestOutcomeBindingReport {
     scanned_files: usize,
     events_scanned: usize,
     events_bound: usize,
+    events_missing_prediction: usize,
     events_skipped_non_hard_label: usize,
     bound_keys: Vec<String>,
+    verification_keys: Vec<String>,
+    signal_drop_event_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SchedulerPredictionVerificationRecord {
+    schema_version: u32,
+    verification_id: String,
+    prediction_id: String,
+    ts: i64,
+    session_id: String,
+    task_id: String,
+    test_id: String,
+    tool_use_id: String,
+    command: String,
+    observed_outcome: String,
+    predicted_outcome: String,
+    agreement: String,
+    evidence_path: String,
+    event_id: String,
+    created_at_unix_ms: i64,
+    source: String,
+    source_prediction_cf: String,
+    source_verification_cf: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1495,8 +1524,11 @@ fn bind_test_outcomes(
         scanned_files: 0,
         events_scanned: 0,
         events_bound: 0,
+        events_missing_prediction: 0,
         events_skipped_non_hard_label: 0,
         bound_keys: Vec::new(),
+        verification_keys: Vec::new(),
+        signal_drop_event_ids: Vec::new(),
     };
     if !source_root.exists() {
         return Ok(report);
@@ -1551,15 +1583,18 @@ fn bind_test_outcomes(
                         format!("{}: {err}", err.code()),
                     )
                 })?;
-            let prediction = predictions.first().ok_or_else(|| {
-                HealError::invalid(
-                    "test_outcome_event.prediction_lookup",
-                    format!(
-                        "no RealityPrediction found for session_id={} while binding event_id={}",
-                        event.session_id, event.event_id
-                    ),
-                )
-            })?;
+            let Some(prediction) = predictions.first() else {
+                let signal_drop_event_id = persist_missing_prediction_signal_drop(
+                    db.as_ref(),
+                    &event,
+                    &path,
+                    line_idx + 1,
+                    line,
+                )?;
+                report.events_missing_prediction += 1;
+                report.signal_drop_event_ids.push(signal_drop_event_id);
+                continue;
+            };
             let example = CalibrationExample {
                 language: prediction.language,
                 predicted_test_pass: prediction.predicted_test_pass.clone(),
@@ -1570,8 +1605,13 @@ fn bind_test_outcomes(
                 event.session_id, event.event_id
             );
             put_oracle_binding_readback(db.as_ref(), key.as_bytes(), &example)?;
+            let verification =
+                scheduler_prediction_verification_record(prediction, &event, &path, event.ts);
+            let verification_key =
+                put_prediction_verification_readback(db.as_ref(), &verification)?;
             report.events_bound += 1;
             report.bound_keys.push(key);
+            report.verification_keys.push(verification_key);
         }
     }
     Ok(report)
@@ -1650,6 +1690,229 @@ fn put_oracle_binding_readback(
         ));
     }
     Ok(())
+}
+
+fn scheduler_prediction_verification_record(
+    prediction: &crate::types::RealityPrediction,
+    event: &TestOutcomeEvent,
+    evidence_path: &Path,
+    now_ms: i64,
+) -> SchedulerPredictionVerificationRecord {
+    let observed = scheduler_observed_outcome(event);
+    let predicted = scheduler_predicted_outcome(prediction, &event.test_id);
+    let agreement = scheduler_agreement(predicted.as_deref(), observed.as_deref());
+    let prediction_id = hex::encode(prediction.prediction_id);
+    let verification_id = stable_test_outcome_id(&[
+        &event.session_id,
+        &event.event_id,
+        &prediction_id,
+        &event.test_id,
+        &now_ms.to_string(),
+    ]);
+    SchedulerPredictionVerificationRecord {
+        schema_version: 1,
+        verification_id,
+        prediction_id,
+        ts: now_ms,
+        session_id: event.session_id.clone(),
+        task_id: prediction.task_id.0.clone(),
+        test_id: event.test_id.clone(),
+        tool_use_id: event.tool_use_id.clone(),
+        command: event.command.clone(),
+        observed_outcome: observed.unwrap_or_else(|| "unknown".to_string()),
+        predicted_outcome: predicted.unwrap_or_else(|| "unknown".to_string()),
+        agreement: agreement.to_string(),
+        evidence_path: evidence_path.display().to_string(),
+        event_id: event.event_id.clone(),
+        created_at_unix_ms: now_ms,
+        source: "self_optimization_observe_test_outcome".to_string(),
+        source_prediction_cf: context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS.to_string(),
+        source_verification_cf: context_graph_mejepa_cf::CF_MEJEPA_PREDICTION_VERIFICATIONS
+            .to_string(),
+    }
+}
+
+fn put_prediction_verification_readback(
+    db: &DB,
+    record: &SchedulerPredictionVerificationRecord,
+) -> Result<String, HealError> {
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_PREDICTION_VERIFICATIONS)
+        .ok_or_else(|| {
+            HealError::invalid(
+                "test_outcome_event.verification_cf",
+                "missing CF_MEJEPA_PREDICTION_VERIFICATIONS",
+            )
+        })?;
+    let key = scheduler_prediction_verification_key(record);
+    if let Some(existing) = db.get_cf(cf, &key)? {
+        let decoded: SchedulerPredictionVerificationRecord = serde_json::from_slice(&existing)?;
+        if decoded.session_id != record.session_id
+            || decoded.event_id != record.event_id
+            || decoded.prediction_id != record.prediction_id
+            || decoded.test_id != record.test_id
+        {
+            return Err(HealError::invalid(
+                "test_outcome_event.verification_readback",
+                "existing CF_MEJEPA_PREDICTION_VERIFICATIONS row conflicts with test outcome",
+            ));
+        }
+        return Ok(String::from_utf8_lossy(&key).to_string());
+    }
+
+    let value = serde_json::to_vec(record)?;
+    let mut opts = WriteOptions::default();
+    opts.set_sync(true);
+    db.put_cf_opt(cf, &key, &value, &opts)?;
+    db.flush_wal(true)?;
+    db.flush_cf(cf)?;
+    let readback = db.get_cf(cf, &key)?.ok_or_else(|| {
+        HealError::invalid(
+            "test_outcome_event.verification_readback",
+            "missing CF_MEJEPA_PREDICTION_VERIFICATIONS row after write",
+        )
+    })?;
+    if readback != value {
+        return Err(HealError::invalid(
+            "test_outcome_event.verification_readback",
+            "CF_MEJEPA_PREDICTION_VERIFICATIONS readback bytes differ",
+        ));
+    }
+    let decoded: SchedulerPredictionVerificationRecord = serde_json::from_slice(&readback)?;
+    if decoded.verification_id != record.verification_id {
+        return Err(HealError::invalid(
+            "test_outcome_event.verification_readback",
+            "CF_MEJEPA_PREDICTION_VERIFICATIONS decoded readback differs",
+        ));
+    }
+    Ok(String::from_utf8_lossy(&key).to_string())
+}
+
+fn persist_missing_prediction_signal_drop(
+    db: &DB,
+    event: &TestOutcomeEvent,
+    evidence_path: &Path,
+    line_no: usize,
+    raw_line: &str,
+) -> Result<String, HealError> {
+    let mut hasher = Sha256::new();
+    hasher.update(raw_line.as_bytes());
+    let input_sha256: [u8; 32] = hasher.finalize().into();
+    let artifact_id = format!(
+        "test-outcome-bind::{}::{}",
+        event.session_id, event.event_id
+    );
+    let mut context = BTreeMap::new();
+    context.insert("session_id".to_string(), event.session_id.clone());
+    context.insert("event_id".to_string(), event.event_id.clone());
+    context.insert("tool_use_id".to_string(), event.tool_use_id.clone());
+    context.insert("test_id".to_string(), event.test_id.clone());
+    context.insert("outcome".to_string(), event.outcome.clone());
+    context.insert(
+        "evidence_path".to_string(),
+        evidence_path.display().to_string(),
+    );
+    context.insert("line_no".to_string(), line_no.to_string());
+    context.insert(
+        "source_prediction_cf".to_string(),
+        context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS.to_string(),
+    );
+    context.insert(
+        "source_signal_drop_cf".to_string(),
+        context_graph_mejepa_cf::CF_MEJEPA_SIGNAL_DROP_LOG.to_string(),
+    );
+    let entry = SignalDropLogEntry::new(
+        event.ts,
+        1,
+        "post_tool_test_outcomes",
+        "self_optimization.observe.bind_test_outcomes",
+        artifact_id,
+        "MEJEPA_TEST_OUTCOME_NO_PREDICTION",
+        format!(
+            "no RealityPrediction found for session_id={} while binding event_id={}",
+            event.session_id, event.event_id
+        ),
+        SignalDropSeverity::Warning,
+        "wait for a live prediction for this session or inspect hook ordering",
+        Some(input_sha256),
+        context,
+    )
+    .map_err(|err| {
+        HealError::invalid(
+            "test_outcome_event.signal_drop",
+            format!("{}: {err}", err.code()),
+        )
+    })?;
+    persist_signal_drop_log_entry(db, &entry).map_err(|err| {
+        HealError::invalid(
+            "test_outcome_event.signal_drop",
+            format!("{}: {err}", err.code()),
+        )
+    })?;
+    Ok(hex::encode(entry.event_id))
+}
+
+fn scheduler_observed_outcome(event: &TestOutcomeEvent) -> Option<String> {
+    match event.outcome.as_str() {
+        "pass" => Some("pass".to_string()),
+        "fail" => Some("fail".to_string()),
+        _ => None,
+    }
+}
+
+fn scheduler_predicted_outcome(
+    prediction: &crate::types::RealityPrediction,
+    test_id: &str,
+) -> Option<String> {
+    for item in &prediction.predicted_failed_tests {
+        if item.test_id.0 == test_id {
+            return scheduler_test_outcome_to_label(item.predicted_outcome);
+        }
+    }
+    match prediction.verdict {
+        crate::types::Verdict::Pass => Some("pass".to_string()),
+        crate::types::Verdict::Fail | crate::types::Verdict::GuardRejected => {
+            Some("fail".to_string())
+        }
+        crate::types::Verdict::OutOfDistribution | crate::types::Verdict::Abstain => None,
+    }
+}
+
+fn scheduler_test_outcome_to_label(outcome: crate::types::TestOutcome) -> Option<String> {
+    match outcome {
+        crate::types::TestOutcome::Pass => Some("pass".to_string()),
+        crate::types::TestOutcome::Fail | crate::types::TestOutcome::Error => {
+            Some("fail".to_string())
+        }
+        crate::types::TestOutcome::Skip | crate::types::TestOutcome::Flaky => None,
+    }
+}
+
+fn scheduler_agreement(predicted: Option<&str>, observed: Option<&str>) -> &'static str {
+    match (predicted, observed) {
+        (Some(predicted), Some(observed)) if predicted == observed => "confirmed",
+        (Some(_), Some(_)) => "refuted",
+        _ => "inconclusive",
+    }
+}
+
+fn scheduler_prediction_verification_key(
+    record: &SchedulerPredictionVerificationRecord,
+) -> Vec<u8> {
+    format!(
+        "{}:{}:{}",
+        record.session_id, record.event_id, record.prediction_id
+    )
+    .into_bytes()
+}
+
+fn stable_test_outcome_id(parts: &[&str]) -> String {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update(part.as_bytes());
+        hasher.update([0]);
+    }
+    hex::encode(hasher.finalize())[..32].to_string()
 }
 
 pub fn operator_override_calibration_counter_key() -> Result<Vec<u8>, HealError> {
@@ -2274,8 +2537,17 @@ mod tests {
             json!(1)
         );
         assert_eq!(
+            observe.details["test_outcome_bindings"]["events_missing_prediction"],
+            json!(0)
+        );
+        assert_eq!(
             observe.details["test_outcome_bindings"]["bound_keys"][0],
             format!("test-outcome-bind::{session_hex}::{event_id}")
+        );
+        let prediction_id = hex::encode([0x46; 16]);
+        assert_eq!(
+            observe.details["test_outcome_bindings"]["verification_keys"][0],
+            format!("{session_hex}:{event_id}:{prediction_id}")
         );
 
         let storage = HealRocksStore::from_db(db.clone()).expect("heal store");
@@ -2298,6 +2570,109 @@ mod tests {
         assert_eq!(decoded.language, Language::Python);
         assert_eq!(decoded.predicted_test_pass, vec![0.9, 0.8]);
         assert_eq!(decoded.actual_test_pass, vec![0.0, 0.0]);
+
+        let verification_cf = db
+            .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_PREDICTION_VERIFICATIONS)
+            .expect("verification cf");
+        let verification_key = format!("{session_hex}:{event_id}:{prediction_id}");
+        let verification_bytes = db
+            .get_cf(verification_cf, verification_key.as_bytes())
+            .expect("verification readback")
+            .expect("verification row exists");
+        let verification: SchedulerPredictionVerificationRecord =
+            serde_json::from_slice(&verification_bytes).expect("decode verification row");
+        assert_eq!(verification.session_id, session_hex);
+        assert_eq!(verification.event_id, event_id);
+        assert_eq!(verification.prediction_id, prediction_id);
+        assert_eq!(verification.observed_outcome, "fail");
+        assert_eq!(verification.predicted_outcome, "pass");
+        assert_eq!(verification.agreement, "refuted");
+    }
+
+    #[test]
+    fn observe_tick_signal_drops_test_outcome_without_prediction() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db = open_test_db(&temp.path().join("db"));
+        let config = test_config(temp.path());
+        let session_id = [0x0a; 16];
+        let session_hex = hex::encode(session_id);
+        let event_id = "22222222222222222222222222222222";
+
+        fs::create_dir_all(&config.test_outcome_root).expect("create test outcome root");
+        let outcome_path = config
+            .test_outcome_root
+            .join(format!("{session_hex}.jsonl"));
+        let event = json!({
+            "event_id": event_id,
+            "ts": 1_778_000_000_002i64,
+            "session_id": session_hex,
+            "tool_use_id": "scheduler-missing-prediction",
+            "command": "pytest tests/test_math.py",
+            "framework": "pytest",
+            "test_id": "tests/test_math.py::test_add",
+            "outcome": "pass",
+            "duration_ms": 10,
+            "error_log": "",
+            "source": "synthetic-fsv",
+            "sequence": 0,
+            "line_no": 1
+        });
+        fs::write(
+            &outcome_path,
+            format!("{}\n", serde_json::to_string(&event).unwrap()),
+        )
+        .expect("write outcome jsonl");
+
+        let mut state = SchedulerState::open(db.clone(), config).expect("open scheduler state");
+        state.run_tick(TickName::Observe).expect("run observe tick");
+        let snapshot = read_status_snapshot(state.status_path()).expect("read status");
+        assert!(!snapshot.last_error.contains_key("observe"));
+        let observe = snapshot
+            .last_success
+            .get("observe")
+            .expect("observe record");
+        assert_eq!(
+            observe.details["test_outcome_bindings"]["events_bound"],
+            json!(0)
+        );
+        assert_eq!(
+            observe.details["test_outcome_bindings"]["events_missing_prediction"],
+            json!(1)
+        );
+        assert_eq!(
+            observe.details["test_outcome_bindings"]["signal_drop_event_ids"]
+                .as_array()
+                .expect("signal drop ids")
+                .len(),
+            1
+        );
+
+        let storage = HealRocksStore::from_db(db.clone()).expect("heal store");
+        assert_eq!(
+            storage
+                .count_cf(context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)
+                .expect("oracle count"),
+            0
+        );
+        assert_eq!(
+            storage
+                .count_cf(context_graph_mejepa_cf::CF_MEJEPA_PREDICTION_VERIFICATIONS)
+                .expect("verification count"),
+            0
+        );
+        let signal_drops =
+            crate::reward_signal_audit::load_signal_drop_log_entries(db.as_ref(), 10)
+                .expect("signal drop readback");
+        assert_eq!(signal_drops.len(), 1);
+        let row = &signal_drops[0];
+        assert_eq!(row.signal_name, "post_tool_test_outcomes");
+        assert_eq!(
+            row.source_stage,
+            "self_optimization.observe.bind_test_outcomes"
+        );
+        assert_eq!(row.error_code, "MEJEPA_TEST_OUTCOME_NO_PREDICTION");
+        assert_eq!(row.context.get("session_id"), Some(&session_hex));
+        assert_eq!(row.context.get("event_id"), Some(&event_id.to_string()));
     }
 
     #[test]
