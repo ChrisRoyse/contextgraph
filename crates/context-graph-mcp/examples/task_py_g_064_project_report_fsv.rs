@@ -43,8 +43,8 @@ fn main() -> Result<()> {
     fs::create_dir_all(&root)?;
     let evidence = json!({
         "schemaVersion": 1,
-        "taskId": "TASK-PY-G-064",
-        "issue": 283,
+        "taskId": "TASK-AIWONDER-016",
+        "issue": 367,
         "sourceOfTruth": {
             "reportJson": "/zfs/archive/contextgraph/projects/<project_id>/report/report.json",
             "reportMarkdown": "/zfs/archive/contextgraph/projects/<project_id>/report/report.md",

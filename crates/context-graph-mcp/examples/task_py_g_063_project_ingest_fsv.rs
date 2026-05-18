@@ -45,6 +45,7 @@ fn main() -> Result<()> {
     let happy = happy_path_case(&root)?;
     let empty = empty_repo_case(&root)?;
     let incremental = unchanged_incremental_case(&root)?;
+    let overwrite_prune = overwrite_prunes_stale_predictions_case(&root)?;
     let large = large_repo_case(&root)?;
     let mixed = mixed_encoding_binary_case(&root)?;
     let scope_switch = scope_switch_case(&root)?;
@@ -56,6 +57,7 @@ fn main() -> Result<()> {
         "task-py-g-063-happy",
         "task-py-g-063-empty",
         "task-py-g-063-incremental",
+        "task-py-g-063-overwrite-prune",
         "task-py-g-063-large",
         "task-py-g-063-mixed",
         "task-py-g-063-scope",
@@ -65,6 +67,7 @@ fn main() -> Result<()> {
     let edge_cases = vec![
         empty,
         incremental,
+        overwrite_prune,
         large,
         mixed,
         scope_switch,
@@ -341,6 +344,69 @@ fn unchanged_incremental_case(root: &Path) -> Result<Value> {
         "timestampAfter": after_ts,
         "chunkUpdatedAtDigestBefore": chunk_digest_before,
         "chunkUpdatedAtDigestAfter": chunk_digest_after,
+        "pass": pass
+    }))
+}
+
+fn overwrite_prunes_stale_predictions_case(root: &Path) -> Result<Value> {
+    let project_id = "task-py-g-063-overwrite-prune";
+    reset_project(project_id)?;
+    let repo = root.join("overwrite_prune_repo");
+    init_git_repo(&repo)?;
+    fs::create_dir_all(repo.join("pkg"))?;
+    fs::write(repo.join("pkg/a.py"), "def a():\n    return 1\n")?;
+    fs::write(repo.join("pkg/b.py"), "def b():\n    return 2\n")?;
+    let before = inspect_state(project_id)?;
+    let first = run_project_ingest(ProjectIngestRequest {
+        repo_path: repo.clone(),
+        project_id: Some(project_id.to_string()),
+        mode: ProjectIngestMode::Full,
+        scope: ProjectIngestScope::SourceOnly,
+        overwrite: false,
+        changed_paths: Vec::new(),
+    })?;
+    let after_first = inspect_state(project_id)?;
+    fs::remove_file(repo.join("pkg/b.py"))?;
+    let second = run_project_ingest(ProjectIngestRequest {
+        repo_path: repo,
+        project_id: Some(project_id.to_string()),
+        mode: ProjectIngestMode::Full,
+        scope: ProjectIngestScope::SourceOnly,
+        overwrite: true,
+        changed_paths: Vec::new(),
+    })?;
+    let after_second = inspect_state(project_id)?;
+    let predictions = read_project_predictions(&default_db_path(project_id)?, project_id)?;
+    let manifest_files = after_second
+        .manifest
+        .as_ref()
+        .map(|manifest| {
+            manifest
+                .prediction_ids_by_file
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let pass = before.project_prediction_rows == 0
+        && first.project_prediction_rows_after == 2
+        && after_first.project_prediction_rows == 2
+        && second.project_prediction_rows_before == 2
+        && second.project_prediction_rows_after == 1
+        && second.manifest.prediction_count == 1
+        && after_second.project_prediction_rows == 1
+        && predictions.len() == 1
+        && manifest_files == vec!["pkg/a.py".to_string()];
+    Ok(json!({
+        "case": "full_overwrite_prunes_stale_prediction_rows",
+        "before": before,
+        "trigger": "Full ingest with two Python files, delete one file, then Full overwrite reingest",
+        "afterFirst": after_first,
+        "afterSecond": after_second,
+        "firstReportSummary": summarize_report(&first),
+        "secondReportSummary": summarize_report(&second),
+        "physicalPredictionRowsAfterSecond": predictions.len(),
+        "manifestFilesAfterSecond": manifest_files,
         "pass": pass
     }))
 }

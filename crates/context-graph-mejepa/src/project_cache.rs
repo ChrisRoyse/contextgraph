@@ -73,17 +73,24 @@ pub struct ProjectCacheConfig {
 impl ProjectCacheConfig {
     pub fn new(project_id: impl Into<String>, repo_path: PathBuf) -> Self {
         let project_id = project_id.into();
+        let data_root = std::env::var(context_graph_paths::ENV_DATA_ROOT)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(context_graph_paths::DEFAULT_DATA_ROOT));
         Self {
-            cache_dir: PathBuf::from(context_graph_paths::DEFAULT_DATA_ROOT)
-                .join("projects")
-                .join(&project_id)
-                .join("cache"),
+            cache_dir: data_root.join("projects").join(&project_id).join("cache"),
             project_id,
             repo_path,
             chunk_schema_version: "python-ast-v1".to_string(),
             scope: ProjectFileScope::All,
             single_file: None,
         }
+    }
+
+    pub fn with_cache_dir(mut self, cache_dir: PathBuf) -> Self {
+        self.cache_dir = cache_dir;
+        self
     }
 
     pub fn with_scope(mut self, scope: ProjectFileScope) -> Self {
@@ -518,13 +525,13 @@ impl ProjectMerkleCache {
             merkle_root,
             scan_started_unix_ms,
             file_count: current.len(),
-            chunk_path_count: 0,
-            unique_chunk_count: 0,
-            embedding_count: 0,
+            chunk_path_count: count_rows(&conn, "chunk_paths")?,
+            unique_chunk_count: count_rows(&conn, "chunks")?,
+            embedding_count: count_rows(&conn, "embeddings")?,
             changed_files,
             deleted_files,
-            deduped_chunk_paths: 0,
-            lazy_rescan_queued: 0,
+            deduped_chunk_paths: count_deduped_chunk_paths(&conn)?,
+            lazy_rescan_queued: count_rows(&conn, "lazy_rescan_queue")?,
             per_embedder_reembedded,
         })
     }

@@ -15,7 +15,7 @@ use crate::types::{
     WitnessHash,
 };
 use context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS;
-use rocksdb::{IteratorMode, DB};
+use rocksdb::{IteratorMode, WriteOptions, DB};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -286,6 +286,7 @@ pub fn run_project_ingest(
 
     let cache = ProjectMerkleCache::open(
         ProjectCacheConfig::new(project_id.clone(), source.source_root.clone())
+            .with_cache_dir(cache_dir.clone())
             .with_scope(request.scope.into())
             .with_single_file(source.single_file.clone()),
     )?;
@@ -295,7 +296,7 @@ pub fn run_project_ingest(
             .map(|manifest| manifest.file_count)
             .unwrap_or(0)
     } else {
-        cached_file_count(cache.db_path()).unwrap_or(0)
+        cached_file_count(cache.db_path())?
     };
     let cache_report =
         if request.mode == ProjectIngestMode::Incremental && !request.changed_paths.is_empty() {
@@ -374,6 +375,13 @@ pub fn run_project_ingest(
     }
     let mut predictions = prediction_rows.into_values().collect::<Vec<_>>();
     predictions.sort_by(|left, right| left.file_path.cmp(&right.file_path));
+    if request.mode == ProjectIngestMode::Full {
+        let retained_keys = predictions
+            .iter()
+            .map(|row| project_prediction_live_key(&project_id, &row.file_path, &row.file_blake3))
+            .collect::<BTreeSet<_>>();
+        prune_project_predictions_except(db.as_ref(), &project_id, &retained_keys)?;
+    }
     let project_prediction_rows_after = if request.mode == ProjectIngestMode::Incremental {
         predictions.len()
     } else {
@@ -454,7 +462,7 @@ pub fn count_project_predictions(db: &DB, project_id: &str) -> Result<usize, Pro
             })?;
     let prefix = format!("project_ingest:{project_id}:");
     let mut count = 0usize;
-    for item in db.iterator_cf(cf, IteratorMode::Start) {
+    for item in db.iterator_cf(&cf, IteratorMode::Start) {
         let (_key, value) = item?;
         let prediction: RealityPrediction = bincode::deserialize(&value)?;
         if prediction.task_id.0.starts_with(&prefix)
@@ -464,6 +472,44 @@ pub fn count_project_predictions(db: &DB, project_id: &str) -> Result<usize, Pro
         }
     }
     Ok(count)
+}
+
+fn prune_project_predictions_except(
+    db: &DB,
+    project_id: &str,
+    retained_keys: &BTreeSet<Vec<u8>>,
+) -> Result<usize, ProjectIngestError> {
+    let cf =
+        db.cf_handle(CF_MEJEPA_LIVE_PREDICTIONS)
+            .ok_or_else(|| MejepaInferError::InvalidInput {
+                field: "rocksdb.column_family".to_string(),
+                detail: format!("missing column family {CF_MEJEPA_LIVE_PREDICTIONS}"),
+            })?;
+    let prefix = format!("project_ingest:{project_id}:");
+    let mut stale_keys = Vec::new();
+    for item in db.iterator_cf(&cf, IteratorMode::Start) {
+        let (key, value) = item?;
+        let prediction: RealityPrediction = bincode::deserialize(&value)?;
+        if prediction.task_id.0.starts_with(&prefix) && !retained_keys.contains(key.as_ref()) {
+            stale_keys.push(key.to_vec());
+        }
+    }
+
+    let mut opts = WriteOptions::default();
+    opts.set_sync(true);
+    for key in &stale_keys {
+        db.delete_cf_opt(&cf, key, &opts)?;
+    }
+    for key in &stale_keys {
+        if db.get_cf(&cf, key)?.is_some() {
+            return Err(ProjectIngestError::Infer(MejepaInferError::InvalidInput {
+                field: "live_predictions".to_string(),
+                detail: "stale project prediction row remained after full reingest prune"
+                    .to_string(),
+            }));
+        }
+    }
+    Ok(stale_keys.len())
 }
 
 pub fn project_prediction_id(project_id: &str, file_path: &str, file_blake3: &str) -> [u8; 16] {

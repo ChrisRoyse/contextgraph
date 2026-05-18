@@ -51,7 +51,8 @@ fn main() -> Result<()> {
     let watcher_status_path = project_cache_root.join("cache/watcher.status");
     let report = json!({
         "schema_version": 1,
-        "task_id": "TASK-PY-G-062",
+        "task_id": "TASK-AIWONDER-016",
+        "issue": 367,
         "source_of_truth": {
             "cache_db": db_path,
             "watcher_status": watcher_status_path,
