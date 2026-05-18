@@ -116,8 +116,20 @@ coverage/
 tarpaulin-report.html
 tarpaulin-report.json
 
-# Local model artifacts are retired from this repository.
-/models/
+# Root models/ may be a source crate; ignore only heavyweight local model payloads.
+/models/artifacts/
+/models/cache/
+/models/checkpoints/
+/models/**/*.safetensors
+/models/**/*.bin
+/models/**/*.pt
+/models/**/*.onnx
+/models/**/*.h5
+/models/**/*.pb
+/models/**/*.tflite
+/models/**/*.pth
+/models/**/*.ckpt
+/models/**/*.msgpack
 
 # Python cache
 __pycache__/
