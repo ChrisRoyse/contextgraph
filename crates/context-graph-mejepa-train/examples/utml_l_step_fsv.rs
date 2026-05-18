@@ -127,6 +127,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         age_days: 3.0,
         age_decay: 0.99,
         agent_surprise_severity_score: 0.25,
+        foundationality_score: 0.0,
+        lambda_foundationality: 1.0,
+        curiosity_score: 0.0,
+        lambda_curiosity: 1.0,
     };
     let sampling_weight = sampling_weight_checked(sampling_components)?;
     let expected_sampling_weight = 2.0 * signal.l_step * 6.0 * 1.5 * 0.99_f32.powf(3.0);
@@ -200,6 +204,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 age_days: -1.0,
                 age_decay: 0.99,
                 agent_surprise_severity_score: 0.0,
+                foundationality_score: 0.0,
+                lambda_foundationality: 1.0,
+                curiosity_score: 0.0,
+                lambda_curiosity: 1.0,
             }).unwrap_err().code(), "train_cert_count": count_cf(cert_db.as_ref(), CF_MEJEPA_TRAIN_CERTS)?},
             "passes": true
         }),

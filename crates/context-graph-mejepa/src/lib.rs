@@ -8,6 +8,7 @@ pub mod adversarial_embedder_injection;
 pub mod calibration;
 pub mod calibration_types;
 pub mod candidate_ranking;
+pub mod chunk_foundationality;
 pub mod claim_graph;
 pub mod cli;
 pub mod compiler;
@@ -71,6 +72,7 @@ pub use adversarial_embedder_injection::*;
 pub use calibration::*;
 pub use calibration_types::*;
 pub use candidate_ranking::*;
+pub use chunk_foundationality::*;
 pub use claim_graph::*;
 pub use cli::*;
 pub use compiler::{

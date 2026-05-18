@@ -2,7 +2,9 @@ pub mod cross_task;
 
 use crate::config::TrainingConfig;
 use crate::error::{TrainerError, TrainerErrorCode};
-use crate::learning_signal::{sampling_weight, should_drop, should_force_include};
+use crate::learning_signal::{
+    sampling_weight_checked, should_drop, should_force_include, SamplingWeightComponents,
+};
 use crate::replay_buffer::{
     sample_replay_batch, ReplayBatchReport, ReplayBatchRequest, ReplayPriorityConfig,
 };
@@ -80,6 +82,7 @@ pub struct BatchSampler {
     pub overrides: Vec<bool>,
     pub ages_days: Vec<f32>,
     pub l_steps: Vec<f32>,
+    pub foundationality_scores: Vec<f32>,
     pub task_ids: Vec<String>,
     pub patch_similarity_graph: PatchSimilarityGraph,
     pub rng: SplitMix64,
@@ -124,6 +127,30 @@ impl BatchSampler {
         adversarial_indices: Vec<usize>,
         patch_similarity_graph: PatchSimilarityGraph,
     ) -> Result<Self, TrainerError> {
+        let foundationality_scores = vec![0.0; l_steps.len()];
+        Self::new_with_foundationality_scores(
+            config,
+            l_steps,
+            overrides,
+            ages_days,
+            task_ids,
+            foundationality_scores,
+            adversarial_indices,
+            patch_similarity_graph,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_foundationality_scores(
+        config: TrainingConfig,
+        l_steps: Vec<f32>,
+        overrides: Vec<bool>,
+        ages_days: Vec<f32>,
+        task_ids: Vec<String>,
+        foundationality_scores: Vec<f32>,
+        adversarial_indices: Vec<usize>,
+        patch_similarity_graph: PatchSimilarityGraph,
+    ) -> Result<Self, TrainerError> {
         config.validate()?;
         let n = l_steps.len();
         if n == 0 {
@@ -133,6 +160,7 @@ impl BatchSampler {
             ("overrides", overrides.len()),
             ("ages_days", ages_days.len()),
             ("task_ids", task_ids.len()),
+            ("foundationality_scores", foundationality_scores.len()),
             (
                 "patch_similarity_graph.neighbors",
                 patch_similarity_graph.neighbors.len(),
@@ -154,6 +182,7 @@ impl BatchSampler {
             overrides,
             ages_days,
             l_steps,
+            foundationality_scores,
             task_ids,
             patch_similarity_graph,
             adversarial_indices,
@@ -204,18 +233,19 @@ impl BatchSampler {
         self.drop_indices.clear();
         self.regular_indices.clear();
         for i in 0..self.l_steps.len() {
-            let weight = sampling_weight(
-                self.l_steps[i],
-                self.overrides[i],
-                self.ages_days[i],
-                self.config.sampling_age_decay,
-            );
-            if !weight.is_finite() {
-                return Err(Self::config_error(
-                    "weights",
-                    format!("non-finite sampling weight at index {i}"),
-                ));
-            }
+            let weight = sampling_weight_checked(SamplingWeightComponents {
+                base_weight: 1.0,
+                l_step: self.l_steps[i],
+                operator_override: self.overrides[i],
+                age_days: self.ages_days[i],
+                age_decay: self.config.sampling_age_decay,
+                agent_surprise_severity_score: 0.0,
+                foundationality_score: self.foundationality_scores[i],
+                lambda_foundationality: self.config.sampling_foundationality_lambda,
+                curiosity_score: 0.0,
+                lambda_curiosity: 1.0,
+            })
+            .map_err(|err| Self::config_error("weights", format!("index {i}: {err}")))?;
             self.weights.push(weight);
             if should_drop(weight, self.config.sampling_drop_threshold) {
                 self.drop_indices.push(i);
@@ -750,6 +780,31 @@ mod tests {
             .adversarial_example_indices
             .iter()
             .all(|idx| (40..50).contains(idx)));
+    }
+
+    #[test]
+    fn foundationality_scores_boost_sampler_weights() {
+        let cfg = TrainingConfig {
+            sampling_foundationality_lambda: 2.0,
+            sampling_force_threshold: 1.0,
+            ..TrainingConfig::default()
+        };
+        let sampler = BatchSampler::new_with_foundationality_scores(
+            cfg,
+            vec![0.2, 0.2],
+            vec![false, false],
+            vec![0.0, 0.0],
+            vec!["leaf".to_string(), "bedrock".to_string()],
+            vec![0.0, 1.0],
+            Vec::new(),
+            PatchSimilarityGraph {
+                neighbors: vec![Vec::new(); 2],
+            },
+        )
+        .unwrap();
+        assert!((sampler.weights[0] - 0.2).abs() < 1e-6);
+        assert!((sampler.weights[1] - 0.6).abs() < 1e-6);
+        assert!(sampler.regular_indices.contains(&1));
     }
 
     #[test]

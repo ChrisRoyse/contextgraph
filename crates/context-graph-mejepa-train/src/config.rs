@@ -67,6 +67,7 @@ pub struct TrainingConfig {
     pub cross_task_transfer_probability: f32,
     pub cross_task_cosine_threshold: f32,
     pub adversarial_mix_ratio: f32,
+    pub sampling_foundationality_lambda: f32,
     pub sampling_drop_threshold: f32,
     pub sampling_force_threshold: f32,
     pub sampling_age_decay: f32,
@@ -100,6 +101,7 @@ impl Default for TrainingConfig {
             cross_task_transfer_probability: 0.3,
             cross_task_cosine_threshold: 0.7,
             adversarial_mix_ratio: 0.20,
+            sampling_foundationality_lambda: 1.0,
             sampling_drop_threshold: 0.05,
             sampling_force_threshold: 1.0,
             sampling_age_decay: 0.995,
@@ -155,7 +157,6 @@ impl TrainingConfig {
                 self.cross_task_cosine_threshold,
             ),
             ("adversarial_mix_ratio", self.adversarial_mix_ratio),
-            ("sampling_drop_threshold", self.sampling_drop_threshold),
             ("sampling_force_threshold", self.sampling_force_threshold),
             ("sampling_age_decay", self.sampling_age_decay),
             (
@@ -171,6 +172,19 @@ impl TrainingConfig {
             if !(0.0..=1.0).contains(&value) || !value.is_finite() {
                 return bad(field, "must be in [0, 1]");
             }
+        }
+        if !self.sampling_drop_threshold.is_finite()
+            || !(0.0..=1.0).contains(&self.sampling_drop_threshold)
+        {
+            return bad("sampling_drop_threshold", "must be in [0, 1]");
+        }
+        if !self.sampling_foundationality_lambda.is_finite()
+            || self.sampling_foundationality_lambda < 0.0
+        {
+            return bad(
+                "sampling_foundationality_lambda",
+                "must be finite and non-negative",
+            );
         }
         if self.sampling_force_threshold <= self.sampling_drop_threshold {
             return bad(

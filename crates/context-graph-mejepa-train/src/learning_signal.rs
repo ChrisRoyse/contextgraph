@@ -214,6 +214,10 @@ pub struct SamplingWeightComponents {
     pub age_days: f32,
     pub age_decay: f32,
     pub agent_surprise_severity_score: f32,
+    pub foundationality_score: f32,
+    pub lambda_foundationality: f32,
+    pub curiosity_score: f32,
+    pub lambda_curiosity: f32,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -592,6 +596,10 @@ pub fn sampling_weight(l_step: f32, operator_override: bool, age_days: f32, age_
         age_days,
         age_decay,
         agent_surprise_severity_score: 0.0,
+        foundationality_score: 0.0,
+        lambda_foundationality: 1.0,
+        curiosity_score: 0.0,
+        lambda_curiosity: 1.0,
     })
     .expect("sampling_weight inputs must be finite and in range; use sampling_weight_checked to handle errors")
 }
@@ -605,10 +613,21 @@ pub fn sampling_weight_checked(c: SamplingWeightComponents) -> Result<f32, UtmlE
         "sampling.agent_surprise_severity_score",
         c.agent_surprise_severity_score,
     )?;
+    validate_unit("sampling.foundationality_score", c.foundationality_score)?;
+    validate_nonnegative("sampling.lambda_foundationality", c.lambda_foundationality)?;
+    validate_unit("sampling.curiosity_score", c.curiosity_score)?;
+    validate_nonnegative("sampling.lambda_curiosity", c.lambda_curiosity)?;
     let override_factor = if c.operator_override { 6.0 } else { 1.0 };
     let surprise_factor = 1.0 + 2.0 * c.agent_surprise_severity_score;
-    let value =
-        c.base_weight * c.l_step * override_factor * surprise_factor * c.age_decay.powf(c.age_days);
+    let foundationality_factor = 1.0 + c.lambda_foundationality * c.foundationality_score;
+    let curiosity_factor = 1.0 + c.lambda_curiosity * c.curiosity_score;
+    let value = c.base_weight
+        * c.l_step
+        * override_factor
+        * surprise_factor
+        * foundationality_factor
+        * curiosity_factor
+        * c.age_decay.powf(c.age_days);
     validate_finite("sampling.weight", value)?;
     Ok(value)
 }
@@ -809,6 +828,10 @@ mod tests {
             age_days: 0.0,
             age_decay: 1.0,
             agent_surprise_severity_score: 0.0,
+            foundationality_score: 0.0,
+            lambda_foundationality: 1.0,
+            curiosity_score: 0.0,
+            lambda_curiosity: 1.0,
         })
         .expect("base weight");
         let catastrophic = sampling_weight_checked(SamplingWeightComponents {
@@ -818,9 +841,31 @@ mod tests {
             age_days: 0.0,
             age_decay: 1.0,
             agent_surprise_severity_score: 1.0,
+            foundationality_score: 0.0,
+            lambda_foundationality: 1.0,
+            curiosity_score: 0.0,
+            lambda_curiosity: 1.0,
         })
         .expect("catastrophic weight");
         assert!((catastrophic / base - 3.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn sampling_weight_foundationality_and_curiosity_compose() {
+        let value = sampling_weight_checked(SamplingWeightComponents {
+            base_weight: 1.0,
+            l_step: 0.5,
+            operator_override: false,
+            age_days: 0.0,
+            age_decay: 1.0,
+            agent_surprise_severity_score: 0.0,
+            foundationality_score: 0.75,
+            lambda_foundationality: 2.0,
+            curiosity_score: 0.5,
+            lambda_curiosity: 1.0,
+        })
+        .expect("weighted sampling");
+        assert!((value - 1.875).abs() < 1e-6);
     }
 
     #[test]
