@@ -170,6 +170,10 @@ name = "task_ek_016_foundationality_fsv"
 path = "examples/task_ek_016_foundationality_fsv.rs"
 
 [[example]]
+name = "task_ek_016_ext_embedder_foundationality_fsv"
+path = "examples/task_ek_016_ext_embedder_foundationality_fsv.rs"
+
+[[example]]
 name = "task_ek_018b_absence_queue_fsv"
 path = "examples/task_ek_018b_absence_queue_fsv.rs"
 
