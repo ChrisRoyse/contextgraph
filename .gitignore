@@ -117,7 +117,7 @@ tarpaulin-report.html
 tarpaulin-report.json
 
 # Local model artifacts are retired from this repository.
-models/
+/models/
 
 # Python cache
 __pycache__/
