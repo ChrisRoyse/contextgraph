@@ -39,6 +39,7 @@ Source: aiwonder `/zfs/archive/contextgraph/fsv/` for post-migration production 
 | Per-cell constellation freshness (TASK-PY-G-052) | scheduler integration | shipped | `/mnt/d/contextgraph/fsv/task-py-g-052-constellation-freshness-fsv/run-1779052689893/constellation_freshness_fsv.json` |
 | Q1 claim graph extractor (TASK-PY-G-041) | bytes-on-disk reconciliation | shipped | `/mnt/d/contextgraph/fsv/task-py-g-041-claim-graph-extractor-fsv/run-1779077268576/claim_graph_extractor_fsv.json` |
 | Per-head DDA projection (TASK-PY-G-043) | 30-chunk FSV | shipped | `/mnt/d/contextgraph/fsv/task-py-g-043-per-head-dda-projection-fsv/run-1779078323947/head_projection_fsv.json` |
+| Real-corpus constellation smoke (TASK-PY-G-095 / #395) | 7 spread aiwonder shards, 12 active embedders, 2,688 packed records, 84 per-cell centroid rows, 66 pairwise relationships, 20 candidate failure-shape rows; `flat_vector_concat_used=false` | PASS | `/zfs/archive/contextgraph/fsv/task-py-g-095-real-corpus-constellation-smoke-fsv/python_real_corpus_constellation_smoke_fsv.json` (sha256 `552de73b…`), independent readback `/zfs/archive/contextgraph/fsv/task-py-g-095-real-corpus-constellation-smoke-fsv/independent_readback.json`, external edge readback `/zfs/archive/contextgraph/fsv/task-py-g-095-real-corpus-constellation-smoke-fsv/external_edge_case_readback.json` |
 
 ---
 
@@ -200,6 +201,7 @@ Source: aiwonder `/zfs/archive/contextgraph/fsv/` for post-migration production 
 |---|---|---|---|
 | #363 | aiwonder is durable SoT for post-migration ContextGraph Phase G | 2026-05-15 | Storage policy (see `03_storage_schema.md §5`) |
 | #358 | Retire intent/north-star modeling from ME-JEPA | 2026-05-18 | `mejepa_elicit_intent` retired; live-session operator-goal embedding removed |
+| #397 | ME-JEPA consequence-prediction truth-system contract | 2026-05-18 | "Predicting reality" means predicting consequences of code being live; MCP presents calibrated consequence evidence to the operator/agent; no hidden intent inference |
 | #341 | TASK-EK-018 self-designed/trained/promoted embedders (APEX deliverable of EPIC #321) | 2026-05 | Establishes EK-018 sub-task tree |
 | #315 | Reward-signal completeness audit — maximum capture from durable reality (LeCun-aligned) | 2026-05 | EPIC anchoring TASK-RWD-* |
 | #314 | Full JEPA architectural alignment per Yann LeCun (2026-05-17 transcript) | 2026-05-17 | EPIC anchoring TASK-FP-101..105 |

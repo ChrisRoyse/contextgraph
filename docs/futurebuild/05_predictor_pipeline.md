@@ -87,6 +87,22 @@ Source files covered: `crates/context-graph-mejepa-embedders/src/lib.rs` + modul
                        CF_MEJEPA_MODEL_PROMOTIONS + CF_MEJEPA_ACTIVE_POINTERS
 ```
 
+The pipeline is a consequence predictor, not an intention engine (#397/#358). It learns from observable reality-chain events:
+
+```
+explicit task text / agent claim
+  → edit event
+  → AST delta
+  → per-embedder packed outputs
+  → teleological constellation
+  → frozen instruments
+  → oracle / test / static / runtime / witness outcomes
+  → prediction verification
+  → replay / reward signal
+```
+
+That chain is how ME-JEPA learns to predict what happens when code is live. The human or their AI agent receives the predicted consequences and decides how to act; ME-JEPA does not infer hidden human intent or synthesize a north-star objective.
+
 ---
 
 ## 2. Embedder Registry (21 slots; E5 retired)
@@ -231,6 +247,8 @@ Decision flow (per `compiler.rs::compile`):
 ## 5. TCT Constellations
 
 `crates/context-graph-mejepa-tct/src/lib.rs:8-26`. Fail-closed: missing centroids, missing thresholds, under-sampled calibration cells, stale constellations, provenance drift, malformed RocksDB rows, non-finite floats are all errors. No permissive thresholds.
+
+For code, a teleological constellation is the exact-state, slot-preserving observation of one reality object (for example an AST chunk, patch, file, or panel row) across all active embedders/instruments and its downstream consequence labels. Each embedder output remains in its own vector space. Mathematical work happens over the collection: per-embedder centroids/variance, pairwise correlation/MI, redundancy, disagreement, temporal movement, attribution, and calibrated uncertainty. Flat `PANEL_DIM` arrays are serialization only; they are not the semantic unit ME-JEPA trains or trusts for ship-gate evidence.
 
 | Module | Purpose |
 |---|---|

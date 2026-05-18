@@ -21,6 +21,8 @@ prediction_oracle_correlation ≥ 0.95
 
 **P0 architecture correction before more metric chasing:** #385 / TASK-PY-G-085 now blocks the gate. ME-JEPA must treat the panel as a typed per-embedder/per-instrument Teleological Constellation. The 5,120-d panel is a storage layout, not a single compensable embedding space. Predictor, OOD, heads, persistence, DDA, and FSV evidence must prove that a weak slot cannot be hidden by strong values in other slots.
 
+**P0 product contract:** #397 is the guiding context. ME-JEPA is the consequence-prediction truth system: predicting reality means predicting what happens when code is live against durable repository/test/runtime/dependency/security/perf/cost/maintenance reality. The MCP surface presents predicted consequences, confidence, and evidence to the human/operator-agent; it does not infer hidden human intent (#358) and it does not generate code.
+
 Once met → human review of AI-generated Python patches is statistically unjustified. Auto-trust policy gates engage (TASK-PY-G-058 / #277).
 
 ---
@@ -79,6 +81,8 @@ Child issue split:
 | #394 / TASK-PY-G-094 | Anti-compensation FSV suite | Prevents regressions back to flat-vector scoring |
 | #395 / TASK-PY-G-095 | Real-corpus constellation smoke | Starts from the completed 391/391 aiwonder forward-cache substrate, not synthetic data |
 | #396 / TASK-PY-G-096 | Constellation fine-tuning objective | Trains on per-slot vectors, pairwise tensors, contradiction/consensus features, temporal metadata, and oracle labels as separate loss components |
+
+**#395 FSV status (2026-05-18):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-095-real-corpus-constellation-smoke-fsv/`: 7 spread shards, 12 active embedders, 2,688 packed records, 84 per-cell centroid rows, 66 pairwise relationship rows, 20 candidate failure-shape rows, tiny real-corpus training/inference smoke, and independent readback with `flat_vector_concat_used=false`.
 
 ### 3.1 Q4 head training (Phase G §2 producers — heads exist as schema fields but lack training data pipelines)
 

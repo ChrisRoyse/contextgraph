@@ -31,6 +31,8 @@ Plus:
 
 > ME-JEPA-Code is a deterministic predictive truth system that returns a calibrated multi-head `RealityPrediction` (Q1 claim-exists / Q2 works / Q3 why-fails / Q4 what-else / Q5 reality-impact) for any AI-generated code change, so human review of AI patches becomes statistically unjustified once `prediction_oracle_correlation ≥ 0.95` stably × 4 rolling windows on the 300×8 SWE-bench Lite Python corpus.
 
+Operationally, "predicting reality" means predicting the consequences of code being live: how the change will interact with durable repository bytes, AST, tests, runtime, dependencies, security/perf/cost surfaces, witness chain, maintenance blast radius, and later shift-log observations. The MCP product shows those predicted consequences and confidence to the human/operator-agent; it does not choose the human's goal and it does not infer hidden human intent (#397, #358).
+
 Current ship-gate status: **0.866667** vs target 0.95. Phase G critical path drives the remaining 0.083 (see `08_roadmap_and_open_work.md §3`).
 
 ---

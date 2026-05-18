@@ -22,6 +22,8 @@ Source files covered: `Cargo.toml`, `CLAUDE.md`, `AGENTS.md`, `crates/context-gr
 
 **Product boundary.** LLM agents are untrusted edit generators. Hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, and docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`.
 
+**Consequence-prediction contract (#397).** In this project, "predicting reality" means predicting the consequences of code being live: whether the change exists, whether it works, why it would fail, what secondary risks it creates, and how it changes durable repository/test/runtime/dependency reality over time. ME-JEPA presents those predicted consequences, confidence, and evidence to the human operator or the operator's AI agent so they can decide whether to proceed, repair, or choose a different route. The model observes explicit task text, agent claims, edits, AST deltas, frozen instruments, oracle outcomes, and verification feedback; it must not infer or classify hidden human intent (#358).
+
 ---
 
 ## 2. Process / Port / Tech Architecture
@@ -39,6 +41,8 @@ Source files covered: `Cargo.toml`, `CLAUDE.md`, `AGENTS.md`, `crates/context-gr
 **No HTTP from action paths.** `WebSearch`/`WebFetch`/`mcp__exa__*` are read-only research tools. The MCP server is the only network surface for runtime work.
 
 **No inner LLM.** Local generative inference (Qwen / Hermes / Ollama / llama.cpp) was retired 2026-05-09. `feature = "llm"` triggers `compile_error!` (`crates/context-graph-mcp/src/lib.rs:13`).
+
+**No intent synthesis.** North-star / intent modeling is retired by ADR #358. Observable goals and agent claims may be stored as evidence in the reality chain; hidden human intention is not a prediction target.
 
 ---
 

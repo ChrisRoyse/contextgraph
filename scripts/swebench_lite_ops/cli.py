@@ -58,6 +58,8 @@ from .python_failure_fingerprint_materializer import add_arguments as add_python
 from .python_failure_fingerprint_materializer import command_python_failure_fingerprint_materializer
 from .python_failure_fingerprint_calibrator import add_arguments as add_python_failure_fingerprint_calibration_arguments
 from .python_failure_fingerprint_calibrator import command_python_failure_fingerprint_calibrator
+from .python_real_corpus_constellation_smoke import add_arguments as add_python_real_corpus_constellation_smoke_arguments
+from .python_real_corpus_constellation_smoke import command_python_real_corpus_constellation_smoke
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -473,6 +475,16 @@ def build_parser() -> argparse.ArgumentParser:
     calibrate_fingerprints.set_defaults(
         func=command_python_failure_fingerprint_calibrator,
         evidence_name="python-failure-fingerprint-calibrate-command-evidence.json",
+    )
+
+    real_corpus_constellation = sub.add_parser(
+        "python-real-corpus-constellation-smoke",
+        help="TASK-PY-G-095: smoke real aiwonder packed forwards as slot-preserving teleological constellations.",
+    )
+    add_python_real_corpus_constellation_smoke_arguments(real_corpus_constellation)
+    real_corpus_constellation.set_defaults(
+        func=command_python_real_corpus_constellation_smoke,
+        evidence_name="python-real-corpus-constellation-smoke-command-evidence.json",
     )
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")
