@@ -7,7 +7,8 @@ use context_graph_mejepa_train::cert::{
     open_train_rocksdb, verify_chain, TrainCertWriter, TrainingCertificate, CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_train::eval::holdout::{
-    CalibrationDataset, HoldoutDataset, HoldoutExample, TrainSplit,
+    CalibrationDataset, HoldoutDataset, HoldoutExample, InverseActionTarget, InverseToolCallTarget,
+    TrainSplit,
 };
 use context_graph_mejepa_train::eval::{Lang, MutationCategory};
 use context_graph_mejepa_train::learning_signal::{
@@ -160,7 +161,7 @@ fn run() -> Result<PathBuf, Box<dyn std::error::Error>> {
                 "crates/context-graph-mejepa/src/predictor/mod.rs"
             ]
         },
-        "scope": "second implementation slice: real shared-trunk inverse head plus fail-closed trainer consumption; real 300x8 four-variant ablation remains open",
+        "scope": "third implementation slice: real shared-trunk inverse head consumes structured patch-diff/tool-call inverse action targets; real 300x8 four-variant ablation remains open",
         "config": {
             "default_inverse_map_coefficient": config_default.inverse_map_coefficient,
             "enabled_inverse_map_coefficient": config_inverse.inverse_map_coefficient,
@@ -193,7 +194,6 @@ fn run() -> Result<PathBuf, Box<dyn std::error::Error>> {
         },
         "realInverseHead": real_inverse_head,
         "remainingIssueWork": [
-            "replace the deterministic metadata action-latent proxy with structured patch-diff/tool-call action targets before any production default",
             "run lambda in {0,0.25,0.5,1.0} on the real 300x8 Python corpus",
             "publish per-cell/global ablation report at /mnt/d/contextgraph/exports/ek-012/bidirectional-ablation-report.md",
             "apply per-cell regression-prevention gate to every ablation variant"
@@ -250,6 +250,12 @@ fn real_inverse_head_trainer_case(
     ));
     let predictor = MeJepaPredictor::new(PredictorConfig::default(), adapter, device.clone(), 2)?;
     let dataset = full_panel_training_dataset(&device)?;
+    let structured_action_target_count = dataset
+        .train
+        .examples
+        .iter()
+        .filter(|example| example.inverse_action_target.is_some())
+        .count();
 
     let missing_db_dir = run_dir.join("missing-inverse-head-rocksdb");
     let missing_db = open_train_rocksdb(&missing_db_dir)?;
@@ -257,6 +263,18 @@ fn real_inverse_head_trainer_case(
     let missing_error = missing_trainer
         .train_one_epoch(&dataset, 0)
         .expect_err("positive lambda without real inverse head must fail");
+
+    let missing_action_db_dir = run_dir.join("missing-action-target-rocksdb");
+    let missing_action_db = open_train_rocksdb(&missing_action_db_dir)?;
+    let mut missing_action_trainer =
+        Trainer::new(config.clone(), missing_action_db, device.clone())?;
+    let mut missing_action_dataset = dataset.clone();
+    for example in &mut missing_action_dataset.train.examples {
+        example.inverse_action_target = None;
+    }
+    let missing_action_error = missing_action_trainer
+        .train_one_epoch_with_inverse_head(&missing_action_dataset, 0, &predictor)
+        .expect_err("positive lambda with no structured action targets must fail");
 
     let mut trainer = Trainer::new(config, db.clone(), device.clone())?;
     let epoch_report = trainer.train_one_epoch_with_inverse_head(&dataset, 0, &predictor)?;
@@ -271,6 +289,8 @@ fn real_inverse_head_trainer_case(
         .unwrap_or(&f32::NAN);
     let summary = predictor.architecture_summary();
     let passes = missing_error.code() == "MEJEPA_TRAIN_CONFIG_INVALID"
+        && missing_action_error.code() == "MEJEPA_TRAIN_CONFIG_INVALID"
+        && structured_action_target_count == dataset.train.examples.len()
         && cert_count == 1
         && epoch_report.summary.total_steps_this_epoch == 1
         && inverse_bits.is_finite()
@@ -283,6 +303,8 @@ fn real_inverse_head_trainer_case(
         "gpu": "cuda:0",
         "rocksdb": db_dir.display().to_string(),
         "missingInverseHeadError": missing_error.code(),
+        "missingStructuredActionTargetError": missing_action_error.code(),
+        "structuredActionTargetCount": structured_action_target_count,
         "certCount": cert_count,
         "inverseMapQualityBits": inverse_bits,
         "inverseMapLoss": inverse_loss,
@@ -335,10 +357,41 @@ fn full_panel_example(
         language: Lang::Python,
         panel_t01: input,
         panel_t2: target,
+        inverse_action_target: Some(structured_inverse_action_target(task_id, adversarial)),
         actual_oracle_pass: !adversarial,
         adversarial,
         foundationality_score: 0.0,
     })
+}
+
+fn structured_inverse_action_target(task_id: &str, adversarial: bool) -> InverseActionTarget {
+    let return_value = if adversarial { 0 } else { 2 };
+    let patch_diff = format!(
+        "diff --git a/src/{task_id}.py b/src/{task_id}.py\n\
+         --- a/src/{task_id}.py\n\
+         +++ b/src/{task_id}.py\n\
+         @@ -1,2 +1,3 @@\n\
+         -def value():\n\
+         -    return 1\n\
+         +def value():\n\
+         +    return {return_value}\n\
+         +# inverse action target {task_id}\n"
+    );
+    InverseActionTarget::new(
+        patch_diff,
+        vec![
+            InverseToolCallTarget {
+                tool_name: "Edit".to_string(),
+                arguments_json: format!(
+                    "{{\"file_path\":\"src/{task_id}.py\",\"old_string\":\"return 1\",\"new_string\":\"return {return_value}\"}}"
+                ),
+            },
+            InverseToolCallTarget {
+                tool_name: "Bash".to_string(),
+                arguments_json: "{\"command\":\"pytest tests/test_value.py\"}".to_string(),
+            },
+        ],
+    )
 }
 
 fn full_panel_tensor(offset: f32, device: &Device) -> Result<Tensor, candle_core::Error> {

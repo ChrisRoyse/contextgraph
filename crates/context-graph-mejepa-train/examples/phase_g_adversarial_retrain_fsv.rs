@@ -193,6 +193,7 @@ fn synthetic_training_dataset() -> Result<TrainingDataset> {
             language: Lang::Python,
             panel_t01: panel.clone(),
             panel_t2: panel,
+            inverse_action_target: None,
             actual_oracle_pass: !adversarial,
             adversarial,
             foundationality_score: 0.0,

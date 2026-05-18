@@ -513,7 +513,18 @@ fn batch_inverse_map_loss(
         }
         input_rows.extend(input);
         target_rows.extend(target);
-        action_rows.extend(action_latent_proxy(example));
+        let action_target = example.inverse_action_target.as_ref().ok_or_else(|| {
+            TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                format!("inverse-map train index {idx} is missing structured patch/tool-call action target"),
+            )
+            .with_context(json!({
+                "task_id": example.task_id.clone(),
+                "remediation": "attach InverseActionTarget with patch diff text and tool-call records before enabling inverse_map_coefficient"
+            }))
+        })?;
+        action_target.validate()?;
+        action_rows.extend(inverse_action_target_vector(action_target));
     }
     let rows = indices.len();
     let dim = panel_dim.ok_or_else(|| {
@@ -535,38 +546,89 @@ fn batch_inverse_map_loss(
     )
 }
 
-fn action_latent_proxy(
-    example: &crate::eval::holdout::HoldoutExample,
+fn inverse_action_target_vector(
+    target: &crate::eval::holdout::InverseActionTarget,
 ) -> [f32; INVERSE_ACTION_DIM] {
     let mut action = [0.0_f32; INVERSE_ACTION_DIM];
-    action[0] = category_index(example.category) as f32
-        / (crate::eval::MutationCategory::ALL
-            .len()
-            .saturating_sub(1)
-            .max(1) as f32);
-    action[1] = language_index(example.language) as f32
-        / (crate::eval::Lang::ALL.len().saturating_sub(1).max(1) as f32);
-    action[2] = if example.adversarial { 1.0 } else { 0.0 };
-    let digest = Sha256::digest(example.task_id.as_bytes());
-    for (slot, chunk) in action[3..].iter_mut().zip(digest.chunks_exact(2)) {
+    let diff = PatchDiffStats::from_diff(&target.patch_diff);
+    action[0] = normalize_count(diff.added_lines, 128);
+    action[1] = normalize_count(diff.deleted_lines, 128);
+    action[2] = normalize_count(diff.touched_files, 64);
+    action[3] = normalize_count(diff.hunks, 64);
+    action[4] = normalize_count(target.tool_calls.len(), 32);
+    for call in &target.tool_calls {
+        let tool_name = call.tool_name.to_ascii_lowercase();
+        let args = call.arguments_json.to_ascii_lowercase();
+        if tool_name.contains("bash") {
+            action[5] = 1.0;
+        }
+        if tool_name.contains("edit") || tool_name.contains("write") || tool_name.contains("patch")
+        {
+            action[6] = 1.0;
+        }
+        if args.contains("pytest")
+            || args.contains("cargo test")
+            || args.contains("unittest")
+            || args.contains("jest")
+            || args.contains("vitest")
+        {
+            action[7] = 1.0;
+        }
+    }
+    let digest = inverse_action_digest(target);
+    for (slot, chunk) in action[8..].iter_mut().zip(digest.chunks_exact(2)) {
         let raw = u16::from_be_bytes([chunk[0], chunk[1]]) as f32 / u16::MAX as f32;
         *slot = raw.mul_add(2.0, -1.0);
     }
     action
 }
 
-fn category_index(category: crate::eval::MutationCategory) -> usize {
-    crate::eval::MutationCategory::ALL
-        .iter()
-        .position(|candidate| *candidate == category)
-        .unwrap_or(0)
+#[derive(Debug, Default)]
+struct PatchDiffStats {
+    added_lines: usize,
+    deleted_lines: usize,
+    touched_files: usize,
+    hunks: usize,
 }
 
-fn language_index(language: crate::eval::Lang) -> usize {
-    crate::eval::Lang::ALL
-        .iter()
-        .position(|candidate| *candidate == language)
-        .unwrap_or(0)
+impl PatchDiffStats {
+    fn from_diff(diff: &str) -> Self {
+        let mut stats = Self::default();
+        let mut files = std::collections::BTreeSet::new();
+        for line in diff.lines() {
+            if let Some(path) = line.strip_prefix("diff --git ") {
+                files.insert(path.to_string());
+            } else if let Some(path) = line.strip_prefix("+++ b/") {
+                files.insert(path.to_string());
+            }
+            if line.starts_with("@@") {
+                stats.hunks += 1;
+            } else if line.starts_with('+') && !line.starts_with("+++") {
+                stats.added_lines += 1;
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                stats.deleted_lines += 1;
+            }
+        }
+        stats.touched_files = files.len();
+        stats
+    }
+}
+
+fn normalize_count(count: usize, cap: usize) -> f32 {
+    let cap = cap.max(1);
+    (count.min(cap) as f32) / cap as f32
+}
+
+fn inverse_action_digest(target: &crate::eval::holdout::InverseActionTarget) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(target.patch_diff.as_bytes());
+    for call in &target.tool_calls {
+        hasher.update([0]);
+        hasher.update(call.tool_name.as_bytes());
+        hasher.update([0]);
+        hasher.update(call.arguments_json.as_bytes());
+    }
+    hasher.finalize().into()
 }
 
 fn default_embedder_versions() -> HashMap<String, String> {

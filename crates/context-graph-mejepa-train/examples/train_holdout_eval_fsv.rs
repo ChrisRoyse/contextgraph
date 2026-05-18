@@ -130,6 +130,7 @@ fn synthetic_examples(n: usize) -> Result<Vec<HoldoutExample>, candle_core::Erro
             language: Lang::ALL[i % Lang::ALL.len()],
             panel_t01: panel.clone(),
             panel_t2: panel,
+            inverse_action_target: None,
             actual_oracle_pass: i % 2 == 1,
             adversarial: false,
             foundationality_score: 0.0,

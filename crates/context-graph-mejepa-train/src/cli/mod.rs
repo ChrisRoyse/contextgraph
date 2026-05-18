@@ -1,7 +1,9 @@
 use crate::cert::{open_train_rocksdb, verify_chain, CF_MEJEPA_TRAIN_CERTS};
 use crate::config::TrainingConfig;
 use crate::error::{TrainerError, TrainerErrorCode};
-use crate::eval::holdout::{HoldoutExample, TrainSplit};
+use crate::eval::holdout::{
+    HoldoutExample, InverseActionTarget, InverseToolCallTarget, TrainSplit,
+};
 use crate::eval::{Lang, MutationCategory};
 use crate::trainer::{Trainer, TrainingDataset};
 use candle_core::{Device, Tensor};
@@ -267,12 +269,14 @@ pub fn load_corpus_index_dataset(corpus: &Path) -> Result<TrainingDataset, Train
                 .ok_or_else(|| corpus_field(i, "bucket"))?,
         )?;
         let panel = corpus_feature_panel(&task_id, cat)?;
+        let inverse_action_target = parse_optional_inverse_action_target(i, entry)?;
         let example = HoldoutExample {
             task_id,
             category: cat,
             language: Lang::Python,
             panel_t01: panel.clone(),
             panel_t2: panel,
+            inverse_action_target,
             actual_oracle_pass: actual,
             adversarial,
             foundationality_score,
@@ -297,6 +301,101 @@ pub fn load_corpus_index_dataset(corpus: &Path) -> Result<TrainingDataset, Train
         },
         holdout: crate::eval::holdout::HoldoutDataset { examples: holdout },
     })
+}
+
+fn parse_optional_inverse_action_target(
+    index: usize,
+    entry: &serde_json::Value,
+) -> Result<Option<InverseActionTarget>, TrainerError> {
+    let patch_diff = ["patch", "patch_text", "diff", "test_patch"]
+        .iter()
+        .filter_map(|field| optional_text_field(entry.get(*field)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let tool_calls = parse_optional_tool_calls(index, entry)?;
+    if patch_diff.trim().is_empty() && tool_calls.is_empty() {
+        return Ok(None);
+    }
+    let target = InverseActionTarget::new(patch_diff, tool_calls);
+    target.validate()?;
+    Ok(Some(target))
+}
+
+fn optional_text_field(value: Option<&serde_json::Value>) -> Option<String> {
+    match value? {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Object(map) => map
+            .get("text")
+            .or_else(|| map.get("source"))
+            .and_then(|value| value.as_str())
+            .map(ToString::to_string),
+        _ => None,
+    }
+}
+
+fn parse_optional_tool_calls(
+    index: usize,
+    entry: &serde_json::Value,
+) -> Result<Vec<InverseToolCallTarget>, TrainerError> {
+    let Some(raw_calls) = entry.get("tool_calls").or_else(|| entry.get("toolCalls")) else {
+        return Ok(Vec::new());
+    };
+    let calls = raw_calls.as_array().ok_or_else(|| {
+        TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            format!("corpus entry {index} tool_calls must be an array"),
+        )
+    })?;
+    let mut out = Vec::with_capacity(calls.len());
+    for (call_idx, call) in calls.iter().enumerate() {
+        match call {
+            serde_json::Value::String(tool_name) => out.push(InverseToolCallTarget {
+                tool_name: tool_name.clone(),
+                arguments_json: "{}".to_string(),
+            }),
+            serde_json::Value::Object(map) => {
+                let tool_name = map
+                    .get("tool_name")
+                    .or_else(|| map.get("toolName"))
+                    .or_else(|| map.get("name"))
+                    .or_else(|| map.get("tool"))
+                    .and_then(|value| value.as_str())
+                    .ok_or_else(|| {
+                        TrainerError::new(
+                            TrainerErrorCode::MejepaTrainConfigInvalid,
+                            format!(
+                                "corpus entry {index} tool_calls[{call_idx}] missing tool name"
+                            ),
+                        )
+                    })?;
+                let arguments = map
+                    .get("arguments_json")
+                    .or_else(|| map.get("argumentsJson"))
+                    .or_else(|| map.get("arguments"))
+                    .or_else(|| map.get("input"))
+                    .cloned()
+                    .unwrap_or_else(|| json!({}));
+                out.push(InverseToolCallTarget {
+                    tool_name: tool_name.to_string(),
+                    arguments_json: serde_json::to_string(&arguments).map_err(|err| {
+                        TrainerError::new(
+                            TrainerErrorCode::MejepaTrainConfigInvalid,
+                            format!(
+                                "corpus entry {index} tool_calls[{call_idx}] arguments failed JSON encoding: {err}"
+                            ),
+                        )
+                    })?,
+                });
+            }
+            _ => {
+                return Err(TrainerError::new(
+                    TrainerErrorCode::MejepaTrainConfigInvalid,
+                    format!("corpus entry {index} tool_calls[{call_idx}] must be string or object"),
+                ));
+            }
+        }
+    }
+    Ok(out)
 }
 
 pub fn corpus_feature_panel(

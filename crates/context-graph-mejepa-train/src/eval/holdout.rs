@@ -34,12 +34,52 @@ pub trait OracleHead {
 }
 
 #[derive(Debug, Clone)]
+pub struct InverseToolCallTarget {
+    pub tool_name: String,
+    pub arguments_json: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct InverseActionTarget {
+    pub patch_diff: String,
+    pub tool_calls: Vec<InverseToolCallTarget>,
+}
+
+impl InverseActionTarget {
+    pub fn new(patch_diff: impl Into<String>, tool_calls: Vec<InverseToolCallTarget>) -> Self {
+        Self {
+            patch_diff: patch_diff.into(),
+            tool_calls,
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), TrainerError> {
+        if self.patch_diff.trim().is_empty() && self.tool_calls.is_empty() {
+            return Err(TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                "inverse action target requires patch diff text or at least one tool call",
+            ));
+        }
+        for (idx, call) in self.tool_calls.iter().enumerate() {
+            if call.tool_name.trim().is_empty() {
+                return Err(TrainerError::new(
+                    TrainerErrorCode::MejepaTrainConfigInvalid,
+                    format!("inverse action target tool call {idx} has empty tool_name"),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct HoldoutExample {
     pub task_id: String,
     pub category: MutationCategory,
     pub language: Lang,
     pub panel_t01: Tensor,
     pub panel_t2: Tensor,
+    pub inverse_action_target: Option<InverseActionTarget>,
     pub actual_oracle_pass: bool,
     pub adversarial: bool,
     pub foundationality_score: f32,

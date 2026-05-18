@@ -86,6 +86,7 @@ fn synthetic_examples(n: usize) -> Result<Vec<HoldoutExample>, candle_core::Erro
             language: Lang::Python,
             panel_t01: panel.clone(),
             panel_t2: panel,
+            inverse_action_target: None,
             actual_oracle_pass: i % 2 == 0,
             adversarial: false,
             foundationality_score: 0.0,
