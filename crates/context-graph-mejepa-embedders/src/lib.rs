@@ -16,6 +16,7 @@ pub mod calibration;
 pub mod config;
 pub mod diagnostics;
 pub mod digest;
+pub mod dynamic_registry;
 pub mod embedder_id;
 pub mod ensemble;
 pub mod error;
@@ -35,6 +36,11 @@ pub use diagnostics::{
 };
 pub use digest::{
     digest_file_sha256, digest_manifest_for_embedder, verify_registration_digest, FileDigest,
+};
+pub use dynamic_registry::{
+    dda_signal_count_for_chunks, upper_triangle_len, DynamicEmbedderKind,
+    DynamicEmbedderProvenanceRecord, DynamicEmbedderRegistryRecord, RuntimeEmbedderId,
+    RuntimeRoutingResult, RuntimeRoutingTable,
 };
 pub use embedder_id::{EmbedderId, EmbedderKind};
 pub use ensemble::{

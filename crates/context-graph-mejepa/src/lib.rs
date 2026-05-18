@@ -16,6 +16,7 @@ pub mod cross_language_label_gating;
 pub mod data_models;
 pub mod dda_features;
 pub mod degraded;
+pub mod dynamic_embedder;
 pub mod error;
 pub mod eval;
 pub mod evidence;
@@ -91,6 +92,7 @@ pub use data_models::{
 };
 pub use dda_features::*;
 pub use degraded::*;
+pub use dynamic_embedder::*;
 pub use error::{LossError, MejepaInferError, NanSource, PredictorError};
 pub use eval::*;
 pub use evidence::{

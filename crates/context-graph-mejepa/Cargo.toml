@@ -18,6 +18,7 @@ blake3 = "1.5"
 context-graph-cuda = { path = "../context-graph-cuda" }
 context-graph-core = { workspace = true }
 context-graph-embeddings = { path = "../context-graph-embeddings" }
+context-graph-mejepa-embedders = { path = "../context-graph-mejepa-embedders" }
 context-graph-mejepa-corpus = { path = "../context-graph-mejepa-corpus" }
 context-graph-mincut = { path = "../context-graph-mincut" }
 context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }
@@ -156,6 +157,10 @@ path = "examples/task_ek_003_mincut_panel_fsv.rs"
 [[example]]
 name = "task_ek_002_propose_instrument_fsv"
 path = "examples/task_ek_002_propose_instrument_fsv.rs"
+
+[[example]]
+name = "task_ek_018a_dynamic_registration_fsv"
+path = "examples/task_ek_018a_dynamic_registration_fsv.rs"
 
 [[example]]
 name = "task_py_g_042_patch_similarity_exemplar_fsv"
