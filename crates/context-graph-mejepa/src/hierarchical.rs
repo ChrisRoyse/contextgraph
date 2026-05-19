@@ -97,6 +97,7 @@ pub fn build_hierarchical_prediction(
         source_panel_sha: prediction.source_panel_sha,
         calibration_version: prediction.calibration_version.clone(),
         created_at_unix_ms: prediction.created_at_unix_ms,
+        slot_attributions: prediction.slot_attributions.clone(),
         levels,
     })
 }
@@ -212,6 +213,8 @@ mod tests {
         let prediction = prediction_for(&patch);
         let panel = panel();
         let record = build_hierarchical_prediction(&prediction, &patch, &panel).unwrap();
+        assert_eq!(record.slot_attributions, prediction.slot_attributions);
+        assert!(!record.slot_attributions.is_empty());
         let kinds = record
             .levels
             .iter()

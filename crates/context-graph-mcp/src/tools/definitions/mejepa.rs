@@ -93,7 +93,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_PREDICT_LATEST,
-            "Read the latest persisted System 2 ME-JEPA RealityPrediction rows for a System 1 agent session from CF_MEJEPA_LIVE_PREDICTIONS.",
+            "Read the latest persisted System 2 ME-JEPA RealityPrediction rows for a System 1 agent session from CF_MEJEPA_LIVE_PREDICTIONS, including compact per-slot attribution summaries over the full stored record.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -449,7 +449,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_EXPLAIN_PREDICTION,
-            "Explain a persisted System 2 ME-JEPA Phase B RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS and returning stored verdict, matched failure-shape fingerprint evidence, top risks, claim reconciliation, reality impact, provenance, and a saliency map normalized from covered chunks.",
+            "Explain a persisted System 2 ME-JEPA Phase B RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS and returning stored verdict, matched failure-shape fingerprint evidence, top risks, per-slot attribution summary, claim reconciliation, reality impact, provenance, and a saliency map normalized from covered chunks.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -478,7 +478,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_INSPECT_PREDICTION,
-            "Inspect a persisted System 2 ME-JEPA RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS plus required per-chunk CF_MEJEPA_DDA_SIGNALS rows, returning storage provenance, witness/panel identifiers, conformal computation trace, TCT guard cells, and contributing chunk signal vectors.",
+            "Inspect a persisted System 2 ME-JEPA RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS plus required per-chunk CF_MEJEPA_DDA_SIGNALS rows, returning storage provenance, witness/panel identifiers, conformal computation trace, TCT guard cells, full machine-readable slot attributions, and contributing chunk signal vectors.",
             json!({
                 "type": "object",
                 "additionalProperties": false,

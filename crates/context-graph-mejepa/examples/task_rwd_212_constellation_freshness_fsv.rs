@@ -390,6 +390,7 @@ fn test_prediction() -> RealityPrediction {
         matched_fingerprint: None,
         unknown_candidate_id: None,
         constellation_intelligence: None,
+        slot_attributions: Vec::new(),
     })
     .unwrap()
 }

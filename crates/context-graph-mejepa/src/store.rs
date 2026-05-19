@@ -25,8 +25,8 @@ use crate::park_list::{
 };
 use crate::system_cost::SystemCostCounters;
 use crate::types::{
-    decode_reality_prediction, ChunkId, DdaSignals, HierarchicalPredictionRecord, PanelId,
-    RealityPrediction,
+    decode_hierarchical_prediction_record, decode_reality_prediction, ChunkId, DdaSignals,
+    HierarchicalPredictionRecord, PanelId, RealityPrediction,
 };
 
 #[derive(Clone)]
@@ -342,7 +342,7 @@ impl MejepaStore for RocksDbInferStore {
                     .to_string(),
             });
         }
-        let decoded: HierarchicalPredictionRecord = bincode::deserialize(&readback)?;
+        let decoded = decode_hierarchical_prediction_record(&readback)?;
         decoded.validate()?;
         if decoded != *record {
             return Err(MejepaInferError::InvalidInput {
@@ -390,8 +390,7 @@ impl MejepaStore for RocksDbInferStore {
                             .to_string(),
                 });
             }
-            let record: HierarchicalPredictionRecord = bincode::deserialize(&value)?;
-            record.validate()?;
+            let record = decode_hierarchical_prediction_record(&value)?;
             if record.session_id != session_id {
                 return Err(MejepaInferError::InvalidInput {
                     field: "hierarchical_predictions.session_id".to_string(),
@@ -661,6 +660,7 @@ mod tests {
             matched_fingerprint: None,
             unknown_candidate_id: None,
             constellation_intelligence: None,
+            slot_attributions: Vec::new(),
         })
         .unwrap()
     }
@@ -753,6 +753,7 @@ mod tests {
             source_panel_sha: [12; 32],
             calibration_version: "calibration-v1".to_string(),
             created_at_unix_ms: 1_772_000_000_001,
+            slot_attributions: Vec::new(),
             levels: vec![
                 HierarchicalPredictionLevel {
                     level: PredictionHierarchyLevel::File,

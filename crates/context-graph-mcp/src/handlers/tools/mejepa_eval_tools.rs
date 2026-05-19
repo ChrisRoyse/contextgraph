@@ -408,6 +408,17 @@ pub fn mejepa_ship_gate_status_payload_with_exemptions(
         "lowStateTransferCells": low_state_transfer_cells(&report),
         "perPredictionClassCalibration": report.per_prediction_class_calibration.clone(),
         "perFailureModeClass": report.per_failure_mode_class.clone(),
+        "slotAttributionSurface": {
+            "predictionField": "slot_attributions",
+            "livePredictionSourceOfTruth": context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
+            "hierarchicalPredictionSourceOfTruth": context_graph_mejepa_cf::CF_MEJEPA_HIERARCHICAL_PREDICTIONS,
+            "agentFacingSurfaces": [
+                "mcp__cgreality__mejepa_predict_latest.slotAttributionSummaries",
+                "mcp__cgreality__mejepa_explain_prediction.slotAttributionsCompact",
+                "mcp__cgreality__mejepa_inspect_prediction.slotAttributions"
+            ],
+            "policy": "ship-gate-blocking predictions must be explainable by persisted per-slot attribution records; compact MCP summaries are views over the full RocksDB record"
+        },
         "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS",
         "ablationSourceOfTruth": context_graph_mejepa_cf::CF_MEJEPA_ABLATION_REPORTS,
         "fingerprintSourceOfTruth": "CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS"

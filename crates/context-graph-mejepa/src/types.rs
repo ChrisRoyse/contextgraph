@@ -26,6 +26,7 @@ const MAX_SKILL_CITATIONS: usize = 512;
 const MAX_PATCH_HUNKS: usize = 4096;
 const MAX_HIERARCHY_LEVELS: usize = MAX_PATCH_HUNKS * 4;
 const MAX_HIERARCHY_SCOPE_ID_BYTES: usize = 1024;
+const MAX_SLOT_ATTRIBUTIONS: usize = 512;
 const MAX_HUNK_TEXT_BYTES: usize = 1_048_576;
 const MAX_WITNESS_SEGMENT_BYTES: usize = 73 * 8192;
 const MAX_COMMIT_MESSAGE_BYTES: usize = 8192;
@@ -1442,6 +1443,136 @@ pub struct PhaseBPredictionSurfaces {
 }
 
 pub const HIERARCHICAL_PREDICTION_SCHEMA_VERSION: u32 = 1;
+pub const SLOT_ATTRIBUTION_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SlotAttributionPolarity {
+    Supporting,
+    Violating,
+    Missing,
+    Stale,
+    Relationship,
+    Q4Concern,
+    Q5Impact,
+}
+
+impl SlotAttributionPolarity {
+    fn is_rejection_evidence(self) -> bool {
+        matches!(self, Self::Violating | Self::Missing | Self::Stale)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SlotAttributionSource {
+    VerdictHead,
+    PredictedWorks,
+    FailureMode,
+    GuardViolation,
+    PerSlotOod,
+    ConstellationPair,
+    FailureFingerprint,
+    ActiveLearningCandidate,
+    Q4Head,
+    Q5Replay,
+    ClaimReconciliation,
+    GrangerAttestation,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SlotAttributionEvidence {
+    pub schema_version: u32,
+    pub slot_id: String,
+    pub embedder: Option<EmbedderId>,
+    pub chunk: Option<ChunkId>,
+    pub polarity: SlotAttributionPolarity,
+    pub source: SlotAttributionSource,
+    pub score: f32,
+    pub threshold: Option<f32>,
+    pub margin: Option<f32>,
+    pub reason: String,
+    pub relationship_slot_id: Option<String>,
+    pub related_fingerprint_id: Option<String>,
+    pub active_learning_candidate_id: Option<[u8; 16]>,
+    pub q_head: Option<String>,
+    pub impact_kind: Option<String>,
+    pub evidence: String,
+}
+
+impl SlotAttributionEvidence {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        if self.schema_version != SLOT_ATTRIBUTION_SCHEMA_VERSION {
+            return Err(MejepaInferError::InvalidInput {
+                field: "slot_attribution.schema_version".to_string(),
+                detail: format!(
+                    "expected schema_version {}, got {}",
+                    SLOT_ATTRIBUTION_SCHEMA_VERSION, self.schema_version
+                ),
+            });
+        }
+        validate_bounded_id("slot_attribution.slot_id", &self.slot_id, MAX_ID_BYTES)?;
+        if let Some(embedder) = &self.embedder {
+            embedder.validate("slot_attribution.embedder")?;
+        }
+        if let Some(chunk) = &self.chunk {
+            chunk.validate("slot_attribution.chunk")?;
+        }
+        validate_probability("slot_attribution.score", self.score)?;
+        validate_optional_probability("slot_attribution.threshold", self.threshold)?;
+        if let Some(margin) = self.margin {
+            validate_finite_f32("slot_attribution.margin", margin)?;
+            if margin < 0.0 {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "slot_attribution.margin".to_string(),
+                    detail: "margin must be non-negative".to_string(),
+                });
+            }
+        }
+        validate_bounded_text(
+            "slot_attribution.reason",
+            &self.reason,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )?;
+        validate_bounded_text(
+            "slot_attribution.evidence",
+            &self.evidence,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )?;
+        if let Some(slot) = &self.relationship_slot_id {
+            validate_bounded_id("slot_attribution.relationship_slot_id", slot, MAX_ID_BYTES)?;
+            if slot == &self.slot_id {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "slot_attribution.relationship_slot_id".to_string(),
+                    detail: "relationship_slot_id must differ from slot_id".to_string(),
+                });
+            }
+        }
+        if let Some(fingerprint) = &self.related_fingerprint_id {
+            validate_bounded_id(
+                "slot_attribution.related_fingerprint_id",
+                fingerprint,
+                MAX_ID_BYTES,
+            )?;
+        }
+        if let Some(candidate) = self.active_learning_candidate_id {
+            if candidate.iter().all(|byte| *byte == 0) {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "slot_attribution.active_learning_candidate_id".to_string(),
+                    detail: "candidate id must be non-zero when present".to_string(),
+                });
+            }
+        }
+        if let Some(head) = &self.q_head {
+            validate_bounded_id("slot_attribution.q_head", head, MAX_ID_BYTES)?;
+        }
+        if let Some(kind) = &self.impact_kind {
+            validate_bounded_id("slot_attribution.impact_kind", kind, MAX_ID_BYTES)?;
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1584,6 +1715,8 @@ pub struct HierarchicalPredictionRecord {
     pub source_panel_sha: [u8; 32],
     pub calibration_version: String,
     pub created_at_unix_ms: i64,
+    #[serde(default)]
+    pub slot_attributions: Vec<SlotAttributionEvidence>,
     pub levels: Vec<HierarchicalPredictionLevel>,
 }
 
@@ -1627,6 +1760,11 @@ impl HierarchicalPredictionRecord {
                 detail: "created_at_unix_ms must be non-negative".to_string(),
             });
         }
+        validate_slot_attribution_collection(
+            "hierarchical_prediction.slot_attributions",
+            &self.slot_attributions,
+            None,
+        )?;
         if self.levels.len() > MAX_HIERARCHY_LEVELS {
             return Err(MejepaInferError::DimMismatch {
                 expected: MAX_HIERARCHY_LEVELS,
@@ -1691,6 +1829,70 @@ impl HierarchicalPredictionRecord {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HierarchicalPredictionRecordLegacyNoSlotAttributions {
+    schema_version: u32,
+    prediction_id: [u8; 16],
+    task_id: TaskId,
+    session_id: [u8; 16],
+    language: Language,
+    source_panel_sha: [u8; 32],
+    calibration_version: String,
+    created_at_unix_ms: i64,
+    levels: Vec<HierarchicalPredictionLevel>,
+}
+
+impl HierarchicalPredictionRecordLegacyNoSlotAttributions {
+    #[cfg(test)]
+    fn from_current(value: &HierarchicalPredictionRecord) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            prediction_id: value.prediction_id,
+            task_id: value.task_id.clone(),
+            session_id: value.session_id,
+            language: value.language,
+            source_panel_sha: value.source_panel_sha,
+            calibration_version: value.calibration_version.clone(),
+            created_at_unix_ms: value.created_at_unix_ms,
+            levels: value.levels.clone(),
+        }
+    }
+
+    fn into_current(self) -> Result<HierarchicalPredictionRecord, MejepaInferError> {
+        HierarchicalPredictionRecord::try_new(HierarchicalPredictionRecord {
+            schema_version: self.schema_version,
+            prediction_id: self.prediction_id,
+            task_id: self.task_id,
+            session_id: self.session_id,
+            language: self.language,
+            source_panel_sha: self.source_panel_sha,
+            calibration_version: self.calibration_version,
+            created_at_unix_ms: self.created_at_unix_ms,
+            slot_attributions: Vec::new(),
+            levels: self.levels,
+        })
+    }
+}
+
+pub fn decode_hierarchical_prediction_record(
+    bytes: &[u8],
+) -> Result<HierarchicalPredictionRecord, MejepaInferError> {
+    match bincode::deserialize::<HierarchicalPredictionRecord>(bytes) {
+        Ok(record) => HierarchicalPredictionRecord::try_new(record),
+        Err(current_err) => {
+            let legacy =
+                bincode::deserialize::<HierarchicalPredictionRecordLegacyNoSlotAttributions>(bytes)
+                    .map_err(|legacy_err| MejepaInferError::InvalidInput {
+                        field: "HierarchicalPredictionRecord.bincode".to_string(),
+                        detail: format!(
+                            "failed to decode current schema ({current_err}) or legacy no-slot-attributions schema ({legacy_err})"
+                        ),
+                    })?;
+            legacy.into_current()
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RealityPrediction {
@@ -1748,6 +1950,158 @@ pub struct RealityPrediction {
     pub unknown_candidate_id: Option<[u8; 16]>,
     #[serde(default)]
     pub constellation_intelligence: Option<ConstellationIntelligenceEvidence>,
+    #[serde(default)]
+    pub slot_attributions: Vec<SlotAttributionEvidence>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RealityPredictionLegacyNoSlotAttributions {
+    prediction_id: [u8; 16],
+    witness_hash: WitnessHash,
+    task_id: TaskId,
+    session_id: [u8; 16],
+    language: Language,
+    covered_chunks: Vec<ChunkId>,
+    verdict: Verdict,
+    confidence_interval: ConformalInterval,
+    predicted_oracle_pass: f32,
+    predicted_test_pass: Vec<f32>,
+    predicted_runtime_trace: [f32; 32],
+    ood_score: f32,
+    outcome_set: ConformalSet,
+    calibrated_confidence: f32,
+    degraded_status: bool,
+    granger_attestations: BTreeMap<String, f32>,
+    predicted_failure_modes: Vec<PredictedFailureMode>,
+    predicted_failed_tests: Vec<PredictedTestOutcome>,
+    predicted_works: Vec<PredictedWorks>,
+    predicted_uncovered_paths: Vec<UncoveredPath>,
+    predicted_flaky_tests: Vec<FlakyTestCandidate>,
+    guard_violations: Vec<GuardViolation>,
+    per_slot_ood_reasons: Vec<PerSlotOodReason>,
+    closest_exemplars: Vec<ExemplarMatch>,
+    predicted_edge_cases: Vec<PredictedEdgeCase>,
+    predicted_latent_bugs: Vec<PredictedLatentBug>,
+    predicted_tech_debt_added: Vec<PredictedTechDebt>,
+    predicted_dead_code: Vec<PredictedDeadCode>,
+    predicted_redundant_code: Vec<PredictedRedundancy>,
+    predicted_perf_regressions: Vec<PredictedPerfRegression>,
+    predicted_security_concerns: Vec<PredictedSecurityConcern>,
+    predicted_accuracy_degradations: Vec<PredictedAccuracyDegradation>,
+    predicted_cost_regressions: Vec<PredictedCostRegression>,
+    predicted_reasoning_class: ReasoningClass,
+    agent_claim_graph: AgentClaimGraph,
+    claim_reconciliation: Vec<ClaimReconciliation>,
+    reality_impact: Option<RealityImpact>,
+    provenance: PredictionProvenance,
+    source_panel_sha: [u8; 32],
+    calibration_version: String,
+    created_at_unix_ms: i64,
+    matched_fingerprint: Option<MatchedFingerprintEvidence>,
+    unknown_candidate_id: Option<[u8; 16]>,
+    constellation_intelligence: Option<ConstellationIntelligenceEvidence>,
+}
+
+impl RealityPredictionLegacyNoSlotAttributions {
+    #[cfg(test)]
+    fn from_current(value: &RealityPrediction) -> Self {
+        Self {
+            prediction_id: value.prediction_id,
+            witness_hash: value.witness_hash.clone(),
+            task_id: value.task_id.clone(),
+            session_id: value.session_id,
+            language: value.language,
+            covered_chunks: value.covered_chunks.clone(),
+            verdict: value.verdict,
+            confidence_interval: value.confidence_interval.clone(),
+            predicted_oracle_pass: value.predicted_oracle_pass,
+            predicted_test_pass: value.predicted_test_pass.clone(),
+            predicted_runtime_trace: value.predicted_runtime_trace,
+            ood_score: value.ood_score,
+            outcome_set: value.outcome_set.clone(),
+            calibrated_confidence: value.calibrated_confidence,
+            degraded_status: value.degraded_status,
+            granger_attestations: value.granger_attestations.clone(),
+            predicted_failure_modes: value.predicted_failure_modes.clone(),
+            predicted_failed_tests: value.predicted_failed_tests.clone(),
+            predicted_works: value.predicted_works.clone(),
+            predicted_uncovered_paths: value.predicted_uncovered_paths.clone(),
+            predicted_flaky_tests: value.predicted_flaky_tests.clone(),
+            guard_violations: value.guard_violations.clone(),
+            per_slot_ood_reasons: value.per_slot_ood_reasons.clone(),
+            closest_exemplars: value.closest_exemplars.clone(),
+            predicted_edge_cases: value.predicted_edge_cases.clone(),
+            predicted_latent_bugs: value.predicted_latent_bugs.clone(),
+            predicted_tech_debt_added: value.predicted_tech_debt_added.clone(),
+            predicted_dead_code: value.predicted_dead_code.clone(),
+            predicted_redundant_code: value.predicted_redundant_code.clone(),
+            predicted_perf_regressions: value.predicted_perf_regressions.clone(),
+            predicted_security_concerns: value.predicted_security_concerns.clone(),
+            predicted_accuracy_degradations: value.predicted_accuracy_degradations.clone(),
+            predicted_cost_regressions: value.predicted_cost_regressions.clone(),
+            predicted_reasoning_class: value.predicted_reasoning_class,
+            agent_claim_graph: value.agent_claim_graph.clone(),
+            claim_reconciliation: value.claim_reconciliation.clone(),
+            reality_impact: value.reality_impact.clone(),
+            provenance: value.provenance.clone(),
+            source_panel_sha: value.source_panel_sha,
+            calibration_version: value.calibration_version.clone(),
+            created_at_unix_ms: value.created_at_unix_ms,
+            matched_fingerprint: value.matched_fingerprint.clone(),
+            unknown_candidate_id: value.unknown_candidate_id,
+            constellation_intelligence: value.constellation_intelligence.clone(),
+        }
+    }
+
+    fn into_current(self) -> Result<RealityPrediction, MejepaInferError> {
+        RealityPrediction::try_new(RealityPrediction {
+            prediction_id: self.prediction_id,
+            witness_hash: self.witness_hash,
+            task_id: self.task_id,
+            session_id: self.session_id,
+            language: self.language,
+            covered_chunks: self.covered_chunks,
+            verdict: self.verdict,
+            confidence_interval: self.confidence_interval,
+            predicted_oracle_pass: self.predicted_oracle_pass,
+            predicted_test_pass: self.predicted_test_pass,
+            predicted_runtime_trace: self.predicted_runtime_trace,
+            ood_score: self.ood_score,
+            outcome_set: self.outcome_set,
+            calibrated_confidence: self.calibrated_confidence,
+            degraded_status: self.degraded_status,
+            granger_attestations: self.granger_attestations,
+            predicted_failure_modes: self.predicted_failure_modes,
+            predicted_failed_tests: self.predicted_failed_tests,
+            predicted_works: self.predicted_works,
+            predicted_uncovered_paths: self.predicted_uncovered_paths,
+            predicted_flaky_tests: self.predicted_flaky_tests,
+            guard_violations: self.guard_violations,
+            per_slot_ood_reasons: self.per_slot_ood_reasons,
+            closest_exemplars: self.closest_exemplars,
+            predicted_edge_cases: self.predicted_edge_cases,
+            predicted_latent_bugs: self.predicted_latent_bugs,
+            predicted_tech_debt_added: self.predicted_tech_debt_added,
+            predicted_dead_code: self.predicted_dead_code,
+            predicted_redundant_code: self.predicted_redundant_code,
+            predicted_perf_regressions: self.predicted_perf_regressions,
+            predicted_security_concerns: self.predicted_security_concerns,
+            predicted_accuracy_degradations: self.predicted_accuracy_degradations,
+            predicted_cost_regressions: self.predicted_cost_regressions,
+            predicted_reasoning_class: self.predicted_reasoning_class,
+            agent_claim_graph: self.agent_claim_graph,
+            claim_reconciliation: self.claim_reconciliation,
+            reality_impact: self.reality_impact,
+            provenance: self.provenance,
+            source_panel_sha: self.source_panel_sha,
+            calibration_version: self.calibration_version,
+            created_at_unix_ms: self.created_at_unix_ms,
+            matched_fingerprint: self.matched_fingerprint,
+            unknown_candidate_id: self.unknown_candidate_id,
+            constellation_intelligence: self.constellation_intelligence,
+            slot_attributions: Vec::new(),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1893,6 +2247,7 @@ impl RealityPredictionLegacyNoConstellation {
             matched_fingerprint: self.matched_fingerprint,
             unknown_candidate_id: self.unknown_candidate_id,
             constellation_intelligence: None,
+            slot_attributions: Vec::new(),
         })
     }
 }
@@ -1901,6 +2256,11 @@ pub fn decode_reality_prediction(bytes: &[u8]) -> Result<RealityPrediction, Meje
     match bincode::deserialize::<RealityPrediction>(bytes) {
         Ok(prediction) => RealityPrediction::try_new(prediction),
         Err(current_err) => {
+            if let Ok(legacy) =
+                bincode::deserialize::<RealityPredictionLegacyNoSlotAttributions>(bytes)
+            {
+                return legacy.into_current();
+            }
             let legacy = bincode::deserialize::<RealityPredictionLegacyNoConstellation>(bytes)
                 .map_err(|legacy_err| MejepaInferError::InvalidInput {
                     field: "RealityPrediction.bincode".to_string(),
@@ -1915,6 +2275,9 @@ pub fn decode_reality_prediction(bytes: &[u8]) -> Result<RealityPrediction, Meje
 
 impl RealityPrediction {
     pub fn try_new(mut value: Self) -> Result<Self, MejepaInferError> {
+        if value.slot_attributions.is_empty() {
+            value.slot_attributions = derive_slot_attributions(&value)?;
+        }
         value.validate()?;
         value.covered_chunks.shrink_to_fit();
         value.predicted_test_pass.shrink_to_fit();
@@ -1936,6 +2299,7 @@ impl RealityPrediction {
         value.predicted_accuracy_degradations.shrink_to_fit();
         value.predicted_cost_regressions.shrink_to_fit();
         value.claim_reconciliation.shrink_to_fit();
+        value.slot_attributions.shrink_to_fit();
         Ok(value)
     }
 
@@ -2086,6 +2450,11 @@ impl RealityPrediction {
         if let Some(evidence) = &self.constellation_intelligence {
             evidence.validate()?;
         }
+        validate_slot_attribution_collection(
+            "slot_attributions",
+            &self.slot_attributions,
+            Some(self.verdict),
+        )?;
         if self.unknown_candidate_id.is_some() && self.verdict != Verdict::OutOfDistribution {
             return Err(MejepaInferError::InvalidInput {
                 field: "unknown_candidate_id".to_string(),
@@ -2122,6 +2491,593 @@ impl RealityPrediction {
         reject_control_chars("calibration_version", &self.calibration_version)?;
         Ok(())
     }
+}
+
+fn validate_slot_attribution_collection(
+    field: &str,
+    attributions: &[SlotAttributionEvidence],
+    verdict: Option<Verdict>,
+) -> Result<(), MejepaInferError> {
+    if attributions.len() > MAX_SLOT_ATTRIBUTIONS {
+        return Err(MejepaInferError::DimMismatch {
+            expected: MAX_SLOT_ATTRIBUTIONS,
+            actual: attributions.len(),
+            context: format!("{field} exceeds maximum"),
+        });
+    }
+    validate_items(field, attributions, SlotAttributionEvidence::validate)?;
+    let mut seen = BTreeSet::new();
+    for item in attributions {
+        let key = format!(
+            "{}|{:?}|{:?}|{}|{}",
+            item.slot_id,
+            item.source,
+            item.polarity,
+            item.chunk
+                .as_ref()
+                .map(|chunk| chunk.0.as_str())
+                .unwrap_or(""),
+            item.reason
+        );
+        if !seen.insert(key) {
+            return Err(MejepaInferError::InvalidInput {
+                field: field.to_string(),
+                detail: "duplicate slot attribution evidence".to_string(),
+            });
+        }
+    }
+    if let Some(verdict) = verdict {
+        if verdict != Verdict::Abstain && attributions.is_empty() {
+            return Err(MejepaInferError::InvalidInput {
+                field: field.to_string(),
+                detail: "non-abstain verdicts must carry at least one slot attribution".to_string(),
+            });
+        }
+        if verdict_requires_rejection_evidence(verdict)
+            && !attributions
+                .iter()
+                .any(|item| item.polarity.is_rejection_evidence())
+        {
+            return Err(MejepaInferError::InvalidInput {
+                field: field.to_string(),
+                detail: "rejection verdicts must name a violating, missing, or stale slot"
+                    .to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn verdict_requires_rejection_evidence(verdict: Verdict) -> bool {
+    matches!(
+        verdict,
+        Verdict::Fail | Verdict::OutOfDistribution | Verdict::Abstain | Verdict::GuardRejected
+    )
+}
+
+fn derive_slot_attributions(
+    prediction: &RealityPrediction,
+) -> Result<Vec<SlotAttributionEvidence>, MejepaInferError> {
+    let mut acc = SlotAttributionAccumulator::default();
+    let default_chunk = prediction.covered_chunks.first().cloned();
+
+    for work in &prediction.predicted_works {
+        for embedder in &work.supporting_embedders {
+            acc.push(slot_attribution(
+                slot_id_for_embedder(embedder),
+                Some(embedder.clone()),
+                Some(work.chunk.clone()),
+                SlotAttributionPolarity::Supporting,
+                SlotAttributionSource::PredictedWorks,
+                work.evidence_strength.max(work.confidence),
+                None,
+                None,
+                "predicted work support",
+                None,
+                None,
+                None,
+                None,
+                None,
+                &work.claim,
+            ));
+        }
+    }
+
+    for mode in &prediction.predicted_failure_modes {
+        if mode.contributing_embedders.is_empty() {
+            acc.push(slot_attribution(
+                "q3_failure_mode_head",
+                None,
+                Some(mode.chunk.clone()),
+                SlotAttributionPolarity::Violating,
+                SlotAttributionSource::FailureMode,
+                mode.confidence,
+                None,
+                None,
+                "failure mode head violation",
+                None,
+                None,
+                None,
+                Some("q3_failure_mode".to_string()),
+                None,
+                &mode.explanation,
+            ));
+        }
+        for embedder in &mode.contributing_embedders {
+            acc.push(slot_attribution(
+                slot_id_for_embedder(embedder),
+                Some(embedder.clone()),
+                Some(mode.chunk.clone()),
+                SlotAttributionPolarity::Violating,
+                SlotAttributionSource::FailureMode,
+                mode.confidence,
+                None,
+                None,
+                "failure mode contributing embedder",
+                None,
+                None,
+                None,
+                Some("q3_failure_mode".to_string()),
+                None,
+                &mode.explanation,
+            ));
+        }
+    }
+
+    for guard in &prediction.guard_violations {
+        acc.push(slot_attribution(
+            slot_id_for_embedder(&guard.embedder),
+            Some(guard.embedder.clone()),
+            Some(guard.chunk.clone()),
+            SlotAttributionPolarity::Violating,
+            SlotAttributionSource::GuardViolation,
+            guard.deficit.clamp(0.0, 1.0),
+            Some(guard.threshold_tau_m),
+            Some(guard.deficit),
+            "constellation guard violation",
+            None,
+            None,
+            None,
+            None,
+            None,
+            format!(
+                "centroid={} cosine={} threshold={}",
+                guard.centroid_id, guard.cosine, guard.threshold_tau_m
+            ),
+        ));
+    }
+
+    for reason in &prediction.per_slot_ood_reasons {
+        acc.push(slot_attribution(
+            slot_id_for_embedder(&reason.embedder),
+            Some(reason.embedder.clone()),
+            reason.chunk.clone(),
+            polarity_for_ood_reason(reason.reason),
+            SlotAttributionSource::PerSlotOod,
+            reason.margin.clamp(0.0, 1.0),
+            Some(reason.threshold),
+            Some(reason.margin),
+            "per-slot OOD guard",
+            None,
+            None,
+            None,
+            None,
+            None,
+            &reason.evidence,
+        ));
+    }
+
+    if let Some(evidence) = &prediction.constellation_intelligence {
+        for pair in &evidence.slot_pair_evidence {
+            let pair_score = pair
+                .contradiction_score
+                .max(pair.novelty_score)
+                .max(pair.blind_spot_z_score)
+                .max(pair.relationship_score)
+                .clamp(0.0, 1.0);
+            for (slot, other) in [
+                (&pair.left_slot_id, &pair.right_slot_id),
+                (&pair.right_slot_id, &pair.left_slot_id),
+            ] {
+                acc.push(slot_attribution(
+                    slot.clone(),
+                    None,
+                    default_chunk.clone(),
+                    SlotAttributionPolarity::Relationship,
+                    SlotAttributionSource::ConstellationPair,
+                    pair_score,
+                    None,
+                    pair.oracle_failure_lift_over_single_slot,
+                    "cross-slot relationship evidence",
+                    Some(other.clone()),
+                    evidence.relationship_pattern_id.clone(),
+                    None,
+                    None,
+                    None,
+                    &pair.source,
+                ));
+            }
+        }
+    }
+
+    if let Some(matched) = &prediction.matched_fingerprint {
+        acc.push(slot_attribution(
+            "failure_fingerprint_catalog",
+            None,
+            default_chunk.clone(),
+            SlotAttributionPolarity::Supporting,
+            SlotAttributionSource::FailureFingerprint,
+            matched.mean_cosine.clamp(0.0, 1.0),
+            None,
+            Some(matched.min_margin.max(0.0)),
+            "matched failure-shape fingerprint",
+            None,
+            Some(hex::encode(matched.fingerprint_id)),
+            None,
+            None,
+            None,
+            &matched.name,
+        ));
+    }
+
+    if let Some(candidate_id) = prediction.unknown_candidate_id {
+        acc.push(slot_attribution(
+            "active_learning_queue",
+            None,
+            default_chunk.clone(),
+            SlotAttributionPolarity::Missing,
+            SlotAttributionSource::ActiveLearningCandidate,
+            prediction.ood_score,
+            None,
+            None,
+            "unknown OOD candidate queued for labeling",
+            None,
+            None,
+            Some(candidate_id),
+            None,
+            None,
+            "no known fingerprint or calibrated slot support matched this observation",
+        ));
+    }
+
+    derive_q4_attributions(prediction, &mut acc, default_chunk.clone());
+    if let Some(impact) = &prediction.reality_impact {
+        acc.push(slot_attribution(
+            "q5_reality_impact_head",
+            None,
+            default_chunk.clone(),
+            SlotAttributionPolarity::Q5Impact,
+            SlotAttributionSource::Q5Replay,
+            q5_impact_score(impact.prediction_correctness),
+            None,
+            None,
+            "reality-impact replay evidence",
+            None,
+            None,
+            None,
+            None,
+            Some(format!("{:?}", impact.prediction_correctness).to_ascii_lowercase()),
+            "Q5 replay compared predicted and observed durable reality shifts",
+        ));
+    }
+
+    for (key, score) in &prediction.granger_attestations {
+        acc.push(slot_attribution(
+            granger_slot_id(key),
+            None,
+            default_chunk.clone(),
+            SlotAttributionPolarity::Supporting,
+            SlotAttributionSource::GrangerAttestation,
+            *score,
+            None,
+            None,
+            "DDA/Granger attestation",
+            None,
+            None,
+            None,
+            None,
+            None,
+            key,
+        ));
+    }
+
+    if acc.items.is_empty() {
+        acc.push(slot_attribution(
+            "verdict_head",
+            None,
+            default_chunk.clone(),
+            SlotAttributionPolarity::Supporting,
+            SlotAttributionSource::VerdictHead,
+            prediction
+                .predicted_oracle_pass
+                .max(prediction.calibrated_confidence)
+                .clamp(0.0, 1.0),
+            None,
+            None,
+            "verdict head support",
+            None,
+            None,
+            None,
+            Some("q2_verdict".to_string()),
+            None,
+            "fallback attribution from calibrated Q2 verdict score",
+        ));
+    }
+    if verdict_requires_rejection_evidence(prediction.verdict)
+        && !acc
+            .items
+            .iter()
+            .any(|item| item.polarity.is_rejection_evidence())
+    {
+        acc.push(slot_attribution(
+            "verdict_head",
+            None,
+            default_chunk,
+            SlotAttributionPolarity::Violating,
+            SlotAttributionSource::VerdictHead,
+            (1.0 - prediction.predicted_oracle_pass).clamp(0.0, 1.0),
+            None,
+            None,
+            "rejection verdict evidence",
+            None,
+            None,
+            None,
+            Some("q2_verdict".to_string()),
+            None,
+            "fallback rejection attribution from calibrated Q2 verdict score",
+        ));
+    }
+    Ok(acc.items)
+}
+
+fn derive_q4_attributions(
+    prediction: &RealityPrediction,
+    acc: &mut SlotAttributionAccumulator,
+    default_chunk: Option<ChunkId>,
+) {
+    for item in &prediction.predicted_edge_cases {
+        acc.push(q4_attribution(
+            "q4_edge_case_head",
+            "edge_case",
+            item.chunk.clone(),
+            item.confidence,
+            &item.triggering_input_description,
+        ));
+    }
+    for item in &prediction.predicted_latent_bugs {
+        acc.push(q4_attribution(
+            "q4_latent_bug_head",
+            "latent_bug",
+            item.chunk.clone(),
+            item.confidence,
+            &item.explanation,
+        ));
+    }
+    for item in &prediction.predicted_tech_debt_added {
+        acc.push(q4_attribution(
+            "q4_tech_debt_head",
+            "tech_debt",
+            item.chunk.clone(),
+            severity_score(item.severity),
+            &item.explanation,
+        ));
+    }
+    for item in &prediction.predicted_dead_code {
+        acc.push(q4_attribution(
+            "q4_dead_code_head",
+            "dead_code",
+            item.chunk.clone(),
+            0.6,
+            &item.reason,
+        ));
+    }
+    for item in &prediction.predicted_redundant_code {
+        acc.push(q4_attribution(
+            "q4_redundancy_head",
+            "redundancy",
+            item.chunk.clone(),
+            item.similarity,
+            &item.explanation,
+        ));
+    }
+    for item in &prediction.predicted_perf_regressions {
+        acc.push(q4_attribution(
+            "q4_perf_head",
+            "perf",
+            item.chunk.clone(),
+            item.confidence,
+            &item.explanation,
+        ));
+    }
+    for item in &prediction.predicted_security_concerns {
+        acc.push(q4_attribution(
+            "q4_security_head",
+            "security",
+            item.chunk.clone(),
+            item.cvss_estimate.map(|cvss| cvss / 10.0).unwrap_or(0.7),
+            &item.explanation,
+        ));
+    }
+    for item in &prediction.predicted_accuracy_degradations {
+        acc.push(q4_attribution(
+            "q4_accuracy_head",
+            "accuracy",
+            item.chunk.clone(),
+            item.confidence,
+            &item.explanation,
+        ));
+    }
+    for item in &prediction.predicted_cost_regressions {
+        acc.push(q4_attribution(
+            "q4_cost_head",
+            "cost",
+            item.chunk.clone(),
+            scaled_delta(item.predicted_delta as f32),
+            &item.explanation,
+        ));
+    }
+    if prediction.predicted_reasoning_class != ReasoningClass::Mute {
+        acc.push(slot_attribution(
+            "q4_reasoning_head",
+            None,
+            default_chunk,
+            SlotAttributionPolarity::Q4Concern,
+            SlotAttributionSource::Q4Head,
+            0.5,
+            None,
+            None,
+            "reasoning-class head evidence",
+            None,
+            None,
+            None,
+            Some("reasoning".to_string()),
+            None,
+            format!("{:?}", prediction.predicted_reasoning_class),
+        ));
+    }
+}
+
+#[derive(Default)]
+struct SlotAttributionAccumulator {
+    items: Vec<SlotAttributionEvidence>,
+    seen: BTreeSet<String>,
+}
+
+impl SlotAttributionAccumulator {
+    fn push(&mut self, item: SlotAttributionEvidence) {
+        if self.items.len() >= MAX_SLOT_ATTRIBUTIONS {
+            return;
+        }
+        let key = format!(
+            "{}|{:?}|{:?}|{}|{}",
+            item.slot_id,
+            item.source,
+            item.polarity,
+            item.chunk
+                .as_ref()
+                .map(|chunk| chunk.0.as_str())
+                .unwrap_or(""),
+            item.reason
+        );
+        if self.seen.insert(key) {
+            self.items.push(item);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn slot_attribution(
+    slot_id: impl Into<String>,
+    embedder: Option<EmbedderId>,
+    chunk: Option<ChunkId>,
+    polarity: SlotAttributionPolarity,
+    source: SlotAttributionSource,
+    score: f32,
+    threshold: Option<f32>,
+    margin: Option<f32>,
+    reason: impl Into<String>,
+    relationship_slot_id: Option<String>,
+    related_fingerprint_id: Option<String>,
+    active_learning_candidate_id: Option<[u8; 16]>,
+    q_head: Option<String>,
+    impact_kind: Option<String>,
+    evidence: impl Into<String>,
+) -> SlotAttributionEvidence {
+    SlotAttributionEvidence {
+        schema_version: SLOT_ATTRIBUTION_SCHEMA_VERSION,
+        slot_id: slot_id.into(),
+        embedder,
+        chunk,
+        polarity,
+        source,
+        score: score.clamp(0.0, 1.0),
+        threshold,
+        margin,
+        reason: reason.into(),
+        relationship_slot_id,
+        related_fingerprint_id,
+        active_learning_candidate_id,
+        q_head,
+        impact_kind,
+        evidence: evidence.into(),
+    }
+}
+
+fn q4_attribution(
+    slot_id: &'static str,
+    q_head: &'static str,
+    chunk: ChunkId,
+    score: f32,
+    evidence: &str,
+) -> SlotAttributionEvidence {
+    slot_attribution(
+        slot_id,
+        None,
+        Some(chunk),
+        SlotAttributionPolarity::Q4Concern,
+        SlotAttributionSource::Q4Head,
+        score,
+        None,
+        None,
+        "Q4 consequence head evidence",
+        None,
+        None,
+        None,
+        Some(q_head.to_string()),
+        None,
+        evidence,
+    )
+}
+
+fn slot_id_for_embedder(embedder: &EmbedderId) -> String {
+    if embedder.0.trim().is_empty() {
+        "unknown_embedder".to_string()
+    } else {
+        embedder.0.clone()
+    }
+}
+
+fn polarity_for_ood_reason(reason: PerSlotOodReasonKind) -> SlotAttributionPolarity {
+    match reason {
+        PerSlotOodReasonKind::MissingSlotObservation => SlotAttributionPolarity::Missing,
+        PerSlotOodReasonKind::StaleCalibration => SlotAttributionPolarity::Stale,
+        _ => SlotAttributionPolarity::Violating,
+    }
+}
+
+fn granger_slot_id(key: &str) -> String {
+    let mut out = String::from("granger_");
+    for ch in key.chars().take(64) {
+        out.push(if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+            ch
+        } else {
+            '_'
+        });
+    }
+    out
+}
+
+fn severity_score(severity: Severity) -> f32 {
+    match severity {
+        Severity::Critical => 1.0,
+        Severity::High => 0.8,
+        Severity::Medium => 0.6,
+        Severity::Low => 0.4,
+        Severity::Info => 0.2,
+    }
+}
+
+fn q5_impact_score(correctness: PredictionCorrectness) -> f32 {
+    match correctness {
+        PredictionCorrectness::Aligned => 1.0,
+        PredictionCorrectness::UnderPredicted | PredictionCorrectness::OverPredicted => 0.7,
+        PredictionCorrectness::DivergentInClass => 0.8,
+        PredictionCorrectness::Surprise => 0.95,
+    }
+}
+
+fn scaled_delta(value: f32) -> f32 {
+    (value.abs() / (value.abs() + 1.0)).clamp(0.0, 1.0)
 }
 
 #[derive(Debug, Clone)]
@@ -2171,6 +3127,7 @@ pub struct RealityPredictionBuilder {
     matched_fingerprint: Option<MatchedFingerprintEvidence>,
     unknown_candidate_id: Option<[u8; 16]>,
     constellation_intelligence: Option<ConstellationIntelligenceEvidence>,
+    slot_attributions: Vec<SlotAttributionEvidence>,
 }
 
 impl RealityPredictionBuilder {
@@ -2225,6 +3182,7 @@ impl RealityPredictionBuilder {
             matched_fingerprint: None,
             unknown_candidate_id: None,
             constellation_intelligence: None,
+            slot_attributions: Vec::new(),
         }
     }
 
@@ -2448,6 +3406,7 @@ impl RealityPredictionBuilder {
             matched_fingerprint: self.matched_fingerprint,
             unknown_candidate_id: self.unknown_candidate_id,
             constellation_intelligence: self.constellation_intelligence,
+            slot_attributions: self.slot_attributions,
         })
     }
 
@@ -2466,6 +3425,11 @@ impl RealityPredictionBuilder {
         value: Option<ConstellationIntelligenceEvidence>,
     ) -> Self {
         self.constellation_intelligence = value;
+        self
+    }
+
+    pub fn slot_attributions(mut self, value: Vec<SlotAttributionEvidence>) -> Self {
+        self.slot_attributions = value;
         self
     }
 }
@@ -3522,6 +4486,13 @@ pub(crate) fn validate_probability(field: &str, value: f32) -> Result<(), Mejepa
     Ok(())
 }
 
+fn validate_optional_probability(field: &str, value: Option<f32>) -> Result<(), MejepaInferError> {
+    if let Some(value) = value {
+        validate_probability(field, value)?;
+    }
+    Ok(())
+}
+
 fn validate_non_empty_id(field: &str, value: &str) -> Result<(), MejepaInferError> {
     validate_bounded_id(field, value, MAX_ID_BYTES)
 }
@@ -3698,5 +4669,191 @@ mod tests {
         assert_eq!(decoded.prediction_id, prediction.prediction_id);
         assert_eq!(decoded.task_id, prediction.task_id);
         assert_eq!(decoded.constellation_intelligence, None);
+        assert!(!decoded.slot_attributions.is_empty());
+    }
+
+    #[test]
+    fn decode_reality_prediction_reads_legacy_without_slot_attributions_field() {
+        let prediction = prediction_for_decode();
+        let legacy = RealityPredictionLegacyNoSlotAttributions::from_current(&prediction);
+        let legacy_bytes = bincode::serialize(&legacy).unwrap();
+
+        let decoded = decode_reality_prediction(&legacy_bytes).unwrap();
+
+        assert_eq!(decoded.prediction_id, prediction.prediction_id);
+        assert_eq!(
+            decoded.constellation_intelligence,
+            prediction.constellation_intelligence
+        );
+        assert!(!decoded.slot_attributions.is_empty());
+    }
+
+    #[test]
+    fn decode_hierarchical_prediction_reads_legacy_without_slot_attributions_field() {
+        let chunk = ChunkId("src/unit.py#0".to_string());
+        let record = HierarchicalPredictionRecord::try_new(HierarchicalPredictionRecord {
+            schema_version: HIERARCHICAL_PREDICTION_SCHEMA_VERSION,
+            prediction_id: [0x21; 16],
+            task_id: TaskId("hierarchy-decode-task".to_string()),
+            session_id: [0x22; 16],
+            language: Language::Python,
+            source_panel_sha: [0x23; 32],
+            calibration_version: "hierarchy-decode".to_string(),
+            created_at_unix_ms: 1_772_000_000_000,
+            slot_attributions: vec![unit_slot_attribution(SlotAttributionPolarity::Supporting)],
+            levels: hierarchy_decode_levels(chunk),
+        })
+        .unwrap();
+        let legacy = HierarchicalPredictionRecordLegacyNoSlotAttributions::from_current(&record);
+        let legacy_bytes = bincode::serialize(&legacy).unwrap();
+
+        let decoded = decode_hierarchical_prediction_record(&legacy_bytes).unwrap();
+
+        assert_eq!(decoded.prediction_id, record.prediction_id);
+        assert!(decoded.slot_attributions.is_empty());
+        assert_eq!(decoded.levels, record.levels);
+    }
+
+    fn hierarchy_decode_levels(chunk: ChunkId) -> Vec<HierarchicalPredictionLevel> {
+        let file = "file:src/unit.py".to_string();
+        let function = "file:src/unit.py/function:unit#0".to_string();
+        let ast = "file:src/unit.py/function:unit#0/ast:function:abc".to_string();
+        vec![
+            hierarchy_decode_level(
+                PredictionHierarchyLevel::File,
+                file.clone(),
+                None,
+                chunk.clone(),
+            ),
+            hierarchy_decode_level(
+                PredictionHierarchyLevel::Function,
+                function.clone(),
+                Some(file),
+                chunk.clone(),
+            ),
+            hierarchy_decode_level(
+                PredictionHierarchyLevel::AstNode,
+                ast.clone(),
+                Some(function),
+                chunk.clone(),
+            ),
+            hierarchy_decode_level(
+                PredictionHierarchyLevel::Chunk,
+                "file:src/unit.py/function:unit#0/ast:function:abc/chunk:0".to_string(),
+                Some(ast),
+                chunk,
+            ),
+        ]
+    }
+
+    fn hierarchy_decode_level(
+        level: PredictionHierarchyLevel,
+        scope_id: String,
+        parent_scope_id: Option<String>,
+        chunk: ChunkId,
+    ) -> HierarchicalPredictionLevel {
+        HierarchicalPredictionLevel {
+            level,
+            scope_id,
+            parent_scope_id,
+            covered_chunks: vec![chunk],
+            predicted_oracle_pass: 0.7,
+            calibrated_confidence: 0.8,
+            ood_score: 0.1,
+            verdict: Verdict::Pass,
+            latent_energy: 0.01,
+        }
+    }
+
+    #[test]
+    fn slot_attributions_reject_duplicate_evidence() {
+        let attr = unit_slot_attribution(SlotAttributionPolarity::Supporting);
+        let err = RealityPredictionBuilder::from_parts(
+            TaskId("slot-duplicate-task".to_string()),
+            [0x31; 16],
+            Language::Python,
+            ConformalSet::try_new(vec![OracleOutcome::Pass], 0.1, 0.2).unwrap(),
+        )
+        .prediction_id([0x32; 16])
+        .witness_hash(WitnessHash([0x33; 32]))
+        .verdict(Verdict::Pass)
+        .confidence_interval(ConformalInterval {
+            lower: 0.6,
+            upper: 0.8,
+            ..ConformalInterval::default()
+        })
+        .predicted_oracle_pass(0.75)
+        .predicted_test_pass(vec![0.75])
+        .ood_score(0.1)
+        .calibrated_confidence(0.7)
+        .provenance(PredictionProvenance {
+            predictor_version: "slot-test".to_string(),
+            constellation_version: "slot-test".to_string(),
+            calibration_version: "slot-test".to_string(),
+            active_pointer: "slot-test".to_string(),
+        })
+        .source_panel_sha([0x34; 32])
+        .calibration_version("slot-test")
+        .slot_attributions(vec![attr.clone(), attr])
+        .build()
+        .unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_INVALID_INPUT");
+    }
+
+    #[test]
+    fn rejection_verdict_requires_rejection_slot_evidence() {
+        let err = RealityPredictionBuilder::from_parts(
+            TaskId("slot-rejection-task".to_string()),
+            [0x41; 16],
+            Language::Python,
+            ConformalSet::try_new(vec![OracleOutcome::Fail], 0.1, 0.2).unwrap(),
+        )
+        .prediction_id([0x42; 16])
+        .witness_hash(WitnessHash([0x43; 32]))
+        .verdict(Verdict::GuardRejected)
+        .confidence_interval(ConformalInterval {
+            lower: 0.1,
+            upper: 0.3,
+            ..ConformalInterval::default()
+        })
+        .predicted_oracle_pass(0.2)
+        .predicted_test_pass(vec![0.2])
+        .ood_score(0.9)
+        .calibrated_confidence(0.4)
+        .provenance(PredictionProvenance {
+            predictor_version: "slot-test".to_string(),
+            constellation_version: "slot-test".to_string(),
+            calibration_version: "slot-test".to_string(),
+            active_pointer: "slot-test".to_string(),
+        })
+        .source_panel_sha([0x44; 32])
+        .calibration_version("slot-test")
+        .slot_attributions(vec![unit_slot_attribution(
+            SlotAttributionPolarity::Supporting,
+        )])
+        .build()
+        .unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_INVALID_INPUT");
+    }
+
+    fn unit_slot_attribution(polarity: SlotAttributionPolarity) -> SlotAttributionEvidence {
+        SlotAttributionEvidence {
+            schema_version: SLOT_ATTRIBUTION_SCHEMA_VERSION,
+            slot_id: "unit_slot".to_string(),
+            embedder: Some(EmbedderId("E_UNIT".to_string())),
+            chunk: Some(ChunkId("src/unit.py#0".to_string())),
+            polarity,
+            source: SlotAttributionSource::VerdictHead,
+            score: 0.8,
+            threshold: None,
+            margin: None,
+            reason: "unit attribution".to_string(),
+            relationship_slot_id: None,
+            related_fingerprint_id: None,
+            active_learning_candidate_id: None,
+            q_head: Some("q2_verdict".to_string()),
+            impact_kind: None,
+            evidence: "unit evidence".to_string(),
+        }
     }
 }

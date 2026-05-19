@@ -289,6 +289,7 @@ fn test_prediction(session_id: [u8; 16]) -> RealityPrediction {
         matched_fingerprint: None,
         unknown_candidate_id: None,
         constellation_intelligence: None,
+        slot_attributions: Vec::new(),
     })
     .unwrap()
 }

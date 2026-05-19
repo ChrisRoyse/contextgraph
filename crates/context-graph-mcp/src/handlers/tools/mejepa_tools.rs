@@ -33,7 +33,8 @@ use context_graph_mejepa::{
     FingerprintReference, InstrumentProposalConfig, InstrumentProposalDecision, LabelMethod,
     LatentActionCandidate, LatentActionSearchConfig, LibraryId, MeJepaInferConfig, MincutOptions,
     OracleOutcome, PanelGraphSource, PanelId, PatchBundle, PredictionId, ProjectIngestRequest,
-    ProjectReportRequest, RealityPrediction, RocksDbEvalStore, RocksDbInferStore, SurpriseEvent,
+    ProjectReportRequest, RealityPrediction, RocksDbEvalStore, RocksDbInferStore,
+    SlotAttributionEvidence, SlotAttributionPolarity, SlotAttributionSource, SurpriseEvent,
     SurpriseSeverity, SystemCostCounters, TaskContext, TestId, VerifyVerdict, WitnessHash,
 };
 use context_graph_mejepa_cf::{
@@ -647,8 +648,13 @@ impl Handlers {
                     q4_projection(prediction, &q4_trust_gate, &trusted)
                 })
                 .collect::<Vec<_>>();
+            let slot_attribution_summaries = predictions
+                .iter()
+                .map(|prediction| slot_attribution_summary(prediction, 8))
+                .collect::<Vec<_>>();
             Ok::<serde_json::Value, context_graph_mejepa::MejepaInferError>(json!({
                 "predictions": predictions,
+                "slotAttributionSummaries": slot_attribution_summaries,
                 "q4TrustGate": q4_trust_gate,
                 "q4": q4,
                 "session_known": session_known
@@ -2585,6 +2591,8 @@ fn run_explain_prediction(
         "unknownCandidateId": prediction.unknown_candidate_id.map(hex::encode),
         "fingerprintEvidenceReason": fingerprint_evidence_reason(db.as_ref(), &prediction)?,
         "fingerprintReferences": fingerprint_references,
+        "slotAttributionSummary": slot_attribution_summary(&prediction, 12),
+        "slotAttributionsCompact": compact_slot_attributions(&prediction, 12),
         "confidenceInterval": prediction.confidence_interval,
         "calibratedConfidence": prediction.calibrated_confidence,
         "oodScore": prediction.ood_score,
@@ -2700,9 +2708,12 @@ fn run_inspect_prediction(
             "guardViolations": row.prediction.guard_violations.clone(),
             "guardViolationCount": row.prediction.guard_violations.len(),
             "perSlotOodReasons": row.prediction.per_slot_ood_reasons.clone(),
-            "perSlotOodReasonCount": row.prediction.per_slot_ood_reasons.len()
+            "perSlotOodReasonCount": row.prediction.per_slot_ood_reasons.len(),
+            "slotAttributionCount": row.prediction.slot_attributions.len(),
+            "slotAttributionSummary": slot_attribution_summary(&row.prediction, 16)
         },
         "contributingChunks": contributing_chunks,
+        "slotAttributions": row.prediction.slot_attributions.clone(),
         "q4": q4,
         "q4TrustGate": &q4_trust_gate,
         "trustedQ4Consequences": &trusted_q4,
@@ -2725,6 +2736,7 @@ fn q4_projection(
 ) -> Value {
     json!({
         "rawObservations": q4_raw_observations(prediction),
+        "slotAttributionsByHead": q4_slot_attributions_by_head(prediction),
         "trustGate": trust_gate,
         "trustedConsequences": trusted,
         "policy": "raw Q4 observations are display-only until the matching head is ready"
@@ -2747,6 +2759,138 @@ fn q4_raw_observations(prediction: &RealityPrediction) -> Value {
         },
         "trustedForDecision": false
     })
+}
+
+fn slot_attribution_summary(prediction: &RealityPrediction, limit: usize) -> Value {
+    let mut by_polarity = BTreeMap::new();
+    let mut by_source = BTreeMap::new();
+    let mut by_slot = BTreeMap::new();
+    let mut rejection_evidence_count = 0usize;
+    let mut q4_count = 0usize;
+    let mut q5_count = 0usize;
+    for attribution in &prediction.slot_attributions {
+        *by_polarity
+            .entry(slot_polarity_name(attribution.polarity).to_string())
+            .or_insert(0usize) += 1;
+        *by_source
+            .entry(slot_source_name(attribution.source).to_string())
+            .or_insert(0usize) += 1;
+        *by_slot.entry(attribution.slot_id.clone()).or_insert(0usize) += 1;
+        if matches!(
+            attribution.polarity,
+            SlotAttributionPolarity::Violating
+                | SlotAttributionPolarity::Missing
+                | SlotAttributionPolarity::Stale
+        ) {
+            rejection_evidence_count += 1;
+        }
+        if attribution.source == SlotAttributionSource::Q4Head {
+            q4_count += 1;
+        }
+        if attribution.source == SlotAttributionSource::Q5Replay {
+            q5_count += 1;
+        }
+    }
+    json!({
+        "schemaVersion": context_graph_mejepa::SLOT_ATTRIBUTION_SCHEMA_VERSION,
+        "predictionId": hex::encode(prediction.prediction_id),
+        "count": prediction.slot_attributions.len(),
+        "byPolarity": by_polarity,
+        "bySource": by_source,
+        "bySlot": by_slot,
+        "rejectionEvidenceCount": rejection_evidence_count,
+        "q4ConcernCount": q4_count,
+        "q5ImpactCount": q5_count,
+        "top": compact_slot_attributions(prediction, limit),
+        "fullRecordField": "prediction.slot_attributions"
+    })
+}
+
+fn compact_slot_attributions(prediction: &RealityPrediction, limit: usize) -> Vec<Value> {
+    let mut items = prediction
+        .slot_attributions
+        .iter()
+        .collect::<Vec<&SlotAttributionEvidence>>();
+    items.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.slot_id.cmp(&right.slot_id))
+            .then_with(|| slot_source_name(left.source).cmp(slot_source_name(right.source)))
+    });
+    items
+        .into_iter()
+        .take(limit)
+        .map(compact_slot_attribution)
+        .collect()
+}
+
+fn compact_slot_attribution(attribution: &SlotAttributionEvidence) -> Value {
+    json!({
+        "slotId": &attribution.slot_id,
+        "embedder": &attribution.embedder,
+        "chunk": &attribution.chunk,
+        "polarity": slot_polarity_name(attribution.polarity),
+        "source": slot_source_name(attribution.source),
+        "score": attribution.score,
+        "threshold": attribution.threshold,
+        "margin": attribution.margin,
+        "reason": &attribution.reason,
+        "relationshipSlotId": &attribution.relationship_slot_id,
+        "relatedFingerprintId": &attribution.related_fingerprint_id,
+        "activeLearningCandidateId": attribution.active_learning_candidate_id.map(hex::encode),
+        "qHead": &attribution.q_head,
+        "impactKind": &attribution.impact_kind,
+        "evidence": &attribution.evidence
+    })
+}
+
+fn q4_slot_attributions_by_head(prediction: &RealityPrediction) -> Value {
+    let mut by_head: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    for attribution in &prediction.slot_attributions {
+        if attribution.source != SlotAttributionSource::Q4Head {
+            continue;
+        }
+        let head = attribution
+            .q_head
+            .clone()
+            .unwrap_or_else(|| "q4_unknown_head".to_string());
+        by_head
+            .entry(head)
+            .or_default()
+            .push(compact_slot_attribution(attribution));
+    }
+    json!(by_head)
+}
+
+fn slot_polarity_name(polarity: SlotAttributionPolarity) -> &'static str {
+    match polarity {
+        SlotAttributionPolarity::Supporting => "supporting",
+        SlotAttributionPolarity::Violating => "violating",
+        SlotAttributionPolarity::Missing => "missing",
+        SlotAttributionPolarity::Stale => "stale",
+        SlotAttributionPolarity::Relationship => "relationship",
+        SlotAttributionPolarity::Q4Concern => "q4_concern",
+        SlotAttributionPolarity::Q5Impact => "q5_impact",
+    }
+}
+
+fn slot_source_name(source: SlotAttributionSource) -> &'static str {
+    match source {
+        SlotAttributionSource::VerdictHead => "verdict_head",
+        SlotAttributionSource::PredictedWorks => "predicted_works",
+        SlotAttributionSource::FailureMode => "failure_mode",
+        SlotAttributionSource::GuardViolation => "guard_violation",
+        SlotAttributionSource::PerSlotOod => "per_slot_ood",
+        SlotAttributionSource::ConstellationPair => "constellation_pair",
+        SlotAttributionSource::FailureFingerprint => "failure_fingerprint",
+        SlotAttributionSource::ActiveLearningCandidate => "active_learning_candidate",
+        SlotAttributionSource::Q4Head => "q4_head",
+        SlotAttributionSource::Q5Replay => "q5_replay",
+        SlotAttributionSource::ClaimReconciliation => "claim_reconciliation",
+        SlotAttributionSource::GrangerAttestation => "granger_attestation",
+    }
 }
 
 fn file_sha_snapshot(
@@ -4511,6 +4655,7 @@ can_operator_override = {operator}
             matched_fingerprint: None,
             unknown_candidate_id: None,
             constellation_intelligence: None,
+            slot_attributions: Vec::new(),
         })
         .unwrap()
     }
@@ -4677,7 +4822,15 @@ can_operator_override = {operator}
                 .unwrap_or_default()
                 - 0.93)
                 .abs()
-                < 0.001;
+                < 0.001
+            && happy_structured["slotAttributionSummaries"]
+                .as_array()
+                .map(|items| items.len())
+                == Some(1)
+            && happy_structured["slotAttributionSummaries"][0]["rejectionEvidenceCount"]
+                .as_u64()
+                .unwrap_or_default()
+                >= 1;
         let boundary_cases = vec![
             json!({
                 "case": "cold_start_session_returns_empty_prediction_list",
@@ -5042,7 +5195,16 @@ can_operator_override = {operator}
             && happy_structured["contributingChunks"][0]["tctCellsConsulted"]
                 .as_array()
                 .map(|values| values.len())
-                == Some(1);
+                == Some(1)
+            && happy_structured["slotAttributions"]
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or_default()
+                >= 1
+            && happy_structured["tctTrace"]["slotAttributionSummary"]["rejectionEvidenceCount"]
+                .as_u64()
+                .unwrap_or_default()
+                >= 1;
 
         let malformed_response = handlers
             .call_mejepa_inspect_prediction(
