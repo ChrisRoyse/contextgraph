@@ -1,5 +1,6 @@
 use candle_core::Tensor;
 use candle_nn::{linear, ops, Linear, Module, VarBuilder};
+use context_graph_mejepa_instruments::InstrumentSlot;
 use std::panic::AssertUnwindSafe;
 
 use crate::config::PANEL_DIM;
@@ -19,14 +20,28 @@ pub const REASONING_CLASSES: usize = 8;
 
 #[derive(Debug)]
 pub struct AuxiliaryHeads {
-    failure_mode: Linear,
-    edge_case: Linear,
-    tech_debt: Linear,
-    perf: Linear,
-    security: Linear,
-    accuracy: Linear,
-    cost: Linear,
-    reasoning: Linear,
+    failure_mode: SlotAwareHead,
+    edge_case: SlotAwareHead,
+    tech_debt: SlotAwareHead,
+    perf: SlotAwareHead,
+    security: SlotAwareHead,
+    accuracy: SlotAwareHead,
+    cost: SlotAwareHead,
+    reasoning: SlotAwareHead,
+}
+
+#[derive(Debug)]
+struct SlotAwareHead {
+    head_id: HeadId,
+    class_count: usize,
+    slot_projections: Vec<SlotHeadProjection>,
+    late_projection: Linear,
+}
+
+#[derive(Debug)]
+struct SlotHeadProjection {
+    slot: InstrumentSlot,
+    projection: Linear,
 }
 
 #[derive(Debug, Clone)]
@@ -34,6 +49,14 @@ pub struct HeadPrediction {
     pub head_id: HeadId,
     pub logits: Tensor,
     pub probabilities: Tensor,
+    pub class_count: usize,
+    pub slot_logits: Vec<SlotLogitContribution>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SlotLogitContribution {
+    pub slot_id: String,
+    pub logits: Tensor,
     pub class_count: usize,
 }
 
@@ -53,14 +76,22 @@ pub struct AllHeadOutputs {
 impl AuxiliaryHeads {
     pub fn new(vb: VarBuilder) -> Result<Self, PredictorError> {
         Ok(Self {
-            failure_mode: linear(PANEL_DIM, FAILURE_MODE_CLASSES, vb.pp("failure_mode"))?,
-            edge_case: linear(PANEL_DIM, EDGE_CASE_CLASSES, vb.pp("edge_case"))?,
-            tech_debt: linear(PANEL_DIM, TECH_DEBT_CLASSES, vb.pp("tech_debt"))?,
-            perf: linear(PANEL_DIM, PERF_CLASSES, vb.pp("perf"))?,
-            security: linear(PANEL_DIM, SECURITY_CLASSES, vb.pp("security"))?,
-            accuracy: linear(PANEL_DIM, ACCURACY_CLASSES, vb.pp("accuracy"))?,
-            cost: linear(PANEL_DIM, COST_CLASSES, vb.pp("cost"))?,
-            reasoning: linear(PANEL_DIM, REASONING_CLASSES, vb.pp("reasoning"))?,
+            failure_mode: SlotAwareHead::new(
+                HeadId::FailureMode,
+                FAILURE_MODE_CLASSES,
+                vb.pp("failure_mode"),
+            )?,
+            edge_case: SlotAwareHead::new(HeadId::EdgeCase, EDGE_CASE_CLASSES, vb.pp("edge_case"))?,
+            tech_debt: SlotAwareHead::new(HeadId::TechDebt, TECH_DEBT_CLASSES, vb.pp("tech_debt"))?,
+            perf: SlotAwareHead::new(HeadId::Perf, PERF_CLASSES, vb.pp("perf"))?,
+            security: SlotAwareHead::new(HeadId::Security, SECURITY_CLASSES, vb.pp("security"))?,
+            accuracy: SlotAwareHead::new(HeadId::Accuracy, ACCURACY_CLASSES, vb.pp("accuracy"))?,
+            cost: SlotAwareHead::new(HeadId::Cost, COST_CLASSES, vb.pp("cost"))?,
+            reasoning: SlotAwareHead::new(
+                HeadId::Reasoning,
+                REASONING_CLASSES,
+                vb.pp("reasoning"),
+            )?,
         })
     }
 
@@ -71,58 +102,20 @@ impl AuxiliaryHeads {
         validate_predicted_panel(predicted)?;
         Ok(AuxiliaryHeadOutputs {
             failure_mode: run_head_fail_closed(HeadId::FailureMode, || {
-                project_head(
-                    HeadId::FailureMode,
-                    &self.failure_mode,
-                    predicted,
-                    FAILURE_MODE_CLASSES,
-                )
+                self.failure_mode.forward(predicted)
             })?,
             edge_case: run_head_fail_closed(HeadId::EdgeCase, || {
-                project_head(
-                    HeadId::EdgeCase,
-                    &self.edge_case,
-                    predicted,
-                    EDGE_CASE_CLASSES,
-                )
+                self.edge_case.forward(predicted)
             })?,
             tech_debt: run_head_fail_closed(HeadId::TechDebt, || {
-                project_head(
-                    HeadId::TechDebt,
-                    &self.tech_debt,
-                    predicted,
-                    TECH_DEBT_CLASSES,
-                )
+                self.tech_debt.forward(predicted)
             })?,
-            perf: run_head_fail_closed(HeadId::Perf, || {
-                project_head(HeadId::Perf, &self.perf, predicted, PERF_CLASSES)
-            })?,
-            security: run_head_fail_closed(HeadId::Security, || {
-                project_head(
-                    HeadId::Security,
-                    &self.security,
-                    predicted,
-                    SECURITY_CLASSES,
-                )
-            })?,
-            accuracy: run_head_fail_closed(HeadId::Accuracy, || {
-                project_head(
-                    HeadId::Accuracy,
-                    &self.accuracy,
-                    predicted,
-                    ACCURACY_CLASSES,
-                )
-            })?,
-            cost: run_head_fail_closed(HeadId::Cost, || {
-                project_head(HeadId::Cost, &self.cost, predicted, COST_CLASSES)
-            })?,
+            perf: run_head_fail_closed(HeadId::Perf, || self.perf.forward(predicted))?,
+            security: run_head_fail_closed(HeadId::Security, || self.security.forward(predicted))?,
+            accuracy: run_head_fail_closed(HeadId::Accuracy, || self.accuracy.forward(predicted))?,
+            cost: run_head_fail_closed(HeadId::Cost, || self.cost.forward(predicted))?,
             reasoning: run_head_fail_closed(HeadId::Reasoning, || {
-                project_head(
-                    HeadId::Reasoning,
-                    &self.reasoning,
-                    predicted,
-                    REASONING_CLASSES,
-                )
+                self.reasoning.forward(predicted)
             })?,
         })
     }
@@ -140,14 +133,109 @@ pub struct AuxiliaryHeadOutputs {
     pub reasoning: HeadPrediction,
 }
 
-fn project_head(
+impl SlotAwareHead {
+    fn new(head_id: HeadId, class_count: usize, vb: VarBuilder) -> Result<Self, PredictorError> {
+        let mut slot_projections = Vec::with_capacity(InstrumentSlot::all().len());
+        for slot in InstrumentSlot::all() {
+            slot_projections.push(SlotHeadProjection {
+                slot,
+                projection: linear(
+                    slot.dim(),
+                    class_count,
+                    vb.pp(format!("slot_{}", slot.slug())),
+                )?,
+            });
+        }
+        let late_projection = linear(
+            class_count * InstrumentSlot::all().len(),
+            class_count,
+            vb.pp("late_projection"),
+        )?;
+        Ok(Self {
+            head_id,
+            class_count,
+            slot_projections,
+            late_projection,
+        })
+    }
+
+    fn forward(&self, predicted: &PredictedPanel) -> Result<HeadPrediction, PredictorError> {
+        let mut slot_logits = Vec::with_capacity(self.slot_projections.len());
+        let mut slot_contributions = Vec::with_capacity(self.slot_projections.len());
+        for slot_projection in &self.slot_projections {
+            let (offset, dim) = slot_projection.slot.extent();
+            let slot_tensor = predicted.tensor.narrow(1, offset, dim)?;
+            let logits = slot_projection.projection.forward(&slot_tensor)?;
+            if logits.dims() != [predicted.batch_size, self.class_count] {
+                return Err(PredictorError::DimMismatch {
+                    detail: format!(
+                        "{} {} slot logits expected (B, {}); got {:?}",
+                        self.head_id.as_str(),
+                        slot_projection.slot.slug(),
+                        self.class_count,
+                        logits.dims()
+                    ),
+                    observed: serde_json::json!({
+                        "head": self.head_id.as_str(),
+                        "slot": slot_projection.slot.slug(),
+                        "slot_logits": logits.dims()
+                    }),
+                    expected_panel_dim: PANEL_DIM,
+                });
+            }
+            ensure_finite(
+                &logits,
+                NanSource::OracleHead,
+                None,
+                &format!(
+                    "{}_{}_slot_logits",
+                    self.head_id.as_str(),
+                    slot_projection.slot.slug()
+                ),
+            )?;
+            slot_contributions.push(SlotLogitContribution {
+                slot_id: slot_projection.slot.slug().to_string(),
+                logits: logits.clone(),
+                class_count: self.class_count,
+            });
+            slot_logits.push(logits);
+        }
+        let slot_logit_refs = slot_logits.iter().collect::<Vec<_>>();
+        let late_input = Tensor::cat(&slot_logit_refs, 1)?;
+        let expected_late_dim = self.class_count * self.slot_projections.len();
+        if late_input.dims() != [predicted.batch_size, expected_late_dim] {
+            return Err(PredictorError::DimMismatch {
+                detail: format!(
+                    "{} late-head input expected (B, {expected_late_dim}); got {:?}",
+                    self.head_id.as_str(),
+                    late_input.dims()
+                ),
+                observed: serde_json::json!({
+                    "head": self.head_id.as_str(),
+                    "late_head_input": late_input.dims()
+                }),
+                expected_panel_dim: PANEL_DIM,
+            });
+        }
+        let logits = self.late_projection.forward(&late_input)?;
+        build_head_prediction(
+            self.head_id,
+            logits,
+            predicted.batch_size,
+            self.class_count,
+            slot_contributions,
+        )
+    }
+}
+
+fn build_head_prediction(
     head_id: HeadId,
-    projection: &Linear,
-    predicted: &PredictedPanel,
+    logits: Tensor,
+    batch_size: usize,
     class_count: usize,
+    slot_logits: Vec<SlotLogitContribution>,
 ) -> Result<HeadPrediction, PredictorError> {
-    let logits = projection.forward(&predicted.tensor)?;
-    if logits.dims() != [predicted.batch_size, class_count] {
+    if logits.dims() != [batch_size, class_count] {
         return Err(PredictorError::DimMismatch {
             detail: format!(
                 "{} logits expected (B, {class_count}); got {:?}",
@@ -179,6 +267,7 @@ fn project_head(
         logits,
         probabilities,
         class_count,
+        slot_logits,
     })
 }
 

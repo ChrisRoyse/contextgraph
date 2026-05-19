@@ -162,7 +162,11 @@ pub use patch_similarity::*;
 pub use pause_state::*;
 pub use prediction_replay::*;
 pub use prediction_surfaces::*;
-pub use predictor::{ArchitectureSummary, MeJepaPredictor, TransformerLayer};
+pub use predictor::{
+    build_no_compensation_trace, build_no_compensation_trace_from_tensors, ArchitectureSummary,
+    MeJepaPredictor, NoCompensationTrace, PairwiseResidualContrast, SlotResidualScore,
+    TransformerLayer,
+};
 pub use project_cache::*;
 pub use project_ingest::*;
 pub use project_report::*;

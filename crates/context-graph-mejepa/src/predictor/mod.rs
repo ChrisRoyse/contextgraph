@@ -1,10 +1,16 @@
 pub mod heads;
+pub mod slot_trace;
 pub mod transformer_layer;
 
 use candle_core::{DType, Device, DeviceLocation, Tensor, Var};
 use candle_nn::{linear, Linear, Module, VarBuilder, VarMap};
+use context_graph_mejepa_instruments::InstrumentSlot;
 use serde::Serialize;
 
+pub use slot_trace::{
+    build_no_compensation_trace, build_no_compensation_trace_from_tensors, NoCompensationTrace,
+    PairwiseResidualContrast, SlotResidualScore,
+};
 pub use transformer_layer::TransformerLayer;
 
 use crate::config::{PredictorConfig, CONCAT_INPUT_DIM, INVERSE_ACTION_DIM, PANEL_DIM};
@@ -26,6 +32,9 @@ pub struct ArchitectureSummary {
     pub activation: &'static str,
     pub residual: bool,
     pub layer_norm: bool,
+    pub slot_preserving_late_fusion: bool,
+    pub slot_encoder_count: usize,
+    pub per_slot_decoder_count: usize,
     pub panel_dim: usize,
     pub concat_input_dim: usize,
     pub bidirectional_inverse_head: bool,
@@ -36,10 +45,10 @@ pub struct ArchitectureSummary {
 pub struct MeJepaPredictor {
     pub(crate) config: PredictorConfig,
     pub(crate) varmap: VarMap,
-    pub(crate) input_proj: Linear,
+    pub(crate) slot_blocks: Vec<SlotPredictorBlock>,
+    pub(crate) late_fusion_proj: Linear,
     pub(crate) inverse_target_proj: Linear,
     pub(crate) layers: Vec<TransformerLayer>,
-    pub(crate) output_proj: Linear,
     pub(crate) inverse_input_proj: Linear,
     pub(crate) inverse_action_proj: Linear,
     pub(crate) oracle_head: OracleHead,
@@ -63,6 +72,13 @@ impl std::fmt::Debug for MeJepaPredictor {
             .field("dtype", &self.dtype)
             .finish()
     }
+}
+
+#[derive(Debug)]
+pub(crate) struct SlotPredictorBlock {
+    slot: InstrumentSlot,
+    input_proj: Linear,
+    output_proj: Linear,
 }
 
 impl MeJepaPredictor {
@@ -97,7 +113,20 @@ impl MeJepaPredictor {
         let eps = config.layer_norm_eps_value()?;
         let varmap = VarMap::new();
         let vb = VarBuilder::from_varmap(&varmap, dtype, &device);
-        let input_proj = linear(CONCAT_INPUT_DIM, hidden_dim, vb.pp("input_proj"))?;
+        let mut slot_blocks = Vec::with_capacity(InstrumentSlot::all().len());
+        for slot in InstrumentSlot::all() {
+            let slot_vb = vb.pp(format!("slot_{}", slot.slug()));
+            slot_blocks.push(SlotPredictorBlock {
+                slot,
+                input_proj: linear(slot.dim() * 2, hidden_dim, slot_vb.pp("input_proj"))?,
+                output_proj: linear(hidden_dim, slot.dim(), slot_vb.pp("output_proj"))?,
+            });
+        }
+        let late_fusion_proj = linear(
+            hidden_dim * InstrumentSlot::all().len(),
+            hidden_dim,
+            vb.pp("late_fusion_proj"),
+        )?;
         let inverse_target_proj = linear(PANEL_DIM, hidden_dim, vb.pp("inverse_target_proj"))?;
         let mut layers = Vec::with_capacity(config.num_layers as usize);
         for layer_idx in 0..config.num_layers {
@@ -109,7 +138,6 @@ impl MeJepaPredictor {
                 vb.pp(format!("layer_{layer_idx}")),
             )?);
         }
-        let output_proj = linear(hidden_dim, PANEL_DIM, vb.pp("output_proj"))?;
         let inverse_input_proj = linear(hidden_dim, PANEL_DIM, vb.pp("inverse_input_proj"))?;
         let inverse_action_proj =
             linear(hidden_dim, INVERSE_ACTION_DIM, vb.pp("inverse_action_proj"))?;
@@ -118,10 +146,10 @@ impl MeJepaPredictor {
         Ok(Self {
             config,
             varmap,
-            input_proj,
+            slot_blocks,
+            late_fusion_proj,
             inverse_target_proj,
             layers,
-            output_proj,
             inverse_input_proj,
             inverse_action_proj,
             oracle_head,
@@ -197,20 +225,106 @@ impl MeJepaPredictor {
         let batch = panel_t0.dims()[0];
         let t0 = panel_t0.to_dtype(self.dtype)?;
         let t1 = panel_t1.to_dtype(self.dtype)?;
-        let x = Tensor::cat(&[&t0, &t1], 1)?;
-        if x.dims() != [batch, CONCAT_INPUT_DIM] {
+        let mut slot_hidden = Vec::with_capacity(self.slot_blocks.len());
+        for block in &self.slot_blocks {
+            let (offset, dim) = block.slot.extent();
+            let t0_slot = t0.narrow(1, offset, dim)?;
+            let t1_slot = t1.narrow(1, offset, dim)?;
+            let slot_input = Tensor::cat(&[&t0_slot, &t1_slot], 1)?;
+            if slot_input.dims() != [batch, dim * 2] {
+                return Err(PredictorError::DimMismatch {
+                    detail: format!(
+                        "{} slot input expected (B, {}); got {:?}",
+                        block.slot.slug(),
+                        dim * 2,
+                        slot_input.dims()
+                    ),
+                    observed: serde_json::json!({
+                        "slot": block.slot.slug(),
+                        "slot_input": slot_input.dims()
+                    }),
+                    expected_panel_dim: PANEL_DIM,
+                });
+            }
+            let encoded = block
+                .input_proj
+                .forward(&slot_input)?
+                .to_dtype(self.dtype)?;
+            if encoded.dims() != [batch, self.config.hidden_dim as usize] {
+                return Err(PredictorError::DimMismatch {
+                    detail: format!(
+                        "{} slot hidden expected (B, {}); got {:?}",
+                        block.slot.slug(),
+                        self.config.hidden_dim,
+                        encoded.dims()
+                    ),
+                    observed: serde_json::json!({
+                        "slot": block.slot.slug(),
+                        "slot_hidden": encoded.dims()
+                    }),
+                    expected_panel_dim: PANEL_DIM,
+                });
+            }
+            if validate_finite {
+                ensure_finite(
+                    &encoded,
+                    NanSource::Input,
+                    None,
+                    &format!("{}_slot_hidden", block.slot.slug()),
+                )?;
+            }
+            slot_hidden.push(encoded);
+        }
+        let slot_hidden_refs = slot_hidden.iter().collect::<Vec<_>>();
+        let fusion_input = Tensor::cat(&slot_hidden_refs, 1)?;
+        let expected_fusion_dim = self.config.hidden_dim as usize * self.slot_blocks.len();
+        if fusion_input.dims() != [batch, expected_fusion_dim] {
             return Err(PredictorError::DimMismatch {
                 detail: format!(
-                    "concat expected (B, {CONCAT_INPUT_DIM}); got {:?}",
-                    x.dims()
+                    "late-fusion input expected (B, {expected_fusion_dim}); got {:?}",
+                    fusion_input.dims()
                 ),
-                observed: serde_json::json!({ "concat": x.dims() }),
+                observed: serde_json::json!({ "late_fusion_input": fusion_input.dims() }),
                 expected_panel_dim: PANEL_DIM,
             });
         }
-        let hidden = self.input_proj.forward(&x)?.to_dtype(self.dtype)?;
+        let hidden = self
+            .late_fusion_proj
+            .forward(&fusion_input)?
+            .to_dtype(self.dtype)?;
         let hidden = self.forward_shared_trunk(hidden, validate_finite)?;
-        let predicted = (self.output_proj.forward(&hidden)? / 4.0)?.to_dtype(self.dtype)?;
+        let mut predicted_slots = Vec::with_capacity(self.slot_blocks.len());
+        for (block, slot_hidden) in self.slot_blocks.iter().zip(&slot_hidden) {
+            let slot_context = (slot_hidden + &hidden)?.to_dtype(self.dtype)?;
+            let slot_predicted =
+                (block.output_proj.forward(&slot_context)? / 4.0)?.to_dtype(self.dtype)?;
+            if slot_predicted.dims() != [batch, block.slot.dim()] {
+                return Err(PredictorError::DimMismatch {
+                    detail: format!(
+                        "{} slot output expected (B, {}); got {:?}",
+                        block.slot.slug(),
+                        block.slot.dim(),
+                        slot_predicted.dims()
+                    ),
+                    observed: serde_json::json!({
+                        "slot": block.slot.slug(),
+                        "slot_output": slot_predicted.dims()
+                    }),
+                    expected_panel_dim: PANEL_DIM,
+                });
+            }
+            if validate_finite {
+                ensure_finite(
+                    &slot_predicted,
+                    NanSource::Output,
+                    None,
+                    &format!("{}_slot_predicted", block.slot.slug()),
+                )?;
+            }
+            predicted_slots.push(slot_predicted);
+        }
+        let predicted_slot_refs = predicted_slots.iter().collect::<Vec<_>>();
+        let predicted = Tensor::cat(&predicted_slot_refs, 1)?;
         if predicted.dims() != [batch, PANEL_DIM] {
             return Err(PredictorError::DimMismatch {
                 detail: format!(
@@ -323,6 +437,9 @@ impl MeJepaPredictor {
             activation: "GeLU",
             residual: true,
             layer_norm: true,
+            slot_preserving_late_fusion: true,
+            slot_encoder_count: InstrumentSlot::all().len(),
+            per_slot_decoder_count: InstrumentSlot::all().len(),
             panel_dim: PANEL_DIM,
             concat_input_dim: CONCAT_INPUT_DIM,
             bidirectional_inverse_head: true,

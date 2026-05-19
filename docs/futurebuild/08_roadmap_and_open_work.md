@@ -33,7 +33,7 @@ By phase label:
 
 | Label | Open count | Notes |
 |---|---|---|
-| `phase:g` | 81 | Ship-gate convergence work (this is the critical path) |
+| `phase:g` | 73 | Ship-gate convergence work (this is the critical path) |
 | `phase:migration` | 4 | Aiwonder migration / durability follow-ups |
 | `phase:f-followup` | 1 | #312 hot_root on ext4 throughput (perf followup) |
 | `phase:f` | 0 (closed as of 2026-05-13) | — |
@@ -45,7 +45,7 @@ By priority:
 | Priority | Open count | Examples |
 |---|---|---|
 | `priority:p0` | 5 | #385 slot-preserving constellation refactor, #310 META issue refactor, #372 aiwonder ZFS mount enforcement, #383 evidence-weighted issue ordering, #397 consequence-prediction contract |
-| `priority:p1` | 32 | Calibration, adversarial defense, Q4 head training, oracle-noise + Goodhart guards, multi-file holdout, off-host backup |
+| `priority:p1` | 24 | Calibration, adversarial defense, Q4 head training, multi-file holdout, off-host backup |
 | `priority:p2` | 40 | EK series tail, post-ship policies, refined sub-tasks, frozen-panel dimensionality ablation, tool-usage telemetry |
 | `priority:p3` | 9 | Deferred (SWE-bench Verified subset, sample-efficiency, v2 stretch tasks, future Docker image plan) |
 
@@ -71,7 +71,7 @@ Child issue split:
 | Issue | Purpose | Why it matters for `0.95` |
 |---|---|---|
 | #386 / TASK-PY-G-086 | Slot-map `ConstellationObservation` schema | ✅ closed 2026-05-19; makes each slot/embedder independently addressable at prediction time |
-| #387 / TASK-PY-G-087 | Slot-preserving late-fusion predictor | Removes early flat fusion as the predictor's semantic bottleneck |
+| #387 / TASK-PY-G-087 | Slot-preserving late-fusion predictor | ✅ closed 2026-05-19; removes early flat fusion as the predictor's semantic bottleneck |
 | #388 / TASK-PY-G-088 | Real aiwonder cross-embedder correlation tensors | Turns the completed corpus substrate into relationship features |
 | #389 / TASK-PY-G-089 | Per-slot calibration, uncertainty, and OOD | Prevents weak slots from being hidden by aggregate scores |
 | #390 / TASK-PY-G-090 | Consensus/contradiction intelligence heads | Makes disagreement, redundancy, novelty, and blind spots first-class predictors |
@@ -89,6 +89,8 @@ Child issue split:
 
 **#386 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-086-constellation-observation-schema-fsv/`: the Rust `ConstellationObservation` schema enumerates all 15 packed panel slots, preserves slot/embedder IDs, dimensions, offsets, filled/missing state, per-slot vector hashes, provenance, calibration cell, and pairwise relationships separately from the packed 5,120-d layout. Edge cases reject duplicate slots, wrong dimensions, non-finite panels, unknown JSON fields, and calibration-cell drift across observation/provenance/slot rows. Main FSV sha256 `9c1b6b870373472b3f8ab1fb999b6e87c62895c828337f0e2fc687c182e8ce11`.
 
+**#387 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-087-slot-preserving-late-fusion-predictor-fsv/`: the live predictor now uses per-slot input encoders, explicit late fusion, and per-slot decoders instead of early `linear(CONCAT_INPUT_DIM, hidden_dim)` plus monolithic output projection as the semantic path. Auxiliary heads now project per-slot logits before late class fusion, so Q3/Q4-style heads can carry slot evidence forward. The no-compensation trace can be built from tensors and proves a one-bad-slot case is rejected even when aggregate distance passes. Main FSV sha256 `9f2c5380794420ca5c4a6a11ca819b731377003b0fbe806f9b2463ab8c6b8d8a`; independent readback sha256 `3a597d3a92160f549785593a86d71f73380809f8f721907cb648463c9c48db12`.
+
 **#393 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-093-constellation-ablation-suite-fsv/`: the suite consumed #396 arrays and emitted 3 baselines plus 6 ablations. The flat-vector baseline is explicitly comparison-only (`ship_gate_eligible=false`). Every ship-gate-eligible ablation from the current #396 scalar features is demoted against the local baseline ladder: best local baseline Brier `0.008555205797287593`; best ablation `per_slot_pairwise_temporal` has ΔBrier `+0.21353286994717507` and Δcorrelation vs historical `-0.5790619486178568`. Q4, Q5, and OOD measurements are recorded as label gaps rather than inferred: Q4 producers #266-#269/#127, Q5 replay #264/#128, and OOD #389/#276/#129 remain the needed data sources.
 
 **#388 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-088-cross-embedder-correlation-tensors-fsv/`: the tensor materializer consumed the 391-shard forward-cache substrate and wrote durable artifacts under `/zfs/archive/contextgraph/corpus/constellation-tensors-v1/`. It produced 516 per-cell/window/slot distribution tensors, 2,838 per-cell/window upper-triangle pair tensors, 1,400 valid pair rows, and 8 full cell/windows with all 66 active pair rows. The report proves `slot_identity_preserved=true`, `flat_vector_concat_used=false`, 12 active embedder slots, declared 15 frozen instrument panel slots where applicable, and redundant/independent/mixed/contradictory/unsupported surface counts.
@@ -99,7 +101,7 @@ Child issue split:
 
 **#394 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-094-anti-compensation-fsv/`: the suite consumes #388 tensor dimensions and #389 slot/pair calibration, emits six adversarial fixtures, and proves corrupted/missing/stale/dimension-shifted slots, contradictory pair relationships, and temporal slot jumps all remain non-ship-gate-eligible even when aggregate normalized scores would pass. The FSV writes direct readback of prediction, OOD, Gτ, Q4, active-learning, and explanation surfaces. Main FSV sha256 `57f710b98fab31d2548bc6da8397487ac960f7cd02d9659df5335f0b017d32a1`; report sha256 `1d68f304dfc2356633596e05eacdf3ae61f89a053fd5c224a830cb9ea9477047`.
 
-**Ordering update from #388/#389/#393/#398/#394 (locked in by #383 / TASK-PY-G-084):** do not promote the current #396/#388/#389 calibrated feature family into the live predictor. The richer slot/pair calibration readout is architecturally correct and #394 now prevents aggregate-compensation regressions, but the ablation evidence shows this path does not close the 0.083 correlation gap by itself. **The next gate-moving work, in evidence-weighted order, is:**
+**Ordering update from #388/#389/#393/#398/#394/#387 (locked in by #383 / TASK-PY-G-084):** the slot-preserving architecture is now enforced in the live predictor path, but the current #396/#388/#389 calibrated feature family is still not promotion-worthy. The richer slot/pair calibration readout is architecturally correct and aggregate-compensation regressions are blocked, but the ablation evidence shows this path does not close the 0.083 correlation gap by itself. **The next gate-moving work, in evidence-weighted order, is:**
 
 1. **Train the missing label producers** so calibration is no longer the bottleneck.
    - Q4 producers — #266 TASK-PY-G-047 (perf), #267 TASK-PY-G-048 (accuracy), #268 TASK-PY-G-049 (cost), #269 TASK-PY-G-050 (reasoning).
@@ -108,9 +110,9 @@ Child issue split:
 2. **Wire Q5 shift-log replay** — #264 TASK-PY-G-045 + #128 TASK-PY-G-013 calibration consumer.
 3. **Calibrate OOD on harvested + synthetic** — #129 TASK-PY-G-014 (now consumes the closed #276 harvest evidence) + #130 TASK-PY-G-015 Gτ guard audit.
 4. **Per-head contradiction calibration** — #263 TASK-PY-G-044.
-5. **Goodhart / oracle-noise guards** — #374 TASK-PY-G-077 secret holdout + #376 TASK-PY-G-076 statistical-power bound. These must land before any "≥ 0.95 × 4 windows" claim is accepted.
+5. **Goodhart / oracle-noise guards** — #374 TASK-PY-G-077 secret holdout and #376 TASK-PY-G-076 statistical-power bound are closed as guard protocols, both currently fail closed as `underpowered`. They continue to block any "≥ 0.95 × 4 windows" claim until real four-window train-visible plus secret/delayed holdout evidence exists and passes.
 6. **Compositional generalization** — #379 TASK-PY-G-081 multi-file structural patch holdout.
-7. **Only then revisit slot-preserving predictor refactor** — #385/#387/#391/#392 (and #382 frozen-panel dimensionality ablation) once the label substrate proves the gap is architectural rather than data-bound.
+7. **Remaining predictor-adjacent constellation surfaces** — #390/#391/#392 (and #382 frozen-panel dimensionality ablation) should follow the label/replay/calibration substrate unless a measured ablation shows they are the next bottleneck.
 
 **Current data-location map for #396 descendants:**
 
@@ -124,11 +126,13 @@ Child issue split:
 | #389 per-slot calibration/OOD | `/zfs/archive/contextgraph/state/calibration/per-slot-v1/` | Durable calibration artifacts: `per_slot_calibration.jsonl`, `per_cell_slot_calibration.jsonl`, `per_pair_calibration.jsonl`, `ood_guard_policy.json`, `per_slot_calibration_report.json` |
 | #389 FSV | `/zfs/archive/contextgraph/fsv/task-py-g-089-per-slot-calibration-ood-fsv/python_per_slot_calibration_ood_fsv.json` | PASS evidence for TASK-PY-G-089; sha256 `24075e0b0cd349c132b3bf2388642e277b854aa121f0039d330487bcf302edd7` |
 | #389 live OOD reason FSV | `/zfs/archive/contextgraph/fsv/task-py-g-089-per-slot-ood-reasons-live-fsv/run-1779156050260/task_py_g_089_per_slot_ood_reasons_live_fsv.json` | PASS evidence that `RealityPrediction.per_slot_ood_reasons` persists through `CF_MEJEPA_LIVE_PREDICTIONS`, byte replays from RocksDB, and rejects empty embedder, missing calibration version, nonfinite score, and over-wide reason arrays without adding rows; sha256 `198bc651ef5075c30676e80625cd8600fe36c3bbc0e1d47ade4662537700a924` |
+| #387 late-fusion predictor FSV | `/zfs/archive/contextgraph/fsv/task-py-g-087-slot-preserving-late-fusion-predictor-fsv/slot_preserving_late_fusion_predictor_fsv.json` | PASS evidence for TASK-PY-G-087; sha256 `9f2c5380794420ca5c4a6a11ca819b731377003b0fbe806f9b2463ab8c6b8d8a`; independent readback sha256 `3a597d3a92160f549785593a86d71f73380809f8f721907cb648463c9c48db12` |
 | #396 certificate/artifacts | `/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts/` | Generated arrays and certificate for TASK-PY-G-096 |
 | #394 anti-compensation FSV | `/zfs/archive/contextgraph/fsv/task-py-g-094-anti-compensation-fsv/python_anti_compensation_fsv.json` | PASS evidence for TASK-PY-G-094; sha256 `57f710b98fab31d2548bc6da8397487ac960f7cd02d9659df5335f0b017d32a1`; fixture rows, active-learning rows, report, independent readback, and external edge readback under the same root |
 | #398 calibrated ablation FSV | `/zfs/archive/contextgraph/fsv/task-py-g-097-constellation-ablation-with-calibration-fsv/python_constellation_ablation_with_calibration_fsv.json` | PASS evidence for TASK-PY-G-097; sha256 `90039db274eb4e37b4fc03ed3bb115b184149c00f3cf2fc684118dff492b854e`; result `no_promotion` |
 | #398 calibrated ablation artifacts | `/zfs/archive/contextgraph/fsv/task-py-g-097-constellation-ablation-with-calibration-fsv/artifacts/` | Report sha256 `a65b320ac08208d26eaeb57eefb90e7bdd5e994d0662527edb399d7ffa06ed35`; metrics sha256 `dc4e3cbe7ec2f95e029030e4fc9550f8a01791267c6b6618d5482bfe4937ad11`; independent readback sha256 `8b1c0f147692179ce3e50b29a90208dcf143ba8e666f8869d588f4801799d0b6`; external edge readback sha256 `bc7fa442c8e05aa9b5574e3d2a9e95465bc8eedc01282fcb80bf3220964ce473` |
 | #276 OOD harvest FSV | `/zfs/archive/contextgraph/fsv/task-py-g-057-ood-harvest-fsv/run-20260519T022705Z/ood_harvest_fsv.json` | PASS evidence for TASK-PY-G-057; sha256 `bc3f9519f157f657fba9fea573fb2dfef4c256221f6a4ffdfec949e88b987b60`; validates harvest/calibration/active-learning CF readback |
+| #374 secret holdout guard FSV | `/zfs/archive/contextgraph/fsv/task-py-g-077-secret-holdout-fsv/python_secret_holdout_fsv.json` | PASS protocol evidence with current fail-closed result `underpowered`; sha256 `16c1a5a68fe2c79616410ad204e7843c86f5da333b7662772fd3e0d8c814233e`; independent readback sha256 `0a429bc62b95ac25f198acd04822c81744632c628a5dc8e6b8c552fb80205e03` |
 
 ### 3.1 Q4 head training (Phase G §2 producers — heads exist as schema fields but lack training data pipelines)
 
@@ -194,7 +198,7 @@ All calibration items below are now qualified by #385: their evidence must be pe
 | #172 / TASK-PY-G-034 | Python acceptance bundle | open |
 | #180 / TASK-PY-G-038 | MCP RealityPrediction FSV | open |
 | #171 / TASK-PY-G-033 | Fail-closed release switch | open |
-| #374 / TASK-PY-G-077 | Secret holdout Goodhart guard for the 0.95 gate (`type:test-gap`) | open p1 |
+| #374 / TASK-PY-G-077 | Secret holdout Goodhart guard for the 0.95 gate (`type:test-gap`) | ✅ closed 2026-05-19; protocol PASS, current result `underpowered` |
 | #376 / TASK-PY-G-076 | Bound oracle noise floor + ship-gate statistical power | ✅ closed 2026-05-19; result `underpowered`, #165/#167 cannot claim `0.95 x 4 windows` yet |
 | #377 / TASK-PY-G-078 | Q4 trust gate must fail closed until label producers train heads | open p1 |
 | #379 / TASK-PY-G-081 | Multi-file structural patch holdout for compositional generalization | open p1 |
