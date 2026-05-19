@@ -86,6 +86,10 @@ Child issue split:
 
 **#396 FSV status (2026-05-18):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/`: 353 real-corpus training rows, 1,440 per-slot vector rows, 2,727 row-pair observations, 66 pairwise relationship rows, and a training certificate with separate slot, pairwise, contradiction, temporal, oracle-alignment, and anti-compensation terms. The certificate joins the 391-shard forward cache to the 300×8 corpus oracle index, proves `flat_vector_concat_used=false`, proves no loss component is only a flat `PANEL_DIM` aggregate, and exposes ablation switches that independently disable slot, pairwise, contradiction, and temporal terms. It correctly refuses promotion: the smoke objective does not beat the local baseline ladder or the historical 0.866667 context.
 
+**#393 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-093-constellation-ablation-suite-fsv/`: the suite consumed #396 arrays and emitted 3 baselines plus 6 ablations. The flat-vector baseline is explicitly comparison-only (`ship_gate_eligible=false`). Every ship-gate-eligible ablation from the current #396 scalar features is demoted against the local baseline ladder: best local baseline Brier `0.008555205797287593`; best ablation `per_slot_pairwise_temporal` has ΔBrier `+0.21353286994717507` and Δcorrelation vs historical `-0.5790619486178568`. Q4, Q5, and OOD measurements are recorded as label gaps rather than inferred: Q4 producers #266-#269/#127, Q5 replay #264/#128, and OOD #389/#276/#129 remain the needed data sources.
+
+**Ordering update from #393:** do not promote the current #396 scalar feature family. The next evidence-weighted constellation work should materialize richer real-corpus relationship tensors and per-slot calibration (#388/#389), then rerun ablations with those artifacts before changing the predictor path.
+
 **Current data-location map for #396 descendants:**
 
 | Data | Path | Notes |

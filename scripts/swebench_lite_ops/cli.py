@@ -62,6 +62,8 @@ from .python_real_corpus_constellation_smoke import add_arguments as add_python_
 from .python_real_corpus_constellation_smoke import command_python_real_corpus_constellation_smoke
 from .python_constellation_training_objective import add_arguments as add_python_constellation_training_objective_arguments
 from .python_constellation_training_objective import command_python_constellation_training_objective
+from .python_constellation_ablation_suite import add_arguments as add_python_constellation_ablation_suite_arguments
+from .python_constellation_ablation_suite import command_python_constellation_ablation_suite
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -497,6 +499,16 @@ def build_parser() -> argparse.ArgumentParser:
     constellation_training_objective.set_defaults(
         func=command_python_constellation_training_objective,
         evidence_name="python-constellation-training-objective-command-evidence.json",
+    )
+
+    constellation_ablation_suite = sub.add_parser(
+        "python-constellation-ablation-suite",
+        help="TASK-PY-G-093: run capability-discovery ablations over real constellation training arrays.",
+    )
+    add_python_constellation_ablation_suite_arguments(constellation_ablation_suite)
+    constellation_ablation_suite.set_defaults(
+        func=command_python_constellation_ablation_suite,
+        evidence_name="python-constellation-ablation-suite-command-evidence.json",
     )
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")
