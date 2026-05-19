@@ -7,6 +7,22 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_SKILL_LIFECYCLE_AUDIT, CF_MEJEPA_SKILL_REVERSE_INDEX,
 };
 use rocksdb::{ColumnFamilyDescriptor, Options};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+struct LegacySkillLifecycleAuditRow {
+    schema_version: u32,
+    skill_audit_id: String,
+    prediction_id: Option<String>,
+    mistake_id: Option<String>,
+    previous_skill_id: Option<String>,
+    decision: SkillLifecycleDecision,
+    candidate_skill_id: Option<String>,
+    evidence_label_ids: Vec<String>,
+    evidence_chunk_ids: Vec<String>,
+    reason: String,
+    created_at_unix_ms: i64,
+}
 
 fn step(index: u32, chunk: &str, label: &str) -> SkillStepEvidence {
     SkillStepEvidence {
@@ -151,4 +167,28 @@ fn membership_hash_changes_when_row_content_changes() {
     let changed_hash = membership_hash(&changed).unwrap();
 
     assert_ne!(baseline, changed_hash);
+}
+
+#[test]
+fn lifecycle_audit_deserializes_legacy_rows_with_empty_ability_context() {
+    let legacy = LegacySkillLifecycleAuditRow {
+        schema_version: SKILL_SEQUENCE_SCHEMA_VERSION,
+        skill_audit_id: "skill_audit:legacy".to_string(),
+        prediction_id: Some("prediction:legacy".to_string()),
+        mistake_id: Some("mistake:legacy".to_string()),
+        previous_skill_id: Some("skill:legacy".to_string()),
+        decision: SkillLifecycleDecision::UpdateExistingSkill,
+        candidate_skill_id: None,
+        evidence_label_ids: vec!["ast_surface:function".to_string()],
+        evidence_chunk_ids: vec!["chunk:legacy".to_string()],
+        reason: "legacy_row".to_string(),
+        created_at_unix_ms: 1_778_000_000_000,
+    };
+    let bytes = bincode::serialize(&legacy).unwrap();
+    let decoded = decode_skill_lifecycle_audit_row(&bytes).unwrap();
+
+    decoded.validate().unwrap();
+    assert!(decoded.evidence_skill_ids.is_empty());
+    assert!(decoded.evidence_higher_ability_ids.is_empty());
+    assert!(decoded.source_membership_keys.is_empty());
 }

@@ -8,6 +8,7 @@
 //! is stored in RocksDB column families and every verification path performs a
 //! separate read from RocksDB.
 
+pub mod ability_resolver;
 pub mod aux;
 pub mod cert;
 pub mod checkpoint;
@@ -35,6 +36,7 @@ pub mod skill_sequence_types;
 mod skill_validation;
 pub mod trainer;
 
+pub use ability_resolver::*;
 pub use cert::{TrainingCertificate, CF_MEJEPA_TRAIN_CERTS};
 pub use chunk_skill_membership::*;
 pub use compression_progress::{

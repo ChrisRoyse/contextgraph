@@ -182,6 +182,49 @@ pub struct SkillLifecycleAuditRow {
     pub evidence_chunk_ids: Vec<String>,
     pub reason: String,
     pub created_at_unix_ms: i64,
+    #[serde(default)]
+    pub evidence_skill_ids: Vec<String>,
+    #[serde(default)]
+    pub evidence_higher_ability_ids: Vec<String>,
+    #[serde(default)]
+    pub source_membership_keys: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LegacySkillLifecycleAuditRow {
+    schema_version: u32,
+    skill_audit_id: String,
+    prediction_id: Option<String>,
+    mistake_id: Option<String>,
+    previous_skill_id: Option<String>,
+    decision: SkillLifecycleDecision,
+    candidate_skill_id: Option<String>,
+    evidence_label_ids: Vec<String>,
+    evidence_chunk_ids: Vec<String>,
+    reason: String,
+    created_at_unix_ms: i64,
+}
+
+impl From<LegacySkillLifecycleAuditRow> for SkillLifecycleAuditRow {
+    fn from(value: LegacySkillLifecycleAuditRow) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            skill_audit_id: value.skill_audit_id,
+            prediction_id: value.prediction_id,
+            mistake_id: value.mistake_id,
+            previous_skill_id: value.previous_skill_id,
+            decision: value.decision,
+            candidate_skill_id: value.candidate_skill_id,
+            evidence_label_ids: value.evidence_label_ids,
+            evidence_chunk_ids: value.evidence_chunk_ids,
+            reason: value.reason,
+            created_at_unix_ms: value.created_at_unix_ms,
+            evidence_skill_ids: Vec::new(),
+            evidence_higher_ability_ids: Vec::new(),
+            source_membership_keys: Vec::new(),
+        }
+    }
 }
 
 impl SkillLifecycleAuditRow {
@@ -199,7 +242,18 @@ impl SkillLifecycleAuditRow {
             }
         }
         validate_live_id_list("evidence_label_ids", &self.evidence_label_ids, MAX_ROW_IDS)?;
+        validate_id_list("evidence_skill_ids", &self.evidence_skill_ids, MAX_ROW_IDS)?;
+        validate_id_list(
+            "evidence_higher_ability_ids",
+            &self.evidence_higher_ability_ids,
+            MAX_ROW_IDS,
+        )?;
         validate_id_list("evidence_chunk_ids", &self.evidence_chunk_ids, MAX_ROW_IDS)?;
+        validate_id_list(
+            "source_membership_keys",
+            &self.source_membership_keys,
+            MAX_ROW_IDS,
+        )?;
         validate_id("reason", &self.reason)?;
         if self.created_at_unix_ms <= 0 {
             return Err(invalid("created_at_unix_ms", "must be positive"));
@@ -318,11 +372,17 @@ pub fn materialize_skill_memberships(
         decision: SkillLifecycleDecision::CreateNewCandidateSkill,
         candidate_skill_id: Some(skill.skill_id.clone()),
         evidence_label_ids: skill.prerequisite_label_ids.clone(),
+        evidence_skill_ids: vec![skill.skill_id.clone()],
+        evidence_higher_ability_ids: Vec::new(),
         evidence_chunk_ids: chunk_memberships
             .iter()
             .map(|row| row.chunk_id.clone())
             .collect::<BTreeSet<_>>()
             .into_iter()
+            .collect(),
+        source_membership_keys: chunk_memberships
+            .iter()
+            .map(|row| row.membership_key.clone())
             .collect(),
         reason: "materialized_from_ordered_skill_sequence".to_string(),
         created_at_unix_ms,
@@ -454,11 +514,97 @@ pub fn read_skill_lifecycle_audit_row(
     db: &DB,
     audit_id: &str,
 ) -> Result<Option<SkillLifecycleAuditRow>, TrainerError> {
-    let row = read_row::<SkillLifecycleAuditRow>(db, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT, audit_id)?;
+    validate_id("audit_id", audit_id)?;
+    let cf_handle = cf(db, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT)?;
+    let Some(bytes) = db
+        .get_cf(cf_handle, audit_id.as_bytes())
+        .map_err(map_rocksdb_error)?
+    else {
+        return Ok(None);
+    };
+    let row = Some(decode_skill_lifecycle_audit_row(&bytes)?);
     if let Some(row) = &row {
         row.validate()?;
     }
     Ok(row)
+}
+
+pub fn read_all_chunk_skill_membership_rows(
+    db: &DB,
+) -> Result<Vec<ChunkSkillMembershipRow>, TrainerError> {
+    let cf_handle = cf(db, CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP)?;
+    let mut rows = Vec::new();
+    for item in db.iterator_cf(cf_handle, IteratorMode::Start) {
+        let (key, value) = item.map_err(map_rocksdb_error)?;
+        let key = String::from_utf8(key.to_vec())
+            .map_err(|err| invalid("chunk_skill_membership.key", err.to_string()))?;
+        let row: ChunkSkillMembershipRow =
+            bincode::deserialize(&value).map_err(map_bincode_error)?;
+        if key != row.membership_key {
+            return Err(invalid(
+                "chunk_skill_membership.key",
+                "key does not match payload",
+            ));
+        }
+        row.validate()?;
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+pub fn read_all_skill_lifecycle_audit_rows(
+    db: &DB,
+) -> Result<Vec<SkillLifecycleAuditRow>, TrainerError> {
+    let cf_handle = cf(db, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT)?;
+    let mut rows = Vec::new();
+    for item in db.iterator_cf(cf_handle, IteratorMode::Start) {
+        let (key, value) = item.map_err(map_rocksdb_error)?;
+        let key = String::from_utf8(key.to_vec())
+            .map_err(|err| invalid("skill_lifecycle_audit.key", err.to_string()))?;
+        let row = decode_skill_lifecycle_audit_row(&value)?;
+        if key != row.skill_audit_id {
+            return Err(invalid(
+                "skill_lifecycle_audit.key",
+                "key does not match payload",
+            ));
+        }
+        row.validate()?;
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+fn decode_skill_lifecycle_audit_row(bytes: &[u8]) -> Result<SkillLifecycleAuditRow, TrainerError> {
+    bincode::deserialize::<SkillLifecycleAuditRow>(bytes)
+        .or_else(|_| bincode::deserialize::<LegacySkillLifecycleAuditRow>(bytes).map(Into::into))
+        .map_err(map_bincode_error)
+}
+
+pub fn write_skill_lifecycle_audit_row_sync_readback(
+    db: &DB,
+    row: &SkillLifecycleAuditRow,
+) -> Result<(), TrainerError> {
+    row.validate()?;
+    let cf_handle = cf(db, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT)?;
+    let mut write_opts = WriteOptions::default();
+    write_opts.set_sync(true);
+    db.put_cf_opt(
+        cf_handle,
+        row.skill_audit_id.as_bytes(),
+        serialize(row)?,
+        &write_opts,
+    )
+    .map_err(map_rocksdb_error)?;
+    db.flush_cf(cf_handle).map_err(map_rocksdb_error)?;
+    let readback = read_skill_lifecycle_audit_row(db, &row.skill_audit_id)?
+        .ok_or_else(|| invalid("readback", "skill lifecycle audit row missing after write"))?;
+    if readback != *row {
+        return Err(invalid(
+            "readback",
+            "skill lifecycle audit row changed during write/readback",
+        ));
+    }
+    Ok(())
 }
 
 pub fn count_cf_rows(db: &DB, cf_name: &str) -> Result<u64, TrainerError> {

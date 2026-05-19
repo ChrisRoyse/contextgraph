@@ -5,6 +5,11 @@
 //! the source-of-truth row before returning the batch report.
 
 use crate::error::{TrainerError, TrainerErrorCode};
+use crate::label_bridge::{
+    ability_signature_hash, accepted_label_signature_hash, membership_signature_hash,
+    skill_signature_hash,
+};
+use crate::skill_validation;
 use context_graph_mejepa::{PredictionId, OPERATOR_OVERRIDE_SAMPLING_WEIGHT};
 use context_graph_mejepa_cf::CF_MEJEPA_REPLAY_BUFFER;
 use rocksdb::{IteratorMode, WriteOptions, DB};
@@ -15,6 +20,10 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 const MAX_CELL_ID_BYTES: usize = 512;
+const MAX_LABEL_IDS: usize = 256;
+const MAX_SKILL_IDS: usize = 128;
+const MAX_HIGHER_ABILITY_IDS: usize = 128;
+const MAX_SOURCE_MEMBERSHIP_KEYS: usize = 512;
 pub const DEFAULT_REPLAY_TTL_DAYS: i64 = 90;
 pub const DEFAULT_REPLAY_COLD_TIER_DAYS: i64 = 30;
 
@@ -107,6 +116,66 @@ pub struct ReplayBufferRow {
     pub source: ReplayBufferSource,
     pub created_at_unix_ms: i64,
     pub updated_at_unix_ms: i64,
+    #[serde(default)]
+    pub accepted_label_ids: Vec<String>,
+    #[serde(default)]
+    pub active_skill_ids: Vec<String>,
+    #[serde(default)]
+    pub active_higher_ability_ids: Vec<String>,
+    #[serde(default)]
+    pub source_membership_keys: Vec<String>,
+    #[serde(default)]
+    pub label_signature_hash: Option<String>,
+    #[serde(default)]
+    pub skill_signature_hash: Option<String>,
+    #[serde(default)]
+    pub ability_signature_hash: Option<String>,
+    #[serde(default)]
+    pub membership_signature_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LegacyReplayBufferRow {
+    prediction_id: PredictionId,
+    surprise_z: f32,
+    cell_id: String,
+    coverage_gap_score: f32,
+    last_replayed_ts: Option<i64>,
+    replay_count: u64,
+    retention_weight: f32,
+    protected: bool,
+    retention_tier: ReplayRetentionTier,
+    source: ReplayBufferSource,
+    created_at_unix_ms: i64,
+    updated_at_unix_ms: i64,
+}
+
+impl From<LegacyReplayBufferRow> for ReplayBufferRow {
+    fn from(value: LegacyReplayBufferRow) -> Self {
+        Self {
+            prediction_id: value.prediction_id,
+            surprise_z: value.surprise_z,
+            cell_id: value.cell_id,
+            coverage_gap_score: value.coverage_gap_score,
+            last_replayed_ts: value.last_replayed_ts,
+            replay_count: value.replay_count,
+            retention_weight: value.retention_weight,
+            protected: value.protected,
+            retention_tier: value.retention_tier,
+            source: value.source,
+            created_at_unix_ms: value.created_at_unix_ms,
+            updated_at_unix_ms: value.updated_at_unix_ms,
+            accepted_label_ids: Vec::new(),
+            active_skill_ids: Vec::new(),
+            active_higher_ability_ids: Vec::new(),
+            source_membership_keys: Vec::new(),
+            label_signature_hash: None,
+            skill_signature_hash: None,
+            ability_signature_hash: None,
+            membership_signature_hash: None,
+        }
+    }
 }
 
 impl ReplayBufferRow {
@@ -138,6 +207,7 @@ impl ReplayBufferRow {
             return Err(invalid("retention_weight", "must be non-negative"));
         }
         validate_cell_id(&self.cell_id)?;
+        validate_label_payload(self)?;
         if self.created_at_unix_ms <= 0 || self.updated_at_unix_ms <= 0 {
             return Err(invalid(
                 "timestamps",
@@ -151,6 +221,76 @@ impl ReplayBufferRow {
         }
         Ok(())
     }
+}
+
+fn validate_label_payload(row: &ReplayBufferRow) -> Result<(), TrainerError> {
+    validate_live_id_list("accepted_label_ids", &row.accepted_label_ids, MAX_LABEL_IDS)?;
+    validate_id_list("active_skill_ids", &row.active_skill_ids, MAX_SKILL_IDS)?;
+    validate_id_list(
+        "active_higher_ability_ids",
+        &row.active_higher_ability_ids,
+        MAX_HIGHER_ABILITY_IDS,
+    )?;
+    validate_id_list(
+        "source_membership_keys",
+        &row.source_membership_keys,
+        MAX_SOURCE_MEMBERSHIP_KEYS,
+    )?;
+    let expected_label_signature = if row.accepted_label_ids.is_empty() {
+        None
+    } else {
+        Some(accepted_label_signature_hash(&row.accepted_label_ids)?)
+    };
+    if row.label_signature_hash != expected_label_signature {
+        return Err(invalid(
+            "label_signature_hash",
+            "does not match accepted_label_ids",
+        ));
+    }
+    let expected_skill_signature = if row.active_skill_ids.is_empty() {
+        None
+    } else {
+        Some(skill_signature_hash(&row.active_skill_ids)?)
+    };
+    if row.skill_signature_hash != expected_skill_signature {
+        return Err(invalid(
+            "skill_signature_hash",
+            "does not match active_skill_ids",
+        ));
+    }
+    let expected_ability_signature = if row.active_higher_ability_ids.is_empty() {
+        None
+    } else {
+        Some(ability_signature_hash(&row.active_higher_ability_ids)?)
+    };
+    if row.ability_signature_hash != expected_ability_signature {
+        return Err(invalid(
+            "ability_signature_hash",
+            "does not match active_higher_ability_ids",
+        ));
+    }
+    let expected_membership_signature = if row.source_membership_keys.is_empty() {
+        None
+    } else {
+        Some(membership_signature_hash(&row.source_membership_keys)?)
+    };
+    if row.membership_signature_hash != expected_membership_signature {
+        return Err(invalid(
+            "membership_signature_hash",
+            "does not match source_membership_keys",
+        ));
+    }
+    for (field, value) in [
+        ("label_signature_hash", &row.label_signature_hash),
+        ("skill_signature_hash", &row.skill_signature_hash),
+        ("ability_signature_hash", &row.ability_signature_hash),
+        ("membership_signature_hash", &row.membership_signature_hash),
+    ] {
+        if let Some(value) = value {
+            validate_cell_component(field, value)?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -222,7 +362,7 @@ pub fn read_replay_row(
     let Some(bytes) = db.get_cf(cf, prediction_id.0).map_err(map_rocksdb_error)? else {
         return Ok(None);
     };
-    let row: ReplayBufferRow = bincode::deserialize(&bytes).map_err(map_bincode_error)?;
+    let row = decode_replay_buffer_row(&bytes)?;
     row.validate()?;
     Ok(Some(row))
 }
@@ -238,7 +378,7 @@ pub fn read_all_replay_rows(db: &DB) -> Result<Vec<ReplayBufferRow>, TrainerErro
                 format!("expected 16-byte prediction_id key, got {}", key.len()),
             ));
         }
-        let row: ReplayBufferRow = bincode::deserialize(&value).map_err(map_bincode_error)?;
+        let row = decode_replay_buffer_row(&value)?;
         if key.as_ref() != &row.prediction_id.0[..] {
             return Err(invalid(
                 "replay_buffer.key",
@@ -249,6 +389,12 @@ pub fn read_all_replay_rows(db: &DB) -> Result<Vec<ReplayBufferRow>, TrainerErro
         rows.push(row);
     }
     Ok(rows)
+}
+
+fn decode_replay_buffer_row(bytes: &[u8]) -> Result<ReplayBufferRow, TrainerError> {
+    bincode::deserialize::<ReplayBufferRow>(bytes)
+        .or_else(|_| bincode::deserialize::<LegacyReplayBufferRow>(bytes).map(Into::into))
+        .map_err(map_bincode_error)
 }
 
 pub fn count_replay_rows(db: &DB) -> Result<u64, TrainerError> {
@@ -500,6 +646,30 @@ fn validate_cell_id(cell_id: &str) -> Result<(), TrainerError> {
     Ok(())
 }
 
+fn validate_id_list(field: &str, values: &[String], max_items: usize) -> Result<(), TrainerError> {
+    skill_validation::validate_id_list(
+        "file:crates/context-graph-mejepa-train/src/replay_buffer.rs",
+        "replay rows must preserve label, skill, ability, and membership identities for mistake-driven learning",
+        field,
+        values,
+        max_items,
+    )
+}
+
+fn validate_live_id_list(
+    field: &str,
+    values: &[String],
+    max_items: usize,
+) -> Result<(), TrainerError> {
+    skill_validation::validate_live_id_list(
+        "file:crates/context-graph-mejepa-train/src/replay_buffer.rs",
+        "target-side supervision labels must not become live replay inputs",
+        field,
+        values,
+        max_items,
+    )
+}
+
 fn replay_cf(db: &DB) -> Result<&rocksdb::ColumnFamily, TrainerError> {
     db.cf_handle(CF_MEJEPA_REPLAY_BUFFER)
         .ok_or_else(|| invalid("rocksdb.column_family", "missing CF_MEJEPA_REPLAY_BUFFER"))
@@ -549,6 +719,28 @@ pub fn label_aware_replay_cell_id(
     label_signature_hash: &str,
     skill_signature_hash: Option<&str>,
 ) -> Result<String, TrainerError> {
+    ability_aware_replay_cell_id(
+        language,
+        mutation_or_live_cell,
+        code_state_key,
+        named_failure_mode,
+        label_signature_hash,
+        skill_signature_hash,
+        None,
+        None,
+    )
+}
+
+pub fn ability_aware_replay_cell_id(
+    language: &str,
+    mutation_or_live_cell: &str,
+    code_state_key: &str,
+    named_failure_mode: &str,
+    label_signature_hash: &str,
+    skill_signature_hash: Option<&str>,
+    ability_signature_hash: Option<&str>,
+    membership_signature_hash: Option<&str>,
+) -> Result<String, TrainerError> {
     for (field, value) in [
         ("language", language),
         ("mutation_or_live_cell", mutation_or_live_cell),
@@ -561,6 +753,12 @@ pub fn label_aware_replay_cell_id(
     if let Some(value) = skill_signature_hash {
         validate_cell_component("skill_signature_hash", value)?;
     }
+    if let Some(value) = ability_signature_hash {
+        validate_cell_component("ability_signature_hash", value)?;
+    }
+    if let Some(value) = membership_signature_hash {
+        validate_cell_component("membership_signature_hash", value)?;
+    }
     let code_state = short_hash(code_state_key);
     let failure_mode = compact_component(named_failure_mode);
     let mut cell_id = format!(
@@ -572,6 +770,14 @@ pub fn label_aware_replay_cell_id(
         compact_component(label_signature_hash)
     );
     if let Some(value) = skill_signature_hash {
+        cell_id.push(':');
+        cell_id.push_str(&compact_component(value));
+    }
+    if let Some(value) = ability_signature_hash {
+        cell_id.push(':');
+        cell_id.push_str(&compact_component(value));
+    }
+    if let Some(value) = membership_signature_hash {
         cell_id.push(':');
         cell_id.push_str(&compact_component(value));
     }
@@ -623,6 +829,14 @@ mod tests {
             surprise_z,
             cell_id: "off_by_one::python".to_string(),
             coverage_gap_score: 0.5,
+            accepted_label_ids: Vec::new(),
+            active_skill_ids: Vec::new(),
+            active_higher_ability_ids: Vec::new(),
+            source_membership_keys: Vec::new(),
+            label_signature_hash: None,
+            skill_signature_hash: None,
+            ability_signature_hash: None,
+            membership_signature_hash: None,
             last_replayed_ts: None,
             replay_count,
             retention_weight: 1.0,
@@ -687,6 +901,26 @@ mod tests {
     }
 
     #[test]
+    fn ability_aware_cell_id_includes_ability_and_membership_signatures() {
+        let cell_id = ability_aware_replay_cell_id(
+            "python",
+            "live_project",
+            "state:unit",
+            "failure:runtime_ability",
+            "labels:abc123def456",
+            Some("skills:def456abc123"),
+            Some("abilities:fedcba654321"),
+            Some("memberships:456abc123def"),
+        )
+        .unwrap();
+
+        assert!(cell_id.contains("skills:def456abc123"));
+        assert!(cell_id.contains("abilities:fedcba654321"));
+        assert!(cell_id.contains("memberships:456abc123def"));
+        assert!(cell_id.len() <= MAX_CELL_ID_BYTES);
+    }
+
+    #[test]
     fn nan_surprise_fails_closed_with_task_code() {
         let err = row(1, f32::NAN, 0).validate().unwrap_err();
         assert_eq!(err.code(), "REPLAY_BUFFER_DEGENERATE_PRIORITY");
@@ -708,5 +942,30 @@ mod tests {
             .k_replay(),
             1
         );
+    }
+
+    #[test]
+    fn replay_row_deserializes_legacy_rows_with_empty_label_context() {
+        let legacy = LegacyReplayBufferRow {
+            prediction_id: PredictionId([0x3c; 16]),
+            surprise_z: 1.0,
+            cell_id: "python:legacy".to_string(),
+            coverage_gap_score: 0.25,
+            last_replayed_ts: None,
+            replay_count: 2,
+            retention_weight: 1.0,
+            protected: false,
+            retention_tier: ReplayRetentionTier::Hot,
+            source: ReplayBufferSource::AgentSurprise,
+            created_at_unix_ms: 1_778_000_000_000,
+            updated_at_unix_ms: 1_778_000_000_001,
+        };
+        let bytes = bincode::serialize(&legacy).unwrap();
+        let decoded = decode_replay_buffer_row(&bytes).unwrap();
+
+        decoded.validate().unwrap();
+        assert!(decoded.accepted_label_ids.is_empty());
+        assert!(decoded.active_higher_ability_ids.is_empty());
+        assert!(decoded.source_membership_keys.is_empty());
     }
 }

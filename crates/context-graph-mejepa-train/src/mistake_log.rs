@@ -6,7 +6,11 @@
 //! instead of a flat panel projection.
 
 use crate::error::{TrainerError, TrainerErrorCode};
-use crate::label_bridge::{accepted_label_signature_hash, skill_signature_hash};
+use crate::label_bridge::{
+    ability_signature_hash, accepted_label_signature_hash, membership_signature_hash,
+    skill_signature_hash,
+};
+use crate::skill_validation;
 use context_graph_mejepa::{PredictionId, Verdict};
 use context_graph_mejepa_cf::CF_MEJEPA_MISTAKE_LOG;
 use rocksdb::{IteratorMode, WriteOptions, DB};
@@ -19,6 +23,8 @@ const MISTAKE_LOG_SCHEMA_VERSION: u32 = 1;
 const MAX_ID_BYTES: usize = 512;
 const MAX_LABEL_IDS: usize = 256;
 const MAX_SKILL_IDS: usize = 128;
+const MAX_HIGHER_ABILITY_IDS: usize = 128;
+const MAX_SOURCE_MEMBERSHIP_KEYS: usize = 512;
 const MAX_FAILURE_EVIDENCE_SET_IDS: usize = 128;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,6 +57,66 @@ pub struct MistakeLogRow {
     pub usefulness_metrics_sha256: Option<String>,
     pub learning_bridge_manifest_sha256: Option<String>,
     pub created_at_unix_ms: i64,
+    #[serde(default)]
+    pub active_higher_ability_ids: Vec<String>,
+    #[serde(default)]
+    pub source_membership_keys: Vec<String>,
+    #[serde(default)]
+    pub ability_signature_hash: Option<String>,
+    #[serde(default)]
+    pub membership_signature_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LegacyMistakeLogRow {
+    schema_version: u32,
+    mistake_id: String,
+    prediction_id: PredictionId,
+    predicted_verdict: Verdict,
+    ground_truth_verdict: Verdict,
+    truth_source: MistakeTruthSource,
+    code_state_key: String,
+    named_failure_mode: Option<String>,
+    accepted_label_ids: Vec<String>,
+    active_skill_ids: Vec<String>,
+    label_signature_hash: String,
+    skill_signature_hash: Option<String>,
+    failure_evidence_set_ids: Vec<String>,
+    replay_row_key: String,
+    accepted_registry_sha256: Option<String>,
+    usefulness_metrics_sha256: Option<String>,
+    learning_bridge_manifest_sha256: Option<String>,
+    created_at_unix_ms: i64,
+}
+
+impl From<LegacyMistakeLogRow> for MistakeLogRow {
+    fn from(value: LegacyMistakeLogRow) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            mistake_id: value.mistake_id,
+            prediction_id: value.prediction_id,
+            predicted_verdict: value.predicted_verdict,
+            ground_truth_verdict: value.ground_truth_verdict,
+            truth_source: value.truth_source,
+            code_state_key: value.code_state_key,
+            named_failure_mode: value.named_failure_mode,
+            accepted_label_ids: value.accepted_label_ids,
+            active_skill_ids: value.active_skill_ids,
+            label_signature_hash: value.label_signature_hash,
+            skill_signature_hash: value.skill_signature_hash,
+            failure_evidence_set_ids: value.failure_evidence_set_ids,
+            replay_row_key: value.replay_row_key,
+            accepted_registry_sha256: value.accepted_registry_sha256,
+            usefulness_metrics_sha256: value.usefulness_metrics_sha256,
+            learning_bridge_manifest_sha256: value.learning_bridge_manifest_sha256,
+            created_at_unix_ms: value.created_at_unix_ms,
+            active_higher_ability_ids: Vec::new(),
+            source_membership_keys: Vec::new(),
+            ability_signature_hash: None,
+            membership_signature_hash: None,
+        }
+    }
 }
 
 impl MistakeLogRow {
@@ -77,12 +143,22 @@ impl MistakeLogRow {
         validate_id("code_state_key", &self.code_state_key)?;
         validate_id("label_signature_hash", &self.label_signature_hash)?;
         validate_id("replay_row_key", &self.replay_row_key)?;
-        validate_id_list(
+        validate_live_id_list(
             "accepted_label_ids",
             &self.accepted_label_ids,
             MAX_LABEL_IDS,
         )?;
         validate_id_list("active_skill_ids", &self.active_skill_ids, MAX_SKILL_IDS)?;
+        validate_id_list(
+            "active_higher_ability_ids",
+            &self.active_higher_ability_ids,
+            MAX_HIGHER_ABILITY_IDS,
+        )?;
+        validate_id_list(
+            "source_membership_keys",
+            &self.source_membership_keys,
+            MAX_SOURCE_MEMBERSHIP_KEYS,
+        )?;
         let expected_label_signature = accepted_label_signature_hash(&self.accepted_label_ids)?;
         if self.label_signature_hash != expected_label_signature {
             return Err(invalid(
@@ -101,6 +177,28 @@ impl MistakeLogRow {
                 "does not match active_skill_ids",
             ));
         }
+        let expected_ability_signature = if self.active_higher_ability_ids.is_empty() {
+            None
+        } else {
+            Some(ability_signature_hash(&self.active_higher_ability_ids)?)
+        };
+        if self.ability_signature_hash != expected_ability_signature {
+            return Err(invalid(
+                "ability_signature_hash",
+                "does not match active_higher_ability_ids",
+            ));
+        }
+        let expected_membership_signature = if self.source_membership_keys.is_empty() {
+            None
+        } else {
+            Some(membership_signature_hash(&self.source_membership_keys)?)
+        };
+        if self.membership_signature_hash != expected_membership_signature {
+            return Err(invalid(
+                "membership_signature_hash",
+                "does not match source_membership_keys",
+            ));
+        }
         validate_id_list(
             "failure_evidence_set_ids",
             &self.failure_evidence_set_ids,
@@ -108,6 +206,12 @@ impl MistakeLogRow {
         )?;
         if let Some(value) = &self.skill_signature_hash {
             validate_id("skill_signature_hash", value)?;
+        }
+        if let Some(value) = &self.ability_signature_hash {
+            validate_id("ability_signature_hash", value)?;
+        }
+        if let Some(value) = &self.membership_signature_hash {
+            validate_id("membership_signature_hash", value)?;
         }
         if let Some(value) = &self.named_failure_mode {
             validate_id("named_failure_mode", value)?;
@@ -161,6 +265,52 @@ pub fn mistake_id_from_parts(
     Ok(format!("mistake:{}", &hex::encode(hasher.finalize())[..24]))
 }
 
+pub fn mistake_id_from_evidence_parts(
+    prediction_id: PredictionId,
+    code_state_key: &str,
+    label_signature_hash: &str,
+    skill_signature_hash: Option<&str>,
+    ability_signature_hash: Option<&str>,
+    membership_signature_hash: Option<&str>,
+    ground_truth_verdict: Verdict,
+) -> Result<String, TrainerError> {
+    if prediction_id.0 == [0_u8; 16] {
+        return Err(invalid("prediction_id", "must be non-zero"));
+    }
+    validate_id("code_state_key", code_state_key)?;
+    validate_id("label_signature_hash", label_signature_hash)?;
+    for (field, value) in [
+        ("skill_signature_hash", skill_signature_hash),
+        ("ability_signature_hash", ability_signature_hash),
+        ("membership_signature_hash", membership_signature_hash),
+    ] {
+        if let Some(value) = value {
+            validate_id(field, value)?;
+        }
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(prediction_id.0);
+    hasher.update([0]);
+    hasher.update(code_state_key.as_bytes());
+    hasher.update([0]);
+    hasher.update(label_signature_hash.as_bytes());
+    hasher.update([0]);
+    if let Some(value) = skill_signature_hash {
+        hasher.update(value.as_bytes());
+    }
+    hasher.update([0]);
+    if let Some(value) = ability_signature_hash {
+        hasher.update(value.as_bytes());
+    }
+    hasher.update([0]);
+    if let Some(value) = membership_signature_hash {
+        hasher.update(value.as_bytes());
+    }
+    hasher.update([0]);
+    hasher.update(format!("{ground_truth_verdict:?}").as_bytes());
+    Ok(format!("mistake:{}", &hex::encode(hasher.finalize())[..24]))
+}
+
 pub fn write_mistake_log_row_sync_readback(
     db: &DB,
     row: &MistakeLogRow,
@@ -196,7 +346,7 @@ pub fn read_mistake_log_row(
     else {
         return Ok(None);
     };
-    let row: MistakeLogRow = bincode::deserialize(&bytes).map_err(map_bincode_error)?;
+    let row = decode_mistake_log_row(&bytes)?;
     row.validate()?;
     Ok(Some(row))
 }
@@ -208,7 +358,7 @@ pub fn read_all_mistake_log_rows(db: &DB) -> Result<Vec<MistakeLogRow>, TrainerE
         let (key, value) = item.map_err(map_rocksdb_error)?;
         let key = String::from_utf8(key.to_vec())
             .map_err(|err| invalid("mistake_log.key", err.to_string()))?;
-        let row: MistakeLogRow = bincode::deserialize(&value).map_err(map_bincode_error)?;
+        let row = decode_mistake_log_row(&value)?;
         if key != row.mistake_id {
             return Err(invalid("mistake_log.key", "key does not match payload"));
         }
@@ -216,6 +366,12 @@ pub fn read_all_mistake_log_rows(db: &DB) -> Result<Vec<MistakeLogRow>, TrainerE
         rows.push(row);
     }
     Ok(rows)
+}
+
+fn decode_mistake_log_row(bytes: &[u8]) -> Result<MistakeLogRow, TrainerError> {
+    bincode::deserialize::<MistakeLogRow>(bytes)
+        .or_else(|_| bincode::deserialize::<LegacyMistakeLogRow>(bytes).map(Into::into))
+        .map_err(map_bincode_error)
 }
 
 fn mistake_log_cf(db: &DB) -> Result<&rocksdb::ColumnFamily, TrainerError> {
@@ -235,6 +391,20 @@ fn validate_id_list(field: &str, values: &[String], max_items: usize) -> Result<
         }
     }
     Ok(())
+}
+
+fn validate_live_id_list(
+    field: &str,
+    values: &[String],
+    max_items: usize,
+) -> Result<(), TrainerError> {
+    skill_validation::validate_live_id_list(
+        "file:crates/context-graph-mejepa-train/src/mistake_log.rs",
+        "mistake rows must preserve live-safe labels; target outcomes belong in truth_source",
+        field,
+        values,
+        max_items,
+    )
 }
 
 fn validate_id(field: &str, value: &str) -> Result<(), TrainerError> {
@@ -287,10 +457,17 @@ mod tests {
         let prediction_id = PredictionId([0x8a; 16]);
         let accepted_label_ids = vec!["ast_surface:function".to_string()];
         let active_skill_ids = vec!["skill:unit_sequence".to_string()];
+        let active_higher_ability_ids = vec!["ability:boundary_sequence".to_string()];
+        let source_membership_keys =
+            vec!["chunk_skill::chunk:unit::python:before:unit::skill:unit_sequence".to_string()];
         let label_signature_hash =
             crate::label_bridge::accepted_label_signature_hash(&accepted_label_ids).unwrap();
         let skill_signature_hash =
             Some(crate::label_bridge::skill_signature_hash(&active_skill_ids).unwrap());
+        let ability_signature_hash =
+            Some(crate::label_bridge::ability_signature_hash(&active_higher_ability_ids).unwrap());
+        let membership_signature_hash =
+            Some(crate::label_bridge::membership_signature_hash(&source_membership_keys).unwrap());
         let mistake_id = mistake_id_from_parts(
             prediction_id,
             "python:before:unit",
@@ -310,8 +487,12 @@ mod tests {
             named_failure_mode: Some("failure:multi_point".to_string()),
             accepted_label_ids,
             active_skill_ids,
+            active_higher_ability_ids,
+            source_membership_keys,
             label_signature_hash,
             skill_signature_hash,
+            ability_signature_hash,
+            membership_signature_hash,
             failure_evidence_set_ids: vec!["python:before:unit".to_string()],
             replay_row_key: "python:swap:state:abc:mode:failure:labels:abc".to_string(),
             accepted_registry_sha256: Some("sha256:registry".to_string()),
@@ -352,5 +533,78 @@ mod tests {
         let err = row.validate().unwrap_err();
 
         assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
+    }
+
+    #[test]
+    fn mistake_log_rejects_target_side_accepted_label() {
+        let mut row = row();
+        row.accepted_label_ids = vec!["oracle:fail".to_string()];
+        row.label_signature_hash =
+            crate::label_bridge::accepted_label_signature_hash(&row.accepted_label_ids).unwrap();
+
+        let err = row.validate().unwrap_err();
+
+        assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
+        assert!(err.to_string().contains("target-side supervision"));
+    }
+
+    #[test]
+    fn evidence_mistake_id_includes_ability_and_membership_signatures() {
+        let prediction_id = PredictionId([0x7b; 16]);
+        let base = mistake_id_from_evidence_parts(
+            prediction_id,
+            "state:unit",
+            "labels:abc",
+            Some("skills:def"),
+            Some("abilities:first"),
+            Some("memberships:one"),
+            Verdict::Fail,
+        )
+        .unwrap();
+        let changed = mistake_id_from_evidence_parts(
+            prediction_id,
+            "state:unit",
+            "labels:abc",
+            Some("skills:def"),
+            Some("abilities:second"),
+            Some("memberships:one"),
+            Verdict::Fail,
+        )
+        .unwrap();
+
+        assert_ne!(base, changed);
+    }
+
+    #[test]
+    fn mistake_row_deserializes_legacy_rows_with_empty_ability_context() {
+        let row = row();
+        let legacy = LegacyMistakeLogRow {
+            schema_version: row.schema_version,
+            mistake_id: row.mistake_id,
+            prediction_id: row.prediction_id,
+            predicted_verdict: row.predicted_verdict,
+            ground_truth_verdict: row.ground_truth_verdict,
+            truth_source: row.truth_source,
+            code_state_key: row.code_state_key,
+            named_failure_mode: row.named_failure_mode,
+            accepted_label_ids: row.accepted_label_ids,
+            active_skill_ids: row.active_skill_ids,
+            label_signature_hash: row.label_signature_hash,
+            skill_signature_hash: row.skill_signature_hash,
+            failure_evidence_set_ids: row.failure_evidence_set_ids,
+            replay_row_key: row.replay_row_key,
+            accepted_registry_sha256: row.accepted_registry_sha256,
+            usefulness_metrics_sha256: row.usefulness_metrics_sha256,
+            learning_bridge_manifest_sha256: row.learning_bridge_manifest_sha256,
+            created_at_unix_ms: row.created_at_unix_ms,
+        };
+        let bytes = bincode::serialize(&legacy).unwrap();
+        let decoded = decode_mistake_log_row(&bytes).unwrap();
+
+        decoded.validate().unwrap();
+        assert!(decoded.active_higher_ability_ids.is_empty());
+        assert!(decoded.source_membership_keys.is_empty());
+        assert!(decoded.ability_signature_hash.is_none());
+        assert!(decoded.membership_signature_hash.is_none());
     }
 }

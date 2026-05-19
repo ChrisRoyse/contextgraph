@@ -35,6 +35,8 @@ const MAX_PROBLEM_STATEMENT_BYTES: usize = 65_536;
 const MAX_ACCEPTED_LABEL_IDS: usize = 256;
 const MAX_FAILURE_EVIDENCE_SET_IDS: usize = 128;
 const MAX_ACTIVE_SKILL_IDS: usize = 128;
+const MAX_ACTIVE_HIGHER_ABILITY_IDS: usize = 128;
+const MAX_SOURCE_MEMBERSHIP_KEYS: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1623,6 +1625,14 @@ pub struct PredictionLabelContext {
     pub learning_bridge_manifest_sha256: Option<String>,
     pub label_signature_hash: Option<String>,
     pub skill_signature_hash: Option<String>,
+    #[serde(default)]
+    pub active_higher_ability_ids: Vec<String>,
+    #[serde(default)]
+    pub source_membership_keys: Vec<String>,
+    #[serde(default)]
+    pub ability_signature_hash: Option<String>,
+    #[serde(default)]
+    pub membership_signature_hash: Option<String>,
 }
 
 impl Default for PredictionLabelContext {
@@ -1633,11 +1643,15 @@ impl Default for PredictionLabelContext {
             code_state_key: None,
             failure_evidence_set_ids: Vec::new(),
             active_skill_ids: Vec::new(),
+            active_higher_ability_ids: Vec::new(),
+            source_membership_keys: Vec::new(),
             accepted_registry_sha256: None,
             usefulness_metrics_sha256: None,
             learning_bridge_manifest_sha256: None,
             label_signature_hash: None,
             skill_signature_hash: None,
+            ability_signature_hash: None,
+            membership_signature_hash: None,
         }
     }
 }
@@ -1668,6 +1682,16 @@ impl PredictionLabelContext {
             &self.active_skill_ids,
             MAX_ACTIVE_SKILL_IDS,
         )?;
+        validate_id_list(
+            "label_context.active_higher_ability_ids",
+            &self.active_higher_ability_ids,
+            MAX_ACTIVE_HIGHER_ABILITY_IDS,
+        )?;
+        validate_id_list(
+            "label_context.source_membership_keys",
+            &self.source_membership_keys,
+            MAX_SOURCE_MEMBERSHIP_KEYS,
+        )?;
         if let Some(key) = &self.code_state_key {
             validate_bounded_id("label_context.code_state_key", key, MAX_ID_BYTES)?;
         }
@@ -1692,12 +1716,71 @@ impl PredictionLabelContext {
                 "label_context.skill_signature_hash",
                 &self.skill_signature_hash,
             ),
+            (
+                "label_context.ability_signature_hash",
+                &self.ability_signature_hash,
+            ),
+            (
+                "label_context.membership_signature_hash",
+                &self.membership_signature_hash,
+            ),
         ] {
             if let Some(value) = value {
                 validate_bounded_id(field, value, MAX_ID_BYTES)?;
             }
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PredictionLabelContextLegacyV1 {
+    schema_version: u32,
+    accepted_label_ids: Vec<String>,
+    code_state_key: Option<String>,
+    failure_evidence_set_ids: Vec<String>,
+    active_skill_ids: Vec<String>,
+    accepted_registry_sha256: Option<String>,
+    usefulness_metrics_sha256: Option<String>,
+    learning_bridge_manifest_sha256: Option<String>,
+    label_signature_hash: Option<String>,
+    skill_signature_hash: Option<String>,
+}
+
+impl PredictionLabelContextLegacyV1 {
+    #[cfg(test)]
+    fn from_current(value: &PredictionLabelContext) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            accepted_label_ids: value.accepted_label_ids.clone(),
+            code_state_key: value.code_state_key.clone(),
+            failure_evidence_set_ids: value.failure_evidence_set_ids.clone(),
+            active_skill_ids: value.active_skill_ids.clone(),
+            accepted_registry_sha256: value.accepted_registry_sha256.clone(),
+            usefulness_metrics_sha256: value.usefulness_metrics_sha256.clone(),
+            learning_bridge_manifest_sha256: value.learning_bridge_manifest_sha256.clone(),
+            label_signature_hash: value.label_signature_hash.clone(),
+            skill_signature_hash: value.skill_signature_hash.clone(),
+        }
+    }
+
+    fn into_current(self) -> PredictionLabelContext {
+        PredictionLabelContext {
+            schema_version: self.schema_version,
+            accepted_label_ids: self.accepted_label_ids,
+            code_state_key: self.code_state_key,
+            failure_evidence_set_ids: self.failure_evidence_set_ids,
+            active_skill_ids: self.active_skill_ids,
+            accepted_registry_sha256: self.accepted_registry_sha256,
+            usefulness_metrics_sha256: self.usefulness_metrics_sha256,
+            learning_bridge_manifest_sha256: self.learning_bridge_manifest_sha256,
+            label_signature_hash: self.label_signature_hash,
+            skill_signature_hash: self.skill_signature_hash,
+            active_higher_ability_ids: Vec::new(),
+            source_membership_keys: Vec::new(),
+            ability_signature_hash: None,
+            membership_signature_hash: None,
+        }
     }
 }
 
@@ -2185,6 +2268,13 @@ impl RealityPredictionLegacyNoLabelContext {
     }
 
     fn into_current(self) -> Result<RealityPrediction, MejepaInferError> {
+        self.into_current_with_label_context(PredictionLabelContext::default())
+    }
+
+    fn into_current_with_label_context(
+        self,
+        label_context: PredictionLabelContext,
+    ) -> Result<RealityPrediction, MejepaInferError> {
         RealityPrediction::try_new(RealityPrediction {
             prediction_id: self.prediction_id,
             witness_hash: self.witness_hash,
@@ -2231,7 +2321,7 @@ impl RealityPredictionLegacyNoLabelContext {
             unknown_candidate_id: self.unknown_candidate_id,
             constellation_intelligence: self.constellation_intelligence,
             slot_attributions: self.slot_attributions,
-            label_context: PredictionLabelContext::default(),
+            label_context,
         })
     }
 }
@@ -2540,6 +2630,19 @@ pub fn decode_reality_prediction(bytes: &[u8]) -> Result<RealityPrediction, Meje
     match bincode_deserialize_strict::<RealityPrediction>(bytes) {
         Ok(prediction) => RealityPrediction::try_new(prediction),
         Err(current_err) => {
+            if let Ok((legacy, consumed)) =
+                bincode_deserialize_prefix::<RealityPredictionLegacyNoLabelContext>(bytes)
+            {
+                if consumed < bytes.len() {
+                    if let Ok(label_context) = bincode_deserialize_strict::<
+                        PredictionLabelContextLegacyV1,
+                    >(&bytes[consumed..])
+                    {
+                        return legacy
+                            .into_current_with_label_context(label_context.into_current());
+                    }
+                }
+            }
             if let Ok(legacy) =
                 bincode_deserialize_strict::<RealityPredictionLegacyNoLabelContext>(bytes)
             {
@@ -2578,6 +2681,15 @@ where
         ))));
     }
     Ok(value)
+}
+
+fn bincode_deserialize_prefix<T>(bytes: &[u8]) -> Result<(T, usize), Box<bincode::ErrorKind>>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let mut cursor = Cursor::new(bytes);
+    let value = bincode::deserialize_from(&mut cursor)?;
+    Ok((value, cursor.position() as usize))
 }
 
 impl RealityPrediction {
@@ -5091,6 +5203,31 @@ mod tests {
         assert_eq!(decoded.prediction_id, prediction.prediction_id);
         assert_eq!(decoded.label_context, PredictionLabelContext::default());
         assert!(!decoded.slot_attributions.is_empty());
+    }
+
+    #[test]
+    fn decode_reality_prediction_reads_legacy_v1_label_context() {
+        let prediction = prediction_for_decode();
+        let legacy_prediction = RealityPredictionLegacyNoLabelContext::from_current(&prediction);
+        let legacy_label = PredictionLabelContextLegacyV1::from_current(&prediction.label_context);
+        let mut bytes = bincode::serialize(&legacy_prediction).unwrap();
+        bytes.extend(bincode::serialize(&legacy_label).unwrap());
+
+        let decoded = decode_reality_prediction(&bytes).unwrap();
+
+        assert_eq!(decoded.prediction_id, prediction.prediction_id);
+        assert_eq!(
+            decoded.label_context.accepted_label_ids,
+            prediction.label_context.accepted_label_ids
+        );
+        assert_eq!(
+            decoded.label_context.active_skill_ids,
+            prediction.label_context.active_skill_ids
+        );
+        assert!(decoded.label_context.active_higher_ability_ids.is_empty());
+        assert!(decoded.label_context.source_membership_keys.is_empty());
+        assert!(decoded.label_context.ability_signature_hash.is_none());
+        assert!(decoded.label_context.membership_signature_hash.is_none());
     }
 
     #[test]

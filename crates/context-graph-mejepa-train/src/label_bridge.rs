@@ -19,6 +19,8 @@ const BRIDGE_MANIFEST_FILE: &str = "learning_bridge_manifest.json";
 const MAX_ID_BYTES: usize = 512;
 const MAX_LABEL_IDS: usize = 256;
 const MAX_SKILL_IDS: usize = 128;
+const MAX_HIGHER_ABILITY_IDS: usize = 128;
+const MAX_SOURCE_MEMBERSHIP_KEYS: usize = 512;
 const MAX_FAILURE_EVIDENCE_SET_IDS: usize = 128;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -241,6 +243,26 @@ pub fn build_prediction_label_context(
     failure_evidence_set_ids: Vec<String>,
     active_skill_ids: Vec<String>,
 ) -> Result<PredictionLabelContext, TrainerError> {
+    build_prediction_label_context_with_abilities(
+        bridge,
+        accepted_label_ids,
+        code_state_key,
+        failure_evidence_set_ids,
+        active_skill_ids,
+        Vec::new(),
+        Vec::new(),
+    )
+}
+
+pub fn build_prediction_label_context_with_abilities(
+    bridge: &LabelLearningBridge,
+    accepted_label_ids: Vec<String>,
+    code_state_key: Option<String>,
+    failure_evidence_set_ids: Vec<String>,
+    active_skill_ids: Vec<String>,
+    active_higher_ability_ids: Vec<String>,
+    source_membership_keys: Vec<String>,
+) -> Result<PredictionLabelContext, TrainerError> {
     bridge.validate_prediction_labels(&accepted_label_ids)?;
     validate_id_list(
         "failure_evidence_set_ids",
@@ -248,6 +270,16 @@ pub fn build_prediction_label_context(
         MAX_FAILURE_EVIDENCE_SET_IDS,
     )?;
     validate_id_list("active_skill_ids", &active_skill_ids, MAX_SKILL_IDS)?;
+    validate_id_list(
+        "active_higher_ability_ids",
+        &active_higher_ability_ids,
+        MAX_HIGHER_ABILITY_IDS,
+    )?;
+    validate_id_list(
+        "source_membership_keys",
+        &source_membership_keys,
+        MAX_SOURCE_MEMBERSHIP_KEYS,
+    )?;
     if let Some(key) = &code_state_key {
         validate_label_id("code_state_key", key)?;
         let row = bridge.code_state_constellations.get(key).ok_or_else(|| {
@@ -279,6 +311,8 @@ pub fn build_prediction_label_context(
         code_state_key,
         failure_evidence_set_ids,
         active_skill_ids: active_skill_ids.clone(),
+        active_higher_ability_ids: active_higher_ability_ids.clone(),
+        source_membership_keys: source_membership_keys.clone(),
         accepted_registry_sha256: Some(bridge.accepted_registry_sha256.clone()),
         usefulness_metrics_sha256: Some(bridge.usefulness_metrics_sha256.clone()),
         learning_bridge_manifest_sha256: Some(bridge.manifest_sha256.clone()),
@@ -287,6 +321,16 @@ pub fn build_prediction_label_context(
             None
         } else {
             Some(skill_signature_hash(&active_skill_ids)?)
+        },
+        ability_signature_hash: if active_higher_ability_ids.is_empty() {
+            None
+        } else {
+            Some(ability_signature_hash(&active_higher_ability_ids)?)
+        },
+        membership_signature_hash: if source_membership_keys.is_empty() {
+            None
+        } else {
+            Some(membership_signature_hash(&source_membership_keys)?)
         },
         ..PredictionLabelContext::default()
     })
@@ -298,6 +342,14 @@ pub fn accepted_label_signature_hash(label_ids: &[String]) -> Result<String, Tra
 
 pub fn skill_signature_hash(skill_ids: &[String]) -> Result<String, TrainerError> {
     ordered_signature_hash("skills", skill_ids, MAX_SKILL_IDS)
+}
+
+pub fn ability_signature_hash(ability_ids: &[String]) -> Result<String, TrainerError> {
+    ordered_signature_hash("abilities", ability_ids, MAX_HIGHER_ABILITY_IDS)
+}
+
+pub fn membership_signature_hash(membership_keys: &[String]) -> Result<String, TrainerError> {
+    ordered_signature_hash("memberships", membership_keys, MAX_SOURCE_MEMBERSHIP_KEYS)
 }
 
 fn signature_hash(prefix: &'static str, ids: &[String]) -> Result<String, TrainerError> {
