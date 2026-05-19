@@ -78,6 +78,7 @@ Child issue split:
 | #391 / TASK-PY-G-091 | Slot-level attribution surfaces | Explains which evidence surfaces caused a verdict |
 | #392 / TASK-PY-G-092 | Temporal constellation trajectory features | Tracks exact-state constellation movement across time/windows |
 | #393 / TASK-PY-G-093 | Capability-discovery ablation suite | Measures which constellation features move oracle correlation |
+| #398 / TASK-PY-G-097 | Rerun ablations with #388/#389 artifacts | Tests the richer tensor + per-slot calibration state before predictor changes |
 | #394 / TASK-PY-G-094 | Anti-compensation FSV suite | Prevents regressions back to flat-vector scoring |
 | #395 / TASK-PY-G-095 | Real-corpus constellation smoke | Starts from the completed 391/391 aiwonder forward-cache substrate, not synthetic data |
 | #396 / TASK-PY-G-096 | Constellation fine-tuning objective | Trains on per-slot vectors, pairwise tensors, contradiction/consensus features, temporal metadata, and oracle labels as separate loss components |
@@ -92,7 +93,7 @@ Child issue split:
 
 **#389 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-089-per-slot-calibration-ood-fsv/`: the calibrator consumed #388 tensors and #396 training rows, wrote durable calibration state under `/zfs/archive/contextgraph/state/calibration/per-slot-v1/`, and produced 12 global slot calibrations, 84 fail-closed per-cell slot rows, and 66 pair calibration rows. The policy proves strict conjunction, `aggregate_score_never_overrides_slot_violation=true`, `reject_missing_or_stale_calibration=true`, `flat_vector_concat_used=false`, and explicit edge cases for missing slot, stale calibration, nonfinite score, and one-bad-slot rejection when the aggregate mean would pass. It is intentionally `ship_gate_countable=false` until #127/#129/#130 rerun under this per-slot guard.
 
-**Ordering update from #388/#389/#393:** do not promote the current #396 scalar feature family. #388 is the durable real-corpus relationship tensor source, #389 is the per-slot fail-closed calibration/OOD state, and #393 must be rerun with #388 + #389 artifacts before changing the predictor path.
+**Ordering update from #388/#389/#393:** do not promote the current #396 scalar feature family. #388 is the durable real-corpus relationship tensor source, #389 is the per-slot fail-closed calibration/OOD state, and #398 must rerun the #393 ablation question with #388 + #389 artifacts before changing the predictor path.
 
 **Current data-location map for #396 descendants:**
 
