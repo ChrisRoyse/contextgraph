@@ -8,11 +8,11 @@ use crate::project_cache::{
 };
 use crate::store::RocksDbInferStore;
 use crate::types::{
-    ChunkId, ConformalSet, EdgeCaseClass, EmbedderId, FailureModeClass, Language, LatentBugClass,
-    OracleOutcome, PredictedEdgeCase, PredictedFailureMode, PredictedLatentBug,
-    PredictedSecurityConcern, PredictedWorks, PredictionProvenance, RealityPrediction,
-    RealityPredictionBuilder, RootCauseClass, SecurityConcernClass, Severity, TaskId, Verdict,
-    WitnessHash,
+    decode_reality_prediction, ChunkId, ConformalSet, EdgeCaseClass, EmbedderId, FailureModeClass,
+    Language, LatentBugClass, OracleOutcome, PredictedEdgeCase, PredictedFailureMode,
+    PredictedLatentBug, PredictedSecurityConcern, PredictedWorks, PredictionProvenance,
+    RealityPrediction, RealityPredictionBuilder, RootCauseClass, SecurityConcernClass, Severity,
+    TaskId, Verdict, WitnessHash,
 };
 use context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS;
 use rocksdb::{IteratorMode, WriteOptions, DB};
@@ -464,7 +464,7 @@ pub fn count_project_predictions(db: &DB, project_id: &str) -> Result<usize, Pro
     let mut count = 0usize;
     for item in db.iterator_cf(&cf, IteratorMode::Start) {
         let (_key, value) = item?;
-        let prediction: RealityPrediction = bincode::deserialize(&value)?;
+        let prediction = decode_reality_prediction(&value)?;
         if prediction.task_id.0.starts_with(&prefix)
             && prediction.provenance.predictor_version == PREDICTOR_VERSION
         {
@@ -489,7 +489,7 @@ fn prune_project_predictions_except(
     let mut stale_keys = Vec::new();
     for item in db.iterator_cf(&cf, IteratorMode::Start) {
         let (key, value) = item?;
-        let prediction: RealityPrediction = bincode::deserialize(&value)?;
+        let prediction = decode_reality_prediction(&value)?;
         if prediction.task_id.0.starts_with(&prefix) && !retained_keys.contains(key.as_ref()) {
             stale_keys.push(key.to_vec());
         }

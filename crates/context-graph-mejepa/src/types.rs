@@ -4,6 +4,7 @@ use std::path::{Component, Path, PathBuf};
 use context_graph_mejepa_instruments::OracleVerdict;
 use serde::{Deserialize, Serialize};
 
+use crate::constellation_intelligence::ConstellationIntelligenceEvidence;
 use crate::error::MejepaInferError;
 use crate::failure_fingerprint::FingerprintCandidateScore;
 
@@ -1745,6 +1746,171 @@ pub struct RealityPrediction {
     pub matched_fingerprint: Option<MatchedFingerprintEvidence>,
     #[serde(default)]
     pub unknown_candidate_id: Option<[u8; 16]>,
+    #[serde(default)]
+    pub constellation_intelligence: Option<ConstellationIntelligenceEvidence>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RealityPredictionLegacyNoConstellation {
+    prediction_id: [u8; 16],
+    witness_hash: WitnessHash,
+    task_id: TaskId,
+    session_id: [u8; 16],
+    language: Language,
+    covered_chunks: Vec<ChunkId>,
+    verdict: Verdict,
+    confidence_interval: ConformalInterval,
+    predicted_oracle_pass: f32,
+    predicted_test_pass: Vec<f32>,
+    predicted_runtime_trace: [f32; 32],
+    ood_score: f32,
+    outcome_set: ConformalSet,
+    calibrated_confidence: f32,
+    degraded_status: bool,
+    granger_attestations: BTreeMap<String, f32>,
+    predicted_failure_modes: Vec<PredictedFailureMode>,
+    predicted_failed_tests: Vec<PredictedTestOutcome>,
+    predicted_works: Vec<PredictedWorks>,
+    predicted_uncovered_paths: Vec<UncoveredPath>,
+    predicted_flaky_tests: Vec<FlakyTestCandidate>,
+    guard_violations: Vec<GuardViolation>,
+    per_slot_ood_reasons: Vec<PerSlotOodReason>,
+    closest_exemplars: Vec<ExemplarMatch>,
+    predicted_edge_cases: Vec<PredictedEdgeCase>,
+    predicted_latent_bugs: Vec<PredictedLatentBug>,
+    predicted_tech_debt_added: Vec<PredictedTechDebt>,
+    predicted_dead_code: Vec<PredictedDeadCode>,
+    predicted_redundant_code: Vec<PredictedRedundancy>,
+    predicted_perf_regressions: Vec<PredictedPerfRegression>,
+    predicted_security_concerns: Vec<PredictedSecurityConcern>,
+    predicted_accuracy_degradations: Vec<PredictedAccuracyDegradation>,
+    predicted_cost_regressions: Vec<PredictedCostRegression>,
+    predicted_reasoning_class: ReasoningClass,
+    agent_claim_graph: AgentClaimGraph,
+    claim_reconciliation: Vec<ClaimReconciliation>,
+    reality_impact: Option<RealityImpact>,
+    provenance: PredictionProvenance,
+    source_panel_sha: [u8; 32],
+    calibration_version: String,
+    created_at_unix_ms: i64,
+    matched_fingerprint: Option<MatchedFingerprintEvidence>,
+    unknown_candidate_id: Option<[u8; 16]>,
+}
+
+impl RealityPredictionLegacyNoConstellation {
+    #[cfg(test)]
+    fn from_current(value: &RealityPrediction) -> Self {
+        Self {
+            prediction_id: value.prediction_id,
+            witness_hash: value.witness_hash.clone(),
+            task_id: value.task_id.clone(),
+            session_id: value.session_id,
+            language: value.language,
+            covered_chunks: value.covered_chunks.clone(),
+            verdict: value.verdict,
+            confidence_interval: value.confidence_interval.clone(),
+            predicted_oracle_pass: value.predicted_oracle_pass,
+            predicted_test_pass: value.predicted_test_pass.clone(),
+            predicted_runtime_trace: value.predicted_runtime_trace,
+            ood_score: value.ood_score,
+            outcome_set: value.outcome_set.clone(),
+            calibrated_confidence: value.calibrated_confidence,
+            degraded_status: value.degraded_status,
+            granger_attestations: value.granger_attestations.clone(),
+            predicted_failure_modes: value.predicted_failure_modes.clone(),
+            predicted_failed_tests: value.predicted_failed_tests.clone(),
+            predicted_works: value.predicted_works.clone(),
+            predicted_uncovered_paths: value.predicted_uncovered_paths.clone(),
+            predicted_flaky_tests: value.predicted_flaky_tests.clone(),
+            guard_violations: value.guard_violations.clone(),
+            per_slot_ood_reasons: value.per_slot_ood_reasons.clone(),
+            closest_exemplars: value.closest_exemplars.clone(),
+            predicted_edge_cases: value.predicted_edge_cases.clone(),
+            predicted_latent_bugs: value.predicted_latent_bugs.clone(),
+            predicted_tech_debt_added: value.predicted_tech_debt_added.clone(),
+            predicted_dead_code: value.predicted_dead_code.clone(),
+            predicted_redundant_code: value.predicted_redundant_code.clone(),
+            predicted_perf_regressions: value.predicted_perf_regressions.clone(),
+            predicted_security_concerns: value.predicted_security_concerns.clone(),
+            predicted_accuracy_degradations: value.predicted_accuracy_degradations.clone(),
+            predicted_cost_regressions: value.predicted_cost_regressions.clone(),
+            predicted_reasoning_class: value.predicted_reasoning_class,
+            agent_claim_graph: value.agent_claim_graph.clone(),
+            claim_reconciliation: value.claim_reconciliation.clone(),
+            reality_impact: value.reality_impact.clone(),
+            provenance: value.provenance.clone(),
+            source_panel_sha: value.source_panel_sha,
+            calibration_version: value.calibration_version.clone(),
+            created_at_unix_ms: value.created_at_unix_ms,
+            matched_fingerprint: value.matched_fingerprint.clone(),
+            unknown_candidate_id: value.unknown_candidate_id,
+        }
+    }
+
+    fn into_current(self) -> Result<RealityPrediction, MejepaInferError> {
+        RealityPrediction::try_new(RealityPrediction {
+            prediction_id: self.prediction_id,
+            witness_hash: self.witness_hash,
+            task_id: self.task_id,
+            session_id: self.session_id,
+            language: self.language,
+            covered_chunks: self.covered_chunks,
+            verdict: self.verdict,
+            confidence_interval: self.confidence_interval,
+            predicted_oracle_pass: self.predicted_oracle_pass,
+            predicted_test_pass: self.predicted_test_pass,
+            predicted_runtime_trace: self.predicted_runtime_trace,
+            ood_score: self.ood_score,
+            outcome_set: self.outcome_set,
+            calibrated_confidence: self.calibrated_confidence,
+            degraded_status: self.degraded_status,
+            granger_attestations: self.granger_attestations,
+            predicted_failure_modes: self.predicted_failure_modes,
+            predicted_failed_tests: self.predicted_failed_tests,
+            predicted_works: self.predicted_works,
+            predicted_uncovered_paths: self.predicted_uncovered_paths,
+            predicted_flaky_tests: self.predicted_flaky_tests,
+            guard_violations: self.guard_violations,
+            per_slot_ood_reasons: self.per_slot_ood_reasons,
+            closest_exemplars: self.closest_exemplars,
+            predicted_edge_cases: self.predicted_edge_cases,
+            predicted_latent_bugs: self.predicted_latent_bugs,
+            predicted_tech_debt_added: self.predicted_tech_debt_added,
+            predicted_dead_code: self.predicted_dead_code,
+            predicted_redundant_code: self.predicted_redundant_code,
+            predicted_perf_regressions: self.predicted_perf_regressions,
+            predicted_security_concerns: self.predicted_security_concerns,
+            predicted_accuracy_degradations: self.predicted_accuracy_degradations,
+            predicted_cost_regressions: self.predicted_cost_regressions,
+            predicted_reasoning_class: self.predicted_reasoning_class,
+            agent_claim_graph: self.agent_claim_graph,
+            claim_reconciliation: self.claim_reconciliation,
+            reality_impact: self.reality_impact,
+            provenance: self.provenance,
+            source_panel_sha: self.source_panel_sha,
+            calibration_version: self.calibration_version,
+            created_at_unix_ms: self.created_at_unix_ms,
+            matched_fingerprint: self.matched_fingerprint,
+            unknown_candidate_id: self.unknown_candidate_id,
+            constellation_intelligence: None,
+        })
+    }
+}
+
+pub fn decode_reality_prediction(bytes: &[u8]) -> Result<RealityPrediction, MejepaInferError> {
+    match bincode::deserialize::<RealityPrediction>(bytes) {
+        Ok(prediction) => RealityPrediction::try_new(prediction),
+        Err(current_err) => {
+            let legacy = bincode::deserialize::<RealityPredictionLegacyNoConstellation>(bytes)
+                .map_err(|legacy_err| MejepaInferError::InvalidInput {
+                    field: "RealityPrediction.bincode".to_string(),
+                    detail: format!(
+                        "failed to decode current schema ({current_err}) or legacy no-constellation schema ({legacy_err})"
+                    ),
+                })?;
+            legacy.into_current()
+        }
+    }
 }
 
 impl RealityPrediction {
@@ -1917,6 +2083,9 @@ impl RealityPrediction {
         if let Some(matched) = &self.matched_fingerprint {
             matched.validate()?;
         }
+        if let Some(evidence) = &self.constellation_intelligence {
+            evidence.validate()?;
+        }
         if self.unknown_candidate_id.is_some() && self.verdict != Verdict::OutOfDistribution {
             return Err(MejepaInferError::InvalidInput {
                 field: "unknown_candidate_id".to_string(),
@@ -2001,6 +2170,7 @@ pub struct RealityPredictionBuilder {
     // TASK-FP-010 (#319) — see RealityPrediction docs for verdict→field semantics.
     matched_fingerprint: Option<MatchedFingerprintEvidence>,
     unknown_candidate_id: Option<[u8; 16]>,
+    constellation_intelligence: Option<ConstellationIntelligenceEvidence>,
 }
 
 impl RealityPredictionBuilder {
@@ -2054,6 +2224,7 @@ impl RealityPredictionBuilder {
             created_at_unix_ms: chrono::Utc::now().timestamp_millis(),
             matched_fingerprint: None,
             unknown_candidate_id: None,
+            constellation_intelligence: None,
         }
     }
 
@@ -2276,6 +2447,7 @@ impl RealityPredictionBuilder {
             // `.unknown_candidate_id(...)` setters below.
             matched_fingerprint: self.matched_fingerprint,
             unknown_candidate_id: self.unknown_candidate_id,
+            constellation_intelligence: self.constellation_intelligence,
         })
     }
 
@@ -2286,6 +2458,14 @@ impl RealityPredictionBuilder {
 
     pub fn unknown_candidate_id(mut self, value: Option<[u8; 16]>) -> Self {
         self.unknown_candidate_id = value;
+        self
+    }
+
+    pub fn constellation_intelligence(
+        mut self,
+        value: Option<ConstellationIntelligenceEvidence>,
+    ) -> Self {
+        self.constellation_intelligence = value;
         self
     }
 }
@@ -3468,4 +3648,55 @@ fn reject_path_control_chars(field: &str, path: &Path) -> Result<(), MejepaInfer
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn prediction_for_decode() -> RealityPrediction {
+        RealityPredictionBuilder::from_parts(
+            TaskId("decode-compat-task".to_string()),
+            [1; 16],
+            Language::Python,
+            ConformalSet::try_new(vec![OracleOutcome::Pass], 0.1, 0.2).unwrap(),
+        )
+        .prediction_id([2; 16])
+        .witness_hash(WitnessHash([3; 32]))
+        .verdict(Verdict::Pass)
+        .confidence_interval(ConformalInterval {
+            lower: 0.6,
+            upper: 0.8,
+            ..ConformalInterval::default()
+        })
+        .predicted_oracle_pass(0.9)
+        .predicted_test_pass(vec![0.9])
+        .ood_score(0.1)
+        .calibrated_confidence(0.7)
+        .granger_attestations(BTreeMap::from([("decode:unit".to_string(), 0.9)]))
+        .provenance(PredictionProvenance {
+            predictor_version: "decode-test".to_string(),
+            constellation_version: "decode-test-constellation".to_string(),
+            calibration_version: "calibration-v1".to_string(),
+            active_pointer: hex::encode([3; 16]),
+        })
+        .source_panel_sha([4; 32])
+        .calibration_version("calibration-v1")
+        .created_at_unix_ms(1_772_000_000_000)
+        .build()
+        .unwrap()
+    }
+
+    #[test]
+    fn decode_reality_prediction_reads_legacy_without_constellation_field() {
+        let prediction = prediction_for_decode();
+        let legacy = RealityPredictionLegacyNoConstellation::from_current(&prediction);
+        let legacy_bytes = bincode::serialize(&legacy).unwrap();
+
+        let decoded = decode_reality_prediction(&legacy_bytes).unwrap();
+
+        assert_eq!(decoded.prediction_id, prediction.prediction_id);
+        assert_eq!(decoded.task_id, prediction.task_id);
+        assert_eq!(decoded.constellation_intelligence, None);
+    }
 }

@@ -19,9 +19,10 @@ use context_graph_mejepa::operator_override::{
     persist_operator_override, OperatorOverride, OverrideVerdict,
 };
 use context_graph_mejepa::{
-    bedrock_consistency_for_patch_diff, build_deterministic_compiler, mejepa_mincut_panel,
-    open_infer_rocksdb, open_mincut_rocksdb, operator_contribution_report_from_db,
-    promote_instrument_proposal, propose_embedder_proposals_from_db, propose_instruments_from_db,
+    bedrock_consistency_for_patch_diff, build_deterministic_compiler, decode_reality_prediction,
+    mejepa_mincut_panel, open_infer_rocksdb, open_mincut_rocksdb,
+    operator_contribution_report_from_db, promote_instrument_proposal,
+    propose_embedder_proposals_from_db, propose_instruments_from_db,
     rank_counterfactual_candidates, read_embedder_proposals, read_instrument_proposal,
     read_instrument_proposals, read_library_foundationality_report, read_mincut_report,
     render_operator_contributions_weekly_section, search_latent_actions,
@@ -3248,11 +3249,8 @@ fn decode_live_prediction_row(key: &[u8], value: &[u8]) -> AnyhowResult<RealityP
             key.len()
         );
     }
-    let prediction: RealityPrediction =
-        bincode::deserialize(value).context("decode CF_MEJEPA_LIVE_PREDICTIONS row")?;
-    prediction
-        .validate()
-        .map_err(|err| anyhow!("invalid persisted RealityPrediction: {err}"))?;
+    let prediction = decode_reality_prediction(value)
+        .map_err(|err| anyhow!("decode CF_MEJEPA_LIVE_PREDICTIONS row: {err}"))?;
     if prediction.session_id != key[0..16] {
         bail!("CF_MEJEPA_LIVE_PREDICTIONS key session prefix does not match payload");
     }
@@ -4512,6 +4510,7 @@ can_operator_override = {operator}
             created_at_unix_ms: 1_778_644_000_000,
             matched_fingerprint: None,
             unknown_candidate_id: None,
+            constellation_intelligence: None,
         })
         .unwrap()
     }

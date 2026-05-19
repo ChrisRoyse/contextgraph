@@ -1539,6 +1539,18 @@ fn active_learning_kind_summary(kind: &ActiveLearningKind) -> serde_json::Value 
             "prediction_id": hex::encode(prediction_id.0),
             "priority_weight": priority_weight,
         }),
+        ActiveLearningKind::ConstellationDisagreement {
+            pattern_id,
+            contradiction_score,
+            novelty_score,
+            slot_pair_count,
+        } => json!({
+            "type": "constellation_disagreement",
+            "pattern_id": pattern_id,
+            "contradiction_score": contradiction_score,
+            "novelty_score": novelty_score,
+            "slot_pair_count": slot_pair_count,
+        }),
     }
 }
 
@@ -2519,6 +2531,7 @@ mod tests {
             created_at_unix_ms: 1_778_000_000_000,
             matched_fingerprint: None,
             unknown_candidate_id: None,
+            constellation_intelligence: None,
         })
         .unwrap()
     }

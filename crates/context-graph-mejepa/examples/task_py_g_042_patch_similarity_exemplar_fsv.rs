@@ -425,6 +425,7 @@ fn live_prediction_row(
         created_at_unix_ms: chrono::Utc::now().timestamp_millis(),
         matched_fingerprint: None,
         unknown_candidate_id: None,
+        constellation_intelligence: None,
     })
     .context("validate live prediction")
 }

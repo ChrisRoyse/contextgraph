@@ -12,8 +12,8 @@ use serde_json::Value;
 use crate::calibration::cf;
 use crate::error::MejepaInferError;
 use crate::types::{
-    Language, ObservedTestOutcome, PredictedTestOutcome, PredictionCorrectness, RealityImpact,
-    RealityPrediction, ShiftEntry, TestId, TestOutcome,
+    decode_reality_prediction, Language, ObservedTestOutcome, PredictedTestOutcome,
+    PredictionCorrectness, RealityImpact, RealityPrediction, ShiftEntry, TestId, TestOutcome,
 };
 
 pub const REALITY_IMPACT_SCHEMA_VERSION: u32 = 1;
@@ -807,8 +807,7 @@ pub fn read_live_prediction_by_id(
         if key[24..40] != prediction_id {
             continue;
         }
-        let prediction: RealityPrediction = bincode::deserialize(&value)?;
-        prediction.validate()?;
+        let prediction = decode_reality_prediction(&value)?;
         if prediction.prediction_id != prediction_id {
             return Err(invalid_input(
                 "live_predictions.prediction_id",
@@ -1793,6 +1792,7 @@ mod tests {
             created_at_unix_ms,
             matched_fingerprint: None,
             unknown_candidate_id: None,
+            constellation_intelligence: None,
         })
         .unwrap()
     }

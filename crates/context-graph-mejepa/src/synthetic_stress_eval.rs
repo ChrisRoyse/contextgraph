@@ -9,7 +9,7 @@ use crate::synthetic_stress::{
     SyntheticStressEvalRequest, SyntheticStressResult, SYNTHETIC_STRESS_SCHEMA_VERSION,
 };
 use crate::synthetic_stress_store::synthetic_stress_result_key;
-use crate::types::RealityPrediction;
+use crate::types::{decode_reality_prediction, RealityPrediction};
 use context_graph_mejepa_cf::{CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_SYNTHETIC_STRESS_RESULTS};
 use std::path::{Path, PathBuf};
 
@@ -79,7 +79,7 @@ fn read_live_prediction(
     let bytes = db.get_cf(cf, &key)?.ok_or_else(|| {
         synthetic_stress_invalid("live_prediction.readback", "missing live prediction row")
     })?;
-    Ok(bincode::deserialize(&bytes)?)
+    Ok(decode_reality_prediction(&bytes)?)
 }
 
 fn actual_shape(

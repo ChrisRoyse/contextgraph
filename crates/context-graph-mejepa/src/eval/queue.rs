@@ -174,6 +174,12 @@ pub enum ActiveLearningKind {
         prediction_id: PredictionId,
         priority_weight: f32,
     },
+    ConstellationDisagreement {
+        pattern_id: String,
+        contradiction_score: f32,
+        novelty_score: f32,
+        slot_pair_count: u32,
+    },
 }
 
 impl ActiveLearningKind {
@@ -194,11 +200,12 @@ impl ActiveLearningKind {
             Self::AgentSurprise { .. } => 0,
             Self::EwcProtectionViolation { .. } => 1,
             Self::OodHarvest { .. } => 2,
-            Self::NovelCluster { .. } => 3,
-            Self::UnknownFingerprint { .. } => 4,
-            Self::ColdCellTargetedCorpus { .. } => 5,
-            Self::OutOfDistribution => 6,
-            Self::Uncertainty => 7,
+            Self::ConstellationDisagreement { .. } => 3,
+            Self::NovelCluster { .. } => 4,
+            Self::UnknownFingerprint { .. } => 5,
+            Self::ColdCellTargetedCorpus { .. } => 6,
+            Self::OutOfDistribution => 7,
+            Self::Uncertainty => 8,
         }
     }
 
@@ -274,6 +281,29 @@ impl ActiveLearningKind {
                     return Err(EvalError::new(
                         EvalErrorCode::InvalidInput,
                         "OOD harvest priority_weight must be finite and positive",
+                    ));
+                }
+                Ok(())
+            }
+            Self::ConstellationDisagreement {
+                pattern_id,
+                contradiction_score,
+                novelty_score,
+                slot_pair_count,
+            } => {
+                validate_cell_id(pattern_id)?;
+                validate_probability(
+                    "active_learning.constellation_disagreement.contradiction_score",
+                    *contradiction_score,
+                )?;
+                validate_probability(
+                    "active_learning.constellation_disagreement.novelty_score",
+                    *novelty_score,
+                )?;
+                if *slot_pair_count == 0 {
+                    return Err(EvalError::new(
+                        EvalErrorCode::InvalidInput,
+                        "constellation disagreement slot_pair_count must be non-zero",
                     ));
                 }
                 Ok(())
@@ -957,6 +987,56 @@ impl ActiveLearningQueueState {
         Ok(true)
     }
 
+    pub fn enqueue_constellation_disagreement(
+        &mut self,
+        pattern_id: String,
+        contradiction_score: f32,
+        novelty_score: f32,
+        slot_pair_count: u32,
+    ) -> Result<(), EvalError> {
+        validate_cell_id(&pattern_id)?;
+        validate_probability(
+            "active_learning.constellation_disagreement.contradiction_score",
+            contradiction_score,
+        )?;
+        validate_probability(
+            "active_learning.constellation_disagreement.novelty_score",
+            novelty_score,
+        )?;
+        if slot_pair_count == 0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "constellation disagreement slot_pair_count must be non-zero",
+            ));
+        }
+        let digest = Sha256::digest(pattern_id.as_bytes());
+        let task_id = TaskId(format!(
+            "constellation-disagreement-{}",
+            hex::encode(&digest[..8])
+        ));
+        let support_gap = contradiction_score.max(novelty_score).clamp(0.0, 1.0);
+        let entry = ActiveLearningQueueEntry {
+            task_id: task_id.clone(),
+            score: support_gap,
+            outcome_set_len: slot_pair_count as usize,
+            ood_score: contradiction_score,
+            curiosity_score: curiosity_score_from_proxy(0.0, contradiction_score, support_gap)?,
+            reason:
+                crate::constellation_intelligence::CONSTELLATION_DISAGREEMENT_ACTIVE_LEARNING_REASON
+                    .to_string(),
+            kind: ActiveLearningKind::ConstellationDisagreement {
+                pattern_id,
+                contradiction_score,
+                novelty_score,
+                slot_pair_count,
+            },
+        };
+        entry.validate()?;
+        self.entries.insert(task_id, entry);
+        self.evict_to_capacity()?;
+        Ok(())
+    }
+
     pub fn enqueue_novel_pattern_candidate(
         &mut self,
         prediction: &RealityPrediction,
@@ -1150,6 +1230,11 @@ impl From<LegacyActiveLearningQueueEntry> for ActiveLearningQueueEntry {
             ActiveLearningKind::OodHarvest {
                 priority_weight, ..
             } => *priority_weight,
+            ActiveLearningKind::ConstellationDisagreement {
+                contradiction_score,
+                novelty_score,
+                ..
+            } => contradiction_score.max(*novelty_score),
             _ => 1.0,
         };
         let curiosity_score = curiosity_score_from_proxy(

@@ -15,6 +15,7 @@ pub mod cli;
 pub mod compiler;
 pub mod config;
 pub mod conformal;
+pub mod constellation_intelligence;
 pub mod constellation_observation;
 pub mod contradiction;
 pub mod cross_language_label_gating;
@@ -115,6 +116,7 @@ pub use config::{
     VICREG_VAR_LAMBDA, VRAM_STEADY_STATE_TARGET_BYTES, VRAM_WARN_THRESHOLD_BYTES,
 };
 pub use conformal::*;
+pub use constellation_intelligence::*;
 pub use constellation_observation::*;
 pub use contradiction::*;
 pub use data_models::{

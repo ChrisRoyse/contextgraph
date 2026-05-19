@@ -296,6 +296,7 @@ fn build_case(input: CaseInput<'_>, run_root: &Path) -> Result<BuiltCase> {
         safety_constraint_violation_count: 0,
         objective_total_cost: 0.05,
         objective_cost_ceiling: 0.65,
+        constellation_verdict_pressure: 0.0,
     });
     let predicted_works_count = surfaces.predicted_works.len();
     let first_work = surfaces.predicted_works.first().cloned();

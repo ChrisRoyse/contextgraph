@@ -1,6 +1,8 @@
 use crate::calibration::cf;
 use crate::eval::{ActiveLearningQueueState, EvalError, RocksDbEvalStore};
-use crate::types::{OracleOutcome, PanelId, PredictionId, RealityPrediction, TaskId, Verdict};
+use crate::types::{
+    decode_reality_prediction, OracleOutcome, PanelId, PredictionId, TaskId, Verdict,
+};
 use rocksdb::{IteratorMode, DB};
 use std::path::Path;
 use std::sync::Arc;
@@ -64,8 +66,7 @@ pub fn harvest_ood_predictions(
     for item in db.iterator_cf(live_cf, IteratorMode::Start) {
         let (key, value) = item?;
         report.scanned_live_predictions += 1;
-        let prediction: RealityPrediction = bincode::deserialize(&value)?;
-        prediction.validate().map_err(EvalError::from)?;
+        let prediction = decode_reality_prediction(&value).map_err(EvalError::from)?;
         validate_live_prediction_key(&key, &prediction)?;
         if prediction.ood_score <= config.threshold {
             continue;

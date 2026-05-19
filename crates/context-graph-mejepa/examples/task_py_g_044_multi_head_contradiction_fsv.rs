@@ -252,6 +252,7 @@ fn happy_path(thresholds: &ContradictionThresholds) -> Result<Value> {
         safety_constraint_violation_count: 0,
         objective_total_cost: 0.05,
         objective_cost_ceiling: 0.65,
+        constellation_verdict_pressure: 0.0,
     });
     Ok(json!({
         "pass": output.verdict == Verdict::Abstain
@@ -294,6 +295,7 @@ fn edge_cases(thresholds: &[ContradictionThresholds]) -> Result<Vec<EdgeCase>> {
         safety_constraint_violation_count: 0,
         objective_total_cost: 0.05,
         objective_cost_ceiling: 0.65,
+        constellation_verdict_pressure: 0.0,
     });
     Ok(vec![
         EdgeCase {

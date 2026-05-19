@@ -5,7 +5,7 @@ use crate::project_ingest::{
     is_valid_project_id, project_prediction_created_at_unix_ms, project_prediction_live_key,
     ProjectIngestManifest,
 };
-use crate::types::{RealityPrediction, Severity, Verdict};
+use crate::types::{decode_reality_prediction, RealityPrediction, Severity, Verdict};
 use context_graph_mejepa_cf::{CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_PROJECT_REPORTS};
 use rocksdb::{IteratorMode, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
@@ -585,8 +585,7 @@ fn load_project_predictions(
                     file_path: row.file_path.clone(),
                     key_hex: key_hex.clone(),
                 })?;
-        let prediction: RealityPrediction = bincode::deserialize(&bytes)?;
-        prediction.validate()?;
+        let prediction = decode_reality_prediction(&bytes)?;
         if hex::encode(prediction.prediction_id) != row.prediction_id_hex
             || prediction.task_id.0 != row.task_id
             || prediction.created_at_unix_ms

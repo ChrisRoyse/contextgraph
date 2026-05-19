@@ -271,5 +271,9 @@ name = "task_py_g_087_slot_preserving_late_fusion_predictor_fsv"
 path = "examples/task_py_g_087_slot_preserving_late_fusion_predictor_fsv.rs"
 
 [[example]]
+name = "task_py_g_090_consensus_contradiction_heads_fsv"
+path = "examples/task_py_g_090_consensus_contradiction_heads_fsv.rs"
+
+[[example]]
 name = "task_py_g_078_q4_trust_gate_fsv"
 path = "examples/task_py_g_078_q4_trust_gate_fsv.rs"

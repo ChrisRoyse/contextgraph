@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 
 use crate::calibration::{cf, count_cf, open_infer_rocksdb, CF_MEJEPA_LIVE_PREDICTIONS};
 use crate::error::MejepaInferError;
-use crate::types::{PredictionId, RealityPrediction};
+use crate::types::{decode_reality_prediction, PredictionId, RealityPrediction};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -133,8 +133,7 @@ fn decode_live_prediction_row(
             context: "MEJEPA_REPLAY_KEY_LENGTH: live prediction key must be session_id || created_at || prediction_id".to_string(),
         });
     }
-    let prediction: RealityPrediction = bincode::deserialize(value)?;
-    prediction.validate()?;
+    let prediction = decode_reality_prediction(value)?;
 
     let mut key_session_id = [0u8; 16];
     key_session_id.copy_from_slice(&key[0..16]);
@@ -253,6 +252,7 @@ mod tests {
             created_at_unix_ms,
             matched_fingerprint: None,
             unknown_candidate_id: None,
+            constellation_intelligence: None,
         })
         .unwrap()
     }

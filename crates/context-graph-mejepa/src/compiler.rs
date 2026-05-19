@@ -19,6 +19,10 @@ use crate::calibration::CalibrationStore;
 use crate::calibration_types::CalibrationRecord;
 use crate::config::MeJepaInferConfig;
 use crate::conformal::{build_outcome_set, conformal_set, CalibrationExample};
+use crate::constellation_intelligence::{
+    default_active_embedder_slot_ids, granger_attestations_from_constellation_intelligence,
+    summarize_dda_constellation_intelligence, ConstellationIntelligenceEvidence,
+};
 use crate::contradiction::{
     ContradictionDecision, ContradictionDecisionKind, ContradictionThresholds,
     CONTRADICTION_THRESHOLD_MISSING, MULTI_HEAD_CONTRADICTION,
@@ -465,11 +469,24 @@ impl MeJepaCompiler {
                 .granger_attestations
                 .insert(SECRET_REDACTION_ATTESTATION_KEY.to_string(), 1.0);
         }
+        let mut constellation_intelligence: Option<ConstellationIntelligenceEvidence> = None;
         if self.config.require_dda_features {
-            let dda_projection = self.load_dda_projection(&source_panel_sha, &covered_chunks)?;
+            let dda_rows = self.load_dda_rows(&source_panel_sha, &covered_chunks)?;
+            let dda_projection =
+                project_dda_features(&dda_rows, self.config.dda_expected_embedder_count)?;
             oracle
                 .granger_attestations
                 .extend(dda_projection.to_granger_attestations());
+            let slot_ids = default_active_embedder_slot_ids(dda_projection.embedder_count);
+            let intelligence = summarize_dda_constellation_intelligence(
+                &slot_ids,
+                &dda_rows,
+                format!("live_inference:{}", hex::encode(source_panel_sha)),
+            )?;
+            oracle.granger_attestations.extend(
+                granger_attestations_from_constellation_intelligence(&intelligence)?,
+            );
+            constellation_intelligence = Some(intelligence);
         }
         oracle.validate()?;
         let ood_score =
@@ -544,6 +561,10 @@ impl MeJepaCompiler {
             safety_constraint_violation_count: objective_report.constraint_violations.len(),
             objective_total_cost: objective_report.cost.total_cost,
             objective_cost_ceiling: objective_report.objective.pass_cost_ceiling,
+            constellation_verdict_pressure: constellation_intelligence
+                .as_ref()
+                .map(|evidence| evidence.pressures.q2_verdict_pressure)
+                .unwrap_or(0.0),
         });
         let verdict = verdict_output.verdict;
         annotate_contradiction_decision(
@@ -591,6 +612,7 @@ impl MeJepaCompiler {
         .calibration_version(calibration.version.clone())
         .matched_fingerprint(fingerprint_evidence.matched_fingerprint)
         .unknown_candidate_id(fingerprint_evidence.unknown_candidate_id)
+        .constellation_intelligence(constellation_intelligence)
         .build()
         .map(|prediction| (prediction, predicted))
     }
@@ -645,11 +667,11 @@ impl MeJepaCompiler {
         Ok(closest_exemplars(&index, query)?.exemplars)
     }
 
-    fn load_dda_projection(
+    fn load_dda_rows(
         &self,
         source_panel_sha: &[u8; 32],
         covered_chunks: &[ChunkId],
-    ) -> Result<crate::dda_features::DdaFeatureProjection, MejepaInferError> {
+    ) -> Result<Vec<(ChunkId, DdaSignals)>, MejepaInferError> {
         if covered_chunks.is_empty() {
             return Err(MejepaInferError::InvalidInput {
                 field: "covered_chunks".to_string(),
@@ -669,7 +691,7 @@ impl MeJepaCompiler {
                 })?;
             rows.push((chunk.clone(), signals));
         }
-        project_dda_features(&rows, self.config.dda_expected_embedder_count)
+        Ok(rows)
     }
 
     fn ood_threshold_for_compilation(&self) -> Result<f32, MejepaInferError> {

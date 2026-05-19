@@ -47,13 +47,15 @@ Source files covered: `crates/context-graph-mejepa-embedders/src/lib.rs` + modul
         + TCT Gτ guard (CF_MEJEPA_GUARD_DECISIONS)
         + cold-cell metric (CF_MEJEPA_COLD_CELL_METRICS, abstain if n_supporting<50)
         + multi-head contradiction gate (CF_MEJEPA_CONTRADICTION_THRESHOLDS)
+        + constellation intelligence heads (CF_MEJEPA_CONSTELLATION_PATTERNS)
         + matched fingerprint (CF_MEJEPA_FINGERPRINT_REVERSE_INDEX)
         + closest exemplars HNSW (CF_MEJEPA_PATCH_SIMILARITY_META)
         + claim graph reconciliation (CF_MEJEPA_CLAIM_RECONCILIATION)
                  │
                  ▼
       RealityPrediction (Q1 claim_graph + Q2 verdict + Q3 fail modes +
-                         Q4 always-on heads + Q5 reality_impact)
+                         Q4 always-on heads + Q5 reality_impact +
+                         constellation_intelligence)
                  │
                  ▼
       CF_MEJEPA_LIVE_PREDICTIONS + CF_MEJEPA_HIERARCHICAL_PREDICTIONS
@@ -240,14 +242,17 @@ Decision flow (per `compiler.rs::compile`):
 7. TCT Gτ guard (`tct/gtau.rs` + `CF_MEJEPA_GUARD_DECISIONS`).
 8. Cold-cell metric: if cell `n_supporting < INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT` (50) → `Verdict::Abstain` + `CF_MEJEPA_COLD_CELL_METRICS` row (TASK-PY-G-061).
 9. Apply multi-head contradiction thresholds (`contradiction.rs` + `CF_MEJEPA_CONTRADICTION_THRESHOLDS`). If the oracle/pass head is high while calibrated high-severity Q3/Q4 failure signals are also high, emit `Verdict::Abstain` with `MULTI_HEAD_CONTRADICTION`. Missing thresholds fail closed with `CONTRADICTION_THRESHOLD_MISSING`; single-head evidence records `SINGLE_HEAD_ONLY`.
-10. Match against fingerprint catalog (`CF_MEJEPA_FINGERPRINT_REVERSE_INDEX`).
-11. Pull closest exemplars (`CF_MEJEPA_PATCH_SIMILARITY_META`).
-12. Reconcile claim graph (`CF_MEJEPA_CLAIM_RECONCILIATION`).
-13. Emit `RealityPrediction` → write `CF_MEJEPA_LIVE_PREDICTIONS` + `CF_MEJEPA_HIERARCHICAL_PREDICTIONS`.
+10. Summarize constellation intelligence (`constellation_intelligence.rs` + `CF_MEJEPA_CONSTELLATION_PATTERNS`). Slot-pair consensus, contradiction, redundancy, novelty, and blind-spot evidence becomes `RealityPrediction.constellation_intelligence`; high consequence pressure can abstain before a false confident pass, and promoted relationship patterns can seed active-learning rows.
+11. Match against fingerprint catalog (`CF_MEJEPA_FINGERPRINT_REVERSE_INDEX`).
+12. Pull closest exemplars (`CF_MEJEPA_PATCH_SIMILARITY_META`).
+13. Reconcile claim graph (`CF_MEJEPA_CLAIM_RECONCILIATION`).
+14. Emit `RealityPrediction` → write `CF_MEJEPA_LIVE_PREDICTIONS` + `CF_MEJEPA_HIERARCHICAL_PREDICTIONS`.
 
 **Anti-compensation guard (TASK-PY-G-094 / #394).** `crates/context-graph-mejepa/examples/python_anti_compensation_fsv.rs` and the calibrated ablation suite (#398) prove corrupted / missing / stale / dimension-shifted slots, contradictory pair relationships, and temporal slot jumps cannot be accepted through aggregate evidence even when a flat normalized score would pass. A code scan prevents flat-vector ship-gate eligibility regressions.
 
 **Multi-head contradiction gate (TASK-PY-G-044 / #263).** `contradiction.rs`, `verdict_assembly.rs`, and `compiler.rs` now read per-cell thresholds from `CF_MEJEPA_CONTRADICTION_THRESHOLDS`. The gate abstains when calibrated Q2/pass confidence and high-severity Q3/Q4 consequence signals conflict, records structured evidence in the prediction/park-list path, fails closed on missing thresholds, and skips only when there is genuinely a single head of evidence. aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-044-multi-head-contradiction-fsv/run-20260519T114854Z/multi_head_contradiction_fsv.json`, sha256 `39fac46044f4a3a8a9d43a5ff117af8c1b8b46906f186f284c89120460b1cf48`.
+
+**Constellation intelligence heads (TASK-PY-G-090 / #390).** `constellation_intelligence.rs`, `compiler.rs`, `verdict_assembly.rs`, `eval/queue.rs`, and `store.rs` now convert DDA/slot-pair relationship rows into structured consensus, contradiction, redundancy, novelty, blind-spot, and consequence-pressure evidence. The live prediction surface carries `RealityPrediction.constellation_intelligence`; `CF_MEJEPA_CONSTELLATION_PATTERNS` stores promoted real-corpus pair patterns; high-value disagreement can enter `CF_MEJEPA_ACTIVE_LEARNING_QUEUE`; and high Q2 pressure abstains before a false confident pass. aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-090-consensus-contradiction-heads-fsv/run-20260519T124035Z/consensus_contradiction_heads_fsv.json`, sha256 `b1d500f008b0a14a704c4c2f83fe8cd19349f0dfb0c78baedb35c711abc50b64`.
 
 ---
 
@@ -516,6 +521,7 @@ Current calibration behavior (2026-05-19, #128):
 |---|---|---|
 | Negative-action ablation falsifier | `crates/context-graph-mejepa-train/examples/phase_g_adversarial_retrain_fsv.rs` + CF_MEJEPA_ABLATION_REPORTS | TASK-PY-G-054 |
 | Multi-head contradiction | `contradiction.rs` + `verdict_assembly.rs` + `CF_MEJEPA_CONTRADICTION_THRESHOLDS`; per-cell thresholds fail closed on missing calibration and abstain on calibrated Q2/Q3/Q4 conflict | TASK-PY-G-044 |
+| Constellation disagreement pressure | `constellation_intelligence.rs` + `verdict_assembly.rs` + `CF_MEJEPA_CONSTELLATION_PATTERNS`; slot-pair contradiction/novelty/blind-spot pressure can abstain and queue active learning when a relationship beats the own-slot baseline | TASK-PY-G-090 |
 | OOD gate floor | `ood.rs` + `ood_harvest.rs`; `mejepa_verify` consumes selected `CF_MEJEPA_OOD_CALIBRATIONS` when `require_ood_calibrator=true`, fails closed on missing/corrupt/unselected calibrator, and preserves cold-cell precedence | TASK-PY-G-014 |
 | Conformal interval floor | `conformal.rs` | TASK-PY-G-006 |
 | Adversarial-embedder-injection mitigation | `adversarial_embedder_injection.rs` | TASK-EK-018J |

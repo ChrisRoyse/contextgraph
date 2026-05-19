@@ -6,9 +6,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use context_graph_mejepa::{
-    build_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb, panel_sha,
-    CalibrationStore, MeJepaInferConfig, MejepaStore, PatchBundle, RealityPrediction,
-    RocksDbInferStore, TaskContext, TrainCertSummary,
+    build_deterministic_compiler, decode_reality_prediction, materialize_inference_panels,
+    open_infer_rocksdb, panel_sha, CalibrationStore, MeJepaInferConfig, MejepaStore, PatchBundle,
+    RealityPrediction, RocksDbInferStore, TaskContext, TrainCertSummary,
 };
 use context_graph_mejepa_instruments::materialize::TimeStep;
 use context_graph_mejepa_instruments::panel_store::{PanelKey, PanelStore, CF_MEJEPA_PANEL_META};
@@ -467,9 +467,8 @@ fn read_predictions_for_attempt(
     for item in db.iterator_cf(cf, IteratorMode::Start) {
         let (_key, value) =
             item.map_err(|err| format!("live prediction iterator failed: {err}"))?;
-        let prediction: RealityPrediction = bincode::deserialize(&value)
-            .map_err(|err| format!("live prediction payload is invalid bincode: {err}"))?;
-        prediction.validate().map_err(|err| err.to_string())?;
+        let prediction = decode_reality_prediction(&value)
+            .map_err(|err| format!("live prediction payload is invalid: {err}"))?;
         if prediction.task_id.0 == attempt_id {
             out.push(prediction);
         }

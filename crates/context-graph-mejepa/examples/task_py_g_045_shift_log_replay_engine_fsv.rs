@@ -398,6 +398,7 @@ fn prediction_with_predicted_files(
         created_at_unix_ms,
         matched_fingerprint: None,
         unknown_candidate_id: None,
+        constellation_intelligence: None,
     })
     .unwrap()
 }

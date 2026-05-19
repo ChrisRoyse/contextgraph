@@ -88,6 +88,7 @@ Adds `CF_MEJEPA_PLASTICITY_HISTORY` (TASK-PY-G-066 continual backprop), `CF_MEJE
 | `CF_MEJEPA_Q4_REASONING_LABELS` | `(corpus_row_id, session_id)` | JSON `Q4ReasoningSignalRecord` | TASK-PY-G-050 |
 | `CF_MEJEPA_HEAD_CALIBRATIONS` | `(head, class)` | JSON per-head calibration / producer-heldout row | TASK-PY-G-012 / TASK-PY-G-050 |
 | `CF_MEJEPA_CONTRADICTION_THRESHOLDS` | `cell_id` | bincode `ContradictionThresholds` | TASK-PY-G-044 per-cell `(tau_oracle, tau_failure_count)` gate for multi-head contradictions |
+| `CF_MEJEPA_CONSTELLATION_PATTERNS` | `pattern_id` | bincode `ConstellationRelationshipPattern` | TASK-PY-G-090 promoted slot-pair relationship patterns: consensus, contradiction, redundancy, novelty, blind spots, and lift over own-slot baselines |
 | `CF_MEJEPA_COVERAGE_SIGNALS` | `(chunk_id)` | JSON `CoverageLabel` | TASK-RWD-209 / TASK-PY-G-075 |
 | `CF_MEJEPA_COMPLEXITY_SIGNALS` | `(chunk_id)` | JSON `ComplexityLabel` | TASK-RWD-209 |
 | `CF_MEJEPA_CHURN_SIGNALS` | `(chunk_id)` | JSON `ChurnLabel` | TASK-RWD-209 |

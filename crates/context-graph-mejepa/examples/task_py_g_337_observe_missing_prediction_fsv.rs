@@ -288,6 +288,7 @@ fn test_prediction(session_id: [u8; 16]) -> RealityPrediction {
         created_at_unix_ms: 1_778_000_000_000,
         matched_fingerprint: None,
         unknown_candidate_id: None,
+        constellation_intelligence: None,
     })
     .unwrap()
 }

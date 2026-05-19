@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use context_graph_mejepa_cf::{
-    CF_MEJEPA_CONTRADICTION_THRESHOLDS, CF_MEJEPA_FAILURE_FINGERPRINTS,
-    CF_MEJEPA_HIERARCHICAL_PREDICTIONS,
+    CF_MEJEPA_CONSTELLATION_PATTERNS, CF_MEJEPA_CONTRADICTION_THRESHOLDS,
+    CF_MEJEPA_FAILURE_FINGERPRINTS, CF_MEJEPA_HIERARCHICAL_PREDICTIONS,
 };
 use rocksdb::{Direction, IteratorMode, WriteOptions, DB};
 
@@ -11,6 +11,9 @@ use crate::calibration::{
 };
 use crate::compiler::{ColdCellMetric, MejepaStore, TrainCertSummary};
 use crate::conformal::CalibrationExample;
+use crate::constellation_intelligence::{
+    constellation_pattern_key, ConstellationRelationshipPattern,
+};
 use crate::contradiction::{contradiction_threshold_key, ContradictionThresholds};
 use crate::error::MejepaInferError;
 use crate::failure_fingerprint::FailureShapeFingerprint;
@@ -21,7 +24,10 @@ use crate::park_list::{
     record_park_list_failure as record_park_list_failure_row, ParkListEntry,
 };
 use crate::system_cost::SystemCostCounters;
-use crate::types::{ChunkId, DdaSignals, HierarchicalPredictionRecord, PanelId, RealityPrediction};
+use crate::types::{
+    decode_reality_prediction, ChunkId, DdaSignals, HierarchicalPredictionRecord, PanelId,
+    RealityPrediction,
+};
 
 #[derive(Clone)]
 pub struct RocksDbInferStore {
@@ -124,6 +130,65 @@ impl RocksDbInferStore {
         }
         Ok(())
     }
+
+    pub fn write_constellation_relationship_pattern(
+        &self,
+        pattern: &ConstellationRelationshipPattern,
+    ) -> Result<(), MejepaInferError> {
+        pattern.validate()?;
+        let cf = cf(&self.db, CF_MEJEPA_CONSTELLATION_PATTERNS)?;
+        let key = constellation_pattern_key(&pattern.pattern_id)?;
+        let value = bincode::serialize(pattern)?;
+        let mut opts = WriteOptions::default();
+        opts.set_sync(true);
+        self.db.put_cf_opt(cf, &key, &value, &opts)?;
+        let readback = self
+            .db
+            .get_cf(cf, &key)?
+            .ok_or_else(|| MejepaInferError::InvalidInput {
+                field: "constellation_pattern".to_string(),
+                detail: "read-after-write could not find pattern row".to_string(),
+            })?;
+        if readback != value {
+            return Err(MejepaInferError::InvalidInput {
+                field: "constellation_pattern".to_string(),
+                detail: "read-after-write bytes differ from pattern payload".to_string(),
+            });
+        }
+        let decoded: ConstellationRelationshipPattern = bincode::deserialize(&readback)?;
+        decoded.validate()?;
+        if decoded != *pattern {
+            return Err(MejepaInferError::InvalidInput {
+                field: "constellation_pattern".to_string(),
+                detail: "read-after-write decoded pattern does not match input".to_string(),
+            });
+        }
+        if let Some(counters) = &self.system_cost_counters {
+            counters.record_rocksdb_write(value.len() as u64);
+        }
+        Ok(())
+    }
+
+    pub fn read_constellation_relationship_patterns(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ConstellationRelationshipPattern>, MejepaInferError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let cf = cf(&self.db, CF_MEJEPA_CONSTELLATION_PATTERNS)?;
+        let mut out = Vec::with_capacity(limit);
+        for item in self.db.iterator_cf(cf, IteratorMode::Start) {
+            let (_key, value) = item?;
+            let pattern: ConstellationRelationshipPattern = bincode::deserialize(&value)?;
+            pattern.validate()?;
+            out.push(pattern);
+            if out.len() == limit {
+                break;
+            }
+        }
+        Ok(out)
+    }
 }
 
 impl MejepaStore for RocksDbInferStore {
@@ -173,8 +238,7 @@ impl MejepaStore for RocksDbInferStore {
                     .to_string(),
             });
         }
-        let decoded: RealityPrediction = bincode::deserialize(&readback)?;
-        decoded.validate()?;
+        let decoded = decode_reality_prediction(&readback)?;
         if decoded != *prediction {
             return Err(MejepaInferError::InvalidInput {
                 field: "live_predictions".to_string(),
@@ -221,8 +285,7 @@ impl MejepaStore for RocksDbInferStore {
                             .to_string(),
                 });
             }
-            let prediction: RealityPrediction = bincode::deserialize(&value)?;
-            prediction.validate()?;
+            let prediction = decode_reality_prediction(&value)?;
             if prediction.session_id != session_id {
                 return Err(MejepaInferError::InvalidInput {
                     field: "live_predictions.session_id".to_string(),
@@ -383,8 +446,7 @@ impl MejepaStore for RocksDbInferStore {
                     .to_string(),
             });
         }
-        let prediction: RealityPrediction = bincode::deserialize(&value)?;
-        prediction.validate()?;
+        let prediction = decode_reality_prediction(&value)?;
         if prediction.session_id != session_id {
             return Err(MejepaInferError::InvalidInput {
                 field: "live_predictions.session_id".to_string(),
@@ -598,6 +660,7 @@ mod tests {
             created_at_unix_ms: 1_772_000_000_000,
             matched_fingerprint: None,
             unknown_candidate_id: None,
+            constellation_intelligence: None,
         })
         .unwrap()
     }

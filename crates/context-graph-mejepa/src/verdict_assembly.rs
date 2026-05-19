@@ -21,6 +21,7 @@ pub struct VerdictAssemblyInput<'a> {
     pub safety_constraint_violation_count: usize,
     pub objective_total_cost: f32,
     pub objective_cost_ceiling: f32,
+    pub constellation_verdict_pressure: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,6 +85,12 @@ pub fn assemble_verdict_with_evidence(input: VerdictAssemblyInput<'_>) -> Verdic
     if let Some(verdict) = contradiction.verdict_override {
         return VerdictAssemblyOutput {
             verdict,
+            contradiction,
+        };
+    }
+    if input.constellation_verdict_pressure >= 0.85 {
+        return VerdictAssemblyOutput {
+            verdict: Verdict::Abstain,
             contradiction,
         };
     }
@@ -158,6 +165,7 @@ mod tests {
             safety_constraint_violation_count: 0,
             objective_total_cost: 0.05,
             objective_cost_ceiling: 0.65,
+            constellation_verdict_pressure: 0.0,
         });
         assert_eq!(verdict, Verdict::Abstain);
     }
@@ -181,6 +189,7 @@ mod tests {
             safety_constraint_violation_count: 0,
             objective_total_cost: 0.05,
             objective_cost_ceiling: 0.65,
+            constellation_verdict_pressure: 0.0,
         });
         assert_eq!(verdict, Verdict::Abstain);
     }
@@ -204,6 +213,7 @@ mod tests {
             safety_constraint_violation_count: 1,
             objective_total_cost: 0.01,
             objective_cost_ceiling: 0.65,
+            constellation_verdict_pressure: 0.0,
         });
         assert_eq!(verdict, Verdict::GuardRejected);
     }
@@ -227,8 +237,42 @@ mod tests {
             safety_constraint_violation_count: 0,
             objective_total_cost: 0.90,
             objective_cost_ceiling: 0.65,
+            constellation_verdict_pressure: 0.0,
         });
         assert_eq!(verdict, Verdict::Fail);
+    }
+
+    #[test]
+    fn constellation_pressure_abstains_before_false_pass() {
+        let work = PredictedWorks {
+            chunk: ChunkId("src/lib.py#0".to_string()),
+            line_range: (1, 3),
+            claim: "code is predicted to work but slot-pair evidence disagrees".to_string(),
+            confidence: 0.92,
+            supporting_embedders: vec![EmbedderId("E_AST".to_string())],
+            similar_known_good_exemplars: Vec::new(),
+            evidence_strength: 0.86,
+        };
+        let verdict = assemble_verdict(VerdictAssemblyInput {
+            contradiction_cell_id: None,
+            contradiction_thresholds: None,
+            oracle_pass_confidence: 0.99,
+            failure_modes: &[],
+            predicted_failed_test_count: 0,
+            predicted_works: &[work],
+            security_concern_count: 0,
+            guard_violation_count: 0,
+            ood_score: 0.1,
+            confidence_interval: &interval(0.95, 0.99),
+            pass_threshold: 0.8,
+            ood_threshold: 0.9,
+            interval_width_threshold: 0.5,
+            safety_constraint_violation_count: 0,
+            objective_total_cost: 0.01,
+            objective_cost_ceiling: 0.65,
+            constellation_verdict_pressure: 0.90,
+        });
+        assert_eq!(verdict, Verdict::Abstain);
     }
 
     #[test]
@@ -250,6 +294,7 @@ mod tests {
             safety_constraint_violation_count: 0,
             objective_total_cost: 0.01,
             objective_cost_ceiling: 0.65,
+            constellation_verdict_pressure: 0.0,
         });
         assert_eq!(no_positive_evidence, Verdict::Fail);
 
@@ -279,6 +324,7 @@ mod tests {
             safety_constraint_violation_count: 0,
             objective_total_cost: 0.01,
             objective_cost_ceiling: 0.65,
+            constellation_verdict_pressure: 0.0,
         });
         assert_eq!(positive_evidence, Verdict::Pass);
     }
