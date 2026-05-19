@@ -157,7 +157,11 @@ pub(crate) fn persist_extraction(
     Ok(keys.len())
 }
 
-pub(crate) fn update_q4_catalog(path: &Path, producer_rows: u64) -> FsvResult<Q4EvidenceCatalog> {
+pub(crate) fn update_q4_catalog(
+    path: &Path,
+    producer_rows: u64,
+    producer_fsv_root: &Path,
+) -> FsvResult<Q4EvidenceCatalog> {
     let mut catalog = if path.exists() {
         serde_json::from_slice(&fs::read(path)?)?
     } else {
@@ -167,10 +171,7 @@ pub(crate) fn update_q4_catalog(path: &Path, producer_rows: u64) -> FsvResult<Q4
     heads.insert(
         Q4HeadKind::Perf,
         Q4HeadEvidence {
-            producer_fsv_root: Some(
-                "/zfs/archive/contextgraph/fsv/task-py-g-047-q4-perf-label-producer-fsv/"
-                    .to_string(),
-            ),
+            producer_fsv_root: Some(canonical_fsv_root(producer_fsv_root)),
             producer_rows,
             calibration_fsv_root: None,
             calibration_rows: 0,
@@ -181,6 +182,14 @@ pub(crate) fn update_q4_catalog(path: &Path, producer_rows: u64) -> FsvResult<Q4
     catalog.heads = heads;
     write_json_checked(path, &catalog)?;
     Ok(catalog)
+}
+
+pub(crate) fn canonical_fsv_root(path: &Path) -> String {
+    let mut raw = path.display().to_string();
+    if !raw.ends_with('/') {
+        raw.push('/');
+    }
+    raw
 }
 
 pub(crate) fn edge_unstable_benchmark_quarantined() -> FsvResult<EdgeCase> {

@@ -5,6 +5,7 @@ use context_graph_mejepa_instruments::{
 };
 use context_graph_mejepa_train::labels::q4_perf_labels_to_prediction_surfaces;
 use serde_json::{json, Value};
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -19,9 +20,27 @@ fn main() -> FsvResult<()> {
         .duration_since(UNIX_EPOCH)?
         .as_millis()
         .to_string();
-    let fsv_root =
-        PathBuf::from("/zfs/archive/contextgraph/fsv/task-py-g-047-q4-perf-label-producer-fsv");
-    let raw_root = PathBuf::from("/zfs/archive/contextgraph/corpus/python-q4-perf-labels-v1");
+    let task = env::var("CG_Q4_PERF_FSV_TASK").unwrap_or_else(|_| "TASK-PY-G-047".to_string());
+    let issue = env::var("CG_Q4_PERF_FSV_ISSUE")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(266);
+    let row_prefix =
+        env::var("CG_Q4_PERF_ROW_PREFIX").unwrap_or_else(|_| "task-py-g-047".to_string());
+    let evidence_name = env::var("CG_Q4_PERF_FSV_EVIDENCE_NAME")
+        .unwrap_or_else(|_| "q4_perf_label_producer_fsv.json".to_string());
+    let fsv_root = env_path(
+        "CG_Q4_PERF_FSV_ROOT",
+        "/zfs/archive/contextgraph/fsv/task-py-g-047-q4-perf-label-producer-fsv",
+    );
+    let raw_root = env_path(
+        "CG_Q4_PERF_RAW_ROOT",
+        "/zfs/archive/contextgraph/corpus/python-q4-perf-labels-v1",
+    );
+    let catalog_producer_fsv_root = env_path(
+        "CG_Q4_PERF_CATALOG_PRODUCER_ROOT",
+        "/zfs/archive/contextgraph/fsv/task-py-g-047-q4-perf-label-producer-fsv/",
+    );
     let catalog_path =
         PathBuf::from("/zfs/archive/contextgraph/state/q4-trust-gate/evidence-catalog.json");
     fs::create_dir_all(&fsv_root)?;
@@ -30,8 +49,8 @@ fn main() -> FsvResult<()> {
         fs::create_dir_all(parent)?;
     }
     let rocksdb_path = fsv_root.join(format!("q4-perf-labels-{run_id}.rocksdb"));
-    let evidence_path = fsv_root.join("q4_perf_label_producer_fsv.json");
-    let row_id = format!("task-py-g-047-{run_id}");
+    let evidence_path = fsv_root.join(evidence_name);
+    let row_id = format!("{row_prefix}-{run_id}");
     let fixture_root = fsv_root.join(format!("fixture-{run_id}"));
     let fixture_script = write_perf_fixture(&fixture_root)?;
     let profile_pre = profile_path(&fixture_root, &row_id, "pre");
@@ -74,7 +93,7 @@ fn main() -> FsvResult<()> {
     producer_rows += persist_extraction(&store, &extraction)? as u64;
     let mut raw_artifact_rows = 1_u64;
     for idx in 0..29 {
-        let row_source = happy_source(&format!("task-py-g-047-{run_id}-producer-{idx:02}"));
+        let row_source = happy_source(&format!("{row_prefix}-{run_id}-producer-{idx:02}"));
         let row_outputs =
             run_fixture_outputs(&fixture_root, &fixture_script, &row_source.corpus_row_id)?;
         write_q4_perf_raw_outputs(&raw_root, &row_source.corpus_row_id, &row_outputs)?;
@@ -134,7 +153,7 @@ fn main() -> FsvResult<()> {
         .into());
     }
 
-    let catalog = update_q4_catalog(&catalog_path, producer_rows)?;
+    let catalog = update_q4_catalog(&catalog_path, producer_rows, &catalog_producer_fsv_root)?;
     let trust_report = q4_trust_gate_report_from_catalog_path(&catalog_path)?;
     let perf_readiness = trust_report
         .head(Q4HeadKind::Perf)
@@ -144,13 +163,21 @@ fn main() -> FsvResult<()> {
         perf_readiness.producer_supported,
     )?;
     require(
+        "perf catalog producer root stays canonical",
+        perf_readiness.producer_fsv_root == canonical_fsv_root(&catalog_producer_fsv_root),
+    )?;
+    require(
+        "perf per-slot evidence is not synthesized",
+        !perf_readiness.per_slot_supported,
+    )?;
+    require(
         "perf remains untrusted without #127 calibration",
         !perf_readiness.q4_head_ready,
     )?;
 
     let evidence = json!({
-        "task": "TASK-PY-G-047",
-        "issue": 266,
+        "task": task,
+        "issue": issue,
         "all_passed": true,
         "source_of_truth": {
             "raw_output_root": raw_root,
@@ -167,6 +194,7 @@ fn main() -> FsvResult<()> {
             "cf": context_graph_mejepa_cf::CF_MEJEPA_Q4_PERF_LABELS,
             "evidence_path": evidence_path,
             "q4_catalog_path": catalog_path,
+            "q4_catalog_producer_fsv_root": catalog_producer_fsv_root,
             "fsv_root": fsv_root,
         },
         "happy_path": {
@@ -209,4 +237,10 @@ fn main() -> FsvResult<()> {
     )?;
     println!("{}", serde_json::to_string_pretty(&readback)?);
     Ok(())
+}
+
+fn env_path(var: &str, default: &str) -> PathBuf {
+    env::var_os(var)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(default))
 }
