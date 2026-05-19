@@ -396,3 +396,61 @@ ME-JEPA-Code is pre-production (no SLA, no backwards compatibility per CLAUDE.md
 - Per-test timing or flake history (not centrally tracked beyond TASK-G-019 oracle flakiness quarantine).
 - Operator personal hardware setup (`~/.config/mejepa/daemon.toml`, GPU driver versions, CUDA toolkit install) — outside scope, see CLAUDE.md §2 + AIWONDER-* issues.
 - Off-aiwonder operator backup procedures — operator responsibility.
+
+---
+
+## 13. FSV Protocols for the 2026-05-19 Binary Doctrine
+
+Three new FSV protocols enforce the binary-Q1/Q2/Q5 + labeled + mistake-driven + cross-panel-triangulated contract. Each protocol slots into the universal FSV-PROTOCOL §1.1–§1.5 (Source-of-truth, Trigger→Process→Outcome, hard rules, evidence, independent readback) — the additions below are protocol-specific assertions every FSV harness for these features must enforce.
+
+### 13.1 Failure-mode labeling FSV (epic #403 / TASK-PY-G-110)
+
+Required SoT assertions:
+
+1. **Cluster purity.** Compute silhouette score on the K-means clustering over the 300×8 holdout's 78-column pairwise-correlation residuals. Required: `mean_silhouette ≥ 0.7`. FSV row records `silhouette`, `k`, `n_samples`.
+2. **Operator-rename idempotence.** Rename a cluster's name via `mejepa_label_failure_cluster`, flush, drop, reopen via production opener, decode the row back. Required: `cluster_id` unchanged, `operator_approved_name` updated, history preserved in `CF_MEJEPA_FAILURE_MODE_LEVEL1.audit_log`.
+3. **Coverage on the holdout.** For every `Verdict::Fail` row in the 30-instance holdout window, `CF_MEJEPA_NAMED_PREDICTIONS` must contain a non-empty `NamedFailureMode`. Required: `named_mode_coverage_on_fail == 1.0`.
+4. **Exemplar-oracle agreement.** For each named failure mode, the top-1 closest exemplar's oracle outcome must match the prediction's oracle outcome ≥ 85% of the time. Required: `closest_exemplar_oracle_agreement ≥ 0.85`.
+5. **Vocabulary-seed audit.** Each level-2 skill name must trace back to either a published seed source (Aleithan 2025 / Yang 2024 / SWE-Bench Pro 2025 / our 8 mutations / our adversarial corpus) OR an operator-approved extension. Required: `unsourced_skills == 0`.
+
+### 13.2 Cross-panel triangulation FSV (epic #404 / TASK-PY-G-111)
+
+Required SoT assertions:
+
+1. **Both panels on same instances.** Every gate-relevant prediction in the holdout window has rows in both `CF_MEJEPA_LIVE_PREDICTIONS` (Panel A) AND `CF_MEJEPA_PANEL_B_OBSERVATIONS` (Panel B) AND `CF_MEJEPA_CROSS_PANEL_AGREEMENT`. Required: `unmatched_predictions == 0`.
+2. **Independent Panel-B readback.** Flush, drop, reopen via production opener. Decode the same `prediction_id` row from `CF_MEJEPA_PANEL_B_OBSERVATIONS`. Required: byte-equality with the pre-flush row.
+3. **Goodhart-detection edge.** Inject a synthetic divergence where Panel A `corr ≥ 0.95` but Panel B `corr < 0.85`. Required: `CROSS_PANEL_GOODHART_DETECTED` flag fires on the matching window in `CF_MEJEPA_CROSS_PANEL_AGREEMENT`, AND the heal scheduler records a `ship_gate_blocked_by_cross_panel` flag.
+4. **Encoder non-overlap audit.** Panel A encoders and Panel B encoders must use distinct model artifacts; SHA-256 manifest pins differ for every learned-encoder slot. Required: `panel_a_b_artifact_overlap_count == 0` on the 5 learned-encoder slot pairs.
+5. **VRAM budget audit.** Panel B encoders never resident during normal inference; only loaded during the evaluation worker's pass. Required: `panel_b_resident_during_inference == false` measured against `mejepa_vram_budget_report`.
+
+### 13.3 Mistake-loop convergence FSV (epic #405 / TASK-PY-G-112)
+
+Required SoT assertions:
+
+1. **Mistake landing.** Inject a deliberate wrong prediction. Required: `CF_MEJEPA_MISTAKE_LOG` contains a new row with the correct `predicted_verdict` / `ground_truth_verdict` / `cell_key` / `panel_signature_hash`. Independent readback after flush/drop/reopen.
+2. **Replay-buffer boost.** After mistake row is written, `CF_MEJEPA_MISTAKE_REPLAY_PRIORITY[mistake_id].boost_factor == 8.0` AND `CF_MEJEPA_REPLAY_BUFFER` has a corresponding priority-boosted entry.
+3. **Convergence on second presentation.** Present the same `panel_signature_hash` to the predictor again after one trainer step. Required: `Verdict` matches ground truth on the second presentation. Persisted as a regression case in `examples/task_py_g_112_mistake_loop_convergence_fsv.rs` with byte-replayable evidence.
+4. **EWC Fisher protection.** The mistake update must not regress accuracy on an unrelated cell. Run a control set of unrelated `(cell_key)` predictions before and after the mistake-loop update. Required: control-set accuracy delta within ±0.02.
+5. **`mistake_repeat_rate` measurement.** Compute the rolling rate across a 100-mistake window. Required for ship eligibility: `mistake_repeat_rate ≤ 0.05`. Byte-readable from `CF_MEJEPA_MISTAKE_LOG` aggregations + `mejepa_mistake_loop_status`.
+
+### 13.4 Q4 freeze audit FSV (one-time, as part of the doctrine commit)
+
+Required SoT assertions (one-time at the doctrine landing):
+
+1. **No new Q4 producer writes after 2026-05-19.** Read `CF_MEJEPA_Q4_*` row counts at landing; persist as `q4_freeze_baseline.json`. Subsequent ingest runs MUST not increase these counts. Required: `q4_row_count_delta == 0` weekly.
+2. **No Q4 contribution to predictor loss.** Audit the trainer's loss-coefficient configuration: every Q4-related coefficient (`inverse_map_coefficient` for Q4 heads, any per-head coefficient on Q4 modules) equals 0. Required: `q4_loss_coefficient_max == 0.0`.
+3. **No Q4 in ship-gate metric.** Audit `mejepa_ship_gate_status` and `swebench_300x8_ship_gate_fsv` to confirm they read only Q2 oracle correlation, not Q4 trust eligibility. Required: `q4_inputs_to_ship_gate == 0`.
+4. **Read-only Q4 surface still works.** `mejepa_predict_latest` returns historical Q4 fields for predictions made before 2026-05-19; new predictions return empty Q4 fields. Required: a one-time FSV that probes both pre- and post-freeze predictions and confirms.
+
+These four assertions are bundled into a single FSV harness: `examples/q4_doctrine_freeze_fsv.rs` under `context-graph-mejepa`, with output at `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/` and a recurring weekly recheck driven by the `mejepa_weekly_eval_dashboard` pipeline.
+
+### 13.5 Disjoint calibration partition (10th-percentile floor)
+
+Per `01_overview.md §1.1` and ClipCannon PAPER §5.4 same-session-band-floor pattern: every τ in `CF_MEJEPA_FAILURE_FINGERPRINTS` (Gτ thresholds), `CF_MEJEPA_OOD_CALIBRATIONS` (OOD τ), and the new `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` confidence cutoffs MUST be computed from a calibration partition that is **disjoint from both train and eval**. The standing FSV `task-py-g-077-secret-holdout-fsv` already verifies disjoint partitioning at the corpus level (`overlap=0`); a new audit `examples/threshold_calibration_provenance_fsv.rs` walks every τ in the live RocksDB and asserts:
+
+- The τ has a recorded `calibration_partition_id` field.
+- The partition's instance-ID list does NOT overlap with the train partition's instance-IDs (`overlap_with_train == 0`).
+- The partition's instance-ID list does NOT overlap with the eval partition (`overlap_with_eval == 0`).
+- The τ value matches the 10th-percentile floor of authentic-sample cosines on the calibration partition, recomputed at audit time (tolerance ±1e-4).
+
+Failures of any assertion fail closed with `THRESHOLD_CALIBRATION_NONDISJOINT` and block ship eligibility for that cell.

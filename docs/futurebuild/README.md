@@ -27,13 +27,13 @@ Plus:
 
 ---
 
-## One-line system summary
+## One-line system summary (2026-05-19 binary-doctrine reframe)
 
-> ME-JEPA-Code is a deterministic predictive truth system that returns a calibrated multi-head `RealityPrediction` (Q1 claim-exists / Q2 works / Q3 why-fails / Q4 what-else / Q5 reality-impact) for any AI-generated code change, so human review of AI patches becomes statistically unjustified once `prediction_oracle_correlation ≥ 0.95` stably × 4 rolling windows on the 300×8 SWE-bench Lite Python corpus.
+> ME-JEPA-Code is a **binary reality predictor**: for any AI-generated code change it returns `Pass | Fail` (against the Docker oracle), with a named failure mode + closest exemplars on Fail, and a binary claim-exists check (Q1) + binary shift-event predictions (Q5) as additional grounded surfaces. Human review of AI patches becomes statistically unjustified once `prediction_oracle_correlation ≥ 0.95` stably × 4 rolling windows on the 300×8 SWE-bench Lite Python corpus **AND** Panel B (non-overlapping encoder triangulation) confirms within 0.05.
 
-Operationally, "predicting reality" means predicting the consequences of code being live: how the change will interact with durable repository bytes, AST, tests, runtime, dependencies, security/perf/cost surfaces, witness chain, maintenance blast radius, and later shift-log observations. The MCP product shows those predicted consequences and confidence to the human/operator-agent; it does not choose the human's goal and it does not infer hidden human intent (#397, #358).
+The 2026-05-19 reframe is the **only** product surface: binary predictions against ground truth (Q1 bytes/AST + Q2 Docker oracle + Q5 shift log), one explanation surface (Q3 named failure mode + closest exemplar), and **Q4 ambiguous surfaces removed entirely** (frozen as display-only historical data; ambiguous things have no free binary form against reality, so the system does not predict them). The MCP product shows the binary verdict + named explanation to the human/operator-agent; it does not choose the human's goal, does not infer hidden human intent (#397, #358), and does not predict heuristic-against-heuristic surfaces.
 
-Current ship-gate status: **0.866667** vs target 0.95. Phase G critical path drives the remaining 0.083 (see `08_roadmap_and_open_work.md §3`).
+Current ship-gate status: **0.866667** vs target 0.95 on Panel A; Panel B has no measurement yet (#404 will produce the first). Phase G critical path drives both. See `08_roadmap_and_open_work.md §3.−1` for the new binary-doctrine ordering of epics #403 (labeling) / #404 (cross-panel) / #405 (mistake loop) / #406 (calibration audit) / #407 (Q4 freeze) / #408 (paper update).
 
 ---
 

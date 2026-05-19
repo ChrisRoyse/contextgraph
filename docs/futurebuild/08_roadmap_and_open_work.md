@@ -6,6 +6,21 @@ Source: `gh issue list --state open`, recent `type:decision` closes, git log, Gi
 
 ---
 
+## 0. Doctrine Update — Binary Q1/Q2/Q5 Contract (2026-05-19, locked in)
+
+The 2026-05-19 reframe (`01_overview.md §1.1`, `05_predictor_pipeline.md §0`) reduces the prediction contract to three binary surfaces against ground truth (Q1 bytes/AST, Q2 Docker oracle, Q5 shift log), one explanation surface (Q3), and removes Q4 entirely. Five new epics implement the new direction; one closes the old direction; one updates the paper:
+
+| New epic | Purpose | Status |
+|---|---|---|
+| **#403 / TASK-PY-G-110** — Failure-mode labeling hierarchy | 4-level named-failure-mode hierarchy on top of the panel; meaning layer over the embedding outputs | OPEN p0 (planned filing 2026-05-19) |
+| **#404 / TASK-PY-G-111** — Cross-panel triangulation | Panel B re-scoring with non-overlapping encoders; defends 0.95 against encoder-matched Goodhart | OPEN p0 (planned filing 2026-05-19) |
+| **#405 / TASK-PY-G-112** — Online mistake-driven learning | Perceptron-family head update on every disagreement-with-reality event; `mistake_repeat_rate ≤ 0.05` convergence target | OPEN p0 (planned filing 2026-05-19) |
+| **#406 / TASK-PY-G-113** — Threshold-calibration partition-disjointness audit | Every τ calibrated on partition disjoint from train + eval; 10th-percentile floor enforced | OPEN p1 (planned filing 2026-05-19) |
+| **#407 / TASK-PY-G-114** — Q4 doctrine freeze + close out Q4 producer track | Closes #266 / #267 / #268 / #269 / #270 / #399 / #400 / #401 as `archived-display-only`; closes #402 as `wontfix` (ambiguity boundary); freezes Q4 CFs | OPEN p0 (planned filing 2026-05-19) |
+| **#408 / TASK-DOC-001** — Paper revision for binary doctrine | Rewrites PAPER §1 from "calibrated multi-head RealityPrediction" to "binary reality predictor with labeled explanation surfaces" | OPEN p2 (planned filing 2026-05-19) |
+
+---
+
 ## 1. Current Ship Gate (active until met)
 
 ```
@@ -13,15 +28,16 @@ prediction_oracle_correlation ≥ 0.95
   stable × 4 consecutive rolling windows
   per (mutation_category × language)
   on the 300×8 Python SWE-bench Lite corpus
+  using Q2 Docker-oracle agreement as the binary verdict
+  AND (NEW 2026-05-19): cross-panel oracle correlation ≥ 0.95 on Panel B
+  AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
 
 **Last holdout measurement:** `0.866667` (legacy `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; not current production evidence until revalidated on aiwonder under #369).
 
-**Gap to ship:** 0.083 correlation points. Bridging this is the entire job of Phase G's remaining open work.
+**Gap to ship:** 0.083 correlation points on Panel A. Panel B has no measurement yet; #404 will produce the first.
 
-**P0 architecture correction before more metric chasing:** #385 / TASK-PY-G-085 now blocks the gate. ME-JEPA must treat the panel as a typed per-embedder/per-instrument Teleological Constellation. The 5,120-d panel is a storage layout, not a single compensable embedding space. Predictor, OOD, heads, persistence, DDA, and FSV evidence must prove that a weak slot cannot be hidden by strong values in other slots.
-
-**P0 product contract:** #397 is the guiding context. ME-JEPA is the consequence-prediction truth system: predicting reality means predicting what happens when code is live against durable repository/test/runtime/dependency/security/perf/cost/maintenance reality. The MCP surface presents predicted consequences, confidence, and evidence to the human/operator-agent; it does not infer hidden human intent (#358) and it does not generate code.
+**P0 product contract:** #397 is the guiding context. ME-JEPA is the **binary reality predictor**: it returns `Pass | Fail` for each candidate code change against the Docker oracle (Q2), with named-failure-mode + closest-exemplar explanation (Q3) on Fail. Q1 (claim-exists) and Q5 (predicted-shift-event) are additional binary predictions against bytes/AST and the shift log respectively. **Q4 ambiguous surfaces are out of scope and frozen as display-only historical data.** The MCP surface presents the binary verdict + named explanation + closest exemplars to the human/operator-agent; it does not infer hidden human intent (#358) and it does not generate code.
 
 Once met → human review of AI-generated Python patches is statistically unjustified. Auto-trust policy gates engage (TASK-PY-G-058 / #277).
 
@@ -52,6 +68,19 @@ By priority:
 ---
 
 ## 3. Critical Path (the issues whose resolution moves the ship-gate needle)
+
+### 3.−1 Binary-doctrine Phase G ordering (2026-05-19 reframe — supersedes prior queue)
+
+The slot-preserving refactor (§3.0 below) is largely shipped and architecturally correct. The next gate-moving work is the **labeling + cross-panel + mistake-loop** stack from the binary doctrine, in this evidence-weighted order:
+
+| Rank | Epic | Why it moves the gate |
+|---|---|---|
+| 1 | **#407 / TASK-PY-G-114** — Q4 freeze + producer-track closeout | Frees bandwidth from Q4 expansion (#266–#270, #399–#402) so it can flow to #403/#404/#405. No code blocked, just rebanding. |
+| 2 | **#403 / TASK-PY-G-110** — Failure-mode labeling hierarchy | Turns the 78-column pairwise-correlation evidence from #388 into named clusters. Required so Q3 explanation surface can land an actionable named mode on every Fail row. The labeling itself is also the primary input feature for the binary head: same-named-failure-mode neighbors are the closest exemplars the predictor needs to commit. |
+| 3 | **#406 / TASK-PY-G-113** — Threshold-calibration disjointness audit | Cheapest move likely to detect under-calibration. The 0.866667 gap may be partly because some τ values were set on a non-disjoint partition. One-day spike with a binary outcome. |
+| 4 | **#404 / TASK-PY-G-111** — Cross-panel triangulation Panel B | Defends 0.95 against encoder-matched Goodhart. **Adds a hard new ship-gate requirement.** Without Panel B, even hitting 0.95 on Panel A is not ship-eligible. |
+| 5 | **#405 / TASK-PY-G-112** — Online mistake-driven loop | The "first time every time" property. Converts every disagreement-with-reality into a training signal under EWC++ protection. Long-horizon ship-defending work. |
+| 6 | **#408 / TASK-DOC-001** — Paper revision | Aligns PAPER §1 with the binary doctrine. Not gate-blocking; defer until first cross-panel green window. |
 
 ### 3.0 Slot-preserving constellation architecture (#385 / TASK-PY-G-085)
 
@@ -174,24 +203,31 @@ Child issue split:
 | #127/#401 Q4 confidence calibration FSV | `/zfs/archive/contextgraph/fsv/task-py-g-012-q4-confidence-calibration-fsv/q4_confidence_calibration_fsv.json` | PASS evidence for TASK-PY-G-012 after #401; sha256 `1b993783ff8a03f5cd94279634debcd936b7aeee7d9c78c6aa22e9db34f1260e`; independent readback sha256 `7173b90df47a961ff4ecee70972db3356cd640e8ca8d166a6e3adcc96535accb`; perf/accuracy/cost/reasoning/non-trivial-on-Pass ready; aggregate Q4 true |
 | #401 Q4 harvest expansion FSV | `/zfs/archive/contextgraph/fsv/task-py-g-100-q4-harvest-expansion-fsv/q4_harvest_expansion_fsv.json` | PASS evidence for TASK-PY-G-100; sha256 `70750e3956e1674eb100f528339c95daabb7b669246c0d906deefb45706eda2f`; direct readback sha256 `71b39669818cb7c196fd5dfe56fdc1d643e6dbfe84909f00911f54bddbff0e78`; proves `q4TrustDecisionEligible=true` and edge-case fail-closed behavior |
 
-### 3.1 Q4 head training (Phase G §2 producers — heads exist as schema fields but lack training data pipelines)
+### 3.1 Q4 head training — CLOSED 2026-05-19 (ambiguity boundary)
 
-| Issue | Task | Producer for | Status |
-|---|---|---|---|
-| #266 / TASK-PY-G-047 | Q4 perf analyzer label pipeline | `predicted_perf_regressions` head | ✅ closed 2026-05-19; head-ready after #401 |
-| #267 / TASK-PY-G-048 | Q4 accuracy analyzer label pipeline | `predicted_accuracy_degradations` head | ✅ closed 2026-05-19; head-ready after #401 |
-| #268 / TASK-PY-G-049 | Q4 cost analyzer label pipeline | `predicted_cost_regressions` head | ✅ closed 2026-05-19; head-ready after #401 |
-| #269 / TASK-PY-G-050 | Reasoning-class head training | `predicted_reasoning_class` head | ✅ closed 2026-05-19; head-ready after #127 |
-| #127 / TASK-PY-G-012 | Q4 confidence calibration per class with Brier/ECE/τ | Q4 trust catalog calibration rows | ✅ closed 2026-05-19; aggregate Q4 ready after #401 |
-| #401 / TASK-PY-G-100 | Expand Q4 producer harvests to calibration floor | perf/accuracy/cost Q4 rows | ✅ closed 2026-05-19; aggregate Q4 true for five producer-backed heads |
-| #402 / TASK-PY-G-101 | Add security and structural Q4 producers before expanding aggregate Q4 scope | security, edge_case, latent_bug, tech_debt, dead_code, redundancy | open p2 |
-| #118 / TASK-PY-G-003 | Per-head Q1-Q5 distillation training step | all heads | open |
-| #270 / TASK-PY-G-051 | Q4 non-trivial-on-Pass calibration | always-on Q4 validation | ✅ closed 2026-05-19; head-ready after #127 |
-| #399 / TASK-PY-G-098 | Q4 perf producer real-analyzer re-proof | `predicted_perf_regressions` proof gap | ✅ closed 2026-05-19; re-proof FSV PASS |
-| #400 / TASK-PY-G-099 | Q4 cost producer real-artifact re-proof | `predicted_cost_regressions` proof gap | ✅ closed 2026-05-19; re-proof FSV PASS |
-| #292 / TASK-PY-G-073 | Predicted-Works head + sub-heads | explicit positive assertions | ✅ closed 2026-05-18 |
+**Per the binary doctrine (`01_overview.md §1.1`, `05_predictor_pipeline.md §16`), all Q4 surfaces are out of the prediction contract.** Q4 questions ("is this performant?", "is this maintainable?", "are there latent bugs?") do not have a free binary form against reality — they require arbitrary thresholds on continuous heuristics or ask taste judgments with no ground truth. The system does not predict ambiguous things because predicting noise corrupts the mistake-driven learning loop.
 
-**Trust boundary:** #377 is closed and makes all raw Q4 observations display-only until the relevant producer issue plus calibration and exact 12-active-slot evidence are present in the Q4 evidence catalog. #401 clears aggregate Q4 for the five producer-backed heads: perf, accuracy, cost, reasoning, and non-trivial-on-Pass. Security and structural Q4 heads remain excluded/fail-closed and are tracked by #402 before the aggregate scope expands.
+Closure status of every prior Q4 producer/calibration issue:
+
+| Issue | New status |
+|---|---|
+| #266 / TASK-PY-G-047 — Q4 perf analyzer label pipeline | `archived-display-only`; 260 rows frozen in `CF_MEJEPA_Q4_PERF_LABELS` |
+| #267 / TASK-PY-G-048 — Q4 accuracy analyzer label pipeline | `archived-display-only`; 240 rows frozen |
+| #268 / TASK-PY-G-049 — Q4 cost analyzer label pipeline | `archived-display-only`; 240 rows frozen |
+| #269 / TASK-PY-G-050 — Reasoning-class head | `archived-display-only`; 300 rows frozen |
+| #270 / TASK-PY-G-051 — Non-trivial-on-Pass | `archived-display-only`; 500 rows frozen |
+| #127 / TASK-PY-G-012 — Q4 confidence calibration | `archived-display-only`; Brier/ECE/τ rows frozen |
+| #377 / TASK-PY-G-078 — Q4 trust gate | `archived-display-only`; gate is now a no-op pass-through |
+| #399 / TASK-PY-G-098 — Q4 perf re-proof | `archived-display-only` |
+| #400 / TASK-PY-G-099 — Q4 cost re-proof | `archived-display-only` |
+| #401 / TASK-PY-G-100 — Q4 harvest expansion | `archived-display-only` |
+| #402 / TASK-PY-G-101 — Q4 security/structural producers | `wontfix-ambiguity-boundary` (ambiguous heads not predictable; semgrep/bandit findings are heuristics not reality) |
+| #118 / TASK-PY-G-003 — Per-head Q1-Q5 distillation | re-scoped to Q1/Q2/Q5 only; Q4 heads removed |
+| #292 / TASK-PY-G-073 — Predicted-Works head + sub-heads | retained (Q2 sub-classifier, not Q4); already closed |
+
+**Closure procedure tracked under #407 / TASK-PY-G-114.** That epic also writes the one-time Q4 freeze FSV at `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/` and adds the weekly Q4-row-count-delta recheck to `mejepa_weekly_eval_dashboard`.
+
+**What replaces the Q4 surfaces in the operator answer.** Operators who used to want "what else could go wrong" answers get them from the **named failure mode** + **closest exemplar** attached to a Fail verdict (§3.−1 row 2, epic #403). If the verdict is Pass, the operator answer is "Pass + Q1=Yes (claim landed in bytes) + closest exemplars all Pass + cross-panel Panel B confirms" — not a list of speculative ambiguous risks.
 
 ### 3.2 Q5 shift-log replay (#264 / TASK-PY-G-045)
 
