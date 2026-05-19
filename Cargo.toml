@@ -26,8 +26,6 @@ members = [
     "crates/context-graph-dynamicjepa",
     "crates/context-graph-cli",
     "crates/context-graph-benchmark",
-    "crates/context-graph-causal-agent",
-    "crates/context-graph-graph-agent",
     "crates/context-graph-test-utils",
 ]
 # Exclude benchmark from default builds — it's 87K lines (22% of codebase)
@@ -55,8 +53,6 @@ default-members = [
     "crates/context-graph-tier-compression",
     "crates/context-graph-dynamicjepa",
     "crates/context-graph-cli",
-    "crates/context-graph-causal-agent",
-    "crates/context-graph-graph-agent",
     "crates/context-graph-test-utils",
 ]
 
