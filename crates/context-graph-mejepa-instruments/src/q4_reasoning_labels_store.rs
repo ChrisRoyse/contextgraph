@@ -108,8 +108,12 @@ impl Q4ReasoningLabelStore {
                     "inspect RocksDB iterator state and head-calibration CF health",
                 )
             })?;
+            let key = decode_key(CF_MEJEPA_HEAD_CALIBRATIONS, &key)?;
+            if !key.starts_with("reasoning::") {
+                continue;
+            }
             rows.push((
-                decode_key(CF_MEJEPA_HEAD_CALIBRATIONS, &key)?,
+                key,
                 serde_json::from_slice(&value).map_err(|err| {
                     InstrumentError::store(
                         "deserialize",

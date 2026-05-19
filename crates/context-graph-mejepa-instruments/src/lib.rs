@@ -52,6 +52,7 @@ pub mod materialize;
 pub mod panel_json;
 pub mod panel_store;
 pub mod q4_accuracy_labels;
+pub mod q4_confidence_calibration;
 pub mod q4_cost_labels;
 pub mod q4_pass_annotations;
 pub mod q4_perf_labels;
@@ -587,6 +588,15 @@ pub use q4_accuracy_labels::{
     Q4AccuracyLabelKind, Q4AccuracyLabelStore, Q4AccuracyMetricKind, Q4AccuracyQuarantine,
     Q4AccuracyRawOutputPaths, Q4AccuracyRawOutputs, Q4AccuracyScanPhase, Q4AccuracySignalRecord,
     Q4AccuracySource, Q4AccuracyToolOutput, DEFAULT_Q4_ACCURACY_TIMEOUT_SECS,
+};
+pub use q4_confidence_calibration::{
+    calibrate_q4_binary_class, q4_head_calibration_key, PersistedQ4HeadCalibration,
+    Q4CalibrationCellMetric, Q4CalibrationExample, Q4CalibrationHead, Q4CalibrationMethod,
+    Q4CalibrationStatus, Q4HeadCalibrationReport, Q4HeadCalibrationStore,
+    Q4_CONFIDENCE_CALIBRATION_SCHEMA_VERSION, Q4_CONFIDENCE_COVERAGE_HIGH,
+    Q4_CONFIDENCE_COVERAGE_LOW, Q4_CONFIDENCE_HOLDOUT_FRACTION, Q4_CONFIDENCE_IMBALANCE_RATE,
+    Q4_CONFIDENCE_MIN_LABELS, Q4_CONFIDENCE_TARGET_COVERAGE, Q4_CONFIDENCE_TARGET_ECE,
+    Q4_CONFIDENCE_TARGET_PRECISION,
 };
 pub use q4_cost_labels::{
     extract_q4_cost_labels, run_q4_cost_tools_with_timeout, write_q4_cost_raw_outputs,
