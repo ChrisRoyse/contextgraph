@@ -976,7 +976,7 @@ mod tests {
         let release = root.join("target/release/context-graph-mcp");
         let debug = root.join("target/debug/context-graph-mcp");
         write_executable(&release);
-        thread::sleep(Duration::from_millis(1100));
+        thread::sleep(Duration::from_millis(2100));
         write_executable(&debug);
         write_mcp_http_config(&root);
 

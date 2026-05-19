@@ -65,7 +65,7 @@ fn main() -> FsvResult<()> {
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
 
     let real_panel_path = PathBuf::from(
-        "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/phase1-extended/panel-all-slots.json",
+        "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-ast-embedder-smoke-fsv/panel.json",
     );
     let real_panel = read_real_phase1_panel(&real_panel_path)?;
     let code_version = git_head()?;
@@ -293,7 +293,7 @@ fn main() -> FsvResult<()> {
 fn read_real_phase1_panel(path: &Path) -> FsvResult<Panel> {
     if !path.is_file() {
         return Err(format!(
-            "required real Phase 1 panel missing at {}; run `cargo run --release -p context-graph-mejepa-instruments --example phase1_extended_fsv` first",
+            "required real Phase 1 panel missing at {}; run `cargo run --release -p context-graph-mejepa-instruments --example ast_embedder_smoke_fsv` first",
             path.display()
         )
         .into());

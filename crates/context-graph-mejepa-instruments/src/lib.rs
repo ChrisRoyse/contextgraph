@@ -30,12 +30,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub mod composite_reward_signals;
 pub mod e_code;
-pub mod e_coverage;
-pub mod e_cyclomatic;
-pub mod e_diff_topology;
-pub mod e_embedder_heads;
 pub mod e_oracle;
 pub mod e_reasoning;
 pub mod e_runtime;
@@ -46,8 +41,6 @@ pub mod e_trace;
 pub mod e_witness;
 mod features;
 pub mod frozen_hook;
-pub mod linear_probe;
-pub mod live_session_signals;
 pub mod materialize;
 pub mod panel_json;
 pub mod panel_store;
@@ -58,10 +51,6 @@ pub mod q4_pass_annotations;
 pub mod q4_perf_labels;
 pub mod q4_reasoning_labels;
 pub mod q4_security_labels;
-pub mod static_analysis_reward;
-pub mod stdlib_registry;
-pub mod telemetry_signals;
-pub mod type_graph_signals;
 
 pub type InstrumentResult<T> = Result<T, InstrumentError>;
 
@@ -535,30 +524,9 @@ fn slot_bit(slot: InstrumentSlot) -> u16 {
 #[path = "tests.rs"]
 mod instrument_tests;
 
-pub use composite_reward_signals::{
-    analyze_churn, analyze_doc_coverage, complexity_label_from_metrics, composite_reward_cfs,
-    coverage_labels_from_metrics, extract_composite_reward_signals, extract_dependency_cve_labels,
-    write_composite_reward_raw_outputs, ChurnCommit, ChurnInput, ChurnLabel, ComplexityLabel,
-    CompositeRewardExtraction, CompositeRewardInput, CompositeRewardQuarantine,
-    CompositeRewardRawOutputPaths, CompositeRewardSignalKind, CompositeRewardSignalRecord,
-    CompositeRewardSignalStore, CompositeRewardStoredKey, CoverageLabel, DepCveInput, DepCveLabel,
-    DocCoverageInput, DocCoverageLabel, FunctionDocCoverage, PersistedCompositeRewardSignal,
-};
 pub use e_code::{
     CodeInstrumentInput, DiffInstrumentInput, EAstInstrument, ECfgInstrument, EDataFlowInstrument,
     EDiffInstrument, ETypeGraphInstrument,
-};
-pub use e_coverage::{
-    analyze_coverage_delta, coverage_snapshot_from_coverage_py_json, CoverageFileDelta,
-    CoverageInput, CoverageMetrics, CoverageSnapshot, ECoverageInstrument, FileCoverageSnapshot,
-};
-pub use e_cyclomatic::{
-    analyze_complexity, ComplexityInput, ComplexityMetrics, ECyclomaticInstrument,
-    FunctionComplexity,
-};
-pub use e_diff_topology::{
-    analyze_diff_topology, DiffTopologyInput, DiffTopologyMetrics, EDiffTopologyInstrument,
-    FileTopology, HunkTopology,
 };
 pub use e_oracle::{EOracleInstrument, ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome};
 pub use e_reasoning::{EReasoningInstrument, ReasoningEvent, ReasoningInput};
@@ -571,9 +539,6 @@ pub use e_text::{ECommitMsgInstrument, EProblemInstrument, ETestInstrument, Text
 pub use e_trace::{ETraceInstrument, TraceEvent, TraceEventKind, TraceInput};
 pub use e_witness::{EWitnessInstrument, WitnessChainInput, CANONICAL_WITNESS_FORMAT_VERSION};
 pub use frozen_hook::{hash_f32s, FrozenGuard, FrozenSnapshot};
-pub use linear_probe::{
-    assert_probe_passes, train_linear_probe, ProbeReport, LINEAR_PROBE_MIN_ACCURACY,
-};
 pub use materialize::{
     active_slots, materialize_panel, vectors_from_panel, zero_slots, MaterializedPanel,
     PanelVectorInput, TimeStep,
@@ -635,13 +600,4 @@ pub use q4_security_labels::{
     Q4SecurityQuarantine, Q4SecurityRawOutputPaths, Q4SecurityRawOutputs, Q4SecurityScanPhase,
     Q4SecuritySeverity, Q4SecuritySignalRecord, Q4SecuritySource, Q4SecurityToolOutput,
     DEFAULT_Q4_SECURITY_TIMEOUT_SECS,
-};
-pub use static_analysis_reward::{
-    extract_static_analysis_labels, run_static_analysis_tools,
-    run_static_analysis_tools_with_timeout, write_static_analysis_raw_outputs,
-    PersistedStaticAnalysisSignal, StaticAnalysisDetector, StaticAnalysisExtraction,
-    StaticAnalysisLabel, StaticAnalysisLineRange, StaticAnalysisQuarantine,
-    StaticAnalysisRawOutputPaths, StaticAnalysisRawOutputs, StaticAnalysisSignalKind,
-    StaticAnalysisSignalRecord, StaticAnalysisSignalStore, StaticAnalysisSource,
-    StaticAnalysisToolOutput, DEFAULT_STATIC_ANALYSIS_TIMEOUT_SECS,
 };

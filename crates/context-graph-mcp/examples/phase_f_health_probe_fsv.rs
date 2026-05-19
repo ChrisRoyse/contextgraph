@@ -10,7 +10,7 @@ use context_graph_mcp::daemon::{
     start_supervised_flywheel_tasks, supervised_task_health_path, supervised_task_names,
     FlywheelDaemonConfig, SupervisedTaskHealthRecord, SupervisedTaskHealthRegistrySnapshot,
 };
-use context_graph_mcp::daemon_validate::validate_aiwonder_root;
+use context_graph_mcp::daemon_validate::validate_daemon_root;
 use context_graph_mcp::health_probe::{start_health_probe, HealthProbeConfig};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -248,7 +248,7 @@ async fn live_daemon_shift_subscriber_health_case(run_root: &Path) -> Result<Val
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&daemon_root, fs::Permissions::from_mode(0o700))?;
     }
-    let paths = validate_aiwonder_root(&daemon_root)?;
+    let paths = validate_daemon_root(&daemon_root)?;
     let repo_root = daemon_root.join("repo");
     fs::create_dir_all(&repo_root)?;
     let db = context_graph_mejepa_hygiene::open_hygiene_rocksdb(&paths.storage_db)?;

@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use crate::error::PredictorError;
 
 pub const DEFAULT_PHASE1_PANEL_PATH: &str =
-    "/tmp/contextgraph-mejepa-instruments-fsv/phase1-extended/panel-all-slots.json";
+    "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-ast-embedder-smoke-fsv/panel.json";
 
 #[derive(Debug, Clone, Copy)]
 pub enum PanelBatchView {
@@ -20,7 +20,7 @@ pub enum PanelBatchView {
 pub fn read_phase1_panel(path: &Path) -> Result<Panel, PredictorError> {
     let text = fs::read_to_string(path).map_err(|err| PredictorError::DeviceUnavailable {
         detail: format!(
-            "required real Phase 1 panel source is missing or unreadable at {}: {err}; run `cargo run -p context-graph-mejepa-instruments --example phase1_extended_fsv` first",
+            "required real Phase 1 panel source is missing or unreadable at {}: {err}; run `cargo run -p context-graph-mejepa-instruments --example ast_embedder_smoke_fsv` first",
             path.display()
         ),
     })?;

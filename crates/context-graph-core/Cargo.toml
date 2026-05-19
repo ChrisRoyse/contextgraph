@@ -82,7 +82,3 @@ required-features = ["test-utils"]
 [[test]]
 name = "source_metadata_integration"
 required-features = ["test-utils"]
-
-[[example]]
-name = "tree_sitter_test"
-path = "examples/tree_sitter_test.rs"

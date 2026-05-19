@@ -21,7 +21,7 @@ const CORPUS_INDEX: &str =
 const AST_CORPUS_FSV: &str =
     "/zfs/archive/contextgraph/fsv/swebench-python-ast-corpus-fsv/swebench-python-ast-corpus-fsv.json";
 const PHASE1_PANEL: &str =
-    "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/phase1-extended/panel-all-slots.json";
+    "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-ast-embedder-smoke-fsv/panel.json";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CorpusEntry {

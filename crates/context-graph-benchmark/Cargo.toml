@@ -96,10 +96,6 @@ name = "temporal-bench"
 path = "src/bin/temporal_bench.rs"
 
 [[bin]]
-name = "causal-realdata-bench"
-path = "src/bin/causal_realdata_bench.rs"
-
-[[bin]]
 name = "temporal-realdata-bench"
 path = "src/bin/temporal_realdata_bench.rs"
 
@@ -110,14 +106,6 @@ path = "src/bin/sparse_bench.rs"
 [[bin]]
 name = "graph-bench"
 path = "src/bin/graph_bench.rs"
-
-[[bin]]
-name = "multimodal-bench"
-path = "src/bin/multimodal_bench.rs"
-
-[[bin]]
-name = "multimodal-realdata-bench"
-path = "src/bin/multimodal_realdata_bench.rs"
 
 [[bin]]
 name = "unified-realdata-bench"
@@ -154,25 +142,8 @@ path = "src/bin/code_fingerprint_bench.rs"
 required-features = ["real-embeddings"]
 
 [[bin]]
-name = "e2-manual-verification"
-path = "src/bin/e2_manual_verification.rs"
-required-features = ["real-embeddings"]
-
-[[bin]]
-name = "weight-profile-bench"
-path = "src/bin/weight_profile_bench.rs"
-
-[[bin]]
 name = "graph-linking-bench"
 path = "src/bin/graph_linking_bench.rs"
-
-[[bin]]
-name = "embedder-impact-bench"
-path = "src/bin/embedder_impact_bench.rs"
-
-[[bin]]
-name = "embedder-impact-realdata-bench"
-path = "src/bin/embedder_impact_realdata_bench.rs"
 
 [[bin]]
 name = "disk-space-bench"
@@ -183,18 +154,6 @@ name = "graph-linking-real-bench"
 path = "src/bin/graph_linking_real_bench.rs"
 
 [[bin]]
-name = "causal-provenance-bench"
-path = "src/bin/causal_provenance_bench.rs"
-
-[[bin]]
 name = "spawn-blocking-bench"
 path = "src/bin/spawn_blocking_bench.rs"
 required-features = ["real-embeddings"]
-
-[[bin]]
-name = "causal-accuracy-bench"
-path = "src/bin/causal_accuracy_bench.rs"
-
-[[bin]]
-name = "causal-embedding-bench"
-path = "src/bin/causal_embedding_bench.rs"

@@ -13,8 +13,8 @@ use context_graph_mejepa::store::RocksDbInferStore;
 use context_graph_mejepa::{
     open_infer_rocksdb, write_json_0600, AgentClaimGraph, ConformalInterval, ConformalMethod,
     ConformalSet, ExemplarMatch, FailureModeClass, Language, MejepaStore, MutationCategory,
-    OracleOutcome, PredictionProvenance, RealityPrediction, ReasoningClass, TaskId, Verdict,
-    WitnessHash,
+    OracleOutcome, PredictionLabelContext, PredictionProvenance, RealityPrediction, ReasoningClass,
+    TaskId, Verdict, WitnessHash,
 };
 use context_graph_mejepa_cf::{CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_PATCH_SIMILARITY_META};
 use context_graph_mejepa_instruments::{OracleVerdict, PerTestOutcome, TestOutcome};
@@ -427,6 +427,7 @@ fn live_prediction_row(
         unknown_candidate_id: None,
         constellation_intelligence: None,
         slot_attributions: Vec::new(),
+        label_context: PredictionLabelContext::default(),
     })
     .context("validate live prediction")
 }

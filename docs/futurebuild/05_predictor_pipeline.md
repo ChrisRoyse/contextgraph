@@ -232,7 +232,7 @@ That chain is how ME-JEPA learns to predict what happens when code is live. The 
 
 **Structural collapse-immunity invariant.** Instruments carry zero trainable parameters. `FrozenGuard` / `FrozenSnapshot` / `hash_f32s` (`frozen_hook.rs`) enforce `ΔΞ.target_collapse = 0` by construction. `crates/context-graph-mejepa/src/grad_hook.rs::run_gradient_hook` checks for `MEJEPA_INSTRUMENT_GRADIENT_LEAK` and fails closed if any gradient touches a frozen-target tensor.
 
-**Composite reward signals.** `composite_reward_signals.rs` analyzes coverage + churn + complexity + doc-coverage + dep-CVE labels (TASK-RWD-209). `q4_security_labels.rs` runs Bandit + Semgrep. `static_analysis_reward.rs` runs mypy + pyright + ruff. `type_graph_signals.rs`, `telemetry_signals.rs`, `live_session_signals.rs` cover TASK-RWD-205/206/207.
+**Retired Q4/RWD producer surfaces.** The unconsumed TASK-RWD producer modules (`composite_reward_signals.rs`, `static_analysis_reward.rs`, `telemetry_signals.rs`, `type_graph_signals.rs`, `live_session_signals.rs`, plus the standalone coverage/cyclomatic/diff-topology helpers) were removed from the active crate surface on 2026-05-19. This does not remove durable historical CF evidence and does not remove the live deterministic target instruments (`e_code`, `e_static_analysis`, `e_runtime`, `e_oracle`, `e_witness`, etc.). The only Q4-related code that remains compiled is the deprecated-readable label/trust-gate surface described in §16.
 
 ---
 

@@ -390,7 +390,7 @@ tasks/swebench-lite/                    — task manifest JSON (workstreams)
 config/                                 — governed paths, model pins
 .claude/                                — settings.json, agents/, loop.md (1 line; see specs)
 .github/workflows/, .github/labels.yml  — CI + label set (memory = Issues)
-memory.archive/                         — read-only legacy SAMP/SMAP (526 files, do not write)
+backupdocs/memory.archive/              — read-only legacy SAMP/SMAP (do not write; GitHub Issues are live memory)
 
 /zfs/archive/contextgraph/              — **aiwonder production durable SoT** (see 03_storage_schema.md §5)
   corpus/                               —   production corpus, panel cache, fingerprint registry

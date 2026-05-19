@@ -4,8 +4,9 @@ use anyhow::{ensure, Context, Result};
 use context_graph_mejepa::{
     count_cf, open_infer_rocksdb, replay_prediction_from_db, write_json_0600, AgentClaimGraph,
     ChunkId, ConformalInterval, ConformalMethod, ConformalSet, EmbedderId, Language, MejepaStore,
-    OracleOutcome, PerSlotOodReason, PerSlotOodReasonKind, PredictionId, PredictionProvenance,
-    RealityPrediction, ReasoningClass, RocksDbInferStore, TaskId, Verdict, WitnessHash,
+    OracleOutcome, PerSlotOodReason, PerSlotOodReasonKind, PredictionId, PredictionLabelContext,
+    PredictionProvenance, RealityPrediction, ReasoningClass, RocksDbInferStore, TaskId, Verdict,
+    WitnessHash,
 };
 use context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS;
 use serde::{Deserialize, Serialize};
@@ -302,5 +303,6 @@ fn base_prediction(
         unknown_candidate_id: None,
         constellation_intelligence: None,
         slot_attributions: Vec::new(),
+        label_context: PredictionLabelContext::default(),
     })
 }

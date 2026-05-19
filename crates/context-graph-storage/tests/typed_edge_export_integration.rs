@@ -52,7 +52,7 @@ fn record_for_edge_type(et: GraphLinkEdgeType) -> TypedEdgeTrainingRecord {
         },
         confidence: 0.78,
         rationale: format!("Reclassification rationale for et={}", edge_type_u8),
-        validator_version: "hermes-2-pro-mistral-7b-q5-km@2026-04".into(),
+        validator_version: "deterministic-validator-v1@2026-05".into(),
     });
 
     TypedEdgeTrainingRecord {

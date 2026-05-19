@@ -250,7 +250,7 @@ mod tests {
                 verdict: LLMVerdict::Valid,
                 confidence: 0.9,
                 rationale: "Direct cause-effect stated.".into(),
-                validator_version: "hermes-2-pro-mistral-7b-q5-km@2026-04".into(),
+                validator_version: "deterministic-validator-v1@2026-05".into(),
             }),
             exported_at: chrono::Utc::now(),
             exporter_version: "typed_edge_export_v1".into(),

@@ -39,7 +39,7 @@ fn valid_validation() -> LLMEdgeValidation {
         confidence: 0.94,
         rationale: "Direct cause-effect stated in source.".into(),
         auto_derived_weight: 0.62,
-        validator_version: "hermes-2-pro-mistral-7b-q5-km@2026-04".into(),
+        validator_version: "deterministic-validator-v1@2026-05".into(),
         prompt_hash: [0xAAu8; 32],
     }
 }
@@ -51,7 +51,7 @@ fn invalid_validation() -> LLMEdgeValidation {
         confidence: 0.18,
         rationale: "LLM found no semantic link between source and target.".into(),
         auto_derived_weight: 0.52,
-        validator_version: "hermes-2-pro-mistral-7b-q5-km@2026-04".into(),
+        validator_version: "deterministic-validator-v1@2026-05".into(),
         prompt_hash: [0xBBu8; 32],
     }
 }
@@ -63,7 +63,7 @@ fn reclassify_validation() -> LLMEdgeValidation {
         confidence: 0.71,
         rationale: "Relationship is entity-shared, not causal.".into(),
         auto_derived_weight: 0.58,
-        validator_version: "hermes-2-pro-mistral-7b-q5-km@2026-04".into(),
+        validator_version: "deterministic-validator-v1@2026-05".into(),
         prompt_hash: [0xCCu8; 32],
     }
 }

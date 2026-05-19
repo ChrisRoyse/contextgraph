@@ -47,6 +47,8 @@ usearch = "2"
 [dev-dependencies]
 context-graph-mejepa-shift-subscriber = { path = "../context-graph-mejepa-shift-subscriber" }
 context-graph-mejepa-train = { path = "../context-graph-mejepa-train" }
+# Used by tests/e2e/chaos_failpoints.rs for fault-injection via failpoints.
+fail = { version = "0.5", features = ["failpoints"] }
 tempfile = "3.10"
 
 [[bin]]

@@ -145,7 +145,7 @@ Build profiles (`Cargo.toml:112-128`):
 
 ## 5. `context-graph-mejepa-instruments` Modules
 
-`crates/context-graph-mejepa-instruments/src/lib.rs:33-58` declares pub modules. Largest: `composite_reward_signals.rs` (~66K), `e_code.rs` (~59K), `q4_security_labels.rs` (~48K), `static_analysis_reward.rs` (~44K), `telemetry_signals.rs` (~46K), `live_session_signals.rs` (~30K).
+`crates/context-graph-mejepa-instruments/src/lib.rs:33-58` declares pub modules. Largest active modules: `e_code.rs`, `q4_security_labels.rs`, and the per-Q4 frozen label satellites. The unconsumed TASK-RWD producer modules were removed from the active crate surface on 2026-05-19 after the investigation cleanup; their historical proof remains in git history and closed issue evidence, not in compiled production code.
 
 | Module | Instrument slot served | Dim | Notes |
 |---|---|---|---|
@@ -158,22 +158,13 @@ Build profiles (`Cargo.toml:112-128`):
 | `e_runtime.rs` | `ERuntime` | 256 | Wall-clock / RSS / coverage / network aggregates |
 | `e_reasoning.rs` | `EReasoning` | 384 | Reasoning / reflexion trace encoder |
 | `e_scalars.rs` | `Scalars` | 128 | BFS depth, blame age, churn, coverage Δ, repo-health |
-| `e_coverage.rs` | (TASK-RWD-202) | — | coverage.py JSON → CoverageSnapshot / CoverageFileDelta |
-| `e_cyclomatic.rs` | (TASK-RWD-201) | — | Per-function cyclomatic complexity |
-| `e_diff_topology.rs` | (TASK-RWD-203) | — | Diff topology metrics |
-| `e_embedder_heads.rs` | — | — | Per-embedder head readout |
-| `composite_reward_signals.rs` | (TASK-RWD-209) | — | coverage + churn + complexity + doc-coverage + dep-CVE composite |
 | `q4_security_labels.rs` | (TASK-RWD-204 / TASK-PY-G-046) | — | Bandit + Semgrep label pipeline |
-| `static_analysis_reward.rs` | (TASK-RWD-208 / TASK-PY-G-074) | — | mypy + pyright + ruff label pipeline |
-| `telemetry_signals.rs` | (TASK-RWD-206) | — | Runtime telemetry prediction labels + symbol profiles |
-| `type_graph_signals.rs` | (TASK-RWD-205) | — | Python E_TypeGraph call-site type evidence |
-| `live_session_signals.rs` | (TASK-RWD-207) | — | Live-session state rows |
 | `panel_json.rs` + `panel_store.rs` | — | — | Panel envelope (`PANEL_JSON_SCHEMA_VERSION`), RocksDB `PanelStore` |
 | `materialize.rs` | — | — | `materialize_panel`, `vectors_from_panel`, `TimeStep` |
 | `frozen_hook.rs` | — | — | `FrozenGuard`, `FrozenSnapshot`, `hash_f32s` — enforces zero-grad on frozen targets |
-| `linear_probe.rs` | — | — | `train_linear_probe`, `LINEAR_PROBE_MIN_ACCURACY`, `ProbeReport` |
-| `stdlib_registry.rs` | — | — | Python stdlib registry |
 | `tests.rs` | — | — | 27+ unit tests |
+
+Retired 2026-05-19 investigation cleanup: `e_coverage.rs`, `e_cyclomatic.rs`, `e_diff_topology.rs`, `e_embedder_heads.rs`, `composite_reward_signals.rs`, `static_analysis_reward.rs`, `telemetry_signals.rs`, `type_graph_signals.rs`, `live_session_signals.rs`, `linear_probe.rs`, and `stdlib_registry.rs`. These were unconsumed producer/helper surfaces after the Q4 freeze and binary Q1/Q2/Q5 contract. Keep `e_static_analysis.rs`, `e_code.rs`, `e_runtime.rs`, and the frozen `q4_*` label readers until the schema-version cleanup that drops deprecated-readable Q4 CFs.
 
 ---
 

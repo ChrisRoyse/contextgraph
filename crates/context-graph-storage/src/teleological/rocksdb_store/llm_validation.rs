@@ -222,7 +222,7 @@ mod tests {
             confidence: 0.92,
             rationale: "Direct cause-effect chain described.".into(),
             auto_derived_weight: 0.58,
-            validator_version: "hermes-2-pro-mistral-7b-q5-km@2026-04".into(),
+            validator_version: "deterministic-validator-v1@2026-05".into(),
             prompt_hash: [7u8; 32],
         }
     }

@@ -2,7 +2,7 @@ use context_graph_mcp::daemon::{
     ensure_mejepa_column_families, run_weekly_eval_job_once, start_supervised_flywheel_tasks,
     FlywheelDaemonConfig, FlywheelJobRunRecord,
 };
-use context_graph_mcp::daemon_validate::validate_aiwonder_root;
+use context_graph_mcp::daemon_validate::validate_daemon_root;
 use context_graph_mejepa::eval::{corpus_sha_from_holdout, synthetic_holdout};
 use context_graph_mejepa::{
     CalibrationExample, CalibrationStore, EmbedderId, Language, TrainCertSummary,
@@ -39,7 +39,7 @@ fn main() -> FsvResult<()> {
 }
 
 async fn run_fsv(fsv_root: PathBuf, daemon_root: PathBuf) -> FsvResult<()> {
-    let paths = validate_aiwonder_root(&daemon_root)?;
+    let paths = validate_daemon_root(&daemon_root)?;
     let repo_root = daemon_root.join("repo");
     fs::create_dir_all(&repo_root)?;
     let db = context_graph_mejepa_hygiene::open_hygiene_rocksdb(&paths.storage_db)?;
@@ -267,7 +267,7 @@ fn edge_zero_scheduler_period(fsv_root: &Path) -> FsvResult<Value> {
     let root = fsv_root.join("edge-zero-period-root");
     fs::create_dir_all(&root)?;
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
-    let paths = validate_aiwonder_root(&root)?;
+    let paths = validate_daemon_root(&root)?;
     let db = context_graph_mejepa_hygiene::open_hygiene_rocksdb(&paths.storage_db)?;
     let before = physical_state(
         db.as_ref(),
@@ -304,7 +304,7 @@ async fn edge_missing_weekly_holdout(fsv_root: &Path) -> FsvResult<Value> {
     let root = fsv_root.join("edge-missing-weekly-holdout-root");
     fs::create_dir_all(&root)?;
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
-    let paths = validate_aiwonder_root(&root)?;
+    let paths = validate_daemon_root(&root)?;
     let repo = root.join("repo");
     fs::create_dir_all(&repo)?;
     let db = context_graph_mejepa_hygiene::open_hygiene_rocksdb(&paths.storage_db)?;

@@ -4,9 +4,10 @@ use context_graph_mejepa::{
     count_cf, open_infer_rocksdb, read_reality_impact_record, replay_and_persist_reality_impact,
     AgentClaimGraph, ChunkId, ConformalSet, EmbedderId, FailureModeClass, Language, MejepaStore,
     OracleOutcome, PredictedFailureMode, PredictedTestOutcome, PredictionCorrectness,
-    PredictionProvenance, RealityImpact, RealityImpactClassification, RealityPrediction,
-    ReasoningClass, RocksDbInferStore, RootCauseClass, Severity, TaskId, TestDeltaKind, TestId,
-    TestOutcome, Verdict, WitnessHash, DEFAULT_REALITY_IMPACT_REPLAY_WINDOW_MS,
+    PredictionLabelContext, PredictionProvenance, RealityImpact, RealityImpactClassification,
+    RealityPrediction, ReasoningClass, RocksDbInferStore, RootCauseClass, Severity, TaskId,
+    TestDeltaKind, TestId, TestOutcome, Verdict, WitnessHash,
+    DEFAULT_REALITY_IMPACT_REPLAY_WINDOW_MS,
 };
 use context_graph_mejepa_cf::{CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_REALITY_IMPACT};
 use serde_json::{json, Value};
@@ -400,6 +401,7 @@ fn prediction_with_predicted_files(
         unknown_candidate_id: None,
         constellation_intelligence: None,
         slot_attributions: Vec::new(),
+        label_context: PredictionLabelContext::default(),
     })
     .unwrap()
 }

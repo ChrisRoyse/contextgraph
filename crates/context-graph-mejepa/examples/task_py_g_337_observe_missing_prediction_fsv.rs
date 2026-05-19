@@ -10,8 +10,8 @@ use anyhow::{ensure, Context, Result};
 use context_graph_mejepa::heal::{read_status_snapshot, SchedulerState, SelfOptimConfig, TickName};
 use context_graph_mejepa::{
     AgentClaimGraph, ConformalInterval, ConformalSet, Language, MejepaStore, OracleOutcome,
-    PredictionProvenance, RealityPrediction, ReasoningClass, RocksDbInferStore, TaskId, Verdict,
-    WitnessHash,
+    PredictionLabelContext, PredictionProvenance, RealityPrediction, ReasoningClass,
+    RocksDbInferStore, TaskId, Verdict, WitnessHash,
 };
 use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
 use serde_json::{json, Value};
@@ -290,6 +290,7 @@ fn test_prediction(session_id: [u8; 16]) -> RealityPrediction {
         unknown_candidate_id: None,
         constellation_intelligence: None,
         slot_attributions: Vec::new(),
+        label_context: PredictionLabelContext::default(),
     })
     .unwrap()
 }

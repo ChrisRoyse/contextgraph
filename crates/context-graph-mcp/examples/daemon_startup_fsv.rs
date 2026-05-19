@@ -9,7 +9,7 @@ use serde_json::json;
 fn main() -> Result<()> {
     let data_root = context_graph_paths::data_root()
         .context("MEJEPA_D_DRIVE_UNAVAILABLE: failed to resolve CONTEXTGRAPH_DATA_ROOT")?;
-    let paths = daemon_validate::validate_aiwonder_root(&data_root)?;
+    let paths = daemon_validate::validate_daemon_root(&data_root)?;
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)

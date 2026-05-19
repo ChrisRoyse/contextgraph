@@ -10,8 +10,9 @@ use anyhow::{Context, Result};
 use context_graph_mejepa::heal::{SchedulerState, SelfOptimConfig, TickName};
 use context_graph_mejepa::types::{
     AgentClaimGraph, ClaimGraph, ConformalInterval, ConformalSet, Language as InferLanguage,
-    OracleOutcome as InferOracleOutcome, PredictionProvenance, RealityPrediction, ReasoningClass,
-    SkillCitation, TaskContext, TaskEnvironment, TaskId, TestId, Verdict, WitnessHash,
+    OracleOutcome as InferOracleOutcome, PredictionLabelContext, PredictionProvenance,
+    RealityPrediction, ReasoningClass, SkillCitation, TaskContext, TaskEnvironment, TaskId, TestId,
+    Verdict, WitnessHash,
 };
 use context_graph_mejepa::{ConstellationGuard, TctConstellationGuard};
 use context_graph_mejepa_instruments::{InstrumentSlot, Panel, PANEL_DIM};
@@ -391,6 +392,7 @@ fn test_prediction() -> RealityPrediction {
         unknown_candidate_id: None,
         constellation_intelligence: None,
         slot_attributions: Vec::new(),
+        label_context: PredictionLabelContext::default(),
     })
     .unwrap()
 }
