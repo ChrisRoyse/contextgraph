@@ -132,6 +132,10 @@ name = "task_py_g_012_q4_confidence_calibration_fsv"
 path = "examples/task_py_g_012_q4_confidence_calibration_fsv.rs"
 
 [[example]]
+name = "task_py_g_114_q4_doctrine_freeze_fsv"
+path = "examples/task_py_g_114_q4_doctrine_freeze_fsv.rs"
+
+[[example]]
 name = "task_py_g_118_skill_sequence_discovery_fsv"
 path = "examples/task_py_g_118_skill_sequence_discovery_fsv.rs"
 

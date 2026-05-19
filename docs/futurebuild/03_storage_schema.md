@@ -414,6 +414,8 @@ Per `05_predictor_pipeline.md §16`, the Q4 prediction track is closed and the f
 | `CF_MEJEPA_HEAD_CALIBRATIONS` (Q4 sub-rows: `q4cal::*`) | Q4 calibration rows frozen | Read-only |
 | `CF_MEJEPA_CONTRADICTION_THRESHOLDS` | Frozen | Read-only (Q4-vs-Q2 contradiction no longer ship-gate-relevant) |
 
+`FROZEN_Q4_CFS` in `mejepa-cf/src/lib.rs` is the weekly row-count-delta watch list. `CF_MEJEPA_HEAD_CALIBRATIONS` is mixed-use, so only its Q4 `q4cal::*` sub-rows are frozen by policy; non-Q4 calibration rows remain valid. The weekly baseline lives under the active durable root at `state/q4-freeze/q4_frozen_cf_counts.json`, and #408 proved the one-time freeze at `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/` with `q4RowCountDelta=0`.
+
 Future cleanup (dropping these CFs in a schema-version bump) tracked under `phase:cleanup`; not in current Phase G scope. Constants stay in `mejepa-cf/src/lib.rs` with a `// FROZEN 2026-05-19: see futurebuild/05 §16` comment.
 
 ### 9.4bis Pathway exploration surface CFs (#416 / TASK-PY-G-119, planned)

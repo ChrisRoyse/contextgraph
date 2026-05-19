@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::Path;
 
+pub const Q4_LOSS_COEFFICIENT_MAX: f32 = 0.0;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LossCoefficients {
@@ -35,11 +37,17 @@ impl Default for LossCoefficients {
             alpha_trace: 0.5,
             alpha_hunk: 1.0,
             alpha_adjacent: 0.5,
-            alpha_reasoning: 0.3,
+            alpha_reasoning: 0.0,
             alpha_overrides: 5.0,
             alpha_counterfactual: 0.2,
             delta: 2.0,
         }
+    }
+}
+
+impl LossCoefficients {
+    pub fn q4_loss_coefficient_max(&self) -> f32 {
+        self.alpha_reasoning.max(0.0)
     }
 }
 
@@ -266,6 +274,12 @@ impl TrainingConfig {
                 return bad(field, "must be non-negative finite");
             }
         }
+        if self.loss_coefficients.q4_loss_coefficient_max() != Q4_LOSS_COEFFICIENT_MAX {
+            return bad(
+                "loss_coefficients.alpha_reasoning",
+                "Q4 doctrine freeze requires q4_loss_coefficient_max == 0.0",
+            );
+        }
         Ok(())
     }
 
@@ -315,6 +329,30 @@ mod tests {
         };
         let err = cfg.validate().unwrap_err();
         assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
+    }
+
+    #[test]
+    fn q4_loss_coefficient_max_is_frozen_zero() {
+        let cfg = TrainingConfig::default();
+        assert_eq!(
+            cfg.loss_coefficients.q4_loss_coefficient_max(),
+            Q4_LOSS_COEFFICIENT_MAX
+        );
+        cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn nonzero_q4_loss_coefficient_fails_closed() {
+        let cfg = TrainingConfig {
+            loss_coefficients: LossCoefficients {
+                alpha_reasoning: 0.3,
+                ..LossCoefficients::default()
+            },
+            ..TrainingConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
+        assert!(err.to_string().contains("q4_loss_coefficient_max"));
     }
 
     #[test]

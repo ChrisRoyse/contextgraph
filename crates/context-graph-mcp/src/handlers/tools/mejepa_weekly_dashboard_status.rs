@@ -1,5 +1,6 @@
 //! Source-of-truth assembly for the Phase F weekly evaluation dashboard.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -46,6 +47,11 @@ pub(super) fn weekly_eval_dashboard(
         .get("status")
         .and_then(Value::as_str)
         .unwrap_or("unknown");
+    let q4_freeze = q4_freeze_row_delta_status(db.as_ref(), &d_root)?;
+    let q4_freeze_status = q4_freeze
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
     let feedback = agent_feedback_summary(db.as_ref(), 5)?;
     let label_transfer = context_graph_mejepa::summarize_label_transfer_decisions(db.as_ref())
         .map_err(|err| {
@@ -56,10 +62,14 @@ pub(super) fn weekly_eval_dashboard(
         })?;
     let overall_status = if weekly_files_status == "present"
         && holdout_feed_status == "ready"
+        && q4_freeze_status == "frozen"
         && report.ship_gate_passed
     {
         "healthy"
-    } else if weekly_files_status == "present" || holdout_feed_status == "ready" {
+    } else if weekly_files_status == "present"
+        || holdout_feed_status == "ready"
+        || q4_freeze_status == "frozen"
+    {
         "attention_required"
     } else {
         "degraded"
@@ -92,15 +102,17 @@ pub(super) fn weekly_eval_dashboard(
         },
         "activeLearning": report.active_learning,
         "labelTransferDecisions": label_transfer,
+        "q4Freeze": q4_freeze,
         "agentFeedback": feedback,
         "operationalSignals": operational_signal_counts(db.as_ref())?,
         "weeklyFiles": weekly_files,
         "requiredWeeklySections": required_weekly_sections_status(&exports_root, &report.report_date),
-        "runbook": runbook_actions(&report, weekly_files_status, holdout_feed_status),
+        "runbook": runbook_actions(&report, weekly_files_status, holdout_feed_status, q4_freeze_status),
         "sourceOfTruth": {
             "evalReport": "CF_MEJEPA_EVAL_REPORTS",
             "holdoutFeed": d_root.join("state/gold-labels/weekly_holdout_panels.json"),
             "exportsRoot": exports_root,
+            "q4FreezeBaseline": d_root.join("state/q4-freeze/q4_frozen_cf_counts.json"),
             "agentFeedback": context_graph_mejepa_cf::CF_MEJEPA_AGENT_FEEDBACK,
             "labelTransferDecisions": context_graph_mejepa_cf::CF_MEJEPA_LABEL_TRANSFER_DECISIONS,
             "driftHistory": context_graph_mejepa_cf::CF_MEJEPA_DRIFT_HISTORY
@@ -196,6 +208,114 @@ fn operational_signal_counts(db: &DB) -> Result<Value, context_graph_mejepa::Eva
         "labelTransferDecisionRows": cf_count(db, context_graph_mejepa_cf::CF_MEJEPA_LABEL_TRANSFER_DECISIONS)?,
         "oodEscalationRows": cf_count(db, context_graph_mejepa_cf::CF_MEJEPA_OOD_ESCALATIONS)?
     }))
+}
+
+fn q4_freeze_row_delta_status(
+    db: &DB,
+    d_root: &Path,
+) -> Result<Value, context_graph_mejepa::EvalError> {
+    let current = frozen_q4_cf_counts(db)?;
+    let baseline_path = d_root.join("state/q4-freeze/q4_frozen_cf_counts.json");
+    let bytes = match fs::read(&baseline_path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(json!({
+                "status": "baseline_missing",
+                "pass": false,
+                "failClosed": true,
+                "baselinePath": baseline_path,
+                "currentCounts": current,
+                "errorCode": "MEJEPA_Q4_FREEZE_BASELINE_MISSING"
+            }));
+        }
+        Err(err) => {
+            return Ok(json!({
+                "status": "baseline_unreadable",
+                "pass": false,
+                "failClosed": true,
+                "baselinePath": baseline_path,
+                "currentCounts": current,
+                "errorCode": "MEJEPA_Q4_FREEZE_BASELINE_UNREADABLE",
+                "error": err.to_string()
+            }));
+        }
+    };
+    let baseline: BTreeMap<String, usize> = match serde_json::from_slice(&bytes) {
+        Ok(value) => value,
+        Err(err) => {
+            return Ok(json!({
+                "status": "baseline_invalid_json",
+                "pass": false,
+                "failClosed": true,
+                "baselinePath": baseline_path,
+                "currentCounts": current,
+                "errorCode": "MEJEPA_Q4_FREEZE_BASELINE_INVALID_JSON",
+                "error": err.to_string()
+            }));
+        }
+    };
+    let deltas = current
+        .keys()
+        .map(|key| {
+            let current_count = current.get(key).copied();
+            let baseline_count = baseline.get(key).copied();
+            let delta = match (current_count, baseline_count) {
+                (Some(current), Some(baseline)) => current as isize - baseline as isize,
+                _ => isize::MAX,
+            };
+            json!({
+                "cf": key,
+                "baseline": baseline_count,
+                "current": current_count,
+                "delta": if delta == isize::MAX { Value::Null } else { json!(delta) },
+                "pass": delta == 0
+            })
+        })
+        .collect::<Vec<_>>();
+    let pass = deltas.iter().all(|item| item["pass"] == true);
+    Ok(json!({
+        "status": if pass { "frozen" } else { "growth_detected" },
+        "pass": pass,
+        "failClosed": !pass,
+        "baselinePath": baseline_path,
+        "baselineSha256": sha256_hex(&bytes),
+        "currentCounts": current,
+        "deltas": deltas,
+        "frozenColumnFamilies": context_graph_mejepa_cf::FROZEN_Q4_CFS,
+        "frozenCalibrationCounter": context_graph_mejepa_cf::FROZEN_Q4_CALIBRATION_COUNT_KEY
+    }))
+}
+
+fn frozen_q4_cf_counts(
+    db: &DB,
+) -> Result<BTreeMap<String, usize>, context_graph_mejepa::EvalError> {
+    let mut counts = context_graph_mejepa_cf::FROZEN_Q4_CFS
+        .iter()
+        .map(|cf| Ok(((*cf).to_string(), cf_count(db, *cf)?)))
+        .collect::<Result<BTreeMap<_, _>, context_graph_mejepa::EvalError>>()?;
+    counts.insert(
+        context_graph_mejepa_cf::FROZEN_Q4_CALIBRATION_COUNT_KEY.to_string(),
+        q4_calibration_count(db)?,
+    );
+    Ok(counts)
+}
+
+fn q4_calibration_count(db: &DB) -> Result<usize, context_graph_mejepa::EvalError> {
+    let cf_name = context_graph_mejepa_cf::CF_MEJEPA_HEAD_CALIBRATIONS;
+    let cf = db.cf_handle(cf_name).ok_or_else(|| {
+        context_graph_mejepa::EvalError::new(
+            context_graph_mejepa::EvalErrorCode::Store,
+            format!("missing column family {cf_name}"),
+        )
+    })?;
+    Ok(db
+        .iterator_cf(cf, IteratorMode::Start)
+        .filter_map(Result::ok)
+        .filter(|(key, _)| {
+            key.as_ref()
+                .starts_with(context_graph_mejepa_cf::FROZEN_Q4_CALIBRATION_KEY_PREFIX.as_bytes())
+        })
+        .count())
 }
 
 fn cf_count(db: &DB, cf_name: &'static str) -> Result<usize, context_graph_mejepa::EvalError> {
@@ -476,6 +596,7 @@ fn runbook_actions(
     report: &context_graph_mejepa::EvalReport,
     weekly_files_status: &str,
     holdout_feed_status: &str,
+    q4_freeze_status: &str,
 ) -> Value {
     let mut actions = Vec::new();
     if weekly_files_status != "present" {
@@ -484,6 +605,9 @@ fn runbook_actions(
     if holdout_feed_status != "ready" {
         actions
             .push("restore weekly holdout feed under state/gold-labels before Phase G evaluation");
+    }
+    if q4_freeze_status != "frozen" {
+        actions.push("restore Q4 freeze baseline or investigate forbidden Q4 CF growth");
     }
     if !report.ship_gate_passed {
         actions.push("inspect ship_gate_failures and block Phase G promotion");

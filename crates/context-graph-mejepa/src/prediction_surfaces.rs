@@ -244,9 +244,15 @@ pub fn infer_phase_b_surfaces(
         }
     }
 
+    if crate::q4_trust_gate::Q4_DOCTRINE_FREEZE_ACTIVE {
+        surfaces.clear_q4_display_only_fields();
+    }
     populate_predicted_works(&mut surfaces, patch, context, predicted_test_pass)?;
     populate_uncovered_paths(&mut surfaces, patch, context)?;
     populate_flaky_tests(&mut surfaces, patch, context)?;
+    if crate::q4_trust_gate::Q4_DOCTRINE_FREEZE_ACTIVE {
+        surfaces.clear_q4_display_only_fields();
+    }
     validate_surfaces(&surfaces)?;
     Ok(surfaces)
 }
@@ -526,7 +532,7 @@ mod tests {
     use crate::types::{AstDiff, DiffHunk, Language, PatchBundle, TaskEnvironment, TaskId, TestId};
 
     #[test]
-    fn detects_hardcoded_secret_and_empty_edge() {
+    fn q4_display_only_surfaces_stay_empty_under_freeze() {
         let patch = PatchBundle::try_new(
             AstDiff {
                 hunks: vec![DiffHunk {
@@ -558,8 +564,7 @@ mod tests {
             skill_citations: Vec::new(),
         };
         let surfaces = infer_phase_b_surfaces(&patch, &context, &[0.9]).unwrap();
-        assert_eq!(surfaces.predicted_security_concerns.len(), 1);
-        assert_eq!(surfaces.predicted_edge_cases.len(), 1);
+        assert_eq!(surfaces.q4_display_only_field_count(), 0);
     }
 
     #[test]
@@ -598,6 +603,43 @@ mod tests {
         assert_eq!(surfaces.predicted_works.len(), 1);
         assert!(surfaces.predicted_works[0].claim.contains("binary_search"));
         assert!(!surfaces.predicted_works[0].supporting_embedders.is_empty());
+    }
+
+    #[test]
+    fn q4_security_signal_does_not_suppress_predicted_works_under_freeze() {
+        let patch = PatchBundle::try_new(
+            AstDiff {
+                hunks: vec![DiffHunk {
+                    path: "src/config.py".into(),
+                    pre_sha: [0; 32],
+                    post_sha: [1; 32],
+                    before: "def load_config():\n    return {}\n".to_string(),
+                    after: "def load_config():\n    api_key = \"sk-test\"\n    return {\"api_key\": api_key}\n"
+                        .to_string(),
+                }],
+            },
+            Vec::new(),
+            "known good config loader".to_string(),
+            [1; 32],
+        )
+        .unwrap();
+        let context = TaskContext {
+            task_id: TaskId("task-py-g-114-unit".to_string()),
+            session_id: [1; 16],
+            language: Language::Python,
+            problem_statement: "KnownGood config loader".to_string(),
+            tests: vec![TestId("tests/test_config.py::test_load_config".to_string())],
+            environment: TaskEnvironment {
+                repo_root: ".".into(),
+                python_version: Some("3.12".to_string()),
+                os: "linux".to_string(),
+            },
+            claim_graph: None,
+            skill_citations: Vec::new(),
+        };
+        let surfaces = infer_phase_b_surfaces(&patch, &context, &[0.93]).unwrap();
+        assert_eq!(surfaces.q4_display_only_field_count(), 0);
+        assert_eq!(surfaces.predicted_works.len(), 1);
     }
 
     #[test]

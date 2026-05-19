@@ -11,14 +11,20 @@ fn missing_support_fails_closed() {
 }
 
 #[test]
-fn complete_single_head_support_flips_only_that_head() {
+fn complete_single_head_support_stays_display_only_under_freeze() {
     let mut catalog = Q4EvidenceCatalog::default();
     catalog.heads.insert(
         Q4HeadKind::Perf,
         complete_evidence_for(Q4HeadKind::Perf, Q4_DEFAULT_PER_SLOT_EVIDENCE_ROOT),
     );
     let report = evaluate_q4_trust_gate(&catalog).unwrap();
-    assert!(report.head(Q4HeadKind::Perf).unwrap().q4_head_ready);
+    let perf = report.head(Q4HeadKind::Perf).unwrap();
+    assert!(!perf.q4_head_ready);
+    assert!(!perf.trusted_in_decision);
+    assert!(perf
+        .missing_requirements
+        .iter()
+        .any(|item| item == Q4_DOCTRINE_FREEZE_REASON));
     assert!(!report.q4_head_ready);
     assert!(!report.head(Q4HeadKind::Accuracy).unwrap().q4_head_ready);
 }
@@ -60,6 +66,58 @@ fn wrong_slot_names_fail_closed() {
         reasoning.unexpected_slots.len(),
         Q4_DEFAULT_REQUIRED_SLOT_COUNT
     );
+}
+
+#[test]
+fn trusted_q4_consequences_omits_all_heads_under_freeze() {
+    let catalog = Q4EvidenceCatalog {
+        heads: default_q4_requirements()
+            .into_iter()
+            .map(|requirement| {
+                (
+                    requirement.head,
+                    complete_evidence_for(requirement.head, Q4_DEFAULT_PER_SLOT_EVIDENCE_ROOT),
+                )
+            })
+            .collect(),
+    };
+    let report = evaluate_q4_trust_gate(&catalog).unwrap();
+    let prediction = crate::RealityPredictionBuilder::from_parts(
+        crate::TaskId("q4-freeze-unit".to_string()),
+        [0x14; 16],
+        crate::Language::Python,
+        crate::ConformalSet::try_new(vec![crate::OracleOutcome::Pass], 0.1, 0.2).unwrap(),
+    )
+    .prediction_id([0x15; 16])
+    .witness_hash(crate::WitnessHash([0x16; 32]))
+    .verdict(crate::Verdict::Pass)
+    .confidence_interval(crate::ConformalInterval {
+        lower: 0.7,
+        upper: 0.9,
+        ..crate::ConformalInterval::default()
+    })
+    .predicted_oracle_pass(0.8)
+    .predicted_test_pass(vec![0.8])
+    .ood_score(0.1)
+    .calibrated_confidence(0.8)
+    .provenance(crate::PredictionProvenance {
+        predictor_version: "q4-freeze-unit".to_string(),
+        constellation_version: "q4-freeze-unit".to_string(),
+        calibration_version: "q4-freeze-unit".to_string(),
+        active_pointer: "q4-freeze-unit".to_string(),
+    })
+    .source_panel_sha([0x17; 32])
+    .calibration_version("q4-freeze-unit")
+    .build()
+    .unwrap();
+    let trusted = trusted_q4_consequences(&prediction, &report);
+
+    assert!(!trusted.q4_trust_decision_eligible);
+    assert!(trusted.perf_regressions.is_empty());
+    assert!(trusted.accuracy_degradations.is_empty());
+    assert!(trusted.cost_regressions.is_empty());
+    assert_eq!(trusted.reasoning_class, None);
+    assert_eq!(trusted.omitted_heads.len(), default_q4_requirements().len());
 }
 
 fn complete_evidence_for(head: Q4HeadKind, slot_root: &str) -> Q4HeadEvidence {

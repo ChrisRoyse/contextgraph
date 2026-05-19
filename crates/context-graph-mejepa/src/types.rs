@@ -1446,6 +1446,34 @@ pub struct PhaseBPredictionSurfaces {
     pub predicted_reasoning_class: ReasoningClass,
 }
 
+impl PhaseBPredictionSurfaces {
+    pub fn clear_q4_display_only_fields(&mut self) {
+        self.predicted_edge_cases.clear();
+        self.predicted_latent_bugs.clear();
+        self.predicted_tech_debt_added.clear();
+        self.predicted_dead_code.clear();
+        self.predicted_redundant_code.clear();
+        self.predicted_perf_regressions.clear();
+        self.predicted_security_concerns.clear();
+        self.predicted_accuracy_degradations.clear();
+        self.predicted_cost_regressions.clear();
+        self.predicted_reasoning_class = ReasoningClass::Mute;
+    }
+
+    pub fn q4_display_only_field_count(&self) -> usize {
+        self.predicted_edge_cases.len()
+            + self.predicted_latent_bugs.len()
+            + self.predicted_tech_debt_added.len()
+            + self.predicted_dead_code.len()
+            + self.predicted_redundant_code.len()
+            + self.predicted_perf_regressions.len()
+            + self.predicted_security_concerns.len()
+            + self.predicted_accuracy_degradations.len()
+            + self.predicted_cost_regressions.len()
+            + usize::from(self.predicted_reasoning_class != ReasoningClass::Mute)
+    }
+}
+
 pub const HIERARCHICAL_PREDICTION_SCHEMA_VERSION: u32 = 1;
 pub const SLOT_ATTRIBUTION_SCHEMA_VERSION: u32 = 1;
 
@@ -2585,6 +2613,38 @@ impl RealityPrediction {
         Ok(value)
     }
 
+    pub fn clear_q4_display_only_fields(&mut self) {
+        self.predicted_edge_cases.clear();
+        self.predicted_latent_bugs.clear();
+        self.predicted_tech_debt_added.clear();
+        self.predicted_dead_code.clear();
+        self.predicted_redundant_code.clear();
+        self.predicted_perf_regressions.clear();
+        self.predicted_security_concerns.clear();
+        self.predicted_accuracy_degradations.clear();
+        self.predicted_cost_regressions.clear();
+        self.predicted_reasoning_class = ReasoningClass::Mute;
+        self.slot_attributions
+            .retain(|item| item.source != SlotAttributionSource::Q4Head);
+    }
+
+    pub fn q4_display_only_field_count(&self) -> usize {
+        self.predicted_edge_cases.len()
+            + self.predicted_latent_bugs.len()
+            + self.predicted_tech_debt_added.len()
+            + self.predicted_dead_code.len()
+            + self.predicted_redundant_code.len()
+            + self.predicted_perf_regressions.len()
+            + self.predicted_security_concerns.len()
+            + self.predicted_accuracy_degradations.len()
+            + self.predicted_cost_regressions.len()
+            + usize::from(self.predicted_reasoning_class != ReasoningClass::Mute)
+    }
+
+    pub fn q4_display_only_fields_empty(&self) -> bool {
+        self.q4_display_only_field_count() == 0
+    }
+
     pub fn validate(&self) -> Result<(), MejepaInferError> {
         validate_non_empty_id("task_id", &self.task_id.0)?;
         if self.covered_chunks.len() > MAX_CHUNKS {
@@ -3643,7 +3703,7 @@ impl RealityPredictionBuilder {
     }
 
     pub fn build(self) -> Result<RealityPrediction, MejepaInferError> {
-        RealityPrediction::try_new(RealityPrediction {
+        let mut prediction = RealityPrediction {
             prediction_id: self.prediction_id,
             witness_hash: self.witness_hash,
             task_id: self.task_id,
@@ -3693,7 +3753,11 @@ impl RealityPredictionBuilder {
             constellation_intelligence: self.constellation_intelligence,
             slot_attributions: self.slot_attributions,
             label_context: self.label_context,
-        })
+        };
+        if crate::q4_trust_gate::Q4_DOCTRINE_FREEZE_ACTIVE {
+            prediction.clear_q4_display_only_fields();
+        }
+        RealityPrediction::try_new(prediction)
     }
 
     pub fn matched_fingerprint(mut self, value: Option<MatchedFingerprintEvidence>) -> Self {
@@ -5027,6 +5091,68 @@ mod tests {
         assert_eq!(decoded.prediction_id, prediction.prediction_id);
         assert_eq!(decoded.label_context, PredictionLabelContext::default());
         assert!(!decoded.slot_attributions.is_empty());
+    }
+
+    #[test]
+    fn builder_clears_q4_display_only_fields_for_new_predictions() {
+        let chunk = ChunkId("src/unit.py#0".to_string());
+        let mut surfaces = PhaseBPredictionSurfaces::default();
+        surfaces
+            .predicted_perf_regressions
+            .push(PredictedPerfRegression {
+                axis: PerfAxis::CpuMs,
+                chunk: chunk.clone(),
+                predicted_delta_pct: 12.0,
+                baseline_value: None,
+                confidence: 0.8,
+                explanation: "legacy Q4 perf observation".to_string(),
+            });
+        surfaces
+            .predicted_security_concerns
+            .push(PredictedSecurityConcern {
+                class: SecurityConcernClass::HardcodedSecret,
+                chunk,
+                line_range: (1, 1),
+                cvss_estimate: Some(7.5),
+                explanation: "legacy Q4 security observation".to_string(),
+            });
+        surfaces.predicted_reasoning_class = ReasoningClass::Overclaiming;
+
+        let prediction = RealityPredictionBuilder::from_parts(
+            TaskId("q4-freeze-build".to_string()),
+            [0x61; 16],
+            Language::Python,
+            ConformalSet::try_new(vec![OracleOutcome::Pass], 0.1, 0.2).unwrap(),
+        )
+        .prediction_id([0x62; 16])
+        .witness_hash(WitnessHash([0x63; 32]))
+        .verdict(Verdict::Pass)
+        .confidence_interval(ConformalInterval {
+            lower: 0.6,
+            upper: 0.8,
+            ..ConformalInterval::default()
+        })
+        .predicted_oracle_pass(0.8)
+        .predicted_test_pass(vec![0.8])
+        .ood_score(0.1)
+        .calibrated_confidence(0.8)
+        .phase_b_surfaces(surfaces)
+        .provenance(PredictionProvenance {
+            predictor_version: "q4-freeze-build".to_string(),
+            constellation_version: "q4-freeze-build".to_string(),
+            calibration_version: "q4-freeze-build".to_string(),
+            active_pointer: "q4-freeze-build".to_string(),
+        })
+        .source_panel_sha([0x64; 32])
+        .calibration_version("q4-freeze-build")
+        .build()
+        .unwrap();
+
+        assert!(prediction.q4_display_only_fields_empty());
+        assert!(prediction
+            .slot_attributions
+            .iter()
+            .all(|item| item.source != SlotAttributionSource::Q4Head));
     }
 
     #[test]

@@ -6,7 +6,7 @@ pub mod predict;
 pub mod sigreg;
 pub mod vicreg;
 
-use crate::config::LossCoefficients;
+use crate::config::{LossCoefficients, Q4_LOSS_COEFFICIENT_MAX};
 use crate::error::{TrainerError, TrainerErrorCode};
 use candle_core::Tensor;
 use serde_json::json;
@@ -86,6 +86,9 @@ pub fn compose_l_full(
         batch_metadata.current_task_centroids.as_deref(),
     )?;
 
+    let effective_alpha_reasoning = coefficients
+        .alpha_reasoning
+        .clamp(0.0, Q4_LOSS_COEFFICIENT_MAX);
     let weighted = [
         ("predict", 1.0, &l_predict),
         ("variance", coefficients.lambda_var, &l_variance),
@@ -98,7 +101,7 @@ pub fn compose_l_full(
         ("traceback", coefficients.alpha_trace, &l_traceback),
         ("hunk_attribution", coefficients.alpha_hunk, &l_hunk),
         ("collateral", coefficients.alpha_adjacent, &l_collateral),
-        ("reasoning", coefficients.alpha_reasoning, &l_reasoning),
+        ("reasoning", effective_alpha_reasoning, &l_reasoning),
         ("operator_match", coefficients.alpha_overrides, &l_operator),
         (
             "constellation_centroid",
@@ -187,5 +190,49 @@ mod tests {
         assert_eq!(loss.components.len(), 14);
         assert!(loss.components["sigreg"].is_finite());
         assert!(loss.total.is_finite());
+    }
+
+    #[test]
+    fn direct_compose_clamps_q4_reasoning_loss_under_freeze() {
+        let device = Device::Cpu;
+        let p = Tensor::from_slice(&[1f32, 0., 1., 0.], (2, 2), &device).unwrap();
+        let t = p.clone();
+        let aux = AuxOutputs {
+            warnings: Tensor::zeros((2, 1), candle_core::DType::F32, &device).unwrap(),
+            runtime_log: Tensor::zeros((2, 1), candle_core::DType::F32, &device).unwrap(),
+            rss: Tensor::zeros((2, 1), candle_core::DType::F32, &device).unwrap(),
+            traceback_cluster_logits: Tensor::zeros((2, 2), candle_core::DType::F32, &device)
+                .unwrap(),
+            hunk_verdicts: Tensor::zeros((2, 1), candle_core::DType::F32, &device).unwrap(),
+            adjacent_outcomes: Tensor::zeros((2, 1), candle_core::DType::F32, &device).unwrap(),
+            reasoning_embedding: p.clone(),
+            operator_match: Tensor::zeros((2, 2), candle_core::DType::F32, &device).unwrap(),
+        };
+        let meta = BatchMetadata {
+            actual_warnings: aux.warnings.clone(),
+            actual_runtime_log: aux.runtime_log.clone(),
+            actual_rss: aux.rss.clone(),
+            actual_traceback_cluster_id: Tensor::from_slice(&[0u32, 1], 2, &device).unwrap(),
+            actual_hunk_verdicts: aux.hunk_verdicts.clone(),
+            actual_adjacent_outcomes: aux.adjacent_outcomes.clone(),
+            actual_cot_cluster_id: Tensor::from_slice(&[0u32, 1], 2, &device).unwrap(),
+            override_flags: vec![false, false],
+            override_gold_labels: Tensor::zeros((2, 2), candle_core::DType::F32, &device).unwrap(),
+            current_task_centroids: Some(vec![p.clone()]),
+        };
+        let base = compose_l_full(&p, &t, &aux, &meta, &LossCoefficients::default()).unwrap();
+        let forced_q4 = compose_l_full(
+            &p,
+            &t,
+            &aux,
+            &meta,
+            &LossCoefficients {
+                alpha_reasoning: 10.0,
+                ..LossCoefficients::default()
+            },
+        )
+        .unwrap();
+        assert!(base.components["reasoning"] > 0.0);
+        assert!((base.total - forced_q4.total).abs() < f32::EPSILON);
     }
 }

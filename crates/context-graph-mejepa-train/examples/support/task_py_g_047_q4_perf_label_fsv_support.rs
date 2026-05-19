@@ -368,5 +368,3 @@ fn metrics_json(rows: &[(&str, f64, Option<f64>)]) -> String {
     })
     .to_string()
 }
-
-fn main() {}

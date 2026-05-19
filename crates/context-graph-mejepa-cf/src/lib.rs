@@ -95,20 +95,38 @@ pub const CF_MEJEPA_PARK_LIST: &str = "CF_MEJEPA_PARK_LIST";
 pub const CF_MEJEPA_COLD_CELL_METRICS: &str = "CF_MEJEPA_COLD_CELL_METRICS";
 // TASK-RWD-208 / TASK-PY-G-074 — normalized mypy/pyright/ruff labels.
 pub const CF_MEJEPA_STATIC_ANALYSIS_SIGNALS: &str = "CF_MEJEPA_STATIC_ANALYSIS_SIGNALS";
+// FROZEN 2026-05-19: see futurebuild/05 §16.
 // TASK-RWD-204 / TASK-PY-G-046 — normalized Bandit/Semgrep Q4 security labels.
 pub const CF_MEJEPA_Q4_SECURITY_LABELS: &str = "CF_MEJEPA_Q4_SECURITY_LABELS";
+// FROZEN 2026-05-19: see futurebuild/05 §16.
 // TASK-PY-G-047 — normalized pytest-benchmark/cProfile Q4 perf labels.
 pub const CF_MEJEPA_Q4_PERF_LABELS: &str = "CF_MEJEPA_Q4_PERF_LABELS";
+// FROZEN 2026-05-19: see futurebuild/05 §16.
 // TASK-PY-G-048 — normalized Python accuracy/data-metric Q4 labels.
 pub const CF_MEJEPA_Q4_ACCURACY_LABELS: &str = "CF_MEJEPA_Q4_ACCURACY_LABELS";
+// FROZEN 2026-05-19: see futurebuild/05 §16.
 // TASK-PY-G-049 — normalized Python CI/dependency/wheel-size Q4 cost labels.
 pub const CF_MEJEPA_Q4_COST_LABELS: &str = "CF_MEJEPA_Q4_COST_LABELS";
+// FROZEN 2026-05-19: see futurebuild/05 §16.
 // TASK-PY-G-050 — normalized agent-prose / oracle-outcome Q4 reasoning labels.
 pub const CF_MEJEPA_Q4_REASONING_LABELS: &str = "CF_MEJEPA_Q4_REASONING_LABELS";
+// FROZEN 2026-05-19: see futurebuild/05 §16.
 // TASK-PY-G-051 — Q4 non-trivial-on-Pass annotation rows.
 pub const CF_MEJEPA_Q4_PASS_ANNOTATIONS: &str = "CF_MEJEPA_Q4_PASS_ANNOTATIONS";
+// FROZEN 2026-05-19: Q4 entries are frozen/display-only. The CF remains open
+// for non-Q4 calibration rows until the next schema-version cleanup.
 // TASK-PY-G-050 / TASK-PY-G-012 — per-head calibration rows.
 pub const CF_MEJEPA_HEAD_CALIBRATIONS: &str = "CF_MEJEPA_HEAD_CALIBRATIONS";
+pub const FROZEN_Q4_CFS: &[&str] = &[
+    CF_MEJEPA_Q4_SECURITY_LABELS,
+    CF_MEJEPA_Q4_PERF_LABELS,
+    CF_MEJEPA_Q4_ACCURACY_LABELS,
+    CF_MEJEPA_Q4_COST_LABELS,
+    CF_MEJEPA_Q4_REASONING_LABELS,
+    CF_MEJEPA_Q4_PASS_ANNOTATIONS,
+];
+pub const FROZEN_Q4_CALIBRATION_KEY_PREFIX: &str = "q4cal::";
+pub const FROZEN_Q4_CALIBRATION_COUNT_KEY: &str = "CF_MEJEPA_HEAD_CALIBRATIONS:q4cal::*";
 // TASK-PY-G-044 — per-cell multi-head contradiction abstain thresholds.
 pub const CF_MEJEPA_CONTRADICTION_THRESHOLDS: &str = "CF_MEJEPA_CONTRADICTION_THRESHOLDS";
 // TASK-PY-G-090 — discovered slot-pair consensus/contradiction relationship patterns.

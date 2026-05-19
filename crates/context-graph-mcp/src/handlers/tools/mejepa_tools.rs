@@ -2739,7 +2739,7 @@ fn q4_projection(
         "slotAttributionsByHead": q4_slot_attributions_by_head(prediction),
         "trustGate": trust_gate,
         "trustedConsequences": trusted,
-        "policy": "raw Q4 observations are display-only until the matching head is ready"
+        "policy": "raw Q4 observations are display-only historical data and never influence trust decisions under the Q4 doctrine freeze"
     })
 }
 

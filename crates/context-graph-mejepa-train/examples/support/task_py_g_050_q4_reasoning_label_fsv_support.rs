@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! Support-only helpers for the archived Q4 reasoning producer FSV.
 
 use context_graph_mejepa::q4_trust_gate::{Q4EvidenceCatalog, Q4HeadEvidence, Q4HeadKind};
 use context_graph_mejepa_instruments::{

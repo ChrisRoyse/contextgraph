@@ -502,5 +502,3 @@ fn output(phase: Q4CostScanPhase, stdout: &str) -> Q4CostToolOutput {
         toolchain_missing: false,
     }
 }
-
-fn main() {}

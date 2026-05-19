@@ -44,7 +44,7 @@ pub use compression_progress::{
     CompressionProgressReport, CompressionProgressState, DEFAULT_COMPRESSION_PROGRESS_EPSILON_BITS,
     DEFAULT_COMPRESSION_PROGRESS_WINDOW,
 };
-pub use config::{LossCoefficients, TrainingConfig};
+pub use config::{LossCoefficients, TrainingConfig, Q4_LOSS_COEFFICIENT_MAX};
 pub use error::{TrainerError, TrainerErrorCode};
 pub use learning_signal::{
     compute_l_step, compute_per_head_learning_signal, DeltaKComponents, DeltaOmegaComponents,

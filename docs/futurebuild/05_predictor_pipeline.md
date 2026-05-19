@@ -691,6 +691,8 @@ PageRank scores weight `BatchSampler` and Fisher (TASK-EK-016 / EK-017 / EK-016-
 - **No Q4 contribution to the predictor's loss** — `inverse_map_coefficient` and any future per-head coefficients on Q4 heads default to 0 and stay there. The trainer ignores Q4 producer rows when assembling the replay batch.
 - **No Q4 trust gate consumption** — `mejepa_predict_latest` and `mejepa_inspect_prediction` continue to expose `q4.rawObservations` for read-only audit; `q4.trustedConsequences` is no longer populated by new predictions.
 
+**Code enforcement added by #408 / TASK-PY-G-114.** `Q4_DOCTRINE_FREEZE_ACTIVE` is true in `q4_trust_gate.rs`; the trust gate forces every Q4 head to `trusted_in_decision=false`, the builder and prediction-surface inference clear Q4 display-only fields on new predictions, `Q4_LOSS_COEFFICIENT_MAX` is pinned to `0.0`, and `q4_inputs_to_ship_gate()` returns `0`. `mejepa_weekly_eval_dashboard` now has a `q4Freeze` section that reads the frozen-CF baseline and fails closed if any deprecated-readable Q4 CF grows.
+
 **Why removed.** Q4 questions are ambiguous (§0): they require an arbitrary threshold on a continuous heuristic, or ask a taste question that reality does not render a binary verdict on. Predicting them trains the system to match heuristic tools (mutmut, semgrep, vulture, hyperfine, pytest-benchmark) rather than reality. The system does not predict ambiguous things because predicting noise corrupts the mistake-driven learning loop (§9.6).
 
 **Historical record of the frozen Q4 producers (kept here for continuity):**
@@ -709,6 +711,8 @@ PageRank scores weight `BatchSampler` and Fisher (TASK-EK-016 / EK-017 / EK-016-
 | Q4 security/structural producer expansion | #402 | Closed as `wontfix` (ambiguity boundary) |
 
 The corresponding `CF_*_Q4_*` CFs are NOT deleted (would force a schema-version bump and DB rewipe); they are deprecated-readable. A future schema-version bump may delete them; tracked separately under `phase:cleanup`.
+
+**#408 FSV.** One-time freeze proof lives at `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/`: `allPassed=true`, `q4RowCountDelta=0`, `q4LossCoefficientMax=0.0`, `q4InputsToShipGate=0`, historical Q4 display-only fields remain readable, and new predictions return zero Q4 display-only fields. Main FSV sha256 `eaec2c41ebab0b196be0674ea435526c10bc932349df76c54048ba8b3d7c43ed`; independent readback sha256 `1d34a219def6e423579af0ce3d1dee45342cf172c52d5210772a7ee81d628fb9`.
 
 **What replaces Q4 in the operator-facing answer.** Operators who used to want "what else could go wrong" answers get them from the **named failure mode** Q3 surface (§4.3): if the binary verdict is Fail, the named failure mode + closest exemplar tell the operator the specific named cause. If the binary verdict is Pass, the operator-facing answer is "Pass + reasons-to-trust: claim landed in bytes (Q1=Yes), oracle agrees (Q2=Pass), closest exemplars all Pass" — not a list of speculative ambiguous risks.
 

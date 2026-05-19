@@ -308,5 +308,3 @@ fn output(phase: Q4AccuracyScanPhase, stdout: &str) -> Q4AccuracyToolOutput {
         toolchain_missing: false,
     }
 }
-
-fn main() {}

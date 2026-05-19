@@ -11,7 +11,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[path = "task_py_g_049_q4_cost_label_fsv_support.rs"]
+#[path = "support/task_py_g_049_q4_cost_label_fsv_support.rs"]
 mod task_py_g_049_q4_cost_label_fsv_support;
 
 use task_py_g_049_q4_cost_label_fsv_support::*;

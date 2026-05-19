@@ -10,7 +10,7 @@ use context_graph_mejepa::{
     FeedbackKind, Language, MutationCategory, PredictionId, RegressionCheck,
     StateTransferDiagnostic, SurpriseEvent, SurpriseSeverity, WitnessHash,
 };
-use rocksdb::{WriteOptions, DB};
+use rocksdb::{IteratorMode, WriteOptions, DB};
 use serde_json::json;
 
 use crate::protocol::JsonRpcId;
@@ -20,7 +20,9 @@ async fn weekly_eval_dashboard_writes_phase_f_fsv_artifact() {
     let (handlers, _handler_tempdir) =
         crate::handlers::tests::create_protocol_test_handlers().await;
     let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
-    let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-weekly-dashboard-fsv");
+    let fsv_root = std::env::var("CG_WEEKLY_DASHBOARD_FSV_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp/contextgraph/fsv/phase-f-weekly-dashboard-fsv"));
     std::fs::create_dir_all(&fsv_root).unwrap();
     let run_root = fsv_root.join(format!("run-{}-{}", started_at_unix_ms, std::process::id()));
     std::fs::create_dir_all(&run_root).unwrap();
@@ -47,6 +49,7 @@ async fn weekly_eval_dashboard_writes_phase_f_fsv_artifact() {
     let happy_pass = happy_result["isError"] == false
         && happy_structured["holdoutFeed"]["status"] == "ready"
         && happy_structured["weeklyFiles"]["status"] == "present"
+        && happy_structured["q4Freeze"]["status"] == "frozen"
         && happy_structured["requiredWeeklySections"]["allPresent"] == true
         && happy_structured["agentFeedback"]["counts"]["surprise"] == 1
         && (happy_calibration_ece - 0.25).abs() < f64::EPSILON;
@@ -87,6 +90,21 @@ async fn weekly_eval_dashboard_writes_phase_f_fsv_artifact() {
         .await;
     let corrupt_export_result = corrupt_export_response.result.unwrap();
 
+    let q4_growth = seed_dashboard_fixture(&run_root.join("q4-growth"), true, true);
+    seed_q4_growth_row(&q4_growth.db_path);
+    let q4_growth_response = handlers
+        .call_mejepa_weekly_eval_dashboard(
+            Some(JsonRpcId::Number(38005)),
+            json!({
+                "dbPath": q4_growth.db_path,
+                "dRoot": q4_growth.d_root,
+                "exportsRoot": q4_growth.exports_root,
+                "maxCells": 10
+            }),
+        )
+        .await;
+    let q4_growth_result = q4_growth_response.result.unwrap();
+
     let unknown_arg_response = handlers
         .call_mejepa_weekly_eval_dashboard(
             Some(JsonRpcId::Number(38004)),
@@ -109,6 +127,14 @@ async fn weekly_eval_dashboard_writes_phase_f_fsv_artifact() {
             "actual": corrupt_export_result,
             "pass": corrupt_export_result["structuredContent"]["weeklyFiles"]["jsonHashReadback"]["status"]
                 == "invalid"
+        }),
+        json!({
+            "case": "q4_frozen_cf_growth_fails_closed",
+            "expected": "q4Freeze.status=growth_detected",
+            "actual": q4_growth_result,
+            "pass": q4_growth_result["structuredContent"]["q4Freeze"]["status"]
+                == "growth_detected"
+                && q4_growth_result["structuredContent"]["q4Freeze"]["failClosed"] == true
         }),
         json!({
             "case": "unknown_argument_fails_schema",
@@ -181,6 +207,7 @@ fn seed_dashboard_fixture(
     let report = synthetic_dashboard_report(&report_date);
     eval_store.persist_report(&report).unwrap();
     seed_surprise_feedback(db.as_ref());
+    write_q4_freeze_baseline(&d_root, db.as_ref());
     if write_holdout {
         let repo = run_root.join("repo");
         std::fs::create_dir_all(&repo).unwrap();
@@ -214,6 +241,67 @@ fn seed_dashboard_fixture(
         exports_root,
         report_date,
     }
+}
+
+fn write_q4_freeze_baseline(d_root: &Path, db: &DB) {
+    let mut counts = context_graph_mejepa_cf::FROZEN_Q4_CFS
+        .iter()
+        .map(|cf| {
+            let handle = db.cf_handle(*cf).unwrap();
+            let count = db.iterator_cf(handle, IteratorMode::Start).count();
+            ((*cf).to_string(), count)
+        })
+        .collect::<BTreeMap<_, _>>();
+    counts.insert(
+        context_graph_mejepa_cf::FROZEN_Q4_CALIBRATION_COUNT_KEY.to_string(),
+        q4_calibration_count(db),
+    );
+    let path = d_root.join("state/q4-freeze/q4_frozen_cf_counts.json");
+    context_graph_mejepa::eval::report::write_json_0600(&path, &counts).unwrap();
+}
+
+fn seed_q4_growth_row(db_path: &Path) {
+    let db = context_graph_mejepa_hygiene::open_hygiene_rocksdb(db_path).unwrap();
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_Q4_PERF_LABELS)
+        .unwrap();
+    let mut opts = WriteOptions::default();
+    opts.set_sync(true);
+    db.put_cf_opt(cf, b"forbidden-q4-growth", b"display-only row grew", &opts)
+        .unwrap();
+    let readback = db.get_cf(cf, b"forbidden-q4-growth").unwrap().unwrap();
+    assert_eq!(readback.as_slice(), b"display-only row grew");
+    let calibration_cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_HEAD_CALIBRATIONS)
+        .unwrap();
+    db.put_cf_opt(
+        calibration_cf,
+        b"q4cal::forbidden-growth",
+        b"display-only q4 calibration grew",
+        &opts,
+    )
+    .unwrap();
+    let calibration_readback = db
+        .get_cf(calibration_cf, b"q4cal::forbidden-growth")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        calibration_readback.as_slice(),
+        b"display-only q4 calibration grew"
+    );
+}
+
+fn q4_calibration_count(db: &DB) -> usize {
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_HEAD_CALIBRATIONS)
+        .unwrap();
+    db.iterator_cf(cf, IteratorMode::Start)
+        .filter_map(Result::ok)
+        .filter(|(key, _)| {
+            key.as_ref()
+                .starts_with(context_graph_mejepa_cf::FROZEN_Q4_CALIBRATION_KEY_PREFIX.as_bytes())
+        })
+        .count()
 }
 
 fn synthetic_dashboard_report(report_date: &str) -> EvalReport {

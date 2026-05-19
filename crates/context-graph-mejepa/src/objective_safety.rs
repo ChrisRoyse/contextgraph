@@ -281,6 +281,14 @@ pub fn evaluate_mejepa_objective(
     Ok(report)
 }
 
+pub fn q4_inputs_to_ship_gate() -> usize {
+    if crate::q4_trust_gate::Q4_DOCTRINE_FREEZE_ACTIVE {
+        0
+    } else {
+        4
+    }
+}
+
 fn objective_cost(
     objective: &MejepaObjective,
     surfaces: &PhaseBPredictionSurfaces,
@@ -288,26 +296,43 @@ fn objective_cost(
 ) -> Result<ObjectiveCostBreakdown, MejepaInferError> {
     let weight_sum = objective.cost.validate()?;
     let oracle_fail_score = (1.0 - predicted_oracle_pass).clamp(0.0, 1.0);
-    let perf_regression_score = surfaces
-        .predicted_perf_regressions
-        .iter()
-        .map(perf_cost)
-        .fold(0.0_f32, f32::max);
-    let security_risk_score = surfaces
-        .predicted_security_concerns
-        .iter()
-        .map(security_cost)
-        .fold(0.0_f32, f32::max);
-    let accuracy_degradation_score = surfaces
-        .predicted_accuracy_degradations
-        .iter()
-        .map(|item| (-item.predicted_delta).clamp(0.0, 1.0))
-        .fold(0.0_f32, f32::max);
-    let cost_regression_score = surfaces
-        .predicted_cost_regressions
-        .iter()
-        .map(cost_regression_cost)
-        .fold(0.0_f32, f32::max);
+    let q4_frozen = crate::q4_trust_gate::Q4_DOCTRINE_FREEZE_ACTIVE;
+    let perf_regression_score = if q4_frozen {
+        0.0
+    } else {
+        surfaces
+            .predicted_perf_regressions
+            .iter()
+            .map(perf_cost)
+            .fold(0.0_f32, f32::max)
+    };
+    let security_risk_score = if q4_frozen {
+        0.0
+    } else {
+        surfaces
+            .predicted_security_concerns
+            .iter()
+            .map(security_cost)
+            .fold(0.0_f32, f32::max)
+    };
+    let accuracy_degradation_score = if q4_frozen {
+        0.0
+    } else {
+        surfaces
+            .predicted_accuracy_degradations
+            .iter()
+            .map(|item| (-item.predicted_delta).clamp(0.0, 1.0))
+            .fold(0.0_f32, f32::max)
+    };
+    let cost_regression_score = if q4_frozen {
+        0.0
+    } else {
+        surfaces
+            .predicted_cost_regressions
+            .iter()
+            .map(cost_regression_cost)
+            .fold(0.0_f32, f32::max)
+    };
     let total_cost = (oracle_fail_score * objective.cost.oracle_fail
         + perf_regression_score * objective.cost.perf_regression
         + security_risk_score * objective.cost.security_risk
@@ -391,18 +416,20 @@ fn detect_secret_exposure(
     hard_block: bool,
     out: &mut Vec<SafetyConstraintViolation>,
 ) {
-    for concern in &surfaces.predicted_security_concerns {
-        if matches!(
-            concern.class,
-            SecurityConcernClass::HardcodedSecret | SecurityConcernClass::LoggingSecret
-        ) {
-            out.push(SafetyConstraintViolation {
-                constraint: SafetyConstraintKind::NoSecretExposure,
-                chunk: concern.chunk.clone(),
-                severity: Severity::Critical,
-                hard_block,
-                reason: concern.explanation.clone(),
-            });
+    if !crate::q4_trust_gate::Q4_DOCTRINE_FREEZE_ACTIVE {
+        for concern in &surfaces.predicted_security_concerns {
+            if matches!(
+                concern.class,
+                SecurityConcernClass::HardcodedSecret | SecurityConcernClass::LoggingSecret
+            ) {
+                out.push(SafetyConstraintViolation {
+                    constraint: SafetyConstraintKind::NoSecretExposure,
+                    chunk: concern.chunk.clone(),
+                    severity: Severity::Critical,
+                    hard_block,
+                    reason: concern.explanation.clone(),
+                });
+            }
         }
     }
     for (idx, hunk) in patch.ast_diff.hunks.iter().enumerate() {
@@ -459,15 +486,17 @@ fn detect_unsafe_crypto(
     hard_block: bool,
     out: &mut Vec<SafetyConstraintViolation>,
 ) {
-    for concern in &surfaces.predicted_security_concerns {
-        if concern.class == SecurityConcernClass::InsecureCryptoAlgo {
-            out.push(SafetyConstraintViolation {
-                constraint: SafetyConstraintKind::NoUnsafeCrypto,
-                chunk: concern.chunk.clone(),
-                severity: Severity::High,
-                hard_block,
-                reason: concern.explanation.clone(),
-            });
+    if !crate::q4_trust_gate::Q4_DOCTRINE_FREEZE_ACTIVE {
+        for concern in &surfaces.predicted_security_concerns {
+            if concern.class == SecurityConcernClass::InsecureCryptoAlgo {
+                out.push(SafetyConstraintViolation {
+                    constraint: SafetyConstraintKind::NoUnsafeCrypto,
+                    chunk: concern.chunk.clone(),
+                    severity: Severity::High,
+                    hard_block,
+                    reason: concern.explanation.clone(),
+                });
+            }
         }
     }
     for (idx, hunk) in patch.ast_diff.hunks.iter().enumerate() {
@@ -614,6 +643,34 @@ mod tests {
         assert!(!report.pass_blocked);
         assert!(report.constraint_violations.is_empty());
         assert!(report.cost.total_cost < 0.10);
+    }
+
+    #[test]
+    fn q4_security_surface_does_not_block_objective_under_freeze() {
+        let patch = patch(
+            "src/auth.py",
+            "def normalize(value):\n    return value\n",
+            "def normalize(value):\n    return value.strip()\n",
+        );
+        let context = context();
+        let mut surfaces = infer_phase_b_surfaces(&patch, &context, &[0.99]).unwrap();
+        surfaces
+            .predicted_security_concerns
+            .push(PredictedSecurityConcern {
+                class: SecurityConcernClass::HardcodedSecret,
+                chunk: ChunkId("src/auth.py#0".to_string()),
+                line_range: (1, 2),
+                cvss_estimate: Some(9.1),
+                explanation: "pre-freeze Q4 display-only security row".to_string(),
+            });
+        let report =
+            evaluate_mejepa_objective(MejepaObjective::default(), &patch, &surfaces, 0.99).unwrap();
+        assert!(!report.pass_blocked);
+        assert_eq!(report.cost.security_risk_score, 0.0);
+        assert!(report.constraint_violations.iter().all(|violation| {
+            violation.constraint != SafetyConstraintKind::NoSecretExposure
+                && violation.constraint != SafetyConstraintKind::NoUnsafeCrypto
+        }));
     }
 
     #[test]

@@ -191,7 +191,7 @@ pub fn build_skill_corpus_materialization(
 
     let discovery = discover_skill_candidates(&episodes, config.discovery, created_at_unix_ms)?;
     let mut candidates = discovery.candidates;
-    candidates.sort_by(|left, right| candidate_rank(right).cmp(&candidate_rank(left)));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate_rank(candidate)));
     let selected = candidates
         .into_iter()
         .take(config.max_materialized_skills)

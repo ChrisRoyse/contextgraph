@@ -30,6 +30,9 @@ pub const Q4_DEFAULT_PER_SLOT_EVIDENCE_ROOT: &str =
 pub const Q4_REQUIRED_ACTIVE_EMBEDDER_SLOTS: [&str; 12] = [
     "e1", "e2", "e3", "e4", "e6", "e7", "e8", "e9", "e10", "e12", "e13", "e14",
 ];
+pub const Q4_DOCTRINE_FREEZE_ACTIVE: bool = true;
+pub const Q4_DOCTRINE_FREEZE_REASON: &str =
+    "Q4 frozen display-only under #408 / docs/futurebuild/05_predictor_pipeline.md §16";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -233,7 +236,10 @@ fn evaluate_q4_trust_gate_with_source(
             .get(&requirement.head)
             .cloned()
             .unwrap_or_default();
-        heads.push(evaluate_head(&requirement, &evidence)?);
+        heads.push(freeze_q4_head_readiness(evaluate_head(
+            &requirement,
+            &evidence,
+        )?));
     }
     let q4_head_ready = heads.iter().all(|head| head.q4_head_ready);
     let report = Q4TrustGateReport {
@@ -242,7 +248,7 @@ fn evaluate_q4_trust_gate_with_source(
         q4_trust_decision_eligible: q4_head_ready,
         slot_preserving_required: true,
         untrusted_output_policy:
-            "raw Q4 fields may be displayed as untrusted observations, but only ready heads may influence trust decisions"
+            "raw Q4 fields are display-only historical observations; Q4 never influences trust decisions under the doctrine freeze"
                 .to_string(),
         source_of_truth,
         heads,
@@ -293,6 +299,27 @@ pub fn trusted_q4_consequences(
         omitted_heads,
         q4_trust_decision_eligible: report.q4_trust_decision_eligible,
     }
+}
+
+fn freeze_q4_head_readiness(mut readiness: Q4HeadReadiness) -> Q4HeadReadiness {
+    if !Q4_DOCTRINE_FREEZE_ACTIVE {
+        return readiness;
+    }
+    readiness.q4_head_ready = false;
+    readiness.trusted_in_decision = false;
+    readiness.producer_supported = false;
+    readiness.calibration_supported = false;
+    readiness.per_slot_supported = false;
+    if !readiness
+        .missing_requirements
+        .iter()
+        .any(|item| item == Q4_DOCTRINE_FREEZE_REASON)
+    {
+        readiness
+            .missing_requirements
+            .push(Q4_DOCTRINE_FREEZE_REASON.to_string());
+    }
+    readiness
 }
 
 impl Q4TrustGateReport {
