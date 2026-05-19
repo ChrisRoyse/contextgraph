@@ -396,16 +396,16 @@ These measurements anchor the new Q1/Q2/Q5-binary + labeled + cross-panel + mist
 
 | Measurement | Target | FSV path (planned) | Issue |
 |---|---|---|---|
-| Failure-mode cluster purity (silhouette) on 300×8 holdout | `mean_silhouette ≥ 0.7` | `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-clustering-fsv/` | #403 / TASK-PY-G-110 |
-| Named failure mode coverage on Fail rows | `named_mode_coverage_on_fail == 1.0` | same | #403 |
-| Closest-exemplar oracle-outcome agreement | `≥ 0.85` | same | #403 |
-| Cross-panel ship-gate metric — Panel A | `≥ 0.95 × 4 windows` | `/zfs/archive/contextgraph/fsv/task-py-g-111-cross-panel-triangulation-fsv/` | #404 / TASK-PY-G-111 |
-| Cross-panel ship-gate metric — Panel B | `≥ 0.95 × 4 windows` AND `\|corr_a − corr_b\| ≤ 0.05` | same | #404 |
-| `CROSS_PANEL_GOODHART_DETECTED` synthetic-injection edge | flag fires on injected divergence | same | #404 |
-| Online-learning `mistake_repeat_rate` on rolling window | `≤ 0.05` | `/zfs/archive/contextgraph/fsv/task-py-g-112-mistake-loop-convergence-fsv/` | #405 / TASK-PY-G-112 |
-| Mistake-loop second-presentation convergence | corrected verdict on 2nd presentation of same `panel_signature_hash` | same | #405 |
-| EWC-protected unrelated-cell control delta | `±0.02` accuracy drift | same | #405 |
-| Threshold-calibration partition-disjointness audit | `overlap_with_train == 0` AND `overlap_with_eval == 0` for every τ | `/zfs/archive/contextgraph/fsv/threshold-calibration-provenance-fsv/` | #406 (new) / TASK-PY-G-113 |
+| Failure-mode cluster purity (silhouette) on 300×8 holdout | `mean_silhouette ≥ 0.7` | `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-clustering-fsv/` | #404 / TASK-PY-G-110 |
+| Named failure mode coverage on Fail rows | `named_mode_coverage_on_fail == 1.0` | same | #404 |
+| Closest-exemplar oracle-outcome agreement | `≥ 0.85` | same | #404 |
+| Cross-panel ship-gate metric — Panel A | `≥ 0.95 × 4 windows` | `/zfs/archive/contextgraph/fsv/task-py-g-111-cross-panel-triangulation-fsv/` | #405 / TASK-PY-G-111 |
+| Cross-panel ship-gate metric — Panel B | `≥ 0.95 × 4 windows` AND `\|corr_a − corr_b\| ≤ 0.05` | same | #405 |
+| `CROSS_PANEL_GOODHART_DETECTED` synthetic-injection edge | flag fires on injected divergence | same | #405 |
+| Online-learning `mistake_repeat_rate` on rolling window | `≤ 0.05` | `/zfs/archive/contextgraph/fsv/task-py-g-112-mistake-loop-convergence-fsv/` | #406 / TASK-PY-G-112 |
+| Mistake-loop second-presentation convergence | corrected verdict on 2nd presentation of same `panel_signature_hash` | same | #406 |
+| EWC-protected unrelated-cell control delta | `±0.02` accuracy drift | same | #406 |
+| Threshold-calibration partition-disjointness audit | `overlap_with_train == 0` AND `overlap_with_eval == 0` for every τ | `/zfs/archive/contextgraph/fsv/threshold-calibration-provenance-fsv/` | #407 (new) / TASK-PY-G-113 |
 | Q4 doctrine freeze (weekly recheck) | `q4_row_count_delta == 0` weekly AND `q4_loss_coefficient_max == 0.0` AND `q4_inputs_to_ship_gate == 0` | `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/` | one-time + weekly via `mejepa_weekly_eval_dashboard` |
 
 **Cross-panel ship gate (new requirement, 2026-05-19).** The 0.95 ship gate is now **conjunctive across panels**: Panel A AND Panel B must both clear 0.95 across 4 rolling windows, with their oracle correlations within 0.05 of each other. This replaces the earlier single-panel formulation and is the primary defense against encoder-matched Goodhart. The legacy `prediction_oracle_correlation ≥ 0.95` (single-panel) metric continues to be measured for historical continuity but no longer determines ship.

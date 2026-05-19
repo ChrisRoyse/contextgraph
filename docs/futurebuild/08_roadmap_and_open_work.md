@@ -12,12 +12,12 @@ The 2026-05-19 reframe (`01_overview.md §1.1`, `05_predictor_pipeline.md §0`) 
 
 | New epic | Purpose | Status |
 |---|---|---|
-| **#403 / TASK-PY-G-110** — Failure-mode labeling hierarchy | 4-level named-failure-mode hierarchy on top of the panel; meaning layer over the embedding outputs | OPEN p0 (planned filing 2026-05-19) |
-| **#404 / TASK-PY-G-111** — Cross-panel triangulation | Panel B re-scoring with non-overlapping encoders; defends 0.95 against encoder-matched Goodhart | OPEN p0 (planned filing 2026-05-19) |
-| **#405 / TASK-PY-G-112** — Online mistake-driven learning | Perceptron-family head update on every disagreement-with-reality event; `mistake_repeat_rate ≤ 0.05` convergence target | OPEN p0 (planned filing 2026-05-19) |
-| **#406 / TASK-PY-G-113** — Threshold-calibration partition-disjointness audit | Every τ calibrated on partition disjoint from train + eval; 10th-percentile floor enforced | OPEN p1 (planned filing 2026-05-19) |
-| **#407 / TASK-PY-G-114** — Q4 doctrine freeze + close out Q4 producer track | Closes #266 / #267 / #268 / #269 / #270 / #399 / #400 / #401 as `archived-display-only`; closes #402 as `wontfix` (ambiguity boundary); freezes Q4 CFs | OPEN p0 (planned filing 2026-05-19) |
-| **#408 / TASK-DOC-001** — Paper revision for binary doctrine | Rewrites PAPER §1 from "calibrated multi-head RealityPrediction" to "binary reality predictor with labeled explanation surfaces" | OPEN p2 (planned filing 2026-05-19) |
+| **#404 / TASK-PY-G-110** — Failure-mode labeling hierarchy | 4-level named-failure-mode hierarchy on top of the panel; meaning layer over the embedding outputs | OPEN p0 (planned filing 2026-05-19) |
+| **#405 / TASK-PY-G-111** — Cross-panel triangulation | Panel B re-scoring with non-overlapping encoders; defends 0.95 against encoder-matched Goodhart | OPEN p0 (planned filing 2026-05-19) |
+| **#406 / TASK-PY-G-112** — Online mistake-driven learning | Perceptron-family head update on every disagreement-with-reality event; `mistake_repeat_rate ≤ 0.05` convergence target | OPEN p0 (planned filing 2026-05-19) |
+| **#407 / TASK-PY-G-113** — Threshold-calibration partition-disjointness audit | Every τ calibrated on partition disjoint from train + eval; 10th-percentile floor enforced | OPEN p1 (planned filing 2026-05-19) |
+| **#408 / TASK-PY-G-114** — Q4 doctrine freeze + close out Q4 producer track | Closes #266 / #267 / #268 / #269 / #270 / #399 / #400 / #401 as `archived-display-only`; closes #402 as `wontfix` (ambiguity boundary); freezes Q4 CFs | OPEN p0 (planned filing 2026-05-19) |
+| **#409 / TASK-DOC-001** — Paper revision for binary doctrine | Rewrites PAPER §1 from "calibrated multi-head RealityPrediction" to "binary reality predictor with labeled explanation surfaces" | OPEN p2 (planned filing 2026-05-19) |
 
 ---
 
@@ -35,7 +35,7 @@ prediction_oracle_correlation ≥ 0.95
 
 **Last holdout measurement:** `0.866667` (legacy `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; not current production evidence until revalidated on aiwonder under #369).
 
-**Gap to ship:** 0.083 correlation points on Panel A. Panel B has no measurement yet; #404 will produce the first.
+**Gap to ship:** 0.083 correlation points on Panel A. Panel B has no measurement yet; #405 will produce the first.
 
 **P0 product contract:** #397 is the guiding context. ME-JEPA is the **binary reality predictor**: it returns `Pass | Fail` for each candidate code change against the Docker oracle (Q2), with named-failure-mode + closest-exemplar explanation (Q3) on Fail. Q1 (claim-exists) and Q5 (predicted-shift-event) are additional binary predictions against bytes/AST and the shift log respectively. **Q4 ambiguous surfaces are out of scope and frozen as display-only historical data.** The MCP surface presents the binary verdict + named explanation + closest exemplars to the human/operator-agent; it does not infer hidden human intent (#358) and it does not generate code.
 
@@ -75,12 +75,12 @@ The slot-preserving refactor (§3.0 below) is largely shipped and architecturall
 
 | Rank | Epic | Why it moves the gate |
 |---|---|---|
-| 1 | **#407 / TASK-PY-G-114** — Q4 freeze + producer-track closeout | Frees bandwidth from Q4 expansion (#266–#270, #399–#402) so it can flow to #403/#404/#405. No code blocked, just rebanding. |
-| 2 | **#403 / TASK-PY-G-110** — Failure-mode labeling hierarchy | Turns the 78-column pairwise-correlation evidence from #388 into named clusters. Required so Q3 explanation surface can land an actionable named mode on every Fail row. The labeling itself is also the primary input feature for the binary head: same-named-failure-mode neighbors are the closest exemplars the predictor needs to commit. |
-| 3 | **#406 / TASK-PY-G-113** — Threshold-calibration disjointness audit | Cheapest move likely to detect under-calibration. The 0.866667 gap may be partly because some τ values were set on a non-disjoint partition. One-day spike with a binary outcome. |
-| 4 | **#404 / TASK-PY-G-111** — Cross-panel triangulation Panel B | Defends 0.95 against encoder-matched Goodhart. **Adds a hard new ship-gate requirement.** Without Panel B, even hitting 0.95 on Panel A is not ship-eligible. |
-| 5 | **#405 / TASK-PY-G-112** — Online mistake-driven loop | The "first time every time" property. Converts every disagreement-with-reality into a training signal under EWC++ protection. Long-horizon ship-defending work. |
-| 6 | **#408 / TASK-DOC-001** — Paper revision | Aligns PAPER §1 with the binary doctrine. Not gate-blocking; defer until first cross-panel green window. |
+| 1 | **#408 / TASK-PY-G-114** — Q4 freeze + producer-track closeout | Frees bandwidth from Q4 expansion (#266–#270, #399–#402) so it can flow to #404/#405/#406. No code blocked, just rebanding. |
+| 2 | **#404 / TASK-PY-G-110** — Failure-mode labeling hierarchy | Turns the 78-column pairwise-correlation evidence from #388 into named clusters. Required so Q3 explanation surface can land an actionable named mode on every Fail row. The labeling itself is also the primary input feature for the binary head: same-named-failure-mode neighbors are the closest exemplars the predictor needs to commit. |
+| 3 | **#407 / TASK-PY-G-113** — Threshold-calibration disjointness audit | Cheapest move likely to detect under-calibration. The 0.866667 gap may be partly because some τ values were set on a non-disjoint partition. One-day spike with a binary outcome. |
+| 4 | **#405 / TASK-PY-G-111** — Cross-panel triangulation Panel B | Defends 0.95 against encoder-matched Goodhart. **Adds a hard new ship-gate requirement.** Without Panel B, even hitting 0.95 on Panel A is not ship-eligible. |
+| 5 | **#406 / TASK-PY-G-112** — Online mistake-driven loop | The "first time every time" property. Converts every disagreement-with-reality into a training signal under EWC++ protection. Long-horizon ship-defending work. |
+| 6 | **#409 / TASK-DOC-001** — Paper revision | Aligns PAPER §1 with the binary doctrine. Not gate-blocking; defer until first cross-panel green window. |
 
 ### 3.0 Slot-preserving constellation architecture (#385 / TASK-PY-G-085)
 
@@ -225,9 +225,9 @@ Closure status of every prior Q4 producer/calibration issue:
 | #118 / TASK-PY-G-003 — Per-head Q1-Q5 distillation | re-scoped to Q1/Q2/Q5 only; Q4 heads removed |
 | #292 / TASK-PY-G-073 — Predicted-Works head + sub-heads | retained (Q2 sub-classifier, not Q4); already closed |
 
-**Closure procedure tracked under #407 / TASK-PY-G-114.** That epic also writes the one-time Q4 freeze FSV at `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/` and adds the weekly Q4-row-count-delta recheck to `mejepa_weekly_eval_dashboard`.
+**Closure procedure tracked under #408 / TASK-PY-G-114.** That epic also writes the one-time Q4 freeze FSV at `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/` and adds the weekly Q4-row-count-delta recheck to `mejepa_weekly_eval_dashboard`.
 
-**What replaces the Q4 surfaces in the operator answer.** Operators who used to want "what else could go wrong" answers get them from the **named failure mode** + **closest exemplar** attached to a Fail verdict (§3.−1 row 2, epic #403). If the verdict is Pass, the operator answer is "Pass + Q1=Yes (claim landed in bytes) + closest exemplars all Pass + cross-panel Panel B confirms" — not a list of speculative ambiguous risks.
+**What replaces the Q4 surfaces in the operator answer.** Operators who used to want "what else could go wrong" answers get them from the **named failure mode** + **closest exemplar** attached to a Fail verdict (§3.−1 row 2, epic #404). If the verdict is Pass, the operator answer is "Pass + Q1=Yes (claim landed in bytes) + closest exemplars all Pass + cross-panel Panel B confirms" — not a list of speculative ambiguous risks.
 
 ### 3.2 Q5 shift-log replay (#264 / TASK-PY-G-045)
 

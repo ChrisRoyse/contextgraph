@@ -403,7 +403,7 @@ ME-JEPA-Code is pre-production (no SLA, no backwards compatibility per CLAUDE.md
 
 Three new FSV protocols enforce the binary-Q1/Q2/Q5 + labeled + mistake-driven + cross-panel-triangulated contract. Each protocol slots into the universal FSV-PROTOCOL §1.1–§1.5 (Source-of-truth, Trigger→Process→Outcome, hard rules, evidence, independent readback) — the additions below are protocol-specific assertions every FSV harness for these features must enforce.
 
-### 13.1 Failure-mode labeling FSV (epic #403 / TASK-PY-G-110)
+### 13.1 Failure-mode labeling FSV (epic #404 / TASK-PY-G-110)
 
 Required SoT assertions:
 
@@ -413,7 +413,7 @@ Required SoT assertions:
 4. **Exemplar-oracle agreement.** For each named failure mode, the top-1 closest exemplar's oracle outcome must match the prediction's oracle outcome ≥ 85% of the time. Required: `closest_exemplar_oracle_agreement ≥ 0.85`.
 5. **Vocabulary-seed audit.** Each level-2 skill name must trace back to either a published seed source (Aleithan 2025 / Yang 2024 / SWE-Bench Pro 2025 / our 8 mutations / our adversarial corpus) OR an operator-approved extension. Required: `unsourced_skills == 0`.
 
-### 13.2 Cross-panel triangulation FSV (epic #404 / TASK-PY-G-111)
+### 13.2 Cross-panel triangulation FSV (epic #405 / TASK-PY-G-111)
 
 Required SoT assertions:
 
@@ -423,7 +423,7 @@ Required SoT assertions:
 4. **Encoder non-overlap audit.** Panel A encoders and Panel B encoders must use distinct model artifacts; SHA-256 manifest pins differ for every learned-encoder slot. Required: `panel_a_b_artifact_overlap_count == 0` on the 5 learned-encoder slot pairs.
 5. **VRAM budget audit.** Panel B encoders never resident during normal inference; only loaded during the evaluation worker's pass. Required: `panel_b_resident_during_inference == false` measured against `mejepa_vram_budget_report`.
 
-### 13.3 Mistake-loop convergence FSV (epic #405 / TASK-PY-G-112)
+### 13.3 Mistake-loop convergence FSV (epic #406 / TASK-PY-G-112)
 
 Required SoT assertions:
 

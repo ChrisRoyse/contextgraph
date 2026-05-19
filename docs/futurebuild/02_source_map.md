@@ -309,9 +309,9 @@ Full FSV evidence index (327 directories on `/mnt/d/contextgraph/fsv/`) → `07_
 
 ## 12. Planned New Modules (Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop)
 
-Planned source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`). All planned modules are **additive** to existing crates — no new top-level crate is created; tracked under epic issues #403 / #404 / #405 / #406.
+Planned source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`). All planned modules are **additive** to existing crates — no new top-level crate is created; tracked under epic issues #404 / #405 / #406 / #407.
 
-### 12.1 Failure-mode labeling hierarchy (epic #403 / TASK-PY-G-110)
+### 12.1 Failure-mode labeling hierarchy (epic #404 / TASK-PY-G-110)
 
 | Planned module | Crate | Role |
 |---|---|---|
@@ -321,7 +321,7 @@ Planned source files supporting the 2026-05-19 binary doctrine (see `01_overview
 | `src/failure_mode_consumer.rs` | `context-graph-mejepa` | Reads K-means cluster output, writes `CF_MEJEPA_FAILURE_MODE_LEVEL1/2/3`, exposes lookup for `compiler.rs::compile` |
 | `examples/task_py_g_110_failure_mode_clustering_fsv.rs` | `context-graph-mejepa` | FSV harness: cluster purity ≥ 0.7 silhouette, operator-rename idempotence, every Fail prediction gets at least one named mode |
 
-### 12.2 Cross-panel triangulation (epic #404 / TASK-PY-G-111)
+### 12.2 Cross-panel triangulation (epic #405 / TASK-PY-G-111)
 
 | Planned module | Crate | Role |
 |---|---|---|
@@ -329,7 +329,7 @@ Planned source files supporting the 2026-05-19 binary doctrine (see `01_overview
 | `src/panel_b/` (new submodule) | `context-graph-mejepa-instruments` | Panel B instrument variants: `e_ast_codebert.rs` (CodeBERT), `e_cfg_pythia.rs` (Pythia program-graph), `e_dataflow_joern.rs` (joern), `e_code_voyage.rs` (Voyage-code-2), `e_text_bge.rs` (bge-large-en-v1.5). Deterministic slots (Trace/Witness/Oracle/StaticAnalysis/Runtime/Reasoning/Scalars) are shared from Panel A. |
 | `examples/task_py_g_111_cross_panel_triangulation_fsv.rs` | `context-graph-mejepa` | FSV harness: both panels on same 30-instance holdout, per-instance Panel-A + Panel-B verdict in `CF_MEJEPA_CROSS_PANEL_AGREEMENT`, `CROSS_PANEL_GOODHART_DETECTED` fires on injected divergence |
 
-### 12.3 Online mistake-driven learning (epic #405 / TASK-PY-G-112)
+### 12.3 Online mistake-driven learning (epic #406 / TASK-PY-G-112)
 
 | Planned module | Crate | Role |
 |---|---|---|

@@ -290,7 +290,7 @@ Decision flow (per `compiler.rs::compile`):
 
 ### 4.3 Failure-mode labeling hierarchy (the meaning layer over the slot panel)
 
-Source files (planned): `crates/context-graph-mejepa/src/failure_mode_hierarchy.rs`, `failure_mode_clusters.rs`, `failure_mode_vocabulary.rs`. Storage CFs: `CF_MEJEPA_FAILURE_MODE_LEVEL1`, `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS`, `CF_MEJEPA_FAILURE_MODE_LEVEL3_CONSTELLATIONS`, `CF_MEJEPA_FAILURE_MODE_VOCABULARY`, `CF_MEJEPA_NAMED_PREDICTIONS`. MCP tools (planned): `mejepa_label_failure_cluster`, `mejepa_list_failure_modes`, `mejepa_explain_named_failure_mode`. Tracked by GitHub epic **#403 (new) / TASK-PY-G-110 — Failure-mode labeling hierarchy**.
+Source files (planned): `crates/context-graph-mejepa/src/failure_mode_hierarchy.rs`, `failure_mode_clusters.rs`, `failure_mode_vocabulary.rs`. Storage CFs: `CF_MEJEPA_FAILURE_MODE_LEVEL1`, `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS`, `CF_MEJEPA_FAILURE_MODE_LEVEL3_CONSTELLATIONS`, `CF_MEJEPA_FAILURE_MODE_VOCABULARY`, `CF_MEJEPA_NAMED_PREDICTIONS`. MCP tools (planned): `mejepa_label_failure_cluster`, `mejepa_list_failure_modes`, `mejepa_explain_named_failure_mode`. Tracked by GitHub epic **#404 (new) / TASK-PY-G-110 — Failure-mode labeling hierarchy**.
 
 **Why it exists.** The 300×8 corpus has been projected through 13 retrieval embedders + 15 frozen instrument slots, producing 78 pairwise correlation tensors per cell (#388), per-slot calibration state (#389), and consensus/contradiction/blind-spot/redundancy/novelty surfaces (#390). All of that is raw numerical evidence. The unsolved problem is **assigning human-readable names** to the recurrent disagreement patterns so the predictor can say "this patch will Fail because of `type_signature_drift_under_test_coverage`" rather than "this patch's per-slot OOD trace is `{E_TypeGraph: 0.42, E_DataFlow: 0.31, E_Test: 0.88, E_Oracle: 0.79}`."
 
@@ -329,7 +329,7 @@ Persisted in `CF_MEJEPA_NAMED_PREDICTIONS` keyed by `prediction_id`. Exposed via
 
 ### 4.4 Cross-panel triangulation (the Goodhart guard)
 
-Source files (planned): `crates/context-graph-mejepa/src/cross_panel.rs`, `crates/context-graph-mejepa-instruments/src/panel_b/`, new instrument modules `e_ast_codebert.rs`, `e_cfg_pythia.rs`, `e_dataflow_joern.rs`, `e_code_voyage.rs`, `e_text_bge.rs`. Storage CFs: `CF_MEJEPA_PANEL_B_OBSERVATIONS`, `CF_MEJEPA_CROSS_PANEL_AGREEMENT`. MCP tools (planned): `mejepa_cross_panel_score`, `mejepa_cross_panel_dashboard`. Tracked by GitHub epic **#404 (new) / TASK-PY-G-111 — Cross-panel triangulation Panel B**.
+Source files (planned): `crates/context-graph-mejepa/src/cross_panel.rs`, `crates/context-graph-mejepa-instruments/src/panel_b/`, new instrument modules `e_ast_codebert.rs`, `e_cfg_pythia.rs`, `e_dataflow_joern.rs`, `e_code_voyage.rs`, `e_text_bge.rs`. Storage CFs: `CF_MEJEPA_PANEL_B_OBSERVATIONS`, `CF_MEJEPA_CROSS_PANEL_AGREEMENT`. MCP tools (planned): `mejepa_cross_panel_score`, `mejepa_cross_panel_dashboard`. Tracked by GitHub epic **#405 (new) / TASK-PY-G-111 — Cross-panel triangulation Panel B**.
 
 **Why it exists.** The 15-slot instrument panel (Panel A) is both the training substrate for the predictor AND the centroid set the Gτ guard evaluates against. That is encoder-matched by construction. A 0.95 oracle correlation on Panel A does not prove the verdict is right against reality; it could prove the predictor learned the panel's idiosyncrasies. The PAPER §6.3 limitation list calls this out explicitly for the voice case (named-future-work: ECAPA-TDNN cross-encoder triangulation); the same risk applies more sharply to the code case because the panel + predictor are jointly trained over the same 2,400-instance corpus.
 
@@ -511,7 +511,7 @@ Performance gate (per phase-g-roadmap §4): fresh ingest of 50-file Python proje
 
 ### 9.6 Online mistake-driven adaptation ("isn't wrong in the future" property)
 
-Source files (planned): `crates/context-graph-mejepa/src/mistake_log.rs`, `crates/context-graph-mejepa-train/src/mistake_consumer.rs`, `crates/context-graph-mejepa-train/src/online_perceptron.rs`. Storage CFs: `CF_MEJEPA_MISTAKE_LOG`, `CF_MEJEPA_MISTAKE_REPLAY_PRIORITY`, `CF_MEJEPA_ONLINE_HEAD_STATE`. MCP tools (planned): `mejepa_record_mistake`, `mejepa_mistake_history`, `mejepa_mistake_loop_status`. Tracked by **#405 (new) / TASK-PY-G-112 — Online mistake-driven learning loop**.
+Source files (planned): `crates/context-graph-mejepa/src/mistake_log.rs`, `crates/context-graph-mejepa-train/src/mistake_consumer.rs`, `crates/context-graph-mejepa-train/src/online_perceptron.rs`. Storage CFs: `CF_MEJEPA_MISTAKE_LOG`, `CF_MEJEPA_MISTAKE_REPLAY_PRIORITY`, `CF_MEJEPA_ONLINE_HEAD_STATE`. MCP tools (planned): `mejepa_record_mistake`, `mejepa_mistake_history`, `mejepa_mistake_loop_status`. Tracked by **#406 (new) / TASK-PY-G-112 — Online mistake-driven learning loop**.
 
 **The classical primitive.** The binary head over the panel is implemented as a margin-based online learner in the kernel-Perceptron / Second-Order-Perceptron family (Rosenblatt 1957; Cesa-Bianchi & Conconi 2005; Orabona 2008 Projectron). Update rule, per mistake:
 
