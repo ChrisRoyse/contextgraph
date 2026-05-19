@@ -129,7 +129,7 @@ Child issue split:
    - Q4 fail-closed trust gate — #377 TASK-PY-G-078 is closed; Q4 heads now refuse trust until producer/calibration/exact-slot evidence is present.
    - Q4 harvest expansion — #401 TASK-PY-G-100 is closed; aggregate `q4TrustDecisionEligible=true` for the five producer-backed heads.
    - Deferred excluded heads — #402 tracks real security/structural Q4 producers before the aggregate Q4 scope expands beyond those five heads.
-2. **Wire Q5 shift-log replay** — #264 TASK-PY-G-045 + #128 TASK-PY-G-013 calibration consumer.
+2. **Calibrate Q5 against shift-log replay** — #264 TASK-PY-G-045 is shipped; #128 TASK-PY-G-013 is now the calibration consumer.
 3. **Calibrate OOD on harvested + synthetic** — #129 TASK-PY-G-014 (now consumes the closed #276 harvest evidence) + #130 TASK-PY-G-015 Gτ guard audit.
 4. **Per-head contradiction calibration** — #263 TASK-PY-G-044.
 5. **Goodhart / oracle-noise guards** — #374 TASK-PY-G-077 secret holdout and #376 TASK-PY-G-076 statistical-power bound are closed as guard protocols, both currently fail closed as `underpowered`. They continue to block any "≥ 0.95 × 4 windows" claim until real four-window train-visible plus secret/delayed holdout evidence exists and passes.
@@ -187,7 +187,11 @@ Child issue split:
 
 ### 3.2 Q5 shift-log replay (#264 / TASK-PY-G-045)
 
-`reality_impact.rs` exists as a scaffold; the shift-log replay engine that drives Q5 `RealityImpact` for production traffic is the remaining work.
+✅ **Shipped 2026-05-19 on aiwonder.** `reality_impact.rs` now materializes durable Q5 `RealityImpactRecord` rows in `CF_MEJEPA_REALITY_IMPACT` from persisted `CF_MEJEPA_LIVE_PREDICTIONS` plus session shift logs. It classifies `Confirmed`, `Missed`, `NotYetObserved`, and `Surprise` consequences, fails closed on explicit SHA-chain gaps and out-of-order timestamps, and exposes `mcp__cgreality__mejepa_reality_impact`.
+
+FSV evidence: `/zfs/archive/contextgraph/fsv/task-py-g-045-shift-log-replay-engine-fsv/shift_log_replay_engine_fsv.json`, sha256 `2043bcf84fddec4e2caad0f0b85bbff9567a3103d32514745f09dbef43868dd1`; independent reopened-RocksDB readback sha256 `dd838f40d63795944931506f3dc16e8cea368b3bc31e6105804595fd525fe693`.
+
+Remaining Q5 work: #128 now consumes these records to calibrate the Q5 head per Python mutation category.
 
 ### 3.3 Phase G calibration sweep (Phase G §3)
 

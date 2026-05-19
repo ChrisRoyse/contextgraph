@@ -76,6 +76,7 @@ All names live in `crates/context-graph-mcp/src/tools/names.rs:96-203`. Most are
 | `mcp__cgreality__mejepa_explain_prediction` | `MEJEPA_EXPLAIN_PREDICTION` | Return per-head feature attributions + matched fingerprint + closest exemplars + violating embedders + **per-slot OOD reasons (TASK-PY-G-089 / #389)** for a `prediction_id` | `predictionId` | Read-only |
 | `mcp__cgreality__mejepa_inspect_prediction` | `MEJEPA_INSPECT_PREDICTION` | Raw prediction row dump; exposes `RealityPrediction.per_slot_ood_reasons` byte-replayed from `CF_MEJEPA_LIVE_PREDICTIONS` | `predictionId` | Read-only |
 | `mcp__cgreality__mejepa_replay_prediction` | `MEJEPA_REPLAY_PREDICTION` | Replay a past prediction against current model + calibration | `predictionId` | Read-only |
+| `mcp__cgreality__mejepa_reality_impact` | `MEJEPA_REALITY_IMPACT` | TASK-PY-G-045 Q5 replay: compare a persisted prediction's expected consequences to the durable session shift log and return confirmed/missed/not-yet-observed/surprise rows | `predictionId`, `runtimeRoot`, `replayWindowMs=3600000` | Writes `CF_MEJEPA_REALITY_IMPACT` with sync + readback |
 
 ### 3.2 Reality Compiler (per-project ingest)
 

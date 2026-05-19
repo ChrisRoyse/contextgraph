@@ -42,7 +42,8 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_EMBEDDER_PROPOSALS, CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_INSTRUMENT_PROPOSALS,
     CF_MEJEPA_LIBRARY_FOUNDATIONALITY, CF_MEJEPA_LIBRARY_REGISTRY, CF_MEJEPA_LIVE_PREDICTIONS,
     CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_OOD_ESCALATIONS,
-    CF_MEJEPA_OPERATOR_CONTRIBUTIONS, CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_OPERATOR_CONTRIBUTIONS, CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_REALITY_IMPACT,
+    CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
@@ -227,6 +228,16 @@ struct ReplayPredictionRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RealityImpactRequest {
+    prediction_id: String,
+    runtime_root: PathBuf,
+    #[serde(default = "default_replay_window_ms")]
+    replay_window_ms: i64,
+    db_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecordAgentFeedbackRequest {
     prediction_id: String,
     #[serde(default)]
@@ -355,6 +366,18 @@ struct MejepaDaemonStatusRequest {
 
 fn default_limit() -> u32 {
     10
+}
+
+fn default_replay_window_ms() -> i64 {
+    context_graph_mejepa::DEFAULT_REALITY_IMPACT_REPLAY_WINDOW_MS
+}
+
+fn current_unix_ms_i64() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(i64::MAX as u128) as i64
 }
 
 fn default_fingerprint_reference_limit() -> u32 {
@@ -1208,6 +1231,94 @@ impl Handlers {
                 "MEJEPA_REPLAY_PREDICTION_FAILED",
                 &err.to_string(),
                 json!({"dbPath": db_path}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_reality_impact(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: RealityImpactRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_REALITY_IMPACT
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        let prediction_id =
+            match context_graph_mejepa::parse_prediction_id_hex(&request.prediction_id) {
+                Ok(value) => value,
+                Err(err) => {
+                    return self.tool_error_structured(
+                        id,
+                        ToolErrorKind::Validation,
+                        "MEJEPA_REALITY_IMPACT_PREDICTION_ID_INVALID",
+                        &err.to_string(),
+                        json!({"predictionId": request.prediction_id}),
+                    );
+                }
+            };
+        let db = match open_infer_rocksdb(&db_path) {
+            Ok(db) => db,
+            Err(err) => {
+                return self.tool_error_structured(
+                    id,
+                    ToolErrorKind::Storage,
+                    "MEJEPA_REALITY_IMPACT_DB_OPEN_FAILED",
+                    &err.to_string(),
+                    json!({"dbPath": db_path}),
+                );
+            }
+        };
+        let created_at_unix_ms = current_unix_ms_i64();
+        let result = context_graph_mejepa::replay_and_persist_reality_impact(
+            db.as_ref(),
+            prediction_id.0,
+            &request.runtime_root,
+            request.replay_window_ms,
+            created_at_unix_ms,
+        );
+        match result {
+            Ok(record) => match serde_json::to_value(&record) {
+                Ok(value) => self.tool_result(
+                    id,
+                    json!({
+                        "record": value,
+                        "sourceOfTruth": {
+                            "dbPath": db_path.display().to_string(),
+                            "shiftLogRoot": request.runtime_root.display().to_string(),
+                            "predictionCf": CF_MEJEPA_LIVE_PREDICTIONS,
+                            "realityImpactCf": CF_MEJEPA_REALITY_IMPACT,
+                            "predictionId": request.prediction_id
+                        }
+                    }),
+                ),
+                Err(err) => self.tool_error_structured(
+                    id,
+                    ToolErrorKind::Execution,
+                    "MEJEPA_REALITY_IMPACT_SERIALIZE_FAILED",
+                    &err.to_string(),
+                    json!({"dbPath": db_path}),
+                ),
+            },
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Storage,
+                "MEJEPA_REALITY_IMPACT_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path, "shiftLogRoot": request.runtime_root}),
             ),
         }
     }

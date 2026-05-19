@@ -485,7 +485,15 @@ Q4 producer rows are display-only until #377's trust gate sees the relevant prod
 
 ## 17. Q5 Reality Impact
 
-`reality_impact.rs`. Shift-log replay engine (TASK-PY-G-045). Replays predicted side effects against the actual shift log → `RealityImpact` struct (file/CF mutations expected vs observed).
+`reality_impact.rs`. Shift-log replay engine (TASK-PY-G-045). Replays predicted side effects against the actual shift log and persists `RealityImpactRecord` rows in `CF_MEJEPA_REALITY_IMPACT`.
+
+Current shipped behavior (2026-05-19, #264):
+- Reads persisted `RealityPrediction` rows from `CF_MEJEPA_LIVE_PREDICTIONS` by `prediction_id`.
+- Parses the session `cgreality-shift-log/<session>.jsonl` over a bounded replay window.
+- Classifies predicted consequences as `Confirmed`, `Missed`, or `NotYetObserved`, and unpredicted observed consequences as `Surprise`.
+- Fails closed on missing predictions, out-of-order timestamps, and explicit shift-log SHA-chain breaks.
+- MCP surface: `mcp__cgreality__mejepa_reality_impact`.
+- aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-045-shift-log-replay-engine-fsv/shift_log_replay_engine_fsv.json`, sha256 `2043bcf84fddec4e2caad0f0b85bbff9567a3103d32514745f09dbef43868dd1`; independent reopened-RocksDB readback sha256 `dd838f40d63795944931506f3dc16e8cea368b3bc31e6105804595fd525fe693`.
 
 ---
 

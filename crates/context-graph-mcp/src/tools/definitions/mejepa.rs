@@ -515,6 +515,34 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_REALITY_IMPACT,
+            "TASK-PY-G-045 Q5 replay surface: read a persisted RealityPrediction from CF_MEJEPA_LIVE_PREDICTIONS, compare predicted consequences to the durable session shift log, persist CF_MEJEPA_REALITY_IMPACT with readback, and return Confirmed/Missed/NotYetObserved/Surprise rows.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["predictionId", "runtimeRoot"],
+                "properties": {
+                    "predictionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{32}$"
+                    },
+                    "runtimeRoot": {
+                        "type": "string",
+                        "description": "Runtime root containing cgreality-shift-log/, or the cgreality-shift-log directory itself."
+                    },
+                    "replayWindowMs": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "default": 3600000
+                    },
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional Phase 4 inference RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_RECORD_AGENT_FEEDBACK,
             "Persist measured System 1 agent feedback for a prior System 2 ME-JEPA RealityPrediction into CF_MEJEPA_AGENT_FEEDBACK, update the active-learning queue when the feedback is surprise-like, and verify RocksDB readback before returning.",
             json!({

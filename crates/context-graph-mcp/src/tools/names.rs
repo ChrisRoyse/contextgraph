@@ -130,6 +130,8 @@ pub const MEJEPA_EXPLAIN_PREDICTION: &str = "mcp__cgreality__mejepa_explain_pred
 pub const MEJEPA_INSPECT_PREDICTION: &str = "mcp__cgreality__mejepa_inspect_prediction";
 /// Phase F byte-for-byte replay of persisted ME-JEPA predictions.
 pub const MEJEPA_REPLAY_PREDICTION: &str = "mcp__cgreality__mejepa_replay_prediction";
+/// TASK-PY-G-045 Q5 shift-log replay engine for predicted reality impact.
+pub const MEJEPA_REALITY_IMPACT: &str = "mcp__cgreality__mejepa_reality_impact";
 /// Phase A agent feedback ledger writer for live ME-JEPA predictions.
 pub const MEJEPA_RECORD_AGENT_FEEDBACK: &str = "mcp__cgreality__mejepa_record_agent_feedback";
 /// Phase 7 replay of a durable reality-shift log entry through the live subscriber.
