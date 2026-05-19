@@ -91,22 +91,55 @@ What stays in the prediction contract:
 
 Q4 heads remain in the schema and the CFs (`CF_MEJEPA_Q4_*`) as **frozen historical display data**, readable by `mejepa_explain_prediction` for forensic continuity, but not trained, not calibrated as a prerequisite for ship, and not consumed by the predictor's loss. New Phase G bandwidth spends nowhere on Q4 expansion. See `08_roadmap_and_open_work.md §3.1` for the Q4 producer track closure.
 
-### 1.2 The labeling layer (the unsolved problem this addresses)
+### 1.2 The labeling layer (Level 0 SHIPPED 2026-05-19 via #413 / TASK-PY-G-117)
 
-Passing the 300×8 SWE-bench Lite corpus through 13 retrieval embedders (E1–E13) + 15 frozen instrument slots (E_AST … Scalars) produced a large corpus of vectors, pairwise correlations (#388), and per-slot/per-cell calibration state (#389). What is missing is the **labeling layer** that turns those numbers into *named* rules a predictor can act on:
+Passing the 300×8 SWE-bench Lite corpus through 13 retrieval embedders (E1–E13) + 15 frozen instrument slots (E_AST … Scalars) produced a large corpus of vectors, pairwise correlations (#388), and per-slot/per-cell calibration state (#389). The 2026-05-19 doctrine reframe identified the **labeling layer** as the missing meaning surface that turns those numbers into named rules. The Level 0 (baseline auto-discovery) implementation **shipped** on 2026-05-19 via TASK-PY-G-117 / #413 with full-corpus FSV PASS.
 
-> "When E_TypeGraph is low *and* E_DataFlow is low *and* E_Test agrees with E_Oracle, the failure mode is `type_signature_drift_under_test_coverage` — and the closest exemplar is `django__django-11234`."
+**What shipped (full-corpus aiwonder run, 2026-05-19):**
 
-The labeling layer is a four-level hierarchy on top of the slot panel (ported from the ClipCannon Action-Unit → Group → Skill → Constellation architecture and re-grounded to code failure modes):
+- **Implementation:** `scripts/swebench_lite_ops/python_auto_label_discovery.py` (1,641 lines, deterministic Python, no inner LLM).
+- **CLI entrypoint:** `python-auto-label-discovery` (registered through `scripts/swebench_lite_ops/cli.py`).
+- **Output root:** `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/`.
+- **FSV:** `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/python_auto_label_discovery_fsv.json` (`passes=true`; manifest sha256 `3cd0e3c6…`, report sha256 `3b3e4b0b…`).
+- **Full-corpus counts:** 399,777 chunk constellation labels · 4,665,772 slot forward records consumed · 25,289,552 pair relationship labels · 3,106,565 group labels · 3,000 code-state constellations · 4,224 file-path constellations · 1,139 failure evidence sets · 549 usefulness metrics · 491 accepted label registry rows · 12/12 manual-review reproductions matched.
+- **Architecture commitments enforced in FSV:** `slot_identity_preserved=true`, `flat_vector_concat_used=false`, no active `/mnt/d` reads/writes.
+- **Leakage policy:** target-side labels (oracle/docker/test-phase outcomes, code-state outcomes) are emitted via `leakage_policy:target_side_only` — supervision/reward inputs to the trainer only, **never** live predictor inputs. Live inputs are slot-local observations, pair/group relationships, repository facts, and durable non-target evidence.
 
-| Level | Object | How it's discovered |
+**Three artifact levels (all materialized, with stable JSONL hashes per the #413 RESOLVED comment):**
+
+| Level | Object | What's materialized |
 |---|---|---|
-| **0** | Raw slot/embedder violations | Already shipped as `GtauViolation` + `per_slot_ood_reasons` (#389) |
-| **1** | Co-firing violation **groups** | K-means clustering (k≈40) over the 78 pairwise correlation residuals from #388 across the 300×8 corpus; each centroid named via cosine-vs-vocabulary against an operator-curated failure-mode vocabulary (DN-CBM / Rao et al. 2024 pattern). |
-| **2** | Named failure **skills** | Hand-named per cluster from the published SWE-bench taxonomies (Yang et al. 2024: 9 categories × 25 subcategories; Aleithan et al. 2025: 4-category patch-difference; SWE-Bench Pro 2025: `wrong_solution`/`tool_error`/`syntax_error`/`incorrect_file`/etc.). Examples: `patch_breaks_test_isolation`, `mock_only_change`, `regression_against_invariant`, `solution_leak`, `incomplete_fix`, `wrong_file`, `compile_error_only`. |
-| **3** | Behavioural failure **constellations** | Co-occurring skill sequences per `mutation_category × language` cell. Examples: `unsafe_security_change` (security skill + dataflow violation), `incompatible_refactor` (type-graph drift + test-isolation break), `mock_only_change` (claim mismatches AST). |
+| **0 — Chunk** | Per-chunk slot-local + pair + group labels | `chunk_constellation_labels.jsonl` (sha256 `4ad438ff…`); 399,777 rows. Powered by a deterministic label compiler that emits AST/source surfaces, source-site relation (exact-mutation / changed-file / wrong-file / missing-target / test-patch / no-compact-source-site), mutation mechanism micro-labels, per-slot scalar/region labels (`norm_l2`, `std`, `abs_mean`, `entropy_proxy`, `zero_fraction`), pair relationship labels, and group signatures across `temporal_triad` / `semantic_content_panel` / `sparse_lexical_panel` / `sparse_hdc_bridge` slot sets. |
+| **1 — File / path** | File-level constellations | `file_path_constellations.jsonl`; 4,224 rows. Slot-local aggregate distributions, pair/group relationship counts, AST surface counts, mutation/source-site evidence, partition metadata. |
+| **2 — Code state** | `(task_instance_id, mutation_category, workspace_state)` constellations | `code_state_constellations.jsonl` (sha256 `582cc0de…`); 3,000 rows. Code-state outcome labels (`code_state_outcome:working_as_intended` vs `code_state_outcome:failed_or_problematic`) are **target-side leakage-policy:target_side_only**. |
 
-A binary prediction becomes actionable when the predictor returns `Fail + named_failure_mode + closest_exemplar`. The agent that consumes the prediction can act on a named mode the way a senior reviewer would; the operator can audit the prediction the way they would audit a named bug class.
+**Three localization modes** distinguished deterministically for failed/problematic code states (`failure_evidence_sets.jsonl`, sha256 `747f8298…`; 1,139 rows):
+
+- `localization:single_point_candidate` (612 cases) — one chunk/source-site dominates the deterministic evidence
+- `localization:multi_point_evidence_set` (1,479 cases) — several chunks jointly explain the failure risk
+- `localization:diffuse_code_state_risk` (18 cases) — whole code state is failed/problematic but no compact chunk set is currently justified
+- `localization:working_state_no_failure_localization` (891 cases) — no failure to localize
+
+**Usefulness scoring** (`label_usefulness_metrics.jsonl`, sha256 `923a618f…`; 549 metrics) scores every candidate label on support count + minimum-support rejection, pass/fail lift + precision/recall against oracle/Docker outcomes, train/calibration/holdout stability, closest-exemplar oracle agreement, incremental predictive contribution over simpler labels, degenerate/leaky-label rejection, and typed uncertainty for unknown/unsupported/low-power labels. Only labels that survive every gate enter the `accepted_label_registry.jsonl` (sha256 `3846bef3…`; 491 accepted rows).
+
+**Learning bridge manifest** (`learning_bridge_manifest.json`, sha256 `5fc7e11b…`) maps accepted label IDs into the **existing** UTML/replay machinery — no new training loop required:
+- `delta_p.per_chunk_values` consumes per-chunk Level-0 labels
+- `delta_xi.constellation_violation_rate` consumes constellation-pattern labels (`CF_MEJEPA_CONSTELLATION_PATTERNS`)
+- `ReplayBufferRow.cell_id` keyed by `(mutation_category × language)` cell from Level-2 code-state constellations
+- Active-learning queue (`CF_MEJEPA_ACTIVE_LEARNING_QUEUE`) consumes unknown/OOD reasons
+- Ontology-growth audit (`CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT`) consumes label promotion/rejection events
+
+**What's next (NOT shipped — open work):**
+
+| Layer | Status | Tracked under |
+|---|---|---|
+| Level 0 chunk labels + Level 1 file constellations + Level 2 code-state constellations | ✅ SHIPPED 2026-05-19 | #413 closed |
+| Hierarchical naming on top of the 491-label registry (failure-mode skills + behavioral constellations à la ClipCannon's Action-Unit → Group → Skill → Constellation hierarchy) | Open — uses the published SWE-bench taxonomies (Aleithan et al. 2025, Yang et al. 2024, SWE-Bench Pro 2025) as the operator-curated seed vocabulary on top of the deterministic Level-0 registry | #404 / TASK-PY-G-110 |
+| Docker oracle outcome ontology (deterministic test-phase vector labels: `FAIL_TO_PASS`, `PASS_TO_PASS`, `FAIL_TO_FAIL`, `PASS_TO_FAIL` + `docker_resolved_clean`, `target_fail_to_pass_tests_failed`, etc.) | Open — feeds Level-2 code-state outcome supervision | #411 / TASK-PY-G-116 |
+| Online mistake-driven consumption of the accepted registry | Open — uses stable label/evidence IDs from #413 as the mistake context | #406 / TASK-PY-G-112 |
+| MCP tools wrapping the CLI for operator-side label inspection | Open — `mejepa_list_failure_modes`, `mejepa_label_failure_cluster`, `mejepa_explain_named_failure_mode`, `mejepa_failure_mode_coverage_audit` | #404 / TASK-PY-G-110 |
+
+A binary prediction becomes actionable when the predictor returns `Fail + named_failure_mode + closest_exemplar`. The agent that consumes the prediction can act on a named mode the way a senior reviewer would; the operator can audit the prediction the way they would audit a named bug class. **The deterministic label substrate that powers this is now full-corpus shipped; the hierarchical naming + MCP surface on top is what #404 still owns.**
 
 ### 1.3 Online mistake-driven adaptation (the "isn't wrong in the future" property)
 

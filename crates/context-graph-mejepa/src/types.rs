@@ -31,6 +31,9 @@ const MAX_HUNK_TEXT_BYTES: usize = 1_048_576;
 const MAX_WITNESS_SEGMENT_BYTES: usize = 73 * 8192;
 const MAX_COMMIT_MESSAGE_BYTES: usize = 8192;
 const MAX_PROBLEM_STATEMENT_BYTES: usize = 65_536;
+const MAX_ACCEPTED_LABEL_IDS: usize = 256;
+const MAX_FAILURE_EVIDENCE_SET_IDS: usize = 128;
+const MAX_ACTIVE_SKILL_IDS: usize = 128;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1478,6 +1481,8 @@ pub enum SlotAttributionSource {
     Q5Replay,
     ClaimReconciliation,
     GrangerAttestation,
+    AcceptedLabel,
+    ConstellationSkill,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1569,6 +1574,99 @@ impl SlotAttributionEvidence {
         }
         if let Some(kind) = &self.impact_kind {
             validate_bounded_id("slot_attribution.impact_kind", kind, MAX_ID_BYTES)?;
+        }
+        Ok(())
+    }
+}
+
+pub const PREDICTION_LABEL_CONTEXT_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredictionLabelContext {
+    pub schema_version: u32,
+    pub accepted_label_ids: Vec<String>,
+    pub code_state_key: Option<String>,
+    pub failure_evidence_set_ids: Vec<String>,
+    pub active_skill_ids: Vec<String>,
+    pub accepted_registry_sha256: Option<String>,
+    pub usefulness_metrics_sha256: Option<String>,
+    pub learning_bridge_manifest_sha256: Option<String>,
+    pub label_signature_hash: Option<String>,
+    pub skill_signature_hash: Option<String>,
+}
+
+impl Default for PredictionLabelContext {
+    fn default() -> Self {
+        Self {
+            schema_version: PREDICTION_LABEL_CONTEXT_SCHEMA_VERSION,
+            accepted_label_ids: Vec::new(),
+            code_state_key: None,
+            failure_evidence_set_ids: Vec::new(),
+            active_skill_ids: Vec::new(),
+            accepted_registry_sha256: None,
+            usefulness_metrics_sha256: None,
+            learning_bridge_manifest_sha256: None,
+            label_signature_hash: None,
+            skill_signature_hash: None,
+        }
+    }
+}
+
+impl PredictionLabelContext {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        if self.schema_version != PREDICTION_LABEL_CONTEXT_SCHEMA_VERSION {
+            return Err(MejepaInferError::InvalidInput {
+                field: "label_context.schema_version".to_string(),
+                detail: format!(
+                    "expected schema_version {}, got {}",
+                    PREDICTION_LABEL_CONTEXT_SCHEMA_VERSION, self.schema_version
+                ),
+            });
+        }
+        validate_id_list(
+            "label_context.accepted_label_ids",
+            &self.accepted_label_ids,
+            MAX_ACCEPTED_LABEL_IDS,
+        )?;
+        validate_id_list(
+            "label_context.failure_evidence_set_ids",
+            &self.failure_evidence_set_ids,
+            MAX_FAILURE_EVIDENCE_SET_IDS,
+        )?;
+        validate_id_list(
+            "label_context.active_skill_ids",
+            &self.active_skill_ids,
+            MAX_ACTIVE_SKILL_IDS,
+        )?;
+        if let Some(key) = &self.code_state_key {
+            validate_bounded_id("label_context.code_state_key", key, MAX_ID_BYTES)?;
+        }
+        for (field, value) in [
+            (
+                "label_context.accepted_registry_sha256",
+                &self.accepted_registry_sha256,
+            ),
+            (
+                "label_context.usefulness_metrics_sha256",
+                &self.usefulness_metrics_sha256,
+            ),
+            (
+                "label_context.learning_bridge_manifest_sha256",
+                &self.learning_bridge_manifest_sha256,
+            ),
+            (
+                "label_context.label_signature_hash",
+                &self.label_signature_hash,
+            ),
+            (
+                "label_context.skill_signature_hash",
+                &self.skill_signature_hash,
+            ),
+        ] {
+            if let Some(value) = value {
+                validate_bounded_id(field, value, MAX_ID_BYTES)?;
+            }
         }
         Ok(())
     }
@@ -1952,6 +2050,161 @@ pub struct RealityPrediction {
     pub constellation_intelligence: Option<ConstellationIntelligenceEvidence>,
     #[serde(default)]
     pub slot_attributions: Vec<SlotAttributionEvidence>,
+    #[serde(default)]
+    pub label_context: PredictionLabelContext,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RealityPredictionLegacyNoLabelContext {
+    prediction_id: [u8; 16],
+    witness_hash: WitnessHash,
+    task_id: TaskId,
+    session_id: [u8; 16],
+    language: Language,
+    covered_chunks: Vec<ChunkId>,
+    verdict: Verdict,
+    confidence_interval: ConformalInterval,
+    predicted_oracle_pass: f32,
+    predicted_test_pass: Vec<f32>,
+    predicted_runtime_trace: [f32; 32],
+    ood_score: f32,
+    outcome_set: ConformalSet,
+    calibrated_confidence: f32,
+    degraded_status: bool,
+    granger_attestations: BTreeMap<String, f32>,
+    predicted_failure_modes: Vec<PredictedFailureMode>,
+    predicted_failed_tests: Vec<PredictedTestOutcome>,
+    predicted_works: Vec<PredictedWorks>,
+    predicted_uncovered_paths: Vec<UncoveredPath>,
+    predicted_flaky_tests: Vec<FlakyTestCandidate>,
+    guard_violations: Vec<GuardViolation>,
+    per_slot_ood_reasons: Vec<PerSlotOodReason>,
+    closest_exemplars: Vec<ExemplarMatch>,
+    predicted_edge_cases: Vec<PredictedEdgeCase>,
+    predicted_latent_bugs: Vec<PredictedLatentBug>,
+    predicted_tech_debt_added: Vec<PredictedTechDebt>,
+    predicted_dead_code: Vec<PredictedDeadCode>,
+    predicted_redundant_code: Vec<PredictedRedundancy>,
+    predicted_perf_regressions: Vec<PredictedPerfRegression>,
+    predicted_security_concerns: Vec<PredictedSecurityConcern>,
+    predicted_accuracy_degradations: Vec<PredictedAccuracyDegradation>,
+    predicted_cost_regressions: Vec<PredictedCostRegression>,
+    predicted_reasoning_class: ReasoningClass,
+    agent_claim_graph: AgentClaimGraph,
+    claim_reconciliation: Vec<ClaimReconciliation>,
+    reality_impact: Option<RealityImpact>,
+    provenance: PredictionProvenance,
+    source_panel_sha: [u8; 32],
+    calibration_version: String,
+    created_at_unix_ms: i64,
+    matched_fingerprint: Option<MatchedFingerprintEvidence>,
+    unknown_candidate_id: Option<[u8; 16]>,
+    constellation_intelligence: Option<ConstellationIntelligenceEvidence>,
+    slot_attributions: Vec<SlotAttributionEvidence>,
+}
+
+impl RealityPredictionLegacyNoLabelContext {
+    #[cfg(test)]
+    fn from_current(value: &RealityPrediction) -> Self {
+        Self {
+            prediction_id: value.prediction_id,
+            witness_hash: value.witness_hash.clone(),
+            task_id: value.task_id.clone(),
+            session_id: value.session_id,
+            language: value.language,
+            covered_chunks: value.covered_chunks.clone(),
+            verdict: value.verdict,
+            confidence_interval: value.confidence_interval.clone(),
+            predicted_oracle_pass: value.predicted_oracle_pass,
+            predicted_test_pass: value.predicted_test_pass.clone(),
+            predicted_runtime_trace: value.predicted_runtime_trace,
+            ood_score: value.ood_score,
+            outcome_set: value.outcome_set.clone(),
+            calibrated_confidence: value.calibrated_confidence,
+            degraded_status: value.degraded_status,
+            granger_attestations: value.granger_attestations.clone(),
+            predicted_failure_modes: value.predicted_failure_modes.clone(),
+            predicted_failed_tests: value.predicted_failed_tests.clone(),
+            predicted_works: value.predicted_works.clone(),
+            predicted_uncovered_paths: value.predicted_uncovered_paths.clone(),
+            predicted_flaky_tests: value.predicted_flaky_tests.clone(),
+            guard_violations: value.guard_violations.clone(),
+            per_slot_ood_reasons: value.per_slot_ood_reasons.clone(),
+            closest_exemplars: value.closest_exemplars.clone(),
+            predicted_edge_cases: value.predicted_edge_cases.clone(),
+            predicted_latent_bugs: value.predicted_latent_bugs.clone(),
+            predicted_tech_debt_added: value.predicted_tech_debt_added.clone(),
+            predicted_dead_code: value.predicted_dead_code.clone(),
+            predicted_redundant_code: value.predicted_redundant_code.clone(),
+            predicted_perf_regressions: value.predicted_perf_regressions.clone(),
+            predicted_security_concerns: value.predicted_security_concerns.clone(),
+            predicted_accuracy_degradations: value.predicted_accuracy_degradations.clone(),
+            predicted_cost_regressions: value.predicted_cost_regressions.clone(),
+            predicted_reasoning_class: value.predicted_reasoning_class,
+            agent_claim_graph: value.agent_claim_graph.clone(),
+            claim_reconciliation: value.claim_reconciliation.clone(),
+            reality_impact: value.reality_impact.clone(),
+            provenance: value.provenance.clone(),
+            source_panel_sha: value.source_panel_sha,
+            calibration_version: value.calibration_version.clone(),
+            created_at_unix_ms: value.created_at_unix_ms,
+            matched_fingerprint: value.matched_fingerprint.clone(),
+            unknown_candidate_id: value.unknown_candidate_id,
+            constellation_intelligence: value.constellation_intelligence.clone(),
+            slot_attributions: value.slot_attributions.clone(),
+        }
+    }
+
+    fn into_current(self) -> Result<RealityPrediction, MejepaInferError> {
+        RealityPrediction::try_new(RealityPrediction {
+            prediction_id: self.prediction_id,
+            witness_hash: self.witness_hash,
+            task_id: self.task_id,
+            session_id: self.session_id,
+            language: self.language,
+            covered_chunks: self.covered_chunks,
+            verdict: self.verdict,
+            confidence_interval: self.confidence_interval,
+            predicted_oracle_pass: self.predicted_oracle_pass,
+            predicted_test_pass: self.predicted_test_pass,
+            predicted_runtime_trace: self.predicted_runtime_trace,
+            ood_score: self.ood_score,
+            outcome_set: self.outcome_set,
+            calibrated_confidence: self.calibrated_confidence,
+            degraded_status: self.degraded_status,
+            granger_attestations: self.granger_attestations,
+            predicted_failure_modes: self.predicted_failure_modes,
+            predicted_failed_tests: self.predicted_failed_tests,
+            predicted_works: self.predicted_works,
+            predicted_uncovered_paths: self.predicted_uncovered_paths,
+            predicted_flaky_tests: self.predicted_flaky_tests,
+            guard_violations: self.guard_violations,
+            per_slot_ood_reasons: self.per_slot_ood_reasons,
+            closest_exemplars: self.closest_exemplars,
+            predicted_edge_cases: self.predicted_edge_cases,
+            predicted_latent_bugs: self.predicted_latent_bugs,
+            predicted_tech_debt_added: self.predicted_tech_debt_added,
+            predicted_dead_code: self.predicted_dead_code,
+            predicted_redundant_code: self.predicted_redundant_code,
+            predicted_perf_regressions: self.predicted_perf_regressions,
+            predicted_security_concerns: self.predicted_security_concerns,
+            predicted_accuracy_degradations: self.predicted_accuracy_degradations,
+            predicted_cost_regressions: self.predicted_cost_regressions,
+            predicted_reasoning_class: self.predicted_reasoning_class,
+            agent_claim_graph: self.agent_claim_graph,
+            claim_reconciliation: self.claim_reconciliation,
+            reality_impact: self.reality_impact,
+            provenance: self.provenance,
+            source_panel_sha: self.source_panel_sha,
+            calibration_version: self.calibration_version,
+            created_at_unix_ms: self.created_at_unix_ms,
+            matched_fingerprint: self.matched_fingerprint,
+            unknown_candidate_id: self.unknown_candidate_id,
+            constellation_intelligence: self.constellation_intelligence,
+            slot_attributions: self.slot_attributions,
+            label_context: PredictionLabelContext::default(),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2100,6 +2353,7 @@ impl RealityPredictionLegacyNoSlotAttributions {
             unknown_candidate_id: self.unknown_candidate_id,
             constellation_intelligence: self.constellation_intelligence,
             slot_attributions: Vec::new(),
+            label_context: PredictionLabelContext::default(),
         })
     }
 }
@@ -2248,6 +2502,7 @@ impl RealityPredictionLegacyNoConstellation {
             unknown_candidate_id: self.unknown_candidate_id,
             constellation_intelligence: None,
             slot_attributions: Vec::new(),
+            label_context: PredictionLabelContext::default(),
         })
     }
 }
@@ -2256,6 +2511,10 @@ pub fn decode_reality_prediction(bytes: &[u8]) -> Result<RealityPrediction, Meje
     match bincode::deserialize::<RealityPrediction>(bytes) {
         Ok(prediction) => RealityPrediction::try_new(prediction),
         Err(current_err) => {
+            if let Ok(legacy) = bincode::deserialize::<RealityPredictionLegacyNoLabelContext>(bytes)
+            {
+                return legacy.into_current();
+            }
             if let Ok(legacy) =
                 bincode::deserialize::<RealityPredictionLegacyNoSlotAttributions>(bytes)
             {
@@ -2300,6 +2559,9 @@ impl RealityPrediction {
         value.predicted_cost_regressions.shrink_to_fit();
         value.claim_reconciliation.shrink_to_fit();
         value.slot_attributions.shrink_to_fit();
+        value.label_context.accepted_label_ids.shrink_to_fit();
+        value.label_context.failure_evidence_set_ids.shrink_to_fit();
+        value.label_context.active_skill_ids.shrink_to_fit();
         Ok(value)
     }
 
@@ -2450,6 +2712,7 @@ impl RealityPrediction {
         if let Some(evidence) = &self.constellation_intelligence {
             evidence.validate()?;
         }
+        self.label_context.validate()?;
         validate_slot_attribution_collection(
             "slot_attributions",
             &self.slot_attributions,
@@ -3128,6 +3391,7 @@ pub struct RealityPredictionBuilder {
     unknown_candidate_id: Option<[u8; 16]>,
     constellation_intelligence: Option<ConstellationIntelligenceEvidence>,
     slot_attributions: Vec<SlotAttributionEvidence>,
+    label_context: PredictionLabelContext,
 }
 
 impl RealityPredictionBuilder {
@@ -3183,6 +3447,7 @@ impl RealityPredictionBuilder {
             unknown_candidate_id: None,
             constellation_intelligence: None,
             slot_attributions: Vec::new(),
+            label_context: PredictionLabelContext::default(),
         }
     }
 
@@ -3407,6 +3672,7 @@ impl RealityPredictionBuilder {
             unknown_candidate_id: self.unknown_candidate_id,
             constellation_intelligence: self.constellation_intelligence,
             slot_attributions: self.slot_attributions,
+            label_context: self.label_context,
         })
     }
 
@@ -3430,6 +3696,11 @@ impl RealityPredictionBuilder {
 
     pub fn slot_attributions(mut self, value: Vec<SlotAttributionEvidence>) -> Self {
         self.slot_attributions = value;
+        self
+    }
+
+    pub fn label_context(mut self, value: PredictionLabelContext) -> Self {
+        self.label_context = value;
         self
     }
 }
@@ -4519,6 +4790,31 @@ fn validate_bounded_id(field: &str, value: &str, max_bytes: usize) -> Result<(),
     Ok(())
 }
 
+fn validate_id_list(
+    field: &str,
+    values: &[String],
+    max_items: usize,
+) -> Result<(), MejepaInferError> {
+    if values.len() > max_items {
+        return Err(MejepaInferError::DimMismatch {
+            expected: max_items,
+            actual: values.len(),
+            context: format!("{field} exceeds maximum"),
+        });
+    }
+    let mut seen = BTreeSet::new();
+    for (idx, value) in values.iter().enumerate() {
+        validate_bounded_id(&format!("{field}[{idx}]"), value, MAX_ID_BYTES)?;
+        if !seen.insert(value) {
+            return Err(MejepaInferError::InvalidInput {
+                field: format!("{field}[{idx}]"),
+                detail: "duplicate id".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn validate_cosine(field: &str, value: f32) -> Result<(), MejepaInferError> {
     if !value.is_finite() {
         return Err(MejepaInferError::NanDetected {
@@ -4654,6 +4950,18 @@ mod tests {
         .source_panel_sha([4; 32])
         .calibration_version("calibration-v1")
         .created_at_unix_ms(1_772_000_000_000)
+        .label_context(PredictionLabelContext {
+            accepted_label_ids: vec!["ast_surface:function".to_string()],
+            code_state_key: Some("python:before:unit".to_string()),
+            failure_evidence_set_ids: vec!["evidence:unit".to_string()],
+            active_skill_ids: vec!["skill:unit_sequence".to_string()],
+            accepted_registry_sha256: Some("sha256:abc123".to_string()),
+            usefulness_metrics_sha256: Some("sha256:def456".to_string()),
+            learning_bridge_manifest_sha256: Some("sha256:fedcba".to_string()),
+            label_signature_hash: Some("labels:abc123def456".to_string()),
+            skill_signature_hash: Some("skills:654fed321cba".to_string()),
+            ..PredictionLabelContext::default()
+        })
         .build()
         .unwrap()
     }
@@ -4685,6 +4993,19 @@ mod tests {
             decoded.constellation_intelligence,
             prediction.constellation_intelligence
         );
+        assert!(!decoded.slot_attributions.is_empty());
+    }
+
+    #[test]
+    fn decode_reality_prediction_reads_legacy_without_label_context_field() {
+        let prediction = prediction_for_decode();
+        let legacy = RealityPredictionLegacyNoLabelContext::from_current(&prediction);
+        let legacy_bytes = bincode::serialize(&legacy).unwrap();
+
+        let decoded = decode_reality_prediction(&legacy_bytes).unwrap();
+
+        assert_eq!(decoded.prediction_id, prediction.prediction_id);
+        assert_eq!(decoded.label_context, PredictionLabelContext::default());
         assert!(!decoded.slot_attributions.is_empty());
     }
 

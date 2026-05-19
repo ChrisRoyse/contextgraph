@@ -1,0 +1,538 @@
+//! TASK-PY-G-112/#413 label bridge for mistake-driven learning.
+//!
+//! This module validates the deterministic baseline label artifacts produced by
+//! TASK-PY-G-117 and turns them into compact runtime/training identities. It
+//! deliberately preserves label and skill IDs instead of turning the embedder
+//! panel into one fused semantic vector.
+
+use crate::error::{TrainerError, TrainerErrorCode};
+use context_graph_mejepa::PredictionLabelContext;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs::File;
+use std::io::{BufRead, BufReader, Read};
+use std::path::{Path, PathBuf};
+
+const BRIDGE_MANIFEST_FILE: &str = "learning_bridge_manifest.json";
+const MAX_ID_BYTES: usize = 512;
+const MAX_LABEL_IDS: usize = 256;
+const MAX_SKILL_IDS: usize = 128;
+const MAX_FAILURE_EVIDENCE_SET_IDS: usize = 128;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningUpdatePolicy {
+    pub baseline_seeded_from: String,
+    pub online_rescore: bool,
+    pub promote_demote_with_new_outcomes: bool,
+    pub target_labels_are_supervision_only: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AcceptedLabelRegistryRow {
+    pub artifact_kind: String,
+    pub schema_version: u32,
+    pub formula_version: String,
+    pub label_id: String,
+    pub label_hash: String,
+    pub family: String,
+    pub status: String,
+    pub support: u64,
+    pub fail_rate: f64,
+    pub lift_over_weighted_category_baseline: f64,
+    pub live_prediction_input_allowed: bool,
+    pub learning_update_policy: LearningUpdatePolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LabelUsefulnessMetricRow {
+    pub label_id: String,
+    pub family: String,
+    pub status: String,
+    pub support: u64,
+    pub leaky_target: bool,
+    pub lift_over_weighted_category_baseline: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FailureEvidenceSetRow {
+    pub code_state_key: String,
+    pub labels: Vec<String>,
+    pub localization_mode: String,
+    pub slot_identity_preserved: bool,
+    pub flat_vector_concat_used: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningBridgePaths {
+    pub accepted_label_registry: String,
+    pub label_usefulness_metrics: String,
+    pub chunk_constellation_labels: String,
+    pub code_state_constellations: String,
+    pub failure_evidence_sets: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DynamicLearningPolicy {
+    pub baseline_only: bool,
+    pub new_data_uses_same_compiler: bool,
+    pub usefulness_rescored_over_time: bool,
+    pub target_outcomes_supervise_but_are_not_live_inputs: bool,
+    pub slot_identity_preserved: bool,
+    pub flat_vector_concat_used: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningBridgeManifest {
+    pub artifact_kind: String,
+    pub schema_version: u32,
+    pub formula_version: String,
+    pub purpose: String,
+    pub paths: LearningBridgePaths,
+    pub consumers: BTreeMap<String, String>,
+    pub dynamic_learning_policy: DynamicLearningPolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LabelLearningBridge {
+    pub manifest: LearningBridgeManifest,
+    pub manifest_sha256: String,
+    pub accepted_registry_sha256: String,
+    pub usefulness_metrics_sha256: String,
+    pub failure_evidence_sets_sha256: String,
+    pub accepted_labels: BTreeMap<String, AcceptedLabelRegistryRow>,
+    pub usefulness_metrics: BTreeMap<String, LabelUsefulnessMetricRow>,
+    pub failure_evidence_sets: BTreeMap<String, FailureEvidenceSetRow>,
+}
+
+impl LabelLearningBridge {
+    pub fn accepted_label(&self, label_id: &str) -> Option<&AcceptedLabelRegistryRow> {
+        self.accepted_labels.get(label_id)
+    }
+
+    pub fn validate_prediction_labels(&self, label_ids: &[String]) -> Result<(), TrainerError> {
+        validate_id_list("accepted_label_ids", label_ids, MAX_LABEL_IDS)?;
+        for label_id in label_ids {
+            let row = self.accepted_labels.get(label_id).ok_or_else(|| {
+                invalid(
+                    "accepted_label_ids",
+                    format!("label_id {label_id} is not in accepted registry"),
+                )
+            })?;
+            validate_accepted_label(row)?;
+        }
+        Ok(())
+    }
+}
+
+pub fn load_label_learning_bridge(
+    root: impl AsRef<Path>,
+) -> Result<LabelLearningBridge, TrainerError> {
+    let root = root.as_ref();
+    let manifest_path = root.join(BRIDGE_MANIFEST_FILE);
+    let manifest: LearningBridgeManifest = read_json_file(&manifest_path)?;
+    validate_manifest(&manifest)?;
+    validate_path_set(&manifest.paths)?;
+
+    let accepted_path = PathBuf::from(&manifest.paths.accepted_label_registry);
+    let usefulness_path = PathBuf::from(&manifest.paths.label_usefulness_metrics);
+    let failure_sets_path = PathBuf::from(&manifest.paths.failure_evidence_sets);
+    let accepted_rows = read_jsonl::<AcceptedLabelRegistryRow>(&accepted_path)?;
+    let usefulness_rows = read_jsonl::<LabelUsefulnessMetricRow>(&usefulness_path)?;
+    let failure_rows = read_jsonl::<FailureEvidenceSetRow>(&failure_sets_path)?;
+
+    let mut accepted_labels = BTreeMap::new();
+    for row in accepted_rows {
+        validate_accepted_label(&row)?;
+        if accepted_labels.insert(row.label_id.clone(), row).is_some() {
+            return Err(invalid("accepted_label_registry", "duplicate label_id"));
+        }
+    }
+    if accepted_labels.is_empty() {
+        return Err(invalid(
+            "accepted_label_registry",
+            "must contain at least one accepted label",
+        ));
+    }
+
+    let mut usefulness_metrics = BTreeMap::new();
+    for row in usefulness_rows {
+        validate_label_id("label_usefulness_metrics.label_id", &row.label_id)?;
+        if row.leaky_target && row.status.starts_with("accepted") {
+            return Err(invalid(
+                "label_usefulness_metrics.leaky_target",
+                format!("accepted label {} is target-leaky", row.label_id),
+            ));
+        }
+        usefulness_metrics.insert(row.label_id.clone(), row);
+    }
+
+    let mut failure_evidence_sets = BTreeMap::new();
+    for row in failure_rows {
+        validate_failure_evidence_set(&row)?;
+        failure_evidence_sets.insert(row.code_state_key.clone(), row);
+    }
+
+    Ok(LabelLearningBridge {
+        manifest_sha256: sha256_file(&manifest_path)?,
+        accepted_registry_sha256: sha256_file(&accepted_path)?,
+        usefulness_metrics_sha256: sha256_file(&usefulness_path)?,
+        failure_evidence_sets_sha256: sha256_file(&failure_sets_path)?,
+        manifest,
+        accepted_labels,
+        usefulness_metrics,
+        failure_evidence_sets,
+    })
+}
+
+pub fn build_prediction_label_context(
+    bridge: &LabelLearningBridge,
+    accepted_label_ids: Vec<String>,
+    code_state_key: Option<String>,
+    failure_evidence_set_ids: Vec<String>,
+    active_skill_ids: Vec<String>,
+) -> Result<PredictionLabelContext, TrainerError> {
+    bridge.validate_prediction_labels(&accepted_label_ids)?;
+    validate_id_list(
+        "failure_evidence_set_ids",
+        &failure_evidence_set_ids,
+        MAX_FAILURE_EVIDENCE_SET_IDS,
+    )?;
+    validate_id_list("active_skill_ids", &active_skill_ids, MAX_SKILL_IDS)?;
+    if let Some(key) = &code_state_key {
+        validate_label_id("code_state_key", key)?;
+    }
+    Ok(PredictionLabelContext {
+        accepted_label_ids: accepted_label_ids.clone(),
+        code_state_key,
+        failure_evidence_set_ids,
+        active_skill_ids: active_skill_ids.clone(),
+        accepted_registry_sha256: Some(bridge.accepted_registry_sha256.clone()),
+        usefulness_metrics_sha256: Some(bridge.usefulness_metrics_sha256.clone()),
+        learning_bridge_manifest_sha256: Some(bridge.manifest_sha256.clone()),
+        label_signature_hash: Some(accepted_label_signature_hash(&accepted_label_ids)?),
+        skill_signature_hash: if active_skill_ids.is_empty() {
+            None
+        } else {
+            Some(skill_signature_hash(&active_skill_ids)?)
+        },
+        ..PredictionLabelContext::default()
+    })
+}
+
+pub fn accepted_label_signature_hash(label_ids: &[String]) -> Result<String, TrainerError> {
+    signature_hash("labels", label_ids)
+}
+
+pub fn skill_signature_hash(skill_ids: &[String]) -> Result<String, TrainerError> {
+    signature_hash("skills", skill_ids)
+}
+
+fn signature_hash(prefix: &'static str, ids: &[String]) -> Result<String, TrainerError> {
+    validate_id_list(prefix, ids, MAX_LABEL_IDS)?;
+    if ids.is_empty() {
+        return Err(invalid(prefix, "signature requires at least one id"));
+    }
+    let mut sorted = ids.to_vec();
+    sorted.sort();
+    let mut hasher = Sha256::new();
+    hasher.update(prefix.as_bytes());
+    hasher.update([0]);
+    for id in sorted {
+        hasher.update(id.as_bytes());
+        hasher.update([0]);
+    }
+    let digest = hex::encode(hasher.finalize());
+    Ok(format!("{prefix}:{}", &digest[..12]))
+}
+
+fn validate_manifest(manifest: &LearningBridgeManifest) -> Result<(), TrainerError> {
+    if manifest.schema_version == 0 {
+        return Err(invalid("schema_version", "must be positive"));
+    }
+    if manifest.dynamic_learning_policy.flat_vector_concat_used {
+        return Err(invalid(
+            "dynamic_learning_policy.flat_vector_concat_used",
+            "flat vector concatenation is forbidden as a semantic learning path",
+        ));
+    }
+    if !manifest.dynamic_learning_policy.slot_identity_preserved {
+        return Err(invalid(
+            "dynamic_learning_policy.slot_identity_preserved",
+            "slot identity must be preserved",
+        ));
+    }
+    if !manifest
+        .dynamic_learning_policy
+        .target_outcomes_supervise_but_are_not_live_inputs
+    {
+        return Err(invalid(
+            "dynamic_learning_policy.target_outcomes_supervise_but_are_not_live_inputs",
+            "target labels may supervise but must not be live inputs",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_path_set(paths: &LearningBridgePaths) -> Result<(), TrainerError> {
+    for (field, path) in [
+        ("accepted_label_registry", &paths.accepted_label_registry),
+        ("label_usefulness_metrics", &paths.label_usefulness_metrics),
+        (
+            "chunk_constellation_labels",
+            &paths.chunk_constellation_labels,
+        ),
+        (
+            "code_state_constellations",
+            &paths.code_state_constellations,
+        ),
+        ("failure_evidence_sets", &paths.failure_evidence_sets),
+    ] {
+        if path.contains("/mnt/d") {
+            return Err(invalid(
+                field,
+                "active label bridge paths must not use /mnt/d",
+            ));
+        }
+        validate_label_id(field, path)?;
+    }
+    Ok(())
+}
+
+fn validate_accepted_label(row: &AcceptedLabelRegistryRow) -> Result<(), TrainerError> {
+    validate_label_id("accepted_label_registry.label_id", &row.label_id)?;
+    validate_label_id("accepted_label_registry.label_hash", &row.label_hash)?;
+    validate_label_id("accepted_label_registry.family", &row.family)?;
+    if !row.status.starts_with("accepted") {
+        return Err(invalid(
+            "accepted_label_registry.status",
+            format!("{} is not accepted", row.label_id),
+        ));
+    }
+    if row.support == 0 {
+        return Err(invalid(
+            "accepted_label_registry.support",
+            format!("{} has zero support", row.label_id),
+        ));
+    }
+    if !row.live_prediction_input_allowed {
+        return Err(invalid(
+            "accepted_label_registry.live_prediction_input_allowed",
+            format!(
+                "{} is target-leaky or disallowed for live prediction",
+                row.label_id
+            ),
+        ));
+    }
+    if !row.learning_update_policy.online_rescore
+        || !row.learning_update_policy.promote_demote_with_new_outcomes
+        || !row
+            .learning_update_policy
+            .target_labels_are_supervision_only
+    {
+        return Err(invalid(
+            "accepted_label_registry.learning_update_policy",
+            format!(
+                "{} is missing online learning policy guarantees",
+                row.label_id
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_failure_evidence_set(row: &FailureEvidenceSetRow) -> Result<(), TrainerError> {
+    validate_label_id("failure_evidence_set.code_state_key", &row.code_state_key)?;
+    validate_id_list("failure_evidence_set.labels", &row.labels, MAX_LABEL_IDS)?;
+    validate_label_id(
+        "failure_evidence_set.localization_mode",
+        &row.localization_mode,
+    )?;
+    if !row.slot_identity_preserved || row.flat_vector_concat_used {
+        return Err(invalid(
+            "failure_evidence_set.slot_policy",
+            "failure evidence must preserve slots and forbid flat-vector semantics",
+        ));
+    }
+    Ok(())
+}
+
+fn read_json_file<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, TrainerError> {
+    let file = File::open(path).map_err(map_io_error)?;
+    serde_json::from_reader(file).map_err(map_json_error)
+}
+
+fn read_jsonl<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T>, TrainerError> {
+    let file = File::open(path).map_err(map_io_error)?;
+    let reader = BufReader::new(file);
+    let mut rows = Vec::new();
+    for (idx, line) in reader.lines().enumerate() {
+        let line = line.map_err(map_io_error)?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row = serde_json::from_str(&line).map_err(|err| {
+            invalid(
+                "jsonl",
+                format!("{}:{} failed JSON parse: {err}", path.display(), idx + 1),
+            )
+        })?;
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+fn sha256_file(path: &Path) -> Result<String, TrainerError> {
+    let mut file = File::open(path).map_err(map_io_error)?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0_u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf).map_err(map_io_error)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("sha256:{}", hex::encode(hasher.finalize())))
+}
+
+fn validate_id_list(field: &str, values: &[String], max_items: usize) -> Result<(), TrainerError> {
+    if values.len() > max_items {
+        return Err(invalid(field, format!("too many ids: {}", values.len())));
+    }
+    let mut seen = BTreeSet::new();
+    for value in values {
+        validate_label_id(field, value)?;
+        if !seen.insert(value) {
+            return Err(invalid(field, format!("duplicate id {value}")));
+        }
+    }
+    Ok(())
+}
+
+fn validate_label_id(field: &str, value: &str) -> Result<(), TrainerError> {
+    if value.trim().is_empty() {
+        return Err(invalid(field, "must be non-empty"));
+    }
+    if value.len() > MAX_ID_BYTES || value.chars().any(char::is_control) {
+        return Err(invalid(field, "must be single-line text up to 512 bytes"));
+    }
+    Ok(())
+}
+
+fn invalid(field: impl Into<String>, message: impl Into<String>) -> TrainerError {
+    TrainerError::new(TrainerErrorCode::MejepaTrainConfigInvalid, message).with_context(json!({
+        "field": field.into(),
+        "file": "file:crates/context-graph-mejepa-train/src/label_bridge.rs",
+        "remediation": "regenerate or repair the #413 label bridge; mistake-driven learning requires non-leaky slot-preserving labels"
+    }))
+}
+
+fn map_io_error(err: std::io::Error) -> TrainerError {
+    invalid("io", err.to_string())
+}
+
+fn map_json_error(err: serde_json::Error) -> TrainerError {
+    invalid("json", err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn write_bridge_fixture(root: &Path, live_allowed: bool) {
+        let accepted = root.join("accepted_label_registry.jsonl");
+        let usefulness = root.join("label_usefulness_metrics.jsonl");
+        let chunks = root.join("chunk_constellation_labels.jsonl");
+        let code_states = root.join("code_state_constellations.jsonl");
+        let failure_sets = root.join("failure_evidence_sets.jsonl");
+        fs::write(
+            &accepted,
+            format!(
+                r#"{{"artifact_kind":"python_auto_label_discovery_accepted_label_registry_row","schema_version":1,"formula_version":"unit","label_id":"ast_surface:function","label_hash":"sha256:label","family":"ast_surface","status":"accepted_live_input","support":42,"fail_rate":0.75,"lift_over_weighted_category_baseline":0.31,"live_prediction_input_allowed":{},"learning_update_policy":{{"baseline_seeded_from":"TASK-PY-G-117","online_rescore":true,"promote_demote_with_new_outcomes":true,"target_labels_are_supervision_only":true}}}}"#,
+                live_allowed
+            ),
+        )
+        .unwrap();
+        fs::write(
+            &usefulness,
+            r#"{"label_id":"ast_surface:function","family":"ast_surface","status":"accepted_live_input","support":42,"leaky_target":false,"lift_over_weighted_category_baseline":0.31}"#,
+        )
+        .unwrap();
+        fs::write(&chunks, "{}\n").unwrap();
+        fs::write(&code_states, "{}\n").unwrap();
+        fs::write(
+            &failure_sets,
+            r#"{"code_state_key":"python:before:unit","labels":["evidence:multi_point"],"localization_mode":"failure_localization:multi_point","slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
+        )
+        .unwrap();
+        let manifest = serde_json::json!({
+            "artifact_kind": "python_auto_label_discovery_learning_bridge_manifest",
+            "schema_version": 1,
+            "formula_version": "unit",
+            "purpose": "unit",
+            "paths": {
+                "accepted_label_registry": accepted,
+                "label_usefulness_metrics": usefulness,
+                "chunk_constellation_labels": chunks,
+                "code_state_constellations": code_states,
+                "failure_evidence_sets": failure_sets,
+            },
+            "consumers": {
+                "ReplayBufferRow.cell_id": "label aware"
+            },
+            "dynamic_learning_policy": {
+                "baseline_only": true,
+                "new_data_uses_same_compiler": true,
+                "usefulness_rescored_over_time": true,
+                "target_outcomes_supervise_but_are_not_live_inputs": true,
+                "slot_identity_preserved": true,
+                "flat_vector_concat_used": false
+            }
+        });
+        fs::write(root.join(BRIDGE_MANIFEST_FILE), manifest.to_string()).unwrap();
+    }
+
+    #[test]
+    fn bridge_builds_prediction_label_context_with_skill_signature() {
+        let temp = tempfile::tempdir().unwrap();
+        write_bridge_fixture(temp.path(), true);
+
+        let bridge = load_label_learning_bridge(temp.path()).unwrap();
+        let context = build_prediction_label_context(
+            &bridge,
+            vec!["ast_surface:function".to_string()],
+            Some("python:before:unit".to_string()),
+            vec!["python:before:unit".to_string()],
+            vec!["skill:unit_sequence".to_string()],
+        )
+        .unwrap();
+
+        assert_eq!(context.accepted_label_ids, vec!["ast_surface:function"]);
+        assert_eq!(context.active_skill_ids, vec!["skill:unit_sequence"]);
+        assert!(context.label_signature_hash.unwrap().starts_with("labels:"));
+        assert!(context.skill_signature_hash.unwrap().starts_with("skills:"));
+        assert!(context
+            .accepted_registry_sha256
+            .unwrap()
+            .starts_with("sha256:"));
+    }
+
+    #[test]
+    fn bridge_rejects_target_leaky_accepted_label() {
+        let temp = tempfile::tempdir().unwrap();
+        write_bridge_fixture(temp.path(), false);
+
+        let err = load_label_learning_bridge(temp.path()).unwrap_err();
+
+        assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
+    }
+}

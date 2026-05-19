@@ -307,19 +307,29 @@ Full FSV evidence index (327 directories on `/mnt/d/contextgraph/fsv/`) → `07_
 
 ---
 
-## 12. Planned New Modules (Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop)
+## 12. Modules for the Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop
 
-Planned source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`). All planned modules are **additive** to existing crates — no new top-level crate is created; tracked under epic issues #404 / #405 / #406 / #407.
+Source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`). Some are **shipped** (#413), some are **planned** (#404 / #405 / #406 / #407). All are **additive** to existing crates — no new top-level crate.
 
-### 12.1 Failure-mode labeling hierarchy (epic #404 / TASK-PY-G-110)
+### 12.1 Failure-mode labeling hierarchy
+
+**Level 0 (deterministic label compiler) — SHIPPED via #413 / TASK-PY-G-117 on 2026-05-19:**
+
+| Module | Status | Role |
+|---|---|---|
+| `scripts/swebench_lite_ops/python_auto_label_discovery.py` (1,641 lines) | ✅ SHIPPED 2026-05-19 | Deterministic full-corpus label compiler. Emits chunk constellation labels, file-path + code-state constellations, failure evidence sets, usefulness metrics, accepted label registry, and the learning bridge manifest. No inner LLM. Slot identity preserved. Imports `python_constellation_training_objective` (normalize_category), `python_real_corpus_constellation_smoke` (forward-cache iterators + scalar feature extraction), `smoke_intelligence_matrices` (JSONL writers + row keys). |
+| CLI entrypoint `python-auto-label-discovery` | ✅ SHIPPED 2026-05-19 | Registered through `scripts/swebench_lite_ops/cli.py`; the operator-facing surface for running the compiler against the aiwonder corpus. |
+| FSV: `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/python_auto_label_discovery_fsv.json` | ✅ PASS (full corpus) | manifest sha256 `3cd0e3c6…`; full 399,777 chunks + 4,665,772 forward records + 491 accepted registry rows; 12/12 manual review reproductions matched |
+
+**Level 1/2/3 hierarchical naming (consumes Level-0 registry) — open under #404 / TASK-PY-G-110:**
 
 | Planned module | Crate | Role |
 |---|---|---|
-| `src/failure_mode_hierarchy.rs` | `context-graph-mejepa` | 4-level hierarchy types (`FailureModeGroupId`, `FailureModeSkillName`, `FailureModeConstellationName`, `NamedFailureMode`) |
-| `src/failure_mode_clusters.rs` | `context-graph-mejepa` | K-means clustering over 78-column pairwise-correlation residuals from #388; cluster naming via cosine-vs-vocabulary (Discover-then-Name CBM, Rao et al. 2024) |
-| `src/failure_mode_vocabulary.rs` | `context-graph-mejepa` | Operator-curated failure-mode vocabulary seeded from Aleithan et al. 2025 / Yang et al. 2024 / SWE-Bench Pro 2025 published taxonomies + our 8-mutation operator set + adversarial corpus |
-| `src/failure_mode_consumer.rs` | `context-graph-mejepa` | Reads K-means cluster output, writes `CF_MEJEPA_FAILURE_MODE_LEVEL1/2/3`, exposes lookup for `compiler.rs::compile` |
-| `examples/task_py_g_110_failure_mode_clustering_fsv.rs` | `context-graph-mejepa` | FSV harness: cluster purity ≥ 0.7 silhouette, operator-rename idempotence, every Fail prediction gets at least one named mode |
+| `src/failure_mode_hierarchy.rs` | `context-graph-mejepa` | 4-level hierarchy types (`FailureModeGroupId`, `FailureModeSkillName`, `FailureModeConstellationName`, `NamedFailureMode`). Reads the 491-row accepted label registry from #413; aggregates Level-0 labels by co-occurrence into Level-1 groups, named via published SWE-bench taxonomies (Aleithan et al. 2025, Yang et al. 2024, SWE-Bench Pro 2025). |
+| `src/failure_mode_clusters.rs` | `context-graph-mejepa` | Aggregation over the deterministic Level-0 label IDs (NOT a new K-means clustering pass — the K-means equivalent already lives in `python_auto_label_discovery.py` as the slot-region label emitter). |
+| `src/failure_mode_vocabulary.rs` | `context-graph-mejepa` | Operator-curated failure-mode vocabulary seeded from the published taxonomies + our 8-mutation operator set + adversarial corpus. Names attach to Level-1 groups already discovered by #413. |
+| `src/failure_mode_consumer.rs` | `context-graph-mejepa` | Reads aggregated Level-1/2/3 names, writes `CF_MEJEPA_FAILURE_MODE_LEVEL1/2/3`, exposes lookup for `compiler.rs::compile`. |
+| `examples/task_py_g_110_failure_mode_hierarchy_fsv.rs` | `context-graph-mejepa` | FSV harness: every shipped Fail prediction in the holdout receives at least one named mode; operator-rename idempotence; named-mode → closest-exemplar oracle agreement ≥ 0.85. |
 
 ### 12.2 Cross-panel triangulation (epic #405 / TASK-PY-G-111)
 

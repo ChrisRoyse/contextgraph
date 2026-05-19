@@ -661,6 +661,7 @@ mod tests {
             unknown_candidate_id: None,
             constellation_intelligence: None,
             slot_attributions: Vec::new(),
+            label_context: Default::default(),
         })
         .unwrap()
     }

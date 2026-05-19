@@ -273,14 +273,24 @@ No tool sends HTTP from action paths (CLAUDE.md §6.8). No tool writes outside `
 
 Planned MCP surfaces supporting the 2026-05-19 binary doctrine (`01_overview.md §1.1`, `05_predictor_pipeline.md §0`). Tracked under epic issues #404 / #405 / #406. All planned tools are `mejepa_*` namespaced and registered through `definitions/mejepa.rs`.
 
-### 9.1 Failure-mode labeling tools (#404 / TASK-PY-G-110)
+### 9.1 Failure-mode labeling tools — CLI SHIPPED via #413; MCP wrappers planned via #404
+
+**Shipped CLI surface (deterministic Level-0 compiler, 2026-05-19):**
+
+| CLI command | Status | Purpose |
+|---|---|---|
+| `python-auto-label-discovery` (registered via `scripts/swebench_lite_ops/cli.py`) | ✅ SHIPPED 2026-05-19 (#413) | Run the full deterministic label compiler against the aiwonder corpus. Writes all 7 Level-0 JSONL artifacts under `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/` plus the FSV at `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/`. Deterministic by `FORMULA_VERSION=deterministic_slot_label_compiler_v1`. |
+
+**Planned MCP wrappers (`mejepa_*` namespace; on top of the shipped CLI) — open under #404 / TASK-PY-G-110:**
 
 | Tool (planned) | Const | Purpose | Key params | Side effects |
 |---|---|---|---|---|
-| `mcp__cgreality__mejepa_list_failure_modes` | `MEJEPA_LIST_FAILURE_MODES` | List the operator-approved failure-mode vocabulary + level-1/2/3 catalog. Optional cell filter. | `cell_key?`, `level: 1\|2\|3` | Read-only: `CF_MEJEPA_FAILURE_MODE_*` |
-| `mcp__cgreality__mejepa_label_failure_cluster` | `MEJEPA_LABEL_FAILURE_CLUSTER` | Operator-facing tool to name a discovered K-means cluster. Top suggestions from `CF_MEJEPA_FAILURE_MODE_VOCABULARY` cosine match; operator can approve, rename, or merge with an existing skill. | `cluster_id`, `chosen_name`, `merge_into_cluster_id?` | Writes `CF_MEJEPA_FAILURE_MODE_LEVEL1` (operator_approved_name), `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` |
-| `mcp__cgreality__mejepa_explain_named_failure_mode` | `MEJEPA_EXPLAIN_NAMED_FAILURE_MODE` | Given a `prediction_id`, return the named failure mode + top-K closest exemplars + slot trace + vocabulary source. Replaces the legacy `mejepa_explain_prediction` output for Fail rows. | `prediction_id`, `k: int=5` | Read-only: `CF_MEJEPA_NAMED_PREDICTIONS`, `CF_MEJEPA_PATCH_SIMILARITY_META` |
+| `mcp__cgreality__mejepa_list_failure_modes` | `MEJEPA_LIST_FAILURE_MODES` | List the operator-approved failure-mode vocabulary + level-1/2/3 catalog (built on top of the 491-row Level-0 accepted registry). Optional cell filter. | `cell_key?`, `level: 1\|2\|3` | Read-only: `CF_MEJEPA_FAILURE_MODE_*` + `accepted_label_registry.jsonl` |
+| `mcp__cgreality__mejepa_label_failure_cluster` | `MEJEPA_LABEL_FAILURE_CLUSTER` | Operator-facing tool to name an aggregated Level-1 group of Level-0 labels. Top suggestions from `CF_MEJEPA_FAILURE_MODE_VOCABULARY` cosine match; operator can approve, rename, or merge with an existing skill. | `group_id`, `chosen_name`, `merge_into_group_id?` | Writes `CF_MEJEPA_FAILURE_MODE_LEVEL1` (operator_approved_name), `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` |
+| `mcp__cgreality__mejepa_explain_named_failure_mode` | `MEJEPA_EXPLAIN_NAMED_FAILURE_MODE` | Given a `prediction_id`, return the named failure mode + top-K closest exemplars + slot trace + vocabulary source + the Level-0 accepted label IDs that triggered the naming. Replaces the legacy `mejepa_explain_prediction` output for Fail rows. | `prediction_id`, `k: int=5` | Read-only: `CF_MEJEPA_NAMED_PREDICTIONS`, `CF_MEJEPA_PATCH_SIMILARITY_META`, `accepted_label_registry.jsonl` |
 | `mcp__cgreality__mejepa_failure_mode_coverage_audit` | `MEJEPA_FAILURE_MODE_COVERAGE_AUDIT` | Read-only audit: for the 300×8 holdout, what fraction of Fail rows have an attached named failure mode? Used as gate evidence for #404's FSV. | (no params) | Read-only |
+| `mcp__cgreality__mejepa_list_accepted_labels` | `MEJEPA_LIST_ACCEPTED_LABELS` | Read-only operator surface over the shipped 491-row accepted Level-0 registry. Filter by family / leakage status / minimum lift / partition. | `family?`, `min_lift?`, `leakage_status?: live_input\|target_side_only` | Read-only: `accepted_label_registry.jsonl` |
+| `mcp__cgreality__mejepa_label_compiler_status` | `MEJEPA_LABEL_COMPILER_STATUS` | Surface the FSV manifest + report from the latest `python-auto-label-discovery` run (last formula version, row counts, sha256s). | (no params) | Read-only |
 
 ### 9.2 Cross-panel triangulation tools (#405 / TASK-PY-G-111)
 

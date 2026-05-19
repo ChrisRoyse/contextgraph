@@ -10,6 +10,7 @@ use context_graph_mejepa_cf::CF_MEJEPA_REPLAY_BUFFER;
 use rocksdb::{IteratorMode, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
@@ -44,6 +45,8 @@ pub enum ReplayBufferSource {
     AdversarialCorpus,
     UnknownFingerprint,
     SchedulerBackfill,
+    AcceptedLabelMistake,
+    ConstellationSkillMistake,
 }
 
 impl ReplayBufferSource {
@@ -52,6 +55,8 @@ impl ReplayBufferSource {
             Self::OperatorOverride => OPERATOR_OVERRIDE_SAMPLING_WEIGHT,
             Self::DriftFlaggedCell => 3.0,
             Self::AdversarialCorpus => 4.0,
+            Self::AcceptedLabelMistake => 8.0,
+            Self::ConstellationSkillMistake => 8.0,
             Self::AgentSurprise | Self::UnknownFingerprint | Self::SchedulerBackfill => 1.0,
         }
     }
@@ -536,6 +541,78 @@ pub fn operator_override_replay_weight(operator_override: bool) -> f32 {
     }
 }
 
+pub fn label_aware_replay_cell_id(
+    language: &str,
+    mutation_or_live_cell: &str,
+    code_state_key: &str,
+    named_failure_mode: &str,
+    label_signature_hash: &str,
+    skill_signature_hash: Option<&str>,
+) -> Result<String, TrainerError> {
+    for (field, value) in [
+        ("language", language),
+        ("mutation_or_live_cell", mutation_or_live_cell),
+        ("code_state_key", code_state_key),
+        ("named_failure_mode", named_failure_mode),
+        ("label_signature_hash", label_signature_hash),
+    ] {
+        validate_cell_component(field, value)?;
+    }
+    if let Some(value) = skill_signature_hash {
+        validate_cell_component("skill_signature_hash", value)?;
+    }
+    let code_state = short_hash(code_state_key);
+    let failure_mode = compact_component(named_failure_mode);
+    let mut cell_id = format!(
+        "{}:{}:state:{}:mode:{}:{}",
+        compact_component(language),
+        compact_component(mutation_or_live_cell),
+        code_state,
+        failure_mode,
+        compact_component(label_signature_hash)
+    );
+    if let Some(value) = skill_signature_hash {
+        cell_id.push(':');
+        cell_id.push_str(&compact_component(value));
+    }
+    validate_cell_id(&cell_id)?;
+    Ok(cell_id)
+}
+
+fn compact_component(value: &str) -> String {
+    let mut compact = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | ':' | '.') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if compact.len() > 96 {
+        compact = short_hash(value);
+    }
+    compact
+}
+
+fn short_hash(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    let digest = hex::encode(hasher.finalize());
+    digest[..12].to_string()
+}
+
+fn validate_cell_component(field: &'static str, value: &str) -> Result<(), TrainerError> {
+    if value.trim().is_empty() {
+        return Err(invalid(field, "must be non-empty"));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(invalid(field, "must be single-line text"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -576,6 +653,37 @@ mod tests {
             .priority_score(ReplayPriorityConfig::default())
             .unwrap();
         assert!((boosted / base - OPERATOR_OVERRIDE_SAMPLING_WEIGHT).abs() < 1e-6);
+    }
+
+    #[test]
+    fn accepted_label_mistake_source_applies_eight_x_replay_weight() {
+        let base = row(1, 2.0, 1)
+            .priority_score(ReplayPriorityConfig::default())
+            .unwrap();
+        let mut label_row = row(2, 2.0, 1);
+        label_row.source = ReplayBufferSource::AcceptedLabelMistake;
+        let boosted = label_row
+            .priority_score(ReplayPriorityConfig::default())
+            .unwrap();
+        assert!((boosted / base - 8.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn label_aware_cell_id_keeps_compact_label_and_skill_signatures() {
+        let cell_id = label_aware_replay_cell_id(
+            "python",
+            "swap_variable",
+            "task:workspace:chunk:source-sha",
+            "failure:multi_point",
+            "labels:abc123def456",
+            Some("skills:def456abc123"),
+        )
+        .unwrap();
+
+        assert!(cell_id.contains("python:swap_variable"));
+        assert!(cell_id.contains("labels:abc123def456"));
+        assert!(cell_id.contains("skills:def456abc123"));
+        assert!(cell_id.len() <= MAX_CELL_ID_BYTES);
     }
 
     #[test]

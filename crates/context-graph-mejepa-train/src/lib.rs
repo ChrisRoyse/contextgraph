@@ -18,10 +18,12 @@ pub mod dda;
 pub mod distill;
 pub mod error;
 pub mod eval;
+pub mod label_bridge;
 pub mod labels;
 pub mod learning_signal;
 pub mod lora_wiring;
 pub mod loss;
+pub mod mistake_log;
 pub mod optim;
 pub mod replay_buffer;
 pub mod sampler;
@@ -47,5 +49,6 @@ pub use loss::inverse::{
     compose_bidirectional_l_full, inverse_map_loss, unit_gaussian_nll_bits,
     InverseMapLossBreakdown, InverseMapOutputs, InverseMapTargets,
 };
+pub use mistake_log::*;
 pub use replay_buffer::*;
 pub use trainer::InverseMapForward;

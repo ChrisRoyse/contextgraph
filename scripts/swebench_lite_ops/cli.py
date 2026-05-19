@@ -70,6 +70,8 @@ from .python_per_slot_calibration_ood import add_arguments as add_python_per_slo
 from .python_per_slot_calibration_ood import command_python_per_slot_calibration_ood
 from .python_anti_compensation_fsv import add_arguments as add_python_anti_compensation_fsv_arguments
 from .python_anti_compensation_fsv import command_python_anti_compensation_fsv
+from .python_auto_label_discovery import add_arguments as add_python_auto_label_discovery_arguments
+from .python_auto_label_discovery import command_python_auto_label_discovery
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -545,6 +547,16 @@ def build_parser() -> argparse.ArgumentParser:
     anti_compensation.set_defaults(
         func=command_python_anti_compensation_fsv,
         evidence_name="python-anti-compensation-fsv-command-evidence.json",
+    )
+
+    auto_label_discovery = sub.add_parser(
+        "python-auto-label-discovery",
+        help="TASK-PY-G-117: deterministic candidate labels, code-state constellations, and usefulness scoring.",
+    )
+    add_python_auto_label_discovery_arguments(auto_label_discovery)
+    auto_label_discovery.set_defaults(
+        func=command_python_auto_label_discovery,
+        evidence_name="python-auto-label-discovery-command-evidence.json",
     )
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")

@@ -403,15 +403,25 @@ ME-JEPA-Code is pre-production (no SLA, no backwards compatibility per CLAUDE.md
 
 Three new FSV protocols enforce the binary-Q1/Q2/Q5 + labeled + mistake-driven + cross-panel-triangulated contract. Each protocol slots into the universal FSV-PROTOCOL §1.1–§1.5 (Source-of-truth, Trigger→Process→Outcome, hard rules, evidence, independent readback) — the additions below are protocol-specific assertions every FSV harness for these features must enforce.
 
-### 13.1 Failure-mode labeling FSV (epic #404 / TASK-PY-G-110)
+### 13.1 Failure-mode labeling FSV — Level 0 SHIPPED via #413; Level 1/2/3 planned via #404
 
-Required SoT assertions:
+**Level 0 — SHIPPED 2026-05-19.** The deterministic label compiler (`python_auto_label_discovery.py`) ran on the full aiwonder corpus with FSV PASS. Reference assertions enforced by the shipped FSV at `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/python_auto_label_discovery_fsv.json` (manifest sha256 `3cd0e3c6…`):
 
-1. **Cluster purity.** Compute silhouette score on the K-means clustering over the 300×8 holdout's 78-column pairwise-correlation residuals. Required: `mean_silhouette ≥ 0.7`. FSV row records `silhouette`, `k`, `n_samples`.
-2. **Operator-rename idempotence.** Rename a cluster's name via `mejepa_label_failure_cluster`, flush, drop, reopen via production opener, decode the row back. Required: `cluster_id` unchanged, `operator_approved_name` updated, history preserved in `CF_MEJEPA_FAILURE_MODE_LEVEL1.audit_log`.
+1. **Slot identity preserved.** `slot_identity_preserved=true` and `flat_vector_concat_used=false` recorded in the FSV manifest; the compiler refuses to emit any label that would require cross-slot vector concatenation.
+2. **No /mnt/d active I/O.** FSV records the input/output paths and asserts none reference `/mnt/d/...`.
+3. **Manual review reproduction.** Compiler reproduces 12/12 deterministic conclusions of the prior 2026-05-19 manual pattern review at `/zfs/archive/contextgraph/fsv/task-py-g-110-manual-pattern-review/run-20260519T141122Z/manual_pattern_review.json` (sha256 `48a6cc61…`).
+4. **Coverage.** Every readable chunk in the 399,777-row chunk corpus emits at least one Level-0 label; every readable slot output emits a region label; every supported same-row pair emits a relationship label or typed unsupported reason; every supported group emits a signature or typed insufficient-support reason.
+5. **Leakage policy.** Outcome labels (oracle/docker/test-phase/code-state) marked `leakage_policy:target_side_only`; live predictor inputs do NOT include them; FSV enforces by walking the registry and rejecting any non-target label with `leaky_target=true`.
+6. **Usefulness gate.** Of 1,800+ candidates, 491 entered the accepted registry; rejected labels carry typed reasons (`below_support`, `below_lift`, `unstable_across_partitions`, `degenerate_pass_only`, `degenerate_fail_only`, `leaky_target_on_live_input`).
+7. **Independent readback.** Every output JSONL byte-replayed after a clean re-read; sha256 of each artifact recorded in the FSV manifest.
+
+**Level 1/2/3 — Planned FSV assertions (epic #404 / TASK-PY-G-110), on top of the shipped Level-0 accepted registry:**
+
+1. **Aggregation coverage.** Every shipped accepted label in the Level-0 registry maps to exactly one Level-1 group (no orphan accepted labels).
+2. **Operator-rename idempotence.** Rename a group's name via `mejepa_label_failure_cluster`, flush, drop, reopen via production opener, decode the row back. Required: `group_id` unchanged, `operator_approved_name` updated, history preserved in `CF_MEJEPA_FAILURE_MODE_LEVEL1.audit_log`.
 3. **Coverage on the holdout.** For every `Verdict::Fail` row in the 30-instance holdout window, `CF_MEJEPA_NAMED_PREDICTIONS` must contain a non-empty `NamedFailureMode`. Required: `named_mode_coverage_on_fail == 1.0`.
 4. **Exemplar-oracle agreement.** For each named failure mode, the top-1 closest exemplar's oracle outcome must match the prediction's oracle outcome ≥ 85% of the time. Required: `closest_exemplar_oracle_agreement ≥ 0.85`.
-5. **Vocabulary-seed audit.** Each level-2 skill name must trace back to either a published seed source (Aleithan 2025 / Yang 2024 / SWE-Bench Pro 2025 / our 8 mutations / our adversarial corpus) OR an operator-approved extension. Required: `unsourced_skills == 0`.
+5. **Vocabulary-seed audit.** Each Level-2 skill name must trace back to either a published seed source (Aleithan 2025 / Yang 2024 / SWE-Bench Pro 2025 / our 8 mutations / our adversarial corpus) OR an operator-approved extension. Required: `unsourced_skills == 0`.
 
 ### 13.2 Cross-panel triangulation FSV (epic #405 / TASK-PY-G-111)
 

@@ -2890,6 +2890,8 @@ fn slot_source_name(source: SlotAttributionSource) -> &'static str {
         SlotAttributionSource::Q5Replay => "q5_replay",
         SlotAttributionSource::ClaimReconciliation => "claim_reconciliation",
         SlotAttributionSource::GrangerAttestation => "granger_attestation",
+        SlotAttributionSource::AcceptedLabel => "accepted_label",
+        SlotAttributionSource::ConstellationSkill => "constellation_skill",
     }
 }
 
@@ -4656,6 +4658,7 @@ can_operator_override = {operator}
             unknown_candidate_id: None,
             constellation_intelligence: None,
             slot_attributions: Vec::new(),
+            label_context: Default::default(),
         })
         .unwrap()
     }

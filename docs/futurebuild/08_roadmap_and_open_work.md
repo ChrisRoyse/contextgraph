@@ -18,6 +18,7 @@ The 2026-05-19 reframe (`01_overview.md §1.1`, `05_predictor_pipeline.md §0`) 
 | **#407 / TASK-PY-G-113** — Threshold-calibration partition-disjointness audit | Every τ calibrated on partition disjoint from train + eval; 10th-percentile floor enforced | OPEN p1 (planned filing 2026-05-19) |
 | **#408 / TASK-PY-G-114** — Q4 doctrine freeze + close out Q4 producer track | Closes #266 / #267 / #268 / #269 / #270 / #399 / #400 / #401 as `archived-display-only`; closes #402 as `wontfix` (ambiguity boundary); freezes Q4 CFs | OPEN p0 (planned filing 2026-05-19) |
 | **#409 / TASK-DOC-001** — Paper revision for binary doctrine | Rewrites PAPER §1 from "calibrated multi-head RealityPrediction" to "binary reality predictor with labeled explanation surfaces" | OPEN p2 (planned filing 2026-05-19) |
+| **#413 / TASK-PY-G-117** — Deterministic auto-label discovery | Slot-preserving candidate labels, code-state constellations, failure evidence sets, usefulness metrics, and accepted label registry for the 399,777 AST chunk corpus | CLOSED 2026-05-19; FSV passed on aiwonder |
 
 ---
 
@@ -77,10 +78,11 @@ The slot-preserving refactor (§3.0 below) is largely shipped and architecturall
 |---|---|---|
 | 1 | **#408 / TASK-PY-G-114** — Q4 freeze + producer-track closeout | Frees bandwidth from Q4 expansion (#266–#270, #399–#402) so it can flow to #404/#405/#406. No code blocked, just rebanding. |
 | 2 | **#404 / TASK-PY-G-110** — Failure-mode labeling hierarchy | Turns the 78-column pairwise-correlation evidence from #388 into named clusters. Required so Q3 explanation surface can land an actionable named mode on every Fail row. The labeling itself is also the primary input feature for the binary head: same-named-failure-mode neighbors are the closest exemplars the predictor needs to commit. |
-| 3 | **#407 / TASK-PY-G-113** — Threshold-calibration disjointness audit | Cheapest move likely to detect under-calibration. The 0.866667 gap may be partly because some τ values were set on a non-disjoint partition. One-day spike with a binary outcome. |
-| 4 | **#405 / TASK-PY-G-111** — Cross-panel triangulation Panel B | Defends 0.95 against encoder-matched Goodhart. **Adds a hard new ship-gate requirement.** Without Panel B, even hitting 0.95 on Panel A is not ship-eligible. |
-| 5 | **#406 / TASK-PY-G-112** — Online mistake-driven loop | The "first time every time" property. Converts every disagreement-with-reality into a training signal under EWC++ protection. Long-horizon ship-defending work. |
-| 6 | **#409 / TASK-DOC-001** — Paper revision | Aligns PAPER §1 with the binary doctrine. Not gate-blocking; defer until first cross-panel green window. |
+| 3 | **#413 / TASK-PY-G-117** — Auto-label discovery baseline | ✅ closed 2026-05-19. Materialized the deterministic baseline label compiler and accepted registry at `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/`. Consumers now have stable label/evidence IDs instead of a flat panel projection. |
+| 4 | **#407 / TASK-PY-G-113** — Threshold-calibration disjointness audit | Cheapest move likely to detect under-calibration. The 0.866667 gap may be partly because some τ values were set on a non-disjoint partition. One-day spike with a binary outcome. |
+| 5 | **#405 / TASK-PY-G-111** — Cross-panel triangulation Panel B | Defends 0.95 against encoder-matched Goodhart. **Adds a hard new ship-gate requirement.** Without Panel B, even hitting 0.95 on Panel A is not ship-eligible. |
+| 6 | **#406 / TASK-PY-G-112** — Online mistake-driven loop | The "first time every time" property. Converts every disagreement-with-reality into a training signal under EWC++ protection, using #413 label/evidence IDs as the stable mistake context. Long-horizon ship-defending work. |
+| 7 | **#409 / TASK-DOC-001** — Paper revision | Aligns PAPER §1 with the binary doctrine. Not gate-blocking; defer until first cross-panel green window. |
 
 ### 3.0 Slot-preserving constellation architecture (#385 / TASK-PY-G-085)
 

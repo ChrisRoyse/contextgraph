@@ -396,6 +396,8 @@ These measurements anchor the new Q1/Q2/Q5-binary + labeled + cross-panel + mist
 
 | Measurement | Target | FSV path (planned) | Issue |
 |---|---|---|---|
+| Deterministic auto-label compiler coverage | 399,777 chunk rows, 4,665,772 slot records, no active `/mnt/d` I/O | `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/python_auto_label_discovery_fsv.json` (`passes=true`) | #413 / TASK-PY-G-117 |
+| Accepted label registry materialization | accepted registry rows > 0; target labels supervision-only; manual review reproduction passes | same; output root `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/` | #413 |
 | Failure-mode cluster purity (silhouette) on 300×8 holdout | `mean_silhouette ≥ 0.7` | `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-clustering-fsv/` | #404 / TASK-PY-G-110 |
 | Named failure mode coverage on Fail rows | `named_mode_coverage_on_fail == 1.0` | same | #404 |
 | Closest-exemplar oracle-outcome agreement | `≥ 0.85` | same | #404 |

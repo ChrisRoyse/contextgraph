@@ -350,13 +350,34 @@ Predecessor: `a1e6a842 Make aiwonder production storage policy explicit` — dec
 
 Planned CFs supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`, `02_source_map.md §12`). All planned CFs land in the `mejepa-cf/src/lib.rs` canonical registry (additive; no rename of existing CFs). Tracked under epic issues #404 / #405 / #406.
 
-### 9.1 Failure-mode labeling hierarchy CFs (#404 / TASK-PY-G-110)
+### 9.1 Failure-mode labeling — Level-0 SHIPPED as JSONL artifacts; Level-1/2/3 CFs planned
+
+**Level 0 (shipped 2026-05-19 via #413 / TASK-PY-G-117) materializes label state as durable JSONL files under `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/`, not as RocksDB CFs.** This was a deliberate choice: the labels are computed deterministically by `python_auto_label_discovery.py` from the forward-cache substrate, and storing them as JSONL keeps the artifact byte-replayable and independent of the RocksDB schema. The accepted label registry is the "stable label ID" surface other CFs (mistake log, replay buffer, constellation patterns) will reference.
+
+**Level 0 shipped artifacts (JSONL on aiwonder):**
+
+| Artifact | Path | Rows | Stable sha256 | Purpose |
+|---|---|---|---|---|
+| `chunk_constellation_labels.jsonl` | `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/` | 399,777 | `4ad438ff343781bd11d2ce1e12e7ac135d9392666fdd6440cf814faccc513d16` | Per-chunk Level-0 labels: AST/source surface, source-site relation, mutation mechanism, per-slot scalar/region labels, pair relationships, group signatures |
+| `file_path_constellations.jsonl` | same | 4,224 | (per FSV) | Per-file constellation aggregates |
+| `code_state_constellations.jsonl` | same | 3,000 | `582cc0de0e19fac5480a29914e573e10a207b372ca3df11db5cbce4050810538` | `(task_instance_id, mutation_category, workspace_state)` constellations with target-side outcome labels (`leakage_policy:target_side_only`) |
+| `failure_evidence_sets.jsonl` | same | 1,139 | `747f82980f689aa137f4e5f38fd1ff9a5bef81ba56b446e6edc350fd1db424ee` | Three localization modes: single-point / multi-point / diffuse / working-state |
+| `label_usefulness_metrics.jsonl` | same | 549 | `923a618f035eb1b6dd4d6f34ebbce6d9ad035a24a93c8f02a3a1a4d8b1b035a8` | Support / pass-fail lift / precision / recall / stability / closest-exemplar agreement / leakage status per label family |
+| `accepted_label_registry.jsonl` | same | 491 | `3846bef398ac9508dfa1f8401b4f4bd19e30d2b19a409e51af5bcc408c3394ff` | The durable Level-0 baseline registry that other systems reference by stable label ID |
+| `learning_bridge_manifest.json` | same | 1 | `5fc7e11b4e9480257be4be405131f6ffddff3c88dee8b3bccdbe7d68dd219ab3` | Maps accepted label IDs into UTML/replay consumers (`delta_p.per_chunk_values`, `delta_xi.constellation_violation_rate`, `ReplayBufferRow.cell_id`, `CF_MEJEPA_CONSTELLATION_PATTERNS`, `CF_MEJEPA_ACTIVE_LEARNING_QUEUE`, `CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT`) |
+| FSV manifest | `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/python_auto_label_discovery_fsv.json` | 1 | manifest `3cd0e3c6…`, report `3b3e4b0b…` | `passes=true`, `slot_identity_preserved=true`, `flat_vector_concat_used=false` |
+
+**Why JSONL instead of CFs at Level 0:** the label compiler is deterministic and the registry is replayable from inputs (forward cache + chunks.jsonl + oracle index). JSONL keeps the audit surface human-readable, lets the FSV byte-compare against the materialized stream, and avoids a CF schema change on every label-formula version bump (`FORMULA_VERSION = "deterministic_slot_label_compiler_v1"`).
+
+**Level 1/2/3 hierarchical naming CFs (planned, #404 / TASK-PY-G-110):**
+
+When the hierarchical naming layer lands on top of the shipped Level-0 registry, these CFs are added. They reference `accepted_label_registry.jsonl` row IDs as the stable Level-0 key.
 
 | CF Constant (planned) | Key | Value | Purpose |
 |---|---|---|---|
 | `CF_MEJEPA_FAILURE_MODE_VOCABULARY` | `vocabulary_id` (e.g. `solution_leak`, `wrong_file`, `type_signature_drift`) | bincode `{name, description, seed_source, embedding_e1, embedding_e7, operator_approved, created_at, updated_at}` | Operator-curated failure-mode vocabulary seeded from published SWE-bench taxonomies (Aleithan et al. 2025 / Yang et al. 2024 / SWE-Bench Pro 2025) plus our 8-mutation operator set plus adversarial corpus. Extensible via `mejepa_label_failure_cluster`. |
-| `CF_MEJEPA_FAILURE_MODE_LEVEL1` | `cluster_id` | bincode `{centroid_vec_78d, sample_count, top_5_vocabulary_matches_with_cosine, operator_approved_name, created_at}` | Level-1 group centroids discovered by K-means (k≈40) over the 78-column pairwise-correlation residual vector. Each centroid named via cosine-vs-vocabulary; operator can override the name. |
-| `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` | `skill_id` | bincode `{skill_name, parent_cluster_ids: Vec<ClusterId>, seed_vocabulary_match: VocabularyId, oracle_outcome_distribution: {pass: u64, fail: u64}, operator_approved}` | Level-2 named skills (e.g. `patch_breaks_test_isolation`, `mock_only_change`). Maps clusters → operator-approved names. |
+| `CF_MEJEPA_FAILURE_MODE_LEVEL1` | `group_id` | bincode `{member_accepted_label_ids: Vec<AcceptedLabelId>, sample_count, top_vocabulary_matches_with_cosine, operator_approved_name, created_at}` | Level-1 groups aggregated over Level-0 accepted labels; each group named via cosine-vs-vocabulary against `CF_MEJEPA_FAILURE_MODE_VOCABULARY`; operator can override the name. |
+| `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` | `skill_id` | bincode `{skill_name, parent_group_ids: Vec<GroupId>, seed_vocabulary_match: VocabularyId, oracle_outcome_distribution: {pass: u64, fail: u64}, operator_approved}` | Level-2 named skills (`patch_breaks_test_isolation`, `mock_only_change`, ...). Maps Level-1 groups → operator-approved names. |
 | `CF_MEJEPA_FAILURE_MODE_LEVEL3_CONSTELLATIONS` | `constellation_id` | bincode `{constellation_name, member_skill_ids: Vec<SkillId>, co_occurrence_count, cell_keys_where_observed: Vec<CellKey>}` | Level-3 behavioral failure constellations (compositions of skills that co-fire). Examples: `unsafe_security_change`, `incompatible_refactor`. |
 | `CF_MEJEPA_NAMED_PREDICTIONS` | `prediction_id` | bincode `NamedFailureMode {level1_group, level2_skill, level3_constellation, confidence, closest_exemplars, vocabulary_source}` | Per-prediction named-failure-mode attachment for `Verdict::Fail` rows. Exposed via `mejepa_explain_prediction` / `mejepa_predict_latest`. |
 
