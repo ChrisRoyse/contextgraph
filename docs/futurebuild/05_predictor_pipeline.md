@@ -6,6 +6,36 @@ Source files covered: `crates/context-graph-mejepa-embedders/src/lib.rs` + modul
 
 ---
 
+## 0. The Predictor Contract (2026-05-19 reframe — binary + labeled + mistake-driven, no ambiguous heads)
+
+This pipeline implements **three binary predicates** with free binary form against reality, plus one explanation surface, plus the deliberately-removed Q4 surface:
+
+| # | Predicate | Reality that renders the verdict |
+|---|---|---|
+| Q1 | `claim_exists(candidate_patch) → { Yes, No }` | Bytes/AST on disk after the patch |
+| Q2 | `oracle_passes(candidate_patch) → { Pass, Fail }` (**the product output**) | Docker oracle (`swebench.harness.run_evaluation`) report.json |
+| Q5 | `predicted_shift_event_occurred(event_id, patch) → { Yes, No }` per leaf event | Durable shift-log JSONL on aiwonder |
+
+Q3 is an **explanation surface only**, not a prediction: when Q2 returns Fail, Q3 attaches the named failure mode + closest exemplar from the labeling hierarchy (§4.3). Q3 itself does not produce a prediction subject to oracle correlation; it labels the binary verdict Q2 already made.
+
+Q4 (perf, accuracy, cost, reasoning class, latent bugs, tech debt, dead code, redundancy, edge cases) is **out of the prediction contract**. Q4 questions are ambiguous by nature — they require imposing arbitrary thresholds on continuous heuristics ("perf regression ≥ 10%") or asking about taste judgments ("is this maintainable?") that reality does not render a binary verdict on. The system does not predict ambiguous things because predicting heuristics introduces noise into the mistake-driven loop that cannot be cleaned up by future ground-truth observations. Existing Q4 producers and calibration rows are **frozen as display-only historical data**; they are not trained, not consumed by the predictor, not ship-gate-relevant. See §16 below for the Q4 freeze.
+
+The whole architecture below — embedders, instruments, panel, heads, TCT, training, heal — is in service of those three binary predicates. The 5-question `RealityPrediction` schema stays in `types.rs` for backward-compat, but the **only fields that determine product behavior are `Verdict::{Pass, Fail}` (Q2), `claim_reconciliation` (Q1), and per-leaf-event `predicted_shift_outcomes` (Q5)**.
+
+Three architectural primitives back the binary contract:
+
+1. **Labeling layer (§4.3 below).** Raw slot violations + cross-embedder correlations are clustered into a 4-level hierarchy of named failure modes (Action-Unit-style → Group → Skill → Constellation). The product returns the named failure mode that applies, grounded by the closest historical exemplar from the 300×8 corpus.
+2. **Online mistake loop (§9.6 below).** When the binary prediction disagrees with reality (oracle / PostToolUse capture / shift-log replay), the disagreement materializes as a `CF_MEJEPA_MISTAKE_LOG` row and the trainer consumes it under EWC++ protection. The convergence target is: never repeat the same mistake on the same `(cell × failure_mode)` cell.
+3. **Cross-panel triangulation (§4.4 below).** Panel B (a deliberately non-overlapping instrument panel) re-scores every gate-relevant patch. A 0.95 result on Panel A only counts when Panel B agrees within 0.05; Goodhart on Panel A fails closed.
+
+**No best-of-K at the product surface.** `mejepa_rank_candidates` and `mejepa_search_latent_actions` remain available as *internal* tools for training-time exploration and operator debugging, but the AI agent calling MCP only ever sees one binary verdict per candidate. "Pass with 0.74 confidence" is not a product output; if the predictor cannot be confident enough to commit, the lack of confidence is itself a mistake to be learned from on the next ground-truth observation.
+
+**Internal Abstain / OOD / GuardRejected are not product hedges.** They are present-tense failures to be eliminated. The path out is the mistake loop, not "try K alternatives." When the gate is at 0.95, the `Abstain` rate must asymptotically approach 0; an Abstain that ships to the agent is a wrong answer.
+
+**The ambiguity boundary (locked-in rule).** ME-JEPA only predicts questions with a free binary form against reality. A question has free binary form when the verdict comes from observing reality directly (a test runner, the bytes on disk, the shift log), not from imposing an arbitrary threshold on a continuous heuristic. Questions like "is this performant?", "is this maintainable?", "are there latent bugs?", "is this idiomatic?" do not have free binary form — they require an arbitrary threshold or rely on a taste judgment without ground truth. Predicting such questions trains the system to match a heuristic, not reality. We do not predict heuristics; we predict reality.
+
+---
+
 ## 1. End-to-End Data Flow
 
 ```
@@ -226,11 +256,13 @@ Inference-time config (`MeJepaInferConfig`):
 
 ### 4.2 Verdict assembly
 
-`crates/context-graph-mejepa/src/verdict_assembly.rs` stitches heads into:
+`crates/context-graph-mejepa/src/verdict_assembly.rs` stitches heads into the public binary verdict plus internal-state markers:
 
 ```rust
 enum Verdict { Pass, Fail, OutOfDistribution, Abstain, GuardRejected }
 ```
+
+**Product surface:** `Pass` or `Fail` are the only values that ship to the MCP caller. `OutOfDistribution`, `Abstain`, and `GuardRejected` are internal-state markers indicating the predictor is not yet good enough to commit on this `(cell × named_failure_mode)` cell. They MUST still be projected to `Pass | Fail` at the MCP boundary (using closest-exemplar majority outcome) so the agent always receives a binary answer; the projected verdict is then subject to ground-truth verification and the mistake-loop update (§9.6). The internal-state marker is persisted alongside in `CF_MEJEPA_LIVE_PREDICTIONS.internal_marker` for forensic audit and to drive heal-scheduler attention.
 
 Decision flow (per `compiler.rs::compile`):
 1. Materialize `Panel` for the candidate change.
@@ -253,6 +285,88 @@ Decision flow (per `compiler.rs::compile`):
 **Multi-head contradiction gate (TASK-PY-G-044 / #263).** `contradiction.rs`, `verdict_assembly.rs`, and `compiler.rs` now read per-cell thresholds from `CF_MEJEPA_CONTRADICTION_THRESHOLDS`. The gate abstains when calibrated Q2/pass confidence and high-severity Q3/Q4 consequence signals conflict, records structured evidence in the prediction/park-list path, fails closed on missing thresholds, and skips only when there is genuinely a single head of evidence. aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-044-multi-head-contradiction-fsv/run-20260519T114854Z/multi_head_contradiction_fsv.json`, sha256 `39fac46044f4a3a8a9d43a5ff117af8c1b8b46906f186f284c89120460b1cf48`.
 
 **Constellation intelligence heads (TASK-PY-G-090 / #390).** `constellation_intelligence.rs`, `compiler.rs`, `verdict_assembly.rs`, `eval/queue.rs`, and `store.rs` now convert DDA/slot-pair relationship rows into structured consensus, contradiction, redundancy, novelty, blind-spot, and consequence-pressure evidence. The live prediction surface carries `RealityPrediction.constellation_intelligence`; `CF_MEJEPA_CONSTELLATION_PATTERNS` stores promoted real-corpus pair patterns; high-value disagreement can enter `CF_MEJEPA_ACTIVE_LEARNING_QUEUE`; and high Q2 pressure abstains before a false confident pass. aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-090-consensus-contradiction-heads-fsv/run-20260519T124035Z/consensus_contradiction_heads_fsv.json`, sha256 `b1d500f008b0a14a704c4c2f83fe8cd19349f0dfb0c78baedb35c711abc50b64`.
+
+---
+
+### 4.3 Failure-mode labeling hierarchy (the meaning layer over the slot panel)
+
+Source files (planned): `crates/context-graph-mejepa/src/failure_mode_hierarchy.rs`, `failure_mode_clusters.rs`, `failure_mode_vocabulary.rs`. Storage CFs: `CF_MEJEPA_FAILURE_MODE_LEVEL1`, `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS`, `CF_MEJEPA_FAILURE_MODE_LEVEL3_CONSTELLATIONS`, `CF_MEJEPA_FAILURE_MODE_VOCABULARY`, `CF_MEJEPA_NAMED_PREDICTIONS`. MCP tools (planned): `mejepa_label_failure_cluster`, `mejepa_list_failure_modes`, `mejepa_explain_named_failure_mode`. Tracked by GitHub epic **#403 (new) / TASK-PY-G-110 — Failure-mode labeling hierarchy**.
+
+**Why it exists.** The 300×8 corpus has been projected through 13 retrieval embedders + 15 frozen instrument slots, producing 78 pairwise correlation tensors per cell (#388), per-slot calibration state (#389), and consensus/contradiction/blind-spot/redundancy/novelty surfaces (#390). All of that is raw numerical evidence. The unsolved problem is **assigning human-readable names** to the recurrent disagreement patterns so the predictor can say "this patch will Fail because of `type_signature_drift_under_test_coverage`" rather than "this patch's per-slot OOD trace is `{E_TypeGraph: 0.42, E_DataFlow: 0.31, E_Test: 0.88, E_Oracle: 0.79}`."
+
+**Discovery procedure (level 1).** K-means clustering (`k` initial 40, tuned per cell density) over the 78-column pairwise-correlation residual vector per row of the 300×8 corpus. Centroid-naming follows the Discover-then-Name CBM pattern (Rao et al. 2024): cosine-similarity each cluster centroid against an operator-curated **failure-mode vocabulary** (`CF_MEJEPA_FAILURE_MODE_VOCABULARY`) embedded with E1 e5-large-v2. Top-1 match becomes the level-1 group name. Operator approves / renames / merges via `mejepa_label_failure_cluster`.
+
+**Failure-mode vocabulary (level 2 skills).** Seeded from published SWE-bench failure taxonomies, NOT invented from scratch:
+
+| Source | Categories used as vocabulary seeds |
+|---|---|
+| Aleithan et al. 2025 "Are Solved Issues Really Solved" | `solution_leak`, `incorrect_fix_weak_test`, `different_files_changed`, `incomplete_fix`, `different_from_gold`, `more_comprehensive_than_gold` |
+| Yang et al. 2024 "Empirical Study on Failures in Automated Issue Solving" | 9 categories × 25 subcategories across Location / Repair / Iteration & Validation phases — e.g. `localization_error`, `flawed_plan_persistence`, `endless_iteration_loop`, `repair_logic_error` |
+| SWE-Bench Pro 2025 (Scale AI) | `wrong_solution`, `tool_use_error`, `syntax_error`, `incorrect_file`, `missed_edge_case`, `misunderstood_problem_statement`, `context_overflow_from_listing`, `endless_file_reading` |
+| Our adversarial corpus (TASK-PY-G-060 / TASK-FP-009) | 30 adversarial fingerprints → seeded skill names per slot violation pattern |
+| Our 8-mutation operator set | `subtle_flip_invariant_violation`, `off_by_one_boundary_miss`, `swap_variable_aliasing`, `delete_test_call_oracle_loss`, `wrong_file_target`, `over_engineer_no_value`, `compile_error_only` |
+
+These are persisted in `CF_MEJEPA_FAILURE_MODE_VOCABULARY` keyed by `vocabulary_id` with body `{name, description, seed_source, embedding_e1, embedding_e7, operator_approved}`. Operator can extend via `mejepa_label_failure_cluster`.
+
+**Level 3 — behavioural failure constellations.** Per `(mutation_category × language × failure_mode_skill)` cell, mine the co-occurrence graph of skills that co-fire on Fail predictions. Constellations are named compositions of skills: e.g. `unsafe_security_change = {security_label_present, dataflow_drift, no_test_coverage_added}`. Stored in `CF_MEJEPA_FAILURE_MODE_LEVEL3_CONSTELLATIONS`. Used in Q4 risk explanation when the binary verdict is Pass-with-risk.
+
+**Prediction integration.** Once labeling is shipped, every `RealityPrediction.verdict == Fail` row carries:
+
+```rust
+pub struct NamedFailureMode {
+    pub level1_group: Option<FailureModeGroupId>,    // K-means cluster ID
+    pub level2_skill: Option<FailureModeSkillName>,  // operator-approved name
+    pub level3_constellation: Option<FailureModeConstellationName>,
+    pub confidence: f32,                              // distance to centroid
+    pub closest_exemplars: Vec<ExemplarPointer>,     // top-K from CF_MEJEPA_PATCH_SIMILARITY_META
+    pub vocabulary_source: VocabularySeedSource,     // which seed taxonomy this name came from
+}
+```
+
+Persisted in `CF_MEJEPA_NAMED_PREDICTIONS` keyed by `prediction_id`. Exposed via `mejepa_explain_prediction` and `mejepa_predict_latest`.
+
+**FSV expectations.** Synthetic + real-corpus FSV must prove (a) cluster purity (≥0.7 silhouette on the 300×8 holdout), (b) operator-rename idempotence (rename → reopen → same id), (c) every Fail prediction in the holdout receives at least one named failure mode, (d) the named failure mode's top closest_exemplar has the same oracle outcome ≥85% of the time.
+
+### 4.4 Cross-panel triangulation (the Goodhart guard)
+
+Source files (planned): `crates/context-graph-mejepa/src/cross_panel.rs`, `crates/context-graph-mejepa-instruments/src/panel_b/`, new instrument modules `e_ast_codebert.rs`, `e_cfg_pythia.rs`, `e_dataflow_joern.rs`, `e_code_voyage.rs`, `e_text_bge.rs`. Storage CFs: `CF_MEJEPA_PANEL_B_OBSERVATIONS`, `CF_MEJEPA_CROSS_PANEL_AGREEMENT`. MCP tools (planned): `mejepa_cross_panel_score`, `mejepa_cross_panel_dashboard`. Tracked by GitHub epic **#404 (new) / TASK-PY-G-111 — Cross-panel triangulation Panel B**.
+
+**Why it exists.** The 15-slot instrument panel (Panel A) is both the training substrate for the predictor AND the centroid set the Gτ guard evaluates against. That is encoder-matched by construction. A 0.95 oracle correlation on Panel A does not prove the verdict is right against reality; it could prove the predictor learned the panel's idiosyncrasies. The PAPER §6.3 limitation list calls this out explicitly for the voice case (named-future-work: ECAPA-TDNN cross-encoder triangulation); the same risk applies more sharply to the code case because the panel + predictor are jointly trained over the same 2,400-instance corpus.
+
+**Panel B instrument map (deliberately non-overlapping with Panel A):**
+
+| Slot purpose | Panel A (production) | Panel B (triangulation) |
+|---|---|---|
+| AST | tree-sitter encoder → 384-d | CodeBERT (microsoft/codebert-base) → 768-d projected to 384-d |
+| CFG | attention encoder → 256-d | Pythia program-graph encoder → 256-d |
+| Data-flow | def-use attention encoder → 256-d | joern-driven data-flow encoder → 256-d |
+| Type-graph | tree-sitter type encoder → 256-d | inferred-type from `pytype` JSON → 256-d |
+| Code-semantic (E7-equivalent) | Qodo-Embed-1 → 1536-d | Voyage-code-2 → 1536-d |
+| Test / Problem / CommitMsg text | e5-large-v2 → variable | bge-large-en-v1.5 → variable |
+| Trace / Witness / Oracle | unchanged | unchanged (deterministic, not encoder-bound) |
+| StaticAnalysis / Runtime / Reasoning / Scalars | unchanged | unchanged |
+
+The deterministic slots (Trace/Witness/Oracle/StaticAnalysis/Runtime/Reasoning/Scalars) are shared between panels because they encode reality directly, not learned representations. Only the *learned encoder* slots get swapped for triangulation.
+
+**Triangulation procedure.**
+
+1. Every gate-relevant prediction (any patch from the 300×8 holdout window) gets scored on Panel A *and* Panel B.
+2. Panel A returns `verdict_a + score_a`. Panel B returns `verdict_b + score_b`. Both go to `CF_MEJEPA_CROSS_PANEL_AGREEMENT` keyed by `(prediction_id, panel_pair_id)`.
+3. **Agreement metric:** for the ship-gate window, compute `cross_panel_oracle_correlation = corr(verdict_a, oracle) AND corr(verdict_b, oracle)` — both must clear 0.95.
+4. **Drift metric:** `|corr_a - corr_b|`. Must be ≤ 0.05 for ship eligibility.
+5. **Fail-closed condition:** if Panel A ≥ 0.95 but Panel B < 0.85, the gate fails closed with `CROSS_PANEL_GOODHART_DETECTED`. The predictor was encoder-matched-Goodharting Panel A; the next training cycle must include Panel B observations in the loss.
+
+**Loss integration.** Optionally (under operator-flagged ablation), the trainer can add a Panel-B agreement term to the loss:
+
+```
+L_cross_panel = λ_xp * (1 - cos(predictor_logit_a, predictor_logit_b))
+```
+
+Default `λ_xp = 0` (panel B is evaluation-only); when the operator enables `λ_xp = 0.1` we expect the predictor to robustify against Panel A idiosyncrasies. Tracked as an ablation in #393's suite.
+
+**Cost.** Panel B requires loading 5 new encoders. VRAM budget is ~12 GB during evaluation only; never resident during normal inference. Panel B can be evaluated in a separate worker that reads `CF_MEJEPA_LIVE_PREDICTIONS` periodically and writes back `CF_MEJEPA_PANEL_B_OBSERVATIONS`.
+
+**FSV expectations.** Cross-panel FSV must prove (a) both panels evaluated on the same 30-instance holdout, (b) per-instance verdict + score persisted in `CF_MEJEPA_CROSS_PANEL_AGREEMENT`, (c) `CROSS_PANEL_GOODHART_DETECTED` fires when synthetic Panel-A-only correlation is injected, (d) the metric is byte-replayable from RocksDB.
 
 ---
 
@@ -395,6 +509,61 @@ Performance gate (per phase-g-roadmap §4): fresh ingest of 50-file Python proje
 
 `CF_MEJEPA_FINGERPRINT_FISHER` + `CF_MEJEPA_FINGERPRINT_DORMANCY`. Per-fingerprint EWC + CBP for catalog stability under continual learning.
 
+### 9.6 Online mistake-driven adaptation ("isn't wrong in the future" property)
+
+Source files (planned): `crates/context-graph-mejepa/src/mistake_log.rs`, `crates/context-graph-mejepa-train/src/mistake_consumer.rs`, `crates/context-graph-mejepa-train/src/online_perceptron.rs`. Storage CFs: `CF_MEJEPA_MISTAKE_LOG`, `CF_MEJEPA_MISTAKE_REPLAY_PRIORITY`, `CF_MEJEPA_ONLINE_HEAD_STATE`. MCP tools (planned): `mejepa_record_mistake`, `mejepa_mistake_history`, `mejepa_mistake_loop_status`. Tracked by **#405 (new) / TASK-PY-G-112 — Online mistake-driven learning loop**.
+
+**The classical primitive.** The binary head over the panel is implemented as a margin-based online learner in the kernel-Perceptron / Second-Order-Perceptron family (Rosenblatt 1957; Cesa-Bianchi & Conconi 2005; Orabona 2008 Projectron). Update rule, per mistake:
+
+```
+if predicted_verdict != ground_truth_verdict:
+    support_set := support_set ∪ { (panel, ground_truth_verdict) }
+    head_weights := head_weights + η · ground_truth_verdict · panel_projection
+    record_mistake_in_CF_MEJEPA_MISTAKE_LOG with full context
+    enqueue at 8× weight in CF_MEJEPA_REPLAY_BUFFER
+    boost Fisher diagonal for the affected slots (EWC++ already implemented)
+```
+
+The "correct on first try, learn when wrong" discipline maps directly onto the Perceptron mistake-bound regime: each mistake strictly improves the head on that specific `(cell × failure_mode × panel_signature)` cell, and the mistake bound is finite under the margin assumption. The Second-Order Perceptron variant uses ridge-style whitening so a single mistake updates the head against the local covariance of the panel, which adapts faster to new instrument additions.
+
+**Ground-truth sources** (the "reality says yes/no" signal):
+
+| Source | When | CF |
+|---|---|---|
+| SWE-bench Docker oracle | Corpus training + heldout eval | `CF_MEJEPA_ORACLE_VERDICTS` |
+| PostToolUse Bash capture | Live agent session | `CF_MEJEPA_PREDICTION_VERIFICATIONS` |
+| Shift-log replay (Q5) | After the patch lives in a session | `CF_MEJEPA_REALITY_IMPACT` |
+| Operator override | Operator labels a row | `CF_MEJEPA_OPERATOR_OVERRIDES` |
+
+Each ground-truth event materializes a `MistakeRow`:
+
+```rust
+pub struct MistakeRow {
+    pub mistake_id: MistakeId,
+    pub prediction_id: PredictionId,
+    pub ts_ns: u64,
+    pub cell_key: CellKey,                        // (mutation_category, language, entity_type)
+    pub predicted_verdict: Verdict,               // what we said
+    pub ground_truth_verdict: Verdict,            // what reality said
+    pub predicted_named_failure_mode: Option<NamedFailureMode>,
+    pub ground_truth_named_failure_mode: Option<NamedFailureMode>,  // from closest exemplar
+    pub source_panel: PanelId,                    // panel A or B
+    pub panel_signature_hash: [u8; 32],           // for dedup
+    pub slot_traces: Vec<PerSlotOodReason>,       // #389 evidence at prediction time
+    pub closest_exemplar_at_predict: ExemplarPointer,
+    pub ground_truth_source: GroundTruthSource,
+    pub replayed_to_trainer: bool,
+}
+```
+
+Stored in `CF_MEJEPA_MISTAKE_LOG` keyed by `mistake_id` with secondary index by `cell_key`.
+
+**Convergence target (the ship-gate-adjacent property).** For every `(cell_key × predicted_named_failure_mode)` tuple, the second occurrence of the same panel signature must produce the correct verdict. Operationalized as a metric: `mistake_repeat_rate = |second_mistake_on_same_cell_and_pattern| / |first_mistake_on_that_cell_and_pattern|`. Target: `≤ 0.05`. If this rate climbs above 0.05 on any rolling window, the heal scheduler is failing to consolidate; promotion blocked.
+
+**Why this beats best-of-K.** The user's constraint: "if it needs 4 guesses to be most correct then it is already wrong." Best-of-K papers over an under-trained predictor by spending compute at inference time. The online perceptron pays the cost at *learning* time and converges to a predictor that is right on the first try. Best-of-K stays available as a debug tool but is never the product path.
+
+**FSV expectations.** Synthetic + real FSV must prove (a) a deliberately-injected wrong prediction lands in `CF_MEJEPA_MISTAKE_LOG`, (b) the next presentation of the same panel signature yields the corrected verdict, (c) the mistake_repeat_rate metric is byte-readable from RocksDB, (d) Fisher protection prevents the mistake update from regressing unrelated cells.
+
 ---
 
 ## 10. Heal Scheduler
@@ -477,19 +646,35 @@ PageRank scores weight `BatchSampler` and Fisher (TASK-EK-016 / EK-017 / EK-016-
 
 ---
 
-## 16. Q4 Always-on Heads
+## 16. Q4 Heads — OUT OF SCOPE (frozen as display-only historical data, 2026-05-19)
 
-| Head | Source | Issue |
+**Status: Q4 heads are removed from the prediction contract.** They remain in the schema, the existing CFs (`CF_MEJEPA_Q4_PERF_LABELS`, `CF_MEJEPA_Q4_ACCURACY_LABELS`, `CF_MEJEPA_Q4_COST_LABELS`, `CF_MEJEPA_Q4_REASONING_LABELS`, `CF_MEJEPA_Q4_PASS_ANNOTATIONS`, `CF_MEJEPA_Q4_SECURITY_LABELS`) are preserved for forensic continuity, and `mejepa_explain_prediction` can still surface their historical rows. But:
+
+- **No new Q4 training** — Q4 producers are frozen; no new rows are written by the production pipeline after 2026-05-19.
+- **No Q4 calibration prerequisite for ship** — the 0.95 ship gate measures Q2 oracle correlation only. Q4 readiness is not a prerequisite.
+- **No Q4 contribution to the predictor's loss** — `inverse_map_coefficient` and any future per-head coefficients on Q4 heads default to 0 and stay there. The trainer ignores Q4 producer rows when assembling the replay batch.
+- **No Q4 trust gate consumption** — `mejepa_predict_latest` and `mejepa_inspect_prediction` continue to expose `q4.rawObservations` for read-only audit; `q4.trustedConsequences` is no longer populated by new predictions.
+
+**Why removed.** Q4 questions are ambiguous (§0): they require an arbitrary threshold on a continuous heuristic, or ask a taste question that reality does not render a binary verdict on. Predicting them trains the system to match heuristic tools (mutmut, semgrep, vulture, hyperfine, pytest-benchmark) rather than reality. The system does not predict ambiguous things because predicting noise corrupts the mistake-driven learning loop (§9.6).
+
+**Historical record of the frozen Q4 producers (kept here for continuity):**
+
+| Frozen head | Source (frozen) | Final state |
 |---|---|---|
-| Predicted security concerns | `q4_security_labels.rs` (Bandit + Semgrep) | TASK-RWD-204 / TASK-PY-G-046 |
-| Predicted perf regressions | `q4_perf_labels.rs` (pytest-benchmark + cProfile label producer) | TASK-PY-G-047 |
-| Predicted accuracy degradations | `q4_accuracy_labels.rs` (ML/data metric label producer) | TASK-PY-G-048 |
-| Predicted cost regressions | `q4_cost_labels.rs` (CI minutes + dep/wheel cost producer) | TASK-PY-G-049 |
-| Predicted-Works + test-coverage + test-flakiness sub-heads | `prediction_surfaces.rs` | TASK-PY-G-073 |
-| Reasoning class | `q4_reasoning_labels.rs` over observed agent prose + oracle/prediction outcomes; `e_reasoning.rs` remains the frozen trace/affect input slot | TASK-PY-G-050 |
+| Predicted security concerns | `q4_security_labels.rs` (Bandit + Semgrep) | Frozen 2026-05-19; `CF_MEJEPA_Q4_SECURITY_LABELS` remains readable; #402 closed as `wontfix` under the ambiguity boundary |
+| Predicted perf regressions | `q4_perf_labels.rs` | Frozen; 260 historical rows in `CF_MEJEPA_Q4_PERF_LABELS` preserved; #266, #399 closed as `archived-display-only` |
+| Predicted accuracy degradations | `q4_accuracy_labels.rs` | Frozen; 240 historical rows in `CF_MEJEPA_Q4_ACCURACY_LABELS` preserved; #267 closed as `archived-display-only` |
+| Predicted cost regressions | `q4_cost_labels.rs` | Frozen; 240 historical rows in `CF_MEJEPA_Q4_COST_LABELS` preserved; #268, #400 closed as `archived-display-only` |
+| Reasoning class | `q4_reasoning_labels.rs` | Frozen; 300 historical rows in `CF_MEJEPA_Q4_REASONING_LABELS` preserved; #269 closed as `archived-display-only` |
+| Non-trivial-on-Pass | `prediction_surfaces.rs` | Frozen; 500 historical rows in `CF_MEJEPA_Q4_PASS_ANNOTATIONS` preserved; #270 closed as `archived-display-only` |
+| Q4 confidence calibration | `HEAD_CALIBRATIONS` consumer | Frozen; #127 closed as `archived-display-only` |
+| Q4 trust gate | `mejepa_predict_latest` exposure | Frozen as a no-op pass-through; #377 closed as `archived-display-only` |
+| Q4 harvest expansion | #401 | Closed as `archived-display-only` |
+| Q4 security/structural producer expansion | #402 | Closed as `wontfix` (ambiguity boundary) |
 
-`Q4SecurityClass`, `Q4SecurityDetector`, `Q4SecuritySeverity`, `Q4SecuritySource` — exported by `q4_security_labels.rs`. Default timeout: `DEFAULT_Q4_SECURITY_TIMEOUT_SECS`.
-Q4 producer rows are display-only until #377's trust gate sees the relevant producer evidence, #127 calibration rows in `CF_MEJEPA_HEAD_CALIBRATIONS`, and exact active-slot evidence for the 12 active embedders.
+The corresponding `CF_*_Q4_*` CFs are NOT deleted (would force a schema-version bump and DB rewipe); they are deprecated-readable. A future schema-version bump may delete them; tracked separately under `phase:cleanup`.
+
+**What replaces Q4 in the operator-facing answer.** Operators who used to want "what else could go wrong" answers get them from the **named failure mode** Q3 surface (§4.3): if the binary verdict is Fail, the named failure mode + closest exemplar tell the operator the specific named cause. If the binary verdict is Pass, the operator-facing answer is "Pass + reasons-to-trust: claim landed in bytes (Q1=Yes), oracle agrees (Q2=Pass), closest exemplars all Pass" — not a list of speculative ambiguous risks.
 
 ---
 

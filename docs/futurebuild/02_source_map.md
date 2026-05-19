@@ -304,3 +304,62 @@ Full FSV evidence index (327 directories on `/mnt/d/contextgraph/fsv/`) → `07_
 - No inner-LLM code. Removed 2026-05-09; `feature = "llm"` triggers `compile_error!`.
 - No HTTP from action paths. `WebSearch`/`WebFetch`/`mcp__exa__*` are read-only research tools only.
 - No `.env` / `.env.*` files committed.
+
+---
+
+## 12. Planned New Modules (Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop)
+
+Planned source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`). All planned modules are **additive** to existing crates — no new top-level crate is created; tracked under epic issues #403 / #404 / #405 / #406.
+
+### 12.1 Failure-mode labeling hierarchy (epic #403 / TASK-PY-G-110)
+
+| Planned module | Crate | Role |
+|---|---|---|
+| `src/failure_mode_hierarchy.rs` | `context-graph-mejepa` | 4-level hierarchy types (`FailureModeGroupId`, `FailureModeSkillName`, `FailureModeConstellationName`, `NamedFailureMode`) |
+| `src/failure_mode_clusters.rs` | `context-graph-mejepa` | K-means clustering over 78-column pairwise-correlation residuals from #388; cluster naming via cosine-vs-vocabulary (Discover-then-Name CBM, Rao et al. 2024) |
+| `src/failure_mode_vocabulary.rs` | `context-graph-mejepa` | Operator-curated failure-mode vocabulary seeded from Aleithan et al. 2025 / Yang et al. 2024 / SWE-Bench Pro 2025 published taxonomies + our 8-mutation operator set + adversarial corpus |
+| `src/failure_mode_consumer.rs` | `context-graph-mejepa` | Reads K-means cluster output, writes `CF_MEJEPA_FAILURE_MODE_LEVEL1/2/3`, exposes lookup for `compiler.rs::compile` |
+| `examples/task_py_g_110_failure_mode_clustering_fsv.rs` | `context-graph-mejepa` | FSV harness: cluster purity ≥ 0.7 silhouette, operator-rename idempotence, every Fail prediction gets at least one named mode |
+
+### 12.2 Cross-panel triangulation (epic #404 / TASK-PY-G-111)
+
+| Planned module | Crate | Role |
+|---|---|---|
+| `src/cross_panel.rs` | `context-graph-mejepa` | Cross-panel orchestrator: schedules Panel B evaluation on gate-relevant predictions, writes `CF_MEJEPA_CROSS_PANEL_AGREEMENT`, raises `CROSS_PANEL_GOODHART_DETECTED` |
+| `src/panel_b/` (new submodule) | `context-graph-mejepa-instruments` | Panel B instrument variants: `e_ast_codebert.rs` (CodeBERT), `e_cfg_pythia.rs` (Pythia program-graph), `e_dataflow_joern.rs` (joern), `e_code_voyage.rs` (Voyage-code-2), `e_text_bge.rs` (bge-large-en-v1.5). Deterministic slots (Trace/Witness/Oracle/StaticAnalysis/Runtime/Reasoning/Scalars) are shared from Panel A. |
+| `examples/task_py_g_111_cross_panel_triangulation_fsv.rs` | `context-graph-mejepa` | FSV harness: both panels on same 30-instance holdout, per-instance Panel-A + Panel-B verdict in `CF_MEJEPA_CROSS_PANEL_AGREEMENT`, `CROSS_PANEL_GOODHART_DETECTED` fires on injected divergence |
+
+### 12.3 Online mistake-driven learning (epic #405 / TASK-PY-G-112)
+
+| Planned module | Crate | Role |
+|---|---|---|
+| `src/mistake_log.rs` | `context-graph-mejepa` | `MistakeRow` type, writer, secondary-index by `cell_key`, byte-replay readback for `CF_MEJEPA_MISTAKE_LOG` |
+| `src/mistake_loop.rs` | `context-graph-mejepa` | Reads ground-truth verdicts from oracle / PostToolUse / shift-log; computes mistake / no-mistake; writes mistake row + boosts `CF_MEJEPA_REPLAY_BUFFER` priority 8× |
+| `src/mistake_consumer.rs` | `context-graph-mejepa-train` | Trainer-side: consumes mistake rows under EWC++ Fisher protection (existing TASK-PY-G-065 path), applies Perceptron / Second-Order-Perceptron / Projectron update rule to the binary head, persists `CF_MEJEPA_ONLINE_HEAD_STATE` |
+| `src/online_perceptron.rs` | `context-graph-mejepa-train` | Kernel-Perceptron family update; Cesa-Bianchi & Conconi 2005 mistake bound; Orabona 2008 Projectron memory-bounded support set; finite mistake bound guarantee |
+| `examples/task_py_g_112_mistake_loop_convergence_fsv.rs` | `context-graph-mejepa-train` | FSV harness: inject deliberate wrong prediction → mistake row written → next presentation of same panel signature yields corrected verdict → `mistake_repeat_rate ≤ 0.05` |
+
+### 12.4 Q4 freeze (deprecation, no new module)
+
+Q4 is removed from the prediction contract (see `01_overview.md §1.1` and `05_predictor_pipeline.md §16`). No new Q4 modules are planned. Existing `q4_*_labels.rs` modules remain compiled and the CFs remain readable for forensic continuity; they are frozen — no new producer writes after 2026-05-19. Future cleanup work (deleting frozen Q4 modules + dropping CFs in a schema-version bump) tracked under `phase:cleanup`.
+
+### 12.5 Dependency graph addendum
+
+```
+context-graph-mejepa (predictor trunk)
+  + failure_mode_hierarchy.rs ─┐
+  + failure_mode_clusters.rs   ├─> reads CF_MEJEPA_CONSTELLATION_PATTERNS (#390), CF_MEJEPA_PATCH_SIMILARITY_META; writes CF_MEJEPA_FAILURE_MODE_LEVEL1/2/3 + CF_MEJEPA_NAMED_PREDICTIONS
+  + failure_mode_vocabulary.rs ┘
+  + cross_panel.rs ────────────> reads CF_MEJEPA_LIVE_PREDICTIONS; writes CF_MEJEPA_CROSS_PANEL_AGREEMENT, CF_MEJEPA_PANEL_B_OBSERVATIONS
+  + mistake_log.rs ────────────> reads CF_MEJEPA_ORACLE_VERDICTS + CF_MEJEPA_PREDICTION_VERIFICATIONS + CF_MEJEPA_REALITY_IMPACT; writes CF_MEJEPA_MISTAKE_LOG, CF_MEJEPA_MISTAKE_REPLAY_PRIORITY
+  + mistake_loop.rs ───────────> bridges mistake_log → replay_buffer (boosts CF_MEJEPA_REPLAY_BUFFER priority 8×)
+
+context-graph-mejepa-instruments
+  + panel_b/ ──────────────────> 5 new Panel B encoders (CodeBERT / Pythia / joern / Voyage-code-2 / bge)
+
+context-graph-mejepa-train
+  + mistake_consumer.rs ───────> consumes CF_MEJEPA_MISTAKE_LOG under EWC++ Fisher protection
+  + online_perceptron.rs ──────> Perceptron / Second-Order-Perceptron / Projectron head update; CF_MEJEPA_ONLINE_HEAD_STATE
+```
+
+No new internal dependency cycles; the planned modules attach to existing crates and read/write only via `context-graph-mejepa-cf` constants and `context-graph-storage` openers.

@@ -8,21 +8,133 @@ Source files covered: `Cargo.toml`, `CLAUDE.md`, `AGENTS.md`, `crates/context-gr
 
 ## 1. What This System Is
 
-**ME-JEPA-Code** is a deterministic predictive truth system. AI coding agents (Claude Code / Codex / Cursor) call it via a local MCP JSON-RPC server. It returns a calibrated multi-head `RealityPrediction` answering five operator questions for any candidate code change:
+**ME-JEPA-Code** is a **binary reality predictor**. AI coding agents (Claude Code / Codex / Cursor) call it via a local MCP JSON-RPC server. For any candidate code change it returns:
 
-| Q | Question | Answered by |
-|---|---|---|
-| **Q1** | Does what the AI **CLAIMED** exist? | Claim graph reconciled against bytes-on-disk + AST (`crates/context-graph-mejepa/src/claim_graph.rs`, `CF_MEJEPA_CLAIM_RECONCILIATION`) |
-| **Q2** | Does it **WORK**? | Predictor + split-conformal interval + TCT Gτ guard → `Verdict::{Pass, Fail, OutOfDistribution, Abstain, GuardRejected}` (`compiler.rs`, `verdict_assembly.rs`) |
-| **Q3** | **WHY** would it fail? | Ranked `predicted_failure_modes`, `closest_exemplars` from patch-similarity HNSW, violating embedders (`failure_fingerprint.rs`, `patch_similarity.rs`) |
-| **Q4** | **WHAT ELSE** could go wrong? | Always-on heads: security (Bandit/Semgrep), perf, cost, accuracy, edge cases, complexity, churn, doc-coverage, dep-CVE (`q4_security_labels.rs`, `composite_reward_signals.rs`) |
-| **Q5** | How is it **IMPACTING REALITY**? | Shift-log replay against predicted side effects (`reality_impact.rs`) |
+```
+verdict ∈ { Pass, Fail }    // "Will this change exist in working reality? Yes or No."
++ named_failure_mode         // (when Fail) the labeled cluster from the failure-mode hierarchy (§1.2)
++ closest_exemplars          // top-K historical patches from the 300×8 corpus that look like this one
++ violating_slots            // per-slot OOD reasons + cross-embedder contradiction evidence (#389/#390)
++ mistake_id (when wrong)    // ground-truth observation lands in CF_MEJEPA_MISTAKE_LOG and feeds online learning (§1.3)
+```
 
-**Ship-gate predicate:** `prediction_oracle_correlation ≥ 0.95` stable across `(mutation_category × language)` on four consecutive rolling windows of the 300×8 SWE-bench Lite Python corpus.
+There is one prediction per candidate. There is no best-of-K. There is no Abstain at the product surface. The system must be right the first time; when it is wrong, the mistake is captured and the predictor adapts.
+
+The five Q-questions are no longer parallel predictions. They split into **binary predictions** (Q1, Q2, Q5) and **explanation-only surfaces** (Q3) — and **Q4 is out of the prediction contract entirely**.
+
+| Q | Status under the strict binary contract |
+|---|---|
+| **Q1** | **Binary prediction.** Hard input feature + downstream check: did the AI's claim physically land in the bytes/AST? Reality is the bytes on disk + AST; the check is byte-equality + AST diff. Free binary form. |
+| **Q2** | **The binary predictor itself.** Output is `Verdict::Pass\|Fail`. Reality is the Docker oracle (`swebench.harness.run_evaluation` per-instance). Free binary form. |
+| **Q3** | **Explanation surface only.** Named failure mode + closest exemplar attached to a `Fail` verdict. Does NOT make its own prediction; it labels the binary verdict that Q2 already made, using the §1.2 hierarchy + case-based exemplar retrieval. |
+| **Q4** | **OUT OF SCOPE.** Removed from the prediction contract 2026-05-19. Q4 questions ("is this performant?", "is this maintainable?", "is this idiomatic?", "are there latent bugs?") do not have a free binary form against reality — they require arbitrary thresholds, depend on workload/hardware/baseline assumptions, or ask about ambiguous taste judgments. ME-JEPA does not predict ambiguous things. Existing Q4 producers (perf/accuracy/cost/reasoning/non-trivial-on-Pass) are **frozen as historical display data**; not trained against, not ship-gate-relevant, not consumed by the predictor. The heads remain in the schema for backward read-only compatibility and will be marked `deprecated_ambiguous` in the next schema version. |
+| **Q5** | **Binary prediction.** Reality is the durable shift log (`/zfs/archive/contextgraph/runtime/shift-log.jsonl`). For each predicted side effect: did the corresponding shift-log event occur? Yes/no per leaf event. Falsifications enter the online-learning mistake loop (`reality_impact.rs`, `CF_MEJEPA_MISTAKE_LOG`). |
+
+**Why Q4 is dropped, not thresholded.** A continuous quantity (perf wall-clock, mutation survival rate, complexity score) only becomes binary via an arbitrary threshold ("perf regressed by ≥10%"). The threshold is not reality — it is a heuristic. ME-JEPA predicts reality, not heuristics. Heuristic-against-reality predictions can be neither right nor wrong in a sense that drives the mistake loop; there is no ground truth that says "10% is the correct threshold." Without ground truth there is no learning signal. Better to predict zero ambiguous things than to predict noise.
+
+This is a meaningful tightening from earlier roadmap framings. Previous Q4 producer work (#266 / #267 / #268 / #269 / #270 / #399 / #400 / #401, plus #402) remains shipped FSV evidence but is reclassified as **completed-and-archived**; new Phase G bandwidth does NOT spend on Q4 expansion. See `08_roadmap_and_open_work.md §3.1` for the closure of the Q4 producer track and the redirection of bandwidth.
+
+**Ship-gate predicate:** `prediction_oracle_correlation ≥ 0.95` stable across `(mutation_category × language)` on four consecutive rolling windows of the 300×8 SWE-bench Lite Python corpus, **measured on Panel A *and* re-confirmed on the non-overlapping Panel B** (§1.4 cross-panel triangulation; new requirement 2026-05-19).
 
 **Product boundary.** LLM agents are untrusted edit generators. Hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, and docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`.
 
 **Consequence-prediction contract (#397).** In this project, "predicting reality" means predicting the consequences of code being live: whether the change exists, whether it works, why it would fail, what secondary risks it creates, and how it changes durable repository/test/runtime/dependency reality over time. ME-JEPA presents those predicted consequences, confidence, and evidence to the human operator or the operator's AI agent so they can decide whether to proceed, repair, or choose a different route. The model observes explicit task text, agent claims, edits, AST deltas, frozen instruments, oracle outcomes, and verification feedback; it must not infer or classify hidden human intent (#358).
+
+### 1.1 Binary-reality contract (2026-05-19 reframe)
+
+The five questions (Q1–Q5) are **explanation surfaces** for one **binary prediction**:
+
+```
+verdict ∈ { Pass, Fail }   ⇔   "Does this candidate code change exist in working reality?"
+```
+
+Pass means the AI's claimed change is materially correct against bytes/AST/test/runtime reality. Fail means it is not. There is no soft-confidence ranking, no `Abstain`, no best-of-K hedging at the product surface. The system must be **correct on the first try**; if it is wrong, the mistake becomes a labeled training row and the predictor adapts so the same mistake is not made twice. This is the property that lets the ship gate be a single number (`prediction_oracle_correlation ≥ 0.95`) rather than a calibrated-coverage statistic.
+
+The Q-surfaces split into **binary predictions** (Q1/Q2/Q5), an **explanation surface** (Q3), and **out-of-scope** (Q4):
+
+| Surface | Binary against reality? | Role |
+|---|---|---|
+| Q1 (`claim_graph`) | Yes — bytes/AST against disk | Binary prediction + input feature to Q2 |
+| Q2 (`oracle head` + `Verdict::Pass\|Fail`) | Yes — Docker oracle | **The product-facing binary prediction** |
+| Q3 (`predicted_failure_modes` + `closest_exemplars`) | No — labels not predictions | Named explanation attached to Fail; powered by failure-mode hierarchy (§1.2) + case-based exemplars (§1.3) |
+| Q4 (always-on heads) | **No — ambiguous by nature** | **Out of scope.** Existing heads frozen as display-only historical data. Not trained. Not ship-gate-relevant. See §1.2 below for the ambiguity argument. |
+| Q5 (`reality_impact`) | Yes — shift-log against shift-log | Binary prediction + mistake-detection surface; falsifications enter the online-learning mistake loop |
+
+The legacy `Verdict::{OutOfDistribution, Abstain, GuardRejected}` states do not disappear from the code, but they are **internal states**, not product outputs. An internal `Abstain` or `OOD` is a signal that the predictor lacks sufficient evidence to be correct on the first try — the system MUST treat that as a present-tense failure to be eliminated, not as an acceptable hedge. The path out of an internal Abstain is online learning, not "try K candidates and pick the best."
+
+**The ambiguity boundary (locked-in rule).** ME-JEPA only predicts questions that have a *free binary form against reality*. Free means: the binary verdict comes from observing reality directly, not from imposing an arbitrary threshold on a continuous heuristic. The system does not predict ambiguous things, because:
+
+1. **Ambiguous questions have no ground truth.** "Is this performant?" depends on workload, hardware, baseline, and acceptable margin — there is no objective answer reality renders. Without ground truth, there is no learning signal, and the prediction is unfalsifiable.
+2. **Thresholded continuous proxies aren't reality, they're heuristics.** "perf regression ≥ 10%" is a binary heuristic, not a binary fact about reality. Predicting whether mutmut/semgrep/vulture/hyperfine returns a finding predicts what those tools say, not whether the code is good. Predicting heuristics introduces noise that can't be cleaned up via the mistake loop because the heuristic itself is the source of disagreement.
+3. **Predicting noise corrupts the mistake-driven loop.** The whole online-adaptation property in §1.3 depends on every mistake row being a real disagreement with reality. Mistakes against heuristic thresholds train the predictor to match the heuristic, not reality. Better to predict zero ambiguous things than to predict noise.
+
+What this excludes from the prediction contract:
+
+| Excluded surface | Why |
+|---|---|
+| Performance regressions | Continuous metric; threshold is arbitrary; depends on workload |
+| Maintainability / tech debt | Taste judgment; no ground truth |
+| Idiomatic-ness | Style preference; no ground truth |
+| Latent bugs | Cannot enumerate; mutmut mutation survival is a heuristic, not a bug |
+| Code redundancy / dead code | Depends on future use; vulture / clone-detection are heuristics |
+| Edge-case coverage | Cannot enumerate edge cases by definition |
+| Cost (CI minutes, dependency growth) | Continuous; threshold is arbitrary |
+| Reasoning quality | Ambiguous; "good reasoning" has no oracle |
+
+What stays in the prediction contract:
+
+| Kept surface | Reality that renders the binary verdict |
+|---|---|
+| Q1 claim-exists | The bytes / AST on disk after the patch |
+| Q2 oracle pass | The Docker oracle's `report.json` (FAIL_TO_PASS / PASS_TO_PASS / etc.) |
+| Q5 specific shift events | The durable shift-log JSONL on aiwonder |
+
+Q4 heads remain in the schema and the CFs (`CF_MEJEPA_Q4_*`) as **frozen historical display data**, readable by `mejepa_explain_prediction` for forensic continuity, but not trained, not calibrated as a prerequisite for ship, and not consumed by the predictor's loss. New Phase G bandwidth spends nowhere on Q4 expansion. See `08_roadmap_and_open_work.md §3.1` for the Q4 producer track closure.
+
+### 1.2 The labeling layer (the unsolved problem this addresses)
+
+Passing the 300×8 SWE-bench Lite corpus through 13 retrieval embedders (E1–E13) + 15 frozen instrument slots (E_AST … Scalars) produced a large corpus of vectors, pairwise correlations (#388), and per-slot/per-cell calibration state (#389). What is missing is the **labeling layer** that turns those numbers into *named* rules a predictor can act on:
+
+> "When E_TypeGraph is low *and* E_DataFlow is low *and* E_Test agrees with E_Oracle, the failure mode is `type_signature_drift_under_test_coverage` — and the closest exemplar is `django__django-11234`."
+
+The labeling layer is a four-level hierarchy on top of the slot panel (ported from the ClipCannon Action-Unit → Group → Skill → Constellation architecture and re-grounded to code failure modes):
+
+| Level | Object | How it's discovered |
+|---|---|---|
+| **0** | Raw slot/embedder violations | Already shipped as `GtauViolation` + `per_slot_ood_reasons` (#389) |
+| **1** | Co-firing violation **groups** | K-means clustering (k≈40) over the 78 pairwise correlation residuals from #388 across the 300×8 corpus; each centroid named via cosine-vs-vocabulary against an operator-curated failure-mode vocabulary (DN-CBM / Rao et al. 2024 pattern). |
+| **2** | Named failure **skills** | Hand-named per cluster from the published SWE-bench taxonomies (Yang et al. 2024: 9 categories × 25 subcategories; Aleithan et al. 2025: 4-category patch-difference; SWE-Bench Pro 2025: `wrong_solution`/`tool_error`/`syntax_error`/`incorrect_file`/etc.). Examples: `patch_breaks_test_isolation`, `mock_only_change`, `regression_against_invariant`, `solution_leak`, `incomplete_fix`, `wrong_file`, `compile_error_only`. |
+| **3** | Behavioural failure **constellations** | Co-occurring skill sequences per `mutation_category × language` cell. Examples: `unsafe_security_change` (security skill + dataflow violation), `incompatible_refactor` (type-graph drift + test-isolation break), `mock_only_change` (claim mismatches AST). |
+
+A binary prediction becomes actionable when the predictor returns `Fail + named_failure_mode + closest_exemplar`. The agent that consumes the prediction can act on a named mode the way a senior reviewer would; the operator can audit the prediction the way they would audit a named bug class.
+
+### 1.3 Online mistake-driven adaptation (the "isn't wrong in the future" property)
+
+The predictor's head over the panel is a margin-based binary classifier wrapped in an **online-mistake-driven update loop** (Rosenblatt 1957 perceptron lineage, with second-order/kernel variants from Cesa-Bianchi & Conconi 2005 and Orabona 2008 for stability):
+
+1. Predictor returns `Pass | Fail` for a candidate patch.
+2. Reality (Docker oracle + PostToolUse capture + shift-log replay) returns the ground truth.
+3. If prediction matches reality → no update; the panel + slot calibration was already discriminative enough.
+4. If prediction disagrees → **mistake row** lands in `CF_MEJEPA_MISTAKE_LOG`. The mistake row carries the panel, the slot trace, the named failure mode the predictor *thought* applied, the named failure mode the closest exemplar suggests, and the ground-truth outcome. The trainer consumes the mistake row under EWC++ catastrophic-forgetting protection (already in #TASK-PY-G-065) plus prioritized replay weight (#TASK-PY-G-068).
+5. Convergence target: for the same `(mutation_category × language × named_failure_mode)` cell, the predictor must not repeat the mistake on the next prediction. The mistake log is the proof.
+
+This replaces the multi-shot best-of-K pattern and the calibrated-coverage Abstain pattern with a **one-shot + adapt** discipline. The agent never sees multiple candidate verdicts; it sees one binary answer and a structured explanation, both of which are subject to falsification by the next ground-truth observation.
+
+### 1.4 Cross-panel triangulation (the Goodhart guard)
+
+The predictor is trained against the 15-slot instrument panel. The Gτ guard is evaluated against the same 15-slot panel. That is **encoder-matched** by construction and creates a Goodhart risk: hitting 0.95 on this panel does not prove the prediction is right against reality; it could prove that the predictor learned the panel.
+
+A second, deliberately non-overlapping panel (Panel B) is materialized for hold-out triangulation:
+
+- E_AST: tree-sitter → CodeBERT AST encoder
+- E_CFG: attention encoder → Pythia program-graph encoder
+- E_DataFlow: attention encoder → joern-driven data-flow encoder
+- E_Code (E7-equivalent): Qodo-Embed-1 → Voyage-code-2
+- E_Test/E_Problem/E_CommitMsg (e5 reuse): e5-large-v2 → bge-large-en-v1.5
+
+When Panel A clears the gate, Panel B re-scores the same 30-instance holdout (and 240-instance train-visible window). If Panel B oracle correlation stays within 0.05 of Panel A, the gate is genuinely external. If Panel B drops by ≥0.10, the predictor was Goodharting Panel A, and the result is fail-closed for ship.
+
+This is the analogue of PAPER §6.3's named-future-work item "cross-encoder triangulation with ECAPA-TDNN" — except where PAPER scoped it as future work for voice cloning, ME-JEPA can do it now because the predictor is already architecturally separated from the panel.
 
 ---
 
