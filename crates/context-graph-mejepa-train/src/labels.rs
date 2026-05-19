@@ -13,7 +13,8 @@ use context_graph_mejepa::{
 };
 use context_graph_mejepa_instruments::{
     Q4AccuracyLabel, Q4AccuracyMetricKind, Q4CostKind, Q4CostLabel, Q4CostLabelKind,
-    Q4PerfCategory, Q4PerfLabel, Q4SecurityClass, Q4SecurityLabel,
+    Q4PerfCategory, Q4PerfLabel, Q4ReasoningClass, Q4ReasoningLabel, Q4SecurityClass,
+    Q4SecurityLabel,
 };
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -482,6 +483,22 @@ pub fn q4_cost_labels_to_prediction_surfaces(
     Ok(surfaces)
 }
 
+pub fn q4_reasoning_labels_to_prediction_surfaces(
+    labels: &[Q4ReasoningLabel],
+) -> Result<PhaseBPredictionSurfaces, UtmlError> {
+    let mut surfaces = PhaseBPredictionSurfaces::default();
+    let Some(label) = labels
+        .iter()
+        .max_by(|left, right| left.confidence.total_cmp(&right.confidence))
+    else {
+        surfaces.predicted_reasoning_class = ReasoningClass::Unknown;
+        return Ok(surfaces);
+    };
+    validate_q4_reasoning_label(label)?;
+    surfaces.predicted_reasoning_class = map_q4_reasoning_class(label.class);
+    Ok(surfaces)
+}
+
 pub fn apply_phase_b_labels_with_transfer_gate(
     db: &DB,
     labels: &ExtractedPhaseBLabels,
@@ -715,6 +732,21 @@ fn map_q4_cost_kind(kind: Q4CostKind) -> CostAxis {
     }
 }
 
+fn map_q4_reasoning_class(class: Q4ReasoningClass) -> ReasoningClass {
+    match class {
+        Q4ReasoningClass::Unknown => ReasoningClass::Unknown,
+        Q4ReasoningClass::None => ReasoningClass::None,
+        Q4ReasoningClass::CodeOnly => ReasoningClass::CodeOnly,
+        Q4ReasoningClass::Unsupported => ReasoningClass::Unsupported,
+        Q4ReasoningClass::Hedging => ReasoningClass::Hedging,
+        Q4ReasoningClass::Overclaiming => ReasoningClass::Overclaiming,
+        Q4ReasoningClass::Calibrated => ReasoningClass::Calibrated,
+        Q4ReasoningClass::Apologetic => ReasoningClass::Apologetic,
+        Q4ReasoningClass::ConfidentCorrect => ReasoningClass::ConfidentCorrect,
+        Q4ReasoningClass::ConfidentWrong => ReasoningClass::ConfidentWrong,
+    }
+}
+
 fn validate_q4_security_label(label: &Q4SecurityLabel) -> Result<(), UtmlError> {
     if label.finding_id.trim().is_empty()
         || label.rule_id.trim().is_empty()
@@ -843,6 +875,26 @@ fn validate_q4_cost_label(label: &Q4CostLabel) -> Result<(), UtmlError> {
         return Err(UtmlError::new(
             UtmlErrorCode::InvalidSignal,
             "Q4 cost regression label must carry a positive delta",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_q4_reasoning_label(label: &Q4ReasoningLabel) -> Result<(), UtmlError> {
+    if label.corpus_row_id.trim().is_empty()
+        || label.chunk_id.trim().is_empty()
+        || label.session_id.trim().is_empty()
+        || label.reason.trim().is_empty()
+    {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 reasoning label missing corpus_row_id/chunk_id/session_id/reason",
+        ));
+    }
+    if !label.confidence.is_finite() || !(0.0..=1.0).contains(&label.confidence) {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 reasoning label confidence must be finite in [0,1]",
         ));
     }
     Ok(())
@@ -1215,5 +1267,39 @@ mod tests {
         }])
         .unwrap();
         assert!(surfaces.predicted_cost_regressions.is_empty());
+    }
+
+    #[test]
+    fn q4_reasoning_labels_feed_prediction_surface_adapter() {
+        let surfaces = q4_reasoning_labels_to_prediction_surfaces(&[Q4ReasoningLabel {
+            corpus_row_id: "row-q4-reasoning".to_string(),
+            chunk_id: "chunk-q4-reasoning".to_string(),
+            session_id: "session-q4-reasoning".to_string(),
+            class: Q4ReasoningClass::Overclaiming,
+            confidence: 0.92,
+            reason: "agent claimed success while oracle reality failed".to_string(),
+            oracle_outcome: context_graph_mejepa_instruments::Q4ReasoningOutcome::Fail,
+            prediction_verdict:
+                context_graph_mejepa_instruments::Q4ReasoningPredictionVerdict::Fail,
+            features: context_graph_mejepa_instruments::Q4ReasoningFeatures {
+                hedge_terms: 0,
+                apology_terms: 0,
+                confidence_terms: 1,
+                success_claim_terms: 1,
+                failure_ack_terms: 0,
+                natural_language_words: 8,
+                code_like_lines: 0,
+                non_ascii_ratio: 0.0,
+                pairwise_cosine_reasoning_diff: 0.2,
+                pairwise_cosine_reasoning_oracle: 0.1,
+                e17_affect_score: 0.7,
+                oracle_pass: false,
+            },
+        }])
+        .unwrap();
+        assert_eq!(
+            surfaces.predicted_reasoning_class,
+            ReasoningClass::Overclaiming
+        );
     }
 }

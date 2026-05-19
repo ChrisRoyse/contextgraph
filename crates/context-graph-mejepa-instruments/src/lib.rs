@@ -54,6 +54,7 @@ pub mod panel_store;
 pub mod q4_accuracy_labels;
 pub mod q4_cost_labels;
 pub mod q4_perf_labels;
+pub mod q4_reasoning_labels;
 pub mod q4_security_labels;
 pub mod static_analysis_reward;
 pub mod stdlib_registry;
@@ -599,6 +600,15 @@ pub use q4_perf_labels::{
     Q4PerfLabelStore, Q4PerfQuarantine, Q4PerfRawOutputPaths, Q4PerfRawOutputs, Q4PerfScanPhase,
     Q4PerfSignalRecord, Q4PerfSource, Q4PerfToolKind, Q4PerfToolOutput,
     DEFAULT_Q4_PERF_TIMEOUT_SECS,
+};
+pub use q4_reasoning_labels::{
+    attach_checkpoint_hash, extract_q4_reasoning_labels, train_q4_reasoning_head,
+    write_q4_reasoning_raw_outputs, PersistedQ4ReasoningCalibration, PersistedQ4ReasoningSignal,
+    Q4ReasoningCalibrationRow, Q4ReasoningClass, Q4ReasoningExtraction, Q4ReasoningFeatures,
+    Q4ReasoningHeadCheckpoint, Q4ReasoningHeadStatus, Q4ReasoningLabel, Q4ReasoningLabelStore,
+    Q4ReasoningOutcome, Q4ReasoningPredictionVerdict, Q4ReasoningQuarantine,
+    Q4ReasoningRawOutputPaths, Q4ReasoningSignalRecord, Q4ReasoningSource,
+    Q4_REASONING_MIN_HARVEST_EXAMPLES,
 };
 pub use q4_security_labels::{
     extract_q4_security_labels, run_q4_security_tools, run_q4_security_tools_with_timeout,

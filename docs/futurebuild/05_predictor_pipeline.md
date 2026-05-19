@@ -472,13 +472,14 @@ PageRank scores weight `BatchSampler` and Fisher (TASK-EK-016 / EK-017 / EK-016-
 | Head | Source | Issue |
 |---|---|---|
 | Predicted security concerns | `q4_security_labels.rs` (Bandit + Semgrep) | TASK-RWD-204 / TASK-PY-G-046 |
-| Predicted perf regressions | (pytest-benchmark + cProfile label pipeline) | TASK-PY-G-047 |
-| Predicted accuracy degradations | (ML test-output metric pipeline) | TASK-PY-G-048 |
-| Predicted cost regressions | (CI minutes + dep counter pipeline) | TASK-PY-G-049 |
+| Predicted perf regressions | `q4_perf_labels.rs` (pytest-benchmark + cProfile label producer) | TASK-PY-G-047 |
+| Predicted accuracy degradations | `q4_accuracy_labels.rs` (ML/data metric label producer) | TASK-PY-G-048 |
+| Predicted cost regressions | `q4_cost_labels.rs` (CI minutes + dep/wheel cost producer) | TASK-PY-G-049 |
 | Predicted-Works + test-coverage + test-flakiness sub-heads | `prediction_surfaces.rs` | TASK-PY-G-073 |
-| Reasoning class | `e_reasoning.rs` | TASK-PY-G-050 |
+| Reasoning class | `q4_reasoning_labels.rs` over observed agent prose + oracle/prediction outcomes; `e_reasoning.rs` remains the frozen trace/affect input slot | TASK-PY-G-050 |
 
 `Q4SecurityClass`, `Q4SecurityDetector`, `Q4SecuritySeverity`, `Q4SecuritySource` — exported by `q4_security_labels.rs`. Default timeout: `DEFAULT_Q4_SECURITY_TIMEOUT_SECS`.
+Q4 producer rows are display-only until #377's trust gate sees the relevant producer evidence, #127 calibration rows in `CF_MEJEPA_HEAD_CALIBRATIONS`, and exact active-slot evidence for the 12 active embedders.
 
 ---
 

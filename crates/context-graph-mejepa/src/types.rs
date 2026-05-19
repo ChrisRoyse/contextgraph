@@ -1121,6 +1121,10 @@ impl PredictedCostRegression {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum ReasoningClass {
+    Unknown,
+    None,
+    CodeOnly,
+    Unsupported,
     Correct,
     MostlyCorrect,
     PlausibleButWrong,
@@ -1128,6 +1132,10 @@ pub enum ReasoningClass {
     Hedging,
     Overclaiming,
     UnderClaiming,
+    Calibrated,
+    Apologetic,
+    ConfidentCorrect,
+    ConfidentWrong,
     #[default]
     Mute,
 }

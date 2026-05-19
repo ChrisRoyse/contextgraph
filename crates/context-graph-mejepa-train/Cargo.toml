@@ -118,3 +118,7 @@ path = "examples/task_py_g_048_q4_accuracy_label_fsv.rs"
 [[example]]
 name = "task_py_g_049_q4_cost_label_fsv"
 path = "examples/task_py_g_049_q4_cost_label_fsv.rs"
+
+[[example]]
+name = "task_py_g_050_q4_reasoning_label_fsv"
+path = "examples/task_py_g_050_q4_reasoning_label_fsv.rs"

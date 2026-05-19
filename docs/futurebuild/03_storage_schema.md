@@ -82,6 +82,9 @@ Adds `CF_MEJEPA_PLASTICITY_HISTORY` (TASK-PY-G-066 continual backprop), `CF_MEJE
 | `CF_MEJEPA_Q4_SECURITY_LABELS` | `(chunk_id, detector, code)` | JSON `Q4SecuritySignalRecord` | TASK-RWD-204 / TASK-PY-G-046 |
 | `CF_MEJEPA_Q4_PERF_LABELS` | `(corpus_row_id, metric)` | JSON `Q4PerfSignalRecord` | TASK-PY-G-047 |
 | `CF_MEJEPA_Q4_ACCURACY_LABELS` | `(corpus_row_id, metric, source_test_hash)` | JSON `Q4AccuracySignalRecord` | TASK-PY-G-048 |
+| `CF_MEJEPA_Q4_COST_LABELS` | `(corpus_row_id, kind)` | JSON `Q4CostSignalRecord` | TASK-PY-G-049 |
+| `CF_MEJEPA_Q4_REASONING_LABELS` | `(corpus_row_id, session_id)` | JSON `Q4ReasoningSignalRecord` | TASK-PY-G-050 |
+| `CF_MEJEPA_HEAD_CALIBRATIONS` | `(head, class)` | JSON per-head calibration / producer-heldout row | TASK-PY-G-012 / TASK-PY-G-050 |
 | `CF_MEJEPA_COVERAGE_SIGNALS` | `(chunk_id)` | JSON `CoverageLabel` | TASK-RWD-209 / TASK-PY-G-075 |
 | `CF_MEJEPA_COMPLEXITY_SIGNALS` | `(chunk_id)` | JSON `ComplexityLabel` | TASK-RWD-209 |
 | `CF_MEJEPA_CHURN_SIGNALS` | `(chunk_id)` | JSON `ChurnLabel` | TASK-RWD-209 |
