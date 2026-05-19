@@ -40,6 +40,8 @@ This is a meaningful tightening from earlier roadmap framings. Previous Q4 produ
 
 **Consequence-prediction contract (#397).** In this project, "predicting reality" means predicting the consequences of code being live: whether the change exists, whether it works, why it would fail, what secondary risks it creates, and how it changes durable repository/test/runtime/dependency reality over time. ME-JEPA presents those predicted consequences, confidence, and evidence to the human operator or the operator's AI agent so they can decide whether to proceed, repair, or choose a different route. The model observes explicit task text, agent claims, edits, AST deltas, frozen instruments, oracle outcomes, and verification feedback; it must not infer or classify hidden human intent (#358).
 
+**Live skill/ability surface (#417).** When ME-JEPA compiles a live project, the path is: project files -> Python AST chunks -> slot-preserving TCT constellations -> deterministic live-observable labels -> many-to-many chunk-skill memberships -> `PredictionLabelContext.active_skill_ids` -> consequence prediction. A chunk can participate in multiple Level-1 groups, Level-2 skills, and Level-3/higher abilities; a skill can span many chunks/files/ordered steps. Those memberships are prediction evidence, not human-intent inference. If reality refutes the prediction, the mistake loop must update the involved skill/ability model: update an underweighted skill, split a mixed skill, create a new candidate skill, demote an unstable skill, or record no-change with evidence.
+
 ### 1.1 Binary-reality contract (2026-05-19 reframe)
 
 The five questions (Q1–Q5) are **explanation surfaces** for one **binary prediction**:
@@ -85,6 +87,7 @@ This is the established L3 capability in the JEPA world-model rubric (arXiv 2511
    - The joint pathway probability (product of conditional leaf probabilities, calibrated by the conformal interval)
    - The closest historical exemplar from the 300×8 corpus that traced a similar pathway (powered by the 491-row accepted label registry from #413)
    - The named failure mode for any `Fail` leaf in the pathway (powered by #404 once Level-1/2/3 hierarchical naming lands on top of #413's registry)
+   - The active skill / higher-ability IDs and source chunk memberships that explain each leaf when available (powered by #414/#417)
 5. **Operator decision:** the operator reads the 3-5 pathways, picks the one they want reality to take. The system then shows them what code-shape *gets them to that pathway* — by reverse-engineering the patch-shape constraints that satisfy the chosen pathway's binary leaves (the §10.2(IX) / TASK-EK-013 / #335 `mejepa_reverse_prediction` tool, when it ships).
 
 **What this is, in standard language.** The pathway surface is the **Pearl Rung-3 counterfactual rollout** instantiated on binary leaves over the durable reality substrate. It is the *simulation-in-the-loop* pattern from arXiv 2603.11677 ("Control without foresight is like driving at night with no headlights"). It is structurally equivalent to **quantitative patch impact analysis** (arXiv 2605.13885) plus **sensitivity analysis for chaotic systems** (the SciML shadowing-methods treatment of the butterfly effect) — measure of how a small action cascades through a complex system, with the cascade decomposed into a small set of named most-probable trajectories rather than a single point forecast.
@@ -94,6 +97,41 @@ This is the established L3 capability in the JEPA world-model rubric (arXiv 2511
 **What this is NOT.** The pathway surface is not generative — it does not synthesize new pathways from imagination. Every leaf in every pathway is a binary prediction made by the predictor, against the same ground-truth substrate (bytes / Docker / shift log) that ground-truths the per-leaf training. Every pathway is byte-replayable: every leaf's predicted outcome eventually meets reality, and the mistake loop (§1.3 / #406) updates the predictor on disagreements. The pathway tree is a *projection* of what the predictor already knows about binary leaves, not a free-form imagination tool.
 
 **Ambiguous-pathway question is open and explicitly deferred.** Whether the pathway surface can ever expand to ambiguous leaves (e.g. "this pathway probably degrades performance by ≥10%") is unanswered. The current ambiguity-boundary rule says no: ambiguous leaves don't have free binary form against reality, so a pathway through one cannot be probability-weighted by the mistake loop. Whether some richer formulation can include them is future work; for now the pathway surface is binary-leaf-only. Tracked under #416 / TASK-PY-G-119 with explicit `ambiguous_leaves_in_pathway == 0` FSV assertion.
+
+### 1.5bis The bidirectional chunk↔skill linkage (#417 / TASK-PY-G-120 — data shipped, capability surface planned)
+
+The substrate chain is **AST chunks → constellations → accepted labels → skills**, and the linkage at every step is bidirectional. The data was shipped end-to-end on 2026-05-19 across #413 (Level-0 labels) and #414 (Level-2 skills + memberships). What's pending is the operator-facing **capability surface** that exposes the linkage. The capability surface is filed as #417 / TASK-PY-G-120.
+
+**Shipped substrate (do not redo):**
+
+| Layer | Artifact | Rows |
+|---|---|---|
+| AST chunks | `python_ast_chunks.jsonl` | 399,777 |
+| Level-0 labels per chunk | `chunk_constellation_labels.jsonl` (#413) | 399,777 |
+| Accepted Level-0 label registry | `accepted_label_registry.jsonl` (#413) | 491 |
+| Level-2 named skills | `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` (#414) | 128 |
+| Chunk → skill memberships | `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` (#414) | 36,773 |
+| Skill → chunk reverse index | `CF_MEJEPA_SKILL_REVERSE_INDEX` (#414) | 10,579 |
+| Skill lifecycle audit | `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` (#414) | 128 |
+
+**The insight.** Every higher-level skill is a composition of accepted Level-0 labels which are deterministic functions of specific AST chunks' multi-embedder constellations. Therefore every named skill traces back to the exact source bytes that compose it, and every source byte can be queried for which named skills it participates in. The data exists; the MCP exposure does not.
+
+**Twelve capabilities this unlocks (per #417):**
+
+1. **Skill → code (forward).** `mejepa_skill_to_code(skill_id)` returns the literal source bytes of the top-K member chunks with file/line/commit provenance. "Show me the code that implements skill X."
+2. **Code → skill (reverse).** `mejepa_code_to_skill(chunk_id)` returns all skills this chunk participates in.
+3. **Skill-conditioned code search.** Boolean set-query: "find code that exhibits skills A AND B but NOT C." Pure intersection/union/exclusion over the existing reverse index.
+4. **Refactoring blast-radius via skill graph.** Modify chunk C → walk memberships → walk reverse index → transitive co-member chunks. GitNexus / code-graph-analysis pattern instantiated on skill graph instead of call graph. Composes with TASK-EK-016 chunk-foundationality for risk weighting.
+5. **Cross-repository skill transfer.** When ingesting a new project, run the #413 deterministic compiler over its AST chunks; chunks that match existing accepted Level-0 signatures automatically participate in existing skills. The gskill / SkillX automatic-skill-onboarding pattern, but data-driven over deterministic signatures.
+6. **Pathway-leaf-to-code linkage.** #416 pathway Fail leaves attach the specific historical chunks that exemplify the mode. "This pathway breaks because the candidate's pattern matches these chunks (byte-level provenance) that have historically failed."
+7. **Skill-graph causal reasoning.** Skill S1's chunks call into skill S2's chunks → S1 depends on S2. The chunk call graph projected onto the skill graph gives a causal layer above the call graph.
+8. **Operator-facing skill ontology browser.** MCP surface over the 128 named skills + 36,773 memberships + 128 lifecycle audit rows, with source-byte rendering.
+9. **Skill provenance for compliance.** Every accepted skill traces to specific AST chunks with file/line/commit provenance. "This code embodies these N capabilities" is a byte-falsifiable claim.
+10. **Active-learning skill gaps.** Chunks with 0 memberships are candidates for new skill discovery; coverage map drives the active-learning queue.
+11. **Skill-conditioned generation context.** When the operator picks a pathway (#416) and asks the agent to write the code that lands it (#335 `mejepa_reverse_prediction`), retrieve top-K historical chunks of the relevant skills as in-context examples. Case-based reasoning, not free-form synthesis.
+12. **Cross-skill conflict graph.** Skills that never co-fire across the shipped memberships are auto-derived as mutually exclusive. "These two capabilities cannot coexist in the same code state."
+
+**The constraint that stays.** Skills are deterministic groupings of accepted Level-0 labels. They do NOT introduce ambiguous heads. Any consumer of skill linkage that feeds back into a prediction surface (e.g. #416 pathway leaves) MUST still use Q1/Q2/Q5 binary leaves only at the prediction boundary. The skill linkage is a **navigation surface over the predictor's training substrate**, not a new prediction surface.
 
 ### 1.6 The ambiguity boundary (locked-in rule)
 

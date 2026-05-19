@@ -428,10 +428,24 @@ The butterfly-effect pathway tree (`01_overview.md §1.5`, `05_predictor_pipelin
 
 Strict write-time assertion: any attempt to write a `PathwayNode` with `leaf_kind` outside `{Q1, Q2, Q5}` fails closed with `PATHWAY_AMBIGUOUS_LEAF_REJECTED`.
 
+### 9.4ter Bidirectional skill/ability linkage CFs (#417 / TASK-PY-G-120, planned)
+
+#414 already materialized the base bidirectional rows: `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP`, `CF_MEJEPA_SKILL_REVERSE_INDEX`, and `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT`. #417 exposes those rows as a live capability surface and adds small derived CFs for skill graphs, coverage gaps, cross-repo transfer, and conflict detection.
+
+| CF Constant (planned) | Key | Value | Purpose |
+|---|---|---|---|
+| `CF_MEJEPA_SKILL_GRAPH` | `(skill_a_id, skill_b_id)` | bincode `{relation: DependsOn|ComposesWith|PrerequisiteOf, support_count, derived_from: ChunkCallGraph|CoMembership|OrderedSequence, evidence_chunk_ids, latest_membership_hash}` | Skill-of-skills graph. Lets the predictor explain how changing chunks for one ability may affect another ability. |
+| `CF_MEJEPA_SKILL_COVERAGE_AUDIT` | `(audit_run_id, chunk_id)` | bincode `{membership_count, gap_class: NoMemberships|OneShotMember|LowConfidence|Covered, active_skill_ids, active_higher_ability_ids}` | Coverage partition over every compiled chunk. Chunks with no memberships become active-learning candidates. |
+| `CF_MEJEPA_CROSS_REPO_SKILL_MATCHES` | `(target_project_id, chunk_id, matched_skill_id)` | bincode `{match_confidence, level0_label_signature, live_input_allowed, source_project_id, provenance_hashes}` | Transfers existing skills to newly ingested projects when live-observable label signatures overlap. |
+| `CF_MEJEPA_SKILL_CONFLICT_GRAPH` | `(skill_a_id, skill_b_id)` | bincode `{relation: MutuallyExclusive|RareCoFire|ContradictoryOutcome, support_count, co_occurrence_count, evidence_window_id}` | Cross-skill consistency/conflict graph derived from shipped membership co-occurrence and outcome distributions. |
+| `CF_MEJEPA_PATHWAY_SKILL_ATTACHMENTS` | `(prediction_id, pathway_id, leaf_id)` | bincode `{active_skill_ids, active_higher_ability_ids, source_chunk_membership_keys, unknown_reason: Option<UNKNOWN_PATHWAY_SIGNATURE>, live_input_allowed}` | Joins #416 binary pathway leaves to concrete chunk/skill evidence without adding ambiguous leaf types. |
+
+No #417 row may use target-side oracle/Docker/test labels as live prediction inputs. Target-side labels may only score, calibrate, promote/demote, or update skill lifecycle rows after reality responds.
+
 ### 9.5 Canonical opener slice update
 
 When CFs land, they get added to `ALL_HYGIENE_REFERENCED_CFS` (`mejepa-cf/lib.rs`). #414 registered `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP`, `CF_MEJEPA_SKILL_REVERSE_INDEX`, and `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` in `FAILURE_MODE_CFS`, `INFER_CFS`, `EVAL_CFS`, `HYGIENE_CFS`, and the canonical all-CF opener. The `canonical_hygiene_cfs_match_group_union` test now explicitly includes `FAILURE_MODE_CFS` and continues to enforce that the grouped CF contract matches `ALL_HYGIENE_REFERENCED_CFS`.
 
-#414 production FSV (`/zfs/archive/contextgraph/fsv/task-py-g-118-skill-sequence-discovery-fsv/run-1779212140822/task_py_g_118_aiwonder_skill_materialization_fsv.json`) streamed all 399,777 #413 chunk-label rows and wrote/read back 128 `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` rows, 36,773 `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` rows, 10,579 `CF_MEJEPA_SKILL_REVERSE_INDEX` rows, and 128 `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` rows. External aiwonder `ldb` readback with `LD_LIBRARY_PATH=/zfs/hot/contextgraph/lib` matched the reopened Rust counts exactly.
+#414 production FSV (`/zfs/archive/contextgraph/fsv/task-py-g-118-skill-sequence-discovery-fsv/run-1779213075188/task_py_g_118_aiwonder_skill_materialization_fsv.json`, `sha256:0df1437ae5e0542b356777b29df700b521b83b054113697ca280ae3d242d3dee`) streamed all 399,777 #413 chunk-label rows and wrote/read back 128 `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` rows, 36,773 `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` rows, 10,579 `CF_MEJEPA_SKILL_REVERSE_INDEX` rows, and 128 `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` rows. External aiwonder `ldb` readback with `LD_LIBRARY_PATH=/zfs/hot/contextgraph/lib` matched the reopened Rust counts exactly.
 
 Because adding a CF is a schema change and ME-JEPA has no migrations (`CLAUDE.md §6.6`), landing #404/#405/#406 means a deliberate DB wipe + rebuild. The wipe is scheduled as a single combined operation rather than 3 separate wipes.

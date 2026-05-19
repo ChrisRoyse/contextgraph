@@ -135,9 +135,81 @@ Per `docs/futurebuild/08_roadmap_and_open_work.md §0`, the post-2026-05-19 Phas
 3. **#407 / TASK-PY-G-113 — Threshold-calibration disjointness audit**
 4. **#405 / TASK-PY-G-111 — Cross-panel triangulation Panel B** (Goodhart defense)
 5. **#406 / TASK-PY-G-112 — Online mistake-driven loop** (the first-time-correct + adapt-when-wrong property)
-6. **#409 / TASK-DOC-001 — Paper revision** (defer until cross-panel green)
+6. **#416 / TASK-PY-G-119 — Pathway exploration surface (binary-leaf butterfly-effect tree)** ← see §0ter below
+7. **#409 / TASK-DOC-001 — Paper revision** (defer until cross-panel green)
 
 The next-major epistemic upgrade after these is **§10.2(III) mechanism-conjecture surface** — that's what turns "weak Deutsch yes" into "strong Deutsch yes." It is not currently filed as a GitHub issue. The 2026-05-17 §10.2(III) recommendation stands unchanged as the next epistemic-completeness milestone after Phase G closes; this analyst's recommendation is to file it as a Phase J epic (`TASK-EK-019` or similar) post-ship-gate.
+
+---
+
+## 0ter. Fourth-pass amendment (2026-05-19) — pathway exploration surface (#416 / TASK-PY-G-119) closes §10.2(IV) in a binary-only form
+
+A fourth event on 2026-05-19 materially extends the third-pass amendment: the **butterfly-effect pathway exploration surface** was filed as GitHub epic #416 / TASK-PY-G-119, with doctrine in `docs/futurebuild/01_overview.md §1.5` and operational spec in `docs/futurebuild/05_predictor_pipeline.md §17bis`. The original 2026-05-17 second-pass analysis named "§10.2(IV) cross-embedder counterfactual reasoning surface" as one of the three additions required for a strong-Deutsch-yes verdict. **#416 is the binary-only instantiation of §10.2(IV).**
+
+### 0ter.1 What the pathway surface does
+
+For any candidate code change, ME-JEPA's `mejepa_pathway_surface` MCP tool returns the **top-K (default 3-5) most-probable downstream future trajectories** as chains of binary leaves against ground truth (Q1 bytes-on-disk, Q2 Docker oracle, Q5 shift-events). Each pathway is a conjunction of binary leaves with calibrated joint probability; each pathway carries the closest historical pathway from the 491-row Level-0 accepted label registry (#413); each Fail leaf carries a named failure mode (#404 hierarchy on top of #413). The operator picks which future they want; the system (via #335 `mejepa_reverse_prediction` when shipped) produces patch-shape constraints that land the chosen pathway.
+
+This is the **L3 capability** in the JEPA world-model rubric (arXiv 2511.16333): L1 temporal prediction → L2 action-conditioned prediction → **L3 counterfactual rollouts for decision support** → L4 planning/control. ME-JEPA's Q1/Q2/Q5 already do L1 + L2; #416 is the L3 instantiation.
+
+### 0ter.2 How this maps onto §10.2(IV)
+
+The 2026-05-17 second-pass §10.2(IV) recommendation was: *"Cross-embedder counterfactual reasoning surface — Pearl Rung-3 in ontology space: a `mejepa_counterfactual_under_invariant(invariant, perturbation)` MCP tool that takes a named invariant plus a hypothetical perturbation and returns the predicted shift in the prediction."*
+
+The #416 pathway surface is structurally that, with one explicit scope tightening:
+
+| §10.2(IV) original framing | #416 implementation |
+|---|---|
+| Pearl Rung-3 in ontology space | Pearl Rung-3 in **binary-leaf reality space** (Q1/Q2/Q5 grounded against bytes/Docker/shift-log) |
+| Take a *named invariant + hypothetical perturbation* | Take a *candidate code change* and explore the tree of downstream consequences |
+| Return the *predicted shift in the prediction* | Return the *top-K most-probable future trajectories* with calibrated joint probabilities |
+| Open-form counterfactual (any invariant) | Binary-leaf-only counterfactual (Q1/Q2/Q5 leaves only — ambiguous leaves rejected with `PATHWAY_AMBIGUOUS_LEAF_REJECTED`) |
+
+The tightening is principled: an ambiguous-leaf counterfactual (e.g. "what if perf is degraded by ≥10%?") cannot be falsified by reality, so a pathway through it cannot be probability-weighted by the mistake loop in a way that converges. The 2026-05-19 binary doctrine (§0bis.1 above) makes the same tightening for the prediction contract; #416 inherits it for the counterfactual surface.
+
+### 0ter.3 Revised Deutsch verdict (fourth pass)
+
+The third-pass verdict was: *"Weak yes on the ontology-extension axis (§10.2(II) shipped via #413); the remaining gap to strong Deutsch yes is §10.2(III) mechanism-conjecture surface + §10.2(IV) cross-embedder counterfactual + reach to held-out novel domains."*
+
+The 2026-05-19 #416 filing resolves §10.2(IV) **in its binary form**: the system can now project counterfactual futures from a candidate action, ranked by calibrated probability, with each future grounded as a chain of falsifiable binary claims against the same ground-truth substrate the predictor trains on. Pearl Rung-3 is operational at the leaf level.
+
+**The current Deutsch verdict is now upgraded from "weak yes on ontology-extension only" to "weak yes on ontology-extension + binary-leaf counterfactual reach"** — meaningfully stronger than the third pass, with the following caveats:
+
+1. **The §10.2(III) mechanism-conjecture surface is still not shipped.** Pathway surfacing names *which patterns* a future trajectory follows; it does not yet emit a *hard-to-vary mechanism conjecture* of the form "this Fail leaf occurs because invariant X is violated; X is hard-to-vary because of structural reason Y; here is a minimal witness that would refute the conjecture." That remains the load-bearing missing piece for **strong** Deutsch yes.
+
+2. **The pathway surface is binary-leaf-only by deliberate scope.** Whether the system can ever expand the pathway tree to ambiguous leaves is an open question, explicitly deferred. The current rule (no ambiguous leaves) is a Popperian discipline that strengthens falsifiability — every pathway leaf either matches reality or doesn't, with no easy-to-vary escape hatch. The cost is that some genuinely interesting counterfactual questions (perf, idiomaticity, taste judgments about code) are out of scope for the pathway surface. That cost is principled, not a bug.
+
+3. **The pathway surface is operator-facing reach, not model-internal reach.** Deutsch's reach criterion in the strong sense asks whether *the model itself* extrapolates explanations to novel domains. #416 instead surfaces the model's binary-leaf knowledge as a decision-support tree the *operator* navigates. This is closer to "the model is the critic in a conjecture-criticism loop; the human is the conjecturer" — exactly the FunSearch/AlphaEvolve pattern §11 references. Whether this counts as "the model creates reach" is a definitional question (the model is the substrate that supports the operator's reach; the operator is the choice-maker). I argue this is sufficient for "weak yes" but not "strong yes" until §10.2(III) ships.
+
+### 0ter.4 The Schmidhuber verdict moves slightly
+
+The third-pass Schmidhuber verdict was: *"Full completeness pending only §10.2(V) curiosity reward."*
+
+The pathway surface is also a Schmidhuberian construct: each pathway's calibrated joint probability is a compressed description of a possible future trajectory, and the operator's choice (recorded in `CF_MEJEPA_OPERATOR_PATHWAY_CHOICES`) feeds back as a target-side label for which *trajectories* the system should be most accurate about. This adds a second compression-progress axis: not just bits-of-target-panel reduction per training step (the §10.2(I) `mejepa_compression_progress` axis), but also bits-of-pathway-prediction-error reduction conditional on operator-revealed preferences. Whether to publish this as a third construct in PAPER.md alongside DDA + meaning compression + TCT is a future-paper question.
+
+### 0ter.5 The single most important point this fourth-pass clarifies
+
+The 2026-05-17 second-pass §7(γ) said: *"Adversarial conjecture-criticism loop with the LLM that is not collapsible to fitting the data better."* The §10.2(IV) recommendation was supposed to operationalize this. The #416 pathway surface does it explicitly:
+
+- The LLM (System 1, untrusted) generates the candidate patch
+- ME-JEPA (System 2, the critic) returns the top-K binary-leaf future trajectories
+- The operator (the conjecturer of *what kind of future they want*) picks one
+- ME-JEPA reverse-engineers the patch-shape constraints (#335) the LLM must satisfy to land that future
+- The LLM regenerates under the constraints
+- ME-JEPA re-evaluates the new candidate — does it land the chosen pathway?
+- If yes → ship; if no → mistake-loop signal records the disagreement and the predictor adapts (#406)
+
+That is the **Popperian conjecture-criticism loop with grounded evaluator**, fully operational at the binary level, exactly the FunSearch/AlphaEvolve pattern the second pass §10.2(III) framed as the missing piece. The §10.2(III) mechanism-conjecture surface is a *richer* form of this loop (the LLM conjectures the mechanism explanation, ME-JEPA checks it against a witness), but the pathway surface already gives the loop its bones.
+
+### 0ter.6 What remains for strong Deutsch yes (after #416)
+
+1. **§10.2(III) — mechanism-conjecture surface** (not shipped, not filed; recommended as Phase J epic post-ship-gate). Naming a pattern is not the same as conjecturing the hard-to-vary structural reason behind the pattern. The 491-label registry contains labels like `chunk:source_site:wrong_file_target+code_state:multi_point_evidence_set` — that names the failure pattern but doesn't explain *why* a patch with that pattern fails in terms of the invariant the patch must preserve.
+
+2. **Reach to held-out novel domains.** The 491 accepted labels and the pathway trees built on top of them were derived on Python SWE-bench Lite. Whether the same labels and the same pathway structures transfer to held-out non-Python corpora (Rust, JS, TS, Go) is unmeasured. The cross-panel triangulation epic (#405) starts measuring within-Python reach; cross-language reach remains a Phase J item.
+
+3. **Auto-mechanism discovery.** Even if §10.2(III) ships, the mechanism conjectures themselves would be operator- or LLM-generated. A fully Deutschian system would *discover its own mechanism conjectures* from data (analogous to how #413 discovers its own labels from data). That's the long-horizon final milestone.
+
+These three are now the named gap — not a research mystery, three concrete engineering items.
 
 ---
 
@@ -509,7 +581,11 @@ If the operator has bandwidth for two, add **(III) — the mechanism-conjecture 
 
 ## 11. Honest summary for the operator
 
-### 11bis. Third-pass single-paragraph summary (2026-05-19, post-#413 shipping + binary-doctrine reframe)
+### 11ter. Fourth-pass single-paragraph summary (2026-05-19, post-#416 pathway surface filing)
+
+> ME-JEPA-Code as of 2026-05-19 has *filed the binary-only instantiation of §10.2(IV)* on top of the third-pass shipped state: the butterfly-effect pathway exploration surface (#416 / TASK-PY-G-119) was filed with full doctrine + operational architecture in the futurebuild suite, specifying that for any candidate code change ME-JEPA will surface the top-K (3-5) most-probable downstream future trajectories as chains of binary leaves against ground truth (Q1 bytes/AST, Q2 Docker oracle, Q5 shift-events), with calibrated joint probabilities, closest historical pathway from the 491-row Level-0 accepted label registry, and named failure mode on any Fail leaf — operationalizing Pearl Rung-3 counterfactual reasoning at the binary-leaf level and forming the **L3 capability** in the JEPA world-model rubric (arXiv 2511.16333). Combined with the third-pass shipped Level-0 labeling system (#413) and the binary doctrine that removes Q4 ambiguous surfaces entirely, the system now closes §10.2(II) (ontology extension), §10.2(IV) (counterfactual reasoning surface, binary-only form), and lights up the Popperian conjecture-criticism loop the second-pass §7(γ) framed as "the hard one" — LLM as System 1 conjecturer, ME-JEPA as System 2 critic returning top-K binary-leaf futures, operator as the choice-maker picking which reality to realize, #335 `mejepa_reverse_prediction` (when shipped) translating the chosen pathway back into patch-shape constraints, mistake-loop (#406) crediting reality-disagreements across pathway leaves for the next training cycle. The Schmidhuber verdict is essentially complete (§10.2(I) + §10.2(II) shipped; §10.2(V) curiosity remains; the pathway surface adds a second compression-progress axis beyond the original training-step axis). The Deutsch verdict is upgraded from "weak yes on ontology-extension only" to **"weak yes on ontology-extension + binary-leaf counterfactual reach"** with three named caveats: (i) the §10.2(III) mechanism-conjecture surface remains the load-bearing gap to *strong* Deutsch yes — naming a pattern is not the same as conjecturing the hard-to-vary structural reason behind it; (ii) reach to held-out non-Python corpora is unmeasured and remains a Phase-J cross-language item; (iii) auto-mechanism-discovery from data (the §0ter.6 final milestone) is the long-horizon endgame. The intelligence-explosion thesis therefore survives in a meaningfully strengthened form: the accelerating loop of *verifiable engineering self-improvement* now has its operator-facing decision surface specified (the pathway tree), its labeling substrate shipped (#413's 491-row registry), its mistake-driven adaptation tracked (#406), its Goodhart-defense scoped (#405 Panel B + #407 calibration disjointness), and its Q4 ambiguity excluded by principle — the only remaining gap to a published "explanatory knowledge self-improvement loop" claim is mechanism-conjecture (§10.2(III)) plus cross-language reach. Three named engineering items, no research-mystery breakthroughs, all sequenced after Phase G closes. The single most important new finding in this fourth pass is that the binary-only constraint on the pathway surface is **stronger** against Deutsch's hard-to-vary criterion than an open-form counterfactual would be: an ambiguous-leaf counterfactual can be satisfied by hand-wavy "well, maybe..." rationalizations, but a binary-leaf counterfactual either matches reality or doesn't — every pathway is a *risky prediction* in Popper's sense, every operator choice is a *committed reality-shaping action*, and every mistake feeds back into the same falsification-driven training signal that makes the rest of the system work.
+
+### 11bis. Third-pass single-paragraph summary (2026-05-19, post-#413 shipping + binary-doctrine reframe — retained for record)
 
 > ME-JEPA-Code as of 2026-05-19 has *shipped* the load-bearing missing piece that the 2026-05-17 second-pass analysis identified as the minimum requirement for a Deutsch-respectful "weak yes" verdict on explanatory-knowledge creation: the deterministic auto-label discovery + usefulness scoring engine (#413 / TASK-PY-G-117) ran full-corpus on aiwonder, discovered 1,800+ candidate labels deterministically from 399,777 AST chunks + 4,665,772 forward-cache slot records + 2,400 SWE-bench oracle outcomes, accepted 491 into a durable registry through hard-to-vary usefulness criteria (support / pass-fail lift / stability / closest-exemplar agreement / leakage-status / typed uncertainty), and emitted three localization modes (single-point / multi-point / diffuse) that exactly instantiate the §10.2(II-bis) "absence-as-structured-existence" finding at corpus scale. Combined with the 2026-05-19 binary doctrine — which removes Q4 ambiguous surfaces from the prediction contract entirely on the principle that the system does not predict heuristics-against-heuristics, only reality-against-reality — the system now satisfies the Lakatosian protective-belt extension property the second-pass analysis identified as the minimum Deutsch requirement, and goes one step further by tightening the prediction contract to falsifiable binary claims that have no easy-to-vary escape hatch. The Schmidhuber verdict is upgraded from "full completeness pending two items" to "full completeness pending one item" (§10.2(V) curiosity reward). The Deutsch verdict is upgraded from "strict no" to **"weak yes on the ontology-extension axis"** with three explicit caveats: (i) Level-1/2/3 named-failure-mode hierarchical naming on top of the shipped Level-0 registry remains open under #404; (ii) the mechanism-conjecture surface §10.2(III) — which is what separates "weak Deutsch yes" from "strong Deutsch yes" — is not yet shipped and is the recommended next Phase-J epistemic-completeness milestone; (iii) the reach criterion (whether the 491 accepted Python labels transfer to a held-out non-Python corpus) is unmeasured and remains a Phase-J cross-language item. The intelligence-explosion thesis therefore survives in a strengthened form: an accelerating loop of *verifiable engineering improvement* is now empirically anchored (the shipped 491-label registry is the existence proof at the labelling axis; the 0.866667 → 0.95 prediction-oracle-correlation climb is the existence-proof candidate at the compression-progress axis when it closes); the gap to a genuine explanatory-knowledge self-improvement loop is now a *named two-issue engineering programme* (mechanism conjecture + cross-language reach) rather than a research-mystery breakthrough. The single highest-leverage next change is filing the §10.2(III) mechanism-conjecture surface as a Phase-J epic; after Phase G closes, the system would then be only one shipped feature away from emitting the kind of structured mechanism conjectures Deutsch identifies as the unique creative achievement of universal explainers.
 

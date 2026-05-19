@@ -336,3 +336,21 @@ The butterfly-effect pathway tree (`docs/futurebuild/01_overview.md §1.5`, `05_
 | `mcp__cgreality__mejepa_pathway_history` | `MEJEPA_PATHWAY_HISTORY` | Read-only audit over `CF_MEJEPA_OPERATOR_PATHWAY_CHOICES`. Filter by window/session/operator. | `windowId?`, `sessionId?`, `limit: int=100` | Read-only |
 
 When #416 lands, the total tool count moves further: **~205 → ~209** (4 additional pathway tools).
+
+### 9.7 Skill↔code linkage capability surface tools (#417 / TASK-PY-G-120, planned)
+
+Exposes the already-shipped bidirectional chunk↔skill data (#413 Level-0 registry + #414 skill memberships and reverse index) through operator-facing MCP tools. Read-only navigation over training substrate; no new prediction surface, no Q4 reanimation, binary-leaf constraint at prediction boundaries preserved. See `01_overview.md §1.5bis` and #417 for the full unlocked capability set.
+
+| Tool (planned) | Const | Purpose | Key params | Side effects |
+|---|---|---|---|---|
+| `mcp__cgreality__mejepa_skill_to_code` | `MEJEPA_SKILL_TO_CODE` | Forward linkage: given skill_id, return top-K member chunks with literal source bytes + file/line/commit provenance | `skillId`, `k: int=20` | Read-only over `CF_MEJEPA_SKILL_REVERSE_INDEX` + AST chunks |
+| `mcp__cgreality__mejepa_code_to_skill` | `MEJEPA_CODE_TO_SKILL` | Reverse linkage: given chunk_id, return all skills this chunk participates in | `chunkId` | Read-only over `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` |
+| `mcp__cgreality__mejepa_skill_set_query` | `MEJEPA_SKILL_SET_QUERY` | Boolean set query over memberships: chunks that have skills `must_have` AND NOT `must_not_have` | `mustHave: [skillId]`, `mustNotHave: [skillId]?` | Read-only |
+| `mcp__cgreality__mejepa_skill_impact` | `MEJEPA_SKILL_IMPACT` | Refactoring blast-radius: chunk → skills → transitive co-member chunks, with TASK-EK-016 foundationality weighting | `chunkId`, `depth: int=2` | Read-only |
+| `mcp__cgreality__mejepa_skill_graph_inspect` | `MEJEPA_SKILL_GRAPH_INSPECT` | Read the skill-of-skills graph (depends-on / composes-with / mutually-exclusive) | `skillId?` | Read-only over `CF_MEJEPA_SKILL_GRAPH` |
+| `mcp__cgreality__mejepa_skill_coverage_audit` | `MEJEPA_SKILL_COVERAGE_AUDIT` | Read the active-learning gap audit (chunks with 0 memberships) | `auditRunId?` | Read-only over `CF_MEJEPA_SKILL_COVERAGE_AUDIT` |
+| `mcp__cgreality__mejepa_cross_repo_skill_transfer` | `MEJEPA_CROSS_REPO_SKILL_TRANSFER` | Run the deterministic Level-0 compiler over a new project's AST chunks, match against existing skill signatures, persist matches | `targetProjectId` | Writes `CF_MEJEPA_CROSS_REPO_SKILL_MATCHES` |
+| `mcp__cgreality__mejepa_skill_conflict_graph` | `MEJEPA_SKILL_CONFLICT_GRAPH` | Read the mutually-exclusive-skill graph derived from zero-co-occurrence in the shipped 36,773 memberships | (no params) | Read-only |
+| `mcp__cgreality__mejepa_skill_browse` | `MEJEPA_SKILL_BROWSE` | Operator-facing skill catalog browse: 128 skills + chunk counts + lifecycle audit | `filter?: {minSupport, minLift, status}` | Read-only |
+
+When #417 lands, the total tool count moves further: **~209 → ~218** (9 additional skill-linkage tools).
