@@ -73,7 +73,16 @@ Three architectural primitives back the binary contract:
       CF_MEJEPA_PANELS + CF_MEJEPA_PANEL_META + CF_MEJEPA_SHIFT_WATERMARK
                  │
                  ▼
-      MeJepaPredictor.forward(panel)
+      Live label compiler (#413)
+        -> live-input-safe slot/pair/group labels per chunk
+                 │
+                 ▼
+      Runtime ability resolver (#418)
+        -> AbilityContext from chunk-skill/higher-ability memberships
+        -> PredictionLabelContext with all active memberships preserved
+                 │
+                 ▼
+      MeJepaPredictor.forward(panel, PredictionLabelContext)
         + per-head DDA projection (CF_MEJEPA_HEAD_PROJECTION_REGISTRY)
         + split-conformal interval (CF_MEJEPA_CALIBRATION_HISTORY)
         + OOD gate (CF_MEJEPA_OOD_ESCALATIONS)
@@ -347,12 +356,13 @@ Decision flow (per `compiler.rs::compile`):
 
 **Chunk-to-skill reverse membership (production FSV passed, #414).** After live label compilation, every AST chunk's TCT constellation is matched against accepted Level-1 groups, Level-2 skills, and Level-3/higher constellations. Membership is many-to-many: one chunk can participate in multiple skills, and one skill can span many chunks, files, ordered steps, prerequisite labels, intermediate states, and outcome observations. Rows record `chunk_id`, `code_state_key`, `skill_id`, `hierarchy_level`, `membership_score`, source accepted label IDs, ordered step evidence, `live_input_allowed`, and provenance hashes. The prediction path consumes these active skill IDs in `PredictionLabelContext`; it does not infer hidden human intent. Synthetic FSV: `/tmp/contextgraph-task-py-g-118-skill-sequence-fsv/task_py_g_118_skill_sequence_discovery_fsv.json` (`passes=true`). Production aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-118-skill-sequence-discovery-fsv/run-1779213075188/task_py_g_118_aiwonder_skill_materialization_fsv.json` (`passes=true`, `sha256:0df1437ae5e0542b356777b29df700b521b83b054113697ca280ae3d242d3dee`), streaming all 399,777 chunk rows and materializing 128 Level-2 skills, 36,773 chunk-skill memberships, 10,579 reverse indexes, and 128 lifecycle audits.
 
-**Bidirectional skill/ability linkage surface (planned, #417 / TASK-PY-G-120).** The shipped #414 rows are not only a training artifact. They are the runtime bridge between code and abilities:
+**Bidirectional skill/ability linkage surface (first read surface shipped, #417 / TASK-PY-G-120; runtime resolver open, #418 / TASK-PY-G-121).** The shipped #414 rows are not only a training artifact. They are the runtime bridge between code and abilities:
 - **Code -> skill:** given a live AST chunk, return every Level-1 group, Level-2 skill, and Level-3/higher ability the chunk participates in, with ordered step evidence and source label IDs.
 - **Skill -> code:** given a skill or ability, return the chunks/files/source bytes that instantiate it, using `CF_MEJEPA_SKILL_REVERSE_INDEX`.
 - **Prediction input:** live predictions populate `PredictionLabelContext.active_skill_ids` from live-input-safe memberships only; target-side oracle/test labels remain supervision after reality responds.
 - **Pathway attachment:** #416 Fail leaves and Q5 leaves attach the active skill IDs plus historical source chunks that explain that consequence when available.
 - **Learning update:** if the prediction is wrong, #406 must write a skill lifecycle audit that updates/splits/creates/demotes/no-changes the involved skill model rather than leaving the chunk membership static.
+- **Runtime resolver:** #418 owns `AbilityContext`: resolve all many-to-many chunk memberships, preserve higher-ability IDs and membership keys, pass them into prediction/replay, and create a candidate ability when no safe existing ability explains a refuted prediction.
 
 This means the live system does not merely predict from chunk vectors. It compiles chunks into TCT constellations, resolves their hierarchical abilities, predicts consequences through those abilities, and repairs the ability model when durable reality falsifies the prediction.
 

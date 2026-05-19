@@ -100,7 +100,7 @@ This is the established L3 capability in the JEPA world-model rubric (arXiv 2511
 
 ### 1.5bis The bidirectional chunk↔skill linkage (#417 / TASK-PY-G-120 — first read surface shipped)
 
-The substrate chain is **AST chunks → constellations → accepted labels → skills**, and the linkage at every step is bidirectional. The data was shipped end-to-end on 2026-05-19 across #413 (Level-0 labels) and #414 (Level-2 skills + memberships). The first #417 operator-facing read surface shipped in `a330b342`: `skill_to_code`, `code_to_skill`, `skill_set_query`, and `skill_coverage_audit` expose the existing CF substrate without adding a prediction head. Impact/blast-radius, graph inspection, cross-repo transfer, pathway-leaf attachment, conflict graph, browse, and live #406 mistake-loop consumption remain open #417 scope.
+The substrate chain is **AST chunks → constellations → accepted labels → skills**, and the linkage at every step is bidirectional. The data was shipped end-to-end on 2026-05-19 across #413 (Level-0 labels) and #414 (Level-2 skills + memberships). The first #417 operator-facing read surface shipped in `a330b342`: `skill_to_code`, `code_to_skill`, `skill_set_query`, and `skill_coverage_audit` expose the existing CF substrate without adding a prediction head. Impact/blast-radius, graph inspection, cross-repo transfer, pathway-leaf attachment, conflict graph, and browse remain open #417 scope. The runtime resolver/consumer that turns those memberships into prediction-time `AbilityContext` and repairs the ontology on wrong predictions is #418 / TASK-PY-G-121.
 
 **Shipped substrate (do not redo):**
 
@@ -114,7 +114,7 @@ The substrate chain is **AST chunks → constellations → accepted labels → s
 | Skill → chunk reverse index | `CF_MEJEPA_SKILL_REVERSE_INDEX` (#414) | 10,579 |
 | Skill lifecycle audit | `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` (#414) | 128 |
 
-**The insight.** Every higher-level skill is a composition of accepted Level-0 labels which are deterministic functions of specific AST chunks' multi-embedder constellations. Therefore every named skill traces back to the exact source bytes that compose it, and every source byte can be queried for which named skills it participates in. The data exists; the MCP exposure does not.
+**The insight.** Every higher-level skill is a composition of accepted Level-0 labels which are deterministic functions of specific AST chunks' multi-embedder constellations. Therefore every named skill traces back to the exact source bytes that compose it, and every source byte can be queried for which named skills it participates in. The data exists; the first MCP exposure now exists for read-only navigation; the remaining work is the runtime ability resolver, graph/impact surfaces, transfer, pathway attachment, and mistake-loop consumption.
 
 **Twelve capabilities this unlocks (per #417):**
 
@@ -131,7 +131,7 @@ The substrate chain is **AST chunks → constellations → accepted labels → s
 11. **Skill-conditioned generation context.** When the operator picks a pathway (#416) and asks the agent to write the code that lands it (#335 `mejepa_reverse_prediction`), retrieve top-K historical chunks of the relevant skills as in-context examples. Case-based reasoning, not free-form synthesis.
 12. **Cross-skill conflict graph.** Skills that never co-fire across the shipped memberships are auto-derived as mutually exclusive. "These two capabilities cannot coexist in the same code state."
 
-**The constraint that stays.** Skills are deterministic groupings of accepted Level-0 labels. They do NOT introduce ambiguous heads. Any consumer of skill linkage that feeds back into a prediction surface (e.g. #416 pathway leaves) MUST still use Q1/Q2/Q5 binary leaves only at the prediction boundary. The skill linkage is a **navigation surface over the predictor's training substrate**, not a new prediction surface.
+**The constraint that stays.** Skills are deterministic groupings of accepted Level-0 labels. They do NOT introduce ambiguous heads. Any consumer of skill linkage that feeds back into a prediction surface (e.g. #416 pathway leaves) MUST still use Q1/Q2/Q5 binary leaves only at the prediction boundary. The skill linkage is a **navigation surface over the predictor's training substrate**, not a new prediction surface. Runtime use is handled by #418: resolve every live-input-safe Level-1/2/3/higher membership for each chunk, carry all memberships into `PredictionLabelContext`, and on a refuted prediction write the lifecycle decision that updates, splits, creates, demotes, or leaves the involved ability unchanged with evidence.
 
 ### 1.5ter Array-of-vectors constellation rule (LOCKED IN, 2026-05-19)
 
