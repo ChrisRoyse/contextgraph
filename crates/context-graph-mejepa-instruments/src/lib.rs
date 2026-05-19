@@ -52,6 +52,7 @@ pub mod materialize;
 pub mod panel_json;
 pub mod panel_store;
 pub mod q4_accuracy_labels;
+pub mod q4_cost_labels;
 pub mod q4_perf_labels;
 pub mod q4_security_labels;
 pub mod static_analysis_reward;
@@ -584,6 +585,13 @@ pub use q4_accuracy_labels::{
     Q4AccuracyLabelKind, Q4AccuracyLabelStore, Q4AccuracyMetricKind, Q4AccuracyQuarantine,
     Q4AccuracyRawOutputPaths, Q4AccuracyRawOutputs, Q4AccuracyScanPhase, Q4AccuracySignalRecord,
     Q4AccuracySource, Q4AccuracyToolOutput, DEFAULT_Q4_ACCURACY_TIMEOUT_SECS,
+};
+pub use q4_cost_labels::{
+    extract_q4_cost_labels, run_q4_cost_tools_with_timeout, write_q4_cost_raw_outputs,
+    PersistedQ4CostSignal, Q4CostCommandSpec, Q4CostExtraction, Q4CostKind, Q4CostLabel,
+    Q4CostLabelKind, Q4CostLabelStore, Q4CostQuarantine, Q4CostRawOutputPaths, Q4CostRawOutputs,
+    Q4CostScanPhase, Q4CostSignalRecord, Q4CostSource, Q4CostToolOutput,
+    DEFAULT_Q4_COST_TIMEOUT_SECS,
 };
 pub use q4_perf_labels::{
     extract_q4_perf_labels, run_q4_perf_tools_with_timeout, write_q4_perf_raw_outputs,

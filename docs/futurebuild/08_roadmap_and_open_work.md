@@ -45,7 +45,7 @@ By priority:
 | Priority | Open count | Examples |
 |---|---|---|
 | `priority:p0` | 5 | #385 slot-preserving constellation refactor, #310 META issue refactor, #372 aiwonder ZFS mount enforcement, #383 evidence-weighted issue ordering, #397 consequence-prediction contract |
-| `priority:p1` | 23 | Calibration, adversarial defense, Q4 head training, multi-file holdout, off-host backup |
+| `priority:p1` | 20 after #268 close | Calibration, adversarial defense, remaining Q4 head training, multi-file holdout, off-host backup |
 | `priority:p2` | 40 | EK series tail, post-ship policies, refined sub-tasks, frozen-panel dimensionality ablation, tool-usage telemetry |
 | `priority:p3` | 9 | Deferred (SWE-bench Verified subset, sample-efficiency, v2 stretch tasks, future Docker image plan) |
 
@@ -107,10 +107,12 @@ Child issue split:
 
 **#267 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-048-q4-accuracy-label-producer-fsv/`: the Q4 accuracy producer runs real bounded `python3` metric commands, persists raw wrappers under `/zfs/archive/contextgraph/corpus/python-q4-accuracy-labels-v1/`, stores 30 producer rows in `CF_MEJEPA_Q4_ACCURACY_LABELS`, preserves same-metric/different-`source_test` rows, treats loss/error metrics as lower-is-better, and persists/reopens quarantine rows without key overwrite. It updates the Q4 evidence catalog as producer-only support: `producerSupported=true`, `perSlotSupported=false`, `q4HeadReady=false`, `q4TrustDecisionEligible=false`. Main FSV sha256 `6ad4e68d5f5cfb229b5da918529dc6fc6c40c97b2226e9b2365aa598a58295a4`; independent readback sha256 `0575ee3c74c2935eab30ed6d7a517ee56c4c78670a9d2be578a837bd315a9d26`.
 
+**#268 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-049-q4-cost-label-producer-fsv/`: the Q4 cost producer runs real bounded `python3` cost commands, persists raw wrappers under `/zfs/archive/contextgraph/corpus/python-q4-cost-labels-v1/`, stores 90 producer rows in `CF_MEJEPA_Q4_COST_LABELS`, and maps CI-minute/dependency-count/wheel-byte positive deltas into `PredictedCostRegression` surfaces while preserving negative deltas as improvements. The FSV materializes a pre/post Python fixture and accepted patch shape adding `requirements.txt: numpy==2.0; scipy==1.14`, parses pytest-compatible wall-clock output plus requirements/wheel metadata, and independently verifies the patch fixture. It preserves the fail-closed contract: dependency labels require a tracked manifest change, rows with no dependency manifest do not synthesize zero dependency labels, wheel-build failures quarantine with `Q4_COST_LABEL_BUILD_FAILED`, and noisy CI walltime quarantines only the CI-minute label. It updates the Q4 evidence catalog as producer-only support: `producerSupported=true`, `perSlotSupported=false`, `q4HeadReady=false`, `q4TrustDecisionEligible=false`. Main FSV sha256 `10a53f7b75b938e53989dc0059cb40bd632ba5d232f58794375b63b5b087de93`; independent readback sha256 `f2f249ad24aeec070649306d3e598bc3c5c30e0c9d649b40fb3fba7b37f93d60`.
+
 **Ordering update from #388/#389/#393/#398/#394/#387 (locked in by #383 / TASK-PY-G-084):** the slot-preserving architecture is now enforced in the live predictor path, but the current #396/#388/#389 calibrated feature family is still not promotion-worthy. The richer slot/pair calibration readout is architecturally correct and aggregate-compensation regressions are blocked, but the ablation evidence shows this path does not close the 0.083 correlation gap by itself. **The next gate-moving work, in evidence-weighted order, is:**
 
 1. **Train the missing label producers** so calibration is no longer the bottleneck.
-   - Q4 producers — #266 TASK-PY-G-047 (perf) and #267 TASK-PY-G-048 (accuracy) are closed producer-only; remaining producer gaps are #268 TASK-PY-G-049 (cost), #269 TASK-PY-G-050 (reasoning).
+   - Q4 producers — #266 TASK-PY-G-047 (perf), #267 TASK-PY-G-048 (accuracy), and #268 TASK-PY-G-049 (cost) are closed producer-only; remaining producer gap is #269 TASK-PY-G-050 (reasoning).
    - Q4 calibration consumer — #127 TASK-PY-G-012.
    - Q4 fail-closed trust gate — #377 TASK-PY-G-078 is closed; Q4 heads now refuse trust until producer/calibration/exact-slot evidence is present.
 2. **Wire Q5 shift-log replay** — #264 TASK-PY-G-045 + #128 TASK-PY-G-013 calibration consumer.
@@ -142,6 +144,7 @@ Child issue split:
 | #377 Q4 trust gate FSV | `/zfs/archive/contextgraph/fsv/task-py-g-078-q4-trust-gate-fsv/q4_trust_gate_fsv.json` | PASS evidence for TASK-PY-G-078; sha256 `0af1726a6e104e7cb70c694c22e40a91b96dc6c323b3679f827d86617aeca30a`; independent readback sha256 `5d4b752ec5fca9eda24fe78dbee649e9a00cb20c1435e3a2f65860886f75bcaa`; future producers write readiness catalog at `/zfs/archive/contextgraph/state/q4-trust-gate/evidence-catalog.json` |
 | #266 Q4 perf label producer FSV | `/zfs/archive/contextgraph/fsv/task-py-g-047-q4-perf-label-producer-fsv/q4_perf_label_producer_fsv.json` | PASS evidence for TASK-PY-G-047; sha256 `8fdd89be848a1c8f0420a13d9c13e326cfd23377d89c4e88d9c61fca50880a83`; independent readback sha256 `e19fe0561f28d7bedf445711640318d2af26b11192fbe5dc7d2b427ee9ee0ae3`; raw output root `/zfs/archive/contextgraph/corpus/python-q4-perf-labels-v1/`; producer-only Q4 catalog update keeps Q4 trust false pending #127 calibration and verified slot evidence |
 | #267 Q4 accuracy label producer FSV | `/zfs/archive/contextgraph/fsv/task-py-g-048-q4-accuracy-label-producer-fsv/q4_accuracy_label_producer_fsv.json` | PASS evidence for TASK-PY-G-048; sha256 `6ad4e68d5f5cfb229b5da918529dc6fc6c40c97b2226e9b2365aa598a58295a4`; independent readback sha256 `0575ee3c74c2935eab30ed6d7a517ee56c4c78670a9d2be578a837bd315a9d26`; raw output root `/zfs/archive/contextgraph/corpus/python-q4-accuracy-labels-v1/`; producer-only Q4 catalog update keeps Q4 trust false pending #127 calibration and verified slot evidence |
+| #268 Q4 cost label producer FSV | `/zfs/archive/contextgraph/fsv/task-py-g-049-q4-cost-label-producer-fsv/q4_cost_label_producer_fsv.json` | PASS evidence for TASK-PY-G-049; sha256 `10a53f7b75b938e53989dc0059cb40bd632ba5d232f58794375b63b5b087de93`; independent readback sha256 `f2f249ad24aeec070649306d3e598bc3c5c30e0c9d649b40fb3fba7b37f93d60`; raw output root `/zfs/archive/contextgraph/corpus/python-q4-cost-labels-v1/`; producer-only Q4 catalog update keeps Q4 trust false pending #127 calibration and verified slot evidence |
 
 ### 3.1 Q4 head training (Phase G §2 producers — heads exist as schema fields but lack training data pipelines)
 
@@ -149,13 +152,13 @@ Child issue split:
 |---|---|---|---|
 | #266 / TASK-PY-G-047 | Q4 perf analyzer label pipeline | `predicted_perf_regressions` head | ✅ closed 2026-05-19; producer-only FSV PASS |
 | #267 / TASK-PY-G-048 | Q4 accuracy analyzer label pipeline | `predicted_accuracy_degradations` head | ✅ closed 2026-05-19; producer-only FSV PASS |
-| #268 / TASK-PY-G-049 | Q4 cost analyzer label pipeline | `predicted_cost_regressions` head | open |
+| #268 / TASK-PY-G-049 | Q4 cost analyzer label pipeline | `predicted_cost_regressions` head | ✅ closed 2026-05-19; producer-only FSV PASS |
 | #269 / TASK-PY-G-050 | Reasoning-class head training | `predicted_reasoning_class` head | open |
 | #118 / TASK-PY-G-003 | Per-head Q1-Q5 distillation training step | all heads | open |
 | #270 / TASK-PY-G-051 | Q4 non-trivial-on-Pass calibration | always-on Q4 validation | open |
 | #292 / TASK-PY-G-073 | Predicted-Works head + sub-heads | explicit positive assertions | ✅ closed 2026-05-18 |
 
-**Trust boundary:** #377 is closed and makes all raw Q4 observations display-only until the relevant producer issue plus #127 calibration and exact 12-active-slot evidence are present in the Q4 evidence catalog. #266 contributes perf producer rows only and #267 contributes accuracy producer rows only; neither claims slot evidence or Q4 readiness. Remaining producer issues #268-#270 must write their per-head rows and link their FSV roots back to `/zfs/archive/contextgraph/state/q4-trust-gate/evidence-catalog.json`.
+**Trust boundary:** #377 is closed and makes all raw Q4 observations display-only until the relevant producer issue plus #127 calibration and exact 12-active-slot evidence are present in the Q4 evidence catalog. #266 contributes perf producer rows only, #267 contributes accuracy producer rows only, and #268 contributes cost producer rows only; none claims slot evidence or Q4 readiness. Remaining producer issues #269-#270 must write their per-head rows and link their FSV roots back to `/zfs/archive/contextgraph/state/q4-trust-gate/evidence-catalog.json`.
 
 ### 3.2 Q5 shift-log replay (#264 / TASK-PY-G-045)
 

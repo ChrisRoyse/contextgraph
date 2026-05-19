@@ -6,13 +6,14 @@ use context_graph_mejepa::label_transfer_audit::{
     LabelTransferAuditRecord,
 };
 use context_graph_mejepa::{
-    AccuracyMetric, ChunkId, EdgeCaseClass, FailureModeClass, Language, LatentBugClass, PerfAxis,
-    PhaseBPredictionSurfaces, PredictedAccuracyDegradation, PredictedPerfRegression, PredictionId,
-    ReasoningClass, RootCauseClass, SecurityConcernClass, TestDeltaKind, TestId, TestOutcome,
+    AccuracyMetric, ChunkId, CostAxis, EdgeCaseClass, FailureModeClass, Language, LatentBugClass,
+    PerfAxis, PhaseBPredictionSurfaces, PredictedAccuracyDegradation, PredictedCostRegression,
+    PredictedPerfRegression, PredictionId, ReasoningClass, RootCauseClass, SecurityConcernClass,
+    TestDeltaKind, TestId, TestOutcome,
 };
 use context_graph_mejepa_instruments::{
-    Q4AccuracyLabel, Q4AccuracyMetricKind, Q4PerfCategory, Q4PerfLabel, Q4SecurityClass,
-    Q4SecurityLabel,
+    Q4AccuracyLabel, Q4AccuracyMetricKind, Q4CostKind, Q4CostLabel, Q4CostLabelKind,
+    Q4PerfCategory, Q4PerfLabel, Q4SecurityClass, Q4SecurityLabel,
 };
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -445,6 +446,42 @@ pub fn q4_accuracy_labels_to_prediction_surfaces(
     Ok(surfaces)
 }
 
+pub fn q4_cost_labels_to_prediction_surfaces(
+    labels: &[Q4CostLabel],
+) -> Result<PhaseBPredictionSurfaces, UtmlError> {
+    let mut surfaces = PhaseBPredictionSurfaces::default();
+    for label in labels {
+        validate_q4_cost_label(label)?;
+        if label.regression {
+            surfaces
+                .predicted_cost_regressions
+                .push(PredictedCostRegression {
+                    axis: map_q4_cost_kind(label.kind),
+                    chunk: ChunkId(label.chunk_id.clone()),
+                    predicted_delta: label.delta,
+                    baseline_value: Some(label.baseline),
+                    explanation: format!(
+                        "q4_cost kind={} regression={} baseline={} after={} delta={}",
+                        label.kind.as_str(),
+                        label.regression,
+                        label.baseline,
+                        label.after,
+                        label.delta
+                    ),
+                });
+        }
+    }
+    for cost in &surfaces.predicted_cost_regressions {
+        cost.validate().map_err(|err| {
+            UtmlError::new(
+                UtmlErrorCode::InvalidSignal,
+                format!("Q4 cost prediction surface invalid: {err}"),
+            )
+        })?;
+    }
+    Ok(surfaces)
+}
+
 pub fn apply_phase_b_labels_with_transfer_gate(
     db: &DB,
     labels: &ExtractedPhaseBLabels,
@@ -670,6 +707,14 @@ fn map_q4_accuracy_metric(kind: Q4AccuracyMetricKind, metric_name: &str) -> Accu
     }
 }
 
+fn map_q4_cost_kind(kind: Q4CostKind) -> CostAxis {
+    match kind {
+        Q4CostKind::CiMinutes => CostAxis::CiMinutes,
+        Q4CostKind::DependencyCount => CostAxis::DependencyCount,
+        Q4CostKind::WheelBytes => CostAxis::StorageBytes,
+    }
+}
+
 fn validate_q4_security_label(label: &Q4SecurityLabel) -> Result<(), UtmlError> {
     if label.finding_id.trim().is_empty()
         || label.rule_id.trim().is_empty()
@@ -740,6 +785,64 @@ fn validate_q4_accuracy_label(label: &Q4AccuracyLabel) -> Result<(), UtmlError> 
         return Err(UtmlError::new(
             UtmlErrorCode::InvalidSignal,
             "Q4 accuracy label carries a non-finite baseline/after/delta",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_q4_cost_label(label: &Q4CostLabel) -> Result<(), UtmlError> {
+    if label.corpus_row_id.trim().is_empty()
+        || label.chunk_id.trim().is_empty()
+        || label.logical_path.trim().is_empty()
+        || label.cost_selector.trim().is_empty()
+    {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 cost label missing corpus_row_id/chunk_id/logical_path/cost_selector",
+        ));
+    }
+    if !label.baseline.is_finite() || !label.after.is_finite() || !label.delta.is_finite() {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 cost label carries a non-finite baseline/after/delta",
+        ));
+    }
+    if label.baseline < 0.0 || label.after < 0.0 {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 cost label carries a negative baseline/after value",
+        ));
+    }
+    let expected_delta = label.after - label.baseline;
+    if (label.delta - expected_delta).abs() > 1e-9_f64.max(expected_delta.abs() * 1e-9) {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 cost label delta disagrees with after-baseline",
+        ));
+    }
+    let expected_kind = if label.delta > 0.0 {
+        Q4CostLabelKind::Regression
+    } else if label.delta < 0.0 {
+        Q4CostLabelKind::Improvement
+    } else {
+        Q4CostLabelKind::Stable
+    };
+    if label.label_kind != expected_kind {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 cost label_kind disagrees with delta direction",
+        ));
+    }
+    if label.regression != (label.label_kind == Q4CostLabelKind::Regression) {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 cost regression boolean disagrees with label_kind",
+        ));
+    }
+    if label.regression && label.delta <= 0.0 {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 cost regression label must carry a positive delta",
         ));
     }
     Ok(())
@@ -1068,5 +1171,49 @@ mod tests {
             surfaces.predicted_accuracy_degradations[0].chunk,
             ChunkId("chunk-q4-accuracy".to_string())
         );
+    }
+
+    #[test]
+    fn q4_cost_labels_feed_prediction_surface_adapter() {
+        let surfaces = q4_cost_labels_to_prediction_surfaces(&[Q4CostLabel {
+            corpus_row_id: "row-q4-cost".to_string(),
+            chunk_id: "chunk-q4-cost".to_string(),
+            logical_path: "requirements.txt".to_string(),
+            cost_selector: "pytest-and-build-wheel".to_string(),
+            kind: Q4CostKind::DependencyCount,
+            baseline: 12.0,
+            after: 14.0,
+            delta: 2.0,
+            regression: true,
+            label_kind: context_graph_mejepa_instruments::Q4CostLabelKind::Regression,
+        }])
+        .unwrap();
+        assert_eq!(surfaces.predicted_cost_regressions.len(), 1);
+        assert_eq!(
+            surfaces.predicted_cost_regressions[0].axis,
+            CostAxis::DependencyCount
+        );
+        assert_eq!(
+            surfaces.predicted_cost_regressions[0].chunk,
+            ChunkId("chunk-q4-cost".to_string())
+        );
+    }
+
+    #[test]
+    fn q4_cost_improvements_do_not_fabricate_regression_surface() {
+        let surfaces = q4_cost_labels_to_prediction_surfaces(&[Q4CostLabel {
+            corpus_row_id: "row-q4-cost-fix".to_string(),
+            chunk_id: "chunk-q4-cost".to_string(),
+            logical_path: "requirements.txt".to_string(),
+            cost_selector: "pytest-and-build-wheel".to_string(),
+            kind: Q4CostKind::DependencyCount,
+            baseline: 14.0,
+            after: 12.0,
+            delta: -2.0,
+            regression: false,
+            label_kind: context_graph_mejepa_instruments::Q4CostLabelKind::Improvement,
+        }])
+        .unwrap();
+        assert!(surfaces.predicted_cost_regressions.is_empty());
     }
 }
