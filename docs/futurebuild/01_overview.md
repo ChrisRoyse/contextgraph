@@ -98,9 +98,9 @@ This is the established L3 capability in the JEPA world-model rubric (arXiv 2511
 
 **Ambiguous-pathway question is open and explicitly deferred.** Whether the pathway surface can ever expand to ambiguous leaves (e.g. "this pathway probably degrades performance by ≥10%") is unanswered. The current ambiguity-boundary rule says no: ambiguous leaves don't have free binary form against reality, so a pathway through one cannot be probability-weighted by the mistake loop. Whether some richer formulation can include them is future work; for now the pathway surface is binary-leaf-only. Tracked under #416 / TASK-PY-G-119 with explicit `ambiguous_leaves_in_pathway == 0` FSV assertion.
 
-### 1.5bis The bidirectional chunk↔skill linkage (#417 / TASK-PY-G-120 — data shipped, capability surface planned)
+### 1.5bis The bidirectional chunk↔skill linkage (#417 / TASK-PY-G-120 — first read surface shipped)
 
-The substrate chain is **AST chunks → constellations → accepted labels → skills**, and the linkage at every step is bidirectional. The data was shipped end-to-end on 2026-05-19 across #413 (Level-0 labels) and #414 (Level-2 skills + memberships). What's pending is the operator-facing **capability surface** that exposes the linkage. The capability surface is filed as #417 / TASK-PY-G-120.
+The substrate chain is **AST chunks → constellations → accepted labels → skills**, and the linkage at every step is bidirectional. The data was shipped end-to-end on 2026-05-19 across #413 (Level-0 labels) and #414 (Level-2 skills + memberships). The first #417 operator-facing read surface shipped in `a330b342`: `skill_to_code`, `code_to_skill`, `skill_set_query`, and `skill_coverage_audit` expose the existing CF substrate without adding a prediction head. Impact/blast-radius, graph inspection, cross-repo transfer, pathway-leaf attachment, conflict graph, browse, and live #406 mistake-loop consumption remain open #417 scope.
 
 **Shipped substrate (do not redo):**
 
