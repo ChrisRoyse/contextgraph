@@ -6,10 +6,13 @@ use context_graph_mejepa::label_transfer_audit::{
     LabelTransferAuditRecord,
 };
 use context_graph_mejepa::{
-    ChunkId, EdgeCaseClass, FailureModeClass, Language, LatentBugClass, PredictionId,
-    ReasoningClass, RootCauseClass, SecurityConcernClass, TestDeltaKind, TestId, TestOutcome,
+    ChunkId, EdgeCaseClass, FailureModeClass, Language, LatentBugClass, PerfAxis,
+    PhaseBPredictionSurfaces, PredictedPerfRegression, PredictionId, ReasoningClass,
+    RootCauseClass, SecurityConcernClass, TestDeltaKind, TestId, TestOutcome,
 };
-use context_graph_mejepa_instruments::{Q4SecurityClass, Q4SecurityLabel};
+use context_graph_mejepa_instruments::{
+    Q4PerfCategory, Q4PerfLabel, Q4SecurityClass, Q4SecurityLabel,
+};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +26,7 @@ pub enum LabelSource {
     CargoTest,
     CargoClippy,
     PythonSecurityAnalyzer,
+    PythonPerfAnalyzer,
     AgentResponse,
 }
 
@@ -356,6 +360,51 @@ pub fn q4_security_labels_to_phase_b_labels(
     Ok(extracted)
 }
 
+pub fn q4_perf_labels_to_prediction_surfaces(
+    labels: &[Q4PerfLabel],
+) -> Result<PhaseBPredictionSurfaces, UtmlError> {
+    let mut surfaces = PhaseBPredictionSurfaces::default();
+    for label in labels {
+        validate_q4_perf_label(label)?;
+        if label.category == Q4PerfCategory::WallclockBudgetExceeded {
+            continue;
+        }
+        if label.regression {
+            surfaces
+                .predicted_perf_regressions
+                .push(PredictedPerfRegression {
+                    axis: map_q4_perf_category(label.category),
+                    chunk: ChunkId(label.chunk_id.clone()),
+                    predicted_delta_pct: label.delta_pct.ok_or_else(|| {
+                        UtmlError::new(
+                            UtmlErrorCode::InvalidSignal,
+                            "Q4 perf regression missing real delta",
+                        )
+                    })? as f32,
+                    baseline_value: label.baseline_ns,
+                    confidence: if label.regression { 0.85 } else { 0.7 },
+                    explanation: format!(
+                    "q4_perf metric={} category={} regression={} baseline_ns={:?} after_ns={:?}",
+                    label.metric,
+                    label.category.as_str(),
+                    label.regression,
+                    label.baseline_ns,
+                    label.after_ns
+                ),
+                });
+        }
+    }
+    for perf in &surfaces.predicted_perf_regressions {
+        perf.validate().map_err(|err| {
+            UtmlError::new(
+                UtmlErrorCode::InvalidSignal,
+                format!("Q4 perf prediction surface invalid: {err}"),
+            )
+        })?;
+    }
+    Ok(surfaces)
+}
+
 pub fn apply_phase_b_labels_with_transfer_gate(
     db: &DB,
     labels: &ExtractedPhaseBLabels,
@@ -427,6 +476,7 @@ fn parse_failed_test_id(line: &str, source: &LabelSource) -> Option<TestId> {
             }
         }
         LabelSource::CargoClippy
+        | LabelSource::PythonPerfAnalyzer
         | LabelSource::PythonSecurityAnalyzer
         | LabelSource::AgentResponse => None,
     }
@@ -549,6 +599,15 @@ fn map_q4_security_class(class: Q4SecurityClass) -> SecurityConcernClass {
     }
 }
 
+fn map_q4_perf_category(category: Q4PerfCategory) -> PerfAxis {
+    match category {
+        Q4PerfCategory::CpuMs | Q4PerfCategory::WallclockBudgetExceeded => PerfAxis::CpuMs,
+        Q4PerfCategory::WallclockMs | Q4PerfCategory::Improvement => PerfAxis::WallclockMs,
+        Q4PerfCategory::AllocCount => PerfAxis::HeapAllocs,
+        Q4PerfCategory::RssKb => PerfAxis::RssKb,
+    }
+}
+
 fn validate_q4_security_label(label: &Q4SecurityLabel) -> Result<(), UtmlError> {
     if label.finding_id.trim().is_empty()
         || label.rule_id.trim().is_empty()
@@ -564,6 +623,39 @@ fn validate_q4_security_label(label: &Q4SecurityLabel) -> Result<(), UtmlError> 
             UtmlErrorCode::InvalidSignal,
             "Q4 security label must have exactly one delta direction",
         ));
+    }
+    Ok(())
+}
+
+fn validate_q4_perf_label(label: &Q4PerfLabel) -> Result<(), UtmlError> {
+    if label.corpus_row_id.trim().is_empty()
+        || label.chunk_id.trim().is_empty()
+        || label.metric.trim().is_empty()
+    {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 perf label missing corpus_row_id/chunk_id/metric",
+        ));
+    }
+    match label.category {
+        Q4PerfCategory::WallclockBudgetExceeded => {
+            if label.baseline_ns.is_some() || label.after_ns.is_some() || label.delta_pct.is_some()
+            {
+                return Err(UtmlError::new(
+                    UtmlErrorCode::InvalidSignal,
+                    "Q4 perf budget-exceeded label must not carry fake deltas",
+                ));
+            }
+        }
+        _ => {
+            if label.baseline_ns.is_none() || label.after_ns.is_none() || label.delta_pct.is_none()
+            {
+                return Err(UtmlError::new(
+                    UtmlErrorCode::InvalidSignal,
+                    "Q4 perf delta label missing baseline/after/delta",
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -692,7 +784,9 @@ fn validate_analyzer_config(config: &PhaseBLabelAnalyzerConfig) -> Result<(), Ut
 fn source_supports_language(source: &LabelSource, language: LabelInputLanguage) -> bool {
     match source {
         LabelSource::Pytest | LabelSource::PythonUnittest => language == LabelInputLanguage::Python,
-        LabelSource::PythonSecurityAnalyzer => language == LabelInputLanguage::Python,
+        LabelSource::PythonPerfAnalyzer | LabelSource::PythonSecurityAnalyzer => {
+            language == LabelInputLanguage::Python
+        }
         LabelSource::CargoTest | LabelSource::CargoClippy => language == LabelInputLanguage::Rust,
         LabelSource::AgentResponse => false,
     }
@@ -822,5 +916,45 @@ mod tests {
         );
         assert_eq!(labels.touched_files[0], PathBuf::from("app/security.py"));
         require_non_empty_labels(&labels).unwrap();
+    }
+
+    #[test]
+    fn q4_perf_labels_feed_prediction_surface_adapter() {
+        let surfaces = q4_perf_labels_to_prediction_surfaces(&[Q4PerfLabel {
+            corpus_row_id: "row-q4-perf".to_string(),
+            chunk_id: "chunk-q4-perf".to_string(),
+            metric: "test_linear".to_string(),
+            category: Q4PerfCategory::WallclockMs,
+            baseline_ns: Some(1_000_000.0),
+            after_ns: Some(1_500_000.0),
+            delta_pct: Some(50.0),
+            regression: true,
+        }])
+        .unwrap();
+        assert_eq!(surfaces.predicted_perf_regressions.len(), 1);
+        assert_eq!(
+            surfaces.predicted_perf_regressions[0].axis,
+            PerfAxis::WallclockMs
+        );
+        assert_eq!(
+            surfaces.predicted_perf_regressions[0].chunk,
+            ChunkId("chunk-q4-perf".to_string())
+        );
+    }
+
+    #[test]
+    fn q4_perf_budget_signal_does_not_fabricate_delta_surface() {
+        let surfaces = q4_perf_labels_to_prediction_surfaces(&[Q4PerfLabel {
+            corpus_row_id: "row-q4-perf-budget".to_string(),
+            chunk_id: "chunk-q4-perf".to_string(),
+            metric: "cprofile_walltime_budget".to_string(),
+            category: Q4PerfCategory::WallclockBudgetExceeded,
+            baseline_ns: None,
+            after_ns: None,
+            delta_pct: None,
+            regression: true,
+        }])
+        .unwrap();
+        assert!(surfaces.predicted_perf_regressions.is_empty());
     }
 }

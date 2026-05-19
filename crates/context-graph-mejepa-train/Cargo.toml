@@ -106,3 +106,7 @@ path = "examples/task_ek_012_bidirectional_ablation_fsv.rs"
 [[example]]
 name = "task_py_g_007_pairwise_mi_fsv"
 path = "examples/task_py_g_007_pairwise_mi_fsv.rs"
+
+[[example]]
+name = "task_py_g_047_q4_perf_label_fsv"
+path = "examples/task_py_g_047_q4_perf_label_fsv.rs"

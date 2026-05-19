@@ -51,6 +51,7 @@ pub mod live_session_signals;
 pub mod materialize;
 pub mod panel_json;
 pub mod panel_store;
+pub mod q4_perf_labels;
 pub mod q4_security_labels;
 pub mod static_analysis_reward;
 pub mod stdlib_registry;
@@ -575,6 +576,13 @@ pub use materialize::{
 pub use panel_json::{PanelEnvelope, PanelProvenance, PANEL_JSON_SCHEMA_VERSION};
 pub use panel_store::{
     PanelKey, PanelMeta, PanelStore, CF_MEJEPA_PANELS, CF_MEJEPA_PANEL_META, MEJEPA_PANEL_CFS,
+};
+pub use q4_perf_labels::{
+    extract_q4_perf_labels, run_q4_perf_tools_with_timeout, write_q4_perf_raw_outputs,
+    PersistedQ4PerfSignal, Q4PerfCategory, Q4PerfCommandSpec, Q4PerfExtraction, Q4PerfLabel,
+    Q4PerfLabelStore, Q4PerfQuarantine, Q4PerfRawOutputPaths, Q4PerfRawOutputs, Q4PerfScanPhase,
+    Q4PerfSignalRecord, Q4PerfSource, Q4PerfToolKind, Q4PerfToolOutput,
+    DEFAULT_Q4_PERF_TIMEOUT_SECS,
 };
 pub use q4_security_labels::{
     extract_q4_security_labels, run_q4_security_tools, run_q4_security_tools_with_timeout,

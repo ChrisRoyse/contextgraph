@@ -80,6 +80,7 @@ Adds `CF_MEJEPA_PLASTICITY_HISTORY` (TASK-PY-G-066 continual backprop), `CF_MEJE
 | `CF_MEJEPA_COLD_CELL_METRICS` | `(cell_key)` | JSON | TASK-PY-G-061 cold cells (n_supporting < 50) |
 | `CF_MEJEPA_STATIC_ANALYSIS_SIGNALS` | `(chunk_id, tool, code)` | JSON `StaticAnalysisSignalRecord` | TASK-RWD-208 / TASK-PY-G-074 |
 | `CF_MEJEPA_Q4_SECURITY_LABELS` | `(chunk_id, detector, code)` | JSON `Q4SecuritySignalRecord` | TASK-RWD-204 / TASK-PY-G-046 |
+| `CF_MEJEPA_Q4_PERF_LABELS` | `(corpus_row_id, metric)` | JSON `Q4PerfSignalRecord` | TASK-PY-G-047 |
 | `CF_MEJEPA_COVERAGE_SIGNALS` | `(chunk_id)` | JSON `CoverageLabel` | TASK-RWD-209 / TASK-PY-G-075 |
 | `CF_MEJEPA_COMPLEXITY_SIGNALS` | `(chunk_id)` | JSON `ComplexityLabel` | TASK-RWD-209 |
 | `CF_MEJEPA_CHURN_SIGNALS` | `(chunk_id)` | JSON `ChurnLabel` | TASK-RWD-209 |
