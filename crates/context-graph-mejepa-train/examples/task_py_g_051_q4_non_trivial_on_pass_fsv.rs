@@ -1,3 +1,5 @@
+// FROZEN 2026-05-19 per #408 — forensic continuity only; do not re-run, do not modify.
+// Q4 ambiguous surface frozen as display-only. See docs/futurebuild/01_overview.md §1.1.
 use context_graph_mejepa::q4_trust_gate::{
     q4_trust_gate_report_from_catalog_path, Q4EvidenceCatalog, Q4HeadEvidence, Q4HeadKind,
 };

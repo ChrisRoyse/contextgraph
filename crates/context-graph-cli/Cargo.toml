@@ -20,10 +20,6 @@ path = "src/main.rs"
 name = "context-graph"
 path = "src/bin/context-graph.rs"
 
-[[bin]]
-name = "blackbox"
-path = "src/bin/blackbox.rs"
-
 [dependencies]
 context-graph-core = { path = "../context-graph-core" }
 context-graph-paths = { path = "../context-graph-paths" }
@@ -41,7 +37,6 @@ clap = { version = "4.5", features = ["derive", "env"] }
 
 # Async runtime
 tokio = { workspace = true }
-axum = "0.8"
 
 # Serialization
 serde = { workspace = true }
@@ -60,8 +55,6 @@ uuid = { workspace = true }
 sha2 = "0.10"
 rocksdb = "0.22"
 zip = "7.2.0"
-rusqlite = { version = "0.32", features = ["bundled"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 dirs = "5"
 # Required by governed_edit for process_group(0) + libc::kill on spawned child
 # processes (docker/python/cargo/git). Prevents grandchild leaks when a timed

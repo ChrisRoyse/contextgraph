@@ -7,24 +7,24 @@ After=default.target
 Type=simple
 WorkingDirectory=/home/cabdru/contextgraph
 Environment=CONTEXTGRAPH_ROOT=/home/cabdru/contextgraph
-Environment=CONTEXTGRAPH_DATA_ROOT=/mnt/d/contextgraph
-Environment=CONTEXT_GRAPH_STORAGE_PATH=/mnt/d/contextgraph/storage/contextgraph-rocksdb
-Environment=CONTEXT_GRAPH_DB_PATH=/mnt/d/contextgraph/storage/contextgraph-rocksdb
-Environment=CONTEXT_GRAPH_MODELS_PATH=/mnt/d/cabdru/contextgraph/models
-Environment=CGREALITY_CACHE_DIR=/mnt/d/contextgraph/state/cgreality
-Environment=CGREALITY_RUNTIME_ROOT_HINT=/mnt/d/contextgraph/state/cgreality/active_runtime_root
+Environment=CONTEXTGRAPH_DATA_ROOT=/zfs/archive/contextgraph
+Environment=CONTEXT_GRAPH_STORAGE_PATH=/zfs/archive/contextgraph/storage/contextgraph-rocksdb
+Environment=CONTEXT_GRAPH_DB_PATH=/zfs/archive/contextgraph/storage/contextgraph-rocksdb
+Environment=CONTEXT_GRAPH_MODELS_PATH=/zfs/hot/contextgraph/models
+Environment=CGREALITY_CACHE_DIR=/zfs/archive/contextgraph/state/cgreality
+Environment=CGREALITY_RUNTIME_ROOT_HINT=/zfs/archive/contextgraph/state/cgreality/active_runtime_root
 Environment=RUST_LOG=context_graph_mcp=info,cgreality=info
 ExecStartPre=/usr/bin/test -x /home/cabdru/contextgraph/target/release/context-graph-mcp
-ExecStartPre=/usr/bin/test -d /mnt/d/contextgraph
-ExecStartPre=/usr/bin/test -f /mnt/d/cabdru/contextgraph/models/bge-m3-dense/model.safetensors
+ExecStartPre=/usr/bin/test -d /zfs/archive/contextgraph
+ExecStartPre=/usr/bin/test -f /zfs/hot/contextgraph/models/bge-m3-dense/model.safetensors
 ExecStart=/home/cabdru/contextgraph/target/release/context-graph-mcp --mode reality-loop --daemon-server-only --daemon-port 3100 --http-port 3101
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=30s
 KillSignal=SIGTERM
 NoNewPrivileges=true
-StandardOutput=append:/mnt/d/contextgraph/logs/context-graph-mcp-http-service.log
-StandardError=append:/mnt/d/contextgraph/logs/context-graph-mcp-http-service.log
+StandardOutput=append:/zfs/archive/contextgraph/logs/context-graph-mcp-http-service.log
+StandardError=append:/zfs/archive/contextgraph/logs/context-graph-mcp-http-service.log
 
 [Install]
 WantedBy=default.target

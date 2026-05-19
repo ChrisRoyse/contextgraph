@@ -824,6 +824,9 @@ mod tests {
             created_at_unix_ms: 1_779_000_000_000 + i64::from(prediction_id[0]),
             matched_fingerprint: None,
             unknown_candidate_id: None,
+            constellation_intelligence: None,
+            slot_attributions: Vec::new(),
+            label_context: Default::default(),
         })
         .unwrap()
     }

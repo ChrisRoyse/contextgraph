@@ -41,7 +41,7 @@ The only outstanding gate is `prediction_oracle_correlation = 0.866667 < 0.95`; 
 - #310 is the active meta/context issue for Phase G queue ordering.
 - #227 is the active runtime-policy context issue for Python ME-JEPA data work.
 
-The historical 2026-05-12 audit trail lived at `./memory/discoveries/2026-05-12--phase-a-d-independent-audit-zero-gaps.md`. That namespace is now archived under `./memory.archive/`. Any audit-trail entries needed going forward become `type:discovery` GitHub issues per the doctrine §3.
+The historical 2026-05-12 audit trail lived at `./memory/discoveries/2026-05-12--phase-a-d-independent-audit-zero-gaps.md`. That namespace is now archived under `backupdocs/memory.archive/`. Any audit-trail entries needed going forward become `type:discovery` GitHub issues per the doctrine §3.
 
 ---
 
@@ -66,7 +66,7 @@ Legacy `reality-loop` binary and inner-actor LLM (Qwen3.6-27B / Hermes-2-Pro / O
 
 ## 4. Memory = GitHub Issues (per doctrine §3)
 
-**There is no `./memory/` directory.** The old SAMP/SMAP namespace is archived to `./memory.archive/` (read-only history; do not write new files there). New memory is captured exclusively in this repo's GitHub Issues:
+**There is no `./memory/` directory.** The old SAMP/SMAP namespace is archived to `backupdocs/memory.archive/` (read-only history; do not write new files there). New memory is captured exclusively in this repo's GitHub Issues:
 
 | Old `./memory/` namespace | New home |
 |---|---|
@@ -142,7 +142,7 @@ If editing one of these is genuinely the right thing for an operator-directed ta
 ./config/         — governed paths, model pins
 ./.claude/        — settings.json, agents/, loop.md, skills/
 ./.github/        — workflows + labels.yml
-./memory.archive/ — read-only legacy SAMP/SMAP narrative (no new entries; see STOP_READING.md)
+backupdocs/memory.archive/ — read-only legacy SAMP/SMAP narrative (no new entries; see STOP_READING.md)
 
 # aiwonder production state (post-migration durable bulk state)
 /zfs/archive/contextgraph/
@@ -317,7 +317,7 @@ All independent tool calls in a single response MUST be made in one message. Bat
 - **Per-tick prompt:** [`.claude/loop.md`](.claude/loop.md)
 - **Legacy MEJEPA narrative (SUPERSEDED for protocol; project content still valid):** [`docs/MEJEPA_SUPER_PROMPT.md`](docs/MEJEPA_SUPER_PROMPT.md)
 - **Legacy issue protocol (SUPERSEDED by doctrine §3):** [`docs2/flagprompt.md`](docs2/flagprompt.md)
-- **Legacy SAMP/SMAP narrative (read-only history):** [`./memory.archive/`](./memory.archive/)
+- **Legacy SAMP/SMAP narrative (read-only history):** [`backupdocs/memory.archive/`](backupdocs/memory.archive/)
 
 ---
 

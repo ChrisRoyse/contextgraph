@@ -132,11 +132,6 @@ enum Commands {
     /// `<models_dir>/bge-m3-dense/` (defaults to `./models/bge-m3-dense/`).
     #[command(name = "backfill-e14")]
     BackfillE14(commands::backfill_e14::BackfillE14Args),
-    /// BlackBoxFix verified AgentOps local ledger commands.
-    Blackbox {
-        #[command(subcommand)]
-        action: commands::blackbox::BlackboxCommands,
-    },
     /// ccreality hook support commands.
     Ccreality {
         #[command(subcommand)]
@@ -217,7 +212,6 @@ pub async fn main() {
             }
         },
         Commands::BackfillE14(args) => commands::backfill_e14::run(args).await,
-        Commands::Blackbox { action } => commands::blackbox::handle_blackbox_command(action).await,
         Commands::Ccreality { action } => {
             commands::ccreality::handle_ccreality_command(action).await
         }

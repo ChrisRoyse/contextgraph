@@ -140,10 +140,6 @@ name = "e1-semantic-bench"
 path = "src/bin/e1_semantic_bench.rs"
 
 [[bin]]
-name = "e11-entity-bench"
-path = "src/bin/e11_entity_bench.rs"
-
-[[bin]]
 name = "e7-realdata-bench"
 path = "src/bin/e7_realdata_bench.rs"
 required-features = ["real-embeddings"]

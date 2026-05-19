@@ -48,10 +48,10 @@ Build profiles (`Cargo.toml:112-128`):
 | 19 | `context-graph-mejepa-hygiene` | "ME-JEPA Phase 6 storage hygiene, quota, GC, and witness compression" | Tier transitions, quota, GC, witness Merkle compress | `categories.rs`, `gc.rs`, `mcp.rs`, `quota.rs`, `reports.rs`, `retention.rs`, `storage.rs`, `tier*.rs`, `witness_compress.rs` |
 | 20 | `context-graph-mejepa-shift-subscriber` | (n/a) | JSONL shift-log tail + watermark + cache → panels | `cache.rs`, `models.rs`, `runner.rs`, `shift_transform.rs`, `status.rs`, `subscriber.rs`, `tail.rs`, `watermark.rs` |
 | 21 | `context-graph-dynamicjepa` | (n/a) | 5090jepa MCP surface (39 tools) — adapter shipping, plan trace, surprise log | (multiple modules) |
-| 22 | `context-graph-causal-agent` | (n/a) | Deterministic causal extraction | — |
-| 23 | `context-graph-graph-agent` | (n/a) | Graph extraction / discovery | — |
-| 24 | `context-graph-test-utils` | "Shared test utilities for context-graph workspace — NO MOCK DATA" | Fixtures, deterministic helpers (no mocks for completion gates per FSV-PROTOCOL §3) | — |
-| 25 | `context-graph-benchmark` *(excluded from default build)* | (n/a) | 87K-line benchmarking suite (4 benchmark `[[bin]]` targets per Cargo.toml: `maxsim_bench`, `causal_relationships_bench`, `hybrid_effectiveness_bench`, `e11_quality_bench`) | — |
+| 22 | `context-graph-test-utils` | "Shared test utilities for context-graph workspace — NO MOCK DATA" | Fixtures, deterministic helpers (no mocks for completion gates per FSV-PROTOCOL §3) | — |
+| 23 | `context-graph-benchmark` *(excluded from default build)* | (n/a) | Benchmarking suite — see crate `Cargo.toml` for the live `[[bin]]` set | — |
+
+**Note on §1 workspace member count.** As of 2026-05-19 cleanup the workspace has **23 active members** (down from 25). The retired crates `context-graph-causal-agent` and `context-graph-graph-agent` were deleted in the same pass that retired the inner-LLM stack (their public surface had zero workspace dependents; the 2026-05-09 ME-JEPA pivot already disabled their LLM-backed callers).
 
 ---
 
@@ -221,8 +221,6 @@ context-graph-mcp ─┬─> context-graph-mejepa
                    ├─> context-graph-mejepa-embedders
                    ├─> context-graph-dynamicjepa
                    ├─> context-graph-storage ──> context-graph-core
-                   ├─> context-graph-causal-agent
-                   ├─> context-graph-graph-agent
                    ├─> context-graph-embeddings ──> context-graph-core, context-graph-cuda
                    ├─> context-graph-paths
                    └─> context-graph-witness ──> (ed25519, sha2, blake3)
@@ -263,12 +261,13 @@ context-graph-test-utils  — zero internal deps
 | Binary | Crate | Entry | Purpose |
 |---|---|---|---|
 | `context-graph-mcp` | `context-graph-mcp` | `crates/context-graph-mcp/src/main.rs` (136K LOC) | MCP server (`--mode stdio` default, `--mode reality-loop` lightweight subset) |
-| `context-graph-cli` | `context-graph-cli` | `crates/context-graph-cli/src/main.rs` (230 LOC) | Operator CLI |
+| `context-graph-cli` | `context-graph-cli` | `crates/context-graph-cli/src/main.rs` | Operator CLI (primary) |
+| `context-graph` | `context-graph-cli` `[[bin]]` | `crates/context-graph-cli/src/bin/context-graph.rs` | Operator CLI (short alias) |
 | `mejepa` | `context-graph-mejepa` `[[bin]]` | `crates/context-graph-mejepa/src/bin/mejepa.rs` | Standalone predictor harness |
 | `mejepa-heal-drill` | `context-graph-mejepa` `[[bin]]` | `crates/context-graph-mejepa/src/bin/mejepa_heal_drill.rs` | Heal scheduler drill |
 | `mejepa-train` | `context-graph-mejepa-train` `[[bin]]` | `crates/context-graph-mejepa-train/src/bin/mejepa_train.rs` | Trainer driver |
 | `train-causal` | `context-graph-embeddings` `[[bin]]` | (per Cargo.toml) | Causal embedder training |
-| Benchmark bins | `context-graph-benchmark` *(excluded)* | per Cargo.toml | `maxsim_bench`, `causal_relationships_bench`, `hybrid_effectiveness_bench`, `e11_quality_bench` |
+| Benchmark bins | `context-graph-benchmark` *(excluded)* | per Cargo.toml | 30+ embedder/graph/causal/sparse/multimodal benchmarks (see crate `Cargo.toml`) |
 
 ---
 

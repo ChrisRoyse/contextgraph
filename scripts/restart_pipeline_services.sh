@@ -16,10 +16,10 @@
 set -u
 
 REPO=/home/cabdru/contextgraph
-DATA_ROOT="${CONTEXTGRAPH_DATA_ROOT:-/mnt/d/contextgraph}"
+DATA_ROOT="${CONTEXTGRAPH_DATA_ROOT:-/zfs/archive/contextgraph}"
 BIN="$REPO/target/release/context-graph-mcp"
 MODE="${CONTEXT_GRAPH_MCP_MODE:-reality-loop}"
-MODELS="${CONTEXT_GRAPH_MODELS_PATH:-/mnt/d/cabdru/contextgraph/models}"
+MODELS="${CONTEXT_GRAPH_MODELS_PATH:-/zfs/hot/contextgraph/models}"
 HTTP_PORT="${CONTEXT_GRAPH_HTTP_PORT:-3101}"
 PIDFILE="${DATA_ROOT}/state/locks/context-graph-daemon.pid"
 DAEMON_LOG="${DATA_ROOT}/logs/cg-daemon.log"

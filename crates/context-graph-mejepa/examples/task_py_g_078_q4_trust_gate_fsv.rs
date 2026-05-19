@@ -1,3 +1,5 @@
+// FROZEN 2026-05-19 per #408 — forensic continuity only; do not re-run, do not modify.
+// Q4 ambiguous surface frozen as display-only. See docs/futurebuild/01_overview.md §1.1.
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};

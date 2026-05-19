@@ -12,7 +12,7 @@ When the doctrine and `CLAUDE.md` agree, follow either. When they conflict, **th
 
 ## Memory = GitHub Issues
 
-Per doctrine §3, all institutional memory lives in this repo's GitHub Issues. There is **no** `./memory/` directory. Old SAMP/SMAP content is archived at `./memory.archive/` (read-only history; do not write new files there).
+Per doctrine §3, all institutional memory lives in this repo's GitHub Issues. There is **no** `./memory/` directory. Old SAMP/SMAP content is archived at `backupdocs/memory.archive/` (read-only history; do not write new files there).
 
 Read at the start of every turn (doctrine §3.3):
 

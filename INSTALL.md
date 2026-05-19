@@ -1,6 +1,6 @@
 # ContextGraph ME-JEPA Install
 
-1. Create and verify D-backed state:
+1. Create and verify aiwonder-backed state:
 
 ```bash
 scripts/setup/first_time_setup.sh
@@ -22,7 +22,7 @@ scripts/ensure_daemon.sh
 
 ```bash
 curl -fsS http://127.0.0.1:3101/healthz
-jq . /mnt/d/contextgraph/fsv/first-time-setup/setup-readback.json
+jq . /zfs/archive/contextgraph/fsv/first-time-setup/setup-readback.json
 ```
 
-Source of truth lives under `/mnt/d/contextgraph`. User config lives under `~/.config/mejepa`.
+Source of truth lives under `/zfs/archive/contextgraph` (durable) and `/zfs/hot/contextgraph` (hot) on aiwonder per CLAUDE.md §6.5. User config lives under `~/.config/mejepa`.
