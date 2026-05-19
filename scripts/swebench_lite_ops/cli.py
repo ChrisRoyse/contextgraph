@@ -66,6 +66,8 @@ from .python_constellation_ablation_suite import add_arguments as add_python_con
 from .python_constellation_ablation_suite import command_python_constellation_ablation_suite
 from .python_constellation_tensors import add_arguments as add_python_constellation_tensors_arguments
 from .python_constellation_tensors import command_python_constellation_tensors
+from .python_per_slot_calibration_ood import add_arguments as add_python_per_slot_calibration_ood_arguments
+from .python_per_slot_calibration_ood import command_python_per_slot_calibration_ood
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -521,6 +523,16 @@ def build_parser() -> argparse.ArgumentParser:
     constellation_tensors.set_defaults(
         func=command_python_constellation_tensors,
         evidence_name="python-constellation-tensors-command-evidence.json",
+    )
+
+    per_slot_calibration_ood = sub.add_parser(
+        "python-per-slot-calibration-ood",
+        help="TASK-PY-G-089: calibrate per-slot uncertainty and fail-closed OOD guard from #388/#396 artifacts.",
+    )
+    add_python_per_slot_calibration_ood_arguments(per_slot_calibration_ood)
+    per_slot_calibration_ood.set_defaults(
+        func=command_python_per_slot_calibration_ood,
+        evidence_name="python-per-slot-calibration-ood-command-evidence.json",
     )
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")

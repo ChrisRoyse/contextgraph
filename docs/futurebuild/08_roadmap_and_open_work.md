@@ -90,7 +90,9 @@ Child issue split:
 
 **#388 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-088-cross-embedder-correlation-tensors-fsv/`: the tensor materializer consumed the 391-shard forward-cache substrate and wrote durable artifacts under `/zfs/archive/contextgraph/corpus/constellation-tensors-v1/`. It produced 516 per-cell/window/slot distribution tensors, 2,838 per-cell/window upper-triangle pair tensors, 1,400 valid pair rows, and 8 full cell/windows with all 66 active pair rows. The report proves `slot_identity_preserved=true`, `flat_vector_concat_used=false`, 12 active embedder slots, declared 15 frozen instrument panel slots where applicable, and redundant/independent/mixed/contradictory/unsupported surface counts.
 
-**Ordering update from #388/#393:** do not promote the current #396 scalar feature family. #388 is now the richer real-corpus relationship tensor source; next work should run #389 per-slot calibration/OOD against #388, then rerun #393 ablations with #388/#389 artifacts before changing the predictor path.
+**#389 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-089-per-slot-calibration-ood-fsv/`: the calibrator consumed #388 tensors and #396 training rows, wrote durable calibration state under `/zfs/archive/contextgraph/state/calibration/per-slot-v1/`, and produced 12 global slot calibrations, 84 fail-closed per-cell slot rows, and 66 pair calibration rows. The policy proves strict conjunction, `aggregate_score_never_overrides_slot_violation=true`, `reject_missing_or_stale_calibration=true`, `flat_vector_concat_used=false`, and explicit edge cases for missing slot, stale calibration, nonfinite score, and one-bad-slot rejection when the aggregate mean would pass. It is intentionally `ship_gate_countable=false` until #127/#129/#130 rerun under this per-slot guard.
+
+**Ordering update from #388/#389/#393:** do not promote the current #396 scalar feature family. #388 is the durable real-corpus relationship tensor source, #389 is the per-slot fail-closed calibration/OOD state, and #393 must be rerun with #388 + #389 artifacts before changing the predictor path.
 
 **Current data-location map for #396 descendants:**
 
@@ -101,6 +103,8 @@ Child issue split:
 | 391-shard packed forward cache | `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z/` | Per-shard packed manifests point to each embedder's record/index files |
 | #388 cross-embedder tensors | `/zfs/archive/contextgraph/corpus/constellation-tensors-v1/` | Durable tensor artifacts: `slot_distribution_tensors.jsonl`, `pairwise_correlation_tensors.jsonl`, `constellation_tensor_report.json`, `constellation_tensor_manifest.json` |
 | #388 FSV | `/zfs/archive/contextgraph/fsv/task-py-g-088-cross-embedder-correlation-tensors-fsv/python_constellation_cross_embedder_tensors_fsv.json` | PASS evidence for TASK-PY-G-088 |
+| #389 per-slot calibration/OOD | `/zfs/archive/contextgraph/state/calibration/per-slot-v1/` | Durable calibration artifacts: `per_slot_calibration.jsonl`, `per_cell_slot_calibration.jsonl`, `per_pair_calibration.jsonl`, `ood_guard_policy.json`, `per_slot_calibration_report.json` |
+| #389 FSV | `/zfs/archive/contextgraph/fsv/task-py-g-089-per-slot-calibration-ood-fsv/python_per_slot_calibration_ood_fsv.json` | PASS evidence for TASK-PY-G-089; sha256 `24075e0b0cd349c132b3bf2388642e277b854aa121f0039d330487bcf302edd7` |
 | #396 certificate/artifacts | `/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts/` | Generated arrays and certificate for TASK-PY-G-096 |
 
 ### 3.1 Q4 head training (Phase G §2 producers — heads exist as schema fields but lack training data pipelines)
