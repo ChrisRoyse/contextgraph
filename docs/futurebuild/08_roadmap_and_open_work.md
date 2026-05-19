@@ -129,12 +129,11 @@ Child issue split:
    - Q4 fail-closed trust gate — #377 TASK-PY-G-078 is closed; Q4 heads now refuse trust until producer/calibration/exact-slot evidence is present.
    - Q4 harvest expansion — #401 TASK-PY-G-100 is closed; aggregate `q4TrustDecisionEligible=true` for the five producer-backed heads.
    - Deferred excluded heads — #402 tracks real security/structural Q4 producers before the aggregate Q4 scope expands beyond those five heads.
-2. **Calibrate Q5 against shift-log replay** — #264 TASK-PY-G-045 is shipped; #128 TASK-PY-G-013 is now the calibration consumer.
-3. **Calibrate OOD on harvested + synthetic** — #129 TASK-PY-G-014 (now consumes the closed #276 harvest evidence) + #130 TASK-PY-G-015 Gτ guard audit.
-4. **Per-head contradiction calibration** — #263 TASK-PY-G-044.
-5. **Goodhart / oracle-noise guards** — #374 TASK-PY-G-077 secret holdout and #376 TASK-PY-G-076 statistical-power bound are closed as guard protocols, both currently fail closed as `underpowered`. They continue to block any "≥ 0.95 × 4 windows" claim until real four-window train-visible plus secret/delayed holdout evidence exists and passes.
-6. **Compositional generalization** — #379 TASK-PY-G-081 multi-file structural patch holdout.
-7. **Remaining predictor-adjacent constellation surfaces** — #390/#391/#392 (and #382 frozen-panel dimensionality ablation) should follow the label/replay/calibration substrate unless a measured ablation shows they are the next bottleneck.
+2. **Calibrate OOD on harvested + synthetic** — #129 TASK-PY-G-014 (now consumes the closed #276 harvest evidence) + #130 TASK-PY-G-015 Gτ guard audit.
+3. **Per-head contradiction calibration** — #263 TASK-PY-G-044.
+4. **Goodhart / oracle-noise guards** — #374 TASK-PY-G-077 secret holdout and #376 TASK-PY-G-076 statistical-power bound are closed as guard protocols, both currently fail closed as `underpowered`. They continue to block any "≥ 0.95 × 4 windows" claim until real four-window train-visible plus secret/delayed holdout evidence exists and passes.
+5. **Compositional generalization** — #379 TASK-PY-G-081 multi-file structural patch holdout.
+6. **Remaining predictor-adjacent constellation surfaces** — #390/#391/#392 (and #382 frozen-panel dimensionality ablation) should follow the label/replay/calibration substrate unless a measured ablation shows they are the next bottleneck.
 
 **Current data-location map for #396 descendants:**
 
@@ -191,7 +190,20 @@ Child issue split:
 
 FSV evidence: `/zfs/archive/contextgraph/fsv/task-py-g-045-shift-log-replay-engine-fsv/shift_log_replay_engine_fsv.json`, sha256 `2e2116e2c0f15c2861d52798b1aefe0435b8acda50399f4a0547b51190fb0959`; independent reopened-RocksDB readback sha256 `8ef576a9353015ea1e4957b753dbe4c717cc92431fcd58824574ca159ee55df5`.
 
-Remaining Q5 work: #128 now consumes these records to calibrate the Q5 head per Python mutation category.
+Q5 calibration consumer: #128 is shipped and writes `CF_MEJEPA_Q5_CALIBRATIONS` from these replay records.
+
+### 3.2.1 Q5 impact calibration (#128 / TASK-PY-G-013)
+
+✅ **Shipped 2026-05-19 on aiwonder.** `reality_impact.rs` now materializes durable `Q5CalibrationRecord` rows in `CF_MEJEPA_Q5_CALIBRATIONS` from #264 replay records in `CF_MEJEPA_REALITY_IMPACT`.
+
+Calibration scope:
+- Cells are keyed by `calibration_id`, `language`, `mutation_category`, and `side_effect_kind`.
+- Metrics include true positives, false positives, false negatives, awaiting-oracle count, replay-exclusion count, support, precision, recall, F1, and surprise rate.
+- `NotYetObserved` rows set `AwaitingOracle` and stay out of precision/recall denominators.
+- Fail-closed replay errors such as `SHIFT_LOG_CHAIN_BROKEN` set `ReplayExcluded` and stay out of metric denominators.
+- High-surprise and low-F1 cells emit retraining flags for the next model-quality loop.
+
+FSV evidence: `/zfs/archive/contextgraph/fsv/task-py-g-013-q5-calibration-fsv/q5_calibration_fsv.json`, sha256 `042bd8ad45df924b6f607c3c2f2bcacc339ad91a11e5457bd1da52b24b22f133`; independent reopened-RocksDB readback sha256 `aa8f56ec0be0bc2e85e9232f391a2f7e3b9c013db37a5ba2091135c85df45a26`; sample sha256 `a0ce89e3a859b634677ab14222f8b5ce8875740074b621cdf9e2f04041db7731`.
 
 ### 3.3 Phase G calibration sweep (Phase G §3)
 
@@ -205,7 +217,7 @@ All calibration items below are now qualified by #385: their evidence must be pe
 | #125 / TASK-PY-G-010 | Q1 claim-existence calibration at corpus scale | open |
 | #126 / TASK-PY-G-011 | Q3 failure-mode calibration | open |
 | #127 / TASK-PY-G-012 | Q4 confidence calibration per class with Brier/ECE/τ | ✅ closed 2026-05-19; aggregate Q4 ready after #401 for producer-backed heads |
-| #128 / TASK-PY-G-013 | Q5 head calibration vs shift-log replay (consumes #264) | open |
+| #128 / TASK-PY-G-013 | Q5 head calibration vs shift-log replay (consumes #264) | ✅ closed 2026-05-19; writes `CF_MEJEPA_Q5_CALIBRATIONS` |
 | #263 / TASK-PY-G-044 | Multi-head contradiction calibration per cell | open |
 | #121 / TASK-PY-G-006 | Conformal RCA classifier | open |
 | #130 / TASK-PY-G-015 | Gτ guard audit | open |

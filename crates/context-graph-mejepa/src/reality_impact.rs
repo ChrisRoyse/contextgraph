@@ -1,8 +1,10 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use context_graph_mejepa_cf::{CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_REALITY_IMPACT};
+use context_graph_mejepa_cf::{
+    CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_Q5_CALIBRATIONS, CF_MEJEPA_REALITY_IMPACT,
+};
 use rocksdb::{IteratorMode, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -10,12 +12,16 @@ use serde_json::Value;
 use crate::calibration::cf;
 use crate::error::MejepaInferError;
 use crate::types::{
-    ObservedTestOutcome, PredictedTestOutcome, PredictionCorrectness, RealityImpact,
+    Language, ObservedTestOutcome, PredictedTestOutcome, PredictionCorrectness, RealityImpact,
     RealityPrediction, ShiftEntry, TestId, TestOutcome,
 };
 
 pub const REALITY_IMPACT_SCHEMA_VERSION: u32 = 1;
+pub const Q5_CALIBRATION_SCHEMA_VERSION: u32 = 1;
 pub const DEFAULT_REALITY_IMPACT_REPLAY_WINDOW_MS: i64 = 60 * 60 * 1000;
+pub const Q5_HIGH_SURPRISE_RATE_THRESHOLD: f64 = 0.30;
+pub const Q5_CELL_RETRAIN_F1_FLOOR: f64 = 0.50;
+pub const Q5_DOMINANT_CLASS_F1_FLOOR: f64 = 0.70;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -146,6 +152,109 @@ impl RealityImpactRecord {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Q5CalibrationCellKey {
+    pub mutation_category: String,
+    pub language: Language,
+    pub side_effect_kind: RealityImpactItemKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Q5CalibrationInput {
+    pub mutation_category: String,
+    pub language: Language,
+    pub record: RealityImpactRecord,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Q5ReplayExclusion {
+    pub mutation_category: String,
+    pub language: Language,
+    pub prediction_id: [u8; 16],
+    pub side_effect_kind: RealityImpactItemKind,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Q5CalibrationFlag {
+    AwaitingOracle,
+    Q5HighSurpriseRate,
+    Q5CellNeedsRetraining,
+    Q5DominantClassBelowFloor,
+    ReplayExcluded,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Q5CalibrationRecord {
+    pub schema_version: u32,
+    pub calibration_id: String,
+    pub cell_key: Q5CalibrationCellKey,
+    pub replay_window_ms: i64,
+    pub true_positives: u64,
+    pub false_positives: u64,
+    pub false_negatives: u64,
+    pub awaiting_oracle: u64,
+    pub excluded_replay_errors: u64,
+    pub support: u64,
+    pub precision: f64,
+    pub recall: f64,
+    pub f1: f64,
+    pub surprise_rate: f64,
+    pub flags: Vec<Q5CalibrationFlag>,
+    pub sample_prediction_ids: Vec<[u8; 16]>,
+    pub exclusion_reasons: Vec<String>,
+    pub created_at_unix_ms: i64,
+}
+
+impl Q5CalibrationRecord {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        if self.schema_version != Q5_CALIBRATION_SCHEMA_VERSION {
+            return Err(invalid_input(
+                "q5_calibration.schema_version",
+                format!(
+                    "expected {}, got {}",
+                    Q5_CALIBRATION_SCHEMA_VERSION, self.schema_version
+                ),
+            ));
+        }
+        if self.calibration_id.trim().is_empty() {
+            return Err(invalid_input(
+                "q5_calibration.calibration_id",
+                "calibration_id must be non-empty",
+            ));
+        }
+        if self.cell_key.mutation_category.trim().is_empty() {
+            return Err(invalid_input(
+                "q5_calibration.mutation_category",
+                "mutation_category must be non-empty",
+            ));
+        }
+        validate_probability("q5_calibration.precision", self.precision)?;
+        validate_probability("q5_calibration.recall", self.recall)?;
+        validate_probability("q5_calibration.f1", self.f1)?;
+        validate_probability("q5_calibration.surprise_rate", self.surprise_rate)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+struct Q5CalibrationAccumulator {
+    true_positives: u64,
+    false_positives: u64,
+    false_negatives: u64,
+    awaiting_oracle: u64,
+    excluded_replay_errors: u64,
+    sample_prediction_ids: BTreeSet<[u8; 16]>,
+    exclusion_reasons: BTreeSet<String>,
+    min_window_start: Option<i64>,
+    max_window_end: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -391,6 +500,293 @@ pub fn read_reality_impact_record(
         ));
     }
     Ok(Some(record))
+}
+
+pub fn read_all_reality_impact_records(
+    db: &DB,
+) -> Result<Vec<RealityImpactRecord>, MejepaInferError> {
+    let cf = cf(db, CF_MEJEPA_REALITY_IMPACT)?;
+    let mut out = Vec::new();
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (key, value) = item?;
+        if key.len() != 16 {
+            return Err(MejepaInferError::DimMismatch {
+                expected: 16,
+                actual: key.len(),
+                context: "CF_MEJEPA_REALITY_IMPACT key must be prediction_id".to_string(),
+            });
+        }
+        let mut prediction_id = [0u8; 16];
+        prediction_id.copy_from_slice(&key);
+        let record: RealityImpactRecord = bincode::deserialize(&value)?;
+        record.validate()?;
+        if record.prediction_id != prediction_id {
+            return Err(invalid_input(
+                "reality_impact.prediction_id",
+                "CF_MEJEPA_REALITY_IMPACT key does not match payload prediction_id",
+            ));
+        }
+        out.push(record);
+    }
+    Ok(out)
+}
+
+pub fn calibrate_and_persist_q5_reality_impact(
+    db: &DB,
+    calibration_id: impl Into<String>,
+    inputs: Vec<Q5CalibrationInput>,
+    exclusions: Vec<Q5ReplayExclusion>,
+    created_at_unix_ms: i64,
+) -> Result<Vec<Q5CalibrationRecord>, MejepaInferError> {
+    let records =
+        calibrate_q5_reality_impact(calibration_id, inputs, exclusions, created_at_unix_ms)?;
+    for record in &records {
+        write_q5_calibration_record(db, record)?;
+    }
+    let readback = read_all_q5_calibration_records(db)?;
+    for record in &records {
+        if !readback.iter().any(|candidate| candidate == record) {
+            return Err(invalid_input(
+                "q5_calibration.readback",
+                format!("missing Q5 calibration row {}", q5_calibration_key(record)),
+            ));
+        }
+    }
+    Ok(records)
+}
+
+pub fn calibrate_q5_reality_impact(
+    calibration_id: impl Into<String>,
+    inputs: Vec<Q5CalibrationInput>,
+    exclusions: Vec<Q5ReplayExclusion>,
+    created_at_unix_ms: i64,
+) -> Result<Vec<Q5CalibrationRecord>, MejepaInferError> {
+    let calibration_id = calibration_id.into();
+    if calibration_id.trim().is_empty() {
+        return Err(invalid_input(
+            "q5_calibration.calibration_id",
+            "calibration_id must be non-empty",
+        ));
+    }
+    let mut accumulators = BTreeMap::<Q5CalibrationCellKey, Q5CalibrationAccumulator>::new();
+    for input in inputs {
+        input.record.validate()?;
+        let base = |kind| Q5CalibrationCellKey {
+            mutation_category: input.mutation_category.clone(),
+            language: input.language,
+            side_effect_kind: kind,
+        };
+        for matched in &input.record.matched {
+            let acc = accumulators
+                .entry(base(matched.predicted.kind))
+                .or_default();
+            acc.true_positives += 1;
+            acc.observe_record(&input.record);
+        }
+        for missed in &input.record.missed {
+            let acc = accumulators.entry(base(missed.predicted.kind)).or_default();
+            acc.false_negatives += 1;
+            acc.observe_record(&input.record);
+        }
+        for pending in &input.record.not_yet_observed {
+            let acc = accumulators
+                .entry(base(pending.predicted.kind))
+                .or_default();
+            acc.awaiting_oracle += 1;
+            acc.observe_record(&input.record);
+        }
+        for surprise in &input.record.surprises {
+            let acc = accumulators
+                .entry(base(surprise.observed.kind))
+                .or_default();
+            acc.false_positives += 1;
+            acc.observe_record(&input.record);
+        }
+    }
+    for exclusion in exclusions {
+        let key = Q5CalibrationCellKey {
+            mutation_category: exclusion.mutation_category,
+            language: exclusion.language,
+            side_effect_kind: exclusion.side_effect_kind,
+        };
+        let acc = accumulators.entry(key).or_default();
+        acc.excluded_replay_errors += 1;
+        acc.sample_prediction_ids.insert(exclusion.prediction_id);
+        acc.exclusion_reasons.insert(exclusion.reason);
+    }
+    let mut records = Vec::new();
+    for (cell_key, acc) in accumulators {
+        let support = acc.true_positives + acc.false_positives + acc.false_negatives;
+        let precision =
+            ratio_with_empty_success(acc.true_positives, acc.true_positives + acc.false_positives);
+        let recall =
+            ratio_with_empty_success(acc.true_positives, acc.true_positives + acc.false_negatives);
+        let f1 = if precision + recall == 0.0 {
+            0.0
+        } else {
+            2.0 * precision * recall / (precision + recall)
+        };
+        let surprise_rate = if support == 0 {
+            0.0
+        } else {
+            acc.false_positives as f64 / support as f64
+        };
+        let mut flags = BTreeSet::new();
+        if acc.awaiting_oracle > 0 {
+            flags.insert(Q5CalibrationFlag::AwaitingOracle);
+        }
+        if acc.excluded_replay_errors > 0 {
+            flags.insert(Q5CalibrationFlag::ReplayExcluded);
+        }
+        if support > 0 && surprise_rate > Q5_HIGH_SURPRISE_RATE_THRESHOLD {
+            flags.insert(Q5CalibrationFlag::Q5HighSurpriseRate);
+        }
+        if support > 0 && f1 < Q5_CELL_RETRAIN_F1_FLOOR {
+            flags.insert(Q5CalibrationFlag::Q5CellNeedsRetraining);
+        }
+        if support > 0
+            && is_q5_dominant_class(cell_key.side_effect_kind)
+            && f1 < Q5_DOMINANT_CLASS_F1_FLOOR
+        {
+            flags.insert(Q5CalibrationFlag::Q5DominantClassBelowFloor);
+        }
+        let record = Q5CalibrationRecord {
+            schema_version: Q5_CALIBRATION_SCHEMA_VERSION,
+            calibration_id: calibration_id.clone(),
+            cell_key,
+            replay_window_ms: replay_window_ms_from_bounds(
+                acc.min_window_start,
+                acc.max_window_end,
+            ),
+            true_positives: acc.true_positives,
+            false_positives: acc.false_positives,
+            false_negatives: acc.false_negatives,
+            awaiting_oracle: acc.awaiting_oracle,
+            excluded_replay_errors: acc.excluded_replay_errors,
+            support,
+            precision,
+            recall,
+            f1,
+            surprise_rate,
+            flags: flags.into_iter().collect(),
+            sample_prediction_ids: acc.sample_prediction_ids.into_iter().take(16).collect(),
+            exclusion_reasons: acc.exclusion_reasons.into_iter().collect(),
+            created_at_unix_ms,
+        };
+        record.validate()?;
+        records.push(record);
+    }
+    if records.is_empty() {
+        return Err(invalid_input(
+            "q5_calibration.inputs",
+            "at least one replay record or exclusion is required",
+        ));
+    }
+    Ok(records)
+}
+
+pub fn write_q5_calibration_record(
+    db: &DB,
+    record: &Q5CalibrationRecord,
+) -> Result<(), MejepaInferError> {
+    record.validate()?;
+    let cf = cf(db, CF_MEJEPA_Q5_CALIBRATIONS)?;
+    let key = q5_calibration_key(record);
+    let value = bincode::serialize(record)?;
+    let mut opts = WriteOptions::default();
+    opts.set_sync(true);
+    db.put_cf_opt(cf, key.as_bytes(), &value, &opts)?;
+    let readback = db.get_cf(cf, key.as_bytes())?.ok_or_else(|| {
+        invalid_input(
+            "q5_calibration.readback",
+            "missing CF_MEJEPA_Q5_CALIBRATIONS row after write",
+        )
+    })?;
+    if readback != value {
+        return Err(invalid_input(
+            "q5_calibration.readback",
+            "CF_MEJEPA_Q5_CALIBRATIONS readback bytes differ",
+        ));
+    }
+    let decoded: Q5CalibrationRecord = bincode::deserialize(&readback)?;
+    decoded.validate()?;
+    if decoded != *record {
+        return Err(invalid_input(
+            "q5_calibration.readback",
+            "CF_MEJEPA_Q5_CALIBRATIONS decoded readback differs",
+        ));
+    }
+    Ok(())
+}
+
+pub fn read_all_q5_calibration_records(
+    db: &DB,
+) -> Result<Vec<Q5CalibrationRecord>, MejepaInferError> {
+    let cf = cf(db, CF_MEJEPA_Q5_CALIBRATIONS)?;
+    let mut out = Vec::new();
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (_key, value) = item?;
+        let record: Q5CalibrationRecord = bincode::deserialize(&value)?;
+        record.validate()?;
+        out.push(record);
+    }
+    Ok(out)
+}
+
+impl Q5CalibrationAccumulator {
+    fn observe_record(&mut self, record: &RealityImpactRecord) {
+        self.sample_prediction_ids.insert(record.prediction_id);
+        self.min_window_start = Some(match self.min_window_start {
+            Some(current) => current.min(record.window_start_unix_ms),
+            None => record.window_start_unix_ms,
+        });
+        self.max_window_end = Some(match self.max_window_end {
+            Some(current) => current.max(record.window_end_unix_ms),
+            None => record.window_end_unix_ms,
+        });
+    }
+}
+
+fn q5_calibration_key(record: &Q5CalibrationRecord) -> String {
+    format!(
+        "{}|{:?}|{}|{:?}",
+        record.calibration_id,
+        record.cell_key.language,
+        record.cell_key.mutation_category,
+        record.cell_key.side_effect_kind
+    )
+}
+
+fn ratio_with_empty_success(numerator: u64, denominator: u64) -> f64 {
+    if denominator == 0 {
+        1.0
+    } else {
+        numerator as f64 / denominator as f64
+    }
+}
+
+fn replay_window_ms_from_bounds(start: Option<i64>, end: Option<i64>) -> i64 {
+    match (start, end) {
+        (Some(start), Some(end)) => end.saturating_sub(start).max(0),
+        _ => 0,
+    }
+}
+
+fn is_q5_dominant_class(kind: RealityImpactItemKind) -> bool {
+    matches!(
+        kind,
+        RealityImpactItemKind::FileChange | RealityImpactItemKind::FailedTest
+    )
+}
+
+fn validate_probability(field: &str, value: f64) -> Result<(), MejepaInferError> {
+    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+        return Err(invalid_input(
+            field,
+            format!("probability must be finite in [0, 1], got {value}"),
+        ));
+    }
+    Ok(())
 }
 
 pub fn read_live_prediction_by_id(
@@ -1191,6 +1587,105 @@ mod tests {
         assert_eq!(record.surprises[0].reason, "UNPREDICTED_FILE_SHIFT");
     }
 
+    #[test]
+    fn q5_calibration_scores_cells_and_excludes_chain_breaks() {
+        let records = calibrate_q5_reality_impact(
+            "unit-q5",
+            vec![
+                Q5CalibrationInput {
+                    mutation_category: "bool_flip".to_string(),
+                    language: Language::Python,
+                    record: impact_record_for_test(
+                        [10; 16],
+                        vec![matched_for_test(
+                            RealityImpactItemKind::FailedTest,
+                            "tests/test_a.py::test_a",
+                        )],
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                    ),
+                },
+                Q5CalibrationInput {
+                    mutation_category: "bool_flip".to_string(),
+                    language: Language::Python,
+                    record: impact_record_for_test(
+                        [11; 16],
+                        Vec::new(),
+                        vec![missed_for_test(
+                            RealityImpactItemKind::FailedTest,
+                            "tests/test_b.py::test_b",
+                            "TEST_NEVER_RAN",
+                        )],
+                        vec![missed_for_test(
+                            RealityImpactItemKind::FailedTest,
+                            "tests/test_later.py::test_later",
+                            "REPLAY_WINDOW_EMPTY",
+                        )],
+                        Vec::new(),
+                    ),
+                },
+                Q5CalibrationInput {
+                    mutation_category: "surprise_cell".to_string(),
+                    language: Language::Python,
+                    record: impact_record_for_test(
+                        [12; 16],
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                        vec![surprise_for_test(
+                            RealityImpactItemKind::FileChange,
+                            "src/unpredicted.py",
+                        )],
+                    ),
+                },
+            ],
+            vec![Q5ReplayExclusion {
+                mutation_category: "bool_flip".to_string(),
+                language: Language::Python,
+                prediction_id: [13; 16],
+                side_effect_kind: RealityImpactItemKind::FailedTest,
+                reason: "SHIFT_LOG_CHAIN_BROKEN".to_string(),
+            }],
+            4_000,
+        )
+        .unwrap();
+
+        let failed_test = records
+            .iter()
+            .find(|record| {
+                record.cell_key.mutation_category == "bool_flip"
+                    && record.cell_key.side_effect_kind == RealityImpactItemKind::FailedTest
+            })
+            .unwrap();
+        assert_eq!(failed_test.true_positives, 1);
+        assert_eq!(failed_test.false_negatives, 1);
+        assert_eq!(failed_test.awaiting_oracle, 1);
+        assert_eq!(failed_test.excluded_replay_errors, 1);
+        assert!(failed_test
+            .flags
+            .contains(&Q5CalibrationFlag::AwaitingOracle));
+        assert!(failed_test
+            .flags
+            .contains(&Q5CalibrationFlag::ReplayExcluded));
+
+        let file_surprise = records
+            .iter()
+            .find(|record| {
+                record.cell_key.mutation_category == "surprise_cell"
+                    && record.cell_key.side_effect_kind == RealityImpactItemKind::FileChange
+            })
+            .unwrap();
+        assert_eq!(file_surprise.true_positives, 0);
+        assert_eq!(file_surprise.false_positives, 1);
+        assert!(file_surprise
+            .flags
+            .contains(&Q5CalibrationFlag::Q5HighSurpriseRate));
+        assert!(file_surprise
+            .flags
+            .contains(&Q5CalibrationFlag::Q5CellNeedsRetraining));
+    }
+
     fn prediction(
         prediction_id: [u8; 16],
         session_id: [u8; 16],
@@ -1300,6 +1795,84 @@ mod tests {
             unknown_candidate_id: None,
         })
         .unwrap()
+    }
+
+    fn impact_record_for_test(
+        prediction_id: [u8; 16],
+        matched: Vec<RealityImpactMatch>,
+        missed: Vec<RealityImpactMiss>,
+        not_yet_observed: Vec<RealityImpactMiss>,
+        surprises: Vec<RealityImpactSurprise>,
+    ) -> RealityImpactRecord {
+        RealityImpactRecord {
+            schema_version: REALITY_IMPACT_SCHEMA_VERSION,
+            prediction_id,
+            session_id: [21; 16],
+            window_start_unix_ms: 1_000,
+            window_end_unix_ms: 2_000,
+            source_shift_log_path: PathBuf::from("cgreality-shift-log/unit.jsonl"),
+            source_prediction_cf: CF_MEJEPA_LIVE_PREDICTIONS.to_string(),
+            source_impact_cf: CF_MEJEPA_REALITY_IMPACT.to_string(),
+            matched,
+            missed,
+            not_yet_observed,
+            surprises,
+            shift_count: 1,
+            observed_test_count: 1,
+            created_at_unix_ms: 2_001,
+        }
+    }
+
+    fn matched_for_test(kind: RealityImpactItemKind, target: &str) -> RealityImpactMatch {
+        RealityImpactMatch {
+            predicted: predicted_for_test(kind, target),
+            observed: observed_for_test(kind, target),
+            classification: RealityImpactClassification::Confirmed,
+        }
+    }
+
+    fn missed_for_test(
+        kind: RealityImpactItemKind,
+        target: &str,
+        reason: &str,
+    ) -> RealityImpactMiss {
+        RealityImpactMiss {
+            predicted: predicted_for_test(kind, target),
+            classification: if reason == "REPLAY_WINDOW_EMPTY" {
+                RealityImpactClassification::NotYetObserved
+            } else {
+                RealityImpactClassification::Missed
+            },
+            reason: reason.to_string(),
+        }
+    }
+
+    fn surprise_for_test(kind: RealityImpactItemKind, target: &str) -> RealityImpactSurprise {
+        RealityImpactSurprise {
+            observed: observed_for_test(kind, target),
+            classification: RealityImpactClassification::Surprise,
+            reason: "UNPREDICTED_REALITY_SHIFT".to_string(),
+        }
+    }
+
+    fn predicted_for_test(kind: RealityImpactItemKind, target: &str) -> RealityImpactPredictedItem {
+        RealityImpactPredictedItem {
+            item_id: format!("{kind:?}:{target}"),
+            kind,
+            target: target.to_string(),
+            detail: "unit q5 fixture".to_string(),
+        }
+    }
+
+    fn observed_for_test(kind: RealityImpactItemKind, target: &str) -> RealityImpactObservedItem {
+        RealityImpactObservedItem {
+            shift_id: format!("shift-{target}"),
+            kind,
+            target: target.to_string(),
+            outcome: matches!(kind, RealityImpactItemKind::FailedTest).then_some(TestOutcome::Fail),
+            file: matches!(kind, RealityImpactItemKind::FileChange).then(|| PathBuf::from(target)),
+            timestamp_unix_ms: 1_500,
+        }
     }
 
     fn write_shift(root: &Path, session_id: [u8; 16], line: &str) {

@@ -47,6 +47,7 @@ Adds `CF_MEJEPA_PLASTICITY_HISTORY` (TASK-PY-G-066 continual backprop), `CF_MEJE
 | `CF_MEJEPA_ORACLE_VERDICTS` | `(task_id, category)` | JSON `OracleVerdict` | Persistent verdict cache from `swebench.rs` |
 | `CF_MEJEPA_PREDICTION_VERIFICATIONS` | `(prediction_id, verifier_id)` | JSON `{kind: Confirmed|Refuted, ...}` | TASK-PY-G-069/070 PostToolUse + Stop hook capture |
 | `CF_MEJEPA_REALITY_IMPACT` | `prediction_id` | bincode `RealityImpactRecord` | TASK-PY-G-045 Q5 shift-log replay: matched/missed/not-yet-observed/surprise consequence rows |
+| `CF_MEJEPA_Q5_CALIBRATIONS` | `(calibration_id, language, mutation_category, side_effect_kind)` | bincode `Q5CalibrationRecord` | TASK-PY-G-013 Q5 replay calibration: precision/recall/F1/support/surprise-rate plus replay exclusions |
 | `CF_MEJEPA_CLAIM_RECONCILIATION` | `(prediction_id, claim_id)` | JSON | TASK-PY-G-041 Q1 claim graph |
 | `CF_MEJEPA_PROJECT_REPORTS` | `project_id` | JSON `ProjectReport` | TASK-PY-G-064 per-project reality report |
 | `CF_MEJEPA_STRESS_RUNS` | `(run_id, case_id)` | JSON | TASK-PY-G-072 end-to-end stress harness |

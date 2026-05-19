@@ -495,6 +495,14 @@ Current shipped behavior (2026-05-19, #264):
 - MCP surface: `mcp__cgreality__mejepa_reality_impact`.
 - aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-045-shift-log-replay-engine-fsv/shift_log_replay_engine_fsv.json`, sha256 `2e2116e2c0f15c2861d52798b1aefe0435b8acda50399f4a0547b51190fb0959`; independent reopened-RocksDB readback sha256 `8ef576a9353015ea1e4957b753dbe4c717cc92431fcd58824574ca159ee55df5`.
 
+Current calibration behavior (2026-05-19, #128):
+- Consumes durable `RealityImpactRecord` rows from `CF_MEJEPA_REALITY_IMPACT`.
+- Writes typed `Q5CalibrationRecord` rows to `CF_MEJEPA_Q5_CALIBRATIONS`, keyed by `calibration_id`, `language`, `mutation_category`, and `side_effect_kind`.
+- Computes true positives, false positives, false negatives, awaiting-oracle count, support, precision, recall, F1, surprise rate, sample prediction IDs, and replay-exclusion reasons.
+- Excludes fail-closed replay errors such as `SHIFT_LOG_CHAIN_BROKEN` from metric denominators while preserving explicit `ReplayExcluded` evidence.
+- Emits flags for `AwaitingOracle`, `Q5HighSurpriseRate`, `Q5CellNeedsRetraining`, and dominant-class F1 below floor.
+- aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-013-q5-calibration-fsv/q5_calibration_fsv.json`, sha256 `042bd8ad45df924b6f607c3c2f2bcacc339ad91a11e5457bd1da52b24b22f133`; independent reopened-RocksDB readback sha256 `aa8f56ec0be0bc2e85e9232f391a2f7e3b9c013db37a5ba2091135c85df45a26`; sample sha256 `a0ce89e3a859b634677ab14222f8b5ce8875740074b621cdf9e2f04041db7731`.
+
 ---
 
 ## 18. Adversarial Defenses

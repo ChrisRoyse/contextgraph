@@ -183,6 +183,10 @@ name = "task_py_g_045_shift_log_replay_engine_fsv"
 path = "examples/task_py_g_045_shift_log_replay_engine_fsv.rs"
 
 [[example]]
+name = "task_py_g_013_q5_calibration_fsv"
+path = "examples/task_py_g_013_q5_calibration_fsv.rs"
+
+[[example]]
 name = "task_ek_018b_absence_queue_fsv"
 path = "examples/task_ek_018b_absence_queue_fsv.rs"
 
