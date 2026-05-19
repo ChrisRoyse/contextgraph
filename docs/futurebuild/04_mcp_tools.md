@@ -4,7 +4,7 @@
 
 Source files covered: `crates/context-graph-mcp/src/tools/definitions/mod.rs`, `crates/context-graph-mcp/src/tools/names.rs`, `crates/context-graph-mcp/src/tools/definitions/mejepa.rs`, all sibling `definitions/*.rs`, `crates/context-graph-mcp/src/deprecation.rs`.
 
-**Total tools registered** in `get_tool_definitions()`: **196** (test-enforced at `definitions/mod.rs:150`).
+**Total tools registered** in `get_tool_definitions()`: **201** (test-enforced at `definitions/mod.rs:150`).
 
 ---
 
@@ -12,12 +12,12 @@ Source files covered: `crates/context-graph-mcp/src/tools/definitions/mod.rs`, `
 
 | Function | Returns | Notes |
 |---|---|---|
-| `get_tool_definitions()` | `Vec<ToolDefinition>` (196 tools) | Default `--mode stdio` registry. Builds from 28 submodules. |
+| `get_tool_definitions()` | `Vec<ToolDefinition>` (201 tools) | Default `--mode stdio` registry. Builds from 28 submodules. |
 | `get_reality_loop_tool_definitions()` | smaller subset | `--mode reality-loop` lightweight surface (post-pivot) |
 | `is_reality_loop_mode()` | bool | Toggles inclusion of `reality::definitions()` |
 
 Tests enforce:
-- `test_total_tool_count_and_no_duplicates` — 196 total, no duplicate names, all have description+schema.
+- `test_total_tool_count_and_no_duplicates` — 201 total, no duplicate names, all have description+schema.
 - `test_submodule_counts` — exact per-submodule counts (table below).
 - `retired_cgreality_tools_are_not_advertised_by_tool_registries` — `RETIRED_CGREALITY_TOOLS` from `deprecation.rs` must NOT appear in any registry. Retired callers receive `CCREALITY_ENGINE_RETIRED`.
 
@@ -42,7 +42,7 @@ Tests enforce:
 | `robustness` | 1 | `search_robust` (E9 typo-tolerant) |
 | `entity` | 6 | E11 KEPLER/TransE: `extract_entities`, `infer_relationship`, `validate_knowledge`, `search_by_entities`, `find_related_entities`, `get_entity_graph` |
 | `embedder` | 10 + 2 standalone | Per-embedder search surfaces (`search_by_embedder`, embedder-cluster, compare-views, etc.) plus `search_by_tokens` (E12) + standalone E13 |
-| **`mejepa`** | **49** | Phase 4 inference + Phase 5 heal + Phase 6 hygiene + Phase 8 eval + Phase F/G/EK runbook — see §3 |
+| **`mejepa`** | **54** | Phase 4 inference + Phase 5 heal + Phase 6 hygiene + Phase 8 eval + Phase F/G/EK runbook + first #417 chunk-skill linkage surface — see §3 |
 | `temporal` | 2 | `search_recent` (E2), `search_periodic` (E3) |
 | `graph_link` | 4 | K-NN navigation + typed edges (`get_unified_neighbors`, `get_typed_edges`, `list_typed_edge_records`, `record_graph_learning_event`) |
 | `maintenance` | 1 | `repair_causal_relationships` (data repair / cleanup) |
@@ -56,11 +56,11 @@ Tests enforce:
 | `typed_edges` | 3 | Phase 4 typed-edge training (F1/F2/F4 + list) |
 | `dynamicjepa` | 39 | 5090jepa MCP surface (Phase 6) |
 | `reality` (only in reality-loop mode) | n/a | post-pivot reality-loop subset |
-| **Total** | **196** | |
+| **Total** | **201** | |
 
 ---
 
-## 3. The 49 `mejepa_*` Tools (the product surface for AI agents)
+## 3. The 54 `mejepa_*` Tools (the product surface for AI agents)
 
 All names live in `crates/context-graph-mcp/src/tools/names.rs:96-203`. Most are namespaced `mcp__cgreality__mejepa_*`; a small set use bare `mejepa_*`.
 
@@ -167,6 +167,17 @@ All names live in `crates/context-graph-mcp/src/tools/names.rs:96-203`. Most are
 | `mejepa_routing_lookup` | `MEJEPA_ROUTING_LOOKUP` | Embedder routing lookup table |
 | `mejepa_vram_budget_report` | `MEJEPA_VRAM_BUDGET_REPORT` | VRAM budget + per-embedder resident bytes |
 
+### 3.11 Skill↔code linkage first slice (TASK-PY-G-120 / #417)
+
+These tools expose the shipped #414 chunk-skill substrate as read-only navigation evidence. They do not add a prediction head and they preserve the binary-leaf boundary at prediction time.
+
+| Tool | Const | Purpose | Side effects |
+|---|---|---|---|
+| `mcp__cgreality__mejepa_skill_to_code` | `MEJEPA_SKILL_TO_CODE` | Forward linkage: given `skillId`, return member chunks with source bytes/provenance when an AST chunk JSONL is supplied | Read-only over `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS`, `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP`, AST chunk JSONL |
+| `mcp__cgreality__mejepa_code_to_skill` | `MEJEPA_CODE_TO_SKILL` | Reverse linkage: given `chunkId`, return every skill/higher-ability membership for that chunk and optional `codeStateKey` | Read-only over `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` |
+| `mcp__cgreality__mejepa_skill_set_query` | `MEJEPA_SKILL_SET_QUERY` | Boolean set query over memberships: chunks that have all `mustHave` skills and none of `mustNotHave` | Read-only over `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` |
+| `mcp__cgreality__mejepa_skill_coverage_audit` | `MEJEPA_SKILL_COVERAGE_AUDIT` | Coverage-gap audit: partition chunks with zero, one, or multiple skill memberships | Read-only over `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` plus optional AST chunk JSONL |
+
 ---
 
 ## 4. Other Tool Domains (summary; full schemas in source)
@@ -241,7 +252,7 @@ Response format: tools return JSON. Errors carry `code: SCREAMING_SNAKE_CASE` ma
 
 | Mode | Tools advertised | Transport | Purpose |
 |---|---|---|---|
-| `--mode stdio` (default) | 196 (`get_tool_definitions`) | JSON-RPC over stdio | Production agent surface |
+| `--mode stdio` (default) | 201 (`get_tool_definitions`) | JSON-RPC over stdio | Production agent surface |
 | `--mode reality-loop` | smaller subset (`get_reality_loop_tool_definitions`) | JSON-RPC over stdio | Post-pivot Claude-Code-outer-loop surface; lightweight subset |
 | HTTP transport | same as configured mode | HTTP | Multi-agent deployments (see `server/http_transport.rs`) |
 
@@ -322,7 +333,7 @@ No tool deletion (would break stored agent prompts referencing them); behaviour 
 
 ### 9.5 Tool-count update
 
-When #404/#405/#406 land, the total tool count moves from **196 → ~205** (4 + 2 + 3 = 9 new tools). The `test_total_tool_count_and_no_duplicates` test threshold is updated as part of the same PR. Q4 tool deprecation does not change the count (tools remain registered, just behaviour-changed).
+Current count after the first #417 slice is **201**. When #404/#405/#406 land, the total tool count increases by the exact tools shipped in those slices and the `test_total_tool_count_and_no_duplicates` threshold must be updated in the same change. Q4 tool deprecation does not change the count (tools remain registered, just behaviour-changed).
 
 ### 9.6 Pathway exploration surface tools (#416 / TASK-PY-G-119, planned)
 
@@ -335,22 +346,22 @@ The butterfly-effect pathway tree (`docs/futurebuild/01_overview.md §1.5`, `05_
 | `mcp__cgreality__mejepa_pathway_record_choice` | `MEJEPA_PATHWAY_RECORD_CHOICE` | Record the operator's chosen pathway (idempotent). Feeds #335 `mejepa_reverse_prediction` when it ships — the system then produces patch-shape constraints that satisfy the chosen pathway's binary leaves. | `predictionId`, `pathwayId`, `rationaleText?` | Writes `CF_MEJEPA_OPERATOR_PATHWAY_CHOICES` |
 | `mcp__cgreality__mejepa_pathway_history` | `MEJEPA_PATHWAY_HISTORY` | Read-only audit over `CF_MEJEPA_OPERATOR_PATHWAY_CHOICES`. Filter by window/session/operator. | `windowId?`, `sessionId?`, `limit: int=100` | Read-only |
 
-When #416 lands, the total tool count moves further: **~205 → ~209** (4 additional pathway tools).
+When #416 lands, the total tool count moves further by 4 additional pathway tools.
 
-### 9.7 Skill↔code linkage capability surface tools (#417 / TASK-PY-G-120, planned)
+### 9.7 Skill↔code linkage capability surface tools (#417 / TASK-PY-G-120)
 
 Exposes the already-shipped bidirectional chunk↔skill data (#413 Level-0 registry + #414 skill memberships and reverse index) through operator-facing MCP tools. Read-only navigation over training substrate; no new prediction surface, no Q4 reanimation, binary-leaf constraint at prediction boundaries preserved. See `01_overview.md §1.5bis` and #417 for the full unlocked capability set.
 
-| Tool (planned) | Const | Purpose | Key params | Side effects |
+| Tool | Const | Purpose | Key params | Side effects |
 |---|---|---|---|---|
-| `mcp__cgreality__mejepa_skill_to_code` | `MEJEPA_SKILL_TO_CODE` | Forward linkage: given skill_id, return top-K member chunks with literal source bytes + file/line/commit provenance | `skillId`, `k: int=20` | Read-only over `CF_MEJEPA_SKILL_REVERSE_INDEX` + AST chunks |
-| `mcp__cgreality__mejepa_code_to_skill` | `MEJEPA_CODE_TO_SKILL` | Reverse linkage: given chunk_id, return all skills this chunk participates in | `chunkId` | Read-only over `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` |
-| `mcp__cgreality__mejepa_skill_set_query` | `MEJEPA_SKILL_SET_QUERY` | Boolean set query over memberships: chunks that have skills `must_have` AND NOT `must_not_have` | `mustHave: [skillId]`, `mustNotHave: [skillId]?` | Read-only |
+| `mcp__cgreality__mejepa_skill_to_code` | `MEJEPA_SKILL_TO_CODE` | **Shipped first slice:** forward linkage from skill to member chunks with literal source bytes when `chunksJsonl` is supplied | `skillId`, `limit: int=20`, `chunksJsonl?`, `requireSourceText?` | Read-only over #414 skill CFs + AST chunks |
+| `mcp__cgreality__mejepa_code_to_skill` | `MEJEPA_CODE_TO_SKILL` | **Shipped first slice:** reverse linkage from chunk to all skill memberships, optionally narrowed by code state | `chunkId`, `codeStateKey?`, `limit: int=20`, `chunksJsonl?`, `requireSourceText?` | Read-only over `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` |
+| `mcp__cgreality__mejepa_skill_set_query` | `MEJEPA_SKILL_SET_QUERY` | **Shipped first slice:** Boolean set query over memberships: chunks that have skills `mustHave` AND NOT `mustNotHave` | `mustHave: [skillId]`, `mustNotHave: [skillId]?`, `limit: int=100` | Read-only |
+| `mcp__cgreality__mejepa_skill_coverage_audit` | `MEJEPA_SKILL_COVERAGE_AUDIT` | **Shipped first slice:** coverage-gap audit over chunks with zero/one/multiple skill memberships | `chunksJsonl?`, `sampleLimit: int=100` | Read-only over membership CF + optional AST chunk JSONL |
 | `mcp__cgreality__mejepa_skill_impact` | `MEJEPA_SKILL_IMPACT` | Refactoring blast-radius: chunk → skills → transitive co-member chunks, with TASK-EK-016 foundationality weighting | `chunkId`, `depth: int=2` | Read-only |
 | `mcp__cgreality__mejepa_skill_graph_inspect` | `MEJEPA_SKILL_GRAPH_INSPECT` | Read the skill-of-skills graph (depends-on / composes-with / mutually-exclusive) | `skillId?` | Read-only over `CF_MEJEPA_SKILL_GRAPH` |
-| `mcp__cgreality__mejepa_skill_coverage_audit` | `MEJEPA_SKILL_COVERAGE_AUDIT` | Read the active-learning gap audit (chunks with 0 memberships) | `auditRunId?` | Read-only over `CF_MEJEPA_SKILL_COVERAGE_AUDIT` |
 | `mcp__cgreality__mejepa_cross_repo_skill_transfer` | `MEJEPA_CROSS_REPO_SKILL_TRANSFER` | Run the deterministic Level-0 compiler over a new project's AST chunks, match against existing skill signatures, persist matches | `targetProjectId` | Writes `CF_MEJEPA_CROSS_REPO_SKILL_MATCHES` |
 | `mcp__cgreality__mejepa_skill_conflict_graph` | `MEJEPA_SKILL_CONFLICT_GRAPH` | Read the mutually-exclusive-skill graph derived from zero-co-occurrence in the shipped 36,773 memberships | (no params) | Read-only |
 | `mcp__cgreality__mejepa_skill_browse` | `MEJEPA_SKILL_BROWSE` | Operator-facing skill catalog browse: 128 skills + chunk counts + lifecycle audit | `filter?: {minSupport, minLift, status}` | Read-only |
 
-When #417 lands, the total tool count moves further: **~209 → ~218** (9 additional skill-linkage tools).
+The first #417 slice adds 4 tools and moves the current registry to **201**. Remaining #417 tools still planned: skill impact, skill graph inspect, cross-repo skill transfer, skill conflict graph, and skill browse.

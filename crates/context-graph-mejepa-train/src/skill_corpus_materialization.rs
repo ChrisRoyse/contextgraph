@@ -957,7 +957,7 @@ mod tests {
                 .map(|label| {
                     format!(
                         r#"{{"artifact_kind":"python_auto_label_discovery_accepted_label_registry_row","schema_version":1,"formula_version":"unit","label_id":"{label}","label_hash":"label:{hash}","family":"{family}","status":"accepted_descriptive","support":10,"fail_rate":0.5,"lift_over_weighted_category_baseline":0.1,"live_prediction_input_allowed":true,"learning_update_policy":{{"baseline_seeded_from":"TASK-PY-G-117","online_rescore":true,"promote_demote_with_new_outcomes":true,"target_labels_are_supervision_only":true}}}}"#,
-                        hash = hex::encode(Sha256::digest(label.as_bytes()))[..24].to_string(),
+                        hash = &hex::encode(Sha256::digest(label.as_bytes()))[..24],
                         family = label.split(':').next().unwrap()
                     )
                 })

@@ -290,7 +290,7 @@ This is the analogue of PAPER §6.3's named-future-work item "cross-encoder tria
 
 | Process | Port / IPC | Technology | Purpose |
 |---|---|---|---|
-| `context-graph-mcp` server (`--mode stdio` or `--mode reality-loop`) | stdio JSON-RPC (default) or HTTP transport | Rust, tokio, async-trait | 196-tool MCP surface; daemon mode supervises long-lived state |
+| `context-graph-mcp` server (`--mode stdio` or `--mode reality-loop`) | stdio JSON-RPC (default) or HTTP transport | Rust, tokio, async-trait | 201-tool MCP surface; daemon mode supervises long-lived state |
 | `context-graph-cli` | CLI invocation | Rust | Operator commands: `mejepa observe`, `mejepa project-ingest`, `mejepa compression-progress`, `mejepa active-learning`, etc. |
 | ME-JEPA training daemon | embedded in CLI/binary | candle (CUDA 13.2), RocksDB | UTML training loop; reads `CF_MEJEPA_REPLAY_BUFFER`; writes `CF_MEJEPA_TRAIN_CERTS` |
 | Shift-log subscriber | tokio task | tokio, async streams | Tails JSONL shift log → materializes panels (`crates/context-graph-mejepa-shift-subscriber`) |
@@ -332,7 +332,7 @@ This is the analogue of PAPER §6.3's named-future-work item "cross-encoder tria
 
 | Crate | Role | LOC (src lib.rs only) |
 |---|---|---|
-| `context-graph-mcp` | MCP JSON-RPC server + 196 tools | 29 (lib) + 136K (main.rs) |
+| `context-graph-mcp` | MCP JSON-RPC server + 201 tools | 29 (lib) + 136K (main.rs) |
 | `context-graph-cli` | Operator CLI, helpers | 14 (lib) + 230 (main.rs) |
 | `context-graph-core` | Shared domain types | — |
 | `context-graph-storage` | RocksDB wrapper, teleological/code/causal CFs | 190 |
@@ -447,7 +447,7 @@ Every crate defines its own `Error` enum with `SCREAMING_SNAKE_CASE` code via `.
 
 ## 9. Major Subsystems (one paragraph each)
 
-**MCP server (`context-graph-mcp`).** JSON-RPC 2.0 stdio (default) or HTTP transport. 196 tool definitions exported by `tools/definitions/mod.rs::get_tool_definitions()`: 49 are `mejepa_*` (Phase 4/5/6/8/F/G/EK predictor + heal + observe + ship-gate dashboard). Also: 39 `dynamicjepa_*` (5090jepa surface), 14 learning, 18 UTL learner-state, 6 constellation, 6 entity, 10 embedder, 5 core memory, 4 each for topic/file_watcher/sequence/causal/graph_link/contrastive, 3 each for typed_edges/provenance, plus singletons. Retired `reality_*` tools fail closed with `CCREALITY_ENGINE_RETIRED`. Reality-loop mode (`--mode reality-loop`) exposes the post-pivot Claude-Code-outer-loop subset only. Server enforces multi-agent isolation via path-policy + edit-lock (see `06_operations_and_fsv.md`).
+**MCP server (`context-graph-mcp`).** JSON-RPC 2.0 stdio (default) or HTTP transport. 201 tool definitions exported by `tools/definitions/mod.rs::get_tool_definitions()`: 54 are `mejepa_*` (Phase 4/5/6/8/F/G/EK predictor + heal + observe + ship-gate dashboard + the first #417 chunk-skill linkage surface). Also: 39 `dynamicjepa_*` (5090jepa surface), 14 learning, 18 UTL learner-state, 6 constellation, 6 entity, 10 embedder, 5 core memory, 4 each for topic/file_watcher/sequence/causal/graph_link/contrastive, 3 each for typed_edges/provenance, plus singletons. Retired `reality_*` tools fail closed with `CCREALITY_ENGINE_RETIRED`. Reality-loop mode (`--mode reality-loop`) exposes the post-pivot Claude-Code-outer-loop subset only. Server enforces multi-agent isolation via path-policy + edit-lock (see `06_operations_and_fsv.md`).
 
 **Predictor (`context-graph-mejepa`).** CUDA-only production predictor. 73 modules covering claim graph (Q1), patch-similarity HNSW exemplars (Q3), Q4 security/perf/cost/accuracy heads, Q5 shift-log replay impact, multi-head VICReg + Huber loss, conformal calibration, OOD detection, claim-vs-reality reconciliation, project-ingest reality compiler, synthetic-stress evaluator, adversarial corpus, dynamic embedder registration, foundationality (PageRank on chunk/library/embedder dep graphs), label transfer audit, operator override surface. `compile()` and `compile_with_fingerprint_observation()` are the canonical Q1-Q5 entry points.
 

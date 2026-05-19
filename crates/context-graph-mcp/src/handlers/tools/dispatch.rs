@@ -262,6 +262,10 @@ impl Handlers {
             tool_names::MEJEPA_COMPRESSION_PROGRESS => call_mejepa_compression_progress(arguments),
             tool_names::MEJEPA_EVAL_BUILD_GRAPH => call_mejepa_eval_build_graph(arguments),
             tool_names::MEJEPA_AUDIT_PAIRWISE_MI => call_mejepa_audit_pairwise_mi(arguments),
+            tool_names::MEJEPA_SKILL_TO_CODE => call_mejepa_skill_to_code(arguments),
+            tool_names::MEJEPA_CODE_TO_SKILL => call_mejepa_code_to_skill(arguments),
+            tool_names::MEJEPA_SKILL_SET_QUERY => call_mejepa_skill_set_query(arguments),
+            tool_names::MEJEPA_SKILL_COVERAGE_AUDIT => call_mejepa_skill_coverage_audit(arguments),
             // Provenance tools (Phase P3)
             tool_names::GET_AUDIT_TRAIL => call_get_audit_trail(arguments),
             tool_names::GET_MERGE_HISTORY => call_get_merge_history(arguments),

@@ -1264,6 +1264,67 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 }
             }),
         ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_SKILL_TO_CODE,
+            "TASK-PY-G-120 skill-to-code linkage: read a Level-2 skill and its persisted chunk memberships, optionally join AST chunk JSONL source bytes, and return byte-grounded member chunks without introducing a prediction head.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["skillId"],
+                "properties": {
+                    "skillId": {"type": "string", "minLength": 1},
+                    "dbPath": {"type": "string", "description": "Optional #414 skill RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_TRAIN_DB or CONTEXTGRAPH_MEJEPA_INFER_DB is used."},
+                    "chunksJsonl": {"type": "string", "description": "Optional AST chunk JSONL with source_text/source byte spans for literal code readback."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 20},
+                    "requireSourceText": {"type": "boolean", "default": false}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_CODE_TO_SKILL,
+            "TASK-PY-G-120 code-to-skill linkage: read all persisted skills a chunk participates in, preserving many-to-many membership and optional source-byte provenance.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["chunkId"],
+                "properties": {
+                    "chunkId": {"type": "string", "minLength": 1},
+                    "codeStateKey": {"type": "string", "minLength": 1},
+                    "dbPath": {"type": "string"},
+                    "chunksJsonl": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 20},
+                    "requireSourceText": {"type": "boolean", "default": false}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_SKILL_SET_QUERY,
+            "TASK-PY-G-120 boolean query over chunk-skill memberships: return chunks that have all required skills and none of the excluded skills.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["mustHave"],
+                "properties": {
+                    "mustHave": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+                    "mustNotHave": {"type": "array", "items": {"type": "string", "minLength": 1}, "default": []},
+                    "dbPath": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 100}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_SKILL_COVERAGE_AUDIT,
+            "TASK-PY-G-120 skill coverage audit: partition chunk universe into chunks with/without skill memberships and surface active-learning gaps.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "chunksJsonl": {"type": "string", "description": "Optional AST chunk JSONL defining the audit universe. If omitted, the universe is all chunks with at least one persisted membership."},
+                    "sampleLimit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 100}
+                }
+            }),
+        ),
     ]
 }
 

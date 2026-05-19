@@ -27,7 +27,7 @@ Build profiles (`Cargo.toml:112-128`):
 
 | # | Crate | Cargo description | Purpose | Key submodules |
 |---|---|---|---|---|
-| 1 | `context-graph-mcp` | "MCP JSON-RPC server for Context Graph" | Stdio + HTTP JSON-RPC, 196 tools, daemon, deprecation gate | `adapters/`, `daemon.rs`, `daemon_validate.rs`, `deprecation.rs`, `handlers/`, `health_probe.rs`, `monitoring.rs`, `protocol.rs`, `server/`, `telemetry/`, `tools/`, `weights.rs` |
+| 1 | `context-graph-mcp` | "MCP JSON-RPC server for Context Graph" | Stdio + HTTP JSON-RPC, 201 tools, daemon, deprecation gate | `adapters/`, `daemon.rs`, `daemon_validate.rs`, `deprecation.rs`, `handlers/`, `health_probe.rs`, `monitoring.rs`, `protocol.rs`, `server/`, `telemetry/`, `tools/`, `weights.rs` |
 | 2 | `context-graph-cli` | (no description) | Operator CLI + helpers | `commands/`, `error.rs`, `governed_edit.rs`, `mcp_client.rs`, `mcp_helpers.rs` |
 | 3 | `context-graph-core` | "Core domain types, traits, and business logic for Context Graph" | Shared types: `CodeEntity`, `CodeLanguage`, etc. | per `types/` |
 | 4 | `context-graph-storage` | "Storage layer for Context Graph with RocksDB backend" | RocksDB wrapper + 19 teleological + 13 quantized + 5 code + 2 causal CFs | `code/`, `column_families.rs`, `dynamicjepa/`, `graph_edges/`, `indexes.rs`, `teleological/` |

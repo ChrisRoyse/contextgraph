@@ -201,6 +201,14 @@ pub const MEJEPA_PROJECT_REPORT: &str = "mcp__cgreality__mejepa_project_report";
 pub const MEJEPA_EVAL_BUILD_GRAPH: &str = "mcp__cgreality__mejepa_eval_build_graph";
 /// UTML pairwise mutual-information audit with CSV source-of-truth readback.
 pub const MEJEPA_AUDIT_PAIRWISE_MI: &str = "mcp__cgreality__mejepa_audit_pairwise_mi";
+/// TASK-PY-G-120 skill-to-code readback over #414 chunk-skill memberships.
+pub const MEJEPA_SKILL_TO_CODE: &str = "mcp__cgreality__mejepa_skill_to_code";
+/// TASK-PY-G-120 chunk/code-to-skill readback over #414 chunk-skill memberships.
+pub const MEJEPA_CODE_TO_SKILL: &str = "mcp__cgreality__mejepa_code_to_skill";
+/// TASK-PY-G-120 boolean set query over persisted chunk-skill memberships.
+pub const MEJEPA_SKILL_SET_QUERY: &str = "mcp__cgreality__mejepa_skill_set_query";
+/// TASK-PY-G-120 chunk-skill coverage audit for active-learning gaps.
+pub const MEJEPA_SKILL_COVERAGE_AUDIT: &str = "mcp__cgreality__mejepa_skill_coverage_audit";
 /// Phase A bootstrap status readback from ME-JEPA RocksDB sources of truth.
 pub const MEJEPA_BOOTSTRAP_STATUS: &str = "mcp__cgreality__mejepa_bootstrap_status";
 // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========

@@ -142,3 +142,7 @@ path = "examples/task_py_g_118_skill_sequence_discovery_fsv.rs"
 [[example]]
 name = "task_py_g_118_aiwonder_skill_materialization_fsv"
 path = "examples/task_py_g_118_aiwonder_skill_materialization_fsv.rs"
+
+[[example]]
+name = "task_py_g_120_skill_linkage_surface_fsv"
+path = "examples/task_py_g_120_skill_linkage_surface_fsv.rs"

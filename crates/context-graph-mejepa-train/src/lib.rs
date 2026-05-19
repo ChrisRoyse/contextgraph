@@ -29,6 +29,7 @@ pub mod optim;
 pub mod replay_buffer;
 pub mod sampler;
 pub mod skill_corpus_materialization;
+pub mod skill_linkage;
 pub mod skill_sequence_discovery;
 pub mod skill_sequence_types;
 mod skill_validation;
@@ -58,5 +59,6 @@ pub use loss::inverse::{
 pub use mistake_log::*;
 pub use replay_buffer::*;
 pub use skill_corpus_materialization::*;
+pub use skill_linkage::*;
 pub use skill_sequence_discovery::*;
 pub use trainer::InverseMapForward;
