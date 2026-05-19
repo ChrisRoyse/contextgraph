@@ -1,13 +1,22 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::panic::AssertUnwindSafe;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
 use context_graph_mejepa_instruments::materialize::{
     materialize_panel, PanelVectorInput, TimeStep,
 };
-use context_graph_mejepa_instruments::{InstrumentSlot, Panel};
+use context_graph_mejepa_instruments::{
+    CodeInstrumentInput, Diagnostic, DiagnosticSeverity, DiffInstrumentInput, EAstInstrument,
+    ECfgInstrument, ECommitMsgInstrument, EDataFlowInstrument, EDiffInstrument, EOracleInstrument,
+    EProblemInstrument, EReasoningInstrument, ERuntimeInstrument, EStaticAnalysisInstrument,
+    ETestInstrument, ETraceInstrument, ETypeGraphInstrument, EWitnessInstrument, Instrument,
+    InstrumentSlot, OracleVerdict as InstrumentOracleVerdict, Panel, PerTestOutcome,
+    ReasoningEvent, ReasoningInput, RuntimeInput, ScalarInput, ScalarsInstrument,
+    StaticAnalysisInput, TestOutcome, TextInstrumentInput, TraceEvent, TraceEventKind, TraceInput,
+    WitnessChainInput, CANONICAL_WITNESS_FORMAT_VERSION,
+};
 use context_graph_mejepa_tct::{
     gtau_check, EmbedderId as TctEmbedderId, EntityType as TctEntityType, Language as TctLanguage,
     MutationCategory as TctMutationCategory, TctConstellation,
@@ -1176,8 +1185,7 @@ impl MeJepaCompiler {
         context: &TaskContext,
         pause_state: &PauseState,
     ) -> Result<(RealityPrediction, Panel), MejepaInferError> {
-        let panel =
-            materialize_panel(TimeStep::T0, vectors_for(TimeStep::T0, patch, context))?.panel;
+        let panel = materialize_inference_panel(TimeStep::T0, patch, context)?;
         let prediction_id = paused_prediction_id(context, patch, pause_state);
         let outcome_set = crate::types::ConformalSet::try_new(
             vec![OracleOutcome::Abstain],
@@ -1228,11 +1236,7 @@ impl MeJepaCompiler {
         detail: &str,
     ) -> Result<(RealityPrediction, Panel), MejepaInferError> {
         let redacted = redact_patch_bundle(patch)?;
-        let panel = materialize_panel(
-            TimeStep::T0,
-            vectors_for(TimeStep::T0, &redacted.patch, context),
-        )?
-        .panel;
+        let panel = materialize_inference_panel(TimeStep::T0, &redacted.patch, context)?;
         let prediction_id = head_failure_prediction_id(context, patch, head, code);
         let outcome_set = crate::types::ConformalSet::try_new(
             vec![OracleOutcome::Abstain],
@@ -1285,11 +1289,7 @@ impl MeJepaCompiler {
     ) -> Result<(RealityPrediction, Panel), MejepaInferError> {
         entry.validate()?;
         let redacted = redact_patch_bundle(patch)?;
-        let panel = materialize_panel(
-            TimeStep::T0,
-            vectors_for(TimeStep::T0, &redacted.patch, context),
-        )?
-        .panel;
+        let panel = materialize_inference_panel(TimeStep::T0, &redacted.patch, context)?;
         let outcome_set = crate::types::ConformalSet::try_new(
             vec![OracleOutcome::Abstain],
             self.config.alpha,
@@ -1366,10 +1366,13 @@ pub fn materialize_inference_panels(
     patch: &PatchBundle,
     context: &TaskContext,
 ) -> Result<(Panel, Panel, Panel), MejepaInferError> {
+    patch.validate()?;
+    context.validate()?;
+    let inputs = build_inference_panel_inputs(patch, context)?;
     Ok((
-        materialize_panel(TimeStep::T0, vectors_for(TimeStep::T0, patch, context))?.panel,
-        materialize_panel(TimeStep::T1, vectors_for(TimeStep::T1, patch, context))?.panel,
-        materialize_panel(TimeStep::T2, vectors_for(TimeStep::T2, patch, context))?.panel,
+        materialize_panel(TimeStep::T0, vectors_for(TimeStep::T0, &inputs)?)?.panel,
+        materialize_panel(TimeStep::T1, vectors_for(TimeStep::T1, &inputs)?)?.panel,
+        materialize_panel(TimeStep::T2, vectors_for(TimeStep::T2, &inputs)?)?.panel,
     ))
 }
 
@@ -1381,60 +1384,355 @@ pub fn panel_sha(panel: &Panel) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-fn vectors_for(
+fn materialize_inference_panel(
     time_step: TimeStep,
     patch: &PatchBundle,
     context: &TaskContext,
-) -> Vec<PanelVectorInput> {
-    let mut seed = Sha256::new();
-    seed.update(context.task_id.0.as_bytes());
-    seed.update(context.problem_statement.as_bytes());
-    seed.update(patch.patch_sha);
-    seed.update(patch.commit_message.as_bytes());
-    for hunk in &patch.ast_diff.hunks {
-        seed.update(hunk.path.to_string_lossy().as_bytes());
-        seed.update(hunk.before.as_bytes());
-        seed.update(hunk.after.as_bytes());
-    }
-    seed.update(format!("{time_step:?}").as_bytes());
-    let digest: [u8; 32] = seed.finalize().into();
-    let scenario = scenario_code(context);
-    context_graph_mejepa_instruments::materialize::active_slots(time_step)
-        .into_iter()
-        .map(|slot| {
-            let mut vector = deterministic_vector(slot, &digest);
-            if slot == InstrumentSlot::EDiff && !vector.is_empty() {
-                vector[0] = scenario as f32;
-            }
-            PanelVectorInput { slot, vector }
+) -> Result<Panel, MejepaInferError> {
+    patch.validate()?;
+    context.validate()?;
+    let inputs = build_inference_panel_inputs(patch, context)?;
+    Ok(materialize_panel(time_step, vectors_for(time_step, &inputs)?)?.panel)
+}
+
+#[derive(Debug, Clone)]
+struct InferencePanelInputs {
+    before_code: CodeInstrumentInput,
+    after_code: CodeInstrumentInput,
+    diff: DiffInstrumentInput,
+    tests: TextInstrumentInput,
+    problem: TextInstrumentInput,
+    commit: TextInstrumentInput,
+    witness: WitnessChainInput,
+    oracle: InstrumentOracleVerdict,
+    trace: TraceInput,
+    static_analysis: StaticAnalysisInput,
+    runtime: RuntimeInput,
+    reasoning: ReasoningInput,
+    scalars: ScalarInput,
+}
+
+fn build_inference_panel_inputs(
+    patch: &PatchBundle,
+    context: &TaskContext,
+) -> Result<InferencePanelInputs, MejepaInferError> {
+    let language = language_slug(context.language).to_string();
+    let path = panel_source_path(patch);
+    let before_source = panel_source_text(patch, SourceSide::Before)?;
+    let after_source = panel_source_text(patch, SourceSide::After)?;
+    let tests_text = context
+        .tests
+        .iter()
+        .map(|test| test.0.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let changed_lines = changed_line_count(patch)?;
+    let file_count = patch
+        .ast_diff
+        .hunks
+        .iter()
+        .map(|hunk| hunk.path.clone())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let value_hash = hex::encode(sha256_panel_input(patch, context));
+    let runtime_tests = context
+        .tests
+        .iter()
+        .map(|test| PerTestOutcome {
+            test_id: format!("{}::__not_observed__", test.0),
+            outcome: TestOutcome::Skip,
+            runtime_ms: -1,
         })
-        .collect()
+        .collect();
+
+    Ok(InferencePanelInputs {
+        before_code: CodeInstrumentInput {
+            language: language.clone(),
+            path: path.clone(),
+            source: before_source.clone(),
+        },
+        after_code: CodeInstrumentInput {
+            language: language.clone(),
+            path: path.clone(),
+            source: after_source.clone(),
+        },
+        diff: DiffInstrumentInput {
+            language: language.clone(),
+            path: path.clone(),
+            before_source,
+            after_source: after_source.clone(),
+        },
+        tests: TextInstrumentInput {
+            text: tests_text,
+            source_id: format!("{}:tests", context.task_id.0),
+            language: Some(language.clone()),
+        },
+        problem: TextInstrumentInput {
+            text: context.problem_statement.clone(),
+            source_id: format!("{}:problem", context.task_id.0),
+            language: Some(language.clone()),
+        },
+        commit: TextInstrumentInput {
+            text: patch.commit_message.clone(),
+            source_id: format!(
+                "{}:commit:{}",
+                context.task_id.0,
+                hex::encode(patch.patch_sha)
+            ),
+            language: Some(language.clone()),
+        },
+        witness: WitnessChainInput {
+            format_version: CANONICAL_WITNESS_FORMAT_VERSION,
+            chain_bytes: patch.witness_chain_segment.clone(),
+        },
+        oracle: InstrumentOracleVerdict {
+            per_test: runtime_tests,
+            exception: None,
+        },
+        trace: TraceInput {
+            events: vec![TraceEvent {
+                function_id: "mejepa.inference.not_observed".to_string(),
+                line: 1,
+                value_hash,
+                timestamp_ms: 1,
+                kind: TraceEventKind::ValueSnapshot,
+            }],
+        },
+        static_analysis: StaticAnalysisInput {
+            source_text: after_source.clone(),
+            diagnostics: vec![Diagnostic {
+                tool: "mejepa_inference".to_string(),
+                severity: DiagnosticSeverity::Info,
+                category: "static_analysis_not_observed".to_string(),
+                line: 1,
+                column: 1,
+            }],
+            churn_30d: Some(changed_lines.min(u32::MAX as usize) as u32),
+        },
+        runtime: RuntimeInput {
+            wall_time_ms: 0,
+            peak_rss_bytes: 0,
+            exit_code: -1,
+            timed_out: true,
+            coverage_percent: None,
+            network_events: 0,
+            filesystem_writes: 0,
+        },
+        reasoning: ReasoningInput {
+            task_id: context.task_id.0.clone(),
+            transcript: format!(
+                "task_id={}; explicit_problem={}; commit_message={}; tests={}",
+                context.task_id.0,
+                context.problem_statement,
+                patch.commit_message,
+                context
+                    .tests
+                    .iter()
+                    .map(|test| test.0.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            events: vec![ReasoningEvent {
+                actor: "operator_or_agent".to_string(),
+                event_type: "explicit_task_context".to_string(),
+                text: context.problem_statement.clone(),
+            }],
+        },
+        scalars: ScalarInput {
+            bfs_depth: max_path_depth(patch),
+            blame_age_days: 0,
+            churn_lines_30d: changed_lines.min(u32::MAX as usize) as u32,
+            coverage_delta: 0.0,
+            repo_health_score: 0.5,
+            files_touched: file_count.min(u32::MAX as usize) as u32,
+            hunks_touched: patch.ast_diff.hunks.len().min(u32::MAX as usize) as u32,
+        },
+    })
 }
 
-fn deterministic_vector(slot: InstrumentSlot, seed: &[u8; 32]) -> Vec<f32> {
-    let mut out = Vec::with_capacity(slot.dim());
-    for idx in 0..slot.dim() {
-        let byte = seed[idx % seed.len()] as f32 / 255.0;
-        let wave = ((idx as f32 + 1.0) * 0.017 + byte).sin() * 0.05;
-        out.push(byte * 0.10 + wave);
+fn vectors_for(
+    time_step: TimeStep,
+    inputs: &InferencePanelInputs,
+) -> Result<Vec<PanelVectorInput>, MejepaInferError> {
+    let mut vectors = Vec::with_capacity(
+        context_graph_mejepa_instruments::materialize::active_slots(time_step).len(),
+    );
+    match time_step {
+        TimeStep::T0 => {
+            push_code_vectors(&mut vectors, &inputs.before_code)?;
+            vectors.push(encode_vector(&ETestInstrument, &inputs.tests)?);
+            vectors.push(encode_vector(&EProblemInstrument, &inputs.problem)?);
+        }
+        TimeStep::T1 => {
+            push_code_vectors(&mut vectors, &inputs.after_code)?;
+            vectors.push(encode_vector(&ETestInstrument, &inputs.tests)?);
+            vectors.push(encode_vector(&EDiffInstrument, &inputs.diff)?);
+            vectors.push(encode_vector(&EWitnessInstrument, &inputs.witness)?);
+            vectors.push(encode_vector(&EProblemInstrument, &inputs.problem)?);
+            vectors.push(encode_vector(&ECommitMsgInstrument, &inputs.commit)?);
+        }
+        TimeStep::T2 => {
+            push_code_vectors(&mut vectors, &inputs.after_code)?;
+            vectors.push(encode_vector(&ETestInstrument, &inputs.tests)?);
+            vectors.push(encode_vector(&ETraceInstrument, &inputs.trace)?);
+            vectors.push(encode_vector(&EDiffInstrument, &inputs.diff)?);
+            vectors.push(encode_vector(&EWitnessInstrument, &inputs.witness)?);
+            vectors.push(encode_vector(&EOracleInstrument, &inputs.oracle)?);
+            vectors.push(encode_vector(&EProblemInstrument, &inputs.problem)?);
+            vectors.push(encode_vector(&ECommitMsgInstrument, &inputs.commit)?);
+            vectors.push(encode_vector(
+                &EStaticAnalysisInstrument,
+                &inputs.static_analysis,
+            )?);
+            vectors.push(encode_vector(&ERuntimeInstrument, &inputs.runtime)?);
+            vectors.push(encode_vector(&EReasoningInstrument, &inputs.reasoning)?);
+            vectors.push(encode_vector(&ScalarsInstrument, &inputs.scalars)?);
+        }
     }
-    out
+    Ok(vectors)
 }
 
-fn scenario_code(context: &TaskContext) -> u8 {
-    let text = context.problem_statement.as_str();
-    if text.contains("scenario: predicted_failure") {
-        2
-    } else if text.contains("scenario: low_confidence") {
-        3
-    } else if text.contains("scenario: granger_rejection") {
-        4
-    } else if text.contains("scenario: constellation_reject") {
-        5
-    } else if text.contains("scenario: ood") {
-        6
-    } else {
-        1
+fn push_code_vectors(
+    vectors: &mut Vec<PanelVectorInput>,
+    code: &CodeInstrumentInput,
+) -> Result<(), MejepaInferError> {
+    vectors.push(encode_vector(&EAstInstrument, code)?);
+    vectors.push(encode_vector(&ECfgInstrument, code)?);
+    vectors.push(encode_vector(&EDataFlowInstrument, code)?);
+    vectors.push(encode_vector(&ETypeGraphInstrument, code)?);
+    Ok(())
+}
+
+fn encode_vector<I, In>(instrument: &I, input: &In) -> Result<PanelVectorInput, MejepaInferError>
+where
+    I: Instrument<Input = In>,
+{
+    Ok(PanelVectorInput {
+        slot: instrument.slot(),
+        vector: instrument.encode(input)?,
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SourceSide {
+    Before,
+    After,
+}
+
+fn panel_source_text(patch: &PatchBundle, side: SourceSide) -> Result<String, MejepaInferError> {
+    if patch.ast_diff.hunks.len() == 1 {
+        let source = match side {
+            SourceSide::Before => &patch.ast_diff.hunks[0].before,
+            SourceSide::After => &patch.ast_diff.hunks[0].after,
+        };
+        if source.trim().is_empty() {
+            return Err(MejepaInferError::InvalidInput {
+                field: format!("ast_diff.hunks[0].{}", source_side_field(side)),
+                detail: "source text is empty; production panels require real source evidence"
+                    .to_string(),
+            });
+        }
+        return Ok(source.clone());
+    }
+
+    let mut out = String::new();
+    for (idx, hunk) in patch.ast_diff.hunks.iter().enumerate() {
+        let source = match side {
+            SourceSide::Before => &hunk.before,
+            SourceSide::After => &hunk.after,
+        };
+        if source.trim().is_empty() {
+            return Err(MejepaInferError::InvalidInput {
+                field: format!("ast_diff.hunks[{idx}].{}", source_side_field(side)),
+                detail: "source text is empty; production panels require real source evidence"
+                    .to_string(),
+            });
+        }
+        out.push_str(&format!(
+            "\n# MEJEPA_BEGIN_HUNK path={}\n",
+            path_text(&hunk.path)
+        ));
+        out.push_str(source);
+        if !source.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str("# MEJEPA_END_HUNK\n");
+    }
+    Ok(out)
+}
+
+fn source_side_field(side: SourceSide) -> &'static str {
+    match side {
+        SourceSide::Before => "before",
+        SourceSide::After => "after",
+    }
+}
+
+fn panel_source_path(patch: &PatchBundle) -> String {
+    if patch.ast_diff.hunks.len() == 1 {
+        return path_text(&patch.ast_diff.hunks[0].path);
+    }
+    "mejepa_aggregate_patch.py".to_string()
+}
+
+fn path_text(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn changed_line_count(patch: &PatchBundle) -> Result<usize, MejepaInferError> {
+    let mut total = 0usize;
+    for hunk in &patch.ast_diff.hunks {
+        let before = hunk.before.lines().count();
+        let after = hunk.after.lines().count();
+        total =
+            total
+                .checked_add(before.max(after))
+                .ok_or_else(|| MejepaInferError::InvalidInput {
+                    field: "ast_diff.hunks".to_string(),
+                    detail: "changed-line count overflow".to_string(),
+                })?;
+    }
+    Ok(total)
+}
+
+fn max_path_depth(patch: &PatchBundle) -> u32 {
+    patch
+        .ast_diff
+        .hunks
+        .iter()
+        .map(|hunk| hunk.path.components().count())
+        .max()
+        .unwrap_or(0)
+        .min(u32::MAX as usize) as u32
+}
+
+fn sha256_panel_input(patch: &PatchBundle, context: &TaskContext) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(context.task_id.0.as_bytes());
+    hasher.update(context.session_id);
+    hasher.update(context.problem_statement.as_bytes());
+    hasher.update(patch.patch_sha);
+    for hunk in &patch.ast_diff.hunks {
+        hasher.update(path_text(&hunk.path).as_bytes());
+        hasher.update(hunk.before.as_bytes());
+        hasher.update(hunk.after.as_bytes());
+    }
+    hasher.finalize().into()
+}
+
+fn language_slug(language: crate::types::Language) -> &'static str {
+    match language {
+        crate::types::Language::Rust => "rust",
+        crate::types::Language::Python => "python",
+        crate::types::Language::Javascript => "javascript",
+        crate::types::Language::Typescript => "typescript",
+        crate::types::Language::Go => "go",
+        crate::types::Language::Java => "java",
+        crate::types::Language::C => "c",
+        crate::types::Language::Cpp => "cpp",
+        crate::types::Language::CSharp => "csharp",
+        crate::types::Language::Ruby => "ruby",
+        crate::types::Language::Php => "php",
     }
 }
 
@@ -2133,4 +2431,117 @@ fn tct_cell_id(
     entity_type: TctEntityType,
 ) -> String {
     format!("mutation={mutation:?}:language={language:?}:entity={entity_type:?}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gates::{sha256_bytes, valid_witness_segment};
+    use crate::types::{AstDiff, DiffHunk, Language, TaskEnvironment, TaskId, TestId};
+
+    fn sample_patch_context(commit_message: &str) -> (PatchBundle, TaskContext) {
+        let before = "def answer(value: int) -> int:\n    return value + 1\n";
+        let after = "def answer(value: int) -> int:\n    return value + 2\n";
+        let patch = PatchBundle::try_new(
+            AstDiff {
+                hunks: vec![DiffHunk {
+                    path: PathBuf::from("src/example.py"),
+                    pre_sha: sha256_bytes(before.as_bytes()),
+                    post_sha: sha256_bytes(after.as_bytes()),
+                    before: before.to_string(),
+                    after: after.to_string(),
+                }],
+            },
+            valid_witness_segment(),
+            commit_message.to_string(),
+            sha256_bytes(b"stable-patch-sha"),
+        )
+        .expect("sample patch is valid");
+        let context = TaskContext {
+            task_id: TaskId("task-real-panel".to_string()),
+            session_id: [7; 16],
+            language: Language::Python,
+            problem_statement: "verify the answer increment changes by one".to_string(),
+            tests: vec![TestId("tests/test_example.py::test_answer".to_string())],
+            environment: TaskEnvironment {
+                repo_root: PathBuf::from("/zfs/archive/contextgraph/test-repo"),
+                python_version: Some("3.11".to_string()),
+                os: "linux".to_string(),
+            },
+            claim_graph: None,
+            skill_citations: vec![],
+        };
+        (patch, context)
+    }
+
+    #[test]
+    fn inference_panels_match_direct_frozen_encoder_outputs() {
+        let (patch, context) = sample_patch_context("change answer increment");
+        let inputs = build_inference_panel_inputs(&patch, &context).unwrap();
+        let (panel_t0, panel_t1, panel_t2) =
+            materialize_inference_panels(&patch, &context).unwrap();
+
+        let direct_ast = EAstInstrument.encode(&inputs.before_code).unwrap();
+        let direct_test = ETestInstrument.encode(&inputs.tests).unwrap();
+        let direct_diff = EDiffInstrument.encode(&inputs.diff).unwrap();
+        let direct_problem = EProblemInstrument.encode(&inputs.problem).unwrap();
+        let direct_commit = ECommitMsgInstrument.encode(&inputs.commit).unwrap();
+        let direct_oracle = EOracleInstrument.encode(&inputs.oracle).unwrap();
+
+        assert_eq!(panel_t0.slot(InstrumentSlot::EAst), direct_ast.as_slice());
+        assert_eq!(panel_t0.slot(InstrumentSlot::ETest), direct_test.as_slice());
+        assert_eq!(panel_t1.slot(InstrumentSlot::EDiff), direct_diff.as_slice());
+        assert_eq!(
+            panel_t1.slot(InstrumentSlot::EProblem),
+            direct_problem.as_slice()
+        );
+        assert_eq!(
+            panel_t1.slot(InstrumentSlot::ECommitMsg),
+            direct_commit.as_slice()
+        );
+        assert_eq!(
+            panel_t2.slot(InstrumentSlot::EOracle),
+            direct_oracle.as_slice()
+        );
+    }
+
+    #[test]
+    fn changed_commit_message_alters_only_commit_slot_in_t1() {
+        let (patch_a, context) = sample_patch_context("change answer increment");
+        let (patch_b, _) = sample_patch_context("document answer increment precisely");
+        let (_, panel_a, _) = materialize_inference_panels(&patch_a, &context).unwrap();
+        let (_, panel_b, _) = materialize_inference_panels(&patch_b, &context).unwrap();
+
+        for slot in context_graph_mejepa_instruments::materialize::active_slots(TimeStep::T1) {
+            if slot == InstrumentSlot::ECommitMsg {
+                assert_ne!(panel_a.slot(slot), panel_b.slot(slot));
+            } else {
+                assert_eq!(panel_a.slot(slot), panel_b.slot(slot), "slot {slot:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn empty_minimal_source_fails_closed() {
+        let (mut patch, context) = sample_patch_context("change answer increment");
+        patch.ast_diff.hunks[0].before.clear();
+        let err = materialize_inference_panels(&patch, &context).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_INVALID_INPUT");
+    }
+
+    #[test]
+    fn malformed_source_fails_closed_through_instrument_encoder() {
+        let (mut patch, context) = sample_patch_context("change answer increment");
+        patch.ast_diff.hunks[0].after = "def broken(:\n".to_string();
+        let err = materialize_inference_panels(&patch, &context).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_INSTRUMENT");
+    }
+
+    #[test]
+    fn missing_witness_fails_closed_when_witness_slot_becomes_active() {
+        let (mut patch, context) = sample_patch_context("change answer increment");
+        patch.witness_chain_segment.clear();
+        let err = materialize_inference_panels(&patch, &context).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_INSTRUMENT");
+    }
 }

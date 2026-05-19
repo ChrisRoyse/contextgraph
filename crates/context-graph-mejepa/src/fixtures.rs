@@ -14,18 +14,21 @@ pub fn fixture_patch_context(
         .map_err(|source| MejepaInferError::io("create_dir_all", repo_root, source))?;
     let rel_path = PathBuf::from(format!("{scenario}.py"));
     let path = repo_root.join(&rel_path);
-    let bytes = format!("def answer():\n    return '{}'\n", scenario).into_bytes();
-    std::fs::write(&path, &bytes).map_err(|source| MejepaInferError::io("write", &path, source))?;
-    let post_sha = sha256_bytes(&bytes);
+    let before = "def answer():\n    return 'before'\n".to_string();
+    let after = format!("def answer():\n    return '{}'\n", scenario);
+    std::fs::write(&path, after.as_bytes())
+        .map_err(|source| MejepaInferError::io("write", &path, source))?;
+    let pre_sha = sha256_bytes(before.as_bytes());
+    let post_sha = sha256_bytes(after.as_bytes());
     let patch_sha = sha256_bytes(format!("patch:{scenario}").as_bytes());
     let patch = PatchBundle::try_new(
         AstDiff {
             hunks: vec![DiffHunk {
                 path: rel_path,
-                pre_sha: post_sha,
+                pre_sha,
                 post_sha,
-                before: String::new(),
-                after: String::from_utf8(bytes).expect("fixture is UTF-8"),
+                before,
+                after,
             }],
         },
         valid_witness_segment(),
