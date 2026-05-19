@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{ensure, Context, Result};
 use context_graph_mejepa::cli::write_json_0600;
 use context_graph_mejepa::{
-    expected_panel_dim, expected_slot_count, ConstellationObservation,
-    PairwiseRelationshipObservation, PanelId, SlotProvenance,
+    expected_panel_dim, expected_slot_count, ConstellationObservation, ConstellationPanelId,
+    PairwiseRelationshipObservation, SlotProvenance,
 };
 use context_graph_mejepa_instruments::{hash_f32s, InstrumentSlot, Panel, PanelBuilder};
 use serde::{Deserialize, Serialize};
@@ -56,6 +56,7 @@ fn main() -> Result<()> {
         missing_slot_case(&artifacts)?,
         duplicate_slot_case(&artifacts)?,
         wrong_dim_case(&artifacts)?,
+        calibration_cell_drift_case(&artifacts)?,
         non_finite_case(&artifacts)?,
         unknown_field_case(&artifacts)?,
     ];
@@ -108,7 +109,7 @@ fn run_happy_path(artifacts: &Path) -> Result<Value> {
     let (panel, provenance) = panel_fixture(None)?;
     let expected_hashes = expected_hashes(&panel);
     let observation = ConstellationObservation::from_panel(
-        PanelId("synthetic-panel-complete".to_string()),
+        ConstellationPanelId("synthetic-panel-complete".to_string()),
         "synthetic-chunk-complete".to_string(),
         "mutation=known_good|language=python".to_string(),
         &panel,
@@ -159,7 +160,7 @@ fn missing_slot_case(artifacts: &Path) -> Result<EdgeCase> {
     let before = source_state(artifacts)?;
     let (panel, provenance) = panel_fixture(Some(InstrumentSlot::ETrace))?;
     let observation = ConstellationObservation::from_panel(
-        PanelId("synthetic-panel-missing-e-trace".to_string()),
+        ConstellationPanelId("synthetic-panel-missing-e-trace".to_string()),
         "synthetic-chunk-missing".to_string(),
         "mutation=known_good|language=python".to_string(),
         &panel,
@@ -187,7 +188,7 @@ fn duplicate_slot_case(artifacts: &Path) -> Result<EdgeCase> {
     let before = source_state(artifacts)?;
     let (panel, provenance) = panel_fixture(None)?;
     let mut observation = ConstellationObservation::from_panel(
-        PanelId("synthetic-panel-duplicate".to_string()),
+        ConstellationPanelId("synthetic-panel-duplicate".to_string()),
         "synthetic-chunk-duplicate".to_string(),
         "mutation=known_good|language=python".to_string(),
         &panel,
@@ -213,7 +214,7 @@ fn wrong_dim_case(artifacts: &Path) -> Result<EdgeCase> {
     let before = source_state(artifacts)?;
     let (panel, provenance) = panel_fixture(None)?;
     let mut observation = ConstellationObservation::from_panel(
-        PanelId("synthetic-panel-wrong-dim".to_string()),
+        ConstellationPanelId("synthetic-panel-wrong-dim".to_string()),
         "synthetic-chunk-wrong-dim".to_string(),
         "mutation=known_good|language=python".to_string(),
         &panel,
@@ -232,6 +233,32 @@ fn wrong_dim_case(artifacts: &Path) -> Result<EdgeCase> {
         after_state: source_state(artifacts)?,
         observed_error_code: observed.clone(),
         pass: observed.as_deref() == Some("MEJEPA_INFER_DIM_MISMATCH"),
+    })
+}
+
+fn calibration_cell_drift_case(artifacts: &Path) -> Result<EdgeCase> {
+    let before = source_state(artifacts)?;
+    let (panel, provenance) = panel_fixture(None)?;
+    let mut observation = ConstellationObservation::from_panel(
+        ConstellationPanelId("synthetic-panel-calibration-drift".to_string()),
+        "synthetic-chunk-calibration-drift".to_string(),
+        "mutation=known_good|language=python".to_string(),
+        &panel,
+        &provenance,
+        Vec::new(),
+    )?;
+    observation.slots[0].calibration_cell = "mutation=other|language=python".to_string();
+    let observed = observation
+        .validate()
+        .err()
+        .map(|err| err.code().to_string());
+    Ok(EdgeCase {
+        case: "slot_calibration_cell_must_match_observation".to_string(),
+        expected: json!({"errorCode": "MEJEPA_INFER_INVALID_INPUT", "noArtifactWritten": true}),
+        before_state: before,
+        after_state: source_state(artifacts)?,
+        observed_error_code: observed.clone(),
+        pass: observed.as_deref() == Some("MEJEPA_INFER_INVALID_INPUT"),
     })
 }
 
@@ -256,7 +283,7 @@ fn unknown_field_case(artifacts: &Path) -> Result<EdgeCase> {
     let before = source_state(artifacts)?;
     let (panel, provenance) = panel_fixture(None)?;
     let mut value = serde_json::to_value(ConstellationObservation::from_panel(
-        PanelId("synthetic-panel-unknown-field".to_string()),
+        ConstellationPanelId("synthetic-panel-unknown-field".to_string()),
         "synthetic-chunk-unknown-field".to_string(),
         "mutation=known_good|language=python".to_string(),
         &panel,

@@ -70,7 +70,7 @@ Child issue split:
 
 | Issue | Purpose | Why it matters for `0.95` |
 |---|---|---|
-| #386 / TASK-PY-G-086 | Slot-map `ConstellationObservation` schema | Makes each slot/embedder independently addressable at prediction time |
+| #386 / TASK-PY-G-086 | Slot-map `ConstellationObservation` schema | ✅ closed 2026-05-19; makes each slot/embedder independently addressable at prediction time |
 | #387 / TASK-PY-G-087 | Slot-preserving late-fusion predictor | Removes early flat fusion as the predictor's semantic bottleneck |
 | #388 / TASK-PY-G-088 | Real aiwonder cross-embedder correlation tensors | Turns the completed corpus substrate into relationship features |
 | #389 / TASK-PY-G-089 | Per-slot calibration, uncertainty, and OOD | Prevents weak slots from being hidden by aggregate scores |
@@ -86,6 +86,8 @@ Child issue split:
 **#395 FSV status (2026-05-18):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-095-real-corpus-constellation-smoke-fsv/`: 7 spread shards, 12 active embedders, 2,688 packed records, 84 per-cell centroid rows, 66 pairwise relationship rows, 20 candidate failure-shape rows, tiny real-corpus training/inference smoke, and independent readback with `flat_vector_concat_used=false`.
 
 **#396 FSV status (2026-05-18):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/`: 353 real-corpus training rows, 1,440 per-slot vector rows, 2,727 row-pair observations, 66 pairwise relationship rows, and a training certificate with separate slot, pairwise, contradiction, temporal, oracle-alignment, and anti-compensation terms. The certificate joins the 391-shard forward cache to the 300×8 corpus oracle index, proves `flat_vector_concat_used=false`, proves no loss component is only a flat `PANEL_DIM` aggregate, and exposes ablation switches that independently disable slot, pairwise, contradiction, and temporal terms. It correctly refuses promotion: the smoke objective does not beat the local baseline ladder or the historical 0.866667 context.
+
+**#386 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-086-constellation-observation-schema-fsv/`: the Rust `ConstellationObservation` schema enumerates all 15 packed panel slots, preserves slot/embedder IDs, dimensions, offsets, filled/missing state, per-slot vector hashes, provenance, calibration cell, and pairwise relationships separately from the packed 5,120-d layout. Edge cases reject duplicate slots, wrong dimensions, non-finite panels, unknown JSON fields, and calibration-cell drift across observation/provenance/slot rows. Main FSV sha256 `9c1b6b870373472b3f8ab1fb999b6e87c62895c828337f0e2fc687c182e8ce11`.
 
 **#393 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-093-constellation-ablation-suite-fsv/`: the suite consumed #396 arrays and emitted 3 baselines plus 6 ablations. The flat-vector baseline is explicitly comparison-only (`ship_gate_eligible=false`). Every ship-gate-eligible ablation from the current #396 scalar features is demoted against the local baseline ladder: best local baseline Brier `0.008555205797287593`; best ablation `per_slot_pairwise_temporal` has ΔBrier `+0.21353286994717507` and Δcorrelation vs historical `-0.5790619486178568`. Q4, Q5, and OOD measurements are recorded as label gaps rather than inferred: Q4 producers #266-#269/#127, Q5 replay #264/#128, and OOD #389/#276/#129 remain the needed data sources.
 
@@ -193,10 +195,10 @@ All calibration items below are now qualified by #385: their evidence must be pe
 | #180 / TASK-PY-G-038 | MCP RealityPrediction FSV | open |
 | #171 / TASK-PY-G-033 | Fail-closed release switch | open |
 | #374 / TASK-PY-G-077 | Secret holdout Goodhart guard for the 0.95 gate (`type:test-gap`) | open p1 |
-| #376 / TASK-PY-G-076 | Bound oracle noise floor + ship-gate statistical power | open p1 |
+| #376 / TASK-PY-G-076 | Bound oracle noise floor + ship-gate statistical power | ✅ closed 2026-05-19; result `underpowered`, #165/#167 cannot claim `0.95 x 4 windows` yet |
 | #377 / TASK-PY-G-078 | Q4 trust gate must fail closed until label producers train heads | open p1 |
 | #379 / TASK-PY-G-081 | Multi-file structural patch holdout for compositional generalization | open p1 |
-| #381 / TASK-PY-G-080 | Stop-hook self-verify circuit breaker | open p1 |
+| #381 / TASK-PY-G-080 | Stop-hook self-verify circuit breaker | ✅ closed 2026-05-19; bounded BLOCKED artifacts and timeout breaker shipped |
 | #382 / TASK-PY-G-083 | Frozen-panel dimensionality ablation | open p2 |
 | #375 / TASK-PY-G-079 | Consume witness provenance in `RealityPrediction.confidence` | open p2 |
 | #378 / TASK-PY-G-082 | MCP tool-usage telemetry + dead-surface audit | open p2 |
