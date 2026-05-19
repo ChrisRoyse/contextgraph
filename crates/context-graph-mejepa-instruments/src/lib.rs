@@ -53,6 +53,7 @@ pub mod panel_json;
 pub mod panel_store;
 pub mod q4_accuracy_labels;
 pub mod q4_cost_labels;
+pub mod q4_pass_annotations;
 pub mod q4_perf_labels;
 pub mod q4_reasoning_labels;
 pub mod q4_security_labels;
@@ -593,6 +594,13 @@ pub use q4_cost_labels::{
     Q4CostLabelKind, Q4CostLabelStore, Q4CostQuarantine, Q4CostRawOutputPaths, Q4CostRawOutputs,
     Q4CostScanPhase, Q4CostSignalRecord, Q4CostSource, Q4CostToolOutput,
     DEFAULT_Q4_COST_TIMEOUT_SECS,
+};
+pub use q4_pass_annotations::{
+    evaluate_q4_pass_nontrivial, q4_pass_annotation_key, write_q4_pass_weekly_markdown,
+    PersistedQ4PassAnnotation, Q4PassAnnotation, Q4PassAnnotationKind, Q4PassAnnotationStore,
+    Q4PassCellMetric, Q4PassEvaluationReport, Q4PassHeadKind, Q4PassMetricStatus,
+    Q4PassPredictedConcern, Q4PassSeverity, Q4_PASS_CONFIDENCE_THRESHOLD, Q4_PASS_MIN_ANNOTATIONS,
+    Q4_PASS_REGRESSION_DROP_THRESHOLD, Q4_PASS_SCHEMA_VERSION, Q4_PASS_TARGET_NONTRIVIAL_RATE,
 };
 pub use q4_perf_labels::{
     extract_q4_perf_labels, run_q4_perf_tools_with_timeout, write_q4_perf_raw_outputs,
