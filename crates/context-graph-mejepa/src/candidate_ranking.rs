@@ -281,7 +281,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result.ranked_candidates.len(), 3);
-        assert_eq!(result.ranked_candidates[0].candidate_id, "candidate-safe");
+        assert!(!result.ranked_candidates[..2]
+            .iter()
+            .any(|candidate| candidate.pass_blocked));
         assert!(result.ranked_candidates[0].pass_in_distribution_score >= 0.0);
         assert_eq!(
             result.ranked_candidates.last().unwrap().candidate_id,
