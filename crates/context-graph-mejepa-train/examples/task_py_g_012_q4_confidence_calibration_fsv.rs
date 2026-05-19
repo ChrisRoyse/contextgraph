@@ -41,8 +41,9 @@ struct EdgeCase {
 
 #[derive(Debug, Serialize)]
 struct ProducerEvidence {
-    head: &'static str,
-    fsv_path: &'static str,
+    head: String,
+    fsv_path: String,
+    fsv_root: String,
     sha256: String,
     producer_rows: u64,
     usable_for_calibration: bool,
@@ -110,7 +111,7 @@ fn main() -> FsvResult<()> {
         "wallclock_ms",
         producer_rows("perf", &producer_evidence) as usize,
         1,
-        &sha256_file(Path::new(PERF_REPROOF_FSV))?,
+        &producer_sha("perf", &producer_evidence)?,
     );
     reports.push(calibrate_q4_binary_class(
         Q4CalibrationHead::Perf,
@@ -125,7 +126,7 @@ fn main() -> FsvResult<()> {
         "accuracy",
         producer_rows("accuracy", &producer_evidence) as usize,
         1,
-        &sha256_file(Path::new(ACCURACY_FSV))?,
+        &producer_sha("accuracy", &producer_evidence)?,
     );
     reports.push(calibrate_q4_binary_class(
         Q4CalibrationHead::Accuracy,
@@ -140,7 +141,7 @@ fn main() -> FsvResult<()> {
         "dependency_count",
         producer_rows("cost", &producer_evidence) as usize,
         1,
-        &sha256_file(Path::new(COST_REPROOF_FSV))?,
+        &producer_sha("cost", &producer_evidence)?,
     );
     reports.push(calibrate_q4_binary_class(
         Q4CalibrationHead::Cost,
@@ -169,20 +170,23 @@ fn main() -> FsvResult<()> {
     )?);
     all_examples.extend(pass_examples);
 
-    require(
-        "perf fails closed below 100 labels",
-        report_for(&reports, Q4CalibrationHead::Perf).status
-            == Q4CalibrationStatus::InsufficientLabelsForCalibration,
+    require_producer_backed_calibration(
+        "perf",
+        Q4CalibrationHead::Perf,
+        &reports,
+        &producer_evidence,
     )?;
-    require(
-        "accuracy fails closed below 100 labels",
-        report_for(&reports, Q4CalibrationHead::Accuracy).status
-            == Q4CalibrationStatus::InsufficientLabelsForCalibration,
+    require_producer_backed_calibration(
+        "accuracy",
+        Q4CalibrationHead::Accuracy,
+        &reports,
+        &producer_evidence,
     )?;
-    require(
-        "cost fails closed below 100 labels",
-        report_for(&reports, Q4CalibrationHead::Cost).status
-            == Q4CalibrationStatus::InsufficientLabelsForCalibration,
+    require_producer_backed_calibration(
+        "cost",
+        Q4CalibrationHead::Cost,
+        &reports,
+        &producer_evidence,
     )?;
     require(
         "reasoning calibration is trust-supported",
@@ -207,19 +211,17 @@ fn main() -> FsvResult<()> {
         "calibration CF record count moved by reports",
         after_count == before_count + reports.len(),
     )?;
-    let reasoning_key = q4_head_calibration_key(Q4CalibrationHead::Reasoning, "overclaiming");
-    let reasoning_readback = store
-        .get_report(Q4CalibrationHead::Reasoning, "overclaiming")?
-        .ok_or("missing reasoning calibration readback")?;
-    let non_trivial_key =
-        q4_head_calibration_key(Q4CalibrationHead::NonTrivialOnPass, "annotation_match");
-    let non_trivial_readback = store
-        .get_report(Q4CalibrationHead::NonTrivialOnPass, "annotation_match")?
-        .ok_or("missing non-trivial-on-pass calibration readback")?;
+    let calibration_readbacks = calibration_readbacks(&store)?;
     drop(store);
 
     let slots = active_slots_from_per_slot_root(Path::new(Q4_DEFAULT_PER_SLOT_EVIDENCE_ROOT))?;
-    let catalog = update_q4_catalog(&catalog_path, &reports, &slots)?;
+    let catalog = update_q4_catalog(
+        &catalog_path,
+        &reports,
+        &slots,
+        &producer_evidence,
+        &fsv_root,
+    )?;
     let trust_report = q4_trust_gate_report_from_catalog_path(&catalog_path)?;
     let reasoning_ready = trust_report
         .head(Q4HeadKind::Reasoning)
@@ -232,9 +234,15 @@ fn main() -> FsvResult<()> {
         "non-trivial-on-pass head is now ready",
         pass_ready.q4_head_ready,
     )?;
+    let aggregate_expected = ["perf", "accuracy", "cost"]
+        .into_iter()
+        .all(|head| producer_rows(head, &producer_evidence) >= Q4_CONFIDENCE_MIN_LABELS as u64)
+        && report_for(&reports, Q4CalibrationHead::Perf).trust_supported()
+        && report_for(&reports, Q4CalibrationHead::Accuracy).trust_supported()
+        && report_for(&reports, Q4CalibrationHead::Cost).trust_supported();
     require(
-        "aggregate Q4 trust still false because perf/accuracy/cost are insufficient",
-        !trust_report.q4_trust_decision_eligible,
+        "aggregate Q4 trust eligibility matches producer/calibration floor",
+        trust_report.q4_trust_decision_eligible == aggregate_expected,
     )?;
 
     let edge_cases = vec![
@@ -258,10 +266,7 @@ fn main() -> FsvResult<()> {
             "rocksdb_path": rocksdb_path,
             "before_count": before_count,
             "after_count": after_count,
-            "reasoning_key": reasoning_key,
-            "reasoning_readback": reasoning_readback,
-            "non_trivial_on_pass_key": non_trivial_key,
-            "non_trivial_on_pass_readback": non_trivial_readback,
+            "calibration_readbacks": calibration_readbacks,
             "keys": keys,
         },
         "slot_evidence": {
@@ -299,7 +304,7 @@ fn main() -> FsvResult<()> {
             "expected": {
                 "min_labels": Q4_CONFIDENCE_MIN_LABELS,
                 "schema_version": Q4_CONFIDENCE_CALIBRATION_SCHEMA_VERSION,
-                "q4_trust_decision_eligible": false,
+                "q4_trust_decision_eligible": aggregate_expected,
             },
             "after_state": {
                 "producer_evidence": producer_evidence,
@@ -316,7 +321,11 @@ fn main() -> FsvResult<()> {
         "implementation_notes": {
             "fail_closed_policy": "Heads below 100 labels or stale labels persist calibration records but do not update Q4 catalog calibration support.",
             "slot_preserving_policy": "Supported heads cite exact active slots from #389; flat vector concatenation is not accepted as slot evidence.",
-            "residual_risk": "Perf, accuracy, cost, security, and structural Q4 heads still need larger producer harvests before Q4 aggregate trust can become eligible."
+            "residual_risk": if aggregate_expected {
+                "Security and structural Q4 heads remain fail-closed and are not part of aggregate Q4 eligibility until producers exist."
+            } else {
+                "Perf, accuracy, cost, security, and structural Q4 heads still need larger producer harvests before Q4 aggregate trust can become eligible."
+            }
         }
     });
     write_json_checked(&evidence_path, &evidence)?;
@@ -330,19 +339,34 @@ fn main() -> FsvResult<()> {
 }
 
 fn load_producer_evidence() -> FsvResult<Vec<ProducerEvidence>> {
-    let specs = [
-        ("perf", PERF_FSV),
-        ("perf_reproof", PERF_REPROOF_FSV),
-        ("accuracy", ACCURACY_FSV),
-        ("cost", COST_FSV),
-        ("cost_reproof", COST_REPROOF_FSV),
-        ("reasoning", REASONING_FSV),
-        ("non_trivial_on_pass", PASS_FSV),
+    let specs = vec![
+        ("perf", env_path("CG_Q4_CALIBRATION_PERF_FSV", PERF_FSV)),
+        (
+            "perf_reproof",
+            env_path("CG_Q4_CALIBRATION_PERF_REPROOF_FSV", PERF_REPROOF_FSV),
+        ),
+        (
+            "accuracy",
+            env_path("CG_Q4_CALIBRATION_ACCURACY_FSV", ACCURACY_FSV),
+        ),
+        ("cost", env_path("CG_Q4_CALIBRATION_COST_FSV", COST_FSV)),
+        (
+            "cost_reproof",
+            env_path("CG_Q4_CALIBRATION_COST_REPROOF_FSV", COST_REPROOF_FSV),
+        ),
+        (
+            "reasoning",
+            env_path("CG_Q4_CALIBRATION_REASONING_FSV", REASONING_FSV),
+        ),
+        (
+            "non_trivial_on_pass",
+            env_path("CG_Q4_CALIBRATION_PASS_FSV", PASS_FSV),
+        ),
     ];
     specs
         .into_iter()
         .map(|(head, path)| {
-            let doc: Value = serde_json::from_slice(&fs::read(path)?)?;
+            let doc: Value = serde_json::from_slice(&fs::read(&path)?)?;
             require(
                 "producer FSV all_passed",
                 doc.get("all_passed").and_then(Value::as_bool) == Some(true),
@@ -356,9 +380,10 @@ fn load_producer_evidence() -> FsvResult<Vec<ProducerEvidence>> {
                 });
             let usable_for_calibration = producer_rows >= Q4_CONFIDENCE_MIN_LABELS as u64;
             Ok(ProducerEvidence {
-                head,
-                fsv_path: path,
-                sha256: sha256_file(Path::new(path))?,
+                head: head.to_string(),
+                fsv_path: path.display().to_string(),
+                fsv_root: fsv_root_from_path(&path),
+                sha256: sha256_file(&path)?,
                 producer_rows,
                 usable_for_calibration,
                 fail_closed_reason: (!usable_for_calibration).then(|| {
@@ -382,11 +407,48 @@ fn unsupported_heads() -> Vec<(Q4CalibrationHead, &'static str)> {
 }
 
 fn producer_rows(head: &str, evidence: &[ProducerEvidence]) -> u64 {
-    evidence
-        .iter()
-        .find(|item| item.head == head || item.head == format!("{head}_reproof"))
+    best_producer_evidence(head, evidence)
         .map(|item| item.producer_rows)
         .unwrap_or(0)
+}
+
+fn producer_sha(head: &str, evidence: &[ProducerEvidence]) -> FsvResult<String> {
+    Ok(best_producer_evidence(head, evidence)
+        .ok_or_else(|| format!("missing producer evidence for {head}"))?
+        .sha256
+        .clone())
+}
+
+fn best_producer_evidence<'a>(
+    head: &str,
+    evidence: &'a [ProducerEvidence],
+) -> Option<&'a ProducerEvidence> {
+    let reproof = format!("{head}_reproof");
+    evidence
+        .iter()
+        .filter(|item| item.head == head || item.head == reproof)
+        .max_by_key(|item| item.producer_rows)
+}
+
+fn require_producer_backed_calibration(
+    evidence_head: &str,
+    calibration_head: Q4CalibrationHead,
+    reports: &[Q4HeadCalibrationReport],
+    evidence: &[ProducerEvidence],
+) -> FsvResult<()> {
+    let rows = producer_rows(evidence_head, evidence);
+    let report = report_for(reports, calibration_head);
+    if rows >= Q4_CONFIDENCE_MIN_LABELS as u64 {
+        require(
+            &format!("{evidence_head} calibration is trust-supported at producer floor"),
+            report.trust_supported(),
+        )
+    } else {
+        require(
+            &format!("{evidence_head} fails closed below 100 labels"),
+            report.status == Q4CalibrationStatus::InsufficientLabelsForCalibration,
+        )
+    }
 }
 
 fn reasoning_examples(path: &Path) -> FsvResult<Vec<Q4CalibrationExample>> {
@@ -482,30 +544,89 @@ fn update_q4_catalog(
     path: &Path,
     reports: &[Q4HeadCalibrationReport],
     slots: &[String],
+    producer_evidence: &[ProducerEvidence],
+    calibration_root: &Path,
 ) -> FsvResult<Q4EvidenceCatalog> {
     let mut catalog: Q4EvidenceCatalog = if path.exists() {
         serde_json::from_slice(&fs::read(path)?)?
     } else {
         Q4EvidenceCatalog::default()
     };
+    update_head_from_evidence(
+        &mut catalog,
+        Q4HeadKind::Perf,
+        "perf",
+        report_for(reports, Q4CalibrationHead::Perf),
+        producer_evidence,
+        slots,
+        calibration_root,
+    );
+    update_head_from_evidence(
+        &mut catalog,
+        Q4HeadKind::Accuracy,
+        "accuracy",
+        report_for(reports, Q4CalibrationHead::Accuracy),
+        producer_evidence,
+        slots,
+        calibration_root,
+    );
+    update_head_from_evidence(
+        &mut catalog,
+        Q4HeadKind::Cost,
+        "cost",
+        report_for(reports, Q4CalibrationHead::Cost),
+        producer_evidence,
+        slots,
+        calibration_root,
+    );
     update_head(
         &mut catalog,
         Q4HeadKind::Reasoning,
         report_for(reports, Q4CalibrationHead::Reasoning),
-        "/zfs/archive/contextgraph/fsv/task-py-g-050-q4-reasoning-label-producer-fsv/",
-        300,
+        best_producer_evidence("reasoning", producer_evidence)
+            .map(|item| item.fsv_root.as_str())
+            .unwrap_or(
+                "/zfs/archive/contextgraph/fsv/task-py-g-050-q4-reasoning-label-producer-fsv/",
+            ),
+        producer_rows("reasoning", producer_evidence),
         slots,
+        calibration_root,
     );
     update_head(
         &mut catalog,
         Q4HeadKind::NonTrivialOnPass,
         report_for(reports, Q4CalibrationHead::NonTrivialOnPass),
-        "/zfs/archive/contextgraph/fsv/task-py-g-051-q4-non-trivial-on-pass-fsv/",
-        500,
+        best_producer_evidence("non_trivial_on_pass", producer_evidence)
+            .map(|item| item.fsv_root.as_str())
+            .unwrap_or("/zfs/archive/contextgraph/fsv/task-py-g-051-q4-non-trivial-on-pass-fsv/"),
+        producer_rows("non_trivial_on_pass", producer_evidence),
         slots,
+        calibration_root,
     );
     write_json_checked(path, &catalog)?;
     Ok(catalog)
+}
+
+fn update_head_from_evidence(
+    catalog: &mut Q4EvidenceCatalog,
+    head: Q4HeadKind,
+    evidence_head: &str,
+    report: &Q4HeadCalibrationReport,
+    producer_evidence: &[ProducerEvidence],
+    slots: &[String],
+    calibration_root: &Path,
+) {
+    if let Some(evidence) = best_producer_evidence(evidence_head, producer_evidence) {
+        update_head(
+            catalog,
+            head,
+            report,
+            &evidence.fsv_root,
+            evidence.producer_rows,
+            slots,
+            calibration_root,
+        );
+    }
 }
 
 fn update_head(
@@ -515,6 +636,7 @@ fn update_head(
     producer_root: &str,
     producer_rows: u64,
     slots: &[String],
+    calibration_root: &Path,
 ) {
     if report.trust_supported() {
         catalog.heads.insert(
@@ -522,13 +644,39 @@ fn update_head(
             Q4HeadEvidence {
                 producer_fsv_root: Some(producer_root.to_string()),
                 producer_rows,
-                calibration_fsv_root: Some(format!("{}/", FSV_ROOT.trim_end_matches('/'))),
+                calibration_fsv_root: Some(canonical_root(calibration_root)),
                 calibration_rows: report.label_count as u64,
                 per_slot_evidence_root: Some(Q4_DEFAULT_PER_SLOT_EVIDENCE_ROOT.to_string()),
                 slots_with_evidence: slots.to_vec(),
             },
         );
     }
+}
+
+fn calibration_readbacks(store: &Q4HeadCalibrationStore) -> FsvResult<BTreeMap<String, Value>> {
+    let specs = [
+        (Q4CalibrationHead::Perf, "wallclock_ms"),
+        (Q4CalibrationHead::Accuracy, "accuracy"),
+        (Q4CalibrationHead::Cost, "dependency_count"),
+        (Q4CalibrationHead::Reasoning, "overclaiming"),
+        (Q4CalibrationHead::NonTrivialOnPass, "annotation_match"),
+    ];
+    let mut readbacks = BTreeMap::new();
+    for (head, class_name) in specs {
+        let key = q4_head_calibration_key(head, class_name);
+        let readback = store.get_report(head, class_name)?;
+        readbacks.insert(
+            key.clone(),
+            json!({
+                "key": key,
+                "present": readback.is_some(),
+                "status": readback.as_ref().map(|row| row.report.status),
+                "label_count": readback.as_ref().map(|row| row.report.label_count),
+                "trust_supported": readback.as_ref().is_some_and(|row| row.report.trust_supported()),
+            }),
+        );
+    }
+    Ok(readbacks)
 }
 
 fn report_for(
@@ -686,6 +834,20 @@ fn write_json_checked<T: Serialize>(path: &Path, value: &T) -> FsvResult<()> {
 
 fn sha256_file(path: &Path) -> FsvResult<String> {
     Ok(format!("{:x}", Sha256::digest(&fs::read(path)?)))
+}
+
+fn fsv_root_from_path(path: &Path) -> String {
+    path.parent()
+        .map(canonical_root)
+        .unwrap_or_else(|| canonical_root(path))
+}
+
+fn canonical_root(path: &Path) -> String {
+    let mut raw = path.display().to_string();
+    if !raw.ends_with('/') {
+        raw.push('/');
+    }
+    raw
 }
 
 fn require(name: &str, condition: bool) -> FsvResult<()> {

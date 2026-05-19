@@ -6,6 +6,7 @@ use context_graph_mejepa_instruments::{
 };
 use context_graph_mejepa_train::labels::q4_accuracy_labels_to_prediction_surfaces;
 use serde_json::{json, Value};
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -20,9 +21,33 @@ fn main() -> FsvResult<()> {
         .duration_since(UNIX_EPOCH)?
         .as_millis()
         .to_string();
-    let fsv_root =
-        PathBuf::from("/zfs/archive/contextgraph/fsv/task-py-g-048-q4-accuracy-label-producer-fsv");
-    let raw_root = PathBuf::from("/zfs/archive/contextgraph/corpus/python-q4-accuracy-labels-v1");
+    let task = env::var("CG_Q4_ACCURACY_FSV_TASK").unwrap_or_else(|_| "TASK-PY-G-048".to_string());
+    let issue = env::var("CG_Q4_ACCURACY_FSV_ISSUE")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(267);
+    let row_prefix =
+        env::var("CG_Q4_ACCURACY_ROW_PREFIX").unwrap_or_else(|_| "task-py-g-048".to_string());
+    let evidence_name = env::var("CG_Q4_ACCURACY_FSV_EVIDENCE_NAME")
+        .unwrap_or_else(|_| "q4_accuracy_label_producer_fsv.json".to_string());
+    let producer_fixture_rows = env_u64("CG_Q4_ACCURACY_PRODUCER_FIXTURE_ROWS", 100)?;
+    let producer_rows_min = env_u64("CG_Q4_ACCURACY_PRODUCER_ROWS_MIN", 100)?;
+    require(
+        "producer fixture row count must be positive",
+        producer_fixture_rows > 0,
+    )?;
+    let fsv_root = env_path(
+        "CG_Q4_ACCURACY_FSV_ROOT",
+        "/zfs/archive/contextgraph/fsv/task-py-g-048-q4-accuracy-label-producer-fsv",
+    );
+    let raw_root = env_path(
+        "CG_Q4_ACCURACY_RAW_ROOT",
+        "/zfs/archive/contextgraph/corpus/python-q4-accuracy-labels-v1",
+    );
+    let catalog_producer_fsv_root = env_path(
+        "CG_Q4_ACCURACY_CATALOG_PRODUCER_ROOT",
+        "/zfs/archive/contextgraph/fsv/task-py-g-048-q4-accuracy-label-producer-fsv/",
+    );
     let catalog_path =
         PathBuf::from("/zfs/archive/contextgraph/state/q4-trust-gate/evidence-catalog.json");
     fs::create_dir_all(&fsv_root)?;
@@ -32,8 +57,8 @@ fn main() -> FsvResult<()> {
     }
 
     let rocksdb_path = fsv_root.join(format!("q4-accuracy-labels-{run_id}.rocksdb"));
-    let evidence_path = fsv_root.join("q4_accuracy_label_producer_fsv.json");
-    let row_id = format!("task-py-g-048-{run_id}");
+    let evidence_path = fsv_root.join(evidence_name);
+    let row_id = format!("{row_prefix}-{run_id}");
     let fixture_root = fsv_root.join(format!("fixture-{run_id}"));
     let fixture_script = write_accuracy_fixture(&fixture_root)?;
 
@@ -67,8 +92,8 @@ fn main() -> FsvResult<()> {
     let mut producer_rows = 0_u64;
     producer_rows += persist_extraction(&store, &extraction)? as u64;
     let mut raw_artifact_rows = 1_u64;
-    for idx in 0..29 {
-        let row_source = happy_source(&format!("task-py-g-048-{run_id}-producer-{idx:02}"));
+    for idx in 0..producer_fixture_rows.saturating_sub(1) {
+        let row_source = happy_source(&format!("{row_prefix}-{run_id}-producer-{idx:02}"));
         let row_outputs = run_fixture_outputs(
             &fixture_root,
             &fixture_script,
@@ -83,7 +108,10 @@ fn main() -> FsvResult<()> {
     }
     store.flush()?;
     let after_count = store.count_records()?;
-    require("producer row minimum met", producer_rows >= 30)?;
+    require(
+        "producer row minimum met",
+        producer_rows >= producer_rows_min,
+    )?;
     require(
         "store count moved by producer rows",
         after_count == before_count + producer_rows as usize,
@@ -153,7 +181,7 @@ fn main() -> FsvResult<()> {
     )?;
     drop(quarantine_reopened);
 
-    let catalog = update_q4_catalog(&catalog_path, producer_rows)?;
+    let catalog = update_q4_catalog(&catalog_path, producer_rows, &catalog_producer_fsv_root)?;
     let trust_report = q4_trust_gate_report_from_catalog_path(&catalog_path)?;
     let accuracy_readiness = trust_report
         .head(Q4HeadKind::Accuracy)
@@ -168,8 +196,8 @@ fn main() -> FsvResult<()> {
     )?;
 
     let evidence = json!({
-        "task": "TASK-PY-G-048",
-        "issue": 267,
+        "task": task,
+        "issue": issue,
         "all_passed": true,
         "source_of_truth": {
             "raw_output_root": raw_root,
@@ -180,6 +208,7 @@ fn main() -> FsvResult<()> {
             "cf": context_graph_mejepa_cf::CF_MEJEPA_Q4_ACCURACY_LABELS,
             "evidence_path": evidence_path,
             "q4_catalog_path": catalog_path,
+            "q4_catalog_producer_fsv_root": catalog_producer_fsv_root,
             "fsv_root": fsv_root,
         },
         "happy_path": {
@@ -189,7 +218,7 @@ fn main() -> FsvResult<()> {
                 "metric": "accuracy",
                 "delta_pct": -8.79,
                 "regression": true,
-                "producer_rows_min": 30,
+                "producer_rows_min": producer_rows_min,
                 "trusted_without_calibration": false,
             },
             "after_state": {
@@ -211,6 +240,7 @@ fn main() -> FsvResult<()> {
         },
         "edge_cases": edge_cases,
         "implementation_notes": {
+            "producer_fixture_rows": producer_fixture_rows,
             "direction_rule": "higher-is-better metrics regress on negative deltas; lower-is-better loss/error metrics regress on positive deltas",
             "unstable_seed_rule": "stddev above fixed-seed threshold quarantines instead of inventing a stable label",
             "trust_boundary": "producer rows alone do not unlock trusted Q4 accuracy; #127 calibration and separately verified slot evidence remain required",
@@ -232,4 +262,20 @@ fn main() -> FsvResult<()> {
     )?;
     println!("{}", serde_json::to_string_pretty(&readback)?);
     Ok(())
+}
+
+fn env_path(var: &str, default: &str) -> PathBuf {
+    env::var_os(var)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(default))
+}
+
+fn env_u64(var: &str, default: u64) -> FsvResult<u64> {
+    match env::var(var) {
+        Ok(raw) => raw
+            .parse::<u64>()
+            .map_err(|err| format!("{var} must be a u64: {err}").into()),
+        Err(env::VarError::NotPresent) => Ok(default),
+        Err(err) => Err(format!("{var} unreadable: {err}").into()),
+    }
 }

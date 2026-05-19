@@ -19,8 +19,8 @@ use q4_trust_gate_support::{
 };
 
 pub const Q4_TRUST_GATE_SCHEMA_VERSION: u32 = 1;
-pub const Q4_DEFAULT_MIN_PRODUCER_ROWS: u64 = 30;
-pub const Q4_DEFAULT_MIN_CALIBRATION_ROWS: u64 = 30;
+pub const Q4_DEFAULT_MIN_PRODUCER_ROWS: u64 = 100;
+pub const Q4_DEFAULT_MIN_CALIBRATION_ROWS: u64 = 100;
 pub const Q4_DEFAULT_REQUIRED_SLOT_COUNT: usize = 12;
 pub const Q4_DEFAULT_EVIDENCE_CATALOG_PATH: &str =
     "/zfs/archive/contextgraph/state/q4-trust-gate/evidence-catalog.json";

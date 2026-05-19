@@ -30,6 +30,12 @@ fn main() -> FsvResult<()> {
         env::var("CG_Q4_COST_ROW_PREFIX").unwrap_or_else(|_| "task-py-g-049".to_string());
     let evidence_name = env::var("CG_Q4_COST_FSV_EVIDENCE_NAME")
         .unwrap_or_else(|_| "q4_cost_label_producer_fsv.json".to_string());
+    let producer_fixture_rows = env_u64("CG_Q4_COST_PRODUCER_FIXTURE_ROWS", 34)?;
+    let producer_rows_min = env_u64("CG_Q4_COST_PRODUCER_ROWS_MIN", 100)?;
+    require(
+        "producer fixture row count must be positive",
+        producer_fixture_rows > 0,
+    )?;
     let fsv_root = env_path(
         "CG_Q4_COST_FSV_ROOT",
         "/zfs/archive/contextgraph/fsv/task-py-g-049-q4-cost-label-producer-fsv",
@@ -38,8 +44,10 @@ fn main() -> FsvResult<()> {
         "CG_Q4_COST_RAW_ROOT",
         "/zfs/archive/contextgraph/corpus/python-q4-cost-labels-v1",
     );
-    let catalog_producer_fsv_root =
-        PathBuf::from("/zfs/archive/contextgraph/fsv/task-py-g-049-q4-cost-label-producer-fsv/");
+    let catalog_producer_fsv_root = env_path(
+        "CG_Q4_COST_CATALOG_PRODUCER_ROOT",
+        "/zfs/archive/contextgraph/fsv/task-py-g-049-q4-cost-label-producer-fsv/",
+    );
     let catalog_path =
         PathBuf::from("/zfs/archive/contextgraph/state/q4-trust-gate/evidence-catalog.json");
     fs::create_dir_all(&fsv_root)?;
@@ -87,7 +95,7 @@ fn main() -> FsvResult<()> {
     let mut producer_rows = 0_u64;
     producer_rows += persist_extraction(&store, &extraction)? as u64;
     let mut raw_artifact_rows = 1_u64;
-    for idx in 0..29 {
+    for idx in 0..producer_fixture_rows.saturating_sub(1) {
         let row_source = happy_source(&format!("{row_prefix}-{run_id}-producer-{idx:02}"));
         let row_outputs = run_fixture_outputs(&fixture_root, &fixture_script, "pre", "post")?;
         write_q4_cost_raw_outputs(&raw_root, &row_source.corpus_row_id, &row_outputs)?;
@@ -107,7 +115,10 @@ fn main() -> FsvResult<()> {
     producer_rows += persist_extraction(&store, &alternate_extraction)? as u64;
     store.flush()?;
     let after_count = store.count_records()?;
-    require("producer row minimum met", producer_rows >= 30)?;
+    require(
+        "producer row minimum met",
+        producer_rows >= producer_rows_min,
+    )?;
     require(
         "store count moved by producer rows",
         after_count == before_count + producer_rows as usize,
@@ -256,7 +267,7 @@ fn main() -> FsvResult<()> {
                 "after": 14.0,
                 "delta": 2.0,
                 "regression": true,
-                "producer_rows_min": 30,
+                "producer_rows_min": producer_rows_min,
                 "trusted_without_calibration": false,
             },
             "after_state": {
@@ -282,6 +293,7 @@ fn main() -> FsvResult<()> {
         },
         "edge_cases": edge_cases,
         "implementation_notes": {
+            "producer_fixture_rows": producer_fixture_rows,
             "direction_rule": "positive cost deltas are regressions; negative cost deltas are improvements and do not emit regression surfaces",
             "missing_precondition_rule": "missing dependency manifests do not synthesize zero dependency labels",
             "noisy_walltime_rule": "CI-minute CV above 0.20 quarantines only the CI-minute label and leaves independent dependency/wheel labels usable",
@@ -308,4 +320,14 @@ fn env_path(var: &str, default: &str) -> PathBuf {
     env::var_os(var)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(default))
+}
+
+fn env_u64(var: &str, default: u64) -> FsvResult<u64> {
+    match env::var(var) {
+        Ok(raw) => raw
+            .parse::<u64>()
+            .map_err(|err| format!("{var} must be a u64: {err}").into()),
+        Err(env::VarError::NotPresent) => Ok(default),
+        Err(err) => Err(format!("{var} unreadable: {err}").into()),
+    }
 }

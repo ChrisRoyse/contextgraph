@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn missing_support_fails_closed() {
-    let report = default_q4_trust_gate_report().unwrap();
+    let report = evaluate_q4_trust_gate(&Q4EvidenceCatalog::default()).unwrap();
     assert!(!report.q4_head_ready);
     assert!(!report.q4_trust_decision_eligible);
     assert!(report.heads.iter().all(|head| !head.trusted_in_decision));
