@@ -614,8 +614,19 @@ impl Handlers {
             )?;
             let session_known =
                 context_graph_mejepa::MejepaStore::session_known(&store, session_id)?;
+            let q4_trust_gate = context_graph_mejepa::default_q4_trust_gate_report()?;
+            let q4 = predictions
+                .iter()
+                .map(|prediction| {
+                    let trusted =
+                        context_graph_mejepa::trusted_q4_consequences(prediction, &q4_trust_gate);
+                    q4_projection(prediction, &q4_trust_gate, &trusted)
+                })
+                .collect::<Vec<_>>();
             Ok::<serde_json::Value, context_graph_mejepa::MejepaInferError>(json!({
                 "predictions": predictions,
+                "q4TrustGate": q4_trust_gate,
+                "q4": q4,
                 "session_known": session_known
             }))
         })();
@@ -2442,6 +2453,10 @@ fn run_explain_prediction(
     let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
     let prediction = find_prediction_by_id(db.as_ref(), prediction_id)?;
     let saliency = saliency_by_chunk(&prediction)?;
+    let q4_trust_gate =
+        context_graph_mejepa::default_q4_trust_gate_report().context("evaluate Q4 trust gate")?;
+    let trusted_q4 = context_graph_mejepa::trusted_q4_consequences(&prediction, &q4_trust_gate);
+    let q4 = q4_projection(&prediction, &q4_trust_gate, &trusted_q4);
     let fingerprint_references = if request.include_fingerprint_references {
         fingerprint_references_for_prediction(
             db.as_ref(),
@@ -2479,6 +2494,9 @@ fn run_explain_prediction(
         "accuracyDegradations": prediction.predicted_accuracy_degradations,
         "costRegressions": prediction.predicted_cost_regressions,
         "reasoningClass": prediction.predicted_reasoning_class,
+        "q4": q4,
+        "q4TrustGate": &q4_trust_gate,
+        "trustedQ4Consequences": &trusted_q4,
         "agentClaimGraph": prediction.agent_claim_graph,
         "claimReconciliation": prediction.claim_reconciliation,
         "realityImpact": prediction.reality_impact,
@@ -2501,6 +2519,10 @@ fn run_inspect_prediction(
     let saliency = saliency_by_chunk(&row.prediction)?;
     let contributing_chunks = inspect_contributing_chunks(db.as_ref(), &row.prediction, &saliency)?;
     let granger_mean = mean_prediction_attestation(&row.prediction.granger_attestations);
+    let q4_trust_gate =
+        context_graph_mejepa::default_q4_trust_gate_report().context("evaluate Q4 trust gate")?;
+    let trusted_q4 = context_graph_mejepa::trusted_q4_consequences(&row.prediction, &q4_trust_gate);
+    let q4 = q4_projection(&row.prediction, &q4_trust_gate, &trusted_q4);
 
     Ok(json!({
         "predictionId": request.prediction_id,
@@ -2569,6 +2591,9 @@ fn run_inspect_prediction(
             "perSlotOodReasonCount": row.prediction.per_slot_ood_reasons.len()
         },
         "contributingChunks": contributing_chunks,
+        "q4": q4,
+        "q4TrustGate": &q4_trust_gate,
+        "trustedQ4Consequences": &trusted_q4,
         "prediction": row.prediction,
         "sourceOfTruth": {
             "dbPath": db_path.display().to_string(),
@@ -2579,6 +2604,37 @@ fn run_inspect_prediction(
             "readbackVerified": true
         }
     }))
+}
+
+fn q4_projection(
+    prediction: &RealityPrediction,
+    trust_gate: &context_graph_mejepa::Q4TrustGateReport,
+    trusted: &context_graph_mejepa::TrustedQ4Consequences,
+) -> Value {
+    json!({
+        "rawObservations": q4_raw_observations(prediction),
+        "trustGate": trust_gate,
+        "trustedConsequences": trusted,
+        "policy": "raw Q4 observations are display-only until the matching head is ready"
+    })
+}
+
+fn q4_raw_observations(prediction: &RealityPrediction) -> Value {
+    json!({
+        "perfRegressions": &prediction.predicted_perf_regressions,
+        "securityConcerns": &prediction.predicted_security_concerns,
+        "accuracyDegradations": &prediction.predicted_accuracy_degradations,
+        "costRegressions": &prediction.predicted_cost_regressions,
+        "reasoningClass": prediction.predicted_reasoning_class,
+        "counts": {
+            "perf": prediction.predicted_perf_regressions.len(),
+            "security": prediction.predicted_security_concerns.len(),
+            "accuracy": prediction.predicted_accuracy_degradations.len(),
+            "cost": prediction.predicted_cost_regressions.len(),
+            "reasoning": 1
+        },
+        "trustedForDecision": false
+    })
 }
 
 fn file_sha_snapshot(

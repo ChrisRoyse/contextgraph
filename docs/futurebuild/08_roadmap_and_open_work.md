@@ -33,7 +33,7 @@ By phase label:
 
 | Label | Open count | Notes |
 |---|---|---|
-| `phase:g` | 73 | Ship-gate convergence work (this is the critical path) |
+| `phase:g` | 72 | Ship-gate convergence work (this is the critical path) |
 | `phase:migration` | 4 | Aiwonder migration / durability follow-ups |
 | `phase:f-followup` | 1 | #312 hot_root on ext4 throughput (perf followup) |
 | `phase:f` | 0 (closed as of 2026-05-13) | — |
@@ -45,7 +45,7 @@ By priority:
 | Priority | Open count | Examples |
 |---|---|---|
 | `priority:p0` | 5 | #385 slot-preserving constellation refactor, #310 META issue refactor, #372 aiwonder ZFS mount enforcement, #383 evidence-weighted issue ordering, #397 consequence-prediction contract |
-| `priority:p1` | 24 | Calibration, adversarial defense, Q4 head training, multi-file holdout, off-host backup |
+| `priority:p1` | 23 | Calibration, adversarial defense, Q4 head training, multi-file holdout, off-host backup |
 | `priority:p2` | 40 | EK series tail, post-ship policies, refined sub-tasks, frozen-panel dimensionality ablation, tool-usage telemetry |
 | `priority:p3` | 9 | Deferred (SWE-bench Verified subset, sample-efficiency, v2 stretch tasks, future Docker image plan) |
 
@@ -101,12 +101,14 @@ Child issue split:
 
 **#394 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-094-anti-compensation-fsv/`: the suite consumes #388 tensor dimensions and #389 slot/pair calibration, emits six adversarial fixtures, and proves corrupted/missing/stale/dimension-shifted slots, contradictory pair relationships, and temporal slot jumps all remain non-ship-gate-eligible even when aggregate normalized scores would pass. The FSV writes direct readback of prediction, OOD, Gτ, Q4, active-learning, and explanation surfaces. Main FSV sha256 `57f710b98fab31d2548bc6da8397487ac960f7cd02d9659df5335f0b017d32a1`; report sha256 `1d68f304dfc2356633596e05eacdf3ae61f89a053fd5c224a830cb9ea9477047`.
 
+**#377 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-078-q4-trust-gate-fsv/`: the Rust Q4 trust gate now separates `q4.rawObservations` from `q4.trustedConsequences` on MCP prediction/reporting surfaces and fails closed until each Q4 head has producer rows, #127 calibration rows, and exact active-slot evidence for `e1,e2,e3,e4,e6,e7,e8,e9,e10,e12,e13,e14`. Boundary cases prove missing support, producer-without-calibration, calibration-without-slots, wrong slot names, and partial head support cannot unlock aggregate Q4 trust. A durable catalog fixture proves future producer evidence can unlock readiness through `/zfs/archive/contextgraph/state/q4-trust-gate/evidence-catalog.json` without changing code. Main FSV sha256 `0af1726a6e104e7cb70c694c22e40a91b96dc6c323b3679f827d86617aeca30a`; independent readback sha256 `5d4b752ec5fca9eda24fe78dbee649e9a00cb20c1435e3a2f65860886f75bcaa`.
+
 **Ordering update from #388/#389/#393/#398/#394/#387 (locked in by #383 / TASK-PY-G-084):** the slot-preserving architecture is now enforced in the live predictor path, but the current #396/#388/#389 calibrated feature family is still not promotion-worthy. The richer slot/pair calibration readout is architecturally correct and aggregate-compensation regressions are blocked, but the ablation evidence shows this path does not close the 0.083 correlation gap by itself. **The next gate-moving work, in evidence-weighted order, is:**
 
 1. **Train the missing label producers** so calibration is no longer the bottleneck.
    - Q4 producers — #266 TASK-PY-G-047 (perf), #267 TASK-PY-G-048 (accuracy), #268 TASK-PY-G-049 (cost), #269 TASK-PY-G-050 (reasoning).
    - Q4 calibration consumer — #127 TASK-PY-G-012.
-   - Q4 fail-closed trust gate — #377 TASK-PY-G-078 (Q4 head must refuse until trained).
+   - Q4 fail-closed trust gate — #377 TASK-PY-G-078 is closed; Q4 heads now refuse trust until producer/calibration/exact-slot evidence is present.
 2. **Wire Q5 shift-log replay** — #264 TASK-PY-G-045 + #128 TASK-PY-G-013 calibration consumer.
 3. **Calibrate OOD on harvested + synthetic** — #129 TASK-PY-G-014 (now consumes the closed #276 harvest evidence) + #130 TASK-PY-G-015 Gτ guard audit.
 4. **Per-head contradiction calibration** — #263 TASK-PY-G-044.
@@ -133,6 +135,7 @@ Child issue split:
 | #398 calibrated ablation artifacts | `/zfs/archive/contextgraph/fsv/task-py-g-097-constellation-ablation-with-calibration-fsv/artifacts/` | Report sha256 `a65b320ac08208d26eaeb57eefb90e7bdd5e994d0662527edb399d7ffa06ed35`; metrics sha256 `dc4e3cbe7ec2f95e029030e4fc9550f8a01791267c6b6618d5482bfe4937ad11`; independent readback sha256 `8b1c0f147692179ce3e50b29a90208dcf143ba8e666f8869d588f4801799d0b6`; external edge readback sha256 `bc7fa442c8e05aa9b5574e3d2a9e95465bc8eedc01282fcb80bf3220964ce473` |
 | #276 OOD harvest FSV | `/zfs/archive/contextgraph/fsv/task-py-g-057-ood-harvest-fsv/run-20260519T022705Z/ood_harvest_fsv.json` | PASS evidence for TASK-PY-G-057; sha256 `bc3f9519f157f657fba9fea573fb2dfef4c256221f6a4ffdfec949e88b987b60`; validates harvest/calibration/active-learning CF readback |
 | #374 secret holdout guard FSV | `/zfs/archive/contextgraph/fsv/task-py-g-077-secret-holdout-fsv/python_secret_holdout_fsv.json` | PASS protocol evidence with current fail-closed result `underpowered`; sha256 `16c1a5a68fe2c79616410ad204e7843c86f5da333b7662772fd3e0d8c814233e`; independent readback sha256 `0a429bc62b95ac25f198acd04822c81744632c628a5dc8e6b8c552fb80205e03` |
+| #377 Q4 trust gate FSV | `/zfs/archive/contextgraph/fsv/task-py-g-078-q4-trust-gate-fsv/q4_trust_gate_fsv.json` | PASS evidence for TASK-PY-G-078; sha256 `0af1726a6e104e7cb70c694c22e40a91b96dc6c323b3679f827d86617aeca30a`; independent readback sha256 `5d4b752ec5fca9eda24fe78dbee649e9a00cb20c1435e3a2f65860886f75bcaa`; future producers write readiness catalog at `/zfs/archive/contextgraph/state/q4-trust-gate/evidence-catalog.json` |
 
 ### 3.1 Q4 head training (Phase G §2 producers — heads exist as schema fields but lack training data pipelines)
 
@@ -145,6 +148,8 @@ Child issue split:
 | #118 / TASK-PY-G-003 | Per-head Q1-Q5 distillation training step | all heads | open |
 | #270 / TASK-PY-G-051 | Q4 non-trivial-on-Pass calibration | always-on Q4 validation | open |
 | #292 / TASK-PY-G-073 | Predicted-Works head + sub-heads | explicit positive assertions | ✅ closed 2026-05-18 |
+
+**Trust boundary:** #377 is closed and makes all raw Q4 observations display-only until the relevant producer issue plus #127 calibration and exact 12-active-slot evidence are present in the Q4 evidence catalog. Producer issues #266-#270 must write their per-head rows and link their FSV roots back to `/zfs/archive/contextgraph/state/q4-trust-gate/evidence-catalog.json`.
 
 ### 3.2 Q5 shift-log replay (#264 / TASK-PY-G-045)
 
@@ -200,7 +205,7 @@ All calibration items below are now qualified by #385: their evidence must be pe
 | #171 / TASK-PY-G-033 | Fail-closed release switch | open |
 | #374 / TASK-PY-G-077 | Secret holdout Goodhart guard for the 0.95 gate (`type:test-gap`) | ✅ closed 2026-05-19; protocol PASS, current result `underpowered` |
 | #376 / TASK-PY-G-076 | Bound oracle noise floor + ship-gate statistical power | ✅ closed 2026-05-19; result `underpowered`, #165/#167 cannot claim `0.95 x 4 windows` yet |
-| #377 / TASK-PY-G-078 | Q4 trust gate must fail closed until label producers train heads | open p1 |
+| #377 / TASK-PY-G-078 | Q4 trust gate must fail closed until label producers train heads | ✅ closed 2026-05-19; FSV PASS |
 | #379 / TASK-PY-G-081 | Multi-file structural patch holdout for compositional generalization | open p1 |
 | #381 / TASK-PY-G-080 | Stop-hook self-verify circuit breaker | ✅ closed 2026-05-19; bounded BLOCKED artifacts and timeout breaker shipped |
 | #382 / TASK-PY-G-083 | Frozen-panel dimensionality ablation | open p2 |
