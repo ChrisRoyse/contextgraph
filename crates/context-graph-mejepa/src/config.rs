@@ -122,6 +122,7 @@ pub const INFER_DEFAULT_BOOTSTRAP_DELTA_XI: f32 = 0.50;
 pub const INFER_DEFAULT_TRAIN_CERT_WINDOW_STEPS: usize = 128;
 pub const INFER_DEFAULT_INSTRUMENT_CACHE_CAPACITY: usize = 4096;
 pub const INFER_DEFAULT_REQUIRE_DDA_FEATURES: bool = false;
+pub const INFER_DEFAULT_REQUIRE_OOD_CALIBRATOR: bool = false;
 pub const INFER_DEFAULT_DDA_EXPECTED_EMBEDDER_COUNT: usize = 0;
 pub const INFER_MAX_DDA_EXPECTED_EMBEDDER_COUNT: usize = 256;
 pub const INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT: u32 = 50;
@@ -142,6 +143,11 @@ pub struct MeJepaInferConfig {
     pub train_cert_window_steps: usize,
     pub instrument_cache_capacity: usize,
     pub require_dda_features: bool,
+    /// When true, `mejepa_verify` must consume a selected
+    /// `CF_MEJEPA_OOD_CALIBRATIONS` row; missing/corrupt/unselected
+    /// calibration fails closed instead of falling back to the static
+    /// `ood_refuse_threshold`.
+    pub require_ood_calibrator: bool,
     /// `0` means infer the count from the first persisted DDA row and require
     /// every covered chunk to match it. Production callers should set this to
     /// the active routed embedder count, currently 12 for Phase D.
@@ -174,6 +180,7 @@ impl Default for MeJepaInferConfig {
             train_cert_window_steps: INFER_DEFAULT_TRAIN_CERT_WINDOW_STEPS,
             instrument_cache_capacity: INFER_DEFAULT_INSTRUMENT_CACHE_CAPACITY,
             require_dda_features: INFER_DEFAULT_REQUIRE_DDA_FEATURES,
+            require_ood_calibrator: INFER_DEFAULT_REQUIRE_OOD_CALIBRATOR,
             dda_expected_embedder_count: INFER_DEFAULT_DDA_EXPECTED_EMBEDDER_COUNT,
             pause_state_path: Some(PathBuf::from(DEFAULT_PAUSE_STATE_PATH)),
             min_cell_support_for_verdict: INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT,

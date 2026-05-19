@@ -422,8 +422,8 @@ Fail-closed on `decode_session_hex32` mismatch, malformed shift entries, waterma
 |---|---|---|
 | `conformal.rs` | Split-conformal predictor: per-head α=`INFER_DEFAULT_ALPHA`, calibration window over `CF_MEJEPA_CALIBRATION_HISTORY` | `crates/context-graph-mejepa/src/conformal.rs` |
 | `calibration.rs` + `calibration_types.rs` | `CalibrationCertificate`, per-head calibration | `crates/context-graph-mejepa-embedders/src/calibration.rs` + mejepa |
-| `ood.rs` | Aggregate OOD gate; writes `CF_MEJEPA_OOD_ESCALATIONS`; `INFER_DEFAULT_OOD_REFUSE_THRESHOLD` | `crates/context-graph-mejepa/src/ood.rs` |
-| `ood_harvest/` + `ood_harvest.rs` | TASK-PY-G-057 / #276 live-session harvest pipeline: above-threshold predictions → `CF_MEJEPA_OOD_HARVEST`, calibration audit → `CF_MEJEPA_OOD_CALIBRATIONS`, 4× projection into `CF_MEJEPA_ACTIVE_LEARNING_QUEUE`, orphan/degenerate quarantine, expired-row tier-down, operator-labeled downweight, `OOD_GATE_OVER_FLAGGING` flag when false-positive rate spikes | `crates/context-graph-mejepa/src/ood_harvest.rs` |
+| `ood.rs` | Residual OOD score math and AUC helpers. Static `INFER_DEFAULT_OOD_REFUSE_THRESHOLD` remains compatibility fallback only when strict OOD calibrator mode is disabled. | `crates/context-graph-mejepa/src/ood.rs` |
+| `ood_harvest/` + `ood_harvest.rs` | TASK-PY-G-057 / #276 live-session harvest pipeline plus TASK-PY-G-014 / #129 serving calibrator: above-threshold predictions → `CF_MEJEPA_OOD_HARVEST`, per-cell threshold/AUC/FPR/recall → `CF_MEJEPA_OOD_CALIBRATIONS`, 4× active-learning projection, orphan/degenerate quarantine, expired-row tier-down, operator-labeled downweight, `OOD_HARVEST_EMPTY`, `OOD_CELL_AUC_REGRESSION`, `OOD_GATE_OVER_FLAGGING`, `OOD_CALIBRATOR_MISSING`, and `OOD_SCORE_ABOVE_THRESHOLD` decisions | `crates/context-graph-mejepa/src/ood_harvest.rs` |
 | Per-slot OOD reasons | `RealityPrediction.per_slot_ood_reasons: Vec<PerSlotOodReason>` materialized from `/zfs/archive/contextgraph/state/calibration/per-slot-v1/`; persists slot/embedder/pair-specific OOD evidence per prediction; exposed via `mejepa_explain_prediction` / `mejepa_inspect_prediction`; `MAX_EMBEDDERS_PER_PANEL` guard | TASK-PY-G-089 / #389 |
 | `ColdCellMetric` (in `compiler.rs`) | Abstain when `n_supporting < INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT` (50); writes `CF_MEJEPA_COLD_CELL_METRICS` | TASK-PY-G-061 |
 
@@ -511,7 +511,7 @@ Current calibration behavior (2026-05-19, #128):
 |---|---|---|
 | Negative-action ablation falsifier | `crates/context-graph-mejepa-train/examples/phase_g_adversarial_retrain_fsv.rs` + CF_MEJEPA_ABLATION_REPORTS | TASK-PY-G-054 |
 | Multi-head contradiction | `verdict_assembly.rs` + Q4 always-on | TASK-PY-G-044 |
-| OOD gate floor | `ood.rs` | TASK-PY-G-014 |
+| OOD gate floor | `ood.rs` + `ood_harvest.rs`; `mejepa_verify` consumes selected `CF_MEJEPA_OOD_CALIBRATIONS` when `require_ood_calibrator=true`, fails closed on missing/corrupt/unselected calibrator, and preserves cold-cell precedence | TASK-PY-G-014 |
 | Conformal interval floor | `conformal.rs` | TASK-PY-G-006 |
 | Adversarial-embedder-injection mitigation | `adversarial_embedder_injection.rs` | TASK-EK-018J |
 | Secret redaction (19 patterns, < 1ms p99 on 10KB) | `scripts/swebench_lite_ops/python_secret_redaction.py` wrapped by `secret_redaction.rs` → `CF_MEJEPA_REDACTION_LOG` | TASK-PY-G-059 (#278) |

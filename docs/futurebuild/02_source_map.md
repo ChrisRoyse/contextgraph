@@ -93,8 +93,8 @@ Build profiles (`Cargo.toml:112-128`):
 | `system_cost.rs` (~23K) | Phase F system-cost computation |
 | `toolchain_detect.rs` | Phase F toolchain availability gate |
 | `degraded.rs` | Degraded-mode fallback |
-| `conformal.rs` + `calibration.rs` + `calibration_types.rs` + `ood.rs` | Split-conformal predictor + per-head calibration + OOD gate |
-| `ood_harvest.rs` + `ood_harvest/` | TASK-PY-G-057 / #276 live-session OOD harvest pipeline → `CF_MEJEPA_OOD_HARVEST`, `CF_MEJEPA_OOD_CALIBRATIONS`, 4× active-learning projection, orphan quarantine, `OOD_GATE_OVER_FLAGGING` |
+| `conformal.rs` + `calibration.rs` + `calibration_types.rs` + `ood.rs` | Split-conformal predictor + per-head calibration + OOD residual score math |
+| `ood_harvest.rs` + `ood_harvest/` | TASK-PY-G-057 / #276 live-session OOD harvest pipeline plus TASK-PY-G-014 / #129 serving calibrator → `CF_MEJEPA_OOD_HARVEST`, selected `CF_MEJEPA_OOD_CALIBRATIONS`, 4× active-learning projection, orphan quarantine, `OOD_GATE_OVER_FLAGGING`, `OOD_HARVEST_EMPTY`, `OOD_CELL_AUC_REGRESSION`, `OOD_CALIBRATOR_MISSING`, strict `mejepa_verify` fail-closed gate |
 | `frozen_target.rs` + `grad_hook.rs` | Frozen-target adapter + gradient leak guard (`MEJEPA_INSTRUMENT_GRADIENT_LEAK`) |
 | `evidence.rs` + `fsv_writer.rs` | FSV evidence builders |
 | `operator_override.rs` + `operator_contribution.rs` (~29K) | REQ-PREDICT-12 / TASK-EK-014 operator override + contribution surface |

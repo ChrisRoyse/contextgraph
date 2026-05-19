@@ -187,6 +187,10 @@ name = "task_py_g_013_q5_calibration_fsv"
 path = "examples/task_py_g_013_q5_calibration_fsv.rs"
 
 [[example]]
+name = "task_py_g_014_ood_gate_fsv"
+path = "examples/task_py_g_014_ood_gate_fsv.rs"
+
+[[example]]
 name = "task_ek_018b_absence_queue_fsv"
 path = "examples/task_ek_018b_absence_queue_fsv.rs"
 

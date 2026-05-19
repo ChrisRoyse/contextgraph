@@ -101,7 +101,7 @@ Adds `CF_MEJEPA_PLASTICITY_HISTORY` (TASK-PY-G-066 continual backprop), `CF_MEJE
 | `CF_MEJEPA_SAMPLER_REWARDS` | `(ts_ns, kind)` | JSON | TASK-PY-G-053 oracle-derived online observe reward |
 | `CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT` | `(ts_ns, cluster_id)` | JSON | TASK-RWD-211 / TASK-PY-G-067 novel-cluster accepted/refuted audit |
 | `CF_MEJEPA_OOD_HARVEST` | `(harvest_run_id, prediction_id)` | JSON | TASK-PY-G-057 / #276 live-session OOD harvest rows (above-threshold predictions, RocksDB byte anchors, orphan/degenerate quarantines) |
-| `CF_MEJEPA_OOD_CALIBRATIONS` | `(harvest_run_id, calibration_id)` | JSON | TASK-PY-G-057 OOD calibration reports + false-positive-rate audit (e.g. `OOD_GATE_OVER_FLAGGING` flag) |
+| `CF_MEJEPA_OOD_CALIBRATIONS` | `(generated_at_unix_ms, calibration_id)` | bincode `OodCalibrationReport` | TASK-PY-G-057 harvest audit + TASK-PY-G-014 serving calibrator: per-cell threshold/AUC/FPR/recall, selected-for-serving flag, empty-harvest and cell-regression flags |
 
 ### 2.4 Constellation / TCT (4 CFs) — `TCT_CFS`
 
@@ -170,7 +170,7 @@ Adds `CF_MEJEPA_PLASTICITY_HISTORY` (TASK-PY-G-066 continual backprop), `CF_MEJE
 | CF Constant | Purpose | Task |
 |---|---|---|
 | `CF_MEJEPA_OOD_HARVEST` | Live-session above-threshold OOD prediction rows (with RocksDB byte anchors and orphan/degenerate quarantines) | TASK-PY-G-057 / #276 |
-| `CF_MEJEPA_OOD_CALIBRATIONS` | OOD calibration reports per harvest run; surfaces flags like `OOD_GATE_OVER_FLAGGING` when the false-positive rate is too high | TASK-PY-G-057 / #276 |
+| `CF_MEJEPA_OOD_CALIBRATIONS` | OOD calibration reports; TASK-PY-G-014 selects serving τ_ood, fails closed on missing/corrupt/unselected calibrator when strict mode is enabled, and surfaces flags like `OOD_HARVEST_EMPTY`, `OOD_CELL_AUC_REGRESSION`, and `OOD_GATE_OVER_FLAGGING` | TASK-PY-G-057 / #276 + TASK-PY-G-014 / #129 |
 
 Harvested rows are projected into `CF_MEJEPA_ACTIVE_LEARNING_QUEUE` at 4× weight (downweighted to 1× when an operator labels the row in-distribution).
 

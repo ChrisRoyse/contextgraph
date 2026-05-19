@@ -1,14 +1,15 @@
 use crate::calibration::cf;
 use crate::eval::{EvalError, EvalErrorCode, RocksDbEvalStore};
-use crate::types::{PanelId, PredictionId, RealityPrediction};
+use crate::types::{Language, PanelId, PredictionId, RealityPrediction};
 use rocksdb::{IteratorMode, WriteOptions, DB};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use super::types::{
-    invalid, validate_probability, OodHarvestQuarantineRow, OodHarvestReport, OodHarvestRow,
-    OodHarvestStatus, OOD_HARVEST_ACTIVE_LEARNING_WEIGHT, OOD_HARVEST_SCHEMA_VERSION,
+    invalid, validate_calibration_cell, validate_probability, OodHarvestQuarantineRow,
+    OodHarvestReport, OodHarvestRow, OodHarvestStatus, OOD_HARVEST_ACTIVE_LEARNING_WEIGHT,
+    OOD_HARVEST_SCHEMA_VERSION,
 };
 
 pub(super) fn empty_harvest_report(tiered_down_count: usize) -> OodHarvestReport {
@@ -44,6 +45,7 @@ pub(super) fn row_from_prediction(
         task_id: prediction.task_id.clone(),
         session_id: prediction.session_id,
         panel_id: PanelId(prediction.source_panel_sha),
+        calibration_cell: calibration_cell_from_prediction(prediction)?,
         affected_chunk_ids: prediction.covered_chunks.clone(),
         agent_prose: prediction.agent_claim_graph.raw_response.clone(),
         verdict: prediction.verdict,
@@ -57,6 +59,23 @@ pub(super) fn row_from_prediction(
     };
     row.validate()?;
     Ok(row)
+}
+
+pub(super) fn calibration_cell_from_prediction(
+    prediction: &RealityPrediction,
+) -> Result<String, EvalError> {
+    calibration_cell_from_language_task(prediction.language, &prediction.task_id.0)
+}
+
+pub(super) fn calibration_cell_from_language_task(
+    language: Language,
+    task_id: &str,
+) -> Result<String, EvalError> {
+    let language = format!("{language:?}").to_ascii_lowercase();
+    let mutation = mutation_category_from_task_id(task_id).unwrap_or("unknown");
+    let cell = format!("language={language}:mutation={mutation}");
+    validate_calibration_cell(&cell)?;
+    Ok(cell)
 }
 
 pub(super) fn quarantine_from_prediction(
@@ -230,6 +249,16 @@ impl ConfusionMatrix {
         validate_probability("ood_calibration.false_positive_rate", rate)?;
         Ok(rate)
     }
+
+    pub(super) fn ood_recall(&self) -> Result<f32, EvalError> {
+        let denom = self.true_positive + self.false_negative;
+        if denom == 0 {
+            return Ok(0.0);
+        }
+        let recall = self.true_positive as f32 / denom as f32;
+        validate_probability("ood_calibration.ood_recall", recall)?;
+        Ok(recall)
+    }
 }
 
 pub(super) fn calibration_report_id(
@@ -265,6 +294,93 @@ fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
             .any(|window| window == needle)
 }
 
+pub(super) fn auc_pairwise(
+    ood_scores: &[f32],
+    id_scores: &[f32],
+) -> Result<Option<f32>, EvalError> {
+    if ood_scores.is_empty() || id_scores.is_empty() {
+        return Ok(None);
+    }
+    let mut score = 0.0f32;
+    let mut pairs = 0usize;
+    for (pos_idx, pos) in ood_scores.iter().enumerate() {
+        validate_probability(&format!("ood_scores[{pos_idx}]"), *pos)?;
+        for (neg_idx, neg) in id_scores.iter().enumerate() {
+            validate_probability(&format!("id_scores[{neg_idx}]"), *neg)?;
+            score += if pos > neg {
+                1.0
+            } else if (*pos - *neg).abs() <= f32::EPSILON {
+                0.5
+            } else {
+                0.0
+            };
+            pairs += 1;
+        }
+    }
+    Ok(Some(score / pairs as f32))
+}
+
+pub(super) fn matrix_at_threshold(
+    observations: &[(f32, bool)],
+    threshold: f32,
+) -> Result<ConfusionMatrix, EvalError> {
+    validate_probability("ood_calibration.threshold", threshold)?;
+    let mut matrix = ConfusionMatrix::default();
+    for (idx, (score, actual_ood)) in observations.iter().enumerate() {
+        validate_probability(&format!("ood_calibration.score[{idx}]"), *score)?;
+        matrix.add(*score > threshold, *actual_ood);
+    }
+    Ok(matrix)
+}
+
+pub(super) fn select_threshold(
+    observations: &[(f32, bool)],
+    fallback: f32,
+    max_false_positive_rate: f32,
+    min_ood_recall: f32,
+) -> Result<f32, EvalError> {
+    validate_probability("ood_calibration.fallback_threshold", fallback)?;
+    validate_probability(
+        "ood_calibration.max_false_positive_rate",
+        max_false_positive_rate,
+    )?;
+    validate_probability("ood_calibration.min_ood_recall", min_ood_recall)?;
+    let mut selected = None;
+    for step in (0..=100).rev() {
+        let threshold = step as f32 / 100.0;
+        let matrix = matrix_at_threshold(observations, threshold)?;
+        let false_positive_rate = matrix.false_positive_rate()?;
+        let ood_recall = matrix.ood_recall()?;
+        if false_positive_rate <= max_false_positive_rate && ood_recall >= min_ood_recall {
+            selected = Some(threshold);
+            break;
+        }
+    }
+    Ok(selected.unwrap_or(fallback))
+}
+
+fn mutation_category_from_task_id(task_id: &str) -> Option<&'static str> {
+    let lower = task_id.to_ascii_lowercase();
+    [
+        "bool_flip",
+        "off_by_one",
+        "boundary",
+        "api_misuse",
+        "import_path",
+        "type_contract",
+        "exception_swallow",
+        "state_mutation",
+        "dead_code",
+        "security",
+        "perf",
+        "accuracy",
+        "cost",
+        "reasoning",
+    ]
+    .into_iter()
+    .find(|category| lower.contains(category))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,5 +400,15 @@ mod tests {
         matrix.add(false, false);
         assert_eq!(matrix.false_positive_rate().unwrap(), 0.5);
         assert!(matrix.false_positive_rate().unwrap() > 0.20);
+    }
+
+    #[test]
+    fn threshold_selection_prefers_strict_threshold_meeting_recall_and_fpr() {
+        let observations = vec![(0.10, false), (0.20, false), (0.91, true), (0.95, true)];
+        let threshold = select_threshold(&observations, 0.85, 0.05, 0.85).unwrap();
+        assert_eq!(threshold, 0.90);
+        let matrix = matrix_at_threshold(&observations, threshold).unwrap();
+        assert_eq!(matrix.false_positive_rate().unwrap(), 0.0);
+        assert_eq!(matrix.ood_recall().unwrap(), 1.0);
     }
 }

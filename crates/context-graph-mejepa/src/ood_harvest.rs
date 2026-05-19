@@ -1,6 +1,6 @@
 use crate::calibration::cf;
 use crate::eval::{ActiveLearningQueueState, EvalError, RocksDbEvalStore};
-use crate::types::{OracleOutcome, PanelId, PredictionId, RealityPrediction, TaskId};
+use crate::types::{OracleOutcome, PanelId, PredictionId, RealityPrediction, TaskId, Verdict};
 use rocksdb::{IteratorMode, DB};
 use std::path::Path;
 use std::sync::Arc;
@@ -9,12 +9,17 @@ mod support;
 mod types;
 
 use support::{
-    calibration_report_id, empty_harvest_report, load_panel_bytes, panel_bytes_are_degenerate,
-    put_readback_bin, quarantine_from_prediction, row_from_prediction, status_rank,
-    validate_live_prediction_key, ConfusionMatrix,
+    auc_pairwise, calibration_report_id, empty_harvest_report, load_panel_bytes,
+    matrix_at_threshold, panel_bytes_are_degenerate, put_readback_bin, quarantine_from_prediction,
+    row_from_prediction, select_threshold, status_rank, validate_live_prediction_key,
 };
 pub use types::*;
 use types::{invalid, validate_prediction_id};
+
+const TASK_PY_G_014_MIN_AUC: f32 = 0.85;
+const TASK_PY_G_014_EMPTY_HARVEST_MIN_AUC: f32 = 0.75;
+const TASK_PY_G_014_MAX_ID_FALSE_POSITIVE_RATE: f32 = 0.05;
+const TASK_PY_G_014_MIN_OOD_RECALL: f32 = 0.85;
 
 pub fn ood_harvest_key(prediction_id: PredictionId) -> [u8; 16] {
     prediction_id.0
@@ -337,25 +342,81 @@ pub fn compute_ood_calibration_report(
         ));
     }
     let harvested = list_ood_harvest_rows(db)?;
-    let mut matrix = ConfusionMatrix::default();
+    let mut observations = Vec::<OodCalibrationObservation>::new();
     for row in &harvested {
         if let Some(outcome) = row.oracle_outcome {
-            matrix.add(
-                row.ood_score > config.threshold,
-                outcome == OracleOutcome::OutOfDistribution,
-            );
+            observations.push(OodCalibrationObservation {
+                cell_id: row.calibration_cell.clone(),
+                score: row.ood_score,
+                actual_ood: outcome == OracleOutcome::OutOfDistribution,
+            });
         }
     }
     for row in synthetic_rows {
         row.validate()?;
-        matrix.add(row.predicted_ood, row.actual_ood);
+        observations.push(OodCalibrationObservation {
+            cell_id: row.calibration_cell.clone(),
+            score: row.ood_score,
+            actual_ood: row.actual_ood,
+        });
     }
+    if observations.is_empty() {
+        return Err(invalid(
+            "OOD calibration requires at least one harvested or synthetic scored row",
+        ));
+    }
+    let score_labels = observations
+        .iter()
+        .map(|row| (row.score, row.actual_ood))
+        .collect::<Vec<_>>();
+    let selected_threshold = select_threshold(
+        &score_labels,
+        config.threshold,
+        TASK_PY_G_014_MAX_ID_FALSE_POSITIVE_RATE,
+        TASK_PY_G_014_MIN_OOD_RECALL,
+    )?;
+    let matrix = matrix_at_threshold(&score_labels, selected_threshold)?;
     let false_positive_rate = matrix.false_positive_rate()?;
-    let flags = if false_positive_rate > 0.20 {
-        vec![OOD_GATE_OVER_FLAGGING.to_string()]
+    let ood_recall = matrix.ood_recall()?;
+    let id_scores = observations
+        .iter()
+        .filter(|row| !row.actual_ood)
+        .map(|row| row.score)
+        .collect::<Vec<_>>();
+    let ood_scores = observations
+        .iter()
+        .filter(|row| row.actual_ood)
+        .map(|row| row.score)
+        .collect::<Vec<_>>();
+    let global_auc = auc_pairwise(&ood_scores, &id_scores)?;
+    let min_required_auc = if harvested.is_empty() {
+        TASK_PY_G_014_EMPTY_HARVEST_MIN_AUC
     } else {
-        Vec::new()
+        TASK_PY_G_014_MIN_AUC
     };
+    let cell_reports = build_ood_cell_reports(&observations, selected_threshold, min_required_auc)?;
+    let mut flags = Vec::new();
+    if harvested.is_empty() {
+        flags.push(OOD_HARVEST_EMPTY.to_string());
+    }
+    if false_positive_rate > TASK_PY_G_014_MAX_ID_FALSE_POSITIVE_RATE {
+        flags.push(OOD_GATE_OVER_FLAGGING.to_string());
+    }
+    if ood_recall < TASK_PY_G_014_MIN_OOD_RECALL {
+        flags.push(OOD_RECALL_BELOW_TARGET.to_string());
+    }
+    if global_auc.is_none_or(|auc| auc < min_required_auc) {
+        flags.push(OOD_AUC_BELOW_TARGET.to_string());
+    }
+    if cell_reports.iter().any(|cell| {
+        cell.flags
+            .iter()
+            .any(|flag| flag == OOD_CELL_AUC_REGRESSION)
+    }) {
+        flags.push(OOD_CELL_AUC_REGRESSION.to_string());
+    }
+    flags.sort();
+    flags.dedup();
     let report_id = calibration_report_id(
         generated_at_unix_ms,
         &matrix,
@@ -368,15 +429,23 @@ pub fn compute_ood_calibration_report(
         generated_at_unix_ms,
         window_start_unix_ms,
         window_end_unix_ms,
-        threshold: config.threshold,
+        threshold: selected_threshold,
         harvested_rows: harvested.len(),
         synthetic_ood_rows: synthetic_rows.len(),
+        id_rows: id_scores.len(),
+        ood_rows: ood_scores.len(),
         true_positive: matrix.true_positive,
         false_positive: matrix.false_positive,
         true_negative: matrix.true_negative,
         false_negative: matrix.false_negative,
+        global_auc,
+        ood_recall,
         false_positive_rate,
+        min_required_auc,
+        selected_for_serving: flags.is_empty()
+            || (harvested.is_empty() && flags.iter().all(|flag| flag == OOD_HARVEST_EMPTY)),
         flags,
+        cell_reports,
         source_harvest_cf: context_graph_mejepa_cf::CF_MEJEPA_OOD_HARVEST.to_string(),
         source_synthetic_cf: context_graph_mejepa_cf::CF_MEJEPA_SYNTHETIC_STRESS_RESULTS
             .to_string(),
@@ -396,4 +465,132 @@ pub fn persist_ood_calibration_report(
         &ood_calibration_report_key(report),
         report,
     )
+}
+
+pub fn read_latest_ood_calibration_report(
+    db: &DB,
+) -> Result<Option<OodCalibrationReport>, EvalError> {
+    let cf = cf(db, context_graph_mejepa_cf::CF_MEJEPA_OOD_CALIBRATIONS)?;
+    let mut latest: Option<OodCalibrationReport> = None;
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (_key, value) = item?;
+        let report: OodCalibrationReport = bincode::deserialize(&value)?;
+        report.validate()?;
+        if latest
+            .as_ref()
+            .is_none_or(|current| report.generated_at_unix_ms > current.generated_at_unix_ms)
+        {
+            latest = Some(report);
+        }
+    }
+    Ok(latest)
+}
+
+pub fn apply_ood_gate_decision(
+    base_verdict: Verdict,
+    ood_score: f32,
+    calibration: Option<&OodCalibrationReport>,
+    cold_cell: Option<(Option<u32>, u32)>,
+) -> Result<OodGateDecision, EvalError> {
+    types::validate_probability("ood_gate.ood_score", ood_score)?;
+    if let Some((n_supporting, threshold)) = cold_cell {
+        if n_supporting.is_none_or(|n| n < threshold) {
+            let decision = OodGateDecision {
+                verdict: Verdict::Abstain,
+                reason: crate::compiler::COLD_CELL_INSUFFICIENT_SUPPORT.to_string(),
+                ood_score,
+                threshold: calibration.map(|report| report.threshold),
+            };
+            decision.validate()?;
+            return Ok(decision);
+        }
+    }
+    let Some(calibration) = calibration else {
+        let decision = OodGateDecision {
+            verdict: Verdict::GuardRejected,
+            reason: OOD_CALIBRATOR_MISSING.to_string(),
+            ood_score,
+            threshold: None,
+        };
+        decision.validate()?;
+        return Ok(decision);
+    };
+    calibration.validate()?;
+    if ood_score > calibration.threshold {
+        let decision = OodGateDecision {
+            verdict: Verdict::OutOfDistribution,
+            reason: OOD_SCORE_ABOVE_THRESHOLD.to_string(),
+            ood_score,
+            threshold: Some(calibration.threshold),
+        };
+        decision.validate()?;
+        return Ok(decision);
+    }
+    let decision = OodGateDecision {
+        verdict: base_verdict,
+        reason: "OOD_SCORE_WITHIN_THRESHOLD".to_string(),
+        ood_score,
+        threshold: Some(calibration.threshold),
+    };
+    decision.validate()?;
+    Ok(decision)
+}
+
+#[derive(Debug, Clone)]
+struct OodCalibrationObservation {
+    cell_id: String,
+    score: f32,
+    actual_ood: bool,
+}
+
+fn build_ood_cell_reports(
+    observations: &[OodCalibrationObservation],
+    threshold: f32,
+    min_required_auc: f32,
+) -> Result<Vec<OodCalibrationCellReport>, EvalError> {
+    let mut cell_ids = observations
+        .iter()
+        .map(|row| row.cell_id.clone())
+        .collect::<Vec<_>>();
+    cell_ids.sort();
+    cell_ids.dedup();
+    let mut reports = Vec::new();
+    for cell_id in cell_ids {
+        let cell = observations
+            .iter()
+            .filter(|row| row.cell_id == cell_id)
+            .map(|row| (row.score, row.actual_ood))
+            .collect::<Vec<_>>();
+        let matrix = matrix_at_threshold(&cell, threshold)?;
+        let id_scores = cell
+            .iter()
+            .filter(|(_, actual_ood)| !*actual_ood)
+            .map(|(score, _)| *score)
+            .collect::<Vec<_>>();
+        let ood_scores = cell
+            .iter()
+            .filter(|(_, actual_ood)| *actual_ood)
+            .map(|(score, _)| *score)
+            .collect::<Vec<_>>();
+        let auc = auc_pairwise(&ood_scores, &id_scores)?;
+        let mut flags = Vec::new();
+        if auc.is_none() {
+            flags.push(OOD_CELL_INSUFFICIENT_SUPPORT.to_string());
+        } else if auc.unwrap_or_default() < min_required_auc {
+            flags.push(OOD_CELL_AUC_REGRESSION.to_string());
+        }
+        let report = OodCalibrationCellReport {
+            cell_id,
+            threshold,
+            id_rows: id_scores.len(),
+            ood_rows: ood_scores.len(),
+            auc,
+            false_positive_rate: matrix.false_positive_rate()?,
+            ood_recall: matrix.ood_recall()?,
+            flags,
+        };
+        report.validate()?;
+        reports.push(report);
+    }
+    Ok(reports)
 }

@@ -129,7 +129,7 @@ Child issue split:
    - Q4 fail-closed trust gate — #377 TASK-PY-G-078 is closed; Q4 heads now refuse trust until producer/calibration/exact-slot evidence is present.
    - Q4 harvest expansion — #401 TASK-PY-G-100 is closed; aggregate `q4TrustDecisionEligible=true` for the five producer-backed heads.
    - Deferred excluded heads — #402 tracks real security/structural Q4 producers before the aggregate Q4 scope expands beyond those five heads.
-2. **Calibrate OOD on harvested + synthetic** — #129 TASK-PY-G-014 (now consumes the closed #276 harvest evidence) + #130 TASK-PY-G-015 Gτ guard audit.
+2. **Gτ guard audit under the same slot-preserving discipline** — #130 TASK-PY-G-015. #129 TASK-PY-G-014 is now closed: strict `mejepa_verify` OOD serving consumes `CF_MEJEPA_OOD_CALIBRATIONS` and fails closed on missing/corrupt calibrator.
 3. **Per-head contradiction calibration** — #263 TASK-PY-G-044.
 4. **Goodhart / oracle-noise guards** — #374 TASK-PY-G-077 secret holdout and #376 TASK-PY-G-076 statistical-power bound are closed as guard protocols, both currently fail closed as `underpowered`. They continue to block any "≥ 0.95 × 4 windows" claim until real four-window train-visible plus secret/delayed holdout evidence exists and passes.
 5. **Compositional generalization** — #379 TASK-PY-G-081 multi-file structural patch holdout.
@@ -153,6 +153,7 @@ Child issue split:
 | #398 calibrated ablation FSV | `/zfs/archive/contextgraph/fsv/task-py-g-097-constellation-ablation-with-calibration-fsv/python_constellation_ablation_with_calibration_fsv.json` | PASS evidence for TASK-PY-G-097; sha256 `90039db274eb4e37b4fc03ed3bb115b184149c00f3cf2fc684118dff492b854e`; result `no_promotion` |
 | #398 calibrated ablation artifacts | `/zfs/archive/contextgraph/fsv/task-py-g-097-constellation-ablation-with-calibration-fsv/artifacts/` | Report sha256 `a65b320ac08208d26eaeb57eefb90e7bdd5e994d0662527edb399d7ffa06ed35`; metrics sha256 `dc4e3cbe7ec2f95e029030e4fc9550f8a01791267c6b6618d5482bfe4937ad11`; independent readback sha256 `8b1c0f147692179ce3e50b29a90208dcf143ba8e666f8869d588f4801799d0b6`; external edge readback sha256 `bc7fa442c8e05aa9b5574e3d2a9e95465bc8eedc01282fcb80bf3220964ce473` |
 | #276 OOD harvest FSV | `/zfs/archive/contextgraph/fsv/task-py-g-057-ood-harvest-fsv/run-20260519T022705Z/ood_harvest_fsv.json` | PASS evidence for TASK-PY-G-057; sha256 `bc3f9519f157f657fba9fea573fb2dfef4c256221f6a4ffdfec949e88b987b60`; validates harvest/calibration/active-learning CF readback |
+| #129 OOD serving-gate FSV | `/zfs/archive/contextgraph/fsv/task-py-g-014-ood-gate-fsv/run-20260519T104711Z/ood_gate_fsv.json` | PASS evidence for TASK-PY-G-014; sha256 `58c46eaba6ea587468b61064cdd2ffe1e616f1a248a51a31bd264c5b272bb729`; independent readback sha256 `3d550dc98cec6957497e82a849501769fc8f1eb581dd3d146fa53a15d0092e7f`; validates strict OOD calibrator serving, empty-harvest synthetic-only fallback, cell-regression flags, missing/corrupt fail-closed behavior, cold-cell precedence, and monotonic AUC after a larger harvest |
 | #374 secret holdout guard FSV | `/zfs/archive/contextgraph/fsv/task-py-g-077-secret-holdout-fsv/python_secret_holdout_fsv.json` | PASS protocol evidence with current fail-closed result `underpowered`; sha256 `16c1a5a68fe2c79616410ad204e7843c86f5da333b7662772fd3e0d8c814233e`; independent readback sha256 `0a429bc62b95ac25f198acd04822c81744632c628a5dc8e6b8c552fb80205e03` |
 | #377 Q4 trust gate FSV | `/zfs/archive/contextgraph/fsv/task-py-g-078-q4-trust-gate-fsv/q4_trust_gate_fsv.json` | PASS evidence for TASK-PY-G-078; sha256 `0af1726a6e104e7cb70c694c22e40a91b96dc6c323b3679f827d86617aeca30a`; independent readback sha256 `5d4b752ec5fca9eda24fe78dbee649e9a00cb20c1435e3a2f65860886f75bcaa`; future producers write readiness catalog at `/zfs/archive/contextgraph/state/q4-trust-gate/evidence-catalog.json` |
 | #266/#401 Q4 perf label producer FSV | `/zfs/archive/contextgraph/fsv/task-py-g-047-q4-perf-label-producer-fsv/q4_perf_expanded_harvest_fsv.json` | PASS evidence for TASK-PY-G-047 expanded by #401; 260 producer rows; sha256 `a29d33b25872c8ae2afc34b682206d3a7615e75fdf7e01b735eddc9cd74c1c3d`; raw output root `/zfs/archive/contextgraph/corpus/python-q4-perf-labels-v1/task-py-g-100-expanded/` |
@@ -239,12 +240,14 @@ All calibration items below are now qualified by #385: their evidence must be pe
 
 **#276 FSV status (2026-05-19):** PASS on aiwonder. Evidence: `/zfs/archive/contextgraph/fsv/task-py-g-057-ood-harvest-fsv/run-20260519T022705Z/ood_harvest_fsv.json` (sha256 `bc3f9519f157f657fba9fea573fb2dfef4c256221f6a4ffdfec949e88b987b60`). The FSV seeds 50 live prediction rows, harvests 5 deliberate OOD rows, confirms active-learning queue weight `4.0`, persists orphan and degenerate-panel quarantines, tiers down an expired row, downweights an operator-labeled in-distribution row, flags `OOD_GATE_OVER_FLAGGING` at false-positive-rate `0.5`, and proves review rows include RocksDB CF/key/value byte anchors.
 
+**#129 FSV status (2026-05-19):** PASS on aiwonder. Evidence: `/zfs/archive/contextgraph/fsv/task-py-g-014-ood-gate-fsv/run-20260519T104711Z/ood_gate_fsv.json` (sha256 `58c46eaba6ea587468b61064cdd2ffe1e616f1a248a51a31bd264c5b272bb729`) plus independent readback sha256 `3d550dc98cec6957497e82a849501769fc8f1eb581dd3d146fa53a15d0092e7f`. The FSV proves strict `mejepa_verify` consumption of selected `CF_MEJEPA_OOD_CALIBRATIONS`, τ_ood serving from harvested rows, normal Python vs fresh OOD behavior, missing/corrupt calibrator fail-closed via `OOD_CALIBRATOR_MISSING`, empty harvest synthetic-only calibration with `OOD_HARVEST_EMPTY`, per-cell AUC regression with `OOD_CELL_AUC_REGRESSION`, cold-cell precedence over OOD, and monotonic AUC after a larger harvest.
+
 ### 3.5 Phase 7 adversarial defense + ship-gate closure (after calibration green)
 
 | Issue | Task | Status |
 |---|---|---|
 | #178 | refined cell taxonomy with Active/Exempt/Uncovered tri-state | open |
-| #129 / TASK-PY-G-014 | OOD detection gate calibrated on harvested + synthetic OOD | open (now consumes #276 harvest evidence) |
+| #129 / TASK-PY-G-014 | OOD detection gate calibrated on harvested + synthetic OOD | ✅ closed 2026-05-19 via aiwonder FSV |
 | #120 / TASK-PY-G-005 | Catastrophic Python cell quarantine | open |
 | #148 / TASK-PY-G-017 | Python leakage detector | open |
 | #153 / TASK-PY-G-022 | Python oracle pass/fail audit | open |

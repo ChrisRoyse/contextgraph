@@ -10,6 +10,7 @@ use crate::compiler::{ColdCellMetric, MejepaStore, TrainCertSummary};
 use crate::conformal::CalibrationExample;
 use crate::error::MejepaInferError;
 use crate::failure_fingerprint::FailureShapeFingerprint;
+use crate::ood_harvest::OodCalibrationReport;
 use crate::park_list::{
     clear_park_list_entry as clear_park_list_entry_row,
     read_park_list_entry as read_park_list_entry_row,
@@ -462,6 +463,17 @@ impl MejepaStore for RocksDbInferStore {
             out.push(fingerprint);
         }
         Ok(out)
+    }
+
+    fn read_latest_ood_calibration_report(
+        &self,
+    ) -> Result<Option<OodCalibrationReport>, MejepaInferError> {
+        crate::ood_harvest::read_latest_ood_calibration_report(&self.db).map_err(|err| {
+            MejepaInferError::InvalidInput {
+                field: context_graph_mejepa_cf::CF_MEJEPA_OOD_CALIBRATIONS.to_string(),
+                detail: err.to_string(),
+            }
+        })
     }
 }
 

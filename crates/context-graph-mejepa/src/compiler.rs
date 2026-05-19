@@ -32,6 +32,9 @@ use crate::gates::{check_source_sha_drift, replay_witness_segment};
 use crate::hierarchical::build_hierarchical_prediction;
 use crate::objective_safety::{evaluate_mejepa_objective, MejepaObjective, ObjectiveSafetyReport};
 use crate::ood::{compute_ood_score, squared_l2};
+use crate::ood_harvest::{
+    apply_ood_gate_decision, OodCalibrationReport, OodGateDecision, OOD_CALIBRATOR_MISSING,
+};
 use crate::park_list::ParkListEntry;
 use crate::patch_similarity::{
     closest_exemplars, load_patch_similarity_index, patch_structural_signature_from_panel,
@@ -299,6 +302,12 @@ pub trait MejepaStore: Send + Sync {
     ) -> Result<Vec<FailureShapeFingerprint>, MejepaInferError> {
         Ok(Vec::new())
     }
+
+    fn read_latest_ood_calibration_report(
+        &self,
+    ) -> Result<Option<OodCalibrationReport>, MejepaInferError> {
+        Ok(None)
+    }
 }
 
 pub struct MeJepaCompiler {
@@ -453,13 +462,7 @@ impl MeJepaCompiler {
         oracle.validate()?;
         let ood_score =
             compute_ood_score(predicted.data(), target.data(), calibration.sigma_squared)?;
-        if ood_score > self.config.ood_refuse_threshold {
-            return Err(MejepaInferError::OodRefuse {
-                ood_score,
-                threshold: self.config.ood_refuse_threshold,
-                reason: "predicted panel residual exceeded OOD threshold".to_string(),
-            });
-        }
+        let ood_threshold = self.ood_threshold_for_compilation()?;
         let train_certs = self
             .store
             .read_recent_train_certs(self.config.train_cert_window_steps)?;
@@ -518,7 +521,7 @@ impl MeJepaCompiler {
             ood_score,
             confidence_interval: &confidence_interval,
             pass_threshold: self.config.p_test_threshold,
-            ood_threshold: self.config.ood_refuse_threshold,
+            ood_threshold,
             interval_width_threshold: 0.8,
             safety_constraint_violation_count: objective_report.constraint_violations.len(),
             objective_total_cost: objective_report.cost.total_cost,
@@ -646,6 +649,80 @@ impl MeJepaCompiler {
         project_dda_features(&rows, self.config.dda_expected_embedder_count)
     }
 
+    fn ood_threshold_for_compilation(&self) -> Result<f32, MejepaInferError> {
+        let Some(report) = self.load_selected_ood_calibration_report()? else {
+            return Ok(if self.config.require_ood_calibrator {
+                1.0
+            } else {
+                self.config.ood_refuse_threshold
+            });
+        };
+        Ok(report.threshold)
+    }
+
+    fn ood_gate_decision(
+        &self,
+        prediction: &RealityPrediction,
+    ) -> Result<OodGateDecision, MejepaInferError> {
+        let report = self.load_selected_ood_calibration_report()?;
+        if report.is_none() && !self.config.require_ood_calibrator {
+            if prediction.ood_score > self.config.ood_refuse_threshold {
+                return Ok(OodGateDecision {
+                    verdict: Verdict::OutOfDistribution,
+                    reason: "OOD_SCORE_ABOVE_STATIC_THRESHOLD".to_string(),
+                    ood_score: prediction.ood_score,
+                    threshold: Some(self.config.ood_refuse_threshold),
+                });
+            }
+            return Ok(OodGateDecision {
+                verdict: prediction.verdict,
+                reason: "OOD_SCORE_WITHIN_STATIC_THRESHOLD".to_string(),
+                ood_score: prediction.ood_score,
+                threshold: Some(self.config.ood_refuse_threshold),
+            });
+        }
+        apply_ood_gate_decision(
+            prediction.verdict,
+            prediction.ood_score,
+            report.as_ref(),
+            None,
+        )
+        .map_err(eval_to_infer_error)
+    }
+
+    fn load_selected_ood_calibration_report(
+        &self,
+    ) -> Result<Option<OodCalibrationReport>, MejepaInferError> {
+        let latest = match self.store.read_latest_ood_calibration_report() {
+            Ok(value) => value,
+            Err(err) if self.config.require_ood_calibrator => {
+                tracing::warn!(
+                    error = %err,
+                    reason = OOD_CALIBRATOR_MISSING,
+                    "OOD calibrator read failed; strict verifier will fail closed"
+                );
+                return Ok(None);
+            }
+            Err(err) => return Err(err),
+        };
+        let Some(report) = latest else {
+            return Ok(None);
+        };
+        if report.selected_for_serving {
+            return Ok(Some(report));
+        }
+        if self.config.require_ood_calibrator {
+            tracing::warn!(
+                report_id = %report.report_id,
+                flags = ?report.flags,
+                reason = OOD_CALIBRATOR_MISSING,
+                "latest OOD calibrator is not selected for serving; strict verifier will fail closed"
+            );
+            return Ok(None);
+        }
+        Ok(None)
+    }
+
     fn record_predictor_elapsed(&self, started: Instant) {
         let Some(counters) = &self.system_cost_counters else {
             return;
@@ -720,7 +797,7 @@ impl MeJepaCompiler {
             }
         }
 
-        let (prediction, predicted_panel) = match self.compile_with_panel(patch, context) {
+        let (mut prediction, predicted_panel) = match self.compile_with_panel(patch, context) {
             Ok(value) => value,
             Err(MejepaInferError::OodRefuse {
                 ood_score,
@@ -803,10 +880,40 @@ impl MeJepaCompiler {
             });
         }
 
+        let ood_decision = self.ood_gate_decision(&prediction)?;
+        apply_ood_gate_to_prediction(&mut prediction, &ood_decision, context)?;
+
         // Persist compiled predictions before downstream gates so escalations remain replayable.
         self.store.write_live_prediction(&prediction)?;
         let hierarchy = build_hierarchical_prediction(&prediction, patch, &predicted_panel)?;
         self.store.write_hierarchical_prediction(&hierarchy)?;
+
+        if ood_gate_failed(&ood_decision) {
+            self.store.record_park_list_failure(
+                prediction.prediction_id,
+                current_unix_ms(),
+                &ood_decision.reason,
+            )?;
+            let failed_gate = match ood_decision.verdict {
+                Verdict::OutOfDistribution => FailedGate::OutOfDistribution {
+                    ood_score: ood_decision.ood_score,
+                    threshold: ood_decision
+                        .threshold
+                        .unwrap_or(self.config.ood_refuse_threshold),
+                },
+                Verdict::GuardRejected => FailedGate::OodGateRejected {
+                    reason: ood_decision.reason.clone(),
+                    ood_score: ood_decision.ood_score,
+                    threshold: ood_decision.threshold,
+                },
+                _ => unreachable!("OOD gate only escalates OOD or guard-rejected verdicts"),
+            };
+            return Ok(VerifyVerdict::EscalateToHuman {
+                reality_prediction: Some(prediction.clone()),
+                failed_gate,
+                gates_passed: 2,
+            });
+        }
 
         let objective_report = objective_report_for_prediction(patch, &prediction)?;
         if objective_report.pass_blocked {
@@ -831,21 +938,6 @@ impl MeJepaCompiler {
             });
         }
 
-        if prediction.ood_score > self.config.ood_refuse_threshold {
-            self.store.record_park_list_failure(
-                prediction.prediction_id,
-                current_unix_ms(),
-                "MEJEPA_INFER_OOD_REFUSE",
-            )?;
-            return Ok(VerifyVerdict::EscalateToHuman {
-                reality_prediction: Some(prediction.clone()),
-                failed_gate: FailedGate::OutOfDistribution {
-                    ood_score: prediction.ood_score,
-                    threshold: self.config.ood_refuse_threshold,
-                },
-                gates_passed: 2,
-            });
-        }
         if prediction.predicted_oracle_pass < self.config.p_test_threshold {
             self.store.record_park_list_failure(
                 prediction.prediction_id,
@@ -1361,6 +1453,58 @@ fn mean_attestation(
         Ok(1.0)
     } else {
         Ok(attestations.values().sum::<f32>() / attestations.len() as f32)
+    }
+}
+
+fn apply_ood_gate_to_prediction(
+    prediction: &mut RealityPrediction,
+    decision: &OodGateDecision,
+    context: &TaskContext,
+) -> Result<(), MejepaInferError> {
+    let previous_verdict = prediction.verdict;
+    prediction.verdict = decision.verdict;
+    prediction
+        .granger_attestations
+        .insert(format!("ood_gate:{}", decision.reason), 1.0);
+    if matches!(
+        decision.verdict,
+        Verdict::OutOfDistribution | Verdict::GuardRejected
+    ) {
+        prediction.matched_fingerprint = None;
+    }
+    if decision.verdict == Verdict::OutOfDistribution {
+        prediction.unknown_candidate_id = Some(unknown_candidate_id_for_prediction(
+            &context.task_id,
+            prediction.prediction_id,
+            &context.session_id,
+        ));
+    } else if previous_verdict == Verdict::OutOfDistribution
+        || prediction.unknown_candidate_id.is_some()
+    {
+        prediction.unknown_candidate_id = None;
+    }
+    prediction.provenance.active_pointer = format!(
+        "ood_gate:{}:score={:.6}:threshold={}",
+        decision.reason,
+        decision.ood_score,
+        decision
+            .threshold
+            .map(|threshold| format!("{threshold:.6}"))
+            .unwrap_or_else(|| "missing".to_string())
+    );
+    prediction.validate()
+}
+
+fn ood_gate_failed(decision: &OodGateDecision) -> bool {
+    decision.reason == OOD_CALIBRATOR_MISSING
+        || decision.reason == crate::ood_harvest::OOD_SCORE_ABOVE_THRESHOLD
+        || decision.reason == "OOD_SCORE_ABOVE_STATIC_THRESHOLD"
+}
+
+fn eval_to_infer_error(err: crate::eval::EvalError) -> MejepaInferError {
+    MejepaInferError::InvalidInput {
+        field: "ood_gate".to_string(),
+        detail: err.to_string(),
     }
 }
 

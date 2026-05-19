@@ -124,11 +124,15 @@ fn main() -> Result<()> {
             &[
                 SyntheticOodCalibrationRow {
                     row_id: "synthetic-true-positive".to_string(),
+                    calibration_cell: "language=python:mutation=unknown".to_string(),
+                    ood_score: 0.86,
                     predicted_ood: true,
                     actual_ood: true,
                 },
                 SyntheticOodCalibrationRow {
                     row_id: "synthetic-true-negative".to_string(),
+                    calibration_cell: "language=python:mutation=unknown".to_string(),
+                    ood_score: 0.20,
                     predicted_ood: false,
                     actual_ood: false,
                 },

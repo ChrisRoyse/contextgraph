@@ -11,6 +11,13 @@ pub const DEFAULT_OOD_HARVEST_RETENTION_ACTIVE_MS: i64 = 90 * 24 * 60 * 60 * 100
 pub const OOD_HARVEST_ORPHAN: &str = "OOD_HARVEST_ORPHAN";
 pub const OOD_HARVEST_DEGENERATE_PANEL: &str = "OOD_HARVEST_DEGENERATE_PANEL";
 pub const OOD_GATE_OVER_FLAGGING: &str = "OOD_GATE_OVER_FLAGGING";
+pub const OOD_HARVEST_EMPTY: &str = "OOD_HARVEST_EMPTY";
+pub const OOD_CELL_AUC_REGRESSION: &str = "OOD_CELL_AUC_REGRESSION";
+pub const OOD_CELL_INSUFFICIENT_SUPPORT: &str = "OOD_CELL_INSUFFICIENT_SUPPORT";
+pub const OOD_RECALL_BELOW_TARGET: &str = "OOD_RECALL_BELOW_TARGET";
+pub const OOD_AUC_BELOW_TARGET: &str = "OOD_AUC_BELOW_TARGET";
+pub const OOD_CALIBRATOR_MISSING: &str = "OOD_CALIBRATOR_MISSING";
+pub const OOD_SCORE_ABOVE_THRESHOLD: &str = "OOD_SCORE_ABOVE_THRESHOLD";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -59,6 +66,7 @@ pub struct OodHarvestRow {
     pub task_id: TaskId,
     pub session_id: [u8; 16],
     pub panel_id: PanelId,
+    pub calibration_cell: String,
     pub affected_chunk_ids: Vec<ChunkId>,
     pub agent_prose: String,
     pub verdict: Verdict,
@@ -86,6 +94,7 @@ impl OodHarvestRow {
             return Err(invalid("ood_harvest.session_id must be non-zero"));
         }
         validate_panel_id(self.panel_id)?;
+        validate_calibration_cell(&self.calibration_cell)?;
         if self.affected_chunk_ids.is_empty() {
             return Err(invalid("ood_harvest.affected_chunk_ids must be non-empty"));
         }
@@ -176,6 +185,8 @@ impl OodHarvestQuarantineRow {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct SyntheticOodCalibrationRow {
     pub row_id: String,
+    pub calibration_cell: String,
+    pub ood_score: f32,
     pub predicted_ood: bool,
     pub actual_ood: bool,
 }
@@ -186,6 +197,40 @@ impl SyntheticOodCalibrationRow {
             return Err(invalid(
                 "synthetic OOD calibration row_id must be non-empty",
             ));
+        }
+        validate_calibration_cell(&self.calibration_cell)?;
+        validate_probability("synthetic_ood_calibration.ood_score", self.ood_score)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct OodCalibrationCellReport {
+    pub cell_id: String,
+    pub threshold: f32,
+    pub id_rows: usize,
+    pub ood_rows: usize,
+    pub auc: Option<f32>,
+    pub false_positive_rate: f32,
+    pub ood_recall: f32,
+    pub flags: Vec<String>,
+}
+
+impl OodCalibrationCellReport {
+    pub fn validate(&self) -> Result<(), EvalError> {
+        validate_calibration_cell(&self.cell_id)?;
+        validate_probability("ood_calibration_cell.threshold", self.threshold)?;
+        validate_probability(
+            "ood_calibration_cell.false_positive_rate",
+            self.false_positive_rate,
+        )?;
+        validate_probability("ood_calibration_cell.ood_recall", self.ood_recall)?;
+        if let Some(auc) = self.auc {
+            validate_probability("ood_calibration_cell.auc", auc)?;
+        }
+        for flag in &self.flags {
+            validate_ood_calibration_flag(flag)?;
         }
         Ok(())
     }
@@ -202,12 +247,19 @@ pub struct OodCalibrationReport {
     pub threshold: f32,
     pub harvested_rows: usize,
     pub synthetic_ood_rows: usize,
+    pub id_rows: usize,
+    pub ood_rows: usize,
     pub true_positive: usize,
     pub false_positive: usize,
     pub true_negative: usize,
     pub false_negative: usize,
+    pub global_auc: Option<f32>,
+    pub ood_recall: f32,
     pub false_positive_rate: f32,
+    pub min_required_auc: f32,
+    pub selected_for_serving: bool,
     pub flags: Vec<String>,
+    pub cell_reports: Vec<OodCalibrationCellReport>,
     pub source_harvest_cf: String,
     pub source_synthetic_cf: String,
 }
@@ -233,19 +285,47 @@ impl OodCalibrationReport {
             ));
         }
         validate_probability("ood_calibration.threshold", self.threshold)?;
+        if let Some(auc) = self.global_auc {
+            validate_probability("ood_calibration.global_auc", auc)?;
+        }
+        validate_probability("ood_calibration.ood_recall", self.ood_recall)?;
         validate_probability(
             "ood_calibration.false_positive_rate",
             self.false_positive_rate,
         )?;
+        validate_probability("ood_calibration.min_required_auc", self.min_required_auc)?;
         for flag in &self.flags {
-            if flag != OOD_GATE_OVER_FLAGGING {
-                return Err(invalid(format!("unknown OOD calibration flag {flag}")));
-            }
+            validate_ood_calibration_flag(flag)?;
+        }
+        for cell in &self.cell_reports {
+            cell.validate()?;
         }
         if self.source_harvest_cf != context_graph_mejepa_cf::CF_MEJEPA_OOD_HARVEST {
             return Err(invalid(
                 "OOD calibration source_harvest_cf must point at CF_MEJEPA_OOD_HARVEST",
             ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct OodGateDecision {
+    pub verdict: Verdict,
+    pub reason: String,
+    pub ood_score: f32,
+    pub threshold: Option<f32>,
+}
+
+impl OodGateDecision {
+    pub fn validate(&self) -> Result<(), EvalError> {
+        validate_probability("ood_gate_decision.ood_score", self.ood_score)?;
+        if let Some(threshold) = self.threshold {
+            validate_probability("ood_gate_decision.threshold", threshold)?;
+        }
+        if self.reason.trim().is_empty() {
+            return Err(invalid("ood_gate_decision.reason must be non-empty"));
         }
         Ok(())
     }
@@ -307,6 +387,33 @@ pub(super) fn validate_probability(field: &str, value: f32) -> Result<(), EvalEr
         return Err(invalid(format!("{field} must be finite and in [0,1]")));
     }
     Ok(())
+}
+
+pub(super) fn validate_calibration_cell(value: &str) -> Result<(), EvalError> {
+    if value.trim().is_empty() {
+        return Err(invalid("OOD calibration cell must be non-empty"));
+    }
+    if value.len() > 256 {
+        return Err(invalid("OOD calibration cell exceeds 256 bytes"));
+    }
+    if value.bytes().any(|byte| byte < 0x20 || byte == 0x7f) {
+        return Err(invalid("OOD calibration cell contains a control character"));
+    }
+    Ok(())
+}
+
+fn validate_ood_calibration_flag(flag: &str) -> Result<(), EvalError> {
+    match flag {
+        OOD_GATE_OVER_FLAGGING
+        | OOD_HARVEST_EMPTY
+        | OOD_CELL_AUC_REGRESSION
+        | OOD_CELL_INSUFFICIENT_SUPPORT
+        | OOD_RECALL_BELOW_TARGET
+        | OOD_AUC_BELOW_TARGET
+        | OOD_CALIBRATOR_MISSING
+        | OOD_SCORE_ABOVE_THRESHOLD => Ok(()),
+        _ => Err(invalid(format!("unknown OOD calibration flag {flag}"))),
+    }
 }
 
 pub(super) fn invalid(message: impl Into<String>) -> EvalError {

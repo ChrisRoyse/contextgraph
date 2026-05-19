@@ -2311,6 +2311,11 @@ pub enum FailedGate {
         ood_score: f32,
         threshold: f32,
     },
+    OodGateRejected {
+        reason: String,
+        ood_score: f32,
+        threshold: Option<f32>,
+    },
     LowConfidence {
         outcome_set_len: usize,
         max_len: usize,
