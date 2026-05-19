@@ -33,20 +33,20 @@ By phase label:
 
 | Label | Open count | Notes |
 |---|---|---|
-| `phase:g` | 62 | Ship-gate convergence work (this is the critical path) |
-| `phase:migration` | 2 | Aiwonder migration — closing out; #368 and #306 still open |
+| `phase:g` | 81 | Ship-gate convergence work (this is the critical path) |
+| `phase:migration` | 4 | Aiwonder migration / durability follow-ups |
 | `phase:f-followup` | 1 | #312 hot_root on ext4 throughput (perf followup) |
 | `phase:f` | 0 (closed as of 2026-05-13) | — |
 | `phase:h` | 0 (closed) | — |
-| No phase (cross-cutting bugs, perf) | ~2 | #295 (resume scan perf), #307 (promote_tree_verified race), #320 (clippy bug) |
+| No phase | 0 | — |
 
 By priority:
 
 | Priority | Open count | Examples |
 |---|---|---|
-| `priority:p0` | 2+ | #385 slot-preserving constellation refactor, #310 META issue refactor, plus any migration blockers still labeled p0 |
-| `priority:p1` | 18 | Calibration, adversarial defense, and Q4 head training |
-| `priority:p2` | 37 | EK series tail, post-ship policies, refined sub-tasks |
+| `priority:p0` | 5 | #385 slot-preserving constellation refactor, #310 META issue refactor, plus migration blockers still labeled p0 |
+| `priority:p1` | 32 | Calibration, adversarial defense, and Q4 head training |
+| `priority:p2` | 40 | EK series tail, post-ship policies, refined sub-tasks |
 | `priority:p3` | 9 | Deferred (SWE-bench Verified subset, sample-efficiency, v2 stretch tasks) |
 
 ---

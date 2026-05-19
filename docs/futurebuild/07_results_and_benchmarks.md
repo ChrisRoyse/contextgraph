@@ -97,7 +97,7 @@ TASK-PY-G-096 writes its certificate and generated arrays under `/zfs/archive/co
 
 ### 2.7 Phase G (ship-gate convergence — IN FLIGHT)
 
-**Status:** 21 Phase G tasks code/FSV shipped (TASK-G-001 through TASK-G-021 plus TASK-PY-G-* shipping continuously). 165 phase:g-labeled issues closed; 62 open after the 2026-05-18 #369 closeout.
+**Status:** 21 Phase G tasks code/FSV shipped (TASK-G-001 through TASK-G-021 plus TASK-PY-G-* shipping continuously). 169 phase:g-labeled issues closed; 81 open after the 2026-05-19 #388 closeout.
 
 **Phase G FSV directories** (legacy `/mnt/d/contextgraph/fsv/phase-g-*`; #369 classifies each as legacy-local, aiwonder-current, or needs-aiwonder-rerun):
 `phase-g-adversarial-retrain-fsv`, `phase-g-cell-exemptions-fsv`, `phase-g-cell-status-fsv`, `phase-g-cli-github-curl-403-fsv`, `phase-g-conformal-recalibration-fsv`, `phase-g-convergence-eta-fsv`, `phase-g-failing-cell-root-cause-fsv`, `phase-g-failure-fingerprint-fsv`, `phase-g-failure-mode-class-metrics-fsv`, `phase-g-fingerprint-classifier-fsv`, `phase-g-fingerprint-mcp-tools-fsv`, `phase-g-fingerprint-ship-gate-fsv`, `phase-g-holdout-rotation-fsv`, `phase-g-label-quality-fsv`, `phase-g-operator-override-recalibration-fsv`, `phase-g-oracle-flakiness-quarantine-fsv`, `phase-g-per-cell-promotion-gate-fsv`, `phase-g-public-ci-cross-validation-fsv`, `phase-g-ship-gate-dashboard-fsv`, `phase-g-ship-gate-stability-fsv`, `phase-g-state-transfer-weekly-markdown-fsv`, `phase-g-targeted-mutation-expansion-fsv`, `phase-g-telemetry-feedback-fsv`, `phase-g-training-holdout-drift-fsv`, `phase-g-training-pipeline-orchestrator-fsv`, `phase-g-unknown-fingerprint-active-learning-fsv`, `phase-g-weekly-cell-triage-fsv`.
