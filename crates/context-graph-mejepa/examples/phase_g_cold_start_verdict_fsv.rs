@@ -341,6 +341,7 @@ fn compiler_with_support(
             age_days: 0,
             cell_id: CELL_ID.to_string(),
             n_supporting,
+            approved: true,
         }),
         Arc::new(PatchWitnessReader),
         store,

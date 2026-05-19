@@ -2201,6 +2201,7 @@ pub struct DeterministicConstellationGuard {
     pub age_days: u32,
     pub cell_id: String,
     pub n_supporting: Option<u32>,
+    pub approved: bool,
 }
 
 impl Default for DeterministicConstellationGuard {
@@ -2210,6 +2211,7 @@ impl Default for DeterministicConstellationGuard {
             age_days: 0,
             cell_id: "mutation=known_good:language=python:entity=function".to_string(),
             n_supporting: Some(100),
+            approved: true,
         }
     }
 }
@@ -2219,17 +2221,14 @@ impl ConstellationGuard for DeterministicConstellationGuard {
         &self,
         _prediction: &RealityPrediction,
         _predicted_panel: &Panel,
-        context: &TaskContext,
+        _context: &TaskContext,
     ) -> Result<ConstellationDecision, MejepaInferError> {
-        let approved = !context
-            .problem_statement
-            .contains("scenario: constellation_reject");
         Ok(ConstellationDecision {
-            approved,
-            reason: if approved {
+            approved: self.approved,
+            reason: if self.approved {
                 "constellation accepted".to_string()
             } else {
-                "scenario requested constellation rejection".to_string()
+                "explicit deterministic guard rejection".to_string()
             },
             version_id: self.version_id.clone(),
             age_days: self.age_days,
@@ -2543,5 +2542,31 @@ mod tests {
         patch.witness_chain_segment.clear();
         let err = materialize_inference_panels(&patch, &context).unwrap_err();
         assert_eq!(err.code(), "MEJEPA_INFER_INSTRUMENT");
+    }
+
+    #[test]
+    fn scenario_strings_do_not_steer_diff_slots() {
+        let (patch, neutral_context) = sample_patch_context("change answer increment");
+        let mut scenario_context = neutral_context.clone();
+        scenario_context.problem_statement =
+            "scenario: ood\nscenario: constellation_reject".to_string();
+        let (_, neutral_t1, neutral_t2) =
+            materialize_inference_panels(&patch, &neutral_context).unwrap();
+        let (_, scenario_t1, scenario_t2) =
+            materialize_inference_panels(&patch, &scenario_context).unwrap();
+
+        assert_eq!(
+            neutral_t1.slot(InstrumentSlot::EDiff),
+            scenario_t1.slot(InstrumentSlot::EDiff)
+        );
+        assert_eq!(
+            neutral_t2.slot(InstrumentSlot::EDiff),
+            scenario_t2.slot(InstrumentSlot::EDiff)
+        );
+        assert_ne!(
+            neutral_t1.slot(InstrumentSlot::EProblem),
+            scenario_t1.slot(InstrumentSlot::EProblem),
+            "problem text still remains typed evidence; it is just not a control channel"
+        );
     }
 }
