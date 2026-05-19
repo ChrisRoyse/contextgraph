@@ -64,6 +64,8 @@ from .python_constellation_training_objective import add_arguments as add_python
 from .python_constellation_training_objective import command_python_constellation_training_objective
 from .python_constellation_ablation_suite import add_arguments as add_python_constellation_ablation_suite_arguments
 from .python_constellation_ablation_suite import command_python_constellation_ablation_suite
+from .python_constellation_tensors import add_arguments as add_python_constellation_tensors_arguments
+from .python_constellation_tensors import command_python_constellation_tensors
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -509,6 +511,16 @@ def build_parser() -> argparse.ArgumentParser:
     constellation_ablation_suite.set_defaults(
         func=command_python_constellation_ablation_suite,
         evidence_name="python-constellation-ablation-suite-command-evidence.json",
+    )
+
+    constellation_tensors = sub.add_parser(
+        "python-constellation-tensors",
+        help="TASK-PY-G-088: materialize slot-preserving cross-embedder correlation tensors from real aiwonder forwards.",
+    )
+    add_python_constellation_tensors_arguments(constellation_tensors)
+    constellation_tensors.set_defaults(
+        func=command_python_constellation_tensors,
+        evidence_name="python-constellation-tensors-command-evidence.json",
     )
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")

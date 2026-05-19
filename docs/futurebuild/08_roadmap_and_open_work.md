@@ -1,6 +1,6 @@
 # 08 — Roadmap and Open Work
 
-**Last refreshed:** 2026-05-18.
+**Last refreshed:** 2026-05-19.
 
 Source: `gh issue list --state open`, recent `type:decision` closes, git log, GitHub issue comments, and archived roadmap history.
 
@@ -88,7 +88,9 @@ Child issue split:
 
 **#393 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-093-constellation-ablation-suite-fsv/`: the suite consumed #396 arrays and emitted 3 baselines plus 6 ablations. The flat-vector baseline is explicitly comparison-only (`ship_gate_eligible=false`). Every ship-gate-eligible ablation from the current #396 scalar features is demoted against the local baseline ladder: best local baseline Brier `0.008555205797287593`; best ablation `per_slot_pairwise_temporal` has ΔBrier `+0.21353286994717507` and Δcorrelation vs historical `-0.5790619486178568`. Q4, Q5, and OOD measurements are recorded as label gaps rather than inferred: Q4 producers #266-#269/#127, Q5 replay #264/#128, and OOD #389/#276/#129 remain the needed data sources.
 
-**Ordering update from #393:** do not promote the current #396 scalar feature family. The next evidence-weighted constellation work should materialize richer real-corpus relationship tensors and per-slot calibration (#388/#389), then rerun ablations with those artifacts before changing the predictor path.
+**#388 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-088-cross-embedder-correlation-tensors-fsv/`: the tensor materializer consumed the 391-shard forward-cache substrate and wrote durable artifacts under `/zfs/archive/contextgraph/corpus/constellation-tensors-v1/`. It produced 516 per-cell/window/slot distribution tensors, 2,838 per-cell/window upper-triangle pair tensors, 1,400 valid pair rows, and 8 full cell/windows with all 66 active pair rows. The report proves `slot_identity_preserved=true`, `flat_vector_concat_used=false`, 12 active embedder slots, declared 15 frozen instrument panel slots where applicable, and redundant/independent/mixed/contradictory/unsupported surface counts.
+
+**Ordering update from #388/#393:** do not promote the current #396 scalar feature family. #388 is now the richer real-corpus relationship tensor source; next work should run #389 per-slot calibration/OOD against #388, then rerun #393 ablations with #388/#389 artifacts before changing the predictor path.
 
 **Current data-location map for #396 descendants:**
 
@@ -97,6 +99,8 @@ Child issue split:
 | 300×8 corpus + oracle labels | `/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json` | 2,400 entries; `oracle_all_passed` is the label source, joined by `(task_instance_id, mutation_category)` |
 | AST chunks | `/zfs/hot/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl` | Provides chunk metadata and row-key fields |
 | 391-shard packed forward cache | `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z/` | Per-shard packed manifests point to each embedder's record/index files |
+| #388 cross-embedder tensors | `/zfs/archive/contextgraph/corpus/constellation-tensors-v1/` | Durable tensor artifacts: `slot_distribution_tensors.jsonl`, `pairwise_correlation_tensors.jsonl`, `constellation_tensor_report.json`, `constellation_tensor_manifest.json` |
+| #388 FSV | `/zfs/archive/contextgraph/fsv/task-py-g-088-cross-embedder-correlation-tensors-fsv/python_constellation_cross_embedder_tensors_fsv.json` | PASS evidence for TASK-PY-G-088 |
 | #396 certificate/artifacts | `/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts/` | Generated arrays and certificate for TASK-PY-G-096 |
 
 ### 3.1 Q4 head training (Phase G §2 producers — heads exist as schema fields but lack training data pipelines)
