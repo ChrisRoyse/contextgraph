@@ -750,6 +750,12 @@ mod tests {
     };
     use tempfile::TempDir;
 
+    fn test_fsv_root() -> PathBuf {
+        std::env::var("CONTEXTGRAPH_FSV_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::temp_dir().join("contextgraph-fsv-tests"))
+    }
+
     fn prediction(
         session_id: [u8; 16],
         prediction_id: [u8; 16],
@@ -853,6 +859,7 @@ mod tests {
         )
         .unwrap();
         prediction.predicted_failed_tests = predicted_failed_tests;
+        prediction.slot_attributions.clear();
         RealityPrediction::try_new(prediction).unwrap()
     }
 
@@ -1144,9 +1151,7 @@ mod tests {
                 .count()
                 == 2
             && (refuted_score - 6.0).abs() < f32::EPSILON;
-        let fsv_root = std::env::var("CONTEXTGRAPH_FSV_ROOT")
-            .unwrap_or_else(|_| "/zfs/archive/contextgraph/fsv".to_string());
-        let fsv_dir = PathBuf::from(fsv_root)
+        let fsv_dir = test_fsv_root()
             .join("task-py-g-069-posttooluse-capture-fsv")
             .join(format!(
                 "run-{}-{}",
@@ -1396,9 +1401,7 @@ mod tests {
             && bulk.unverified_predictions.len() == 50
             && bulk.recommended_commands.len() == 10
             && bulk.truncated_recommended_command_count == 40;
-        let fsv_root = std::env::var("CONTEXTGRAPH_FSV_ROOT")
-            .unwrap_or_else(|_| "/zfs/archive/contextgraph/fsv".to_string());
-        let fsv_dir = PathBuf::from(fsv_root)
+        let fsv_dir = test_fsv_root()
             .join("task-py-g-070-stop-self-verify-fsv")
             .join(format!(
                 "run-{}-{}",
