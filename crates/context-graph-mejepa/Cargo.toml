@@ -191,6 +191,10 @@ name = "task_py_g_014_ood_gate_fsv"
 path = "examples/task_py_g_014_ood_gate_fsv.rs"
 
 [[example]]
+name = "task_py_g_015_gtau_guard_audit_fsv"
+path = "examples/task_py_g_015_gtau_guard_audit_fsv.rs"
+
+[[example]]
 name = "task_ek_018b_absence_queue_fsv"
 path = "examples/task_ek_018b_absence_queue_fsv.rs"
 

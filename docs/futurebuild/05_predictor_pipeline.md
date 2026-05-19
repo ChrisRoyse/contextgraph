@@ -260,6 +260,7 @@ For code, a teleological constellation is the exact-state, slot-preserving obser
 | `constellation.rs` | Centroid + threshold container |
 | `freshness.rs` + `freshness_policy.rs` | Per-cell freshness checks; TASK-PY-G-052 scheduler |
 | `gtau.rs` | Gτ guard predicate |
+| `guard_audit.rs` | TASK-PY-G-015 per-Python-cell Gτ audit over #388 tensors and #389 per-slot calibration; reports pass/fail counts, missing reward-signal neighborhoods, and ship-gate countability without flattening slots |
 | `hinge.rs` + `hinge_types.rs` | Decision hinges |
 | `inspect.rs` | MCP `constellation_inspect` surface |
 | `panel_slots.rs` | Slot definitions for TCT consumption |
