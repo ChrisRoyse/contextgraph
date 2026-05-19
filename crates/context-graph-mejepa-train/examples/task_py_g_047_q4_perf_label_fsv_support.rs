@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use context_graph_mejepa::q4_trust_gate::{Q4EvidenceCatalog, Q4HeadEvidence, Q4HeadKind};
 use context_graph_mejepa_instruments::{
     extract_q4_perf_labels, run_q4_perf_tools_with_timeout, Q4PerfCategory, Q4PerfCommandSpec,
@@ -357,3 +359,5 @@ fn metrics_json(rows: &[(&str, f64, Option<f64>)]) -> String {
     })
     .to_string()
 }
+
+fn main() {}

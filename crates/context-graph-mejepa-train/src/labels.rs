@@ -6,12 +6,13 @@ use context_graph_mejepa::label_transfer_audit::{
     LabelTransferAuditRecord,
 };
 use context_graph_mejepa::{
-    ChunkId, EdgeCaseClass, FailureModeClass, Language, LatentBugClass, PerfAxis,
-    PhaseBPredictionSurfaces, PredictedPerfRegression, PredictionId, ReasoningClass,
-    RootCauseClass, SecurityConcernClass, TestDeltaKind, TestId, TestOutcome,
+    AccuracyMetric, ChunkId, EdgeCaseClass, FailureModeClass, Language, LatentBugClass, PerfAxis,
+    PhaseBPredictionSurfaces, PredictedAccuracyDegradation, PredictedPerfRegression, PredictionId,
+    ReasoningClass, RootCauseClass, SecurityConcernClass, TestDeltaKind, TestId, TestOutcome,
 };
 use context_graph_mejepa_instruments::{
-    Q4PerfCategory, Q4PerfLabel, Q4SecurityClass, Q4SecurityLabel,
+    Q4AccuracyLabel, Q4AccuracyMetricKind, Q4PerfCategory, Q4PerfLabel, Q4SecurityClass,
+    Q4SecurityLabel,
 };
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,7 @@ pub enum LabelSource {
     CargoClippy,
     PythonSecurityAnalyzer,
     PythonPerfAnalyzer,
+    PythonAccuracyAnalyzer,
     AgentResponse,
 }
 
@@ -405,6 +407,44 @@ pub fn q4_perf_labels_to_prediction_surfaces(
     Ok(surfaces)
 }
 
+pub fn q4_accuracy_labels_to_prediction_surfaces(
+    labels: &[Q4AccuracyLabel],
+) -> Result<PhaseBPredictionSurfaces, UtmlError> {
+    let mut surfaces = PhaseBPredictionSurfaces::default();
+    for label in labels {
+        validate_q4_accuracy_label(label)?;
+        if label.regression {
+            surfaces
+                .predicted_accuracy_degradations
+                .push(PredictedAccuracyDegradation {
+                    metric: map_q4_accuracy_metric(label.metric_kind, &label.metric_name),
+                    chunk: ChunkId(label.chunk_id.clone()),
+                    predicted_delta: label.delta_pct as f32,
+                    baseline_value: Some(label.baseline_value),
+                    confidence: 0.85,
+                    explanation: format!(
+                        "q4_accuracy metric={} kind={:?} regression={} baseline={} after={} source_test={}",
+                        label.metric_name,
+                        label.metric_kind,
+                        label.regression,
+                        label.baseline_value,
+                        label.after_value,
+                        label.source_test
+                    ),
+                });
+        }
+    }
+    for accuracy in &surfaces.predicted_accuracy_degradations {
+        accuracy.validate().map_err(|err| {
+            UtmlError::new(
+                UtmlErrorCode::InvalidSignal,
+                format!("Q4 accuracy prediction surface invalid: {err}"),
+            )
+        })?;
+    }
+    Ok(surfaces)
+}
+
 pub fn apply_phase_b_labels_with_transfer_gate(
     db: &DB,
     labels: &ExtractedPhaseBLabels,
@@ -476,6 +516,7 @@ fn parse_failed_test_id(line: &str, source: &LabelSource) -> Option<TestId> {
             }
         }
         LabelSource::CargoClippy
+        | LabelSource::PythonAccuracyAnalyzer
         | LabelSource::PythonPerfAnalyzer
         | LabelSource::PythonSecurityAnalyzer
         | LabelSource::AgentResponse => None,
@@ -608,6 +649,27 @@ fn map_q4_perf_category(category: Q4PerfCategory) -> PerfAxis {
     }
 }
 
+fn map_q4_accuracy_metric(kind: Q4AccuracyMetricKind, metric_name: &str) -> AccuracyMetric {
+    match kind {
+        Q4AccuracyMetricKind::Accuracy => AccuracyMetric::Accuracy,
+        Q4AccuracyMetricKind::F1 => AccuracyMetric::F1,
+        Q4AccuracyMetricKind::Precision => AccuracyMetric::Precision,
+        Q4AccuracyMetricKind::Recall => AccuracyMetric::Recall,
+        Q4AccuracyMetricKind::Auc => AccuracyMetric::Auc,
+        Q4AccuracyMetricKind::MeanAbsoluteError => AccuracyMetric::MeanAbsoluteError,
+        Q4AccuracyMetricKind::MeanSquaredError => AccuracyMetric::MeanSquaredError,
+        Q4AccuracyMetricKind::R2 => AccuracyMetric::R2,
+        Q4AccuracyMetricKind::Rouge => AccuracyMetric::DownstreamTaskScore(metric_name.to_string()),
+        Q4AccuracyMetricKind::Loss
+        | Q4AccuracyMetricKind::LogLoss
+        | Q4AccuracyMetricKind::CrossEntropy => AccuracyMetric::Other(metric_name.to_string()),
+        Q4AccuracyMetricKind::Perplexity => AccuracyMetric::PerplexitySnapshot,
+        Q4AccuracyMetricKind::CalibrationError => AccuracyMetric::CalibrationError,
+        Q4AccuracyMetricKind::BrierScore => AccuracyMetric::BrierScore,
+        Q4AccuracyMetricKind::Other => AccuracyMetric::Other(metric_name.to_string()),
+    }
+}
+
 fn validate_q4_security_label(label: &Q4SecurityLabel) -> Result<(), UtmlError> {
     if label.finding_id.trim().is_empty()
         || label.rule_id.trim().is_empty()
@@ -656,6 +718,29 @@ fn validate_q4_perf_label(label: &Q4PerfLabel) -> Result<(), UtmlError> {
                 ));
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_q4_accuracy_label(label: &Q4AccuracyLabel) -> Result<(), UtmlError> {
+    if label.corpus_row_id.trim().is_empty()
+        || label.chunk_id.trim().is_empty()
+        || label.metric_name.trim().is_empty()
+        || label.source_test.trim().is_empty()
+    {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 accuracy label missing corpus_row_id/chunk_id/metric_name/source_test",
+        ));
+    }
+    if !label.baseline_value.is_finite()
+        || !label.after_value.is_finite()
+        || !label.delta_pct.is_finite()
+    {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "Q4 accuracy label carries a non-finite baseline/after/delta",
+        ));
     }
     Ok(())
 }
@@ -787,6 +872,7 @@ fn source_supports_language(source: &LabelSource, language: LabelInputLanguage) 
         LabelSource::PythonPerfAnalyzer | LabelSource::PythonSecurityAnalyzer => {
             language == LabelInputLanguage::Python
         }
+        LabelSource::PythonAccuracyAnalyzer => language == LabelInputLanguage::Python,
         LabelSource::CargoTest | LabelSource::CargoClippy => language == LabelInputLanguage::Rust,
         LabelSource::AgentResponse => false,
     }
@@ -862,7 +948,7 @@ fn bounded_output(field: &str, bytes: &[u8], max_bytes: usize) -> Result<String,
 mod tests {
     use super::*;
     use context_graph_mejepa_instruments::{
-        Q4SecurityDetector, Q4SecurityLineRange, Q4SecuritySeverity,
+        Q4AccuracyLabelKind, Q4SecurityDetector, Q4SecurityLineRange, Q4SecuritySeverity,
     };
 
     #[test]
@@ -956,5 +1042,31 @@ mod tests {
         }])
         .unwrap();
         assert!(surfaces.predicted_perf_regressions.is_empty());
+    }
+
+    #[test]
+    fn q4_accuracy_labels_feed_prediction_surface_adapter() {
+        let surfaces = q4_accuracy_labels_to_prediction_surfaces(&[Q4AccuracyLabel {
+            corpus_row_id: "row-q4-accuracy".to_string(),
+            chunk_id: "chunk-q4-accuracy".to_string(),
+            metric_name: "accuracy".to_string(),
+            metric_kind: Q4AccuracyMetricKind::Accuracy,
+            baseline_value: 0.91,
+            after_value: 0.83,
+            delta_pct: -8.791_209,
+            regression: true,
+            kind: Q4AccuracyLabelKind::Regression,
+            source_test: "tests/test_model.py::test_quality".to_string(),
+        }])
+        .unwrap();
+        assert_eq!(surfaces.predicted_accuracy_degradations.len(), 1);
+        assert_eq!(
+            surfaces.predicted_accuracy_degradations[0].metric,
+            AccuracyMetric::Accuracy
+        );
+        assert_eq!(
+            surfaces.predicted_accuracy_degradations[0].chunk,
+            ChunkId("chunk-q4-accuracy".to_string())
+        );
     }
 }
