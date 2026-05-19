@@ -54,7 +54,7 @@ The historical 2026-05-12 audit trail lived at `./memory/discoveries/2026-05-12-
 - **`context-graph-mejepa-corpus`** — Mutation operators (8 × 11 languages), corpus CLI, SWE-bench bridge.
 - **`context-graph-mejepa-embedders`** — 21 embedder slots; `EmbedderForward` trait; 12 active content slots (8 pretrained + 4 algorithmic).
 - **`context-graph-mejepa-hygiene`** — Tier compression, quota, eviction, GC, witness Merkle compression.
-- **`context-graph-mejepa-instruments`** — 15 frozen instruments + panel (5,120-d total).
+- **`context-graph-mejepa-instruments`** — 15 frozen instruments. The panel is an **array of 15 per-embedder vectors** (a teleological constellation), one vector per slot, each vector living in its own embedder's space. The 5,120 number is contiguous-serialization byte layout only; cross-embedder dim-wise comparison is forbidden — only same-embedder dim-wise compares (E1↔E1, E_AST↔E_AST, etc.), array-level operations on the structured array (per-slot cosine map, similarity matrices, matrix-style projections that respect slot identity), and scalar pairwise cross-slot relationships (MI, correlation, agreement).
 - **`context-graph-mejepa-shift-subscriber`** — Tokio task tailing the shift log; materializes panels.
 - **`context-graph-mejepa-tct`** — Teleological constellations + Gτ guard.
 - **`context-graph-mejepa-train`** — Trainer + UTML formula carriers + DDA computation + samplers.

@@ -247,9 +247,9 @@ fn write_q4_freeze_baseline(d_root: &Path, db: &DB) {
     let mut counts = context_graph_mejepa_cf::FROZEN_Q4_CFS
         .iter()
         .map(|cf| {
-            let handle = db.cf_handle(*cf).unwrap();
+            let handle = db.cf_handle(cf).unwrap();
             let count = db.iterator_cf(handle, IteratorMode::Start).count();
-            ((*cf).to_string(), count)
+            (cf.to_string(), count)
         })
         .collect::<BTreeMap<_, _>>();
     counts.insert(

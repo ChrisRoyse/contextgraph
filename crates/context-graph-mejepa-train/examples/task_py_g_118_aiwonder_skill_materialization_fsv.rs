@@ -41,9 +41,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(&run_root)?;
     let before_tree = tree_state(&run_root)?;
 
-    let mut config = SkillCorpusMaterializationConfig::default();
-    config.max_chunk_rows = args.max_chunk_rows;
-    config.max_materialized_skills = args.max_materialized_skills;
+    let mut config = SkillCorpusMaterializationConfig {
+        max_chunk_rows: args.max_chunk_rows,
+        max_materialized_skills: args.max_materialized_skills,
+        ..Default::default()
+    };
     config.discovery.min_support = args.min_support;
     config.discovery.min_lift_over_cell_baseline = args.min_lift;
     config.discovery.min_confidence = args.min_confidence;

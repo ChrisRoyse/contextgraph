@@ -291,7 +291,7 @@ fn frozen_q4_cf_counts(
 ) -> Result<BTreeMap<String, usize>, context_graph_mejepa::EvalError> {
     let mut counts = context_graph_mejepa_cf::FROZEN_Q4_CFS
         .iter()
-        .map(|cf| Ok(((*cf).to_string(), cf_count(db, *cf)?)))
+        .map(|cf| Ok((cf.to_string(), cf_count(db, cf)?)))
         .collect::<Result<BTreeMap<_, _>, context_graph_mejepa::EvalError>>()?;
     counts.insert(
         context_graph_mejepa_cf::FROZEN_Q4_CALIBRATION_COUNT_KEY.to_string(),

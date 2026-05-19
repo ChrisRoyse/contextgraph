@@ -133,6 +133,48 @@ The substrate chain is **AST chunks → constellations → accepted labels → s
 
 **The constraint that stays.** Skills are deterministic groupings of accepted Level-0 labels. They do NOT introduce ambiguous heads. Any consumer of skill linkage that feeds back into a prediction surface (e.g. #416 pathway leaves) MUST still use Q1/Q2/Q5 binary leaves only at the prediction boundary. The skill linkage is a **navigation surface over the predictor's training substrate**, not a new prediction surface.
 
+### 1.5ter Array-of-vectors constellation rule (LOCKED IN, 2026-05-19)
+
+The panel is an array of 15 per-embedder vectors. This is the structural rule the predictor, the Gτ guard, the OOD scorer, the calibrator, every downstream head, every FSV harness, and every doc MUST honour. The slot-preserving refactor (#385 / #386 / #387 / #388 / #389 / #390 / #394) shipped this rule into the code; archive-grade framings that called the panel a "5,120-d joint embedding" or "fused panel" are doctrinally retired.
+
+**What an entry in the panel is.** Each `InstrumentSlot` carries one vector produced by one specific frozen embedder/instrument: `E_AST` produces a tree-sitter AST vector, `E_TypeGraph` produces a type-graph attention vector, `E1`-class slots produce e5-large-v2 semantic vectors, `E12` produces ColBERT late-interaction tokens, `E_Trace` produces an execution-trace transformer vector, `E_Oracle` produces a binary-outcome one-hot, etc. Each vector space is **distinct and unrelated to the others**. Dimension `k` of `E_AST` has no relationship to dimension `k` of `E1` — they are different coordinate systems.
+
+**What you CAN do (valid operations):**
+
+| Operation | Example | Valid because |
+|---|---|---|
+| Same-embedder dim-wise compare | `cosine(panel_A.E_AST, panel_B.E_AST)` | Both vectors are in the same E_AST space |
+| Same-embedder centroid + threshold | `cos(panel.E_AST, centroid.E_AST) >= τ_E_AST` (the Gτ guard) | Centroid is built from same-embedder samples |
+| Same-embedder vector arithmetic | `panel_A.E_AST - panel_B.E_AST` (residual within the same space) | Same coordinate system |
+| Array-vs-array per-slot map | 15-element vector of `[cosine(panel_A.slot_i, panel_B.slot_i) for i in slots]` | Each comparison is same-embedder; the resulting vector lives in slot-index space, NOT in a fused embedding space |
+| Strict-conjunction gate over the map | `forall slot: cos(A.slot, B.slot) >= τ_slot` | Per-slot threshold per embedder; same-embedder cosines combined by logical AND, not by averaging or projection |
+| Per-pair similarity matrix between two arrays | 15×15 matrix where cell `(i,j)` is `cosine(panel_A.slot_i, panel_B.slot_j)` ONLY for `i==j` (off-diagonal is undefined / typed-zero / never compared) | Diagonal cells are same-embedder cosines; off-diagonal is structurally undefined |
+| Cross-slot SCALAR pairwise relationship within one array | `MI(slot_a_distribution, slot_b_distribution)`, `corr(slot_a, slot_b)`, `agreement_score(slot_a, slot_b)`, `disagreement_score(slot_a, slot_b)` | These are scalar statistics over the two slot distributions; they do NOT align dimensions across the slots, they compute a single number summarizing the relationship |
+| Matrix-style operations on the typed structured array | Per-slot weighted aggregation `sum_i w_i * f_i(slot_i)`, slot-set selection / masking via `filled_mask`, masked matrix projections through 15 dedicated linear projections (one per slot), slot-preserving late fusion | Each operation respects slot identity; one linear projection per slot, with the result combined via late fusion, not by reading the packed buffer as one homogeneous vector |
+| Array-level aggregate scalar statistics | `min_margin = min over slots of (cosine - threshold)`, `slots_violating_count`, `worst_slot_id` | Aggregates *over* same-embedder comparisons, not *across* embedder spaces |
+
+**What you CANNOT do (forbidden operations):**
+
+| Forbidden | Why |
+|---|---|
+| `cosine(panel.E_AST_subvector, panel.E1_subvector)` (even if padded to same length) | Different coordinate systems; the dimensions don't refer to comparable axes |
+| `linear(5120, hidden_dim)` over the packed buffer | Treats all 5,120 bytes as one homogeneous embedding; silently learns meaningless cross-embedder compensations |
+| `residual_norm_sq(predicted.data, target.data)` over the packed 5,120 buffer | Must decompose to per-slot residuals first; per-slot residuals are then aggregated by fail-closed conjunction, never averaged |
+| `flat_attention(packed_buffer)` (self-attention over all 5,120 elements as if they were one sequence) | Attention treats positions as exchangeable within a coordinate system; mixing E_AST positions with E1 positions in one attention head is the same error as flat linear projection |
+| Padding shorter slots to a common length and then comparing dim-wise | The pad changes the vector length but does not move the vectors into the same coordinate system; the comparison is still meaningless |
+| Any operation that allows a strong slot's value to compensate for a violation in a weak slot | The anti-compensation FSV (#394) catches this; strict per-slot conjunction enforces it |
+
+**Why the 5,120 number exists at all.** It is the contiguous byte layout for serialization: the sum of per-slot dimensions, stored as one f32 buffer with per-slot `(offset, dim)` extents in `InstrumentSlot::layout()`. RocksDB persists `Panel` as a JSON envelope containing this buffer + the `filled_mask` bitmap. On every read, the buffer is sliced back into 15 per-slot vectors before any operation. The 5,120 number is for transport; it is never a semantic input.
+
+**Code-level enforcement (already shipped).** `crates/context-graph-mejepa-tct/src/gtau.rs:14` iterates `for embedder in EmbedderId::all()` and computes `cosine_similarity(slot, centroid)` per embedder only. `cosine_similarity` at `gtau.rs:90` errors with `MEJEPA_TCT_DIM_MISMATCH` on any vector-length mismatch (architectural prevention of accidental cross-embedder comparison). `slot_identity_preserved=true` and `flat_vector_concat_used=false` are FSV-asserted at #386 / #387 / #388 / #389 / #390 / #394 / #398. The slot-preserving late-fusion predictor (#387) replaced the prior flat-projection predictor and the FSV proved the swap.
+
+**Where to look in code:**
+- Storage layout: `crates/context-graph-mejepa-instruments/src/lib.rs:158-199` (`InstrumentSlot::layout()`)
+- Gτ guard (the per-embedder cosine implementation): `crates/context-graph-mejepa-tct/src/gtau.rs:14`
+- Dim-mismatch fail-closed: `crates/context-graph-mejepa-tct/src/gtau.rs:90`
+- Slot-preserving predictor: `crates/context-graph-mejepa/src/predictor/` (per-slot input encoders + late fusion)
+- Anti-compensation FSV: `crates/context-graph-mejepa/examples/python_anti_compensation_fsv.rs` (#394)
+
 ### 1.6 The ambiguity boundary (locked-in rule)
 
 ME-JEPA only predicts questions that have a *free binary form against reality*. Free means: the binary verdict comes from observing reality directly, not from imposing an arbitrary threshold on a continuous heuristic. The system does not predict ambiguous things, because:
@@ -409,7 +451,7 @@ Every crate defines its own `Error` enum with `SCREAMING_SNAKE_CASE` code via `.
 
 **Predictor (`context-graph-mejepa`).** CUDA-only production predictor. 73 modules covering claim graph (Q1), patch-similarity HNSW exemplars (Q3), Q4 security/perf/cost/accuracy heads, Q5 shift-log replay impact, multi-head VICReg + Huber loss, conformal calibration, OOD detection, claim-vs-reality reconciliation, project-ingest reality compiler, synthetic-stress evaluator, adversarial corpus, dynamic embedder registration, foundationality (PageRank on chunk/library/embedder dep graphs), label transfer audit, operator override surface. `compile()` and `compile_with_fingerprint_observation()` are the canonical Q1-Q5 entry points.
 
-**Frozen instruments (`context-graph-mejepa-instruments`).** 15-slot typed panel storage layout: `E_AST (384)`, `E_CFG (256)`, `E_DataFlow (256)`, `E_TypeGraph (256)`, `E_Test (384)`, `E_Trace (512)`, `E_Diff (256)`, `E_Witness (256)`, `E_Oracle (128)`, `E_Problem (1024)`, `E_CommitMsg (384)`, `E_StaticAnalysis (256)`, `E_Runtime (256)`, `E_Reasoning (384)`, `Scalars (128)`. These slots are independent evidence surfaces inside a Teleological Constellation, not one fused semantic embedding. `Panel`/`PanelBuilder` enforce fail-closed dim+finite+double-fill validation. Instrument trait carries zero trainable params (structural collapse-immunity invariant `ΔΞ.target_collapse = 0`).
+**Frozen instruments (`context-graph-mejepa-instruments`).** A `Panel` is an **array of 15 per-embedder vectors** (a teleological constellation), one vector per slot, each vector living in its own embedder's space: `E_AST (384)`, `E_CFG (256)`, `E_DataFlow (256)`, `E_TypeGraph (256)`, `E_Test (384)`, `E_Trace (512)`, `E_Diff (256)`, `E_Witness (256)`, `E_Oracle (128)`, `E_Problem (1024)`, `E_CommitMsg (384)`, `E_StaticAnalysis (256)`, `E_Runtime (256)`, `E_Reasoning (384)`, `Scalars (128)`. The 5,120 f32 contiguous buffer + per-slot byte offsets is the serialization format; **the semantic unit is the array of 15 per-embedder vectors, NOT a 5,120-d fused embedding**. Cross-embedder dimension-wise comparison is forbidden (E1's dim-3 is not comparable to E_AST's dim-3 — those numbers live in unrelated coordinate systems). Valid operations: same-embedder dim-wise compare (E1↔E1, E_AST↔E_AST, etc.); array-vs-array operations on the structured array (per-slot cosine map, similarity matrices, matrix-style projections that respect slot identity, masked aggregation); cross-slot SCALAR pairwise relationship metrics within the same array (MI, correlation, agreement). `Panel`/`PanelBuilder` enforce fail-closed dim+finite+double-fill validation. Instrument trait carries zero trainable params (structural collapse-immunity invariant `ΔΞ.target_collapse = 0`).
 
 **Embedders (`context-graph-mejepa-embedders`).** 21 slots (E5 retired). 12 active content embedders (8 pretrained + 4 algorithmic). Frozen-by-design weights: E1, E6, E7, E8, E10, E12, E13, E14. Dynamic-registration scaffolding (`dynamic_registry.rs`) + VRAM budget enforcement (`vram.rs`) + falsification gate + freeze audit + adversarial-injection mitigation. SHA-256 manifest pins for every pretrained weight. CUDA-required for production; CPU construction rejected.
 

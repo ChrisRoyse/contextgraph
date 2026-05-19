@@ -59,12 +59,15 @@ Three architectural primitives back the binary contract:
       plus dynamic embedders behind freeze gate)
                  │
                  ▼
-      15 frozen instruments → typed 5,120-d Panel storage layout
+      15 frozen instruments → array of 15 per-embedder vectors (a teleological constellation)
         E_AST 384 | E_CFG 256 | E_DataFlow 256 | E_TypeGraph 256 |
         E_Test 384 | E_Trace 512 | E_Diff 256 | E_Witness 256 |
         E_Oracle 128 | E_Problem 1024 | E_CommitMsg 384 |
         E_StaticAnalysis 256 | E_Runtime 256 | E_Reasoning 384 |
         Scalars 128
+        (each slot's vector lives in its own embedder's space;
+         the array IS the constellation, NOT a 5,120-d fused embedding;
+         5,120 is contiguous-serialization byte layout only)
                  │  PanelBuilder validates: dim + finite + no double-fill
                  ▼
       CF_MEJEPA_PANELS + CF_MEJEPA_PANEL_META + CF_MEJEPA_SHIFT_WATERMARK
@@ -169,11 +172,25 @@ That chain is how ME-JEPA learns to predict what happens when code is live. The 
 
 ---
 
-## 3. Instrument Panel (15 slots, 5,120-d storage layout)
+## 3. Instrument Panel — Array of Per-Embedder Vectors (a teleological constellation)
 
-`crates/context-graph-mejepa-instruments/src/lib.rs:158-199`. `PANEL_DIM = 5_120`. `SLOT_COUNT = 15`. Layout MUST sum to PANEL_DIM (asserted at debug build via `debug_assert_eq!`).
+`crates/context-graph-mejepa-instruments/src/lib.rs:158-199`. The panel is **an array of 15 per-embedder/per-instrument vectors**, one vector per slot, each living in its own embedder's vector space. It is a teleological constellation in the strict sense: the array IS the constellation, not a fused embedding of the array.
 
-**Semantic contract:** the panel is a typed constellation carrier, not one fused embedding space. Each slot remains an independent evidence surface with its own encoder, dimension, filled bit, and downstream violation attribution. Cross-slot correlations and pairwise MI are valid signals; cross-slot compensation is not. A wrong/weak slot must fail closed even when the aggregate 5,120-d distance looks acceptable.
+**The architectural rule (locked in):**
+
+1. **Each slot's vector lives in its own embedder's space.** E_AST's 384-d vector is a tree-sitter AST embedding; E_TypeGraph's 256-d vector is a type-graph embedding; E1's vector is an e5-large-v2 semantic embedding. These vector spaces are **not** dimension-compatible with each other.
+
+2. **Same-embedder vectors are dimension-wise comparable.** E_AST(chunk A) cosine E_AST(chunk B) is valid because both vectors live in the same E_AST space. Same for every other slot pair across different chunks (E_TypeGraph ↔ E_TypeGraph, E1 ↔ E1, E_Trace ↔ E_Trace, etc.). The Gτ guard at `gtau.rs:14` enforces this by iterating per embedder and computing `cosine_similarity(slot, centroid)` only between same-embedder slots.
+
+3. **Cross-embedder dimension comparison is forbidden.** You cannot compare E1's dim-3 to E_AST's dim-3 because those numbers come from unrelated spaces. The `cosine_similarity` function at `gtau.rs:90` fails closed with `MEJEPA_TCT_DIM_MISMATCH` if you attempt it (different-length vectors can never be compared; same-length vectors from different embedders MUST not be compared).
+
+4. **Whole arrays can be compared to whole arrays.** Two constellation arrays (e.g. a candidate panel and a centroid panel from the same `(cell × language × entity_type)` cell) can undergo array-level operations: per-slot cosine map (the Gτ guard), per-slot violation accumulation, full pairwise per-slot similarity matrix, slot-set intersection/union over filled bits, matrix-style projections that treat the array as a typed structured object, and any other operation that respects slot identity.
+
+5. **Cross-embedder relationships within the same array are scalar pairwise metrics, not vector dim-wise compares.** MI(E_AST, E_TypeGraph), correlation(E_Test_outcomes, E_Oracle_outcomes), agreement-or-disagreement scores between pair (E_AST, E_DataFlow) — these are valid scalar relationships. They compute *over* the two slot distributions; they don't try to align dimensions across them.
+
+6. **`PANEL_DIM = 5_120` is BYTE-LAYOUT only.** The constant in `crates/context-graph-mejepa-instruments/src/lib.rs:165` and the offset table in `InstrumentSlot::layout()` exist solely to serialize the structured array into a contiguous f32 buffer for RocksDB persistence. The 5,120 number is a sum of per-slot dimensions for storage and transport; it is NOT a unified semantic embedding, it is NOT comparable to any other 5,120-d vector, and it is NOT a valid input to a single-projection "linear(5120, hidden)" predictor head. Any flat projection over the packed 5,120 buffer is forbidden; the slot-preserving refactor (#385/#387) replaced that pattern with per-slot encoders + late fusion.
+
+**Slot inventory (per-slot vector dimensions; each lives in its own space):**
 
 | # | Slot | Variant | Dim | Offset | Encoder source | Encodes |
 |---|---|---|---|---|---|---|
@@ -193,7 +210,7 @@ That chain is how ME-JEPA learns to predict what happens when code is live. The 
 | 14 | `EReasoning` | `e_reasoning` | 384 | 4608 | `e_reasoning::EReasoningInstrument` | Reasoning / reflexion trace |
 | 15 | `Scalars` | `scalars` | 128 | 4992 | `e_scalars::ScalarsInstrument` | BFS depth, blame age, churn, coverage Δ, repo-health |
 
-**Total:** 5,120 (4992 + 128 = 5,120 ✅).
+**Storage byte layout total:** 5,120 f32 (sum of per-slot dims: 4992 + 128 = 5,120). This is the contiguous serialization size only; the SEMANTIC unit is the array of 15 per-embedder vectors, NOT a 5,120-d fused embedding. A `Panel` deserialized from disk is sliced back into per-slot regions before any operation; no operation reads across slot boundaries as if the dimensions were homogeneous.
 
 **Panel invariants** (`PanelBuilder::set_slot`, `validate_panel_parts`):
 - `vector.len() == slot.dim()` else `MEJEPA_INSTRUMENTS_INVALID_INPUT`
@@ -214,16 +231,33 @@ That chain is how ME-JEPA learns to predict what happens when code is live. The 
 
 `crates/context-graph-mejepa/src/predictor/` — `MeJepaPredictor`, `TransformerLayer`, `ArchitectureSummary`. CUDA-required.
 
-**P0 correction (#385):** the current predictor/head implementation still contains flat `PANEL_DIM` and `CONCAT_INPUT_DIM` projections. That is acceptable only as a storage-compatible implementation detail while #385 is open; it is not acceptable ship-gate evidence. The production architecture must preserve per-slot/per-embedder constellation semantics through predictor input, output, heads, OOD scoring, calibration, and FSV readback.
+**Architectural rule (locked in by #385 / #386 / #387; flat-vector pattern is forbidden):** the predictor consumes the panel **as an array of per-embedder vectors**, NOT as a flat 5,120-d input. Per-slot input encoders project each slot vector from its own embedder space into a shared latent representation; the latent representations are then late-fused. There is no single `linear(5120, hidden)` projection over the packed byte buffer — that pattern is the architectural error #385 corrected. The slot-preserving late-fusion predictor shipped via #387 (FSV PASS, `slot_identity_preserved=true`, `flat_vector_concat_used=false`).
 
-Default architecture (`config.rs`):
-- `PANEL_DIM` = 5,120 input
-- `CONCAT_INPUT_DIM` = (constant; ≥5120 + auxiliary)
+**Why this matters operationally:** the per-embedder vectors live in distinct spaces (e5-large-v2 semantic, tree-sitter AST, type-graph attention, ColBERT late-interaction, etc.). Dimension `k` of E1 means nothing in relation to dimension `k` of E_AST — they are unrelated coordinate systems. A flat `linear(PANEL_DIM, hidden)` projection treats all 5,120 dimensions as one homogeneous coordinate system and silently learns cross-embedder compensations that are mathematically meaningless. Per-slot encoders + late fusion respect the array structure: each slot is projected by its own dedicated input encoder; per-slot evidence flows forward as typed entries that downstream heads can attribute violations to.
+
+**Legal operations on the panel (per slot or array-level):**
+- **Per-slot dim-wise:** cosine, dot product, L2 distance against same-embedder vectors only (e.g. `cosine(panel.E_AST, centroid.E_AST)`). Implementation: `gtau.rs:14` iterates per embedder.
+- **Array-vs-array:** per-slot cosine map (vector of 15 same-embedder cosines), strict-conjunction gate over the map (all slots must clear their per-slot threshold), per-pair similarity matrix (where each cell is a same-embedder cosine), aggregate scalar statistics over the map (min margin, slot-count violating, etc.).
+- **Cross-slot SCALAR pairwise within the same array:** MI(slot_a_distribution, slot_b_distribution), correlation(slot_a, slot_b) — scalar relationship metrics over the two slot distributions, NOT a vector dim-wise compare. Shipped via #388 (78 pairwise correlation tensors per cell).
+- **Matrix-style operations on the structured array:** any operation that treats the array as a typed 15-entry structured object — per-slot weighted aggregation, slot-set selection, masked matrix projections that respect slot identity, slot-preserving fusion through 15 dedicated linear projections rather than one fused projection.
+
+**Forbidden operations:**
+- Single linear/conv/attention projection over the packed 5,120-d buffer as if it were one embedding space.
+- Dimension-wise comparison between two slots from different embedders (e.g. `cosine(panel.E_AST_subvector_padded_to_768, panel.E_TypeGraph_subvector_padded_to_768)` is forbidden even if you pad/truncate — the dimensions live in unrelated coordinate systems).
+- Flat residual computation over the whole 5,120 buffer (`residual_norm_sq(predicted.data, target.data)` over the packed buffer) — must decompose to per-slot residuals first.
+- Any operation that allows a strong slot to compensate for a violation in a weak slot. The anti-compensation FSV (#394) is the regression gate.
+
+Default architecture (`config.rs`) — per-slot:
+- 15 per-slot input encoders (one per `InstrumentSlot`), each `linear(slot.dim(), per_slot_latent_dim)`
+- Late-fusion stack: typed concatenation of the 15 latents followed by transformer layers operating on the slot-preserving sequence (slot index becomes a positional encoding feature so the transformer cannot accidentally treat dimensions as exchangeable)
+- 15 per-slot output decoders that emit per-slot residuals against the frozen target (rather than one flat decoder)
 - `DEFAULT_HIDDEN_DIM`, `DEFAULT_NUM_HEADS`, `DEFAULT_NUM_LAYERS`, `DEFAULT_FF_EXPANSION`, `DEFAULT_LAYER_NORM_EPS`
 - `INVERSE_ACTION_DIM` — 16-d action latent for inverse map (TASK-EK-012)
-- VICReg: `VICREG_INV_LAMBDA`, `VICREG_VAR_LAMBDA`, `VICREG_COV_LAMBDA`, `VICREG_GAMMA`
+- VICReg: `VICREG_INV_LAMBDA`, `VICREG_VAR_LAMBDA`, `VICREG_COV_LAMBDA`, `VICREG_GAMMA` — computed per-slot, aggregated via fail-closed conjunction
 - `GRAD_NORM_NOISE_FLOOR`
 - VRAM budgets: `VRAM_STEADY_STATE_TARGET_BYTES`, `VRAM_WARN_THRESHOLD_BYTES`
+
+Legacy constants (`PANEL_DIM`, `CONCAT_INPUT_DIM`) remain in `config.rs` as serialization helpers but MUST NOT appear as the input shape of any semantic projection. Any new module that requests them as a single-projection input must fail closed via the #385 freeze guard or be rejected at code review.
 
 Inference-time config (`MeJepaInferConfig`):
 - `INFER_DEFAULT_ALPHA` — conformal α
@@ -712,7 +746,7 @@ PageRank scores weight `BatchSampler` and Fisher (TASK-EK-016 / EK-017 / EK-016-
 
 The corresponding `CF_*_Q4_*` CFs are NOT deleted (would force a schema-version bump and DB rewipe); they are deprecated-readable. A future schema-version bump may delete them; tracked separately under `phase:cleanup`.
 
-**#408 FSV.** One-time freeze proof lives at `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/`: `allPassed=true`, `q4RowCountDelta=0`, `q4LossCoefficientMax=0.0`, `q4InputsToShipGate=0`, historical Q4 display-only fields remain readable, and new predictions return zero Q4 display-only fields. Main FSV sha256 `eaec2c41ebab0b196be0674ea435526c10bc932349df76c54048ba8b3d7c43ed`; independent readback sha256 `1d34a219def6e423579af0ce3d1dee45342cf172c52d5210772a7ee81d628fb9`.
+**#408 FSV.** One-time freeze proof lives at `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/`: `allPassed=true`, `q4RowCountDelta=0`, `q4LossCoefficientMax=0.0`, `q4InputsToShipGate=0`, historical Q4 display-only fields remain readable, and new predictions return zero Q4 display-only fields. The proof also covers `q4cal::*` row-count freeze in `CF_MEJEPA_HEAD_CALIBRATIONS`. Main FSV sha256 `23408b7d09571ca123447d05b365d1ac33b200142be9ce64a75d07c163eb32c3`; independent readback sha256 `5e2f0213a36d9463bd2f630d45f1928fd3c2a80e21b1fa7e06825d80c10412d5`.
 
 **What replaces Q4 in the operator-facing answer.** Operators who used to want "what else could go wrong" answers get them from the **named failure mode** Q3 surface (§4.3): if the binary verdict is Fail, the named failure mode + closest exemplar tell the operator the specific named cause. If the binary verdict is Pass, the operator-facing answer is "Pass + reasons-to-trust: claim landed in bytes (Q1=Yes), oracle agrees (Q2=Pass), closest exemplars all Pass" — not a list of speculative ambiguous risks.
 

@@ -194,10 +194,10 @@ fn frozen_q4_counts(db: &DB) -> FsvResult<BTreeMap<String, usize>> {
         .iter()
         .map(|cf_name| {
             let cf = db
-                .cf_handle(*cf_name)
+                .cf_handle(cf_name)
                 .ok_or_else(|| format!("missing column family {cf_name}"))?;
             Ok((
-                (*cf_name).to_string(),
+                cf_name.to_string(),
                 db.iterator_cf(cf, IteratorMode::Start).count(),
             ))
         })

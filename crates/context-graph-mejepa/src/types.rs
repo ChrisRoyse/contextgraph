@@ -2137,13 +2137,13 @@ impl RealityPredictionLegacyNoLabelContext {
     fn from_current(value: &RealityPrediction) -> Self {
         Self {
             prediction_id: value.prediction_id,
-            witness_hash: value.witness_hash.clone(),
+            witness_hash: value.witness_hash,
             task_id: value.task_id.clone(),
             session_id: value.session_id,
             language: value.language,
             covered_chunks: value.covered_chunks.clone(),
             verdict: value.verdict,
-            confidence_interval: value.confidence_interval.clone(),
+            confidence_interval: value.confidence_interval,
             predicted_oracle_pass: value.predicted_oracle_pass,
             predicted_test_pass: value.predicted_test_pass.clone(),
             predicted_runtime_trace: value.predicted_runtime_trace,
@@ -2289,13 +2289,13 @@ impl RealityPredictionLegacyNoSlotAttributions {
     fn from_current(value: &RealityPrediction) -> Self {
         Self {
             prediction_id: value.prediction_id,
-            witness_hash: value.witness_hash.clone(),
+            witness_hash: value.witness_hash,
             task_id: value.task_id.clone(),
             session_id: value.session_id,
             language: value.language,
             covered_chunks: value.covered_chunks.clone(),
             verdict: value.verdict,
-            confidence_interval: value.confidence_interval.clone(),
+            confidence_interval: value.confidence_interval,
             predicted_oracle_pass: value.predicted_oracle_pass,
             predicted_test_pass: value.predicted_test_pass.clone(),
             predicted_runtime_trace: value.predicted_runtime_trace,
@@ -2439,13 +2439,13 @@ impl RealityPredictionLegacyNoConstellation {
     fn from_current(value: &RealityPrediction) -> Self {
         Self {
             prediction_id: value.prediction_id,
-            witness_hash: value.witness_hash.clone(),
+            witness_hash: value.witness_hash,
             task_id: value.task_id.clone(),
             session_id: value.session_id,
             language: value.language,
             covered_chunks: value.covered_chunks.clone(),
             verdict: value.verdict,
-            confidence_interval: value.confidence_interval.clone(),
+            confidence_interval: value.confidence_interval,
             predicted_oracle_pass: value.predicted_oracle_pass,
             predicted_test_pass: value.predicted_test_pass.clone(),
             predicted_runtime_trace: value.predicted_runtime_trace,
