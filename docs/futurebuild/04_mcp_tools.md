@@ -266,3 +266,50 @@ No tool sends HTTP from action paths (CLAUDE.md §6.8). No tool writes outside `
 - Response body shapes — derive from the source plus the `RealityPrediction` / `ProjectReport` / etc. types in `crates/context-graph-mejepa/src/types.rs`.
 - HTTP transport configuration — see `crates/context-graph-mcp/src/server/http_transport.rs`.
 - Adapter shims to legacy ccreality tool names — see `crates/context-graph-mcp/src/adapters/` (transport-only; same handlers).
+
+---
+
+## 9. Planned New MCP Tools (Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop)
+
+Planned MCP surfaces supporting the 2026-05-19 binary doctrine (`01_overview.md §1.1`, `05_predictor_pipeline.md §0`). Tracked under epic issues #403 / #404 / #405. All planned tools are `mejepa_*` namespaced and registered through `definitions/mejepa.rs`.
+
+### 9.1 Failure-mode labeling tools (#403 / TASK-PY-G-110)
+
+| Tool (planned) | Const | Purpose | Key params | Side effects |
+|---|---|---|---|---|
+| `mcp__cgreality__mejepa_list_failure_modes` | `MEJEPA_LIST_FAILURE_MODES` | List the operator-approved failure-mode vocabulary + level-1/2/3 catalog. Optional cell filter. | `cell_key?`, `level: 1\|2\|3` | Read-only: `CF_MEJEPA_FAILURE_MODE_*` |
+| `mcp__cgreality__mejepa_label_failure_cluster` | `MEJEPA_LABEL_FAILURE_CLUSTER` | Operator-facing tool to name a discovered K-means cluster. Top suggestions from `CF_MEJEPA_FAILURE_MODE_VOCABULARY` cosine match; operator can approve, rename, or merge with an existing skill. | `cluster_id`, `chosen_name`, `merge_into_cluster_id?` | Writes `CF_MEJEPA_FAILURE_MODE_LEVEL1` (operator_approved_name), `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` |
+| `mcp__cgreality__mejepa_explain_named_failure_mode` | `MEJEPA_EXPLAIN_NAMED_FAILURE_MODE` | Given a `prediction_id`, return the named failure mode + top-K closest exemplars + slot trace + vocabulary source. Replaces the legacy `mejepa_explain_prediction` output for Fail rows. | `prediction_id`, `k: int=5` | Read-only: `CF_MEJEPA_NAMED_PREDICTIONS`, `CF_MEJEPA_PATCH_SIMILARITY_META` |
+| `mcp__cgreality__mejepa_failure_mode_coverage_audit` | `MEJEPA_FAILURE_MODE_COVERAGE_AUDIT` | Read-only audit: for the 300×8 holdout, what fraction of Fail rows have an attached named failure mode? Used as gate evidence for #403's FSV. | (no params) | Read-only |
+
+### 9.2 Cross-panel triangulation tools (#404 / TASK-PY-G-111)
+
+| Tool (planned) | Const | Purpose | Key params | Side effects |
+|---|---|---|---|---|
+| `mcp__cgreality__mejepa_cross_panel_score` | `MEJEPA_CROSS_PANEL_SCORE` | Trigger Panel B evaluation for a specific `prediction_id`; returns per-panel verdicts + agreement metric + `CROSS_PANEL_GOODHART_DETECTED` flag if applicable. Synchronous (loads Panel B encoders for the call). | `prediction_id`, `force_reload_panel_b: bool=false` | Writes `CF_MEJEPA_PANEL_B_OBSERVATIONS`, `CF_MEJEPA_CROSS_PANEL_AGREEMENT` |
+| `mcp__cgreality__mejepa_cross_panel_dashboard` | `MEJEPA_CROSS_PANEL_DASHBOARD` | Aggregate dashboard for the current ship-gate window: per-cell Panel-A vs Panel-B correlation, agreement delta, count of `CROSS_PANEL_GOODHART_DETECTED` rows. | `window_id?` | Read-only: `CF_MEJEPA_CROSS_PANEL_AGREEMENT`, `CF_MEJEPA_EVAL_REPORTS` |
+
+### 9.3 Mistake-driven loop tools (#405 / TASK-PY-G-112)
+
+| Tool (planned) | Const | Purpose | Key params | Side effects |
+|---|---|---|---|---|
+| `mcp__cgreality__mejepa_record_mistake` | `MEJEPA_RECORD_MISTAKE` | Land a `MistakeRow` for a `prediction_id` that disagreed with reality. Called by the PostToolUse capture, the shift-log replay, the operator override, and the oracle-eval pipeline. Idempotent on `prediction_id` + `ground_truth_source`. | `prediction_id`, `ground_truth_verdict: Pass\|Fail`, `ground_truth_source`, `slot_traces?` | Writes `CF_MEJEPA_MISTAKE_LOG`, boosts `CF_MEJEPA_REPLAY_BUFFER` 8×, writes `CF_MEJEPA_MISTAKE_REPLAY_PRIORITY` |
+| `mcp__cgreality__mejepa_mistake_history` | `MEJEPA_MISTAKE_HISTORY` | Read-only: list mistakes for a `cell_key` or `named_failure_mode` in a window. Drives operator triage and the heal scheduler's per-cell attention. | `cell_key?`, `named_failure_mode?`, `since_ts_ns?`, `limit: int=100` | Read-only: `CF_MEJEPA_MISTAKE_LOG` |
+| `mcp__cgreality__mejepa_mistake_loop_status` | `MEJEPA_MISTAKE_LOOP_STATUS` | Aggregate: rolling `mistake_repeat_rate` per `(cell_key × named_failure_mode)`, support-set size, last-update-ts. Target convergence: ≤ 0.05 repeat rate within window. | (no params) | Read-only: `CF_MEJEPA_MISTAKE_LOG`, `CF_MEJEPA_ONLINE_HEAD_STATE` |
+
+### 9.4 Q4 tool deprecation
+
+Per `05_predictor_pipeline.md §16`, the following existing tools remain registered but are reclassified as **read-only-historical** and no longer accept writes:
+
+| Tool | Status after 2026-05-19 |
+|---|---|
+| `mcp__cgreality__mejepa_predict_latest` `q4.*` fields | Read-only; new predictions populate the field as empty objects |
+| `mcp__cgreality__mejepa_explain_prediction` `q4_evidence` section | Read-only; historical rows still visible |
+| `mcp__cgreality__mejepa_inspect_prediction` `q4.*` | Read-only |
+| Q4-specific producers / calibration tools (if any operator-visible ones existed via `mejepa_eval_run` Q4 subcommand) | Disabled by default; gated behind `--allow-deprecated-q4` env var for forensic re-runs only |
+
+No tool deletion (would break stored agent prompts referencing them); behaviour change only. Documented in `04_mcp_tools.md §9.4` + `01_overview.md §1.1`.
+
+### 9.5 Tool-count update
+
+When #403/#404/#405 land, the total tool count moves from **196 → ~205** (4 + 2 + 3 = 9 new tools). The `test_total_tool_count_and_no_duplicates` test threshold is updated as part of the same PR. Q4 tool deprecation does not change the count (tools remain registered, just behaviour-changed).
