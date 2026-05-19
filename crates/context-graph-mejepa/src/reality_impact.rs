@@ -6,7 +6,6 @@ use context_graph_mejepa_cf::{CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_REALITY_IMPA
 use rocksdb::{IteratorMode, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 use crate::calibration::cf;
 use crate::error::MejepaInferError;
@@ -246,9 +245,9 @@ pub fn replay_reality_impact_for_prediction(
     }
     let shift_log_path =
         shift_log_path_for_session(runtime_or_shift_log_root, prediction.session_id);
-    let entries = read_shift_log_entries(&shift_log_path)?;
     let window_start = prediction.created_at_unix_ms;
     let window_end = window_start.saturating_add(replay_window_ms);
+    let entries = read_shift_log_entries(&shift_log_path, Some(window_end))?;
     let entries = entries
         .into_iter()
         .filter(|entry| {
@@ -476,17 +475,36 @@ fn classify_correctness(
 fn predicted_impact_items(prediction: &RealityPrediction) -> Vec<RealityImpactPredictedItem> {
     let mut items = Vec::new();
     let mut ids = BTreeSet::new();
-    for file in prediction_covered_files(prediction) {
-        push_predicted_item(
-            &mut items,
-            &mut ids,
-            RealityImpactPredictedItem {
-                item_id: format!("file:{}", file.display()),
-                kind: RealityImpactItemKind::FileChange,
-                target: file.display().to_string(),
-                detail: "covered chunk file expected to be touched by this prediction".to_string(),
-            },
-        );
+    if let Some(impact) = &prediction.reality_impact {
+        for file in &impact.predicted_files_changed {
+            push_predicted_item(
+                &mut items,
+                &mut ids,
+                RealityImpactPredictedItem {
+                    item_id: format!("file:{}", file.display()),
+                    kind: RealityImpactItemKind::FileChange,
+                    target: file.display().to_string(),
+                    detail: "explicit RealityImpact predicted_files_changed entry".to_string(),
+                },
+            );
+        }
+        for item in &impact.predicted_test_outcomes {
+            if matches!(
+                item.predicted_outcome,
+                TestOutcome::Fail | TestOutcome::Error
+            ) {
+                push_predicted_item(
+                    &mut items,
+                    &mut ids,
+                    RealityImpactPredictedItem {
+                        item_id: format!("failed_test:{}", item.test_id.0),
+                        kind: RealityImpactItemKind::FailedTest,
+                        target: item.test_id.0.clone(),
+                        detail: format!("predicted_outcome={:?}", item.predicted_outcome),
+                    },
+                );
+            }
+        }
     }
     for item in &prediction.predicted_failed_tests {
         if matches!(
@@ -679,7 +697,10 @@ fn shift_log_path_for_session(root: impl AsRef<Path>, session_id: [u8; 16]) -> P
     shift_log_dir.join(format!("{}.jsonl", hex::encode(session_id)))
 }
 
-fn read_shift_log_entries(path: &Path) -> Result<Vec<ParsedShiftLogEntry>, MejepaInferError> {
+fn read_shift_log_entries(
+    path: &Path,
+    stop_after_unix_ms: Option<i64>,
+) -> Result<Vec<ParsedShiftLogEntry>, MejepaInferError> {
     if !path.is_file() {
         return Ok(Vec::new());
     }
@@ -687,12 +708,16 @@ fn read_shift_log_entries(path: &Path) -> Result<Vec<ParsedShiftLogEntry>, Mejep
     let mut out = Vec::new();
     let mut previous_timestamp = None;
     let mut previous_effective_sha = None::<String>;
+    let mut previous_file_after_sha = std::collections::BTreeMap::<PathBuf, [u8; 32]>::new();
     for (line_idx, line) in raw.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
         }
         let value: Value = serde_json::from_str(line)?;
         let entry = parse_shift_log_entry(&value, path, line_idx + 1)?;
+        if stop_after_unix_ms.is_some_and(|stop| entry.timestamp_unix_ms > stop) {
+            break;
+        }
         if let Some(prev_ts) = previous_timestamp {
             if entry.timestamp_unix_ms < prev_ts {
                 return Err(invalid_input(
@@ -745,16 +770,62 @@ fn read_shift_log_entries(path: &Path) -> Result<Vec<ParsedShiftLogEntry>, Mejep
                 ));
             }
         }
+        validate_file_sha_chain(&entry, &mut previous_file_after_sha, path, line_idx + 1)?;
         previous_timestamp = Some(entry.timestamp_unix_ms);
-        previous_effective_sha = Some(
-            entry
-                .declared_sha256
-                .clone()
-                .unwrap_or_else(|| hex::encode(Sha256::digest(line.as_bytes()))),
-        );
+        previous_effective_sha = entry.declared_sha256.clone();
         out.push(entry);
     }
     Ok(out)
+}
+
+fn validate_file_sha_chain(
+    entry: &ParsedShiftLogEntry,
+    previous_file_after_sha: &mut std::collections::BTreeMap<PathBuf, [u8; 32]>,
+    path: &Path,
+    line: usize,
+) -> Result<(), MejepaInferError> {
+    let Some(file) = &entry.file else {
+        return Ok(());
+    };
+    let Some(after_sha) = entry.after_sha else {
+        return Err(invalid_input(
+            "shift_log.after_sha256",
+            format!(
+                "SHIFT_LOG_CHAIN_UNVERIFIABLE: file shift {} at {} line {} has no after.sha256",
+                file.display(),
+                path.display(),
+                line
+            ),
+        ));
+    };
+    if let Some(previous_after) = previous_file_after_sha.get(file) {
+        let Some(before_sha) = entry.before_sha else {
+            return Err(invalid_input(
+                "shift_log.before_sha256",
+                format!(
+                    "SHIFT_LOG_CHAIN_UNVERIFIABLE: repeated file shift {} at {} line {} has no before.sha256",
+                    file.display(),
+                    path.display(),
+                    line
+                ),
+            ));
+        };
+        if before_sha != *previous_after {
+            return Err(invalid_input(
+                "shift_log.before_sha256",
+                format!(
+                    "SHIFT_LOG_CHAIN_BROKEN: file shift {} at {} line {} before.sha256={} expected_previous_after={}",
+                    file.display(),
+                    path.display(),
+                    line,
+                    hex::encode(before_sha),
+                    hex::encode(previous_after)
+                ),
+            ));
+        }
+    }
+    previous_file_after_sha.insert(file.clone(), after_sha);
+    Ok(())
 }
 
 fn parse_shift_log_entry(
@@ -973,8 +1044,8 @@ mod tests {
     use crate::store::RocksDbInferStore;
     use crate::types::{
         ChunkId, ConformalSet, EmbedderId, FailureModeClass, Language, OracleOutcome,
-        PredictedFailureMode, RealityPrediction, RootCauseClass, Severity, TaskId, TestDeltaKind,
-        TestId,
+        PredictedFailureMode, PredictionCorrectness, RealityImpact, RealityPrediction,
+        RootCauseClass, Severity, TaskId, TestDeltaKind, TestId,
     };
     use std::collections::BTreeMap;
 
@@ -1011,7 +1082,7 @@ mod tests {
         write_shift(
             temp.path(),
             session_id,
-            r#"{"shift_id":"shift-1","timestamp_unix_ms":1010,"subject":{"path":"src/lib.py"},"before":{"sha256":"sha256:1111111111111111111111111111111111111111111111111111111111111111"},"after":{"sha256":"sha256:2222222222222222222222222222222222222222222222222222222222222222"},"test_id":"tests/test_lib.py::test_handles_edges","outcome":"failed"}"#,
+            r#"{"shift_id":"shift-1","timestamp_unix_ms":1010,"test_id":"tests/test_lib.py::test_handles_edges","outcome":"failed"}"#,
         );
         let record = replay_and_persist_reality_impact(
             db.as_ref(),
@@ -1021,7 +1092,7 @@ mod tests {
             2_000,
         )
         .unwrap();
-        assert_eq!(record.matched.len(), 2);
+        assert_eq!(record.matched.len(), 1);
         assert_eq!(record.missed.len(), 0);
         assert_eq!(record.surprises.len(), 0);
         assert_eq!(
@@ -1046,27 +1117,51 @@ mod tests {
             replay_reality_impact_for_prediction(&prediction, temp.path(), 10_000, 2_000).unwrap();
         assert_eq!(record.matched.len(), 0);
         assert_eq!(record.missed.len(), 0);
-        assert_eq!(record.not_yet_observed.len(), 2);
+        assert_eq!(record.not_yet_observed.len(), 1);
         assert!(record.surprises.is_empty());
     }
 
     #[test]
     fn replay_shift_sha_chain_break_fails_closed() {
-        let prediction = prediction([4; 16], [5; 16], 1_000, vec!["src/lib.py#0"], Vec::new());
+        let prediction = prediction_with_predicted_files(
+            [4; 16],
+            [5; 16],
+            1_000,
+            vec!["src/lib.py#0"],
+            Vec::new(),
+            vec!["src/lib.py"],
+        );
         let temp = tempfile::tempdir().unwrap();
         write_shift(
             temp.path(),
             [5; 16],
-            r#"{"shift_id":"shift-1","timestamp_unix_ms":1010,"subject":{"path":"src/lib.py"},"shift_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+            r#"{"shift_id":"shift-1","timestamp_unix_ms":1010,"subject":{"path":"src/lib.py"},"after":{"sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
         );
         write_shift(
             temp.path(),
             [5; 16],
-            r#"{"shift_id":"shift-2","timestamp_unix_ms":1020,"subject":{"path":"src/lib.py"},"prev_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
+            r#"{"shift_id":"shift-2","timestamp_unix_ms":1020,"subject":{"path":"src/lib.py"},"before":{"sha256":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"after":{"sha256":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}}"#,
         );
         let err = replay_reality_impact_for_prediction(&prediction, temp.path(), 10_000, 2_000)
             .unwrap_err();
         assert!(err.to_string().contains("SHIFT_LOG_CHAIN_BROKEN"));
+    }
+
+    #[test]
+    fn covered_chunks_are_not_predicted_file_changes() {
+        let prediction = prediction([4; 16], [6; 16], 1_000, vec!["src/lib.py#0"], Vec::new());
+        let temp = tempfile::tempdir().unwrap();
+        write_shift(
+            temp.path(),
+            [6; 16],
+            r#"{"shift_id":"shift-1","timestamp_unix_ms":1010,"subject":{"path":"src/lib.py"},"after":{"sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
+        );
+        let record =
+            replay_reality_impact_for_prediction(&prediction, temp.path(), 10_000, 2_000).unwrap();
+        assert!(record.matched.is_empty());
+        assert!(record.missed.is_empty());
+        assert_eq!(record.surprises.len(), 1);
+        assert_eq!(record.surprises[0].reason, "UNPREDICTED_FILE_SHIFT");
     }
 
     #[test]
@@ -1082,12 +1177,12 @@ mod tests {
         write_shift(
             temp.path(),
             [7; 16],
-            r#"{"shift_id":"shift-1","timestamp_unix_ms":1010,"subject":{"path":"src/unexpected.py"}}"#,
+            r#"{"shift_id":"shift-1","timestamp_unix_ms":1010,"subject":{"path":"src/unexpected.py"},"after":{"sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
         );
         let record =
             replay_reality_impact_for_prediction(&prediction, temp.path(), 10_000, 2_000).unwrap();
         assert_eq!(record.matched.len(), 0);
-        assert_eq!(record.missed.len(), 2);
+        assert_eq!(record.missed.len(), 1);
         assert!(record
             .missed
             .iter()
@@ -1102,6 +1197,24 @@ mod tests {
         created_at_unix_ms: i64,
         covered_chunks: Vec<&str>,
         failed_tests: Vec<&str>,
+    ) -> RealityPrediction {
+        prediction_with_predicted_files(
+            prediction_id,
+            session_id,
+            created_at_unix_ms,
+            covered_chunks,
+            failed_tests,
+            Vec::new(),
+        )
+    }
+
+    fn prediction_with_predicted_files(
+        prediction_id: [u8; 16],
+        session_id: [u8; 16],
+        created_at_unix_ms: i64,
+        covered_chunks: Vec<&str>,
+        failed_tests: Vec<&str>,
+        predicted_files: Vec<&str>,
     ) -> RealityPrediction {
         let failure_mode = PredictedFailureMode {
             failure_class: FailureModeClass::AssertionMismatch,
@@ -1163,7 +1276,22 @@ mod tests {
             predicted_reasoning_class: crate::types::ReasoningClass::Mute,
             agent_claim_graph: crate::types::AgentClaimGraph::default(),
             claim_reconciliation: Vec::new(),
-            reality_impact: None,
+            reality_impact: if predicted_files.is_empty() {
+                None
+            } else {
+                Some(RealityImpact {
+                    observed_shifts: Vec::new(),
+                    predicted_files_changed: predicted_files
+                        .into_iter()
+                        .map(PathBuf::from)
+                        .collect(),
+                    observed_files_changed: Vec::new(),
+                    unexpected_files_changed: Vec::new(),
+                    predicted_test_outcomes: Vec::new(),
+                    observed_test_outcomes: Vec::new(),
+                    prediction_correctness: PredictionCorrectness::Aligned,
+                })
+            },
             provenance: crate::types::PredictionProvenance::default(),
             source_panel_sha: [4; 32],
             calibration_version: "cal-v1".to_string(),

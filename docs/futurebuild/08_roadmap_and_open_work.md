@@ -187,9 +187,9 @@ Child issue split:
 
 ### 3.2 Q5 shift-log replay (#264 / TASK-PY-G-045)
 
-✅ **Shipped 2026-05-19 on aiwonder.** `reality_impact.rs` now materializes durable Q5 `RealityImpactRecord` rows in `CF_MEJEPA_REALITY_IMPACT` from persisted `CF_MEJEPA_LIVE_PREDICTIONS` plus session shift logs. It classifies `Confirmed`, `Missed`, `NotYetObserved`, and `Surprise` consequences, fails closed on explicit SHA-chain gaps and out-of-order timestamps, and exposes `mcp__cgreality__mejepa_reality_impact`.
+✅ **Shipped 2026-05-19 on aiwonder.** `reality_impact.rs` now materializes durable Q5 `RealityImpactRecord` rows in `CF_MEJEPA_REALITY_IMPACT` from persisted `CF_MEJEPA_LIVE_PREDICTIONS` plus session shift logs. It classifies `Confirmed`, `Missed`, `NotYetObserved`, and `Surprise` consequences, fails closed on explicit SHA-chain gaps, unverifiable per-file SHA evidence, before/after SHA discontinuity, and out-of-order timestamps, and exposes `mcp__cgreality__mejepa_reality_impact`.
 
-FSV evidence: `/zfs/archive/contextgraph/fsv/task-py-g-045-shift-log-replay-engine-fsv/shift_log_replay_engine_fsv.json`, sha256 `2043bcf84fddec4e2caad0f0b85bbff9567a3103d32514745f09dbef43868dd1`; independent reopened-RocksDB readback sha256 `dd838f40d63795944931506f3dc16e8cea368b3bc31e6105804595fd525fe693`.
+FSV evidence: `/zfs/archive/contextgraph/fsv/task-py-g-045-shift-log-replay-engine-fsv/shift_log_replay_engine_fsv.json`, sha256 `2e2116e2c0f15c2861d52798b1aefe0435b8acda50399f4a0547b51190fb0959`; independent reopened-RocksDB readback sha256 `8ef576a9353015ea1e4957b753dbe4c717cc92431fcd58824574ca159ee55df5`.
 
 Remaining Q5 work: #128 now consumes these records to calibrate the Q5 head per Python mutation category.
 

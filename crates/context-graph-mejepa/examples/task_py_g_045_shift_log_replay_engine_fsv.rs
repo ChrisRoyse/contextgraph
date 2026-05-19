@@ -3,10 +3,10 @@ use context_graph_mejepa::cli::write_json_0600;
 use context_graph_mejepa::{
     count_cf, open_infer_rocksdb, read_reality_impact_record, replay_and_persist_reality_impact,
     AgentClaimGraph, ChunkId, ConformalSet, EmbedderId, FailureModeClass, Language, MejepaStore,
-    OracleOutcome, PredictedFailureMode, PredictedTestOutcome, PredictionProvenance,
-    RealityImpactClassification, RealityImpactItemKind, RealityPrediction, ReasoningClass,
-    RocksDbInferStore, RootCauseClass, Severity, TaskId, TestDeltaKind, TestId, TestOutcome,
-    Verdict, WitnessHash, DEFAULT_REALITY_IMPACT_REPLAY_WINDOW_MS,
+    OracleOutcome, PredictedFailureMode, PredictedTestOutcome, PredictionCorrectness,
+    PredictionProvenance, RealityImpact, RealityImpactClassification, RealityPrediction,
+    ReasoningClass, RocksDbInferStore, RootCauseClass, Severity, TaskId, TestDeltaKind, TestId,
+    TestOutcome, Verdict, WitnessHash, DEFAULT_REALITY_IMPACT_REPLAY_WINDOW_MS,
 };
 use context_graph_mejepa_cf::{CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_REALITY_IMPACT};
 use serde_json::{json, Value};
@@ -46,7 +46,7 @@ fn main() -> Result<()> {
         write_shift(
             &runtime_root,
             happy.session_id,
-            r#"{"shift_id":"happy-shift","timestamp_unix_ms":1100,"subject":{"path":"src/lib.py"},"before":{"sha256":"sha256:1111111111111111111111111111111111111111111111111111111111111111"},"after":{"sha256":"sha256:2222222222222222222222222222222222222222222222222222222222222222"},"test_id":"tests/test_lib.py::test_handles_edges","outcome":"failed"}"#,
+            r#"{"shift_id":"happy-shift","timestamp_unix_ms":1100,"test_id":"tests/test_lib.py::test_handles_edges","outcome":"failed"}"#,
         )?;
         let happy_record = replay_and_persist_reality_impact(
             db.as_ref(),
@@ -55,7 +55,7 @@ fn main() -> Result<()> {
             DEFAULT_REALITY_IMPACT_REPLAY_WINDOW_MS,
             2_000,
         )?;
-        let happy_pass = happy_record.matched.len() == 2
+        let happy_pass = happy_record.matched.len() == 1
             && happy_record.missed.is_empty()
             && happy_record.not_yet_observed.is_empty()
             && happy_record.surprises.is_empty();
@@ -78,26 +78,27 @@ fn main() -> Result<()> {
         )?;
         let empty_pass = empty_record.matched.is_empty()
             && empty_record.missed.is_empty()
-            && empty_record.not_yet_observed.len() == 2;
+            && empty_record.not_yet_observed.len() == 1;
 
         let broken_id = id16("broken-chain");
-        let broken = prediction(
+        let broken = prediction_with_predicted_files(
             broken_id,
             id16("broken-session"),
             1_000,
             vec!["src/broken.py#0"],
             Vec::new(),
+            vec!["src/broken.py"],
         );
         store.write_live_prediction(&broken)?;
         write_shift(
             &runtime_root,
             broken.session_id,
-            r#"{"shift_id":"broken-1","timestamp_unix_ms":1100,"subject":{"path":"src/broken.py"},"shift_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+            r#"{"shift_id":"broken-1","timestamp_unix_ms":1100,"subject":{"path":"src/broken.py"},"after":{"sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
         )?;
         write_shift(
             &runtime_root,
             broken.session_id,
-            r#"{"shift_id":"broken-2","timestamp_unix_ms":1200,"subject":{"path":"src/broken.py"},"prev_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
+            r#"{"shift_id":"broken-2","timestamp_unix_ms":1200,"subject":{"path":"src/broken.py"},"before":{"sha256":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"after":{"sha256":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}}"#,
         )?;
         let broken_error = replay_and_persist_reality_impact(
             db.as_ref(),
@@ -123,7 +124,7 @@ fn main() -> Result<()> {
         write_shift(
             &runtime_root,
             missed.session_id,
-            r#"{"shift_id":"missed-file","timestamp_unix_ms":1100,"subject":{"path":"src/missed.py"}}"#,
+            r#"{"shift_id":"missed-file","timestamp_unix_ms":1100,"subject":{"path":"src/missed.py"},"after":{"sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
         )?;
         let missed_record = replay_and_persist_reality_impact(
             db.as_ref(),
@@ -132,15 +133,15 @@ fn main() -> Result<()> {
             DEFAULT_REALITY_IMPACT_REPLAY_WINDOW_MS,
             2_300,
         )?;
-        let missed_pass = missed_record.matched.len() == 1
-            && missed_record
-                .matched
-                .iter()
-                .any(|m| m.predicted.kind == RealityImpactItemKind::FileChange)
+        let missed_pass = missed_record.matched.is_empty()
             && missed_record
                 .missed
                 .iter()
-                .any(|m| m.reason == "TEST_NEVER_RAN");
+                .any(|m| m.reason == "TEST_NEVER_RAN")
+            && missed_record
+                .surprises
+                .iter()
+                .any(|s| s.reason == "UNPREDICTED_FILE_SHIFT");
 
         let surprise_id = id16("surprise");
         let surprise = prediction(
@@ -154,7 +155,7 @@ fn main() -> Result<()> {
         write_shift(
             &runtime_root,
             surprise.session_id,
-            r#"{"shift_id":"surprise-file","timestamp_unix_ms":1100,"subject":{"path":"src/unexpected.py"}}"#,
+            r#"{"shift_id":"surprise-file","timestamp_unix_ms":1100,"subject":{"path":"src/unexpected.py"},"after":{"sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
         )?;
         let surprise_record = replay_and_persist_reality_impact(
             db.as_ref(),
@@ -163,7 +164,7 @@ fn main() -> Result<()> {
             DEFAULT_REALITY_IMPACT_REPLAY_WINDOW_MS,
             2_400,
         )?;
-        let surprise_pass = surprise_record.missed.len() == 1
+        let surprise_pass = surprise_record.missed.is_empty()
             && surprise_record.surprises.len() == 1
             && surprise_record.surprises[0].classification == RealityImpactClassification::Surprise;
 
@@ -171,23 +172,25 @@ fn main() -> Result<()> {
         write_shift(
             &runtime_root,
             overlap_session,
-            r#"{"shift_id":"overlap-file","timestamp_unix_ms":1100,"subject":{"path":"src/shared.py"}}"#,
+            r#"{"shift_id":"overlap-file","timestamp_unix_ms":1100,"subject":{"path":"src/shared.py"},"after":{"sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
         )?;
         let overlap_a_id = id16("overlap-a");
         let overlap_b_id = id16("overlap-b");
-        let overlap_a = prediction(
+        let overlap_a = prediction_with_predicted_files(
             overlap_a_id,
             overlap_session,
             1_000,
             vec!["src/shared.py#0"],
             Vec::new(),
+            vec!["src/shared.py"],
         );
-        let overlap_b = prediction(
+        let overlap_b = prediction_with_predicted_files(
             overlap_b_id,
             overlap_session,
             1_000,
             vec!["src/shared.py#1"],
             Vec::new(),
+            vec!["src/shared.py"],
         );
         store.write_live_prediction(&overlap_a)?;
         store.write_live_prediction(&overlap_b)?;
@@ -298,6 +301,24 @@ fn prediction(
     covered_chunks: Vec<&str>,
     failed_tests: Vec<&str>,
 ) -> RealityPrediction {
+    prediction_with_predicted_files(
+        prediction_id,
+        session_id,
+        created_at_unix_ms,
+        covered_chunks,
+        failed_tests,
+        Vec::new(),
+    )
+}
+
+fn prediction_with_predicted_files(
+    prediction_id: [u8; 16],
+    session_id: [u8; 16],
+    created_at_unix_ms: i64,
+    covered_chunks: Vec<&str>,
+    failed_tests: Vec<&str>,
+    predicted_files: Vec<&str>,
+) -> RealityPrediction {
     let failure_mode = PredictedFailureMode {
         failure_class: FailureModeClass::AssertionMismatch,
         chunk: ChunkId("src/lib.py#0".to_string()),
@@ -358,7 +379,19 @@ fn prediction(
         predicted_reasoning_class: ReasoningClass::Mute,
         agent_claim_graph: AgentClaimGraph::default(),
         claim_reconciliation: Vec::new(),
-        reality_impact: None,
+        reality_impact: if predicted_files.is_empty() {
+            None
+        } else {
+            Some(RealityImpact {
+                observed_shifts: Vec::new(),
+                predicted_files_changed: predicted_files.into_iter().map(PathBuf::from).collect(),
+                observed_files_changed: Vec::new(),
+                unexpected_files_changed: Vec::new(),
+                predicted_test_outcomes: Vec::new(),
+                observed_test_outcomes: Vec::new(),
+                prediction_correctness: PredictionCorrectness::Aligned,
+            })
+        },
         provenance: PredictionProvenance::default(),
         source_panel_sha: [4; 32],
         calibration_version: "task-py-g-045".to_string(),

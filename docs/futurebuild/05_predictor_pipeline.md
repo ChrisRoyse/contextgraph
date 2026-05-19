@@ -491,9 +491,9 @@ Current shipped behavior (2026-05-19, #264):
 - Reads persisted `RealityPrediction` rows from `CF_MEJEPA_LIVE_PREDICTIONS` by `prediction_id`.
 - Parses the session `cgreality-shift-log/<session>.jsonl` over a bounded replay window.
 - Classifies predicted consequences as `Confirmed`, `Missed`, or `NotYetObserved`, and unpredicted observed consequences as `Surprise`.
-- Fails closed on missing predictions, out-of-order timestamps, and explicit shift-log SHA-chain breaks.
+- Fails closed on missing predictions, out-of-order timestamps, explicit shift-log SHA-chain breaks, unverifiable file-shift SHA evidence, and per-file before/after SHA discontinuity.
 - MCP surface: `mcp__cgreality__mejepa_reality_impact`.
-- aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-045-shift-log-replay-engine-fsv/shift_log_replay_engine_fsv.json`, sha256 `2043bcf84fddec4e2caad0f0b85bbff9567a3103d32514745f09dbef43868dd1`; independent reopened-RocksDB readback sha256 `dd838f40d63795944931506f3dc16e8cea368b3bc31e6105804595fd525fe693`.
+- aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-045-shift-log-replay-engine-fsv/shift_log_replay_engine_fsv.json`, sha256 `2e2116e2c0f15c2861d52798b1aefe0435b8acda50399f4a0547b51190fb0959`; independent reopened-RocksDB readback sha256 `8ef576a9353015ea1e4957b753dbe4c717cc92431fcd58824574ca159ee55df5`.
 
 ---
 
