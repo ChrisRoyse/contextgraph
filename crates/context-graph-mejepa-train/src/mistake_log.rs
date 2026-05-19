@@ -6,6 +6,7 @@
 //! instead of a flat panel projection.
 
 use crate::error::{TrainerError, TrainerErrorCode};
+use crate::label_bridge::{accepted_label_signature_hash, skill_signature_hash};
 use context_graph_mejepa::{PredictionId, Verdict};
 use context_graph_mejepa_cf::CF_MEJEPA_MISTAKE_LOG;
 use rocksdb::{IteratorMode, WriteOptions, DB};
@@ -82,6 +83,24 @@ impl MistakeLogRow {
             MAX_LABEL_IDS,
         )?;
         validate_id_list("active_skill_ids", &self.active_skill_ids, MAX_SKILL_IDS)?;
+        let expected_label_signature = accepted_label_signature_hash(&self.accepted_label_ids)?;
+        if self.label_signature_hash != expected_label_signature {
+            return Err(invalid(
+                "label_signature_hash",
+                "does not match accepted_label_ids",
+            ));
+        }
+        let expected_skill_signature = if self.active_skill_ids.is_empty() {
+            None
+        } else {
+            Some(skill_signature_hash(&self.active_skill_ids)?)
+        };
+        if self.skill_signature_hash != expected_skill_signature {
+            return Err(invalid(
+                "skill_signature_hash",
+                "does not match active_skill_ids",
+            ));
+        }
         validate_id_list(
             "failure_evidence_set_ids",
             &self.failure_evidence_set_ids,
@@ -266,8 +285,12 @@ mod tests {
 
     fn row() -> MistakeLogRow {
         let prediction_id = PredictionId([0x8a; 16]);
-        let label_signature_hash = "labels:abc123def456".to_string();
-        let skill_signature_hash = Some("skills:def456abc123".to_string());
+        let accepted_label_ids = vec!["ast_surface:function".to_string()];
+        let active_skill_ids = vec!["skill:unit_sequence".to_string()];
+        let label_signature_hash =
+            crate::label_bridge::accepted_label_signature_hash(&accepted_label_ids).unwrap();
+        let skill_signature_hash =
+            Some(crate::label_bridge::skill_signature_hash(&active_skill_ids).unwrap());
         let mistake_id = mistake_id_from_parts(
             prediction_id,
             "python:before:unit",
@@ -285,8 +308,8 @@ mod tests {
             truth_source: MistakeTruthSource::SwebenchDockerOracle,
             code_state_key: "python:before:unit".to_string(),
             named_failure_mode: Some("failure:multi_point".to_string()),
-            accepted_label_ids: vec!["ast_surface:function".to_string()],
-            active_skill_ids: vec!["skill:unit_sequence".to_string()],
+            accepted_label_ids,
+            active_skill_ids,
             label_signature_hash,
             skill_signature_hash,
             failure_evidence_set_ids: vec!["python:before:unit".to_string()],
@@ -315,6 +338,16 @@ mod tests {
     fn mistake_log_rejects_non_mistake_verdict_pair() {
         let mut row = row();
         row.ground_truth_verdict = row.predicted_verdict;
+
+        let err = row.validate().unwrap_err();
+
+        assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
+    }
+
+    #[test]
+    fn mistake_log_rejects_signature_that_does_not_match_ids() {
+        let mut row = row();
+        row.label_signature_hash = "labels:wrong".to_string();
 
         let err = row.validate().unwrap_err();
 

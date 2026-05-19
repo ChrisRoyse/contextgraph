@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &bridge,
         accepted_label_ids.clone(),
         Some("python:before:unit".to_string()),
-        vec!["python:before:unit".to_string()],
+        Vec::new(),
         active_skill_ids.clone(),
     )?;
     let label_signature = label_context
@@ -126,6 +126,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(&leaky_root)?;
     write_label_fixture(&leaky_root, false)?;
     let edge_leaky_label = load_label_learning_bridge(&leaky_root).is_err();
+    let edge_target_failure_evidence_rejected = build_prediction_label_context(
+        &bridge,
+        vec!["ast_surface:function".to_string()],
+        Some("python:before:unit".to_string()),
+        vec!["python:before:unit".to_string()],
+        Vec::new(),
+    )
+    .is_err();
 
     let report_path = fsv_root.join("task_py_g_112_mistake_loop_convergence_fsv.json");
     let all_passed = mistake_readback == mistake_row
@@ -133,7 +141,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && edge_empty_labels
         && edge_same_verdict
         && edge_bad_cell_component
-        && edge_leaky_label;
+        && edge_leaky_label
+        && edge_target_failure_evidence_rejected;
     let report = json!({
         "artifact_kind": "task_py_g_112_mistake_loop_convergence_fsv",
         "schema_version": 1,
@@ -149,8 +158,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "empty_label_signature_rejected": edge_empty_labels,
             "same_verdict_mistake_rejected": edge_same_verdict,
             "control_char_cell_component_rejected": edge_bad_cell_component,
-            "leaky_live_label_rejected": edge_leaky_label
+            "leaky_live_label_rejected": edge_leaky_label,
+            "target_failure_evidence_rejected_as_live_input": edge_target_failure_evidence_rejected
         },
+        "proof_scope": "label-bridge, mistake-log, and replay persistence/readback; online convergence remains the surrounding TASK-PY-G-112 implementation scope",
         "slot_identity_preserved": true,
         "flat_vector_concat_used": false,
         "active_path_policy": {"mnt_d_active_reads_or_writes": false}
@@ -208,7 +219,10 @@ fn write_label_fixture(root: &Path, live_allowed: bool) -> Result<(), Box<dyn st
         r#"{"label_id":"ast_surface:function","family":"ast_surface","status":"accepted_live_input","support":42,"leaky_target":false,"lift_over_weighted_category_baseline":0.31}"#,
     )?;
     fs::write(&chunks, "{}\n")?;
-    fs::write(&code_states, "{}\n")?;
+    fs::write(
+        &code_states,
+        r#"{"group_key":"python:before:unit","labels":["group_scope:code_state","dominant_surface:function"],"slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
+    )?;
     fs::write(
         &failure_sets,
         r#"{"code_state_key":"python:before:unit","labels":["evidence:multi_point"],"localization_mode":"failure_localization:multi_point","slot_identity_preserved":true,"flat_vector_concat_used":false}"#,

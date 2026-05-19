@@ -59,9 +59,29 @@ pub struct LabelUsefulnessMetricRow {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FailureEvidenceSetRow {
+    #[serde(default)]
+    pub artifact_kind: String,
+    #[serde(default)]
+    pub schema_version: u32,
+    #[serde(default)]
+    pub formula_version: String,
     pub code_state_key: String,
     pub labels: Vec<String>,
     pub localization_mode: String,
+    pub slot_identity_preserved: bool,
+    pub flat_vector_concat_used: bool,
+    #[serde(default)]
+    pub live_prediction_input_allowed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CodeStateConstellationRow {
+    #[serde(default)]
+    pub group_key: String,
+    #[serde(default)]
+    pub code_state_key: Option<String>,
+    #[serde(default)]
+    pub labels: Vec<String>,
     pub slot_identity_preserved: bool,
     pub flat_vector_concat_used: bool,
 }
@@ -106,9 +126,11 @@ pub struct LabelLearningBridge {
     pub manifest_sha256: String,
     pub accepted_registry_sha256: String,
     pub usefulness_metrics_sha256: String,
+    pub code_state_constellations_sha256: String,
     pub failure_evidence_sets_sha256: String,
     pub accepted_labels: BTreeMap<String, AcceptedLabelRegistryRow>,
     pub usefulness_metrics: BTreeMap<String, LabelUsefulnessMetricRow>,
+    pub code_state_constellations: BTreeMap<String, CodeStateConstellationRow>,
     pub failure_evidence_sets: BTreeMap<String, FailureEvidenceSetRow>,
 }
 
@@ -141,11 +163,13 @@ pub fn load_label_learning_bridge(
     validate_manifest(&manifest)?;
     validate_path_set(&manifest.paths)?;
 
-    let accepted_path = PathBuf::from(&manifest.paths.accepted_label_registry);
-    let usefulness_path = PathBuf::from(&manifest.paths.label_usefulness_metrics);
-    let failure_sets_path = PathBuf::from(&manifest.paths.failure_evidence_sets);
+    let accepted_path = resolve_bridge_path(root, &manifest.paths.accepted_label_registry);
+    let usefulness_path = resolve_bridge_path(root, &manifest.paths.label_usefulness_metrics);
+    let code_state_path = resolve_bridge_path(root, &manifest.paths.code_state_constellations);
+    let failure_sets_path = resolve_bridge_path(root, &manifest.paths.failure_evidence_sets);
     let accepted_rows = read_jsonl::<AcceptedLabelRegistryRow>(&accepted_path)?;
     let usefulness_rows = read_jsonl::<LabelUsefulnessMetricRow>(&usefulness_path)?;
+    let code_state_rows = read_jsonl::<CodeStateConstellationRow>(&code_state_path)?;
     let failure_rows = read_jsonl::<FailureEvidenceSetRow>(&failure_sets_path)?;
 
     let mut accepted_labels = BTreeMap::new();
@@ -174,20 +198,35 @@ pub fn load_label_learning_bridge(
         usefulness_metrics.insert(row.label_id.clone(), row);
     }
 
+    let mut code_state_constellations = BTreeMap::new();
+    for row in code_state_rows {
+        let key = validate_code_state_constellation(&row)?;
+        if code_state_constellations.insert(key, row).is_some() {
+            return Err(invalid("code_state_constellations", "duplicate code-state key"));
+        }
+    }
+
     let mut failure_evidence_sets = BTreeMap::new();
     for row in failure_rows {
         validate_failure_evidence_set(&row)?;
-        failure_evidence_sets.insert(row.code_state_key.clone(), row);
+        if failure_evidence_sets
+            .insert(row.code_state_key.clone(), row)
+            .is_some()
+        {
+            return Err(invalid("failure_evidence_sets", "duplicate code_state_key"));
+        }
     }
 
     Ok(LabelLearningBridge {
         manifest_sha256: sha256_file(&manifest_path)?,
         accepted_registry_sha256: sha256_file(&accepted_path)?,
         usefulness_metrics_sha256: sha256_file(&usefulness_path)?,
+        code_state_constellations_sha256: sha256_file(&code_state_path)?,
         failure_evidence_sets_sha256: sha256_file(&failure_sets_path)?,
         manifest,
         accepted_labels,
         usefulness_metrics,
+        code_state_constellations,
         failure_evidence_sets,
     })
 }
@@ -208,6 +247,27 @@ pub fn build_prediction_label_context(
     validate_id_list("active_skill_ids", &active_skill_ids, MAX_SKILL_IDS)?;
     if let Some(key) = &code_state_key {
         validate_label_id("code_state_key", key)?;
+        let row = bridge.code_state_constellations.get(key).ok_or_else(|| {
+            invalid(
+                "code_state_key",
+                format!("{key} is not present in code_state_constellations"),
+            )
+        })?;
+        validate_code_state_live_input(row)?;
+    }
+    for id in &failure_evidence_set_ids {
+        let row = bridge.failure_evidence_sets.get(id).ok_or_else(|| {
+            invalid(
+                "failure_evidence_set_ids",
+                format!("{id} is not present in failure_evidence_sets"),
+            )
+        })?;
+        if !row.live_prediction_input_allowed {
+            return Err(invalid(
+                "failure_evidence_set_ids",
+                format!("{id} is target-side failure evidence and cannot be a live prediction input"),
+            ));
+        }
     }
     Ok(PredictionLabelContext {
         accepted_label_ids: accepted_label_ids.clone(),
@@ -232,7 +292,7 @@ pub fn accepted_label_signature_hash(label_ids: &[String]) -> Result<String, Tra
 }
 
 pub fn skill_signature_hash(skill_ids: &[String]) -> Result<String, TrainerError> {
-    signature_hash("skills", skill_ids)
+    ordered_signature_hash("skills", skill_ids, MAX_SKILL_IDS)
 }
 
 fn signature_hash(prefix: &'static str, ids: &[String]) -> Result<String, TrainerError> {
@@ -246,6 +306,28 @@ fn signature_hash(prefix: &'static str, ids: &[String]) -> Result<String, Traine
     hasher.update(prefix.as_bytes());
     hasher.update([0]);
     for id in sorted {
+        hasher.update(id.as_bytes());
+        hasher.update([0]);
+    }
+    let digest = hex::encode(hasher.finalize());
+    Ok(format!("{prefix}:{}", &digest[..12]))
+}
+
+fn ordered_signature_hash(
+    prefix: &'static str,
+    ids: &[String],
+    max_items: usize,
+) -> Result<String, TrainerError> {
+    validate_id_list(prefix, ids, max_items)?;
+    if ids.is_empty() {
+        return Err(invalid(prefix, "signature requires at least one id"));
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(prefix.as_bytes());
+    hasher.update([0]);
+    for (idx, id) in ids.iter().enumerate() {
+        hasher.update((idx as u64).to_le_bytes());
+        hasher.update([0]);
         hasher.update(id.as_bytes());
         hasher.update([0]);
     }
@@ -306,6 +388,15 @@ fn validate_path_set(paths: &LearningBridgePaths) -> Result<(), TrainerError> {
     Ok(())
 }
 
+fn resolve_bridge_path(root: &Path, path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        path
+    } else {
+        root.join(path)
+    }
+}
+
 fn validate_accepted_label(row: &AcceptedLabelRegistryRow) -> Result<(), TrainerError> {
     validate_label_id("accepted_label_registry.label_id", &row.label_id)?;
     validate_label_id("accepted_label_registry.label_hash", &row.label_hash)?;
@@ -362,6 +453,46 @@ fn validate_failure_evidence_set(row: &FailureEvidenceSetRow) -> Result<(), Trai
         ));
     }
     Ok(())
+}
+
+fn validate_code_state_constellation(
+    row: &CodeStateConstellationRow,
+) -> Result<String, TrainerError> {
+    let key = if row.group_key.trim().is_empty() {
+        row.code_state_key.clone().unwrap_or_default()
+    } else {
+        row.group_key.clone()
+    };
+    validate_label_id("code_state_constellation.key", &key)?;
+    validate_id_list("code_state_constellation.labels", &row.labels, MAX_LABEL_IDS)?;
+    if !row.slot_identity_preserved || row.flat_vector_concat_used {
+        return Err(invalid(
+            "code_state_constellation.slot_policy",
+            "code-state constellations must preserve slots and forbid flat-vector semantics",
+        ));
+    }
+    Ok(key)
+}
+
+fn validate_code_state_live_input(row: &CodeStateConstellationRow) -> Result<(), TrainerError> {
+    for label in &row.labels {
+        if is_target_only_label(label) {
+            return Err(invalid(
+                "code_state_key",
+                format!(
+                    "code-state row contains target-only label {label}; live prediction context must be compiled from observable labels only"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn is_target_only_label(label: &str) -> bool {
+    matches!(
+        label.split_once(':').map(|(family, _)| family),
+        Some("oracle" | "docker" | "test_phase" | "code_state_outcome" | "partition" | "leakage_policy")
+    )
 }
 
 fn read_json_file<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, TrainerError> {
@@ -468,7 +599,11 @@ mod tests {
         )
         .unwrap();
         fs::write(&chunks, "{}\n").unwrap();
-        fs::write(&code_states, "{}\n").unwrap();
+        fs::write(
+            &code_states,
+            r#"{"group_key":"python:before:unit","labels":["group_scope:code_state","dominant_surface:function"],"slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
+        )
+        .unwrap();
         fs::write(
             &failure_sets,
             r#"{"code_state_key":"python:before:unit","labels":["evidence:multi_point"],"localization_mode":"failure_localization:multi_point","slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
@@ -511,7 +646,7 @@ mod tests {
             &bridge,
             vec!["ast_surface:function".to_string()],
             Some("python:before:unit".to_string()),
-            vec!["python:before:unit".to_string()],
+            Vec::new(),
             vec!["skill:unit_sequence".to_string()],
         )
         .unwrap();
@@ -524,6 +659,40 @@ mod tests {
             .accepted_registry_sha256
             .unwrap()
             .starts_with("sha256:"));
+    }
+
+    #[test]
+    fn skill_signature_preserves_sequence_order() {
+        let forward = skill_signature_hash(&[
+            "skill:first".to_string(),
+            "skill:second".to_string(),
+        ])
+        .unwrap();
+        let reverse = skill_signature_hash(&[
+            "skill:second".to_string(),
+            "skill:first".to_string(),
+        ])
+        .unwrap();
+
+        assert_ne!(forward, reverse);
+    }
+
+    #[test]
+    fn bridge_rejects_target_side_failure_evidence_as_live_input() {
+        let temp = tempfile::tempdir().unwrap();
+        write_bridge_fixture(temp.path(), true);
+        let bridge = load_label_learning_bridge(temp.path()).unwrap();
+
+        let err = build_prediction_label_context(
+            &bridge,
+            vec!["ast_surface:function".to_string()],
+            Some("python:before:unit".to_string()),
+            vec!["python:before:unit".to_string()],
+            Vec::new(),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
     }
 
     #[test]

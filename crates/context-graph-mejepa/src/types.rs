@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Cursor;
 use std::path::{Component, Path, PathBuf};
 
 use context_graph_mejepa_instruments::OracleVerdict;
@@ -2508,28 +2509,47 @@ impl RealityPredictionLegacyNoConstellation {
 }
 
 pub fn decode_reality_prediction(bytes: &[u8]) -> Result<RealityPrediction, MejepaInferError> {
-    match bincode::deserialize::<RealityPrediction>(bytes) {
+    match bincode_deserialize_strict::<RealityPrediction>(bytes) {
         Ok(prediction) => RealityPrediction::try_new(prediction),
         Err(current_err) => {
-            if let Ok(legacy) = bincode::deserialize::<RealityPredictionLegacyNoLabelContext>(bytes)
+            if let Ok(legacy) =
+                bincode_deserialize_strict::<RealityPredictionLegacyNoLabelContext>(bytes)
             {
                 return legacy.into_current();
             }
             if let Ok(legacy) =
-                bincode::deserialize::<RealityPredictionLegacyNoSlotAttributions>(bytes)
+                bincode_deserialize_strict::<RealityPredictionLegacyNoSlotAttributions>(bytes)
             {
                 return legacy.into_current();
             }
-            let legacy = bincode::deserialize::<RealityPredictionLegacyNoConstellation>(bytes)
-                .map_err(|legacy_err| MejepaInferError::InvalidInput {
-                    field: "RealityPrediction.bincode".to_string(),
-                    detail: format!(
-                        "failed to decode current schema ({current_err}) or legacy no-constellation schema ({legacy_err})"
-                    ),
-                })?;
+            let legacy = bincode_deserialize_strict::<RealityPredictionLegacyNoConstellation>(
+                bytes,
+            )
+            .map_err(|legacy_err| MejepaInferError::InvalidInput {
+                field: "RealityPrediction.bincode".to_string(),
+                detail: format!(
+                    "failed to decode current schema ({current_err}) or legacy no-constellation schema ({legacy_err})"
+                ),
+            })?;
             legacy.into_current()
         }
     }
+}
+
+fn bincode_deserialize_strict<T>(bytes: &[u8]) -> Result<T, Box<bincode::ErrorKind>>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let mut cursor = Cursor::new(bytes);
+    let value = bincode::deserialize_from(&mut cursor)?;
+    let consumed = cursor.position() as usize;
+    if consumed != bytes.len() {
+        return Err(Box::new(bincode::ErrorKind::Custom(format!(
+            "trailing bytes after strict decode: consumed {consumed} of {}",
+            bytes.len()
+        ))));
+    }
+    Ok(value)
 }
 
 impl RealityPrediction {
@@ -5007,6 +5027,17 @@ mod tests {
         assert_eq!(decoded.prediction_id, prediction.prediction_id);
         assert_eq!(decoded.label_context, PredictionLabelContext::default());
         assert!(!decoded.slot_attributions.is_empty());
+    }
+
+    #[test]
+    fn decode_reality_prediction_rejects_trailing_bytes_instead_of_legacy_prefix() {
+        let prediction = prediction_for_decode();
+        let mut bytes = bincode::serialize(&prediction).unwrap();
+        bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+
+        let err = decode_reality_prediction(&bytes).unwrap_err();
+
+        assert!(matches!(err, MejepaInferError::InvalidInput { .. }));
     }
 
     #[test]
