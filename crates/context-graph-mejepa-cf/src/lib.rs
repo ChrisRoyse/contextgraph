@@ -772,6 +772,7 @@ mod tests {
             .chain(FINGERPRINT_CFS.iter())
             .chain(ADVERSARIAL_CFS.iter())
             .chain(OOD_HARVEST_CFS.iter())
+            .chain(FAILURE_MODE_CFS.iter())
             .chain(REWARD_SIGNAL_CFS.iter())
             .chain(EXPLANATORY_KNOWLEDGE_CFS.iter())
         {
@@ -879,6 +880,18 @@ mod tests {
         assert_eq!(
             CF_MEJEPA_FAILURE_EVIDENCE_SETS,
             "CF_MEJEPA_FAILURE_EVIDENCE_SETS"
+        );
+        assert_eq!(
+            CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP,
+            "CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP"
+        );
+        assert_eq!(
+            CF_MEJEPA_SKILL_REVERSE_INDEX,
+            "CF_MEJEPA_SKILL_REVERSE_INDEX"
+        );
+        assert_eq!(
+            CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
+            "CF_MEJEPA_SKILL_LIFECYCLE_AUDIT"
         );
         assert_eq!(CF_MEJEPA_MISTAKE_LOG, "CF_MEJEPA_MISTAKE_LOG");
         assert_eq!(

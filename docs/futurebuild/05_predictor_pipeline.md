@@ -290,11 +290,11 @@ Decision flow (per `compiler.rs::compile`):
 
 ### 4.3 Failure-mode labeling hierarchy (the meaning layer over the slot panel)
 
-**Level 0 (deterministic label compiler) — SHIPPED 2026-05-19 via #413 / TASK-PY-G-117.** Full-corpus aiwonder FSV passed. The Level-1/2/3 hierarchical naming on top of this Level-0 registry remains open under #404 / TASK-PY-G-110, and the sequence-aware chunk-to-skill membership layer remains open under #414 / TASK-PY-G-118.
+**Level 0 (deterministic label compiler) — SHIPPED 2026-05-19 via #413 / TASK-PY-G-117.** Full-corpus aiwonder FSV passed. The Level-1/2/3 hierarchical naming on top of this Level-0 registry remains open under #404 / TASK-PY-G-110. The sequence-aware chunk-to-skill membership layer now has code-level synthetic FSV plus full aiwonder corpus materialization under #414 / TASK-PY-G-118.
 
 **Shipped source (Level 0):** `scripts/swebench_lite_ops/python_auto_label_discovery.py` (1,641 lines, deterministic Python, no inner LLM). CLI entrypoint `python-auto-label-discovery`. Output root `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/`. FSV `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/python_auto_label_discovery_fsv.json` (`passes=true`).
 
-**Planned source (Level 1/2/3, #404 + #414):** `crates/context-graph-mejepa/src/failure_mode_hierarchy.rs`, `failure_mode_aggregator.rs`, `failure_mode_vocabulary.rs`, `failure_mode_consumer.rs`, `skill_sequence_discovery.rs`, `chunk_skill_membership.rs` — aggregates Level-0 labels into named groups/skills/constellations on top of the 491-row shipped accepted registry, then writes the reverse membership rows that tell each chunk which skills and higher-level abilities it participates in. Storage CFs (planned): `CF_MEJEPA_FAILURE_MODE_LEVEL1`, `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS`, `CF_MEJEPA_FAILURE_MODE_LEVEL3_CONSTELLATIONS`, `CF_MEJEPA_FAILURE_MODE_VOCABULARY`, `CF_MEJEPA_NAMED_PREDICTIONS`, `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP`, `CF_MEJEPA_SKILL_REVERSE_INDEX`, `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT`. MCP tools (planned): `mejepa_list_failure_modes`, `mejepa_label_failure_cluster`, `mejepa_explain_named_failure_mode`, `mejepa_list_accepted_labels`, `mejepa_label_compiler_status`, `mejepa_list_chunk_skills`, `mejepa_skill_lifecycle_audit`.
+**Source (Level 1/2/3, #404 + #414):** planned runtime hierarchy consumers remain in `crates/context-graph-mejepa/src/failure_mode_hierarchy.rs`, `failure_mode_aggregator.rs`, `failure_mode_vocabulary.rs`, and `failure_mode_consumer.rs`. The first #414 train-side implementation is now `crates/context-graph-mejepa-train/src/skill_sequence_discovery.rs`, `skill_sequence_types.rs`, `chunk_skill_membership.rs`, and `skill_validation.rs`, with FSV example `task_py_g_118_skill_sequence_discovery_fsv.rs`. It turns ordered Level-0 label episodes into promotion-ready Level-2 skill rows and writes the reverse membership rows that tell each chunk which skills and higher-level abilities it participates in. Storage CFs registered in `context-graph-mejepa-cf`: `CF_MEJEPA_FAILURE_MODE_LEVEL1`, `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS`, `CF_MEJEPA_FAILURE_MODE_LEVEL3_CONSTELLATIONS`, `CF_MEJEPA_FAILURE_MODE_VOCABULARY`, `CF_MEJEPA_NAMED_PREDICTIONS`, `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP`, `CF_MEJEPA_SKILL_REVERSE_INDEX`, `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT`. MCP tools (planned): `mejepa_list_failure_modes`, `mejepa_label_failure_cluster`, `mejepa_explain_named_failure_mode`, `mejepa_list_accepted_labels`, `mejepa_label_compiler_status`, `mejepa_list_chunk_skills`, `mejepa_skill_lifecycle_audit`.
 
 **Why it exists.** The 300×8 corpus has been projected through 13 retrieval embedders + 15 frozen instrument slots, producing 78 pairwise correlation tensors per cell (#388), per-slot calibration state (#389), and consensus/contradiction/blind-spot/redundancy/novelty surfaces (#390). All of that is raw numerical evidence. The labeling layer turns those numbers into named rules so the predictor can say "this patch will Fail because of `type_signature_drift_under_test_coverage`" rather than "this patch's per-slot OOD trace is `{E_TypeGraph: 0.42, E_DataFlow: 0.31, ...}`."
 
@@ -311,9 +311,9 @@ Decision flow (per `compiler.rs::compile`):
 - `CF_MEJEPA_ACTIVE_LEARNING_QUEUE` consumes unknown/OOD reasons
 - `CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT` consumes promotion/rejection events
 
-**Chunk-to-skill reverse membership (planned, #414).** After live label compilation, every AST chunk's TCT constellation must be matched against accepted Level-1 groups, Level-2 skills, and Level-3/higher constellations. Membership is many-to-many: one chunk can participate in multiple skills, and one skill can span many chunks, files, ordered steps, prerequisite labels, intermediate states, and outcome observations. Rows record `chunk_id`, `code_state_key`, `constellation_id`, `skill_id`, `hierarchy_level`, `membership_score`, source accepted label IDs, ordered step evidence, `live_input_allowed`, and provenance hashes. The prediction path consumes these active skill IDs in `PredictionLabelContext`; it does not infer hidden human intent.
+**Chunk-to-skill reverse membership (production FSV passed, #414).** After live label compilation, every AST chunk's TCT constellation is matched against accepted Level-1 groups, Level-2 skills, and Level-3/higher constellations. Membership is many-to-many: one chunk can participate in multiple skills, and one skill can span many chunks, files, ordered steps, prerequisite labels, intermediate states, and outcome observations. Rows record `chunk_id`, `code_state_key`, `skill_id`, `hierarchy_level`, `membership_score`, source accepted label IDs, ordered step evidence, `live_input_allowed`, and provenance hashes. The prediction path consumes these active skill IDs in `PredictionLabelContext`; it does not infer hidden human intent. Synthetic FSV: `/tmp/contextgraph-task-py-g-118-skill-sequence-fsv/task_py_g_118_skill_sequence_discovery_fsv.json` (`passes=true`). Production aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-118-skill-sequence-discovery-fsv/run-1779212140822/task_py_g_118_aiwonder_skill_materialization_fsv.json` (`passes=true`), streaming all 399,777 chunk rows and materializing 128 Level-2 skills, 36,773 chunk-skill memberships, 10,579 reverse indexes, and 128 lifecycle audits.
 
-**Skill lifecycle on mistakes (planned, #414 feeding #406).** When a prediction disagrees with durable reality, the mistake loop must decide whether the active skill model was right but underweighted, too broad, too narrow, stale, leaky, or missing. Each mistake creates a lifecycle decision: `UpdateExistingSkill`, `SplitMixedSkill`, `CreateNewCandidateSkill`, `DemoteUnstableSkill`, or `NoChangeWithEvidence`. This is how ME-JEPA learns new abilities and repairs old ones as it sees new projects after the SWE-bench baseline.
+**Skill lifecycle on mistakes (partial code-level FSV, #414 feeding #406).** When a prediction disagrees with durable reality, the mistake loop must decide whether the active skill model was right but underweighted, too broad, too narrow, stale, leaky, or missing. Each mistake creates a lifecycle decision: `UpdateExistingSkill`, `SplitMixedSkill`, `CreateNewCandidateSkill`, `DemoteUnstableSkill`, or `NoChangeWithEvidence`. #414 now persists `SkillLifecycleAuditRow` for created candidate skills; wiring those decisions into the live #406 mistake consumer remains open. This is how ME-JEPA learns new abilities and repairs old ones as it sees new projects after the SWE-bench baseline.
 
 **Level 1/2/3 — Aggregation procedure (planned, #404).** Aggregate over the shipped 491-row Level-0 accepted registry (NOT a new K-means pass — the K-means equivalent is the slot-region label emitter in Level 0). Group co-firing accepted labels by support count + co-occurrence per `(mutation_category × language × code_state)` cell into Level-1 groups. Name groups via cosine-vs-vocabulary against an operator-curated **failure-mode vocabulary** (`CF_MEJEPA_FAILURE_MODE_VOCABULARY`) embedded with E1 e5-large-v2. Top-1 match becomes the Level-1 group name. Operator approves / renames / merges via `mejepa_label_failure_cluster`.
 
@@ -724,6 +724,139 @@ Current calibration behavior (2026-05-19, #128):
 - Excludes fail-closed replay errors such as `SHIFT_LOG_CHAIN_BROKEN` from metric denominators while preserving explicit `ReplayExcluded` evidence.
 - Emits flags for `AwaitingOracle`, `Q5HighSurpriseRate`, `Q5CellNeedsRetraining`, and dominant-class F1 below floor.
 - aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-013-q5-calibration-fsv/q5_calibration_fsv.json`, sha256 `042bd8ad45df924b6f607c3c2f2bcacc339ad91a11e5457bd1da52b24b22f133`; independent reopened-RocksDB readback sha256 `aa8f56ec0be0bc2e85e9232f391a2f7e3b9c013db37a5ba2091135c85df45a26`; sample sha256 `a0ce89e3a859b634677ab14222f8b5ce8875740074b621cdf9e2f04041db7731`.
+
+---
+
+## 17bis. Pathway Exploration Surface (the binary-leaf butterfly-effect tree — planned, #416 / TASK-PY-G-119)
+
+This is the L3 capability in the JEPA world-model rubric (arXiv 2511.16333) — **counterfactual rollouts for decision support** — instantiated on the Q1 / Q2 / Q5 binary-leaf substrate. See `01_overview.md §1.5` for the conceptual framing. This section specifies the operational architecture.
+
+**Status:** planned (not shipped). Tracked under the new epic **#416 / TASK-PY-G-119 — Pathway exploration surface (binary-leaf butterfly-effect tree)**.
+
+### 17bis.1 Architecture
+
+Planned source modules (additive to `context-graph-mejepa`):
+
+| Module | Role |
+|---|---|
+| `src/pathway/tree.rs` | `PathwayNode { leaf_kind: Q1\|Q2\|Q5, leaf_id, predicted_outcome: bool, predicted_prob: f32, conformal_interval, parent_path_prob, children: Vec<NodeId> }` + `PathwayTree` build / prune / serialize |
+| `src/pathway/beam_search.rs` | Beam expansion with UCB1-style selection (Narrative Studio + SWE-Search pattern); top-K retention by cumulative path probability (Diffusion Scenario Tree pattern, arXiv 2509.14832); pruning threshold `ε ≈ 0.01` for `P(path)` |
+| `src/pathway/leaf_predictor.rs` | Routes each candidate leaf to the right predictor head (Q1 claim-graph head, Q2 oracle head, Q5 shift-event head). Strict assertion: any non-Q1/Q2/Q5 leaf attempt → `PATHWAY_AMBIGUOUS_LEAF_REJECTED` error |
+| `src/pathway/exemplar_attach.rs` | For each surfaced pathway, retrieve the closest historical pathway from the 491-row Level-0 accepted label registry (#413) keyed by leaf-sequence signature |
+| `src/pathway/store.rs` | `CF_MEJEPA_PATHWAY_TREES` + `CF_MEJEPA_SURFACED_PATHWAYS` RocksDB writers |
+| `examples/task_py_g_118_pathway_surface_fsv.rs` | FSV harness: 3-5 surfaced pathways, joint probabilities sum-normalized within the beam, ambiguous-leaf rejection, byte-replay, mistake-loop integration |
+
+### 17bis.2 Storage CFs (planned, additive to `mejepa-cf/lib.rs`)
+
+| CF Constant | Key | Value | Purpose |
+|---|---|---|---|
+| `CF_MEJEPA_PATHWAY_TREES` | `(prediction_id, tree_run_id)` | bincode `PathwayTree { root_patch_id, nodes, beam_width, depth, pruning_epsilon }` | Full pathway tree for a candidate patch; byte-replayable per FSV |
+| `CF_MEJEPA_SURFACED_PATHWAYS` | `(prediction_id, pathway_id)` | bincode `SurfacedPathway { leaf_chain: Vec<BinaryLeaf>, joint_probability, closest_historical_pathway, named_failure_mode_if_fail_leaf }` | The top-K pathways actually returned to the operator |
+| `CF_MEJEPA_OPERATOR_PATHWAY_CHOICES` | `(prediction_id, chooser_id)` | bincode `{chosen_pathway_id, chose_at_ts_ns, rationale_text?}` | Operator's chosen future; feeds the reverse-prediction tool (#335 `mejepa_reverse_prediction`) when it ships |
+
+All three are **target-side leakage-policy:target_side_only** for live-input training purposes (the chosen pathway is a downstream effect of the operator's choice, not a live predictor input).
+
+### 17bis.3 MCP tools (planned)
+
+| Tool | Purpose |
+|---|---|
+| `mcp__cgreality__mejepa_pathway_surface(prediction_id, k: int=5)` | Compute and return the top-K most-probable pathways for a candidate patch |
+| `mcp__cgreality__mejepa_pathway_inspect(prediction_id, pathway_id)` | Return full leaf chain + per-leaf probabilities + conformal intervals + closest historical exemplar |
+| `mcp__cgreality__mejepa_pathway_record_choice(prediction_id, pathway_id, rationale_text?)` | Record the operator's chosen future; idempotent |
+| `mcp__cgreality__mejepa_pathway_history(window_id?)` | Read-only audit over `CF_MEJEPA_OPERATOR_PATHWAY_CHOICES` |
+
+### 17bis.4 Algorithm (beam search over binary leaves)
+
+```
+fn surface_pathways(candidate_patch: Patch, k: usize = 5, beam_width: usize = 32,
+                    max_depth: usize = 6, pruning_epsilon: f32 = 0.01) -> Vec<SurfacedPathway> {
+    let root = PathwayNode::seed(candidate_patch);             // Q1 binary leaf: claim_exists
+    let mut frontier: Vec<PathwayNode> = vec![root];
+    for depth in 0..max_depth {
+        let mut next_frontier = Vec::new();
+        for node in &frontier {
+            let children = node.expand_binary_children();      // ONLY Q1/Q2/Q5 leaves
+            for child in children {
+                if !child.leaf_kind.is_binary() {
+                    return Err(PATHWAY_AMBIGUOUS_LEAF_REJECTED); // ambiguity boundary
+                }
+                let predicted = predictor.binary_head_predict(child);
+                child.path_prob = node.path_prob * predicted.calibrated_prob;
+                if child.path_prob >= pruning_epsilon {
+                    next_frontier.push(child);
+                }
+            }
+        }
+        // beam_width retention by path_prob (Diffusion Scenario Tree pattern)
+        next_frontier.sort_by(|a, b| b.path_prob.partial_cmp(&a.path_prob).unwrap());
+        next_frontier.truncate(beam_width);
+        frontier = next_frontier;
+        if frontier.is_empty() { break; }
+    }
+    // Normalize within the surviving frontier; return top-K terminal pathways
+    let total: f32 = frontier.iter().map(|n| n.path_prob).sum();
+    frontier.iter_mut().for_each(|n| n.path_prob /= total);
+    frontier.sort_by(|a, b| b.path_prob.partial_cmp(&a.path_prob).unwrap());
+    frontier.truncate(k);
+    frontier.into_iter().map(SurfacedPathway::from).collect()
+}
+```
+
+The expansion grammar for `PathwayNode::expand_binary_children` is the operative spec; it MUST only emit Q1/Q2/Q5 leaves. Adding any other leaf type to the grammar is forbidden until and unless the ambiguity-boundary rule is revised.
+
+### 17bis.5 Required FSV assertions
+
+1. **Ambiguous-leaf rejection.** `ambiguous_leaves_in_pathway == 0` across every surfaced pathway in the holdout window. Attempting to inject a non-Q1/Q2/Q5 leaf fails closed with `PATHWAY_AMBIGUOUS_LEAF_REJECTED`.
+2. **Joint probability normalization.** For each surfaced top-K set, joint probabilities are normalized (`sum(P(pathway_i)) == 1.0 ± 1e-4` after frontier normalization).
+3. **Byte-replay.** Every node, every edge probability, every per-leaf conformal interval byte-replayable from `CF_MEJEPA_PATHWAY_TREES` after flush/drop/reopen.
+4. **Closest-exemplar attachment.** Every surfaced pathway has a non-empty `closest_historical_pathway` field grounded in the 491-row Level-0 accepted label registry from #413 (or typed-empty for novel pathways with explicit `UNKNOWN_PATHWAY_SIGNATURE`).
+5. **Mistake-loop integration.** When reality renders any binary leaf of a surfaced pathway and the predicted outcome was wrong, the disagreement materializes as a `CF_MEJEPA_MISTAKE_LOG` row (per #406 / TASK-PY-G-112). The mistake row records `(pathway_id, leaf_id, predicted, observed)` so the trainer can credit-assign across the pathway, not just on the candidate-patch root.
+6. **Goodhart-safe surfacing.** No pathway is surfaced solely on the predictor's own confidence — every leaf's calibration row must be present in the disjoint calibration partition (#407 / TASK-PY-G-113). Pathways through cold cells (`n_supporting < INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT`) carry an explicit `cold_cell_warning` flag.
+
+### 17bis.6 Operator-facing semantics
+
+The operator sees a list like:
+
+```
+Candidate patch: <patch_sha256>
+Most probable futures (top-5):
+
+[1] P = 0.42  →  Q1=Yes → Q2=Pass → Q5.django_test_isolation=Yes → Q5.next_session_admin_save=Yes
+                "patch lands, tests pass, isolation holds, downstream admin.save() consumer unaffected"
+                Closest historical: django__django-13230 (PASS) — registry label `chunk:source_site:exact_mutation_overlap+pair:e7_e9:zero_fraction_high`
+
+[2] P = 0.21  →  Q1=Yes → Q2=Pass → Q5.django_test_isolation=Yes → Q5.next_session_admin_save=No
+                "patch lands, tests pass, isolation holds, BUT downstream admin.save() consumer breaks next session"
+                Closest historical: django__django-11211 (FAIL after merge) — registry label `code_state:multi_point_evidence_set`
+                ⚠ named failure mode (#404 hierarchy): `downstream_consumer_regression`
+
+[3] P = 0.17  →  Q1=Yes → Q2=Fail
+                "patch lands but oracle rejects (target_fail_to_pass tests failed)"
+                Closest historical: django__django-12286 (FAIL) — registry label `mutation_mechanism:subtle_flip_invariant_violation`
+
+[4] P = 0.12  →  Q1=Yes → Q2=Pass → Q5.django_test_isolation=No
+                "patch lands, oracle passes solo, BUT test isolation breaks when other tests run"
+                ⚠ named failure mode: `mock_only_change`
+
+[5] P = 0.08  →  Q1=No
+                "patch will not land in bytes as claimed (claim-vs-AST mismatch)"
+```
+
+The operator picks one of `[1]–[5]`, the system records the choice in `CF_MEJEPA_OPERATOR_PATHWAY_CHOICES`, and (when #335 `mejepa_reverse_prediction` lands) the system produces patch-shape constraints that would satisfy the chosen pathway's binary leaves.
+
+This is what "the system enlightens the operator on the butterfly-effect pathways and lets them choose which path to choose" means architecturally: every node is a binary leaf the predictor commits on, every pathway is a conjunction of falsifiable binary claims, every probability is calibrated against the disjoint calibration partition, and every operator choice is a durable row that feeds back into the mistake-loop training signal.
+
+### 17bis.7 What this is NOT
+
+- **Not generative.** Pathways are projections of the predictor's existing binary-head knowledge into a tree, not invented futures.
+- **Not ambiguous.** Q4 heads (perf / accuracy / cost / latent bugs / tech debt / idiomaticity) cannot enter a pathway. The ambiguity boundary applies leaf-by-leaf.
+- **Not best-of-K patch selection.** Pathway surfacing operates on *one* candidate patch and shows its possible future trajectories. It is NOT the §0 "best-of-K candidates" pattern that the binary doctrine forbids.
+- **Not a probability ranking over ambiguous outcomes.** "How performant" / "how maintainable" are never pathway nodes. Pathway probabilities multiply binary leaf probabilities only.
+- **Not unlimited.** Beam width × max depth bounds the tree; default `beam_width=32`, `max_depth=6`, `pruning_epsilon=0.01`, `k=5`. Operator can tune within sane bounds; pathway counts above 5 typically exceed operator decision bandwidth.
+
+### 17bis.8 Open question: ambiguous-pathway extension
+
+Whether the pathway surface can ever expand to ambiguous leaves (e.g. "this pathway probably degrades perf by ≥10%") is unanswered. The current ambiguity-boundary rule says no — ambiguous leaves cannot be falsified by reality, so a pathway through one cannot be probability-weighted by the mistake loop in a way that converges. Whether some richer formulation (interval-typed pathway leaves with externally falsifiable thresholds against deterministic tools? typed-uncertainty leaves with explicit calibration partitions?) can include them is future work and is **explicitly out of scope for #416 / TASK-PY-G-119**. The FSV asserts `ambiguous_leaves_in_pathway == 0` at every release.
 
 ---
 

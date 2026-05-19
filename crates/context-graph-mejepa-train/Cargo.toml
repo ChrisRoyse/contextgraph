@@ -130,3 +130,11 @@ path = "examples/task_py_g_051_q4_non_trivial_on_pass_fsv.rs"
 [[example]]
 name = "task_py_g_012_q4_confidence_calibration_fsv"
 path = "examples/task_py_g_012_q4_confidence_calibration_fsv.rs"
+
+[[example]]
+name = "task_py_g_118_skill_sequence_discovery_fsv"
+path = "examples/task_py_g_118_skill_sequence_discovery_fsv.rs"
+
+[[example]]
+name = "task_py_g_118_aiwonder_skill_materialization_fsv"
+path = "examples/task_py_g_118_aiwonder_skill_materialization_fsv.rs"

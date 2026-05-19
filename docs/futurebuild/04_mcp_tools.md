@@ -323,3 +323,16 @@ No tool deletion (would break stored agent prompts referencing them); behaviour 
 ### 9.5 Tool-count update
 
 When #404/#405/#406 land, the total tool count moves from **196 → ~205** (4 + 2 + 3 = 9 new tools). The `test_total_tool_count_and_no_duplicates` test threshold is updated as part of the same PR. Q4 tool deprecation does not change the count (tools remain registered, just behaviour-changed).
+
+### 9.6 Pathway exploration surface tools (#416 / TASK-PY-G-119, planned)
+
+The butterfly-effect pathway tree (`docs/futurebuild/01_overview.md §1.5`, `05_predictor_pipeline.md §17bis`) — top-K most-probable future trajectories per candidate patch as chains of Q1/Q2/Q5 binary leaves only — adds four MCP tools. Strict binary-leaf rule applies: any non-Q1/Q2/Q5 leaf in a pathway request fails closed with `PATHWAY_AMBIGUOUS_LEAF_REJECTED`.
+
+| Tool (planned) | Const | Purpose | Key params | Side effects |
+|---|---|---|---|---|
+| `mcp__cgreality__mejepa_pathway_surface` | `MEJEPA_PATHWAY_SURFACE` | Compute and return the top-K (default 5) most-probable pathways for a candidate patch. Each pathway is a chain of binary Q1/Q2/Q5 leaves with calibrated joint probability, closest historical exemplar from the 491-row Level-0 registry (#413), and named failure mode on any Fail leaf (#404). | `predictionId`, `k: int=5`, `beamWidth: int=32`, `maxDepth: int=6`, `pruningEpsilon: f32=0.01` | Writes `CF_MEJEPA_PATHWAY_TREES`, `CF_MEJEPA_SURFACED_PATHWAYS` |
+| `mcp__cgreality__mejepa_pathway_inspect` | `MEJEPA_PATHWAY_INSPECT` | Return full leaf chain + per-leaf probabilities + conformal intervals + closest historical exemplar for one pathway. | `predictionId`, `pathwayId` | Read-only |
+| `mcp__cgreality__mejepa_pathway_record_choice` | `MEJEPA_PATHWAY_RECORD_CHOICE` | Record the operator's chosen pathway (idempotent). Feeds #335 `mejepa_reverse_prediction` when it ships — the system then produces patch-shape constraints that satisfy the chosen pathway's binary leaves. | `predictionId`, `pathwayId`, `rationaleText?` | Writes `CF_MEJEPA_OPERATOR_PATHWAY_CHOICES` |
+| `mcp__cgreality__mejepa_pathway_history` | `MEJEPA_PATHWAY_HISTORY` | Read-only audit over `CF_MEJEPA_OPERATOR_PATHWAY_CHOICES`. Filter by window/session/operator. | `windowId?`, `sessionId?`, `limit: int=100` | Read-only |
+
+When #416 lands, the total tool count moves further: **~205 → ~209** (4 additional pathway tools).

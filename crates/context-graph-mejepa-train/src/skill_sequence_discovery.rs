@@ -4,93 +4,25 @@
 //! Target-side oracle/test labels may score the pattern after reality responds,
 //! but they are never allowed in the live inputs that identify the skill.
 
-use crate::error::{TrainerError, TrainerErrorCode};
-use serde::{Deserialize, Serialize};
-use serde_json::json;
+use crate::error::TrainerError;
+use crate::skill_validation;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const SKILL_SEQUENCE_SCHEMA_VERSION: u32 = 1;
-const MAX_ID_BYTES: usize = 512;
 const MAX_STEPS: usize = 64;
 const MAX_IDS_PER_STEP: usize = 128;
 const MAX_EPISODES_PER_SKILL: usize = 4096;
+const SOURCE_FILE: &str = "file:crates/context-graph-mejepa-train/src/skill_sequence_discovery.rs";
+const REMEDIATION: &str =
+    "skill discovery must use live-observable ordered labels and target outcomes only for post-reality supervision";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub enum SkillOutcomeVerdict {
-    Pass,
-    Fail,
-    Unknown,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct SkillOutcomeObservation {
-    pub outcome_label_id: String,
-    pub verdict: SkillOutcomeVerdict,
-    pub target_side_supervision_only: bool,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct SkillOutcomeDistribution {
-    pub pass: u64,
-    pub fail: u64,
-    pub unknown: u64,
-}
+pub use crate::skill_sequence_types::*;
+pub use crate::skill_validation::is_target_only_live_label;
 
 impl SkillOutcomeDistribution {
     pub fn supervised_total(&self) -> u64 {
         self.pass + self.fail
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct SkillStepEvidence {
-    pub step_index: u32,
-    pub chunk_id: String,
-    pub file_path: String,
-    pub code_state_key: String,
-    pub accepted_label_ids: Vec<String>,
-    pub group_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct SkillStepTemplate {
-    pub step_index: u32,
-    pub accepted_label_ids: Vec<String>,
-    pub group_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct SkillTransitionEdge {
-    pub from_step_index: u32,
-    pub to_step_index: u32,
-    pub edge_label: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct SkillEpisodeRow {
-    pub episode_id: String,
-    pub proposed_skill_name: Option<String>,
-    pub ordered_steps: Vec<SkillStepEvidence>,
-    pub outcome: Option<SkillOutcomeObservation>,
-    pub failure_evidence_set_ids: Vec<String>,
-    pub cell_baseline_fail_rate: f64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct SkillDiscoveryConfig {
-    pub min_support: u64,
-    pub min_lift_over_cell_baseline: f64,
-    pub min_confidence: f64,
-    pub allow_pending_outcome_candidates: bool,
 }
 
 impl Default for SkillDiscoveryConfig {
@@ -102,40 +34,6 @@ impl Default for SkillDiscoveryConfig {
             allow_pending_outcome_candidates: true,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub enum SkillPromotionStatus {
-    ActiveLearning,
-    PromotionReady,
-    OperatorApproved,
-    Demoted,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct Level2SkillRow {
-    pub schema_version: u32,
-    pub skill_id: String,
-    pub skill_name: String,
-    pub parent_group_ids: Vec<String>,
-    pub parent_skill_ids: Vec<String>,
-    pub ordered_steps: Vec<SkillStepTemplate>,
-    pub prerequisite_label_ids: Vec<String>,
-    pub transition_edges: Vec<SkillTransitionEdge>,
-    pub support: u64,
-    pub confidence: f64,
-    pub lift_over_cell_baseline: f64,
-    pub stability: f64,
-    pub oracle_outcome_distribution: SkillOutcomeDistribution,
-    pub code_state_keys: Vec<String>,
-    pub source_episode_ids: Vec<String>,
-    pub failure_evidence_set_ids: Vec<String>,
-    pub live_input_allowed: bool,
-    pub promotion_status: SkillPromotionStatus,
-    pub operator_approved: bool,
-    pub created_at_unix_ms: i64,
 }
 
 impl Level2SkillRow {
@@ -160,7 +58,11 @@ impl Level2SkillRow {
             MAX_IDS_PER_STEP,
         )?;
         validate_transition_edges(&self.transition_edges, self.ordered_steps.len())?;
-        validate_id_list("code_state_keys", &self.code_state_keys, MAX_EPISODES_PER_SKILL)?;
+        validate_id_list(
+            "code_state_keys",
+            &self.code_state_keys,
+            MAX_EPISODES_PER_SKILL,
+        )?;
         validate_id_list(
             "source_episode_ids",
             &self.source_episode_ids,
@@ -174,10 +76,7 @@ impl Level2SkillRow {
         validate_finite_unit("confidence", self.confidence)?;
         validate_finite_unit("stability", self.stability)?;
         if !self.lift_over_cell_baseline.is_finite() {
-            return Err(invalid(
-                "lift_over_cell_baseline",
-                "must be a finite value",
-            ));
+            return Err(invalid("lift_over_cell_baseline", "must be a finite value"));
         }
         if self.support == 0 || self.source_episode_ids.len() as u64 != self.support {
             return Err(invalid(
@@ -196,24 +95,6 @@ impl Level2SkillRow {
         }
         Ok(())
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct SkillCandidateRejection {
-    pub pattern_hash: String,
-    pub reason: String,
-    pub support: u64,
-    pub lift_over_cell_baseline: f64,
-    pub confidence: f64,
-    pub source_episode_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct SkillDiscoveryReport {
-    pub candidates: Vec<Level2SkillRow>,
-    pub rejections: Vec<SkillCandidateRejection>,
 }
 
 pub fn discover_skill_candidates(
@@ -244,6 +125,17 @@ pub fn discover_skill_candidates(
     let mut rejections = Vec::new();
     for (pattern_hash, acc) in groups {
         let metrics = acc.metrics();
+        if acc.source_episode_ids.len() >= MAX_EPISODES_PER_SKILL
+            && acc.support > MAX_EPISODES_PER_SKILL as u64
+        {
+            rejections.push(acc.rejection(
+                pattern_hash,
+                "too_broad_high_support_static_pattern",
+                metrics.lift_over_cell_baseline,
+                metrics.confidence,
+            ));
+            continue;
+        }
         if acc.support < config.min_support {
             rejections.push(acc.rejection(
                 pattern_hash,
@@ -321,24 +213,6 @@ pub fn skill_id_from_parts(
     ))
 }
 
-pub fn is_target_only_live_label(label: &str) -> bool {
-    matches!(
-        label.split_once(':').map(|(family, _)| family),
-        Some(
-            "oracle"
-                | "docker"
-                | "test_phase"
-                | "test_result"
-                | "code_state_outcome"
-                | "partition"
-                | "leakage_policy"
-                | "ground_truth"
-                | "truth"
-                | "post_tool_use"
-        )
-    )
-}
-
 #[derive(Debug, Clone)]
 struct Accumulator {
     proposed_skill_name: Option<String>,
@@ -380,12 +254,11 @@ impl Accumulator {
     }
 
     fn add_episode(&mut self, episode: &SkillEpisodeRow) -> Result<(), TrainerError> {
-        if self.support as usize >= MAX_EPISODES_PER_SKILL {
-            return Err(invalid("episodes", "too many episodes for one skill"));
-        }
         self.support += 1;
         self.baseline_fail_rate_sum += episode.cell_baseline_fail_rate;
-        self.source_episode_ids.push(episode.episode_id.clone());
+        if self.source_episode_ids.len() < MAX_EPISODES_PER_SKILL {
+            self.source_episode_ids.push(episode.episode_id.clone());
+        }
         self.failure_evidence_set_ids
             .extend(episode.failure_evidence_set_ids.iter().cloned());
         for step in &episode.ordered_steps {
@@ -580,7 +453,9 @@ fn validate_transition_edges(
     Ok(())
 }
 
-fn templates_from_steps(steps: &[SkillStepEvidence]) -> Result<Vec<SkillStepTemplate>, TrainerError> {
+fn templates_from_steps(
+    steps: &[SkillStepEvidence],
+) -> Result<Vec<SkillStepTemplate>, TrainerError> {
     let mut templates = Vec::with_capacity(steps.len());
     for step in steps {
         let mut accepted_label_ids = step.accepted_label_ids.clone();
@@ -622,7 +497,10 @@ fn pattern_hash(steps: &[SkillStepTemplate]) -> Result<String, TrainerError> {
             hasher.update(group.as_bytes());
         }
     }
-    Ok(format!("skill_pattern:{}", &hex::encode(hasher.finalize())[..24]))
+    Ok(format!(
+        "skill_pattern:{}",
+        &hex::encode(hasher.finalize())[..24]
+    ))
 }
 
 fn stability_score(file_count: usize, support: u64) -> f64 {
@@ -635,7 +513,11 @@ fn stability_score(file_count: usize, support: u64) -> f64 {
 fn derive_skill_name(parent_group_ids: &[String], ordered_steps: &[SkillStepTemplate]) -> String {
     let source = parent_group_ids
         .first()
-        .or_else(|| ordered_steps.first().and_then(|step| step.accepted_label_ids.first()))
+        .or_else(|| {
+            ordered_steps
+                .first()
+                .and_then(|step| step.accepted_label_ids.first())
+        })
         .map(String::as_str)
         .unwrap_or("unnamed");
     format!("auto_{}", slugify(source))
@@ -653,55 +535,26 @@ fn slugify(value: &str) -> String {
     out.trim_matches('_').chars().take(64).collect()
 }
 
-fn validate_live_label_list(
-    field: &str,
-    values: &[String],
-) -> Result<(), TrainerError> {
-    validate_id_list(field, values, MAX_IDS_PER_STEP)?;
-    for value in values {
-        if is_target_only_live_label(value) {
-            return Err(invalid(
-                field,
-                format!("{value} is target-side supervision and cannot identify a live skill"),
-            ));
-        }
-    }
-    Ok(())
+fn validate_live_label_list(field: &str, values: &[String]) -> Result<(), TrainerError> {
+    skill_validation::validate_live_id_list(
+        SOURCE_FILE,
+        REMEDIATION,
+        field,
+        values,
+        MAX_IDS_PER_STEP,
+    )
 }
 
 fn validate_id_list(field: &str, values: &[String], max_items: usize) -> Result<(), TrainerError> {
-    if values.len() > max_items {
-        return Err(invalid(field, format!("too many ids: {}", values.len())));
-    }
-    let mut seen = BTreeSet::new();
-    for value in values {
-        validate_id(field, value)?;
-        if !seen.insert(value) {
-            return Err(invalid(field, format!("duplicate id {value}")));
-        }
-    }
-    Ok(())
+    skill_validation::validate_id_list(SOURCE_FILE, REMEDIATION, field, values, max_items)
 }
 
 fn validate_id(field: &str, value: &str) -> Result<(), TrainerError> {
-    if value.trim().is_empty() {
-        return Err(invalid(field, "must be non-empty"));
-    }
-    if value.len() > MAX_ID_BYTES || value.chars().any(char::is_control) {
-        return Err(invalid(field, "must be single-line text up to 512 bytes"));
-    }
-    if value.contains("/mnt/d") {
-        return Err(invalid(field, "must not reference legacy /mnt/d state"));
-    }
-    Ok(())
+    skill_validation::validate_id(SOURCE_FILE, REMEDIATION, field, value)
 }
 
 fn validate_project_relative_path(field: &str, value: &str) -> Result<(), TrainerError> {
-    validate_id(field, value)?;
-    if value.starts_with('/') || value.split('/').any(|part| part == "..") {
-        return Err(invalid(field, "must be a project-relative path"));
-    }
-    Ok(())
+    skill_validation::validate_project_relative_path(SOURCE_FILE, REMEDIATION, field, value)
 }
 
 fn validate_config(config: SkillDiscoveryConfig) -> Result<(), TrainerError> {
@@ -709,155 +562,19 @@ fn validate_config(config: SkillDiscoveryConfig) -> Result<(), TrainerError> {
         return Err(invalid("min_support", "must be positive"));
     }
     if !config.min_lift_over_cell_baseline.is_finite() {
-        return Err(invalid(
-            "min_lift_over_cell_baseline",
-            "must be finite",
-        ));
+        return Err(invalid("min_lift_over_cell_baseline", "must be finite"));
     }
     validate_finite_unit("min_confidence", config.min_confidence)
 }
 
 fn validate_finite_unit(field: &str, value: f64) -> Result<(), TrainerError> {
-    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-        return Err(invalid(field, "must be finite and within [0, 1]"));
-    }
-    Ok(())
+    skill_validation::validate_finite_unit(SOURCE_FILE, REMEDIATION, field, value)
 }
 
 fn invalid(field: impl Into<String>, message: impl Into<String>) -> TrainerError {
-    TrainerError::new(TrainerErrorCode::MejepaTrainConfigInvalid, message).with_context(json!({
-        "field": field.into(),
-        "file": "file:crates/context-graph-mejepa-train/src/skill_sequence_discovery.rs",
-        "remediation": "skill discovery must use live-observable ordered labels and target outcomes only for post-reality supervision"
-    }))
+    skill_validation::invalid(SOURCE_FILE, REMEDIATION, field, message)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn step(index: u32, chunk: &str, file: &str, label: &str, group: &str) -> SkillStepEvidence {
-        SkillStepEvidence {
-            step_index: index,
-            chunk_id: chunk.to_string(),
-            file_path: file.to_string(),
-            code_state_key: format!("python:state:{chunk}"),
-            accepted_label_ids: vec![label.to_string()],
-            group_ids: vec![group.to_string()],
-        }
-    }
-
-    fn episode(id: &str, file_suffix: &str, verdict: Option<SkillOutcomeVerdict>) -> SkillEpisodeRow {
-        SkillEpisodeRow {
-            episode_id: id.to_string(),
-            proposed_skill_name: Some("import_contract_drift".to_string()),
-            ordered_steps: vec![
-                step(
-                    0,
-                    &format!("chunk:{file_suffix}:caller"),
-                    &format!("pkg/{file_suffix}.py"),
-                    "ast_surface:import_from",
-                    "group:import_contract",
-                ),
-                step(
-                    1,
-                    &format!("chunk:{file_suffix}:callee"),
-                    &format!("pkg/{file_suffix}.py"),
-                    "pair_relation:caller_missing_symbol",
-                    "group:import_contract",
-                ),
-            ],
-            outcome: verdict.map(|verdict| SkillOutcomeObservation {
-                outcome_label_id: "oracle:fail".to_string(),
-                verdict,
-                target_side_supervision_only: true,
-            }),
-            failure_evidence_set_ids: vec![format!("evidence:{id}")],
-            cell_baseline_fail_rate: 0.20,
-        }
-    }
-
-    #[test]
-    fn discovery_promotes_ordered_skill_candidate() {
-        let report = discover_skill_candidates(
-            &[
-                episode("episode:a", "a", Some(SkillOutcomeVerdict::Fail)),
-                episode("episode:b", "b", Some(SkillOutcomeVerdict::Fail)),
-            ],
-            SkillDiscoveryConfig::default(),
-            1_779_000_000_000,
-        )
-        .unwrap();
-
-        assert_eq!(report.rejections, Vec::new());
-        assert_eq!(report.candidates.len(), 1);
-        let row = &report.candidates[0];
-        assert_eq!(row.skill_name, "import_contract_drift");
-        assert_eq!(row.promotion_status, SkillPromotionStatus::PromotionReady);
-        assert_eq!(row.ordered_steps.len(), 2);
-        assert_eq!(row.transition_edges[0].from_step_index, 0);
-        assert_eq!(row.transition_edges[0].to_step_index, 1);
-        assert!(row.lift_over_cell_baseline >= 0.79);
-    }
-
-    #[test]
-    fn discovery_rejects_target_only_live_label() {
-        let mut row = episode("episode:a", "a", Some(SkillOutcomeVerdict::Fail));
-        row.ordered_steps[0].accepted_label_ids = vec!["oracle:pass".to_string()];
-
-        let err = discover_skill_candidates(
-            &[row],
-            SkillDiscoveryConfig::default(),
-            1_779_000_000_000,
-        )
-        .unwrap_err();
-
-        assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
-    }
-
-    #[test]
-    fn discovery_rejects_missing_order() {
-        let mut row = episode("episode:a", "a", Some(SkillOutcomeVerdict::Fail));
-        row.ordered_steps[1].step_index = 3;
-
-        let err = discover_skill_candidates(
-            &[row],
-            SkillDiscoveryConfig::default(),
-            1_779_000_000_000,
-        )
-        .unwrap_err();
-
-        assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
-    }
-
-    #[test]
-    fn discovery_rejects_low_support_overfit_candidate() {
-        let report = discover_skill_candidates(
-            &[episode("episode:a", "a", Some(SkillOutcomeVerdict::Fail))],
-            SkillDiscoveryConfig::default(),
-            1_779_000_000_000,
-        )
-        .unwrap();
-
-        assert_eq!(report.candidates, Vec::new());
-        assert_eq!(report.rejections.len(), 1);
-        assert_eq!(report.rejections[0].reason, "low_support_overfit");
-    }
-
-    #[test]
-    fn discovery_emits_pending_live_candidate_without_oracle_outcome() {
-        let report = discover_skill_candidates(
-            &[
-                episode("episode:a", "a", None),
-                episode("episode:b", "b", None),
-            ],
-            SkillDiscoveryConfig::default(),
-            1_779_000_000_000,
-        )
-        .unwrap();
-
-        assert_eq!(report.candidates.len(), 1);
-        assert_eq!(report.candidates[0].promotion_status, SkillPromotionStatus::ActiveLearning);
-        assert_eq!(report.candidates[0].oracle_outcome_distribution.unknown, 2);
-    }
-}
+#[path = "skill_sequence_discovery_tests.rs"]
+mod skill_sequence_discovery_tests;

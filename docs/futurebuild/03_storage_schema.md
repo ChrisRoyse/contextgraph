@@ -348,9 +348,9 @@ Predecessor: `a1e6a842 Make aiwonder production storage policy explicit` — dec
 
 ## 9. Planned New Column Families (Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop)
 
-Planned CFs supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`, `02_source_map.md §12`). All planned CFs land in the `mejepa-cf/src/lib.rs` canonical registry (additive; no rename of existing CFs). Tracked under epic issues #404 / #405 / #406.
+Additive CFs supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`, `02_source_map.md §12`). The #414 skill-membership CFs are registered in `mejepa-cf/src/lib.rs`; #404/#405/#406 runtime consumers remain tracked by their issue gates. No rename of existing CFs.
 
-### 9.1 Failure-mode labeling — Level-0 SHIPPED as JSONL artifacts; Level-1/2/3 CFs planned
+### 9.1 Failure-mode labeling — Level-0 SHIPPED as JSONL artifacts; #414 skill CFs registered
 
 **Level 0 (shipped 2026-05-19 via #413 / TASK-PY-G-117) materializes label state as durable JSONL files under `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/`, not as RocksDB CFs.** This was a deliberate choice: the labels are computed deterministically by `python_auto_label_discovery.py` from the forward-cache substrate, and storing them as JSONL keeps the artifact byte-replayable and independent of the RocksDB schema. The accepted label registry is the "stable label ID" surface other CFs (mistake log, replay buffer, constellation patterns) will reference.
 
@@ -369,11 +369,11 @@ Planned CFs supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1
 
 **Why JSONL instead of CFs at Level 0:** the label compiler is deterministic and the registry is replayable from inputs (forward cache + chunks.jsonl + oracle index). JSONL keeps the audit surface human-readable, lets the FSV byte-compare against the materialized stream, and avoids a CF schema change on every label-formula version bump (`FORMULA_VERSION = "deterministic_slot_label_compiler_v1"`).
 
-**Level 1/2/3 hierarchical naming CFs (planned, #404 / TASK-PY-G-110):**
+**Level 1/2/3 hierarchical naming and skill-membership CFs (#404 / #414):**
 
 When the hierarchical naming layer lands on top of the shipped Level-0 registry, these CFs are added. They reference `accepted_label_registry.jsonl` row IDs as the stable Level-0 key.
 
-| CF Constant (planned) | Key | Value | Purpose |
+| CF Constant | Key | Value | Purpose |
 |---|---|---|---|
 | `CF_MEJEPA_FAILURE_MODE_VOCABULARY` | `vocabulary_id` (e.g. `solution_leak`, `wrong_file`, `type_signature_drift`) | bincode `{name, description, seed_source, embedding_e1, embedding_e7, operator_approved, created_at, updated_at}` | Operator-curated failure-mode vocabulary seeded from published SWE-bench taxonomies (Aleithan et al. 2025 / Yang et al. 2024 / SWE-Bench Pro 2025) plus our 8-mutation operator set plus adversarial corpus. Extensible via `mejepa_label_failure_cluster`. |
 | `CF_MEJEPA_FAILURE_MODE_LEVEL1` | `group_id` | bincode `{member_accepted_label_ids: Vec<AcceptedLabelId>, sample_count, top_vocabulary_matches_with_cosine, operator_approved_name, created_at}` | Level-1 groups aggregated over Level-0 accepted labels; each group named via cosine-vs-vocabulary against `CF_MEJEPA_FAILURE_MODE_VOCABULARY`; operator can override the name. |
@@ -416,8 +416,22 @@ Per `05_predictor_pipeline.md §16`, the Q4 prediction track is closed and the f
 
 Future cleanup (dropping these CFs in a schema-version bump) tracked under `phase:cleanup`; not in current Phase G scope. Constants stay in `mejepa-cf/src/lib.rs` with a `// FROZEN 2026-05-19: see futurebuild/05 §16` comment.
 
+### 9.4bis Pathway exploration surface CFs (#416 / TASK-PY-G-119, planned)
+
+The butterfly-effect pathway tree (`01_overview.md §1.5`, `05_predictor_pipeline.md §17bis`) adds three CFs. All three are **target-side leakage-policy:target_side_only** for live-input training purposes (the chosen pathway is downstream of the operator's choice, never a live predictor input).
+
+| CF Constant (planned) | Key | Value | Purpose |
+|---|---|---|---|
+| `CF_MEJEPA_PATHWAY_TREES` | `(prediction_id, tree_run_id)` | bincode `PathwayTree { root_patch_id, nodes: Vec<PathwayNode>, beam_width, max_depth, pruning_epsilon, formula_version }` where every `PathwayNode.leaf_kind ∈ {Q1, Q2, Q5}` (strict; non-binary leaves rejected at write time) | Full pathway tree per candidate patch; byte-replayable per FSV |
+| `CF_MEJEPA_SURFACED_PATHWAYS` | `(prediction_id, pathway_id)` | bincode `SurfacedPathway { leaf_chain: Vec<BinaryLeaf>, joint_probability, closest_historical_pathway, named_failure_mode_if_fail_leaf, cold_cell_warning }` | The top-K (3-5) pathways actually returned to the operator |
+| `CF_MEJEPA_OPERATOR_PATHWAY_CHOICES` | `(prediction_id, chooser_id)` | bincode `{chosen_pathway_id, chose_at_ts_ns, rationale_text?}` | Operator's chosen future; feeds #335 `mejepa_reverse_prediction` when shipped |
+
+Strict write-time assertion: any attempt to write a `PathwayNode` with `leaf_kind` outside `{Q1, Q2, Q5}` fails closed with `PATHWAY_AMBIGUOUS_LEAF_REJECTED`.
+
 ### 9.5 Canonical opener slice update
 
-When the planned CFs land, they get added to `ALL_HYGIENE_REFERENCED_CFS` (`mejepa-cf/lib.rs`). The new `MEJEPA_HYGIENE_REFERENCED_CF_COUNT` total will increase by ~13 (8 labeling/skill CFs + 2 cross-panel + 3 mistake-loop). The `canonical_hygiene_cfs_match_group_union` test continues to enforce that the union of `SELF_HEALING_REFERENCED_CFS ∪ INFER_CFS ∪ HYGIENE_CFS ∪ TCT_CFS ∪ FLYWHEEL_CFS ∪ FINGERPRINT_CFS ∪ ADVERSARIAL_CFS ∪ REWARD_SIGNAL_CFS ∪ EXPLANATORY_KNOWLEDGE_CFS ∪ OOD_HARVEST_CFS ∪ FAILURE_MODE_CFS (new) ∪ CROSS_PANEL_CFS (new) ∪ MISTAKE_LOOP_CFS (new)` matches `ALL_HYGIENE_REFERENCED_CFS`.
+When CFs land, they get added to `ALL_HYGIENE_REFERENCED_CFS` (`mejepa-cf/lib.rs`). #414 registered `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP`, `CF_MEJEPA_SKILL_REVERSE_INDEX`, and `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` in `FAILURE_MODE_CFS`, `INFER_CFS`, `EVAL_CFS`, `HYGIENE_CFS`, and the canonical all-CF opener. The `canonical_hygiene_cfs_match_group_union` test now explicitly includes `FAILURE_MODE_CFS` and continues to enforce that the grouped CF contract matches `ALL_HYGIENE_REFERENCED_CFS`.
+
+#414 production FSV (`/zfs/archive/contextgraph/fsv/task-py-g-118-skill-sequence-discovery-fsv/run-1779212140822/task_py_g_118_aiwonder_skill_materialization_fsv.json`) streamed all 399,777 #413 chunk-label rows and wrote/read back 128 `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` rows, 36,773 `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` rows, 10,579 `CF_MEJEPA_SKILL_REVERSE_INDEX` rows, and 128 `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` rows. External aiwonder `ldb` readback with `LD_LIBRARY_PATH=/zfs/hot/contextgraph/lib` matched the reopened Rust counts exactly.
 
 Because adding a CF is a schema change and ME-JEPA has no migrations (`CLAUDE.md §6.6`), landing #404/#405/#406 means a deliberate DB wipe + rebuild. The wipe is scheduled as a single combined operation rather than 3 separate wipes.

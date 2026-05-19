@@ -62,7 +62,42 @@ The Q-surfaces split into **binary predictions** (Q1/Q2/Q5), an **explanation su
 
 The legacy `Verdict::{OutOfDistribution, Abstain, GuardRejected}` states do not disappear from the code, but they are **internal states**, not product outputs. An internal `Abstain` or `OOD` is a signal that the predictor lacks sufficient evidence to be correct on the first try — the system MUST treat that as a present-tense failure to be eliminated, not as an acceptable hedge. The path out of an internal Abstain is online learning, not "try K candidates and pick the best."
 
-**The ambiguity boundary (locked-in rule).** ME-JEPA only predicts questions that have a *free binary form against reality*. Free means: the binary verdict comes from observing reality directly, not from imposing an arbitrary threshold on a continuous heuristic. The system does not predict ambiguous things, because:
+### 1.5 The butterfly-effect pathway surface (binary-leaf-only consequence exploration)
+
+The binary-prediction contract (§1.1) is the per-leaf primitive. What the system *delivers to the operator* on top of that primitive is a small set of **most-probable futures** — concrete branching pathways that a candidate code change opens up in durable reality, each pathway being a conjunction of binary leaves. The operator picks which future they want; the system shows them what code-shape lands them there.
+
+**Why this is what the system is actually doing.** Each prediction surface is a binary leaf against ground truth (Q1: did the claim land in bytes? Q2: does the Docker oracle pass? Q5: did this specific predicted shift-event occur?). These leaves compose temporally and causally: Q1's outcome conditions Q2's prior; Q2's outcome conditions Q5's prior over downstream shift events; and Q5 events condition further Q5 events as the patch lives in the codebase over subsequent sessions. The full *tree* of possible reality trajectories from a single candidate patch is exponentially large, but **most branches collapse to negligible probability**. The most-probable branches form a small handful of pathways the operator can usefully reason about.
+
+This is the established L3 capability in the JEPA world-model rubric (arXiv 2511.16333): L1 temporal prediction → L2 action-conditioned prediction → **L3 counterfactual rollouts for decision support** → L4 planning/control. ME-JEPA's Q1/Q2/Q5 stack already does L1 + L2; the pathway surface is the L3 instance.
+
+**Strict binary-leaf rule (the ambiguity boundary applies here too).** Every node in the pathway tree must be a binary leaf against ground truth — Q1/Q2/Q5 only. No ambiguous heads (Q4 perf / accuracy / cost / latent-bug / tech-debt / idiomaticity) enter the tree as nodes. The reason is the same reason Q4 is out of the prediction contract: an ambiguous leaf cannot be falsified by reality, so a pathway through an ambiguous leaf cannot be probability-weighted in a way that the mistake loop can clean up. Whether the pathway surface ever expands to ambiguous leaves is an open question; current scope is binary only.
+
+**Construction (planned, #416 / TASK-PY-G-119 — Pathway exploration surface).**
+
+1. **Seed:** the candidate patch (post-Q1 binary verdict on claim-exists).
+2. **Tree expansion:** beam search over downstream binary leaves. Each leaf is one of:
+   - `Q2.oracle_pass(patch) → {Yes, No}` — immediate test outcome
+   - `Q5.shift_event(event_id) → {Yes, No}` — predicted downstream consequence (predicted file-byte change, predicted test re-run outcome, predicted downstream API call shift, etc.)
+   Each node's children are conditioned on the path so far. Each edge carries the predictor's binary probability + the calibration confidence.
+3. **Pruning:** beam width is bounded; low-probability subtrees (`P(path) < ε` for ε ≈ 0.01) are pruned. Inspired by Diffusion Scenario Tree (arXiv 2509.14832) — `top-K` retention by cumulative path probability, branch probabilities normalized to sum to 1 at each level. Inspired by SWE-Search / CodePilot / Narrative Studio MCTS patterns — UCB1 for selection, rollout depth bounded, backprop-of-value up the path.
+4. **Top-K surfacing:** return the 3-5 most-probable terminal-state pathways. Each pathway carries:
+   - The full chain of binary leaves with their per-leaf probabilities
+   - The joint pathway probability (product of conditional leaf probabilities, calibrated by the conformal interval)
+   - The closest historical exemplar from the 300×8 corpus that traced a similar pathway (powered by the 491-row accepted label registry from #413)
+   - The named failure mode for any `Fail` leaf in the pathway (powered by #404 once Level-1/2/3 hierarchical naming lands on top of #413's registry)
+5. **Operator decision:** the operator reads the 3-5 pathways, picks the one they want reality to take. The system then shows them what code-shape *gets them to that pathway* — by reverse-engineering the patch-shape constraints that satisfy the chosen pathway's binary leaves (the §10.2(IX) / TASK-EK-013 / #335 `mejepa_reverse_prediction` tool, when it ships).
+
+**What this is, in standard language.** The pathway surface is the **Pearl Rung-3 counterfactual rollout** instantiated on binary leaves over the durable reality substrate. It is the *simulation-in-the-loop* pattern from arXiv 2603.11677 ("Control without foresight is like driving at night with no headlights"). It is structurally equivalent to **quantitative patch impact analysis** (arXiv 2605.13885) plus **sensitivity analysis for chaotic systems** (the SciML shadowing-methods treatment of the butterfly effect) — measure of how a small action cascades through a complex system, with the cascade decomposed into a small set of named most-probable trajectories rather than a single point forecast.
+
+**Why this matters operationally.** Without the pathway surface, the operator sees one binary verdict per patch (Pass / Fail) and decides yes-or-no on a single candidate. With the pathway surface, the operator sees the *shape of the futures that candidate opens* — what propagates cleanly, what breaks downstream, what triggers re-runs, what compounds over sessions. This converts the system from a verifier of one candidate into **decision-support for reality-shaping**: the operator can choose which of the 3-5 most-probable futures they want, then ask the agent to write the code-shape that lands them there.
+
+**What this is NOT.** The pathway surface is not generative — it does not synthesize new pathways from imagination. Every leaf in every pathway is a binary prediction made by the predictor, against the same ground-truth substrate (bytes / Docker / shift log) that ground-truths the per-leaf training. Every pathway is byte-replayable: every leaf's predicted outcome eventually meets reality, and the mistake loop (§1.3 / #406) updates the predictor on disagreements. The pathway tree is a *projection* of what the predictor already knows about binary leaves, not a free-form imagination tool.
+
+**Ambiguous-pathway question is open and explicitly deferred.** Whether the pathway surface can ever expand to ambiguous leaves (e.g. "this pathway probably degrades performance by ≥10%") is unanswered. The current ambiguity-boundary rule says no: ambiguous leaves don't have free binary form against reality, so a pathway through one cannot be probability-weighted by the mistake loop. Whether some richer formulation can include them is future work; for now the pathway surface is binary-leaf-only. Tracked under #416 / TASK-PY-G-119 with explicit `ambiguous_leaves_in_pathway == 0` FSV assertion.
+
+### 1.6 The ambiguity boundary (locked-in rule)
+
+ME-JEPA only predicts questions that have a *free binary form against reality*. Free means: the binary verdict comes from observing reality directly, not from imposing an arbitrary threshold on a continuous heuristic. The system does not predict ambiguous things, because:
 
 1. **Ambiguous questions have no ground truth.** "Is this performant?" depends on workload, hardware, baseline, and acceptable margin — there is no objective answer reality renders. Without ground truth, there is no learning signal, and the prediction is unfalsifiable.
 2. **Thresholded continuous proxies aren't reality, they're heuristics.** "perf regression ≥ 10%" is a binary heuristic, not a binary fact about reality. Predicting whether mutmut/semgrep/vulture/hyperfine returns a finding predicts what those tools say, not whether the code is good. Predicting heuristics introduces noise that can't be cleaned up via the mistake loop because the heuristic itself is the source of disagreement.
