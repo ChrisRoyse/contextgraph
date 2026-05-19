@@ -241,3 +241,7 @@ path = "examples/task_py_g_071_synthetic_stress_fsv.rs"
 [[example]]
 name = "task_py_g_056_live_session_fsv"
 path = "examples/task_py_g_056_live_session_fsv.rs"
+
+[[example]]
+name = "task_py_g_086_constellation_observation_schema_fsv"
+path = "examples/task_py_g_086_constellation_observation_schema_fsv.rs"

@@ -1,6 +1,6 @@
 # 05 — Predictor Pipeline (Embedders → Instruments → Panels → Heads → TCT → Training)
 
-**Last refreshed:** 2026-05-18.
+**Last refreshed:** 2026-05-19.
 
 Source files covered: `crates/context-graph-mejepa-embedders/src/lib.rs` + modules, `crates/context-graph-mejepa-instruments/src/lib.rs` + modules, `crates/context-graph-mejepa/src/lib.rs` + `compiler.rs` + `verdict_assembly.rs` + `claim_graph.rs` + `patch_similarity.rs` + `failure_fingerprint.rs` + `project_ingest.rs` + `live_session_trace.rs`, `crates/context-graph-mejepa-tct/src/lib.rs` + modules, `crates/context-graph-mejepa-train/src/lib.rs` + `learning_signal.rs` + `replay_buffer.rs` + `compression_progress.rs` + `loss/inverse.rs`, `crates/context-graph-mejepa-corpus/src/lib.rs` + ops, `crates/context-graph-mejepa-shift-subscriber/src/lib.rs`, `crates/context-graph-mejepa/src/heal/`.
 
@@ -234,13 +234,16 @@ Decision flow (per `compiler.rs::compile`):
 2. Forward through `MeJepaPredictor`.
 3. Project per-head DDA features (`head_projection.rs` + `CF_MEJEPA_HEAD_PROJECTION_REGISTRY`).
 4. Apply split-conformal interval (`conformal.rs`).
-5. OOD gate (`ood.rs` + `CF_MEJEPA_OOD_ESCALATIONS`).
-6. TCT Gτ guard (`tct/gtau.rs` + `CF_MEJEPA_GUARD_DECISIONS`).
-7. Cold-cell metric: if cell `n_supporting < INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT` (50) → `Verdict::Abstain` + `CF_MEJEPA_COLD_CELL_METRICS` row (TASK-PY-G-061).
-8. Match against fingerprint catalog (`CF_MEJEPA_FINGERPRINT_REVERSE_INDEX`).
-9. Pull closest exemplars (`CF_MEJEPA_PATCH_SIMILARITY_META`).
-10. Reconcile claim graph (`CF_MEJEPA_CLAIM_RECONCILIATION`).
-11. Emit `RealityPrediction` → write `CF_MEJEPA_LIVE_PREDICTIONS` + `CF_MEJEPA_HIERARCHICAL_PREDICTIONS`.
+5. **Per-slot OOD reasons (TASK-PY-G-089 / #389).** `RealityPrediction.per_slot_ood_reasons: Vec<PerSlotOodReason>` is materialized from per-slot/per-embedder calibration state under `/zfs/archive/contextgraph/state/calibration/per-slot-v1/`. Any slot/embedder/pair-specific OOD reason persists with the prediction row, byte-replays from RocksDB, and is exposed by `mejepa_explain_prediction` / `mejepa_inspect_prediction`. `MAX_EMBEDDERS_PER_PANEL` guard rejects over-wide arrays.
+6. Aggregate OOD gate (`ood.rs` + `CF_MEJEPA_OOD_ESCALATIONS`). Strict-conjunction policy: aggregate score never overrides a slot violation (`aggregate_score_never_overrides_slot_violation=true` in `ood_guard_policy.json`).
+7. TCT Gτ guard (`tct/gtau.rs` + `CF_MEJEPA_GUARD_DECISIONS`).
+8. Cold-cell metric: if cell `n_supporting < INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT` (50) → `Verdict::Abstain` + `CF_MEJEPA_COLD_CELL_METRICS` row (TASK-PY-G-061).
+9. Match against fingerprint catalog (`CF_MEJEPA_FINGERPRINT_REVERSE_INDEX`).
+10. Pull closest exemplars (`CF_MEJEPA_PATCH_SIMILARITY_META`).
+11. Reconcile claim graph (`CF_MEJEPA_CLAIM_RECONCILIATION`).
+12. Emit `RealityPrediction` → write `CF_MEJEPA_LIVE_PREDICTIONS` + `CF_MEJEPA_HIERARCHICAL_PREDICTIONS`.
+
+**Anti-compensation guard (TASK-PY-G-094 / #394).** `crates/context-graph-mejepa/examples/python_anti_compensation_fsv.rs` and the calibrated ablation suite (#398) prove corrupted / missing / stale / dimension-shifted slots, contradictory pair relationships, and temporal slot jumps cannot be accepted through aggregate evidence even when a flat normalized score would pass. A code scan prevents flat-vector ship-gate eligibility regressions.
 
 ---
 
@@ -419,7 +422,9 @@ Fail-closed on `decode_session_hex32` mismatch, malformed shift entries, waterma
 |---|---|---|
 | `conformal.rs` | Split-conformal predictor: per-head α=`INFER_DEFAULT_ALPHA`, calibration window over `CF_MEJEPA_CALIBRATION_HISTORY` | `crates/context-graph-mejepa/src/conformal.rs` |
 | `calibration.rs` + `calibration_types.rs` | `CalibrationCertificate`, per-head calibration | `crates/context-graph-mejepa-embedders/src/calibration.rs` + mejepa |
-| `ood.rs` | OOD gate; writes `CF_MEJEPA_OOD_ESCALATIONS`; `INFER_DEFAULT_OOD_REFUSE_THRESHOLD` | `crates/context-graph-mejepa/src/ood.rs` |
+| `ood.rs` | Aggregate OOD gate; writes `CF_MEJEPA_OOD_ESCALATIONS`; `INFER_DEFAULT_OOD_REFUSE_THRESHOLD` | `crates/context-graph-mejepa/src/ood.rs` |
+| `ood_harvest/` + `ood_harvest.rs` | TASK-PY-G-057 / #276 live-session harvest pipeline: above-threshold predictions → `CF_MEJEPA_OOD_HARVEST`, calibration audit → `CF_MEJEPA_OOD_CALIBRATIONS`, 4× projection into `CF_MEJEPA_ACTIVE_LEARNING_QUEUE`, orphan/degenerate quarantine, expired-row tier-down, operator-labeled downweight, `OOD_GATE_OVER_FLAGGING` flag when false-positive rate spikes | `crates/context-graph-mejepa/src/ood_harvest.rs` |
+| Per-slot OOD reasons | `RealityPrediction.per_slot_ood_reasons: Vec<PerSlotOodReason>` materialized from `/zfs/archive/contextgraph/state/calibration/per-slot-v1/`; persists slot/embedder/pair-specific OOD evidence per prediction; exposed via `mejepa_explain_prediction` / `mejepa_inspect_prediction`; `MAX_EMBEDDERS_PER_PANEL` guard | TASK-PY-G-089 / #389 |
 | `ColdCellMetric` (in `compiler.rs`) | Abstain when `n_supporting < INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT` (50); writes `CF_MEJEPA_COLD_CELL_METRICS` | TASK-PY-G-061 |
 
 ---

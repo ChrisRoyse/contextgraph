@@ -44,10 +44,10 @@ By priority:
 
 | Priority | Open count | Examples |
 |---|---|---|
-| `priority:p0` | 5 | #385 slot-preserving constellation refactor, #310 META issue refactor, plus migration blockers still labeled p0 |
-| `priority:p1` | 32 | Calibration, adversarial defense, and Q4 head training |
-| `priority:p2` | 40 | EK series tail, post-ship policies, refined sub-tasks |
-| `priority:p3` | 9 | Deferred (SWE-bench Verified subset, sample-efficiency, v2 stretch tasks) |
+| `priority:p0` | 5 | #385 slot-preserving constellation refactor, #310 META issue refactor, #372 aiwonder ZFS mount enforcement, #383 evidence-weighted issue ordering, #397 consequence-prediction contract |
+| `priority:p1` | 32 | Calibration, adversarial defense, Q4 head training, oracle-noise + Goodhart guards, multi-file holdout, off-host backup |
+| `priority:p2` | 40 | EK series tail, post-ship policies, refined sub-tasks, frozen-panel dimensionality ablation, tool-usage telemetry |
+| `priority:p3` | 9 | Deferred (SWE-bench Verified subset, sample-efficiency, v2 stretch tasks, future Docker image plan) |
 
 ---
 
@@ -97,7 +97,18 @@ Child issue split:
 
 **#394 FSV status (2026-05-19):** PASS on aiwonder. Evidence under `/zfs/archive/contextgraph/fsv/task-py-g-094-anti-compensation-fsv/`: the suite consumes #388 tensor dimensions and #389 slot/pair calibration, emits six adversarial fixtures, and proves corrupted/missing/stale/dimension-shifted slots, contradictory pair relationships, and temporal slot jumps all remain non-ship-gate-eligible even when aggregate normalized scores would pass. The FSV writes direct readback of prediction, OOD, Gτ, Q4, active-learning, and explanation surfaces. Main FSV sha256 `57f710b98fab31d2548bc6da8397487ac960f7cd02d9659df5335f0b017d32a1`; report sha256 `1d68f304dfc2356633596e05eacdf3ae61f89a053fd5c224a830cb9ea9477047`.
 
-**Ordering update from #388/#389/#393/#398/#394:** do not promote the current #396/#388/#389 calibrated feature family into the live predictor. The richer slot/pair calibration readout is architecturally correct and #394 now prevents aggregate-compensation regressions, but the ablation evidence shows this path does not close the 0.083 correlation gap by itself. The next gate-moving work should shift to missing labels and calibration substrate: Q4 producers #266-#269/#127, Q5 replay #264/#128, OOD calibration #129/#130 now that #276 harvest is available, and per-head contradiction calibration #263.
+**Ordering update from #388/#389/#393/#398/#394 (locked in by #383 / TASK-PY-G-084):** do not promote the current #396/#388/#389 calibrated feature family into the live predictor. The richer slot/pair calibration readout is architecturally correct and #394 now prevents aggregate-compensation regressions, but the ablation evidence shows this path does not close the 0.083 correlation gap by itself. **The next gate-moving work, in evidence-weighted order, is:**
+
+1. **Train the missing label producers** so calibration is no longer the bottleneck.
+   - Q4 producers — #266 TASK-PY-G-047 (perf), #267 TASK-PY-G-048 (accuracy), #268 TASK-PY-G-049 (cost), #269 TASK-PY-G-050 (reasoning).
+   - Q4 calibration consumer — #127 TASK-PY-G-012.
+   - Q4 fail-closed trust gate — #377 TASK-PY-G-078 (Q4 head must refuse until trained).
+2. **Wire Q5 shift-log replay** — #264 TASK-PY-G-045 + #128 TASK-PY-G-013 calibration consumer.
+3. **Calibrate OOD on harvested + synthetic** — #129 TASK-PY-G-014 (now consumes the closed #276 harvest evidence) + #130 TASK-PY-G-015 Gτ guard audit.
+4. **Per-head contradiction calibration** — #263 TASK-PY-G-044.
+5. **Goodhart / oracle-noise guards** — #374 TASK-PY-G-077 secret holdout + #376 TASK-PY-G-076 statistical-power bound. These must land before any "≥ 0.95 × 4 windows" claim is accepted.
+6. **Compositional generalization** — #379 TASK-PY-G-081 multi-file structural patch holdout.
+7. **Only then revisit slot-preserving predictor refactor** — #385/#387/#391/#392 (and #382 frozen-panel dimensionality ablation) once the label substrate proves the gap is architectural rather than data-bound.
 
 **Current data-location map for #396 descendants:**
 
@@ -172,7 +183,7 @@ All calibration items below are now qualified by #385: their evidence must be pe
 | Issue | Task | Status |
 |---|---|---|
 | #178 | refined cell taxonomy with Active/Exempt/Uncovered tri-state | open |
-| #129 / TASK-PY-G-014 | OOD detection gate calibrated on harvested + synthetic OOD | open |
+| #129 / TASK-PY-G-014 | OOD detection gate calibrated on harvested + synthetic OOD | open (now consumes #276 harvest evidence) |
 | #120 / TASK-PY-G-005 | Catastrophic Python cell quarantine | open |
 | #148 / TASK-PY-G-017 | Python leakage detector | open |
 | #153 / TASK-PY-G-022 | Python oracle pass/fail audit | open |
@@ -181,6 +192,14 @@ All calibration items below are now qualified by #385: their evidence must be pe
 | #172 / TASK-PY-G-034 | Python acceptance bundle | open |
 | #180 / TASK-PY-G-038 | MCP RealityPrediction FSV | open |
 | #171 / TASK-PY-G-033 | Fail-closed release switch | open |
+| #374 / TASK-PY-G-077 | Secret holdout Goodhart guard for the 0.95 gate (`type:test-gap`) | open p1 |
+| #376 / TASK-PY-G-076 | Bound oracle noise floor + ship-gate statistical power | open p1 |
+| #377 / TASK-PY-G-078 | Q4 trust gate must fail closed until label producers train heads | open p1 |
+| #379 / TASK-PY-G-081 | Multi-file structural patch holdout for compositional generalization | open p1 |
+| #381 / TASK-PY-G-080 | Stop-hook self-verify circuit breaker | open p1 |
+| #382 / TASK-PY-G-083 | Frozen-panel dimensionality ablation | open p2 |
+| #375 / TASK-PY-G-079 | Consume witness provenance in `RealityPrediction.confidence` | open p2 |
+| #378 / TASK-PY-G-082 | MCP tool-usage telemetry + dead-surface audit | open p2 |
 
 ### 3.6 Phase 8 post-ship operation (engages after `≥ 0.95 × 4 windows`)
 
@@ -226,6 +245,9 @@ All calibration items below are now qualified by #385: their evidence must be pe
 | #367 / TASK-AIWONDER-016 | Project-ingest/runtime data locality audit for arbitrary repo folders | ✅ closed 2026-05-18 |
 | #368 / TASK-AIWONDER-017 | Host capability utilization audit + scheduler profile | open p1 |
 | #369 / TASK-AIWONDER-018 | Revalidate post-migration Phase G FSV artifacts on aiwonder | open p0 (blocks transition of all Phase G FSV from `/mnt/d` to `/zfs/archive`) |
+| #372 / TASK-AIWONDER-019 | ContextGraph roots must be mounted on aiwonder ZFS pools (paths-policy enforcement) | open p0 `status:blocked` |
+| #380 / TASK-AIWONDER-020 | Off-host backup for `/zfs/archive` proof history (#296 backup posture follow-up) | open p1 |
+| #384 / TASK-AIWONDER-021 | CUDA/candle rollback and reproducibility lane | open p2 |
 | #295 | PERF — #199 resume launch scans full D-drive FSV root | in-progress |
 | #299 / #300 / #301 / #302 / #303 / #304 / #305 | AIWONDER-003..010 install / transfer / build / launch / calibration sub-tasks | in-progress p1 |
 | #306 | AIWONDER-011 SWE-bench Lite Python Docker image plan (future Q3) | p3 |
@@ -239,6 +261,8 @@ All calibration items below are now qualified by #385: their evidence must be pe
 | #310 | META Issue refactor (2026-05-15) | Tracks Phase G execution-order map; the live source of "what to do NOW" |
 | #227 | Python ME-JEPA data explosion runtime policy | Defines runtime constraints during forward cache jobs |
 | #296 | aiwonder migration EPIC (closed but still load-bearing context) | Establishes the migration plan |
+| #383 / TASK-PY-G-084 | Gate-active issue order must be evidence-weighted, not vision-weighted (p0) | When choosing the next task, weight by measured impact on the 0.083 correlation gap (e.g., #388/#389/#398 showed slot-preserving features alone don't close the gap → next bandwidth shifts to label producers, not more architectural refactors) |
+| #397 / [PY-G] CONTEXT | ME-JEPA consequence-prediction truth-system contract (p0) | "Predicting reality" = predicting consequences of code being live; the MCP product presents calibrated consequence evidence to the operator/agent; hidden human intent is not a prediction target (locks in #358) |
 
 ---
 

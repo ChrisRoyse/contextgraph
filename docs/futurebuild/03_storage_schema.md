@@ -1,6 +1,6 @@
 # 03 — Storage Schema and Policy
 
-**Last refreshed:** 2026-05-18.
+**Last refreshed:** 2026-05-19.
 
 Source files covered: `crates/context-graph-mejepa-cf/src/lib.rs` (entire file — canonical ME-JEPA CF registry), `crates/context-graph-storage/src/lib.rs`, `crates/context-graph-storage/src/teleological/`, `crates/context-graph-mejepa-instruments/src/panel_store.rs`, `CLAUDE.md §8`, GitHub issues #363/#369.
 
@@ -93,6 +93,8 @@ Adds `CF_MEJEPA_PLASTICITY_HISTORY` (TASK-PY-G-066 continual backprop), `CF_MEJE
 | `CF_MEJEPA_REPLAY_BUFFER` | `(priority, entry_id)` | JSON | TASK-RWD-210 / TASK-PY-G-068 surprise-prioritized M(t) replay |
 | `CF_MEJEPA_SAMPLER_REWARDS` | `(ts_ns, kind)` | JSON | TASK-PY-G-053 oracle-derived online observe reward |
 | `CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT` | `(ts_ns, cluster_id)` | JSON | TASK-RWD-211 / TASK-PY-G-067 novel-cluster accepted/refuted audit |
+| `CF_MEJEPA_OOD_HARVEST` | `(harvest_run_id, prediction_id)` | JSON | TASK-PY-G-057 / #276 live-session OOD harvest rows (above-threshold predictions, RocksDB byte anchors, orphan/degenerate quarantines) |
+| `CF_MEJEPA_OOD_CALIBRATIONS` | `(harvest_run_id, calibration_id)` | JSON | TASK-PY-G-057 OOD calibration reports + false-positive-rate audit (e.g. `OOD_GATE_OVER_FLAGGING` flag) |
 
 ### 2.4 Constellation / TCT (4 CFs) — `TCT_CFS`
 
@@ -156,9 +158,18 @@ Adds `CF_MEJEPA_PLASTICITY_HISTORY` (TASK-PY-G-066 continual backprop), `CF_MEJE
 | `CF_MEJEPA_PANEL_DISK_OVERFLOW` | Panel overflow to disk |
 | `CF_MEJEPA_GC_HISTORY` | GC report history |
 
-### 2.9 Canonical opener slice
+### 2.9 OOD Harvest — `OOD_HARVEST_CFS`
 
-`ALL_HYGIENE_REFERENCED_CFS` (`mejepa-cf/lib.rs:471-569`) is the single canonical opener list. Length = `MEJEPA_HYGIENE_REFERENCED_CF_COUNT`. Drift between this list and `SELF_HEALING_REFERENCED_CFS ∪ INFER_CFS ∪ HYGIENE_CFS ∪ TCT_CFS ∪ FLYWHEEL_CFS ∪ FINGERPRINT_CFS ∪ ADVERSARIAL_CFS ∪ REWARD_SIGNAL_CFS ∪ EXPLANATORY_KNOWLEDGE_CFS` is rejected by `canonical_hygiene_cfs_match_group_union` test.
+| CF Constant | Purpose | Task |
+|---|---|---|
+| `CF_MEJEPA_OOD_HARVEST` | Live-session above-threshold OOD prediction rows (with RocksDB byte anchors and orphan/degenerate quarantines) | TASK-PY-G-057 / #276 |
+| `CF_MEJEPA_OOD_CALIBRATIONS` | OOD calibration reports per harvest run; surfaces flags like `OOD_GATE_OVER_FLAGGING` when the false-positive rate is too high | TASK-PY-G-057 / #276 |
+
+Harvested rows are projected into `CF_MEJEPA_ACTIVE_LEARNING_QUEUE` at 4× weight (downweighted to 1× when an operator labels the row in-distribution).
+
+### 2.10 Canonical opener slice
+
+`ALL_HYGIENE_REFERENCED_CFS` (`mejepa-cf/lib.rs:471-569`) is the single canonical opener list. Length = `MEJEPA_HYGIENE_REFERENCED_CF_COUNT`. Drift between this list and `SELF_HEALING_REFERENCED_CFS ∪ INFER_CFS ∪ HYGIENE_CFS ∪ TCT_CFS ∪ FLYWHEEL_CFS ∪ FINGERPRINT_CFS ∪ ADVERSARIAL_CFS ∪ REWARD_SIGNAL_CFS ∪ EXPLANATORY_KNOWLEDGE_CFS ∪ OOD_HARVEST_CFS` is rejected by `canonical_hygiene_cfs_match_group_union` test.
 
 ---
 
@@ -241,6 +252,12 @@ GitHub issue #363 (closed, `type:decision`) — supersedes the pre-migration D-d
 │   ├── predictions/                         # Project-local CF_MEJEPA_LIVE_PREDICTIONS dump
 │   └── report/                              # report.json + report.md (TASK-PY-G-064)
 ├── state/                                   # Durable runtime state surviving restarts
+│   └── calibration/per-slot-v1/             # TASK-PY-G-089 / #389 per-slot calibration + OOD policy
+│       ├── per_slot_calibration.jsonl       #   12 global slot calibrations
+│       ├── per_cell_slot_calibration.jsonl  #   84 fail-closed per-cell rows
+│       ├── per_pair_calibration.jsonl       #   66 pair calibrations
+│       ├── ood_guard_policy.json            #   strict-conjunction OOD policy
+│       └── per_slot_calibration_report.json #   readback report
 └── exports/
     └── weekly/<YYYY-MM-DD>/                 # Weekly eval reports, ablation_report.md, compression_progress.md, etc.
 ```

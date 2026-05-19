@@ -1,6 +1,6 @@
 # 06 — Operations, FSV, Runbook, DR, Test Suite
 
-**Last refreshed:** 2026-05-18.
+**Last refreshed:** 2026-05-19.
 
 Source files covered: `docs/futurebuild/specs/FSV-PROTOCOL.md`, `AGENTS.md`, `CLAUDE.md`, `docs2/AICodingAgentSuperPrompt.md`, `docs2/hardeningprompt.md`, `scripts/cc/*.sh`, `crates/context-graph-mejepa-hygiene/src/{quota,gc,reports,retention,witness_compress}.rs`, `crates/context-graph-mejepa-shift-subscriber/src/`, `crates/context-graph-mcp/src/{daemon.rs, daemon_validate.rs, health_probe.rs, monitoring.rs, deprecation.rs}`, `crates/context-graph-mejepa-train/Cargo.toml` (test inventory).
 
@@ -138,7 +138,7 @@ Every worked issue ends with exactly one of **RESOLVED** / **PAUSE** / **BLOCKED
 | Symptom | First action | Diagnostic CF / tool |
 |---|---|---|
 | Many `Refuted` rows in `CF_MEJEPA_PREDICTION_VERIFICATIONS` | `mejepa_active_learning_queue` (rank by curiosity per TASK-EK-006) | active learning queue |
-| OOD spike | `mejepa_audit_pairwise_mi` to see embedder redundancy/synergy collapse | `CF_MEJEPA_PAIRWISE_MI` |
+| OOD spike | `mejepa_audit_pairwise_mi` for embedder redundancy/synergy collapse; check `mejepa_explain_prediction.per_slot_ood_reasons` (TASK-PY-G-089) for slot-specific drivers; inspect harvest at `CF_MEJEPA_OOD_HARVEST` + `CF_MEJEPA_OOD_CALIBRATIONS` for `OOD_GATE_OVER_FLAGGING` flag | `CF_MEJEPA_PAIRWISE_MI`, `CF_MEJEPA_OOD_HARVEST`, `CF_MEJEPA_OOD_CALIBRATIONS` |
 | Watermark stalled | `mejepa_subscriber_status` + check `/zfs/archive/contextgraph/runtime/shift-log.jsonl` size + tail health | shift-subscriber |
 | Quota overflow | `mejepa_quota_status` then `mejepa_gc_run` | `CF_MEJEPA_QUOTA_STATE`, `CF_MEJEPA_GC_HISTORY` |
 | Stuck heal | `mejepa_heal_status` + `mejepa_daemon_status` | `CF_MEJEPA_HEAL_REPORTS`, `CF_MEJEPA_DRIFT_HISTORY` |
@@ -208,7 +208,7 @@ cargo fmt
 - **ZFS snapshots** on aiwonder for `/zfs/archive/contextgraph/`. Daily snapshots; weekly retention; monthly cold.
 - **HF cache** is regenerable (re-download).
 - **No off-site backup** of synthetic training corpora (too large, regenerable).
-- **Off-site (or operator-side) backup required** for: ZFS snapshots of `/zfs/archive/...fsv/` (FSV historical proof) and `/zfs/archive/contextgraph/runtime/shift-log.jsonl` (replay source).
+- **Off-site (or operator-side) backup required** for: ZFS snapshots of `/zfs/archive/...fsv/` (FSV historical proof) and `/zfs/archive/contextgraph/runtime/shift-log.jsonl` (replay source). Tracked by **#380 / TASK-AIWONDER-020 (Off-host backup for `/zfs/archive` proof history)** — open p1 follow-up to #296.
 
 ### 4.4 DR drill (when last run: track via GitHub `phase:f-followup` label)
 
@@ -240,6 +240,8 @@ cargo fmt
 | Compression progress (CPΦ) | conditional description length bits / window | `mejepa_compression_progress` + `CF_MEJEPA_TRAIN_CERTS` (TASK-EK-001) |
 | Active learning queue | size + per-source counts + curiosity ranking | `mejepa_active_learning_queue` + `CF_MEJEPA_ACTIVE_LEARNING_QUEUE` + `CF_MEJEPA_CURIOSITY_TELEMETRY` (TASK-EK-006) |
 | Signal drop log | fail-closed reward-signal drops | `CF_MEJEPA_SIGNAL_DROP_LOG` (TASK-RWD-315) |
+| OOD harvest | live-session above-threshold harvest, false-positive-rate audit, orphan/degenerate quarantine, expired tier-down | `CF_MEJEPA_OOD_HARVEST` + `CF_MEJEPA_OOD_CALIBRATIONS` (TASK-PY-G-057 / #276) |
+| Per-slot OOD reasons | per-slot/embedder/pair OOD evidence persisted on each prediction row | `RealityPrediction.per_slot_ood_reasons` + `/zfs/archive/contextgraph/state/calibration/per-slot-v1/` (TASK-PY-G-089 / #389) |
 | Daemon health endpoint | structured health probe | `crates/context-graph-mcp/src/health_probe.rs` |
 | Multi-agent monitoring | per-agent + per-session liveness | `crates/context-graph-mcp/src/monitoring.rs` |
 

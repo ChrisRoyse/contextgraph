@@ -1,6 +1,6 @@
 # 01 — System Overview
 
-**Last refreshed:** 2026-05-18. **Status:** Phase G in flight (ship gate `prediction_oracle_correlation ≥ 0.95 × 4 rolling windows` still open; latest holdout 0.866667). Phase A–F + H code/FSV-shipped.
+**Last refreshed:** 2026-05-19. **Status:** Phase G in flight (ship gate `prediction_oracle_correlation ≥ 0.95 × 4 rolling windows` still open; latest holdout 0.866667). Phase A–F + H code/FSV-shipped. 2026-05-19 architectural verdict: the slot-preserving constellation refactor (#385/#386-#398) is correct but does not close the 0.083 gap by itself; #383 (evidence-weighted ordering) now redirects next bandwidth toward Q4/Q5 label producers + OOD calibration before further predictor changes.
 
 Source files covered: `Cargo.toml`, `CLAUDE.md`, `AGENTS.md`, `crates/context-graph-mcp/src/lib.rs`, `crates/context-graph-mejepa/src/lib.rs`, `crates/context-graph-mejepa-cf/src/lib.rs`, `crates/context-graph-mejepa-instruments/src/lib.rs`, `crates/context-graph-mejepa-corpus/src/lib.rs`, `crates/context-graph-storage/src/lib.rs`, `crates/context-graph-mcp/src/tools/definitions/mod.rs`.
 

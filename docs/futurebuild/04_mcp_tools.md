@@ -1,6 +1,6 @@
 # 04 — MCP Tools Reference
 
-**Last refreshed:** 2026-05-18.
+**Last refreshed:** 2026-05-19.
 
 Source files covered: `crates/context-graph-mcp/src/tools/definitions/mod.rs`, `crates/context-graph-mcp/src/tools/names.rs`, `crates/context-graph-mcp/src/tools/definitions/mejepa.rs`, all sibling `definitions/*.rs`, `crates/context-graph-mcp/src/deprecation.rs`.
 
@@ -73,8 +73,8 @@ All names live in `crates/context-graph-mcp/src/tools/names.rs:96-203`. Most are
 | `mcp__cgreality__mejepa_predict_what_if` | `MEJEPA_PREDICT_WHAT_IF` | Counterfactual prediction for a proposed input change | candidate panel deltas | Read-only |
 | `mcp__cgreality__mejepa_search_latent_actions` | `MEJEPA_SEARCH_LATENT_ACTIONS` | TASK-FP-103 best-of-K latent-action search | candidate seeds, K | Read-only |
 | `mcp__cgreality__mejepa_rank_candidates` | `MEJEPA_RANK_CANDIDATES` | TASK-FP-105 counterfactual repair ranking | candidates list | Read-only |
-| `mcp__cgreality__mejepa_explain_prediction` | `MEJEPA_EXPLAIN_PREDICTION` | Return per-head feature attributions + matched fingerprint + closest exemplars + violating embedders for a `prediction_id` | `predictionId` | Read-only |
-| `mcp__cgreality__mejepa_inspect_prediction` | `MEJEPA_INSPECT_PREDICTION` | Raw prediction row dump | `predictionId` | Read-only |
+| `mcp__cgreality__mejepa_explain_prediction` | `MEJEPA_EXPLAIN_PREDICTION` | Return per-head feature attributions + matched fingerprint + closest exemplars + violating embedders + **per-slot OOD reasons (TASK-PY-G-089 / #389)** for a `prediction_id` | `predictionId` | Read-only |
+| `mcp__cgreality__mejepa_inspect_prediction` | `MEJEPA_INSPECT_PREDICTION` | Raw prediction row dump; exposes `RealityPrediction.per_slot_ood_reasons` byte-replayed from `CF_MEJEPA_LIVE_PREDICTIONS` | `predictionId` | Read-only |
 | `mcp__cgreality__mejepa_replay_prediction` | `MEJEPA_REPLAY_PREDICTION` | Replay a past prediction against current model + calibration | `predictionId` | Read-only |
 
 ### 3.2 Reality Compiler (per-project ingest)
