@@ -1,7 +1,12 @@
+use crate::contradiction::{
+    detect_multi_head_contradiction, ContradictionDecision, ContradictionThresholds,
+};
 use crate::types::{ConformalInterval, PredictedFailureMode, PredictedWorks, Severity, Verdict};
 
 #[derive(Debug, Clone, Copy)]
 pub struct VerdictAssemblyInput<'a> {
+    pub contradiction_cell_id: Option<&'a str>,
+    pub contradiction_thresholds: Option<&'a ContradictionThresholds>,
     pub oracle_pass_confidence: f32,
     pub failure_modes: &'a [PredictedFailureMode],
     pub predicted_failed_test_count: usize,
@@ -18,30 +23,69 @@ pub struct VerdictAssemblyInput<'a> {
     pub objective_cost_ceiling: f32,
 }
 
-pub fn assemble_verdict(input: VerdictAssemblyInput<'_>) -> Verdict {
-    if input.safety_constraint_violation_count > 0 {
-        return Verdict::GuardRejected;
-    }
-    if input.ood_score >= input.ood_threshold
-        || input.confidence_interval.width() > input.interval_width_threshold
-    {
-        return Verdict::OutOfDistribution;
-    }
-    if input.guard_violation_count > 0 {
-        return Verdict::GuardRejected;
-    }
+#[derive(Debug, Clone, PartialEq)]
+pub struct VerdictAssemblyOutput {
+    pub verdict: Verdict,
+    pub contradiction: ContradictionDecision,
+}
 
+pub fn assemble_verdict(input: VerdictAssemblyInput<'_>) -> Verdict {
+    assemble_verdict_with_evidence(input).verdict
+}
+
+pub fn assemble_verdict_with_evidence(input: VerdictAssemblyInput<'_>) -> VerdictAssemblyOutput {
     let high_severity_concerns = input
         .failure_modes
         .iter()
         .filter(|mode| {
             matches!(mode.severity, Severity::High | Severity::Critical) && mode.confidence > 0.6
         })
-        .count();
-    if input.oracle_pass_confidence > 0.85
-        && (high_severity_concerns > 0 || input.security_concern_count > 0)
+        .count() as u32;
+    let contradiction = detect_multi_head_contradiction(
+        input.contradiction_cell_id,
+        input.oracle_pass_confidence,
+        high_severity_concerns,
+        input.security_concern_count as u32,
+        input.contradiction_thresholds,
+    )
+    .unwrap_or_else(|err| ContradictionDecision {
+        kind: crate::contradiction::ContradictionDecisionKind::ThresholdMissing,
+        reason: format!("CONTRADICTION_CALIBRATION_INVALID:{}", err.code()),
+        cell_id: input.contradiction_cell_id.map(ToString::to_string),
+        oracle_pass_confidence: input.oracle_pass_confidence,
+        high_severity_failure_count: high_severity_concerns,
+        security_concern_count: input.security_concern_count as u32,
+        tau_oracle: None,
+        tau_failure_count: None,
+        verdict_override: Some(Verdict::Abstain),
+    });
+
+    if input.safety_constraint_violation_count > 0 {
+        return VerdictAssemblyOutput {
+            verdict: Verdict::GuardRejected,
+            contradiction,
+        };
+    }
+    if input.ood_score >= input.ood_threshold
+        || input.confidence_interval.width() > input.interval_width_threshold
     {
-        return Verdict::Abstain;
+        return VerdictAssemblyOutput {
+            verdict: Verdict::OutOfDistribution,
+            contradiction,
+        };
+    }
+    if input.guard_violation_count > 0 {
+        return VerdictAssemblyOutput {
+            verdict: Verdict::GuardRejected,
+            contradiction,
+        };
+    }
+
+    if let Some(verdict) = contradiction.verdict_override {
+        return VerdictAssemblyOutput {
+            verdict,
+            contradiction,
+        };
     }
 
     if input.oracle_pass_confidence >= input.pass_threshold
@@ -55,9 +99,15 @@ pub fn assemble_verdict(input: VerdictAssemblyInput<'_>) -> Verdict {
         && input.security_concern_count == 0
         && input.objective_total_cost <= input.objective_cost_ceiling
     {
-        Verdict::Pass
+        VerdictAssemblyOutput {
+            verdict: Verdict::Pass,
+            contradiction,
+        }
     } else {
-        Verdict::Fail
+        VerdictAssemblyOutput {
+            verdict: Verdict::Fail,
+            contradiction,
+        }
     }
 }
 
@@ -92,6 +142,8 @@ mod tests {
             root_cause_class: RootCauseClass::LogicError,
         };
         let verdict = assemble_verdict(VerdictAssemblyInput {
+            contradiction_cell_id: None,
+            contradiction_thresholds: None,
             oracle_pass_confidence: 0.92,
             failure_modes: &[failure],
             predicted_failed_test_count: 0,
@@ -113,6 +165,8 @@ mod tests {
     #[test]
     fn security_concern_abstains_instead_of_false_confident_pass() {
         let verdict = assemble_verdict(VerdictAssemblyInput {
+            contradiction_cell_id: None,
+            contradiction_thresholds: None,
             oracle_pass_confidence: 0.95,
             failure_modes: &[],
             predicted_failed_test_count: 0,
@@ -134,6 +188,8 @@ mod tests {
     #[test]
     fn hard_safety_constraint_rejects_before_pass() {
         let verdict = assemble_verdict(VerdictAssemblyInput {
+            contradiction_cell_id: None,
+            contradiction_thresholds: None,
             oracle_pass_confidence: 0.99,
             failure_modes: &[],
             predicted_failed_test_count: 0,
@@ -155,6 +211,8 @@ mod tests {
     #[test]
     fn high_objective_cost_blocks_pass() {
         let verdict = assemble_verdict(VerdictAssemblyInput {
+            contradiction_cell_id: None,
+            contradiction_thresholds: None,
             oracle_pass_confidence: 0.99,
             failure_modes: &[],
             predicted_failed_test_count: 0,
@@ -176,6 +234,8 @@ mod tests {
     #[test]
     fn pass_requires_high_confidence_predicted_works() {
         let no_positive_evidence = assemble_verdict(VerdictAssemblyInput {
+            contradiction_cell_id: None,
+            contradiction_thresholds: None,
             oracle_pass_confidence: 0.99,
             failure_modes: &[],
             predicted_failed_test_count: 0,
@@ -203,6 +263,8 @@ mod tests {
             evidence_strength: 0.86,
         };
         let positive_evidence = assemble_verdict(VerdictAssemblyInput {
+            contradiction_cell_id: None,
+            contradiction_thresholds: None,
             oracle_pass_confidence: 0.99,
             failure_modes: &[],
             predicted_failed_test_count: 0,

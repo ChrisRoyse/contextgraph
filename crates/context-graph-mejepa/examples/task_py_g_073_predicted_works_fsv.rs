@@ -280,6 +280,8 @@ fn build_case(input: CaseInput<'_>, run_root: &Path) -> Result<BuiltCase> {
         empirical_coverage: 0.94,
     };
     let verdict = assemble_verdict(VerdictAssemblyInput {
+        contradiction_cell_id: None,
+        contradiction_thresholds: None,
         oracle_pass_confidence: oracle_confidence,
         failure_modes: &surfaces.predicted_failure_modes,
         predicted_failed_test_count: surfaces.predicted_failed_tests.len(),

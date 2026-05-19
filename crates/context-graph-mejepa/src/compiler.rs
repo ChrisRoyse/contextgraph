@@ -19,6 +19,10 @@ use crate::calibration::CalibrationStore;
 use crate::calibration_types::CalibrationRecord;
 use crate::config::MeJepaInferConfig;
 use crate::conformal::{build_outcome_set, conformal_set, CalibrationExample};
+use crate::contradiction::{
+    ContradictionDecision, ContradictionDecisionKind, ContradictionThresholds,
+    CONTRADICTION_THRESHOLD_MISSING, MULTI_HEAD_CONTRADICTION,
+};
 use crate::dda_features::{project_dda_features, DDA_FEATURE_PROJECTION_SCHEMA};
 use crate::degraded::{
     calibrated_confidence, calibrated_confidence_multiplier, compute_train_health, evidence_factor,
@@ -60,7 +64,7 @@ use crate::types::{
     PerSlotOodReasonKind, PhaseBPredictionSurfaces, PredictionProvenance, RealityPrediction,
     RealityPredictionBuilder, TaskContext, Verdict, VerifyVerdict, WitnessHash,
 };
-use crate::verdict_assembly::{assemble_verdict, VerdictAssemblyInput};
+use crate::verdict_assembly::{assemble_verdict_with_evidence, VerdictAssemblyInput};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -274,6 +278,14 @@ pub trait MejepaStore: Send + Sync {
         &self,
         limit: usize,
     ) -> Result<Vec<CalibrationExample>, MejepaInferError>;
+
+    fn read_contradiction_thresholds(
+        &self,
+        cell_id: &str,
+    ) -> Result<Option<ContradictionThresholds>, MejepaInferError> {
+        let _ = cell_id;
+        Ok(None)
+    }
 
     fn read_dda_signals(
         &self,
@@ -511,7 +523,13 @@ impl MeJepaCompiler {
             empirical_coverage: calibration.empirical_coverage,
         };
         confidence_interval.validate("confidence_interval")?;
-        let verdict = assemble_verdict(VerdictAssemblyInput {
+        let contradiction_cell = self.constellation_guard.target_cell_support(context)?;
+        let contradiction_thresholds = self
+            .store
+            .read_contradiction_thresholds(&contradiction_cell.cell_id)?;
+        let verdict_output = assemble_verdict_with_evidence(VerdictAssemblyInput {
+            contradiction_cell_id: Some(&contradiction_cell.cell_id),
+            contradiction_thresholds: contradiction_thresholds.as_ref(),
             oracle_pass_confidence: oracle.predicted_oracle_pass,
             failure_modes: &phase_b_surfaces.predicted_failure_modes,
             predicted_failed_test_count: phase_b_surfaces.predicted_failed_tests.len(),
@@ -527,6 +545,11 @@ impl MeJepaCompiler {
             objective_total_cost: objective_report.cost.total_cost,
             objective_cost_ceiling: objective_report.objective.pass_cost_ceiling,
         });
+        let verdict = verdict_output.verdict;
+        annotate_contradiction_decision(
+            &mut oracle.granger_attestations,
+            &verdict_output.contradiction,
+        )?;
         let per_slot_ood_reasons = per_slot_ood_reasons_from_guard_violations(
             &phase_b_surfaces.guard_violations,
             &calibration.version,
@@ -915,6 +938,23 @@ impl MeJepaCompiler {
             });
         }
 
+        if let Some(failed_gate) = self.contradiction_failed_gate(&prediction, context)? {
+            let reason = match &failed_gate {
+                FailedGate::MultiHeadContradiction { reason, .. } => reason.as_str(),
+                _ => unreachable!("contradiction_failed_gate only returns MultiHeadContradiction"),
+            };
+            self.store.record_park_list_failure(
+                prediction.prediction_id,
+                current_unix_ms(),
+                reason,
+            )?;
+            return Ok(VerifyVerdict::EscalateToHuman {
+                reality_prediction: Some(prediction.clone()),
+                failed_gate,
+                gates_passed: 2,
+            });
+        }
+
         let objective_report = objective_report_for_prediction(patch, &prediction)?;
         if objective_report.pass_blocked {
             self.store.record_park_list_failure(
@@ -1043,6 +1083,52 @@ impl MeJepaCompiler {
             reason: reason.to_string(),
         };
         Ok(Some((abstain, gate)))
+    }
+
+    fn contradiction_failed_gate(
+        &self,
+        prediction: &RealityPrediction,
+        context: &TaskContext,
+    ) -> Result<Option<FailedGate>, MejepaInferError> {
+        if prediction.verdict != Verdict::Abstain {
+            return Ok(None);
+        }
+        let reason = prediction
+            .granger_attestations
+            .keys()
+            .find_map(|key| key.strip_prefix("contradiction:"))
+            .filter(|reason| {
+                *reason == MULTI_HEAD_CONTRADICTION
+                    || *reason == CONTRADICTION_THRESHOLD_MISSING
+                    || reason.starts_with("CONTRADICTION_CALIBRATION_INVALID:")
+            })
+            .map(ToString::to_string);
+        let Some(reason) = reason else {
+            return Ok(None);
+        };
+        let support = self.constellation_guard.target_cell_support(context)?;
+        let thresholds = self.store.read_contradiction_thresholds(&support.cell_id)?;
+        let high_severity_failure_count = prediction
+            .predicted_failure_modes
+            .iter()
+            .filter(|mode| {
+                matches!(
+                    mode.severity,
+                    crate::types::Severity::High | crate::types::Severity::Critical
+                ) && mode.confidence > 0.6
+            })
+            .count() as u32;
+        Ok(Some(FailedGate::MultiHeadContradiction {
+            cell_id: support.cell_id,
+            reason,
+            oracle_pass_confidence: prediction.predicted_oracle_pass,
+            tau_oracle: thresholds.as_ref().map(|thresholds| thresholds.tau_oracle),
+            high_severity_failure_count,
+            tau_failure_count: thresholds
+                .as_ref()
+                .map(|thresholds| thresholds.tau_failure_count),
+            security_concern_count: prediction.predicted_security_concerns.len() as u32,
+        }))
     }
 
     fn active_pause_state(&self) -> Option<PauseState> {
@@ -1535,6 +1621,35 @@ fn abstain_for_cold_cell(
             .unwrap_or_else(|| "lookup_failure".to_string())
     );
     RealityPrediction::try_new(abstain)
+}
+
+fn annotate_contradiction_decision(
+    attestations: &mut BTreeMap<String, f32>,
+    decision: &ContradictionDecision,
+) -> Result<(), MejepaInferError> {
+    match decision.kind {
+        ContradictionDecisionKind::NoContradiction => return Ok(()),
+        ContradictionDecisionKind::SingleHeadOnly
+        | ContradictionDecisionKind::MultiHeadContradiction
+        | ContradictionDecisionKind::ThresholdMissing => {}
+    }
+    validate_probability(
+        "contradiction.oracle_pass_confidence",
+        decision.oracle_pass_confidence,
+    )?;
+    attestations.insert(format!("contradiction:{}", decision.reason), 1.0);
+    attestations.insert(
+        "contradiction:oracle_pass_confidence".to_string(),
+        decision.oracle_pass_confidence,
+    );
+    if let Some(tau_oracle) = decision.tau_oracle {
+        validate_probability("contradiction.tau_oracle", tau_oracle)?;
+        attestations.insert("contradiction:tau_oracle".to_string(), tau_oracle);
+    }
+    if let Some(cell_id) = &decision.cell_id {
+        attestations.insert(format!("contradiction_cell:{}", short_sha(cell_id)), 1.0);
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]

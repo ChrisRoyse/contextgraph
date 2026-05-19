@@ -4,7 +4,7 @@
 
 Source files covered: `Cargo.toml`, every `crates/*/Cargo.toml`, every `crates/*/src/lib.rs`, every `crates/*/src/main.rs`, every `[[bin]]` and `[[example]]` declaration.
 
-Totals (2026-05-19, via `find crates -type f -path '*/src/*' -name '*.rs'`, `find crates -type f -path '*/examples/*' -name '*.rs'`, and `find crates -type f -path '*/tests/*' -name '*.rs'`): **1,599** src/lib `.rs` files · **209** examples · **258** test files.
+Totals (2026-05-19, via `find crates -type f -path '*/src/*' -name '*.rs'`, `find crates -type f -path '*/examples/*' -name '*.rs'`, and `find crates -type f -path '*/tests/*' -name '*.rs'`): **1,600** src/lib `.rs` files · **210** examples · **258** test files.
 
 ---
 
@@ -57,7 +57,7 @@ Build profiles (`Cargo.toml:112-128`):
 
 ## 3. `context-graph-mejepa` Modules (73 files; trunk of the predictor)
 
-`crates/context-graph-mejepa/src/lib.rs:6-82` (Phase 2 — predictor + Phase 4 inference + everything bolted on since).
+`crates/context-graph-mejepa/src/lib.rs:6-86` (Phase 2 — predictor + Phase 4 inference + everything bolted on since).
 
 | Module | Purpose |
 |---|---|
@@ -67,6 +67,7 @@ Build profiles (`Cargo.toml:112-128`):
 | `claim_graph.rs` (~30K) | Q1 claim parser + AST/bytes-on-disk reconciliation → `CF_MEJEPA_CLAIM_RECONCILIATION` |
 | `patch_similarity.rs` (~28K) | Q3 closest exemplars: usearch HNSW over L2-normalized `(E_AST, E_CFG, E_DataFlow, E_TypeGraph)` signatures → `CF_MEJEPA_PATCH_SIMILARITY_META` |
 | `head_projection.rs` | Per-head DDA slice projection (TASK-PY-G-043) → `CF_MEJEPA_HEAD_PROJECTION_REGISTRY` |
+| `contradiction.rs` | TASK-PY-G-044 per-cell multi-head contradiction thresholds and fail-closed detector → `CF_MEJEPA_CONTRADICTION_THRESHOLDS` |
 | `failure_fingerprint.rs` (~75K) | First-class failure-shape fingerprint catalog (TASK-FP-001..010) → 8 fingerprint CFs |
 | `adversarial_corpus.rs` | 30-case adversarial Python corpus (TASK-PY-G-060 / TASK-FP-009) → `CF_MEJEPA_ADVERSARIAL_CORPUS` |
 | `synthetic_stress.rs` + `synthetic_stress_{cases,corpus,eval,store}.rs` | TASK-PY-G-071 synthetic Python stress eval → `CF_MEJEPA_SYNTHETIC_STRESS_RESULTS` |
@@ -271,14 +272,14 @@ context-graph-test-utils  — zero internal deps
 
 ---
 
-## 9. Examples (209 example files, mostly FSV harnesses — partial inventory; full mapping in `07_results_and_benchmarks.md`)
+## 9. Examples (210 example files, mostly FSV harnesses — partial inventory; full mapping in `07_results_and_benchmarks.md`)
 
 Per-crate `[[example]]` declarations from each `Cargo.toml`:
 
 | Crate | Notable examples (FSV harnesses, name → matching closed issue / task) |
 |---|---|
 | `context-graph-mcp` | `phase_f_gpu_wsl_fsv`, `task_py_g_063_project_ingest_fsv`, `task_py_g_064_project_report_fsv` |
-| `context-graph-mejepa` | `mejepa-heal-drill`, `inference_fsv`, `phase5_self_healing_fsv`, `phase8_eval_fsv`, `utml_009_per_cell_state_transfer_fsv`, `phase_f_mi_heatmap_fsv`, `phase_f_per_head_calibration_fsv`, `continual_backprop_regulation_fsv`, `phase_f_toolchain_availability_fsv`, `phase_f_cross_language_label_gating_fsv`, `phase_f_system_cost_fsv`, `phase_f_adversarial_corpus_fsv`, `phase_f_pause_consumer_fsv`, `phase_f_pause_active_learning_fsv`, `phase_f_restart_safety_fsv`, `phase_f_multi_agent_fsv`, `phase_g_project_merkle_cache_fsv` (per recent commit), `task_py_g_056_live_session_fsv` (per recent commit), `task_py_g_015_gtau_guard_audit_fsv` (#130) |
+| `context-graph-mejepa` | `mejepa-heal-drill`, `inference_fsv`, `phase5_self_healing_fsv`, `phase8_eval_fsv`, `utml_009_per_cell_state_transfer_fsv`, `phase_f_mi_heatmap_fsv`, `phase_f_per_head_calibration_fsv`, `continual_backprop_regulation_fsv`, `phase_f_toolchain_availability_fsv`, `phase_f_cross_language_label_gating_fsv`, `phase_f_system_cost_fsv`, `phase_f_adversarial_corpus_fsv`, `phase_f_pause_consumer_fsv`, `phase_f_pause_active_learning_fsv`, `phase_f_restart_safety_fsv`, `phase_f_multi_agent_fsv`, `phase_g_project_merkle_cache_fsv` (per recent commit), `task_py_g_056_live_session_fsv` (per recent commit), `task_py_g_015_gtau_guard_audit_fsv` (#130), `task_py_g_044_multi_head_contradiction_fsv` (#263) |
 | `context-graph-mejepa-train` | (17 FSV examples) `train_*_fsv`, `utml_l_step_fsv`, `swebench_300x8_ship_gate_fsv`, `operator_override_sampler_fsv`, `task_py_g_053_online_observe_fsv`, `task_ek_015_credibility_override_fsv`, `label_transfer_consumer_fsv`, `phase_g_adversarial_retrain_fsv`, `task_fp_101_sigreg_fsv`, `task_rwd_210_replay_buffer_fsv`, `task_ek_012_bidirectional_corpus_fsv`, `task_ek_012_bidirectional_ablation_fsv`, `task_py_g_007_pairwise_mi_fsv` |
 | `context-graph-mejepa-hygiene` | `merkle_compression_fsv`, `quota_overflow_fsv`, `gc_stress_fsv`, `phase_f_storage_exhaustion_fsv`, `phase_f_feedback_override_retention_fsv` |
 | `context-graph-mejepa-shift-subscriber` | `shift_subscriber_fsv` |

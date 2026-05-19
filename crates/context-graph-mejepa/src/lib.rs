@@ -16,6 +16,7 @@ pub mod compiler;
 pub mod config;
 pub mod conformal;
 pub mod constellation_observation;
+pub mod contradiction;
 pub mod cross_language_label_gating;
 pub mod data_models;
 pub mod dda_features;
@@ -115,6 +116,7 @@ pub use config::{
 };
 pub use conformal::*;
 pub use constellation_observation::*;
+pub use contradiction::*;
 pub use data_models::{
     OracleLogits, PredictedInverseMap, PredictedPanel, TargetPanel, TargetProvenance,
 };

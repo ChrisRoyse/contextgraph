@@ -277,8 +277,8 @@ FSV examples (per Cargo.toml): `merkle_compression_fsv`, `quota_overflow_fsv`, `
 
 ### 7.1 Counts (2026-05-19)
 
-- **Source `.rs` files**: 1,599 under `crates/*/src/`
-- **Example files**: 209 under `crates/*/examples/` (mostly `*_fsv.rs` FSV harnesses)
+- **Source `.rs` files**: 1,600 under `crates/*/src/`
+- **Example files**: 210 under `crates/*/examples/` (mostly `*_fsv.rs` FSV harnesses)
 - **Test files**: 258 under `crates/*/tests/`
 
 Historical totals from memory:
@@ -294,7 +294,7 @@ Current counts shift weekly; the source of truth is `cargo test --release` (or p
 |---|---|---|
 | **Unit tests** | inline `#[cfg(test)] mod tests` per source file + `tests.rs` modules | most coverage |
 | **Integration tests** | `crates/*/tests/*.rs` | 258 files |
-| **FSV harnesses** | `crates/*/examples/*_fsv.rs` | 209 files. Each = one task. Output: JSON SoT readback artifact under `/mnt/d/contextgraph/fsv/<task>-fsv/` (legacy) or `/zfs/archive/contextgraph/fsv/<task>-fsv/` (post-migration target). |
+| **FSV harnesses** | `crates/*/examples/*_fsv.rs` | 210 files. Each = one task. Output: JSON SoT readback artifact under `/mnt/d/contextgraph/fsv/<task>-fsv/` (legacy) or `/zfs/archive/contextgraph/fsv/<task>-fsv/` (post-migration target). |
 | **Adversarial harnesses** | `crates/context-graph-mejepa/examples/phase_f_adversarial_corpus_fsv.rs`, `adversarial_corpus.rs` (30 cases) | TASK-PY-G-060 / TASK-FP-009 |
 | **Synthetic stress harness** | `examples/task_py_g_071_synthetic_stress_fsv.rs` (alias) + `synthetic_stress.rs` (30 known-answer) | TASK-PY-G-071 |
 | **End-to-end stress harness** | `project_stress.rs` | TASK-PY-G-072 |

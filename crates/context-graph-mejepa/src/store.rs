@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use context_graph_mejepa_cf::{CF_MEJEPA_FAILURE_FINGERPRINTS, CF_MEJEPA_HIERARCHICAL_PREDICTIONS};
+use context_graph_mejepa_cf::{
+    CF_MEJEPA_CONTRADICTION_THRESHOLDS, CF_MEJEPA_FAILURE_FINGERPRINTS,
+    CF_MEJEPA_HIERARCHICAL_PREDICTIONS,
+};
 use rocksdb::{Direction, IteratorMode, WriteOptions, DB};
 
 use crate::calibration::{
@@ -8,6 +11,7 @@ use crate::calibration::{
 };
 use crate::compiler::{ColdCellMetric, MejepaStore, TrainCertSummary};
 use crate::conformal::CalibrationExample;
+use crate::contradiction::{contradiction_threshold_key, ContradictionThresholds};
 use crate::error::MejepaInferError;
 use crate::failure_fingerprint::FailureShapeFingerprint;
 use crate::ood_harvest::OodCalibrationReport;
@@ -81,6 +85,44 @@ impl RocksDbInferStore {
         key.extend_from_slice(&metric.created_at_unix_ms.to_be_bytes());
         key.extend_from_slice(&metric.prediction_id);
         Ok(key)
+    }
+
+    pub fn write_contradiction_thresholds(
+        &self,
+        thresholds: &ContradictionThresholds,
+    ) -> Result<(), MejepaInferError> {
+        thresholds.validate()?;
+        let cf = cf(&self.db, CF_MEJEPA_CONTRADICTION_THRESHOLDS)?;
+        let key = contradiction_threshold_key(&thresholds.cell_id)?;
+        let value = bincode::serialize(thresholds)?;
+        let mut opts = WriteOptions::default();
+        opts.set_sync(true);
+        self.db.put_cf_opt(cf, &key, &value, &opts)?;
+        let readback = self
+            .db
+            .get_cf(cf, &key)?
+            .ok_or_else(|| MejepaInferError::InvalidInput {
+                field: "contradiction_thresholds".to_string(),
+                detail: "read-after-write could not find threshold row".to_string(),
+            })?;
+        if readback != value {
+            return Err(MejepaInferError::InvalidInput {
+                field: "contradiction_thresholds".to_string(),
+                detail: "read-after-write bytes differ from threshold payload".to_string(),
+            });
+        }
+        let decoded: ContradictionThresholds = bincode::deserialize(&readback)?;
+        decoded.validate()?;
+        if decoded != *thresholds {
+            return Err(MejepaInferError::InvalidInput {
+                field: "contradiction_thresholds".to_string(),
+                detail: "read-after-write decoded threshold does not match input".to_string(),
+            });
+        }
+        if let Some(counters) = &self.system_cost_counters {
+            counters.record_rocksdb_write(value.len() as u64);
+        }
+        Ok(())
     }
 }
 
@@ -370,6 +412,19 @@ impl MejepaStore for RocksDbInferStore {
             }
         }
         Ok(out)
+    }
+
+    fn read_contradiction_thresholds(
+        &self,
+        cell_id: &str,
+    ) -> Result<Option<ContradictionThresholds>, MejepaInferError> {
+        let cf = cf(&self.db, CF_MEJEPA_CONTRADICTION_THRESHOLDS)?;
+        let Some(bytes) = self.db.get_cf(cf, contradiction_threshold_key(cell_id)?)? else {
+            return Ok(None);
+        };
+        let thresholds: ContradictionThresholds = bincode::deserialize(&bytes)?;
+        thresholds.validate()?;
+        Ok(Some(thresholds))
     }
 
     fn read_dda_signals(

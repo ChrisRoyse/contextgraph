@@ -2357,6 +2357,15 @@ pub enum FailedGate {
         code: String,
         detail: String,
     },
+    MultiHeadContradiction {
+        cell_id: String,
+        reason: String,
+        oracle_pass_confidence: f32,
+        tau_oracle: Option<f32>,
+        high_severity_failure_count: u32,
+        tau_failure_count: Option<u32>,
+        security_concern_count: u32,
+    },
     ColdCell {
         cell_id: String,
         n_supporting: Option<u32>,

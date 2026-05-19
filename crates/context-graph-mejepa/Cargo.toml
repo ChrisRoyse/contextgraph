@@ -247,6 +247,10 @@ name = "task_py_g_043_per_head_dda_projection_fsv"
 path = "examples/task_py_g_043_per_head_dda_projection_fsv.rs"
 
 [[example]]
+name = "task_py_g_044_multi_head_contradiction_fsv"
+path = "examples/task_py_g_044_multi_head_contradiction_fsv.rs"
+
+[[example]]
 name = "task_py_g_072_stress_harness_fsv"
 path = "examples/task_py_g_072_stress_harness_fsv.rs"
 
