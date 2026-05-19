@@ -531,9 +531,9 @@ SplitMix64 shuffle + LPT pre-sort + lowest-current/target-ratio bin-pack.
 
 | Capability | Source | Issue |
 |---|---|---|
-| Merkle-tree per-project chunk/embed cache | `project_cache.rs` | #281 / TASK-PY-G-062 |
+| Merkle-tree per-project chunk cache; embedding writes fail closed unless real active embedder outputs are supplied | `project_cache.rs` | #281 / TASK-PY-G-062, #424 |
 | 250 ms debounced watcher-status scan | `project_cache.rs` | #281 |
-| Transitive invalidation + schema-version-aware re-embed | `project_cache.rs` | #281 |
+| Transitive invalidation + schema-version-aware chunk refresh; real project-cache re-embed provider still required before live consequence prediction | `project_cache.rs` | #281, #424 |
 | `mejepa_project_ingest` MCP tool | `project_ingest.rs` + MCP wrapper | #282 / TASK-PY-G-063 |
 | `mejepa_project_report` MCP tool | `project_report.rs` + MCP wrapper | #283 / TASK-PY-G-064 |
 

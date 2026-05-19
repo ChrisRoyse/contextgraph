@@ -42,6 +42,14 @@ pub enum ProjectCacheError {
     ChunkFailed { path: String, reason: String },
     #[error("MEJEPA_PROJECT_CACHE_HASH_COLLISION: blake3={blake3} paths={paths:?}")]
     HashCollision { blake3: String, paths: Vec<String> },
+    #[error(
+        "MEJEPA_PROJECT_CACHE_REAL_EMBEDDING_REQUIRED: chunk_key={chunk_key} embedder_id={embedder_id} embedder_version={embedder_version}"
+    )]
+    RealEmbeddingRequired {
+        chunk_key: String,
+        embedder_id: String,
+        embedder_version: String,
+    },
 }
 
 impl ProjectCacheError {
@@ -56,6 +64,7 @@ impl ProjectCacheError {
             Self::UnsupportedFile { .. } => "MEJEPA_PROJECT_CACHE_UNSUPPORTED_FILE",
             Self::ChunkFailed { .. } => "MEJEPA_PROJECT_CACHE_CHUNK_FAILED",
             Self::HashCollision { .. } => "MEJEPA_PROJECT_CACHE_HASH_COLLISION",
+            Self::RealEmbeddingRequired { .. } => "MEJEPA_PROJECT_CACHE_REAL_EMBEDDING_REQUIRED",
         }
     }
 }
@@ -630,6 +639,7 @@ impl ProjectMerkleCache {
             context: "write schema version",
             source,
         })?;
+        purge_legacy_synthetic_embeddings(&conn)?;
         Ok(())
     }
 
@@ -1115,54 +1125,26 @@ fn refresh_embeddings(
     embedder_versions: &[EmbedderVersion],
     chunk_keys: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, usize>, ProjectCacheError> {
-    let mut per_embedder = BTreeMap::new();
-    for chunk_key in chunk_keys {
-        for embedder in embedder_versions {
-            let existing: Option<String> = conn
-                .query_row(
-                    "SELECT embedder_version FROM embeddings WHERE chunk_key = ?1 AND embedder_id = ?2",
-                    params![chunk_key, embedder.embedder_id],
-                    |row| row.get(0),
-                )
-                .optional()
-                .map_err(|source| ProjectCacheError::Sqlite {
-                    context: "query embedding version",
-                    source,
-                })?;
-            if existing.as_deref() == Some(embedder.embedder_version.as_str()) {
-                continue;
-            }
-            let vector = deterministic_vector_blob(
-                chunk_key,
-                &embedder.embedder_id,
-                &embedder.embedder_version,
-            );
-            conn.execute(
-                "\
-                INSERT INTO embeddings(chunk_key, embedder_id, embedder_version, vector_blob, updated_at)
-                VALUES (?1, ?2, ?3, ?4, ?5)
-                ON CONFLICT(chunk_key, embedder_id) DO UPDATE SET
-                    embedder_version = excluded.embedder_version,
-                    vector_blob = excluded.vector_blob,
-                    updated_at = excluded.updated_at",
-                params![
-                    chunk_key,
-                    embedder.embedder_id,
-                    embedder.embedder_version,
-                    vector,
-                    now_ms(),
-                ],
-            )
-            .map_err(|source| ProjectCacheError::Sqlite {
-                context: "upsert embedding row",
-                source,
-            })?;
-            *per_embedder
-                .entry(embedder.embedder_id.clone())
-                .or_insert(0) += 1;
-        }
+    purge_legacy_synthetic_embeddings(conn)?;
+    if chunk_keys.is_empty() || embedder_versions.is_empty() {
+        return Ok(BTreeMap::new());
     }
-    Ok(per_embedder)
+    let chunk_key = chunk_keys.iter().next().cloned().unwrap_or_default();
+    let embedder = &embedder_versions[0];
+    Err(ProjectCacheError::RealEmbeddingRequired {
+        chunk_key,
+        embedder_id: embedder.embedder_id.clone(),
+        embedder_version: embedder.embedder_version.clone(),
+    })
+}
+
+fn purge_legacy_synthetic_embeddings(conn: &Connection) -> Result<(), ProjectCacheError> {
+    conn.execute("DELETE FROM embeddings WHERE length(vector_blob) = 32", [])
+        .map_err(|source| ProjectCacheError::Sqlite {
+            context: "purge legacy synthetic embedding rows",
+            source,
+        })?;
+    Ok(())
 }
 
 fn reject_hash_collisions(
@@ -1306,12 +1288,6 @@ fn chunk_key(schema_version: &str, file_blake3: &str, start: u64, end: u64, kind
     blake3_hex(format!("{schema_version}\0{file_blake3}\0{start}\0{end}\0{kind}").as_bytes())
 }
 
-fn deterministic_vector_blob(chunk_key: &str, embedder_id: &str, version: &str) -> Vec<u8> {
-    blake3::hash(format!("{chunk_key}\0{embedder_id}\0{version}").as_bytes())
-        .as_bytes()
-        .to_vec()
-}
-
 fn decode_utf8_or_latin1(bytes: &[u8]) -> String {
     match std::str::from_utf8(bytes) {
         Ok(text) => text.to_string(),
@@ -1342,4 +1318,80 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn memory_conn_with_embeddings_table() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory sqlite");
+        conn.execute_batch(
+            "\
+            CREATE TABLE embeddings(
+                chunk_key TEXT NOT NULL,
+                embedder_id TEXT NOT NULL,
+                embedder_version TEXT NOT NULL,
+                vector_blob BLOB NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY(chunk_key, embedder_id)
+            );
+            ",
+        )
+        .expect("create embeddings table");
+        conn
+    }
+
+    #[test]
+    fn refresh_embeddings_fails_closed_without_real_forward_outputs() {
+        let conn = memory_conn_with_embeddings_table();
+        let chunk_keys = BTreeSet::from(["chunk-a".to_string()]);
+        let embedders = vec![EmbedderVersion::new("e1", "project-ingest-v1")];
+
+        let err = refresh_embeddings(&conn, &embedders, &chunk_keys).unwrap_err();
+
+        assert_eq!(err.code(), "MEJEPA_PROJECT_CACHE_REAL_EMBEDDING_REQUIRED");
+        assert!(err.to_string().contains("chunk_key=chunk-a"));
+        assert!(err.to_string().contains("embedder_id=e1"));
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM embeddings", [], |row| row.get(0))
+            .expect("count embeddings");
+        assert_eq!(rows, 0, "fail-closed path must not write fake vectors");
+    }
+
+    #[test]
+    fn refresh_embeddings_purges_legacy_32_byte_synthetic_rows() {
+        let conn = memory_conn_with_embeddings_table();
+        conn.execute(
+            "\
+            INSERT INTO embeddings(chunk_key, embedder_id, embedder_version, vector_blob, updated_at)
+            VALUES ('chunk-a', 'e1', 'project-ingest-v1', ?1, 1)",
+            params![vec![7_u8; 32]],
+        )
+        .expect("insert legacy synthetic row");
+        let chunk_keys = BTreeSet::from(["chunk-b".to_string()]);
+        let embedders = vec![EmbedderVersion::new("e7", "project-ingest-v1")];
+
+        let err = refresh_embeddings(&conn, &embedders, &chunk_keys).unwrap_err();
+
+        assert_eq!(err.code(), "MEJEPA_PROJECT_CACHE_REAL_EMBEDDING_REQUIRED");
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM embeddings", [], |row| row.get(0))
+            .expect("count embeddings");
+        assert_eq!(rows, 0, "legacy 32-byte hash vectors must be invalidated");
+    }
+
+    #[test]
+    fn refresh_embeddings_cache_only_scan_writes_no_embeddings() {
+        let conn = memory_conn_with_embeddings_table();
+        let chunk_keys = BTreeSet::from(["chunk-a".to_string()]);
+
+        let counts = refresh_embeddings(&conn, &[], &chunk_keys).expect("cache-only refresh");
+
+        assert!(counts.is_empty());
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM embeddings", [], |row| row.get(0))
+            .expect("count embeddings");
+        assert_eq!(rows, 0);
+    }
 }
