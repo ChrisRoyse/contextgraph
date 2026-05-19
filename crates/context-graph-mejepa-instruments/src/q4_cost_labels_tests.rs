@@ -152,6 +152,40 @@ fn swapped_phase_fails_closed() {
     assert!(extract_q4_cost_labels(&source, &outputs).is_err());
 }
 
+#[test]
+fn inconsistent_cost_label_shape_fails_closed() {
+    let label = Q4CostLabel {
+        corpus_row_id: "row-cost-inconsistent".to_string(),
+        chunk_id: "chunk-cost-001".to_string(),
+        logical_path: "requirements.txt".to_string(),
+        cost_selector: "pytest-and-build-wheel".to_string(),
+        kind: Q4CostKind::DependencyCount,
+        baseline: 14.0,
+        after: 12.0,
+        delta: 2.0,
+        regression: true,
+        label_kind: Q4CostLabelKind::Regression,
+    };
+    assert!(validate_label_shape(&label).is_err());
+}
+
+#[test]
+fn label_key_keeps_same_row_different_chunks_separate() {
+    let left = q4_cost_label_key(
+        "row-cost-same-row",
+        "chunk-cost-left",
+        Q4CostKind::DependencyCount,
+    );
+    let right = q4_cost_label_key(
+        "row-cost-same-row",
+        "chunk-cost-right",
+        Q4CostKind::DependencyCount,
+    );
+    assert_ne!(left, right);
+    assert!(left.starts_with("row-cost-same-row:label:dependency_count:"));
+    assert!(right.starts_with("row-cost-same-row:label:dependency_count:"));
+}
+
 fn sample_source(row_id: &str) -> Q4CostSource {
     Q4CostSource {
         corpus_row_id: row_id.to_string(),

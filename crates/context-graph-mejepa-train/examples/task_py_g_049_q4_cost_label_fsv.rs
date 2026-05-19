@@ -6,6 +6,7 @@ use context_graph_mejepa_instruments::{
 };
 use context_graph_mejepa_train::labels::q4_cost_labels_to_prediction_surfaces;
 use serde_json::{json, Value};
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -20,9 +21,25 @@ fn main() -> FsvResult<()> {
         .duration_since(UNIX_EPOCH)?
         .as_millis()
         .to_string();
-    let fsv_root =
-        PathBuf::from("/zfs/archive/contextgraph/fsv/task-py-g-049-q4-cost-label-producer-fsv");
-    let raw_root = PathBuf::from("/zfs/archive/contextgraph/corpus/python-q4-cost-labels-v1");
+    let task = env::var("CG_Q4_COST_FSV_TASK").unwrap_or_else(|_| "TASK-PY-G-049".to_string());
+    let issue = env::var("CG_Q4_COST_FSV_ISSUE")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(268);
+    let row_prefix =
+        env::var("CG_Q4_COST_ROW_PREFIX").unwrap_or_else(|_| "task-py-g-049".to_string());
+    let evidence_name = env::var("CG_Q4_COST_FSV_EVIDENCE_NAME")
+        .unwrap_or_else(|_| "q4_cost_label_producer_fsv.json".to_string());
+    let fsv_root = env_path(
+        "CG_Q4_COST_FSV_ROOT",
+        "/zfs/archive/contextgraph/fsv/task-py-g-049-q4-cost-label-producer-fsv",
+    );
+    let raw_root = env_path(
+        "CG_Q4_COST_RAW_ROOT",
+        "/zfs/archive/contextgraph/corpus/python-q4-cost-labels-v1",
+    );
+    let catalog_producer_fsv_root =
+        PathBuf::from("/zfs/archive/contextgraph/fsv/task-py-g-049-q4-cost-label-producer-fsv/");
     let catalog_path =
         PathBuf::from("/zfs/archive/contextgraph/state/q4-trust-gate/evidence-catalog.json");
     fs::create_dir_all(&fsv_root)?;
@@ -32,8 +49,8 @@ fn main() -> FsvResult<()> {
     }
 
     let rocksdb_path = fsv_root.join(format!("q4-cost-labels-{run_id}.rocksdb"));
-    let evidence_path = fsv_root.join("q4_cost_label_producer_fsv.json");
-    let row_id = format!("task-py-g-049-{run_id}");
+    let evidence_path = fsv_root.join(evidence_name);
+    let row_id = format!("{row_prefix}-{run_id}");
     let fixture_root = fsv_root.join(format!("fixture-{run_id}"));
     let fixture_script = write_cost_fixture(&fixture_root)?;
     let fixture_patch = fixture_root.join("requirements.patch");
@@ -71,13 +88,23 @@ fn main() -> FsvResult<()> {
     producer_rows += persist_extraction(&store, &extraction)? as u64;
     let mut raw_artifact_rows = 1_u64;
     for idx in 0..29 {
-        let row_source = happy_source(&format!("task-py-g-049-{run_id}-producer-{idx:02}"));
+        let row_source = happy_source(&format!("{row_prefix}-{run_id}-producer-{idx:02}"));
         let row_outputs = run_fixture_outputs(&fixture_root, &fixture_script, "pre", "post")?;
         write_q4_cost_raw_outputs(&raw_root, &row_source.corpus_row_id, &row_outputs)?;
         raw_artifact_rows += 1;
         let row_extraction = extract_q4_cost_labels(&row_source, &row_outputs)?;
         producer_rows += persist_extraction(&store, &row_extraction)? as u64;
     }
+    let alternate_source = alternate_chunk_source(&source.corpus_row_id);
+    let alternate_outputs = run_fixture_outputs(&fixture_root, &fixture_script, "pre", "post")?;
+    let alternate_raw_paths = write_q4_cost_raw_outputs(
+        &raw_root,
+        &format!("{}-alternate-chunk", alternate_source.corpus_row_id),
+        &alternate_outputs,
+    )?;
+    raw_artifact_rows += 1;
+    let alternate_extraction = extract_q4_cost_labels(&alternate_source, &alternate_outputs)?;
+    producer_rows += persist_extraction(&store, &alternate_extraction)? as u64;
     store.flush()?;
     let after_count = store.count_records()?;
     require("producer row minimum met", producer_rows >= 30)?;
@@ -96,6 +123,13 @@ fn main() -> FsvResult<()> {
             Q4CostKind::DependencyCount,
         )?
         .ok_or("missing canonical cost label readback")?;
+    let alternate_readback = reopened
+        .get_label_record(
+            &alternate_source.corpus_row_id,
+            &alternate_source.chunk_id,
+            Q4CostKind::DependencyCount,
+        )?
+        .ok_or("missing alternate same-row cost label readback")?;
     require(
         "reopened RocksDB sees producer rows",
         reopened_rows.len() == after_count,
@@ -109,6 +143,26 @@ fn main() -> FsvResult<()> {
     require(
         "canonical row/kind readback is label",
         matches!(canonical_readback.signal, Q4CostSignalRecord::Label(_)),
+    )?;
+    require(
+        "same row/different chunk readback is label",
+        matches!(alternate_readback.signal, Q4CostSignalRecord::Label(_)),
+    )?;
+    let canonical_key = format!(
+        "{}:label:{}:{}",
+        source.corpus_row_id,
+        Q4CostKind::DependencyCount.as_str(),
+        sha256_text(&source.chunk_id),
+    );
+    let alternate_key = format!(
+        "{}:label:{}:{}",
+        alternate_source.corpus_row_id,
+        Q4CostKind::DependencyCount.as_str(),
+        sha256_text(&alternate_source.chunk_id),
+    );
+    require(
+        "same row/different chunk keys do not collide",
+        canonical_key != alternate_key,
     )?;
     drop(reopened);
 
@@ -153,7 +207,7 @@ fn main() -> FsvResult<()> {
     )?;
     drop(quarantine_reopened);
 
-    let catalog = update_q4_catalog(&catalog_path, producer_rows)?;
+    let catalog = update_q4_catalog(&catalog_path, producer_rows, &catalog_producer_fsv_root)?;
     let trust_report = q4_trust_gate_report_from_catalog_path(&catalog_path)?;
     let cost_readiness = trust_report
         .head(Q4HeadKind::Cost)
@@ -163,17 +217,26 @@ fn main() -> FsvResult<()> {
         cost_readiness.producer_supported,
     )?;
     require(
+        "cost catalog producer root stays canonical",
+        cost_readiness.producer_fsv_root == canonical_fsv_root(&catalog_producer_fsv_root),
+    )?;
+    require(
+        "cost per-slot evidence is not synthesized",
+        !cost_readiness.per_slot_supported,
+    )?;
+    require(
         "cost remains untrusted without #127 calibration",
         !cost_readiness.q4_head_ready,
     )?;
 
     let evidence = json!({
-        "task": "TASK-PY-G-049",
-        "issue": 268,
+        "task": task,
+        "issue": issue,
         "all_passed": true,
         "source_of_truth": {
             "raw_output_root": raw_root,
             "raw_output_paths": raw_paths,
+            "alternate_same_row_raw_output_paths": alternate_raw_paths,
             "real_fixture_root": fixture_root,
             "real_fixture_script": fixture_script,
             "real_fixture_patch": fixture_patch,
@@ -181,6 +244,7 @@ fn main() -> FsvResult<()> {
             "cf": context_graph_mejepa_cf::CF_MEJEPA_Q4_COST_LABELS,
             "evidence_path": evidence_path,
             "q4_catalog_path": catalog_path,
+            "q4_catalog_producer_fsv_root": catalog_producer_fsv_root,
             "fsv_root": fsv_root,
         },
         "happy_path": {
@@ -203,7 +267,11 @@ fn main() -> FsvResult<()> {
                 "cf_record_count": after_count,
                 "reopened_record_count": reopened_rows.len(),
                 "canonical_readback": canonical_readback,
+                "alternate_same_row_readback": alternate_readback,
+                "canonical_readback_key": canonical_key,
+                "alternate_same_row_readback_key": alternate_key,
                 "raw_cost_sha256": sha256_file(&raw_paths.cost_json)?,
+                "alternate_same_row_raw_cost_sha256": sha256_file(&alternate_raw_paths.cost_json)?,
                 "predicted_cost_regressions": surfaces.predicted_cost_regressions,
                 "persisted_quarantine_keys": persisted_quarantine_keys,
                 "persisted_quarantine_rows": persisted_quarantine_extraction.quarantines,
@@ -234,4 +302,10 @@ fn main() -> FsvResult<()> {
     )?;
     println!("{}", serde_json::to_string_pretty(&readback)?);
     Ok(())
+}
+
+fn env_path(var: &str, default: &str) -> PathBuf {
+    env::var_os(var)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(default))
 }

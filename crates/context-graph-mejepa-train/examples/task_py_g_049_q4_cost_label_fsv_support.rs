@@ -33,6 +33,16 @@ pub(crate) fn happy_source(row_id: &str) -> Q4CostSource {
     }
 }
 
+pub(crate) fn alternate_chunk_source(row_id: &str) -> Q4CostSource {
+    Q4CostSource {
+        corpus_row_id: row_id.to_string(),
+        chunk_id: "chunk-q4-cost-002".to_string(),
+        logical_path: "pyproject.toml".to_string(),
+        cost_selector: "pytest-and-build-wheel-alt-manifest".to_string(),
+        changed_paths: vec!["pyproject.toml".to_string()],
+    }
+}
+
 pub(crate) fn write_cost_fixture(root: &Path) -> FsvResult<PathBuf> {
     fs::create_dir_all(root)?;
     write_project_state(root, "pre", 12, 600.0, Some(10_000))?;
@@ -41,6 +51,7 @@ pub(crate) fn write_cost_fixture(root: &Path) -> FsvResult<PathBuf> {
     write_project_state(root, "no_reqs_post", 0, 66.0, None)?;
     write_project_state(root, "fix_pre", 14, 60.0, None)?;
     write_project_state(root, "fix_post", 12, 60.0, None)?;
+    write_failing_wheel_state(root)?;
     fs::write(
         root.join("requirements.patch"),
         "\
@@ -54,8 +65,11 @@ diff --git a/requirements.txt b/requirements.txt\n\
     let script = root.join("q4_cost_fixture.py");
     let source = r#"
 import argparse
+import os
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 
 
@@ -72,28 +86,136 @@ def emit(case: str) -> None:
         payload = {"metrics": [{"kind": "ci_minutes", "value": 12.0, "stddev": 0.4}, {"kind": "dependency_count", "value": 14}]}
         print(json.dumps(payload, sort_keys=True))
     elif case == "wheel_fail":
-        print("wheel build failed", file=sys.stderr)
-        raise SystemExit(1)
+        emit_failing_wheel(ROOT / "wheel_fail")
     else:
         raise ValueError(f"unknown case: {case}")
 
 
 def emit_project(project: Path) -> None:
-    duration_seconds = float((project / "pytest_duration_seconds.txt").read_text().strip())
-    print("============================= test session starts =============================")
-    print("tests/test_cost.py::test_cost PASSED")
-    print(f"============================== 1 passed in {duration_seconds:.2f}s ==============================")
+    env = tool_env()
+    pytest = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q"],
+        cwd=project,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=30,
+        check=False,
+    )
+    print(pytest.stdout.strip())
+    if pytest.returncode != 0:
+        raise SystemExit(pytest.returncode)
     requirements = project / "requirements.txt"
     if requirements.exists():
         print("REQUIREMENTS_START")
         print(requirements.read_text().strip())
         print("REQUIREMENTS_END")
+    dist = project / "dist"
+    if dist.exists():
+        shutil.rmtree(dist)
+    wheel = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            "--disable-pip-version-check",
+            "--no-deps",
+            "--no-build-isolation",
+            ".",
+            "-w",
+            "dist",
+        ],
+        cwd=project,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=60,
+        check=False,
+    )
+    print("WHEEL_BUILD_STDOUT_START")
+    print(wheel.stdout.strip())
+    print("WHEEL_BUILD_STDOUT_END")
+    if wheel.returncode != 0:
+        raise SystemExit(wheel.returncode)
     wheels = sorted((project / "dist").glob("*.whl"))
     if wheels:
         wheel = wheels[0]
         print("WHEEL_START")
         print(f"wheel_bytes: {wheel.stat().st_size} {wheel}")
         print("WHEEL_END")
+
+
+def emit_failing_wheel(project: Path) -> None:
+    env = tool_env()
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            "--disable-pip-version-check",
+            "--no-deps",
+            "--no-build-isolation",
+            ".",
+            "-w",
+            "dist",
+        ],
+        cwd=project,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=60,
+        check=False,
+    )
+    print(result.stdout.strip())
+    raise SystemExit(result.returncode or 1)
+
+
+def tool_env() -> dict[str, str]:
+    env = os.environ.copy()
+    if has_pytest(env):
+        return env
+    vendor = ROOT / ".pytest_vendor"
+    if not (vendor / "pytest").exists():
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                "--target",
+                str(vendor),
+                "pytest==9.0.3",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=120,
+            check=True,
+        )
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(vendor) if not existing else f"{vendor}{os.pathsep}{existing}"
+    if not has_pytest(env):
+        raise RuntimeError("pytest toolchain bootstrap failed")
+    return env
+
+
+def has_pytest(env: dict[str, str]) -> bool:
+    probe = subprocess.run(
+        [sys.executable, "-m", "pytest", "--version"],
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=15,
+        check=False,
+    )
+    return probe.returncode == 0
 
 
 def main() -> None:
@@ -133,8 +255,45 @@ fn write_project_state(
     let state_root = root.join(state);
     fs::create_dir_all(&state_root)?;
     fs::write(
-        state_root.join("pytest_duration_seconds.txt"),
-        format!("{duration_seconds:.2}\n"),
+        state_root.join("pyproject.toml"),
+        r#"[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "q4-cost-fixture"
+version = "0.1.0"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+demo_cost = ["payload.bin"]
+"#,
+    )?;
+    let package_root = state_root.join("src").join("demo_cost");
+    fs::create_dir_all(&package_root)?;
+    fs::write(
+        package_root.join("__init__.py"),
+        "from .core import workload\n",
+    )?;
+    let loop_count = (duration_seconds / 0.02).max(1.0) as usize;
+    fs::write(
+        package_root.join("core.py"),
+        format!(
+            "def workload():\n    total = 0\n    for idx in range({loop_count}):\n        total += (idx * 17) % 31\n    return total\n"
+        ),
+    )?;
+    let payload_size = wheel_bytes.unwrap_or(512);
+    let payload = (0..payload_size)
+        .map(|idx| ((idx * 37 + payload_size) % 251) as u8)
+        .collect::<Vec<_>>();
+    fs::write(package_root.join("payload.bin"), payload)?;
+    let tests_root = state_root.join("tests");
+    fs::create_dir_all(&tests_root)?;
+    fs::write(
+        tests_root.join("test_cost.py"),
+        "import sys\nfrom pathlib import Path\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[1] / \"src\"))\nfrom demo_cost import workload\n\n\ndef test_cost():\n    assert workload() >= 0\n",
     )?;
     if dependency_count > 0 {
         let mut deps = (0..dependency_count)
@@ -147,11 +306,13 @@ fn write_project_state(
         }
         fs::write(state_root.join("requirements.txt"), deps.join("\n") + "\n")?;
     }
-    if let Some(size) = wheel_bytes {
-        let dist = state_root.join("dist");
-        fs::create_dir_all(&dist)?;
-        fs::write(dist.join("demo-0.1.0-py3-none-any.whl"), vec![b'0'; size])?;
-    }
+    Ok(())
+}
+
+fn write_failing_wheel_state(root: &Path) -> FsvResult<()> {
+    let state_root = root.join("wheel_fail");
+    fs::create_dir_all(&state_root)?;
+    fs::write(state_root.join("pyproject.toml"), "[build-system\n")?;
     Ok(())
 }
 
@@ -163,7 +324,11 @@ pub(crate) fn persist_extraction(
     Ok(keys.len())
 }
 
-pub(crate) fn update_q4_catalog(path: &Path, producer_rows: u64) -> FsvResult<Q4EvidenceCatalog> {
+pub(crate) fn update_q4_catalog(
+    path: &Path,
+    producer_rows: u64,
+    producer_fsv_root: &Path,
+) -> FsvResult<Q4EvidenceCatalog> {
     let mut catalog = if path.exists() {
         serde_json::from_slice(&fs::read(path)?)?
     } else {
@@ -173,10 +338,7 @@ pub(crate) fn update_q4_catalog(path: &Path, producer_rows: u64) -> FsvResult<Q4
     heads.insert(
         Q4HeadKind::Cost,
         Q4HeadEvidence {
-            producer_fsv_root: Some(
-                "/zfs/archive/contextgraph/fsv/task-py-g-049-q4-cost-label-producer-fsv/"
-                    .to_string(),
-            ),
+            producer_fsv_root: Some(canonical_fsv_root(producer_fsv_root)),
             producer_rows,
             calibration_fsv_root: None,
             calibration_rows: 0,
@@ -187,6 +349,14 @@ pub(crate) fn update_q4_catalog(path: &Path, producer_rows: u64) -> FsvResult<Q4
     catalog.heads = heads;
     write_json_checked(path, &catalog)?;
     Ok(catalog)
+}
+
+pub(crate) fn canonical_fsv_root(path: &Path) -> String {
+    let mut raw = path.display().to_string();
+    if !raw.ends_with('/') {
+        raw.push('/');
+    }
+    raw
 }
 
 pub(crate) fn edge_no_requirements_absent_dep_label(
@@ -299,6 +469,10 @@ pub(crate) fn write_json_checked(path: &Path, value: &impl Serialize) -> FsvResu
 pub(crate) fn sha256_file(path: &Path) -> FsvResult<String> {
     let bytes = fs::read(path)?;
     Ok(format!("{:x}", Sha256::digest(&bytes)))
+}
+
+pub(crate) fn sha256_text(value: &str) -> String {
+    format!("{:x}", Sha256::digest(value.as_bytes()))
 }
 
 pub(crate) fn require(name: &str, condition: bool) -> FsvResult<()> {
