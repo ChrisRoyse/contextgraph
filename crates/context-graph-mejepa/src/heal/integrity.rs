@@ -610,8 +610,7 @@ mod tests {
 
     #[test]
     fn witness_quarantine_fsv_blocks_writes_until_approved_repair() {
-        let fsv_root =
-            PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-witness-quarantine-fsv");
+        let (_temp, fsv_root) = witness_quarantine_fsv_root();
         fs::create_dir_all(&fsv_root).expect("fsv root");
         let run_id = format!(
             "{}-{}",
@@ -819,6 +818,15 @@ mod tests {
         let readback: serde_json::Value =
             serde_json::from_slice(&fs::read(&fsv_path).expect("read fsv")).expect("parse fsv");
         assert_eq!(readback, fsv);
+    }
+
+    fn witness_quarantine_fsv_root() -> (Option<tempfile::TempDir>, PathBuf) {
+        if let Some(root) = std::env::var_os("CG_MEJEPA_WITNESS_QUARANTINE_FSV_ROOT") {
+            return (None, PathBuf::from(root));
+        }
+        let temp = tempfile::tempdir().expect("witness quarantine fsv tempdir");
+        let root = temp.path().join("phase-f-witness-quarantine-fsv");
+        (Some(temp), root)
     }
 
     fn corrupt_second_entry(path: &Path) {
