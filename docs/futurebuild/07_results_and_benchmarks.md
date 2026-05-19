@@ -40,6 +40,19 @@ Source: aiwonder `/zfs/archive/contextgraph/fsv/` for post-migration production 
 | Q1 claim graph extractor (TASK-PY-G-041) | bytes-on-disk reconciliation | shipped | `/mnt/d/contextgraph/fsv/task-py-g-041-claim-graph-extractor-fsv/run-1779077268576/claim_graph_extractor_fsv.json` |
 | Per-head DDA projection (TASK-PY-G-043) | 30-chunk FSV | shipped | `/mnt/d/contextgraph/fsv/task-py-g-043-per-head-dda-projection-fsv/run-1779078323947/head_projection_fsv.json` |
 | Real-corpus constellation smoke (TASK-PY-G-095 / #395) | 7 spread aiwonder shards, 12 active embedders, 2,688 packed records, 84 per-cell centroid rows, 66 pairwise relationships, 20 candidate failure-shape rows; `flat_vector_concat_used=false` | PASS | `/zfs/archive/contextgraph/fsv/task-py-g-095-real-corpus-constellation-smoke-fsv/python_real_corpus_constellation_smoke_fsv.json` (sha256 `552de73b…`), independent readback `/zfs/archive/contextgraph/fsv/task-py-g-095-real-corpus-constellation-smoke-fsv/independent_readback.json`, external edge readback `/zfs/archive/contextgraph/fsv/task-py-g-095-real-corpus-constellation-smoke-fsv/external_edge_case_readback.json` |
+| Constellation training objective smoke (TASK-PY-G-096 / #396) | Real aiwonder 391-shard forward-cache joined to the 300×8 oracle index; 353 training rows, 1,440 per-slot vector rows, 2,727 row-pair observations, 66 pairwise relationships; per-slot/pairwise/contradiction/temporal/oracle/anti-compensation certificate; local baseline ladder plus historical 0.866667 context; `flat_vector_concat_used=false`; promotion refused | PASS | `/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/python_constellation_training_objective_fsv.json` (sha256 `9a58e747…`), certificate sha256 `a5ec541d…`, independent readback `/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/independent_readback.json` (sha256 `52498f5b…`), external edge readback sha256 `37f1dc39…` |
+
+### 1.1 Aiwonder Corpus Data Map For Constellation Training
+
+The active Python ship-gate data lives in three separate aiwonder artifacts that must not be confused:
+
+| Artifact | Path | Role |
+|---|---|---|
+| 300×8 SWE-bench Lite Python corpus + oracle labels | `/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json` | 2,400 entries; `oracle_all_passed` is the #396 label source, joined by `(task_instance_id, mutation_category)` |
+| AST chunk store | `/zfs/hot/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl` | Chunk metadata and stable row keys: `task_instance_id`, `workspace_state`, `chunk_id`, `source_sha256` |
+| Full packed embedder forward cache | `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z/` | 391 completed shards; per-shard packed manifests point to each embedder's record/index JSONL; active embedders are `e1,e6,e7,e8,e10,e12,e13,e14,e2,e3,e4,e9` |
+
+TASK-PY-G-096 writes its certificate and generated arrays under `/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts/`: `constellation_training_rows.jsonl`, `constellation_slot_vectors.jsonl`, `constellation_pairwise_observations.jsonl`, `constellation_pairwise_relationships.jsonl`, and `constellation_training_certificate.json`.
 
 ---
 
