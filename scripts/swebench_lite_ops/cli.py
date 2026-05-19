@@ -507,7 +507,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     constellation_ablation_suite = sub.add_parser(
         "python-constellation-ablation-suite",
-        help="TASK-PY-G-093: run capability-discovery ablations over real constellation training arrays.",
+        help="TASK-PY-G-097: rerun constellation ablations with #388 tensors and #389 per-slot calibration/OOD state.",
     )
     add_python_constellation_ablation_suite_arguments(constellation_ablation_suite)
     constellation_ablation_suite.set_defaults(
