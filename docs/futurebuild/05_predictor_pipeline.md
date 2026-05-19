@@ -84,7 +84,7 @@ Three architectural primitives back the binary contract:
                  │
                  ▼
       RealityPrediction (Q1 claim_graph + Q2 verdict + Q3 fail modes +
-                         Q4 always-on heads + Q5 reality_impact +
+                         Q5 reality_impact + label/skill context +
                          constellation_intelligence)
                  │
                  ▼
@@ -273,7 +273,7 @@ Decision flow (per `compiler.rs::compile`):
 6. Aggregate OOD gate (`ood.rs` + `CF_MEJEPA_OOD_ESCALATIONS`). Strict-conjunction policy: aggregate score never overrides a slot violation (`aggregate_score_never_overrides_slot_violation=true` in `ood_guard_policy.json`).
 7. TCT Gτ guard (`tct/gtau.rs` + `CF_MEJEPA_GUARD_DECISIONS`).
 8. Cold-cell metric: if cell `n_supporting < INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT` (50) → `Verdict::Abstain` + `CF_MEJEPA_COLD_CELL_METRICS` row (TASK-PY-G-061).
-9. Apply multi-head contradiction thresholds (`contradiction.rs` + `CF_MEJEPA_CONTRADICTION_THRESHOLDS`). If the oracle/pass head is high while calibrated high-severity Q3/Q4 failure signals are also high, emit `Verdict::Abstain` with `MULTI_HEAD_CONTRADICTION`. Missing thresholds fail closed with `CONTRADICTION_THRESHOLD_MISSING`; single-head evidence records `SINGLE_HEAD_ONLY`.
+9. Apply contradiction thresholds (`contradiction.rs` + `CF_MEJEPA_CONTRADICTION_THRESHOLDS`). If the Q2 pass head is high while calibrated consequence-pressure evidence from Q3 explanation/TCT constellation signals is also high, emit `Verdict::Abstain` with `MULTI_HEAD_CONTRADICTION`. Missing thresholds fail closed with `CONTRADICTION_THRESHOLD_MISSING`; single-head evidence records `SINGLE_HEAD_ONLY`. Q4 thresholds are historical/display-only and are not consumed by the active verdict path.
 10. Summarize constellation intelligence (`constellation_intelligence.rs` + `CF_MEJEPA_CONSTELLATION_PATTERNS`). Slot-pair consensus, contradiction, redundancy, novelty, and blind-spot evidence becomes `RealityPrediction.constellation_intelligence`; high consequence pressure can abstain before a false confident pass, and promoted relationship patterns can seed active-learning rows.
 11. Match against fingerprint catalog (`CF_MEJEPA_FINGERPRINT_REVERSE_INDEX`).
 12. Pull closest exemplars (`CF_MEJEPA_PATCH_SIMILARITY_META`).
@@ -282,7 +282,7 @@ Decision flow (per `compiler.rs::compile`):
 
 **Anti-compensation guard (TASK-PY-G-094 / #394).** `crates/context-graph-mejepa/examples/python_anti_compensation_fsv.rs` and the calibrated ablation suite (#398) prove corrupted / missing / stale / dimension-shifted slots, contradictory pair relationships, and temporal slot jumps cannot be accepted through aggregate evidence even when a flat normalized score would pass. A code scan prevents flat-vector ship-gate eligibility regressions.
 
-**Multi-head contradiction gate (TASK-PY-G-044 / #263).** `contradiction.rs`, `verdict_assembly.rs`, and `compiler.rs` now read per-cell thresholds from `CF_MEJEPA_CONTRADICTION_THRESHOLDS`. The gate abstains when calibrated Q2/pass confidence and high-severity Q3/Q4 consequence signals conflict, records structured evidence in the prediction/park-list path, fails closed on missing thresholds, and skips only when there is genuinely a single head of evidence. aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-044-multi-head-contradiction-fsv/run-20260519T114854Z/multi_head_contradiction_fsv.json`, sha256 `39fac46044f4a3a8a9d43a5ff117af8c1b8b46906f186f284c89120460b1cf48`.
+**Contradiction gate (TASK-PY-G-044 / #263).** `contradiction.rs`, `verdict_assembly.rs`, and `compiler.rs` read per-cell thresholds from `CF_MEJEPA_CONTRADICTION_THRESHOLDS`. The active gate abstains when calibrated Q2/pass confidence and high-severity Q3 explanation/TCT consequence-pressure evidence conflict, records structured evidence in the prediction/park-list path, fails closed on missing thresholds, and skips only when there is genuinely a single head of evidence. Historical Q4 contradiction rows remain readable but are frozen display-only under #408. aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-044-multi-head-contradiction-fsv/run-20260519T114854Z/multi_head_contradiction_fsv.json`, sha256 `39fac46044f4a3a8a9d43a5ff117af8c1b8b46906f186f284c89120460b1cf48`.
 
 **Constellation intelligence heads (TASK-PY-G-090 / #390).** `constellation_intelligence.rs`, `compiler.rs`, `verdict_assembly.rs`, `eval/queue.rs`, and `store.rs` now convert DDA/slot-pair relationship rows into structured consensus, contradiction, redundancy, novelty, blind-spot, and consequence-pressure evidence. The live prediction surface carries `RealityPrediction.constellation_intelligence`; `CF_MEJEPA_CONSTELLATION_PATTERNS` stores promoted real-corpus pair patterns; high-value disagreement can enter `CF_MEJEPA_ACTIVE_LEARNING_QUEUE`; and high Q2 pressure abstains before a false confident pass. aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-090-consensus-contradiction-heads-fsv/run-20260519T124035Z/consensus_contradiction_heads_fsv.json`, sha256 `b1d500f008b0a14a704c4c2f83fe8cd19349f0dfb0c78baedb35c711abc50b64`.
 
@@ -290,11 +290,11 @@ Decision flow (per `compiler.rs::compile`):
 
 ### 4.3 Failure-mode labeling hierarchy (the meaning layer over the slot panel)
 
-**Level 0 (deterministic label compiler) — SHIPPED 2026-05-19 via #413 / TASK-PY-G-117.** Full-corpus aiwonder FSV passed. The Level-1/2/3 hierarchical naming on top of this Level-0 registry remains open under #404 / TASK-PY-G-110.
+**Level 0 (deterministic label compiler) — SHIPPED 2026-05-19 via #413 / TASK-PY-G-117.** Full-corpus aiwonder FSV passed. The Level-1/2/3 hierarchical naming on top of this Level-0 registry remains open under #404 / TASK-PY-G-110, and the sequence-aware chunk-to-skill membership layer remains open under #414 / TASK-PY-G-118.
 
 **Shipped source (Level 0):** `scripts/swebench_lite_ops/python_auto_label_discovery.py` (1,641 lines, deterministic Python, no inner LLM). CLI entrypoint `python-auto-label-discovery`. Output root `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/`. FSV `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/python_auto_label_discovery_fsv.json` (`passes=true`).
 
-**Planned source (Level 1/2/3, #404):** `crates/context-graph-mejepa/src/failure_mode_hierarchy.rs`, `failure_mode_aggregator.rs`, `failure_mode_vocabulary.rs`, `failure_mode_consumer.rs` — aggregates Level-0 labels into named groups/skills/constellations on top of the 491-row shipped accepted registry. Storage CFs (planned): `CF_MEJEPA_FAILURE_MODE_LEVEL1`, `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS`, `CF_MEJEPA_FAILURE_MODE_LEVEL3_CONSTELLATIONS`, `CF_MEJEPA_FAILURE_MODE_VOCABULARY`, `CF_MEJEPA_NAMED_PREDICTIONS`. MCP tools (planned): `mejepa_list_failure_modes`, `mejepa_label_failure_cluster`, `mejepa_explain_named_failure_mode`, `mejepa_list_accepted_labels`, `mejepa_label_compiler_status`.
+**Planned source (Level 1/2/3, #404 + #414):** `crates/context-graph-mejepa/src/failure_mode_hierarchy.rs`, `failure_mode_aggregator.rs`, `failure_mode_vocabulary.rs`, `failure_mode_consumer.rs`, `skill_sequence_discovery.rs`, `chunk_skill_membership.rs` — aggregates Level-0 labels into named groups/skills/constellations on top of the 491-row shipped accepted registry, then writes the reverse membership rows that tell each chunk which skills and higher-level abilities it participates in. Storage CFs (planned): `CF_MEJEPA_FAILURE_MODE_LEVEL1`, `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS`, `CF_MEJEPA_FAILURE_MODE_LEVEL3_CONSTELLATIONS`, `CF_MEJEPA_FAILURE_MODE_VOCABULARY`, `CF_MEJEPA_NAMED_PREDICTIONS`, `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP`, `CF_MEJEPA_SKILL_REVERSE_INDEX`, `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT`. MCP tools (planned): `mejepa_list_failure_modes`, `mejepa_label_failure_cluster`, `mejepa_explain_named_failure_mode`, `mejepa_list_accepted_labels`, `mejepa_label_compiler_status`, `mejepa_list_chunk_skills`, `mejepa_skill_lifecycle_audit`.
 
 **Why it exists.** The 300×8 corpus has been projected through 13 retrieval embedders + 15 frozen instrument slots, producing 78 pairwise correlation tensors per cell (#388), per-slot calibration state (#389), and consensus/contradiction/blind-spot/redundancy/novelty surfaces (#390). All of that is raw numerical evidence. The labeling layer turns those numbers into named rules so the predictor can say "this patch will Fail because of `type_signature_drift_under_test_coverage`" rather than "this patch's per-slot OOD trace is `{E_TypeGraph: 0.42, E_DataFlow: 0.31, ...}`."
 
@@ -311,6 +311,10 @@ Decision flow (per `compiler.rs::compile`):
 - `CF_MEJEPA_ACTIVE_LEARNING_QUEUE` consumes unknown/OOD reasons
 - `CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT` consumes promotion/rejection events
 
+**Chunk-to-skill reverse membership (planned, #414).** After live label compilation, every AST chunk's TCT constellation must be matched against accepted Level-1 groups, Level-2 skills, and Level-3/higher constellations. Membership is many-to-many: one chunk can participate in multiple skills, and one skill can span many chunks, files, ordered steps, prerequisite labels, intermediate states, and outcome observations. Rows record `chunk_id`, `code_state_key`, `constellation_id`, `skill_id`, `hierarchy_level`, `membership_score`, source accepted label IDs, ordered step evidence, `live_input_allowed`, and provenance hashes. The prediction path consumes these active skill IDs in `PredictionLabelContext`; it does not infer hidden human intent.
+
+**Skill lifecycle on mistakes (planned, #414 feeding #406).** When a prediction disagrees with durable reality, the mistake loop must decide whether the active skill model was right but underweighted, too broad, too narrow, stale, leaky, or missing. Each mistake creates a lifecycle decision: `UpdateExistingSkill`, `SplitMixedSkill`, `CreateNewCandidateSkill`, `DemoteUnstableSkill`, or `NoChangeWithEvidence`. This is how ME-JEPA learns new abilities and repairs old ones as it sees new projects after the SWE-bench baseline.
+
 **Level 1/2/3 — Aggregation procedure (planned, #404).** Aggregate over the shipped 491-row Level-0 accepted registry (NOT a new K-means pass — the K-means equivalent is the slot-region label emitter in Level 0). Group co-firing accepted labels by support count + co-occurrence per `(mutation_category × language × code_state)` cell into Level-1 groups. Name groups via cosine-vs-vocabulary against an operator-curated **failure-mode vocabulary** (`CF_MEJEPA_FAILURE_MODE_VOCABULARY`) embedded with E1 e5-large-v2. Top-1 match becomes the Level-1 group name. Operator approves / renames / merges via `mejepa_label_failure_cluster`.
 
 **Failure-mode vocabulary (level 2 skills).** Seeded from published SWE-bench failure taxonomies, NOT invented from scratch:
@@ -325,9 +329,9 @@ Decision flow (per `compiler.rs::compile`):
 
 These are persisted in `CF_MEJEPA_FAILURE_MODE_VOCABULARY` keyed by `vocabulary_id` with body `{name, description, seed_source, embedding_e1, embedding_e7, operator_approved}`. Operator can extend via `mejepa_label_failure_cluster`.
 
-**Level 3 — behavioural failure constellations.** Per `(mutation_category × language × failure_mode_skill)` cell, mine the co-occurrence graph of skills that co-fire on Fail predictions. Constellations are named compositions of skills: e.g. `unsafe_security_change = {security_label_present, dataflow_drift, no_test_coverage_added}`. Stored in `CF_MEJEPA_FAILURE_MODE_LEVEL3_CONSTELLATIONS`. Used in Q4 risk explanation when the binary verdict is Pass-with-risk.
+**Level 3 — behavioural failure constellations.** Per `(mutation_category × language × failure_mode_skill)` cell, mine the ordered co-occurrence graph of skills and labels that explain consequence patterns in reality. Constellations are named compositions of skills: e.g. `unsafe_security_change = {security_label_present -> dataflow_drift -> no_test_coverage_added}`. Stored in `CF_MEJEPA_FAILURE_MODE_LEVEL3_CONSTELLATIONS`. Used by the Q2 binary verdict, Q3 explanation surface, closest-exemplar retrieval, and #406 replay keys.
 
-**Prediction integration.** Once labeling is shipped, every `RealityPrediction.verdict == Fail` row carries:
+**Prediction integration.** Once the hierarchy and reverse membership layers ship, every live prediction carries `PredictionLabelContext.active_skill_ids` and can expose the chunk memberships behind those skills. Every `RealityPrediction.verdict == Fail` row also carries:
 
 ```rust
 pub struct NamedFailureMode {
@@ -340,9 +344,9 @@ pub struct NamedFailureMode {
 }
 ```
 
-Persisted in `CF_MEJEPA_NAMED_PREDICTIONS` keyed by `prediction_id`. Exposed via `mejepa_explain_prediction` and `mejepa_predict_latest`.
+Persisted in `CF_MEJEPA_NAMED_PREDICTIONS` keyed by `prediction_id`, with chunk-level reverse membership rows in `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP`. Exposed via `mejepa_explain_prediction`, `mejepa_predict_latest`, and `mejepa_list_chunk_skills`.
 
-**FSV expectations.** Synthetic + real-corpus FSV must prove (a) cluster purity (≥0.7 silhouette on the 300×8 holdout), (b) operator-rename idempotence (rename → reopen → same id), (c) every Fail prediction in the holdout receives at least one named failure mode, (d) the named failure mode's top closest_exemplar has the same oracle outcome ≥85% of the time.
+**FSV expectations.** Synthetic + real-corpus FSV must prove (a) cluster purity (≥0.7 silhouette on the 300×8 holdout), (b) operator-rename idempotence (rename -> reopen -> same id), (c) every Fail prediction in the holdout receives at least one named failure mode, (d) the named failure mode's top closest_exemplar has the same oracle outcome ≥85% of the time, (e) a chunk with multiple valid skill memberships preserves all memberships without flattening them into one label, (f) a live-codebase simulation without oracle labels still emits only live-input-safe memberships, and (g) a wrong prediction writes a skill lifecycle audit row with update/split/create/demote/no-change decision and independent RocksDB readback.
 
 ### 4.4 Cross-panel triangulation (the Goodhart guard)
 
@@ -567,6 +571,12 @@ pub struct MistakeRow {
     pub source_panel: PanelId,                    // panel A or B
     pub panel_signature_hash: [u8; 32],           // for dedup
     pub slot_traces: Vec<PerSlotOodReason>,       // #389 evidence at prediction time
+    pub accepted_label_ids: Vec<AcceptedLabelId>,
+    pub active_skill_ids: Vec<SkillId>,            // ordered; A->B differs from B->A
+    pub label_signature_hash: LabelSignatureHash,
+    pub skill_signature_hash: Option<SkillSignatureHash>,
+    pub skill_lifecycle_decision: SkillLifecycleDecision,
+    pub skill_lifecycle_audit_id: Option<SkillAuditId>,
     pub closest_exemplar_at_predict: ExemplarPointer,
     pub ground_truth_source: GroundTruthSource,
     pub replayed_to_trainer: bool,
@@ -575,11 +585,11 @@ pub struct MistakeRow {
 
 Stored in `CF_MEJEPA_MISTAKE_LOG` keyed by `mistake_id` with secondary index by `cell_key`.
 
-**Convergence target (the ship-gate-adjacent property).** For every `(cell_key × predicted_named_failure_mode)` tuple, the second occurrence of the same panel signature must produce the correct verdict. Operationalized as a metric: `mistake_repeat_rate = |second_mistake_on_same_cell_and_pattern| / |first_mistake_on_that_cell_and_pattern|`. Target: `≤ 0.05`. If this rate climbs above 0.05 on any rolling window, the heal scheduler is failing to consolidate; promotion blocked.
+**Convergence target (the ship-gate-adjacent property).** For every `(cell_key × predicted_named_failure_mode × ordered_skill_signature)` tuple, the second occurrence of the same panel signature must produce the correct verdict. Operationalized as a metric: `mistake_repeat_rate = |second_mistake_on_same_cell_and_pattern| / |first_mistake_on_that_cell_and_pattern|`. Target: `≤ 0.05`. If this rate climbs above 0.05 on any rolling window, the heal scheduler is failing to consolidate; promotion blocked.
 
 **Why this beats best-of-K.** The user's constraint: "if it needs 4 guesses to be most correct then it is already wrong." Best-of-K papers over an under-trained predictor by spending compute at inference time. The online perceptron pays the cost at *learning* time and converges to a predictor that is right on the first try. Best-of-K stays available as a debug tool but is never the product path.
 
-**FSV expectations.** Synthetic + real FSV must prove (a) a deliberately-injected wrong prediction lands in `CF_MEJEPA_MISTAKE_LOG`, (b) the next presentation of the same panel signature yields the corrected verdict, (c) the mistake_repeat_rate metric is byte-readable from RocksDB, (d) Fisher protection prevents the mistake update from regressing unrelated cells.
+**FSV expectations.** Synthetic + real FSV must prove (a) a deliberately-injected wrong prediction lands in `CF_MEJEPA_MISTAKE_LOG`, (b) the next presentation of the same panel signature yields the corrected verdict, (c) the mistake_repeat_rate metric is byte-readable from RocksDB, (d) Fisher protection prevents the mistake update from regressing unrelated cells, (e) `skill:A -> skill:B` and `skill:B -> skill:A` produce distinct replay keys, and (f) the same mistake writes a skill lifecycle audit row that updates, splits, creates, demotes, or explicitly leaves unchanged the involved skill/ability model.
 
 ---
 

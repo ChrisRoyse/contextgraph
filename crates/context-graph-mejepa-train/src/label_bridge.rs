@@ -202,7 +202,10 @@ pub fn load_label_learning_bridge(
     for row in code_state_rows {
         let key = validate_code_state_constellation(&row)?;
         if code_state_constellations.insert(key, row).is_some() {
-            return Err(invalid("code_state_constellations", "duplicate code-state key"));
+            return Err(invalid(
+                "code_state_constellations",
+                "duplicate code-state key",
+            ));
         }
     }
 
@@ -265,7 +268,9 @@ pub fn build_prediction_label_context(
         if !row.live_prediction_input_allowed {
             return Err(invalid(
                 "failure_evidence_set_ids",
-                format!("{id} is target-side failure evidence and cannot be a live prediction input"),
+                format!(
+                    "{id} is target-side failure evidence and cannot be a live prediction input"
+                ),
             ));
         }
     }
@@ -464,7 +469,11 @@ fn validate_code_state_constellation(
         row.group_key.clone()
     };
     validate_label_id("code_state_constellation.key", &key)?;
-    validate_id_list("code_state_constellation.labels", &row.labels, MAX_LABEL_IDS)?;
+    validate_id_list(
+        "code_state_constellation.labels",
+        &row.labels,
+        MAX_LABEL_IDS,
+    )?;
     if !row.slot_identity_preserved || row.flat_vector_concat_used {
         return Err(invalid(
             "code_state_constellation.slot_policy",
@@ -491,7 +500,14 @@ fn validate_code_state_live_input(row: &CodeStateConstellationRow) -> Result<(),
 fn is_target_only_label(label: &str) -> bool {
     matches!(
         label.split_once(':').map(|(family, _)| family),
-        Some("oracle" | "docker" | "test_phase" | "code_state_outcome" | "partition" | "leakage_policy")
+        Some(
+            "oracle"
+                | "docker"
+                | "test_phase"
+                | "code_state_outcome"
+                | "partition"
+                | "leakage_policy"
+        )
     )
 }
 
@@ -663,16 +679,10 @@ mod tests {
 
     #[test]
     fn skill_signature_preserves_sequence_order() {
-        let forward = skill_signature_hash(&[
-            "skill:first".to_string(),
-            "skill:second".to_string(),
-        ])
-        .unwrap();
-        let reverse = skill_signature_hash(&[
-            "skill:second".to_string(),
-            "skill:first".to_string(),
-        ])
-        .unwrap();
+        let forward =
+            skill_signature_hash(&["skill:first".to_string(), "skill:second".to_string()]).unwrap();
+        let reverse =
+            skill_signature_hash(&["skill:second".to_string(), "skill:first".to_string()]).unwrap();
 
         assert_ne!(forward, reverse);
     }
