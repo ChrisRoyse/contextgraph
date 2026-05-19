@@ -1436,6 +1436,58 @@ pub const HIERARCHICAL_PREDICTION_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum PerSlotOodReasonKind {
+    SlotThresholdExceeded,
+    MissingSlotObservation,
+    StaleCalibration,
+    InvalidCalibration,
+    NonFiniteSlotScore,
+    ConformalIntervalTooWide,
+    GtauViolation,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PerSlotOodReason {
+    pub embedder: EmbedderId,
+    pub chunk: Option<ChunkId>,
+    pub reason: PerSlotOodReasonKind,
+    pub observed_score: f32,
+    pub threshold: f32,
+    pub margin: f32,
+    pub calibration_version: String,
+    pub evidence: String,
+}
+
+impl PerSlotOodReason {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.embedder.validate("per_slot_ood_reason.embedder")?;
+        if let Some(chunk) = &self.chunk {
+            chunk.validate("per_slot_ood_reason.chunk")?;
+        }
+        validate_finite_f32("per_slot_ood_reason.observed_score", self.observed_score)?;
+        validate_finite_f32("per_slot_ood_reason.threshold", self.threshold)?;
+        validate_finite_f32("per_slot_ood_reason.margin", self.margin)?;
+        if self.margin < 0.0 {
+            return Err(MejepaInferError::InvalidInput {
+                field: "per_slot_ood_reason.margin".to_string(),
+                detail: "margin must be non-negative".to_string(),
+            });
+        }
+        validate_non_empty_id(
+            "per_slot_ood_reason.calibration_version",
+            &self.calibration_version,
+        )?;
+        validate_bounded_text(
+            "per_slot_ood_reason.evidence",
+            &self.evidence,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PredictionHierarchyLevel {
     File,
     Function,
@@ -1658,6 +1710,8 @@ pub struct RealityPrediction {
     #[serde(default)]
     pub predicted_flaky_tests: Vec<FlakyTestCandidate>,
     pub guard_violations: Vec<GuardViolation>,
+    #[serde(default)]
+    pub per_slot_ood_reasons: Vec<PerSlotOodReason>,
     pub closest_exemplars: Vec<ExemplarMatch>,
     pub predicted_edge_cases: Vec<PredictedEdgeCase>,
     pub predicted_latent_bugs: Vec<PredictedLatentBug>,
@@ -1696,6 +1750,7 @@ impl RealityPrediction {
         value.predicted_uncovered_paths.shrink_to_fit();
         value.predicted_flaky_tests.shrink_to_fit();
         value.guard_violations.shrink_to_fit();
+        value.per_slot_ood_reasons.shrink_to_fit();
         value.closest_exemplars.shrink_to_fit();
         value.predicted_edge_cases.shrink_to_fit();
         value.predicted_latent_bugs.shrink_to_fit();
@@ -1777,6 +1832,18 @@ impl RealityPrediction {
             "guard_violations",
             &self.guard_violations,
             GuardViolation::validate,
+        )?;
+        if self.per_slot_ood_reasons.len() > MAX_EMBEDDERS_PER_PANEL {
+            return Err(MejepaInferError::DimMismatch {
+                expected: MAX_EMBEDDERS_PER_PANEL,
+                actual: self.per_slot_ood_reasons.len(),
+                context: "per_slot_ood_reasons exceeds maximum".to_string(),
+            });
+        }
+        validate_items(
+            "per_slot_ood_reasons",
+            &self.per_slot_ood_reasons,
+            PerSlotOodReason::validate,
         )?;
         validate_items(
             "closest_exemplars",
@@ -1904,6 +1971,7 @@ pub struct RealityPredictionBuilder {
     predicted_uncovered_paths: Vec<UncoveredPath>,
     predicted_flaky_tests: Vec<FlakyTestCandidate>,
     guard_violations: Vec<GuardViolation>,
+    per_slot_ood_reasons: Vec<PerSlotOodReason>,
     closest_exemplars: Vec<ExemplarMatch>,
     predicted_edge_cases: Vec<PredictedEdgeCase>,
     predicted_latent_bugs: Vec<PredictedLatentBug>,
@@ -1957,6 +2025,7 @@ impl RealityPredictionBuilder {
             predicted_uncovered_paths: Vec::new(),
             predicted_flaky_tests: Vec::new(),
             guard_violations: Vec::new(),
+            per_slot_ood_reasons: Vec::new(),
             closest_exemplars: Vec::new(),
             predicted_edge_cases: Vec::new(),
             predicted_latent_bugs: Vec::new(),
@@ -2065,6 +2134,16 @@ impl RealityPredictionBuilder {
         self
     }
 
+    pub fn guard_violations(mut self, value: Vec<GuardViolation>) -> Self {
+        self.guard_violations = value;
+        self
+    }
+
+    pub fn per_slot_ood_reasons(mut self, value: Vec<PerSlotOodReason>) -> Self {
+        self.per_slot_ood_reasons = value;
+        self
+    }
+
     pub fn predicted_edge_cases(mut self, value: Vec<PredictedEdgeCase>) -> Self {
         self.predicted_edge_cases = value;
         self
@@ -2165,6 +2244,7 @@ impl RealityPredictionBuilder {
             predicted_uncovered_paths: self.predicted_uncovered_paths,
             predicted_flaky_tests: self.predicted_flaky_tests,
             guard_violations: self.guard_violations,
+            per_slot_ood_reasons: self.per_slot_ood_reasons,
             closest_exemplars: self.closest_exemplars,
             predicted_edge_cases: self.predicted_edge_cases,
             predicted_latent_bugs: self.predicted_latent_bugs,

@@ -53,9 +53,9 @@ use crate::system_cost::SystemCostCounters;
 use crate::types::{
     validate_probability, AgentClaimGraph, ChunkId, ConformalInterval, ConformalMethod, DdaSignals,
     EmbedderId, ExemplarMatch, FailedGate, HierarchicalPredictionRecord,
-    MatchedFingerprintEvidence, OracleOutcome, PanelId, PatchBundle, PhaseBPredictionSurfaces,
-    PredictionProvenance, RealityPrediction, RealityPredictionBuilder, TaskContext, Verdict,
-    VerifyVerdict, WitnessHash,
+    MatchedFingerprintEvidence, OracleOutcome, PanelId, PatchBundle, PerSlotOodReason,
+    PerSlotOodReasonKind, PhaseBPredictionSurfaces, PredictionProvenance, RealityPrediction,
+    RealityPredictionBuilder, TaskContext, Verdict, VerifyVerdict, WitnessHash,
 };
 use crate::verdict_assembly::{assemble_verdict, VerdictAssemblyInput};
 
@@ -524,6 +524,10 @@ impl MeJepaCompiler {
             objective_total_cost: objective_report.cost.total_cost,
             objective_cost_ceiling: objective_report.objective.pass_cost_ceiling,
         });
+        let per_slot_ood_reasons = per_slot_ood_reasons_from_guard_violations(
+            &phase_b_surfaces.guard_violations,
+            &calibration.version,
+        )?;
         let fingerprint_evidence =
             self.live_fingerprint_evidence_for_panel(&predicted, verdict, context, prediction_id)?;
         let provenance = PredictionProvenance {
@@ -554,6 +558,7 @@ impl MeJepaCompiler {
         .degraded_status(train_health.degraded_status)
         .granger_attestations(oracle.granger_attestations)
         .phase_b_surfaces(phase_b_surfaces)
+        .per_slot_ood_reasons(per_slot_ood_reasons)
         .agent_claim_graph(AgentClaimGraph::default())
         .provenance(provenance)
         .source_panel_sha(source_panel_sha)
@@ -1431,6 +1436,37 @@ fn evidence_from_fingerprint_classification(
         matched_fingerprint,
         unknown_candidate_id: None,
     })
+}
+
+fn per_slot_ood_reasons_from_guard_violations(
+    guard_violations: &[crate::types::GuardViolation],
+    calibration_version: &str,
+) -> Result<Vec<PerSlotOodReason>, MejepaInferError> {
+    guard_violations
+        .iter()
+        .map(|violation| {
+            let reason = PerSlotOodReason {
+                embedder: violation.embedder.clone(),
+                chunk: Some(violation.chunk.clone()),
+                reason: PerSlotOodReasonKind::GtauViolation,
+                observed_score: violation.cosine,
+                threshold: violation.threshold_tau_m,
+                margin: violation.deficit,
+                calibration_version: calibration_version.to_string(),
+                evidence: format!(
+                    "Gtau slot violation: embedder={} chunk={} centroid={} cosine={} threshold_tau_m={} deficit={}",
+                    violation.embedder.0,
+                    violation.chunk.0,
+                    violation.centroid_id,
+                    violation.cosine,
+                    violation.threshold_tau_m,
+                    violation.deficit
+                ),
+            };
+            reason.validate()?;
+            Ok(reason)
+        })
+        .collect()
 }
 
 fn objective_report_for_prediction(

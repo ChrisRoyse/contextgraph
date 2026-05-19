@@ -2468,6 +2468,7 @@ fn run_explain_prediction(
         "predictedUncoveredPaths": prediction.predicted_uncovered_paths,
         "predictedFlakyTests": prediction.predicted_flaky_tests,
         "guardViolations": prediction.guard_violations,
+        "perSlotOodReasons": prediction.per_slot_ood_reasons,
         "edgeCases": prediction.predicted_edge_cases,
         "latentBugs": prediction.predicted_latent_bugs,
         "techDebt": prediction.predicted_tech_debt_added,
@@ -2563,7 +2564,9 @@ fn run_inspect_prediction(
         "tctTrace": {
             "constellationVersion": row.prediction.provenance.constellation_version.clone(),
             "guardViolations": row.prediction.guard_violations.clone(),
-            "guardViolationCount": row.prediction.guard_violations.len()
+            "guardViolationCount": row.prediction.guard_violations.len(),
+            "perSlotOodReasons": row.prediction.per_slot_ood_reasons.clone(),
+            "perSlotOodReasonCount": row.prediction.per_slot_ood_reasons.len()
         },
         "contributingChunks": contributing_chunks,
         "prediction": row.prediction,
@@ -4306,6 +4309,16 @@ can_operator_override = {operator}
                 cosine: 0.71,
                 threshold_tau_m: 0.85,
                 deficit: 0.14,
+            }],
+            per_slot_ood_reasons: vec![context_graph_mejepa::PerSlotOodReason {
+                embedder: context_graph_mejepa::EmbedderId("E7".to_string()),
+                chunk: Some(ChunkId(chunk.to_string())),
+                reason: context_graph_mejepa::PerSlotOodReasonKind::GtauViolation,
+                observed_score: 0.71,
+                threshold: 0.85,
+                margin: 0.14,
+                calibration_version: "inspect-test-calibration-v1".to_string(),
+                evidence: "Gtau slot violation: embedder=E7 chunk=inspect fixture".to_string(),
             }],
             closest_exemplars: Vec::new(),
             predicted_edge_cases: Vec::new(),

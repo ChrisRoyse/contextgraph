@@ -399,6 +399,7 @@ fn live_prediction_row(
         predicted_uncovered_paths: Vec::new(),
         predicted_flaky_tests: Vec::new(),
         guard_violations: Vec::new(),
+        per_slot_ood_reasons: Vec::new(),
         closest_exemplars,
         predicted_edge_cases: Vec::new(),
         predicted_latent_bugs: Vec::new(),
