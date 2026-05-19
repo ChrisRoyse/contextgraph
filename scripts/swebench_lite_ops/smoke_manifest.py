@@ -982,7 +982,7 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
         "fsv_out": file_state(fsv_out),
         "manifest_root_bytes": path_bytes(args.manifest_root),
         "fsv_root_bytes": path_bytes(args.fsv_root),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
+        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
     }
 
     expected_categories = tuple(category.strip() for category in args.expected_mutation_categories.split(",") if category.strip())
@@ -1064,7 +1064,7 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
         "smoke_manifest_count": count_jsonl(manifest_out),
         "manifest_root_bytes": path_bytes(args.manifest_root),
         "fsv_root_bytes": path_bytes(args.fsv_root),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
+        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
     }
     happy_path = {
         "expected": {

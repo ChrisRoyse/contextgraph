@@ -18,7 +18,7 @@ use context_graph_mejepa::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-const FSV_DIR: &str = "/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv";
+const FSV_DIR: &str = "/zfs/archive/contextgraph/fsv/contextgraph-phase-b-fsv";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

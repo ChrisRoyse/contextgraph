@@ -17,8 +17,8 @@ SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-G-037"
 ARTIFACT_KIND = "python_proof_domain_isolation"
 FORMULA_VERSION = "python_proof_domain_isolation_v1"
-DEFAULT_OUTPUT_ROOT = Path("/mnt/d/contextgraph/corpus/python-proof-domain-isolation-v1")
-DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-g-037-proof-domain-isolation-fsv")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-proof-domain-isolation-v1")
+DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-037-proof-domain-isolation-fsv")
 
 PROOF_DOMAIN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("gridworld", re.compile(r"\bgridworld\b", re.IGNORECASE)),

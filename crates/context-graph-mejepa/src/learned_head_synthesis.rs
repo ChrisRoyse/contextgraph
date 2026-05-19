@@ -92,7 +92,7 @@ impl Default for LearnedHeadTrainingConfig {
             learning_rate: DEFAULT_LEARNED_HEAD_LEARNING_RATE,
             variance_floor: DEFAULT_LEARNED_HEAD_VARIANCE_FLOOR,
             divergence_loss_ceiling: DEFAULT_LEARNED_HEAD_DIVERGENCE_LOSS_CEILING,
-            artifact_root: PathBuf::from("/mnt/d/contextgraph/models/dynamic"),
+            artifact_root: PathBuf::from("/zfs/archive/contextgraph/models/dynamic"),
         }
     }
 }

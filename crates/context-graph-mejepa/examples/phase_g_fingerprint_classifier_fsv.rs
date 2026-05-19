@@ -23,7 +23,7 @@ use context_graph_mejepa_instruments::ExceptionClass;
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use serde::Serialize;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-fingerprint-classifier-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-g-fingerprint-classifier-fsv";
 
 #[derive(Debug, Serialize)]
 struct ClassificationCase {

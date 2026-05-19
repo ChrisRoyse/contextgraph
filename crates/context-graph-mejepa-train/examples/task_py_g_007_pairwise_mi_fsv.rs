@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 const TASK: &str = "TASK-PY-G-007";
-const ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-007-pairwise-mi-fsv";
+const ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-007-pairwise-mi-fsv";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -2,10 +2,10 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="/mnt/d/contextgraph/fsv/phase-g-label-quality-fsv"
+FSV_ROOT="/zfs/archive/contextgraph/fsv/phase-g-label-quality-fsv"
 DB_PATH="$FSV_ROOT/rocksdb"
 EMPTY_DB_PATH="$FSV_ROOT/empty-rocksdb"
-EXPORT_DIR="/mnt/d/contextgraph/exports/eval/2026-05-13-label-quality-fsv"
+EXPORT_DIR="/zfs/archive/contextgraph/exports/eval/2026-05-13-label-quality-fsv"
 MARKDOWN_OUT="$EXPORT_DIR/label_quality.md"
 SUMMARY_JSON="$FSV_ROOT/label_quality_summary.json"
 EMPTY_MARKDOWN_OUT="$FSV_ROOT/empty_label_quality.md"

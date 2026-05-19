@@ -44,7 +44,7 @@ struct RegistrationEvidence {
 fn main() -> ExampleResult<()> {
     let models_root = std::env::var("CONTEXTGRAPH_MODELS_ROOT")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/mnt/d/cabdru/contextgraph/models"));
+        .unwrap_or_else(|_| PathBuf::from("/zfs/hot/contextgraph/models"));
     let output_path = std::env::var("CONTEXTGRAPH_MEJEPA_MODELS_CONFIG")
         .map(PathBuf::from)
         .unwrap_or_else(|_| models_root.join("mejepa_models_config.toml"));
@@ -52,7 +52,7 @@ fn main() -> ExampleResult<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             PathBuf::from(
-                "/mnt/d/contextgraph/fsv/contextgraph-mejepa-models-config-materialization/models-config-materialization.json",
+                "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-models-config-materialization/models-config-materialization.json",
             )
         });
 

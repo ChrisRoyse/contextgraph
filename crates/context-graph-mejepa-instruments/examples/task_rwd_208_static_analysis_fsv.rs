@@ -28,10 +28,10 @@ fn main() -> FsvResult<()> {
         .duration_since(UNIX_EPOCH)?
         .as_millis()
         .to_string();
-    let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/task-py-g-074-static-analysis-fsv")
+    let fsv_root = PathBuf::from("/zfs/archive/contextgraph/fsv/task-py-g-074-static-analysis-fsv")
         .join(format!("run-{run_id}"));
     fs::create_dir_all(&fsv_root)?;
-    let raw_root = PathBuf::from("/mnt/d/contextgraph/corpus/python-static-analysis-v1");
+    let raw_root = PathBuf::from("/zfs/archive/contextgraph/corpus/python-static-analysis-v1");
     let row_id = format!("task-rwd-208-{run_id}");
     let rocksdb_path = fsv_root.join("static-analysis-rocksdb");
     let evidence_path = fsv_root.join("static_analysis_fsv.json");

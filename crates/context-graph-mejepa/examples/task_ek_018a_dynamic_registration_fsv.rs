@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-018a-dynamic-registration-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-018a-dynamic-registration-fsv";
 
 fn main() -> Result<()> {
     let started_at_unix_ms = current_unix_ms();
@@ -224,7 +224,8 @@ fn registry_record(created_at: i64) -> Result<DynamicEmbedderRegistryRecord> {
         route_languages: vec!["python".to_string()],
         route_entity_types: vec!["Function".to_string()],
         forward_artifact_path:
-            "/mnt/d/contextgraph/models/dynamic/edynamic_1_corpus_transe_v1/forward.so".to_string(),
+            "/zfs/archive/contextgraph/models/dynamic/edynamic_1_corpus_transe_v1/forward.so"
+                .to_string(),
         forward_artifact_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             .to_string(),
         required_vram_bytes: 64 * 1024 * 1024,

@@ -20,7 +20,7 @@ use context_graph_mejepa_instruments::{Panel, PANEL_DIM};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-065-ewc-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-065-ewc-fsv";
 
 fn main() -> Result<()> {
     let run_root = run_root()?;

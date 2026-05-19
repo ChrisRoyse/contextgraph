@@ -17,7 +17,7 @@ struct Fixture {
 }
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-ast-reformat-fsv");
+    let root = PathBuf::from("/zfs/archive/contextgraph/fsv/contextgraph-ast-reformat-fsv");
     reset_secure_dir(&root)?;
     let mut rows = Vec::new();
     for fixture in fixtures() {

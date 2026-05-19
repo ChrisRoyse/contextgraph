@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="${FSV_ROOT:-/mnt/d/contextgraph/fsv/phase-h-agent-roster-retirement-fsv}"
+FSV_ROOT="${FSV_ROOT:-/zfs/archive/contextgraph/fsv/phase-h-agent-roster-retirement-fsv}"
 RUN_ID="run-$(date -u +%s)-$$"
 RUN_ROOT="$FSV_ROOT/$RUN_ID"
 ARTIFACT="$FSV_ROOT/agent_roster_retirement_fsv.json"

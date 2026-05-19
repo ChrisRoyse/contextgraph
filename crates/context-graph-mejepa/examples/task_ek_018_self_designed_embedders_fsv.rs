@@ -6,67 +6,67 @@ use context_graph_mejepa::{current_unix_ms, write_json_0600};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-018-self-designed-embedders-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-018-self-designed-embedders-fsv";
 
 const SUBTASKS: &[SubtaskInput] = &[
     SubtaskInput {
         key: "TASK-EK-018A",
         issue: 342,
-        path: "/mnt/d/contextgraph/fsv/task-ek-018a-dynamic-registration-fsv/run-1779082972512/dynamic_registration_fsv.json",
+        path: "/zfs/archive/contextgraph/fsv/task-ek-018a-dynamic-registration-fsv/run-1779082972512/dynamic_registration_fsv.json",
         required_top_key: "registry",
     },
     SubtaskInput {
         key: "TASK-EK-018B",
         issue: 344,
-        path: "/mnt/d/contextgraph/fsv/task-ek-018b-absence-queue-fsv/run-1779083869949/absence_queue_fsv.json",
+        path: "/zfs/archive/contextgraph/fsv/task-ek-018b-absence-queue-fsv/run-1779083869949/absence_queue_fsv.json",
         required_top_key: "synthetic_injection",
     },
     SubtaskInput {
         key: "TASK-EK-018C",
         issue: 343,
-        path: "/mnt/d/contextgraph/fsv/task-ek-018c-falsification-gate-fsv/run-1779084741976/falsification_gate_fsv.json",
+        path: "/zfs/archive/contextgraph/fsv/task-ek-018c-falsification-gate-fsv/run-1779084741976/falsification_gate_fsv.json",
         required_top_key: "positive_candidate",
     },
     SubtaskInput {
         key: "TASK-EK-018D",
         issue: 345,
-        path: "/mnt/d/contextgraph/fsv/task-ek-018d-algorithmic-embedder-synthesis-fsv/algorithmic_embedder_synthesis_fsv.json",
+        path: "/zfs/archive/contextgraph/fsv/task-ek-018d-algorithmic-embedder-synthesis-fsv/algorithmic_embedder_synthesis_fsv.json",
         required_top_key: "accepted_identifier_length",
     },
     SubtaskInput {
         key: "TASK-EK-018E",
         issue: 347,
-        path: "/mnt/d/contextgraph/fsv/task-ek-018e-learned-head-synthesis-fsv/learned_head_synthesis_fsv.json",
+        path: "/zfs/archive/contextgraph/fsv/task-ek-018e-learned-head-synthesis-fsv/learned_head_synthesis_fsv.json",
         required_top_key: "accepted_learned_head",
     },
     SubtaskInput {
         key: "TASK-EK-018F",
         issue: 348,
-        path: "/mnt/d/contextgraph/fsv/task-ek-018f-entity-kge-embedder-fsv/run-1779086521328/entity_kge_embedder_fsv.json",
+        path: "/zfs/archive/contextgraph/fsv/task-ek-018f-entity-kge-embedder-fsv/run-1779086521328/entity_kge_embedder_fsv.json",
         required_top_key: "operator_approval",
     },
     SubtaskInput {
         key: "TASK-EK-018G",
         issue: 346,
-        path: "/mnt/d/contextgraph/fsv/task-ek-018g-freeze-audit-fsv/run-1779087475469/freeze_audit_fsv.json",
+        path: "/zfs/archive/contextgraph/fsv/task-ek-018g-freeze-audit-fsv/run-1779087475469/freeze_audit_fsv.json",
         required_top_key: "freeze_audit",
     },
     SubtaskInput {
         key: "TASK-EK-018H",
         issue: 350,
-        path: "/mnt/d/contextgraph/fsv/task-ek-018h-operator-gates-fsv/run-1779085400986/operator_gates_fsv.json",
+        path: "/zfs/archive/contextgraph/fsv/task-ek-018h-operator-gates-fsv/run-1779085400986/operator_gates_fsv.json",
         required_top_key: "first_promotion",
     },
     SubtaskInput {
         key: "TASK-EK-018I",
         issue: 353,
-        path: "/mnt/d/contextgraph/fsv/task-ek-018i-dynamic-vram-fsv/run-1779086976419/dynamic_vram_fsv.json",
+        path: "/zfs/archive/contextgraph/fsv/task-ek-018i-dynamic-vram-fsv/run-1779086976419/dynamic_vram_fsv.json",
         required_top_key: "promotion_budget",
     },
     SubtaskInput {
         key: "TASK-EK-018J",
         issue: 351,
-        path: "/mnt/d/contextgraph/fsv/task-ek-018j-adversarial-injection-fsv/run-1779088294511/adversarial_injection_fsv.json",
+        path: "/zfs/archive/contextgraph/fsv/task-ek-018j-adversarial-injection-fsv/run-1779088294511/adversarial_injection_fsv.json",
         required_top_key: "report",
     },
 ];

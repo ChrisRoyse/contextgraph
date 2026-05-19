@@ -30,7 +30,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-012-bidirectional-corpus-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-012-bidirectional-corpus-fsv";
 
 fn main() -> ExitCode {
     match run() {
@@ -195,7 +195,7 @@ fn run() -> Result<PathBuf, Box<dyn std::error::Error>> {
         "realInverseHead": real_inverse_head,
         "remainingIssueWork": [
             "run lambda in {0,0.25,0.5,1.0} on the real 300x8 Python corpus",
-            "publish per-cell/global ablation report at /mnt/d/contextgraph/exports/ek-012/bidirectional-ablation-report.md",
+            "publish per-cell/global ablation report at /zfs/archive/contextgraph/exports/ek-012/bidirectional-ablation-report.md",
             "apply per-cell regression-prevention gate to every ablation variant"
         ],
         "all_passed": all_passed

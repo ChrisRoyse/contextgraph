@@ -41,10 +41,9 @@ _PROMOTE_HOT_STAGE_LOCK = threading.Lock()
 AIWONDER_DURABLE_ROOT = Path("/zfs/archive/contextgraph")
 AIWONDER_HOT_ROOT = Path("/zfs/hot/contextgraph")
 AIWONDER_SCRATCH_ROOT = Path("/home/croyse/.cache/contextgraph")
-LEGACY_LOCAL_ROOT = Path("/mnt/d/contextgraph")
-ENV_LOCAL_SMOKE_ISSUE = "CONTEXTGRAPH_LOCAL_SMOKE_ISSUE"
+FORBIDDEN_LOCAL_ROOT = Path("/mnt/d/contextgraph")
 
-DEFAULT_CHUNKS_JSONL = Path("/zfs/hot/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
+DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
 DEFAULT_CACHE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1")
 DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-029-sharded-cuda-scheduler-fsv")
 DEFAULT_HOT_ROOT = Path("/zfs/hot/contextgraph/runtime/python-forward-shard-scheduler")
@@ -76,7 +75,7 @@ DEFAULT_ESTIMATED_RECORD_BYTES = 16 * 1024
 DEFAULT_HOT_STAGE_BUDGET_BYTES = 48 * 1024 * 1024 * 1024
 DEFAULT_DURABLE_SLACK_BYTES = 2 * 1024 * 1024 * 1024
 DEFAULT_FSV_EDGE_COPY_BUDGET_BYTES = 2 * 1024 * 1024 * 1024
-MAX_D_DRIVE_IO_WORKERS = 8
+MAX_DURABLE_IO_WORKERS = 8
 MAX_GPU_WORKERS_PER_DEVICE = 1
 SHARD_RUN_LOG_NAME_PATTERN = re.compile(r"^shard-\d{6}-offset-\d{9}\.json$")
 
@@ -117,11 +116,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hot-root", type=Path, default=DEFAULT_HOT_ROOT)
     parser.add_argument(
         "--local-smoke-issue",
-        default=os.environ.get(ENV_LOCAL_SMOKE_ISSUE, ""),
-        help=(
-            "Explicit issue id that allows local /mnt/d smoke roots. Empty means "
-            "production mode, where /mnt/d is rejected before writes."
-        ),
+        default="",
+        help="Deprecated no-op. /mnt/d inputs and outputs are always rejected; move required data to aiwonder first.",
     )
     parser.add_argument("--task-id", default=TASK_ID)
     parser.add_argument("--start-offset", type=int, default=0)
@@ -360,13 +356,11 @@ def production_root_error(label: str, path: Path, expected: str) -> SchedulerErr
 
 def require_production_durable_path(path: Path, label: str, local_smoke_issue: str) -> Path:
     normalized = normalize_guard_path(path)
-    if path_is_under(normalized, LEGACY_LOCAL_ROOT.resolve(strict=False)):
-        if local_smoke_issue.strip():
-            return normalized
+    if path_is_under(normalized, FORBIDDEN_LOCAL_ROOT.resolve(strict=False)):
         raise production_root_error(
             label,
             normalized,
-            f"use {AIWONDER_DURABLE_ROOT} or pass --local-smoke-issue for an issue-scoped local smoke",
+            f"use {AIWONDER_DURABLE_ROOT}; move required data to aiwonder before running",
         )
     if path_is_under(normalized, AIWONDER_DURABLE_ROOT):
         return normalized
@@ -386,9 +380,7 @@ def require_aiwonder_hot_or_scratch_path(path: Path, label: str) -> Path:
 
 def require_aiwonder_input_path(path: Path, label: str, local_smoke_issue: str) -> Path:
     normalized = normalize_guard_path(path)
-    if path_is_under(normalized, LEGACY_LOCAL_ROOT.resolve(strict=False)):
-        if local_smoke_issue.strip():
-            return normalized
+    if path_is_under(normalized, FORBIDDEN_LOCAL_ROOT.resolve(strict=False)):
         raise production_root_error(
             label,
             normalized,
@@ -406,7 +398,7 @@ def require_aiwonder_input_path(path: Path, label: str, local_smoke_issue: str) 
 def validate_production_roots(args: argparse.Namespace) -> dict[str, Any]:
     local_smoke_issue = args.local_smoke_issue.strip()
     checked = {
-        "local_smoke_issue": local_smoke_issue or None,
+        "local_smoke_issue_deprecated_ignored": local_smoke_issue or None,
         "chunks_jsonl": str(require_aiwonder_input_path(args.chunks_jsonl, "chunks_jsonl", local_smoke_issue)),
         "cache_root": str(require_production_durable_path(args.cache_root, "cache_root", local_smoke_issue)),
         "fsv_root": str(require_production_durable_path(args.fsv_root, "fsv_root", local_smoke_issue)),
@@ -511,7 +503,7 @@ def runner_batch_controls(args: argparse.Namespace) -> dict[str, Any]:
         "embedder_max_padded_source_bytes": args.embedder_max_padded_source_byte_map,
         "gpu_vram_guard_bytes": args.gpu_vram_guard_bytes,
         "worker_tiers": {
-            "d_drive_io_workers": args.io_workers,
+            "durable_io_workers": args.io_workers,
             "cpu_static_tokenization_workers": args.cpu_workers,
             "gpu_batch_workers": args.gpu_workers,
         },
@@ -767,14 +759,8 @@ def require_probe_success(label: str, result: dict[str, Any]) -> None:
 
 
 def _disk_snapshot_targets() -> list[str]:
-    """Targets df should report. Default: WSL2 layout (/, /mnt/c, /mnt/d).
-    Override via CG_MEJEPA_DISK_TARGETS env var (comma-separated paths).
-
-    On aiwonder, set e.g. `CG_MEJEPA_DISK_TARGETS=/,/zfs/hot,/zfs/archive` so
-    the preflight reports the actual durable + hot filesystems instead of the
-    WSL2 ones (which don't exist on bare-metal Linux).
-    """
-    raw = os.environ.get("CG_MEJEPA_DISK_TARGETS", "/,/mnt/c,/mnt/d")
+    """Targets df should report for aiwonder durable + hot filesystems."""
+    raw = os.environ.get("CG_MEJEPA_DISK_TARGETS", "/,/zfs/hot,/zfs/archive")
     targets = [t.strip() for t in raw.split(",") if t.strip()]
     require("MEJEPA_SCHEDULER_DISK_TARGETS_EMPTY: at least one df target required", bool(targets))
     return targets
@@ -1434,7 +1420,7 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
     require("MEJEPA_SCHEDULER_GPU_WORKERS_INVALID: GPU workers is positive", args.gpu_workers > 0)
     require(
         "MEJEPA_SCHEDULER_IO_WORKERS_EXCEED_POLICY: durable/Docker I/O workers stay bounded",
-        args.io_workers <= MAX_D_DRIVE_IO_WORKERS,
+        args.io_workers <= MAX_DURABLE_IO_WORKERS,
     )
     require(
         "MEJEPA_SCHEDULER_CPU_WORKERS_EXCEED_POLICY: CPU workers fit live host thread policy",
@@ -1451,10 +1437,7 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
         f"MEJEPA_SCHEDULER_HOT_CAPACITY: hot root disk target {hot_disk} has planned free bytes",
         capacity["hot_stage_budget_bytes"] <= disks[hot_disk]["available_bytes"],
     )
-    # Durable-root capacity check. WSL2 default is /mnt/d; aiwonder uses /archive
-    # (the ZFS pool mount point for /zfs/archive/contextgraph). Override via
-    # CG_MEJEPA_DURABLE_DISK_TARGET.
-    durable_disk = os.environ.get("CG_MEJEPA_DURABLE_DISK_TARGET", "/mnt/d")
+    durable_disk = os.environ.get("CG_MEJEPA_DURABLE_DISK_TARGET", "/zfs/archive")
     require(
         f"MEJEPA_SCHEDULER_DURABLE_CAPACITY: durable root disk target {durable_disk} has planned free bytes",
         capacity["required_durable_available_bytes"] <= disks[durable_disk]["available_bytes"],
@@ -1488,7 +1471,7 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
         "capacity_policy": capacity,
         "worker_policy": {
             "selected": runner_batch_controls(args)["worker_tiers"],
-            "max_d_drive_io_workers": MAX_D_DRIVE_IO_WORKERS,
+            "max_durable_io_workers": MAX_DURABLE_IO_WORKERS,
             "cpu_worker_ceiling": worker_ceiling,
             "detected_logical_threads": cpu["logical_threads"],
             "detected_affinity_logical_threads": cpu["affinity_logical_threads"],
@@ -4576,9 +4559,7 @@ def preflight_edge_checks(args: argparse.Namespace, preflight: dict[str, Any]) -
         "hot_stage_projected_capacity_overflow_rejected_before_writes",
         hot_stage_budget_bytes=preflight["host"]["filesystems"]["/"]["size_bytes"] + 1,
     )
-    # Use the configured durable-disk target (default /mnt/d for WSL2, /archive
-    # on aiwonder). Same env var as the live preflight (§host_preflight).
-    durable_disk_for_edge = os.environ.get("CG_MEJEPA_DURABLE_DISK_TARGET", "/mnt/d")
+    durable_disk_for_edge = os.environ.get("CG_MEJEPA_DURABLE_DISK_TARGET", "/zfs/archive")
     expect_preflight_failure(
         "durable_root_projected_capacity_overflow_rejected_before_writes",
         projected_output_bytes=preflight["host"]["filesystems"][durable_disk_for_edge]["size_bytes"] + 1,

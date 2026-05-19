@@ -9,7 +9,7 @@ use context_graph_mejepa::{
 };
 use serde::Serialize;
 
-pub const DEFAULT_MEJEPA_INFER_DB: &str = "/mnt/d/contextgraph/storage/contextgraph-rocksdb";
+pub const DEFAULT_MEJEPA_INFER_DB: &str = "/zfs/archive/contextgraph/storage/contextgraph-rocksdb";
 
 #[derive(Args, Debug, Clone)]
 pub struct ReplayArgs {

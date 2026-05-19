@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::types::{OracleOutcome, RealityPrediction, Verdict};
 
 pub const DEFAULT_PAUSE_STATE_PATH: &str =
-    "/mnt/d/contextgraph/state/cgreality/predictions_paused_until.json";
+    "/zfs/archive/contextgraph/state/cgreality/predictions_paused_until.json";
 pub const ENV_PAUSE_STATE_PATH: &str = "CONTEXTGRAPH_MEJEPA_PAUSE_PATH";
 pub const PAUSE_REASON_CODE: &str = "MEJEPA_VERIFY_PAUSED_BY_OPERATOR";
 

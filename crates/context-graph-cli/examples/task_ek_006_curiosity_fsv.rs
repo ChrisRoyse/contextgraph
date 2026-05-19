@@ -26,8 +26,9 @@ use context_graph_mejepa_cf::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-006-curiosity-fsv";
-const CANONICAL_FSV: &str = "/mnt/d/contextgraph/fsv/task-ek-006-curiosity-fsv/curiosity_fsv.json";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-006-curiosity-fsv";
+const CANONICAL_FSV: &str =
+    "/zfs/archive/contextgraph/fsv/task-ek-006-curiosity-fsv/curiosity_fsv.json";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

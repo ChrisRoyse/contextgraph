@@ -14,7 +14,7 @@ use context_graph_mejepa_cf::{CF_MEJEPA_EMBEDDER_PROPOSAL_REJECTIONS, CF_MEJEPA_
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-018j-adversarial-injection-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-018j-adversarial-injection-fsv";
 const THREAT_MODEL_DOC: &str = "docs/futurebuild/22_ADVERSARIAL_ROBUSTNESS.md";
 
 fn main() -> Result<()> {

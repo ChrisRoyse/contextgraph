@@ -1,7 +1,7 @@
 //! Real SWE-bench Lite Python 300x8 corpus train/holdout ship-gate FSV.
 //!
 //! Source of truth:
-//! - D-drive corpus index/stats/verify evidence.
+//! - aiwonder corpus index/stats/verify evidence.
 //! - RocksDB CF_MEJEPA_TRAIN_CERTS for training certificates.
 //! - RocksDB CF_MEJEPA_HOLDOUT_REPORTS for rolling holdout reports.
 //! - The final JSON ledger written here and immediately read back.
@@ -24,17 +24,18 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::ExitCode;
 
-const CORPUS_DIR: &str = "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511";
+const CORPUS_DIR: &str = "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511";
 const INDEX_PATH: &str =
-    "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
+    "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
 const STATS_PATH: &str =
-    "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/stats.json";
+    "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/stats.json";
 const VERIFY_PATH: &str =
-    "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/verify-evidence.json";
-const FSV_DIR: &str = "/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv";
-const DB_DIR: &str = "/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/train-eval-rocksdb";
+    "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/verify-evidence.json";
+const FSV_DIR: &str = "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv";
+const DB_DIR: &str =
+    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/train-eval-rocksdb";
 const EVIDENCE_PATH: &str =
-    "/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json";
+    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json";
 const SHIP_GATE_TARGET: f32 = 0.95;
 const FINAL_HOLDOUT_STEP: u64 = 20_000;
 

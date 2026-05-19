@@ -18,9 +18,10 @@ use crate::error::MejepaInferError;
 use crate::project_ingest::ProjectIngestError;
 use crate::types::{FailureModeClass, Verdict};
 
-pub const SYNTHETIC_STRESS_ROOT: &str = "/mnt/d/contextgraph/corpus/python-synthetic-stress-v1";
+pub const SYNTHETIC_STRESS_ROOT: &str =
+    "/zfs/archive/contextgraph/corpus/python-synthetic-stress-v1";
 pub const SYNTHETIC_STRESS_RESULTS_DB: &str =
-    "/mnt/d/contextgraph/corpus/python-synthetic-stress-v1-results.rocksdb";
+    "/zfs/archive/contextgraph/corpus/python-synthetic-stress-v1-results.rocksdb";
 pub const SYNTHETIC_STRESS_CASES: usize = 30;
 pub const SYNTHETIC_STRESS_THRESHOLD: f32 = 0.85;
 pub const SYNTHETIC_STRESS_SCHEMA_VERSION: u32 = 1;

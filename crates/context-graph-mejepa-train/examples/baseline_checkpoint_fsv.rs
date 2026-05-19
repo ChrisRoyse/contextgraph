@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/baseline-checkpoint-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/baseline-checkpoint-fsv";
 
 #[derive(Debug, Serialize)]
 struct FileEvidence {

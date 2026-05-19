@@ -20,7 +20,7 @@ use context_graph_mejepa::{count_cf, open_infer_rocksdb, Language, RocksDbEvalSt
 use context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS;
 use serde_json::{json, Value};
 
-const DEFAULT_FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-cell-status-fsv";
+const DEFAULT_FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-g-cell-status-fsv";
 const THRESHOLD: f32 = 0.95;
 const PASS_CORRELATION: f32 = 0.97;
 const BELOW_CORRELATION: f32 = 0.91;

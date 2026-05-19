@@ -15,9 +15,9 @@ use std::path::{Path, PathBuf};
 
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
-const FSV_DIR: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-vram-wsl-fsv";
+const FSV_DIR: &str = "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-vram-wsl-fsv";
 const EVIDENCE_PATH: &str =
-    "/mnt/d/contextgraph/fsv/contextgraph-mejepa-vram-wsl-fsv/vram-wsl-telemetry-evidence.json";
+    "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-vram-wsl-fsv/vram-wsl-telemetry-evidence.json";
 const SYSTEM_SPECS: &str = "/home/cabdru/contextgraph/docs2/systemspecs.md";
 
 fn main() -> FsvResult<()> {

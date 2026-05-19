@@ -31,15 +31,15 @@ from .smoke_intelligence_matrices import (
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-021"
 ARTIFACT_KIND = "python_q1_q5_reward_tensors"
-DEFAULT_DDA_ROOT = Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/per-embedder")
-DEFAULT_TCT_ROOT = Path("/mnt/d/contextgraph/corpus/python-tct-cells-v1")
-DEFAULT_OUTPUT_ROOT = Path("/mnt/d/contextgraph/corpus/python-reward-tensors-v1")
-DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-021-reward-tensors-fsv")
-DEFAULT_FULL_AST_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json")
-DEFAULT_SMOKE_MANIFEST_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json")
-DEFAULT_DDA_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json")
-DEFAULT_TCT_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json")
-DEFAULT_SCHEMA_PATH = Path("/mnt/d/contextgraph/corpus/python-code-constellation-schema-v1/code_constellation_schema.json")
+DEFAULT_DDA_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/per-embedder")
+DEFAULT_TCT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-tct-cells-v1")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-reward-tensors-v1")
+DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-021-reward-tensors-fsv")
+DEFAULT_FULL_AST_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json")
+DEFAULT_SMOKE_MANIFEST_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json")
+DEFAULT_DDA_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json")
+DEFAULT_TCT_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json")
+DEFAULT_SCHEMA_PATH = Path("/zfs/archive/contextgraph/corpus/python-code-constellation-schema-v1/code_constellation_schema.json")
 
 
 class RewardTensorError(RuntimeError):

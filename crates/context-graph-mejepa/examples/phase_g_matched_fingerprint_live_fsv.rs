@@ -26,7 +26,7 @@ use context_graph_mejepa_instruments::{ExceptionClass, InstrumentSlot, Panel, PA
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-fp-010-matched-fingerprint-live-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-fp-010-matched-fingerprint-live-fsv";
 const EVIDENCE_DIM: usize = 384;
 
 #[derive(Debug, Serialize)]

@@ -31,10 +31,10 @@ TASK_ID = "TASK-FP-002"
 ARTIFACT_KIND = "python_failure_fingerprint_seed_catalog"
 FORMULA_VERSION = "failure_fingerprint_centroid_variance_v1"
 DEFAULT_FORWARD_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z")
-DEFAULT_CHUNKS_JSONL = Path("/zfs/hot/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
+DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-failure-fingerprints-seed-v1")
 DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-fp-002-seed-fingerprint-materializer-fsv")
-LOCAL_FALLBACK_CHUNKS_JSONL = Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
+LOCAL_FALLBACK_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
 EXPECTED_EMBEDDERS = ("e1", "e6", "e7", "e8", "e10", "e12", "e13", "e14", "e2", "e3", "e4", "e9")
 EXPECTED_MUTATION_CATEGORIES = (
     "known_good",

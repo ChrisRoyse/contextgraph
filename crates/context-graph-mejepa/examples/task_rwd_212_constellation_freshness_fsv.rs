@@ -25,7 +25,7 @@ use context_graph_mejepa_tct::{
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use serde_json::json;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-052-constellation-freshness-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-052-constellation-freshness-fsv";
 
 fn main() -> Result<()> {
     let run_root =

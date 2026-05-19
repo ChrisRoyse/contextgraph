@@ -75,7 +75,7 @@ struct GenerateArgs {
     tasks_dir: PathBuf,
     #[arg(
         long,
-        default_value = "/mnt/d/contextgraph/cache/contextgraph-swebench/venv/bin/python"
+        default_value = "/zfs/archive/contextgraph/cache/contextgraph-swebench/venv/bin/python"
     )]
     venv_python: PathBuf,
     #[arg(long = "instance-id")]
@@ -91,9 +91,9 @@ struct GenerateArgs {
     #[arg(long, default_value_t = 0)]
     skip_tasks: usize,
     // EPHEMERAL — defaults pinned to ext4 (~/.cache/...) for ~40-100× WSL2
-    // throughput vs 9P (D-drive). On native Linux ~/.cache/ is still ext4
+    // throughput vs cross-filesystem mounted drives. On native Linux ~/.cache/ is still ext4
     // and Just Works. The require_ephemeral_path validator forbids C-drive
-    // mounts; D-drive (durable) is still accepted via explicit override.
+    // mounts; durable production data is kept under /zfs/archive/contextgraph.
     #[arg(long, default_value = "/home/cabdru/.cache/mejepa-corpus/repos")]
     repo_cache_dir: PathBuf,
     #[arg(long, default_value = "/home/cabdru/.cache/mejepa-corpus/work")]
@@ -125,7 +125,7 @@ struct VerifyArgs {
     sample_keys: Vec<String>,
     #[arg(
         long,
-        default_value = "/mnt/d/contextgraph/cache/contextgraph-swebench/venv/bin/python"
+        default_value = "/zfs/archive/contextgraph/cache/contextgraph-swebench/venv/bin/python"
     )]
     venv_python: PathBuf,
     #[arg(long, default_value = "mejepa-corpus-verify")]
@@ -154,7 +154,7 @@ struct SmokeArgs {
     tasks_dir: PathBuf,
     #[arg(
         long,
-        default_value = "/mnt/d/contextgraph/cache/contextgraph-swebench/venv/bin/python"
+        default_value = "/zfs/archive/contextgraph/cache/contextgraph-swebench/venv/bin/python"
     )]
     venv_python: PathBuf,
     #[arg(long = "instance-id")]
@@ -170,9 +170,9 @@ struct SmokeArgs {
     #[arg(long, default_value_t = 0)]
     skip_tasks: usize,
     // EPHEMERAL — defaults pinned to ext4 (~/.cache/...) for ~40-100× WSL2
-    // throughput vs 9P (D-drive). On native Linux ~/.cache/ is still ext4
+    // throughput vs cross-filesystem mounted drives. On native Linux ~/.cache/ is still ext4
     // and Just Works. The require_ephemeral_path validator forbids C-drive
-    // mounts; D-drive (durable) is still accepted via explicit override.
+    // mounts; durable production data is kept under /zfs/archive/contextgraph.
     #[arg(long, default_value = "/home/cabdru/.cache/mejepa-corpus/repos")]
     repo_cache_dir: PathBuf,
     #[arg(long, default_value = "/home/cabdru/.cache/mejepa-corpus/work")]
@@ -233,7 +233,7 @@ struct PhaseCVerifyArgs {
     non_python_corpus: PathBuf,
     #[arg(
         long,
-        default_value = "/mnt/d/contextgraph/fsv/corpus-fsv/split_full.json"
+        default_value = "/zfs/archive/contextgraph/fsv/corpus-fsv/split_full.json"
     )]
     evidence: PathBuf,
     #[arg(long, default_value = "tasks/swebench-lite")]
@@ -349,7 +349,7 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
     args.output = require_corpus_path(&args.output, "generate.output")?;
     args.venv_python = require_durable_path(&args.venv_python, "generate.venv_python")?;
     // Cache + source-work are ephemeral: rebuildable from durable inputs
-    // and pinned to ext4 on WSL2 for ~40-100× throughput vs 9P (D-drive).
+    // and pinned to local scratch for throughput before durable aiwonder promotion.
     args.repo_cache_dir = require_ephemeral_path(&args.repo_cache_dir, "generate.repo_cache_dir")?;
     args.source_work_root =
         require_ephemeral_path(&args.source_work_root, "generate.source_work_root")?;
@@ -506,8 +506,8 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
         // Phase 1: parallel patch generation across all selected manifests
         // for this category. Rayon workers stay on source-prep work only:
         // git/cache/worktree activity lives under the ext4 ephemeral roots.
-        // Durable corpus patch files on /mnt/d are persisted serially after
-        // oracle verdicts return, so DrvFs/9P never sees 30 concurrent atomic
+        // Durable corpus patch files are persisted serially after oracle verdicts
+        // return, so the archive root never sees 30 concurrent atomic
         // writes and failed oracle batches do not leave stale patch files.
         let category_value = *category;
         let interrupted_ref = &interrupted;
@@ -3819,7 +3819,7 @@ mod tests {
     fn oracle_repeat_output_requires_multiple_runs() -> CliResult<()> {
         let venv = tempfile::NamedTempFile::new()?;
         let args = VerifyArgs {
-            corpus: PathBuf::from("/mnt/d/contextgraph/corpus/synthetic-repeat-check"),
+            corpus: PathBuf::from("/zfs/archive/contextgraph/corpus/synthetic-repeat-check"),
             sample_fraction: 1.0,
             sample_keys: Vec::new(),
             venv_python: venv.path().to_path_buf(),
@@ -3828,7 +3828,7 @@ mod tests {
             overall_timeout_secs: 1,
             oracle_repeat_runs: 1,
             oracle_repeat_output: Some(PathBuf::from(
-                "/mnt/d/contextgraph/exports/eval/synthetic-repeat-check.json",
+                "/zfs/archive/contextgraph/exports/eval/synthetic-repeat-check.json",
             )),
         };
 

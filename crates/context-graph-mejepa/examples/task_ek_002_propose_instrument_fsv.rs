@@ -31,7 +31,7 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-002-propose-instrument-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-002-propose-instrument-fsv";
 const PROPOSE_TOOL: &str = "mcp__cgreality__mejepa_propose_instrument";
 const PROMOTE_TOOL: &str = "mcp__cgreality__mejepa_promote_instrument_proposal";
 

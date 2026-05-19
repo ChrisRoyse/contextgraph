@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-071-synthetic-corpus-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-071-synthetic-corpus-fsv";
 
 fn main() -> Result<()> {
     let run_dir = PathBuf::from(FSV_ROOT).join(format!(

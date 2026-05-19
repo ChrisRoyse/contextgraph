@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> Result<()> {
-    let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-label-transfer-gating-fsv");
+    let fsv_root = PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-label-transfer-gating-fsv");
     fs::create_dir_all(&fsv_root)?;
     let run_root = fsv_root.join(format!(
         "run-{}-{}",

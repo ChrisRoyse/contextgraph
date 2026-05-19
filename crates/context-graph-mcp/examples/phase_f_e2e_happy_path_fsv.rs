@@ -4,7 +4,7 @@ mod harness;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-f-e2e-happy-path-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-f-e2e-happy-path-fsv";
 
 fn main() -> ExitCode {
     let root = PathBuf::from(FSV_ROOT);

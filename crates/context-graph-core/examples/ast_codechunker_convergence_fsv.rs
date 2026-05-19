@@ -17,7 +17,7 @@ use std::process::Command;
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/ast-codechunker-convergence-fsv");
+    let root = PathBuf::from("/zfs/archive/contextgraph/fsv/ast-codechunker-convergence-fsv");
     reset_secure_dir(&root)?;
     let sources = root.join("sources");
     let toolchain = root.join("toolchain");

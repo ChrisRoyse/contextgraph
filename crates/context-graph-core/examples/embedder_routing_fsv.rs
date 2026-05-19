@@ -8,7 +8,7 @@ use std::path::Path;
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let root = Path::new("/mnt/d/contextgraph/fsv/contextgraph-mejepa-embedders-fsv");
+    let root = Path::new("/zfs/archive/contextgraph/fsv/contextgraph-mejepa-embedders-fsv");
     if root.exists() {
         fs::remove_dir_all(root)?;
     }

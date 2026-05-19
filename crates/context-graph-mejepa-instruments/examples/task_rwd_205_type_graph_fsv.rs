@@ -23,8 +23,8 @@ struct EdgeCase {
 fn main() -> FsvResult<()> {
     let run_id = format!("run-{}", now_millis()?);
     let fsv_root =
-        PathBuf::from("/mnt/d/contextgraph/fsv/task-rwd-205-type-graph-fsv").join(&run_id);
-    let raw_root = PathBuf::from("/mnt/d/contextgraph/corpus/python-type-graph-signals-v1")
+        PathBuf::from("/zfs/archive/contextgraph/fsv/task-rwd-205-type-graph-fsv").join(&run_id);
+    let raw_root = PathBuf::from("/zfs/archive/contextgraph/corpus/python-type-graph-signals-v1")
         .join("task-rwd-205-fsv")
         .join(&run_id);
     let db_path = fsv_root.join("type_graph_signals.db");

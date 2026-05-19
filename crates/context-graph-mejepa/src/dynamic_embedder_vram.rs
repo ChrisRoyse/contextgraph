@@ -377,7 +377,7 @@ mod tests {
             route_languages: vec!["python".to_string()],
             route_entity_types: vec!["*".to_string()],
             forward_artifact_path: format!(
-                "/mnt/d/contextgraph/models/dynamic/edynamic_{sequence}_{name}/forward.bin"
+                "/zfs/archive/contextgraph/models/dynamic/edynamic_{sequence}_{name}/forward.bin"
             ),
             forward_artifact_sha256:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),

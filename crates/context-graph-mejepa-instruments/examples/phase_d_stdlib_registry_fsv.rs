@@ -7,7 +7,7 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-d-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-d-fsv";
 
 #[derive(Debug, Serialize)]
 struct RegistryState {

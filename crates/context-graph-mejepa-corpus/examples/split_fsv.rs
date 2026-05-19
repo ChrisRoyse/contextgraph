@@ -1,8 +1,8 @@
 // Manual Full State Verification for the corpus split wrapper.
 //
 // Sources of truth:
-//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-evidence.json
-//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-assignments.json
+//   - /zfs/archive/contextgraph/fsv/context-graph-mejepa-corpus/split-evidence.json
+//   - /zfs/archive/contextgraph/fsv/context-graph-mejepa-corpus/split-assignments.json
 //
 // This example fails closed. It writes assignment/evidence files durably,
 // re-reads them, hashes them, reconstructs the assignment state from disk,

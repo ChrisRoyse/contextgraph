@@ -181,7 +181,7 @@ fn refresh_report_for_test(
         constellation_version_id: constellation.version_id(),
         corpus_sha: constellation.corpus_provenance.corpus_sha,
         code_version: constellation.corpus_provenance.code_version.clone(),
-        source_corpus_path: "/mnt/d/contextgraph/corpus/test-index.json".to_string(),
+        source_corpus_path: "/zfs/archive/contextgraph/corpus/test-index.json".to_string(),
         source_corpus_sha256: [2u8; 32],
         source_row_count,
         source_chunk_count,

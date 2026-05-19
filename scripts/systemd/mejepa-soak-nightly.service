@@ -1,7 +1,7 @@
 [Unit]
 Description=ContextGraph ME-JEPA nightly accelerated soak FSV
 Documentation=file:/home/cabdru/contextgraph/docs/futurebuild/18_INTEGRATION_AND_E2E_TESTING.md
-ConditionPathExists=/mnt/d/contextgraph/fsv
+ConditionPathExists=/zfs/archive/contextgraph/fsv
 ConditionPathExists=/home/cabdru/contextgraph/target/release/examples/phase_f_soak_test_fsv
 
 [Service]

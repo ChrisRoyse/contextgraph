@@ -5,7 +5,7 @@ ROOT="${CLAUDE_PROJECT_DIR:-${CONTEXTGRAPH_ROOT:-/home/cabdru/contextgraph}}"
 # shellcheck source=scripts/cc/_common.sh
 source "${ROOT}/scripts/cc/_common.sh"
 
-DROOT="${CGREALITY_DROOT:-/mnt/d/contextgraph}"
+DROOT="${CGREALITY_DROOT:-/zfs/archive/contextgraph}"
 CAPTURE_LOG="${CGREALITY_POSTTOOLUSE_CAPTURE_LOG:-${DROOT}/runtime/posttooluse-mejepa-capture.jsonl}"
 
 posttooluse_capture_log_event() {
@@ -57,7 +57,7 @@ RAW_SESSION_ID="$(jq -r '.session_id // env.CLAUDE_SESSION_ID // ""' <<<"${INPUT
 SESSION_ID="$(cgreality_session_hex32 "${RAW_SESSION_ID}")"
 TOOL_USE_ID="$(jq -r '.tool_use_id // ""' <<<"${INPUT}")"
 COMMAND="$(jq -r '.tool_input.command // ""' <<<"${INPUT}")"
-INFER_DB="${CONTEXTGRAPH_MEJEPA_INFER_DB:-/mnt/d/contextgraph/storage/contextgraph-rocksdb}"
+INFER_DB="${CONTEXTGRAPH_MEJEPA_INFER_DB:-/zfs/archive/contextgraph/storage/contextgraph-rocksdb}"
 VERIFY_TIMEOUT_SECONDS="${CGREALITY_MEJEPA_VERIFY_TIMEOUT_SECONDS:-2}"
 
 OUTPUT="$(jq -r '
@@ -108,7 +108,7 @@ write_ambiguous_event() {
 append_events_to_outcome_log() {
   local events_path="$1"
   local out_dir out_path
-  out_dir="${CGREALITY_TEST_OUTCOME_DIR:-/mnt/d/contextgraph/runtime/test-outcomes}"
+  out_dir="${CGREALITY_TEST_OUTCOME_DIR:-/zfs/archive/contextgraph/runtime/test-outcomes}"
   out_path="${out_dir}/${SESSION_ID}.jsonl"
   mkdir -p "${out_dir}"
   (

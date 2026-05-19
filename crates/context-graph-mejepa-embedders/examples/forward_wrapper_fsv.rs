@@ -18,7 +18,7 @@ type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv");
+    let root = PathBuf::from("/zfs/archive/contextgraph/fsv/contextgraph-mejepa-forward-fsv");
     reset_root(&root)?;
     let output_dir = root.join("forward-outputs");
     fs::create_dir_all(&output_dir)?;
@@ -26,7 +26,7 @@ async fn main() -> FsvResult<()> {
     let config_path = std::env::var("CONTEXTGRAPH_MEJEPA_MODELS_CONFIG")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
-            PathBuf::from("/mnt/d/cabdru/contextgraph/models/mejepa_models_config.toml")
+            PathBuf::from("/zfs/hot/contextgraph/models/mejepa_models_config.toml")
         });
 
     let config = ModelsConfig::load(&config_path)?;

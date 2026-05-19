@@ -441,7 +441,7 @@ def command_string(outcome: dict[str, Any]) -> str:
     prediction = outcome.get("paths", {}).get("summary") or outcome.get("paths", {}).get("patch_diff") or "gold"
     return " ".join(
         [
-            "/mnt/d/contextgraph/cache/contextgraph-swebench/venv/bin/python",
+            "/zfs/archive/contextgraph/cache/contextgraph-swebench/venv/bin/python",
             "-m swebench.harness.run_evaluation",
             "--dataset_name SWE-bench/SWE-bench_Lite",
             "--split test",
@@ -954,7 +954,7 @@ def edge_audit(
 
     before = count_event_file(event_path)
     missing_log = json.loads(canonical_json(outcomes[1]))
-    missing_log["paths"]["command_log"] = "/mnt/d/contextgraph/corpus/python-oracle-baselines-v1/runs/missing-command-log.log"
+    missing_log["paths"]["command_log"] = "/zfs/archive/contextgraph/corpus/python-oracle-baselines-v1/runs/missing-command-log.log"
     try:
         artifact_maps(missing_log)
         error = None
@@ -1024,7 +1024,7 @@ def command_oracle_events(args: Any) -> dict[str, Any]:
         "event_schema": file_state(schema_path),
         "event_manifest": file_state(manifest_path),
         "event_fsv": file_state(fsv_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
+        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "event_root_bytes": path_bytes(args.event_root),
     }
@@ -1084,7 +1084,7 @@ def command_oracle_events(args: Any) -> dict[str, Any]:
         },
         "storage_policy": {
             "decision_issue": 212,
-            "durable_root": "/mnt/d/contextgraph",
+            "durable_root": "/zfs/archive/contextgraph",
             "hot_root": str(args.hot_root),
             "hot_budget_bytes": args.hot_budget_bytes,
         },
@@ -1103,7 +1103,7 @@ def command_oracle_events(args: Any) -> dict[str, Any]:
         "event_schema": file_state(schema_path),
         "event_manifest": file_state(manifest_path),
         "event_fsv": file_state(fsv_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
+        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "event_root_bytes": path_bytes(args.event_root),
         "fsv_root_bytes": path_bytes(args.fsv_root),

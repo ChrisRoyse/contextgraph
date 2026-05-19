@@ -104,9 +104,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let edge_target_label_rejected = target_label_edge_rejected();
     let edge_too_broad_rejected = too_broad_pattern_edge_rejected()?;
-    let edge_mnt_d_rejected =
-        build_skill_corpus_materialization("/mnt/d/contextgraph/not-active", config, created_at)
-            .is_err();
+    let edge_mnt_d_rejected = build_skill_corpus_materialization(
+        "/zfs/archive/contextgraph/not-active",
+        config,
+        created_at,
+    )
+    .is_err();
 
     let expected_counts_match = reopened_counts == after_counts
         && after_counts["level2Skills"] == build.report.materialized_skill_count as u64

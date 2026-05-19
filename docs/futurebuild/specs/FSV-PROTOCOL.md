@@ -94,8 +94,7 @@ For implementation tasks, produce:
 4. **SoT readback artifact:** production FSV must be written on aiwonder under
    `/zfs/archive/contextgraph/fsv/<task>-fsv/<artifact>.json` with a pass field,
    exact SoT path, happy path, boundary cases, and physical artifact hashes or
-   counts. `/mnt/d/contextgraph/fsv/...` is local-only evidence unless an issue
-   explicitly scopes a local smoke and names that limitation in closeout.
+   counts. `/mnt/d/contextgraph/fsv/...` is historical provenance only and not an active closeout target.
 5. **Independent RocksDB verification** for CF writes: flush/drop/reopen through
    the production opener or an equivalent separate handle, then decode the same
    row back.

@@ -57,7 +57,7 @@ struct ChunkLevelRejectionEvidence {
 }
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-mejepa-tct-fsv");
+    let root = PathBuf::from("/zfs/archive/contextgraph/fsv/contextgraph-mejepa-tct-fsv");
     if root.exists() {
         fs::remove_dir_all(&root)?;
     }
@@ -65,7 +65,7 @@ fn main() -> FsvResult<()> {
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
 
     let real_panel_path = PathBuf::from(
-        "/mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/phase1-extended/panel-all-slots.json",
+        "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/phase1-extended/panel-all-slots.json",
     );
     let real_panel = read_real_phase1_panel(&real_panel_path)?;
     let code_version = git_head()?;

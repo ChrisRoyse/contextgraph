@@ -24,8 +24,8 @@ from .smoke_intelligence_matrices import (
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-028"
 ARTIFACT_KIND = "python_mejepa_reward_field_sample"
-DEFAULT_OUTPUT_ROOT = Path("/mnt/d/contextgraph/corpus/python-reward-field-sample-v1")
-DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-028-reward-field-sample-fsv")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-reward-field-sample-v1")
+DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-028-reward-field-sample-fsv")
 
 
 class RewardFieldSampleError(SwebenchOpsError):
@@ -284,7 +284,7 @@ def command_python_reward_field_sample(args: argparse.Namespace) -> int:
     before = {
         "output_root": tree_state(args.output_root),
         "fsv_root": tree_state(args.fsv_root),
-        "disk": disk_state([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
+        "disk": disk_state([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
     }
 
     readiness = read_json(args.readiness_decision)
@@ -439,7 +439,7 @@ def command_python_reward_field_sample(args: argparse.Namespace) -> int:
     after = {
         "output_root": tree_state(args.output_root),
         "fsv_root": tree_state(args.fsv_root),
-        "disk": disk_state([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
+        "disk": disk_state([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
     }
     readback_bundle = read_json(args.output_root / "reward_field_sample_bundle.json")
     readback_sample_count = sum(1 for _ in iter_jsonl(args.output_root / "sample_rows.jsonl"))
@@ -503,14 +503,14 @@ def command_python_reward_field_sample(args: argparse.Namespace) -> int:
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--smoke-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"))
-    parser.add_argument("--chunks-jsonl", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl"))
-    parser.add_argument("--forward-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/forward-cache"))
-    parser.add_argument("--dda-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/per-embedder"))
-    parser.add_argument("--tct-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-tct-cells-v1"))
-    parser.add_argument("--reward-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-reward-tensors-v1"))
-    parser.add_argument("--oracle-events", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-oracle-events-v1/oracle_events.jsonl"))
-    parser.add_argument("--readiness-decision", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-data-readiness-gate-v1/data_readiness_decision.json"))
+    parser.add_argument("--smoke-manifest", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"))
+    parser.add_argument("--chunks-jsonl", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl"))
+    parser.add_argument("--forward-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/forward-cache"))
+    parser.add_argument("--dda-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/per-embedder"))
+    parser.add_argument("--tct-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-tct-cells-v1"))
+    parser.add_argument("--reward-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-reward-tensors-v1"))
+    parser.add_argument("--oracle-events", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-oracle-events-v1/oracle_events.jsonl"))
+    parser.add_argument("--readiness-decision", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-data-readiness-gate-v1/data_readiness_decision.json"))
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
     parser.add_argument("--expected-embedder-count", type=int, default=12)

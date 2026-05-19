@@ -19,7 +19,7 @@ use context_graph_mejepa::{
 };
 use serde::Serialize;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-fp-103-latent-search-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-fp-103-latent-search-fsv";
 const SEARCH_TOOL_NAME: &str = "mcp__cgreality__mejepa_search_latent_actions";
 
 #[derive(Debug, Serialize)]

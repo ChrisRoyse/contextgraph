@@ -31,7 +31,7 @@ use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
 use serde::Serialize;
 use serde_json::json;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-failure-fingerprint-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-g-failure-fingerprint-fsv";
 
 #[derive(Debug, Serialize)]
 struct ReadbackCase {

@@ -157,7 +157,7 @@ struct ConstellationFreshnessAuditArgs {
     db_path: PathBuf,
     #[arg(
         long,
-        default_value = "/mnt/d/contextgraph/exports/constellation-freshness-audit"
+        default_value = "/zfs/archive/contextgraph/exports/constellation-freshness-audit"
     )]
     output_root: PathBuf,
     #[arg(long, default_value_t = 10_000)]

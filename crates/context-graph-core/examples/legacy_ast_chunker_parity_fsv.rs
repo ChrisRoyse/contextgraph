@@ -13,7 +13,7 @@ use std::process::Command;
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/legacy-ast-chunker-parity-fsv");
+    let root = PathBuf::from("/zfs/archive/contextgraph/fsv/legacy-ast-chunker-parity-fsv");
     let sources = root.join("sources");
     let syntax = root.join("syntax");
     reset_secure_dir(&root)?;

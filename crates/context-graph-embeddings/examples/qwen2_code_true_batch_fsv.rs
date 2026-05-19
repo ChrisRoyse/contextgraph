@@ -16,7 +16,7 @@ type FsvResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 async fn main() -> FsvResult<()> {
     let output_path = env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| {
         PathBuf::from(
-            "/mnt/d/contextgraph/fsv/task-py-data-033-qwen2-code-batch-fsv/qwen2_code_true_batch_fsv.json",
+            "/zfs/archive/contextgraph/fsv/task-py-data-033-qwen2-code-batch-fsv/qwen2_code_true_batch_fsv.json",
         )
     });
     let telemetry_path = output_path.with_file_name("qwen2_code_true_batch_telemetry.jsonl");
@@ -24,7 +24,7 @@ async fn main() -> FsvResult<()> {
         .or_else(|_| env::var("CONTEXTGRAPH_MODELS_ROOT"))
         .or_else(|_| env::var("EMBEDDING_MODELS_DIR"))
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/mnt/d/cabdru/contextgraph/models"));
+        .unwrap_or_else(|_| PathBuf::from("/zfs/hot/contextgraph/models"));
     let model_path = model_root.join("code-1536");
 
     let chunks = synthetic_python_chunks();

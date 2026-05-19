@@ -36,7 +36,8 @@ enum Toolchain {
 }
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-ast-chunker-multilang-fsv");
+    let root =
+        PathBuf::from("/zfs/archive/contextgraph/fsv/contextgraph-ast-chunker-multilang-fsv");
     reset_secure_dir(&root)?;
     let mut languages = Vec::new();
     for fixture in fixtures() {
@@ -81,7 +82,7 @@ fn main() -> FsvResult<()> {
 
 fn run_language_fsv(root: &Path, fixture: Fixture) -> FsvResult<Value> {
     let lang_dir = PathBuf::from(format!(
-        "/mnt/d/contextgraph/fsv/contextgraph-{}-ast-chunker-fsv",
+        "/zfs/archive/contextgraph/fsv/contextgraph-{}-ast-chunker-fsv",
         fixture.slug
     ));
     reset_secure_dir(&lang_dir)?;

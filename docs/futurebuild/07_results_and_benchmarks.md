@@ -78,7 +78,7 @@ The active Python ship-gate data lives in three separate aiwonder artifacts that
 | Artifact | Path | Role |
 |---|---|---|
 | 300×8 SWE-bench Lite Python corpus + oracle labels | `/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json` | 2,400 entries; `oracle_all_passed` is the #396 label source, joined by `(task_instance_id, mutation_category)` |
-| AST chunk store | `/zfs/hot/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl` | Chunk metadata and stable row keys: `task_instance_id`, `workspace_state`, `chunk_id`, `source_sha256` |
+| AST chunk store | `/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl` | Chunk metadata and stable row keys: `task_instance_id`, `workspace_state`, `chunk_id`, `source_sha256` |
 | Full packed embedder forward cache | `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z/` | 391 completed shards; per-shard packed manifests point to each embedder's record/index JSONL; active embedders are `e1,e2,e3,e4,e6,e7,e8,e9,e10,e12,e13,e14` |
 | Cross-embedder constellation tensor store | `/zfs/archive/contextgraph/corpus/constellation-tensors-v1/` | TASK-PY-G-088 output: `slot_distribution_tensors.jsonl`, `pairwise_correlation_tensors.jsonl`, `constellation_tensor_report.json`, `constellation_tensor_manifest.json`; FSV at `/zfs/archive/contextgraph/fsv/task-py-g-088-cross-embedder-correlation-tensors-fsv/python_constellation_cross_embedder_tensors_fsv.json` |
 | Per-slot calibration and OOD guard | `/zfs/archive/contextgraph/state/calibration/per-slot-v1/` | TASK-PY-G-089 output: `per_slot_calibration.jsonl`, `per_cell_slot_calibration.jsonl`, `per_pair_calibration.jsonl`, `ood_guard_policy.json`, `per_slot_calibration_report.json`; calibration FSV at `/zfs/archive/contextgraph/fsv/task-py-g-089-per-slot-calibration-ood-fsv/python_per_slot_calibration_ood_fsv.json`; live `RealityPrediction.per_slot_ood_reasons` FSV at `/zfs/archive/contextgraph/fsv/task-py-g-089-per-slot-ood-reasons-live-fsv/run-1779156050260/task_py_g_089_per_slot_ood_reasons_live_fsv.json` |
@@ -279,7 +279,7 @@ TASK-PY-G-096 writes its certificate and generated arrays under `/zfs/archive/co
 | #315 | Reward-signal completeness audit — maximum capture from durable reality (LeCun-aligned) | 2026-05 | EPIC anchoring TASK-RWD-* |
 | #314 | Full JEPA architectural alignment per Yann LeCun (2026-05-17 transcript) | 2026-05-17 | EPIC anchoring TASK-FP-101..105 |
 | #309 | Failure-Shape Fingerprints as the first-class ME-JEPA training object | 2026-05 | EPIC anchoring TASK-FP-001..010 |
-| #212 | WSL ext4 hot staging with D-drive durable SoT | superseded by #363 | Historical; legacy local rule |
+| #212 | WSL ext4 hot staging with aiwonder durable SoT | superseded by #363 | Historical; legacy local rule |
 
 Closed `type:decision` issues are immutable architectural decisions per doctrine §3.10.
 
@@ -344,7 +344,7 @@ Documents (where retained): `docs/HIDDEN_BROKENNESS_AUDIT_*.md`, `docs/MEMORY_RE
 | Train/inference prefix mismatch (`"search_document:"` required by nomic-embed) | Embedder eval | Prefix at both train and infer |
 | E14 phase-B quantized fixture broken | TASK-PY-DATA-* FSV | Fixture regenerated (commit f22b3509) |
 | #313 — parallel-isolated consolidation `shutil.Error` on shard 300 crashed prod after 23.8h | aiwonder production crash | Race fix |
-| #295 — #199 resume launch scanned full D-drive FSV root (perf hit) | Operator observation | Scope-restricted resume scan |
+| #295 — #199 resume launch scanned full aiwonder FSV root (perf hit) | Operator observation | Scope-restricted resume scan |
 | `Pipelinebuilder.k()` setting never propagated | Audit | Pass k through to execute_stages |
 | Pipeline-internal env_api_token regex re-matched `[REDACTED_*]` markers | TASK-PY-G-059 FSV | Negative lookahead |
 | Pipeline-internal env_password regex missed dict-literal form | TASK-PY-G-059 FSV | Optional quote around key + key surface expansion |

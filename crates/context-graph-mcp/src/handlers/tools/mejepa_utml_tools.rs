@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn pairwise_mi_audit_rejects_empty_slot_series() {
         let request = PairwiseMiAuditRequest {
-            output_dir: PathBuf::from("/mnt/d/contextgraph/fsv/mcp-pairwise-mi-unit/edge"),
+            output_dir: PathBuf::from("/zfs/archive/contextgraph/fsv/mcp-pairwise-mi-unit/edge"),
             step: 1,
             period_steps: 1,
             series_by_slot: BTreeMap::from([("e_ast".to_string(), vec![0.1])]),

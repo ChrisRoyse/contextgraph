@@ -67,11 +67,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         context_graph_paths::ENV_LOCAL_SMOKE_ISSUE,
         "issue-365-local-smoke-fsv",
     );
-    let local_smoke_accept =
+    let local_smoke_reject = expect_error_code(
         context_graph_paths::require_production_durable_root_or_named_local_smoke(
             Path::new("/mnt/d/contextgraph/fsv/task-aiwonder-014-local-smoke"),
             "durable_root",
-        )?;
+        ),
+        "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER",
+    );
 
     restore_env(context_graph_paths::ENV_DATA_ROOT, prior_data_root);
     restore_env(
@@ -87,7 +89,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         json!({"case": "reject_local_scratch_root", "passes": reject_local_scratch}),
         json!({"case": "env_var_rejects_local_durable_root", "passes": env_reject_local}),
         json!({"case": "env_var_accepts_aiwonder_archive_root", "passes": env_accept_archive.starts_with(context_graph_paths::AIWONDER_DURABLE_ROOT), "path": env_accept_archive}),
-        json!({"case": "named_local_smoke_accepts_legacy_root_without_production_closeout", "passes": local_smoke_accept.starts_with(context_graph_paths::LEGACY_LOCAL_DATA_ROOT), "path": local_smoke_accept}),
+        json!({"case": "named_local_smoke_still_rejects_legacy_root", "passes": local_smoke_reject}),
     ];
     let passes = cases
         .iter()

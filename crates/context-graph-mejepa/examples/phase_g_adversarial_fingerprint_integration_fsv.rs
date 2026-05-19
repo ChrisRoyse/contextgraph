@@ -22,8 +22,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 const FSV_ROOT: &str =
-    "/mnt/d/contextgraph/fsv/task-fp-009-adversarial-fingerprint-integration-fsv";
-const CORPUS_ROOT: &str = "/mnt/d/contextgraph/corpus/python-adversarial-v1";
+    "/zfs/archive/contextgraph/fsv/task-fp-009-adversarial-fingerprint-integration-fsv";
+const CORPUS_ROOT: &str = "/zfs/archive/contextgraph/corpus/python-adversarial-v1";
 const WINDOW_COUNT: usize = 4;
 
 fn main() -> Result<()> {

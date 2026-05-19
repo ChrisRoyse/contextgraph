@@ -20,7 +20,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const OUT: &str = "/mnt/d/contextgraph/fsv/contextgraph-utml-fsv";
+const OUT: &str = "/zfs/archive/contextgraph/fsv/contextgraph-utml-fsv";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = PathBuf::from(OUT);

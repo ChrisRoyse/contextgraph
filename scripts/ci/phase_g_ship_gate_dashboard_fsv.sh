@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="${CONTEXTGRAPH_SHIP_GATE_DASHBOARD_FSV_ROOT:-/mnt/d/contextgraph/fsv/phase-g-ship-gate-dashboard-fsv}"
+FSV_ROOT="${CONTEXTGRAPH_SHIP_GATE_DASHBOARD_FSV_ROOT:-/zfs/archive/contextgraph/fsv/phase-g-ship-gate-dashboard-fsv}"
 INPUT_JSON="$FSV_ROOT/synthetic_cell_status.json"
 STALE_JSON="$FSV_ROOT/stale_80_cell_status.json"
 STALE_STDOUT="$FSV_ROOT/stale_80_dashboard_stdout.json"
@@ -101,7 +101,7 @@ payload = {
     "passed": False,
     "cells": rows,
     "sourceOfTruth": {
-        "db_path": "/mnt/d/contextgraph/fsv/phase-g-ship-gate-dashboard-fsv/synthetic-db",
+        "db_path": "/zfs/archive/contextgraph/fsv/phase-g-ship-gate-dashboard-fsv/synthetic-db",
         "column_family": "CF_MEJEPA_EVAL_REPORTS",
         "selector": "load_latest_report()",
         "required_grid": "8 mutation categories x python",
@@ -139,7 +139,7 @@ stale_payload = {
     "passed": True,
     "cells": stale_rows,
     "sourceOfTruth": {
-        "db_path": "/mnt/d/contextgraph/fsv/phase-g-ship-gate-dashboard-fsv/stale-db",
+        "db_path": "/zfs/archive/contextgraph/fsv/phase-g-ship-gate-dashboard-fsv/stale-db",
         "column_family": "CF_MEJEPA_EVAL_REPORTS",
         "selector": "load_latest_report()",
         "required_grid": "8 mutation categories x 10 non-Python fixture languages",

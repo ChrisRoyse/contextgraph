@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-f-mi-heatmap-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-f-mi-heatmap-fsv";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "build_release_sha": git_head_short(),
         "happy_path": [{
             "case": "render_pairwise_mi_markdown_and_png",
-            "sot": "file:/mnt/d/contextgraph/fsv/phase-f-mi-heatmap-fsv/run-*/pairwise_mi_matrix.{md,png}",
+            "sot": "file:/zfs/archive/contextgraph/fsv/phase-f-mi-heatmap-fsv/run-*/pairwise_mi_matrix.{md,png}",
             "before": null,
             "trigger": "cargo run --release -p context-graph-mejepa --example phase_f_mi_heatmap_fsv",
             "after": {

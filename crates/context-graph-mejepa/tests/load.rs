@@ -33,10 +33,10 @@ fn task_test_007_load_harness_persists_prediction_and_feedback_metrics() {
 fn default_fsv_root_is_process_thread_scoped_to_prevent_readback_races() {
     let fsv_root = load::default_fsv_root();
     let root_text = fsv_root.to_string_lossy();
-    assert!(fsv_root.starts_with("/mnt/d/contextgraph/fsv/phase-f-load-test-fsv/runs"));
+    assert!(fsv_root.starts_with("/zfs/archive/contextgraph/fsv/phase-f-load-test-fsv/runs"));
     assert!(root_text.contains(&format!("pid-{}", std::process::id())));
     assert_ne!(
         fsv_root,
-        std::path::PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-load-test-fsv")
+        std::path::PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-load-test-fsv")
     );
 }

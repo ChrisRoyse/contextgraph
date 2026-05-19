@@ -29,7 +29,8 @@ fn main() -> FsvResult<()> {
         .and_then(Path::parent)
         .expect("workspace root")
         .to_path_buf();
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-mejepa-ast-embedder-smoke-fsv");
+    let root =
+        PathBuf::from("/zfs/archive/contextgraph/fsv/contextgraph-mejepa-ast-embedder-smoke-fsv");
     if root.exists() {
         fs::remove_dir_all(&root)?;
     }

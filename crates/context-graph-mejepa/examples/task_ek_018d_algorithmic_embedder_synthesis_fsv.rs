@@ -25,7 +25,8 @@ use context_graph_mejepa_cf::{
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-018d-algorithmic-embedder-synthesis-fsv";
+const FSV_ROOT: &str =
+    "/zfs/archive/contextgraph/fsv/task-ek-018d-algorithmic-embedder-synthesis-fsv";
 
 fn main() -> Result<()> {
     let started_at = current_unix_ms();
@@ -33,7 +34,7 @@ fn main() -> Result<()> {
     let infer_db_path = run_root.join("infer-rocksdb");
     let work_root = run_root.join("sandbox-work");
     let artifact_root = PathBuf::from(format!(
-        "/mnt/d/contextgraph/models/dynamic/task-ek-018d/run-{started_at}"
+        "/zfs/archive/contextgraph/models/dynamic/task-ek-018d/run-{started_at}"
     ));
     let fsv_path = run_root.join("algorithmic_embedder_synthesis_fsv.json");
     let canonical_path = PathBuf::from(FSV_ROOT).join("algorithmic_embedder_synthesis_fsv.json");

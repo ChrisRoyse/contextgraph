@@ -319,8 +319,6 @@ ENVIRONMENT VARIABLES:
     CONTEXT_GRAPH_HEALTH_PROBE_PORT Probe port when enabled (default: 9111)
     CONTEXT_GRAPH_HEALTH_PROBE_BIND Probe bind address when enabled (default: 127.0.0.1)
     CONTEXTGRAPH_DATA_ROOT      Durable production root (default: /zfs/archive/contextgraph)
-    CONTEXTGRAPH_LOCAL_SMOKE_ISSUE
-                                Explicit issue id allowing local /mnt/d smoke roots only
     RUST_LOG                    Log level (error, warn, info, debug, trace)
 
 PRIORITY:
@@ -2748,7 +2746,7 @@ async fn async_main() -> Result<()> {
     let daemon_paths = if daemon_mode_requested {
         let data_root = context_graph_paths::production_data_root()
             .map_err(|err| anyhow::anyhow!("{}: {}", err.code, err))?;
-        Some(daemon_validate::validate_d_drive_root(&data_root)?)
+        Some(daemon_validate::validate_daemon_root(&data_root)?)
     } else {
         None
     };

@@ -219,7 +219,8 @@ mod test_support {
         let missing_bits_error = missing_bits_boundary(temp.path())?;
         let non_finite_error = non_finite_boundary(temp.path())?;
 
-        let fsv_root = Path::new("/mnt/d/contextgraph/fsv/task-ek-001-compression-progress-fsv");
+        let fsv_root =
+            Path::new("/zfs/archive/contextgraph/fsv/task-ek-001-compression-progress-fsv");
         let run_root = fsv_root.join(format!(
             "run-{}-{}",
             chrono::Utc::now().timestamp_millis(),

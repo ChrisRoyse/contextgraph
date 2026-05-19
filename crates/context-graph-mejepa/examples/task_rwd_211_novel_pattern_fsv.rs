@@ -22,7 +22,7 @@ use context_graph_mejepa::{
 use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
 use serde::Serialize;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-067-novel-pattern-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-067-novel-pattern-fsv";
 
 #[derive(Debug, Serialize)]
 struct BoundaryCase {

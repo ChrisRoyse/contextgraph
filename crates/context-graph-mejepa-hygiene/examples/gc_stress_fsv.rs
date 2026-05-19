@@ -11,7 +11,7 @@ use context_graph_mejepa_hygiene::{
 use context_graph_witness::{WitnessEntry, HASH_SIZE, ZERO_HASH};
 use serde::Serialize;
 
-const ROOT: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-hygiene-gc-stress-fsv";
+const ROOT: &str = "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-hygiene-gc-stress-fsv";
 
 #[derive(Debug, Serialize)]
 struct Evidence {
@@ -85,7 +85,7 @@ fn stress(
 
 fn invalid_config_case() -> serde_json::Value {
     let db = match open_hygiene_rocksdb(
-        "/mnt/d/contextgraph/fsv/contextgraph-mejepa-hygiene-gc-invalid-db",
+        "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-hygiene-gc-invalid-db",
     ) {
         Ok(db) => db,
         Err(err) => {
@@ -98,7 +98,7 @@ fn invalid_config_case() -> serde_json::Value {
     };
     let mut config = match runtime_config(
         db,
-        "/mnt/d/contextgraph/fsv/contextgraph-mejepa-hygiene-gc-invalid-archives".into(),
+        "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-hygiene-gc-invalid-archives".into(),
     ) {
         Ok(config) => config,
         Err(err) => {

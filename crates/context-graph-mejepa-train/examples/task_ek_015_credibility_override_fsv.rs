@@ -23,7 +23,7 @@ use context_graph_mejepa_train::sampler::{
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-015-credibility-override-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-015-credibility-override-fsv";
 const BASE_TS: i64 = 1_800_100_000_000;
 
 fn main() -> Result<()> {

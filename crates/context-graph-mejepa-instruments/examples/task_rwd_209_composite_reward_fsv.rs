@@ -28,10 +28,11 @@ fn main() -> FsvResult<()> {
         .duration_since(UNIX_EPOCH)?
         .as_millis()
         .to_string();
-    let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/task-py-g-075-composite-reward-fsv")
-        .join(format!("run-{run_id}"));
+    let fsv_root =
+        PathBuf::from("/zfs/archive/contextgraph/fsv/task-py-g-075-composite-reward-fsv")
+            .join(format!("run-{run_id}"));
     fs::create_dir_all(&fsv_root)?;
-    let raw_root = PathBuf::from("/mnt/d/contextgraph/corpus/python-reward-signals-v1");
+    let raw_root = PathBuf::from("/zfs/archive/contextgraph/corpus/python-reward-signals-v1");
     let row_id = format!("task-rwd-209-{run_id}");
     let chunk_id = "chunk-composite-reward-001";
     let path = "pkg/reward.py";

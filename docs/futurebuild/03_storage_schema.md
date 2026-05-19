@@ -225,7 +225,7 @@ Dimension constants: `E1_DIM`, `E1_MATRYOSHKA_DIM`, `E2_DIM`, `E3_DIM`, `E4_DIM`
 
 ## 5. Storage Policy (post-migration 2026-05-18)
 
-GitHub issue #363 (closed, `type:decision`) — supersedes the pre-migration D-drive production policy.
+GitHub issue #363 (closed, `type:decision`) — supersedes the pre-migration aiwonder production policy.
 
 | Tier | Path | Purpose | Retention |
 |---|---|---|---|
@@ -286,7 +286,7 @@ GitHub issue #363 (closed, `type:decision`) — supersedes the pre-migration D-d
 
 | Action | Production durable | Production hot | Scratch | Local legacy |
 |---|---|---|---|---|
-| Write production FSV evidence | ✅ `/zfs/archive/...fsv/<task>-fsv/` | ❌ | ❌ | ❌ unless issue-scoped local smoke |
+| Write production FSV evidence | ✅ `/zfs/archive/...fsv/<task>-fsv/` | ❌ | ❌ | ❌ never for production work |
 | Tail shift log | ✅ | (read mirror) | — | (historical) |
 | Project-ingest cache | ✅ | (hot-mirror) | — | (historical) |
 | Reads from training daemon | ✅ | ✅ | — | (historical) |

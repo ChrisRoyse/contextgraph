@@ -19,7 +19,7 @@ use context_graph_mejepa::{
 };
 use serde::Serialize;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-fp-102-hierarchical-jepa-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-fp-102-hierarchical-jepa-fsv";
 
 #[derive(Debug, Serialize)]
 struct HierarchyEvidence {

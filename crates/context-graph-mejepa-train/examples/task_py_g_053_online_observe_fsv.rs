@@ -28,7 +28,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const HAPPY_EVENT_ID: &str = "53535353535353535353535353535353";
 
 fn main() -> Result<()> {
-    let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/task-py-g-053-online-observe-fsv");
+    let fsv_root = PathBuf::from("/zfs/archive/contextgraph/fsv/task-py-g-053-online-observe-fsv");
     fs::create_dir_all(&fsv_root)?;
     let run_root = fsv_root.join(format!(
         "run-{}-{}",

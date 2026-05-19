@@ -148,7 +148,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .is_err();
     let edge_mntd_source_path_rejected =
-        load_chunk_source_index_jsonl(Path::new("/mnt/d/contextgraph/forbidden.jsonl")).is_err();
+        load_chunk_source_index_jsonl(Path::new("/zfs/archive/contextgraph/forbidden.jsonl"))
+            .is_err();
 
     let skill_to_code_pass = skill_to_code_report.total_matching_memberships == 4
         && skill_to_code_report

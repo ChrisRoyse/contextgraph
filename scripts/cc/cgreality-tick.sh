@@ -4,7 +4,7 @@
 #
 # Periodic tick (suggested cadence: every 30 min via systemd timer or cron).
 # When called:
-#   1. read the active runtime root from /mnt/d/contextgraph/state/cgreality/active_runtime_root
+#   1. read the active runtime root from /zfs/archive/contextgraph/state/cgreality/active_runtime_root
 #   2. find the latest attempt-summary.json under it
 #   3. skip if a recommendation already exists for this attempt
 #   4. otherwise launch a single-shot Claude Code optimizer turn
@@ -18,7 +18,7 @@
 #                                  end-state)
 #
 # Source of truth on every decision:
-#   /mnt/d/contextgraph/state/cgreality/active_runtime_root
+#   /zfs/archive/contextgraph/state/cgreality/active_runtime_root
 #   <runtime_root>/<run>/<task>/<attempt>/attempt-summary.json
 #   <runtime_root>/<run>/<task>/<attempt>/claude-code-optimizer/recommendation-*.json
 #
@@ -31,7 +31,7 @@ set -euo pipefail
 ROOT="${CONTEXTGRAPH_ROOT:-$HOME/contextgraph}"
 cd "$ROOT" || { echo "cgreality-tick: cannot cd to $ROOT" >&2; exit 1; }
 
-ACTIVE_FILE="${CGREALITY_CACHE_DIR:-/mnt/d/contextgraph/state/cgreality}/active_runtime_root"
+ACTIVE_FILE="${CGREALITY_CACHE_DIR:-/zfs/archive/contextgraph/state/cgreality}/active_runtime_root"
 [ -f "$ACTIVE_FILE" ] || { echo "cgreality-tick: no active runtime root" >&2; exit 0; }
 
 ACTIVE="$(cat "$ACTIVE_FILE" 2>/dev/null | tr -d '[:space:]')"

@@ -14,10 +14,10 @@ use std::sync::Mutex;
 
 type FsvResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-const CORPUS_ROOT: &str = "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511";
-const REPO_CACHE: &str = "/mnt/d/contextgraph/cache/mejepa-corpus/repos";
+const CORPUS_ROOT: &str = "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511";
+const REPO_CACHE: &str = "/zfs/archive/contextgraph/cache/mejepa-corpus/repos";
 const TASKS_DIR: &str = "tasks/swebench-lite";
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/swebench-python-ast-corpus-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/swebench-python-ast-corpus-fsv";
 
 #[derive(Debug)]
 struct TaskCase {
@@ -60,7 +60,7 @@ fn main() -> FsvResult<()> {
         "source_of_truth": {
             "corpus_index": format!("{CORPUS_ROOT}/index.json"),
             "corpus_verify_evidence": format!("{CORPUS_ROOT}/verify-evidence.json"),
-            "docker_desktop_data": "/mnt/d/contextgraph/docker-desktop-data",
+            "docker_desktop_data": "/zfs/archive/contextgraph/docker-desktop-data",
             "repo_cache": REPO_CACHE,
             "host_source_readbacks": sources_dir.display().to_string(),
             "evidence_json": evidence_path.display().to_string(),

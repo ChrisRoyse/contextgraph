@@ -23,22 +23,24 @@ pub struct DaemonPaths {
 
 #[derive(Debug, Error)]
 pub enum DaemonValidationError {
-    #[error("MEJEPA_D_DRIVE_PATH_INVALID: {path}: {detail}")]
+    #[error("MEJEPA_DAEMON_ROOT_PATH_INVALID: {path}: {detail}")]
     PathInvalid { path: String, detail: String },
-    #[error("MEJEPA_D_DRIVE_UNAVAILABLE: {path}: {source}")]
-    DDriveUnavailable {
+    #[error("MEJEPA_DAEMON_ROOT_UNAVAILABLE: {path}: {source}")]
+    RootUnavailable {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("MEJEPA_D_DRIVE_NOT_WRITABLE: {path}: {source}")]
-    DDriveNotWritable {
+    #[error("MEJEPA_DAEMON_ROOT_NOT_WRITABLE: {path}: {source}")]
+    RootNotWritable {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("MEJEPA_D_DRIVE_PERMS_TOO_OPEN: {path}: mode {mode:o}; expected no group/world bits")]
-    DDrivePermsTooOpen { path: PathBuf, mode: u32 },
-    #[error("MEJEPA_D_DRIVE_SUBDIR_CREATE_FAILED: {path}: {source}")]
-    DDriveSubdirCreateFailed {
+    #[error(
+        "MEJEPA_DAEMON_ROOT_PERMS_TOO_OPEN: {path}: mode {mode:o}; expected no group/world bits"
+    )]
+    RootPermsTooOpen { path: PathBuf, mode: u32 },
+    #[error("MEJEPA_DAEMON_ROOT_SUBDIR_CREATE_FAILED: {path}: {source}")]
+    RootSubdirCreateFailed {
         path: PathBuf,
         source: std::io::Error,
     },
@@ -46,20 +48,19 @@ pub enum DaemonValidationError {
     DaemonLockHeld { path: PathBuf, holder: String },
 }
 
-pub fn validate_d_drive_root(root: &Path) -> Result<DaemonPaths, DaemonValidationError> {
+pub fn validate_daemon_root(root: &Path) -> Result<DaemonPaths, DaemonValidationError> {
     validate_root_path(root)?;
-    let metadata =
-        fs::metadata(root).map_err(|source| DaemonValidationError::DDriveUnavailable {
-            path: root.to_path_buf(),
-            source,
-        })?;
+    let metadata = fs::metadata(root).map_err(|source| DaemonValidationError::RootUnavailable {
+        path: root.to_path_buf(),
+        source,
+    })?;
     if !metadata.is_dir() {
         return Err(DaemonValidationError::PathInvalid {
             path: root.display().to_string(),
             detail: "root exists but is not a directory".to_string(),
         });
     }
-    validate_d_drive_permissions(root, &metadata)?;
+    validate_root_permissions(root, &metadata)?;
 
     let root_write_test = root.join(".mejepa-daemon-root-write-test");
     write_remove_test(root, &root_write_test)?;
@@ -81,16 +82,15 @@ pub fn validate_d_drive_root(root: &Path) -> Result<DaemonPaths, DaemonValidatio
 
     for dir in required_subdirs(root) {
         fs::create_dir_all(&dir).map_err(|source| {
-            DaemonValidationError::DDriveSubdirCreateFailed {
+            DaemonValidationError::RootSubdirCreateFailed {
                 path: dir.clone(),
                 source,
             }
         })?;
-        let meta =
-            fs::metadata(&dir).map_err(|source| DaemonValidationError::DDriveUnavailable {
-                path: dir.clone(),
-                source,
-            })?;
+        let meta = fs::metadata(&dir).map_err(|source| DaemonValidationError::RootUnavailable {
+            path: dir.clone(),
+            source,
+        })?;
         if !meta.is_dir() {
             return Err(DaemonValidationError::PathInvalid {
                 path: dir.display().to_string(),
@@ -104,7 +104,7 @@ pub fn validate_d_drive_root(root: &Path) -> Result<DaemonPaths, DaemonValidatio
     Ok(paths)
 }
 
-fn validate_d_drive_permissions(
+fn validate_root_permissions(
     root: &Path,
     metadata: &fs::Metadata,
 ) -> Result<(), DaemonValidationError> {
@@ -113,7 +113,7 @@ fn validate_d_drive_permissions(
         use std::os::unix::fs::PermissionsExt;
         let mode = metadata.permissions().mode() & 0o777;
         if mode & 0o077 != 0 {
-            return Err(DaemonValidationError::DDrivePermsTooOpen {
+            return Err(DaemonValidationError::RootPermsTooOpen {
                 path: root.to_path_buf(),
                 mode,
             });
@@ -127,11 +127,11 @@ fn validate_d_drive_permissions(
 }
 
 fn write_remove_test(root: &Path, write_test: &Path) -> Result<(), DaemonValidationError> {
-    fs::write(write_test, b"ok").map_err(|source| DaemonValidationError::DDriveNotWritable {
+    fs::write(write_test, b"ok").map_err(|source| DaemonValidationError::RootNotWritable {
         path: root.to_path_buf(),
         source,
     })?;
-    fs::remove_file(write_test).map_err(|source| DaemonValidationError::DDriveNotWritable {
+    fs::remove_file(write_test).map_err(|source| DaemonValidationError::RootNotWritable {
         path: write_test.to_path_buf(),
         source,
     })
@@ -190,7 +190,7 @@ impl DaemonPidLock {
     pub fn acquire(path: &Path) -> Result<Self, DaemonValidationError> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|source| {
-                DaemonValidationError::DDriveSubdirCreateFailed {
+                DaemonValidationError::RootSubdirCreateFailed {
                     path: parent.to_path_buf(),
                     source,
                 }
@@ -202,7 +202,7 @@ impl DaemonPidLock {
             .read(true)
             .write(true)
             .open(path)
-            .map_err(|source| DaemonValidationError::DDriveNotWritable {
+            .map_err(|source| DaemonValidationError::RootNotWritable {
                 path: path.to_path_buf(),
                 source,
             })?;
@@ -225,7 +225,7 @@ impl DaemonPidLock {
             .and_then(|_| file.seek(std::io::SeekFrom::Start(0)).map(|_| ()))
             .and_then(|_| writeln!(file, "{pid}"))
             .and_then(|_| file.flush())
-            .map_err(|source| DaemonValidationError::DDriveNotWritable {
+            .map_err(|source| DaemonValidationError::RootNotWritable {
                 path: path.to_path_buf(),
                 source,
             })?;
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn validator_creates_required_subdirs_and_readback_paths() {
         let temp = private_tempdir();
-        let paths = validate_d_drive_root(temp.path()).expect("valid root");
+        let paths = validate_daemon_root(temp.path()).expect("valid root");
         assert!(paths.storage_db.is_dir());
         assert!(paths.shift_log_dir.is_dir());
         assert!(paths.panel_db.is_dir());
@@ -277,13 +277,10 @@ mod tests {
     #[test]
     fn validator_rejects_missing_and_invalid_roots() {
         let missing = PathBuf::from("/tmp/contextgraph-definitely-missing-daemon-root");
-        let err = validate_d_drive_root(&missing).expect_err("missing root must fail");
-        assert!(matches!(
-            err,
-            DaemonValidationError::DDriveUnavailable { .. }
-        ));
+        let err = validate_daemon_root(&missing).expect_err("missing root must fail");
+        assert!(matches!(err, DaemonValidationError::RootUnavailable { .. }));
 
-        let err = validate_d_drive_root(Path::new("relative"))
+        let err = validate_daemon_root(Path::new("relative"))
             .expect_err("relative root must fail closed");
         assert!(matches!(err, DaemonValidationError::PathInvalid { .. }));
     }
@@ -296,10 +293,10 @@ mod tests {
         let temp = tempfile::tempdir().expect("tempdir");
         fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o777))
             .expect("set open perms");
-        let err = validate_d_drive_root(temp.path()).expect_err("open perms must fail");
+        let err = validate_daemon_root(temp.path()).expect_err("open perms must fail");
         assert!(matches!(
             err,
-            DaemonValidationError::DDrivePermsTooOpen { .. }
+            DaemonValidationError::RootPermsTooOpen { .. }
         ));
     }
 

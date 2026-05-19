@@ -21,8 +21,8 @@ use context_graph_mejepa_instruments::{OracleVerdict, PerTestOutcome, TestOutcom
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-042-patch-similarity-exemplar-fsv";
-const INDEX_ROOT: &str = "/mnt/d/contextgraph/storage/patch-similarity-index-v1";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-042-patch-similarity-exemplar-fsv";
+const INDEX_ROOT: &str = "/zfs/archive/contextgraph/storage/patch-similarity-index-v1";
 
 #[derive(Debug, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -256,7 +256,7 @@ fn record(
         failure_mode_class,
         witness_hash: WitnessHash([id; 32]),
         evidence_path: format!(
-            "/mnt/d/contextgraph/fsv/task-py-g-042/evidence/exemplar-{id:03}.json"
+            "/zfs/archive/contextgraph/fsv/task-py-g-042/evidence/exemplar-{id:03}.json"
         ),
         diff_summary: format!("cluster={cluster} mutation={}", mutation_kind.slug()),
         vector: cluster_vector(cluster, id as u64),

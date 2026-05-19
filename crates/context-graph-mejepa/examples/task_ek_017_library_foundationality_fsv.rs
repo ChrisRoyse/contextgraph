@@ -18,7 +18,7 @@ use context_graph_mejepa_cf::{
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-017-library-foundationality-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-017-library-foundationality-fsv";
 
 fn main() -> Result<()> {
     let started_at_unix_ms = current_unix_ms();

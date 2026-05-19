@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="/mnt/d/contextgraph/fsv/phase-g-failure-mode-class-metrics-fsv"
+FSV_ROOT="/zfs/archive/contextgraph/fsv/phase-g-failure-mode-class-metrics-fsv"
 REPORT="${FSV_ROOT}/failure_mode_class_metrics_fsv.json"
 
 cd "${ROOT}"

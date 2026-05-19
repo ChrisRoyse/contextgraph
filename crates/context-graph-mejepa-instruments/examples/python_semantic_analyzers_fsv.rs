@@ -28,7 +28,8 @@ struct SlotReadback {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-python-semantic-analyzers-fsv");
+    let root =
+        PathBuf::from("/zfs/archive/contextgraph/fsv/contextgraph-python-semantic-analyzers-fsv");
     reset_root(&root)?;
     let source_dir = root.join("sources");
     let output_dir = root.join("slot-outputs");

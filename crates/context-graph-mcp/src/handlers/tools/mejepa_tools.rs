@@ -77,7 +77,7 @@ const ENV_INFER_DB: &str = "CONTEXTGRAPH_MEJEPA_INFER_DB";
 const ENV_ALLOW_DETERMINISTIC_VERIFY: &str = "CONTEXTGRAPH_MEJEPA_ALLOW_DETERMINISTIC_VERIFY";
 const ENV_PAUSE_PATH: &str = "CONTEXTGRAPH_MEJEPA_PAUSE_PATH";
 const DEFAULT_PAUSE_STATE_PATH: &str =
-    "/mnt/d/contextgraph/state/cgreality/predictions_paused_until.json";
+    "/zfs/archive/contextgraph/state/cgreality/predictions_paused_until.json";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -4173,7 +4173,7 @@ mod mejepa_constellation_inspect_tests {
         let (handlers, _handler_tempdir) =
             crate::handlers::tests::create_protocol_test_handlers().await;
         let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
-        let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-agent-identity-fsv");
+        let fsv_root = PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-agent-identity-fsv");
         fs::create_dir_all(&fsv_root).unwrap();
         let run_root = fsv_root.join(format!(
             "mcp-run-{}-{}",
@@ -4712,7 +4712,7 @@ can_operator_override = {operator}
             crate::handlers::tests::create_protocol_test_handlers().await;
         let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
         let fsv_root =
-            PathBuf::from("/mnt/d/contextgraph/fsv/task-py-g-055-prediction-injection-fsv");
+            PathBuf::from("/zfs/archive/contextgraph/fsv/task-py-g-055-prediction-injection-fsv");
         fs::create_dir_all(&fsv_root).unwrap();
         let run_root = fsv_root.join(format!(
             "mcp-readback-run-{}-{}",
@@ -4966,7 +4966,8 @@ can_operator_override = {operator}
         let (handlers, _handler_tempdir) =
             crate::handlers::tests::create_protocol_test_handlers().await;
         let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
-        let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-system-cost-producers-fsv");
+        let fsv_root =
+            PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-system-cost-producers-fsv");
         fs::create_dir_all(&fsv_root).unwrap();
         let run_root = fsv_root.join(format!(
             "mcp-feedback-run-{}-{}",
@@ -5130,7 +5131,8 @@ can_operator_override = {operator}
         let (handlers, _handler_tempdir) =
             crate::handlers::tests::create_protocol_test_handlers().await;
         let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
-        let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-inspect-prediction-fsv");
+        let fsv_root =
+            PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-inspect-prediction-fsv");
         fs::create_dir_all(&fsv_root).unwrap();
         let run_root = fsv_root.join(format!("run-{}-{}", started_at_unix_ms, std::process::id()));
         fs::create_dir_all(&run_root).unwrap();
@@ -5409,7 +5411,7 @@ can_operator_override = {operator}
         let (handlers, _handler_tempdir) =
             crate::handlers::tests::create_protocol_test_handlers().await;
         let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
-        let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-operator-override-fsv");
+        let fsv_root = PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-operator-override-fsv");
         fs::create_dir_all(&fsv_root).unwrap();
         let run_root = fsv_root.join(format!(
             "mcp-run-{}-{}",
@@ -5968,7 +5970,7 @@ can_operator_override = {operator}
         let (handlers, _handler_tempdir) =
             crate::handlers::tests::create_protocol_test_handlers().await;
         let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
-        let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-daemon-status-fsv");
+        let fsv_root = PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-daemon-status-fsv");
         std::fs::create_dir_all(&fsv_root).unwrap();
         let run_root = fsv_root.join(format!("run-{}-{}", started_at_unix_ms, std::process::id()));
         std::fs::create_dir_all(&run_root).unwrap();

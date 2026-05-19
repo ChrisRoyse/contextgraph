@@ -18,7 +18,7 @@ use context_graph_mejepa::system_cost::HealTickerTelemetrySnapshot;
 use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
 use serde_json::{json, Value};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-training-holdout-drift-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-g-training-holdout-drift-fsv";
 const REPORT_NAME: &str = "training_holdout_drift_fsv.json";
 
 fn main() -> Result<()> {

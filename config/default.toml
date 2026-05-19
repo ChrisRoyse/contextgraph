@@ -17,9 +17,9 @@ tcp_port = 8080
 # Storage backend: "rocksdb", "sqlite", "postgres"
 backend = "rocksdb"
 # RocksDB path (durable source of truth)
-path = "/mnt/d/contextgraph/storage/contextgraph-rocksdb"
+path = "/zfs/archive/contextgraph/storage/contextgraph-rocksdb"
 # SQLite database path (only used when backend = "sqlite")
-sqlite_path = "/mnt/d/contextgraph/storage/context-graph.db"
+sqlite_path = "/zfs/archive/contextgraph/storage/context-graph.db"
 # PostgreSQL connection string (only used when backend = "postgres")
 # postgres_url = "postgres://user:pass@localhost/contextgraph"
 

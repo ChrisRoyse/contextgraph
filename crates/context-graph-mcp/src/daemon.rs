@@ -773,7 +773,7 @@ pub fn start_supervised_flywheel_tasks(
     ensure_mejepa_column_families(&db)?;
     append_daemon_log(
         &config.paths.stdout_log,
-        "validated D-drive root, starting supervised tasks",
+        "validated daemon root, starting supervised tasks",
     )?;
     write_supervisor_status(&config, "starting", &BTreeMap::new())?;
 
@@ -1468,7 +1468,7 @@ pub fn write_weekly_eval_markdown(
          - source_of_truth: CF_MEJEPA_HEAL_REPORTS / CF_MEJEPA_MODEL_PROMOTIONS\n\
          - see `mcp__cgreality__mejepa_weekly_eval_dashboard` for current row counts and readback hashes\n\n\
          ## Storage Utilization\n\n\
-         - storage source: /mnt/d/contextgraph runtime root\n\
+         - storage source: /zfs/archive/contextgraph runtime root\n\
          - detailed slice readback: `mcp__cgreality__mejepa_quota_status`\n\n\
          - session_cleanup_gc_events: {}\n\
          - session_cleanup_gc_event_source: CF_MEJEPA_GC_HISTORY event_type=session_cleanup\n\n\
@@ -2199,7 +2199,7 @@ mod tests {
             "scheduled_run",
             flywheel_run_id(SupervisedTaskKind::WeeklyEvalScheduler, "unit_test"),
         )
-        .completed(serde_json::json!({"weekly_json_path": "/mnt/d/contextgraph/exports/eval/unit/weekly.json"}));
+        .completed(serde_json::json!({"weekly_json_path": "/zfs/archive/contextgraph/exports/eval/unit/weekly.json"}));
         let key_hex = record_flywheel_job_run(&db, &record).expect("record job run");
         let key = hex::decode(key_hex).expect("decode key");
         let cf = db
@@ -2643,7 +2643,7 @@ mod tests {
     fn scheduler_period_override_rejects_zero_duration() {
         let temp = private_tempdir();
         let paths =
-            crate::daemon_validate::validate_d_drive_root(temp.path()).expect("valid daemon root");
+            crate::daemon_validate::validate_daemon_root(temp.path()).expect("valid daemon root");
         let config = FlywheelDaemonConfig::from_paths(paths, temp.path().to_path_buf());
         let err = config
             .with_test_scheduler_periods(Duration::ZERO, Duration::from_secs(1))
@@ -2657,7 +2657,7 @@ mod tests {
     fn self_optimization_scheduler_config_uses_daemon_source_of_truth_paths() {
         let temp = private_tempdir();
         let paths =
-            crate::daemon_validate::validate_d_drive_root(temp.path()).expect("valid daemon root");
+            crate::daemon_validate::validate_daemon_root(temp.path()).expect("valid daemon root");
         let config = FlywheelDaemonConfig::from_paths(paths.clone(), temp.path().to_path_buf());
         let scheduler_config = self_optimization_scheduler_config(&config);
 
@@ -2683,7 +2683,7 @@ mod tests {
     async fn supervisor_restart_flapping_writes_heal_report_source_of_truth() {
         let temp = private_tempdir();
         let paths =
-            crate::daemon_validate::validate_d_drive_root(temp.path()).expect("valid daemon root");
+            crate::daemon_validate::validate_daemon_root(temp.path()).expect("valid daemon root");
         let db = Arc::new(open_mejepa_test_db(&paths.storage_db));
         let config = FlywheelDaemonConfig::from_paths(paths.clone(), temp.path().to_path_buf());
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -2747,7 +2747,7 @@ mod tests {
     async fn self_optimization_scheduler_panic_is_caught_by_supervisor_wrapper() {
         let temp = private_tempdir();
         let paths =
-            crate::daemon_validate::validate_d_drive_root(temp.path()).expect("valid daemon root");
+            crate::daemon_validate::validate_daemon_root(temp.path()).expect("valid daemon root");
         let db = Arc::new(open_mejepa_test_db(&paths.storage_db));
         let config = FlywheelDaemonConfig::from_paths(paths, temp.path().to_path_buf());
         let (_shutdown_tx, shutdown_rx) = watch::channel(false);

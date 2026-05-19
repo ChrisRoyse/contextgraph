@@ -1095,7 +1095,7 @@ impl McpServer {
     /// Priority order:
     /// 1. `CONTEXT_GRAPH_STORAGE_PATH` environment variable
     /// 2. `config.storage.path` from configuration
-    /// 3. Default: D-backed ContextGraph storage under `/mnt/d/contextgraph`.
+    /// 3. Default: aiwonder-backed ContextGraph storage under `/zfs/archive/contextgraph`.
     ///
     /// Creates the directory if it doesn't exist.
     /// SRV-M3 FIX: Made `pub` so main.rs can use the same path resolution
@@ -1123,7 +1123,7 @@ impl McpServer {
         }
 
         let default_path = context_graph_paths::durable_storage_path()?;
-        info!("Using default D-backed storage path: {:?}", default_path);
+        info!("Using default aiwonder storage path: {:?}", default_path);
         Ok(default_path)
     }
 
@@ -1136,8 +1136,7 @@ impl McpServer {
     /// Priority order:
     /// 1. `CONTEXT_GRAPH_MODELS_PATH` environment variable
     /// 2. `CONTEXTGRAPH_MODELS_ROOT` Phase-1b materializer environment variable
-    /// 3. Phase-1b canonical D: model registry path when present
-    /// 4. Default: `models` directory NEXT TO EXECUTABLE (not current dir!)
+    /// 3. Default: aiwonder hot model registry path.
     ///
     /// CRITICAL: Uses executable directory as base, NOT current working directory.
     /// This prevents path resolution issues when MCP clients spawn the server from
@@ -1164,33 +1163,8 @@ impl McpServer {
             return path;
         }
 
-        let phase1b_registry_path = PathBuf::from("/mnt/d/cabdru/contextgraph/models");
-        if phase1b_registry_path
-            .join("mejepa_models_config.toml")
-            .is_file()
-        {
-            info!(
-                "Using Phase-1b ME-JEPA model registry path: {:?}",
-                phase1b_registry_path
-            );
-            return phase1b_registry_path;
-        }
-
-        // FIXED: Use executable's directory instead of current_dir
-        // This ensures the server finds models regardless of working directory.
-        let default_path = std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| {
-                // Fallback to current_dir only if we can't get executable path
-                warn!("Could not determine executable directory, falling back to current_dir");
-                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-            })
-            .join("models");
-        info!(
-            "Using default models path (relative to executable): {:?}",
-            default_path
-        );
+        let default_path = PathBuf::from("/zfs/hot/contextgraph/models");
+        info!("Using default aiwonder models path: {:?}", default_path);
         default_path
     }
 

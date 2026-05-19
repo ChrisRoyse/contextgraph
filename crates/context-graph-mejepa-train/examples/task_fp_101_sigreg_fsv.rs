@@ -11,7 +11,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-fp-101-sigreg-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-fp-101-sigreg-fsv";
 
 fn main() -> ExitCode {
     match run() {

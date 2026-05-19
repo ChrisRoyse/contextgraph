@@ -200,7 +200,7 @@ fn generate_with_config<O: Oracle>(
         context_graph_paths::require_under_data_root(&config.venv_python, "generate.venv_python")?;
     // Cache and work roots are EPHEMERAL — rebuildable from the durable
     // corpus output + a fresh `git clone`. On WSL2 these paths benchmark
-    // 40-100× faster on ext4 than on the D-drive 9P shim, so the validator
+    // 40-100× faster on ext4 than on the aiwonder 9P shim, so the validator
     // explicitly allows paths outside the data root (only denying C-drive).
     // See `context_graph_paths::require_ephemeral_path` and the 2026-05-11
     // 9P throughput benchmark in `./memory/discoveries/`.
@@ -759,13 +759,13 @@ fn json_error(context: impl Into<String>) -> impl FnOnce(serde_json::Error) -> M
 
 fn default_venv_python() -> PathBuf {
     context_graph_paths::ensure_subdir("cache/contextgraph-swebench")
-        .expect("ContextGraph D-backed SWE-bench cache root must be available")
+        .expect("ContextGraph aiwonder-backed SWE-bench cache root must be available")
         .join("venv/bin/python")
 }
 
 fn default_repo_cache_dir() -> PathBuf {
     context_graph_paths::mejepa_corpus_repo_cache_dir()
-        .expect("ContextGraph D-backed ME-JEPA corpus repo cache must be available")
+        .expect("ContextGraph aiwonder-backed ME-JEPA corpus repo cache must be available")
 }
 
 #[cfg(test)]
@@ -777,7 +777,7 @@ mod tests {
         let oracle = SwebenchDockerOracle;
         let err = generate_swe_bench_mutation_corpus_with_oracle(
             Path::new("tasks/swebench-lite"),
-            Path::new("/mnt/d/contextgraph/fsv/contextgraph-generate-outside-corpus-root"),
+            Path::new("/zfs/archive/contextgraph/fsv/contextgraph-generate-outside-corpus-root"),
             &[MutationCategory::KnownGood],
             &[Language::Python],
             &oracle,

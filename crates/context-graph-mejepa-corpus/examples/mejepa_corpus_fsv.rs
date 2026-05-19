@@ -2,11 +2,11 @@
 // the train/calibration/holdout split helper.
 //
 // Sources of truth:
-//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/generated_sources/*.py
-//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/pyc/*.pyc
-//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-assignments.json
-//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-repo-atomic-assignments.json
-//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/mejepa-corpus-evidence.json
+//   - /zfs/archive/contextgraph/fsv/context-graph-mejepa-corpus/generated_sources/*.py
+//   - /zfs/archive/contextgraph/fsv/context-graph-mejepa-corpus/pyc/*.pyc
+//   - /zfs/archive/contextgraph/fsv/context-graph-mejepa-corpus/split-assignments.json
+//   - /zfs/archive/contextgraph/fsv/context-graph-mejepa-corpus/split-repo-atomic-assignments.json
+//   - /zfs/archive/contextgraph/fsv/context-graph-mejepa-corpus/mejepa-corpus-evidence.json
 //
 // The example fails closed. It asserts every invariant before writing
 // evidence, fsyncs and read-checks each generated file, runs Python syntax

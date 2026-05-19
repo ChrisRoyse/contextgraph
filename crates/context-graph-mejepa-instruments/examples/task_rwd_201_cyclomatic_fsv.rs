@@ -22,7 +22,7 @@ fn main() -> FsvResult<()> {
         .duration_since(UNIX_EPOCH)?
         .as_millis()
         .to_string();
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/task-rwd-201-cyclomatic-fsv")
+    let root = PathBuf::from("/zfs/archive/contextgraph/fsv/task-rwd-201-cyclomatic-fsv")
         .join(format!("run-{run_id}"));
     fs::create_dir_all(&root)?;
     let source_path = root.join("ladder.py");

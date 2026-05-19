@@ -99,7 +99,7 @@ mod cuda_impl {
             return p;
         }
 
-        let canonical = PathBuf::from("/mnt/d/cabdru/contextgraph/models");
+        let canonical = PathBuf::from("/zfs/hot/contextgraph/models");
         if canonical.join("mejepa_models_config.toml").is_file() {
             tracing::info!("Using canonical ME-JEPA models path: {:?}", canonical);
             return canonical;

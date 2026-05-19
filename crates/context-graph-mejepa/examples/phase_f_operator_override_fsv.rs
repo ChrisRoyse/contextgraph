@@ -17,7 +17,7 @@ use context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_OVERRIDES;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-f-operator-override-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-f-operator-override-fsv";
 
 fn main() -> Result<()> {
     let stamp = Utc::now().timestamp_millis();

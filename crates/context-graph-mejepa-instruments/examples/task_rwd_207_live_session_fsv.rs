@@ -24,8 +24,8 @@ struct EdgeCase {
 fn main() -> FsvResult<()> {
     let run_id = format!("run-{}", now_millis()?);
     let fsv_root =
-        PathBuf::from("/mnt/d/contextgraph/fsv/task-rwd-207-live-session-fsv").join(&run_id);
-    let raw_root = PathBuf::from("/mnt/d/contextgraph/corpus/python-live-session-signals-v1")
+        PathBuf::from("/zfs/archive/contextgraph/fsv/task-rwd-207-live-session-fsv").join(&run_id);
+    let raw_root = PathBuf::from("/zfs/archive/contextgraph/corpus/python-live-session-signals-v1")
         .join("task-rwd-207-fsv")
         .join(&run_id);
     let db_path = fsv_root.join("live_session_signals.db");

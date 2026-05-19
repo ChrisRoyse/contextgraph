@@ -408,7 +408,7 @@ memory.archive/                         — read-only legacy SAMP/SMAP (526 file
 
 /mnt/d/contextgraph/                    — **legacy/local SoT** (327 FSV dirs as of 2026-05-18)
                                           historical for production unless an issue explicitly
-                                          scopes a local-only smoke (#369 tracks revalidation)
+                                          scopes a historical-only proof (#369 tracks revalidation)
 ```
 
 ---

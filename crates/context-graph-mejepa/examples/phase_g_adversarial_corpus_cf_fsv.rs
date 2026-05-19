@@ -13,8 +13,8 @@ use context_graph_mejepa::{
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-060-adversarial-corpus-fsv";
-const CORPUS_ROOT: &str = "/mnt/d/contextgraph/corpus/python-adversarial-v1";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-060-adversarial-corpus-fsv";
+const CORPUS_ROOT: &str = "/zfs/archive/contextgraph/corpus/python-adversarial-v1";
 
 fn main() -> Result<()> {
     let run_root = PathBuf::from(FSV_ROOT).join(format!("run-{}", now_ms()));

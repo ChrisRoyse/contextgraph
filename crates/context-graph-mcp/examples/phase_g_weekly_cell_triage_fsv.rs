@@ -17,7 +17,7 @@ use context_graph_mejepa::Language;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const DEFAULT_FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-weekly-cell-triage-fsv";
+const DEFAULT_FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-g-weekly-cell-triage-fsv";
 
 fn main() -> Result<()> {
     let output_root = std::env::args()

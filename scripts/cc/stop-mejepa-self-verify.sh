@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/cc/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
-LOG_PATH="${CGREALITY_STOP_MEJEPA_LOG:-${CGREALITY_DROOT:-/mnt/d/contextgraph}/runtime/stop-mejepa-self-verify.jsonl}"
+LOG_PATH="${CGREALITY_STOP_MEJEPA_LOG:-${CGREALITY_DROOT:-/zfs/archive/contextgraph}/runtime/stop-mejepa-self-verify.jsonl}"
 BLOCKED_DIR="${CGREALITY_STOP_MEJEPA_BLOCKED_DIR:-$(dirname "${LOG_PATH}")/stop-mejepa-self-verify-blocked}"
 BREAKER_STATE_DIR="${CGREALITY_STOP_MEJEPA_BREAKER_STATE_DIR:-$(dirname "${LOG_PATH}")/stop-mejepa-self-verify-breaker}"
 
@@ -50,7 +50,7 @@ stop_mejepa_warn_unreachable() {
     --arg detail "${detail}" \
     --arg stderr_tail "${stderr_tail}" \
     --arg log_path "${LOG_PATH}" \
-    --arg db_path "${CONTEXTGRAPH_MEJEPA_INFER_DB:-/mnt/d/contextgraph/storage/contextgraph-rocksdb}" \
+    --arg db_path "${CONTEXTGRAPH_MEJEPA_INFER_DB:-/zfs/archive/contextgraph/storage/contextgraph-rocksdb}" \
     '{
       error_code: "MEJEPA_STOP_HOOK_DAEMON_UNREACHABLE",
       session_id: $session_id,
@@ -97,7 +97,7 @@ stop_mejepa_write_blocked_artifact() {
     --arg stderr_tail "${stderr_tail}" \
     --arg artifact_path "${artifact_path}" \
     --arg log_path "${LOG_PATH}" \
-    --arg db_path "${DB_PATH:-${CONTEXTGRAPH_MEJEPA_INFER_DB:-/mnt/d/contextgraph/storage/contextgraph-rocksdb}}" \
+    --arg db_path "${DB_PATH:-${CONTEXTGRAPH_MEJEPA_INFER_DB:-/zfs/archive/contextgraph/storage/contextgraph-rocksdb}}" \
     --argjson breaker_open "${breaker_open}" \
     --argjson timeout_count "${timeout_count}" \
     '{
@@ -233,7 +233,7 @@ if [ -f "${CONFIG_PATH}" ] && grep -Eq '^[[:space:]]*stop_hook_enabled[[:space:]
   exit 0
 fi
 
-DB_PATH="${CONTEXTGRAPH_MEJEPA_INFER_DB:-/mnt/d/contextgraph/storage/contextgraph-rocksdb}"
+DB_PATH="${CONTEXTGRAPH_MEJEPA_INFER_DB:-/zfs/archive/contextgraph/storage/contextgraph-rocksdb}"
 MAX_PREDICTIONS="${CGREALITY_MEJEPA_STOP_VERIFY_MAX_PREDICTIONS:-50}"
 TIMEOUT_SECONDS="${CGREALITY_MEJEPA_STOP_VERIFY_TIMEOUT_SECONDS:-6}"
 TIMEOUT_BREAKER_THRESHOLD="${CGREALITY_MEJEPA_STOP_VERIFY_TIMEOUT_BREAKER_THRESHOLD:-3}"

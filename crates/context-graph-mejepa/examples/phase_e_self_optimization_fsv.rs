@@ -32,7 +32,10 @@ use serde_json::{json, Value};
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[arg(long, default_value = "/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv")]
+    #[arg(
+        long,
+        default_value = "/zfs/archive/contextgraph/fsv/mejepa-phase-e-fsv"
+    )]
     output_root: PathBuf,
 }
 

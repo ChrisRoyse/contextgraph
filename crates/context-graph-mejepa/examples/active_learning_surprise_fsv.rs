@@ -9,7 +9,7 @@
 //! production will use.
 //!
 //! Per FSV-PROTOCOL.md §6: writes evidence to
-//! `/mnt/d/contextgraph/fsv/active-learning-fsv/agent_surprise.json` with
+//! `/zfs/archive/contextgraph/fsv/active-learning-fsv/agent_surprise.json` with
 //! cf_counts_before / cf_counts_after, happy-path readback, boundary cases.
 
 use std::fs;
@@ -24,8 +24,9 @@ use context_graph_mejepa_hygiene::storage::open_hygiene_rocksdb;
 use serde::Serialize;
 use serde_json::json;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/active-learning-fsv";
-const FSV_OUTPUT_PATH: &str = "/mnt/d/contextgraph/fsv/active-learning-fsv/agent_surprise.json";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/active-learning-fsv";
+const FSV_OUTPUT_PATH: &str =
+    "/zfs/archive/contextgraph/fsv/active-learning-fsv/agent_surprise.json";
 
 #[derive(Serialize)]
 struct CaseReport {

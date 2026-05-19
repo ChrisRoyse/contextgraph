@@ -16,7 +16,7 @@ ContextGraph training was originally on the operator's WSL2 box (`/mnt/d/context
 2. **HD space limit.** The operator's local disk can't hold the full corpus reward field (~73 GB projected) + the Q3 SWE-bench Lite Python Docker images (~1-2 TB future requirement).
 3. **No CUDA MPS in WSL2.** Multi-process kernel overlap on the GPU is not supported on WSL2 → parallel-isolated mode in the scheduler can't actually deliver kernel-level concurrency. aiwonder runs `nvidia-cuda-mps-control.service` → MPS is active → parallel-isolated **does** get true kernel overlap on aiwonder.
 
-The aiwonder migration completed on 2026-05-17 (#296). The 2026-05-18 storage correction (#363) makes aiwonder the production durable source of truth for Phase G and later work. Local `/mnt/d/contextgraph/...` paths are legacy/local calibration evidence unless a GitHub issue explicitly scopes a local-only smoke.
+The aiwonder migration completed on 2026-05-17 (#296). The 2026-05-18 storage correction (#363), tightened by #412 on 2026-05-19, makes aiwonder the production durable source of truth for Phase G and later work. Local `/mnt/d/contextgraph/...` paths are legacy provenance only and must not be used for active reads or writes. Move any needed data to aiwonder first.
 
 ---
 
@@ -174,7 +174,7 @@ export CG_MEJEPA_PY_INSTRUMENT_REGISTRY_JSONL=/zfs/hot/contextgraph/corpus/pytho
 /zfs/hot/contextgraph/venv/bin/python3 \
   /zfs/hot/contextgraph/repo/scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
   --task-id TASK-PY-DATA-016-AIWONDER \
-  --chunks-jsonl /zfs/hot/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl \
+  --chunks-jsonl /zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl \
   --cache-root /zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-<TS> \
   --fsv-root /zfs/archive/contextgraph/fsv/python-forward-cache-v1-aiwonder-<TS>-fsv \
   --hot-root /home/croyse/.cache/contextgraph/aiwonder-<TS> \
@@ -257,7 +257,7 @@ Current corrective work after the #363 storage decision:
 3. **Never disable MPS.** `nvidia-cuda-mps-control.service` is load-bearing for the leapable-tei warm contexts and our own parallel-isolated mode benefits from it.
 4. **Never write secrets into this repo.** Use Infisical CLI or env-var names; see `leapablememory/docs2/infisical-secrets-guide.md §0`.
 5. **`/zfs/hot/` has no redundancy** (single NVMe). The corpus run's checkpoint + cache should go to `/zfs/archive/` (HDD mirror) for durability; only the in-flight hot-stage scratch should live on `/zfs/hot/contextgraph/` or `/home/croyse/.cache/`.
-6. **Production SoT is aiwonder.** Durable production corpus, runtime, project, cache, export, and FSV outputs go under `/zfs/archive/contextgraph/...`; local `/mnt/d/contextgraph` output is local-only unless an issue explicitly asks for it.
+6. **Production SoT is aiwonder.** Durable production corpus, runtime, project, cache, export, and FSV outputs go under `/zfs/archive/contextgraph/...`; local `/mnt/d/contextgraph` is historical provenance only and never an active input/output path.
 7. **Verify by SoT readback.** Per doctrine §4. Remote `systemctl is-active`, `du -sh`, `df -B1`, file hashes, RocksDB read-only reopen — not just SSH return codes.
 8. **Comment on the relevant GitHub Issue at every milestone.** Per doctrine §3.5.
 

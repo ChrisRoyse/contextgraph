@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-targeted-mutation-expansion-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-g-targeted-mutation-expansion-fsv";
 const ROWS_PER_CATEGORY: usize = 600;
 
 #[derive(Debug, Clone)]

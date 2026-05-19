@@ -49,7 +49,7 @@ impl Predictor for FailingPredictor {
 }
 
 fn main() -> Result<()> {
-    let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/d-series-blind-spots-fsv");
+    let fsv_root = PathBuf::from("/zfs/archive/contextgraph/fsv/d-series-blind-spots-fsv");
     fs::create_dir_all(&fsv_root)?;
     let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
     let mut happy_path = Vec::new();

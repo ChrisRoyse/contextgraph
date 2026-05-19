@@ -9,8 +9,8 @@
 //   - <run_root>/gold.<run_id>.json
 //   - <run_root>/logs/run_evaluation/<run_id>/gold/sympy__sympy-20590/
 //       report.json, run_instance.log, test_output.txt, patch.diff
-//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/swebench-oracle/oracle-store/
-//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/swebench-oracle-evidence.json
+//   - /zfs/archive/contextgraph/fsv/context-graph-mejepa-corpus/swebench-oracle/oracle-store/
+//   - /zfs/archive/contextgraph/fsv/context-graph-mejepa-corpus/swebench-oracle-evidence.json
 //
 // Expected: with --predictions_path=gold the harness applies the dataset's
 // canonical fix; the per-instance report.json reports

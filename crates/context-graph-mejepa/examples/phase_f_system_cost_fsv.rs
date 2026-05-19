@@ -21,7 +21,7 @@ use rocksdb::{IteratorMode, DB};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-f-system-cost-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-f-system-cost-fsv";
 const REPORT_FILE: &str = "system_cost_fsv.json";
 const VERIFY_COUNT: u64 = 1_000;
 const HEAL_WRITE_COUNT: u64 = 200;

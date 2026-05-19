@@ -36,7 +36,7 @@ use std::path::{Path, PathBuf};
 use tokenizers::Tokenizer;
 
 /// Canonical local ME-JEPA model artifact root used by this workstation.
-const DEFAULT_MODELS_ROOT: &str = "/mnt/d/cabdru/contextgraph/models";
+const DEFAULT_MODELS_ROOT: &str = "/zfs/hot/contextgraph/models";
 const MODELS_REGISTRY_FILENAME: &str = "mejepa_models_config.toml";
 const BGE_M3_MODEL_DIR: &str = "bge-m3-dense";
 const BGE_M3_TOKENIZER_FILENAME: &str = "tokenizer.json";

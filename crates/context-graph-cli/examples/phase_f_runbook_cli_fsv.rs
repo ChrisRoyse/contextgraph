@@ -2,7 +2,7 @@
 //!
 //! Exercises `mejepa daemon-status`, `mejepa report-weekly`,
 //! `mejepa eval-ship-gate`, and `mejepa rollback` against synthetic but
-//! schema-valid Source-of-Truth state under `/mnt/d/contextgraph/fsv/`.
+//! schema-valid Source-of-Truth state under `/zfs/archive/contextgraph/fsv/`.
 //! The rollback happy path is already FSV'd at the heal layer by
 //! `rollback_uses_persisted_heal_report_source_of_truth`; here we cover
 //! the CLI wrapper's validation + error surface so the operator binding
@@ -33,7 +33,7 @@ use rocksdb::WriteOptions;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-f-runbook-cli-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-f-runbook-cli-fsv";
 
 fn main() -> Result<()> {
     let started_at_unix_ms = Utc::now().timestamp_millis();

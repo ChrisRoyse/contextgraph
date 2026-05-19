@@ -28,7 +28,7 @@ pub(crate) enum ModelState<W> {
 }
 
 #[cfg(test)]
-const PRETRAINED_TEST_MODELS_ROOT: &str = "/mnt/d/cabdru/contextgraph/models";
+const PRETRAINED_TEST_MODELS_ROOT: &str = "/zfs/hot/contextgraph/models";
 
 #[cfg(test)]
 const PRETRAINED_TEST_MODELS_REGISTRY: &str = "mejepa_models_config.toml";

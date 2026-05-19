@@ -1,9 +1,9 @@
 // Manual Full State Verification for Phase 0 oracle + RocksDB storage.
 //
 // Sources of truth on disk:
-//   /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/oracle/pytest-report.json
-//   /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/oracle/rocksdb/
-//   /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/oracle-evidence.json
+//   /zfs/archive/contextgraph/fsv/context-graph-mejepa-corpus/oracle/pytest-report.json
+//   /zfs/archive/contextgraph/fsv/context-graph-mejepa-corpus/oracle/rocksdb/
+//   /zfs/archive/contextgraph/fsv/context-graph-mejepa-corpus/oracle-evidence.json
 //
 // The trigger is a real `python3 -m pytest` run over synthetic tests whose
 // expected outcomes are known up front: 1 pass, 1 fail, 1 skip. A small local

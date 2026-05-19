@@ -1142,7 +1142,7 @@ mod tests {
                 == 2
             && (refuted_score - 6.0).abs() < f32::EPSILON;
         let fsv_root = std::env::var("CONTEXTGRAPH_FSV_ROOT")
-            .unwrap_or_else(|_| "/mnt/d/contextgraph/fsv".to_string());
+            .unwrap_or_else(|_| "/zfs/archive/contextgraph/fsv".to_string());
         let fsv_dir = PathBuf::from(fsv_root)
             .join("task-py-g-069-posttooluse-capture-fsv")
             .join(format!(
@@ -1162,7 +1162,7 @@ mod tests {
                 "live_prediction_cf": context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
                 "active_learning_cf": context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
                 "fsv_path": report_path.display().to_string(),
-                "hook_capture_log": "/mnt/d/contextgraph/runtime/posttooluse-mejepa-capture.jsonl"
+                "hook_capture_log": "/zfs/archive/contextgraph/runtime/posttooluse-mejepa-capture.jsonl"
             },
             "cases": {
                 "refuted_queue_weight_6x": {
@@ -1394,7 +1394,7 @@ mod tests {
             && bulk.recommended_commands.len() == 10
             && bulk.truncated_recommended_command_count == 40;
         let fsv_root = std::env::var("CONTEXTGRAPH_FSV_ROOT")
-            .unwrap_or_else(|_| "/mnt/d/contextgraph/fsv".to_string());
+            .unwrap_or_else(|_| "/zfs/archive/contextgraph/fsv".to_string());
         let fsv_dir = PathBuf::from(fsv_root)
             .join("task-py-g-070-stop-self-verify-fsv")
             .join(format!(
@@ -1412,7 +1412,7 @@ mod tests {
                 "db_path": db_path,
                 "live_prediction_cf": context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
                 "verification_cf": context_graph_mejepa_cf::CF_MEJEPA_PREDICTION_VERIFICATIONS,
-                "hook_log": "/mnt/d/contextgraph/runtime/stop-mejepa-self-verify.jsonl",
+                "hook_log": "/zfs/archive/contextgraph/runtime/stop-mejepa-self-verify.jsonl",
                 "fsv_path": report_path.display().to_string()
             },
             "cases": {

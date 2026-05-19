@@ -23,7 +23,8 @@ use context_graph_mejepa_cf::{
 use context_graph_mejepa_train::eval::holdout::{PredictorForward, PredictorForwardOptions};
 use serde_json::{json, Value};
 
-const DEFAULT_FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-054-negative-action-ablation-fsv";
+const DEFAULT_FSV_ROOT: &str =
+    "/zfs/archive/contextgraph/fsv/task-py-g-054-negative-action-ablation-fsv";
 const FP_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const FP_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
@@ -81,7 +82,7 @@ fn run(output_root: &Path) -> Result<Value> {
             "eval_reports": CF_MEJEPA_EVAL_REPORTS,
             "fingerprint_ship_gate_windows": CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
             "mcp_response_builder": "context_graph_mcp::handlers::tools::mejepa_ship_gate_status_payload",
-            "weekly_ablation_artifact_pattern": "/mnt/d/contextgraph/exports/weekly/*/ablation_report.md"
+            "weekly_ablation_artifact_pattern": "/zfs/archive/contextgraph/exports/weekly/*/ablation_report.md"
         },
         "healthy": healthy,
         "degenerate": degenerate,

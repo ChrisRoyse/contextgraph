@@ -13,7 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-d-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-d-fsv";
 const CHUNK_COUNT: usize = 30;
 const EMBEDDER_COUNT: usize = 12;
 const VECTOR_DIM: usize = 16;

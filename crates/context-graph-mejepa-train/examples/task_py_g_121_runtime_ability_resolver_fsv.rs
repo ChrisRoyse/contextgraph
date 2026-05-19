@@ -100,7 +100,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .is_err();
     let edge_mntd_db_rejected =
-        open_ability_resolver_rocksdb(Path::new("/mnt/d/contextgraph/bad.rocksdb"), true).is_err();
+        open_ability_resolver_rocksdb(Path::new("/zfs/archive/contextgraph/bad.rocksdb"), true)
+            .is_err();
     let edge_leaky_membership_rejected = leaky_membership_rejected(&fsv_root, &skill_a.skill_id)?;
 
     db.flush()?;

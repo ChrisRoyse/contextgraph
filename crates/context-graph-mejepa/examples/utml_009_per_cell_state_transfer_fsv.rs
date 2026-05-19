@@ -12,7 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/utml-009-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/utml-009-fsv";
 const REPORT_FILE: &str = "per_cell_state_transfer_fsv.json";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

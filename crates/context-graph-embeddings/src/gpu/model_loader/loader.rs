@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn test_load_semantic_model() {
         let loader = GpuModelLoader::new().expect("GPU init failed");
-        let model_dir = Path::new("/mnt/d/cabdru/contextgraph/models/semantic");
+        let model_dir = Path::new("/zfs/hot/contextgraph/models/semantic");
         let weights = loader.load_bert_weights(model_dir).expect("Load failed");
 
         // e5-large-v2 specs
@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn test_load_entity_model() {
         let loader = GpuModelLoader::new().expect("GPU init failed");
-        let model_dir = Path::new("/mnt/d/cabdru/contextgraph/models/entity");
+        let model_dir = Path::new("/zfs/hot/contextgraph/models/entity");
         let weights = loader.load_bert_weights(model_dir).expect("Load failed");
 
         // all-MiniLM-L6-v2 specs

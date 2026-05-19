@@ -260,7 +260,7 @@ mod test_support {
             "all_passed": all_passed
         });
         let run_root = PathBuf::from(format!(
-            "/mnt/d/contextgraph/fsv/task-rwd-315-reward-audit-fsv/run-{}-{}",
+            "/zfs/archive/contextgraph/fsv/task-rwd-315-reward-audit-fsv/run-{}-{}",
             chrono::Utc::now().timestamp_millis(),
             std::process::id()
         ));

@@ -232,7 +232,7 @@ mod tests {
             route_languages: vec!["python".to_string()],
             route_entity_types: vec!["Function".to_string()],
             forward_artifact_path:
-                "/mnt/d/contextgraph/models/dynamic/edynamic_1_corpus_transe_v1/forward.so"
+                "/zfs/archive/contextgraph/models/dynamic/edynamic_1_corpus_transe_v1/forward.so"
                     .to_string(),
             forward_artifact_sha256:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),

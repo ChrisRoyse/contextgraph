@@ -21,8 +21,10 @@ use context_graph_mejepa::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-pub(crate) const DEFAULT_MEJEPA_INFER_DB: &str = "/mnt/d/contextgraph/storage/contextgraph-rocksdb";
-pub(crate) const DEFAULT_MEJEPA_TRAIN_DB: &str = "/mnt/d/contextgraph/storage/contextgraph-rocksdb";
+pub(crate) const DEFAULT_MEJEPA_INFER_DB: &str =
+    "/zfs/archive/contextgraph/storage/contextgraph-rocksdb";
+pub(crate) const DEFAULT_MEJEPA_TRAIN_DB: &str =
+    "/zfs/archive/contextgraph/storage/contextgraph-rocksdb";
 
 #[derive(Subcommand, Debug)]
 pub enum MejepaCommands {

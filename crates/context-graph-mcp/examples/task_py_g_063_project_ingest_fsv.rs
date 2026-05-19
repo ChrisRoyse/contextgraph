@@ -659,14 +659,14 @@ fn outside_allowed_root_case() -> Result<Value> {
 fn local_d_artifact_absence_case(project_ids: &[&str]) -> Value {
     let existing = project_ids
         .iter()
-        .map(|project_id| format!("/mnt/d/contextgraph/projects/{project_id}"))
+        .map(|project_id| format!("/zfs/archive/contextgraph/projects/{project_id}"))
         .filter(|path| Path::new(path).exists())
         .collect::<Vec<_>>();
     let pass = existing.is_empty();
     json!({
         "case": "no_production_project_artifacts_written_to_local_d",
         "before": {"checkedProjectIds": project_ids},
-        "trigger": "physical existence check for issue-scoped project ids under /mnt/d/contextgraph/projects",
+        "trigger": "physical existence check for issue-scoped project ids under /zfs/archive/contextgraph/projects",
         "after": {"existingLocalDProjectRoots": existing},
         "pass": pass
     })

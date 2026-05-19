@@ -12,7 +12,7 @@ use context_graph_mejepa::{open_infer_rocksdb, Language};
 use rocksdb::{IteratorMode, DB};
 use serde_json::json;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-f-per-head-calibration-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-f-per-head-calibration-fsv";
 const REPORT_FILE: &str = "per_head_calibration_fsv.json";
 const EXPECTED_ECE: f32 = 0.25;
 const ECE_TOLERANCE: f32 = 0.02;

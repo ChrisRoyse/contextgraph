@@ -5,7 +5,7 @@ set -euo pipefail
 # named below; synthetic matches prove CLAUDE.md rejects active guidance.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="${FSV_ROOT:-/mnt/d/contextgraph/fsv/phase-h-claude-inner-loop-reference-fsv}"
+FSV_ROOT="${FSV_ROOT:-/zfs/archive/contextgraph/fsv/phase-h-claude-inner-loop-reference-fsv}"
 RUN_ID="run-$(date -u +%s)-$$"
 RUN_ROOT="$FSV_ROOT/$RUN_ID"
 ARTIFACT="$FSV_ROOT/claude_inner_loop_reference_fsv.json"

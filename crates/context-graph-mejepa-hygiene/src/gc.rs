@@ -473,6 +473,6 @@ fn retention_rules_for_env(env: &HygieneEnv) -> OpsResult<BTreeMap<String, Reten
 fn gc_lock_path() -> PathBuf {
     let root = std::env::var("CONTEXTGRAPH_DATA_ROOT")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/mnt/d/contextgraph"));
+        .unwrap_or_else(|_| PathBuf::from("/zfs/archive/contextgraph"));
     root.join("state/locks/mejepa-gc.lock")
 }

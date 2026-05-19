@@ -11,7 +11,7 @@ SESSION_ID="$(cgreality_session_hex32 "${RAW_SESSION_ID}")"
 HTTP_PORT="${CONTEXT_GRAPH_HTTP_PORT:-3101}"
 MCP_URL="${CONTEXTGRAPH_MCP_HTTP_URL:-http://127.0.0.1:${HTTP_PORT}/mcp}"
 RENDERER="${ROOT}/scripts/cc/render_prediction_markdown.py"
-AGENT_HISTORY_ROOT="${CGREALITY_AGENT_HISTORY_ROOT:-${CGREALITY_DROOT:-/mnt/d/contextgraph}/runtime/agent-history}"
+AGENT_HISTORY_ROOT="${CGREALITY_AGENT_HISTORY_ROOT:-${CGREALITY_DROOT:-/zfs/archive/contextgraph}/runtime/agent-history}"
 AGENT_HISTORY_PATH="${AGENT_HISTORY_ROOT}/$(cgreality_safe_id "${SESSION_ID}")-injections.jsonl"
 COLD_START_MARKDOWN=$'### Reality prediction\n(no prediction available yet; ME-JEPA observing)\n'
 

@@ -22,7 +22,7 @@ fn main() -> FsvResult<()> {
         .duration_since(UNIX_EPOCH)?
         .as_millis()
         .to_string();
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/task-rwd-203-diff-topology-fsv")
+    let root = PathBuf::from("/zfs/archive/contextgraph/fsv/task-rwd-203-diff-topology-fsv")
         .join(format!("run-{run_id}"));
     fs::create_dir_all(&root)?;
     let diff_path = root.join("sample.diff");

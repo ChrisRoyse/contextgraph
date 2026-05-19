@@ -30,7 +30,7 @@ use context_graph_mejepa_embedders::{upper_triangle_len, EmbedderId};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-018f-entity-kge-embedder-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-018f-entity-kge-embedder-fsv";
 
 fn main() -> Result<()> {
     let started_at_unix_ms = current_unix_ms();
@@ -73,7 +73,7 @@ fn main() -> Result<()> {
     .context("build KGE forward artifact")?;
     let artifact_sha256 = sha256_hex(&artifact_bytes);
     let artifact_path = PathBuf::from(format!(
-        "/mnt/d/contextgraph/models/dynamic/edynamic_1_corpus_rotate_v1/run-{started_at_unix_ms}/forward.json"
+        "/zfs/archive/contextgraph/models/dynamic/edynamic_1_corpus_rotate_v1/run-{started_at_unix_ms}/forward.json"
     ));
     write_bytes_readback(&artifact_path, &artifact_bytes).context("write KGE artifact")?;
     let artifact_file_sha256 = sha256_file(&artifact_path).context("hash KGE artifact")?;

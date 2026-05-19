@@ -18,7 +18,7 @@ use context_graph_mejepa::{
 use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, WriteOptions, DB};
 use serde_json::{json, Value};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-061-cold-start-verdict-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-061-cold-start-verdict-fsv";
 const REPORT_NAME: &str = "cold_start_verdict_fsv.json";
 
 fn main() -> Result<()> {

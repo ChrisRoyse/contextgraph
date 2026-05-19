@@ -179,7 +179,7 @@ Child issue split:
 | Data | Path | Notes |
 |---|---|---|
 | 300×8 corpus + oracle labels | `/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json` | 2,400 entries; `oracle_all_passed` is the label source, joined by `(task_instance_id, mutation_category)` |
-| AST chunks | `/zfs/hot/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl` | Provides chunk metadata and row-key fields |
+| AST chunks | `/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl` | Provides chunk metadata and stable row-key fields |
 | 391-shard packed forward cache | `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z/` | Per-shard packed manifests point to each embedder's record/index files |
 | #388 cross-embedder tensors | `/zfs/archive/contextgraph/corpus/constellation-tensors-v1/` | Durable tensor artifacts: `slot_distribution_tensors.jsonl`, `pairwise_correlation_tensors.jsonl`, `constellation_tensor_report.json`, `constellation_tensor_manifest.json` |
 | #388 FSV | `/zfs/archive/contextgraph/fsv/task-py-g-088-cross-embedder-correlation-tensors-fsv/python_constellation_cross_embedder_tensors_fsv.json` | PASS evidence for TASK-PY-G-088 |
@@ -367,7 +367,7 @@ All calibration items below are now qualified by #385: their evidence must be pe
 | #372 / TASK-AIWONDER-019 | ContextGraph roots must be mounted on aiwonder ZFS pools (paths-policy enforcement) | open p0 `status:blocked` |
 | #380 / TASK-AIWONDER-020 | Off-host backup for `/zfs/archive` proof history (#296 backup posture follow-up) | open p1 |
 | #384 / TASK-AIWONDER-021 | CUDA/candle rollback and reproducibility lane | open p2 |
-| #295 | PERF — #199 resume launch scans full D-drive FSV root | in-progress |
+| #295 | PERF — #199 resume launch scans full aiwonder FSV root | in-progress |
 | #299 / #300 / #301 / #302 / #303 / #304 / #305 | AIWONDER-003..010 install / transfer / build / launch / calibration sub-tasks | in-progress p1 |
 | #306 | AIWONDER-011 SWE-bench Lite Python Docker image plan (future Q3) | p3 |
 
@@ -389,7 +389,7 @@ All calibration items below are now qualified by #385: their evidence must be pe
 
 | # | Title | Status |
 |---|---|---|
-| #295 | Resume launch scans full D-drive FSV root (perf) | in-progress |
+| #295 | Resume launch scans full aiwonder FSV root (perf) | in-progress |
 | #307 | promote_tree_verified asserts 'previous destination archived' on second-subrun shard promotion (regression in 4cd003e1) | in-progress |
 | #320 | phase_g_project_merkle_cache_fsv example fails clippy — `ProjectMerkleCache` doesn't impl `Debug` | needs-triage p1 |
 | #338 | Capture agent response bodies in runtime/agent-history for Q1 claim FSV | needs-triage p2 |

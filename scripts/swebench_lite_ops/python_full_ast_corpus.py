@@ -741,7 +741,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
         "diagnostics": file_state(diagnostics_path),
         "task_checkpoint_root": {"path": str(args.task_checkpoint_root), "exists": args.task_checkpoint_root.exists()},
         "chunk_coverage": coverage_from_jsonl(chunks_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
+        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "snapshot_bytes": path_bytes(snapshot_root),
     }
@@ -957,7 +957,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
         },
         "progress": file_state(progress_path),
         "chunk_coverage": coverage_from_jsonl(chunks_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
+        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
         "hot_bytes": hot_bytes,
         "snapshot_bytes": path_bytes(snapshot_root),
     }

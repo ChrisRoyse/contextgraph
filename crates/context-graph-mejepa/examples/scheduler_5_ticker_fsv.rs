@@ -22,7 +22,7 @@ use tokio::sync::watch;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[arg(long, default_value = "/mnt/d/contextgraph/fsv/mejepa-heal-fsv")]
+    #[arg(long, default_value = "/zfs/archive/contextgraph/fsv/mejepa-heal-fsv")]
     output_root: PathBuf,
 }
 
@@ -46,8 +46,9 @@ async fn main() -> ExitCode {
 async fn run(args: Args) -> Result<Value> {
     if args.output_root.exists() {
         ensure!(
-            args.output_root.starts_with("/mnt/d/contextgraph/fsv/"),
-            "refusing to remove FSV root outside /mnt/d/contextgraph/fsv"
+            args.output_root
+                .starts_with("/zfs/archive/contextgraph/fsv/"),
+            "refusing to remove FSV root outside /zfs/archive/contextgraph/fsv"
         );
         fs::remove_dir_all(&args.output_root)
             .with_context(|| format!("remove {}", args.output_root.display()))?;

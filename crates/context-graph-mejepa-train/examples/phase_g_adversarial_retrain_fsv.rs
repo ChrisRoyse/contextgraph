@@ -30,7 +30,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-adversarial-retrain-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-g-adversarial-retrain-fsv";
 const REPORT_NAME: &str = "phase_g_adversarial_retrain_fsv.json";
 const TASK_ID: &str = "TASK-G-010";
 const TRAIN_EXAMPLES: usize = 50;

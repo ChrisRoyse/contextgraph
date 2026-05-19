@@ -14,7 +14,7 @@ use context_graph_mejepa_cf::CF_MEJEPA_CLAIM_RECONCILIATION;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-041-claim-graph-extractor-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-041-claim-graph-extractor-fsv";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,9 +65,11 @@ fn main() -> Result<()> {
     let shift = shift_for(&repo_path, "src/calc.py", "green-shift-0001")?;
 
     let agent_history =
-        agent_history_stats(Path::new("/mnt/d/contextgraph/runtime/agent-history"))?;
-    let (real_responses, real_response_source) =
-        load_real_response_strings(Path::new("/mnt/d/contextgraph/runtime/test-outcomes"), 50)?;
+        agent_history_stats(Path::new("/zfs/archive/contextgraph/runtime/agent-history"))?;
+    let (real_responses, real_response_source) = load_real_response_strings(
+        Path::new("/zfs/archive/contextgraph/runtime/test-outcomes"),
+        50,
+    )?;
     let real_graphs = real_responses
         .iter()
         .map(|response| extract_claim_graph(response))
@@ -298,7 +300,7 @@ fn load_real_response_strings(root: &Path, limit: usize) -> Result<(Vec<String>,
                 if responses.len() >= limit {
                     return Ok((
                         responses,
-                        "/mnt/d/contextgraph/runtime/test-outcomes/*.jsonl gh issue comment payloads"
+                        "/zfs/archive/contextgraph/runtime/test-outcomes/*.jsonl gh issue comment payloads"
                             .to_string(),
                     ));
                 }
@@ -316,7 +318,8 @@ fn load_real_response_strings(root: &Path, limit: usize) -> Result<(Vec<String>,
     }
     Ok((
         responses,
-        "/mnt/d/contextgraph/runtime/test-outcomes/*.jsonl plus GitHub issue comments".to_string(),
+        "/zfs/archive/contextgraph/runtime/test-outcomes/*.jsonl plus GitHub issue comments"
+            .to_string(),
     ))
 }
 

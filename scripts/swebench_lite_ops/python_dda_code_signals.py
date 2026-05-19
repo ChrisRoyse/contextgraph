@@ -39,9 +39,9 @@ SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-017"
 ARTIFACT_KIND = "python_first_order_dda_code_signals"
 FORMULA_VERSION = "python_dda_first_order_v1"
-DEFAULT_OUTPUT_ROOT = Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/per-embedder")
-DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-017-dda-signals-fsv")
-DEFAULT_CONSTELLATION_SCHEMA = Path("/mnt/d/contextgraph/corpus/python-code-constellation-schema-v1/code_constellation_schema.json")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/per-embedder")
+DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-017-dda-signals-fsv")
+DEFAULT_CONSTELLATION_SCHEMA = Path("/zfs/archive/contextgraph/corpus/python-code-constellation-schema-v1/code_constellation_schema.json")
 EXPECTED_EMBEDDERS = ("e1", "e6", "e7", "e8", "e10", "e12", "e13", "e14", "e2", "e3", "e4", "e9")
 EPS = 1.0e-12
 

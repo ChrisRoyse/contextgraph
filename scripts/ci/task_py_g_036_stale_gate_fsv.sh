@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="${CONTEXTGRAPH_TASK_PY_G_036_FSV_ROOT:-/mnt/d/contextgraph/fsv/task-py-g-036-stale-gate-fsv}"
+FSV_ROOT="${CONTEXTGRAPH_TASK_PY_G_036_FSV_ROOT:-/zfs/archive/contextgraph/fsv/task-py-g-036-stale-gate-fsv}"
 CELL_ROOT="$FSV_ROOT/cell-status"
 DASHBOARD_ROOT="$FSV_ROOT/dashboard"
 REPORT_JSON="$FSV_ROOT/task_py_g_036_stale_gate_fsv.json"

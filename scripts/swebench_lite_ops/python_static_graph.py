@@ -134,7 +134,7 @@ def command_static_graph(args: Any) -> dict[str, Any]:
         "edge_records": file_state(edge_path),
         "manifest": file_state(manifest_path),
         "fsv": file_state(fsv_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
+        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "graph_root_bytes": path_bytes(args.graph_root),
     }
@@ -185,7 +185,7 @@ def command_static_graph(args: Any) -> dict[str, Any]:
         "records": file_state(records_path),
         "edge_records": file_state(edge_path),
         "manifest": file_state(manifest_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
+        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "graph_root_bytes": path_bytes(args.graph_root),
     }

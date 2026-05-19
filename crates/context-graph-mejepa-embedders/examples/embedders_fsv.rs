@@ -23,7 +23,7 @@ fn main() -> FsvResult<()> {
     let config_path = std::env::var("CONTEXTGRAPH_MEJEPA_MODELS_CONFIG")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
-            PathBuf::from("/mnt/d/cabdru/contextgraph/models/mejepa_models_config.toml")
+            PathBuf::from("/zfs/hot/contextgraph/models/mejepa_models_config.toml")
         });
     let progress_path = root.join("embedders_fsv_progress.json");
     let mut progress = Vec::new();

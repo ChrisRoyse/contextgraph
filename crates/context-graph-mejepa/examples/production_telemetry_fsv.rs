@@ -14,20 +14,21 @@ use std::path::{Path, PathBuf};
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 const SHIP_GATE_FSV: &str =
-    "/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json";
+    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json";
 const CONFORMAL_FSV: &str =
-    "/mnt/d/contextgraph/fsv/contextgraph-mejepa-infer-fsv/conformal-calibration-evidence.json";
-const OOD_FSV: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-infer-fsv/ood-evidence.json";
+    "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-infer-fsv/conformal-calibration-evidence.json";
+const OOD_FSV: &str =
+    "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-infer-fsv/ood-evidence.json";
 const SHIFT_LATENCY_FSV: &str =
-    "/mnt/d/contextgraph/fsv/contextgraph-mejepa-shift-subscriber-fsv/predict-latency-evidence.json";
+    "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-shift-subscriber-fsv/predict-latency-evidence.json";
 const VRAM_FSV: &str =
-    "/mnt/d/contextgraph/fsv/contextgraph-mejepa-vram-wsl-fsv/vram-wsl-telemetry-evidence.json";
+    "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-vram-wsl-fsv/vram-wsl-telemetry-evidence.json";
 const PYTHON_CORPUS_INDEX: &str =
-    "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
+    "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
 
 fn main() -> FsvResult<()> {
     let root =
-        PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-mejepa-production-telemetry-fsv");
+        PathBuf::from("/zfs/archive/contextgraph/fsv/contextgraph-mejepa-production-telemetry-fsv");
     if root.exists() {
         fs::remove_dir_all(&root)?;
     }

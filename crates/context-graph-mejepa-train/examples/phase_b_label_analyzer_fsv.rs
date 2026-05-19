@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-b-label-analyzer-fsv");
+    let root = PathBuf::from("/zfs/archive/contextgraph/fsv/phase-b-label-analyzer-fsv");
     reset_secure_dir(&root)?;
     let python = std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string());
     write_fixture_files(&root)?;

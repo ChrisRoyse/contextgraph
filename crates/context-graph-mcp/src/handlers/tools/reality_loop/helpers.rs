@@ -27,7 +27,7 @@ pub async fn read_active_runtime_root() -> Result<Option<PathBuf>> {
             "CCREALITY_ACTIVE_ROOT_READ_FAILED",
             format!("failed to read active runtime root: {e}"),
             "active_runtime_root.path",
-            "ensure /mnt/d/contextgraph/state/cgreality is readable",
+            "ensure /zfs/archive/contextgraph/state/cgreality is readable",
             json!({"path": path.display().to_string()}),
             Some(file_sot(&path)),
         )
@@ -60,7 +60,7 @@ pub async fn read_active_target_instance() -> Result<Option<String>> {
             "CCREALITY_ACTIVE_INSTANCE_READ_FAILED",
             format!("failed to read active target instance: {e}"),
             "active_target_instance.path",
-            "ensure /mnt/d/contextgraph/state/cgreality is readable",
+            "ensure /zfs/archive/contextgraph/state/cgreality is readable",
             json!({"path": path.display().to_string()}),
             Some(file_sot(&path)),
         )

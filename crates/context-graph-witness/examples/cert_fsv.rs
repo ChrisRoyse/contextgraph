@@ -1,6 +1,6 @@
 // Manual Full State Verification for Stage 0 + Stage F + Merkle certificates.
 // Writes JSON evidence + raw certificates to disk under
-// /mnt/d/contextgraph/fsv/contextgraph-tier2-fsv/ for physical inspection.
+// /zfs/archive/contextgraph/fsv/contextgraph-tier2-fsv/ for physical inspection.
 
 use context_graph_witness::{
     cert::{
@@ -14,7 +14,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let evidence_root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-tier2-fsv");
+    let evidence_root = PathBuf::from("/zfs/archive/contextgraph/fsv/contextgraph-tier2-fsv");
     fs::create_dir_all(&evidence_root)?;
 
     // Stage 0: bind a synthetic recruiting corpus to a manifest of

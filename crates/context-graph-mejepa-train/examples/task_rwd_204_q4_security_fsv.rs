@@ -33,10 +33,11 @@ fn main() -> FsvResult<()> {
         .duration_since(UNIX_EPOCH)?
         .as_millis()
         .to_string();
-    let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/task-py-g-046-q4-security-label-fsv")
-        .join(format!("run-{run_id}"));
+    let fsv_root =
+        PathBuf::from("/zfs/archive/contextgraph/fsv/task-py-g-046-q4-security-label-fsv")
+            .join(format!("run-{run_id}"));
     fs::create_dir_all(&fsv_root)?;
-    let raw_root = PathBuf::from("/mnt/d/contextgraph/corpus/python-q4-security-labels-v1");
+    let raw_root = PathBuf::from("/zfs/archive/contextgraph/corpus/python-q4-security-labels-v1");
     let row_id = format!("task-rwd-204-{run_id}");
     let rocksdb_path = fsv_root.join("q4-security-rocksdb");
     let evidence_path = fsv_root.join("q4_security_label_fsv.json");

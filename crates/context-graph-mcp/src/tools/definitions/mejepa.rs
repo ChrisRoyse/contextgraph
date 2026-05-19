@@ -739,7 +739,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "properties": {
                     "statePath": {
                         "type": "string",
-                        "description": "Pause-state JSON path. If omitted, CONTEXTGRAPH_MEJEPA_PAUSE_PATH or the D-drive default is used."
+                        "description": "Pause-state JSON path. If omitted, CONTEXTGRAPH_MEJEPA_PAUSE_PATH or the aiwonder default is used."
                     },
                     "durationMins": {
                         "type": "integer",
@@ -960,7 +960,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "dbPath": {"type": "string"},
                     "dRoot": {
                         "type": "string",
-                        "description": "D-drive ME-JEPA root containing state/gold-labels and exports. Defaults to CONTEXTGRAPH_DATA_ROOT or is inferred from exportsRoot when possible."
+                        "description": "aiwonder ME-JEPA root containing state/gold-labels and exports. Defaults to CONTEXTGRAPH_DATA_ROOT or is inferred from exportsRoot when possible."
                     },
                     "exportsRoot": {
                         "type": "string",

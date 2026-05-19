@@ -14,7 +14,7 @@ use context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_CONTRIBUTIONS;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-014-operator-contributions-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-014-operator-contributions-fsv";
 const SYNTHETIC_BASE_TS: i64 = 1_800_000_000_000;
 const WEEK_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 

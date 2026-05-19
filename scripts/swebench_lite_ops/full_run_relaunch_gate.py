@@ -15,32 +15,32 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-064"
-DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-064-post249-full-run-relaunch-gate-fsv")
-DEFAULT_CHUNKS_JSONL = Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
-DEFAULT_CACHE_ROOT = Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515")
-DEFAULT_RUN_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-016-full-c8117f15-20260515-fsv")
+DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-064-post249-full-run-relaunch-gate-fsv")
+DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
+DEFAULT_CACHE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515")
+DEFAULT_RUN_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-016-full-c8117f15-20260515-fsv")
 DEFAULT_HOT_ROOT = Path("/home/cabdru/.cache/contextgraph/task-py-data-016-full-c8117f15-20260515")
-DEFAULT_STALE_CACHE_ROOT = Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514")
-DEFAULT_STALE_RUN_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-016-full-20260514-fsv")
+DEFAULT_STALE_CACHE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514")
+DEFAULT_STALE_RUN_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-016-full-20260514-fsv")
 DEFAULT_STALE_HOT_ROOT = Path("/home/cabdru/.cache/contextgraph/task-py-data-016-full-20260514")
-DEFAULT_SMOKE_MANIFEST_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json")
+DEFAULT_SMOKE_MANIFEST_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json")
 DEFAULT_SMOKE_FORWARD_FSV = Path(
-    "/mnt/d/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"
+    "/zfs/archive/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"
 )
 DEFAULT_SMOKE_INTELLIGENCE_FSV = Path(
-    "/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"
+    "/zfs/archive/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"
 )
 DEFAULT_SMOKE_STORAGE_DESIGN_FSV = Path(
-    "/mnt/d/contextgraph/fsv/task-py-data-063-post249-smoke-storage-design-fsv/smoke_storage_design_fsv.json"
+    "/zfs/archive/contextgraph/fsv/task-py-data-063-post249-smoke-storage-design-fsv/smoke_storage_design_fsv.json"
 )
 DEFAULT_STORAGE_DESIGN_GO_NO_GO = Path(
-    "/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/go_no_go.json"
+    "/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/go_no_go.json"
 )
-DEFAULT_STORAGE_POLICY = Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/storage_policy.json")
+DEFAULT_STORAGE_POLICY = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/storage_policy.json")
 DEFAULT_STORAGE_ESTIMATES = Path(
-    "/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/full_scale_storage_estimates.json"
+    "/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/full_scale_storage_estimates.json"
 )
-DEFAULT_FULL_AST_CORPUS_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json")
+DEFAULT_FULL_AST_CORPUS_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json")
 DEFAULT_CARGO_RUNNER = "target/release/examples/python_forward_cache_fsv"
 
 
@@ -305,13 +305,13 @@ def validate_relaunch_policy(args: argparse.Namespace, command: list[str]) -> di
             "actual": str(hot_root),
         },
         {
-            "name": "durable_cache_on_d_drive",
-            "passes": path_is_under(cache_root, Path("/mnt/d/contextgraph")),
+            "name": "durable_cache_on_aiwonder_archive",
+            "passes": path_is_under(cache_root, Path("/zfs/archive/contextgraph")),
             "actual": str(cache_root),
         },
         {
-            "name": "fsv_on_d_drive",
-            "passes": path_is_under(fsv_root, Path("/mnt/d/contextgraph")),
+            "name": "fsv_on_aiwonder_archive",
+            "passes": path_is_under(fsv_root, Path("/zfs/archive/contextgraph")),
             "actual": str(fsv_root),
         },
         {"name": "packed_store_required", "passes": "--require-packed-store" in command_set, "actual": command},
@@ -357,8 +357,8 @@ def validate_storage_design(args: argparse.Namespace) -> dict[str, Any]:
             "actual": metric_policy,
         },
         {
-            "name": "storage_estimate_fits_d_drive",
-            "passes": int(estimates.get("estimated_total_design_bytes") or 0) < int(estimates.get("d_drive_free_bytes") or 0),
+            "name": "storage_estimate_fits_aiwonder_archive",
+            "passes": int(estimates.get("estimated_total_design_bytes") or 0) < int(estimates.get("archive_free_bytes") or 0),
             "actual": estimates,
         },
     ]
@@ -747,7 +747,7 @@ def build_fsv(args: argparse.Namespace) -> dict[str, Any]:
         "disk_snapshot": {
             "wsl_ext4_root": disk_snapshot(Path("/")),
             "windows_c_mount_forbidden": disk_snapshot(Path("/mnt/c")),
-            "d_drive": disk_snapshot(Path("/mnt/d")),
+            "aiwonder_archive": disk_snapshot(Path("/zfs/archive")),
         },
         "child_smoke_artifacts": child_artifacts,
         "storage_design": storage_design,

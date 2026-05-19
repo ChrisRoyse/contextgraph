@@ -5,7 +5,7 @@ set -euo pipefail
 # scanned below; this FSV prevents active scripts/config from carrying them.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="${FSV_ROOT:-/mnt/d/contextgraph/fsv/phase-h-scripts-config-inner-llm-residue-fsv}"
+FSV_ROOT="${FSV_ROOT:-/zfs/archive/contextgraph/fsv/phase-h-scripts-config-inner-llm-residue-fsv}"
 RUN_ID="run-$(date -u +%s)-$$"
 RUN_ROOT="$FSV_ROOT/$RUN_ID"
 ARTIFACT="$FSV_ROOT/scripts_config_inner_llm_residue_fsv.json"

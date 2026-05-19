@@ -25,7 +25,7 @@ use context_graph_mejepa_cf::{
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-018g-freeze-audit-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-018g-freeze-audit-fsv";
 
 fn main() -> Result<()> {
     let started_at_unix_ms = current_unix_ms();
@@ -71,7 +71,7 @@ fn main() -> Result<()> {
         route_languages: vec!["python".to_string()],
         route_entity_types: vec!["*".to_string()],
         forward_artifact_path:
-            "/mnt/d/contextgraph/models/dynamic/edynamic_1_freeze_guarded_v1/forward.bin"
+            "/zfs/archive/contextgraph/models/dynamic/edynamic_1_freeze_guarded_v1/forward.bin"
                 .to_string(),
         forward_artifact_sha256: comparison.candidate_artifact_sha256.clone(),
         required_vram_bytes: 128 * 1024 * 1024,

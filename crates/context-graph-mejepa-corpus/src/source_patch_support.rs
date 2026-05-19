@@ -12,7 +12,7 @@ use crate::{MutationCategory, MutationError, MutationResult};
 
 /// Per-operation timeouts for git subprocess calls invoked from source-prep.
 /// Calibrated empirically against the SWE-bench Lite Python repos and the
-/// observed p99 latencies on WSL2 → D-drive in this workspace.
+/// observed p99 latencies on WSL2 → aiwonder in this workspace.
 ///
 /// REGRESSION HISTORY:
 /// - 2026-05-11 #1: corpus generator hung 5h on `django__django-15790`

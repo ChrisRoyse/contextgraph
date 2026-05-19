@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="/mnt/d/contextgraph/fsv/phase-g-oracle-flakiness-quarantine-fsv"
+FSV_ROOT="/zfs/archive/contextgraph/fsv/phase-g-oracle-flakiness-quarantine-fsv"
 REPORT="${FSV_ROOT}/oracle_flakiness_quarantine_fsv.json"
 
 cd "${ROOT}"

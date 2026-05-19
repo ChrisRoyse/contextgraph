@@ -20,7 +20,7 @@ use context_graph_mejepa_cf::{
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-016-ext-embedder-foundationality-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-016-ext-embedder-foundationality-fsv";
 
 fn main() -> Result<()> {
     let started_at_unix_ms = current_unix_ms();
@@ -277,7 +277,7 @@ fn registry_record(
         route_languages: vec!["python".to_string()],
         route_entity_types: vec!["*".to_string()],
         forward_artifact_path: format!(
-            "/mnt/d/contextgraph/models/dynamic/edynamic_{sequence}_{name}/forward.bin"
+            "/zfs/archive/contextgraph/models/dynamic/edynamic_{sequence}_{name}/forward.bin"
         ),
         forward_artifact_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             .to_string(),

@@ -28,9 +28,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const INDEX_PATH: &str =
-    "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-012-bidirectional-ablation-fsv";
-const REPORT_PATH: &str = "/mnt/d/contextgraph/exports/ek-012/bidirectional-ablation-report.md";
+    "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-012-bidirectional-ablation-fsv";
+const REPORT_PATH: &str =
+    "/zfs/archive/contextgraph/exports/ek-012/bidirectional-ablation-report.md";
 const SHIP_GATE_TARGET: f32 = 0.95;
 const LAMBDAS: [f32; 4] = [0.0, 0.25, 0.5, 1.0];
 

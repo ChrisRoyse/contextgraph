@@ -19,7 +19,7 @@ use std::sync::Arc;
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/dda-prediction-consumption-fsv");
+    let root = PathBuf::from("/zfs/archive/contextgraph/fsv/dda-prediction-consumption-fsv");
     reset_secure_dir(&root)?;
     let happy = run_happy_path(&root)?;
     let edges = json!({

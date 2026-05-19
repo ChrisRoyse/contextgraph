@@ -17,7 +17,7 @@ use context_graph_mejepa_cf::CF_MEJEPA_DYNAMIC_EMBEDDER_REGISTRY;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-018i-dynamic-vram-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-018i-dynamic-vram-fsv";
 
 fn main() -> Result<()> {
     let started_at_unix_ms = current_unix_ms();
@@ -241,7 +241,7 @@ fn registry_record(
         route_languages: vec!["python".to_string()],
         route_entity_types: vec!["*".to_string()],
         forward_artifact_path: format!(
-            "/mnt/d/contextgraph/models/dynamic/edynamic_{sequence}_{name}/forward.bin"
+            "/zfs/archive/contextgraph/models/dynamic/edynamic_{sequence}_{name}/forward.bin"
         ),
         forward_artifact_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             .to_string(),
@@ -270,7 +270,7 @@ fn utility(
 
 fn artifact_path(started_at_unix_ms: i64, sequence: u32, name: &str) -> PathBuf {
     PathBuf::from(format!(
-        "/mnt/d/contextgraph/models/dynamic/edynamic_{sequence}_{name}/vram-fsv-{started_at_unix_ms}/forward.bin"
+        "/zfs/archive/contextgraph/models/dynamic/edynamic_{sequence}_{name}/vram-fsv-{started_at_unix_ms}/forward.bin"
     ))
 }
 

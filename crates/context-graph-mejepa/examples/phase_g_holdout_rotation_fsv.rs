@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 struct Args {
     #[arg(
         long,
-        default_value = "/mnt/d/contextgraph/fsv/phase-g-holdout-rotation-fsv"
+        default_value = "/zfs/archive/contextgraph/fsv/phase-g-holdout-rotation-fsv"
     )]
     output_root: PathBuf,
 }

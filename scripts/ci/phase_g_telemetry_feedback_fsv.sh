@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="/mnt/d/contextgraph/fsv/phase-g-telemetry-feedback-fsv"
+FSV_ROOT="/zfs/archive/contextgraph/fsv/phase-g-telemetry-feedback-fsv"
 REPORT_JSON="$FSV_ROOT/telemetry_feedback_fsv.json"
 
 cd "$REPO_ROOT"

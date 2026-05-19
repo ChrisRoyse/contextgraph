@@ -2,7 +2,7 @@
 Description=ContextGraph ME-JEPA log rotation
 Documentation=file:/home/cabdru/contextgraph/docs/futurebuild/tasks/observability/_all_tasks.md
 # Refuses to run if the log root is missing rather than silently no-op'ing.
-ConditionPathExists=/mnt/d/contextgraph/logs
+ConditionPathExists=/zfs/archive/contextgraph/logs
 
 [Service]
 Type=oneshot
@@ -10,10 +10,10 @@ UMask=0077
 # Compress yesterday's *.log files (>=1 day old, <30 days) with gzip --best.
 # This is idempotent: re-running compresses any new candidates, leaves the
 # rest alone.
-ExecStart=/usr/bin/find /mnt/d/contextgraph/logs -maxdepth 1 -type f -name "*.log" -mtime +0 -mtime -30 -not -name "*.gz" -exec /usr/bin/gzip --best --force {} \;
+ExecStart=/usr/bin/find /zfs/archive/contextgraph/logs -maxdepth 1 -type f -name "*.log" -mtime +0 -mtime -30 -not -name "*.gz" -exec /usr/bin/gzip --best --force {} \;
 # Delete logs older than 30 days (matches `19_OPERATOR_RUNBOOK §6` retention
 # default; tune via the timer's OnCalendar if a longer window is required).
-ExecStart=/usr/bin/find /mnt/d/contextgraph/logs -maxdepth 1 -type f \( -name "*.log" -o -name "*.log.gz" \) -mtime +30 -delete
+ExecStart=/usr/bin/find /zfs/archive/contextgraph/logs -maxdepth 1 -type f \( -name "*.log" -o -name "*.log.gz" \) -mtime +30 -delete
 
 # Fail closed: any oneshot ExecStart failure surfaces in the journal and
 # the timer's Result=, rather than silently swallowing rotation gaps.

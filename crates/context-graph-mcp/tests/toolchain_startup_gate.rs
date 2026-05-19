@@ -7,7 +7,7 @@ use std::process::{Command, Output};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-f-toolchain-startup-gate-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-f-toolchain-startup-gate-fsv";
 const REPORT_FILE: &str = "toolchain_startup_gate_fsv.json";
 const DAEMON_CONFIG_FILE: &str = "daemon.toml";
 

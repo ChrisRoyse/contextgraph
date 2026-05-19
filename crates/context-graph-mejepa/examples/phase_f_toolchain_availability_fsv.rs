@@ -10,7 +10,7 @@ use context_graph_mejepa::Language;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-f-toolchain-availability-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-f-toolchain-availability-fsv";
 const REPORT_FILE: &str = "toolchain_availability_fsv.json";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

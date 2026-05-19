@@ -31,7 +31,7 @@ use context_graph_mincut::weights_from_edges;
 use rocksdb::{WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-003-mincut-panel-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-003-mincut-panel-fsv";
 const MCP_TOOL_NAME: &str = "mcp__cgreality__mejepa_mincut_panel";
 const CLI_TOOL_NAME: &str = "context-graph-cli mejepa mincut-panel";
 

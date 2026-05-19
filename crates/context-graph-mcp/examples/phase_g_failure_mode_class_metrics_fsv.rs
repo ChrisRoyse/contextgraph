@@ -16,7 +16,8 @@ use context_graph_mejepa::{
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const DEFAULT_FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-failure-mode-class-metrics-fsv";
+const DEFAULT_FSV_ROOT: &str =
+    "/zfs/archive/contextgraph/fsv/phase-g-failure-mode-class-metrics-fsv";
 const TASK_ID: &str = "TASK-G-020";
 
 fn main() -> Result<()> {

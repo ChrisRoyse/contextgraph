@@ -15,8 +15,8 @@ from .smoke_intelligence_matrices import artifact_state, dump_json, iter_jsonl, 
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-023"
 ARTIFACT_KIND = "python_mejepa_data_readiness_gate"
-DEFAULT_OUTPUT_ROOT = Path("/mnt/d/contextgraph/corpus/python-data-readiness-gate-v1")
-DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-023-data-readiness-gate-fsv")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-data-readiness-gate-v1")
+DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-023-data-readiness-gate-fsv")
 EXPECTED_MUTATION_CATEGORIES = {
     "compile_error",
     "delete_test_call",
@@ -477,26 +477,26 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--cleaned-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-cleaned-manifest-v1/cleaned_manifest.json"))
-    parser.add_argument("--cleaned-manifest-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-004-cleaned-manifest-fsv/cleaned_manifest_fsv.json"))
-    parser.add_argument("--workspace-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-workspaces-v1/workspace_manifest.json"))
-    parser.add_argument("--workspace-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-006-workspaces-fsv/workspace_fsv.json"))
-    parser.add_argument("--oracle-events-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-008-oracle-events-fsv/oracle_events_fsv.json"))
-    parser.add_argument("--full-ast-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json"))
-    parser.add_argument("--smoke-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"))
-    parser.add_argument("--smoke-manifest-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json"))
-    parser.add_argument("--forward-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"))
-    parser.add_argument("--dda-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/per-embedder"))
-    parser.add_argument("--dda-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json"))
-    parser.add_argument("--pairwise-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/pairwise"))
-    parser.add_argument("--pairwise-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-018-pairwise-dda-mi-fsv/python_pairwise_dda_mi_fsv.json"))
-    parser.add_argument("--tct-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-tct-cells-v1"))
-    parser.add_argument("--tct-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json"))
-    parser.add_argument("--reward-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-reward-tensors-v1"))
-    parser.add_argument("--reward-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-021-reward-tensors-fsv/python_reward_tensors_fsv.json"))
-    parser.add_argument("--analysis-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-reward-field-analysis-v1"))
-    parser.add_argument("--analysis-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-022-reward-field-analysis-fsv/python_reward_field_analysis_fsv.json"))
-    parser.add_argument("--full-run-checkpoint", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515/python_forward_cache_checkpoint.json"))
+    parser.add_argument("--cleaned-manifest", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-cleaned-manifest-v1/cleaned_manifest.json"))
+    parser.add_argument("--cleaned-manifest-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-004-cleaned-manifest-fsv/cleaned_manifest_fsv.json"))
+    parser.add_argument("--workspace-manifest", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-workspaces-v1/workspace_manifest.json"))
+    parser.add_argument("--workspace-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-006-workspaces-fsv/workspace_fsv.json"))
+    parser.add_argument("--oracle-events-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-008-oracle-events-fsv/oracle_events_fsv.json"))
+    parser.add_argument("--full-ast-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json"))
+    parser.add_argument("--smoke-manifest", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"))
+    parser.add_argument("--smoke-manifest-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json"))
+    parser.add_argument("--forward-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"))
+    parser.add_argument("--dda-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/per-embedder"))
+    parser.add_argument("--dda-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json"))
+    parser.add_argument("--pairwise-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/pairwise"))
+    parser.add_argument("--pairwise-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-018-pairwise-dda-mi-fsv/python_pairwise_dda_mi_fsv.json"))
+    parser.add_argument("--tct-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-tct-cells-v1"))
+    parser.add_argument("--tct-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json"))
+    parser.add_argument("--reward-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-reward-tensors-v1"))
+    parser.add_argument("--reward-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-021-reward-tensors-fsv/python_reward_tensors_fsv.json"))
+    parser.add_argument("--analysis-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-reward-field-analysis-v1"))
+    parser.add_argument("--analysis-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-022-reward-field-analysis-fsv/python_reward_field_analysis_fsv.json"))
+    parser.add_argument("--full-run-checkpoint", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515/python_forward_cache_checkpoint.json"))
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
     parser.add_argument("--training-scope", choices=["smoke-dry-run", "full-production"], default="smoke-dry-run")

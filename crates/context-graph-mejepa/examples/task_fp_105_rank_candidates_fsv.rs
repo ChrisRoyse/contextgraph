@@ -21,7 +21,7 @@ use context_graph_mejepa::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-fp-105-rank-candidates-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-fp-105-rank-candidates-fsv";
 const RANK_TOOL_NAME: &str = "mcp__cgreality__mejepa_rank_candidates";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

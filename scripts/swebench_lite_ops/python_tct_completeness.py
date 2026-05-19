@@ -20,16 +20,16 @@ FORMULA_VERSION = "python_tct_completeness_v1"
 EXPECTED_Q_HEADS = ("q1", "q2", "q3", "q4", "q5")
 EXPECTED_TCT_TARGETS = ("Q1_claim_existence", "Q2_work_status", "Q3_failure_reason", "Q4_edge_risk", "Q5_reality_impact")
 DEFAULT_EXPECTED_EMBEDDERS = "e1,e6,e7,e8,e10,e12,e13,e14,e2,e3,e4,e9"
-DEFAULT_REWARD_ROOT = Path("/mnt/d/contextgraph/corpus/python-reward-tensors-v1")
-DEFAULT_DDA_ROOT = Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/per-embedder")
-DEFAULT_TCT_ROOT = Path("/mnt/d/contextgraph/corpus/python-tct-cells-v1")
-DEFAULT_CONTRIBUTION_ROOT = Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-v1/contribution")
-DEFAULT_OUTPUT_ROOT = Path("/mnt/d/contextgraph/corpus/python-tct-completeness-v1")
-DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-g-039-tct-completeness-fsv")
-DEFAULT_REWARD_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-021-reward-tensors-fsv/python_reward_tensors_fsv.json")
-DEFAULT_DDA_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json")
-DEFAULT_TCT_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json")
-DEFAULT_CONTRIBUTION_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-055-embedder-contribution-fsv/python_embedder_contribution_fsv.json")
+DEFAULT_REWARD_ROOT = Path("/zfs/archive/contextgraph/corpus/python-reward-tensors-v1")
+DEFAULT_DDA_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/per-embedder")
+DEFAULT_TCT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-tct-cells-v1")
+DEFAULT_CONTRIBUTION_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-v1/contribution")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-tct-completeness-v1")
+DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-039-tct-completeness-fsv")
+DEFAULT_REWARD_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-021-reward-tensors-fsv/python_reward_tensors_fsv.json")
+DEFAULT_DDA_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json")
+DEFAULT_TCT_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json")
+DEFAULT_CONTRIBUTION_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-055-embedder-contribution-fsv/python_embedder_contribution_fsv.json")
 
 
 class TctCompletenessError(RuntimeError):

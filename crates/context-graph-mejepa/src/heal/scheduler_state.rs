@@ -110,13 +110,13 @@ impl Default for SelfOptimConfig {
             emergency_eviction_period: DEFAULT_EMERGENCY_EVICTION_PERIOD,
             telemetry_feedback_period: DEFAULT_TELEMETRY_FEEDBACK_PERIOD,
             status_path: PathBuf::from(
-                "/mnt/d/contextgraph/state/schedulers/self_optimization_status.json",
+                "/zfs/archive/contextgraph/state/schedulers/self_optimization_status.json",
             ),
-            hygiene_archive_root: PathBuf::from("/mnt/d/contextgraph/archive/mejepa-hygiene"),
+            hygiene_archive_root: PathBuf::from("/zfs/archive/contextgraph/archive/mejepa-hygiene"),
             witness_chain_path: PathBuf::from(
-                "/mnt/d/contextgraph/storage/witness/self-optimization-witness-chain.bin",
+                "/zfs/archive/contextgraph/storage/witness/self-optimization-witness-chain.bin",
             ),
-            test_outcome_root: PathBuf::from("/mnt/d/contextgraph/runtime/test-outcomes"),
+            test_outcome_root: PathBuf::from("/zfs/archive/contextgraph/runtime/test-outcomes"),
             emergency_eviction_threshold_bytes: DEFAULT_EMERGENCY_EVICTION_THRESHOLD_BYTES,
         }
     }

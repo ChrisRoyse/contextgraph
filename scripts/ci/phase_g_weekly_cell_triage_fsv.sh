@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="/mnt/d/contextgraph/fsv/phase-g-weekly-cell-triage-fsv"
+FSV_ROOT="/zfs/archive/contextgraph/fsv/phase-g-weekly-cell-triage-fsv"
 REPORT="${FSV_ROOT}/weekly_cell_triage_fsv.json"
 
 cd "${ROOT}"

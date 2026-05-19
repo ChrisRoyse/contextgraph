@@ -25,14 +25,14 @@ use context_graph_mejepa_cf::{
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-018e-learned-head-synthesis-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-018e-learned-head-synthesis-fsv";
 
 fn main() -> Result<()> {
     let started_at = current_unix_ms();
     let run_root = PathBuf::from(FSV_ROOT).join(format!("run-{started_at}"));
     let infer_db_path = run_root.join("infer-rocksdb");
     let artifact_root = PathBuf::from(format!(
-        "/mnt/d/contextgraph/models/dynamic/task-ek-018e/run-{started_at}"
+        "/zfs/archive/contextgraph/models/dynamic/task-ek-018e/run-{started_at}"
     ));
     let fsv_path = run_root.join("learned_head_synthesis_fsv.json");
     let canonical_path = PathBuf::from(FSV_ROOT).join("learned_head_synthesis_fsv.json");

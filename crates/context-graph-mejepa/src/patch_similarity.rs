@@ -686,7 +686,7 @@ mod tests {
             oracle_outcome: oracle(),
             failure_mode_class,
             witness_hash: WitnessHash([idx; 32]),
-            evidence_path: format!("/mnt/d/contextgraph/fsv/task-{idx}.json"),
+            evidence_path: format!("/zfs/archive/contextgraph/fsv/task-{idx}.json"),
             diff_summary: format!("synthetic exemplar {idx}"),
             vector: vector(axis),
         }

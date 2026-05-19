@@ -17,17 +17,17 @@ from .smoke_intelligence_matrices import artifact_state, dump_json, iter_jsonl, 
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-022"
 ARTIFACT_KIND = "python_reward_field_quality_analysis"
-DEFAULT_REWARD_ROOT = Path("/mnt/d/contextgraph/corpus/python-reward-tensors-v1")
-DEFAULT_DDA_ROOT = Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/per-embedder")
-DEFAULT_PAIRWISE_ROOT = Path("/mnt/d/contextgraph/corpus/python-dda-signals-v1/pairwise")
-DEFAULT_TCT_ROOT = Path("/mnt/d/contextgraph/corpus/python-tct-cells-v1")
-DEFAULT_MATRIX_ROOT = Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices")
-DEFAULT_OUTPUT_ROOT = Path("/mnt/d/contextgraph/corpus/python-reward-field-analysis-v1")
-DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-022-reward-field-analysis-fsv")
-DEFAULT_REWARD_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-021-reward-tensors-fsv/python_reward_tensors_fsv.json")
-DEFAULT_DDA_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json")
-DEFAULT_TCT_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json")
-DEFAULT_MATRIX_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json")
+DEFAULT_REWARD_ROOT = Path("/zfs/archive/contextgraph/corpus/python-reward-tensors-v1")
+DEFAULT_DDA_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/per-embedder")
+DEFAULT_PAIRWISE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/pairwise")
+DEFAULT_TCT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-tct-cells-v1")
+DEFAULT_MATRIX_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-reward-field-analysis-v1")
+DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-022-reward-field-analysis-fsv")
+DEFAULT_REWARD_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-021-reward-tensors-fsv/python_reward_tensors_fsv.json")
+DEFAULT_DDA_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json")
+DEFAULT_TCT_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json")
+DEFAULT_MATRIX_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json")
 
 
 class RewardFieldAnalysisError(RuntimeError):

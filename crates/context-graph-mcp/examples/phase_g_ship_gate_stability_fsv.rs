@@ -19,7 +19,7 @@ use context_graph_mejepa_cf::{
 use rocksdb::WriteOptions;
 use serde_json::{json, Value};
 
-const DEFAULT_FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-ship-gate-stability-fsv";
+const DEFAULT_FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-g-ship-gate-stability-fsv";
 
 fn main() -> Result<()> {
     let output_root = std::env::args()

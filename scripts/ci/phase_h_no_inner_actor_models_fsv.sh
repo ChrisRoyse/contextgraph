@@ -5,7 +5,7 @@ set -euo pipefail
 # named below; synthetic matches prove the detector fails closed.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="${FSV_ROOT:-/mnt/d/contextgraph/fsv/phase-h-no-inner-actor-models-fsv}"
+FSV_ROOT="${FSV_ROOT:-/zfs/archive/contextgraph/fsv/phase-h-no-inner-actor-models-fsv}"
 RUN_ID="run-$(date -u +%s)-$$"
 RUN_ROOT="$FSV_ROOT/$RUN_ID"
 ARTIFACT="$FSV_ROOT/no_inner_actor_models_fsv.json"

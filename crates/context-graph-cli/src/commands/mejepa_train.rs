@@ -40,8 +40,9 @@ const LOGICAL_DDA_SIGNALS_PER_PANEL: usize = 462;
 const PANEL_SCHEMA_VERSION: u8 = 1;
 const PYTHON_TRAIN_CYCLE_MODE: &str = "python_full_cycle";
 const PYTHON_TRAIN_CYCLE_SCHEMA_VERSION: u8 = 1;
-const DEFAULT_CHECKPOINT_DIR: &str = "/mnt/d/contextgraph/model-checkpoints/python-train-cycle";
-const DEFAULT_EVAL_EXPORT_DIR: &str = "/mnt/d/contextgraph/exports/eval/python-train-cycle";
+const DEFAULT_CHECKPOINT_DIR: &str =
+    "/zfs/archive/contextgraph/model-checkpoints/python-train-cycle";
+const DEFAULT_EVAL_EXPORT_DIR: &str = "/zfs/archive/contextgraph/exports/eval/python-train-cycle";
 const DEFAULT_MAX_PYTHON_CORPUS_ROWS: usize = 2_400;
 
 #[derive(Args, Debug, Clone)]

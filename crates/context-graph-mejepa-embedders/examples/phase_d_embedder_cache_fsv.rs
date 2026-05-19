@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{sleep, Duration};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-d-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-d-fsv";
 
 #[derive(Debug, Serialize)]
 struct EntryEvidence {

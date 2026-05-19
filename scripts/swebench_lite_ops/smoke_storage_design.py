@@ -14,15 +14,15 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-063"
-DEFAULT_SMOKE_ROOT = Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2")
+DEFAULT_SMOKE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2")
 DEFAULT_FORWARD_ROOT = DEFAULT_SMOKE_ROOT / "forward-cache"
 DEFAULT_MATRIX_ROOT = DEFAULT_SMOKE_ROOT / "intelligence-matrices"
 DEFAULT_DESIGN_ROOT = DEFAULT_SMOKE_ROOT / "design"
-DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-063-post249-smoke-storage-design-fsv")
-DEFAULT_FULL_CHUNKS_JSONL = Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
-DEFAULT_FORWARD_FSV = Path("/mnt/d/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json")
+DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-063-post249-smoke-storage-design-fsv")
+DEFAULT_FULL_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
+DEFAULT_FORWARD_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json")
 DEFAULT_MATRIX_FSV = Path(
-    "/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"
+    "/zfs/archive/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"
 )
 DEFAULT_SMOKE_CHUNKS = 1000
 DEFAULT_MAX_DURABLE_FORWARD_BYTES = 500 * 1024 * 1024 * 1024
@@ -201,7 +201,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
     scale = full_chunk_count / float(smoke_chunk_count)
     forward_state = tree_state(args.forward_root)
     matrix_state = tree_state(args.matrix_root)
-    d_snapshot = disk_snapshot(Path("/mnt/d/contextgraph"))
+    d_snapshot = disk_snapshot(Path("/zfs/archive/contextgraph"))
 
     forward_estimate = ceil_int(forward_state["byte_count"] * scale)
     raw_vector_estimate = ceil_int(smoke_raw_vector_bytes * scale)
@@ -269,9 +269,9 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "decision": "ACCEPT_STORAGE_DESIGN_FOR_255_RELAUNCH_GATE",
         "full_run_allowed_now": False,
         "full_run_blockers_remaining": ["#255 full-run relaunch gate"],
-        "durable_root": "/mnt/d/contextgraph/corpus/python-forward-cache-v1",
+        "durable_root": "/zfs/archive/contextgraph/corpus/python-forward-cache-v1",
         "hot_root_policy": "bounded WSL ext4 staging under /home/cabdru/.cache/contextgraph; never /mnt/c",
-        "vector_store": "packed JSONL records plus packed index per shard, promoted to D-drive after readback",
+        "vector_store": "packed JSONL records plus packed index per shard, promoted to aiwonder durable archive after readback",
         "matrix_store": "bounded global/window summary artifacts, not raw chunk-pair matrices",
         "hash_chain": "per-shard packed manifest hashes -> corpus manifest -> design FSV -> #255 relaunch artifact",
         "resume_semantics": [
@@ -312,8 +312,8 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "estimated_windowed_matrix_bytes": windowed_matrix_estimate,
         "estimated_total_design_bytes": estimated_total_design_bytes,
         "max_durable_forward_bytes": args.max_durable_forward_bytes,
-        "d_drive_free_bytes": d_snapshot["free"],
-        "d_drive_capacity_margin_bytes": int(d_snapshot["free"]) - estimated_total_design_bytes,
+        "archive_free_bytes": d_snapshot["free"],
+        "archive_capacity_margin_bytes": int(d_snapshot["free"]) - estimated_total_design_bytes,
         "unbounded_full_chunk_pair_count_forbidden": unbounded_chunk_pairs,
     }
 
@@ -363,7 +363,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "edge_case_audit": {
             "storage_budget": {
                 "passes": estimates_ok,
-                "expected": f"estimated_total_design_bytes < 75% of D free bytes and forward estimate <= {args.max_durable_forward_bytes}",
+                "expected": f"estimated_total_design_bytes < 75% of aiwonder archive free bytes and forward estimate <= {args.max_durable_forward_bytes}",
                 "actual": estimates,
             },
             "unscalable_metric_policy": {
@@ -378,7 +378,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
                 "actual_matrix_fsv": file_state(args.matrix_fsv),
             },
         },
-        "disk_snapshot": {"d_drive": d_snapshot},
+        "disk_snapshot": {"aiwonder_archive": d_snapshot},
     }
 
 
@@ -414,7 +414,7 @@ def command_smoke_storage_design(args: argparse.Namespace) -> int:
         and readback_go_no_go.get("storage_design_accepted") is True
         and readback_go_no_go.get("may_start_full_run_now") is False
         and readback_go_no_go.get("may_start_full_run_after_255") is True
-        and readback_estimates.get("estimated_total_design_bytes", 0) < readback_estimates.get("d_drive_free_bytes", 0)
+        and readback_estimates.get("estimated_total_design_bytes", 0) < readback_estimates.get("archive_free_bytes", 0)
         and all(item.get("unbounded_pairwise_chunk_storage") is False for item in readback_policy.get("metric_storage_policy", []))
         and artifact_state["file_count"] == 4
     )
@@ -444,7 +444,7 @@ def command_smoke_storage_design(args: argparse.Namespace) -> int:
             "may_start_full_run_after_255": readback_go_no_go.get("may_start_full_run_after_255"),
             "estimated_full_forward_cache_bytes": readback_estimates.get("estimated_full_forward_cache_bytes"),
             "estimated_total_design_bytes": readback_estimates.get("estimated_total_design_bytes"),
-            "d_drive_free_bytes": readback_estimates.get("d_drive_free_bytes"),
+            "archive_free_bytes": readback_estimates.get("archive_free_bytes"),
             "unbounded_full_chunk_pair_count_forbidden": readback_estimates.get("unbounded_full_chunk_pair_count_forbidden"),
             "metric_policy_count": len(readback_policy.get("metric_storage_policy", [])),
             "full_chunks_state": file_state(args.full_chunks_jsonl),

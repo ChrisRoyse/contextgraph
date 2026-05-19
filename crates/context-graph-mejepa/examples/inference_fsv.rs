@@ -19,7 +19,7 @@ use context_graph_mejepa::{
 };
 use serde::{Deserialize, Serialize};
 
-const FSV_DIR: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-infer-fsv";
+const FSV_DIR: &str = "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-infer-fsv";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

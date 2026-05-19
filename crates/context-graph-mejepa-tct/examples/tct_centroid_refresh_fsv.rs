@@ -15,13 +15,13 @@ use sha2::{Digest, Sha256};
 
 type FsvResult<T> = Result<T, Box<dyn Error>>;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-tct-refresh-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-tct-refresh-fsv";
 const CORPUS_INDEX: &str =
-    "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
+    "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
 const AST_CORPUS_FSV: &str =
-    "/mnt/d/contextgraph/fsv/swebench-python-ast-corpus-fsv/swebench-python-ast-corpus-fsv.json";
+    "/zfs/archive/contextgraph/fsv/swebench-python-ast-corpus-fsv/swebench-python-ast-corpus-fsv.json";
 const PHASE1_PANEL: &str =
-    "/mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/phase1-extended/panel-all-slots.json";
+    "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/phase1-extended/panel-all-slots.json";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CorpusEntry {

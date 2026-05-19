@@ -21,7 +21,8 @@ use context_graph_mejepa::{
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use serde::Serialize;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-unknown-fingerprint-active-learning-fsv";
+const FSV_ROOT: &str =
+    "/zfs/archive/contextgraph/fsv/phase-g-unknown-fingerprint-active-learning-fsv";
 
 #[derive(Debug, Serialize)]
 struct BoundaryCase {

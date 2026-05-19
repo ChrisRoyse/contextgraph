@@ -25,11 +25,11 @@ use context_graph_mejepa_train::sampler::{BatchSampler, PatchSimilarityGraph};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-016-foundationality-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-016-foundationality-fsv";
 const SWE_300X8_CORPUS_DIR: &str =
-    "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511";
+    "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511";
 const SWE_300X8_INDEX_PATH: &str =
-    "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
+    "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
 
 fn main() -> Result<()> {
     let started_at_unix_ms = current_unix_ms();

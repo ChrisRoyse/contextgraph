@@ -12,7 +12,7 @@ use context_graph_mejepa_cf::CF_MEJEPA_EMBEDDER_PROPOSALS;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-018b-absence-queue-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-018b-absence-queue-fsv";
 
 fn main() -> Result<()> {
     let ts = now_unix_ms()?;

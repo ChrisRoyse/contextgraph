@@ -20,13 +20,13 @@ fn cli_daemon_rejects_local_d_root_in_production_mode() {
     let output = run_mcp(&[
         "--daemon-toolchain-audit-only",
         "--d-root",
-        "/mnt/d/contextgraph",
+        "/zfs/archive/contextgraph",
     ]);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
         !output.status.success(),
-        "production daemon root must reject local D-drive"
+        "production daemon root must reject local aiwonder"
     );
     assert!(
         stderr.contains("MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER"),

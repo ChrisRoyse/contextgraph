@@ -12,7 +12,7 @@ use std::process::Command;
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/python-ast-atomic-fsv");
+    let root = PathBuf::from("/zfs/archive/contextgraph/fsv/python-ast-atomic-fsv");
     reset_secure_dir(&root)?;
     let sources = root.join("sources");
     fs::create_dir_all(&sources)?;

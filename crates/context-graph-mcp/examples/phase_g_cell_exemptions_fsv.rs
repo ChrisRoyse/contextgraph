@@ -15,7 +15,7 @@ use context_graph_mejepa::{count_cf, open_infer_rocksdb, Language, RocksDbEvalSt
 use context_graph_mejepa_cf::{CF_MEJEPA_EVAL_REPORTS, CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS};
 use serde_json::{json, Value};
 
-const DEFAULT_FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-cell-exemptions-fsv";
+const DEFAULT_FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-g-cell-exemptions-fsv";
 const EXEMPT_CELL: &str = "compile_error::python";
 
 fn main() -> Result<()> {

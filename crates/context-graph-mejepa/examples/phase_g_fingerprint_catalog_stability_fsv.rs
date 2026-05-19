@@ -25,7 +25,8 @@ use context_graph_mejepa_cf::{
 use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
 use serde_json::{json, Value};
 
-const DEFAULT_FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-fp-008-fingerprint-stability-fsv";
+const DEFAULT_FSV_ROOT: &str =
+    "/zfs/archive/contextgraph/fsv/task-fp-008-fingerprint-stability-fsv";
 
 fn main() -> Result<()> {
     let output_root = std::env::args()

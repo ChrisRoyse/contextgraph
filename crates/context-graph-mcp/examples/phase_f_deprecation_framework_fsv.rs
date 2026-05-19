@@ -10,7 +10,7 @@ use context_graph_mcp::deprecation::{
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-f-deprecation-framework-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-f-deprecation-framework-fsv";
 const ENV_LEVEL: &str = "CONTEXT_GRAPH_DEPRECATION_LEVEL";
 const CALL_SITE_INVENTORY: &str = "scripts/ci/phase_f_deprecation_call_sites.md";
 

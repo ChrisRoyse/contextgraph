@@ -2,14 +2,14 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="/mnt/d/contextgraph/fsv/phase-g-training-pipeline-orchestrator-fsv"
+FSV_ROOT="/zfs/archive/contextgraph/fsv/phase-g-training-pipeline-orchestrator-fsv"
 DB_PATH="$FSV_ROOT/infer-rocksdb"
 PY_CORPUS="$FSV_ROOT/corpus-python"
 NONPY_CORPUS="$FSV_ROOT/corpus-non-python"
 OUTPUT_JSON="$FSV_ROOT/orchestrator-output.json"
 REPORT_JSON="$FSV_ROOT/training_pipeline_orchestrator_fsv.json"
-PY_REAL="/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json"
-NONPY_REAL="/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/index.json"
+PY_REAL="/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json"
+NONPY_REAL="/zfs/archive/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/index.json"
 
 rm -rf "$FSV_ROOT"
 mkdir -p \

@@ -131,7 +131,7 @@ def command_ast_chunks(args: Any) -> dict[str, Any]:
         "edge_chunks": file_state(edge_path),
         "manifest": file_state(manifest_path),
         "fsv": file_state(fsv_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
+        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "chunk_root_bytes": path_bytes(args.chunk_root),
     }
@@ -206,7 +206,7 @@ def command_ast_chunks(args: Any) -> dict[str, Any]:
         "inputs": {"parse_records": str(args.parse_records)},
         "storage_policy": {
             "decision_issue": 212,
-            "durable_root": "/mnt/d/contextgraph",
+            "durable_root": "/zfs/archive/contextgraph",
             "hot_root": str(args.hot_root),
             "hot_budget_bytes": args.hot_budget_bytes,
         },
@@ -238,7 +238,7 @@ def command_ast_chunks(args: Any) -> dict[str, Any]:
         "edge_chunks": file_state(edge_path),
         "manifest": file_state(manifest_path),
         "fsv": file_state(fsv_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/mnt/d")]),
+        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
         "hot_bytes": hot_bytes,
         "chunk_root_bytes": path_bytes(args.chunk_root),
         "fsv_root_bytes": path_bytes(args.fsv_root),

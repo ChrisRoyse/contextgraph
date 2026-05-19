@@ -13,7 +13,7 @@ use context_graph_mejepa::{count_cf, open_infer_rocksdb};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-g-oracle-flakiness-quarantine-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-g-oracle-flakiness-quarantine-fsv";
 
 fn main() -> Result<()> {
     let root = PathBuf::from(FSV_ROOT);

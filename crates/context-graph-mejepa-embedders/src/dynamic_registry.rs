@@ -10,7 +10,7 @@ use std::str::FromStr;
 const MAX_DYNAMIC_NAME_LEN: usize = 64;
 const MAX_DYNAMIC_DIMENSION: usize = 8192;
 const MAX_DYNAMIC_EMBEDDERS: usize = 235;
-const DYNAMIC_MODEL_ROOT: &str = "/mnt/d/contextgraph/models/dynamic/";
+const DYNAMIC_MODEL_ROOT: &str = "/zfs/archive/contextgraph/models/dynamic/";
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -141,7 +141,7 @@ impl DynamicEmbedderRegistryRecord {
                     "forward artifact path must live under {DYNAMIC_MODEL_ROOT}, got {}",
                     self.forward_artifact_path
                 ),
-                "persist promoted dynamic embedders under the D-drive model root",
+                "persist promoted dynamic embedders under the aiwonder model root",
             ));
         }
         validate_sha256(
@@ -540,7 +540,7 @@ mod tests {
             route_languages: vec!["python".to_string()],
             route_entity_types: vec!["Function".to_string()],
             forward_artifact_path:
-                "/mnt/d/contextgraph/models/dynamic/edynamic_1_corpus_transe_v1/forward.so"
+                "/zfs/archive/contextgraph/models/dynamic/edynamic_1_corpus_transe_v1/forward.so"
                     .to_string(),
             forward_artifact_sha256:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),

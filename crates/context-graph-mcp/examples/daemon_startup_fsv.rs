@@ -9,7 +9,7 @@ use serde_json::json;
 fn main() -> Result<()> {
     let data_root = context_graph_paths::data_root()
         .context("MEJEPA_D_DRIVE_UNAVAILABLE: failed to resolve CONTEXTGRAPH_DATA_ROOT")?;
-    let paths = daemon_validate::validate_d_drive_root(&data_root)?;
+    let paths = daemon_validate::validate_aiwonder_root(&data_root)?;
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
@@ -27,7 +27,7 @@ fn main() -> Result<()> {
     let evidence = json!({
         "source_of_truth": evidence_path,
         "pid": std::process::id(),
-        "validated_d_drive_paths": paths,
+        "validated_aiwonder_paths": paths,
         "supervised_task_names": daemon::supervised_task_names(),
         "systemd_service": systemd_service,
         "validated_at_unix_seconds": chrono::Utc::now().timestamp(),

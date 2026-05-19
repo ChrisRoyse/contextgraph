@@ -16,7 +16,7 @@ use rocksdb::{WriteOptions, DB};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-f-prediction-replay-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-f-prediction-replay-fsv";
 const CF_MEJEPA_LIVE_PREDICTIONS: &str = "CF_MEJEPA_LIVE_PREDICTIONS";
 
 #[tokio::main]

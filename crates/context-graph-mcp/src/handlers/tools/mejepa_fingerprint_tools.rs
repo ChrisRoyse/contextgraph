@@ -1431,7 +1431,7 @@ mod test_support {
             "all_passed": all_passed
         });
         let run_root = PathBuf::from(format!(
-            "/mnt/d/contextgraph/fsv/phase-g-fingerprint-mcp-tools-fsv/run-{}",
+            "/zfs/archive/contextgraph/fsv/phase-g-fingerprint-mcp-tools-fsv/run-{}",
             chrono::Utc::now().timestamp_millis()
         ));
         std::fs::create_dir_all(&run_root).expect("create fsv dir");

@@ -17,7 +17,7 @@ use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-337-observe-missing-prediction-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-337-observe-missing-prediction-fsv";
 
 fn main() -> Result<()> {
     let run_root =

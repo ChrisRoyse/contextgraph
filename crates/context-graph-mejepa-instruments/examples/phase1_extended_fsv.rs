@@ -26,7 +26,7 @@ type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
     let root = PathBuf::from(
-        "/mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/phase1-extended",
+        "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/phase1-extended",
     );
     if root.exists() {
         fs::remove_dir_all(&root)?;

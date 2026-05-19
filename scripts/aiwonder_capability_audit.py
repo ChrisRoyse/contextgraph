@@ -23,7 +23,7 @@ from typing import Any
 TASK_ID = "TASK-AIWONDER-017"
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/fsv/task-aiwonder-017-capability-audit")
 DEFAULT_REPO_ROOT = Path("/zfs/hot/contextgraph/repo")
-DEFAULT_CHUNKS_JSONL = Path("/zfs/hot/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
+DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
 DEFAULT_RUNNER = Path("/zfs/hot/contextgraph/repo/target/release/examples/python_forward_cache_fsv")
 DEFAULT_STORAGE_BLOCKER = "#372"
 

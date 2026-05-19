@@ -1,6 +1,6 @@
 // Manual Full State Verification (FSV) for Tier-1 foundation gaps:
 // generic MMR + conformal prediction. Writes JSON evidence to disk under
-// /mnt/d/contextgraph/fsv/contextgraph-tier1-fsv/ for physical inspection.
+// /zfs/archive/contextgraph/fsv/contextgraph-tier1-fsv/ for physical inspection.
 
 use context_graph_solver::{
     mmr_select, mmr_select_with_matrix, ConformalConfig, ConformalPredictor, MmrConfig,
@@ -11,7 +11,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let evidence_root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-tier1-fsv");
+    let evidence_root = PathBuf::from("/zfs/archive/contextgraph/fsv/contextgraph-tier1-fsv");
     fs::create_dir_all(&evidence_root)?;
 
     let mmr_evidence = run_mmr_fsv()?;

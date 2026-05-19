@@ -23,7 +23,7 @@
 //   - `swebench.harness.run_evaluation` (CLI entrypoint).
 //   - `swebench.harness.grading.get_eval_report` (per-instance report
 //     producer; inspected at
-//     `/mnt/d/contextgraph/cache/contextgraph-swebench/SWE-bench/swebench/harness/grading.py`
+//     `/zfs/archive/contextgraph/cache/contextgraph-swebench/SWE-bench/swebench/harness/grading.py`
 //     during this implementation).
 //   - `docs/ruvectorfindings/sitrep/04_implementation_plans/plan_phase0_docker_oracle.md`.
 
@@ -302,7 +302,7 @@ pub fn run_swebench_lite_oracle(
             OracleError::io(
                 &harness_lock_path,
                 err.to_string(),
-                "ensure /mnt/d/contextgraph/state/locks is writable so the SWE-bench Docker harness lock can reset ownership",
+                "ensure /zfs/archive/contextgraph/state/locks is writable so the SWE-bench Docker harness lock can reset ownership",
             )
         })?;
         writeln!(
@@ -316,14 +316,14 @@ pub fn run_swebench_lite_oracle(
             OracleError::io(
                 &harness_lock_path,
                 err.to_string(),
-                "ensure /mnt/d/contextgraph/state/locks is writable so the SWE-bench Docker harness lock can record ownership",
+                "ensure /zfs/archive/contextgraph/state/locks is writable so the SWE-bench Docker harness lock can record ownership",
             )
         })?;
         harness_lock.sync_all().map_err(|err| {
             OracleError::io(
                 &harness_lock_path,
                 err.to_string(),
-                "ensure /mnt/d/contextgraph/state/locks is writable so the SWE-bench Docker harness lock can sync ownership",
+                "ensure /zfs/archive/contextgraph/state/locks is writable so the SWE-bench Docker harness lock can sync ownership",
             )
         })?;
         let mut cmd = Command::new(&command[0]);
@@ -405,7 +405,7 @@ pub fn run_swebench_lite_oracle_batch(
             OracleError::io(
                 &harness_lock_path,
                 err.to_string(),
-                "ensure /mnt/d/contextgraph/state/locks is writable so the SWE-bench Docker harness lock can reset ownership",
+                "ensure /zfs/archive/contextgraph/state/locks is writable so the SWE-bench Docker harness lock can reset ownership",
             )
         })?;
         writeln!(
@@ -419,14 +419,14 @@ pub fn run_swebench_lite_oracle_batch(
             OracleError::io(
                 &harness_lock_path,
                 err.to_string(),
-                "ensure /mnt/d/contextgraph/state/locks is writable so the SWE-bench Docker harness lock can record ownership",
+                "ensure /zfs/archive/contextgraph/state/locks is writable so the SWE-bench Docker harness lock can record ownership",
             )
         })?;
         harness_lock.sync_all().map_err(|err| {
             OracleError::io(
                 &harness_lock_path,
                 err.to_string(),
-                "ensure /mnt/d/contextgraph/state/locks is writable so the SWE-bench Docker harness lock can sync ownership",
+                "ensure /zfs/archive/contextgraph/state/locks is writable so the SWE-bench Docker harness lock can sync ownership",
             )
         })?;
         let mut cmd = Command::new(&command[0]);
@@ -528,7 +528,7 @@ fn acquire_swebench_harness_lock(path: &Path) -> OracleResult<File> {
             OracleError::io(
                 path,
                 err.to_string(),
-                "ensure /mnt/d/contextgraph/state/locks is writable so corpus jobs can coordinate SWE-bench Docker harness access",
+                "ensure /zfs/archive/contextgraph/state/locks is writable so corpus jobs can coordinate SWE-bench Docker harness access",
             )
         })?;
     file.lock_exclusive().map_err(|err| {

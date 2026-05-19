@@ -47,7 +47,7 @@ Synthetic input allowed when **deterministic, distinguishable, representative, b
 | Build | `cargo build --release -p <crate>` |
 | Test | `cargo test -p <crate>` (or scoped with reason) |
 | Clippy | `cargo clippy -p <crate> --no-deps --tests --examples -- -D warnings` |
-| **SoT readback artifact** | Production: `/zfs/archive/contextgraph/fsv/<task>-fsv/<artifact>.json` with `allPassed: true`. `/mnt/d/contextgraph/fsv/...` only when issue explicitly scopes a local-only smoke. |
+| **SoT readback artifact** | Production: `/zfs/archive/contextgraph/fsv/<task>-fsv/<artifact>.json` with `allPassed: true`. `/mnt/d/contextgraph/fsv/...` only when issue explicitly scopes a historical-only proof. |
 | **Independent RocksDB verification** | Flush/drop/reopen through production opener (or separate handle), decode the same row back. |
 | **GitHub issue closeout** | CLAIM before code; RESOLVED / PAUSE / BLOCKED after with command evidence, FSV path, hashes, residual risk. |
 

@@ -23,7 +23,7 @@ fn main() -> FsvResult<()> {
         .duration_since(UNIX_EPOCH)?
         .as_millis()
         .to_string();
-    let root = PathBuf::from("/mnt/d/contextgraph/fsv/task-rwd-202-coverage-fsv")
+    let root = PathBuf::from("/zfs/archive/contextgraph/fsv/task-rwd-202-coverage-fsv")
         .join(format!("run-{run_id}"));
     fs::create_dir_all(&root)?;
     let baseline_path = root.join("baseline_coverage.json");

@@ -21,7 +21,7 @@ use context_graph_mejepa_train::dda::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-043-per-head-dda-projection-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-043-per-head-dda-projection-fsv";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

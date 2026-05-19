@@ -19,7 +19,7 @@ type FsvResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 async fn main() -> FsvResult<()> {
     let output_path = env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| {
         PathBuf::from(
-            "/mnt/d/contextgraph/fsv/task-py-data-035-colbert-batch-fsv/colbert_true_batch_fsv.json",
+            "/zfs/archive/contextgraph/fsv/task-py-data-035-colbert-batch-fsv/colbert_true_batch_fsv.json",
         )
     });
     let telemetry_path = output_path.with_file_name("colbert_true_batch_telemetry.jsonl");
@@ -27,7 +27,7 @@ async fn main() -> FsvResult<()> {
         .or_else(|_| env::var("CONTEXTGRAPH_MODELS_ROOT"))
         .or_else(|_| env::var("EMBEDDING_MODELS_DIR"))
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/mnt/d/cabdru/contextgraph/models"));
+        .unwrap_or_else(|_| PathBuf::from("/zfs/hot/contextgraph/models"));
 
     let chunks = synthetic_python_chunks();
     let model_run = run_model_case(&model_root, &chunks).await?;
@@ -87,7 +87,7 @@ async fn main() -> FsvResult<()> {
         "trigger_process_outcome": {
             "trigger": "cargo run -p context-graph-embeddings --example colbert_true_batch_fsv -- <artifact_path>",
             "process": "LateInteractionModel::embed_tokens_batch and EmbeddingModel::embed_true_batch",
-            "outcome": "durable JSON/JSONL ColBERT true-batch evidence under /mnt/d/contextgraph/fsv/task-py-data-035-colbert-batch-fsv/"
+            "outcome": "durable JSON/JSONL ColBERT true-batch evidence under /zfs/archive/contextgraph/fsv/task-py-data-035-colbert-batch-fsv/"
         },
         "capacity_evidence": {
             "root": df_capacity("/")?,

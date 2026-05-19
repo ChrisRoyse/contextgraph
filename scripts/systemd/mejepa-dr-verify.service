@@ -1,7 +1,7 @@
 [Unit]
 Description=ContextGraph ME-JEPA monthly DR restore verification
 Documentation=file:/home/cabdru/contextgraph/docs/futurebuild/tasks/dr/_all_tasks.md
-ConditionPathExists=/mnt/d/contextgraph-backups/local
+ConditionPathExists=/zfs/archive/contextgraph/backups/local
 
 [Service]
 Type=oneshot

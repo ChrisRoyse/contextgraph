@@ -16,14 +16,14 @@ type FsvResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 async fn main() -> FsvResult<()> {
     let output_path = env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| {
         PathBuf::from(
-            "/mnt/d/contextgraph/fsv/task-py-data-032-bert-family-batch-fsv/bert_family_true_batch_fsv.json",
+            "/zfs/archive/contextgraph/fsv/task-py-data-032-bert-family-batch-fsv/bert_family_true_batch_fsv.json",
         )
     });
     let model_root = env::var("CONTEXT_GRAPH_MODELS_PATH")
         .or_else(|_| env::var("CONTEXTGRAPH_MODELS_ROOT"))
         .or_else(|_| env::var("EMBEDDING_MODELS_DIR"))
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/mnt/d/cabdru/contextgraph/models"));
+        .unwrap_or_else(|_| PathBuf::from("/zfs/hot/contextgraph/models"));
 
     let mut models = Vec::new();
 

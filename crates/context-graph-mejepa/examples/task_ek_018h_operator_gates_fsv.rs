@@ -13,7 +13,7 @@ use context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-ek-018h-operator-gates-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-ek-018h-operator-gates-fsv";
 
 fn main() -> Result<()> {
     let started_at_unix_ms = current_unix_ms();

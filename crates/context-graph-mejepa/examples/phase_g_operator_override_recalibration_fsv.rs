@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 const DEFAULT_FSV_ROOT: &str =
-    "/mnt/d/contextgraph/fsv/phase-g-operator-override-recalibration-fsv";
+    "/zfs/archive/contextgraph/fsv/phase-g-operator-override-recalibration-fsv";
 
 fn main() -> Result<()> {
     let output_root = std::env::args()

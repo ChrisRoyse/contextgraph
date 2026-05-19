@@ -18,7 +18,7 @@ const NOW_MS: i64 = 1_779_049_500_000;
 const DAY_MS: i64 = 86_400_000;
 
 fn main() -> Result<()> {
-    let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/task-py-g-068-replay-buffer-fsv");
+    let fsv_root = PathBuf::from("/zfs/archive/contextgraph/fsv/task-py-g-068-replay-buffer-fsv");
     fs::create_dir_all(&fsv_root)?;
     let run_root = fsv_root.join(format!(
         "run-{}-{}",

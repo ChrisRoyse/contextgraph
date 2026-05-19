@@ -49,7 +49,7 @@ ARTIFACT_KIND = "python_secret_redaction"
 FORMULA_VERSION = "v1.0.0"
 PRODUCER = "contextgraph.swebench_lite_ops.python_secret_redaction"
 
-DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-g-059-secret-redaction-fsv")
+DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-059-secret-redaction-fsv")
 DEFAULT_OUTPUT_ROOT = DEFAULT_FSV_ROOT / "artifacts"
 
 

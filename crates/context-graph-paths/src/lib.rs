@@ -145,13 +145,10 @@ pub fn require_production_durable_root_or_named_local_smoke(
 ) -> Result<PathBuf> {
     let normalized = normalize_absolute_lexical(&make_absolute(path)?)?;
     if is_under_legacy_local_root(&normalized) {
-        if named_local_smoke_issue().is_some() {
-            return Ok(normalized);
-        }
         return Err(production_root_not_aiwonder(
             field,
             &normalized,
-            "local /mnt/d roots are allowed only when CONTEXTGRAPH_LOCAL_SMOKE_ISSUE names the issue-scoped local-smoke run",
+            "local /mnt/d roots are never active inputs or outputs; move required data to /zfs/archive/contextgraph on aiwonder",
         ));
     }
     require_production_durable_root(&normalized, field)
@@ -191,10 +188,7 @@ pub fn production_data_root() -> Result<PathBuf> {
 }
 
 pub fn named_local_smoke_issue() -> Option<String> {
-    match env::var(ENV_LOCAL_SMOKE_ISSUE) {
-        Ok(value) if !value.trim().is_empty() => Some(value),
-        _ => None,
-    }
+    None
 }
 
 pub fn mejepa_image_prep_log_dir() -> Result<PathBuf> {
@@ -558,12 +552,12 @@ mod tests {
         assert_eq!(err.code, "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER");
 
         env::set_var(ENV_LOCAL_SMOKE_ISSUE, "issue-365-local-smoke-test");
-        let local = require_production_durable_root_or_named_local_smoke(
+        let err = require_production_durable_root_or_named_local_smoke(
             Path::new("/mnt/d/contextgraph"),
             ENV_DATA_ROOT,
         )
-        .expect("named local smoke may use local D root without production closeout");
-        assert_eq!(local, PathBuf::from("/mnt/d/contextgraph"));
+        .expect_err("local D root stays rejected even when legacy local-smoke env is set");
+        assert_eq!(err.code, "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER");
 
         restore_env(prior_data);
         restore_local_smoke_env(prior_smoke);

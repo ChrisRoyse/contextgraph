@@ -21,13 +21,13 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 const DEFAULT_CHUNKS_JSONL: &str =
-    "/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl";
+    "/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl";
 const DEFAULT_REGISTRY_JSONL: &str =
-    "/mnt/d/contextgraph/corpus/python-frozen-instrument-registry-v1/python_frozen_instrument_records.jsonl";
-const DEFAULT_MODELS_CONFIG: &str = "/mnt/d/cabdru/contextgraph/models/mejepa_models_config.toml";
-const DEFAULT_CACHE_ROOT: &str = "/mnt/d/contextgraph/corpus/python-forward-cache-v1";
+    "/zfs/hot/contextgraph/corpus/python-frozen-instrument-registry-v1/python_frozen_instrument_records.jsonl";
+const DEFAULT_MODELS_CONFIG: &str = "/zfs/hot/contextgraph/models/mejepa_models_config.toml";
+const DEFAULT_CACHE_ROOT: &str = "/zfs/archive/contextgraph/corpus/python-forward-cache-v1";
 const DEFAULT_FSV_ROOT: &str =
-    "/mnt/d/contextgraph/fsv/task-py-data-016-corpus-embedder-explosion-fsv";
+    "/zfs/archive/contextgraph/fsv/task-py-data-016-corpus-embedder-explosion-fsv";
 const DEFAULT_HOT_ROOT: &str =
     "/home/cabdru/.cache/contextgraph/task-py-data-016-corpus-embedder-explosion";
 const CACHE_SCHEMA_VERSION: u16 = 1;
@@ -395,7 +395,7 @@ async fn main() -> FsvResult<()> {
     )?;
     require("true batch size is non-zero", true_batch_size > 0)?;
     require("GPU VRAM guard is non-zero", gpu_vram_guard_bytes > 0)?;
-    require("D-drive I/O worker count is non-zero", io_workers > 0)?;
+    require("durable I/O worker count is non-zero", io_workers > 0)?;
     require("CPU worker count is non-zero", cpu_workers > 0)?;
     require("GPU worker count is non-zero", gpu_workers > 0)?;
     require(
@@ -663,7 +663,7 @@ async fn main() -> FsvResult<()> {
                     .collect::<Vec<_>>(),
                 "gpu_vram_guard_bytes": gpu_vram_guard_bytes,
                 "worker_tiers": {
-                    "d_drive_io_workers": io_workers,
+                    "durable_io_workers": io_workers,
                     "cpu_static_tokenization_workers": cpu_workers,
                     "gpu_batch_workers": gpu_workers,
                 },
@@ -799,7 +799,7 @@ async fn main() -> FsvResult<()> {
             "record_stage_root": paths.record_stage_root().display().to_string(),
             "durable_root": paths.cache_root.display().to_string(),
             "hot_root_allowed": true,
-            "durable_root_on_d_drive": paths.cache_root.starts_with("/mnt/d"),
+            "durable_root_on_aiwonder": paths.cache_root.starts_with("/zfs/archive/contextgraph"),
             "chunk_offset": chunk_offset,
             "max_chunks": max_chunks,
             "only_embedder": only_embedder.map(|embedder| embedder.slug().to_string()),
@@ -814,7 +814,7 @@ async fn main() -> FsvResult<()> {
                 .collect::<Vec<_>>(),
             "gpu_vram_guard_bytes": gpu_vram_guard_bytes,
             "worker_tiers": {
-                "d_drive_io_workers": io_workers,
+                "durable_io_workers": io_workers,
                 "cpu_static_tokenization_workers": cpu_workers,
                 "gpu_batch_workers": gpu_workers,
             },
@@ -2940,8 +2940,8 @@ fn write_cache_record_promoted_checked(
     record: &ForwardCacheRecord,
 ) -> FsvResult<Value> {
     require(
-        "durable cache record path is on D drive",
-        path.starts_with("/mnt/d"),
+        "durable cache record path is on aiwonder archive",
+        path.starts_with("/zfs/archive/contextgraph"),
     )?;
     let bytes = serde_json::to_vec(record)?;
     let stage_path = paths
@@ -3702,7 +3702,7 @@ fn edge_hot_stage_promotion_mismatch(paths: &Paths) -> FsvResult<Value> {
     Ok(json!({
         "case": "hot_stage_promotion_mismatch_rejected",
         "before_state": before,
-        "trigger": "stage valid bytes on WSL ext4, write different bytes to D-drive edge target, then compare SoT readback",
+        "trigger": "stage valid bytes on hot scratch, write different bytes to durable archive edge target, then compare SoT readback",
         "stage_path": stage_path.display().to_string(),
         "stage_sha256": sha256_file(&stage_path)?,
         "durable_path": durable_path.display().to_string(),
@@ -4855,11 +4855,11 @@ fn disk_snapshot() -> FsvResult<Value> {
             "--output=source,size,used,avail,pcent,target",
             "/",
             "/mnt/c",
-            "/mnt/d",
+            "/archive",
         ])
         .output()?;
     Ok(json!({
-        "command": "df -B1 --output=source,size,used,avail,pcent,target / /mnt/c /mnt/d",
+        "command": "df -B1 --output=source,size,used,avail,pcent,target / /mnt/c /archive",
         "exit_code": output.status.code(),
         "stdout": String::from_utf8_lossy(&output.stdout).to_string(),
         "stderr": String::from_utf8_lossy(&output.stderr).to_string(),

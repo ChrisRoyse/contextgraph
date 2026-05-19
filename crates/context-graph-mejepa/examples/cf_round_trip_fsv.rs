@@ -6,7 +6,7 @@
 //! end-to-end, with full state verification:
 //!
 //! 1. Define source of truth: a fresh RocksDB store under
-//!    `/mnt/d/contextgraph/fsv/mejepa-cf-fsv/rocks-<ts>`.
+//!    `/zfs/archive/contextgraph/fsv/mejepa-cf-fsv/rocks-<ts>`.
 //! 2. Capture BEFORE state by listing CF handles and counts.
 //! 3. Trigger: encode each value struct, derive its bincode key, write to the
 //!    correct CF, and `flush_cf` so RocksDB has fully persisted before readback.
@@ -18,7 +18,7 @@
 //!    from two OS threads into `CF_MEJEPA_AGENT_FEEDBACK`.
 //!
 //! Every step writes evidence to
-//! `/mnt/d/contextgraph/fsv/mejepa-cf-fsv/round_trip.json`. The process fails
+//! `/zfs/archive/contextgraph/fsv/mejepa-cf-fsv/round_trip.json`. The process fails
 //! closed with a non-zero exit code on the first divergence — no silent
 //! warnings, no skipped boundary cases.
 
@@ -44,8 +44,8 @@ use rocksdb::{ColumnFamilyDescriptor, Options, WriteOptions, DB};
 use serde::Serialize;
 use serde_json::json;
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/mejepa-cf-fsv";
-const FSV_OUTPUT_PATH: &str = "/mnt/d/contextgraph/fsv/mejepa-cf-fsv/round_trip.json";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/mejepa-cf-fsv";
+const FSV_OUTPUT_PATH: &str = "/zfs/archive/contextgraph/fsv/mejepa-cf-fsv/round_trip.json";
 
 /// CF key encoder: `(panel_id, chunk_id) → bincode`.
 fn encode_dda_key(panel: &PanelId, chunk: &ChunkId) -> Result<Vec<u8>> {

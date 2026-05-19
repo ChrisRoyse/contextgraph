@@ -1,6 +1,6 @@
 // Manual Full State Verification for ed25519 segment signing on the
 // witness chain. Writes JSON evidence + raw signed segment to disk under
-// /mnt/d/contextgraph/fsv/contextgraph-tier1-fsv/ for physical inspection.
+// /zfs/archive/contextgraph/fsv/contextgraph-tier1-fsv/ for physical inspection.
 
 use context_graph_witness::{
     sign::{verify_segment, verify_segment_with_expected_pubkey, WitnessKeypair},
@@ -11,7 +11,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let evidence_root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-tier1-fsv");
+    let evidence_root = PathBuf::from("/zfs/archive/contextgraph/fsv/contextgraph-tier1-fsv");
     fs::create_dir_all(&evidence_root)?;
 
     // Build a tiny but real witness segment: 3 chained 73-byte entries.

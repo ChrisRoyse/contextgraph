@@ -2,7 +2,7 @@
 # Shared helpers for ccreality Claude Code hooks.
 set -euo pipefail
 
-CGREALITY_CACHE="${CGREALITY_CACHE_DIR:-/mnt/d/contextgraph/state/cgreality}"
+CGREALITY_CACHE="${CGREALITY_CACHE_DIR:-/zfs/archive/contextgraph/state/cgreality}"
 RUNTIME_ROOT_FILE="${CGREALITY_CACHE}/active_runtime_root"
 TARGET_INSTANCE_FILE="${CGREALITY_CACHE}/active_target_instance"
 CONTEXTGRAPH_ROOT_RESOLVED="${CONTEXTGRAPH_ROOT:-${CLAUDE_PROJECT_DIR:-/home/cabdru/contextgraph}}"
@@ -128,7 +128,7 @@ cgreality_droot_log_event() {
   if [ -z "${payload}" ]; then
     payload="{}"
   fi
-  local droot="${CGREALITY_DROOT:-/mnt/d/contextgraph}"
+  local droot="${CGREALITY_DROOT:-/zfs/archive/contextgraph}"
   local log="${droot}/runtime/cgreality-hook-events.jsonl"
   if ! mkdir -p "$(dirname "${log}")"; then
     printf '{"status":"error","error_code":"CCREALITY_DROOT_HOOK_EVENT_LOG_DIR_FAILED","source_of_truth":"%s"}\n' "$(cgreality_file_sot "${log}")" >&2

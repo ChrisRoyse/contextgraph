@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
-const DEFAULT_FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-059-secret-redaction-fsv";
+const DEFAULT_FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-059-secret-redaction-fsv";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> FsvResult<()> {

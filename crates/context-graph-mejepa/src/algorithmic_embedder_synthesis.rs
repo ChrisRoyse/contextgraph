@@ -87,7 +87,7 @@ impl Default for AlgorithmicEmbedderSynthesisConfig {
         Self {
             rustc_path: PathBuf::from("rustc"),
             work_root: std::env::temp_dir().join("contextgraph-algorithmic-embedder-synthesis"),
-            artifact_root: PathBuf::from("/mnt/d/contextgraph/models/dynamic"),
+            artifact_root: PathBuf::from("/zfs/archive/contextgraph/models/dynamic"),
             variance_floor: DEFAULT_ALGORITHMIC_VARIANCE_FLOOR,
             fuzz_inputs: default_fuzz_inputs(),
         }

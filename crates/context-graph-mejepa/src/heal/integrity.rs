@@ -610,7 +610,8 @@ mod tests {
 
     #[test]
     fn witness_quarantine_fsv_blocks_writes_until_approved_repair() {
-        let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-witness-quarantine-fsv");
+        let fsv_root =
+            PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-witness-quarantine-fsv");
         fs::create_dir_all(&fsv_root).expect("fsv root");
         let run_id = format!(
             "{}-{}",

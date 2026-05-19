@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-072-stress-harness-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-072-stress-harness-fsv";
 const REPORT_NAME: &str = "stress_harness_fsv.json";
 
 fn main() -> Result<()> {

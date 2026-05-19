@@ -19,20 +19,20 @@ import numpy as np
 
 
 SCHEMA_VERSION = 1
-DEFAULT_FORWARD_ROOT = Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/forward-cache")
+DEFAULT_FORWARD_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/forward-cache")
 DEFAULT_SMOKE_MANIFEST = Path(
-    "/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"
+    "/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"
 )
 DEFAULT_OUTPUT_ROOT = Path(
-    "/mnt/d/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices"
+    "/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices"
 )
-DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv")
+DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv")
 DEFAULT_TASK_ID = "TASK-PY-DATA-062"
 DEFAULT_FULL_TASK_ID = "TASK-PY-DATA-046"
-DEFAULT_FULL_FORWARD_ROOT = Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515")
-DEFAULT_CHUNKS_JSONL = Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
-DEFAULT_FULL_OUTPUT_ROOT = Path("/mnt/d/contextgraph/corpus/python-embedder-intelligence-v1/alignment")
-DEFAULT_FULL_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-046-alignment-fsv")
+DEFAULT_FULL_FORWARD_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515")
+DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
+DEFAULT_FULL_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-v1/alignment")
+DEFAULT_FULL_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-046-alignment-fsv")
 DEFAULT_MIN_OVERLAP = 20
 DEFAULT_NEIGHBOR_K = 10
 CCA_MAX_DIM_SUM = 900

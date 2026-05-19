@@ -19,7 +19,7 @@ use context_graph_mejepa_cf::CF_MEJEPA_PLASTICITY_HISTORY;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/task-py-g-066-continual-backprop-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-066-continual-backprop-fsv";
 const PARAM_COUNT: usize = 1_000;
 const ITERATIONS: usize = 50_000;
 

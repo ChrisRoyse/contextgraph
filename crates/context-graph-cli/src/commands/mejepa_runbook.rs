@@ -28,14 +28,14 @@ use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, WriteBatch};
 use serde::Serialize;
 use serde_json::{json, Value};
 
-const DEFAULT_MEJEPA_INFER_DB: &str = "/mnt/d/contextgraph/storage/contextgraph-rocksdb";
-const DEFAULT_MEJEPA_HEAL_DB: &str = "/mnt/d/contextgraph/storage/mejepa-heal";
-const DEFAULT_SCHEDULER_STATE_ROOT: &str = "/mnt/d/contextgraph/state/schedulers";
+const DEFAULT_MEJEPA_INFER_DB: &str = "/zfs/archive/contextgraph/storage/contextgraph-rocksdb";
+const DEFAULT_MEJEPA_HEAL_DB: &str = "/zfs/archive/contextgraph/storage/mejepa-heal";
+const DEFAULT_SCHEDULER_STATE_ROOT: &str = "/zfs/archive/contextgraph/state/schedulers";
 const DEFAULT_WITNESS_CHAIN_PATH: &str =
-    "/mnt/d/contextgraph/state/cgreality/mejepa-witness-chain.bin";
-const DEFAULT_HYGIENE_ARCHIVE_ROOT: &str = "/mnt/d/contextgraph/storage/hygiene-archive";
+    "/zfs/archive/contextgraph/state/cgreality/mejepa-witness-chain.bin";
+const DEFAULT_HYGIENE_ARCHIVE_ROOT: &str = "/zfs/archive/contextgraph/storage/hygiene-archive";
 const DEFAULT_PAUSE_STATE_PATH: &str =
-    "/mnt/d/contextgraph/state/cgreality/predictions_paused_until.json";
+    "/zfs/archive/contextgraph/state/cgreality/predictions_paused_until.json";
 
 #[derive(Args, Debug, Clone)]
 pub struct PauseArgs {

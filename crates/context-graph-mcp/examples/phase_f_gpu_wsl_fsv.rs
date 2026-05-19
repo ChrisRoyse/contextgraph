@@ -7,7 +7,7 @@ use context_graph_mcp::telemetry::gpu_wsl::{default_query, nvidia_smi_query_with
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use serde_json::{json, Value};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-f-gpu-wsl-telemetry-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-f-gpu-wsl-telemetry-fsv";
 const REPORT_FILE: &str = "gpu_wsl_telemetry_fsv.json";
 const GIB: u64 = 1024 * 1024 * 1024;
 

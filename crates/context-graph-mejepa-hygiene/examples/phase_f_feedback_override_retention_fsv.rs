@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/phase-f-retention-fsv";
+const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/phase-f-retention-fsv";
 const NOW_MS: i64 = 1_800_000_000_000;
 const DAY_MS: i64 = 86_400_000;
 const RETENTION_DAYS: i64 = 365;

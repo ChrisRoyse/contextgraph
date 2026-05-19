@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FSV_ROOT="${CONTEXTGRAPH_CELL_STATUS_FSV_ROOT:-/mnt/d/contextgraph/fsv/phase-g-cell-status-fsv}"
+FSV_ROOT="${CONTEXTGRAPH_CELL_STATUS_FSV_ROOT:-/zfs/archive/contextgraph/fsv/phase-g-cell-status-fsv}"
 SEED_JSON="$FSV_ROOT/seed-output.json"
 PASS_JSON="$FSV_ROOT/pass-output.json"
 BELOW_JSON="$FSV_ROOT/below-threshold-output.json"
