@@ -19,6 +19,7 @@ pub mod constellation_intelligence;
 pub mod constellation_observation;
 pub mod contradiction;
 pub mod cross_language_label_gating;
+pub mod cross_panel;
 pub mod data_models;
 pub mod dda_features;
 pub mod degraded;
@@ -120,6 +121,7 @@ pub use conformal::*;
 pub use constellation_intelligence::*;
 pub use constellation_observation::*;
 pub use contradiction::*;
+pub use cross_panel::*;
 pub use data_models::{
     OracleLogits, PredictedInverseMap, PredictedPanel, TargetPanel, TargetProvenance,
 };
