@@ -769,6 +769,7 @@ fn retired_e5_error() -> CoreError {
 }
 
 const E14_REQUIRED_FILES: [&str; 3] = ["config.json", "pytorch_model.bin", "tokenizer.json"];
+const ACTIVE_MODEL_REGISTRY: &str = "mejepa_models_config.toml";
 
 fn ensure_bge_m3_assets(models_dir: &Path) -> EmbeddingResult<PathBuf> {
     let bge_dir = models_dir.join(ModelId::BgeM3Dense.directory_name());
@@ -834,6 +835,84 @@ fn validate_json_asset(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn resolve_active_embedder_dir(
+    models_dir: &Path,
+    embedder_key: &str,
+    fallback_subdir: &str,
+) -> EmbeddingResult<PathBuf> {
+    let registry = models_dir.join(ACTIVE_MODEL_REGISTRY);
+    if registry.is_file() {
+        let registry_text =
+            std::fs::read_to_string(&registry).map_err(|err| EmbeddingError::ConfigError {
+                message: format!(
+                    "ACTIVE_MODEL_REGISTRY_UNREADABLE: failed to read {}: {err}",
+                    registry.display()
+                ),
+            })?;
+        let registry_value = toml::from_str::<toml::Value>(&registry_text).map_err(|err| {
+            EmbeddingError::ConfigError {
+                message: format!(
+                    "ACTIVE_MODEL_REGISTRY_INVALID: failed to parse {}: {err}",
+                    registry.display()
+                ),
+            }
+        })?;
+
+        if let Some(path_text) = registry_value
+            .get("embedders")
+            .and_then(toml::Value::as_table)
+            .and_then(|embedders| embedders.get(embedder_key))
+            .and_then(|entry| entry.get("path"))
+            .and_then(toml::Value::as_str)
+            .filter(|path| !path.trim().is_empty())
+        {
+            let configured = PathBuf::from(path_text);
+            let resolved = if configured.is_absolute() {
+                configured
+            } else {
+                models_dir.join(configured)
+            };
+            if resolved.is_dir() {
+                tracing::info!(
+                    target: "context_graph_embeddings::provider",
+                    embedder_key,
+                    model_dir = %resolved.display(),
+                    registry = %registry.display(),
+                    "Using active embedder model directory from registry"
+                );
+                return Ok(resolved);
+            }
+            return Err(EmbeddingError::ConfigError {
+                message: format!(
+                    "ACTIVE_EMBEDDER_MODEL_DIR_MISSING: {embedder_key} registry path {} from {} is not a directory",
+                    resolved.display(),
+                    registry.display()
+                ),
+            });
+        }
+    }
+
+    let fallback = models_dir.join(fallback_subdir);
+    if fallback.is_dir() {
+        tracing::warn!(
+            target: "context_graph_embeddings::provider",
+            embedder_key,
+            fallback = %fallback.display(),
+            registry = %registry.display(),
+            "Active model registry path not available; using legacy model directory"
+        );
+        return Ok(fallback);
+    }
+
+    Err(EmbeddingError::ConfigError {
+        message: format!(
+            "ACTIVE_EMBEDDER_MODEL_DIR_MISSING: {embedder_key} has no usable path in {} and fallback {} is not a directory",
+            registry.display(),
+            fallback.display()
+        ),
+    })
+}
+
 impl ProductionMultiArrayProvider {
     /// Create a new ProductionMultiArrayProvider with all 14 embedders.
     ///
@@ -876,14 +955,15 @@ impl ProductionMultiArrayProvider {
         let e6_model = factory.create_model(ModelId::Sparse, &config)?;
         let e7_model = factory.create_model(ModelId::Code, &config)?;
 
-        // E8: Create GraphModel using shared e5-large-v2 model (VRAM sharing per E8 Upgrade)
-        // The graph model path points to semantic to share the e5-large-v2 weights with E1
-        let e8_graph_model = GraphModel::new(&models_dir.join("semantic"), config.clone())?;
+        // E8: Create GraphModel using the active registry path. On aiwonder this
+        // intentionally points at semantic to share e5-large-v2 weights with E1.
+        let e8_graph_dir = resolve_active_embedder_dir(&models_dir, "e8", "semantic")?;
+        let e8_graph_model = GraphModel::new(&e8_graph_dir, config.clone())?;
         let e9_model = factory.create_model(ModelId::Hdc, &config)?;
 
         // E10: Create ContextualModel directly for dual embedding support (E10 Upgrade)
-        let e10_contextual_model =
-            ContextualModel::new(&models_dir.join("contextual"), config.clone())?;
+        let e10_contextual_dir = resolve_active_embedder_dir(&models_dir, "e10", "contextual")?;
+        let e10_contextual_model = ContextualModel::new(&e10_contextual_dir, config.clone())?;
 
         let e12_model = factory.create_model(ModelId::LateInteraction, &config)?;
         let e13_model = factory.create_model(ModelId::Splade, &config)?;
@@ -2053,6 +2133,56 @@ mod tests {
 
         assert_eq!(result, bge_dir);
         assert!(after.iter().all(|(_, len)| *len > 0));
+    }
+
+    #[test]
+    fn active_registry_resolves_e10_contextual_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let contextual_dir = temp.path().join("contextual-e5-base");
+        std::fs::create_dir_all(&contextual_dir).unwrap();
+        std::fs::write(
+            temp.path().join(ACTIVE_MODEL_REGISTRY),
+            format!(
+                "\
+[embedders.e10]
+path = \"{}\"
+",
+                contextual_dir.display()
+            ),
+        )
+        .unwrap();
+
+        let resolved = resolve_active_embedder_dir(temp.path(), "e10", "contextual").unwrap();
+
+        assert_eq!(resolved, contextual_dir);
+    }
+
+    #[test]
+    fn active_registry_fails_closed_when_pinned_dir_is_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing_dir = temp.path().join("contextual-e5-base");
+        std::fs::write(
+            temp.path().join(ACTIVE_MODEL_REGISTRY),
+            format!(
+                "\
+[embedders.e10]
+path = \"{}\"
+",
+                missing_dir.display()
+            ),
+        )
+        .unwrap();
+
+        let err = resolve_active_embedder_dir(temp.path(), "e10", "contextual")
+            .expect_err("missing active registry path must fail closed");
+
+        match err {
+            EmbeddingError::ConfigError { message } => {
+                assert!(message.contains("ACTIVE_EMBEDDER_MODEL_DIR_MISSING"));
+                assert!(message.contains("e10"));
+            }
+            other => panic!("expected ConfigError, got {other:?}"),
+        }
     }
     // =========================================================================
     // E4 INSTRUCTION FIX VERIFICATION TESTS
