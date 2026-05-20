@@ -84,8 +84,7 @@ mod cuda_impl {
     /// Priority:
     /// 1. CONTEXT_GRAPH_MODELS_PATH environment variable
     /// 2. CONTEXTGRAPH_MODELS_ROOT environment variable
-    /// 3. Canonical local model registry path used by this workspace
-    /// 4. ./models relative to current directory
+    /// 3. Canonical aiwonder hot model registry path
     fn resolve_models_dir() -> EmbeddingResult<PathBuf> {
         if let Ok(path) = std::env::var("CONTEXT_GRAPH_MODELS_PATH") {
             let p = PathBuf::from(&path);
@@ -189,7 +188,7 @@ mod cuda_impl {
         // Verify models directory exists
         if !models_dir.exists() {
             let err_msg = format!(
-                "Models directory not found: {:?}. Set CONTEXT_GRAPH_MODELS_PATH or ensure ./models exists.",
+                "Models directory not found: {:?}. Ensure /zfs/hot/contextgraph/models exists or set an allowed aiwonder model root.",
                 models_dir
             );
             tracing::error!("{}", err_msg);
@@ -520,5 +519,32 @@ mod tests {
             cuda_impl::validate_model_root(PathBuf::from("/zfs/hot/contextgraph/models"), "test")
                 .expect("aiwonder hot model root must be accepted");
         assert_eq!(path, PathBuf::from("/zfs/hot/contextgraph/models"));
+    }
+
+    #[cfg(feature = "candle")]
+    #[test]
+    fn test_model_root_guard_accepts_archive_and_scratch_roots() {
+        for root in [
+            "/zfs/archive/contextgraph/models",
+            "/home/croyse/.cache/contextgraph/models",
+        ] {
+            let path = cuda_impl::validate_model_root(PathBuf::from(root), "test")
+                .expect("allowed aiwonder model roots must be accepted");
+            assert_eq!(path, PathBuf::from(root));
+        }
+    }
+
+    #[cfg(feature = "candle")]
+    #[test]
+    fn test_model_root_guard_rejects_local_and_sibling_roots() {
+        for root in [
+            "/mnt/c/contextgraph/models",
+            "models",
+            "/zfs/hot/contextgraph-bad/models",
+        ] {
+            let err = cuda_impl::validate_model_root(PathBuf::from(root), "test")
+                .expect_err("non-aiwonder model roots must be rejected");
+            assert!(err.to_string().contains("MEJEPA_MODEL_ROOT_NOT_AIWONDER"));
+        }
     }
 }

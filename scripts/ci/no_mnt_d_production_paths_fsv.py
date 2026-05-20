@@ -17,6 +17,7 @@ FORBIDDEN = "/" + "mnt" + "/d"
 AIWONDER_DURABLE = "/zfs/archive/contextgraph"
 AIWONDER_HOT = "/zfs/hot/contextgraph"
 AIWONDER_SCRATCH = "/home/croyse/.cache/contextgraph"
+STALE_CLEANUP_ISSUE = 451
 
 SCAN_ROOTS = [
     ".claude",
@@ -157,24 +158,6 @@ def classify_repo_line(rel: str, lines: list[str], index: int) -> tuple[str, str
     if any(marker in text for marker in historical_markers):
         return "historical_provenance", "line explicitly marks historical/local status"
 
-    guard_markers = [
-        "must not",
-        "cannot",
-        "forbidden",
-        "reject",
-        "denied",
-        "fail closed",
-        "fails closed",
-        "invalid",
-        "not use",
-        "no /mnt",
-        "not /mnt",
-        "guard",
-        "negative",
-    ]
-    if any(marker in window for marker in guard_markers):
-        return "historical_provenance", "line is inside a rejection/guard context"
-
     stale_doc_markers = [
         "#369 tracks",
         "#369 reclassifies",
@@ -201,10 +184,72 @@ def classify_repo_line(rel: str, lines: list[str], index: int) -> tuple[str, str
         "environment=",
         "=",
     ]
-    if any(marker in text for marker in active_io_markers):
+    if any(marker in text for marker in active_io_markers) and not explicit_negative_context(
+        rel, text, window
+    ):
         return "active_violation", "line looks like active path configuration or I/O"
 
+    guard_markers = [
+        "must not",
+        "cannot",
+        "forbidden",
+        "reject",
+        "denied",
+        "fail closed",
+        "fails closed",
+        "invalid",
+        "not use",
+        "no /mnt",
+        "not /mnt",
+        "guard",
+        "negative",
+    ]
+    if any(marker in window for marker in guard_markers):
+        return "historical_provenance", "line is inside a rejection/guard context"
+
     return "historical_provenance", "unclassified code reference without active I/O shape"
+
+
+def explicit_negative_context(rel: str, text: str, window: str) -> bool:
+    if any(marker in window for marker in ["expect_err", "return err", "return err("]):
+        return True
+    if "/tests/" in f"/{rel}" or rel.endswith("_test.rs"):
+        return any(marker in window for marker in ["expect_err", "must not", "reject", "guard"])
+    negative_shapes = [
+        "expect_err",
+        "assert",
+        "not (",
+        "not path_is_under",
+        'value == "/mnt/d"',
+        'startswith("/mnt/d/',
+        'starts_with("/mnt/d/',
+        "return err",
+        "return err(",
+        "return err!",
+        "return err;",
+        "return err.",
+        "return err,",
+        "return error",
+        "return err(invalid",
+        "return err(",
+        "return err {",
+        "return err;",
+        "return err)",
+        "return err:",
+        "return err<",
+        "return err?",
+        "return err_",
+        "return err-",
+        "return err;",
+        "return err",
+        "return Err".lower(),
+        "must not",
+        "cannot",
+        "forbidden",
+        "reject",
+        "denied",
+    ]
+    return any(shape in text for shape in negative_shapes)
 
 
 def scan_repo(repo: Path) -> list[Hit]:
@@ -267,52 +312,114 @@ def scan_open_issues(repo: Path) -> list[Hit]:
     for issue in issues:
         number = int(issue["number"])
         url = str(issue["url"])
-        body = issue.get("body") or ""
-        for index, line in enumerate(body.splitlines()):
-            if FORBIDDEN not in line:
-                continue
-            classification, reason = classify_issue_line(number, line)
-            hits.append(
-                Hit(
-                    source="github",
-                    path=f"issue-{number}",
-                    line=index + 1,
-                    classification=classification,
-                    text=line.strip(),
-                    reason=reason,
-                    issue=number,
-                    url=url,
-                )
-            )
+        hits.extend(scan_issue_text(number, url, "body", issue.get("body") or ""))
+        hits.extend(scan_issue_comments(repo, number, url))
     return hits
 
 
-def classify_issue_line(number: int, line: str) -> tuple[str, str]:
+def scan_issue_comments(repo: Path, number: int, url: str) -> list[Hit]:
+    try:
+        result = subprocess.run(
+            ["gh", "issue", "view", str(number), "--json", "comments"],
+            cwd=repo,
+            text=True,
+            check=True,
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return []
+    comments = json.loads(result.stdout).get("comments") or []
+    hits: list[Hit] = []
+    for comment_index, comment in enumerate(comments, start=1):
+        hits.extend(
+            scan_issue_text(
+                number,
+                url,
+                f"comment-{comment_index}",
+                comment.get("body") or "",
+            )
+        )
+    return hits
+
+
+def scan_issue_text(number: int, url: str, section: str, text: str) -> list[Hit]:
+    hits: list[Hit] = []
+    for index, line in enumerate(text.splitlines()):
+        if FORBIDDEN not in line:
+            continue
+        classification, reason = classify_issue_line(line)
+        hits.append(
+            Hit(
+                source="github",
+                path=f"issue-{number}:{section}",
+                line=index + 1,
+                classification=classification,
+                text=line.strip(),
+                reason=reason,
+                issue=number,
+                url=url,
+            )
+        )
+    return hits
+
+
+def classify_issue_line(line: str) -> tuple[str, str]:
     text = line.lower()
-    if number in {412, 434}:
-        return "historical_provenance", "tracking issue describes the migration defect"
-    if any(marker in text for marker in ["legacy", "historical", "forbidden", "stale"]):
+    tracking_markers = [
+        "audit",
+        "cleanup",
+        "classified",
+        "classifies",
+        "defect",
+        "eliminate",
+        "false negative",
+        "forbidden",
+        "historical",
+        "legacy",
+        "must not",
+        "no-`/mnt/d`",
+        "no-/mnt/d",
+        "remove `/mnt/d`",
+        "reject",
+        "stale",
+        "supersede",
+        "tracked",
+        "tracks",
+    ]
+    if any(marker in text for marker in tracking_markers):
         return "historical_provenance", "issue line explicitly marks legacy/stale status"
-    return "stale_issue", "open issue body still names a legacy production path"
+    return "stale_issue", "open issue text still names a legacy production path"
 
 
 def synthetic_cases() -> dict[str, object]:
     env_line = f"CONTEXT_GRAPH_MODELS_PATH={FORBIDDEN}/contextgraph/models"
     guard_line = f"active production paths must not use {FORBIDDEN}"
     stale_line = f"production FSV still being authored under {FORBIDDEN}"
+    issue_tracking_line = f"#412 tracks no-{FORBIDDEN} cleanup"
+    issue_active_line = f"--fsv-root {FORBIDDEN}/contextgraph/fsv/task"
 
     results = [
         classify_repo_line("scripts/synthetic_env.sh", [env_line], 0)[0],
         classify_repo_line("crates/context-graph-mejepa-train/src/guard.rs", [guard_line], 0)[0],
         classify_repo_line("docs/futurebuild/03_storage_schema.md", [stale_line], 0)[0],
+        classify_issue_line(issue_tracking_line)[0],
+        classify_issue_line(issue_active_line)[0],
     ]
-    expected = ["active_violation", "historical_provenance", "stale_doc"]
+    expected = [
+        "active_violation",
+        "historical_provenance",
+        "stale_doc",
+        "historical_provenance",
+        "stale_issue",
+    ]
     return {
         "passed": results == expected,
         "cases": [
             {"name": "env_override_default", "expected": expected[0], "actual": results[0]},
             {"name": "guard_negative_case", "expected": expected[1], "actual": results[1]},
             {"name": "stale_active_doc", "expected": expected[2], "actual": results[2]},
+            {"name": "issue_tracking_line", "expected": expected[3], "actual": results[3]},
+            {"name": "issue_active_default", "expected": expected[4], "actual": results[4]},
         ],
     }
 
@@ -329,6 +436,21 @@ def summarize(hits: list[Hit]) -> dict[str, int]:
     return summary
 
 
+def issue_exists(repo: Path, number: int) -> bool:
+    try:
+        subprocess.run(
+            ["gh", "issue", "view", str(number), "--json", "number"],
+            cwd=repo,
+            text=True,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return True
+
+
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     repo = args.repo.resolve()
@@ -338,16 +460,23 @@ def main(argv: list[str]) -> int:
         hits.extend(scan_open_issues(repo))
 
     counts = summarize(hits)
+    active_path_gate_passed = synthetic["passed"] and counts.get("active_violation", 0) == 0
+    stale_cleanup_tracked = issue_exists(repo, STALE_CLEANUP_ISSUE) or (
+        counts.get("stale_doc", 0) == 0 and counts.get("stale_issue", 0) == 0
+    )
     payload = {
         "schema": "contextgraph.task-aiwonder-022.no-mnt-d-production-paths-fsv.v1",
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "repoRoot": str(repo),
         "forbiddenPattern": FORBIDDEN,
         "allowedProductionRoots": [AIWONDER_DURABLE, AIWONDER_HOT, AIWONDER_SCRATCH],
+        "staleCleanupIssue": STALE_CLEANUP_ISSUE,
         "assertions": {
             "syntheticCasesPassed": synthetic["passed"],
             "activeViolationCountZero": counts.get("active_violation", 0) == 0,
-            "allPassed": synthetic["passed"] and counts.get("active_violation", 0) == 0,
+            "activePathGatePassed": active_path_gate_passed,
+            "staleFindingsTracked": stale_cleanup_tracked,
+            "allPassed": active_path_gate_passed and stale_cleanup_tracked,
         },
         "counts": counts,
         "syntheticCases": synthetic["cases"],

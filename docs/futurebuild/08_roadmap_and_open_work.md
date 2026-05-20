@@ -38,7 +38,7 @@ prediction_oracle_correlation ≥ 0.95
   AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
 
-**Last holdout measurement:** `0.866667` (legacy `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; not current production evidence until revalidated on aiwonder under #369).
+**Last holdout measurement:** `0.866667` (legacy `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; #369 closed the aiwonder revalidation sweep, and #405 is the next source for the first Panel B measurement).
 
 **Gap to ship:** 0.083 correlation points on Panel A. Panel B has no measurement yet; #405 will produce the first.
 

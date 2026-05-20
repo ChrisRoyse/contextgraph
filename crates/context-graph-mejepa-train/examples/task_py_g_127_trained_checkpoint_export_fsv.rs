@@ -8,9 +8,14 @@ use context_graph_mejepa::conformal::{non_conformity_score, CalibrationExample};
 use context_graph_mejepa::{
     export_trained_predictor_checkpoint, fixture_patch_context,
     load_verified_trained_predictor_checkpoint, materialize_inference_panels, panel_sha,
-    predictor_weight_content_sha256, CalibrationStore, FrozenTargetAdapter, MeJepaInferConfig,
-    MeJepaPredictor, MejepaStore, PredictorCheckpointExportMetadata, PredictorConfig,
-    RocksDbInferStore, PANEL_DIM,
+    predictor_weight_content_sha256, valid_witness_segment, AstDiff, CalibrationStore, DiffHunk,
+    FrozenTargetAdapter, Language, MeJepaInferConfig, MeJepaPredictor, MejepaStore, PatchBundle,
+    PredictorCheckpointExportMetadata, PredictorConfig, RocksDbInferStore, TaskContext,
+    TaskEnvironment, TaskId, TestId, PANEL_DIM,
+};
+use context_graph_mejepa_instruments::{
+    EOracleInstrument, Instrument, InstrumentSlot, OracleVerdict as InstrumentOracleVerdict, Panel,
+    PerTestOutcome, TestOutcome,
 };
 use context_graph_mejepa_tct::{
     panel_slot_for_embedder, Centroid, ConstellationStore, CorpusProvenance, EmbedderId,
@@ -23,8 +28,9 @@ use context_graph_mejepa_train::optim::build_adamw;
 use context_graph_mejepa_train::TrainingConfig;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -33,6 +39,27 @@ const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-127-trained-chec
 const MODEL_ROOT: &str =
     "/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv";
 const REPORT_NAME: &str = "trained_checkpoint_export_fsv.json";
+const CONSTELLATION_ARTIFACT_ROOT: &str =
+    "/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts";
+const AST_CHUNKS_JSONL: &str =
+    "/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl";
+const REAL_CORPUS_BATCH_SIZE: usize = 4;
+const REAL_CORPUS_OPTIMIZER_STEPS: usize = 3;
+
+struct RealCorpusTrainingBatch {
+    panel_t0: Tensor,
+    panel_t1: Tensor,
+    target_panel: Tensor,
+    corpus_sha256: String,
+    summary: Value,
+    direct_pack_edge: Value,
+}
+
+#[derive(Clone, Debug)]
+struct ChunkPair {
+    before: Value,
+    after: Value,
+}
 
 fn main() -> Result<()> {
     let fsv_root = PathBuf::from(FSV_ROOT);
@@ -56,26 +83,43 @@ fn main() -> Result<()> {
 
     let training_config = TrainingConfig {
         lr: 1e-3,
-        batch_size: 2,
+        batch_size: REAL_CORPUS_BATCH_SIZE,
         epochs: 1,
         warmup_steps: 1,
         max_grad_norm: 5.0,
         full_finetune: true,
         ..TrainingConfig::default()
     };
-    let (panel_t0, panel_t1, target_panel, corpus_sha256) = deterministic_training_batch(&device)?;
-    let (loss_tensor, loss_before) =
+    let real_batch = real_corpus_training_batch(
+        Path::new(CONSTELLATION_ARTIFACT_ROOT),
+        Path::new(AST_CHUNKS_JSONL),
+        REAL_CORPUS_BATCH_SIZE,
+        &device,
+    )?;
+    let RealCorpusTrainingBatch {
+        panel_t0,
+        panel_t1,
+        target_panel,
+        corpus_sha256,
+        summary: real_corpus_summary,
+        direct_pack_edge,
+    } = real_batch;
+    let (_loss_tensor, loss_before) =
         predictor_training_loss(&predictor, &panel_t0, &panel_t1, &target_panel)?;
     let mut optimizer = build_adamw(
         &training_config,
-        2,
+        REAL_CORPUS_BATCH_SIZE as u64,
         predictor.trainable_parameters(),
         Vec::new(),
         Vec::new(),
         Vec::new(),
     )?;
-    optimizer.adamw.step(&loss_tensor)?;
-    device.synchronize()?;
+    for _ in 0..REAL_CORPUS_OPTIMIZER_STEPS {
+        let (step_loss, _step_scalar) =
+            predictor_training_loss(&predictor, &panel_t0, &panel_t1, &target_panel)?;
+        optimizer.adamw.step(&step_loss)?;
+        device.synchronize()?;
+    }
     let trained_weight_sha256 = predictor_weight_content_sha256(&predictor)?;
     let (_loss_after_tensor, loss_after) =
         predictor_training_loss(&predictor, &panel_t0, &panel_t1, &target_panel)?;
@@ -96,6 +140,7 @@ fn main() -> Result<()> {
             "before": loss_before,
             "after": loss_after
         },
+        "real_corpus_batch": real_corpus_summary,
         "initial_weight_sha256": initial_weight_sha256,
         "trained_weight_sha256": trained_weight_sha256,
         "weight_delta_observed": weight_delta_observed,
@@ -162,6 +207,9 @@ fn main() -> Result<()> {
         && runtime["prediction_has_loaded_checkpoint_attestation"] == true
         && runtime["prediction_has_checkpoint_sha_attestation"] == true
         && runtime["prediction_persisted"] == true
+        && real_corpus_summary["label_diversity_passed"] == true
+        && real_corpus_summary["synthetic_seed_features_used"] == false
+        && direct_pack_edge["passed"] == true
         && unchanged_export_edge["passed"] == true
         && config_mismatch_edge["passed"] == true
         && stub_rejection_edge["passed"] == true;
@@ -185,7 +233,8 @@ fn main() -> Result<()> {
             "trained_weight_sha256": trained_weight_sha256,
             "weight_delta_observed": weight_delta_observed,
             "training_certificate_sha256": training_certificate_sha256,
-            "corpus_sha256": corpus_sha256
+            "corpus_sha256": corpus_sha256,
+            "real_corpus_batch": real_corpus_summary
         },
         "export": {
             "manifest_sha256": export.manifest_sha256,
@@ -204,6 +253,7 @@ fn main() -> Result<()> {
         },
         "runtime": runtime,
         "edge_cases": [
+            direct_pack_edge,
             unchanged_export_edge,
             config_mismatch_edge,
             stub_rejection_edge
@@ -235,36 +285,560 @@ fn predictor_training_loss(
     Ok((loss, scalar))
 }
 
-fn deterministic_training_batch(device: &Device) -> Result<(Tensor, Tensor, Tensor, String)> {
-    let batch = 2usize;
-    let mut t0 = Vec::with_capacity(batch * PANEL_DIM);
-    let mut t1 = Vec::with_capacity(batch * PANEL_DIM);
-    let mut target = Vec::with_capacity(batch * PANEL_DIM);
-    for row in 0..batch {
-        for dim in 0..PANEL_DIM {
-            let x = (row * PANEL_DIM + dim) as f32;
-            let a = ((x * 0.001).sin() * 0.25) + row as f32 * 0.05;
-            let b = ((x * 0.0007).cos() * 0.20) - row as f32 * 0.03;
-            t0.push(a);
-            t1.push(b);
-            target.push((a * 0.65 + b * 0.35).tanh());
+fn real_corpus_training_batch(
+    artifact_root: &Path,
+    ast_chunks_jsonl: &Path,
+    batch_size: usize,
+    device: &Device,
+) -> Result<RealCorpusTrainingBatch> {
+    ensure!(batch_size >= 2, "real corpus batch must contain >=2 rows");
+    let training_rows_path = artifact_root.join("constellation_training_rows.jsonl");
+    let slot_vectors_path = artifact_root.join("constellation_slot_vectors.jsonl");
+    let certificate_path = artifact_root.join("constellation_training_certificate.json");
+    for path in [
+        &training_rows_path,
+        &slot_vectors_path,
+        &certificate_path,
+        ast_chunks_jsonl,
+    ] {
+        ensure!(
+            path.is_file(),
+            "TASK-PY-G-127_REAL_CORPUS_ARTIFACT_MISSING: {}",
+            path.display()
+        );
+    }
+
+    let certificate: Value = serde_json::from_slice(&fs::read(&certificate_path)?)?;
+    ensure!(
+        certificate["passes"] == true
+            && certificate["objective_policy"]["flat_vector_concat_used"] == false,
+        "TASK-PY-G-127_REAL_CORPUS_CERTIFICATE_INVALID: {}",
+        certificate_path.display()
+    );
+
+    let all_rows = read_jsonl_values(&training_rows_path)?;
+    let candidate_keys = all_rows
+        .iter()
+        .filter(|row| row["partition"] == "train")
+        .map(row_key)
+        .collect::<Result<BTreeSet<_>>>()?;
+    let candidate_pairs = read_candidate_chunk_pairs(ast_chunks_jsonl, &candidate_keys)?;
+    let selected_rows = select_real_corpus_rows(&all_rows, &candidate_pairs, batch_size)?;
+    let selected_keys = selected_rows
+        .iter()
+        .map(row_key)
+        .collect::<Result<BTreeSet<_>>>()?;
+    let slot_readback = read_selected_slot_vectors(&slot_vectors_path, &selected_keys)?;
+
+    let mut panel_t0_values = Vec::with_capacity(batch_size * PANEL_DIM);
+    let mut panel_t1_values = Vec::with_capacity(batch_size * PANEL_DIM);
+    let mut target_values = Vec::with_capacity(batch_size * PANEL_DIM);
+    let mut selected_summary = Vec::with_capacity(batch_size);
+    let mut label_counts: BTreeMap<String, usize> = BTreeMap::new();
+    for (idx, row) in selected_rows.iter().enumerate() {
+        let key = row_key(row)?;
+        let chunk_pair = candidate_pairs
+            .get(&key)
+            .with_context(|| format!("TASK-PY-G-127_AST_CHUNK_PAIR_MISSING: {key}"))?;
+        let oracle_all_passed = row["labels"]["oracle_all_passed"]
+            .as_bool()
+            .with_context(|| format!("TASK-PY-G-127_ORACLE_LABEL_MISSING: {key}"))?;
+        *label_counts
+            .entry(if oracle_all_passed { "pass" } else { "fail" }.to_string())
+            .or_default() += 1;
+
+        let (patch, context) = patch_context_from_real_row(row, chunk_pair, idx)?;
+        let (panel_t0, panel_t1, panel_t2) = materialize_inference_panels(&patch, &context)?;
+        let target_panel = panel_with_oracle_label(&panel_t2, oracle_all_passed)?;
+        panel_t0_values.extend_from_slice(panel_t0.data());
+        panel_t1_values.extend_from_slice(panel_t1.data());
+        target_values.extend_from_slice(target_panel.data());
+        selected_summary.push(json!({
+            "row_key": key,
+            "partition": row["partition"],
+            "cell_key": row["cell_key"],
+            "oracle_all_passed": oracle_all_passed,
+            "present_embedder_count": row["slot_policy"]["present_embedder_count"],
+            "slot_vector_readback": slot_readback.row_summaries.get(&row_key(row)?),
+            "source": {
+                "task_instance_id": chunk_pair.after["task_instance_id"],
+                "before_workspace_state": chunk_pair.before["workspace_state"],
+                "after_workspace_state": chunk_pair.after["workspace_state"],
+                "relative_path": chunk_pair.after["relative_path"],
+                "before_chunk_id": chunk_pair.before["chunk_id"],
+                "after_chunk_id": chunk_pair.after["chunk_id"],
+                "before_source_sha256": chunk_pair.before["source_sha256"],
+                "after_source_sha256": chunk_pair.after["source_sha256"],
+            },
+            "panel_hashes": {
+                "t0_sha256": sha256_f32s(panel_t0.data()),
+                "t1_sha256": sha256_f32s(panel_t1.data()),
+                "target_sha256": sha256_f32s(target_panel.data()),
+                "target_oracle_slot_sha256": sha256_f32s(target_panel.slot(InstrumentSlot::EOracle)),
+            }
+        }));
+    }
+
+    ensure!(
+        label_counts.contains_key("pass") && label_counts.contains_key("fail"),
+        "TASK-PY-G-127_REAL_CORPUS_LABELS_DEGENERATE: {:?}",
+        label_counts
+    );
+    ensure!(
+        panel_t0_values.len() == batch_size * PANEL_DIM
+            && panel_t1_values.len() == batch_size * PANEL_DIM
+            && target_values.len() == batch_size * PANEL_DIM,
+        "TASK-PY-G-127_PANEL_BATCH_DIM_MISMATCH"
+    );
+
+    let artifact_hashes = json!({
+        "constellation_training_rows": sha256_file(&training_rows_path)?,
+        "constellation_slot_vectors": sha256_file(&slot_vectors_path)?,
+        "constellation_training_certificate": sha256_file(&certificate_path)?,
+        "python_ast_chunks": sha256_file(ast_chunks_jsonl)?,
+    });
+    let direct_pack_edge = active_embedder_direct_pack_edge(&slot_readback)?;
+    let summary = json!({
+        "schema_version": 1,
+        "source": {
+            "artifact_root": artifact_root,
+            "training_rows": training_rows_path,
+            "slot_vectors": slot_vectors_path,
+            "training_certificate": certificate_path,
+            "ast_chunks_jsonl": ast_chunks_jsonl,
+        },
+        "artifact_hashes": artifact_hashes,
+        "batch_size": batch_size,
+        "panel_dim": PANEL_DIM,
+        "optimizer_steps": REAL_CORPUS_OPTIMIZER_STEPS,
+        "selected_rows": selected_summary,
+        "label_counts": label_counts,
+        "label_diversity_passed": true,
+        "slot_vector_rows_read": slot_readback.slot_vector_rows_read,
+        "slot_vector_hashes_verified": slot_readback.vector_hashes_verified,
+        "max_active_embedder_total_dim": slot_readback.max_total_dim,
+        "synthetic_seed_features_used": false,
+        "flat_vector_concat_used": false,
+        "candidate_chunk_pairs_with_real_source_change": candidate_pairs.len(),
+        "chunk_pair_policy": "after row key from #396 joined to base chunk by task/path/chunk_kind/node_kind/name/qualname/line span; no-op same-source rows rejected",
+        "panels_materialized_from": "real #396 row keys + base-vs-after AST chunk source_text + frozen instrument encoders + oracle_all_passed target slot",
+        "active_embedder_vectors_directly_packed_into_5120_panel": false,
+    });
+    let corpus_sha256 = sha256_json(&summary)?;
+    Ok(RealCorpusTrainingBatch {
+        panel_t0: Tensor::from_slice(&panel_t0_values, (batch_size, PANEL_DIM), device)?
+            .to_dtype(DType::BF16)?,
+        panel_t1: Tensor::from_slice(&panel_t1_values, (batch_size, PANEL_DIM), device)?
+            .to_dtype(DType::BF16)?,
+        target_panel: Tensor::from_slice(&target_values, (batch_size, PANEL_DIM), device)?
+            .to_dtype(DType::BF16)?,
+        corpus_sha256,
+        summary,
+        direct_pack_edge,
+    })
+}
+
+#[derive(Debug)]
+struct SlotVectorReadback {
+    slot_vector_rows_read: usize,
+    vector_hashes_verified: usize,
+    max_total_dim: usize,
+    row_summaries: BTreeMap<String, Value>,
+}
+
+fn read_jsonl_values(path: &Path) -> Result<Vec<Value>> {
+    let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut rows = Vec::new();
+    for (idx, line) in BufReader::new(file).lines().enumerate() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        rows.push(
+            serde_json::from_str(&line)
+                .with_context(|| format!("parse {} line {}", path.display(), idx + 1))?,
+        );
+    }
+    ensure!(!rows.is_empty(), "JSONL is empty: {}", path.display());
+    Ok(rows)
+}
+
+fn select_real_corpus_rows(
+    rows: &[Value],
+    chunk_pairs: &BTreeMap<String, ChunkPair>,
+    batch_size: usize,
+) -> Result<Vec<Value>> {
+    let eligible = rows
+        .iter()
+        .filter(|row| row["partition"] == "train")
+        .filter(|row| row_key(row).map_or(false, |key| chunk_pairs.contains_key(&key)))
+        .collect::<Vec<_>>();
+    ensure!(
+        eligible.len() >= batch_size,
+        "TASK-PY-G-127_REAL_SOURCE_CHANGE_ROWS_TOO_SMALL: eligible {} expected {}",
+        eligible.len(),
+        batch_size
+    );
+    let mut selected = Vec::with_capacity(batch_size);
+    let mut selected_keys = BTreeSet::new();
+    let mut add_row = |row: &Value, selected: &mut Vec<Value>| -> Result<()> {
+        let key = row_key(row)?;
+        if selected_keys.insert(key) {
+            selected.push(row.clone());
+        }
+        Ok(())
+    };
+    if let Some(max_coverage) = eligible
+        .iter()
+        .copied()
+        .max_by_key(|row| row["slots"].as_array().map_or(0, Vec::len))
+    {
+        add_row(max_coverage, &mut selected)?;
+    }
+    for wanted in [true, false] {
+        if selected.len() >= batch_size {
+            break;
+        }
+        if let Some(row) = eligible
+            .iter()
+            .copied()
+            .find(|row| row["labels"]["oracle_all_passed"].as_bool() == Some(wanted))
+        {
+            add_row(row, &mut selected)?;
         }
     }
-    let corpus_sha256 = sha256_json(&json!({
-        "schema_version": 1,
-        "kind": "task-py-g-127-deterministic-panel-smoke",
-        "batch": batch,
-        "panel_dim": PANEL_DIM,
-        "t0_sha256": sha256_f32s(&t0),
-        "t1_sha256": sha256_f32s(&t1),
-        "target_sha256": sha256_f32s(&target)
-    }))?;
-    Ok((
-        Tensor::from_slice(&t0, (batch, PANEL_DIM), device)?.to_dtype(DType::BF16)?,
-        Tensor::from_slice(&t1, (batch, PANEL_DIM), device)?.to_dtype(DType::BF16)?,
-        Tensor::from_slice(&target, (batch, PANEL_DIM), device)?.to_dtype(DType::BF16)?,
-        corpus_sha256,
+    for row in eligible {
+        if selected.len() >= batch_size {
+            break;
+        }
+        add_row(row, &mut selected)?;
+    }
+    ensure!(
+        selected.len() == batch_size,
+        "TASK-PY-G-127_REAL_CORPUS_BATCH_TOO_SMALL: selected {} expected {}",
+        selected.len(),
+        batch_size
+    );
+    let labels = selected
+        .iter()
+        .map(|row| row["labels"]["oracle_all_passed"].as_bool())
+        .collect::<BTreeSet<_>>();
+    ensure!(
+        labels.contains(&Some(true)) && labels.contains(&Some(false)),
+        "TASK-PY-G-127_REAL_CORPUS_LABELS_DEGENERATE: {:?}",
+        labels
+    );
+    Ok(selected)
+}
+
+fn read_candidate_chunk_pairs(
+    path: &Path,
+    candidate_keys: &BTreeSet<String>,
+) -> Result<BTreeMap<String, ChunkPair>> {
+    let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut after_chunks = BTreeMap::new();
+    let mut identities = BTreeSet::new();
+    for (idx, line) in BufReader::new(file).lines().enumerate() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: Value = serde_json::from_str(&line)
+            .with_context(|| format!("parse {} line {}", path.display(), idx + 1))?;
+        let key = chunk_row_key(&row)?;
+        if candidate_keys.contains(&key) {
+            identities.insert(chunk_pair_identity(&row)?);
+            after_chunks.insert(key, row);
+            if after_chunks.len() == candidate_keys.len() {
+                break;
+            }
+        }
+    }
+    ensure!(
+        !after_chunks.is_empty(),
+        "TASK-PY-G-127_AST_CHUNK_READBACK_EMPTY"
+    );
+
+    let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut before_by_identity = BTreeMap::new();
+    for (idx, line) in BufReader::new(file).lines().enumerate() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: Value = serde_json::from_str(&line)
+            .with_context(|| format!("parse {} line {}", path.display(), idx + 1))?;
+        if row["workspace_state"] != "base" {
+            continue;
+        }
+        let identity = chunk_pair_identity(&row)?;
+        if identities.contains(&identity) {
+            before_by_identity.entry(identity).or_insert(row);
+        }
+    }
+
+    let mut pairs = BTreeMap::new();
+    for (key, after) in after_chunks {
+        if after["workspace_state"] == "base" {
+            continue;
+        }
+        let identity = chunk_pair_identity(&after)?;
+        let Some(before) = before_by_identity.get(&identity) else {
+            continue;
+        };
+        let before_source = value_string(before, "source_text")?;
+        let after_source = value_string(&after, "source_text")?;
+        if before_source == after_source {
+            continue;
+        }
+        pairs.insert(
+            key,
+            ChunkPair {
+                before: before.clone(),
+                after,
+            },
+        );
+    }
+    ensure!(
+        !pairs.is_empty(),
+        "TASK-PY-G-127_REAL_SOURCE_CHANGE_PAIR_READBACK_EMPTY"
+    );
+    Ok(pairs)
+}
+
+fn read_selected_slot_vectors(
+    path: &Path,
+    selected_keys: &BTreeSet<String>,
+) -> Result<SlotVectorReadback> {
+    let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut dims_by_row: BTreeMap<String, Vec<(String, usize)>> = BTreeMap::new();
+    let mut vector_hashes_verified = 0usize;
+    let mut slot_vector_rows_read = 0usize;
+    for (idx, line) in BufReader::new(file).lines().enumerate() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: Value = serde_json::from_str(&line)
+            .with_context(|| format!("parse {} line {}", path.display(), idx + 1))?;
+        let key = value_string(&row, "row_key")?;
+        if !selected_keys.contains(&key) {
+            continue;
+        }
+        let embedder_id = value_string(&row, "embedder_id")?;
+        let dim = row["dim"]
+            .as_u64()
+            .with_context(|| format!("slot vector missing dim for {key}:{embedder_id}"))?
+            as usize;
+        let vector_values = row["vector"]
+            .as_array()
+            .with_context(|| format!("slot vector missing vector for {key}:{embedder_id}"))?;
+        ensure!(
+            vector_values.len() == dim,
+            "TASK-PY-G-127_SLOT_VECTOR_DIM_MISMATCH: {key}:{embedder_id} len={} dim={dim}",
+            vector_values.len()
+        );
+        let mut vector = Vec::with_capacity(dim);
+        for value in vector_values {
+            let value = value
+                .as_f64()
+                .with_context(|| format!("non-number slot vector value for {key}:{embedder_id}"))?
+                as f32;
+            ensure!(
+                value.is_finite(),
+                "TASK-PY-G-127_SLOT_VECTOR_NONFINITE: {key}:{embedder_id}"
+            );
+            vector.push(value);
+        }
+        let expected_hash = value_string(&row, "vector_sha256")?;
+        let expected_hash = expected_hash
+            .strip_prefix("sha256:")
+            .unwrap_or(&expected_hash)
+            .to_string();
+        let observed_hash = sha256_f32s(&vector);
+        ensure!(
+            observed_hash == expected_hash,
+            "TASK-PY-G-127_SLOT_VECTOR_HASH_MISMATCH: {key}:{embedder_id}"
+        );
+        vector_hashes_verified += 1;
+        slot_vector_rows_read += 1;
+        dims_by_row.entry(key).or_default().push((embedder_id, dim));
+    }
+    let mut row_summaries = BTreeMap::new();
+    let mut max_total_dim = 0usize;
+    for key in selected_keys {
+        let mut dims = dims_by_row
+            .remove(key)
+            .with_context(|| format!("TASK-PY-G-127_SLOT_VECTOR_READBACK_MISSING: {key}"))?;
+        dims.sort();
+        let total_dim = dims.iter().map(|(_, dim)| *dim).sum::<usize>();
+        max_total_dim = max_total_dim.max(total_dim);
+        row_summaries.insert(
+            key.clone(),
+            json!({
+                "embedder_count": dims.len(),
+                "total_active_embedder_dim": total_dim,
+                "dims": dims.iter().map(|(embedder_id, dim)| json!({"embedder_id": embedder_id, "dim": dim})).collect::<Vec<_>>(),
+            }),
+        );
+    }
+    Ok(SlotVectorReadback {
+        slot_vector_rows_read,
+        vector_hashes_verified,
+        max_total_dim,
+        row_summaries,
+    })
+}
+
+fn active_embedder_direct_pack_edge(readback: &SlotVectorReadback) -> Result<Value> {
+    let max_total_dim = readback.max_total_dim;
+    Ok(json!({
+        "name": "active_embedder_vectors_are_not_directly_packed_into_5120_panel",
+        "before": {
+            "panel_dim": PANEL_DIM,
+            "max_total_active_embedder_dim_in_batch": max_total_dim,
+            "row_summaries": &readback.row_summaries,
+        },
+        "after": {
+            "direct_pack_used": false,
+            "training_panel_source": "frozen instrument encoders over real #396 AST rows; oracle target slot from oracle_all_passed",
+        },
+        "passed": max_total_dim != PANEL_DIM && max_total_dim > PANEL_DIM && readback.vector_hashes_verified > 0,
+    }))
+}
+
+fn patch_context_from_real_row(
+    row: &Value,
+    chunk_pair: &ChunkPair,
+    idx: usize,
+) -> Result<(PatchBundle, TaskContext)> {
+    let before_source = value_string(&chunk_pair.before, "source_text")?;
+    let after_source = value_string(&chunk_pair.after, "source_text")?;
+    ensure!(
+        !before_source.trim().is_empty() && !after_source.trim().is_empty(),
+        "TASK-PY-G-127_EMPTY_AST_CHUNK_SOURCE_TEXT_PAIR: {}",
+        row_key(row)?
+    );
+    ensure!(
+        before_source != after_source,
+        "TASK-PY-G-127_NOOP_AST_CHUNK_PAIR: {}",
+        row_key(row)?
+    );
+    let relative_path = PathBuf::from(value_string(&chunk_pair.after, "relative_path")?);
+    let pre_sha = sha256_array(before_source.as_bytes());
+    let post_sha = sha256_array(after_source.as_bytes());
+    let patch_sha = sha256_array(row_key(row)?.as_bytes());
+    let oracle_all_passed = row["labels"]["oracle_all_passed"]
+        .as_bool()
+        .context("oracle_all_passed")?;
+    let patch = PatchBundle::try_new(
+        AstDiff {
+            hunks: vec![DiffHunk {
+                path: relative_path.clone(),
+                pre_sha,
+                post_sha,
+                before: before_source,
+                after: after_source,
+            }],
+        },
+        valid_witness_segment(),
+        format!(
+            "TASK-PY-G-127 real corpus checkpoint row {} oracle_all_passed={}",
+            value_string(&chunk_pair.after, "task_instance_id")?,
+            oracle_all_passed
+        ),
+        patch_sha,
+    )?;
+    let mut session_id = [7u8; 16];
+    session_id[0] = (idx as u8).saturating_add(1);
+    let context = TaskContext {
+        task_id: TaskId(format!(
+            "task-py-g-127-{}-{}",
+            idx,
+            value_string(&chunk_pair.after, "task_instance_id")?
+        )),
+        session_id,
+        language: Language::Python,
+        problem_statement: format!(
+            "Predict observed SWE-bench oracle consequence for {} {} {}.",
+            value_string(&chunk_pair.after, "task_instance_id")?,
+            value_string(&chunk_pair.after, "mutation_category")?,
+            relative_path.display()
+        ),
+        tests: vec![TestId(format!(
+            "oracle_label::{}::{}",
+            value_string(&chunk_pair.after, "task_instance_id")?,
+            value_string(&chunk_pair.after, "mutation_category")?
+        ))],
+        environment: TaskEnvironment {
+            repo_root: PathBuf::from("/zfs/hot/contextgraph/task-py-g-127-real-corpus-panel"),
+            python_version: Some("3.11".to_string()),
+            os: "linux".to_string(),
+        },
+        claim_graph: None,
+        skill_citations: vec![],
+    };
+    Ok((patch, context))
+}
+
+fn panel_with_oracle_label(panel: &Panel, oracle_all_passed: bool) -> Result<Panel> {
+    let outcome = if oracle_all_passed {
+        TestOutcome::Pass
+    } else {
+        TestOutcome::Fail
+    };
+    let verdict = InstrumentOracleVerdict {
+        per_test: vec![PerTestOutcome {
+            test_id: "task_py_g_127_real_corpus_oracle_label".to_string(),
+            outcome,
+            runtime_ms: -1,
+        }],
+        exception: None,
+    };
+    let oracle_vector = EOracleInstrument.encode(&verdict)?;
+    let (offset, dim) = InstrumentSlot::EOracle.extent();
+    ensure!(
+        oracle_vector.len() == dim,
+        "TASK-PY-G-127_ORACLE_VECTOR_DIM_MISMATCH"
+    );
+    let mut data = panel.data().to_vec();
+    data[offset..offset + dim].copy_from_slice(&oracle_vector);
+    Ok(Panel::try_new(data, panel.filled_mask())?)
+}
+
+fn row_key(row: &Value) -> Result<String> {
+    value_string(row, "row_key")
+}
+
+fn chunk_row_key(chunk: &Value) -> Result<String> {
+    Ok(format!(
+        "{}|{}|{}|{}",
+        value_string(chunk, "task_instance_id")?,
+        value_string(chunk, "workspace_state")?,
+        value_string(chunk, "chunk_id")?,
+        value_string(chunk, "source_sha256")?
     ))
+}
+
+fn chunk_pair_identity(chunk: &Value) -> Result<String> {
+    Ok(format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}",
+        value_string(chunk, "task_instance_id")?,
+        value_string(chunk, "relative_path")?,
+        value_string(chunk, "chunk_kind")?,
+        value_string(chunk, "node_kind")?,
+        chunk["name"].as_str().unwrap_or(""),
+        chunk["qualname"].as_str().unwrap_or(""),
+        chunk["line_start"].as_u64().context("missing line_start")?,
+        chunk["line_end"].as_u64().context("missing line_end")?,
+    ))
+}
+
+fn value_string(value: &Value, field: &str) -> Result<String> {
+    value[field]
+        .as_str()
+        .map(ToString::to_string)
+        .with_context(|| format!("missing string field {field}"))
 }
 
 fn unchanged_weights_export_edge(
@@ -573,6 +1147,16 @@ fn remove_if_exists(path: &Path) -> Result<()> {
 
 fn sha256_json(value: &impl serde::Serialize) -> Result<String> {
     Ok(sha256_hex(&serde_json::to_vec(value)?))
+}
+
+fn sha256_file(path: &Path) -> Result<String> {
+    Ok(sha256_hex(&fs::read(path)?))
+}
+
+fn sha256_array(bytes: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hasher.finalize().into()
 }
 
 fn sha256_f32s(values: &[f32]) -> String {
