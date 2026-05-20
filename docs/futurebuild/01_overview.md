@@ -292,9 +292,10 @@ The result was deterministic for the same `(task_id, patch_sha)`. Every ablation
 2. ✅ Re-run `λ_inv` bidirectional ablation with real inputs. Current measurement: `/zfs/archive/contextgraph/fsv/task-ek-012-bidirectional-ablation-realinput-fsv/run-20260520T172657Z/`.
 3. ✅ Re-run #393 / #398 ablation suites against real-input inference path. Current measurements: `/zfs/archive/contextgraph/fsv/task-py-g-093-constellation-ablation-suite-realinput-fsv/run-20260520T181900Z/` and `/zfs/archive/contextgraph/fsv/task-py-g-097-constellation-ablation-with-calibration-realinput-fsv/run-20260520T170156Z/`.
 4. ✅ Verify trained-weight manifest: `trained_weight_sha256 != initial_weight_sha256` (proves real training happened, not stub copy).
-5. ✅ Repair first weak-cell slice from #535/#536 (`delete_test_call`, `known_good`, `over_engineer`, `swap_variable` Brier/correlation; `subtle_flip` Brier; `off_by_one` fail recall). The ship gate is still blocked; next gate work is calibration-disjointness / anti-Goodhart proof plus deeper mixed-cell ranking repair before Panel B can support any 0.95 claim.
+5. ✅ Repair first weak-cell slice from #535/#536 (`delete_test_call`, `known_good`, `over_engineer`, `swap_variable` Brier/correlation; `subtle_flip` Brier; `off_by_one` fail recall). The ship gate is still blocked; next gate work is deeper mixed-cell ranking repair and Panel B validation before any 0.95 claim.
+6. ✅ Revalidate post-#536 calibration disjointness (#547): selected `tau=20.0, fail_boost=1.5` was calibration-selected, row/feature-member overlaps are zero, #413 label-lineage hashes match, and target-side labels are excluded from live rank-lift features.
 
-Tracked under new context issue filed alongside this doc refresh; gate-active critical path in `08_roadmap_and_open_work.md §3.0` reordered so rebaseline precedes #407 / #511 / #405.
+Tracked under #529; gate-active critical path in `08_roadmap_and_open_work.md §3.0` reordered so #547 precedes #511 / #405.
 
 ### 1.5sext Neuroscience-inspired reserve (filed 2026-05-20, DO NOT START until current queue concludes)
 

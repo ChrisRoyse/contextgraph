@@ -433,7 +433,7 @@ Per `01_overview.md §1.1`: every τ in `CF_MEJEPA_FAILURE_FINGERPRINTS`, `CF_ME
 - Instance-ID list does NOT overlap with eval (`overlap_with_eval == 0`).
 - τ value matches 10th-percentile floor of authentic-sample cosines on calibration partition (tolerance ±1e-4).
 
-Any failure → `THRESHOLD_CALIBRATION_NONDISJOINT` and ship eligibility blocked for that cell. Tracked by **#407 (open p1)**.
+Any failure → `THRESHOLD_CALIBRATION_NONDISJOINT` and ship eligibility blocked for that cell. The reusable auditor shipped in #407; the post-#536 real-input rank-lift path was revalidated in #547. Latest aiwonder FSV: `/zfs/archive/contextgraph/fsv/post-536-calibration-disjointness-fsv/run-20260520T181254Z/post_536_calibration_disjointness_fsv.json`, report sha256 `d90152ebd41b5e626ca8b9882dbba185d711f13aa69048e7e627fa854d4b27e8`, readback sha256 `2d58c9e3dd0c70d08202656f85596058287c77eb9a48aa1bb15010d89d19f0c7`. It proves zero train/calibration/holdout overlaps by row key and feature-member key, label-lineage hashes match #413, selected #536 candidate `tau=20.0, fail_boost=1.5` was calibration-selected, and target-side label prefixes were not included in live rank-lift features.
 
 ### 11.6 Information-physics FSV protocols (planned)
 
