@@ -48,8 +48,44 @@ use context_graph_core::types::SourceMetadata;
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use context_graph_storage::EdgeRepository;
 use serde_json::json;
+use thiserror::Error;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+
+/// Structured errors surfaced by training-corpus assembly helpers.
+///
+/// Fixes Sherlock findings F-011 and F-012: previously `fetch_knn_per_embedder`
+/// and `fetch_outgoing_edges` silently returned empty `Vec`s on
+/// `EdgeRepository` errors, leaving callers unable to distinguish "no
+/// neighbors / no outgoing edges" from "the K-NN / typed-edge column family is
+/// broken." Training records were silently truncated.
+///
+/// Variants are mapped 1:1 into the MCP JSON-RPC response so consumers see
+/// the structured failure (`code` + `source_id` + `embedder_idx` + `cause`).
+#[derive(Debug, Error)]
+pub enum TrainingToolError {
+    /// `EdgeRepository::get_typed_edges_from` or `get_embedder_edges` failed.
+    /// `embedder_idx` is `None` for typed-edge sweeps and `Some(idx)` for K-NN
+    /// per-embedder fetches.
+    #[error(
+        "TRAINING_TOOL_EDGE_REPOSITORY_FETCH_FAILED: source={source_id} \
+         embedder_idx={embedder_idx:?} cause={cause}"
+    )]
+    EdgeRepositoryFetchFailed {
+        source_id: Uuid,
+        embedder_idx: Option<u8>,
+        cause: String,
+    },
+}
+
+impl TrainingToolError {
+    /// Stable machine-readable error code for MCP response surfaces.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::EdgeRepositoryFetchFailed { .. } => "TRAINING_TOOL_EDGE_REPOSITORY_FETCH_FAILED",
+        }
+    }
+}
 
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
@@ -190,6 +226,12 @@ impl Handlers {
         let mut skipped = 0usize;
         let mut bytes_written = 0u64;
         let mut errors = 0usize;
+        // F-011 / F-012: surface per-embedder K-NN and typed-edge fetch failures
+        // separately from generic build/store errors so MCP consumers can tell
+        // "edge CF is broken" from "topic profile fetch returned empty."
+        // Capped at HARD_MAX_MEMORIES so the JSON response stays bounded.
+        let mut fetch_failures: Vec<serde_json::Value> = Vec::new();
+        const FETCH_FAILURES_CAP: usize = 1024;
 
         for fp in &fingerprints {
             // Fetch source metadata ONCE per memory (fix #3). Used for both
@@ -248,6 +290,18 @@ impl Handlers {
                 Err(msg) => {
                     warn!(id = %fp.id, error = %msg, "build_training_record failed");
                     errors += 1;
+                    // F-011 / F-012: surface structured edge-repository failures
+                    // in the MCP response. The error code prefix is the stable
+                    // identifier; we also stash the raw message for diagnosis.
+                    if msg.starts_with("TRAINING_TOOL_EDGE_REPOSITORY_FETCH_FAILED")
+                        && fetch_failures.len() < FETCH_FAILURES_CAP
+                    {
+                        fetch_failures.push(json!({
+                            "code": "TRAINING_TOOL_EDGE_REPOSITORY_FETCH_FAILED",
+                            "memory_id": fp.id.to_string(),
+                            "message": msg,
+                        }));
+                    }
                     continue;
                 }
             };
@@ -270,6 +324,7 @@ impl Handlers {
             skipped, errors, cleared, elapsed_ms, "export_training_corpus complete"
         );
 
+        let fetch_failure_count = fetch_failures.len();
         self.tool_result(
             id,
             json!({
@@ -277,6 +332,8 @@ impl Handlers {
                 "exported": exported,
                 "skipped_filtered": skipped,
                 "errors": errors,
+                "edge_repository_fetch_failure_count": fetch_failure_count,
+                "edge_repository_fetch_failures": fetch_failures,
                 "cleared_before_export": cleared,
                 "fingerprints_scanned": fingerprints.len(),
                 "approx_bytes_written": bytes_written,
@@ -404,20 +461,29 @@ impl Handlers {
             Vec::new()
         };
 
-        // Edges + K-NN
+        // Edges + K-NN.
+        //
+        // F-011 / F-012 fix: `fetch_outgoing_edges` and `fetch_knn_per_embedder`
+        // now return `Result<_, TrainingToolError>` rather than silently
+        // collapsing repo errors to empty `Vec`s. Propagate via `String` into
+        // the caller's `Result<TrainingRecord, String>`. The MCP-tool entry
+        // point counts these failures into `fetch_failures` so the JSON-RPC
+        // response surfaces the structured error to consumers.
         let (outgoing_edges, incoming_edges, knn) = if include_edges {
             let repo = self.edge_repository.as_ref();
-            let outgoing = repo
-                .map(|r| fetch_outgoing_edges(r, fp.id))
-                .unwrap_or_default();
+            let outgoing = match repo {
+                Some(r) => fetch_outgoing_edges(r, fp.id).map_err(|e| e.to_string())?,
+                None => Vec::new(),
+            };
             let incoming = if include_incoming {
                 incoming_index.get(&fp.id).cloned().unwrap_or_default()
             } else {
                 Vec::new()
             };
-            let knn = repo
-                .map(|r| fetch_knn_per_embedder(r, fp.id))
-                .unwrap_or_else(|| (0..NUM_EMBEDDERS).map(|_| Vec::new()).collect());
+            let knn = match repo {
+                Some(r) => fetch_knn_per_embedder(r, fp.id).map_err(|e| e.to_string())?,
+                None => (0..NUM_EMBEDDERS).map(|_| Vec::new()).collect(),
+            };
             (outgoing, incoming, knn)
         } else {
             (
@@ -741,12 +807,26 @@ fn build_incoming_index(all_edges: &[TypedEdge]) -> HashMap<Uuid, Vec<TrainingEd
     out
 }
 
-fn fetch_outgoing_edges(repo: &EdgeRepository, source: Uuid) -> Vec<TrainingEdge> {
+/// Fetch outgoing typed edges for `source` and convert to training rows.
+///
+/// Fail-closed: any `EdgeRepository::get_typed_edges_from` error surfaces as
+/// `TrainingToolError::EdgeRepositoryFetchFailed { embedder_idx: None }`. The
+/// `warn!` is preserved for diagnostic continuity (the underlying RocksDB
+/// error chain is otherwise lost once we stringify the cause in the variant
+/// payload), but the caller MUST also see the error in the MCP response.
+fn fetch_outgoing_edges(
+    repo: &EdgeRepository,
+    source: Uuid,
+) -> Result<Vec<TrainingEdge>, TrainingToolError> {
     match repo.get_typed_edges_from(source) {
-        Ok(edges) => edges.iter().map(typed_edge_to_training_ref).collect(),
+        Ok(edges) => Ok(edges.iter().map(typed_edge_to_training_ref).collect()),
         Err(e) => {
             warn!(source = %source, error = %e, "get_typed_edges_from failed");
-            Vec::new()
+            Err(TrainingToolError::EdgeRepositoryFetchFailed {
+                source_id: source,
+                embedder_idx: None,
+                cause: e.to_string(),
+            })
         }
     }
 }
@@ -762,19 +842,45 @@ fn typed_edge_to_training_ref(e: &TypedEdge) -> TrainingEdge {
     }
 }
 
-fn fetch_knn_per_embedder(repo: &EdgeRepository, source: Uuid) -> Vec<Vec<KnnNeighbor>> {
-    (0..NUM_EMBEDDERS)
-        .map(|idx| match repo.get_embedder_edges(idx as u8, source) {
-            Ok(edges) => edges
-                .into_iter()
-                .map(|e| KnnNeighbor {
-                    target_id: e.target(),
-                    similarity: e.similarity(),
-                })
-                .collect(),
-            Err(_) => Vec::new(),
-        })
-        .collect()
+/// Fetch K-NN neighbors per embedder for `source`.
+///
+/// Fail-closed: the first failing embedder's error is returned as
+/// `TrainingToolError::EdgeRepositoryFetchFailed { embedder_idx: Some(idx) }`.
+/// Previously `Err(_) => Vec::new()` silently truncated training data; consumers
+/// could not distinguish "no neighbors" from "K-NN CF broken."
+fn fetch_knn_per_embedder(
+    repo: &EdgeRepository,
+    source: Uuid,
+) -> Result<Vec<Vec<KnnNeighbor>>, TrainingToolError> {
+    let mut out = Vec::with_capacity(NUM_EMBEDDERS);
+    for idx in 0..NUM_EMBEDDERS {
+        let embedder_idx = idx as u8;
+        match repo.get_embedder_edges(embedder_idx, source) {
+            Ok(edges) => out.push(
+                edges
+                    .into_iter()
+                    .map(|e| KnnNeighbor {
+                        target_id: e.target(),
+                        similarity: e.similarity(),
+                    })
+                    .collect(),
+            ),
+            Err(e) => {
+                warn!(
+                    source = %source,
+                    embedder_idx,
+                    error = %e,
+                    "get_embedder_edges failed"
+                );
+                return Err(TrainingToolError::EdgeRepositoryFetchFailed {
+                    source_id: source,
+                    embedder_idx: Some(embedder_idx),
+                    cause: e.to_string(),
+                });
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn render_training_record(

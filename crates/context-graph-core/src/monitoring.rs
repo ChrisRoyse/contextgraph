@@ -512,23 +512,31 @@ impl SystemMonitor for StubSystemMonitor {
     }
 }
 
-/// Production layer status provider per Constitution layer architecture.
+/// Layer status provider that **hardcodes** L1/L3 as `Active` without any
+/// health check.
 ///
-/// Per constitution.yaml:
-/// - L1_Sensing: 13-model embed, PII scrub, adversarial detect (<5ms) - ACTIVE
-/// - L3_Memory: MHN, FAISS GPU (<1ms) - ACTIVE (using RocksDB)
-/// - L4_Learning: UTL optimizer, neuromod controller (100Hz) - NOT IMPLEMENTED
-/// - L5_Coherence: Topic synthesis, context distiller (10ms) - NOT IMPLEMENTED
+/// **DO NOT use for FSV evidence or production reporting.** This is a stub
+/// retained for unit tests where the test purpose is unrelated to layer-status
+/// semantics (e.g., handler glue tests). Per Sherlock finding M-M1
+/// (2026-05-19), FSV harnesses must use `LiveLayerStatusProvider` (in
+/// `context-graph-mcp::monitoring`) which performs real health checks against
+/// the model-load state and the teleological store.
 ///
-/// Maps to legacy names:
+/// Constitution mapping retained for legacy documentation only:
+/// - L1_Sensing -> hardcoded Active
+/// - L3_Memory -> hardcoded Active
+/// - L4_Learning -> hardcoded NotImplemented
+/// - L5_Coherence -> hardcoded NotImplemented
+///
+/// Legacy aliases (caller -> L*):
 /// - perception -> L1_Sensing
 /// - memory -> L3_Memory
 /// - action -> L4_Learning
 /// - meta -> L5_Coherence
 #[derive(Debug, Clone, Default)]
-pub struct StubLayerStatusProvider;
+pub struct HardcodedActiveLayerStatusProvider;
 
-impl StubLayerStatusProvider {
+impl HardcodedActiveLayerStatusProvider {
     /// Create a new layer status provider.
     pub fn new() -> Self {
         Self
@@ -536,7 +544,7 @@ impl StubLayerStatusProvider {
 }
 
 #[async_trait]
-impl LayerStatusProvider for StubLayerStatusProvider {
+impl LayerStatusProvider for HardcodedActiveLayerStatusProvider {
     async fn perception_status(&self) -> MonitorResult<LayerStatus> {
         // L1_Sensing: 13-embedder ProductionMultiArrayProvider is working
         Ok(LayerStatus::Active)
@@ -650,7 +658,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_layer_status_provider_constitution_aligned() {
-        let provider = StubLayerStatusProvider::new();
+        let provider = HardcodedActiveLayerStatusProvider::new();
 
         // L1_Sensing (perception): Active - 13-embedder system working
         assert!(matches!(

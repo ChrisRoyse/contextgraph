@@ -1,6 +1,5 @@
 use anyhow::{ensure, Context, Result};
 use async_trait::async_trait;
-use context_graph_core::monitoring::StubLayerStatusProvider;
 use context_graph_core::traits::{
     EmbeddingMetadata, MultiArrayEmbeddingOutput, MultiArrayEmbeddingProvider,
     TeleologicalMemoryStore,
@@ -8,6 +7,7 @@ use context_graph_core::traits::{
 use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 use context_graph_core::{CoreError, CoreResult};
 use context_graph_mcp::handlers::Handlers;
+use context_graph_mcp::monitoring::LiveLayerStatusProvider;
 use context_graph_mcp::protocol::{JsonRpcId, JsonRpcRequest};
 use context_graph_mejepa::{
     blake3_hex, count_project_predictions, count_project_reports, open_infer_rocksdb,
@@ -29,7 +29,9 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 const FSV_ROOT: &str =
     "/zfs/archive/contextgraph/fsv/task-aiwonder-016-project-report-locality-fsv";
@@ -756,10 +758,29 @@ fn build_protocol_handlers(root: &Path) -> Result<Handlers> {
         Arc::clone(&provider),
         GraphBuilderConfig::default(),
     ));
+
+    // M-M1 fix: use `LiveLayerStatusProvider` instead of the hardcoded stub so
+    // the FSV report does not silently claim "L1/L3 Active" without
+    // verification. L1 (perception) is reported as `Error(...)` because this
+    // FSV harness wires `FailClosedEmbeddingProvider` — no real embedding
+    // models are loaded. L3 (memory) is honestly computed against the real
+    // teleological store via `count()`.
+    let models_loading = Arc::new(AtomicBool::new(false));
+    let models_failed = Arc::new(RwLock::new(Some(
+        "FSV harness uses FailClosedEmbeddingProvider; no real embedding \
+         models are loaded in this run."
+            .to_string(),
+    )));
+    let layer_status_provider = Arc::new(LiveLayerStatusProvider::new(
+        models_loading,
+        models_failed,
+        Arc::clone(&teleological_store),
+    ));
+
     Handlers::without_llm(
         teleological_store,
         provider,
-        Arc::new(StubLayerStatusProvider),
+        layer_status_provider,
         edge_repository,
         graph_builder,
         Arc::new(context_graph_embeddings::provider::NoOpCausalHintProvider),

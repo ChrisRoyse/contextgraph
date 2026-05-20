@@ -1,7 +1,9 @@
 //! Live system monitoring for production MCP server.
 //!
-//! Replaces `StubLayerStatusProvider` (which always returns "Active") with real
-//! component health checks. No fake data, no fallbacks — honest reporting only.
+//! Replaces `HardcodedActiveLayerStatusProvider` (which always returns
+//! "Active", formerly named `StubLayerStatusProvider` until the M-M1 rename
+//! on 2026-05-19) with real component health checks. No fake data, no
+//! fallbacks — honest reporting only.
 
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicBool, Ordering};

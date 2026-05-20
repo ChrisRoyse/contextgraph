@@ -471,7 +471,7 @@ fn select_real_corpus_rows(
     let eligible = rows
         .iter()
         .filter(|row| row["partition"] == "train")
-        .filter(|row| row_key(row).map_or(false, |key| chunk_pairs.contains_key(&key)))
+        .filter(|row| row_key(row).is_ok_and(|key| chunk_pairs.contains_key(&key)))
         .collect::<Vec<_>>();
     ensure!(
         eligible.len() >= batch_size,

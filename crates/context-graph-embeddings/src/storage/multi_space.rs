@@ -13,6 +13,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::debug;
 use uuid::Uuid;
 
 use super::types::{
@@ -164,13 +165,15 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
             })
             .collect();
 
-        // Log success evidence
-        eprintln!(
-            "[SINGLE-SPACE SEARCH] embedder={}, query_dim={}, k={}, found={}",
-            embedder_idx,
-            query.len(),
+        // F-030 fix: replace `eprintln!` with structured `tracing::debug!`.
+        // `eprintln!` cannot be filtered, correlated, or shipped to operator
+        // dashboards; doctrine §14.12 requires structured fields.
+        debug!(
+            embedder = embedder_idx,
+            query_dim = query.len(),
             k,
-            results.len()
+            found = results.len(),
+            "single-space search complete"
         );
 
         Ok(results)
@@ -232,9 +235,10 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
         for (&embedder_idx, query) in queries {
             // Skip non-HNSW embedders (E6, E12) - they need different search
             if !self.hnsw_manager.embedder_uses_hnsw(embedder_idx) {
-                eprintln!(
-                    "[MULTI-SPACE SEARCH] Skipping embedder {} (not HNSW)",
-                    embedder_idx
+                // F-030 fix: structured `tracing` instead of `eprintln!`.
+                debug!(
+                    embedder = embedder_idx,
+                    "multi-space search: skipping non-HNSW embedder"
                 );
                 continue;
             }
@@ -274,17 +278,20 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
         // LOG SUCCESS EVIDENCE
         // =====================================================================
 
-        eprintln!(
-            "[MULTI-SPACE SEARCH] spaces_queried={}, unique_candidates={}, returned={}",
-            queries.len(),
-            total_candidates,
-            fused_results.len()
+        // F-030 fix: structured `tracing` instead of `eprintln!`.
+        debug!(
+            spaces_queried = queries.len(),
+            unique_candidates = total_candidates,
+            returned = fused_results.len(),
+            "multi-space search complete"
         );
 
         if let Some(top) = fused_results.first() {
-            eprintln!(
-                "[MULTI-SPACE SEARCH] top_result: id={}, rrf_score={:.4}, embedder_count={}",
-                top.id, top.rrf_score, top.embedder_count
+            debug!(
+                top_id = %top.id,
+                top_rrf_score = top.rrf_score,
+                top_embedder_count = top.embedder_count,
+                "multi-space search top result"
             );
         }
 
@@ -302,9 +309,10 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
         k_per_space: usize,
         final_k: usize,
     ) -> Result<Vec<MultiSpaceQueryResult>, EmbeddingError> {
-        eprintln!(
-            "[PURPOSE-WEIGHTED SEARCH] topic_profile_sum={:.4}",
-            topic_profile.iter().sum::<f32>()
+        // F-030 fix: structured `tracing` instead of `eprintln!`.
+        debug!(
+            topic_profile_sum = topic_profile.iter().sum::<f32>(),
+            "purpose-weighted search"
         );
         self.search_multi_space(queries, Some(topic_profile), k_per_space, final_k)
     }

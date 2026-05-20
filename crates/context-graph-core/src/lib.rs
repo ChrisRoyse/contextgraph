@@ -78,9 +78,12 @@ pub use monitoring::{
 };
 
 // AP-007: Stub monitors are TEST ONLY - not available in production builds
-// Production code MUST provide real SystemMonitor and LayerStatusProvider implementations
+// Production code MUST provide real SystemMonitor and LayerStatusProvider implementations.
+// (M-M1, 2026-05-19: `StubLayerStatusProvider` renamed to
+// `HardcodedActiveLayerStatusProvider` so future agents are not deceived by
+// the name; the type still hardcodes L1/L3 = Active.)
 #[cfg(test)]
-pub use monitoring::{StubLayerStatusProvider, StubSystemMonitor};
+pub use monitoring::{HardcodedActiveLayerStatusProvider, StubSystemMonitor};
 
 // Teleological module re-exports (cross-embedding synergy and fusion)
 pub use teleological::{
