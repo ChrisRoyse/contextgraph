@@ -27,6 +27,8 @@ pub mod learning_signal;
 pub mod lora_wiring;
 pub mod loss;
 pub mod mistake_log;
+pub mod online_head_state;
+mod online_head_state_support;
 pub mod optim;
 pub mod replay_buffer;
 pub mod sampler;
@@ -61,6 +63,7 @@ pub use loss::inverse::{
     InverseMapLossBreakdown, InverseMapOutputs, InverseMapTargets,
 };
 pub use mistake_log::*;
+pub use online_head_state::*;
 pub use replay_buffer::*;
 pub use skill_corpus_materialization::*;
 pub use skill_linkage::*;

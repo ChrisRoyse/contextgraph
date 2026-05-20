@@ -1,11 +1,17 @@
 use context_graph_mejepa::{PredictionId, Verdict};
-use context_graph_mejepa_cf::{CF_MEJEPA_MISTAKE_LOG, CF_MEJEPA_REPLAY_BUFFER};
+use context_graph_mejepa_cf::{
+    CF_MEJEPA_MISTAKE_LOG, CF_MEJEPA_ONLINE_HEAD_STATE, CF_MEJEPA_REPLAY_BUFFER,
+};
 use context_graph_mejepa_train::label_bridge::{
     accepted_label_signature_hash, build_prediction_label_context, load_label_learning_bridge,
 };
 use context_graph_mejepa_train::mistake_log::{
     mistake_id_from_parts, read_mistake_log_row, write_mistake_log_row_sync_readback,
     MistakeLogRow, MistakeTruthSource,
+};
+use context_graph_mejepa_train::online_head_state::{
+    apply_online_mistake_update_sync_readback, online_head_key, read_online_head_state_row,
+    read_repeat_metric_row, repeat_metric_key, OnlineHeadUpdateConfig, OnlineHeadUpdateInput,
 };
 use context_graph_mejepa_train::replay_buffer::{
     label_aware_replay_cell_id, read_replay_row, write_replay_row_sync_readback, ReplayBufferRow,
@@ -142,12 +148,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         created_at_unix_ms: 1_779_000_000_000,
     };
     write_mistake_log_row_sync_readback(&db, &mistake_row)?;
+    let panel_signature_hash = format!(
+        "panel:{}",
+        &hex::encode(Sha256::digest(b"task-py-g-112:python:before:unit"))[..24]
+    );
+    let online_update_report = apply_online_mistake_update_sync_readback(
+        &db,
+        OnlineHeadUpdateInput {
+            panel_signature_hash: panel_signature_hash.clone(),
+            mistake_row: mistake_row.clone(),
+            replay_row: replay_row.clone(),
+            base_verdict_before_update: Verdict::Pass,
+            now_unix_ms: 1_779_000_000_100,
+        },
+        OnlineHeadUpdateConfig::default(),
+    )?;
 
     drop(db);
     let readback_db = open_db(&db_path)?;
     let mistake_readback =
         read_mistake_log_row(&readback_db, &mistake_id)?.ok_or("missing mistake")?;
     let replay_readback = read_replay_row(&readback_db, prediction_id)?.ok_or("missing replay")?;
+    let online_head_readback =
+        read_online_head_state_row(&readback_db, &online_head_key(&panel_signature_hash)?)?
+            .ok_or("missing online head state")?;
+    let repeat_metric_readback = read_repeat_metric_row(
+        &readback_db,
+        &repeat_metric_key(
+            &replay_cell_id,
+            &label_signature,
+            skill_signature.as_deref(),
+            label_context.ability_signature_hash.as_deref(),
+            label_context.membership_signature_hash.as_deref(),
+        )?,
+    )?
+    .ok_or("missing repeat metric")?;
 
     let edge_empty_labels = accepted_label_signature_hash(&Vec::new()).is_err();
     let edge_same_verdict = {
@@ -178,8 +213,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .is_err();
 
     let report_path = fsv_root.join("task_py_g_112_mistake_loop_convergence_fsv.json");
+    let same_panel_signature_corrected = online_update_report.same_panel_signature_corrected;
+    let corrected_verdict_is_fail =
+        online_update_report.corrected_verdict_after_update == Verdict::Fail;
+    let repeat_metric_byte_readable = online_update_report.repeat_metric_byte_readable;
+    let online_head_readback_matches =
+        online_head_readback == online_update_report.head_state_after;
+    let repeat_metric_readback_matches =
+        repeat_metric_readback == online_update_report.repeat_metric_after;
+    let unrelated_cell_accuracy_delta_within_002 =
+        online_update_report.unrelated_cell_accuracy_delta.abs() <= 0.02;
+    let online_head_update_passes = same_panel_signature_corrected
+        && corrected_verdict_is_fail
+        && repeat_metric_byte_readable
+        && online_head_readback_matches
+        && repeat_metric_readback_matches
+        && unrelated_cell_accuracy_delta_within_002
+        && online_update_report.label_skill_ability_membership_ids_agree
+        && !online_update_report.flat_vector_concat_used;
     let all_passed = mistake_readback == mistake_row
         && replay_readback == replay_row
+        && online_head_update_passes
         && edge_empty_labels
         && edge_same_verdict
         && edge_bad_cell_component
@@ -191,14 +245,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "artifact_kind": "task_py_g_112_mistake_loop_convergence_fsv",
         "schema_version": 1,
         "task_id": "TASK-PY-G-112",
-        "covered_github_issues": [112, 430],
+        "covered_github_issues": [406, 430],
         "passes": all_passed,
         "before": before,
         "after": tree_state(&fsv_root)?,
         "db_path": db_path,
+        "online_head_state_cf": CF_MEJEPA_ONLINE_HEAD_STATE,
         "label_context": label_context,
         "mistake_readback": mistake_readback,
         "replay_readback": replay_readback,
+        "online_head_update_report": online_update_report,
+        "online_head_readback": online_head_readback,
+        "repeat_metric_readback": repeat_metric_readback,
+        "online_head_checks": {
+            "same_panel_signature_corrected": same_panel_signature_corrected,
+            "corrected_verdict_is_fail": corrected_verdict_is_fail,
+            "repeat_metric_byte_readable": repeat_metric_byte_readable,
+            "online_head_readback_matches": online_head_readback_matches,
+            "repeat_metric_readback_matches": repeat_metric_readback_matches,
+            "unrelated_cell_accuracy_delta_within_002": unrelated_cell_accuracy_delta_within_002
+        },
         "edge_cases": {
             "empty_label_signature_rejected": edge_empty_labels,
             "same_verdict_mistake_rejected": edge_same_verdict,
@@ -212,7 +278,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "live_prediction_inputs": "live_predictor_labels plus accepted registry rows with live_prediction_input_allowed=true",
             "target_only_provenance": "labels and target_supervision_labels may preserve oracle/outcome/test labels but cannot feed live prediction context"
         },
-        "proof_scope": "label-bridge, mistake-log, replay persistence/readback, and #430 live-label leakage boundary; online convergence remains the surrounding TASK-PY-G-112 implementation scope",
+        "proof_scope": "label-bridge, mistake-log, replay persistence/readback, #430 live-label leakage boundary, and online head-state correction/readback for the first mistake-driven convergence step",
         "slot_identity_preserved": true,
         "flat_vector_concat_used": false,
         "active_path_policy": {"mnt_d_active_reads_or_writes": false}
@@ -248,6 +314,7 @@ fn open_db(path: &Path) -> Result<DB, rocksdb::Error> {
         vec![
             ColumnFamilyDescriptor::new(CF_MEJEPA_MISTAKE_LOG, Options::default()),
             ColumnFamilyDescriptor::new(CF_MEJEPA_REPLAY_BUFFER, Options::default()),
+            ColumnFamilyDescriptor::new(CF_MEJEPA_ONLINE_HEAD_STATE, Options::default()),
         ],
     )
 }
