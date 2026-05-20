@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use anyhow::{bail, ensure, Context, Result};
 use candle_core::{DType, Device, Tensor};
 use candle_nn::loss::cross_entropy;
@@ -45,13 +47,17 @@ const CONSTELLATION_ARTIFACT_ROOT: &str =
     "/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts";
 const AST_CHUNKS_JSONL: &str =
     "/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl";
+const SWEBENCH_CORPUS_DIR: &str =
+    "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511";
+const SWEBENCH_INDEX_PATH: &str =
+    "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
 const NATIVE_ACTIVE_ADAPTER_MODEL_ROOT: &str =
     "/zfs/archive/contextgraph/models/task-py-g-152-native-active-constellation-training-fsv";
 const NATIVE_ACTIVE_ADAPTER_FSV_ROOT: &str =
     "/zfs/archive/contextgraph/fsv/task-py-g-152-native-active-constellation-training-fsv";
-const REAL_CORPUS_BATCH_SIZE: usize = 256;
-const REAL_CORPUS_OPTIMIZER_STEPS: usize = 256;
-const ORACLE_LOSS_WEIGHT: f64 = 4.0;
+const REAL_CORPUS_BATCH_SIZE: usize = 1920;
+const REAL_CORPUS_OPTIMIZER_STEPS: usize = 64;
+const ORACLE_LOSS_WEIGHT: f64 = 8.0;
 
 struct RealCorpusTrainingBatch {
     panel_t0: Tensor,
@@ -104,6 +110,29 @@ struct NativeAdapterEvidenceReadback {
     summary: Value,
 }
 
+#[derive(Clone, Debug, serde::Deserialize)]
+struct CorpusIndex {
+    entries: Vec<CorpusEntry>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+struct CorpusEntry {
+    bucket: String,
+    category: String,
+    oracle_all_passed: bool,
+    patch_path: String,
+    patch_sha256: String,
+    repo: String,
+    task_id: String,
+}
+
+#[derive(Default)]
+struct ParsedFilePatch {
+    path: Option<PathBuf>,
+    before: Vec<String>,
+    after: Vec<String>,
+}
+
 fn main() -> Result<()> {
     let fsv_root = PathBuf::from(FSV_ROOT);
     let model_root = PathBuf::from(MODEL_ROOT);
@@ -133,9 +162,9 @@ fn main() -> Result<()> {
         full_finetune: true,
         ..TrainingConfig::default()
     };
-    let real_batch = real_corpus_training_batch(
-        Path::new(CONSTELLATION_ARTIFACT_ROOT),
-        Path::new(AST_CHUNKS_JSONL),
+    let real_batch = swebench_corpus_training_batch(
+        Path::new(SWEBENCH_CORPUS_DIR),
+        Path::new(SWEBENCH_INDEX_PATH),
         REAL_CORPUS_BATCH_SIZE,
         &device,
     )?;
@@ -446,6 +475,336 @@ fn oracle_training_diagnostics(
             && predicted_pass_count < batch
             && (score_max - score_min) > 0.05,
     })
+}
+
+fn swebench_corpus_training_batch(
+    corpus_dir: &Path,
+    index_path: &Path,
+    batch_size: usize,
+    device: &Device,
+) -> Result<RealCorpusTrainingBatch> {
+    ensure!(batch_size >= 2, "real corpus batch must contain >=2 rows");
+    ensure!(
+        corpus_dir.is_dir(),
+        "TASK-PY-G-127_SWEBENCH_CORPUS_DIR_MISSING: {}",
+        corpus_dir.display()
+    );
+    ensure!(
+        index_path.is_file(),
+        "TASK-PY-G-127_SWEBENCH_INDEX_MISSING: {}",
+        index_path.display()
+    );
+    let index: CorpusIndex = serde_json::from_slice(&fs::read(index_path)?)?;
+    let train_rows = index
+        .entries
+        .iter()
+        .filter(|entry| entry.bucket == "train")
+        .cloned()
+        .collect::<Vec<_>>();
+    ensure!(
+        train_rows.len() >= batch_size,
+        "TASK-PY-G-127_SWEBENCH_TRAIN_ROWS_TOO_SMALL: {} < {}",
+        train_rows.len(),
+        batch_size
+    );
+    let selected_rows = select_swebench_training_rows(&train_rows, batch_size);
+    let mut panel_t0_values = Vec::with_capacity(batch_size * PANEL_DIM);
+    let mut panel_t1_values = Vec::with_capacity(batch_size * PANEL_DIM);
+    let mut target_values = Vec::with_capacity(batch_size * PANEL_DIM);
+    let mut oracle_target_values = Vec::with_capacity(batch_size);
+    let mut label_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut category_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut selected_summary = Vec::with_capacity(batch_size.min(80));
+    let mut patch_hashes = Vec::with_capacity(batch_size);
+    for (idx, entry) in selected_rows.iter().enumerate() {
+        let patch_path = corpus_dir.join(&entry.patch_path);
+        let patch = swebench_patch_bundle_from_entry(entry, &patch_path)?;
+        let context = swebench_task_context_from_entry(entry, idx)?;
+        let (panel_t0, panel_t1, panel_t2) = materialize_inference_panels(&patch, &context)?;
+        let target_panel = panel_with_oracle_label(&panel_t2, entry.oracle_all_passed)?;
+        panel_t0_values.extend_from_slice(panel_t0.data());
+        panel_t1_values.extend_from_slice(panel_t1.data());
+        target_values.extend_from_slice(target_panel.data());
+        oracle_target_values.push(if entry.oracle_all_passed { 0u32 } else { 1u32 });
+        *label_counts
+            .entry(
+                if entry.oracle_all_passed {
+                    "pass"
+                } else {
+                    "fail"
+                }
+                .to_string(),
+            )
+            .or_default() += 1;
+        *category_counts.entry(entry.category.clone()).or_default() += 1;
+        patch_hashes.push(entry.patch_sha256.clone());
+        if selected_summary.len() < 80 {
+            selected_summary.push(json!({
+                "task_id": entry.task_id,
+                "repo": entry.repo,
+                "category": entry.category,
+                "oracle_all_passed": entry.oracle_all_passed,
+                "patch_path": patch_path.display().to_string(),
+                "patch_sha256": entry.patch_sha256,
+                "panel_hashes": {
+                    "t0_sha256": sha256_f32s(panel_t0.data()),
+                    "t1_sha256": sha256_f32s(panel_t1.data()),
+                    "target_sha256": sha256_f32s(target_panel.data()),
+                    "target_oracle_slot_sha256": sha256_f32s(target_panel.slot(InstrumentSlot::EOracle)),
+                }
+            }));
+        }
+    }
+    ensure!(
+        label_counts.contains_key("pass") && label_counts.contains_key("fail"),
+        "TASK-PY-G-127_SWEBENCH_LABELS_DEGENERATE: {:?}",
+        label_counts
+    );
+    ensure!(
+        panel_t0_values.len() == batch_size * PANEL_DIM
+            && panel_t1_values.len() == batch_size * PANEL_DIM
+            && target_values.len() == batch_size * PANEL_DIM
+            && oracle_target_values.len() == batch_size,
+        "TASK-PY-G-127_SWEBENCH_PANEL_BATCH_DIM_MISMATCH"
+    );
+    let artifact_hashes = json!({
+        "swebench_index": sha256_file(index_path)?,
+        "selected_patch_sha256_digest": sha256_json(&patch_hashes)?,
+    });
+    let direct_pack_edge = json!({
+        "name": "swebench_real_patch_panels_are_not_direct_packed_embedding_vectors",
+        "before": {
+            "corpus_dir": corpus_dir,
+            "index_path": index_path,
+            "selected_train_rows": batch_size,
+        },
+        "after": {
+            "direct_pack_used": false,
+            "training_panel_source": "SWE-bench 300x8 patch files -> parseable patch carrier -> frozen instrument encoders -> oracle_all_passed supervised target",
+        },
+        "passed": true,
+    });
+    let summary = json!({
+        "schema_version": 2,
+        "source": {
+            "corpus_dir": corpus_dir,
+            "index_path": index_path,
+            "train_rows_available": train_rows.len(),
+        },
+        "artifact_hashes": artifact_hashes,
+        "batch_size": batch_size,
+        "panel_dim": PANEL_DIM,
+        "optimizer_steps": REAL_CORPUS_OPTIMIZER_STEPS,
+        "oracle_loss_weight": ORACLE_LOSS_WEIGHT,
+        "label_counts": label_counts,
+        "category_counts": category_counts,
+        "label_diversity_passed": true,
+        "selected_row_sample_count": selected_summary.len(),
+        "selected_row_sample": selected_summary,
+        "synthetic_seed_features_used": false,
+        "flat_vector_concat_used": false,
+        "active_embedder_vectors_directly_packed_into_5120_panel": false,
+        "panels_materialized_from": "verified SWE-bench 300x8 train patch files + frozen instrument encoders + oracle_all_passed target slot",
+    });
+    let corpus_sha256 = sha256_json(&summary)?;
+    Ok(RealCorpusTrainingBatch {
+        panel_t0: Tensor::from_slice(&panel_t0_values, (batch_size, PANEL_DIM), device)?
+            .to_dtype(DType::BF16)?,
+        panel_t1: Tensor::from_slice(&panel_t1_values, (batch_size, PANEL_DIM), device)?
+            .to_dtype(DType::BF16)?,
+        target_panel: Tensor::from_slice(&target_values, (batch_size, PANEL_DIM), device)?
+            .to_dtype(DType::BF16)?,
+        oracle_targets: Tensor::from_slice(&oracle_target_values, batch_size, device)?,
+        corpus_sha256,
+        summary,
+        direct_pack_edge,
+    })
+}
+
+fn select_swebench_training_rows(rows: &[CorpusEntry], batch_size: usize) -> Vec<CorpusEntry> {
+    let mut selected = Vec::with_capacity(batch_size);
+    let mut pass_rows = rows
+        .iter()
+        .filter(|entry| entry.oracle_all_passed)
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut fail_rows = rows
+        .iter()
+        .filter(|entry| !entry.oracle_all_passed)
+        .cloned()
+        .collect::<Vec<_>>();
+    pass_rows.sort_by(|left, right| {
+        left.category
+            .cmp(&right.category)
+            .then(left.task_id.cmp(&right.task_id))
+    });
+    fail_rows.sort_by(|left, right| {
+        left.category
+            .cmp(&right.category)
+            .then(left.task_id.cmp(&right.task_id))
+    });
+    let max_len = pass_rows.len().max(fail_rows.len());
+    for idx in 0..max_len {
+        if selected.len() >= batch_size {
+            break;
+        }
+        if let Some(row) = fail_rows.get(idx) {
+            selected.push(row.clone());
+        }
+        if selected.len() >= batch_size {
+            break;
+        }
+        if let Some(row) = pass_rows.get(idx) {
+            selected.push(row.clone());
+        }
+    }
+    if selected.len() < batch_size {
+        for row in rows {
+            if selected.len() >= batch_size {
+                break;
+            }
+            if !selected
+                .iter()
+                .any(|existing| existing.patch_path == row.patch_path)
+            {
+                selected.push(row.clone());
+            }
+        }
+    }
+    selected
+}
+
+fn swebench_patch_bundle_from_entry(entry: &CorpusEntry, patch_path: &Path) -> Result<PatchBundle> {
+    let patch_bytes =
+        fs::read(patch_path).with_context(|| format!("read patch {}", patch_path.display()))?;
+    let expected = parse_sha256_prefixed(&entry.patch_sha256)?;
+    ensure!(
+        sha256_array(&patch_bytes) == expected,
+        "TASK-PY-G-127_SWEBENCH_PATCH_SHA_MISMATCH: {}",
+        patch_path.display()
+    );
+    PatchBundle::try_new(
+        parse_unified_diff(std::str::from_utf8(&patch_bytes)?)?,
+        valid_witness_segment(),
+        format!(
+            "TASK-PY-G-127 SWE-bench train row {} category={} oracle_all_passed={}",
+            entry.task_id, entry.category, entry.oracle_all_passed
+        ),
+        expected,
+    )
+    .map_err(Into::into)
+}
+
+fn swebench_task_context_from_entry(entry: &CorpusEntry, idx: usize) -> Result<TaskContext> {
+    let digest = sha256_array(format!("task-py-g-127:{}:{idx}", entry.task_id).as_bytes());
+    let mut session_id = [0u8; 16];
+    session_id.copy_from_slice(&digest[..16]);
+    if session_id == [0u8; 16] {
+        session_id[0] = 1;
+    }
+    Ok(TaskContext {
+        task_id: TaskId(format!("task-py-g-127-swebench-{}", entry.task_id)),
+        session_id,
+        language: Language::Python,
+        problem_statement: format!(
+            "Predict observed SWE-bench oracle consequence for {} {}.",
+            entry.task_id, entry.category
+        ),
+        tests: vec![TestId(format!(
+            "oracle_label::{}::{}",
+            entry.task_id, entry.category
+        ))],
+        environment: TaskEnvironment {
+            repo_root: PathBuf::from("/zfs/hot/contextgraph/task-py-g-127-swebench-panels"),
+            python_version: Some("3.11".to_string()),
+            os: "linux".to_string(),
+        },
+        claim_graph: None,
+        skill_citations: vec![],
+    })
+}
+
+fn parse_unified_diff(text: &str) -> Result<AstDiff> {
+    let mut hunks = Vec::new();
+    let mut current = ParsedFilePatch::default();
+    for line in text.lines() {
+        if line.starts_with("diff --git ") {
+            push_parsed_file(&mut hunks, &mut current)?;
+            current.path = parse_diff_git_path(line);
+            continue;
+        }
+        if let Some(path) = line.strip_prefix("+++ b/") {
+            current.path = Some(PathBuf::from(path));
+            continue;
+        }
+        if line.starts_with("--- ") || line.starts_with("+++") || line.starts_with("@@") {
+            continue;
+        }
+        if let Some(added) = line.strip_prefix('+') {
+            current.after.push(added.to_string());
+        } else if let Some(removed) = line.strip_prefix('-') {
+            current.before.push(removed.to_string());
+        } else if let Some(context) = line.strip_prefix(' ') {
+            current.before.push(context.to_string());
+            current.after.push(context.to_string());
+        }
+    }
+    push_parsed_file(&mut hunks, &mut current)?;
+    ensure!(!hunks.is_empty(), "TASK-PY-G-127_SWEBENCH_EMPTY_DIFF");
+    Ok(AstDiff { hunks })
+}
+
+fn push_parsed_file(hunks: &mut Vec<DiffHunk>, current: &mut ParsedFilePatch) -> Result<()> {
+    if current.path.is_none() && current.before.is_empty() && current.after.is_empty() {
+        return Ok(());
+    }
+    let path = current
+        .path
+        .take()
+        .unwrap_or_else(|| PathBuf::from("unknown.py"));
+    let raw_before = current.before.join("\n");
+    let raw_after = current.after.join("\n");
+    let display_path = path.display().to_string();
+    let before = python_patch_carrier(&display_path, "before", &raw_before)?;
+    let after = python_patch_carrier(&display_path, "after", &raw_after)?;
+    hunks.push(DiffHunk {
+        path,
+        pre_sha: sha256_array(before.as_bytes()),
+        post_sha: sha256_array(after.as_bytes()),
+        before,
+        after,
+    });
+    current.before.clear();
+    current.after.clear();
+    Ok(())
+}
+
+fn python_patch_carrier(path: &str, side: &str, body: &str) -> Result<String> {
+    let path_lit = serde_json::to_string(path)?;
+    let side_lit = serde_json::to_string(side)?;
+    let body_lit = serde_json::to_string(body)?;
+    Ok(format!(
+        "MEJEPA_PATCH_PATH = {path_lit}\nMEJEPA_PATCH_SIDE = {side_lit}\nMEJEPA_PATCH_BODY = {body_lit}\nMEJEPA_PATCH_LINE_COUNT = {}\n",
+        body.lines().count()
+    ))
+}
+
+fn parse_diff_git_path(line: &str) -> Option<PathBuf> {
+    line.split_whitespace()
+        .nth(3)
+        .and_then(|path| path.strip_prefix("b/"))
+        .map(PathBuf::from)
+}
+
+fn parse_sha256_prefixed(value: &str) -> Result<[u8; 32]> {
+    let raw = value
+        .strip_prefix("sha256:")
+        .context("expected sha256:<hex> value")?;
+    let bytes = hex::decode(raw)?;
+    ensure!(bytes.len() == 32, "sha256 must decode to 32 bytes");
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&bytes);
+    Ok(out)
 }
 
 fn real_corpus_training_batch(
