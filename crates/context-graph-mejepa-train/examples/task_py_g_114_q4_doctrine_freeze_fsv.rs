@@ -1,8 +1,9 @@
 use context_graph_mejepa::{
-    ConformalInterval, ConformalSet, CostAxis, Language, OracleOutcome, PerfAxis,
+    assemble_verdict, infer_phase_b_surfaces, AstDiff, ConformalInterval, ConformalMethod,
+    ConformalSet, CostAxis, DiffHunk, Language, OracleOutcome, PatchBundle, PerfAxis,
     PredictedCostRegression, PredictedPerfRegression, PredictionProvenance, Q4EvidenceCatalog,
-    Q4HeadEvidence, RealityPrediction, RealityPredictionBuilder, ReasoningClass, TaskId, Verdict,
-    WitnessHash,
+    Q4HeadEvidence, RealityPrediction, RealityPredictionBuilder, ReasoningClass, TaskContext,
+    TaskEnvironment, TaskId, TestId, Verdict, VerdictAssemblyInput, WitnessHash,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_HEAD_CALIBRATIONS, CF_MEJEPA_LIVE_PREDICTIONS, FROZEN_Q4_CALIBRATION_COUNT_KEY,
@@ -67,6 +68,7 @@ fn main() -> FsvResult<()> {
 
     let edge_cases = vec![
         full_evidence_catalog_stays_frozen_case(&trust_report),
+        q4_only_inputs_do_not_change_predicted_works_or_verdict_case()?,
         nonzero_q4_loss_fails_closed_case(),
         q4_growth_detected_case(&run_root)?,
         q4_calibration_growth_detected_case(&run_root)?,
@@ -385,6 +387,98 @@ fn full_q4_evidence_trust_report() -> FsvResult<context_graph_mejepa::Q4TrustGat
     Ok(context_graph_mejepa::evaluate_q4_trust_gate(
         &Q4EvidenceCatalog { heads },
     )?)
+}
+
+fn q4_only_inputs_do_not_change_predicted_works_or_verdict_case() -> FsvResult<Value> {
+    let patch = PatchBundle::try_new(
+        AstDiff {
+            hunks: vec![DiffHunk {
+                path: "src/config.py".into(),
+                pre_sha: [0; 32],
+                post_sha: [1; 32],
+                before: "def load_config():\n    return {}\n".to_string(),
+                after: "def load_config():\n    api_key = \"sk-test\"\n    return {\"api_key\": api_key}\n"
+                    .to_string(),
+            }],
+        },
+        Vec::new(),
+        "known good config loader".to_string(),
+        [1; 32],
+    )?;
+    let context = TaskContext {
+        task_id: TaskId("task-py-g-114-q4-isolation-fsv".to_string()),
+        session_id: [0x14; 16],
+        language: Language::Python,
+        problem_statement: "KnownGood config loader".to_string(),
+        tests: vec![TestId("tests/test_config.py::test_load_config".to_string())],
+        environment: TaskEnvironment {
+            repo_root: ".".into(),
+            python_version: Some("3.12".to_string()),
+            os: "linux".to_string(),
+        },
+        claim_graph: None,
+        skill_citations: Vec::new(),
+    };
+    let surfaces = infer_phase_b_surfaces(&patch, &context, &[0.93])?;
+    let interval = ConformalInterval {
+        lower: 0.90,
+        upper: 0.96,
+        method: ConformalMethod::SplitConformal,
+        coverage_target: 0.9,
+        empirical_coverage: 0.9,
+    };
+    let clean_verdict = assemble_verdict(VerdictAssemblyInput {
+        contradiction_cell_id: None,
+        contradiction_thresholds: None,
+        oracle_pass_confidence: 0.93,
+        failure_modes: &surfaces.predicted_failure_modes,
+        predicted_failed_test_count: surfaces.predicted_failed_tests.len(),
+        predicted_works: &surfaces.predicted_works,
+        security_concern_count: 0,
+        guard_violation_count: surfaces.guard_violations.len(),
+        ood_score: 0.1,
+        confidence_interval: &interval,
+        pass_threshold: 0.8,
+        ood_threshold: 0.9,
+        interval_width_threshold: 0.5,
+        safety_constraint_violation_count: 0,
+        objective_total_cost: 0.01,
+        objective_cost_ceiling: 0.65,
+        constellation_verdict_pressure: 0.0,
+    });
+    let q4_only_verdict = assemble_verdict(VerdictAssemblyInput {
+        contradiction_cell_id: None,
+        contradiction_thresholds: None,
+        oracle_pass_confidence: 0.93,
+        failure_modes: &surfaces.predicted_failure_modes,
+        predicted_failed_test_count: surfaces.predicted_failed_tests.len(),
+        predicted_works: &surfaces.predicted_works,
+        security_concern_count: 7,
+        guard_violation_count: surfaces.guard_violations.len(),
+        ood_score: 0.1,
+        confidence_interval: &interval,
+        pass_threshold: 0.8,
+        ood_threshold: 0.9,
+        interval_width_threshold: 0.5,
+        safety_constraint_violation_count: 0,
+        objective_total_cost: 0.01,
+        objective_cost_ceiling: 0.65,
+        constellation_verdict_pressure: 0.0,
+    });
+    Ok(json!({
+        "case": "q4_only_inputs_do_not_change_predicted_works_or_verdict",
+        "expected": "post-freeze Q4 display fields empty, predicted_works still present, Q4-only security count ignored by verdict assembly",
+        "actual": {
+            "q4DisplayOnlyFieldCount": surfaces.q4_display_only_field_count(),
+            "predictedWorks": surfaces.predicted_works.len(),
+            "cleanVerdict": clean_verdict,
+            "q4OnlyVerdict": q4_only_verdict
+        },
+        "pass": surfaces.q4_display_only_field_count() == 0
+            && surfaces.predicted_works.len() == 1
+            && clean_verdict == Verdict::Pass
+            && q4_only_verdict == clean_verdict
+    }))
 }
 
 fn full_evidence_catalog_stays_frozen_case(
