@@ -307,7 +307,7 @@ Full FSV evidence index (327 directories on `/mnt/d/contextgraph/fsv/`) → `07_
 
 ## 12. Modules for the Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop
 
-Source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`). Some are **shipped** (#413), some are **planned** (#404 / #405 / #406 / #407). All are **additive** to existing crates — no new top-level crate.
+Source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`). The Level-0 label compiler (#413), skill-sequence substrate (#414), runtime ability resolver slice (#418), and core online-head mistake consumer (#406) are shipped; #404 / #405 / #407 / #523 remain active follow-ons. All are additive to existing crates — no new top-level crate.
 
 ### 12.1 Failure-mode labeling hierarchy
 
@@ -339,13 +339,14 @@ Source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.
 
 ### 12.3 Online mistake-driven learning (epic #406 / TASK-PY-G-112)
 
-| Planned module | Crate | Role |
+| Module | Crate | Role |
 |---|---|---|
-| `src/mistake_log.rs` | `context-graph-mejepa` | `MistakeRow` type, writer, secondary-index by `cell_key`, byte-replay readback for `CF_MEJEPA_MISTAKE_LOG` |
-| `src/mistake_loop.rs` | `context-graph-mejepa` | Reads ground-truth verdicts from oracle / PostToolUse / shift-log; computes mistake / no-mistake; writes mistake row + boosts `CF_MEJEPA_REPLAY_BUFFER` priority 8× |
-| `src/mistake_consumer.rs` | `context-graph-mejepa-train` | Trainer-side: consumes mistake rows under EWC++ Fisher protection (existing TASK-PY-G-065 path), applies Perceptron / Second-Order-Perceptron / Projectron update rule to the binary head, persists `CF_MEJEPA_ONLINE_HEAD_STATE` |
-| `src/online_perceptron.rs` | `context-graph-mejepa-train` | Kernel-Perceptron family update; Cesa-Bianchi & Conconi 2005 mistake bound; Orabona 2008 Projectron memory-bounded support set; finite mistake bound guarantee |
-| `examples/task_py_g_112_mistake_loop_convergence_fsv.rs` | `context-graph-mejepa-train` | FSV harness: inject deliberate wrong prediction → mistake row written → next presentation of same panel signature yields corrected verdict → `mistake_repeat_rate ≤ 0.05` |
+| `src/mistake_log.rs` | `context-graph-mejepa-train` | Shipped `MistakeLogRow` type, writer, validation, and byte-replay readback for `CF_MEJEPA_MISTAKE_LOG` |
+| `src/replay_buffer.rs` | `context-graph-mejepa-train` | Shipped label/skill-aware replay row and priority score used by the mistake loop |
+| `src/online_head_state.rs` + `online_head_state_keys.rs` + `online_head_state_support.rs` | `context-graph-mejepa-train` | Shipped key-local exact-panel online-head state. Updates only the matching `panel_signature_hash`, persists repeat metrics, reports `protection_mode=exactPanelKeyIsolation`, and rejects unbacked Fisher/EWC claims (#524). |
+| `src/ability_resolver_refutation.rs` + `ability_resolver_types.rs` + `ability_resolver_storage.rs` | `context-graph-mejepa-train` | Shipped live consumer bridge: ability refutations write mistake rows, replay rows, skill lifecycle audit rows, and online-head updates in one readback-verified path. |
+| `examples/task_py_g_112_mistake_loop_convergence_fsv.rs` | `context-graph-mejepa-train` | Shipped FSV harness: inject deliberate wrong prediction → mistake row written → exact panel signature yields corrected verdict → `mistake_repeat_rate` row byte-readable → unrelated-control delta ≤ 0.02 → unbacked Fisher/EWC claim rejected. |
+| `mejepa_record_mistake`, `mejepa_mistake_history`, `mejepa_mistake_loop_status` | `context-graph-mcp` | Planned MCP wrappers for the shipped storage/update primitive; tracked under #523. |
 
 ### 12.4 Q4 freeze (deprecation, no new module)
 
@@ -366,8 +367,10 @@ context-graph-mejepa-instruments
   + panel_b/ ──────────────────> 5 new Panel B encoders (CodeBERT / Pythia / joern / Voyage-code-2 / bge)
 
 context-graph-mejepa-train
-  + mistake_consumer.rs ───────> consumes CF_MEJEPA_MISTAKE_LOG under EWC++ Fisher protection
-  + online_perceptron.rs ──────> Perceptron / Second-Order-Perceptron / Projectron head update; CF_MEJEPA_ONLINE_HEAD_STATE
+  + mistake_log.rs ────────────> writes and reads CF_MEJEPA_MISTAKE_LOG
+  + replay_buffer.rs ──────────> priority-scored replay rows keyed by label/skill/ability signatures
+  + online_head_state.rs ──────> exact-panel online-head update; CF_MEJEPA_ONLINE_HEAD_STATE; no Fisher/EWC claim without durable row
+  + ability_resolver_refutation.rs -> live refutation consumer writes lifecycle + mistake + replay + online-head rows
 ```
 
 No new internal dependency cycles; the planned modules attach to existing crates and read/write only via `context-graph-mejepa-cf` constants and `context-graph-storage` openers.

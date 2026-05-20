@@ -25,7 +25,7 @@ The whole architecture below — embedders, instruments, panel, heads, TCT, trai
 Three architectural primitives back the binary contract:
 
 1. **Labeling layer (§4.3 below).** Raw slot violations + cross-embedder correlations are clustered into a 4-level hierarchy of named failure modes (Action-Unit-style → Group → Skill → Constellation). The product returns the named failure mode that applies, grounded by the closest historical exemplar from the 300×8 corpus.
-2. **Online mistake loop (§9.6 below).** When the binary prediction disagrees with reality (oracle / PostToolUse capture / shift-log replay), the disagreement materializes as a `CF_MEJEPA_MISTAKE_LOG` row and the trainer consumes it under EWC++ protection. The convergence target is: never repeat the same mistake on the same `(cell × failure_mode)` cell.
+2. **Online mistake loop (§9.6 below).** When the binary prediction disagrees with reality (oracle / PostToolUse capture / shift-log replay), the disagreement materializes as a `CF_MEJEPA_MISTAKE_LOG` row and the shipped trainer path consumes it through exact-panel online-head state. Current protection is measured unrelated-control isolation, not Fisher/EWC; any future Fisher/EWC claim must persist a durable row and pass #524.
 3. **Cross-panel triangulation (§4.4 below).** Panel B (a deliberately non-overlapping instrument panel) re-scores every gate-relevant patch. A 0.95 result on Panel A only counts when Panel B agrees within 0.05; Goodhart on Panel A fails closed.
 
 **Info-physics additions (2026-05-20).** Four issues filed against `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md` formalize properties the architecture already embodies but does not name:
@@ -391,7 +391,7 @@ These scalars feed into the existing #390 intelligence head as per-cell features
 
 This means the live system does not merely predict from chunk vectors. It compiles chunks into TCT constellations, resolves their hierarchical abilities, predicts consequences through those abilities, and repairs the ability model when durable reality falsifies the prediction.
 
-**Skill lifecycle on mistakes (partial code-level FSV, #414 feeding #406).** When a prediction disagrees with durable reality, the mistake loop must decide whether the active skill model was right but underweighted, too broad, too narrow, stale, leaky, or missing. Each mistake creates a lifecycle decision: `UpdateExistingSkill`, `SplitMixedSkill`, `CreateNewCandidateSkill`, `DemoteUnstableSkill`, or `NoChangeWithEvidence`. #414 now persists `SkillLifecycleAuditRow` for created candidate skills; wiring those decisions into the live #406 mistake consumer remains open. This is how ME-JEPA learns new abilities and repairs old ones as it sees new projects after the SWE-bench baseline.
+**Skill lifecycle on mistakes (code-level FSV, #414 feeding #406).** When a prediction disagrees with durable reality, the mistake loop must decide whether the active skill model was right but underweighted, too broad, too narrow, stale, leaky, or missing. Each mistake creates a lifecycle decision: `UpdateExistingSkill`, `SplitMixedSkill`, `CreateNewCandidateSkill`, `DemoteUnstableSkill`, or `NoChangeWithEvidence`. #414 persists `SkillLifecycleAuditRow` rows, and #406/#418 now wire those decisions into the live refutation consumer for active abilities and new candidates. Broader pathway-leaf credit assignment remains #416, and MCP status/record/history tools remain #523.
 
 **Level 1/2/3 — Aggregation procedure (planned, #404).** Aggregate over the shipped 491-row Level-0 accepted registry (NOT a new K-means pass — the K-means equivalent is the slot-region label emitter in Level 0). Group co-firing accepted labels by support count + co-occurrence per `(mutation_category × language × code_state)` cell into Level-1 groups. Name groups via cosine-vs-vocabulary against an operator-curated **failure-mode vocabulary** (`CF_MEJEPA_FAILURE_MODE_VOCABULARY`) embedded with E1 e5-large-v2. Top-1 match becomes the Level-1 group name. Operator approves / renames / merges via `mejepa_label_failure_cluster`.
 
@@ -614,20 +614,23 @@ Performance gate (per phase-g-roadmap §4): fresh ingest of 50-file Python proje
 
 ### 9.6 Online mistake-driven adaptation ("isn't wrong in the future" property)
 
-Source files (planned): `crates/context-graph-mejepa/src/mistake_log.rs`, `crates/context-graph-mejepa-train/src/mistake_consumer.rs`, `crates/context-graph-mejepa-train/src/online_perceptron.rs`. Storage CFs: `CF_MEJEPA_MISTAKE_LOG`, `CF_MEJEPA_MISTAKE_REPLAY_PRIORITY`, `CF_MEJEPA_ONLINE_HEAD_STATE`. MCP tools (planned): `mejepa_record_mistake`, `mejepa_mistake_history`, `mejepa_mistake_loop_status`. Tracked by **#406 (new) / TASK-PY-G-112 — Online mistake-driven learning loop**.
+Source files (shipped): `crates/context-graph-mejepa-train/src/mistake_log.rs`, `replay_buffer.rs`, `online_head_state.rs`, `online_head_state_keys.rs`, `online_head_state_support.rs`, and the live bridge in `ability_resolver_refutation.rs`. Storage CFs: `CF_MEJEPA_MISTAKE_LOG`, `CF_MEJEPA_REPLAY_BUFFER`, `CF_MEJEPA_ONLINE_HEAD_STATE`, plus skill lifecycle audit CFs from #414/#418. MCP tools remain planned under #523: `mejepa_record_mistake`, `mejepa_mistake_history`, `mejepa_mistake_loop_status`. Tracked by **#406 / TASK-PY-G-112 — Online mistake-driven learning loop** (core shipped) and **#524 / TASK-PY-G-112C** (Fisher/EWC wording and guard).
 
-**The classical primitive.** The binary head over the panel is implemented as a margin-based online learner in the kernel-Perceptron / Second-Order-Perceptron family (Rosenblatt 1957; Cesa-Bianchi & Conconi 2005; Orabona 2008 Projectron). Update rule, per mistake:
+**The shipped primitive.** The current online head is key-local exact-panel state over `panel_signature_hash`. It is deliberately narrow: it corrects the repeated same-panel mistake, records the label/skill/ability/membership context that made the mistake meaningful, and measures an unrelated control panel before/after so the FSV can prove this update did not perturb unrelated exact-panel state. It does **not** flatten slots, does **not** update a trainable vector head, and does **not** claim Fisher/EWC.
 
 ```
 if predicted_verdict != ground_truth_verdict:
-    support_set := support_set ∪ { (panel, ground_truth_verdict) }
-    head_weights := head_weights + η · ground_truth_verdict · panel_projection
     record_mistake_in_CF_MEJEPA_MISTAKE_LOG with full context
-    enqueue at 8× weight in CF_MEJEPA_REPLAY_BUFFER
-    boost Fisher diagonal for the affected slots (EWC++ already implemented)
+    enqueue label/skill-aware row in CF_MEJEPA_REPLAY_BUFFER
+    online_head[panel_signature_hash].correction_bias += eta * sign(ground_truth_verdict)
+    online_head[panel_signature_hash].corrected_verdict = sign(correction_bias)
+    repeat_metric[cell,label,skill,ability,membership] = byte-readable rolling metric
+    protection_mode = exactPanelKeyIsolation
+    claims_fisher_ewc_protection = false
+    assert unrelated_control_delta <= 0.02
 ```
 
-The "correct on first try, learn when wrong" discipline maps directly onto the Perceptron mistake-bound regime: each mistake strictly improves the head on that specific `(cell × failure_mode × panel_signature)` cell, and the mistake bound is finite under the margin assumption. The Second-Order Perceptron variant uses ridge-style whitening so a single mistake updates the head against the local covariance of the panel, which adapts faster to new instrument additions.
+The "correct on first try, learn when wrong" discipline starts as an exact-panel correction guarantee: each mistake strictly improves the next verdict for that specific `(cell × failure_mode × ordered_skill_signature × panel_signature)` row and persists the learning context for broader trainer consolidation. A future Second-Order Perceptron / Projectron-style vector update can be introduced later, but it must add durable Fisher/EWC rows before any report may claim Fisher/EWC protection (#524).
 
 **Ground-truth sources** (the "reality says yes/no" signal):
 
@@ -671,7 +674,7 @@ Stored in `CF_MEJEPA_MISTAKE_LOG` keyed by `mistake_id` with secondary index by 
 
 **Why this beats best-of-K.** The user's constraint: "if it needs 4 guesses to be most correct then it is already wrong." Best-of-K papers over an under-trained predictor by spending compute at inference time. The online perceptron pays the cost at *learning* time and converges to a predictor that is right on the first try. Best-of-K stays available as a debug tool but is never the product path.
 
-**FSV expectations.** Synthetic + real FSV must prove (a) a deliberately-injected wrong prediction lands in `CF_MEJEPA_MISTAKE_LOG`, (b) the next presentation of the same panel signature yields the corrected verdict, (c) the mistake_repeat_rate metric is byte-readable from RocksDB, (d) Fisher protection prevents the mistake update from regressing unrelated cells, (e) `skill:A -> skill:B` and `skill:B -> skill:A` produce distinct replay keys, and (f) the same mistake writes a skill lifecycle audit row that updates, splits, creates, demotes, or explicitly leaves unchanged the involved skill/ability model.
+**FSV expectations.** Synthetic + real FSV must prove (a) a deliberately-injected wrong prediction lands in `CF_MEJEPA_MISTAKE_LOG`, (b) the next presentation of the same panel signature yields the corrected verdict, (c) the `mistake_repeat_rate` metric is byte-readable from RocksDB, (d) exact-panel unrelated-control delta stays within ±0.02, (e) any report that claims Fisher/EWC without a durable row is rejected, (f) `skill:A -> skill:B` and `skill:B -> skill:A` produce distinct replay keys, and (g) the same mistake writes a skill lifecycle audit row that updates, splits, creates, demotes, or explicitly leaves unchanged the involved skill/ability model.
 
 ---
 

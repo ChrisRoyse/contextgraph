@@ -33,7 +33,7 @@ Plus:
 
 The 2026-05-19 reframe is the **only** product surface: binary predictions against ground truth (Q1 bytes/AST + Q2 Docker oracle + Q5 shift log), one explanation surface (Q3 named failure mode + closest exemplar), and **Q4 ambiguous surfaces removed entirely** (frozen as display-only historical data; ambiguous things have no free binary form against reality, so the system does not predict them). The MCP product shows the binary verdict + named explanation to the human/operator-agent; it does not choose the human's goal, does not infer hidden human intent (#397, #358), and does not predict heuristic-against-heuristic surfaces.
 
-Current ship-gate status: **0.866667** vs target 0.95 on Panel A; Panel B has no measurement yet (#405 will produce the first). Phase G critical path drives both. See `08_roadmap_and_open_work.md §3.−1` for the new binary-doctrine ordering of epics #404 (labeling) / #405 (cross-panel) / #406 (mistake loop) / #407 (calibration audit) / #408 (Q4 freeze) / #409 (paper update).
+Current ship-gate status: **0.866667** vs target 0.95 on Panel A; Panel B has no measurement yet (#405 will produce the first). Phase G critical path drives both. See `08_roadmap_and_open_work.md §3.−1` for the new binary-doctrine ordering of epics #404 (labeling) / #405 (cross-panel) / #406 (core mistake loop closed; #523 MCP wrappers remain) / #407 (calibration audit) / #408 (Q4 freeze) / #409 (paper update).
 
 ---
 

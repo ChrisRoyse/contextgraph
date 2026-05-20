@@ -10,8 +10,9 @@ use context_graph_mejepa_train::mistake_log::{
     MistakeLogRow, MistakeTruthSource,
 };
 use context_graph_mejepa_train::online_head_state::{
-    apply_online_mistake_update_sync_readback, online_head_key, read_online_head_state_row,
-    read_repeat_metric_row, repeat_metric_key, OnlineHeadUpdateConfig, OnlineHeadUpdateInput,
+    apply_online_mistake_update_sync_readback, online_head_key,
+    online_head_report_fisher_claim_guard, read_online_head_state_row, read_repeat_metric_row,
+    repeat_metric_key, OnlineHeadProtectionMode, OnlineHeadUpdateConfig, OnlineHeadUpdateInput,
 };
 use context_graph_mejepa_train::replay_buffer::{
     label_aware_replay_cell_id, read_replay_row, write_replay_row_sync_readback, ReplayBufferRow,
@@ -223,12 +224,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         repeat_metric_readback == online_update_report.repeat_metric_after;
     let unrelated_cell_accuracy_delta_within_002 =
         online_update_report.unrelated_cell_accuracy_delta.abs() <= 0.02;
+    let exact_panel_protection_mode = online_update_report.protection_mode
+        == OnlineHeadProtectionMode::ExactPanelKeyIsolation
+        && !online_update_report.claims_fisher_ewc_protection
+        && online_update_report.fisher_ewc_row_key.is_none();
+    let current_report_has_no_unbacked_fisher_claim =
+        online_head_report_fisher_claim_guard(&readback_db, &online_update_report)?;
+    let mut unbacked_fisher_claim_report = online_update_report.clone();
+    unbacked_fisher_claim_report.protection_mode = OnlineHeadProtectionMode::FisherEwc;
+    unbacked_fisher_claim_report.claims_fisher_ewc_protection = true;
+    unbacked_fisher_claim_report.fisher_ewc_row_key = None;
+    let unbacked_fisher_claim_rejected =
+        !online_head_report_fisher_claim_guard(&readback_db, &unbacked_fisher_claim_report)?;
     let online_head_update_passes = same_panel_signature_corrected
         && corrected_verdict_is_fail
         && repeat_metric_byte_readable
         && online_head_readback_matches
         && repeat_metric_readback_matches
         && unrelated_cell_accuracy_delta_within_002
+        && exact_panel_protection_mode
+        && current_report_has_no_unbacked_fisher_claim
+        && unbacked_fisher_claim_rejected
         && online_update_report.label_skill_ability_membership_ids_agree
         && !online_update_report.flat_vector_concat_used;
     let all_passed = mistake_readback == mistake_row
@@ -245,7 +261,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "artifact_kind": "task_py_g_112_mistake_loop_convergence_fsv",
         "schema_version": 1,
         "task_id": "TASK-PY-G-112",
-        "covered_github_issues": [406, 430],
+        "covered_github_issues": [406, 430, 524],
         "passes": all_passed,
         "before": before,
         "after": tree_state(&fsv_root)?,
@@ -263,7 +279,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "repeat_metric_byte_readable": repeat_metric_byte_readable,
             "online_head_readback_matches": online_head_readback_matches,
             "repeat_metric_readback_matches": repeat_metric_readback_matches,
-            "unrelated_cell_accuracy_delta_within_002": unrelated_cell_accuracy_delta_within_002
+            "unrelated_cell_accuracy_delta_within_002": unrelated_cell_accuracy_delta_within_002,
+            "exact_panel_protection_mode": exact_panel_protection_mode,
+            "current_report_has_no_unbacked_fisher_claim": current_report_has_no_unbacked_fisher_claim,
+            "unbacked_fisher_claim_rejected": unbacked_fisher_claim_rejected
         },
         "edge_cases": {
             "empty_label_signature_rejected": edge_empty_labels,
@@ -278,7 +297,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "live_prediction_inputs": "live_predictor_labels plus accepted registry rows with live_prediction_input_allowed=true",
             "target_only_provenance": "labels and target_supervision_labels may preserve oracle/outcome/test labels but cannot feed live prediction context"
         },
-        "proof_scope": "label-bridge, mistake-log, replay persistence/readback, #430 live-label leakage boundary, and online head-state correction/readback for the first mistake-driven convergence step",
+        "proof_scope": "label-bridge, mistake-log, replay persistence/readback, #430 live-label leakage boundary, online head-state correction/readback, exact-panel protection-mode clarity, and fail-closed rejection of unbacked Fisher/EWC claims",
         "slot_identity_preserved": true,
         "flat_vector_concat_used": false,
         "active_path_policy": {"mnt_d_active_reads_or_writes": false}

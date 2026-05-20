@@ -347,7 +347,7 @@ Predecessor: `a1e6a842 Make aiwonder production storage policy explicit` — dec
 
 ## 9. Planned New Column Families (Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop)
 
-Additive CFs supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`, `02_source_map.md §12`). The #414 skill-membership CFs are registered in `mejepa-cf/src/lib.rs`; #404/#405/#406 runtime consumers remain tracked by their issue gates. No rename of existing CFs.
+Additive CFs supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`, `02_source_map.md §12`). The #414 skill-membership CFs and #406 online-head CF are registered in `mejepa-cf/src/lib.rs`; #404/#405 runtime consumers remain tracked by their issue gates. No rename of existing CFs.
 
 ### 9.1 Failure-mode labeling — Level-0 SHIPPED as JSONL artifacts; #414 skill CFs registered
 
@@ -392,11 +392,14 @@ When the hierarchical naming layer lands on top of the shipped Level-0 registry,
 
 ### 9.3 Mistake-driven online-learning CFs (#406 / TASK-PY-G-112)
 
-| CF Constant (planned) | Key | Value | Purpose |
+| CF Constant | Key | Value | Purpose |
 |---|---|---|---|
 | `CF_MEJEPA_MISTAKE_LOG` | `mistake_id` | bincode `MistakeRow { prediction_id, ts_ns, cell_key, predicted_verdict, ground_truth_verdict, predicted_named_failure_mode, ground_truth_named_failure_mode, source_panel, panel_signature_hash, slot_traces, accepted_label_ids, active_skill_ids, label_signature_hash, skill_signature_hash, skill_lifecycle_decision, skill_lifecycle_audit_id, closest_exemplar_at_predict, ground_truth_source, replayed_to_trainer }` | Append-only log of every prediction that disagreed with reality. Secondary index by `cell_key` and ordered `skill_signature_hash` for the `mistake_repeat_rate` metric. |
 | `CF_MEJEPA_MISTAKE_REPLAY_PRIORITY` | `mistake_id` | bincode `{priority: f32, boost_factor: 8.0, scheduled_at: ts_ns, replayed_at: Option<ts_ns>}` | Replay-buffer priority overlay; bridges mistake rows into `CF_MEJEPA_REPLAY_BUFFER` at 8× weight. |
-| `CF_MEJEPA_ONLINE_HEAD_STATE` | `head_id` | bincode `{support_set: Vec<SupportPoint>, weights_blob_sha: [u8;32], mistake_count, last_update_ts, mistake_bound_remaining_estimate}` | Persisted Perceptron / Second-Order-Perceptron / Projectron support set + head weights blob. Allows the online head to survive restarts without re-walking the entire mistake log. |
+| `CF_MEJEPA_ONLINE_HEAD_STATE` | `online_head:<panel_signature_hash>` | bincode `OnlineHeadStateRow { head_key, panel_signature_hash, replay_cell_id, label_signature_hash, skill_signature_hash, ability_signature_hash, membership_signature_hash, support_count, mistake_count, correction_bias, corrected_verdict, last_prediction_id, last_mistake_id, last_replay_row_key, updated_at_unix_ms }` | Shipped #406 key-local exact-panel online-head state. Allows the next presentation of the same panel signature to return the corrected verdict after durable readback. |
+| `CF_MEJEPA_ONLINE_HEAD_STATE` | `mistake_repeat:<cell+label+skill+ability+membership signature>` | bincode `OnlineHeadRepeatMetricRow { replay_cell_id, label_signature_hash, skill_signature_hash, ability_signature_hash, membership_signature_hash, window_size, mistake_count, repeated_mistake_count, mistake_repeat_rate, updated_at_unix_ms }` | Byte-readable mistake-repeat metric used by the #406 FSV and future MCP status tool (#523). |
+
+There is intentionally no #406 Fisher/EWC row in this CF today. Current reports use `protection_mode=exactPanelKeyIsolation`, `claims_fisher_ewc_protection=false`, and `fisher_ewc_row_key=null`. #524 guards the boundary: a future report that claims Fisher/EWC must point at a durable Fisher/EWC row or fail FSV.
 
 ### 9.4 Q4 CF freeze (NOT deleted; deprecated-readable)
 
@@ -471,7 +474,7 @@ Five new CFs land with the creativity-engine issues (`08_roadmap_and_open_work.m
 | `CF_MEJEPA_CHUNK_CONSOLIDATED` | #520 / TASK-CR-005 | `(chunk_id)` | bincode `{cluster_id, residual_per_slot: Vec<Vec<f32>>, consolidation_timestamp, witness_hash}` | Settled chunks. Reconstruction = cluster_centroid + residual. Original `CF_MEJEPA_PANELS` row can be dropped or moved to cold storage. |
 | `CF_MEJEPA_CONSOLIDATION_AUDIT` | #520 / TASK-CR-005 | `(audit_id)` | bincode `{settled_chunk_count, outlier_chunk_count, storage_bytes_freed, before_witness_hash, after_witness_hash}` | Per-consolidation-run audit row. |
 
-**Schema migration impact.** All five issues land additive CFs only (no modifications to existing CFs except for one: #519 changes the `Panel` envelope to allow variable-K slot occupancy where the existing schema assumes the full 15-slot layout — that IS a schema change requiring the combined wipe per `CLAUDE.md §6.6`). Recommend bundling the #519 schema change with the other planned schema changes (#511 / #512 / #404 / #405 / #406) into a single wipe + rebuild event.
+**Schema migration impact.** All five issues land additive CFs only (no modifications to existing CFs except for one: #519 changes the `Panel` envelope to allow variable-K slot occupancy where the existing schema assumes the full 15-slot layout — that IS a schema change requiring the combined wipe per `CLAUDE.md §6.6`). Recommend bundling the #519 schema change with the other planned schema changes (#511 / #512 / #404 / #405) into a single wipe + rebuild event.
 
 ### 9.5 Canonical opener slice update
 
@@ -479,4 +482,4 @@ When CFs land, they get added to `ALL_HYGIENE_REFERENCED_CFS` (`mejepa-cf/lib.rs
 
 #414 production FSV (`/zfs/archive/contextgraph/fsv/task-py-g-118-skill-sequence-discovery-fsv/run-1779213075188/task_py_g_118_aiwonder_skill_materialization_fsv.json`, `sha256:0df1437ae5e0542b356777b29df700b521b83b054113697ca280ae3d242d3dee`) streamed all 399,777 #413 chunk-label rows and wrote/read back 128 `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` rows, 36,773 `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` rows, 10,579 `CF_MEJEPA_SKILL_REVERSE_INDEX` rows, and 128 `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` rows. External aiwonder `ldb` readback with `LD_LIBRARY_PATH=/zfs/hot/contextgraph/lib` matched the reopened Rust counts exactly.
 
-Because adding a CF is a schema change and ME-JEPA has no migrations (`CLAUDE.md §6.6`), landing #404/#405/#406 means a deliberate DB wipe + rebuild. The wipe is scheduled as a single combined operation rather than 3 separate wipes.
+Because adding a CF is a schema change and ME-JEPA has no migrations (`CLAUDE.md §6.6`), landing #404/#405 means a deliberate DB wipe + rebuild. The #406 online-head CF is already registered; future Fisher/EWC rows for #524 must either reuse an existing declared CF with a documented key prefix or land with an explicit wipe/rebuild plan.

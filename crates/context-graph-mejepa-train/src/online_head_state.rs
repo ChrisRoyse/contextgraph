@@ -59,6 +59,13 @@ pub struct OnlineHeadUpdateConfig {
     pub repeat_window_size: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OnlineHeadProtectionMode {
+    ExactPanelKeyIsolation,
+    FisherEwc,
+}
+
 impl Default for OnlineHeadUpdateConfig {
     fn default() -> Self {
         Self {
@@ -82,6 +89,9 @@ pub struct OnlineHeadUpdateInput {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct OnlineHeadUpdateReport {
     pub schema_version: u32,
+    pub protection_mode: OnlineHeadProtectionMode,
+    pub claims_fisher_ewc_protection: bool,
+    pub fisher_ewc_row_key: Option<String>,
     pub head_state_before: Option<OnlineHeadStateRow>,
     pub head_state_after: OnlineHeadStateRow,
     pub repeat_metric_after: OnlineHeadRepeatMetricRow,
@@ -257,6 +267,9 @@ pub fn apply_online_mistake_update_sync_readback(
     };
     Ok(OnlineHeadUpdateReport {
         schema_version: ONLINE_HEAD_STATE_SCHEMA_VERSION,
+        protection_mode: OnlineHeadProtectionMode::ExactPanelKeyIsolation,
+        claims_fisher_ewc_protection: false,
+        fisher_ewc_row_key: None,
         head_state_before: before,
         head_state_after: after,
         repeat_metric_after: read_repeat_metric_row(db, &metric_key)?
@@ -279,6 +292,29 @@ pub fn apply_online_mistake_update_sync_readback(
         ),
         flat_vector_concat_used: false,
     })
+}
+
+pub fn online_head_report_fisher_claim_guard(
+    db: &DB,
+    report: &OnlineHeadUpdateReport,
+) -> Result<bool, TrainerError> {
+    if !report.claims_fisher_ewc_protection {
+        return Ok(
+            report.protection_mode == OnlineHeadProtectionMode::ExactPanelKeyIsolation
+                && report.fisher_ewc_row_key.is_none(),
+        );
+    }
+    if report.protection_mode != OnlineHeadProtectionMode::FisherEwc {
+        return Ok(false);
+    }
+    let Some(row_key) = report.fisher_ewc_row_key.as_deref() else {
+        return Ok(false);
+    };
+    validate_id("fisher_ewc_row_key", row_key)?;
+    Ok(db
+        .get_cf(online_head_cf(db)?, row_key.as_bytes())
+        .map_err(map_rocksdb_error)?
+        .is_some())
 }
 
 pub fn predict_with_online_head(

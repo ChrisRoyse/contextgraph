@@ -406,7 +406,7 @@ These measurements anchor the new Q1/Q2/Q5-binary + labeled + cross-panel + mist
 | `CROSS_PANEL_GOODHART_DETECTED` synthetic-injection edge | flag fires on injected divergence | same | #405 |
 | Online-learning `mistake_repeat_rate` on rolling window | `≤ 0.05` | `/zfs/archive/contextgraph/fsv/task-py-g-112-mistake-loop-convergence-fsv/` | #406 / TASK-PY-G-112 |
 | Mistake-loop second-presentation convergence | corrected verdict on 2nd presentation of same `panel_signature_hash` | same | #406 |
-| EWC-protected unrelated-cell control delta | `±0.02` accuracy drift | same | #406 |
+| Exact-panel unrelated-control delta + unbacked Fisher/EWC claim guard | `±0.02` accuracy drift AND Fisher/EWC claim rejected without durable row | same + `/zfs/archive/contextgraph/fsv/task-py-g-112c-online-head-ewc-clarity-fsv/` | #406 / #524 |
 | Threshold-calibration partition-disjointness audit | `overlap_with_train == 0` AND `overlap_with_eval == 0` for every τ | `/zfs/archive/contextgraph/fsv/threshold-calibration-provenance-fsv/` | #407 (new) / TASK-PY-G-113 |
 | Q4 doctrine freeze (weekly recheck) | `q4_row_count_delta == 0` weekly AND `q4_loss_coefficient_max == 0.0` AND `q4_inputs_to_ship_gate == 0` | `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/` | one-time + weekly via `mejepa_weekly_eval_dashboard` |
 | Information-entropy loss — monotonic decrease | `latent_entropy_monotonicity_violations == 0` across ≥4 training windows with λ > 0; holdout Brier no-regression | `/zfs/archive/contextgraph/fsv/task-ip-001-entropy-loss-fsv/` | #511 / TASK-IP-001 (info-physics) |

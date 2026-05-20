@@ -17,7 +17,7 @@ use context_graph_mejepa_train::chunk_skill_membership::{
 use context_graph_mejepa_train::label_bridge::load_label_learning_bridge;
 use context_graph_mejepa_train::mistake_log::{read_all_mistake_log_rows, MistakeTruthSource};
 use context_graph_mejepa_train::online_head_state::{
-    read_online_head_state_row, read_repeat_metric_row,
+    read_online_head_state_row, read_repeat_metric_row, OnlineHeadProtectionMode,
 };
 use context_graph_mejepa_train::replay_buffer::read_all_replay_rows;
 use context_graph_mejepa_train::skill_sequence_discovery::{
@@ -455,6 +455,9 @@ fn online_update_pass(report: &AbilityRefutationReport) -> bool {
         && update.label_skill_ability_membership_ids_agree
         && !update.flat_vector_concat_used
         && update.unrelated_cell_accuracy_delta.abs() <= 0.02
+        && update.protection_mode == OnlineHeadProtectionMode::ExactPanelKeyIsolation
+        && !update.claims_fisher_ewc_protection
+        && update.fisher_ewc_row_key.is_none()
 }
 
 fn no_forbidden_runtime_policy(label_context: &PredictionLabelContext) -> bool {
