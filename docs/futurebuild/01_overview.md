@@ -114,7 +114,7 @@ The substrate chain is **AST chunks → constellations → accepted labels → s
 | Skill → chunk reverse index | `CF_MEJEPA_SKILL_REVERSE_INDEX` (#414) | 10,579 |
 | Skill lifecycle audit | `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` (#414) | 128 |
 
-**The insight.** Every higher-level skill is a composition of accepted Level-0 labels which are deterministic functions of specific AST chunks' multi-embedder constellations. Therefore every named skill traces back to the exact source bytes that compose it, and every source byte can be queried for which named skills it participates in. The data exists; the first MCP exposure now exists for read-only navigation; runtime resolver consumption shipped under #418; the remaining work is graph/impact surfaces, transfer, pathway attachment, and mistake-loop MCP exposure.
+**The insight.** Every higher-level skill is a composition of accepted Level-0 labels which are deterministic functions of specific AST chunks' multi-embedder constellations. Therefore every named skill traces back to the exact source bytes that compose it, and every source byte can be queried for which named skills it participates in. The data exists; the first MCP exposure now exists for read-only navigation; runtime resolver consumption shipped under #418; mistake-loop MCP record/history/status shipped under #523; the remaining work is graph/impact surfaces, transfer, and pathway attachment.
 
 **Twelve capabilities this unlocks (per #417):**
 
@@ -313,10 +313,10 @@ Passing the 300×8 SWE-bench Lite corpus through 13 retrieval embedders (E1–E1
 | Level 0 chunk labels + Level 1 file constellations + Level 2 code-state constellations | ✅ SHIPPED 2026-05-19 | #413 closed |
 | Hierarchical naming on top of the 491-label registry (failure-mode skills + behavioral constellations à la ClipCannon's Action-Unit → Group → Skill → Constellation hierarchy) | ✅ SHIPPED 2026-05-20 — aiwonder FSV materialized Level-1/2/3 rows, added deterministic failure-coverage backstop skills, and proved holdout Fail named-mode coverage plus closest-exemplar agreement | #404 / TASK-PY-G-110 |
 | Docker oracle outcome ontology (deterministic test-phase vector labels: `FAIL_TO_PASS`, `PASS_TO_PASS`, `FAIL_TO_FAIL`, `PASS_TO_FAIL` + `docker_resolved_clean`, `target_fail_to_pass_tests_failed`, etc.) | Open — feeds Level-2 code-state outcome supervision | #411 / TASK-PY-G-116 |
-| Online mistake-driven consumption of the accepted registry | Core shipped 2026-05-20 — uses stable label/evidence IDs from #413 and ordered skill/ability signatures from #414/#418 as the mistake context; MCP wrappers remain #523 | #406 closed / #523 open |
-| MCP tools wrapping the CLI/FSV substrate for operator-side label inspection | Open — `mejepa_list_failure_modes`, `mejepa_label_failure_cluster`, `mejepa_explain_named_failure_mode`, `mejepa_failure_mode_coverage_audit` | #417 / TASK-PY-G-120 and #523 / TASK-PY-G-112B |
+| Online mistake-driven consumption of the accepted registry | ✅ SHIPPED 2026-05-20 — uses stable label/evidence IDs from #413 and ordered skill/ability signatures from #414/#418 as the mistake context; #523 exposes MCP record/history/status wrappers over the same RocksDB source of truth | #406 / #523 closed |
+| MCP tools wrapping the CLI/FSV substrate for operator-side label inspection | Open — `mejepa_list_failure_modes`, `mejepa_label_failure_cluster`, `mejepa_explain_named_failure_mode`, `mejepa_failure_mode_coverage_audit` | #417 / TASK-PY-G-120 |
 
-A binary prediction becomes actionable when the predictor returns `Fail + named_failure_mode + closest_exemplar`. The agent that consumes the prediction can act on a named mode the way a senior reviewer would; the operator can audit the prediction the way they would audit a named bug class. **The deterministic label substrate, hierarchical named-mode layer, and runtime commitment path are now full-corpus shipped; the remaining surface work is MCP/operator exposure through #417/#523.**
+A binary prediction becomes actionable when the predictor returns `Fail + named_failure_mode + closest_exemplar`. The agent that consumes the prediction can act on a named mode the way a senior reviewer would; the operator can audit the prediction the way they would audit a named bug class. **The deterministic label substrate, hierarchical named-mode layer, runtime commitment path, and mistake-loop MCP wrapper are now full-corpus shipped; the remaining surface work is broader operator navigation through #417.**
 
 ### 1.3 Online mistake-driven adaptation (the "isn't wrong in the future" property)
 
@@ -352,7 +352,7 @@ This is the analogue of PAPER §6.3's named-future-work item "cross-encoder tria
 
 | Process | Port / IPC | Technology | Purpose |
 |---|---|---|---|
-| `context-graph-mcp` server (`--mode stdio` or `--mode reality-loop`) | stdio JSON-RPC (default) or HTTP transport | Rust, tokio, async-trait | 201-tool MCP surface; daemon mode supervises long-lived state |
+| `context-graph-mcp` server (`--mode stdio` or `--mode reality-loop`) | stdio JSON-RPC (default) or HTTP transport | Rust, tokio, async-trait | 204-tool MCP surface; daemon mode supervises long-lived state |
 | `context-graph-cli` | CLI invocation | Rust | Operator commands: `mejepa observe`, `mejepa project-ingest`, `mejepa compression-progress`, `mejepa active-learning`, etc. |
 | ME-JEPA training daemon | embedded in CLI/binary | candle (CUDA 13.2), RocksDB | UTML training loop; reads `CF_MEJEPA_REPLAY_BUFFER`; writes `CF_MEJEPA_TRAIN_CERTS` |
 | Shift-log subscriber | tokio task | tokio, async streams | Tails JSONL shift log → materializes panels (`crates/context-graph-mejepa-shift-subscriber`) |
@@ -394,7 +394,7 @@ This is the analogue of PAPER §6.3's named-future-work item "cross-encoder tria
 
 | Crate | Role | LOC (src lib.rs only) |
 |---|---|---|
-| `context-graph-mcp` | MCP JSON-RPC server + 201 tools | 29 (lib) + 136K (main.rs) |
+| `context-graph-mcp` | MCP JSON-RPC server + 204 tools | 29 (lib) + 136K (main.rs) |
 | `context-graph-cli` | Operator CLI, helpers | 14 (lib) + 230 (main.rs) |
 | `context-graph-core` | Shared domain types | — |
 | `context-graph-storage` | RocksDB wrapper, teleological/code/causal CFs | 190 |
@@ -506,7 +506,7 @@ Every crate defines its own `Error` enum with `SCREAMING_SNAKE_CASE` code via `.
 
 ## 9. Major Subsystems (one paragraph each)
 
-**MCP server (`context-graph-mcp`).** JSON-RPC 2.0 stdio (default) or HTTP transport. 201 tool definitions exported by `tools/definitions/mod.rs::get_tool_definitions()`: 54 are `mejepa_*` (Phase 4/5/6/8/F/G/EK predictor + heal + observe + ship-gate dashboard + the first #417 chunk-skill linkage surface). Also: 39 `dynamicjepa_*` (5090jepa surface), 14 learning, 18 UTL learner-state, 6 constellation, 6 entity, 10 embedder, 5 core memory, 4 each for topic/file_watcher/sequence/causal/graph_link/contrastive, 3 each for typed_edges/provenance, plus singletons. Retired `reality_*` tools fail closed with `CCREALITY_ENGINE_RETIRED`. Reality-loop mode (`--mode reality-loop`) exposes the post-pivot Claude-Code-outer-loop subset only. Server enforces multi-agent isolation via path-policy + edit-lock (see `06_operations_and_fsv.md`).
+**MCP server (`context-graph-mcp`).** JSON-RPC 2.0 stdio (default) or HTTP transport. 204 tool definitions exported by `tools/definitions/mod.rs::get_tool_definitions()`: 57 are `mejepa_*` (Phase 4/5/6/8/F/G/EK predictor + heal + observe + ship-gate dashboard + the first #417 chunk-skill linkage surface + #523 mistake-loop record/history/status). Also: 39 `dynamicjepa_*` (5090jepa surface), 14 learning, 18 UTL learner-state, 6 constellation, 6 entity, 10 embedder, 5 core memory, 4 each for topic/file_watcher/sequence/causal/graph_link/contrastive, 3 each for typed_edges/provenance, plus singletons. Retired `reality_*` tools fail closed with `CCREALITY_ENGINE_RETIRED`. Reality-loop mode (`--mode reality-loop`) exposes the post-pivot Claude-Code-outer-loop subset only. Server enforces multi-agent isolation via path-policy + edit-lock (see `06_operations_and_fsv.md`).
 
 **Predictor (`context-graph-mejepa`).** CUDA-only production predictor. 73 modules covering claim graph (Q1), patch-similarity HNSW exemplars (Q3), Q4 security/perf/cost/accuracy heads, Q5 shift-log replay impact, multi-head VICReg + Huber loss, conformal calibration, OOD detection, claim-vs-reality reconciliation, project-ingest reality compiler, synthetic-stress evaluator, adversarial corpus, dynamic embedder registration, foundationality (PageRank on chunk/library/embedder dep graphs), label transfer audit, operator override surface. `compile()` and `compile_with_fingerprint_observation()` are the canonical Q1-Q5 entry points.
 

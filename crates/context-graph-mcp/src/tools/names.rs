@@ -209,6 +209,12 @@ pub const MEJEPA_CODE_TO_SKILL: &str = "mcp__cgreality__mejepa_code_to_skill";
 pub const MEJEPA_SKILL_SET_QUERY: &str = "mcp__cgreality__mejepa_skill_set_query";
 /// TASK-PY-G-120 chunk-skill coverage audit for active-learning gaps.
 pub const MEJEPA_SKILL_COVERAGE_AUDIT: &str = "mcp__cgreality__mejepa_skill_coverage_audit";
+/// TASK-PY-G-112B durable mistake-loop writer over online-head state.
+pub const MEJEPA_RECORD_MISTAKE: &str = "mcp__cgreality__mejepa_record_mistake";
+/// TASK-PY-G-112B durable mistake-loop history readback.
+pub const MEJEPA_MISTAKE_HISTORY: &str = "mcp__cgreality__mejepa_mistake_history";
+/// TASK-PY-G-112B online-head repeat-mistake status readback.
+pub const MEJEPA_MISTAKE_LOOP_STATUS: &str = "mcp__cgreality__mejepa_mistake_loop_status";
 /// Phase A bootstrap status readback from ME-JEPA RocksDB sources of truth.
 pub const MEJEPA_BOOTSTRAP_STATUS: &str = "mcp__cgreality__mejepa_bootstrap_status";
 // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========

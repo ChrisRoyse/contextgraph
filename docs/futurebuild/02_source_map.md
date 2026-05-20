@@ -27,7 +27,7 @@ Build profiles (`Cargo.toml:112-128`):
 
 | # | Crate | Cargo description | Purpose | Key submodules |
 |---|---|---|---|---|
-| 1 | `context-graph-mcp` | "MCP JSON-RPC server for Context Graph" | Stdio + HTTP JSON-RPC, 201 tools, daemon, deprecation gate | `adapters/`, `daemon.rs`, `daemon_validate.rs`, `deprecation.rs`, `handlers/`, `health_probe.rs`, `monitoring.rs`, `protocol.rs`, `server/`, `telemetry/`, `tools/`, `weights.rs` |
+| 1 | `context-graph-mcp` | "MCP JSON-RPC server for Context Graph" | Stdio + HTTP JSON-RPC, 204 tools, daemon, deprecation gate | `adapters/`, `daemon.rs`, `daemon_validate.rs`, `deprecation.rs`, `handlers/`, `health_probe.rs`, `monitoring.rs`, `protocol.rs`, `server/`, `telemetry/`, `tools/`, `weights.rs` |
 | 2 | `context-graph-cli` | (no description) | Operator CLI + helpers | `commands/`, `error.rs`, `governed_edit.rs`, `mcp_client.rs`, `mcp_helpers.rs` |
 | 3 | `context-graph-core` | "Core domain types, traits, and business logic for Context Graph" | Shared types: `CodeEntity`, `CodeLanguage`, etc. | per `types/` |
 | 4 | `context-graph-storage` | "Storage layer for Context Graph with RocksDB backend" | RocksDB wrapper + 19 teleological + 13 quantized + 5 code + 2 causal CFs | `code/`, `column_families.rs`, `dynamicjepa/`, `graph_edges/`, `indexes.rs`, `teleological/` |
@@ -307,7 +307,7 @@ Full FSV evidence index (327 directories on `/mnt/d/contextgraph/fsv/`) → `07_
 
 ## 12. Modules for the Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop
 
-Source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`). The Level-0 label compiler (#413), Level-1/2/3 hierarchy (#404), skill-sequence substrate (#414), runtime ability resolver slice (#418), and core online-head mistake consumer (#406) are shipped; #405 / #407 / #523 remain active follow-ons. All are additive to existing crates — no new top-level crate.
+Source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`). The Level-0 label compiler (#413), Level-1/2/3 hierarchy (#404), skill-sequence substrate (#414), runtime ability resolver slice (#418), core online-head mistake consumer (#406), and mistake-loop MCP wrapper (#523) are shipped; #405 / #407 remain active gate follow-ons. All are additive to existing crates — no new top-level crate.
 
 ### 12.1 Failure-mode labeling hierarchy
 
@@ -344,7 +344,7 @@ Source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.
 | `src/online_head_state.rs` + `online_head_state_keys.rs` + `online_head_state_support.rs` | `context-graph-mejepa-train` | Shipped key-local exact-panel online-head state. Updates only the matching `panel_signature_hash`, persists repeat metrics, reports `protection_mode=exactPanelKeyIsolation`, and rejects unbacked Fisher/EWC claims (#524). |
 | `src/ability_resolver_refutation.rs` + `ability_resolver_types.rs` + `ability_resolver_storage.rs` | `context-graph-mejepa-train` | Shipped live consumer bridge: ability refutations write mistake rows, replay rows, skill lifecycle audit rows, and online-head updates in one readback-verified path. |
 | `examples/task_py_g_112_mistake_loop_convergence_fsv.rs` | `context-graph-mejepa-train` | Shipped FSV harness: inject deliberate wrong prediction → mistake row written → exact panel signature yields corrected verdict → `mistake_repeat_rate` row byte-readable → unrelated-control delta ≤ 0.02 → unbacked Fisher/EWC claim rejected. |
-| `mejepa_record_mistake`, `mejepa_mistake_history`, `mejepa_mistake_loop_status` | `context-graph-mcp` | Planned MCP wrappers for the shipped storage/update primitive; tracked under #523. |
+| `src/handlers/tools/mejepa_mistake_loop_tools.rs` + `examples/task_py_g_112b_mistake_loop_mcp_tools_fsv.rs` | `context-graph-mcp` | Shipped #523 MCP wrappers: `mejepa_record_mistake`, `mejepa_mistake_history`, and `mejepa_mistake_loop_status`. aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-112b-mistake-loop-mcp-tools-fsv/run-20260520T113125Z/`, report sha256 `9a9e50b6d6fdf8d3e4b64ab6edd992802121eb13b17663bc0f11786446411ae7`. |
 
 ### 12.4 Q4 freeze (deprecation, no new module)
 

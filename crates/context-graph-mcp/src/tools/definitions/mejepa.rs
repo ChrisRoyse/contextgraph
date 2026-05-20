@@ -1325,6 +1325,91 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 }
             }),
         ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_RECORD_MISTAKE,
+            "TASK-PY-G-112B mistake-loop writer: persist a durable mistake row and replay row, then apply the exact-panel online-head update through RocksDB source-of-truth readback.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["panelSignatureHash", "mistakeRow", "replayRow", "baseVerdictBeforeUpdate", "nowUnixMs"],
+                "properties": {
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional #406/#418 RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_TRAIN_DB or CONTEXTGRAPH_MEJEPA_INFER_DB is used. Legacy /mnt/d roots fail closed."
+                    },
+                    "panelSignatureHash": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^[A-Za-z0-9:_-]+$"
+                    },
+                    "mistakeRow": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "description": "Bincode-compatible MistakeLogRow JSON. acceptedLabelIds must contain only live-safe labels; target-side oracle/docker/test labels fail closed."
+                    },
+                    "replayRow": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "description": "Bincode-compatible ReplayBufferRow JSON with label/skill/ability/membership signatures matching the mistake row."
+                    },
+                    "baseVerdictBeforeUpdate": {
+                        "type": "string",
+                        "enum": ["pass", "fail"]
+                    },
+                    "nowUnixMs": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "onlineHeadConfig": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "learningRate": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+                            "repeatWindowSize": {"type": "integer", "minimum": 1}
+                        }
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_MISTAKE_HISTORY,
+            "TASK-PY-G-112B mistake-loop history: read CF_MEJEPA_MISTAKE_LOG rows with optional replay-buffer and skill-lifecycle audit joins, preserving label/skill/ability/membership signatures.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "mistakeId": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "predictionIdHex": {"type": "string", "pattern": "^[0-9A-Fa-f]{32}$"},
+                    "codeStateKey": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "labelSignatureHash": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "skillSignatureHash": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 100},
+                    "includeReplayRows": {"type": "boolean", "default": true},
+                    "includeLifecycleAudits": {"type": "boolean", "default": true}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_MISTAKE_LOOP_STATUS,
+            "TASK-PY-G-112B online-head status: read the exact online_head:<panelSignatureHash> row, byte-readable repeat-mistake metrics, and source CF counts directly from RocksDB.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["panelSignatureHash"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "panelSignatureHash": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^[A-Za-z0-9:_-]+$"
+                    },
+                    "repeatMetricLimit": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 20}
+                }
+            }),
+        ),
     ]
 }
 

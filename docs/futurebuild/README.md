@@ -14,7 +14,7 @@ Authority hierarchy: **universal doctrine** (`docs2/AICodingAgentSuperPrompt.md`
 | 1 | [`01_overview.md`](01_overview.md) | First time touching the system. What it is, tech stack, entry points, subsystem summary, exception hierarchy. |
 | 2 | [`02_source_map.md`](02_source_map.md) | Need to know which crate / file owns what. Dependency graph. Binary targets. |
 | 3 | [`03_storage_schema.md`](03_storage_schema.md) | Touching durable state. 200+ RocksDB column families. aiwonder storage policy. |
-| 4 | [`04_mcp_tools.md`](04_mcp_tools.md) | Calling or implementing an MCP tool. 201 tools (54 are the `mejepa_*` product surface). |
+| 4 | [`04_mcp_tools.md`](04_mcp_tools.md) | Calling or implementing an MCP tool. 204 tools (57 are the `mejepa_*` product surface). |
 | 5 | [`05_predictor_pipeline.md`](05_predictor_pipeline.md) | Working on the predictor: embedders, instruments, panels, heads, TCT, corpus, training, heal. |
 | 6 | [`06_operations_and_fsv.md`](06_operations_and_fsv.md) | Operating the system: FSV protocol, runbook, DR, observability, test suite. |
 | 7 | [`07_results_and_benchmarks.md`](07_results_and_benchmarks.md) | Want the proof history: shipped task FSV evidence, ablation results, ship-gate progress, audit history. |
@@ -33,7 +33,7 @@ Plus:
 
 The 2026-05-19 reframe is the **only** product surface: binary predictions against ground truth (Q1 bytes/AST + Q2 Docker oracle + Q5 shift log), one explanation surface (Q3 named failure mode + closest exemplar), and **Q4 ambiguous surfaces removed entirely** (frozen as display-only historical data; ambiguous things have no free binary form against reality, so the system does not predict them). The MCP product shows the binary verdict + named explanation to the human/operator-agent; it does not choose the human's goal, does not infer hidden human intent (#397, #358), and does not predict heuristic-against-heuristic surfaces.
 
-Current ship-gate status: **0.866667** vs target 0.95 on Panel A; Panel B has no measurement yet (#405 will produce the first). Phase G critical path drives both. #404's hierarchy is now materialized and holdout-proved on aiwonder: 8 Level-1 groups, 157 Level-2 skills, 379 Level-3 constellations, 536 named predictions, `named_mode_coverage_on_fail=1.0`, and closest-exemplar oracle agreement `1.0` over 113/114 comparable holdout Fail rows. See `08_roadmap_and_open_work.md §3.−1` for the binary-doctrine ordering of epics #404 / #405 / #406 (core mistake loop closed; #523 MCP wrappers remain) / #407 / #408 / #409.
+Current ship-gate status: **0.866667** vs target 0.95 on Panel A; Panel B has no measurement yet (#405 will produce the first). Phase G critical path drives both. #404's hierarchy is now materialized and holdout-proved on aiwonder: 8 Level-1 groups, 157 Level-2 skills, 379 Level-3 constellations, 536 named predictions, `named_mode_coverage_on_fail=1.0`, and closest-exemplar oracle agreement `1.0` over 113/114 comparable holdout Fail rows. #406's core mistake loop and #523's MCP wrappers are closed: `mejepa_record_mistake`, `mejepa_mistake_history`, and `mejepa_mistake_loop_status` now expose the source-of-truth CFs. See `08_roadmap_and_open_work.md §3.−1` for the binary-doctrine ordering of epics #404 / #405 / #406/#523 / #407 / #408 / #409.
 
 ---
 

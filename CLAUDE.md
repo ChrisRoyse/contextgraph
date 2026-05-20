@@ -80,7 +80,7 @@ Beyond the binary primitive ME-JEPA exposes two derived operator-facing surfaces
 | 4 | **#414 / TASK-PY-G-118** — Skill-sequence discovery + chunk-skill reverse membership | ✅ CLOSED 2026-05-19 (synthetic + aiwonder FSV passed) |
 | 5 | **#407 / TASK-PY-G-113** — Threshold-calibration disjointness audit | OPEN p1 |
 | 6 | **#405 / TASK-PY-G-111** — Cross-panel triangulation Panel B (defends 0.95 against Goodhart) | OPEN p0; adds a hard new ship-gate requirement |
-| 7 | **#406 / TASK-PY-G-112** — Online mistake-driven loop (`mistake_repeat_rate ≤ 0.05`) | CLOSED 2026-05-20; MCP wrappers remain #523 |
+| 7 | **#406 / #523 / TASK-PY-G-112(B)** — Online mistake-driven loop (`mistake_repeat_rate ≤ 0.05`) | CLOSED 2026-05-20; core trainer path + MCP record/history/status wrappers shipped |
 | 7.5 | **#416 / TASK-PY-G-119** — Pathway exploration surface (binary-leaf butterfly-effect tree) | OPEN p1 |
 | 7.6 | **#417 / TASK-PY-G-120** — Bidirectional chunk↔skill linkage MCP surface | OPEN p1; first read-only slice shipped 2026-05-19 |
 | 7.7 | **#418 / TASK-PY-G-121** — Runtime hierarchical ability resolver | CLOSED 2026-05-19; aiwonder FSV passed |
