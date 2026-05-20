@@ -2,7 +2,9 @@ use anyhow::{ensure, Context, Result};
 use context_graph_mejepa::calibration::open_infer_rocksdb;
 use context_graph_mejepa::cli::{
     build_slot_preserving_cuda_compiler, write_json_0600, FIXTURE_COMPILER_EVIDENCE_CLASS,
-    SLOT_PRESERVING_CUDA_COMPILER_EVIDENCE_CLASS, TRAINED_CHECKPOINT_ATTESTATION_KEY,
+    NATIVE_ACTIVE_CONSTELLATION_ADAPTER_ATTESTATION_KEY,
+    SLOT_PRESERVING_CUDA_COMPILER_EVIDENCE_CLASS,
+    SLOT_PRESERVING_CUDA_TRAINED_COMPILER_EVIDENCE_CLASS, TRAINED_CHECKPOINT_ATTESTATION_KEY,
 };
 use context_graph_mejepa::conformal::{non_conformity_score, CalibrationExample};
 use context_graph_mejepa::{
@@ -25,6 +27,20 @@ use std::time::{Duration, SystemTime};
 const DEFAULT_FSV_ROOT: &str =
     "/zfs/archive/contextgraph/fsv/task-py-g-126-deterministic-harness-guard-fsv";
 const REPORT_NAME: &str = "deterministic_harness_guard_fsv.json";
+const TRAINED_CHECKPOINT_MANIFEST: &str =
+    "/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv/best.manifest.json";
+
+#[derive(Debug, Clone)]
+struct CheckpointEvidence {
+    manifest_path: PathBuf,
+    manifest_sha256: String,
+    checkpoint_sha256: String,
+    training_certificate_sha256: String,
+    native_adapter_manifest_sha256: String,
+    native_adapter_checkpoint_sha256: String,
+    native_adapter_training_certificate_sha256: String,
+    summary: Value,
+}
 
 fn main() -> Result<()> {
     let root = std::env::var("CG_MEJEPA_TASK_PY_G_126_FSV_ROOT")
@@ -40,6 +56,7 @@ fn main() -> Result<()> {
     let calibration = CalibrationStore::new(db.clone(), 30)?;
     seed_calibration(&calibration)?;
     let tct_seed = seed_tct_constellation(db.clone())?;
+    let checkpoint = read_checkpoint_evidence(Path::new(TRAINED_CHECKPOINT_MANIFEST))?;
     let store = Arc::new(RocksDbInferStore::new(db));
     let compiler = build_slot_preserving_cuda_compiler(
         repo_root.clone(),
@@ -49,6 +66,7 @@ fn main() -> Result<()> {
             outcome_set_max: 1,
             require_ood_calibrator: false,
             pause_state_path: None,
+            trained_checkpoint_manifest_path: Some(checkpoint.manifest_path.clone()),
             ..MeJepaInferConfig::default()
         },
     )?;
@@ -70,7 +88,14 @@ fn main() -> Result<()> {
         "prediction_persisted": persisted,
         "source_panel_sha_matches_predicted_panel": prediction.source_panel_sha == panel_sha(&predicted_panel),
         "prediction_has_real_compiler_attestation": prediction.granger_attestations.contains_key("MEJEPA_REAL_COMPILER"),
-        "prediction_has_untrained_checkpoint_blocker": prediction.granger_attestations.get(TRAINED_CHECKPOINT_ATTESTATION_KEY) == Some(&0.0),
+        "prediction_has_trained_checkpoint_attestation": prediction.granger_attestations.get(TRAINED_CHECKPOINT_ATTESTATION_KEY) == Some(&1.0),
+        "prediction_has_checkpoint_sha_attestation": prediction.granger_attestations.contains_key(&format!("checkpoint_sha256:{}", checkpoint.checkpoint_sha256)),
+        "prediction_has_checkpoint_manifest_sha_attestation": prediction.granger_attestations.contains_key(&format!("checkpoint_manifest_sha256:{}", checkpoint.manifest_sha256)),
+        "prediction_has_training_certificate_attestation": prediction.granger_attestations.contains_key(&format!("checkpoint_training_certificate_sha256:{}", checkpoint.training_certificate_sha256)),
+        "prediction_has_native_active_constellation_adapter_attestation": prediction.granger_attestations.get(NATIVE_ACTIVE_CONSTELLATION_ADAPTER_ATTESTATION_KEY) == Some(&1.0),
+        "prediction_has_native_active_constellation_adapter_manifest_sha_attestation": prediction.granger_attestations.contains_key(&format!("native_active_constellation_adapter_manifest_sha256:{}", checkpoint.native_adapter_manifest_sha256)),
+        "prediction_has_native_active_constellation_adapter_checkpoint_sha_attestation": prediction.granger_attestations.contains_key(&format!("native_active_constellation_adapter_checkpoint_sha256:{}", checkpoint.native_adapter_checkpoint_sha256)),
+        "prediction_has_native_active_constellation_adapter_training_certificate_sha_attestation": prediction.granger_attestations.contains_key(&format!("native_active_constellation_adapter_training_certificate_sha256:{}", checkpoint.native_adapter_training_certificate_sha256)),
         "prediction_lacks_fixture_skill_attestation": !prediction.granger_attestations.contains_key("skill:python_unit"),
         "predicted_panel_filled_mask": predicted_panel.filled_mask(),
         "t1_panel_sha": hex::encode(panel_sha(&panel_t1)),
@@ -91,7 +116,23 @@ fn main() -> Result<()> {
     let all_passed = persisted
         && truthy(&happy_path, "source_panel_sha_matches_predicted_panel")
         && truthy(&happy_path, "prediction_has_real_compiler_attestation")
-        && truthy(&happy_path, "prediction_has_untrained_checkpoint_blocker")
+        && truthy(&happy_path, "prediction_has_trained_checkpoint_attestation")
+        && truthy(&happy_path, "prediction_has_checkpoint_sha_attestation")
+        && truthy(&happy_path, "prediction_has_checkpoint_manifest_sha_attestation")
+        && truthy(&happy_path, "prediction_has_training_certificate_attestation")
+        && truthy(&happy_path, "prediction_has_native_active_constellation_adapter_attestation")
+        && truthy(
+            &happy_path,
+            "prediction_has_native_active_constellation_adapter_manifest_sha_attestation",
+        )
+        && truthy(
+            &happy_path,
+            "prediction_has_native_active_constellation_adapter_checkpoint_sha_attestation",
+        )
+        && truthy(
+            &happy_path,
+            "prediction_has_native_active_constellation_adapter_training_certificate_sha_attestation",
+        )
         && truthy(&happy_path, "prediction_lacks_fixture_skill_attestation")
         && source_scan["legacy_builder_name_occurrences"] == 0
         && source_scan["product_fixture_builder_occurrences"] == 0
@@ -109,7 +150,7 @@ fn main() -> Result<()> {
     let report = json!({
         "schema_version": 1,
         "task_id": "TASK-PY-G-126",
-        "issue": 426,
+        "issue": 438,
         "source_of_truth": {
             "db_path": db_path,
             "report_path": report_path,
@@ -117,13 +158,15 @@ fn main() -> Result<()> {
         },
         "evidence_classes": {
             "fixture_compiler": FIXTURE_COMPILER_EVIDENCE_CLASS,
-            "real_compiler": SLOT_PRESERVING_CUDA_COMPILER_EVIDENCE_CLASS,
+            "real_compiler_untrained": SLOT_PRESERVING_CUDA_COMPILER_EVIDENCE_CLASS,
+            "real_compiler": SLOT_PRESERVING_CUDA_TRAINED_COMPILER_EVIDENCE_CLASS,
             "fixture_ship_gate_countable": false,
             "real_compiler_uses_slot_preserving_cuda_path": true,
             "real_compiler_uses_persisted_tct_guard": true,
-            "trained_checkpoint_loaded": false,
-            "real_compiler_ship_gate_countable": false
+            "trained_checkpoint_loaded": true,
+            "real_compiler_ship_gate_countable": true
         },
+        "trained_checkpoint": checkpoint.summary,
         "tct_seed": tct_seed,
         "happy_path": happy_path,
         "source_scan": source_scan,
@@ -139,6 +182,100 @@ fn main() -> Result<()> {
     );
     println!("{}", serde_json::to_string_pretty(&readback_report)?);
     Ok(())
+}
+
+fn read_checkpoint_evidence(manifest_path: &Path) -> Result<CheckpointEvidence> {
+    ensure!(
+        manifest_path.starts_with("/zfs/archive/contextgraph/")
+            || manifest_path.starts_with("/zfs/hot/contextgraph/"),
+        "TASK-PY-G-126_TRAINED_CHECKPOINT_NOT_ON_AIWONDER_ZFS: {}",
+        manifest_path.display()
+    );
+    ensure!(
+        !manifest_path.starts_with("/mnt/d"),
+        "TASK-PY-G-126_TRAINED_CHECKPOINT_MNT_D_FORBIDDEN: {}",
+        manifest_path.display()
+    );
+    let manifest_bytes = fs::read(manifest_path).with_context(|| {
+        format!(
+            "read trained checkpoint manifest {}",
+            manifest_path.display()
+        )
+    })?;
+    let manifest_sha256 = sha256_hex(&manifest_bytes);
+    let manifest: Value = serde_json::from_slice(&manifest_bytes)?;
+    ensure!(
+        manifest["training_status"] == "trained",
+        "TASK-PY-G-126_TRAINED_CHECKPOINT_STATUS_INVALID"
+    );
+    let checkpoint_file = manifest["checkpoint_file"]
+        .as_str()
+        .context("checkpoint_file")?;
+    ensure!(
+        checkpoint_file == "best.safetensors",
+        "TASK-PY-G-126_TRAINED_CHECKPOINT_FILE_INVALID"
+    );
+    let checkpoint_path = manifest_path
+        .parent()
+        .context("checkpoint manifest parent")?
+        .join(checkpoint_file);
+    let checkpoint_bytes = fs::read(&checkpoint_path)
+        .with_context(|| format!("read trained checkpoint {}", checkpoint_path.display()))?;
+    let checkpoint_sha256 = sha256_hex(&checkpoint_bytes);
+    let manifest_checkpoint_sha256 = string_field(&manifest, "checkpoint_sha256")?;
+    ensure!(
+        checkpoint_sha256 == manifest_checkpoint_sha256,
+        "TASK-PY-G-126_TRAINED_CHECKPOINT_HASH_MISMATCH"
+    );
+    ensure!(
+        checkpoint_bytes.len() as u64 == manifest["checkpoint_bytes"].as_u64().unwrap_or_default(),
+        "TASK-PY-G-126_TRAINED_CHECKPOINT_BYTES_MISMATCH"
+    );
+    let training_certificate_sha256 = string_field(&manifest, "training_certificate_sha256")?;
+    let native_adapter = manifest["native_active_constellation_adapter"]
+        .as_object()
+        .context("native_active_constellation_adapter evidence missing")?;
+    let native_adapter_manifest_sha256 = native_adapter
+        .get("manifest_sha256")
+        .and_then(Value::as_str)
+        .context("native adapter manifest sha")?
+        .to_string();
+    let native_adapter_checkpoint_sha256 = native_adapter
+        .get("checkpoint_sha256")
+        .and_then(Value::as_str)
+        .context("native adapter checkpoint sha")?
+        .to_string();
+    let native_adapter_training_certificate_sha256 = native_adapter
+        .get("training_certificate_sha256")
+        .and_then(Value::as_str)
+        .context("native adapter training certificate sha")?
+        .to_string();
+    let summary = json!({
+        "manifest_path": manifest_path.display().to_string(),
+        "checkpoint_path": checkpoint_path.display().to_string(),
+        "manifest_sha256": manifest_sha256.clone(),
+        "checkpoint_sha256": checkpoint_sha256.clone(),
+        "checkpoint_bytes": checkpoint_bytes.len(),
+        "training_certificate_sha256": training_certificate_sha256.clone(),
+        "native_active_constellation_adapter": {
+            "manifest_sha256": native_adapter_manifest_sha256.clone(),
+            "checkpoint_sha256": native_adapter_checkpoint_sha256.clone(),
+            "training_certificate_sha256": native_adapter_training_certificate_sha256.clone(),
+        },
+        "training_status": "trained",
+        "source_issue": 441,
+        "source_task_id": "TASK-PY-G-127",
+    });
+    Ok(CheckpointEvidence {
+        manifest_path: manifest_path.to_path_buf(),
+        manifest_sha256,
+        checkpoint_sha256,
+        training_certificate_sha256,
+        native_adapter_manifest_sha256,
+        native_adapter_checkpoint_sha256,
+        native_adapter_training_certificate_sha256,
+        summary,
+    })
 }
 
 fn seed_calibration(calibration: &CalibrationStore) -> Result<()> {
@@ -426,6 +563,13 @@ fn is_product_runtime_path(path: &str) -> bool {
 
 fn truthy(value: &Value, key: &str) -> bool {
     value.get(key).and_then(Value::as_bool) == Some(true)
+}
+
+fn string_field(value: &Value, key: &str) -> Result<String> {
+    value[key]
+        .as_str()
+        .map(ToString::to_string)
+        .with_context(|| format!("missing string field {key}"))
 }
 
 fn seed_tct_constellation(db: Arc<rocksdb::DB>) -> Result<Value> {
