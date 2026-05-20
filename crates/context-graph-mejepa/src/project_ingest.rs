@@ -5,7 +5,7 @@ use crate::error::MejepaInferError;
 use crate::project_cache::{
     blake3_hex, project_role_for_path, ChunkRole, EmbedderVersion, ProjectCacheConfig,
     ProjectCacheError, ProjectEmbeddingInput, ProjectEmbeddingProvider, ProjectEmbeddingRow,
-    ProjectEmbeddingVectorFormat, ProjectFileScope, ProjectMerkleCache,
+    ProjectEmbeddingRowParts, ProjectEmbeddingVectorFormat, ProjectFileScope, ProjectMerkleCache,
 };
 use crate::store::RocksDbInferStore;
 use crate::types::{
@@ -164,17 +164,17 @@ fn project_embedding_row(
         "model_id": model_id,
     })
     .to_string();
-    Ok(ProjectEmbeddingRow::new(
-        chunk.chunk_key.clone(),
-        embedder.embedder_id.clone(),
-        embedder.embedder_version.clone(),
-        format,
+    Ok(ProjectEmbeddingRow::new(ProjectEmbeddingRowParts {
+        chunk_key: chunk.chunk_key.clone(),
+        embedder_id: embedder.embedder_id.clone(),
+        embedder_version: embedder.embedder_version.clone(),
+        vector_format: format,
         dimension,
-        bytes,
+        vector_blob: bytes,
         model_id,
-        "multi_array_provider_slot_preserving",
+        precision_class: "multi_array_provider_slot_preserving".to_string(),
         provenance,
-    ))
+    }))
 }
 
 fn encode_project_embedding_slice(
@@ -189,7 +189,7 @@ fn encode_project_embedding_slice(
             if !values.iter().all(|value| value.is_finite()) {
                 return Err("dense vector contains NaN or Inf".to_string());
             }
-            let mut bytes = Vec::with_capacity(values.len() * std::mem::size_of::<f32>());
+            let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
             for value in values {
                 bytes.extend_from_slice(&value.to_le_bytes());
             }

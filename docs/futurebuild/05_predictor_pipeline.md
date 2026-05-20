@@ -27,7 +27,7 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, the **inference path** in `crates
 - `validate_aiwonder_checkpoint_path` rejects non-aiwonder roots
 - `trained_weight_sha256 != initial_weight_sha256` invariant on every manifest
 
-**P0 blocker for further gate work:** the real-input rebaseline now exists and is below gate: raw holdout `prediction_oracle_correlation = 0.5255988836`, calibrated holdout `0.6631761193` from `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T155822Z/`. The previous `0.866667` ship-gate measurement remains invalidated. Next gate work must lift mixed-cell ranking on real slot-preserving signals and remove the compile-error carrier workaround (#531), not repeat the synthetic-input path. See `01_overview.md §1.7` and `08_roadmap_and_open_work.md §0.5`.
+**P0 blocker for further gate work:** the real-input rebaseline now exists and is below gate: raw holdout `prediction_oracle_correlation = 0.4843192995`, calibrated holdout `0.6631761193` from `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T161430Z/`. The previous `0.866667` ship-gate measurement remains invalidated. `compile_error` now uses first-class invalid-source panels instead of the carrier workaround; next gate work must lift mixed-cell ranking on real slot-preserving signals (#534), not repeat the synthetic-input path. See `01_overview.md §1.7` and `08_roadmap_and_open_work.md §0.5`.
 
 ---
 

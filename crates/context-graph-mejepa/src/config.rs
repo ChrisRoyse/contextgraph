@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -306,7 +306,7 @@ impl MeJepaInferConfig {
 
 pub(crate) fn validate_aiwonder_checkpoint_path(
     field: &'static str,
-    path: &PathBuf,
+    path: &Path,
 ) -> Result<(), PredictorError> {
     if path.as_os_str().is_empty() {
         return Err(PredictorError::ConfigInvalid {

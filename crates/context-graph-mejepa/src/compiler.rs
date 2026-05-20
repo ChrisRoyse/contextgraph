@@ -8,18 +8,19 @@ use context_graph_mejepa_instruments::materialize::{
     materialize_panel, PanelVectorInput, TimeStep,
 };
 use context_graph_mejepa_instruments::{
-    CodeInstrumentInput, DiffInstrumentInput, EAstInstrument, ECfgInstrument, ECommitMsgInstrument,
-    EDataFlowInstrument, EDiffInstrument, EOracleInstrument, EProblemInstrument,
-    EReasoningInstrument, ERuntimeInstrument, EStaticAnalysisInstrument, ETestInstrument,
-    ETraceInstrument, ETypeGraphInstrument, EWitnessInstrument, Instrument, InstrumentSlot,
-    OracleVerdict as InstrumentOracleVerdict, Panel, ReasoningEvent, ReasoningInput, RuntimeInput,
-    ScalarInput, ScalarsInstrument, StaticAnalysisInput, TextInstrumentInput, TraceInput,
-    WitnessChainInput, CANONICAL_WITNESS_FORMAT_VERSION,
+    CodeInstrumentInput, Diagnostic, DiagnosticSeverity, DiffInstrumentInput, EAstInstrument,
+    ECfgInstrument, ECommitMsgInstrument, EDataFlowInstrument, EDiffInstrument, EOracleInstrument,
+    EProblemInstrument, EReasoningInstrument, ERuntimeInstrument, EStaticAnalysisInstrument,
+    ETestInstrument, ETraceInstrument, ETypeGraphInstrument, EWitnessInstrument, Instrument,
+    InstrumentSlot, OracleVerdict as InstrumentOracleVerdict, Panel, ReasoningEvent,
+    ReasoningInput, RuntimeInput, ScalarInput, ScalarsInstrument, StaticAnalysisInput,
+    TextInstrumentInput, TraceInput, WitnessChainInput, CANONICAL_WITNESS_FORMAT_VERSION,
 };
 use context_graph_mejepa_tct::{
     gtau_check, EmbedderId as TctEmbedderId, EntityType as TctEntityType, Language as TctLanguage,
     MutationCategory as TctMutationCategory, TctConstellation,
 };
+use ruff_text_size::Ranged;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -1422,6 +1423,8 @@ fn materialize_inference_panel(
 struct InferencePanelInputs {
     before_code: CodeInstrumentInput,
     after_code: CodeInstrumentInput,
+    before_invalid_source: Option<InvalidSourceDiagnostic>,
+    after_invalid_source: Option<InvalidSourceDiagnostic>,
     diff: DiffInstrumentInput,
     tests: TextInstrumentInput,
     problem: TextInstrumentInput,
@@ -1435,6 +1438,20 @@ struct InferencePanelInputs {
     scalars: ScalarInput,
 }
 
+#[derive(Debug, Clone)]
+struct InvalidSourceDiagnostic {
+    side: SourceSide,
+    language: String,
+    path: String,
+    kind: String,
+    detail: String,
+    line: u32,
+    column: u32,
+    source_len_bytes: usize,
+    source_line_count: usize,
+    empty_source: bool,
+}
+
 fn build_inference_panel_inputs(
     patch: &PatchBundle,
     context: &TaskContext,
@@ -1443,6 +1460,18 @@ fn build_inference_panel_inputs(
     let path = panel_source_path(patch);
     let before_source = panel_source_text(patch, SourceSide::Before)?;
     let after_source = panel_source_text(patch, SourceSide::After)?;
+    let before_code = CodeInstrumentInput {
+        language: language.clone(),
+        path: path.clone(),
+        source: before_source.clone(),
+    };
+    let after_code = CodeInstrumentInput {
+        language: language.clone(),
+        path: path.clone(),
+        source: after_source.clone(),
+    };
+    let before_invalid_source = invalid_source_diagnostic(&before_code, SourceSide::Before);
+    let after_invalid_source = invalid_source_diagnostic(&after_code, SourceSide::After);
     let tests_text = context
         .tests
         .iter()
@@ -1457,17 +1486,26 @@ fn build_inference_panel_inputs(
         .map(|hunk| hunk.path.clone())
         .collect::<BTreeSet<_>>()
         .len();
+    let static_analysis = if let Some(diagnostic) = &after_invalid_source {
+        StaticAnalysisInput {
+            source_text: after_source.clone(),
+            diagnostics: vec![static_analysis_diagnostic(diagnostic)],
+            churn_30d: None,
+            evidence_unavailable: false,
+        }
+    } else {
+        StaticAnalysisInput {
+            source_text: after_source.clone(),
+            diagnostics: Vec::new(),
+            churn_30d: None,
+            evidence_unavailable: true,
+        }
+    };
     Ok(InferencePanelInputs {
-        before_code: CodeInstrumentInput {
-            language: language.clone(),
-            path: path.clone(),
-            source: before_source.clone(),
-        },
-        after_code: CodeInstrumentInput {
-            language: language.clone(),
-            path: path.clone(),
-            source: after_source.clone(),
-        },
+        before_code,
+        after_code,
+        before_invalid_source,
+        after_invalid_source,
         diff: DiffInstrumentInput {
             language: language.clone(),
             path: path.clone(),
@@ -1506,12 +1544,7 @@ fn build_inference_panel_inputs(
             events: Vec::new(),
             evidence_unavailable: true,
         },
-        static_analysis: StaticAnalysisInput {
-            source_text: after_source.clone(),
-            diagnostics: Vec::new(),
-            churn_30d: None,
-            evidence_unavailable: true,
-        },
+        static_analysis,
         runtime: RuntimeInput {
             wall_time_ms: 0,
             peak_rss_bytes: 0,
@@ -1564,23 +1597,35 @@ fn vectors_for(
     );
     match time_step {
         TimeStep::T0 => {
-            push_code_vectors(&mut vectors, &inputs.before_code)?;
+            push_code_vectors(
+                &mut vectors,
+                &inputs.before_code,
+                inputs.before_invalid_source.as_ref(),
+            )?;
             vectors.push(encode_vector(&ETestInstrument, &inputs.tests)?);
             vectors.push(encode_vector(&EProblemInstrument, &inputs.problem)?);
         }
         TimeStep::T1 => {
-            push_code_vectors(&mut vectors, &inputs.after_code)?;
+            push_code_vectors(
+                &mut vectors,
+                &inputs.after_code,
+                inputs.after_invalid_source.as_ref(),
+            )?;
             vectors.push(encode_vector(&ETestInstrument, &inputs.tests)?);
-            vectors.push(encode_vector(&EDiffInstrument, &inputs.diff)?);
+            push_diff_vector(&mut vectors, inputs)?;
             vectors.push(encode_vector(&EWitnessInstrument, &inputs.witness)?);
             vectors.push(encode_vector(&EProblemInstrument, &inputs.problem)?);
             vectors.push(encode_vector(&ECommitMsgInstrument, &inputs.commit)?);
         }
         TimeStep::T2 => {
-            push_code_vectors(&mut vectors, &inputs.after_code)?;
+            push_code_vectors(
+                &mut vectors,
+                &inputs.after_code,
+                inputs.after_invalid_source.as_ref(),
+            )?;
             vectors.push(encode_vector(&ETestInstrument, &inputs.tests)?);
             vectors.push(encode_vector(&ETraceInstrument, &inputs.trace)?);
-            vectors.push(encode_vector(&EDiffInstrument, &inputs.diff)?);
+            push_diff_vector(&mut vectors, inputs)?;
             vectors.push(encode_vector(&EWitnessInstrument, &inputs.witness)?);
             vectors.push(encode_vector(&EOracleInstrument, &inputs.oracle)?);
             vectors.push(encode_vector(&EProblemInstrument, &inputs.problem)?);
@@ -1600,11 +1645,50 @@ fn vectors_for(
 fn push_code_vectors(
     vectors: &mut Vec<PanelVectorInput>,
     code: &CodeInstrumentInput,
+    invalid_source: Option<&InvalidSourceDiagnostic>,
 ) -> Result<(), MejepaInferError> {
+    if let Some(diagnostic) = invalid_source {
+        for slot in [
+            InstrumentSlot::EAst,
+            InstrumentSlot::ECfg,
+            InstrumentSlot::EDataFlow,
+            InstrumentSlot::ETypeGraph,
+        ] {
+            vectors.push(PanelVectorInput {
+                slot,
+                vector: invalid_source_vector(slot, diagnostic, None)?,
+            });
+        }
+        return Ok(());
+    }
     vectors.push(encode_vector(&EAstInstrument, code)?);
     vectors.push(encode_vector(&ECfgInstrument, code)?);
     vectors.push(encode_vector(&EDataFlowInstrument, code)?);
     vectors.push(encode_vector(&ETypeGraphInstrument, code)?);
+    Ok(())
+}
+
+fn push_diff_vector(
+    vectors: &mut Vec<PanelVectorInput>,
+    inputs: &InferencePanelInputs,
+) -> Result<(), MejepaInferError> {
+    let primary_invalid = inputs
+        .after_invalid_source
+        .as_ref()
+        .or(inputs.before_invalid_source.as_ref());
+    if let Some(primary) = primary_invalid {
+        let secondary = if matches!(primary.side, SourceSide::After) {
+            inputs.before_invalid_source.as_ref()
+        } else {
+            inputs.after_invalid_source.as_ref()
+        };
+        vectors.push(PanelVectorInput {
+            slot: InstrumentSlot::EDiff,
+            vector: invalid_source_vector(InstrumentSlot::EDiff, primary, secondary)?,
+        });
+        return Ok(());
+    }
+    vectors.push(encode_vector(&EDiffInstrument, &inputs.diff)?);
     Ok(())
 }
 
@@ -1630,29 +1714,15 @@ fn panel_source_text(patch: &PatchBundle, side: SourceSide) -> Result<String, Me
             SourceSide::Before => &patch.ast_diff.hunks[0].before,
             SourceSide::After => &patch.ast_diff.hunks[0].after,
         };
-        if source.trim().is_empty() {
-            return Err(MejepaInferError::InvalidInput {
-                field: format!("ast_diff.hunks[0].{}", source_side_field(side)),
-                detail: "source text is empty; production panels require real source evidence"
-                    .to_string(),
-            });
-        }
         return Ok(source.clone());
     }
 
     let mut out = String::new();
-    for (idx, hunk) in patch.ast_diff.hunks.iter().enumerate() {
+    for hunk in &patch.ast_diff.hunks {
         let source = match side {
             SourceSide::Before => &hunk.before,
             SourceSide::After => &hunk.after,
         };
-        if source.trim().is_empty() {
-            return Err(MejepaInferError::InvalidInput {
-                field: format!("ast_diff.hunks[{idx}].{}", source_side_field(side)),
-                detail: "source text is empty; production panels require real source evidence"
-                    .to_string(),
-            });
-        }
         out.push_str(&format!(
             "\n# MEJEPA_BEGIN_HUNK path={}\n",
             path_text(&hunk.path)
@@ -1666,11 +1736,192 @@ fn panel_source_text(patch: &PatchBundle, side: SourceSide) -> Result<String, Me
     Ok(out)
 }
 
-fn source_side_field(side: SourceSide) -> &'static str {
-    match side {
-        SourceSide::Before => "before",
-        SourceSide::After => "after",
+fn invalid_source_diagnostic(
+    code: &CodeInstrumentInput,
+    side: SourceSide,
+) -> Option<InvalidSourceDiagnostic> {
+    let source_line_count = code.source.lines().count().max(1);
+    let empty_source = code.source.trim().is_empty();
+    if empty_source {
+        return Some(InvalidSourceDiagnostic {
+            side,
+            language: code.language.clone(),
+            path: code.path.clone(),
+            kind: "empty_source".to_string(),
+            detail: "source text is empty or whitespace-only".to_string(),
+            line: 1,
+            column: 1,
+            source_len_bytes: code.source.len(),
+            source_line_count,
+            empty_source: true,
+        });
     }
+    if code.language != "python" {
+        return None;
+    }
+    match ruff_python_parser::parse_module(&code.source) {
+        Ok(_) => None,
+        Err(err) => {
+            let start_byte = err.range().start().to_usize();
+            Some(InvalidSourceDiagnostic {
+                side,
+                language: code.language.clone(),
+                path: code.path.clone(),
+                kind: sanitize_diagnostic_text(&format!("{:?}", err.error)),
+                detail: sanitize_diagnostic_text(&err.to_string()),
+                line: line_for_byte(code.source.as_bytes(), start_byte),
+                column: column_for_byte(code.source.as_bytes(), start_byte),
+                source_len_bytes: code.source.len(),
+                source_line_count,
+                empty_source: false,
+            })
+        }
+    }
+}
+
+fn static_analysis_diagnostic(diagnostic: &InvalidSourceDiagnostic) -> Diagnostic {
+    Diagnostic {
+        tool: "ruff_python_parser".to_string(),
+        severity: DiagnosticSeverity::Error,
+        category: diagnostic.kind.clone(),
+        line: diagnostic.line.max(1),
+        column: diagnostic.column.max(1),
+    }
+}
+
+fn invalid_source_vector(
+    slot: InstrumentSlot,
+    primary: &InvalidSourceDiagnostic,
+    secondary: Option<&InvalidSourceDiagnostic>,
+) -> Result<Vec<f32>, MejepaInferError> {
+    let mut out = vec![0.0_f32; slot.dim()];
+    out[0] = 10.0;
+    out[1] = source_side_feature(primary.side);
+    out[2] = bounded_ratio(primary.line as f32, primary.source_line_count as f32);
+    out[3] = bounded_ratio(primary.column as f32, 240.0);
+    out[4] = bounded_ratio(primary.source_len_bytes as f32, 5_000_000.0);
+    out[5] = bounded_ratio(primary.source_line_count as f32, 100_000.0);
+    out[6] = if primary.empty_source { 1.0 } else { 0.0 };
+    out[7] = if primary.kind == "empty_source" {
+        0.0
+    } else {
+        1.0
+    };
+    out[8] = invalid_source_slot_feature(slot);
+    if let Some(secondary) = secondary {
+        out[9] = 1.0;
+        out[10] = source_side_feature(secondary.side);
+        out[11] = bounded_ratio(secondary.line as f32, secondary.source_line_count as f32);
+        out[12] = bounded_ratio(secondary.column as f32, 240.0);
+        out[13] = if secondary.empty_source { 1.0 } else { 0.0 };
+    }
+    add_invalid_source_hashes(&mut out, primary, 1.0);
+    if let Some(secondary) = secondary {
+        add_invalid_source_hashes(&mut out, secondary, 0.5);
+    }
+    normalize_l2(&mut out);
+    if let Some((idx, value)) = out.iter().enumerate().find(|(_, value)| !value.is_finite()) {
+        return Err(MejepaInferError::NanDetected {
+            nan_source: "invalid_source_vector".to_string(),
+            detail: format!("slot={slot:?} vector[{idx}] is non-finite: {value}"),
+        });
+    }
+    Ok(out)
+}
+
+fn add_invalid_source_hashes(out: &mut [f32], diagnostic: &InvalidSourceDiagnostic, weight: f32) {
+    add_feature_bin(out, 32, 32, &diagnostic.language, weight);
+    add_feature_bin(out, 64, 64, &diagnostic.path, weight);
+    add_feature_bin(out, 128, 64, &diagnostic.kind, weight);
+    add_feature_bin(out, 192, 64, &diagnostic.detail, weight);
+}
+
+fn add_feature_bin(out: &mut [f32], offset: usize, span: usize, key: &str, weight: f32) {
+    if offset >= out.len() || span == 0 {
+        return;
+    }
+    let available = span.min(out.len() - offset);
+    let idx = offset + (fnv1a64(key.as_bytes()) as usize % available);
+    out[idx] += weight;
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in bytes {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x100_0000_01b3);
+    }
+    hash
+}
+
+fn bounded_ratio(value: f32, denom: f32) -> f32 {
+    if denom <= 0.0 {
+        0.0
+    } else {
+        (value / denom).clamp(0.0, 1.0)
+    }
+}
+
+fn normalize_l2(out: &mut [f32]) {
+    let norm = out
+        .iter()
+        .map(|value| (*value as f64) * (*value as f64))
+        .sum::<f64>()
+        .sqrt();
+    if norm > 0.0 {
+        for value in out {
+            *value = (*value as f64 / norm) as f32;
+        }
+    }
+}
+
+fn source_side_feature(side: SourceSide) -> f32 {
+    match side {
+        SourceSide::Before => 0.25,
+        SourceSide::After => 0.75,
+    }
+}
+
+fn invalid_source_slot_feature(slot: InstrumentSlot) -> f32 {
+    match slot {
+        InstrumentSlot::EAst => 0.1,
+        InstrumentSlot::ECfg => 0.2,
+        InstrumentSlot::EDataFlow => 0.3,
+        InstrumentSlot::ETypeGraph => 0.4,
+        InstrumentSlot::EDiff => 0.5,
+        _ => 0.0,
+    }
+}
+
+fn line_for_byte(source: &[u8], byte: usize) -> u32 {
+    let bounded = byte.min(source.len());
+    source[..bounded]
+        .iter()
+        .filter(|byte| **byte == b'\n')
+        .count()
+        .saturating_add(1)
+        .min(u32::MAX as usize) as u32
+}
+
+fn column_for_byte(source: &[u8], byte: usize) -> u32 {
+    let bounded = byte.min(source.len());
+    let line_start = source[..bounded]
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map(|idx| idx + 1)
+        .unwrap_or(0);
+    bounded
+        .saturating_sub(line_start)
+        .saturating_add(1)
+        .min(u32::MAX as usize) as u32
+}
+
+fn sanitize_diagnostic_text(value: &str) -> String {
+    let sanitized = value
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect::<String>();
+    sanitized.trim().chars().take(240).collect()
 }
 
 fn panel_source_path(patch: &PatchBundle) -> String {
@@ -2554,19 +2805,53 @@ mod tests {
     }
 
     #[test]
-    fn empty_minimal_source_fails_closed() {
+    fn empty_minimal_source_materializes_invalid_source_panel() {
         let (mut patch, context) = sample_patch_context("change answer increment");
         patch.ast_diff.hunks[0].before.clear();
-        let err = materialize_inference_panels(&patch, &context).unwrap_err();
-        assert_eq!(err.code(), "MEJEPA_INFER_INVALID_INPUT");
+        patch.ast_diff.hunks[0].after.clear();
+        let (panel_t0, panel_t1, panel_t2) =
+            materialize_inference_panels(&patch, &context).unwrap();
+        assert!(panel_t0.slot(InstrumentSlot::EAst)[0] > 0.90);
+        assert!(panel_t1.slot(InstrumentSlot::EAst)[0] > 0.90);
+        assert!(panel_t1.slot(InstrumentSlot::EDiff)[0] > 0.90);
+        assert!(panel_t2.slot(InstrumentSlot::EStaticAnalysis)[0] > 0.0);
     }
 
     #[test]
-    fn malformed_source_fails_closed_through_instrument_encoder() {
+    fn malformed_source_materializes_invalid_source_panel() {
         let (mut patch, context) = sample_patch_context("change answer increment");
         patch.ast_diff.hunks[0].after = "def broken(:\n".to_string();
-        let err = materialize_inference_panels(&patch, &context).unwrap_err();
-        assert_eq!(err.code(), "MEJEPA_INFER_INSTRUMENT");
+        let (_, panel_t1, panel_t2) = materialize_inference_panels(&patch, &context).unwrap();
+        assert!(panel_t1.slot(InstrumentSlot::EAst)[0] > 0.90);
+        assert!(panel_t1.slot(InstrumentSlot::EDiff)[0] > 0.90);
+        assert!(panel_t2.slot(InstrumentSlot::EStaticAnalysis)[0] > 0.0);
+    }
+
+    #[test]
+    fn code_instruments_still_reject_malformed_source_directly() {
+        let input = CodeInstrumentInput {
+            language: "python".to_string(),
+            path: "src/broken.py".to_string(),
+            source: "def broken(:\n".to_string(),
+        };
+        let err = EAstInstrument.encode(&input).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+    }
+
+    #[test]
+    fn mixed_validity_multifile_patch_materializes_invalid_source_panel() {
+        let (mut patch, context) = sample_patch_context("change answer increment");
+        patch.ast_diff.hunks.push(DiffHunk {
+            path: PathBuf::from("src/broken.py"),
+            pre_sha: sha256_bytes(b"def ok():\n    return 1\n"),
+            post_sha: sha256_bytes(b"def broken(:\n"),
+            before: "def ok():\n    return 1\n".to_string(),
+            after: "def broken(:\n".to_string(),
+        });
+        let (_, panel_t1, panel_t2) = materialize_inference_panels(&patch, &context).unwrap();
+        assert!(panel_t1.slot(InstrumentSlot::EAst)[0] > 0.90);
+        assert!(panel_t1.slot(InstrumentSlot::EDiff)[0] > 0.90);
+        assert!(panel_t2.slot(InstrumentSlot::EStaticAnalysis)[0] > 0.0);
     }
 
     #[test]

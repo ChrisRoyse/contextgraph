@@ -302,6 +302,7 @@ fn pattern_from_real_lift(
         },
         active_learning_recommended: true,
         relationship_pattern_id: None,
+        topology_features: None,
         slot_pair_evidence: vec![pair],
         source: PAIRWISE_OBSERVATIONS.to_string(),
     };
@@ -532,12 +533,12 @@ fn discover_real_pairwise_lift(
         .context("no real pairwise lift found in #396 artifacts")
 }
 
-fn load_training_row_labels(
-    path: &Path,
-) -> Result<(
+type TrainingRowLabels = (
     BTreeMap<String, bool>,
     BTreeMap<String, BTreeMap<String, f32>>,
-)> {
+);
+
+fn load_training_row_labels(path: &Path) -> Result<TrainingRowLabels> {
     let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     let mut labels = BTreeMap::new();
     let mut slot_scores = BTreeMap::new();

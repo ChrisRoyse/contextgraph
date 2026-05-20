@@ -114,11 +114,12 @@ impl Instrument for EStaticAnalysisInstrument {
 }
 
 fn validate_input(input: &StaticAnalysisInput) -> InstrumentResult<()> {
-    if input.source_text.trim().is_empty() {
+    let empty_source = input.source_text.trim().is_empty();
+    if empty_source && input.diagnostics.is_empty() {
         return Err(InstrumentError::invalid(
             "input.source_text",
             "static-analysis input has empty source_text",
-            "capture the analyzed source text before encoding E_StaticAnalysis",
+            "capture the analyzed source text or attach an invalid-source diagnostic before encoding E_StaticAnalysis",
         ));
     }
     if input.source_text.chars().any(|ch| ch == '\0') {
@@ -149,7 +150,7 @@ fn validate_input(input: &StaticAnalysisInput) -> InstrumentResult<()> {
         }
         return Ok(());
     }
-    let line_count = input.source_text.lines().count();
+    let line_count = input.source_text.lines().count().max(1);
     for (idx, diagnostic) in input.diagnostics.iter().enumerate() {
         validate_text("input.diagnostics[i].tool", idx, &diagnostic.tool)?;
         validate_text("input.diagnostics[i].category", idx, &diagnostic.category)?;

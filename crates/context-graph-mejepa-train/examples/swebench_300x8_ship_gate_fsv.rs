@@ -15,7 +15,7 @@ use context_graph_mejepa::{
     Language, MeJepaPredictor, PatchBundle, PredictorConfig, TaskContext, TaskEnvironment, TaskId,
     TestId, PANEL_DIM,
 };
-use context_graph_mejepa_instruments::Panel;
+use context_graph_mejepa_instruments::{InstrumentSlot, Panel};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -271,7 +271,8 @@ fn run() -> Result<()> {
         },
         "execute_and_inspect": {
             "prediction_path": "real patch bytes -> PatchBundle -> materialize_inference_panels -> MeJepaPredictor::forward -> checkpoint-backed OracleHead",
-            "patch_source_encoding": "unified diff removed/added text is embedded as JSON-escaped string constants in parseable Python carrier modules before code instruments run; patch_sha256 remains verified against original patch bytes",
+            "patch_source_encoding": "non-compile-error rows still use parseable carrier modules for diff-fragment measurement continuity; compile_error rows use raw removed/added source and the first-class invalid-source diagnostic panel path; patch_sha256 remains verified against original patch bytes",
+            "compile_error_carrier_workaround_used": false,
             "synthetic_seed_features_used": false,
             "echo_predictor_used": false,
             "category_majority_oracle_used": false,
@@ -291,7 +292,8 @@ fn run() -> Result<()> {
             "statistical_power_blockers": final_power_blockers,
             "rolling_window_blockers": rolling_blockers,
             "rolling_window_statistical_power_blockers": rolling_power_blockers,
-            "sample_predictions": predictions.iter().take(16).collect::<Vec<_>>()
+            "sample_predictions": predictions.iter().take(16).collect::<Vec<_>>(),
+            "invalid_source_edge_case_audit": invalid_source_edge_case_audit()?
         },
         "edge_case_audit": {
             "source_audit": source_audit,
@@ -783,7 +785,8 @@ fn patch_bundle_from_entry(entry: &CorpusEntry, patch_path: &Path) -> Result<Pat
         observed_sha
     );
     let patch_sha = parse_sha256_prefixed(&entry.patch_sha256)?;
-    let ast_diff = parse_unified_diff(&patch_text)?;
+    let use_parseable_carrier = entry.category != "compile_error";
+    let ast_diff = parse_unified_diff(&patch_text, use_parseable_carrier)?;
     let commit_message = format!(
         "task_id={} repo={} category={} note={}",
         entry.task_id,
@@ -834,6 +837,122 @@ fn task_context_from_entry(entry: &CorpusEntry) -> Result<TaskContext> {
     Ok(context)
 }
 
+fn invalid_source_edge_case_audit() -> Result<Value> {
+    let context = edge_case_context()?;
+    let cases = vec![
+        (
+            "valid_python",
+            edge_case_patch(
+                "src/valid.py",
+                "def answer():\n    return 1\n",
+                "def answer():\n    return 2\n",
+                b"valid-python-edge",
+            )?,
+        ),
+        (
+            "malformed_python",
+            edge_case_patch(
+                "src/broken.py",
+                "def answer():\n    return 1\n",
+                "def broken(:\n",
+                b"malformed-python-edge",
+            )?,
+        ),
+        (
+            "empty_patch",
+            edge_case_patch("src/empty.py", "", "", b"empty-python-edge")?,
+        ),
+        (
+            "mixed_validity_multifile",
+            PatchBundle::try_new(
+                AstDiff {
+                    hunks: vec![
+                        DiffHunk {
+                            path: PathBuf::from("src/valid.py"),
+                            pre_sha: sha256_bytes(b"def answer():\n    return 1\n"),
+                            post_sha: sha256_bytes(b"def answer():\n    return 2\n"),
+                            before: "def answer():\n    return 1\n".to_string(),
+                            after: "def answer():\n    return 2\n".to_string(),
+                        },
+                        DiffHunk {
+                            path: PathBuf::from("src/broken.py"),
+                            pre_sha: sha256_bytes(b"def ok():\n    return 1\n"),
+                            post_sha: sha256_bytes(b"def broken(:\n"),
+                            before: "def ok():\n    return 1\n".to_string(),
+                            after: "def broken(:\n".to_string(),
+                        },
+                    ],
+                },
+                valid_witness_segment(),
+                "invalid-source edge case mixed validity".to_string(),
+                sha256_bytes(b"mixed-validity-edge"),
+            )?,
+        ),
+    ];
+    let mut rows = Vec::new();
+    for (case, patch) in cases {
+        let (panel_t0, panel_t1, panel_t2) = materialize_inference_panels(&patch, &context)?;
+        rows.push(json!({
+            "case": case,
+            "panel_t0_sha256": hex::encode(panel_sha(&panel_t0)),
+            "panel_t1_sha256": hex::encode(panel_sha(&panel_t1)),
+            "panel_t2_sha256": hex::encode(panel_sha(&panel_t2)),
+            "t1_ast_invalid_source_sentinel": panel_t1.slot(InstrumentSlot::EAst)[0],
+            "t1_diff_invalid_source_sentinel": panel_t1.slot(InstrumentSlot::EDiff)[0],
+            "t2_static_analysis_error_density": panel_t2.slot(InstrumentSlot::EStaticAnalysis)[0],
+            "materialized": true
+        }));
+    }
+    Ok(json!({
+        "schema_version": 1,
+        "proves": [
+            "valid Python materializes through real code instruments",
+            "malformed Python materializes through invalid-source diagnostic slots",
+            "empty patches materialize as explicit invalid-source evidence",
+            "mixed-validity multi-file patches materialize as aggregate invalid-source evidence"
+        ],
+        "cases": rows
+    }))
+}
+
+fn edge_case_context() -> Result<TaskContext> {
+    let context = TaskContext {
+        task_id: TaskId("task-py-g-131-invalid-source-edge-cases".to_string()),
+        session_id: [13; 16],
+        language: Language::Python,
+        problem_statement: "prove first-class invalid-source panelization".to_string(),
+        tests: vec![TestId(
+            "tests/test_invalid_source.py::test_panelizes".to_string(),
+        )],
+        environment: TaskEnvironment {
+            repo_root: PathBuf::from(CORPUS_DIR),
+            python_version: Some("3.11".to_string()),
+            os: "linux".to_string(),
+        },
+        claim_graph: None,
+        skill_citations: vec![],
+    };
+    context.validate()?;
+    Ok(context)
+}
+
+fn edge_case_patch(path: &str, before: &str, after: &str, seed: &[u8]) -> Result<PatchBundle> {
+    Ok(PatchBundle::try_new(
+        AstDiff {
+            hunks: vec![DiffHunk {
+                path: PathBuf::from(path),
+                pre_sha: sha256_bytes(before.as_bytes()),
+                post_sha: sha256_bytes(after.as_bytes()),
+                before: before.to_string(),
+                after: after.to_string(),
+            }],
+        },
+        valid_witness_segment(),
+        format!("invalid-source edge case {}", String::from_utf8_lossy(seed)),
+        sha256_bytes(seed),
+    )?)
+}
+
 #[derive(Debug, Default)]
 struct ParsedFilePatch {
     path: Option<PathBuf>,
@@ -841,12 +960,12 @@ struct ParsedFilePatch {
     after: Vec<String>,
 }
 
-fn parse_unified_diff(text: &str) -> Result<AstDiff> {
+fn parse_unified_diff(text: &str, use_parseable_carrier: bool) -> Result<AstDiff> {
     let mut hunks = Vec::new();
     let mut current = ParsedFilePatch::default();
     for line in text.lines() {
         if line.starts_with("diff --git ") {
-            push_parsed_file(&mut hunks, &mut current)?;
+            push_parsed_file(&mut hunks, &mut current, use_parseable_carrier)?;
             current.path = parse_diff_git_path(line);
             continue;
         }
@@ -866,10 +985,10 @@ fn parse_unified_diff(text: &str) -> Result<AstDiff> {
             current.after.push(context.to_string());
         }
     }
-    push_parsed_file(&mut hunks, &mut current)?;
+    push_parsed_file(&mut hunks, &mut current, use_parseable_carrier)?;
     if hunks.is_empty() {
-        let before = python_patch_carrier("patch.diff", "before", "")?;
-        let after = python_patch_carrier("patch.diff", "after", text)?;
+        let before = encode_patch_side("patch.diff", "before", "", use_parseable_carrier)?;
+        let after = encode_patch_side("patch.diff", "after", text, use_parseable_carrier)?;
         hunks.push(DiffHunk {
             path: PathBuf::from("patch.diff"),
             pre_sha: sha256_bytes(before.as_bytes()),
@@ -881,7 +1000,11 @@ fn parse_unified_diff(text: &str) -> Result<AstDiff> {
     Ok(AstDiff { hunks })
 }
 
-fn push_parsed_file(hunks: &mut Vec<DiffHunk>, current: &mut ParsedFilePatch) -> Result<()> {
+fn push_parsed_file(
+    hunks: &mut Vec<DiffHunk>,
+    current: &mut ParsedFilePatch,
+    use_parseable_carrier: bool,
+) -> Result<()> {
     if current.path.is_none() && current.before.is_empty() && current.after.is_empty() {
         return Ok(());
     }
@@ -892,8 +1015,8 @@ fn push_parsed_file(hunks: &mut Vec<DiffHunk>, current: &mut ParsedFilePatch) ->
     let raw_before = current.before.join("\n");
     let raw_after = current.after.join("\n");
     let display_path = path.display().to_string();
-    let before = python_patch_carrier(&display_path, "before", &raw_before)?;
-    let after = python_patch_carrier(&display_path, "after", &raw_after)?;
+    let before = encode_patch_side(&display_path, "before", &raw_before, use_parseable_carrier)?;
+    let after = encode_patch_side(&display_path, "after", &raw_after, use_parseable_carrier)?;
     hunks.push(DiffHunk {
         path,
         pre_sha: sha256_bytes(before.as_bytes()),
@@ -904,6 +1027,19 @@ fn push_parsed_file(hunks: &mut Vec<DiffHunk>, current: &mut ParsedFilePatch) ->
     current.before.clear();
     current.after.clear();
     Ok(())
+}
+
+fn encode_patch_side(
+    path: &str,
+    side: &str,
+    body: &str,
+    use_parseable_carrier: bool,
+) -> Result<String> {
+    if use_parseable_carrier {
+        python_patch_carrier(path, side, body)
+    } else {
+        Ok(body.to_string())
+    }
 }
 
 fn python_patch_carrier(path: &str, side: &str, body: &str) -> Result<String> {

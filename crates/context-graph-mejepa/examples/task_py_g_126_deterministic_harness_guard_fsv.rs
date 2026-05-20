@@ -309,7 +309,7 @@ fn seed_calibration(calibration: &CalibrationStore) -> Result<()> {
 fn missing_calibration_edge(root: &Path) -> Result<Value> {
     let edge_root = root.join("missing-calibration-edge");
     fs::create_dir_all(&edge_root)?;
-    let db = open_infer_rocksdb(&edge_root.join("infer.rocksdb"))?;
+    let db = open_infer_rocksdb(edge_root.join("infer.rocksdb"))?;
     seed_tct_constellation(db.clone())?;
     let calibration = CalibrationStore::new(db.clone(), 30)?;
     let store = Arc::new(RocksDbInferStore::new(db));
@@ -345,7 +345,7 @@ fn missing_calibration_edge(root: &Path) -> Result<Value> {
 fn missing_checkpoint_edge(root: &Path) -> Result<Value> {
     let edge_root = root.join("missing-checkpoint-edge");
     fs::create_dir_all(&edge_root)?;
-    let db = open_infer_rocksdb(&edge_root.join("infer.rocksdb"))?;
+    let db = open_infer_rocksdb(edge_root.join("infer.rocksdb"))?;
     let calibration = CalibrationStore::new(db.clone(), 30)?;
     seed_calibration(&calibration)?;
     seed_tct_constellation(db.clone())?;
@@ -377,7 +377,7 @@ fn stub_checkpoint_edge(root: &Path) -> Result<Value> {
     let edge_root = root.join("stub-checkpoint-edge");
     let model_root = edge_root.join("models");
     fs::create_dir_all(&model_root)?;
-    let db = open_infer_rocksdb(&edge_root.join("infer.rocksdb"))?;
+    let db = open_infer_rocksdb(edge_root.join("infer.rocksdb"))?;
     let calibration = CalibrationStore::new(db.clone(), 30)?;
     seed_calibration(&calibration)?;
     seed_tct_constellation(db.clone())?;

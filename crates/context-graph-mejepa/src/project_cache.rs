@@ -265,30 +265,33 @@ pub struct ProjectEmbeddingRow {
     pub provenance: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct ProjectEmbeddingRowParts {
+    pub chunk_key: String,
+    pub embedder_id: String,
+    pub embedder_version: String,
+    pub vector_format: ProjectEmbeddingVectorFormat,
+    pub dimension: u32,
+    pub vector_blob: Vec<u8>,
+    pub model_id: String,
+    pub precision_class: String,
+    pub provenance: String,
+}
+
 impl ProjectEmbeddingRow {
-    pub fn new(
-        chunk_key: impl Into<String>,
-        embedder_id: impl Into<String>,
-        embedder_version: impl Into<String>,
-        vector_format: ProjectEmbeddingVectorFormat,
-        dimension: u32,
-        vector_blob: Vec<u8>,
-        model_id: impl Into<String>,
-        precision_class: impl Into<String>,
-        provenance: impl Into<String>,
-    ) -> Self {
-        let output_sha256 = sha256_hex(&vector_blob);
+    pub fn new(parts: ProjectEmbeddingRowParts) -> Self {
+        let output_sha256 = sha256_hex(&parts.vector_blob);
         Self {
-            chunk_key: chunk_key.into(),
-            embedder_id: embedder_id.into(),
-            embedder_version: embedder_version.into(),
-            vector_format,
-            dimension,
-            vector_blob,
-            model_id: model_id.into(),
-            precision_class: precision_class.into(),
+            chunk_key: parts.chunk_key,
+            embedder_id: parts.embedder_id,
+            embedder_version: parts.embedder_version,
+            vector_format: parts.vector_format,
+            dimension: parts.dimension,
+            vector_blob: parts.vector_blob,
+            model_id: parts.model_id,
+            precision_class: parts.precision_class,
             output_sha256,
-            provenance: provenance.into(),
+            provenance: parts.provenance,
         }
     }
 }
@@ -1774,7 +1777,7 @@ fn persist_embedding_rows(
         }
         *per_embedder.entry(row.embedder_id.clone()).or_insert(0) += 1;
     }
-    for (chunk_key, embedder_id, embedder_version) in expected.difference(&seen) {
+    if let Some((chunk_key, embedder_id, embedder_version)) = expected.difference(&seen).next() {
         return Err(ProjectCacheError::EmbeddingOutputMissing {
             chunk_key: chunk_key.clone(),
             embedder_id: embedder_id.clone(),
@@ -2296,17 +2299,17 @@ mod tests {
                     for offset in 0..dimension {
                         bytes.extend_from_slice(&(seed + offset as f32).to_le_bytes());
                     }
-                    rows.push(ProjectEmbeddingRow::new(
-                        chunk.chunk_key.clone(),
-                        embedder.embedder_id.clone(),
-                        embedder.embedder_version.clone(),
-                        format,
+                    rows.push(ProjectEmbeddingRow::new(ProjectEmbeddingRowParts {
+                        chunk_key: chunk.chunk_key.clone(),
+                        embedder_id: embedder.embedder_id.clone(),
+                        embedder_version: embedder.embedder_version.clone(),
+                        vector_format: format,
                         dimension,
-                        bytes,
-                        format!("fixture-model-{}", embedder.embedder_id),
-                        "fixture_real_provider_dense_f32",
-                        format!("fixture provenance for {}", chunk.content_sha256),
-                    ));
+                        vector_blob: bytes,
+                        model_id: format!("fixture-model-{}", embedder.embedder_id),
+                        precision_class: "fixture_real_provider_dense_f32".to_string(),
+                        provenance: format!("fixture provenance for {}", chunk.content_sha256),
+                    }));
                 }
             }
             Ok(rows)

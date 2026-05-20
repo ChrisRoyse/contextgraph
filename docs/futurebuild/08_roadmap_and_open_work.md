@@ -14,17 +14,16 @@ The prediction contract is **three binary surfaces against ground truth** (Q1 by
 
 Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-seeded synthetic vectors instead of calling real `E*Instrument` encoders. Six P0 fixes (#422 / #424 / #426 / #437 / #438 / #441 / #452, all closed 2026-05-19/20) replaced the broken pipeline. **The previous `0.866667` ship-gate measurement is INVALID** — it was the deterministic fixed-point output of a hash-derived predictor, not a real measurement of model quality on real code semantics. See `01_overview.md §1.7` and `07_results_and_benchmarks.md §0` for forensic detail.
 
-**Current real-input state (#533):** aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T155822Z/` reports raw holdout `prediction_oracle_correlation = 0.5255988836` and calibrated holdout `prediction_oracle_correlation = 0.6631761193`. Calibration is fitted only on the 240-row calibration split and improves Brier/ECE, but the gate still fails. The next lift is mixed-cell ranking (#534), first-class invalid-source panelization (#531), and cross-panel Goodhart defense (#405), not another synthetic-input rebaseline.
+**Current real-input state (#531):** aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T161430Z/` reports raw holdout `prediction_oracle_correlation = 0.4843192995` and calibrated holdout `prediction_oracle_correlation = 0.6631761193`. Calibration is fitted only on the 240-row calibration split and improves Brier/ECE; `compile_error` rows now use raw invalid-source diagnostic panels instead of the carrier workaround. The next lift is mixed-cell ranking (#534) and cross-panel Goodhart defense (#405), not another synthetic-input rebaseline.
 
 **Remaining revalidation queue:**
 
-1. Replace the `compile_error` carrier workaround with first-class invalid-source panels (#531).
-2. Train or refit rank-aware mixed-cell predictors for `known_good`, `delete_test_call`, `off_by_one`, `over_engineer`, `subtle_flip`, and `swap_variable` from real slot-preserving labels (#534).
-3. Re-run `λ_inv` bidirectional ablation against real inputs.
-4. Re-run #393 / #398 ablation suites against real inputs.
-5. Re-validate #129 OOD serving gate + #130 Gτ guard audit + #404 holdout coverage against real-input predictions.
+1. Train or refit rank-aware mixed-cell predictors for `known_good`, `delete_test_call`, `off_by_one`, `over_engineer`, `subtle_flip`, and `swap_variable` from real slot-preserving labels (#534).
+2. Re-run `λ_inv` bidirectional ablation against real inputs.
+3. Re-run #393 / #398 ablation suites against real inputs.
+4. Re-validate #129 OOD serving gate + #130 Gτ guard audit + #404 holdout coverage against real-input predictions.
 
-Tracked under #529 plus the measured blockers #531 and #534. **All issues listed in §3 below assume the real-input rebaseline exists unless explicitly noted otherwise.**
+Tracked under #529 plus the measured blocker #534. **All issues listed in §3 below assume the real-input rebaseline exists unless explicitly noted otherwise.**
 
 ---
 
@@ -41,7 +40,7 @@ prediction_oracle_correlation ≥ 0.95
   AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
 
-**Last holdout measurement:** `0.6631761193` calibrated (`0.5255988836` raw) from `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T155822Z/`. Previous `0.866667` figure (from `/mnt/d/...ship-gate-fsv/ship-gate-fsv.json`) was measured against the synthetic-vector inference path and is invalidated.
+**Last holdout measurement:** `0.6631761193` calibrated (`0.4843192995` raw) from `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T161430Z/`. Previous `0.866667` figure (from `/mnt/d/...ship-gate-fsv/ship-gate-fsv.json`) was measured against the synthetic-vector inference path and is invalidated.
 
 **Gap to ship:** `0.2868238807` against the calibrated real-input Panel A measurement, plus four-window stability and Panel B cross-checks.
 
