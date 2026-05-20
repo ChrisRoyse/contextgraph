@@ -177,7 +177,7 @@ The architectural correction from flat-panel projection (#385) to slot-preservin
 
 ### 5.3 Evidence-weighted ordering (#383, pinned context) — recheck required
 
-#383 says gate-active issue order must be evidence-weighted, not vision-weighted. **The "evidence" that drove the recent reordering was from synthetic-input ablations and is itself invalidated.** Re-rank from the `0.7942190170` real Panel A measurement; with #393/#398/#546 remeasured and not promoted, #536 only a small hard-negative weighting lift, and #547 passing disjointness, the top of the queue is deeper mixed-cell ranking repair plus Panel B / anti-Goodhart validation.
+#383 says gate-active issue order must be evidence-weighted, not vision-weighted. **The "evidence" that drove the recent reordering was from synthetic-input ablations and is itself invalidated.** Re-rank from the `0.7942190170` real Panel A measurement; with #393/#398/#546 remeasured and not promoted, #536 only a small hard-negative weighting lift, and #547 passing disjointness, the top of the queue is #548 deeper mixed-cell ranking repair plus Panel B / anti-Goodhart validation.
 
 ### 5.4 The labeling layer is the meaning surface (#404 / #413 / #414 / #418) — substrate stands
 

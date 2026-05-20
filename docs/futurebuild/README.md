@@ -61,9 +61,9 @@ Human review of AI patches becomes statistically unjustified once `prediction_or
 
 ## Critical-path one-liner (read `08` for detail)
 
-**P0 blocker:** close the remaining mixed-cell rank deficits exposed by #536 (`off_by_one`, `subtle_flip`, `swap_variable`) after #547 proved the current rank-lift calibration path is split-disjoint and not holdout-selected.
+**P0 blocker:** close the remaining mixed-cell rank deficits exposed by #536 (`off_by_one`, `subtle_flip`, `swap_variable`) under #548 after #547 proved the current rank-lift calibration path is split-disjoint and not holdout-selected.
 
-Critical path: `#404 hierarchy` ✅ → `#413 labels` ✅ → `#414 skills` ✅ → `#418 resolver` ✅ → `#406/#523 mistake loop + MCP` ✅ → `#535 mixed-cell rank lift on real labels` ✅ → `#537 rebaseline #393/#398/λ_inv ablations` ✅ → `#536 weak-cell repair` ✅ → `#547 post-#536 calibration disjointness` ✅ → `#511 entropy loss` (p1) → **`#405 Panel B`** (blocked p0) → deeper mixed-cell repair → 0.95 ship gate.
+Critical path: `#404 hierarchy` ✅ → `#413 labels` ✅ → `#414 skills` ✅ → `#418 resolver` ✅ → `#406/#523 mistake loop + MCP` ✅ → `#535 mixed-cell rank lift on real labels` ✅ → `#537 rebaseline #393/#398/λ_inv ablations` ✅ → `#536 weak-cell repair` ✅ → `#547 post-#536 calibration disjointness` ✅ → **`#548 mixed-cell ranking repair`** → `#511 entropy loss` (p1) → **`#405 Panel B`** (blocked p0) → 0.95 ship gate.
 
 Post-0.95: pathway exploration (#416), skill-linkage MCP (#417), info-physics formalization (#511/#512/#514), creativity engine (#516-#520).
 

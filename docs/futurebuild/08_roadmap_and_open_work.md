@@ -18,7 +18,7 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-se
 
 **Remaining revalidation queue:**
 
-1. Continue targeted mixed-cell ranking repair for `off_by_one`, `subtle_flip`, and `swap_variable`; #536 improved some weak-cell diagnostics but did not unsaturate threshold behavior enough for the gate.
+1. Continue targeted mixed-cell ranking repair under #548 for `off_by_one`, `subtle_flip`, and `swap_variable`; #536 improved some weak-cell diagnostics but did not unsaturate threshold behavior enough for the gate.
 2. Run Panel B / anti-Goodhart validation (#405/#521) when the model-backed Panel B blocker clears.
 3. Re-validate #129 OOD serving gate + #130 Gτ guard audit + #404 holdout coverage against real-input predictions.
 
@@ -91,11 +91,12 @@ Per pinned context #383 (LOCKED): gate-active issue order is **evidence-weighted
 | 5 | **#418** runtime hierarchical ability resolver | ✅ closed 2026-05-19 | Pure resolver logic — REAL |
 | 6 | **#406 / #523** online mistake loop + MCP | ✅ closed 2026-05-20 | Machinery shipped; needs real predictor mistakes to validate `mistake_repeat_rate ≤ 0.05` convergence |
 | 7 | **#547** post-#536 calibration-disjointness revalidation | ✅ complete 2026-05-20 | Proves #536 selected `tau=20.0, fail_boost=1.5` on calibration only; train/calibration/holdout row and feature-member overlaps are zero; #413 label-lineage hashes stable; target-side labels excluded. |
-| 8 | **#511** information-entropy auxiliary loss | OPEN p1 | Re-justify against the `0.7942190170` real baseline before training. |
-| 9 | **#405** cross-panel triangulation Panel B | OPEN p0, blocked | Even hitting 0.95 on Panel A is not ship-eligible without Panel B. Defends 0.95 against encoder-matched Goodhart. |
-| 10 | **#379** multi-file structural patch holdout | OPEN p1 | Compositional generalization |
-| 11 | **#392** temporal constellation trajectory features | OPEN p1 | Exact-state movement across windows |
-| 12 | **#409** paper revision | OPEN p2 | Aligns PAPER §1 with binary doctrine + adds synthetic-vector remediation section. Not gate-blocking. |
+| 8 | **#548** post-#547 mixed-cell ranking repair | OPEN p0 | Directly targets `off_by_one`, `subtle_flip`, and `swap_variable` without split leakage or holdout-selected calibration. |
+| 9 | **#511** information-entropy auxiliary loss | OPEN p1 | Re-justify against the `0.7942190170` real baseline before training. |
+| 10 | **#405** cross-panel triangulation Panel B | OPEN p0, blocked | Even hitting 0.95 on Panel A is not ship-eligible without Panel B. Defends 0.95 against encoder-matched Goodhart. |
+| 11 | **#379** multi-file structural patch holdout | OPEN p1 | Compositional generalization |
+| 12 | **#392** temporal constellation trajectory features | OPEN p1 | Exact-state movement across windows |
+| 13 | **#409** paper revision | OPEN p2 | Aligns PAPER §1 with binary doctrine + adds synthetic-vector remediation section. Not gate-blocking. |
 
 ### 3.1 Slot-preserving constellation architecture (#385 parent — substantially shipped)
 
@@ -254,7 +255,7 @@ Only candidates passing BOTH are promoted. Rejected candidates write a `CF_MEJEP
 
 **Activation rule:** these are *contingency plans* for if the current Phase G queue + creativity engine fail to close the remaining ship-gate gap. **They are NOT to be started until:**
 
-1. The current queue concludes (#529 rebaseline → #535 rank lift → #536 weak-cell repair → #547 calibration disjointness → #511 entropy loss → #405 Panel B → #379 multi-file holdout → #392 temporal features).
+1. The current queue concludes (#529 rebaseline → #535 rank lift → #536 weak-cell repair → #547 calibration disjointness → #548 mixed-cell repair → #511 entropy loss → #405 Panel B → #379 multi-file holdout → #392 temporal features).
 2. A post-queue gap analysis has been run and concludes the remaining gap is not closable with the current architecture + corpus + label substrate.
 3. The operator explicitly re-prioritizes any of these (or all) from `p3` based on what gap analysis identifies as needed.
 
