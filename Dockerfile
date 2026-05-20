@@ -11,7 +11,7 @@ ENV CUDA_COMPUTE_CAP=120
 ENV CONTEXT_GRAPH_ENV=development
 ENV CONTEXT_GRAPH_BIN=/usr/local/bin/context-graph
 ENV ONET_TEXT_ZIP=/data/onet/db_30_2_text.zip
-ENV SYSTEM_SPECS=/workspace/docs2/systemspecs.md
+ENV SYSTEM_SPECS=/workspace/docs2/aiwonder.md
 ENV FIXTURES_ROOT=/workspace/configs/dynamicjepa
 ENV MEJEPA_REPRO_RUN_ROOT=/work/mejepa_reproduce_runs
 
@@ -21,7 +21,7 @@ COPY --chmod=0755 target/debug/context-graph /usr/local/bin/context-graph
 COPY --chmod=0755 reproduce.sh /workspace/reproduce.sh
 COPY configs/dynamicjepa /workspace/configs/dynamicjepa
 COPY reference /workspace/reference
-COPY docs2/systemspecs.md /workspace/docs2/systemspecs.md
+COPY docs2/aiwonder.md /workspace/docs2/aiwonder.md
 
 ENTRYPOINT ["/workspace/reproduce.sh"]
 CMD ["--help"]

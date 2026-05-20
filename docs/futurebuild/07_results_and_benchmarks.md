@@ -298,7 +298,7 @@ Closed `type:decision` issues are immutable architectural decisions per doctrine
 | Patch-similarity HNSW (usearch over 4-signature concatenation) | top-1 same-failure-mode accuracy 1.0 on holdout | TASK-PY-G-042 sha256 `177cc3a7…` |
 | MCP+Storage test suite (2026-02-26 snapshot) | 1,179 passed, 0 failed | memory note |
 | Full workspace test (2026-02-23 snapshot, pre-Phase G expansion) | 6,353 passed, 0 failed | memory note |
-| Quantized embedder benchmarks (TASK-EMB-022) | 13 quantized CFs benched via `crates/context-graph-benchmark/[[bin]]` `maxsim_bench`, `causal_relationships_bench`, `hybrid_effectiveness_bench`, `e11_quality_bench` | per Cargo.toml |
+| Quantized embedder benchmarks (TASK-EMB-022) | Historical pre-pivot benchmark record. The old `maxsim_bench`, `causal_relationships_bench`, `hybrid_effectiveness_bench`, and `e11_quality_bench` names are no longer live Cargo targets. The retained `context-graph-benchmark` crate is excluded from default builds and is diagnostic only; current bins are documented in `02_source_map.md`. | historical / not Phase G ship-gate evidence |
 
 ---
 

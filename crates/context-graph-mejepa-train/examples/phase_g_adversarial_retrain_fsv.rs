@@ -6,9 +6,9 @@ use anyhow::{anyhow, ensure, Context, Result};
 use candle_core::{Device, Tensor};
 use context_graph_mejepa::gates::valid_witness_segment;
 use context_graph_mejepa::{
-    build_deterministic_compiler, fixture_patch_context, open_infer_rocksdb, sha256_bytes, AstDiff,
-    CalibrationExample, CalibrationStore, DiffHunk, Language, MeJepaInferConfig, PatchBundle,
-    RocksDbInferStore, TaskContext, TaskEnvironment, TaskId, TestId, VerifyVerdict,
+    build_fixture_deterministic_compiler, fixture_patch_context, open_infer_rocksdb, sha256_bytes,
+    AstDiff, CalibrationExample, CalibrationStore, DiffHunk, Language, MeJepaInferConfig,
+    PatchBundle, RocksDbInferStore, TaskContext, TaskEnvironment, TaskId, TestId, VerifyVerdict,
 };
 use context_graph_mejepa_train::cert::{open_train_rocksdb, CF_MEJEPA_TRAIN_CERTS};
 use context_graph_mejepa_train::eval::holdout::{
@@ -235,7 +235,7 @@ fn run_synthetic_prediction_cases(fsv_root: &Path) -> Result<Value> {
         BTreeMap::new(),
     )?;
     let store = Arc::new(RocksDbInferStore::new(db));
-    let compiler = build_deterministic_compiler(
+    let compiler = build_fixture_deterministic_compiler(
         repo_root.clone(),
         store,
         calibration,

@@ -1,8 +1,10 @@
 use crate::error::{TrainerError, TrainerErrorCode};
+use context_graph_mejepa::{
+    export_trained_predictor_checkpoint, ExportedPredictorCheckpoint, MeJepaPredictor,
+    PredictorCheckpointExportMetadata,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const PROMOTION_EPSILON: f32 = 0.005;
@@ -26,22 +28,54 @@ pub fn promote_best(
     if current_agreement - best_so_far < promotion_threshold {
         return Ok(None);
     }
-    std::fs::create_dir_all(checkpoint_dir)?;
-    let final_path = checkpoint_dir.join("best.safetensors");
-    let tmp_path = checkpoint_dir.join("best.safetensors.tmp");
-    let bytes =
-        format!("MEJEPA_BEST_STUB_V1\nstep={current_step}\nagreement={current_agreement:.6}\n");
-    {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&tmp_path)?;
-        file.write_all(bytes.as_bytes())?;
-        file.sync_all()?;
+    Err(TrainerError::new(
+        TrainerErrorCode::MejepaTrainCheckpointCorrupt,
+        "text-stub best.safetensors promotion is retired; call promote_trained_predictor_checkpoint with a trained MeJepaPredictor",
+    )
+    .with_context(json!({
+        "checkpoint_dir": checkpoint_dir,
+        "current_step": current_step,
+        "current_agreement": current_agreement,
+        "best_so_far": best_so_far,
+        "promotion_threshold": promotion_threshold,
+        "retired_stub_magic": "MEJEPA_BEST_STUB_V1"
+    })))
+}
+
+pub fn promote_trained_predictor_checkpoint(
+    checkpoint_dir: &Path,
+    current_step: u64,
+    current_agreement: f32,
+    best_so_far: f32,
+    promotion_threshold: f32,
+    predictor: &MeJepaPredictor,
+    metadata: PredictorCheckpointExportMetadata,
+) -> Result<Option<ExportedPredictorCheckpoint>, TrainerError> {
+    if current_agreement - best_so_far < promotion_threshold {
+        return Ok(None);
     }
-    std::fs::rename(&tmp_path, &final_path)?;
-    Ok(Some(final_path))
+    if current_step == 0 || metadata.payload_step == 0 {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainCheckpointCorrupt,
+            "trained checkpoint promotion requires a non-zero training step",
+        )
+        .with_context(json!({
+            "current_step": current_step,
+            "metadata_payload_step": metadata.payload_step
+        })));
+    }
+    export_trained_predictor_checkpoint(predictor, checkpoint_dir, predictor.config(), metadata)
+        .map(Some)
+        .map_err(|err| {
+            TrainerError::new(
+                TrainerErrorCode::MejepaTrainCheckpointCorrupt,
+                format!("trained predictor checkpoint export failed: {err}"),
+            )
+            .with_context(json!({
+                "predictor_error_code": err.code(),
+                "checkpoint_dir": checkpoint_dir
+            }))
+        })
 }
 
 pub fn detect_regression(

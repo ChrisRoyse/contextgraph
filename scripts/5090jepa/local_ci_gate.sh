@@ -39,7 +39,7 @@ cd "$REPO_ROOT"
 
 RUN_ROOT="${MEJEPA_CI_RUN_ROOT:-tmp/mejepa_local_ci_runs}"
 ONET_TEXT_ZIP="${ONET_TEXT_ZIP:-tmp/onet_probe/db_30_2_text.zip}"
-SYSTEM_SPECS="docs2/systemspecs.md"
+SYSTEM_SPECS="${SYSTEM_SPECS:-docs2/aiwonder.md}"
 RUN_ID_PREFIX="${LOCAL_CI_RUN_ID_PREFIX:-local_$(date -u +%Y%m%dT%H%M%SZ)_$$}"
 MANIFEST_PATH="$RUN_ROOT/${RUN_ID_PREFIX}_local_ci_manifest.json"
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

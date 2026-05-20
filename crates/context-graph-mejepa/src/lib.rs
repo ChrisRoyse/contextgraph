@@ -63,6 +63,7 @@ pub mod pause_state;
 pub mod prediction_replay;
 pub mod prediction_surfaces;
 pub mod predictor;
+pub mod predictor_checkpoint;
 pub mod project_cache;
 pub mod project_ingest;
 pub mod project_report;
@@ -172,6 +173,7 @@ pub use predictor::{
     MeJepaPredictor, NoCompensationTrace, PairwiseResidualContrast, SlotResidualScore,
     TransformerLayer,
 };
+pub use predictor_checkpoint::*;
 pub use project_cache::*;
 pub use project_ingest::*;
 pub use project_report::*;

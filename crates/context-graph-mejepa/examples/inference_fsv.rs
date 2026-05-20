@@ -13,7 +13,7 @@ use context_graph_mejepa::conformal::{calibrate_tau, non_conformity_score, Calib
 use context_graph_mejepa::fixtures::fixture_patch_context;
 use context_graph_mejepa::ood::{ood_score_from_norm_sq, separation_auc, tune_sigma_squared};
 use context_graph_mejepa::{
-    build_deterministic_compiler, open_infer_rocksdb, valid_witness_segment, AstDiff,
+    build_fixture_deterministic_compiler, open_infer_rocksdb, valid_witness_segment, AstDiff,
     CalibrationStore, FailedGate, Language, MeJepaInferConfig, OracleOutcome, PatchBundle,
     RocksDbInferStore, VerifyVerdict,
 };
@@ -116,7 +116,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         outcome_set_max: 1,
         ..MeJepaInferConfig::default()
     };
-    let compiler = build_deterministic_compiler(
+    let compiler = build_fixture_deterministic_compiler(
         repo_root.clone(),
         infer_store.clone(),
         calibration_store.clone(),

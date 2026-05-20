@@ -1252,7 +1252,7 @@ fn run_weekly_eval_once(config: &FlywheelDaemonConfig, db: Arc<DB>) -> Result<se
         ood_refuse_threshold: 1.0,
         ..context_graph_mejepa::MeJepaInferConfig::default()
     };
-    let compiler = Arc::new(context_graph_mejepa::build_deterministic_compiler(
+    let compiler = Arc::new(context_graph_mejepa::build_slot_preserving_cuda_compiler(
         config.repo_root.clone(),
         infer_store,
         calibration,

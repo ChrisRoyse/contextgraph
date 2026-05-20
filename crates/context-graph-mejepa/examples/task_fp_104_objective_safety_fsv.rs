@@ -11,12 +11,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Context, Result};
 use context_graph_mejepa::{
-    build_deterministic_compiler, count_cf, evaluate_mejepa_objective, infer_phase_b_surfaces,
-    open_infer_rocksdb, sha256_bytes, valid_witness_segment, AstDiff, CalibrationRecord,
-    CalibrationStore, DiffHunk, FailedGate, Language, MeJepaInferConfig, MejepaObjective,
-    MejepaStore, PatchBundle, RocksDbInferStore, SafetyConstraintKind, TaskContext,
-    TaskEnvironment, TaskId, TestId, Verdict, VerifyVerdict, CF_MEJEPA_HIERARCHICAL_PREDICTIONS,
-    CF_MEJEPA_LIVE_PREDICTIONS,
+    build_fixture_deterministic_compiler, count_cf, evaluate_mejepa_objective,
+    infer_phase_b_surfaces, open_infer_rocksdb, sha256_bytes, valid_witness_segment, AstDiff,
+    CalibrationRecord, CalibrationStore, DiffHunk, FailedGate, Language, MeJepaInferConfig,
+    MejepaObjective, MejepaStore, PatchBundle, RocksDbInferStore, SafetyConstraintKind,
+    TaskContext, TaskEnvironment, TaskId, TestId, Verdict, VerifyVerdict,
+    CF_MEJEPA_HIERARCHICAL_PREDICTIONS, CF_MEJEPA_LIVE_PREDICTIONS,
 };
 use serde::Serialize;
 
@@ -59,7 +59,7 @@ fn main() -> Result<()> {
     let calibration = CalibrationStore::new(db.clone(), 30)?;
     calibration.persist(&calibration_record())?;
     let store = Arc::new(RocksDbInferStore::new(db.clone()));
-    let compiler = build_deterministic_compiler(
+    let compiler = build_fixture_deterministic_compiler(
         repo_root.clone(),
         store.clone(),
         calibration,

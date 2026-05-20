@@ -1,8 +1,8 @@
-//! WSL GPU telemetry hardening FSV.
+//! aiwonder GPU telemetry hardening FSV.
 //!
 //! The CUDA driver memory readback is authoritative for budget gates. The
-//! `nvidia-smi` side channel is diagnostic only because NVIDIA documents a
-//! limited `nvidia-smi` feature set under WSL 2.
+//! `nvidia-smi` side channel is diagnostic only; budget decisions use direct
+//! CUDA-driver memory readback.
 
 use context_graph_mejepa_embedders::{
     nvidia_smi_status, nvidia_smi_total_mb_from_command, query_vram_budget, VramBudget,
@@ -15,10 +15,10 @@ use std::path::{Path, PathBuf};
 
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
-const FSV_DIR: &str = "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-vram-wsl-fsv";
+const FSV_DIR: &str = "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-vram-aiwonder-fsv";
 const EVIDENCE_PATH: &str =
-    "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-vram-wsl-fsv/vram-wsl-telemetry-evidence.json";
-const SYSTEM_SPECS: &str = "/home/cabdru/contextgraph/docs2/systemspecs.md";
+    "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-vram-aiwonder-fsv/vram-aiwonder-telemetry-evidence.json";
+const SYSTEM_SPECS: &str = "/home/cabdru/contextgraph/docs2/aiwonder.md";
 
 fn main() -> FsvResult<()> {
     let root = PathBuf::from(FSV_DIR);
@@ -29,10 +29,7 @@ fn main() -> FsvResult<()> {
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
 
     let specs = fs::read_to_string(SYSTEM_SPECS)?;
-    require(
-        "system specs contain RTX 5090",
-        specs.contains("NVIDIA GeForce RTX 5090"),
-    )?;
+    require("system specs contain RTX 5090", specs.contains("RTX 5090"))?;
     require("system specs contain CUDA 13.2", specs.contains("13.2"))?;
 
     let real_budget = query_vram_budget(VramBudget {
@@ -50,7 +47,7 @@ fn main() -> FsvResult<()> {
 
     let edge_cases = vec![
         edge_missing_command(&root)?,
-        edge_unsupported_wsl_sentinel(&root)?,
+        edge_unsupported_nvidia_smi_sentinel(&root)?,
         edge_malformed_output(&root)?,
         edge_valid_output(&root)?,
     ];
@@ -63,9 +60,9 @@ fn main() -> FsvResult<()> {
         },
         "web_research": [
             {
-                "source": "NVIDIA CUDA on WSL User Guide",
-                "url": "https://docs.nvidia.com/cuda/wsl-user-guide/index.html",
-                "applied": "treat nvidia-smi as a limited WSL diagnostic and keep CUDA driver memory readback authoritative"
+                "source": "aiwonder hardware profile",
+                "url": "docs2/aiwonder.md",
+                "applied": "validate the live aiwonder RTX 5090 / CUDA 13.2 context without restoring the removed private hardware dump"
             },
             {
                 "source": "NVIDIA CUDA 13.2 compute capabilities",
@@ -131,7 +128,7 @@ fn edge_missing_command(root: &Path) -> FsvResult<Value> {
     }))
 }
 
-fn edge_unsupported_wsl_sentinel(root: &Path) -> FsvResult<Value> {
+fn edge_unsupported_nvidia_smi_sentinel(root: &Path) -> FsvResult<Value> {
     let command = write_probe_script(root, "nvidia-smi-unsupported", "N/A\n")?;
     let before = json!({
         "command_path": command,
@@ -144,7 +141,7 @@ fn edge_unsupported_wsl_sentinel(root: &Path) -> FsvResult<Value> {
         "status": status
     });
     Ok(json!({
-        "name": "wsl_unsupported_memory_total_is_non_authoritative",
+        "name": "unsupported_memory_total_is_non_authoritative",
         "before": before,
         "after": after,
         "observed_expected_outcome": result.as_ref().unwrap_err().contains("unsupported memory.total row")

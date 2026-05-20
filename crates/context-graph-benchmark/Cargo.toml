@@ -1,6 +1,6 @@
 [package]
 name = "context-graph-benchmark"
-description = "Benchmarking suite comparing 13-embedder multi-space fingerprinting vs single-embedder RAG"
+description = "Excluded diagnostic benchmark suite for ContextGraph embedder, graph-linking, and real-data performance"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

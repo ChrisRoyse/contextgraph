@@ -1,6 +1,6 @@
 # CLAUDE.md — ContextGraph / ME-JEPA-Code project addendum
 
-You are working in the **ContextGraph** repository, building **ME-JEPA-Code**: the deterministic predictive truth system that lets AI coding agents stop generating unverified claims and start producing patches a calibrated verifier can trust. This file is loaded automatically into every Claude Code session that opens this directory.
+You are working in the **ContextGraph** repository, building **ME-JEPA-Code**: the deterministic **binary reality predictor** that lets AI coding agents stop generating unverified claims and start producing patches a calibrated verifier can trust. This file is loaded automatically into every Claude Code session that opens this directory.
 
 **Master rules (universal protocol):** [`docs2/AICodingAgentSuperPrompt.md`](docs2/AICodingAgentSuperPrompt.md) — the AI Coding Agent Doctrine. Read it once at session start. It is the canonical, density-first reference for memory (GitHub Issues), claiming, FSV, RCA, hardening, communication, session lifecycle, and the forensic + simplification disciplines.
 
@@ -8,59 +8,129 @@ You are working in the **ContextGraph** repository, building **ME-JEPA-Code**: t
 
 ---
 
-## 1. What we are building
+## 1. What we are building (2026-05-19 binary-doctrine reframe)
 
-**ME-JEPA-Code** is a calibrated multi-head `RealityPrediction` system answering five operator questions for any code change an AI agent produces:
+**ME-JEPA-Code** is a **binary reality predictor**. For any AI-generated code change, it returns `Pass | Fail` against the Docker oracle, plus three additional grounded surfaces:
 
-| Q | Question | How ME-JEPA answers |
-|---|----------|---------------------|
-| **Q1** | Does what the AI claimed it did **EXIST**? | Claim graph reconciled against the SHA chain on disk |
-| **Q2** | Does it **WORK**? | Predictor + conformal interval + TCT Gτ guard → `Verdict::{Pass, Fail, OutOfDistribution, Abstain, GuardRejected}` |
-| **Q3** | **WHY** would it fail? | Ranked `predicted_failure_modes`, predicted test flips, violating embedders, closest exemplars |
-| **Q4** | **WHAT ELSE** could go wrong? | Always-on heads: edge cases, latent bugs, tech debt, dead code, redundancy, perf, security, accuracy, cost |
-| **Q5** | How is it **IMPACTING REALITY**? | Shift log replayed against predicted side-effects → `RealityImpact` |
+| Q | Question | Surface | How ME-JEPA answers |
+|---|----------|---------|---------------------|
+| **Q1** | Does what the AI claimed it did **EXIST**? | binary prediction | Claim graph reconciled against bytes/AST on disk → `CF_MEJEPA_CLAIM_RECONCILIATION` |
+| **Q2** | Does it **WORK**? | binary prediction | Predictor + conformal interval + TCT Gτ guard → `Verdict::{Pass, Fail, OutOfDistribution, Abstain, GuardRejected}`; oracle = Docker `swebench.harness.run_evaluation` |
+| **Q3** | **WHY** would it fail? | explanation only | On `Fail`, attaches a **named failure mode** (hierarchical, see #404) + **closest exemplars** from `CF_MEJEPA_PATCH_SIMILARITY_META`. Q3 is NOT itself a binary prediction surface — it labels the Q2 verdict |
+| **Q4** | ~~What else could go wrong?~~ | **REMOVED 2026-05-19 (#408 closed)** | Q4 ambiguous surfaces have no free binary form against reality. CFs remain readable for forensic continuity; producer track is closed. Display-only. |
+| **Q5** | How is it **IMPACTING REALITY**? | binary prediction | Predicted shift events checked against the live `runtime/shift-log/*.jsonl` tail → `RealityImpact` with `matched`/`missed`/`surprises`/`not_yet_observed` |
 
-**Ship-gate predicate:** `prediction_oracle_correlation ≥ 0.95` stably across `(mutation_category × language)` on four consecutive rolling windows of the 300×8 SWE-bench Lite corpus. When that's met, human review of AI-generated patches is statistically unjustified — the verifier *is* the system.
+The product surface is the **MCP server**. AI agents call it via JSON-RPC stdio. Underneath, a continuous self-optimization daemon consumes every Edit shift, every test outcome, and every agent-feedback event to retrain itself online — driven by the **online mistake-driven loop** (#406) under EWC++ Fisher protection.
 
-ME-JEPA runs as an **MCP server** locally on operator hardware. AI agents call it via JSON-RPC stdio. Underneath, a continuous self-optimization daemon consumes every Edit shift, every test outcome, and every agent-feedback event to retrain itself online.
+**Ship-gate predicate (tightened 2026-05-19):**
+
+```
+prediction_oracle_correlation ≥ 0.95
+  stable × 4 consecutive rolling windows
+  per (mutation_category × language)
+  on the 300×8 Python SWE-bench Lite corpus
+  using Q2 Docker-oracle agreement as the binary verdict
+  AND cross-panel oracle correlation ≥ 0.95 on Panel B (#405)
+  AND |corr_panel_a − corr_panel_b| ≤ 0.05
+```
+
+Once met → human review of AI-generated Python patches is statistically unjustified. Current measurement: `0.866667` (Panel A); Panel B has no measurement yet (#405 produces the first).
 
 **Product boundary.** ME-JEPA is the product. LLM agents are untrusted edit generators. Hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, and docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`. A feature belongs in the architecture only if it captures durable reality, densifies frozen target panels, improves predictor calibration/coverage/OOD, converts prediction mistakes into replay weight, or proves to the operator (by SoT readback) that the system functions as claimed.
 
----
+Beyond the binary primitive ME-JEPA exposes two derived operator-facing surfaces:
 
-## 2. Verified phase status (2026-05-13)
-
-**Independent audit completed 2026-05-12.** 35/35 Phase A–D items PRESENT against the live tree; 16/16 FSV evidence files present on the then-current local `/mnt/d/contextgraph/fsv/` evidence root; all 17 filed GitHub issues (#3–#19) including umbrella gate [#15](https://github.com/ChrisRoyse/contextgraph/issues/15) CLOSED. **Phase E entry is unblocked.**
-
-The only outstanding gate is `prediction_oracle_correlation = 0.866667 < 0.95`; older local evidence cites `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`. That is Phase G model-quality convergence, not a Phase A–D implementation gap. Phase E's job is to generate the learning pressure that closes the 0.95 gate.
-
-**Post-migration storage correction (2026-05-18; tightened by #412 on 2026-05-19):** #363 supersedes the old D-drive durable-SoT rule for production Phase G work. Current production corpus, runtime, project-ingest, cache, model-output, and FSV artifacts must live on aiwonder under `/zfs/archive/contextgraph/...`; hot work must live under `/zfs/hot/contextgraph/...` or explicitly budgeted aiwonder scratch. Local `/mnt/d/contextgraph/...` is legacy provenance only and must not be used for active reads or writes. If needed data exists only on `/mnt/d`, move it to aiwonder first. #369 tracks revalidation of post-migration artifacts that still cite `/mnt/d`.
-
-**Current work source.** GitHub Issues are the live source of truth for next work. Read the pinned `type:context` issues first, then `docs/futurebuild/README.md` for the current 8-doc map and `docs/futurebuild/08_roadmap_and_open_work.md` for the latest locally synced roadmap.
-
-- #310 is the active meta/context issue for Phase G queue ordering.
-- #227 is the active runtime-policy context issue for Python ME-JEPA data work.
-
-The historical 2026-05-12 audit trail lived at `./memory/discoveries/2026-05-12--phase-a-d-independent-audit-zero-gaps.md`. That namespace is now archived under `backupdocs/memory.archive/`. Any audit-trail entries needed going forward become `type:discovery` GitHub issues per the doctrine §3.
+- **Hierarchical chunk↔skill linkage** (#414 / #417 / #418 — shipped) — 399,777 AST chunks ↔ 491 accepted labels ↔ 128 named skills ↔ ~37k chunk→skill memberships ↔ ~10.6k skill→chunk reverse rows. Read-only navigation surface; no new prediction head.
+- **Pathway exploration** (#416 — open) — top-K (3–5) most-probable future trajectories per candidate patch, chains of Q1/Q2/Q5 binary leaves only (Q4 strictly excluded). Operator picks which future to realize through code.
 
 ---
 
-## 3. The crates
+## 2. Phase status (refreshed 2026-05-19)
 
-- **`context-graph-mcp`** — MCP server. Speaks JSON-RPC over stdio. Exposes the 28 live `mejepa_*` tools plus compatibility `mcp__cgreality__*` source-of-truth transport. Owns path-policy, edit-lock, ledger, and shift-log machinery. Fails closed on retired reality-loop calls (`CCREALITY_ENGINE_RETIRED`).
-- **`context-graph-cli`** — Harness CLI, DynamicJEPA commands, governed readback helpers, ME-JEPA implementation work.
-- **`context-graph-mejepa`** — Predictor, compiler, heal scheduler, eval. The trunk model.
-- **`context-graph-mejepa-cf`** — RocksDB column-family registry (51+ CFs).
-- **`context-graph-mejepa-corpus`** — Mutation operators (8 × 11 languages), corpus CLI, SWE-bench bridge.
+**Phases A–H complete.** 35/35 Phase A–D items audit-verified 2026-05-12. Phase H (inner-actor LLM retirement) FSV-verified 2026-05-13 — `feature = "llm"` triggers `compile_error!` at `crates/context-graph-mcp/src/lib.rs:13`; deletion of `Qwen3.6-27B`, `Hermes-2-Pro`, `Ollama`, `llama.cpp` generative inference enforced by 9 `scripts/ci/phase_h_*.sh` absence-checks.
+
+**The only outstanding gate is Phase G model-quality convergence:** `prediction_oracle_correlation = 0.866667 < 0.95` on Panel A (legacy `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; pending revalidation on aiwonder under #369).
+
+**Post-migration storage:** Production durable state lives on aiwonder under `/zfs/archive/contextgraph/...`; hot work under `/zfs/hot/contextgraph/...` (per #363 / #412). Local `/mnt/d/contextgraph/...` is **legacy provenance only** — not an active read/write target. If needed data only exists there, move it to aiwonder first.
+
+**2026-05-19 cleanup pass (this session).** Investigation reports at `./docs/INVESTIGATION_{1,2,3}_*.md` drove ~314,000 LOC removed across 4 commits, including:
+
+- Retired crates **`context-graph-causal-agent`** + **`context-graph-graph-agent`** (had zero workspace dependents after the 2026-05-09 LLM cutover). Workspace: 25 → 23 active members.
+- Retired **BlackBoxFix** subsystem from `context-graph-cli` (~52K LOC + 26 tests + `axum`/`reqwest`/`rusqlite` deps).
+- Retired **Q4 producer modules** (#408 closed): `composite_reward_signals`, `static_analysis_reward`, `telemetry_signals`, `live_session_signals`, `type_graph_signals`, `e_coverage`, `e_cyclomatic`, `e_diff_topology`, `e_embedder_heads` + their FSV examples. `q4_trust_gate.rs` (the freeze enforcement) remains. Q4 CFs are read-only forensic continuity.
+- Removed `linear_probe.rs`, `stdlib_registry.rs`, pre-pivot benchmark bins (`causal_*`, `multimodal_*`, `embedder_impact_*`, `weight_profile_bench`, `e2_manual_verification`, `e10_modifier_tuning`, `e11_entity_bench`).
+- Removed 42 retired Shakespeare LoRA training scripts (4 historical-only stubs retained — Phase H absence-check tracks them).
+- Removed `.claude/skills/ccreality-{iterate,readback,smoke,trigger-check}/`, `docs2/contextgraphspecs/`, `docs2/realitywhitepaper/`, `backupdocs/*` numbered duplicates.
+- Re-pointed `INSTALL.md`, `systemd/contextgraph-mcp-http.service`, `scripts/restart_pipeline_services.sh` from `/mnt/d/...` to aiwonder.
+- Re-branded 7 storage-test `validator_version: "hermes-2-pro-mistral-7b-q5-km@2026-04"` strings → `"deterministic-validator-v1@2026-05"`.
+
+**Current work source.** GitHub Issues are the live source of truth. Read pinned `type:context` issues first, then `docs/futurebuild/README.md` for the 8-doc map and `docs/futurebuild/08_roadmap_and_open_work.md` for the latest roadmap.
+
+- **#310** — active meta/context issue for Phase G queue ordering.
+- **#227** — active runtime-policy context issue for Python ME-JEPA data work.
+- **#383** — locked rule (pinned `type:context`): gate-active issue ordering is **evidence-weighted, not vision-weighted**.
+
+**Current critical path (binary doctrine ordering, per `08 §3.−1`):**
+
+| Rank | Epic | Status |
+|---|---|---|
+| 1 | **#408 / TASK-PY-G-114** — Q4 doctrine freeze + producer-track closeout | ✅ CLOSED 2026-05-19 |
+| 2 | **#404 / TASK-PY-G-110** — Failure-mode labeling hierarchy (4-level named-mode meaning layer) | OPEN p0 |
+| 3 | **#413 / TASK-PY-G-117** — Auto-label discovery baseline | ✅ CLOSED 2026-05-19; 399,777 chunk labels, 491 accepted label registry rows on aiwonder |
+| 4 | **#414 / TASK-PY-G-118** — Skill-sequence discovery + chunk-skill reverse membership | ✅ CLOSED 2026-05-19 (synthetic + aiwonder FSV passed) |
+| 5 | **#407 / TASK-PY-G-113** — Threshold-calibration disjointness audit | OPEN p1 |
+| 6 | **#405 / TASK-PY-G-111** — Cross-panel triangulation Panel B (defends 0.95 against Goodhart) | OPEN p0; adds a hard new ship-gate requirement |
+| 7 | **#406 / TASK-PY-G-112** — Online mistake-driven loop (`mistake_repeat_rate ≤ 0.05`) | OPEN p0 |
+| 7.5 | **#416 / TASK-PY-G-119** — Pathway exploration surface (binary-leaf butterfly-effect tree) | OPEN p1 |
+| 7.6 | **#417 / TASK-PY-G-120** — Bidirectional chunk↔skill linkage MCP surface | OPEN p1; first read-only slice shipped 2026-05-19 |
+| 7.7 | **#418 / TASK-PY-G-121** — Runtime hierarchical ability resolver | OPEN p0 |
+| 8 | **#409 / TASK-DOC-001** — Paper revision for binary doctrine | OPEN p2 |
+
+Historical 2026-05-12 audit trail lived at `./memory/discoveries/2026-05-12--phase-a-d-independent-audit-zero-gaps.md`. That namespace is archived under `backupdocs/memory.archive/`. Any audit-trail entries going forward become `type:discovery` GitHub issues per doctrine §3.
+
+---
+
+## 3. The crates (23 active workspace members)
+
+Workspace manifest: `Cargo.toml:6-30`. `default-members` excludes `context-graph-benchmark` (still 80K+ LOC excluded from default build).
+
+**Product surface:**
+
+- **`context-graph-mcp`** — MCP server. Speaks JSON-RPC over stdio + Streamable HTTP. Exposes 54 live `mejepa_*` tools plus compatibility `mcp__cgreality__*` source-of-truth transport. Owns path-policy, edit-lock, ledger, and shift-log machinery. Fails closed on retired reality-loop calls (`CCREALITY_ENGINE_RETIRED`).
+- **`context-graph-cli`** — Operator CLI + helpers. Two bins: `context-graph-cli` (primary), `context-graph` (short alias). Owns DynamicJEPA commands, governed readback helpers, ccreality hook surface, ME-JEPA active-learning surface. **BlackBoxFix subsystem removed 2026-05-19.**
+
+**ME-JEPA trunk:**
+
+- **`context-graph-mejepa`** — Predictor, compiler (`MeJepaCompiler::compile`), heal scheduler, eval. The trunk model. Bins: `mejepa`, `mejepa-heal-drill`.
+- **`context-graph-mejepa-cf`** — RocksDB column-family registry (~120 ME-JEPA CFs). Zero internal deps by design.
+- **`context-graph-mejepa-corpus`** — 8 mutation operators (Python first-class; other 10 languages deferred), corpus CLI, SWE-bench bridge (`run_swebench_lite_oracle()` → Docker `python -m swebench.harness.run_evaluation`).
 - **`context-graph-mejepa-embedders`** — 21 embedder slots; `EmbedderForward` trait; 12 active content slots (8 pretrained + 4 algorithmic).
 - **`context-graph-mejepa-hygiene`** — Tier compression, quota, eviction, GC, witness Merkle compression.
-- **`context-graph-mejepa-instruments`** — 15 frozen instruments. The panel is an **array of 15 per-embedder vectors** (a teleological constellation), one vector per slot, each vector living in its own embedder's space. The 5,120 number is contiguous-serialization byte layout only; cross-embedder dim-wise comparison is forbidden — only same-embedder dim-wise compares (E1↔E1, E_AST↔E_AST, etc.), array-level operations on the structured array (per-slot cosine map, similarity matrices, matrix-style projections that respect slot identity), and scalar pairwise cross-slot relationships (MI, correlation, agreement).
+- **`context-graph-mejepa-instruments`** — Frozen instrument slots. The `Panel` is an **array of per-embedder vectors** (a teleological constellation), one vector per slot, each living in its own embedder's space. The contiguous 5,120-f32 serialization is **byte layout only**; cross-embedder dim-wise comparison is forbidden. Allowed operations: (a) same-embedder cosine (E1↔E1, E_AST↔E_AST, …), (b) array-level structured operations (per-slot cosine maps, similarity matrices, slot-identity-preserving projections), (c) scalar pairwise cross-slot relationships (MI, correlation, agreement). **Q4 producer modules and TASK-RWD signals retired 2026-05-19**; Q4 trust gate remains.
 - **`context-graph-mejepa-shift-subscriber`** — Tokio task tailing the shift log; materializes panels.
-- **`context-graph-mejepa-tct`** — Teleological constellations + Gτ guard.
-- **`context-graph-mejepa-train`** — Trainer + UTML formula carriers + DDA computation + samplers.
-- **`context-graph-{core,mincut,solver,tier-compression,witness,benchmark}`** — Supporting primitives.
+- **`context-graph-mejepa-tct`** — Teleological constellations + Gτ guard + freshness audit.
+- **`context-graph-mejepa-train`** — Trainer + UTML formula carriers + DDA computation + replay buffer + mistake-loop consumer (#406). Bin: `mejepa-train`.
 
-Legacy `reality-loop` binary and inner-actor LLM (Qwen3.6-27B / Hermes-2-Pro / Ollama / llama.cpp generative inference) were deleted 2026-05-09 and Phase H FSV-verified on 2026-05-13 (#134/#135). **Do not reanimate without explicit operator authorization.**
+**Supporting primitives:**
+
+- **`context-graph-core`** — Shared domain types: `CodeEntity`, `CodeLanguage`, `LLMEdgeValidation`, `TypedEdgeTrainingRecord`, etc.
+- **`context-graph-storage`** — RocksDB wrapper + 51+ CFs.
+- **`context-graph-embeddings`** — E1–E14 pipeline, model loaders. Bin: `train-causal`.
+- **`context-graph-cuda`** — CUDA helper kernels (HDC, k-NN).
+- **`context-graph-paths`** — Fail-closed durable path resolver; rejects non-aiwonder prod targets.
+- **`context-graph-witness`** — Clean-room ed25519 + Merkle + Stage 0/F certificates.
+- **`context-graph-solver`** — Causal masking, MMR, conformal predictor.
+- **`context-graph-mincut`** — Clean-room Stoer-Wagner global min-cut.
+- **`context-graph-tier-compression`** — 8/7/5/3-bit groupwise scalar quantization with magic+version header.
+- **`context-graph-dynamicjepa`** — 5090jepa MCP surface (39 tools): adapter shipping, plan trace, surprise log.
+- **`context-graph-test-utils`** — Shared test utilities — NO MOCK DATA (per FSV-PROTOCOL §3).
+- **`context-graph-benchmark`** *(excluded from default build)* — Benchmarking suite. Build explicitly with `cargo build -p context-graph-benchmark`. Pre-pivot bins were retired 2026-05-19; live bins are E1/E4/E7/graph-linking/sparse/temporal/multimodal-stripped.
+
+**Legacy and retired:**
+
+- `context-graph-reality-loop` binary — deleted 2026-05-09 (Phase H). Do not reanimate without explicit operator authorization and new FSV evidence.
+- Inner-actor LLM stack (Qwen3.6-27B / Hermes-2-Pro / Ollama / llama.cpp generative inference) — deleted 2026-05-09; Phase H absence-checks at `scripts/ci/phase_h_*.sh` assert continued absence.
+- `context-graph-causal-agent`, `context-graph-graph-agent` — deleted 2026-05-19; LLM-backed callers were retired in the 2026-05-09 ME-JEPA pivot and the crates had zero workspace dependents.
 
 ---
 
@@ -101,17 +171,20 @@ Label set: see [`.github/labels.yml`](.github/labels.yml). Bootstrap with `scrip
 
 These are non-negotiable and project-specific. Doctrine universal rules still apply.
 
-1. **Structural collapse-immunity on the target side.** Frozen instruments have ZERO trainable parameters. `ΔΞ.target_collapse = 0` by construction. Never wire a gradient into the frozen-target path; the `MEJEPA_INSTRUMENT_GRADIENT_LEAK` guard is correct behavior.
-2. **Reality-shift principle.** No alteration without current state. No alteration without a delta back into perception. Pre/post-tool hooks enforce this.
-3. **GENERIC-ONLY in the trained model.** Every trained primitive must generalize across every SWE-bench task, every Python repo, every bug class. Mental check: *"would this be load-bearing for `psf__requests-2317` / `django__django-12286` / `sympy__sympy-13895` and any future repo?"* You may reason task-specifically when attempting a SWE-bench task; never bake task-specifics into the trained model.
-4. **Single outer loop around the invoking agent.** No inner LLM. The agent (Claude / Codex / Cursor) IS the actor. Its Edit / Write / Bash / tests ARE the data-generating process.
-5. **aiwonder only for post-migration production durable state.** Production corpora, FSV evidence, runtime shift logs, test outcomes, project-ingest outputs, and weekly exports live under `/zfs/archive/contextgraph/...` on aiwonder; hot staging lives under `/zfs/hot/contextgraph/...` or explicitly budgeted aiwonder scratch. Local `/mnt/d/contextgraph/...` is legacy provenance only and must not be used for active reads or writes.
-6. **No backwards compatibility.** Pre-production tree. Wipe DB on schema change; fail fast with structured errors; never write migration shims.
-7. **Upstream reference-only — clean-room.** Never vendor / path-dep / npm-depend on `ruvnet/agentdb` or `ruvnet/ruvector`. Reimplement borrowed ideas in our own crates.
-8. **No HTTP from action paths.** MCP server is the only network surface. `WebSearch` / `WebFetch` / `mcp__exa__*` are read-only research tools. No `curl` / `wget` / `fetch` in action code paths.
-9. **No destructive git.** Forbidden: `push --force`, `--force-with-lease`, `reset --hard`, `checkout --`, `clean -f`, `rebase`. Plain `git push` (fast-forward) is allowed.
-10. **Frozen embedder weights.** E1, E6, E7, E8, E10, E12, E13, E14 are frozen by design. Do not retrain in the live loop.
-11. **No cost caps.** System runs locally; no per-turn or per-day spend caps. `blocked` is for real obstacles, not budget.
+1. **Binary doctrine.** ME-JEPA predicts binary outcomes against ground truth (Q1 bytes/AST, Q2 Docker oracle, Q5 shift log). Q3 is an explanation surface attached to Q2 verdicts. **Q4 is removed/frozen** as of 2026-05-19 (#408). Do not reanimate Q4 producer pipelines without new operator authorization and a doctrine change.
+2. **Slot identity is sacred.** The `Panel` is an array of per-embedder vectors. NEVER perform cross-embedder dim-wise comparison. NEVER flatten the panel into a single 5,120-d vector for similarity/distance. The contiguous serialization is for transport only. See `01_overview.md §1.5ter` and `02_source_map.md §5`.
+3. **Structural collapse-immunity on the target side.** Frozen instruments have ZERO trainable parameters. `ΔΞ.target_collapse = 0` by construction. Never wire a gradient into the frozen-target path; the `MEJEPA_INSTRUMENT_GRADIENT_LEAK` guard is correct behavior.
+4. **Reality-shift principle.** No alteration without current state. No alteration without a delta back into perception. Pre/post-tool hooks enforce this.
+5. **GENERIC-ONLY in the trained model.** Every trained primitive must generalize across every SWE-bench task, every Python repo, every bug class. Mental check: *"would this be load-bearing for `psf__requests-2317` / `django__django-12286` / `sympy__sympy-13895` and any future repo?"* You may reason task-specifically when attempting a SWE-bench task; never bake task-specifics into the trained model.
+6. **Single outer loop around the invoking agent.** No inner LLM. The agent (Claude / Codex / Cursor) IS the actor. Its Edit / Write / Bash / tests ARE the data-generating process. Phase H absence-checks at `scripts/ci/phase_h_*.sh` assert this stays true.
+7. **aiwonder only for post-migration production durable state.** Production corpora, FSV evidence, runtime shift logs, test outcomes, project-ingest outputs, and weekly exports live under `/zfs/archive/contextgraph/...` on aiwonder; hot staging lives under `/zfs/hot/contextgraph/...` or explicitly budgeted aiwonder scratch. Local `/mnt/d/contextgraph/...` is legacy provenance only and must not be used for active reads or writes.
+8. **No backwards compatibility.** Pre-production tree. Wipe DB on schema change; fail fast with structured errors; never write migration shims.
+9. **Upstream reference-only — clean-room.** Never vendor / path-dep / npm-depend on `ruvnet/agentdb` or `ruvnet/ruvector`. Reimplement borrowed ideas in our own crates.
+10. **No HTTP from action paths.** MCP server is the only network surface. `WebSearch` / `WebFetch` / `mcp__exa__*` are read-only research tools. No `curl` / `wget` / `fetch` in action code paths.
+11. **No destructive git.** Forbidden: `push --force`, `--force-with-lease`, `reset --hard`, `checkout --`, `clean -f`, `rebase`. Plain `git push` (fast-forward) is allowed.
+12. **Frozen embedder weights.** E1, E6, E7, E8, E10, E12, E13, E14 are frozen by design. Do not retrain in the live loop.
+13. **Mistake-loop is the only online weight update path.** Trainer-side `mejepa-train/src/mistake_consumer.rs` (#406) consumes `CF_MEJEPA_MISTAKE_LOG` under EWC++ Fisher protection. No other path may update predictor weights at serving time.
+14. **No cost caps.** System runs locally; no per-turn or per-day spend caps. `blocked` is for real obstacles, not budget.
 
 ---
 
@@ -134,15 +207,22 @@ If editing one of these is genuinely the right thing for an operator-directed ta
 ## 8. Directory layout
 
 ```
-./crates/         — Rust workspace (the source tree)
-./docs/           — futurebuild plan + ruvectorfindings + MEJEPA_SUPER_PROMPT.md (project narrative; SUPERSEDED for protocol)
-./docs2/          — AICodingAgentSuperPrompt.md (master doctrine) + hardeningprompt.md (14-axis deep-dive) + flagprompt.md (SUPERSEDED issue protocol) + prdtospec.md
-./scripts/        — CC hook scripts (scripts/cc/), CI lint (scripts/ci/), setup, systemd, label bootstrap (gh-labels-bootstrap.sh)
-./tasks/          — workstream manifests (e.g., tasks/swebench-lite/*.json)
-./config/         — governed paths, model pins
-./.claude/        — settings.json, agents/, loop.md, skills/
-./.github/        — workflows + labels.yml
-backupdocs/memory.archive/ — read-only legacy SAMP/SMAP narrative (no new entries; see STOP_READING.md)
+./crates/         — Rust workspace (23 active members; benchmark crate excluded from default build)
+./docs/           — futurebuild plan (8-doc live suite + _archived/) + PAPER.md + investigation reports
+./docs2/          — AICodingAgentSuperPrompt.md (master doctrine) + hardeningprompt.md (14-axis deep-dive) + prdtospec.md + aiwonder.md + flagprompt.md (SUPERSEDED, kept as reference)
+./scripts/        — CC hook scripts (scripts/cc/), CI lint + Phase G/H FSV audit harnesses (scripts/ci/), setup, swebench_lite_ops/, label bootstrap (gh-labels-bootstrap.sh)
+./tasks/          — Workstream manifests (e.g., tasks/swebench-lite/*.json — 300 SWE-bench Lite Python instance manifests)
+./tests/e2e/      — 13 root-level chaos/load/soak/multi-agent/restart-safety e2e tests (shim'd into crates/*/tests/)
+./tests/fixtures/ — 30 adversarial diff fixtures (TASK-PY-G-060)
+./config/         — default.toml, mejepa/, retention_policy.toml, cell_exemptions.toml, governed_paths.json (legacy)
+./configs/        — dynamicjepa/ (domain_packs/, verification/) — note plural; tracked for collapse in tech-debt
+./systemd/        — contextgraph-mcp-http.service (aiwonder paths)
+./.claude/        — settings.json, agents/, loop.md, skills/, hooks/
+./.github/        — workflows/ (ci, ci_smoke_a/b/c, chaos, e2e, load, soak) + labels.yml
+./backupdocs/memory.archive/ — read-only legacy SAMP/SMAP narrative (no new entries)
+./samplecode/     — Multi-language scratch corpus referenced by ast_embedder_smoke_fsv (source files only; build caches gitignored)
+./shakespear/     — complete_works.txt (LibraryId::ShakespeareCanon training data)
+./reference/      — DynamicJEPA reference release JSONs (for ci_smoke_a regression)
 
 # aiwonder production state (post-migration durable bulk state)
 /zfs/archive/contextgraph/
@@ -160,11 +240,11 @@ backupdocs/memory.archive/ — read-only legacy SAMP/SMAP narrative (no new entr
 ├── corpus/                              # Stable hot inputs
 └── runtime/                             # Active scheduler logs and hot run state
 
-# local legacy/calibration evidence
-/mnt/d/contextgraph/                     # Historical provenance only; not an active data root
+# local legacy provenance only — NOT an active data root
+/mnt/d/contextgraph/
 ```
 
-CI lint `scripts/ci/check_no_c_drive_paths.sh` enforces no C-drive paths in code or FSV files.
+CI lint `scripts/ci/check_no_c_drive_paths.sh` blocks C-drive paths in code or FSV files. `scripts/ci/no_mnt_d_production_paths_fsv.py` sweeps for stale `/mnt/d` references (#369).
 
 ---
 
@@ -173,7 +253,7 @@ CI lint `scripts/ci/check_no_c_drive_paths.sh` enforces no C-drive paths in code
 1. **READ** (doctrine §3.3 + §12.1) — Run the six issue queries to see pinned context / in-progress / blocked / unclaimed agent queue / active decisions / discoveries touching your task area. Skim `AGENTS.md` and this file.
 2. **Read current futurebuild docs.** `docs/futurebuild/README.md` maps the current 8-doc suite; read `01_overview.md`, `07_results_and_benchmarks.md`, and `08_roadmap_and_open_work.md` for current state, proof history, and open work.
 3. **Check GitHub state** — `gh issue list --state open --label "status:in-progress"` (avoid these), `--label "source:agent" --search "no:assignee"` (your candidate queue).
-4. **Pick** the highest-priority incomplete deliverable. Or follow operator direction.
+4. **Pick** the highest-priority incomplete deliverable, prioritized by the evidence-weighted ordering in `08 §3.−1`. Or follow operator direction.
 5. **Claim** the issue (if existing) per doctrine §3.4: atomic `gh issue edit` assigning self + flipping `status:needs-triage` → `status:in-progress` + CLAIM comment listing files-touched and ETA.
 6. **Audit the task** against the live tree per `docs/futurebuild/specs/FSV-PROTOCOL.md` §7. `ASSUME THE TASK IS WRONG`. Examine code BEFORE reading claims (Linear Sequential Unmasking, doctrine §2.8).
 7. **Plan.** Trigger → Process → Outcome (doctrine §2.2). Name the SoT. List ≥3 boundary cases.
@@ -261,6 +341,9 @@ RCA: 5 Whys → Fishbone → Fault Tree Analysis → first-principles debugging 
 cargo build --release -p context-graph-cli      # workhorse CLI
 cargo build --release -p context-graph-mcp      # MCP protocol shim
 cargo build --release -p <touched-crate>        # after any change
+cargo build --release                            # full default workspace (excludes benchmark crate)
+cargo build --release --examples                 # also compile every FSV harness
+cargo build -p context-graph-benchmark           # benchmark suite (explicitly opted-in)
 cargo test                                       # full suite
 cargo test -p <touched-crate>                    # scoped
 cargo clippy --no-deps --tests --examples -- -D warnings
@@ -269,6 +352,8 @@ cargo fmt
 
 **`cargo check` is NOT a substitute for `cargo build --release`.** Always run release build after a `changed` recommendation.
 
+Phase H absence-checks run from `scripts/ci/phase_h_*.sh` — operator-invoked, no CI wiring by design. Phase G audit harnesses live at `scripts/ci/phase_g_*.sh`.
+
 ---
 
 ## 15. Project-specific hard "never"s (additive to doctrine §15-equivalent)
@@ -276,15 +361,19 @@ cargo fmt
 These are on top of the doctrine's universal forbidden list.
 
 1. Never reintroduce the retired inner-actor LLM stack (Qwen, Hermes, Ollama, llama.cpp generative inference) without explicit operator authorization and new FSV evidence.
-2. Never call HTTP from action paths (curl / wget / fetch). MCP is the only action surface.
-3. Never edit `.env`, `swebench/**`, `tests/oracle_**/**`, `crates/*/src/reward_specs/**`, `crates/*/src/verifiers/**` without operator OK.
-4. Never use destructive git (`push --force`, `--force-with-lease`, `reset --hard`, `checkout --`, `clean -f`, `rebase`).
-5. Never write `./memory/*.md` files. Memory is GitHub Issues (doctrine §3).
-6. Never cater a trained primitive to a specific task (GENERIC-ONLY rule §6.3).
-7. Never trust a return value as evidence of work — read the SoT (doctrine §0 / §4).
-8. Never add cost caps or dollar budgets.
-9. Never use mock data in tests that gate task completion.
-10. Never write tests that pass when the project is broken.
+2. Never reanimate the **Q4 producer track** (composite reward signals / static-analysis / telemetry / live-session / type-graph / coverage / cyclomatic / diff-topology / embedder-heads) without a documented #408 reversal. The Q4 trust gate at `mejepa/src/q4_trust_gate.rs:Q4_DOCTRINE_FREEZE_ACTIVE = true` is doctrine.
+3. Never reanimate the retired BlackBoxFix subsystem (HTTP server, SQLite ledger, axum/reqwest deps) without filing a new `type:context` issue documenting product-mission alignment.
+4. Never reanimate `context-graph-causal-agent` or `context-graph-graph-agent` — both deleted 2026-05-19; their LLM-backed callers have been retired since 2026-05-09.
+5. Never call HTTP from action paths (curl / wget / fetch). MCP is the only action surface.
+6. Never edit `.env`, `swebench/**`, `tests/oracle_**/**`, `crates/*/src/reward_specs/**`, `crates/*/src/verifiers/**` without operator OK.
+7. Never use destructive git (`push --force`, `--force-with-lease`, `reset --hard`, `checkout --`, `clean -f`, `rebase`).
+8. Never write `./memory/*.md` files. Memory is GitHub Issues (doctrine §3).
+9. Never cater a trained primitive to a specific task (GENERIC-ONLY rule §6.5).
+10. Never trust a return value as evidence of work — read the SoT (doctrine §0 / §4).
+11. Never add cost caps or dollar budgets.
+12. Never use mock data in tests that gate task completion.
+13. Never write tests that pass when the project is broken.
+14. Never collapse the panel into a single flat vector for similarity, distance, OOD residual, calibration, or any predictor input. Slot identity is doctrine (§6.2).
 
 Full universal list: doctrine §1, §7, §8, §15-equivalent.
 
@@ -304,6 +393,7 @@ All independent tool calls in a single response MUST be made in one message. Bat
 - **Document failure as carefully as success — in issue comments.** Failure is the next agent's lesson.
 - **GitHub Issues are the single source of truth for memory across agents** (doctrine §3). If it isn't in Issues, it dies with the session.
 - **`/zfs/archive/contextgraph/` on aiwonder is the production durable SoT** for post-migration FSV evidence. Local `/mnt/d/contextgraph/` evidence does not count for production closeout and must not be used as an active input.
+- **Binary > calibrated.** The system was reframed 2026-05-19 from "calibrated multi-head RealityPrediction" to "binary reality predictor with labeled explanation surfaces". Q4 ambiguous heads are out of scope.
 
 ---
 
@@ -314,11 +404,13 @@ All independent tool calls in a single response MUST be made in one message. Bat
 - **Futurebuild plan:** [`docs/futurebuild/README.md`](docs/futurebuild/README.md)
 - **FSV contract:** [`docs/futurebuild/specs/FSV-PROTOCOL.md`](docs/futurebuild/specs/FSV-PROTOCOL.md)
 - **14-axis hardening deep-dive:** [`docs2/hardeningprompt.md`](docs2/hardeningprompt.md)
+- **Aiwonder operations:** [`docs2/aiwonder.md`](docs2/aiwonder.md)
 - **Per-tick prompt:** [`.claude/loop.md`](.claude/loop.md)
+- **2026-05-19 cleanup audit:** [`docs/INVESTIGATION_1_CRATES_DEAD_CODE.md`](docs/INVESTIGATION_1_CRATES_DEAD_CODE.md), [`docs/INVESTIGATION_2_TESTS_BENCHMARKS_EXAMPLES.md`](docs/INVESTIGATION_2_TESTS_BENCHMARKS_EXAMPLES.md), [`docs/INVESTIGATION_3_SCRIPTS_DOCS_CONFIG_TOPLEVEL.md`](docs/INVESTIGATION_3_SCRIPTS_DOCS_CONFIG_TOPLEVEL.md)
 - **Legacy MEJEPA narrative (SUPERSEDED for protocol; project content still valid):** [`docs/MEJEPA_SUPER_PROMPT.md`](docs/MEJEPA_SUPER_PROMPT.md)
 - **Legacy issue protocol (SUPERSEDED by doctrine §3):** [`docs2/flagprompt.md`](docs2/flagprompt.md)
 - **Legacy SAMP/SMAP narrative (read-only history):** [`backupdocs/memory.archive/`](backupdocs/memory.archive/)
 
 ---
 
-**One-line summary.** ME-JEPA-Code is the deterministic predictive truth system that returns a calibrated multi-head `RealityPrediction` for any AI-generated code change so human review becomes statistically unjustified once `prediction_oracle_correlation ≥ 0.95` stably across 4 rolling windows on the 300×8 SWE-bench Lite corpus — every primitive must be generic, every change must verify by source-of-truth readback, every memory must be captured in a GitHub Issue (claim before working — no silent work), every observed defect not fixed this turn must become a GitHub issue, every post-write must pass the code-simplification discipline, and every turn must end with both an FSV evidence file and a RESOLVED/PAUSE/BLOCKED issue comment.
+**One-line summary.** ME-JEPA-Code is the **binary reality predictor** that returns `Pass | Fail` for any AI-generated code change against the Docker oracle, with named-failure-mode + closest-exemplar explanation on Fail (Q3), claim-existence (Q1) and shift-event (Q5) binary predictions as additional grounded surfaces, and Q4 ambiguous heads frozen out as of 2026-05-19 — human review becomes statistically unjustified once `prediction_oracle_correlation ≥ 0.95` stably × 4 rolling windows on the 300×8 Python SWE-bench Lite corpus AND Panel B confirms within 0.05. Every primitive must be generic, every change must verify by source-of-truth readback on aiwonder, every memory must be captured in a GitHub Issue (claim before working — no silent work), every observed defect not fixed this turn must become a GitHub issue, every post-write must pass the code-simplification discipline, and every turn must end with both an FSV evidence file and a RESOLVED/PAUSE/BLOCKED issue comment.

@@ -12,10 +12,10 @@ use context_graph_mejepa::calibration::count_cf;
 use context_graph_mejepa::conformal::non_conformity_score;
 use context_graph_mejepa::gates::valid_witness_segment;
 use context_graph_mejepa::{
-    build_deterministic_compiler, open_infer_rocksdb, sha256_bytes, AstDiff, CalibrationExample,
-    CalibrationStore, DiffHunk, Language, MeJepaInferConfig, PatchBundle, RocksDbInferStore,
-    TaskContext, TaskEnvironment, TaskId, TestId, VerifyVerdict, CF_MEJEPA_LIVE_PREDICTIONS,
-    MEJEPA_INFER_CFS,
+    build_fixture_deterministic_compiler, open_infer_rocksdb, sha256_bytes, AstDiff,
+    CalibrationExample, CalibrationStore, DiffHunk, Language, MeJepaInferConfig, PatchBundle,
+    RocksDbInferStore, TaskContext, TaskEnvironment, TaskId, TestId, VerifyVerdict,
+    CF_MEJEPA_LIVE_PREDICTIONS, MEJEPA_INFER_CFS,
 };
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -203,7 +203,7 @@ pub fn run_adversarial_corpus_fsv(fsv_root: &Path) -> Result<AdversarialCorpusFs
         let db = open_infer_rocksdb(&db_path)?;
         let calibration = seed_calibration(db.clone())?;
         let store = Arc::new(RocksDbInferStore::new(db.clone()));
-        let compiler = build_deterministic_compiler(
+        let compiler = build_fixture_deterministic_compiler(
             repo_root.clone(),
             store,
             calibration,

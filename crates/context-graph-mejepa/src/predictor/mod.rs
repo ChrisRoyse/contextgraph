@@ -428,6 +428,10 @@ impl MeJepaPredictor {
         self.varmap.all_vars()
     }
 
+    pub fn config(&self) -> &PredictorConfig {
+        &self.config
+    }
+
     pub fn architecture_summary(&self) -> ArchitectureSummary {
         ArchitectureSummary {
             num_layers: self.config.num_layers,

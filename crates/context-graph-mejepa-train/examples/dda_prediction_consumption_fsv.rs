@@ -1,8 +1,8 @@
 use context_graph_mejepa::prediction_surfaces::covered_chunks_for_patch;
 use context_graph_mejepa::{
-    build_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb, panel_sha,
-    CalibrationExample, CalibrationStore, DdaSignals, DeterministicPredictor, MeJepaInferConfig,
-    MejepaStore, PanelId, Predictor, RocksDbInferStore,
+    build_fixture_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb,
+    panel_sha, CalibrationExample, CalibrationStore, DdaSignals, DeterministicPredictor,
+    MeJepaInferConfig, MejepaStore, PanelId, Predictor, RocksDbInferStore,
 };
 use context_graph_mejepa_cf::CF_MEJEPA_DDA_SIGNALS;
 use context_graph_mejepa_train::dda::{
@@ -219,7 +219,7 @@ fn setup(
         BTreeMap::new(),
     )?;
     let store = Arc::new(RocksDbInferStore::new(db.clone()));
-    let compiler = build_deterministic_compiler(
+    let compiler = build_fixture_deterministic_compiler(
         repo_root.clone(),
         store.clone(),
         calibration_store,

@@ -1,6 +1,6 @@
 use anyhow::{ensure, Result};
 use context_graph_mejepa::calibration::open_infer_rocksdb;
-use context_graph_mejepa::cli::{build_deterministic_compiler, write_json_0600};
+use context_graph_mejepa::cli::{build_fixture_deterministic_compiler, write_json_0600};
 use context_graph_mejepa::conformal::{non_conformity_score, CalibrationExample};
 use context_graph_mejepa::gates::{sha256_bytes, valid_witness_segment};
 use context_graph_mejepa::{
@@ -50,7 +50,7 @@ fn main() -> Result<()> {
     )?;
 
     let store = Arc::new(RocksDbInferStore::new(db));
-    let compiler = build_deterministic_compiler(
+    let compiler = build_fixture_deterministic_compiler(
         repo_root.clone(),
         store,
         calibration,

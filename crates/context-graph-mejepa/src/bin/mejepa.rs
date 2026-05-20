@@ -16,10 +16,10 @@ use context_graph_mejepa::fsv_writer;
 use context_graph_mejepa::heal::{run_heal_drill, HealDrillArgs, InjectDrift, FSV_ROOT};
 use context_graph_mejepa::panel_source::{self, PanelBatchView};
 use context_graph_mejepa::{
-    build_deterministic_compiler, open_infer_rocksdb, CalibrationStore, ForwardPassEvidence,
-    FrozenTargetAdapter, InferTestArgs, LossOutputs, MeJepaPredictor, PredictorConfig,
-    RocksDbInferStore, TargetProvenance, VicregLambdas, VicregLossEvidence, PANEL_DIM,
-    VRAM_STEADY_STATE_TARGET_BYTES,
+    build_fixture_deterministic_compiler, open_infer_rocksdb, CalibrationStore,
+    ForwardPassEvidence, FrozenTargetAdapter, InferTestArgs, LossOutputs, MeJepaPredictor,
+    PredictorConfig, RocksDbInferStore, TargetProvenance, VicregLambdas, VicregLossEvidence,
+    PANEL_DIM, VRAM_STEADY_STATE_TARGET_BYTES,
 };
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::sync::Arc;
@@ -582,7 +582,7 @@ fn run_infer_test_command(args: InferTestArgs) -> Result<ExitCode, MejepaCliErro
         MejepaCliError::Assertion(format!("failed to initialize calibration store: {err}"))
     })?;
     let store = std::sync::Arc::new(RocksDbInferStore::new(db));
-    let compiler = build_deterministic_compiler(
+    let compiler = build_fixture_deterministic_compiler(
         repo_root,
         store,
         calibration.clone(),

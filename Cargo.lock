@@ -1323,6 +1323,7 @@ dependencies = [
  "context-graph-mejepa-cf",
  "context-graph-mejepa-corpus",
  "context-graph-mejepa-instruments",
+ "context-graph-mejepa-tct",
  "context-graph-mincut",
  "context-graph-witness",
  "ed25519-dalek",

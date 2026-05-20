@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -198,7 +198,11 @@ pub fn open_infer_rocksdb(path: impl AsRef<Path>) -> Result<Arc<DB>, MejepaInfer
     opts.set_paranoid_checks(true);
     let descriptors = MEJEPA_INFER_CFS
         .iter()
-        .map(|cf| ColumnFamilyDescriptor::new(*cf, Options::default()))
+        .chain(context_graph_mejepa_cf::TCT_CFS.iter())
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|cf| ColumnFamilyDescriptor::new(cf, Options::default()))
         .collect::<Vec<_>>();
     Ok(Arc::new(DB::open_cf_descriptors(
         &opts,

@@ -9,7 +9,7 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use context_graph_mejepa::calibration::count_cf;
 use context_graph_mejepa::{
-    build_deterministic_compiler, open_infer_rocksdb, sha256_bytes, valid_witness_segment,
+    build_fixture_deterministic_compiler, open_infer_rocksdb, sha256_bytes, valid_witness_segment,
     ActualOutcome, AgentId, AstDiff, CalibrationExample, CalibrationStore, DiffHunk, FeedbackId,
     FeedbackKind, Language, MeJepaInferConfig, MejepaStore, OracleOutcome, PatchBundle,
     PredictionId, RealityPrediction, RocksDbInferStore, SurpriseEvent, SurpriseSeverity,
@@ -123,7 +123,7 @@ pub fn run_chaos_failpoints_fsv(fsv_root: &Path) -> Result<ChaosFailpointsFsvRep
             db.as_ref(),
             context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
         )?;
-        let compiler = build_deterministic_compiler(
+        let compiler = build_fixture_deterministic_compiler(
             repo_root.clone(),
             store.clone(),
             calibration,

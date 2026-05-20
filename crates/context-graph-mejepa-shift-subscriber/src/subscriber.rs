@@ -8,7 +8,7 @@ use crate::shift_transform::{
 };
 use crate::{Result, SubscriberError, WatermarkWriter};
 use context_graph_mejepa::{
-    build_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb,
+    build_slot_preserving_cuda_compiler, materialize_inference_panels, open_infer_rocksdb,
     CalibrationExample, CalibrationStore, ChunkId, DdaSignals, MeJepaInferConfig, MejepaStore,
     PanelId, PatchBundle, RealityPrediction, RocksDbInferStore, TaskContext, TrainCertSummary,
 };
@@ -277,7 +277,7 @@ impl ShiftSubscriber {
             dda_expected_embedder_count: SUPPORTED_ALGORITHMIC_FORWARD_EMBEDDERS.len(),
             ..MeJepaInferConfig::default()
         };
-        Ok(build_deterministic_compiler(
+        Ok(build_slot_preserving_cuda_compiler(
             self.config.repo_root.clone(),
             store,
             calibration,

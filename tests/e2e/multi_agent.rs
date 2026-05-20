@@ -9,7 +9,7 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use context_graph_mejepa::calibration::count_cf;
 use context_graph_mejepa::{
-    build_deterministic_compiler, open_infer_rocksdb, valid_witness_segment, ActualOutcome,
+    build_fixture_deterministic_compiler, open_infer_rocksdb, valid_witness_segment, ActualOutcome,
     AgentId, AstDiff, CalibrationExample, CalibrationStore, DiffHunk, FeedbackId, FeedbackKind,
     Language, MeJepaInferConfig, MejepaStore, OracleOutcome, PatchBundle, PredictionId,
     RealityPrediction, RocksDbInferStore, SurpriseEvent, SurpriseSeverity, TaskContext,
@@ -312,7 +312,7 @@ fn run_concurrent_predictions(
         let store = store.clone();
         let calibration = calibration.clone();
         handles.push(std::thread::spawn(move || -> Result<PredictionArtifact> {
-            let compiler = build_deterministic_compiler(
+            let compiler = build_fixture_deterministic_compiler(
                 repo_root,
                 Arc::new(RocksDbInferStore::new(db)),
                 calibration,

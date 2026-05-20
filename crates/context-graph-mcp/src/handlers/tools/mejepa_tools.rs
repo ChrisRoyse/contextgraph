@@ -19,8 +19,8 @@ use context_graph_mejepa::operator_override::{
     persist_operator_override, OperatorOverride, OverrideVerdict,
 };
 use context_graph_mejepa::{
-    bedrock_consistency_for_patch_diff, build_deterministic_compiler, decode_reality_prediction,
-    mejepa_mincut_panel, open_infer_rocksdb, open_mincut_rocksdb,
+    bedrock_consistency_for_patch_diff, build_slot_preserving_cuda_compiler,
+    decode_reality_prediction, mejepa_mincut_panel, open_infer_rocksdb, open_mincut_rocksdb,
     operator_contribution_report_from_db, promote_instrument_proposal,
     propose_embedder_proposals_from_db, propose_instruments_from_db,
     rank_counterfactual_candidates, read_embedder_proposals, read_instrument_proposal,
@@ -74,7 +74,6 @@ const ENV_HEAL_DB: &str = "CONTEXTGRAPH_MEJEPA_HEAL_DB";
 const ENV_HYGIENE_ARCHIVE_ROOT: &str = "CONTEXTGRAPH_MEJEPA_HYGIENE_ARCHIVE_ROOT";
 const ENV_PANEL_DB: &str = "CONTEXTGRAPH_MEJEPA_PANEL_DB";
 const ENV_INFER_DB: &str = "CONTEXTGRAPH_MEJEPA_INFER_DB";
-const ENV_ALLOW_DETERMINISTIC_VERIFY: &str = "CONTEXTGRAPH_MEJEPA_ALLOW_DETERMINISTIC_VERIFY";
 const ENV_PAUSE_PATH: &str = "CONTEXTGRAPH_MEJEPA_PAUSE_PATH";
 const DEFAULT_PAUSE_STATE_PATH: &str =
     "/zfs/archive/contextgraph/state/cgreality/predictions_paused_until.json";
@@ -511,7 +510,7 @@ impl Handlers {
                     response["provenance"] = json!({
                         "codeVersion": env!("CARGO_PKG_VERSION"),
                         "dbPath": db_path,
-                        "mode": "deterministic_phase4_harness",
+                        "mode": "paused_before_slot_preserving_cuda_compiler",
                         "pauseStatePath": pause_path,
                     });
                 }
@@ -529,7 +528,6 @@ impl Handlers {
             }
         }
         let result = (|| {
-            ensure_deterministic_verify_allowed()?;
             let db = open_infer_rocksdb(&db_path)?;
             let subscriber_state = subscriber_state_for_provenance(db.as_ref(), session_id)
                 .map_err(
@@ -543,7 +541,7 @@ impl Handlers {
                 db,
                 Arc::clone(&self.system_cost_counters),
             ));
-            let compiler = build_deterministic_compiler(
+            let compiler = build_slot_preserving_cuda_compiler(
                 repo_root,
                 store,
                 calibration,
@@ -557,7 +555,7 @@ impl Handlers {
                 response["provenance"] = json!({
                     "codeVersion": env!("CARGO_PKG_VERSION"),
                     "dbPath": db_path,
-                    "mode": "deterministic_phase4_harness",
+                    "mode": "slot_preserving_cuda_real_compiler",
                     "last_consumed_shift_id": subscriber_state_value
                         .get("last_consumed_shift_id")
                         .cloned()
@@ -2192,20 +2190,19 @@ fn resolve_optional_infer_db_path(input: Option<&PathBuf>) -> Result<PathBuf, St
 }
 
 fn run_predict_what_if(db_path: &Path, request: PredictWhatIfRequest) -> AnyhowResult<Value> {
-    ensure_deterministic_verify_allowed().map_err(|err| anyhow!("{}: {err}", err.code()))?;
     let repo_root = request.context.environment.repo_root.clone();
     let disk_sha_before = file_sha_snapshot(&repo_root, &request.patch)
         .context("read repository file SHA snapshot before what-if prediction")?;
     let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
     let calibration = CalibrationStore::new(db.clone(), 30)?;
     let store = Arc::new(RocksDbInferStore::new(db.clone()));
-    let compiler = build_deterministic_compiler(
+    let compiler = build_slot_preserving_cuda_compiler(
         repo_root.clone(),
         store,
         calibration,
         MeJepaInferConfig::default(),
     )
-    .context("build deterministic ME-JEPA compiler")?;
+    .context("build slot-preserving CUDA ME-JEPA compiler")?;
     let prediction = compiler
         .compile(&request.patch, &request.context)
         .context("compile what-if prediction")?;
@@ -2254,20 +2251,19 @@ fn run_search_latent_actions(
     db_path: &Path,
     request: SearchLatentActionsRequest,
 ) -> AnyhowResult<Value> {
-    ensure_deterministic_verify_allowed().map_err(|err| anyhow!("{}: {err}", err.code()))?;
     let repo_root = request.context.environment.repo_root.clone();
     let disk_sha_before = file_sha_snapshot_for_candidates(&repo_root, &request.candidates)
         .context("read repository file SHA snapshot before latent action search")?;
     let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
     let calibration = CalibrationStore::new(db.clone(), 30)?;
     let store = Arc::new(RocksDbInferStore::new(db));
-    let compiler = build_deterministic_compiler(
+    let compiler = build_slot_preserving_cuda_compiler(
         repo_root.clone(),
         store,
         calibration,
         MeJepaInferConfig::default(),
     )
-    .context("build deterministic ME-JEPA compiler")?;
+    .context("build slot-preserving CUDA ME-JEPA compiler")?;
     let search = search_latent_actions(
         &compiler,
         &request.context,
@@ -2299,20 +2295,19 @@ fn run_search_latent_actions(
 }
 
 fn run_rank_candidates(db_path: &Path, request: RankCandidatesRequest) -> AnyhowResult<Value> {
-    ensure_deterministic_verify_allowed().map_err(|err| anyhow!("{}: {err}", err.code()))?;
     let repo_root = request.context.environment.repo_root.clone();
     let disk_sha_before = file_sha_snapshot_for_candidates(&repo_root, &request.candidates)
         .context("read repository file SHA snapshot before candidate ranking")?;
     let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
     let calibration = CalibrationStore::new(db.clone(), 30)?;
     let store = Arc::new(RocksDbInferStore::new(db));
-    let compiler = build_deterministic_compiler(
+    let compiler = build_slot_preserving_cuda_compiler(
         repo_root.clone(),
         store,
         calibration,
         MeJepaInferConfig::default(),
     )
-    .context("build deterministic ME-JEPA compiler")?;
+    .context("build slot-preserving CUDA ME-JEPA compiler")?;
     let ranking = rank_counterfactual_candidates(
         &compiler,
         &request.context,
@@ -3790,27 +3785,6 @@ fn count_cf_any(db: &DB, name: &str) -> AnyhowResult<u64> {
     Ok(count)
 }
 
-fn ensure_deterministic_verify_allowed() -> Result<(), context_graph_mejepa::MejepaInferError> {
-    match std::env::var(ENV_ALLOW_DETERMINISTIC_VERIFY) {
-        Ok(value) if value.eq_ignore_ascii_case("true") || value == "1" => Ok(()),
-        Ok(value) => Err(context_graph_mejepa::MejepaInferError::FeatureDisabled {
-            feature: format!(
-                "deterministic ME-JEPA verify harness requires {ENV_ALLOW_DETERMINISTIC_VERIFY}=true or 1; observed {value:?}"
-            ),
-        }),
-        Err(std::env::VarError::NotPresent) => {
-            Err(context_graph_mejepa::MejepaInferError::FeatureDisabled {
-                feature: format!(
-                    "deterministic ME-JEPA verify harness requires {ENV_ALLOW_DETERMINISTIC_VERIFY}=true or 1"
-                ),
-            })
-        }
-        Err(err) => Err(context_graph_mejepa::MejepaInferError::FeatureDisabled {
-            feature: format!("failed to read {ENV_ALLOW_DETERMINISTIC_VERIFY}: {err}"),
-        }),
-    }
-}
-
 fn parse_runtime_versions(
     input: &std::collections::BTreeMap<String, String>,
 ) -> Result<std::collections::BTreeMap<EmbedderId, [u8; 32]>, String> {
@@ -3877,7 +3851,6 @@ mod mejepa_constellation_inspect_tests {
         std::env::remove_var(ENV_TCT_DB);
         std::env::remove_var(ENV_INFER_DB);
         std::env::remove_var(ENV_PAUSE_PATH);
-        std::env::remove_var(ENV_ALLOW_DETERMINISTIC_VERIFY);
         std::env::remove_var(
             crate::handlers::tools::mejepa_agent_identity::ENV_MEJEPA_AGENTS_CONFIG,
         );
@@ -5791,15 +5764,6 @@ can_operator_override = {operator}
         let runtime = versions(8);
         let err = run_constellation_inspect(temp.path(), None, &runtime).unwrap_err();
         assert_eq!(err.code(), "MEJEPA_TCT_MISSING_CENTROID");
-    }
-
-    #[test]
-    fn mejepa_verify_requires_explicit_deterministic_harness_opt_in() {
-        let _guard = env_guard();
-        let err = ensure_deterministic_verify_allowed().unwrap_err();
-        assert_eq!(err.code(), "MEJEPA_INFER_FEATURE_DISABLED");
-        std::env::set_var(ENV_ALLOW_DETERMINISTIC_VERIFY, "true");
-        ensure_deterministic_verify_allowed().unwrap();
     }
 
     #[test]

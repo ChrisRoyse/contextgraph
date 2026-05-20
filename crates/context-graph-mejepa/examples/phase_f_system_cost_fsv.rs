@@ -12,7 +12,7 @@ use context_graph_mejepa::system_cost::{
     SystemCostCounters, SystemCostError, SystemCostSnapshot,
 };
 use context_graph_mejepa::{
-    build_deterministic_compiler, fixture_patch_context, CalibrationStore, Language,
+    build_fixture_deterministic_compiler, fixture_patch_context, CalibrationStore, Language,
     MeJepaInferConfig, RocksDbInferStore, VerifyVerdict,
 };
 use context_graph_mejepa_cf::CF_MEJEPA_WEIGHT_BLOBS;
@@ -177,7 +177,7 @@ fn producer_wiring_evidence(
         db.clone(),
         Arc::clone(&counters),
     ));
-    let compiler = build_deterministic_compiler(
+    let compiler = build_fixture_deterministic_compiler(
         repo_root.clone(),
         store.clone(),
         calibration_store,

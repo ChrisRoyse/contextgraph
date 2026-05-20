@@ -60,13 +60,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(report.per_language_accuracy.len(), 11);
     assert!(report.generic_only_warning.is_some());
     assert_eq!(report.phase3_dod_passed, Some(true));
-    let best = promote_best(
+    let retired_stub_promotion_error = promote_best(
         Path::new(FSV_DIR),
         1000,
         report.prediction_oracle_agreement,
         0.0,
         0.005,
-    )?;
+    )
+    .expect_err("retired text-stub checkpoint promotion must fail closed");
+    assert_eq!(
+        retired_stub_promotion_error.code(),
+        "MEJEPA_TRAIN_CHECKPOINT_CORRUPT"
+    );
     let evidence = json!({
         "source_of_truth": DB_DIR,
         "cf": CF_MEJEPA_HOLDOUT_REPORTS,
@@ -75,7 +80,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "per_category_keys": report.per_mutation_category_accuracy.len(),
         "per_language_keys": report.per_language_accuracy.len(),
         "generic_only_warning": report.generic_only_warning,
-        "best_safetensors_path": best
+        "retired_stub_promotion_error": retired_stub_promotion_error.code(),
+        "best_safetensors_path": null
     });
     write_0600(
         Path::new(FSV_DIR).join("holdout-eval-evidence.json"),

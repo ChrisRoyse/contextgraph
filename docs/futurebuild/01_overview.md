@@ -326,9 +326,9 @@ This is the analogue of PAPER §6.3's named-future-work item "cross-encoder tria
 
 ---
 
-## 4. Workspace Members (25 active default + 1 excluded)
+## 4. Workspace Members (22 active default + 1 excluded)
 
-`Cargo.toml:6-32` lists all members; `default-members` (lines 36-61) excludes `context-graph-benchmark` (87K lines, build explicitly with `-p`). Full per-crate detail in `02_source_map.md`.
+`Cargo.toml:6-32` lists all members; `default-members` (lines 36-61) excludes `context-graph-benchmark` (87K lines, build explicitly with `-p`). Retired `context-graph-causal-agent` and `context-graph-graph-agent` were deleted on 2026-05-19 after the ME-JEPA pivot left them with zero workspace dependents. Full per-crate detail in `02_source_map.md`.
 
 | Crate | Role | LOC (src lib.rs only) |
 |---|---|---|
@@ -353,8 +353,6 @@ This is the analogue of PAPER §6.3's named-future-work item "cross-encoder tria
 | `context-graph-mejepa-hygiene` | Tier transitions, quota, GC, witness compress | 37 |
 | `context-graph-mejepa-shift-subscriber` | JSONL shift-log tail → panel materialization | 26 |
 | `context-graph-dynamicjepa` | 5090jepa MCP surface (39 tools) | — |
-| `context-graph-causal-agent` | Deterministic causal extraction | — |
-| `context-graph-graph-agent` | Graph extraction / discovery | 66 |
 | `context-graph-test-utils` | Shared test fixtures (NO MOCK DATA) | 23 |
 | `context-graph-benchmark` *(excluded from default build)* | 87K-line benchmarking suite | — |
 

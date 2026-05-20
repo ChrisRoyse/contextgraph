@@ -8,7 +8,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition::new(
             tool_names::MEJEPA_VERIFY,
-            "System 2 verifier surface: evaluate a System 1 LLM candidate patch through the ME-JEPA Phase 4 inference gate ladder. This surface currently exposes the deterministic Phase 4 harness only when CONTEXTGRAPH_MEJEPA_ALLOW_DETERMINISTIC_VERIFY is explicitly enabled; otherwise it fails closed.",
+            "System 2 verifier surface: evaluate a System 1 LLM candidate patch through the slot-preserving CUDA ME-JEPA inference compiler. Deterministic fixture compilers are non-countable test helpers and are not exposed by this product tool.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -118,7 +118,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_PREDICT_WHAT_IF,
-            "System 2 what-if surface: compile a non-mutating ME-JEPA Phase B prediction for a System 1 candidate patch. Reads calibration/train-cert state from the real inference RocksDB, refuses to run unless the deterministic harness is explicitly enabled, and returns repository SHA readback proving no touched file was modified.",
+            "System 2 what-if surface: compile a non-mutating ME-JEPA Phase B prediction for a System 1 candidate patch through the slot-preserving CUDA compiler. Reads calibration/train-cert state from the real inference RocksDB and returns repository SHA readback proving no touched file was modified.",
             json!({
                 "type": "object",
                 "additionalProperties": false,

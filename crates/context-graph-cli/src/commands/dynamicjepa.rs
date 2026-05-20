@@ -1312,7 +1312,7 @@ pub struct ResearchSmokeArgs {
     pub hyperparameter_origin: Option<String>,
 
     /// Local system specification document to hash into the research bundle.
-    #[arg(long = "system-specs", default_value = "docs2/systemspecs.md")]
+    #[arg(long = "system-specs", default_value = "docs2/aiwonder.md")]
     pub system_specs: PathBuf,
 
     /// Emit one machine-readable JSON object.
@@ -1363,7 +1363,7 @@ pub struct HpSweepArgs {
     pub career_training_seeds: Vec<u64>,
 
     /// Local system specification document to hash into each child research bundle.
-    #[arg(long = "system-specs", default_value = "docs2/systemspecs.md")]
+    #[arg(long = "system-specs", default_value = "docs2/aiwonder.md")]
     pub system_specs: PathBuf,
 
     /// Emit one machine-readable JSON object.
@@ -16192,7 +16192,7 @@ fn write_environment_bundle(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult
         return Err(DynamicJepaError::validation(
             "research_smoke.system_specs",
             format!("system specs file does not exist: {}", ctx.system_specs.display()),
-            "pass --system-specs with a local hardware specification document, or restore docs2/systemspecs.md",
+            "pass --system-specs with a local hardware specification document, or restore docs2/aiwonder.md",
         ));
     }
     let system_specs_sha256 = hex_bytes(&file_sha256(&ctx.system_specs)?);

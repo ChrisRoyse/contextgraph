@@ -41,7 +41,7 @@ reference=""
 seeds=""
 run_root="${MEJEPA_REPRO_RUN_ROOT:-tmp/mejepa_reproduce_runs}"
 onet_text_zip="${ONET_TEXT_ZIP:-tmp/onet_probe/db_30_2_text.zip}"
-system_specs="${SYSTEM_SPECS:-docs2/systemspecs.md}"
+system_specs="${SYSTEM_SPECS:-docs2/aiwonder.md}"
 fixtures_root="${FIXTURES_ROOT:-configs/dynamicjepa}"
 run_id_prefix="${REPRODUCE_RUN_ID_PREFIX:-reproduce_$(date -u +%Y%m%dT%H%M%SZ)_$$}"
 

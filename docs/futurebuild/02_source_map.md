@@ -10,7 +10,7 @@ Totals (2026-05-19, via `find crates -type f -path '*/src/*' -name '*.rs'`, `fin
 
 ## 1. Workspace Manifest
 
-`Cargo.toml:6-32` lists 25 active members. `default-members` (lines 36-61) excludes `context-graph-benchmark` (87K-line benchmarking suite, never compiled into the MCP server). Build benchmark explicitly with `cargo build -p context-graph-benchmark`.
+`Cargo.toml:6-32` lists 23 active workspace members. `default-members` (lines 36-61) includes 22 default-build crates and excludes `context-graph-benchmark` (87K-line diagnostic benchmarking suite, never compiled into the MCP server). Build benchmark explicitly with `cargo build -p context-graph-benchmark`.
 
 Workspace package: `version = "0.1.0"`, `edition = "2021"`, `rust-version = "1.95"`, `license = "PolyForm-Noncommercial-1.0.0"`.
 
@@ -49,7 +49,7 @@ Build profiles (`Cargo.toml:112-128`):
 | 20 | `context-graph-mejepa-shift-subscriber` | (n/a) | JSONL shift-log tail + watermark + cache → panels | `cache.rs`, `models.rs`, `runner.rs`, `shift_transform.rs`, `status.rs`, `subscriber.rs`, `tail.rs`, `watermark.rs` |
 | 21 | `context-graph-dynamicjepa` | (n/a) | 5090jepa MCP surface (39 tools) — adapter shipping, plan trace, surprise log | (multiple modules) |
 | 22 | `context-graph-test-utils` | "Shared test utilities for context-graph workspace — NO MOCK DATA" | Fixtures, deterministic helpers (no mocks for completion gates per FSV-PROTOCOL §3) | — |
-| 23 | `context-graph-benchmark` *(excluded from default build)* | (n/a) | Benchmarking suite — see crate `Cargo.toml` for the live `[[bin]]` set | — |
+| 23 | `context-graph-benchmark` *(excluded from default build)* | "Excluded diagnostic benchmark suite for ContextGraph embedder, graph-linking, and real-data performance" | Diagnostic benchmark suite. Not ship-gate evidence; use only for explicit embedder/graph/performance investigations. Current live bins: `benchmark-report`, `realdata-bench`, `gpu-bench`, `embedder-stress`, `hf-bench`, `temporal-bench`, `temporal-realdata-bench`, `sparse-bench`, `graph-bench`, `unified-realdata-bench`, `graph-realdata-bench`, `validation-realdata-bench`, `e4-hybrid-session-bench`, `e1-semantic-bench`, `e7-bench`, `e7-realdata-bench`, `code-fingerprint-bench`, `graph-linking-bench`, `graph-linking-real-bench`, `disk-space-bench`, `spawn-blocking-bench`. Benches: `comparative_suite`, `scaling_analysis`. | — |
 
 **Note on §1 workspace member count.** As of 2026-05-19 cleanup the workspace has **23 active members** (down from 25). The retired crates `context-graph-causal-agent` and `context-graph-graph-agent` were deleted in the same pass that retired the inner-LLM stack (their public surface had zero workspace dependents; the 2026-05-09 ME-JEPA pivot already disabled their LLM-backed callers).
 
@@ -258,7 +258,7 @@ context-graph-test-utils  — zero internal deps
 | `mejepa-heal-drill` | `context-graph-mejepa` `[[bin]]` | `crates/context-graph-mejepa/src/bin/mejepa_heal_drill.rs` | Heal scheduler drill |
 | `mejepa-train` | `context-graph-mejepa-train` `[[bin]]` | `crates/context-graph-mejepa-train/src/bin/mejepa_train.rs` | Trainer driver |
 | `train-causal` | `context-graph-embeddings` `[[bin]]` | (per Cargo.toml) | Causal embedder training |
-| Benchmark bins | `context-graph-benchmark` *(excluded)* | per Cargo.toml | 30+ embedder/graph/causal/sparse/multimodal benchmarks (see crate `Cargo.toml`) |
+| Benchmark bins | `context-graph-benchmark` *(excluded)* | per Cargo.toml | 21 explicit diagnostic bins plus `comparative_suite` / `scaling_analysis` benches. Current metrics are embedder throughput/latency/resource use, real-data benchmark reports, graph-linking quality, temporal/sparse/GPU stress, validation real-data checks, and code-fingerprint retrieval behavior. These are not Phase G ship-gate evidence unless a child issue names a benchmark run and FSV root explicitly. |
 
 ---
 

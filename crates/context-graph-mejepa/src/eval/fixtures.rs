@@ -9,7 +9,7 @@ use crate::fixtures::fixture_patch_context;
 use crate::gates::sha256_bytes;
 use crate::types::{EmbedderId, FailureModeClass, Language, OracleOutcome, TaskId};
 use crate::{
-    build_deterministic_compiler, open_infer_rocksdb, MeJepaCompiler, MeJepaInferConfig,
+    build_fixture_deterministic_compiler, open_infer_rocksdb, MeJepaCompiler, MeJepaInferConfig,
     RocksDbInferStore,
 };
 use rocksdb::DB;
@@ -38,7 +38,7 @@ pub fn build_eval_compiler(
         outcome_set_max: 4,
         ..Default::default()
     };
-    let compiler = Arc::new(build_deterministic_compiler(
+    let compiler = Arc::new(build_fixture_deterministic_compiler(
         repo_root.to_path_buf(),
         store,
         calibration.clone(),

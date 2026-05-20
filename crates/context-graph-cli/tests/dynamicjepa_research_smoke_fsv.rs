@@ -14,6 +14,7 @@ use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 const DEFAULT_ONET_TEXT_ZIP: &str = "tmp/onet_probe/db_30_2_text.zip";
+const DEFAULT_SYSTEM_SPECS: &str = "docs2/aiwonder.md";
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -277,7 +278,7 @@ fn hp_sweep_fails_closed_for_unknown_axis_before_bundle_creation() {
         "--onet-text-zip",
         onet_zip.to_str().expect("O*NET ZIP path utf8"),
         "--system-specs",
-        root.join("docs2/systemspecs.md")
+        root.join(DEFAULT_SYSTEM_SPECS)
             .to_str()
             .expect("system specs path utf8"),
         "--json",
@@ -325,7 +326,7 @@ fn hp_sweep_fails_closed_for_invalid_value_before_bundle_creation() {
         "--onet-text-zip",
         onet_zip.to_str().expect("O*NET ZIP path utf8"),
         "--system-specs",
-        root.join("docs2/systemspecs.md")
+        root.join(DEFAULT_SYSTEM_SPECS)
             .to_str()
             .expect("system specs path utf8"),
         "--json",
@@ -374,7 +375,7 @@ fn hp_sweep_fails_closed_for_existing_output_root() {
         "--onet-text-zip",
         onet_zip.to_str().expect("O*NET ZIP path utf8"),
         "--system-specs",
-        root.join("docs2/systemspecs.md")
+        root.join(DEFAULT_SYSTEM_SPECS)
             .to_str()
             .expect("system specs path utf8"),
         "--json",
@@ -565,7 +566,7 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
         "--onet-text-zip",
         onet_zip.to_str().expect("O*NET ZIP path utf8"),
         "--system-specs",
-        root.join("docs2/systemspecs.md")
+        root.join(DEFAULT_SYSTEM_SPECS)
             .to_str()
             .expect("system specs path utf8"),
         "--career-training-seed",

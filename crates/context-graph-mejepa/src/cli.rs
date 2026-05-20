@@ -2,23 +2,42 @@ use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
+use candle_core::{DType, Device, Tensor};
 use clap::Args;
+use context_graph_mejepa_instruments::{InstrumentSlot, Panel};
 use serde::{Deserialize, Serialize};
 
 use crate::calibration::CalibrationStore;
 use crate::compiler::{
-    DeterministicConstellationGuard, DeterministicOracleHead, DeterministicPredictor,
-    IdentityFrozenTarget, MeJepaCompiler, PatchWitnessReader,
+    DeterministicConstellationGuard, DeterministicOracleHead, DeterministicPredictor, FrozenTarget,
+    IdentityFrozenTarget, MeJepaCompiler, OracleHead, OracleScores, PatchWitnessReader, Predictor,
+    TctConstellationGuard,
 };
-use crate::config::MeJepaInferConfig;
+use crate::config::{MeJepaInferConfig, PredictorConfig, PANEL_DIM};
 use crate::conformal::{non_conformity_score, CalibrationExample};
+use crate::data_models::{PredictedPanel, TargetProvenance};
 use crate::error::MejepaInferError;
 use crate::fixtures::fixture_patch_context;
+use crate::frozen_target::FrozenTargetAdapter;
 use crate::ood::separation_auc;
+use crate::predictor::MeJepaPredictor;
+use crate::predictor_checkpoint::{
+    load_verified_trained_predictor_checkpoint, LoadedPredictorCheckpoint,
+};
 use crate::store::RocksDbInferStore;
+use context_graph_mejepa_tct::{
+    ConstellationStore, EntityType as TctEntityType, MutationCategory as TctMutationCategory,
+};
+
+pub const FIXTURE_COMPILER_EVIDENCE_CLASS: &str = "fixture_only_non_ship_gate";
+pub const SLOT_PRESERVING_CUDA_COMPILER_EVIDENCE_CLASS: &str =
+    "slot_preserving_cuda_non_synthetic_untrained_checkpoint_blocked";
+pub const SLOT_PRESERVING_CUDA_TRAINED_COMPILER_EVIDENCE_CLASS: &str =
+    "slot_preserving_cuda_trained_checkpoint_loaded";
+pub const TRAINED_CHECKPOINT_ATTESTATION_KEY: &str = "MEJEPA_TRAINED_CHECKPOINT_LOADED";
 
 #[derive(Debug, Clone, Args)]
 pub struct InferTestArgs {
@@ -116,7 +135,7 @@ pub fn dod_satisfied(report: &InferTestReport) -> bool {
         && report.ood_separation_auc > 0.85
 }
 
-pub fn build_deterministic_compiler(
+pub fn build_fixture_deterministic_compiler(
     repo_root: PathBuf,
     store: Arc<RocksDbInferStore>,
     calibration: CalibrationStore,
@@ -136,6 +155,243 @@ pub fn build_deterministic_compiler(
         repo_root,
         system_cost_counters,
     )
+}
+
+pub fn build_slot_preserving_cuda_compiler(
+    repo_root: PathBuf,
+    store: Arc<RocksDbInferStore>,
+    calibration: CalibrationStore,
+    mut config: MeJepaInferConfig,
+) -> Result<MeJepaCompiler, MejepaInferError> {
+    config.outcome_set_max = config.outcome_set_max.max(1);
+    let system_cost_counters = store.system_cost_counters();
+    let mut instrument_versions = BTreeMap::new();
+    for slot in InstrumentSlot::all() {
+        instrument_versions.insert(
+            slot.slug().to_string(),
+            format!("slot-preserving-real-compiler-v1:dim={}", slot.dim()),
+        );
+    }
+    let frozen_target = FrozenTargetAdapter::new(TargetProvenance::new(
+        "slot-preserving-frozen-instrument-panel",
+        instrument_versions,
+        0,
+        None,
+    ));
+    let constellation_store = ConstellationStore::new(store.db())?;
+    let latest_constellation_version = constellation_store.latest_version()?;
+    let constellation =
+        constellation_store.load_without_runtime_checks(latest_constellation_version)?;
+    let constellation_guard = TctConstellationGuard::new(
+        constellation,
+        TctMutationCategory::KnownGood,
+        TctEntityType::Function,
+    )?;
+    let device = Device::new_cuda(0).map_err(crate::error::PredictorError::from)?;
+    let predictor_config = PredictorConfig::default();
+    let mut predictor = MeJepaPredictor::new(predictor_config.clone(), frozen_target, device, 1)?;
+    let loaded_checkpoint = match config.trained_checkpoint_manifest_path.as_ref() {
+        Some(path) => Some(load_verified_trained_predictor_checkpoint(
+            &mut predictor,
+            path,
+            &predictor_config,
+        )?),
+        None => None,
+    };
+    let loaded_checkpoint = Arc::new(loaded_checkpoint);
+    let shared = Arc::new(Mutex::new(predictor));
+    MeJepaCompiler::new_with_system_cost_counters(
+        config,
+        Arc::new(SlotPreservingCudaPredictor {
+            shared: Arc::clone(&shared),
+        }),
+        Arc::new(SlotPreservingCudaFrozenTarget {
+            shared: Arc::clone(&shared),
+        }),
+        Arc::new(SlotPreservingCudaOracleHead {
+            shared,
+            loaded_checkpoint,
+        }),
+        Arc::new(constellation_guard),
+        Arc::new(PatchWitnessReader),
+        store,
+        calibration,
+        repo_root,
+        system_cost_counters,
+    )
+}
+
+struct SlotPreservingCudaPredictor {
+    shared: Arc<Mutex<MeJepaPredictor>>,
+}
+
+impl Predictor for SlotPreservingCudaPredictor {
+    fn predict(&self, panel_t0: &Panel, panel_t1: &Panel) -> Result<Panel, MejepaInferError> {
+        let filled_mask = panel_t0.filled_mask() | panel_t1.filled_mask();
+        let predictor = lock_real_predictor(&self.shared, "predictor")?;
+        let panel_t0 = panel_to_tensor(panel_t0, predictor.device(), predictor.dtype())?;
+        let panel_t1 = panel_to_tensor(panel_t1, predictor.device(), predictor.dtype())?;
+        let predicted = predictor.forward(&panel_t0, &panel_t1)?;
+        candle(predictor.device().synchronize())?;
+        tensor_to_panel(&predicted.tensor, filled_mask)
+    }
+}
+
+struct SlotPreservingCudaFrozenTarget {
+    shared: Arc<Mutex<MeJepaPredictor>>,
+}
+
+impl FrozenTarget for SlotPreservingCudaFrozenTarget {
+    fn target(&self, panel_t2: &Panel) -> Result<Panel, MejepaInferError> {
+        let predictor = lock_real_predictor(&self.shared, "frozen_target")?;
+        let target = predictor.frozen_target_adapter().encode_target(
+            panel_t2,
+            predictor.device(),
+            predictor.dtype(),
+        )?;
+        if target.panel_dim != PANEL_DIM || target.batch_size != 1 {
+            return Err(MejepaInferError::DimMismatch {
+                expected: PANEL_DIM,
+                actual: target.panel_dim,
+                context: "real frozen target adapter returned an invalid target panel".to_string(),
+            });
+        }
+        Ok(panel_t2.clone())
+    }
+}
+
+struct SlotPreservingCudaOracleHead {
+    shared: Arc<Mutex<MeJepaPredictor>>,
+    loaded_checkpoint: Arc<Option<LoadedPredictorCheckpoint>>,
+}
+
+impl OracleHead for SlotPreservingCudaOracleHead {
+    fn score(&self, predicted_panel: &Panel) -> Result<OracleScores, MejepaInferError> {
+        let predictor = lock_real_predictor(&self.shared, "oracle_head")?;
+        let tensor = panel_to_tensor(predicted_panel, predictor.device(), predictor.dtype())?;
+        let predicted = PredictedPanel {
+            tensor,
+            batch_size: 1,
+            panel_dim: PANEL_DIM,
+            dtype: format!("{:?}", predictor.dtype()),
+        };
+        let logits = predictor.oracle_head().predict_logits(&predicted)?;
+        let probabilities = predictor.oracle_head().predict_probabilities(&logits)?;
+        let values = candle(candle(probabilities.tensor.to_dtype(DType::F32))?.flatten_all())?
+            .to_vec1::<f32>()
+            .map_err(crate::error::PredictorError::from)?;
+        if values.len() < 2 {
+            return Err(MejepaInferError::DimMismatch {
+                expected: 2,
+                actual: values.len(),
+                context:
+                    "real oracle head must emit oracle-pass plus at least one test probability"
+                        .to_string(),
+            });
+        }
+        let runtime_slot = predicted_panel.slot(InstrumentSlot::ERuntime);
+        let mut predicted_runtime_trace = [0.0; 32];
+        for (dst, src) in predicted_runtime_trace
+            .iter_mut()
+            .zip(runtime_slot.iter().copied())
+        {
+            *dst = src;
+        }
+        let checkpoint_loaded = self.loaded_checkpoint.as_ref().as_ref();
+        let mut granger_attestations = BTreeMap::from([
+            ("MEJEPA_REAL_COMPILER".to_string(), 1.0),
+            (
+                "MEJEPA_REAL_COMPILER_EVIDENCE_CLASS".to_string(),
+                if values[0].is_finite() { 1.0 } else { 0.0 },
+            ),
+            (
+                TRAINED_CHECKPOINT_ATTESTATION_KEY.to_string(),
+                checkpoint_loaded.map(|_| 1.0).unwrap_or(0.0),
+            ),
+        ]);
+        if let Some(checkpoint) = checkpoint_loaded {
+            granger_attestations.insert(
+                format!("checkpoint_sha256:{}", checkpoint.checkpoint_sha256),
+                1.0,
+            );
+            granger_attestations.insert(
+                format!("checkpoint_manifest_sha256:{}", checkpoint.manifest_sha256),
+                1.0,
+            );
+            granger_attestations.insert(
+                format!(
+                    "checkpoint_architecture_sha256:{}",
+                    checkpoint.architecture_sha256
+                ),
+                1.0,
+            );
+            granger_attestations.insert(
+                format!(
+                    "checkpoint_training_certificate_sha256:{}",
+                    checkpoint.training_certificate_sha256
+                ),
+                1.0,
+            );
+            granger_attestations.insert(
+                format!(
+                    "checkpoint_trained_weight_sha256:{}",
+                    checkpoint.trained_weight_sha256
+                ),
+                1.0,
+            );
+        }
+        Ok(OracleScores {
+            predicted_oracle_pass: values[0],
+            predicted_test_pass: values[1..].to_vec(),
+            predicted_runtime_trace,
+            granger_attestations,
+        })
+    }
+}
+
+fn lock_real_predictor<'a>(
+    shared: &'a Mutex<MeJepaPredictor>,
+    head: &'static str,
+) -> Result<MutexGuard<'a, MeJepaPredictor>, MejepaInferError> {
+    shared.lock().map_err(|_| MejepaInferError::InvalidInput {
+        field: format!("real_compiler.{head}"),
+        detail: "slot-preserving CUDA compiler mutex was poisoned".to_string(),
+    })
+}
+
+fn panel_to_tensor(
+    panel: &Panel,
+    device: &Device,
+    dtype: DType,
+) -> Result<Tensor, MejepaInferError> {
+    if panel.data().len() != PANEL_DIM {
+        return Err(MejepaInferError::DimMismatch {
+            expected: PANEL_DIM,
+            actual: panel.data().len(),
+            context: "panel_to_tensor real compiler input".to_string(),
+        });
+    }
+    candle(candle(Tensor::from_slice(panel.data(), (1, PANEL_DIM), device))?.to_dtype(dtype))
+}
+
+fn tensor_to_panel(tensor: &Tensor, filled_mask: u16) -> Result<Panel, MejepaInferError> {
+    let values = candle(candle(tensor.to_dtype(DType::F32))?.flatten_all())?
+        .to_vec1::<f32>()
+        .map_err(crate::error::PredictorError::from)?;
+    if values.len() != PANEL_DIM {
+        return Err(MejepaInferError::DimMismatch {
+            expected: PANEL_DIM,
+            actual: values.len(),
+            context: "real compiler predicted tensor length".to_string(),
+        });
+    }
+    Ok(Panel::try_new(values, filled_mask)?)
+}
+
+fn candle<T>(result: Result<T, candle_core::Error>) -> Result<T, MejepaInferError> {
+    result
+        .map_err(crate::error::PredictorError::from)
+        .map_err(MejepaInferError::from)
 }
 
 pub fn load_calibration_examples(

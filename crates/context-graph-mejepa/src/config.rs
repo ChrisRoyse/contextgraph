@@ -163,6 +163,10 @@ pub struct MeJepaInferConfig {
     pub patch_similarity_index_dir: Option<PathBuf>,
     /// Expected 64-hex corpus snapshot hash for the configured exemplar index.
     pub patch_similarity_corpus_snapshot_hash: Option<String>,
+    /// Manifest for a trained ME-JEPA predictor checkpoint. When absent the
+    /// slot-preserving CUDA compiler may still emit non-countable diagnostic
+    /// predictions, but it must attest `MEJEPA_TRAINED_CHECKPOINT_LOADED=0.0`.
+    pub trained_checkpoint_manifest_path: Option<PathBuf>,
 }
 
 impl Default for MeJepaInferConfig {
@@ -186,6 +190,7 @@ impl Default for MeJepaInferConfig {
             min_cell_support_for_verdict: INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT,
             patch_similarity_index_dir: None,
             patch_similarity_corpus_snapshot_hash: None,
+            trained_checkpoint_manifest_path: None,
         }
     }
 }
@@ -258,6 +263,16 @@ impl MeJepaInferConfig {
                 detail: "min_cell_support_for_verdict must be >= 1".to_string(),
             });
         }
+        if let Some(path) = &self.trained_checkpoint_manifest_path {
+            validate_aiwonder_checkpoint_path("trained_checkpoint_manifest_path", path)?;
+            if path.extension().and_then(|value| value.to_str()) != Some("json") {
+                return Err(PredictorError::ConfigInvalid {
+                    detail:
+                        "trained_checkpoint_manifest_path must point to a JSON manifest artifact"
+                            .to_string(),
+                });
+            }
+        }
         match (
             self.patch_similarity_index_dir.as_ref(),
             self.patch_similarity_corpus_snapshot_hash.as_ref(),
@@ -287,6 +302,33 @@ impl MeJepaInferConfig {
         }
         Ok(())
     }
+}
+
+pub(crate) fn validate_aiwonder_checkpoint_path(
+    field: &'static str,
+    path: &PathBuf,
+) -> Result<(), PredictorError> {
+    if path.as_os_str().is_empty() {
+        return Err(PredictorError::ConfigInvalid {
+            detail: format!("{field} must be non-empty when configured"),
+        });
+    }
+    let display = path.to_string_lossy();
+    if display.contains("/mnt/d") || display.contains("\\mnt\\d") {
+        return Err(PredictorError::ConfigInvalid {
+            detail: format!("{field} must not reference legacy /mnt/d storage: {display}"),
+        });
+    }
+    if !display.starts_with("/zfs/archive/contextgraph/")
+        && !display.starts_with("/zfs/hot/contextgraph/")
+    {
+        return Err(PredictorError::ConfigInvalid {
+            detail: format!(
+                "{field} must live under aiwonder /zfs/archive/contextgraph or /zfs/hot/contextgraph; got {display}"
+            ),
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]

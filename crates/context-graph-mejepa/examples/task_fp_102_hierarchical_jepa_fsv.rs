@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Context, Result};
 use context_graph_mejepa::{
-    build_deterministic_compiler, count_cf, open_infer_rocksdb, sha256_bytes,
+    build_fixture_deterministic_compiler, count_cf, open_infer_rocksdb, sha256_bytes,
     valid_witness_segment, AstDiff, CalibrationRecord, CalibrationStore, DiffHunk,
     HierarchicalPredictionRecord, Language, MeJepaInferConfig, MejepaStore, PatchBundle,
     PredictionHierarchyLevel, RocksDbInferStore, TaskContext, TaskEnvironment, TaskId, TestId,
@@ -57,7 +57,7 @@ fn main() -> Result<()> {
     calibration.persist(&calibration_record())?;
 
     let store = Arc::new(RocksDbInferStore::new(db.clone()));
-    let compiler = build_deterministic_compiler(
+    let compiler = build_fixture_deterministic_compiler(
         repo_root.clone(),
         store.clone(),
         calibration,

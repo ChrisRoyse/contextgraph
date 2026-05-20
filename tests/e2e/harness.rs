@@ -16,11 +16,11 @@ use context_graph_mejepa::heal::{
     CF_MEJEPA_SHIFT_WATERMARK,
 };
 use context_graph_mejepa::{
-    build_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb, ActualOutcome,
-    AgentId, AstDiff, CalibrationStore, DiffHunk, FeedbackId, FeedbackKind, Language,
-    MeJepaInferConfig, MejepaStore, OracleOutcome, PatchBundle, PredictionId, RealityPrediction,
-    RocksDbInferStore, SurpriseEvent, SurpriseSeverity, TaskContext, TaskEnvironment, TaskId,
-    TestId, VerifyVerdict, WitnessHash,
+    build_fixture_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb,
+    ActualOutcome, AgentId, AstDiff, CalibrationStore, DiffHunk, FeedbackId, FeedbackKind,
+    Language, MeJepaInferConfig, MejepaStore, OracleOutcome, PatchBundle, PredictionId,
+    RealityPrediction, RocksDbInferStore, SurpriseEvent, SurpriseSeverity, TaskContext,
+    TaskEnvironment, TaskId, TestId, VerifyVerdict, WitnessHash,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_ORACLE_VERDICTS,
@@ -153,7 +153,7 @@ pub fn run_e2e_happy_path_fsv(fsv_root: &Path) -> Result<E2eFsvReport> {
             .context("open E2E inference RocksDB")?;
         let calibration_store = seed_calibration(db.clone())?;
         let store = Arc::new(RocksDbInferStore::new(db.clone()));
-        let compiler = build_deterministic_compiler(
+        let compiler = build_fixture_deterministic_compiler(
             harness.paths.repo_root.clone(),
             store.clone(),
             calibration_store,

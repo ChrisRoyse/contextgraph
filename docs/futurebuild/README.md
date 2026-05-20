@@ -2,7 +2,7 @@
 
 **Last refreshed:** 2026-05-19. **Style:** source-grounded WHAT-IS reference for AI agents. **Doc count:** 8 (down from 31).
 
-Source code: `/home/cabdru/contextgraph/crates/` (25 default-build crates; 1 excluded benchmark suite).
+Source code: `/home/cabdru/contextgraph/crates/` (22 default-build crates; 1 excluded benchmark suite).
 Authority hierarchy: **universal doctrine** (`docs2/AICodingAgentSuperPrompt.md`) > **project addendum** (`CLAUDE.md`) > **this suite**.
 
 ---

@@ -3,21 +3,26 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime};
 
 use context_graph_mejepa_corpus::oracle::{OracleStore, CF_MEJEPA_MUTATION_CORPUS};
 use context_graph_mejepa_corpus::{
     MutationCategory, MutationOutcome, OracleVerdict, PerTestOutcome, TestOutcome,
+};
+use context_graph_mejepa_tct::{
+    panel_slot_for_embedder, Centroid, ConstellationStore, CorpusProvenance, EmbedderId,
+    EntityType as TctEntityType, Language as TctLanguage, MutationCategory as TctMutationCategory,
+    OracleOutcome as TctOracleOutcome, ShrinkageOrigin, TctConstellation, Thresholds,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    build_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb, sha256_bytes,
-    valid_witness_segment, AstDiff, CalibrationExample, CalibrationStore, DiffHunk, Language,
-    MeJepaInferConfig, PatchBundle, RocksDbInferStore, TaskContext, TaskEnvironment, TaskId,
-    TestId, TrainCertSummary, VerifyVerdict,
+    build_slot_preserving_cuda_compiler, materialize_inference_panels, open_infer_rocksdb,
+    sha256_bytes, valid_witness_segment, AstDiff, CalibrationExample, CalibrationStore, DiffHunk,
+    Language, MeJepaInferConfig, PatchBundle, RocksDbInferStore, TaskContext, TaskEnvironment,
+    TaskId, TestId, TrainCertSummary, VerifyVerdict,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -262,7 +267,7 @@ fn build_compiler(
     seed_infer_db(db.clone())?;
     let calibration = CalibrationStore::new(db.clone(), 30)?;
     let store = std::sync::Arc::new(RocksDbInferStore::new(db));
-    Ok(build_deterministic_compiler(
+    Ok(build_slot_preserving_cuda_compiler(
         repo_root,
         store,
         calibration,
@@ -298,7 +303,76 @@ fn seed_infer_db(db: std::sync::Arc<rocksdb::DB>) -> anyhow::Result<()> {
         witness_offset: 44,
     };
     db.put_cf(cf, b"cert:phase7-dod:0001", bincode::serialize(&cert)?)?;
+    let constellation_store = ConstellationStore::new(db.clone())?;
+    let constellation = fixture_tct_constellation(SystemTime::now() - Duration::from_secs(10))?;
+    constellation_store.persist(&constellation)?;
     Ok(())
+}
+
+fn fixture_tct_constellation(frozen_at: SystemTime) -> anyhow::Result<TctConstellation> {
+    let mut thresholds = BTreeMap::new();
+    let mut per_chunk_thresholds = BTreeMap::new();
+    let mut category = BTreeMap::new();
+    let mut language = BTreeMap::new();
+    let mut outcome = BTreeMap::new();
+    let mut chunk = BTreeMap::new();
+    for (idx, embedder) in EmbedderId::all().iter().copied().enumerate() {
+        thresholds.insert(embedder, -1.0);
+        per_chunk_thresholds.insert((TctEntityType::Function, embedder), -1.0);
+        let dim = panel_slot_for_embedder(embedder).dim();
+        let centroid = Centroid::try_new(
+            normalized_fixture_vector(dim, idx as f32 + 1.0),
+            80,
+            ShrinkageOrigin::OwnCell,
+            "phase7-dod-verify-tct-centroid",
+        )?;
+        category.insert(embedder, centroid.clone());
+        language.insert(embedder, centroid.clone());
+        outcome.insert(embedder, centroid.clone());
+        chunk.insert(
+            (
+                TctMutationCategory::KnownGood,
+                TctEntityType::Function,
+                TctLanguage::Python,
+                embedder,
+            ),
+            centroid,
+        );
+    }
+    let thresholds = Thresholds::try_new(thresholds, per_chunk_thresholds)?;
+    let provenance = CorpusProvenance::try_new(
+        [0x57; 32],
+        EmbedderId::all()
+            .iter()
+            .copied()
+            .map(|embedder| (embedder, [embedder as u8; 32]))
+            .collect(),
+        frozen_at,
+        "0123456789abcdef0123456789abcdef01234567".to_string(),
+    )?;
+    Ok(TctConstellation::try_new(
+        BTreeMap::from([(TctMutationCategory::KnownGood, category)]),
+        BTreeMap::from([(
+            (TctLanguage::Python, TctMutationCategory::KnownGood),
+            language,
+        )]),
+        BTreeMap::from([(TctOracleOutcome::Pass, outcome)]),
+        chunk,
+        thresholds,
+        provenance,
+        frozen_at,
+    )?)
+}
+
+fn normalized_fixture_vector(dim: usize, seed: f32) -> Vec<f32> {
+    let mut values = (0..dim)
+        .map(|idx| seed + idx as f32 * 0.01)
+        .collect::<Vec<_>>();
+    let norm = values.iter().map(|value| value * value).sum::<f32>().sqrt();
+    for value in &mut values {
+        *value /= norm;
+    }
+    values
 }
 
 fn sample_holdout_5pct(task: &str, pct: f32, holdout_dir: &Path) -> anyhow::Result<Vec<String>> {

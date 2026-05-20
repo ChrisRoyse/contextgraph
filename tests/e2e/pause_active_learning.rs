@@ -12,8 +12,8 @@ use context_graph_mejepa::conformal::{non_conformity_score, CalibrationExample};
 use context_graph_mejepa::eval::{ActiveLearningQueueState, EvalObservation, MutationCategory};
 use context_graph_mejepa::gates::{sha256_bytes, valid_witness_segment};
 use context_graph_mejepa::{
-    build_deterministic_compiler, current_unix_ms, open_infer_rocksdb, read_pause_state, AstDiff,
-    CalibrationStore, DiffHunk, FailedGate, Language, MeJepaInferConfig, OracleOutcome,
+    build_fixture_deterministic_compiler, current_unix_ms, open_infer_rocksdb, read_pause_state,
+    AstDiff, CalibrationStore, DiffHunk, FailedGate, Language, MeJepaInferConfig, OracleOutcome,
     PatchBundle, PauseReadOutcome, PauseState, PredictionId, RocksDbEvalStore, RocksDbInferStore,
     SurpriseSeverity, TaskContext, TaskEnvironment, TaskId, TestId, VerifyVerdict,
     MEJEPA_INFER_CFS,
@@ -396,7 +396,7 @@ fn build_compiler(
 ) -> Result<context_graph_mejepa::MeJepaCompiler> {
     let calibration = seed_calibration(db.clone())?;
     let store = Arc::new(RocksDbInferStore::new(db));
-    Ok(build_deterministic_compiler(
+    Ok(build_fixture_deterministic_compiler(
         repo_root.to_path_buf(),
         store,
         calibration,

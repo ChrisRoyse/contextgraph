@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use context_graph_mejepa::{
-    build_deterministic_compiler, decode_reality_prediction, materialize_inference_panels,
+    build_slot_preserving_cuda_compiler, decode_reality_prediction, materialize_inference_panels,
     open_infer_rocksdb, panel_sha, CalibrationStore, MeJepaInferConfig, MejepaStore, PatchBundle,
     RealityPrediction, RocksDbInferStore, TaskContext, TrainCertSummary,
 };
@@ -194,7 +194,7 @@ pub(crate) fn replay_shift(shift: &LocatedShift) -> Result<Value, String> {
     let panels = materialize_inference_panels(&patch, &context).map_err(|err| err.to_string())?;
     let calibration = CalibrationStore::new(db.clone(), 30).map_err(|err| err.to_string())?;
     let store = RocksDbInferStore::new(db.clone());
-    let compiler = build_deterministic_compiler(
+    let compiler = build_slot_preserving_cuda_compiler(
         context.environment.repo_root.clone(),
         std::sync::Arc::new(store.clone()),
         calibration,

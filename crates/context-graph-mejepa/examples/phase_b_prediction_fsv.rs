@@ -11,7 +11,7 @@ use context_graph_mejepa::cli::write_json_0600;
 use context_graph_mejepa::conformal::{non_conformity_score, CalibrationExample};
 use context_graph_mejepa::gates::{sha256_bytes, valid_witness_segment};
 use context_graph_mejepa::{
-    build_deterministic_compiler, open_infer_rocksdb, AstDiff, CalibrationStore, DiffHunk,
+    build_fixture_deterministic_compiler, open_infer_rocksdb, AstDiff, CalibrationStore, DiffHunk,
     Language, MeJepaInferConfig, MejepaStore, PatchBundle, RocksDbInferStore, TaskContext,
     TaskEnvironment, TaskId, TestId, VerifyVerdict,
 };
@@ -98,7 +98,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
 
     let store = Arc::new(RocksDbInferStore::new(db.clone()));
-    let compiler = build_deterministic_compiler(
+    let compiler = build_fixture_deterministic_compiler(
         repo_root.clone(),
         store.clone(),
         calibration_store,

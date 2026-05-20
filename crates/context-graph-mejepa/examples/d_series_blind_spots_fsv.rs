@@ -404,7 +404,7 @@ fn build_compiler_with_store(repo_root: &Path, store: RocksDbInferStore) -> Resu
             BTreeMap::new(),
         )?;
     }
-    Ok(context_graph_mejepa::build_deterministic_compiler(
+    Ok(context_graph_mejepa::build_fixture_deterministic_compiler(
         repo_root.to_path_buf(),
         Arc::new(store),
         calibration,

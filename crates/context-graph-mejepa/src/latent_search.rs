@@ -545,9 +545,9 @@ mod tests {
     use std::sync::Arc;
 
     use crate::{
-        build_deterministic_compiler, open_infer_rocksdb, sha256_bytes, valid_witness_segment,
-        AstDiff, CalibrationRecord, CalibrationStore, DiffHunk, Language, MeJepaInferConfig,
-        RocksDbInferStore, TaskEnvironment, TaskId, TestId,
+        build_fixture_deterministic_compiler, open_infer_rocksdb, sha256_bytes,
+        valid_witness_segment, AstDiff, CalibrationRecord, CalibrationStore, DiffHunk, Language,
+        MeJepaInferConfig, RocksDbInferStore, TaskEnvironment, TaskId, TestId,
     };
 
     use super::*;
@@ -637,7 +637,7 @@ mod tests {
         let calibration = CalibrationStore::new(db.clone(), 30).unwrap();
         calibration.persist(&calibration_record()).unwrap();
         let store = Arc::new(RocksDbInferStore::new(db));
-        build_deterministic_compiler(
+        build_fixture_deterministic_compiler(
             repo_root.to_path_buf(),
             store,
             calibration,

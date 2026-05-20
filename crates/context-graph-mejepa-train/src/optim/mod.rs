@@ -16,10 +16,10 @@ pub struct OptimizerWiring {
 pub fn build_adamw(
     config: &TrainingConfig,
     total_steps: u64,
-    predictor_params: Vec<Tensor>,
-    lora_params: Vec<Tensor>,
-    aux_params: Vec<Tensor>,
-    layernorm_bias_params: Vec<Tensor>,
+    predictor_params: Vec<Var>,
+    lora_params: Vec<Var>,
+    aux_params: Vec<Var>,
+    layernorm_bias_params: Vec<Var>,
 ) -> Result<OptimizerWiring, TrainerError> {
     config.validate()?;
     if total_steps == 0 {
@@ -39,17 +39,17 @@ pub fn build_adamw(
     let mut adamw = AdamW::new(adam_config);
     for param in predictor_params {
         adamw
-            .add_param(Var::from_tensor(&param)?, ParamGroup::Projection)
+            .add_param(param, ParamGroup::Projection)
             .map_err(|err| config_error("predictor_params", err.to_string()))?;
     }
     for param in lora_params {
         adamw
-            .add_param(Var::from_tensor(&param)?, ParamGroup::Lora)
+            .add_param(param, ParamGroup::Lora)
             .map_err(|err| config_error("lora_params", err.to_string()))?;
     }
     for param in aux_params {
         adamw
-            .add_param(Var::from_tensor(&param)?, ParamGroup::Markers)
+            .add_param(param, ParamGroup::Markers)
             .map_err(|err| config_error("aux_params", err.to_string()))?;
     }
     if !layernorm_bias_params.is_empty() {

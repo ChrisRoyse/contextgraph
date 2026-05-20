@@ -6,7 +6,7 @@
 //! - Gradient clipping (max_norm)
 //! - Decoupled weight decay
 
-use candle_core::{Tensor, Var};
+use candle_core::{DType, Tensor, Var};
 
 use crate::error::{EmbeddingError, EmbeddingResult};
 
@@ -145,6 +145,8 @@ impl AdamW {
                     .sqr()
                     .map_err(map_candle)?
                     .sum_all()
+                    .map_err(map_candle)?
+                    .to_dtype(DType::F32)
                     .map_err(map_candle)?
                     .to_scalar()
                     .map_err(map_candle)?;

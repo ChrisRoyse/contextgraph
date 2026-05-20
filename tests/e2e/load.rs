@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use context_graph_mejepa::{
-    build_deterministic_compiler, count_cf, fixture_patch_context, open_infer_rocksdb,
+    build_fixture_deterministic_compiler, count_cf, fixture_patch_context, open_infer_rocksdb,
     ActualOutcome, AgentId, CalibrationExample, CalibrationStore, FeedbackId, FeedbackKind,
     Language, MeJepaInferConfig, MejepaStore, OracleOutcome, PatchBundle, PredictionId,
     RealityPrediction, RocksDbInferStore, SurpriseEvent, SurpriseSeverity, TaskContext, TaskId,
@@ -474,7 +474,7 @@ fn run_prediction_load(
         let calibration = calibration.clone();
         handles.push(std::thread::spawn(
             move || -> Result<Vec<PredictionSample>> {
-                let compiler = build_deterministic_compiler(
+                let compiler = build_fixture_deterministic_compiler(
                     repo_root,
                     Arc::new(RocksDbInferStore::new(db)),
                     calibration,
