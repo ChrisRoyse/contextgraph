@@ -1,8 +1,8 @@
 # 01 — System Overview
 
-**Last refreshed:** 2026-05-19. **Status:** Phase G in flight (ship gate `prediction_oracle_correlation ≥ 0.95 × 4 rolling windows` still open; latest holdout 0.866667). Phase A–F + H code/FSV-shipped. 2026-05-19 architectural verdict: the slot-preserving constellation refactor (#385/#386-#398) is correct but does not close the 0.083 gap by itself; #383 (evidence-weighted ordering) now redirects next bandwidth toward Q4/Q5 label producers + OOD calibration before further predictor changes.
+**Status:** Phase G in flight (ship gate `prediction_oracle_correlation ≥ 0.95 × 4 rolling windows` open; latest holdout 0.866667). Phases A–F + H code/FSV-shipped.
 
-Source files covered: `Cargo.toml`, `CLAUDE.md`, `AGENTS.md`, `crates/context-graph-mcp/src/lib.rs`, `crates/context-graph-mejepa/src/lib.rs`, `crates/context-graph-mejepa-cf/src/lib.rs`, `crates/context-graph-mejepa-instruments/src/lib.rs`, `crates/context-graph-mejepa-corpus/src/lib.rs`, `crates/context-graph-storage/src/lib.rs`, `crates/context-graph-mcp/src/tools/definitions/mod.rs`.
+Source files: `Cargo.toml`, `CLAUDE.md`, `AGENTS.md`, `crates/context-graph-mcp/src/lib.rs`, `crates/context-graph-mejepa/src/lib.rs`, `crates/context-graph-mejepa-cf/src/lib.rs`, `crates/context-graph-mejepa-instruments/src/lib.rs`, `crates/context-graph-mejepa-corpus/src/lib.rs`, `crates/context-graph-storage/src/lib.rs`, `crates/context-graph-mcp/src/tools/definitions/mod.rs`.
 
 ---
 
@@ -12,339 +12,231 @@ Source files covered: `Cargo.toml`, `CLAUDE.md`, `AGENTS.md`, `crates/context-gr
 
 ```
 verdict ∈ { Pass, Fail }    // "Will this change exist in working reality? Yes or No."
-+ named_failure_mode         // (when Fail) the labeled cluster from the failure-mode hierarchy (§1.2)
-+ closest_exemplars          // top-K historical patches from the 300×8 corpus that look like this one
-+ violating_slots            // per-slot OOD reasons + cross-embedder contradiction evidence (#389/#390)
-+ mistake_id (when wrong)    // ground-truth observation lands in CF_MEJEPA_MISTAKE_LOG and feeds online learning (§1.3)
++ named_failure_mode         // (when Fail) labeled cluster from the failure-mode hierarchy (§1.2)
++ closest_exemplars          // top-K historical patches from the 300×8 corpus
++ violating_slots            // per-slot OOD reasons + cross-embedder contradiction evidence
++ mistake_id (when wrong)    // ground-truth observation lands in CF_MEJEPA_MISTAKE_LOG and feeds online learning
 ```
 
-There is one prediction per candidate. There is no best-of-K. There is no Abstain at the product surface. The system must be right the first time; when it is wrong, the mistake is captured and the predictor adapts.
+There is one prediction per candidate. There is no best-of-K. There is no `Abstain` at the product surface. The system must be right the first time; when wrong, the mistake is captured and the predictor adapts.
 
-The five Q-questions are no longer parallel predictions. They split into **binary predictions** (Q1, Q2, Q5) and **explanation-only surfaces** (Q3) — and **Q4 is out of the prediction contract entirely**.
+The five Q-questions are **binary predictions** (Q1, Q2, Q5), an **explanation surface** (Q3), and **out-of-scope** (Q4):
 
-| Q | Status under the strict binary contract |
+| Q | Status |
 |---|---|
-| **Q1** | **Binary prediction.** Hard input feature + downstream check: did the AI's claim physically land in the bytes/AST? Reality is the bytes on disk + AST; the check is byte-equality + AST diff. Free binary form. |
-| **Q2** | **The binary predictor itself.** Output is `Verdict::Pass\|Fail`. Reality is the Docker oracle (`swebench.harness.run_evaluation` per-instance). Free binary form. |
-| **Q3** | **Explanation surface only.** Named failure mode + closest exemplar attached to a `Fail` verdict. Does NOT make its own prediction; it labels the binary verdict that Q2 already made, using the §1.2 hierarchy + case-based exemplar retrieval. |
-| **Q4** | **OUT OF SCOPE.** Removed from the prediction contract 2026-05-19. Q4 questions ("is this performant?", "is this maintainable?", "is this idiomatic?", "are there latent bugs?") do not have a free binary form against reality — they require arbitrary thresholds, depend on workload/hardware/baseline assumptions, or ask about ambiguous taste judgments. ME-JEPA does not predict ambiguous things. Existing Q4 producers (perf/accuracy/cost/reasoning/non-trivial-on-Pass) are **frozen as historical display data**; not trained against, not ship-gate-relevant, not consumed by the predictor. The heads remain in the schema for backward read-only compatibility and will be marked `deprecated_ambiguous` in the next schema version. |
-| **Q5** | **Binary prediction.** Reality is the durable shift log (`/zfs/archive/contextgraph/runtime/shift-log.jsonl`). For each predicted side effect: did the corresponding shift-log event occur? Yes/no per leaf event. Falsifications enter the online-learning mistake loop (`reality_impact.rs`, `CF_MEJEPA_MISTAKE_LOG`). |
+| **Q1** | **Binary prediction.** Did the AI's claim physically land in the bytes/AST? Reality = bytes on disk + AST diff. |
+| **Q2** | **The binary predictor itself.** Output is `Verdict::Pass\|Fail`. Reality = Docker oracle (`swebench.harness.run_evaluation`). |
+| **Q3** | **Explanation surface only.** Named failure mode + closest exemplar attached to a `Fail` verdict. Labels Q2; does not make its own prediction. |
+| **Q4** | **OUT OF SCOPE.** Q4 questions ("performant?", "maintainable?", "latent bugs?") have no free binary form against reality. CFs are deprecated-readable display-only; not trained, not consumed by predictor. |
+| **Q5** | **Binary prediction.** For each predicted side effect: did the corresponding shift-log event occur? Reality = `/zfs/archive/contextgraph/runtime/shift-log.jsonl`. |
 
-**Why Q4 is dropped, not thresholded.** A continuous quantity (perf wall-clock, mutation survival rate, complexity score) only becomes binary via an arbitrary threshold ("perf regressed by ≥10%"). The threshold is not reality — it is a heuristic. ME-JEPA predicts reality, not heuristics. Heuristic-against-reality predictions can be neither right nor wrong in a sense that drives the mistake loop; there is no ground truth that says "10% is the correct threshold." Without ground truth there is no learning signal. Better to predict zero ambiguous things than to predict noise.
+**Why Q4 is dropped, not thresholded.** Continuous quantities (perf wall-clock, mutation survival rate) only become binary via arbitrary thresholds. The threshold is heuristic, not reality. Mistake-loop convergence requires real disagreement with reality, not disagreement with a heuristic.
 
-This is a meaningful tightening from earlier roadmap framings. Previous Q4 producer work (#266 / #267 / #268 / #269 / #270 / #399 / #400 / #401, plus #402) remains shipped FSV evidence but is reclassified as **completed-and-archived**; new Phase G bandwidth does NOT spend on Q4 expansion. See `08_roadmap_and_open_work.md §3.1` for the closure of the Q4 producer track and the redirection of bandwidth.
+**Ship-gate predicate:**
 
-**Ship-gate predicate:** `prediction_oracle_correlation ≥ 0.95` stable across `(mutation_category × language)` on four consecutive rolling windows of the 300×8 SWE-bench Lite Python corpus, **measured on Panel A *and* re-confirmed on the non-overlapping Panel B** (§1.4 cross-panel triangulation; new requirement 2026-05-19).
+```
+prediction_oracle_correlation ≥ 0.95
+  stable × 4 consecutive rolling windows
+  per (mutation_category × language)
+  on the 300×8 SWE-bench Lite Python corpus
+  using Q2 Docker-oracle agreement as the binary verdict
+  AND cross-panel oracle correlation ≥ 0.95 on Panel B (#405)
+  AND |corr_panel_a − corr_panel_b| ≤ 0.05
+```
 
 **Product boundary.** LLM agents are untrusted edit generators. Hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, and docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`.
 
-**Consequence-prediction contract (#397).** In this project, "predicting reality" means predicting the consequences of code being live: whether the change exists, whether it works, why it would fail, what secondary risks it creates, and how it changes durable repository/test/runtime/dependency reality over time. ME-JEPA presents those predicted consequences, confidence, and evidence to the human operator or the operator's AI agent so they can decide whether to proceed, repair, or choose a different route. The model observes explicit task text, agent claims, edits, AST deltas, frozen instruments, oracle outcomes, and verification feedback; it must not infer or classify hidden human intent (#358).
+**Consequence-prediction contract (#397).** The model observes explicit task text, agent claims, edits, AST deltas, frozen instruments, oracle outcomes, and verification feedback. It does NOT infer or classify hidden human intent. Predicted consequences + evidence are presented to the operator/agent so they decide whether to proceed, repair, or pick a different route.
 
-**Live skill/ability surface (#417).** When ME-JEPA compiles a live project, the path is: project files -> Python AST chunks -> slot-preserving TCT constellations -> deterministic live-observable labels -> many-to-many chunk-skill memberships -> `PredictionLabelContext.active_skill_ids` -> consequence prediction. A chunk can participate in multiple Level-1 groups, Level-2 skills, and Level-3/higher abilities; a skill can span many chunks/files/ordered steps. Those memberships are prediction evidence, not human-intent inference. If reality refutes the prediction, the mistake loop must update the involved skill/ability model: update an underweighted skill, split a mixed skill, create a new candidate skill, demote an unstable skill, or record no-change with evidence.
+**Live skill/ability surface.** When ME-JEPA compiles a live project: project files → Python AST chunks → slot-preserving TCT constellations → deterministic live-observable labels → many-to-many chunk-skill memberships → `PredictionLabelContext.active_skill_ids` → consequence prediction. A chunk can participate in multiple Level-1 groups, Level-2 skills, and Level-3/higher abilities. Memberships are prediction evidence, not intent inference. On refutation, the mistake loop updates/splits/creates/demotes the involved skill/ability.
 
-### 1.1 Binary-reality contract (2026-05-19 reframe)
+---
 
-The five questions (Q1–Q5) are **explanation surfaces** for one **binary prediction**:
+### 1.2 The labeling layer (the meaning surface)
 
-```
-verdict ∈ { Pass, Fail }   ⇔   "Does this candidate code change exist in working reality?"
-```
-
-Pass means the AI's claimed change is materially correct against bytes/AST/test/runtime reality. Fail means it is not. There is no soft-confidence ranking, no `Abstain`, no best-of-K hedging at the product surface. The system must be **correct on the first try**; if it is wrong, the mistake becomes a labeled training row and the predictor adapts so the same mistake is not made twice. This is the property that lets the ship gate be a single number (`prediction_oracle_correlation ≥ 0.95`) rather than a calibrated-coverage statistic.
-
-The Q-surfaces split into **binary predictions** (Q1/Q2/Q5), an **explanation surface** (Q3), and **out-of-scope** (Q4):
-
-| Surface | Binary against reality? | Role |
-|---|---|---|
-| Q1 (`claim_graph`) | Yes — bytes/AST against disk | Binary prediction + input feature to Q2 |
-| Q2 (`oracle head` + `Verdict::Pass\|Fail`) | Yes — Docker oracle | **The product-facing binary prediction** |
-| Q3 (`predicted_failure_modes` + `closest_exemplars`) | No — labels not predictions | Named explanation attached to Fail; powered by failure-mode hierarchy (§1.2) + case-based exemplars (§1.3) |
-| Q4 (always-on heads) | **No — ambiguous by nature** | **Out of scope.** Existing heads frozen as display-only historical data. Not trained. Not ship-gate-relevant. See §1.2 below for the ambiguity argument. |
-| Q5 (`reality_impact`) | Yes — shift-log against shift-log | Binary prediction + mistake-detection surface; falsifications enter the online-learning mistake loop |
-
-The legacy `Verdict::{OutOfDistribution, Abstain, GuardRejected}` states do not disappear from the code, but they are **internal states**, not product outputs. An internal `Abstain` or `OOD` is a signal that the predictor lacks sufficient evidence to be correct on the first try — the system MUST treat that as a present-tense failure to be eliminated, not as an acceptable hedge. The path out of an internal Abstain is online learning, not "try K candidates and pick the best."
-
-### 1.5 The butterfly-effect pathway surface (binary-leaf-only consequence exploration)
-
-The binary-prediction contract (§1.1) is the per-leaf primitive. What the system *delivers to the operator* on top of that primitive is a small set of **most-probable futures** — concrete branching pathways that a candidate code change opens up in durable reality, each pathway being a conjunction of binary leaves. The operator picks which future they want; the system shows them what code-shape lands them there.
-
-**Why this is what the system is actually doing.** Each prediction surface is a binary leaf against ground truth (Q1: did the claim land in bytes? Q2: does the Docker oracle pass? Q5: did this specific predicted shift-event occur?). These leaves compose temporally and causally: Q1's outcome conditions Q2's prior; Q2's outcome conditions Q5's prior over downstream shift events; and Q5 events condition further Q5 events as the patch lives in the codebase over subsequent sessions. The full *tree* of possible reality trajectories from a single candidate patch is exponentially large, but **most branches collapse to negligible probability**. The most-probable branches form a small handful of pathways the operator can usefully reason about.
-
-This is the established L3 capability in the JEPA world-model rubric (arXiv 2511.16333): L1 temporal prediction → L2 action-conditioned prediction → **L3 counterfactual rollouts for decision support** → L4 planning/control. ME-JEPA's Q1/Q2/Q5 stack already does L1 + L2; the pathway surface is the L3 instance.
-
-**Strict binary-leaf rule (the ambiguity boundary applies here too).** Every node in the pathway tree must be a binary leaf against ground truth — Q1/Q2/Q5 only. No ambiguous heads (Q4 perf / accuracy / cost / latent-bug / tech-debt / idiomaticity) enter the tree as nodes. The reason is the same reason Q4 is out of the prediction contract: an ambiguous leaf cannot be falsified by reality, so a pathway through an ambiguous leaf cannot be probability-weighted in a way that the mistake loop can clean up. Whether the pathway surface ever expands to ambiguous leaves is an open question; current scope is binary only.
-
-**Construction (planned, #416 / TASK-PY-G-119 — Pathway exploration surface).**
-
-1. **Seed:** the candidate patch (post-Q1 binary verdict on claim-exists).
-2. **Tree expansion:** beam search over downstream binary leaves. Each leaf is one of:
-   - `Q2.oracle_pass(patch) → {Yes, No}` — immediate test outcome
-   - `Q5.shift_event(event_id) → {Yes, No}` — predicted downstream consequence (predicted file-byte change, predicted test re-run outcome, predicted downstream API call shift, etc.)
-   Each node's children are conditioned on the path so far. Each edge carries the predictor's binary probability + the calibration confidence.
-3. **Pruning:** beam width is bounded; low-probability subtrees (`P(path) < ε` for ε ≈ 0.01) are pruned. Inspired by Diffusion Scenario Tree (arXiv 2509.14832) — `top-K` retention by cumulative path probability, branch probabilities normalized to sum to 1 at each level. Inspired by SWE-Search / CodePilot / Narrative Studio MCTS patterns — UCB1 for selection, rollout depth bounded, backprop-of-value up the path.
-4. **Top-K surfacing:** return the 3-5 most-probable terminal-state pathways. Each pathway carries:
-   - The full chain of binary leaves with their per-leaf probabilities
-   - The joint pathway probability (product of conditional leaf probabilities, calibrated by the conformal interval)
-   - The closest historical exemplar from the 300×8 corpus that traced a similar pathway (powered by the 491-row accepted label registry from #413)
-   - The named failure mode for any `Fail` leaf in the pathway (powered by #404 once Level-1/2/3 hierarchical naming lands on top of #413's registry)
-   - The active skill / higher-ability IDs and source chunk memberships that explain each leaf when available (powered by #414/#417)
-5. **Operator decision:** the operator reads the 3-5 pathways, picks the one they want reality to take. The system then shows them what code-shape *gets them to that pathway* — by reverse-engineering the patch-shape constraints that satisfy the chosen pathway's binary leaves (the §10.2(IX) / TASK-EK-013 / #335 `mejepa_reverse_prediction` tool, when it ships).
-
-**What this is, in standard language.** The pathway surface is the **Pearl Rung-3 counterfactual rollout** instantiated on binary leaves over the durable reality substrate. It is the *simulation-in-the-loop* pattern from arXiv 2603.11677 ("Control without foresight is like driving at night with no headlights"). It is structurally equivalent to **quantitative patch impact analysis** (arXiv 2605.13885) plus **sensitivity analysis for chaotic systems** (the SciML shadowing-methods treatment of the butterfly effect) — measure of how a small action cascades through a complex system, with the cascade decomposed into a small set of named most-probable trajectories rather than a single point forecast.
-
-**Why this matters operationally.** Without the pathway surface, the operator sees one binary verdict per patch (Pass / Fail) and decides yes-or-no on a single candidate. With the pathway surface, the operator sees the *shape of the futures that candidate opens* — what propagates cleanly, what breaks downstream, what triggers re-runs, what compounds over sessions. This converts the system from a verifier of one candidate into **decision-support for reality-shaping**: the operator can choose which of the 3-5 most-probable futures they want, then ask the agent to write the code-shape that lands them there.
-
-**What this is NOT.** The pathway surface is not generative — it does not synthesize new pathways from imagination. Every leaf in every pathway is a binary prediction made by the predictor, against the same ground-truth substrate (bytes / Docker / shift log) that ground-truths the per-leaf training. Every pathway is byte-replayable: every leaf's predicted outcome eventually meets reality, and the mistake loop (§1.3 / #406) updates the predictor on disagreements. The pathway tree is a *projection* of what the predictor already knows about binary leaves, not a free-form imagination tool.
-
-**Ambiguous-pathway question is open and explicitly deferred.** Whether the pathway surface can ever expand to ambiguous leaves (e.g. "this pathway probably degrades performance by ≥10%") is unanswered. The current ambiguity-boundary rule says no: ambiguous leaves don't have free binary form against reality, so a pathway through one cannot be probability-weighted by the mistake loop. Whether some richer formulation can include them is future work; for now the pathway surface is binary-leaf-only. Tracked under #416 / TASK-PY-G-119 with explicit `ambiguous_leaves_in_pathway == 0` FSV assertion.
-
-### 1.5bis The bidirectional chunk↔skill linkage (#417 / TASK-PY-G-120 — first read surface shipped)
-
-The substrate chain is **AST chunks → constellations → accepted labels → skills**, and the linkage at every step is bidirectional. The data was shipped end-to-end on 2026-05-19 across #413 (Level-0 labels) and #414 (Level-2 skills + memberships). The first #417 operator-facing read surface shipped in `a330b342`: `skill_to_code`, `code_to_skill`, `skill_set_query`, and `skill_coverage_audit` expose the existing CF substrate without adding a prediction head. Impact/blast-radius, graph inspection, cross-repo transfer, pathway-leaf attachment, conflict graph, and browse remain open #417 scope. The runtime resolver/consumer that turns those memberships into prediction-time `AbilityContext` and repairs the ontology on wrong predictions shipped under #418 / TASK-PY-G-121.
+Raw slot violations + cross-embedder correlations are clustered into a **4-level hierarchy of named failure modes**. The product returns the named mode that applies, grounded by the closest historical exemplar.
 
 **Shipped substrate (do not redo):**
 
 | Layer | Artifact | Rows |
 |---|---|---|
 | AST chunks | `python_ast_chunks.jsonl` | 399,777 |
-| Level-0 labels per chunk | `chunk_constellation_labels.jsonl` (#413) | 399,777 |
-| Accepted Level-0 label registry | `accepted_label_registry.jsonl` (#413) | 491 |
-| Level-2 named skills | `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` (#414) | 128 |
-| Chunk → skill memberships | `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` (#414) | 36,773 |
-| Skill → chunk reverse index | `CF_MEJEPA_SKILL_REVERSE_INDEX` (#414) | 10,579 |
-| Skill lifecycle audit | `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` (#414) | 128 |
+| Level-0 labels per chunk (#413) | `chunk_constellation_labels.jsonl` | 399,777 |
+| Accepted Level-0 label registry (#413) | `accepted_label_registry.jsonl` | 491 |
+| Level-2 named skills (#414) | `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` | 128 |
+| Chunk → skill memberships (#414) | `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` | 36,773 |
+| Skill → chunk reverse (#414) | `CF_MEJEPA_SKILL_REVERSE_INDEX` | 10,579 |
+| Level-1/2/3 hierarchy + named predictions (#404) | `CF_MEJEPA_FAILURE_MODE_LEVEL{1,2,3}_*`, `CF_MEJEPA_NAMED_PREDICTIONS` | 8 groups / 157 skills / 379 constellations / 536 named predictions |
 
-**The insight.** Every higher-level skill is a composition of accepted Level-0 labels which are deterministic functions of specific AST chunks' multi-embedder constellations. Therefore every named skill traces back to the exact source bytes that compose it, and every source byte can be queried for which named skills it participates in. The data exists; the first MCP exposure now exists for read-only navigation; runtime resolver consumption shipped under #418; mistake-loop MCP record/history/status shipped under #523; the remaining work is graph/impact surfaces, transfer, and pathway attachment.
+Holdout proof (#404): 114/114 Fail rows have FailLikely named-mode coverage; closest-exemplar oracle agreement 1.0 over 113/114 comparable holdout Fail rows.
 
-**Twelve capabilities this unlocks (per #417):**
+Live-input safety: target-side labels (oracle/Docker/test outcomes) are emitted with `leakage_policy:target_side_only`. They are supervision/reward inputs only — **never** live predictor inputs.
 
-1. **Skill → code (forward).** `mejepa_skill_to_code(skill_id)` returns the literal source bytes of the top-K member chunks with file/line/commit provenance. "Show me the code that implements skill X."
-2. **Code → skill (reverse).** `mejepa_code_to_skill(chunk_id)` returns all skills this chunk participates in.
-3. **Skill-conditioned code search.** Boolean set-query: "find code that exhibits skills A AND B but NOT C." Pure intersection/union/exclusion over the existing reverse index.
-4. **Refactoring blast-radius via skill graph.** Modify chunk C → walk memberships → walk reverse index → transitive co-member chunks. GitNexus / code-graph-analysis pattern instantiated on skill graph instead of call graph. Composes with TASK-EK-016 chunk-foundationality for risk weighting.
-5. **Cross-repository skill transfer.** When ingesting a new project, run the #413 deterministic compiler over its AST chunks; chunks that match existing accepted Level-0 signatures automatically participate in existing skills. The gskill / SkillX automatic-skill-onboarding pattern, but data-driven over deterministic signatures.
-6. **Pathway-leaf-to-code linkage.** #416 pathway Fail leaves attach the specific historical chunks that exemplify the mode. "This pathway breaks because the candidate's pattern matches these chunks (byte-level provenance) that have historically failed."
-7. **Skill-graph causal reasoning.** Skill S1's chunks call into skill S2's chunks → S1 depends on S2. The chunk call graph projected onto the skill graph gives a causal layer above the call graph.
-8. **Operator-facing skill ontology browser.** MCP surface over the 128 named skills + 36,773 memberships + 128 lifecycle audit rows, with source-byte rendering.
-9. **Skill provenance for compliance.** Every accepted skill traces to specific AST chunks with file/line/commit provenance. "This code embodies these N capabilities" is a byte-falsifiable claim.
-10. **Active-learning skill gaps.** Chunks with 0 memberships are candidates for new skill discovery; coverage map drives the active-learning queue.
-11. **Skill-conditioned generation context.** When the operator picks a pathway (#416) and asks the agent to write the code that lands it (#335 `mejepa_reverse_prediction`), retrieve top-K historical chunks of the relevant skills as in-context examples. Case-based reasoning, not free-form synthesis.
-12. **Cross-skill conflict graph.** Skills that never co-fire across the shipped memberships are auto-derived as mutually exclusive. "These two capabilities cannot coexist in the same code state."
+---
 
-**The constraint that stays.** Skills are deterministic groupings of accepted Level-0 labels. They do NOT introduce ambiguous heads. Any consumer of skill linkage that feeds back into a prediction surface (e.g. #416 pathway leaves) MUST still use Q1/Q2/Q5 binary leaves only at the prediction boundary. The skill linkage is a **navigation surface over the predictor's training substrate**, not a new prediction surface. Runtime use is handled by #418: resolve every live-input-safe Level-1/2/3/higher membership for each chunk, carry all memberships into `PredictionLabelContext`, and on a refuted prediction write the lifecycle decision that updates, splits, creates, demotes, or leaves the involved ability unchanged with evidence.
+### 1.3 Online mistake-driven adaptation
 
-### 1.5ter Array-of-vectors constellation rule (LOCKED IN, 2026-05-19)
-
-The panel is an array of 15 per-embedder vectors. This is the structural rule the predictor, the Gτ guard, the OOD scorer, the calibrator, every downstream head, every FSV harness, and every doc MUST honour. The slot-preserving refactor (#385 / #386 / #387 / #388 / #389 / #390 / #394) shipped this rule into the code; archive-grade framings that called the panel a "5,120-d joint embedding" or "fused panel" are doctrinally retired.
-
-**What an entry in the panel is.** Each `InstrumentSlot` carries one vector produced by one specific frozen embedder/instrument: `E_AST` produces a tree-sitter AST vector, `E_TypeGraph` produces a type-graph attention vector, `E1`-class slots produce e5-large-v2 semantic vectors, `E12` produces ColBERT late-interaction tokens, `E_Trace` produces an execution-trace transformer vector, `E_Oracle` produces a binary-outcome one-hot, etc. Each vector space is **distinct and unrelated to the others**. Dimension `k` of `E_AST` has no relationship to dimension `k` of `E1` — they are different coordinate systems.
-
-**What you CAN do (valid operations):**
-
-| Operation | Example | Valid because |
-|---|---|---|
-| Same-embedder dim-wise compare | `cosine(panel_A.E_AST, panel_B.E_AST)` | Both vectors are in the same E_AST space |
-| Same-embedder centroid + threshold | `cos(panel.E_AST, centroid.E_AST) >= τ_E_AST` (the Gτ guard) | Centroid is built from same-embedder samples |
-| Same-embedder vector arithmetic | `panel_A.E_AST - panel_B.E_AST` (residual within the same space) | Same coordinate system |
-| Array-vs-array per-slot map | 15-element vector of `[cosine(panel_A.slot_i, panel_B.slot_i) for i in slots]` | Each comparison is same-embedder; the resulting vector lives in slot-index space, NOT in a fused embedding space |
-| Strict-conjunction gate over the map | `forall slot: cos(A.slot, B.slot) >= τ_slot` | Per-slot threshold per embedder; same-embedder cosines combined by logical AND, not by averaging or projection |
-| Per-pair similarity matrix between two arrays | 15×15 matrix where cell `(i,j)` is `cosine(panel_A.slot_i, panel_B.slot_j)` ONLY for `i==j` (off-diagonal is undefined / typed-zero / never compared) | Diagonal cells are same-embedder cosines; off-diagonal is structurally undefined |
-| Cross-slot SCALAR pairwise relationship within one array | `MI(slot_a_distribution, slot_b_distribution)`, `corr(slot_a, slot_b)`, `agreement_score(slot_a, slot_b)`, `disagreement_score(slot_a, slot_b)` | These are scalar statistics over the two slot distributions; they do NOT align dimensions across the slots, they compute a single number summarizing the relationship |
-| Matrix-style operations on the typed structured array | Per-slot weighted aggregation `sum_i w_i * f_i(slot_i)`, slot-set selection / masking via `filled_mask`, masked matrix projections through 15 dedicated linear projections (one per slot), slot-preserving late fusion | Each operation respects slot identity; one linear projection per slot, with the result combined via late fusion, not by reading the packed buffer as one homogeneous vector |
-| Array-level aggregate scalar statistics | `min_margin = min over slots of (cosine - threshold)`, `slots_violating_count`, `worst_slot_id` | Aggregates *over* same-embedder comparisons, not *across* embedder spaces |
-
-**What you CANNOT do (forbidden operations):**
-
-| Forbidden | Why |
-|---|---|
-| `cosine(panel.E_AST_subvector, panel.E1_subvector)` (even if padded to same length) | Different coordinate systems; the dimensions don't refer to comparable axes |
-| `linear(5120, hidden_dim)` over the packed buffer | Treats all 5,120 bytes as one homogeneous embedding; silently learns meaningless cross-embedder compensations |
-| `residual_norm_sq(predicted.data, target.data)` over the packed 5,120 buffer | Must decompose to per-slot residuals first; per-slot residuals are then aggregated by fail-closed conjunction, never averaged |
-| `flat_attention(packed_buffer)` (self-attention over all 5,120 elements as if they were one sequence) | Attention treats positions as exchangeable within a coordinate system; mixing E_AST positions with E1 positions in one attention head is the same error as flat linear projection |
-| Padding shorter slots to a common length and then comparing dim-wise | The pad changes the vector length but does not move the vectors into the same coordinate system; the comparison is still meaningless |
-| Any operation that allows a strong slot's value to compensate for a violation in a weak slot | The anti-compensation FSV (#394) catches this; strict per-slot conjunction enforces it |
-
-**Why the 5,120 number exists at all.** It is the contiguous byte layout for serialization: the sum of per-slot dimensions, stored as one f32 buffer with per-slot `(offset, dim)` extents in `InstrumentSlot::layout()`. RocksDB persists `Panel` as a JSON envelope containing this buffer + the `filled_mask` bitmap. On every read, the buffer is sliced back into 15 per-slot vectors before any operation. The 5,120 number is for transport; it is never a semantic input.
-
-**Code-level enforcement (already shipped).** `crates/context-graph-mejepa-tct/src/gtau.rs:14` iterates `for embedder in EmbedderId::all()` and computes `cosine_similarity(slot, centroid)` per embedder only. `cosine_similarity` at `gtau.rs:90` errors with `MEJEPA_TCT_DIM_MISMATCH` on any vector-length mismatch (architectural prevention of accidental cross-embedder comparison). `slot_identity_preserved=true` and `flat_vector_concat_used=false` are FSV-asserted at #386 / #387 / #388 / #389 / #390 / #394 / #398. The slot-preserving late-fusion predictor (#387) replaced the prior flat-projection predictor and the FSV proved the swap.
-
-**Where to look in code:**
-- Storage layout: `crates/context-graph-mejepa-instruments/src/lib.rs:158-199` (`InstrumentSlot::layout()`)
-- Gτ guard (the per-embedder cosine implementation): `crates/context-graph-mejepa-tct/src/gtau.rs:14`
-- Dim-mismatch fail-closed: `crates/context-graph-mejepa-tct/src/gtau.rs:90`
-- Slot-preserving predictor: `crates/context-graph-mejepa/src/predictor/` (per-slot input encoders + late fusion)
-- Anti-compensation FSV: `crates/context-graph-mejepa/examples/python_anti_compensation_fsv.rs` (#394)
-
-### 1.5quart Stars as Vectors — the formal celestial-cartography model (2026-05-20)
-
-The teleological-constellation primitive is named after star constellations and the analogy is formal, not decorative. See `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md` for the full derivation; this section is the locked-in summary.
-
-**The literal claim.** A real star is not a 2D dot in the sky. It is a high-dimensional vector — Gaia DR3 (arXiv:2503.19997) catalogs ~30 million stars as `(3D position, 3D velocity, photometry across 5 bands, T_eff, [Fe/H], log g, per-element abundances)` — 100+ dimensions. The Big Dipper's seven stars *are not in a line in 3D*: Alkaid is 104 ly away, Mizar is 83, Dubhe is 124. The Big Dipper is a 2D projection from Earth's specific viewing angle of seven independent high-dimensional vectors. **The constellation is in the observer, not in the sky.** From Alpha Centauri the Sun would appear in Cassiopeia.
-
-**Structural identity to ContextGraph.**
-
-| Astronomy | ContextGraph / ME-JEPA |
-|---|---|
-| One star = one vector in ~100-dim observational space | One AST chunk = array of 15 per-embedder vectors (`Panel`, §1.5ter) |
-| Same-spectrum-band cosine valid (G-band to G-band) | Same-embedder cosine valid (`E_AST` to `E_AST`, etc.) |
-| Cross-band dim-wise comparison nonsense | Cross-embedder dim-wise comparison forbidden (§1.5ter) |
-| Constellations perceived from a viewing angle | Teleological constellations perceived from `(mutation_category × language × cell)` |
-| Big Dipper = 7 stars whose Earth-projection forms a pattern | #413 Level-2 code-state constellation = `(task_instance_id, mutation_category, workspace_state)` triple with recognizable multi-slot signature |
-| Gaia DR3 = 30M-star catalog with full vectors | Production AST chunk corpus = 399,777 chunks with full 15-slot vectors |
-| Star foundation model predicts missing parameters from observed | ME-JEPA predicts missing reality outcomes (Q1/Q2/Q5) from observed slot evidence |
-| Lux model (arXiv:2502.01745): latent z_n projects to (labels, spectra) | Slot-preserving predictor: late-fused latent projects to (verdict, named failure mode) |
-
-**The non-obvious implication: the constellation isn't in the data, it's in the predictor.** The 15-slot panel for a given chunk exists independently of any constellation labeling. The named failure modes (#404), the skills (#414), the code-state constellations (#413 Level-2) are *the predictor's perceived patterns*. Re-train the predictor, change the panel, swap encoders — and the constellations change shape. This explains a phenomenon the project has observed empirically: the slot-preserving refactor (#385 / #387) shipped, the architecture was correct, the calibration tensors materialized — and the ship-gate correlation did not close (still 0.866 vs 0.95). The labels the predictor learned to perceive are the bottleneck. #413 and #404 are now shipped as the predictor's "perceptual training" substrate; the active critical path is proving Panel B, disjoint calibration, mistake-loop operator access, and ship-gate lift rather than adding another raw embedding pipeline.
-
-**Operator-facing tools (extending the existing #417 read surface — see `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md` Proposal D):**
-
-- `mejepa_chunk_as_star(chunk_id)` — stellar parameter card view of an AST chunk: per-slot vector summaries, slot calibration cell, closest accepted Level-0 labels, active skills, closest exemplars. Output structurally analogous to a Gaia DR3 catalog row.
-- `mejepa_constellation_membership(chunk_id)` — named constellations (Level-0 / Level-1 / Level-2 / skill / higher ability) the chunk participates in. Layered on `code_to_skill` (shipped 2026-05-19 in `a330b342`).
-
-**Information-physics framing (Vopson, Gates, FlyWire, Wheeler — peer-reviewed).** The project independently arrives at four established principles:
-
-1. **Wheeler "it from bit" (1989)** = the binary Q1/Q2/Q5 contract (§1.1). The system predicts only questions with free binary form against reality.
-2. **Vopson 2nd law of information dynamics (AIP Advances 12, 075310, 2022)** = the project's entropy-decreasing operations (tier compression, Q4 freeze #408, slot-preserving fusion #387). Formalized as a trainer loss term in #511 / TASK-IP-001.
-3. **Gates' self-dual error-correcting codes in supersymmetry (Doran et al. 2008)** = the formal version of the heuristic anti-compensation property (#394, shipped). Filed as #512 / TASK-IP-002.
-4. **FlyWire whole-brain connectome (Nature 634, 2024-10-02)** = the project's 78-column cross-embedder correlation tensor (#388). FlyWire found rich-club organization (30% of regions drive flow); the same analysis applied to ME-JEPA's tensor is filed as #513 / TASK-IP-003.
-
-The project is, in scope, building a digital twin of "what happens when a code change goes live" — structurally the same operation as connectome → physics-engine → behaviour the Eon Systems fly demonstration (March 2026) validated. The cold-load behavioural FSV that proves the predictor's behaviour is encoded in the weights (not in transient training state) is filed as #514 / TASK-IP-005.
-
-### 1.5quint The creativity engine (post-0.95 — autonomous bounded growth, 2026-05-20)
-
-**The architectural framing.** ME-JEPA is the *engineering* half of a two-halves system: it verifies binary claims against reality (Q1/Q2/Q5 oracle). The *creativity* half — autonomous embedder synthesis — proposes the new measurement axes that creativity requires. The integration is autonomous because two additional oracles gate every proposal:
-
-1. **Novelty oracle** — cross-correlation test: is candidate E_{N+1} actually orthogonal to existing N? Reject if max correlation > τ_novelty (~0.7).
-2. **Utility oracle** — ablation test: does adding E_{N+1} improve per-cell oracle correlation by ≥ δ_utility (~0.005)? Reject if not.
-
-Only candidates that pass BOTH are promoted. Rejected candidates write a `CF_MEJEPA_EMBEDDER_PROPOSAL_AUDIT` row with typed reasons.
-
-**The non-obvious property.** The number of orthogonal informative axes ContextGraph admits is **bounded by reality** — by the intrinsic dimensionality of the corpus, not by ambition. For code corpora N* ≈ 50-500; for natural language N* ≈ 200-1000; for pure math N* ≈ 20-50. The system **automatically discovers its own N*** because the novelty oracle starts rejecting every candidate once the corpus is fully resolved. Bounded growth is a consequence, not a constraint.
-
-**The full creativity loop (5 issues, all post-0.95 — `08 §3.−0.5`):**
-
-| Issue | What it does |
-|---|---|
-| #517 / TASK-CR-002 | Mistake-driven embedder demand signal — when mistake-loop attribution shows no slot can explain a disagreement, write a residual signature into `CF_MEJEPA_EMBEDDER_DEMAND` |
-| #516 / TASK-CR-001 | Novelty + Utility oracle — the two-test gate that converts unbounded synthesis into bounded growth |
-| #518 / TASK-CR-003 | Embedder retirement audit + Pareto frontier — periodic pruning of dominated embedders (Vopson 2nd law applied to the embedder set itself) |
-| #519 / TASK-CR-004 | Domain-routed sparse panel — universal ~30 slots + per-domain ~15 extension; 3-5× storage saving with zero signal loss |
-| #520 / TASK-CR-005 | Episodic-to-semantic consolidation — settled chunks replaced by `(cluster_id, residual)`; boundary chunks keep raw |
-
-**Composition.** Together with the existing v2-stretch creativity tasks (#329 AlphaEvolve outer loop, #335 reverse-prediction, #354-357 EK v2 series), these five form a **self-resolving observer**: the system grows its measurement panel until reality is fully resolved (novelty oracle rejects every candidate), prunes dominated embedders (retirement audit), specializes per domain (sparse routing), and compresses settled clusters (consolidation). The panel reaches steady state at the intrinsic dimensionality of the domain. Storage stays bounded; search precision stays maximal; both true at once because the system is at the equilibrium Vopson's second law of infodynamics predicts.
-
-**The deepest property.** Measurement axes are the unit of intelligence — not parameters, not training data, not compute, but the number of orthogonal informative ways the system has of perceiving the world. Every embedder is a new sense organ. The combinatorial explosion (subset queries 2^N, motifs N^L) isn't a side effect; it's the mechanism. A system that can grow its own informative sense organs, validate each against reality, and compress what works into named patterns has the same architectural property as a scientist — and the property generalizes to any substrate where the oracle can render a binary verdict.
-
-The creativity engine is post-0.95 work because the 0.866 → 0.95 gap is a function of the *labels the predictor learned to perceive*, not the embedder count or storage architecture. Once the gate is hit, the creativity engine takes over and the system starts growing beyond its hand-designed 12-embedder seed configuration.
-
-### 1.6 The ambiguity boundary (locked-in rule)
-
-ME-JEPA only predicts questions that have a *free binary form against reality*. Free means: the binary verdict comes from observing reality directly, not from imposing an arbitrary threshold on a continuous heuristic. The system does not predict ambiguous things, because:
-
-1. **Ambiguous questions have no ground truth.** "Is this performant?" depends on workload, hardware, baseline, and acceptable margin — there is no objective answer reality renders. Without ground truth, there is no learning signal, and the prediction is unfalsifiable.
-2. **Thresholded continuous proxies aren't reality, they're heuristics.** "perf regression ≥ 10%" is a binary heuristic, not a binary fact about reality. Predicting whether mutmut/semgrep/vulture/hyperfine returns a finding predicts what those tools say, not whether the code is good. Predicting heuristics introduces noise that can't be cleaned up via the mistake loop because the heuristic itself is the source of disagreement.
-3. **Predicting noise corrupts the mistake-driven loop.** The whole online-adaptation property in §1.3 depends on every mistake row being a real disagreement with reality. Mistakes against heuristic thresholds train the predictor to match the heuristic, not reality. Better to predict zero ambiguous things than to predict noise.
-
-What this excludes from the prediction contract:
-
-| Excluded surface | Why |
-|---|---|
-| Performance regressions | Continuous metric; threshold is arbitrary; depends on workload |
-| Maintainability / tech debt | Taste judgment; no ground truth |
-| Idiomatic-ness | Style preference; no ground truth |
-| Latent bugs | Cannot enumerate; mutmut mutation survival is a heuristic, not a bug |
-| Code redundancy / dead code | Depends on future use; vulture / clone-detection are heuristics |
-| Edge-case coverage | Cannot enumerate edge cases by definition |
-| Cost (CI minutes, dependency growth) | Continuous; threshold is arbitrary |
-| Reasoning quality | Ambiguous; "good reasoning" has no oracle |
-
-What stays in the prediction contract:
-
-| Kept surface | Reality that renders the binary verdict |
-|---|---|
-| Q1 claim-exists | The bytes / AST on disk after the patch |
-| Q2 oracle pass | The Docker oracle's `report.json` (FAIL_TO_PASS / PASS_TO_PASS / etc.) |
-| Q5 specific shift events | The durable shift-log JSONL on aiwonder |
-
-Q4 heads remain in the schema and the CFs (`CF_MEJEPA_Q4_*`) as **frozen historical display data**, readable by `mejepa_explain_prediction` for forensic continuity, but not trained, not calibrated as a prerequisite for ship, and not consumed by the predictor's loss. New Phase G bandwidth spends nowhere on Q4 expansion. See `08_roadmap_and_open_work.md §3.1` for the Q4 producer track closure.
-
-### 1.2 The labeling layer (Level 0 SHIPPED 2026-05-19 via #413 / TASK-PY-G-117)
-
-Passing the 300×8 SWE-bench Lite corpus through 13 retrieval embedders (E1–E13) + 15 frozen instrument slots (E_AST … Scalars) produced a large corpus of vectors, pairwise correlations (#388), and per-slot/per-cell calibration state (#389). The 2026-05-19 doctrine reframe identified the **labeling layer** as the missing meaning surface that turns those numbers into named rules. The Level 0 (baseline auto-discovery) implementation **shipped** on 2026-05-19 via TASK-PY-G-117 / #413 with full-corpus FSV PASS.
-
-**What shipped (full-corpus aiwonder run, 2026-05-19):**
-
-- **Implementation:** `scripts/swebench_lite_ops/python_auto_label_discovery.py` (1,641 lines, deterministic Python, no inner LLM).
-- **CLI entrypoint:** `python-auto-label-discovery` (registered through `scripts/swebench_lite_ops/cli.py`).
-- **Output root:** `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/`.
-- **FSV:** `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/python_auto_label_discovery_fsv.json` (`passes=true`; manifest sha256 `3cd0e3c6…`, report sha256 `3b3e4b0b…`).
-- **Full-corpus counts:** 399,777 chunk constellation labels · 4,665,772 slot forward records consumed · 25,289,552 pair relationship labels · 3,106,565 group labels · 3,000 code-state constellations · 4,224 file-path constellations · 1,139 failure evidence sets · 549 usefulness metrics · 491 accepted label registry rows · 12/12 manual-review reproductions matched.
-- **Architecture commitments enforced in FSV:** `slot_identity_preserved=true`, `flat_vector_concat_used=false`, no active `/mnt/d` reads/writes.
-- **Leakage policy:** target-side labels (oracle/docker/test-phase outcomes, code-state outcomes) are emitted via `leakage_policy:target_side_only` — supervision/reward inputs to the trainer only, **never** live predictor inputs. Live inputs are slot-local observations, pair/group relationships, repository facts, and durable non-target evidence.
-
-**Three artifact levels (all materialized, with stable JSONL hashes per the #413 RESOLVED comment):**
-
-| Level | Object | What's materialized |
-|---|---|---|
-| **0 — Chunk** | Per-chunk slot-local + pair + group labels | `chunk_constellation_labels.jsonl` (sha256 `4ad438ff…`); 399,777 rows. Powered by a deterministic label compiler that emits AST/source surfaces, source-site relation (exact-mutation / changed-file / wrong-file / missing-target / test-patch / no-compact-source-site), mutation mechanism micro-labels, per-slot scalar/region labels (`norm_l2`, `std`, `abs_mean`, `entropy_proxy`, `zero_fraction`), pair relationship labels, and group signatures across `temporal_triad` / `semantic_content_panel` / `sparse_lexical_panel` / `sparse_hdc_bridge` slot sets. |
-| **1 — File / path** | File-level constellations | `file_path_constellations.jsonl`; 4,224 rows. Slot-local aggregate distributions, pair/group relationship counts, AST surface counts, mutation/source-site evidence, partition metadata. |
-| **2 — Code state** | `(task_instance_id, mutation_category, workspace_state)` constellations | `code_state_constellations.jsonl` (sha256 `582cc0de…`); 3,000 rows. Code-state outcome labels (`code_state_outcome:working_as_intended` vs `code_state_outcome:failed_or_problematic`) are **target-side leakage-policy:target_side_only**. |
-
-**Three localization modes** distinguished deterministically for failed/problematic code states (`failure_evidence_sets.jsonl`, sha256 `747f8298…`; 1,139 rows):
-
-- `localization:single_point_candidate` (612 cases) — one chunk/source-site dominates the deterministic evidence
-- `localization:multi_point_evidence_set` (1,479 cases) — several chunks jointly explain the failure risk
-- `localization:diffuse_code_state_risk` (18 cases) — whole code state is failed/problematic but no compact chunk set is currently justified
-- `localization:working_state_no_failure_localization` (891 cases) — no failure to localize
-
-**Usefulness scoring** (`label_usefulness_metrics.jsonl`, sha256 `923a618f…`; 549 metrics) scores every candidate label on support count + minimum-support rejection, pass/fail lift + precision/recall against oracle/Docker outcomes, train/calibration/holdout stability, closest-exemplar oracle agreement, incremental predictive contribution over simpler labels, degenerate/leaky-label rejection, and typed uncertainty for unknown/unsupported/low-power labels. Only labels that survive every gate enter the `accepted_label_registry.jsonl` (sha256 `3846bef3…`; 491 accepted rows).
-
-**Learning bridge manifest** (`learning_bridge_manifest.json`, sha256 `5fc7e11b…`) maps accepted label IDs into the **existing** UTML/replay machinery — no new training loop required:
-- `delta_p.per_chunk_values` consumes per-chunk Level-0 labels
-- `delta_xi.constellation_violation_rate` consumes constellation-pattern labels (`CF_MEJEPA_CONSTELLATION_PATTERNS`)
-- `ReplayBufferRow.cell_id` keyed by `(mutation_category × language)` cell from Level-2 code-state constellations
-- Active-learning queue (`CF_MEJEPA_ACTIVE_LEARNING_QUEUE`) consumes unknown/OOD reasons
-- Ontology-growth audit (`CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT`) consumes label promotion/rejection events
-
-**What's next (NOT shipped — open work):**
-
-| Layer | Status | Tracked under |
-|---|---|---|
-| Level 0 chunk labels + Level 1 file constellations + Level 2 code-state constellations | ✅ SHIPPED 2026-05-19 | #413 closed |
-| Hierarchical naming on top of the 491-label registry (failure-mode skills + behavioral constellations à la ClipCannon's Action-Unit → Group → Skill → Constellation hierarchy) | ✅ SHIPPED 2026-05-20 — aiwonder FSV materialized Level-1/2/3 rows, added deterministic failure-coverage backstop skills, and proved holdout Fail named-mode coverage plus closest-exemplar agreement | #404 / TASK-PY-G-110 |
-| Docker oracle outcome ontology (deterministic test-phase vector labels: `FAIL_TO_PASS`, `PASS_TO_PASS`, `FAIL_TO_FAIL`, `PASS_TO_FAIL` + `docker_resolved_clean`, `target_fail_to_pass_tests_failed`, etc.) | Open — feeds Level-2 code-state outcome supervision | #411 / TASK-PY-G-116 |
-| Online mistake-driven consumption of the accepted registry | ✅ SHIPPED 2026-05-20 — uses stable label/evidence IDs from #413 and ordered skill/ability signatures from #414/#418 as the mistake context; #523 exposes MCP record/history/status wrappers over the same RocksDB source of truth | #406 / #523 closed |
-| MCP tools wrapping the CLI/FSV substrate for operator-side label inspection | Open — `mejepa_list_failure_modes`, `mejepa_label_failure_cluster`, `mejepa_explain_named_failure_mode`, `mejepa_failure_mode_coverage_audit` | #417 / TASK-PY-G-120 |
-
-A binary prediction becomes actionable when the predictor returns `Fail + named_failure_mode + closest_exemplar`. The agent that consumes the prediction can act on a named mode the way a senior reviewer would; the operator can audit the prediction the way they would audit a named bug class. **The deterministic label substrate, hierarchical named-mode layer, runtime commitment path, and mistake-loop MCP wrapper are now full-corpus shipped; the remaining surface work is broader operator navigation through #417.**
-
-### 1.3 Online mistake-driven adaptation (the "isn't wrong in the future" property)
-
-The predictor's head over the panel is a margin-based binary classifier wrapped in an **online-mistake-driven update loop** (Rosenblatt 1957 perceptron lineage, with second-order/kernel variants from Cesa-Bianchi & Conconi 2005 and Orabona 2008 for stability):
+The predictor's head over the panel is wrapped in an **online-mistake-driven update loop** (#406, #523, shipped):
 
 1. Predictor returns `Pass | Fail` for a candidate patch.
-2. Reality (Docker oracle + PostToolUse capture + shift-log replay) returns the ground truth.
-3. If prediction matches reality → no update; the panel + slot calibration was already discriminative enough.
-4. If prediction disagrees → **mistake row** lands in `CF_MEJEPA_MISTAKE_LOG`. The mistake row carries the panel, the slot trace, the named failure mode the predictor *thought* applied, the named failure mode the closest exemplar suggests, and the ground-truth outcome. The shipped #406 trainer path consumes the row through key-local exact-panel online-head state, measures unrelated-control drift, and labels the report `exactPanelKeyIsolation`. It does **not** claim Fisher/EWC protection unless a future vector/weight update persists a durable Fisher/EWC row (#524).
-5. Convergence target: for the same `(mutation_category × language × named_failure_mode)` cell, the predictor must not repeat the mistake on the next prediction. The mistake log is the proof.
+2. Reality (Docker oracle + PostToolUse capture + shift-log replay) returns ground truth.
+3. Match → no update.
+4. Disagree → **mistake row** in `CF_MEJEPA_MISTAKE_LOG` with full context (panel, slot trace, named failure mode predicted vs ground-truth, accepted label IDs, active skill IDs).
+5. Trainer consumes via key-local exact-panel online-head state (`CF_MEJEPA_ONLINE_HEAD_STATE`). Same panel signature returns the corrected verdict on next presentation.
+6. **Convergence target:** `mistake_repeat_rate ≤ 0.05` over rolling 100-mistake window.
 
-This replaces the multi-shot best-of-K pattern and the calibrated-coverage Abstain pattern with a **one-shot + adapt** discipline. The agent never sees multiple candidate verdicts; it sees one binary answer and a structured explanation, both of which are subject to falsification by the next ground-truth observation.
+Current protection mode: `exactPanelKeyIsolation`. Unrelated-control delta ≤ 0.02 measured. True Fisher/EWC protection is not claimed without durable Fisher rows (#524 guards the boundary).
+
+MCP surface (shipped 2026-05-20, #523): `mejepa_record_mistake`, `mejepa_mistake_history`, `mejepa_mistake_loop_status`.
+
+---
 
 ### 1.4 Cross-panel triangulation (the Goodhart guard)
 
-The predictor is trained against the 15-slot instrument panel. The Gτ guard is evaluated against the same 15-slot panel. That is **encoder-matched** by construction and creates a Goodhart risk: hitting 0.95 on this panel does not prove the prediction is right against reality; it could prove that the predictor learned the panel.
+The predictor is trained against the 15-slot Panel A. The Gτ guard is evaluated against the same Panel A. Encoder-matched by construction → 0.95 on Panel A could mean the predictor learned the panel.
 
-A second, deliberately non-overlapping panel (Panel B) is materialized for hold-out triangulation:
+Panel B (non-overlapping encoders) re-scores every gate-relevant patch:
 
-- E_AST: tree-sitter → CodeBERT AST encoder
-- E_CFG: attention encoder → Pythia program-graph encoder
-- E_DataFlow: attention encoder → joern-driven data-flow encoder
-- E_Code (E7-equivalent): Qodo-Embed-1 → Voyage-code-2
-- E_Test/E_Problem/E_CommitMsg (e5 reuse): e5-large-v2 → bge-large-en-v1.5
+| Slot | Panel A | Panel B |
+|---|---|---|
+| AST | tree-sitter → 384-d | CodeBERT → 384-d |
+| CFG | attention encoder → 256-d | Pythia program-graph → 256-d |
+| Data-flow | def-use attention → 256-d | joern → 256-d |
+| Type-graph | tree-sitter type → 256-d | pytype JSON → 256-d |
+| Code-semantic | Qodo-Embed-1 → 1536-d | Voyage-code-2 → 1536-d |
+| Test/Problem/CommitMsg | e5-large-v2 | bge-large-en-v1.5 |
+| Trace/Witness/Oracle/StaticAnalysis/Runtime/Reasoning/Scalars | unchanged | unchanged (deterministic) |
 
-When Panel A clears the gate, Panel B re-scores the same 30-instance holdout (and 240-instance train-visible window). If Panel B oracle correlation stays within 0.05 of Panel A, the gate is genuinely external. If Panel B drops by ≥0.10, the predictor was Goodharting Panel A, and the result is fail-closed for ship.
+Ship-fail-closed: Panel A ≥ 0.95 AND Panel B < 0.85 → `CROSS_PANEL_GOODHART_DETECTED`. Tracked by **#405 (open p0, blocked)**.
 
-This is the analogue of PAPER §6.3's named-future-work item "cross-encoder triangulation with ECAPA-TDNN" — except where PAPER scoped it as future work for voice cloning, ME-JEPA can do it now because the predictor is already architecturally separated from the panel.
+---
+
+### 1.5 The butterfly-effect pathway surface (planned, #416)
+
+What the system delivers on top of the binary primitive: a small set of **most-probable futures** — concrete branching pathways from a single candidate patch, each pathway a conjunction of binary leaves.
+
+**Strict rule: every node is a Q1/Q2/Q5 binary leaf against ground truth.** No ambiguous leaves (Q4, taste judgments) enter the tree.
+
+**Construction (planned, #416 / TASK-PY-G-119):**
+
+1. Seed: candidate patch (post-Q1 binary verdict).
+2. Beam search over downstream binary leaves; each leaf = `Q2.oracle_pass | Q5.shift_event`.
+3. Beam-width bounded; low-probability subtrees pruned (`P(path) < ε ≈ 0.01`).
+4. Surface top 3-5 terminal-state pathways: leaf chain + joint probability + closest historical exemplar (from #413 registry) + named failure mode for any Fail leaf (from #404 hierarchy) + active skill IDs (from #414).
+5. Operator picks one. System (when #335 ships) reverse-engineers patch-shape constraints that land that pathway.
+
+This is the **Pearl Rung-3 counterfactual rollout** on binary leaves over the durable reality substrate. It is `L3` in the JEPA world-model rubric. It converts the system from a verifier of one candidate into decision-support for reality-shaping.
+
+**Not generative.** Every leaf is a binary prediction the predictor commits on. Every pathway is byte-replayable. The mistake loop credits assignments across pathway leaves on disagreement.
+
+---
+
+### 1.5bis Bidirectional chunk↔skill linkage (#417, first slice shipped)
+
+The substrate chain — `AST chunks → constellations → accepted labels → skills` — is bidirectional at every step. First read-only MCP slice shipped 2026-05-19:
+
+| Tool | Purpose |
+|---|---|
+| `mejepa_skill_to_code(skill_id)` | Forward: source bytes of member chunks |
+| `mejepa_code_to_skill(chunk_id)` | Reverse: skills this chunk participates in |
+| `mejepa_skill_set_query` | Boolean set query over memberships |
+| `mejepa_skill_coverage_audit` | Coverage gap audit |
+
+Remaining (open in #417): skill impact / blast-radius, skill graph, cross-repo transfer, pathway-leaf attachment, conflict graph, browse.
+
+The constraint: skills are deterministic groupings of accepted Level-0 labels. They do NOT introduce ambiguous heads. Skill linkage is a **navigation surface over the predictor's training substrate**, not a new prediction surface.
+
+Runtime resolver (#418, shipped): resolves every live-input-safe membership for each chunk; carries memberships into `PredictionLabelContext`; on refutation writes lifecycle audit (update/split/create/demote/no-change).
+
+---
+
+### 1.5ter Array-of-vectors constellation rule (LOCKED IN)
+
+The panel is an **array of 15 per-embedder vectors**. NOT a 5,120-d fused embedding. The contiguous 5,120 f32 buffer is byte-layout for serialization only.
+
+**Valid operations:**
+- Same-embedder dim-wise compare: `cosine(panel_A.E_AST, panel_B.E_AST)` ✓
+- Array-vs-array per-slot map (vector of 15 same-embedder cosines)
+- Strict-conjunction gate over the map
+- Per-pair similarity matrix (diagonal only — off-diagonal undefined)
+- Cross-slot scalar pairwise: MI(slot_a, slot_b), correlation(slot_a, slot_b)
+- Matrix-style ops respecting slot identity (per-slot weighted aggregation, masked projections)
+
+**Forbidden:**
+- `cosine(panel.E_AST, panel.E1)` (different coordinate systems) ✗
+- `linear(5120, hidden)` over packed buffer (silent cross-embedder compensation) ✗
+- `residual_norm_sq` over packed 5,120 buffer ✗
+- Any operation where strong slot compensates for weak slot
+
+**Code-level enforcement (shipped).** `crates/context-graph-mejepa-tct/src/gtau.rs:14` iterates `for embedder in EmbedderId::all()`; `cosine_similarity` at `gtau.rs:90` errors with `MEJEPA_TCT_DIM_MISMATCH` on length mismatch. Slot-preserving late-fusion predictor (#387) replaced the flat-projection predictor.
+
+---
+
+### 1.5quart Stars as Vectors — celestial-cartography model
+
+The teleological-constellation primitive is named after star constellations and the analogy is formal. See `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md`.
+
+| Astronomy | ContextGraph |
+|---|---|
+| One star = vector in ~100-dim observational space (Gaia DR3) | One AST chunk = array of 15 per-embedder vectors |
+| Same-spectrum-band cosine valid | Same-embedder cosine valid |
+| Cross-band dim-wise compare = nonsense | Cross-embedder dim-wise compare forbidden |
+| Constellations perceived from viewing angle | Constellations perceived from `(mutation_category × language × cell)` |
+| Big Dipper = 2D projection of 7 high-dim stars | Code-state constellation = signature over panel array |
+| Star foundation model predicts missing parameters | ME-JEPA predicts missing reality outcomes |
+
+**Key implication: the constellation isn't in the data, it's in the predictor.** The 15-slot panel for a given chunk exists independently of any constellation labeling. The named failure modes, skills, and code-state constellations are the *predictor's perceived patterns*. Re-train → constellations change shape. The 0.866 vs 0.95 gap is bottlenecked by what the predictor learned to perceive, not by raw embeddings.
+
+Operator-facing tools (planned, extending #417): `mejepa_chunk_as_star`, `mejepa_constellation_membership`.
+
+**Information-physics framing (peer-reviewed):**
+
+1. **Wheeler "it from bit" (1989)** = the binary Q1/Q2/Q5 contract.
+2. **Vopson 2nd law of infodynamics (AIP Advances 12, 075310, 2022)** = entropy-decreasing operations (tier compression, slot-preserving fusion). Formalized as trainer loss in #511.
+3. **Gates' self-dual ECC in supersymmetry (Doran et al. 2008)** = formal version of anti-compensation. Filed as #512.
+4. **FlyWire whole-brain connectome (Nature 634, 2024)** = #388 cross-embedder correlation tensor. #513 was tested and demoted as diagnostic-only after split-stable evidence failed modularity/coverage.
+5. **Eon Systems cold-load (March 2026)** = behavior encoded in weights, not transient training state. Filed as #514.
+
+---
+
+### 1.5quint The creativity engine (post-0.95 — autonomous bounded growth)
+
+ME-JEPA is the *engineering* half: verifies binary claims against reality. The *creativity* half — **autonomous embedder synthesis** — proposes new measurement axes. Integration is autonomous because two oracles gate every proposal:
+
+1. **Novelty oracle** — cross-correlation test: is candidate orthogonal to existing N? Reject if max correlation > τ_novelty (~0.7).
+2. **Utility oracle** — ablation test: does adding it improve per-cell oracle correlation by ≥ δ_utility (~0.005)?
+
+**The non-obvious property.** The number of orthogonal informative axes ContextGraph admits is **bounded by reality** — the intrinsic dimensionality of the corpus. For code N* ≈ 50-500. The system **discovers its own N*** because the novelty oracle rejects every candidate once the corpus is fully resolved.
+
+**Five issues (all post-0.95):**
+
+| Issue | What it does | Priority |
+|---|---|---|
+| #517 / TASK-CR-002 | Mistake-driven embedder demand signal | p1 |
+| #516 / TASK-CR-001 | Novelty + Utility oracle | p2 (p1 immediately post-0.95) |
+| #518 / TASK-CR-003 | Embedder retirement audit + Pareto frontier | p1 |
+| #519 / TASK-CR-004 | Domain-routed sparse panel | p1 |
+| #520 / TASK-CR-005 | Episodic-to-semantic consolidation | p2 |
+
+Together with v2-stretch (#329, #335, #354-357) these form a **self-resolving observer**: system grows panel until corpus is resolved, prunes dominated embedders, specializes per domain, compresses settled clusters. Bounded by reality, not ambition.
+
+---
+
+### 1.6 The ambiguity boundary (locked-in rule)
+
+ME-JEPA only predicts questions with a **free binary form against reality**. Free = verdict comes from observing reality directly, not from imposing arbitrary thresholds on continuous heuristics.
+
+**Excluded from prediction contract:** perf regressions, maintainability, idiomaticity, latent bugs, code redundancy, edge-case coverage, cost, reasoning quality.
+
+**Kept in prediction contract:**
+
+| Surface | Reality |
+|---|---|
+| Q1 claim-exists | Bytes / AST on disk |
+| Q2 oracle pass | Docker oracle `report.json` |
+| Q5 shift events | Durable shift-log JSONL |
+
+Q4 heads remain in schema and CFs (`CF_MEJEPA_Q4_*`) as **frozen historical display data**, readable but not trained, calibrated, or consumed.
 
 ---
 
@@ -352,122 +244,116 @@ This is the analogue of PAPER §6.3's named-future-work item "cross-encoder tria
 
 | Process | Port / IPC | Technology | Purpose |
 |---|---|---|---|
-| `context-graph-mcp` server (`--mode stdio` or `--mode reality-loop`) | stdio JSON-RPC (default) or HTTP transport | Rust, tokio, async-trait | 204-tool MCP surface; daemon mode supervises long-lived state |
-| `context-graph-cli` | CLI invocation | Rust | Operator commands: `mejepa observe`, `mejepa project-ingest`, `mejepa compression-progress`, `mejepa active-learning`, etc. |
+| `context-graph-mcp` server | stdio JSON-RPC (default) or HTTP transport | Rust, tokio, async-trait | 204-tool MCP surface; daemon mode |
+| `context-graph-cli` | CLI invocation | Rust | `mejepa observe`, `mejepa project-ingest`, `mejepa compression-progress`, `mejepa active-learning`, etc. |
 | ME-JEPA training daemon | embedded in CLI/binary | candle (CUDA 13.2), RocksDB | UTML training loop; reads `CF_MEJEPA_REPLAY_BUFFER`; writes `CF_MEJEPA_TRAIN_CERTS` |
-| Shift-log subscriber | tokio task | tokio, async streams | Tails JSONL shift log → materializes panels (`crates/context-graph-mejepa-shift-subscriber`) |
-| Heal scheduler | embedded thread | tokio | Drift detection, Fisher/EWC, distill, promotion (`crates/context-graph-mejepa/src/heal/`) |
-| Single RocksDB (per runtime root) | local disk | RocksDB ≥ 8.x | 200+ column families (51 base + ~120 ME-JEPA + 19 teleological + 13 quantized + 5 code + 2 causal). See `03_storage_schema.md`. |
+| Shift-log subscriber | tokio task | tokio | Tails JSONL shift log → materializes panels |
+| Heal scheduler | embedded thread | tokio | Drift detection, Fisher/EWC, distill, promotion |
+| RocksDB (per runtime root) | local disk | RocksDB ≥ 8.x | 200+ column families |
 | GPU runtime | CUDA 13.2 on RTX 5090 Blackwell | cudarc 0.19.x via candle 0.10.2 | Embedder forward passes, predictor training |
 
-**No HTTP from action paths.** `WebSearch`/`WebFetch`/`mcp__exa__*` are read-only research tools. The MCP server is the only network surface for runtime work.
-
-**No inner LLM.** Local generative inference (Qwen / Hermes / Ollama / llama.cpp) was retired 2026-05-09. `feature = "llm"` triggers `compile_error!` (`crates/context-graph-mcp/src/lib.rs:13`).
-
-**No intent synthesis.** North-star / intent modeling is retired by ADR #358. Observable goals and agent claims may be stored as evidence in the reality chain; hidden human intention is not a prediction target.
+**Constraints:**
+- **No HTTP from action paths.** MCP server is the only network surface.
+- **No inner LLM.** Local generative inference (Qwen / Hermes / Ollama / llama.cpp) is compile-locked off — `feature = "llm"` triggers `compile_error!` at `crates/context-graph-mcp/src/lib.rs:13`.
+- **No intent synthesis.** Observable goals and agent claims are evidence; hidden human intent is not a prediction target.
 
 ---
 
 ## 3. Technology Stack
 
-| Layer | Technology | Version constraint | Where pinned |
-|---|---|---|---|
-| Language | Rust | edition 2021, MSRV 1.95 | `Cargo.toml:64-66` |
-| Async runtime | tokio | 1.35 (`features = ["full"]`) | `Cargo.toml:72` |
-| Serialization | serde, serde_json, bincode 1.3, toml 0.8 | — | `Cargo.toml:76-79` |
-| Error | thiserror, anyhow | — | `Cargo.toml:82-83` |
-| Telemetry | tracing, tracing-subscriber (json/env-filter) | — | `Cargo.toml:86-87` |
-| Config | `config` crate | 0.14 | `Cargo.toml:90` |
-| IDs / time | uuid (v4/v5/serde), chrono (serde) | uuid 1.6, chrono 0.4 | `Cargo.toml:93-94` |
-| ML runtime | candle-core, candle-nn (CUDA) | 0.10.2 (cudarc 0.19.x, CUDA 13.2) | `Cargo.toml:101-104` |
-| Storage | RocksDB | via `rocksdb` crate (see per-crate manifests) | `crates/context-graph-storage/Cargo.toml` |
-| Crypto / hashing | ed25519, sha2, blake3 | — | `crates/context-graph-witness/Cargo.toml` |
-| Vector search | usearch HNSW (patch-similarity), hnsw_rs (embedder indexes) | — | per-crate |
-| Build profiles | `release` (thin LTO, 16 CGUs), `release-max` (1 CGU), `dev` (opt 0, line-info debug, incremental) | — | `Cargo.toml:112-128` |
-| License | PolyForm-Noncommercial-1.0.0 | — | `Cargo.toml:67` |
+| Layer | Technology | Version |
+|---|---|---|
+| Language | Rust | edition 2021, MSRV 1.95 |
+| Async runtime | tokio | 1.35 |
+| Serialization | serde, serde_json, bincode 1.3, toml 0.8 | — |
+| Error | thiserror, anyhow | — |
+| Telemetry | tracing, tracing-subscriber (json/env-filter) | — |
+| ML runtime | candle-core, candle-nn (CUDA) | 0.10.2 (cudarc 0.19.x, CUDA 13.2) |
+| Storage | RocksDB | per-crate manifests |
+| Crypto / hashing | ed25519, sha2, blake3 | — |
+| Vector search | usearch HNSW, hnsw_rs | — |
+| License | PolyForm-Noncommercial-1.0.0 | — |
+
+Build profiles (`Cargo.toml:112-128`): `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `dev` (opt-0, line-info debug, incremental).
 
 ---
 
-## 4. Workspace Members (22 active workspace crates)
+## 4. Workspace Members (22 active crates)
 
-`Cargo.toml:6-30` lists all members; `default-members` mirrors the same 22 crates. Retired `context-graph-causal-agent`, `context-graph-graph-agent`, and `context-graph-benchmark` were deleted after the ME-JEPA pivot left them with no ship-gate role. Full per-crate detail in `02_source_map.md`.
+| Crate | Role |
+|---|---|
+| `context-graph-mcp` | MCP JSON-RPC server + 204 tools (54 `mejepa_*`) |
+| `context-graph-cli` | Operator CLI + helpers (`context-graph` short alias) |
+| `context-graph-core` | Shared domain types |
+| `context-graph-storage` | RocksDB wrapper + teleological/code/causal CFs |
+| `context-graph-witness` | ed25519 + Merkle + Stage 0/F certificates |
+| `context-graph-solver` | Causal masking, MMR, conformal predictor |
+| `context-graph-mincut` | Clean-room Stoer-Wagner global min-cut |
+| `context-graph-paths` | Fail-closed durable path resolver (aiwonder enforced) |
+| `context-graph-tier-compression` | 8/7/5/3-bit groupwise scalar quantization |
+| `context-graph-embeddings` | E1-E14 embedding pipeline |
+| `context-graph-cuda` | CUDA helpers |
+| **`context-graph-mejepa`** | **Predictor trunk** (73 modules) |
+| `context-graph-mejepa-cf` | Canonical CF name registry (zero-dep) |
+| `context-graph-mejepa-corpus` | 8× mutation operators + SWE-bench bridge |
+| `context-graph-mejepa-instruments` | 15-slot panel + frozen instruments |
+| `context-graph-mejepa-embedders` | 21 embedder slots, dynamic registry, calibration |
+| `context-graph-mejepa-train` | UTML trainer, replay buffer, mistake loop, certificates |
+| `context-graph-mejepa-tct` | Teleological constellations + Gτ guard |
+| `context-graph-mejepa-hygiene` | Tier transitions, quota, GC, witness compress |
+| `context-graph-mejepa-shift-subscriber` | JSONL shift-log tail → panel materialization |
+| `context-graph-dynamicjepa` | 5090jepa MCP surface (39 tools) |
+| `context-graph-test-utils` | Shared test fixtures (NO MOCK DATA) |
 
-| Crate | Role | LOC (src lib.rs only) |
-|---|---|---|
-| `context-graph-mcp` | MCP JSON-RPC server + 204 tools | 29 (lib) + 136K (main.rs) |
-| `context-graph-cli` | Operator CLI, helpers | 14 (lib) + 230 (main.rs) |
-| `context-graph-core` | Shared domain types | — |
-| `context-graph-storage` | RocksDB wrapper, teleological/code/causal CFs | 190 |
-| `context-graph-witness` | Tamper-evident chain primitives (ed25519, Merkle) | 225 |
-| `context-graph-solver` | Causal masking, MMR, conformal predictor | 31 |
-| `context-graph-mincut` | Clean-room Stoer-Wagner global min-cut | 333 |
-| `context-graph-paths` | Fail-closed durable path resolver | 614 |
-| `context-graph-tier-compression` | 8/7/5/3-bit groupwise scalar quantization | 516 |
-| `context-graph-embeddings` | E1-E14 embedding pipeline | 135 |
-| `context-graph-cuda` | CUDA helpers | — |
-| `context-graph-mejepa` | **Predictor trunk** (compiler, conformal, OOD, claim graph, patch similarity, project-ingest, ...) | 175 (lib); 73 module files |
-| `context-graph-mejepa-cf` | Canonical column-family name registry (zero-dep) | 819 |
-| `context-graph-mejepa-corpus` | 8× mutation operators + SWE-bench bridge | 822 |
-| `context-graph-mejepa-instruments` | 15-slot typed panel storage layout + frozen instruments | 595 |
-| `context-graph-mejepa-embedders` | 21 embedder slots, dynamic registry, calibration | 63 |
-| `context-graph-mejepa-train` | UTML trainer, replay buffer, certificates | 51 |
-| `context-graph-mejepa-tct` | Teleological constellations + Gτ guard | 49 |
-| `context-graph-mejepa-hygiene` | Tier transitions, quota, GC, witness compress | 37 |
-| `context-graph-mejepa-shift-subscriber` | JSONL shift-log tail → panel materialization | 26 |
-| `context-graph-dynamicjepa` | 5090jepa MCP surface (39 tools) | — |
-| `context-graph-test-utils` | Shared test fixtures (NO MOCK DATA) | 23 |
+Full per-crate detail in `02_source_map.md`.
 
 ---
 
 ## 5. Entry Points
 
-| Binary / command | Crate | Purpose |
-|---|---|---|
-| `context-graph-mcp` | `context-graph-mcp` | MCP server. `--mode stdio` (default) or `--mode reality-loop` (lightweight subset). Multi-agent observability via `mejepa_daemon_status`. |
-| `context-graph-cli` | `context-graph-cli` | Operator CLI. Subcommands include `mejepa observe`, `mejepa project-ingest`, `mejepa project-report`, `mejepa compression-progress`, `mejepa active-learning {list|label|dismiss}`, `mejepa stop-self-verify`, `mejepa eval synthetic-stress`. |
-| `mejepa` | `context-graph-mejepa` `[[bin]]` | Standalone predictor harness. |
-| `mejepa-heal-drill` | `context-graph-mejepa` `[[bin]]` | Heal scheduler drill. |
-| `mejepa-train` | `context-graph-mejepa-train` `[[bin]]` | Trainer entry. |
-| `train-causal` | `context-graph-embeddings` `[[bin]]` | Causal embedder training. |
-| 50+ FSV examples (`crates/*/examples/*_fsv.rs`) | per crate | Per-task FSV harnesses. See `07_results_and_benchmarks.md` for the full index. |
+| Binary | Purpose |
+|---|---|
+| `context-graph-mcp` | MCP server. `--mode stdio` (default) or `--mode reality-loop` (lightweight subset). Multi-agent observability via `mejepa_daemon_status`. |
+| `context-graph-cli` / `context-graph` | Operator CLI. `mejepa observe`, `mejepa project-ingest`, `mejepa project-report`, `mejepa compression-progress`, `mejepa active-learning {list\|label\|dismiss}`, `mejepa stop-self-verify`. |
+| `mejepa` | Standalone predictor harness. |
+| `mejepa-heal-drill` | Heal scheduler drill. |
+| `mejepa-train` | Trainer entry. |
+| `train-causal` | Causal embedder training. |
+| 210+ FSV examples (`crates/*/examples/*_fsv.rs`) | Per-task FSV harnesses. See `07_results_and_benchmarks.md`. |
 
 ---
 
-## 6. Directory Layout (what exists at runtime)
+## 6. Directory Layout
 
 ```
-crates/                                — Rust workspace (1567 .rs src files, 189 example files, 258 test files)
-docs/futurebuild/                       — this doc suite (8 condensed docs as of 2026-05-18)
-docs/futurebuild/_archived/             — original 31 planning docs (read-only history)
-docs/futurebuild/specs/FSV-PROTOCOL.md  — mandatory verification contract (still authoritative)
-docs2/AICodingAgentSuperPrompt.md       — master doctrine (universal protocol)
+crates/                                — Rust workspace (22 active crates)
+docs/futurebuild/                       — this doc suite
+docs/futurebuild/specs/FSV-PROTOCOL.md  — mandatory verification contract
+docs2/AICodingAgentSuperPrompt.md       — master doctrine
 docs2/hardeningprompt.md                — 14-axis hardening deep-dive
-scripts/cc/                             — Claude Code hook scripts (PostToolUse, Stop, UserPromptSubmit)
-scripts/ci/                             — CI lint (e.g. check_no_c_drive_paths.sh)
+scripts/cc/                             — Claude Code hook scripts
+scripts/ci/                             — CI lint (e.g. check_no_c_drive_paths.sh, no_mnt_d_production_paths_fsv.py)
 scripts/swebench_lite_ops/              — Python redaction + SWE-bench Lite helpers
-tasks/swebench-lite/                    — task manifest JSON (workstreams)
+tasks/swebench-lite/                    — task manifest JSON
 config/                                 — governed paths, model pins
-.claude/                                — settings.json, agents/, loop.md (1 line; see specs)
+.claude/                                — settings.json, agents/, loop.md
 .github/workflows/, .github/labels.yml  — CI + label set (memory = Issues)
-backupdocs/memory.archive/              — read-only legacy SAMP/SMAP (do not write; GitHub Issues are live memory)
 
-/zfs/archive/contextgraph/              — **aiwonder production durable SoT** (see 03_storage_schema.md §5)
-  corpus/                               —   production corpus, panel cache, fingerprint registry
-  fsv/                                  —   per-task FSV evidence (post-migration target)
-  runtime/                              —   shift log, test outcomes, scheduler events
-  projects/<project_id>/                —   reality-compiler per-project cache, manifest, report
-  state/                                —   durable runtime state surviving restarts
-  exports/                              —   weekly eval reports, operator exports
+# aiwonder production durable SoT
+/zfs/archive/contextgraph/
+  corpus/                               — production corpus, panel cache, fingerprint registry
+  fsv/                                  — per-task FSV evidence (post-migration target)
+  runtime/                              — shift log, test outcomes, scheduler events
+  projects/<project_id>/                — reality-compiler per-project cache, manifest, report
+  state/                                — durable runtime state (calibration, labels, q4-trust-gate)
+  exports/                              — weekly eval reports, operator exports
 
-/zfs/hot/contextgraph/                  — **aiwonder hot state**
-  repo/                                 —   git checkout, release binaries
-  models/                               —   embedder model weights
-  corpus/                               —   stable hot inputs
-  runtime/                              —   active scheduler logs / hot run state
-
-/mnt/d/contextgraph/                    — **legacy/local SoT** (327 FSV dirs as of 2026-05-18)
-                                          historical for production unless an issue explicitly
-                                          scopes a historical-only proof (#369 tracks revalidation)
+# aiwonder hot state
+/zfs/hot/contextgraph/
+  repo/                                 — git checkout, release binaries
+  models/                               — embedder model weights
+  corpus/                               — stable hot inputs (chunks.jsonl)
+  runtime/                              — active scheduler logs / hot run state
 ```
 
 ---
@@ -476,70 +362,65 @@ backupdocs/memory.archive/              — read-only legacy SAMP/SMAP (do not w
 
 | Tier | What | Where | Regenerable? |
 |---|---|---|---|
-| **Sacred** (never edit) | Operator `.env`/`.env.*`; `swebench/**`; `tests/oracle_**/**`; `crates/*/src/reward_specs/**`; `crates/*/src/verifiers/**`; `*.pem`, `*.key`, `**/credentials.json` | various | No |
-| **Durable production** | RocksDB CFs (51+ teleological/quantized/code/causal + 120+ ME-JEPA); FSV evidence; project-ingest manifests; weekly exports | `/zfs/archive/contextgraph/` on aiwonder | Source-recoverable (corpus) or replay-from-shift-log (predictions). Many FSV artifacts are irreplaceable single events. |
+| **Sacred** (never edit) | `.env`/`.env.*`; `swebench/**`; `tests/oracle_**/**`; `crates/*/src/reward_specs/**`; `crates/*/src/verifiers/**`; `*.pem`, `*.key`, `**/credentials.json` | various | No |
+| **Durable production** | RocksDB CFs (~200); FSV evidence; project-ingest manifests; weekly exports | `/zfs/archive/contextgraph/` on aiwonder | Source-recoverable (corpus) or replay-from-shift-log (predictions). Many FSV artifacts are irreplaceable single events. |
 | **Hot** | Active checkpoints, model weights, hot run state | `/zfs/hot/contextgraph/` on aiwonder | Yes (re-download / rebuild) |
 | **Ephemeral** | `/tmp/contextgraph-*` scratch | `/tmp/` | Yes |
-| **Legacy/local** | Pre-migration FSV + corpus + shift-log | `/mnt/d/contextgraph/` | Frozen as historical evidence; #369 reclassifies |
+
+`/mnt/d/contextgraph/` is **legacy provenance only** — not an active data root. CI lint `scripts/ci/no_mnt_d_production_paths_fsv.py` (#412 / #434) fails on active production reads/writes.
 
 ---
 
 ## 8. Exception Hierarchy (fail-closed structured errors)
 
-Every crate defines its own `Error` enum with `SCREAMING_SNAKE_CASE` code via `.code()`. Truncated catalog:
+Every crate defines its own `Error` enum with `SCREAMING_SNAKE_CASE` code via `.code()`. Sample:
 
-| Crate | Top-level error type | Sample error codes | Where defined |
-|---|---|---|---|
-| `context-graph-mejepa-instruments` | `InstrumentError` (`InvalidInput`, `NumericalInvariant`, `FrozenViolation`, `Store`) | `MEJEPA_INSTRUMENTS_INVALID_INPUT`, `MEJEPA_INSTRUMENTS_NUMERICAL_INVARIANT`, `MEJEPA_INSTR_FROZEN_VIOLATION`, `MEJEPA_INSTRUMENTS_STORE_ERROR` | `crates/.../src/lib.rs:62-105` |
-| `context-graph-mejepa-corpus` | `MutationError` (`InvalidInput`, `NoMutationSite`, `OperatorFailed`, `LeakageDetected`, `SubprocessTimeout`) | `MEJEPA_CORPUS_INVALID_INPUT`, `MEJEPA_CORPUS_NO_MUTATION_SITE`, `MEJEPA_CORPUS_OPERATOR_FAILED`, `MEJEPA_CORPUS_LEAKAGE_DETECTED`, `MEJEPA_CORPUS_SUBPROCESS_TIMEOUT` | `crates/.../src/lib.rs:111-160` |
-| `context-graph-mejepa` | `PredictorError`, `MejepaInferError`, `LossError`, `NanSource` | (see `crates/context-graph-mejepa/src/error.rs`) | `error.rs` |
-| `context-graph-mejepa-train` | `TrainerError`, `TrainerErrorCode`, `UtmlError`, `UtmlErrorCode` | (see `error.rs`) | `crates/.../src/error.rs` |
-| `context-graph-mejepa-tct` | `Tct*Error` | constellation freshness, calibration cell support, Gτ guard | `error.rs` |
-| `context-graph-mejepa-hygiene` | hygiene `Error` | tier transitions, quota overflow, GC | `error.rs` |
-| `context-graph-mejepa-shift-subscriber` | `SubscriberError` | watermark, decode, tail | `error.rs` |
-| `context-graph-storage` | `StorageError`, `QuantizedStorageError`, `TeleologicalStoreError`, `CodeStorageError`, `GraphEdgeStorageError` | open / CF missing / decode failure | `error.rs` |
-| `context-graph-mcp` (server/handlers) | retired tools → `CCREALITY_ENGINE_RETIRED` fail-closed | — | `deprecation.rs` |
+| Crate | Sample error codes |
+|---|---|
+| `context-graph-mejepa-instruments` | `MEJEPA_INSTRUMENTS_INVALID_INPUT`, `MEJEPA_INSTRUMENTS_NUMERICAL_INVARIANT`, `MEJEPA_INSTR_FROZEN_VIOLATION` |
+| `context-graph-mejepa-corpus` | `MEJEPA_CORPUS_INVALID_INPUT`, `MEJEPA_CORPUS_NO_MUTATION_SITE`, `MEJEPA_CORPUS_LEAKAGE_DETECTED`, `MEJEPA_CORPUS_SUBPROCESS_TIMEOUT` |
+| `context-graph-mejepa` | `MEJEPA_INSTRUMENT_GRADIENT_LEAK`, `OOD_CALIBRATOR_MISSING`, `OOD_SCORE_ABOVE_THRESHOLD`, `MULTI_HEAD_CONTRADICTION`, `CONTRADICTION_THRESHOLD_MISSING`, `CROSS_PANEL_GOODHART_DETECTED`, `PATHWAY_AMBIGUOUS_LEAF_REJECTED` |
+| `context-graph-mejepa-tct` | `MEJEPA_TCT_DIM_MISMATCH` |
+| `context-graph-mcp` | `CCREALITY_ENGINE_RETIRED` (retired tool callers fail closed) |
 
-**Fail-closed contract.** Missing CFs, missing files, missing models, missing env vars, malformed inputs MUST return a structured error with `code()`. No silent defaults; no permissive fallbacks. Doctrine § 1 / FSV-PROTOCOL § 3.
+**Fail-closed contract.** Missing CFs, missing files, missing models, missing env vars, malformed inputs MUST return a structured error with `code()`. No silent defaults. (Doctrine § 1 / FSV-PROTOCOL § 3.)
 
 ---
 
 ## 9. Major Subsystems (one paragraph each)
 
-**MCP server (`context-graph-mcp`).** JSON-RPC 2.0 stdio (default) or HTTP transport. 204 tool definitions exported by `tools/definitions/mod.rs::get_tool_definitions()`: 57 are `mejepa_*` (Phase 4/5/6/8/F/G/EK predictor + heal + observe + ship-gate dashboard + the first #417 chunk-skill linkage surface + #523 mistake-loop record/history/status). Also: 39 `dynamicjepa_*` (5090jepa surface), 14 learning, 18 UTL learner-state, 6 constellation, 6 entity, 10 embedder, 5 core memory, 4 each for topic/file_watcher/sequence/causal/graph_link/contrastive, 3 each for typed_edges/provenance, plus singletons. Retired `reality_*` tools fail closed with `CCREALITY_ENGINE_RETIRED`. Reality-loop mode (`--mode reality-loop`) exposes the post-pivot Claude-Code-outer-loop subset only. Server enforces multi-agent isolation via path-policy + edit-lock (see `06_operations_and_fsv.md`).
+**MCP server (`context-graph-mcp`).** JSON-RPC 2.0 stdio (default) or HTTP transport. 204 tools (54 `mejepa_*` product surface, plus learning, UTL, constellation, entity, embedder, graph, sequence, file watcher, training, provenance, daemon, etc.). Retired `reality_*` tools fail closed with `CCREALITY_ENGINE_RETIRED`. Server enforces multi-agent isolation via path-policy + edit-lock.
 
-**Predictor (`context-graph-mejepa`).** CUDA-only production predictor. 73 modules covering claim graph (Q1), patch-similarity HNSW exemplars (Q3), Q4 security/perf/cost/accuracy heads, Q5 shift-log replay impact, multi-head VICReg + Huber loss, conformal calibration, OOD detection, claim-vs-reality reconciliation, project-ingest reality compiler, synthetic-stress evaluator, adversarial corpus, dynamic embedder registration, foundationality (PageRank on chunk/library/embedder dep graphs), label transfer audit, operator override surface. `compile()` and `compile_with_fingerprint_observation()` are the canonical Q1-Q5 entry points.
+**Predictor (`context-graph-mejepa`).** CUDA-only production predictor. 73 modules covering claim graph (Q1), patch-similarity HNSW exemplars (Q3), Q5 shift-log replay impact, multi-head VICReg + Huber loss, conformal calibration, OOD detection, project-ingest reality compiler, synthetic-stress evaluator, adversarial corpus, dynamic embedder registration, foundationality (PageRank), operator override. `compile()` and `compile_with_fingerprint_observation()` are the canonical Q1-Q5 entry points.
 
-**Frozen instruments (`context-graph-mejepa-instruments`).** A `Panel` is an **array of 15 per-embedder vectors** (a teleological constellation), one vector per slot, each vector living in its own embedder's space: `E_AST (384)`, `E_CFG (256)`, `E_DataFlow (256)`, `E_TypeGraph (256)`, `E_Test (384)`, `E_Trace (512)`, `E_Diff (256)`, `E_Witness (256)`, `E_Oracle (128)`, `E_Problem (1024)`, `E_CommitMsg (384)`, `E_StaticAnalysis (256)`, `E_Runtime (256)`, `E_Reasoning (384)`, `Scalars (128)`. The 5,120 f32 contiguous buffer + per-slot byte offsets is the serialization format; **the semantic unit is the array of 15 per-embedder vectors, NOT a 5,120-d fused embedding**. Cross-embedder dimension-wise comparison is forbidden (E1's dim-3 is not comparable to E_AST's dim-3 — those numbers live in unrelated coordinate systems). Valid operations: same-embedder dim-wise compare (E1↔E1, E_AST↔E_AST, etc.); array-vs-array operations on the structured array (per-slot cosine map, similarity matrices, matrix-style projections that respect slot identity, masked aggregation); cross-slot SCALAR pairwise relationship metrics within the same array (MI, correlation, agreement). `Panel`/`PanelBuilder` enforce fail-closed dim+finite+double-fill validation. Instrument trait carries zero trainable params (structural collapse-immunity invariant `ΔΞ.target_collapse = 0`).
+**Frozen instruments (`context-graph-mejepa-instruments`).** A `Panel` is an array of 15 per-embedder vectors: `E_AST (384)`, `E_CFG (256)`, `E_DataFlow (256)`, `E_TypeGraph (256)`, `E_Test (384)`, `E_Trace (512)`, `E_Diff (256)`, `E_Witness (256)`, `E_Oracle (128)`, `E_Problem (1024)`, `E_CommitMsg (384)`, `E_StaticAnalysis (256)`, `E_Runtime (256)`, `E_Reasoning (384)`, `Scalars (128)`. The 5,120 f32 contiguous buffer is byte layout only. Cross-embedder dim-wise compare forbidden. Instruments carry zero trainable params (`ΔΞ.target_collapse = 0`).
 
-**Embedders (`context-graph-mejepa-embedders`).** 21 slots (E5 retired). 12 active content embedders (8 pretrained + 4 algorithmic). Frozen-by-design weights: E1, E6, E7, E8, E10, E12, E13, E14. Dynamic-registration scaffolding (`dynamic_registry.rs`) + VRAM budget enforcement (`vram.rs`) + falsification gate + freeze audit + adversarial-injection mitigation. SHA-256 manifest pins for every pretrained weight. CUDA-required for production; CPU construction rejected.
+**Embedders (`context-graph-mejepa-embedders`).** 21 slots. 12 active content embedders (8 pretrained + 4 algorithmic). Frozen-by-design: E1, E6, E7, E8, E10, E12, E13, E14. Dynamic-registration with VRAM budget + falsification + freeze + adversarial-injection mitigation. SHA-256 manifest pins for every pretrained weight. CUDA-required.
 
-**Corpus generator (`context-graph-mejepa-corpus`).** 8 mutation categories × 11 languages = 88 generic operators (Python uses the parser-backed operators; other 10 languages use `generic_language_ops`). Deterministic SplitMix64 PRNG. Categories: `KnownGood`/`SubtleFlip`/`OffByOne`/`SwapVariable`/`DeleteTestCall`/`WrongFile`/`OverEngineer`/`CompileError`. SWE-bench Lite bridge (`swebench.rs`) wraps `python -m swebench.harness.run_evaluation` per-instance, parses `report.json`, converts `FAIL_TO_PASS`/`PASS_TO_PASS`/`FAIL_TO_FAIL`/`PASS_TO_FAIL` → `OracleVerdict`. Split modes: `InstanceAtomic` (default, 240/30/30 on Lite) and `RepoAtomic` (195/77/28, repo-bounded). Provenance via SHA256 hash of sorted `(task_id, category, patch_sha256, oracle_verdict_sha256)` rows.
+**Corpus generator (`context-graph-mejepa-corpus`).** 8 mutation categories × 11 languages = 88 generic operators (Python first-class via parser-backed operators; other 10 deferred). Categories: `KnownGood`/`SubtleFlip`/`OffByOne`/`SwapVariable`/`DeleteTestCall`/`WrongFile`/`OverEngineer`/`CompileError`. SWE-bench Lite bridge wraps `python -m swebench.harness.run_evaluation` per-instance. Split modes: `InstanceAtomic` (default, 240/30/30) and `RepoAtomic`.
 
-**Trainer (`context-graph-mejepa-train`).** UTML v1.0 implementation. `compute_l_step` evaluates `L_step = ΔP × ΔK × ΔΩ × ΔΞ`. EWC++ (`task-py-g-065`), continual backprop (Dohare 2024, `task-py-g-066`), prioritized replay buffer over `CF_MEJEPA_REPLAY_BUFFER` keyed by surprise + per-cell coverage gap, inverse-map head (TASK-EK-012), per-fingerprint Fisher / dormancy (TASK-FP-008), compression-progress reporter (TASK-EK-001) producing CDL_bits weekly. Outputs `TrainingCertificate` rows in `CF_MEJEPA_TRAIN_CERTS`.
+**Trainer (`context-graph-mejepa-train`).** UTML v1.0 implementation. `compute_l_step` evaluates `L_step = ΔP × ΔK × ΔΩ × ΔΞ`. EWC++ Fisher, continual backprop (Dohare 2024), prioritized replay buffer over `CF_MEJEPA_REPLAY_BUFFER`. **Mistake loop consumer (#406, shipped):** consumes `CF_MEJEPA_MISTAKE_LOG`, applies exact-panel online-head updates with measured unrelated-control isolation, writes byte-readable `mistake_repeat_rate` metric. Skill-sequence discovery (#414, shipped) + failure-mode hierarchy (#404, shipped) feed the labeling layer.
 
-**TCT (`context-graph-mejepa-tct`).** Teleological constellations + Gτ guard. Cell key = `(mutation_category, language, additional_dims)`. Per-cell calibration, freshness audit (`freshness_policy.rs`), constellation refresh scheduler (`CF_MEJEPA_CONSTELLATION_REFRESH_LOG`). `Gτ` rejects predictions with insufficient cell support. Refresh-report renderer emits human-readable triage.
+**TCT (`context-graph-mejepa-tct`).** Teleological constellations + Gτ guard. Cell key = `(mutation_category, language, additional_dims)`. Per-cell calibration, freshness audit, refresh scheduler. Gτ rejects predictions with insufficient cell support.
 
-**Hygiene (`context-graph-mejepa-hygiene`).** Tier transitions (hot → warm → frozen), quota enforcement, GC reports, witness-chain Merkle compression. MCP surfaces: `mejepa_quota_status`, `mejepa_gc_run`, `mejepa_witness_compress`.
+**Hygiene (`context-graph-mejepa-hygiene`).** Tier transitions (hot → warm → frozen), quota enforcement, GC, witness-chain Merkle compression. MCP surfaces: `mejepa_quota_status`, `mejepa_gc_run`, `mejepa_witness_compress`.
 
-**Shift subscriber (`context-graph-mejepa-shift-subscriber`).** Tokio task tailing JSONL shift log (`/zfs/archive/contextgraph/runtime/shift-log.jsonl` in production, `/mnt/d/...` historical). Decodes `ShiftEntry` → calls `shift_to_inference()` → materializes `Panel` → writes `CF_MEJEPA_PANELS` + `CF_MEJEPA_SHIFT_WATERMARK`. Watermark write is the durability gate.
+**Shift subscriber.** Tokio task tailing `/zfs/archive/contextgraph/runtime/shift-log.jsonl`. Decodes `ShiftEntry` → `shift_to_inference()` → materializes `Panel` → writes `CF_MEJEPA_PANELS` + `CF_MEJEPA_SHIFT_WATERMARK`. Watermark is the durability gate.
 
-**Storage (`context-graph-storage`).** RocksDB wrapper. 19 teleological CFs (fingerprints, e1_matryoshka_128, e12_late_interaction, e13_splade_inverted, e6_sparse_inverted, content, source_metadata, file_index, topic_portfolio, entity_provenance, audit_log, audit_by_target, merge_history, importance_history, tool_call_index, consolidation_recommendations, embedding_registry, custom_weight_profiles, topic_profiles). 13 quantized embedder CFs (`emb_0..emb_12`). 5 code CFs (entities, e7 embeddings, file/name/signature indexes). 2 causal CFs (relationships, by_source). Per-CF `Options` with column-specific compaction. HNSW configs per embedder; inverted index for sparse embedders.
+**Storage (`context-graph-storage`).** RocksDB wrapper. ~200 CFs (51 base + 120 ME-JEPA + 19 teleological + 13 quantized + 5 code + 2 causal). HNSW configs per embedder; inverted index for sparse embedders.
 
-**CLI (`context-graph-cli`).** Operator CLI. Helpers in `governed_edit.rs` (path-policy edits), `mcp_client.rs` (call MCP from CLI scripts), `mcp_helpers.rs`. `exit_code_for_error()` maps known structured errors to deterministic exit codes for CI/scripts; `is_corruption_indicator()` triggers harder failure modes.
-
-**Witness (`context-graph-witness`).** Tamper-evident chain primitives. ed25519 segment signing (feature `ed25519`), Merkle aggregation, Stage 0 + Stage F + Merkle certificates with full metadata binding (corpus_id, policy_version, query_id, head_id, latency_ms, trajectory_count).
+**Witness (`context-graph-witness`).** Tamper-evident chain primitives. ed25519 segment signing, Merkle aggregation, Stage 0 + Stage F + Merkle certificates with full metadata binding.
 
 ---
 
 ## 10. What This System Is NOT
 
-- Not a generative inference engine — no inner LLM. The product is the *verifier*, not a code-writer.
-- Not a benchmark harness — the old `context-graph-benchmark` suite was retired as pre-pivot evidence.
-- Not a hosted service — runs locally on operator hardware (aiwonder for production durable state).
-- Not a Python codebase — Python only shows up as the *corpus subject* (SWE-bench Lite) and in tool wrappers (`scripts/swebench_lite_ops/*`).
-- Not cross-language at ship-gate time — current ship gate is Python-only (300×8 Python corpus). Non-Python `Language::*` variants exist in the corpus generator but are deferred from the current gate.
-- Not HTTP-callable from action paths — the MCP server is the only network surface for runtime work.
+- Not a generative inference engine — no inner LLM. The product is the verifier, not a code-writer.
+- Not a benchmark harness — pre-pivot benchmark crate retired.
+- Not a hosted service — runs locally on operator hardware (aiwonder for production).
+- Not a Python codebase — Python only shows up as the corpus subject (SWE-bench Lite) and in tool wrappers.
+- Not cross-language at ship-gate time — current gate is Python-only (300×8 Python corpus).
+- Not HTTP-callable from action paths.
 
 ---
 
@@ -548,10 +429,10 @@ Every crate defines its own `Error` enum with `SCREAMING_SNAKE_CASE` code via `.
 - Per-crate source map + dependency graph → `02_source_map.md`
 - Every RocksDB column family with key/value format → `03_storage_schema.md`
 - Every MCP tool with parameters and returns → `04_mcp_tools.md`
-- Embedder slots / instruments / heads / TCT / corpus / heal / training → `05_predictor_pipeline.md`
+- Embedder slots / instruments / heads / TCT / corpus / heal / mistake loop / training → `05_predictor_pipeline.md`
 - FSV protocol, runbook, DR, observability, test suite → `06_operations_and_fsv.md`
 - FSV evidence history, ship-gate progress, ablations → `07_results_and_benchmarks.md`
-- Current open work, Phase G/I/J, deferred items → `08_roadmap_and_open_work.md`
+- Current open work, critical path, post-ship plans → `08_roadmap_and_open_work.md`
 - Doctrine (universal protocol) → `docs2/AICodingAgentSuperPrompt.md`
 - Project addendum (invariants, deny-list) → `CLAUDE.md`
 - Per-turn agent contract → `AGENTS.md`
