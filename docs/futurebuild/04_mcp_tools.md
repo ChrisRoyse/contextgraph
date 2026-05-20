@@ -1,5 +1,7 @@
 # 04 — MCP Tools Reference
 
+⚠ **Synthetic-vector remediation (2026-05-19/20):** every MCP tool whose handler routes through the inference path (`mejepa_verify`, `mejepa_predict_latest`, `mejepa_predict_what_if`, `mejepa_search_latent_actions`, `mejepa_rank_candidates`, `mejepa_explain_prediction`, `mejepa_inspect_prediction`, `mejepa_replay_prediction`, `mejepa_reality_impact`, `mejepa_project_ingest`, `mejepa_project_report`, `mejepa_pathway_*`, `mejepa_record_mistake`, etc.) returned synthetic-input outputs before 2026-05-19 22:45 UTC. The Rust code path is now real (per `01_overview.md §1.7`); any persisted prediction rows produced before the fix are contaminated. Tools that read pure-substrate CFs (`mejepa_skill_to_code`, `mejepa_code_to_skill`, `mejepa_skill_set_query`, `mejepa_skill_coverage_audit`, `mejepa_chunk_as_star`, `mejepa_constellation_membership`, `mejepa_list_accepted_labels`, fingerprint surface, hygiene surface, daemon/heal status) are unaffected.
+
 Source files: `crates/context-graph-mcp/src/tools/definitions/mod.rs`, `crates/context-graph-mcp/src/tools/names.rs`, `crates/context-graph-mcp/src/tools/definitions/mejepa.rs`, all sibling `definitions/*.rs`, `crates/context-graph-mcp/src/deprecation.rs`.
 
 **Total tools registered** in `get_tool_definitions()`: **214** (test-enforced at `definitions/mod.rs:150`).

@@ -4,6 +4,33 @@ Source files: `crates/context-graph-mejepa-embedders/src/lib.rs` + modules, `cra
 
 ---
 
+## 0a. ⚠ Synthetic-vector remediation (2026-05-19/20) — pipeline rebaseline pending
+
+Between Phase G ramp and 2026-05-19 22:45 UTC, the **inference path** in `crates/context-graph-mejepa/src/compiler.rs::vectors_for` filled instrument-panel slots with SHA256-seeded synthetic vectors via `deterministic_vector(slot, &digest)` instead of calling the real frozen `E*Instrument` encoders. The forward cache pipeline (`crates/context-graph-mejepa-embedders/examples/python_forward_cache_fsv.rs`, ~24h GPU run, `precision_class: "candle_real_forward"`) was unaffected — it always used real Candle CUDA forward with SHA-pinned safetensors.
+
+**Six P0 fixes shipped 2026-05-19/20 (all closed):**
+
+| Issue | Fix |
+|---|---|
+| #422 | Production inference panels now route through real `E*Instrument` encoders (`compiler.rs::build_inference_panel_inputs`, commit `e2c51669`) |
+| #424 | Project cache fails closed on fake `deterministic_vector_blob` embeddings (commit `5330629e`) |
+| #426 | FSV/MCP deterministic harness can no longer pass without real compiler semantics |
+| #437 | Project ingest wired to active embedder forward providers (commit `a0849ac3`) |
+| #438 | Slot-preserving CUDA compiler must load verified trained checkpoint (commit `f982f29d`) |
+| #441 | Training loop now owns and optimizes real `MeJepaPredictor` weights; exports via manifest-verified pipeline (commit `db83923a`) |
+| #452 | Native active-embedder constellation adapter preserves per-embedder ragged spaces (commit `d068d2ed`) |
+
+**Code guards now in production** (`crates/context-graph-mejepa/src/predictor_checkpoint.rs`):
+
+- Lines 147-158: reject any checkpoint containing `PREDICTOR_CHECKPOINT_STUB_MAGIC = b"MEJEPA_BEST_STUB_V1"` at export
+- Lines 239-250: reject at load
+- `validate_aiwonder_checkpoint_path` rejects non-aiwonder roots
+- `trained_weight_sha256 != initial_weight_sha256` invariant on every manifest
+
+**P0 blocker for further gate work:** rebaseline `swebench_300x8_ship_gate_fsv` end-to-end against real-instruments inference path + real trained checkpoint. The previous `0.866667` ship-gate measurement is invalidated (it was the deterministic fixed-point output of the hash-driven inference). See `01_overview.md §1.7` for full forensic and `08_roadmap_and_open_work.md §0.5` for the rebaseline action plan.
+
+---
+
 ## 0. The Predictor Contract — binary + labeled + mistake-driven, no ambiguous heads
 
 This pipeline implements **three binary predicates** with free binary form against reality, plus one explanation surface:

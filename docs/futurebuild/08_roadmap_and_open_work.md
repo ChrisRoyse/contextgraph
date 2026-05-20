@@ -10,6 +10,22 @@ The prediction contract is **three binary surfaces against ground truth** (Q1 by
 
 ---
 
+## 0.5. ⚠ P0 BLOCKER: Ship-gate measurement requires rebaseline
+
+Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-seeded synthetic vectors instead of calling real `E*Instrument` encoders. Six P0 fixes (#422 / #424 / #426 / #437 / #438 / #441 / #452, all closed 2026-05-19/20) replaced the broken pipeline. **The previous `0.866667` ship-gate measurement is INVALID** — it was the deterministic fixed-point output of a hash-derived predictor, not a real measurement of model quality on real code semantics. See `01_overview.md §1.7` and `07_results_and_benchmarks.md §0` for forensic detail.
+
+**Before any further Phase G gate work** (#407 / #511 / #405 / #379 / #392), the rebaseline must complete:
+
+1. Run `swebench_300x8_ship_gate_fsv` on aiwonder against the real-instruments inference path + the real trained checkpoint (from #441's now-shipped trainer pipeline).
+2. Verify manifest: `trained_weight_sha256 != initial_weight_sha256` (proves real training, not stub copy).
+3. Re-run `λ_inv` bidirectional ablation against real inputs.
+4. Re-run #393 / #398 ablation suites against real inputs.
+5. Re-validate #129 OOD serving gate + #130 Gτ guard audit + #404 holdout coverage against real-input predictions.
+
+Tracked under a new context issue filed alongside this roadmap refresh. **All issues listed in §3 below assume the rebaseline has completed unless explicitly noted otherwise.**
+
+---
+
 ## 1. Current Ship Gate
 
 ```
@@ -22,9 +38,9 @@ prediction_oracle_correlation ≥ 0.95
   AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
 
-**Last holdout measurement:** `0.866667` (Panel A; Panel B has no measurement yet — #405 produces the first).
+**Last holdout measurement:** **PENDING REBASELINE.** Previous `0.866667` figure (from `/mnt/d/...ship-gate-fsv/ship-gate-fsv.json`) was measured against the synthetic-vector inference path and is invalidated. No post-fix end-to-end ship-gate measurement exists on aiwonder yet.
 
-**Gap to ship:** 0.083 correlation points on Panel A.
+**Gap to ship:** unknown until rebaseline. Could be anywhere from worse than 0.866 to already past 0.95.
 
 **P0 product contract (#397):** ME-JEPA is the binary reality predictor. It returns `Pass | Fail` for each candidate code change against the Docker oracle (Q2), with named-failure-mode + closest-exemplar explanation (Q3) on Fail. Q1 (claim-exists) and Q5 (predicted-shift-event) are additional binary predictions. Q4 ambiguous surfaces are out of scope.
 
@@ -58,21 +74,23 @@ By priority:
 
 Per pinned context #383 (LOCKED): gate-active issue order is **evidence-weighted, not vision-weighted**.
 
-### 3.0 The road to 0.95 (in evidence-weighted order)
+### 3.0 The road to 0.95 (synthetic-vector-aware ordering)
 
 | Rank | Epic | Status | Why it moves the gate |
 |---|---|---|---|
-| 1 | **#404** failure-mode hierarchy | ✅ closed 2026-05-20 | Names the predictor's perceived patterns; named-mode coverage on holdout = 1.0 |
-| 2 | **#413** auto-label discovery | ✅ closed 2026-05-19 | 491-row accepted Level-0 registry: the stable ID surface |
-| 3 | **#414** skill substrate | ✅ closed 2026-05-19 | 128 Level-2 skills, 36,773 chunk memberships, 10,579 reverse rows |
-| 4 | **#418** runtime hierarchical ability resolver | ✅ closed 2026-05-19 | Carries memberships into `PredictionLabelContext` for live predictions |
-| 5 | **#406 / #523** online mistake loop + MCP | ✅ closed 2026-05-20 | "Isn't wrong in the future" property; `mistake_repeat_rate ≤ 0.05` target |
-| 6 | **#407** threshold-calibration partition-disjointness audit | OPEN p1 | Cheapest move likely to detect under-calibration. ~1-day spike with binary outcome. |
-| 7 | **#511** information-entropy auxiliary loss | OPEN p1 | Adds Vopson 2nd-law-of-infodynamics minimization. Worst case = no movement; best case = 1-2 correlation points closed |
-| 8 | **#405** cross-panel triangulation Panel B | OPEN p0, blocked | **Adds a hard new ship-gate requirement.** Even hitting 0.95 on Panel A is not ship-eligible without Panel B. Defends 0.95 against encoder-matched Goodhart. Blocked on #521 model-backed Panel B encoders |
+| **0** | **REBASELINE** — run `swebench_300x8_ship_gate_fsv` against real-instruments inference + real trained checkpoint | **P0 BLOCKER** | Until this lands there is no valid measurement; every downstream gate item depends on knowing where we actually are. See §0.5 above. |
+| **0.5** | Re-run `λ_inv` bidirectional ablation + #393/#398 ablation suites against real inputs | P0 blocker | Pre-fix ablations measured nothing meaningful; redoing them might reveal the actual gap-closing levers |
+| 1 | **#404** failure-mode hierarchy | ✅ closed 2026-05-20 | Substrate REAL (deterministic over real corpus); holdout measurements need re-validation against post-fix predictions |
+| 2 | **#413** auto-label discovery | ✅ closed 2026-05-19 | 491-row accepted Level-0 registry — REAL (deterministic over real forward cache) |
+| 3 | **#414** skill substrate | ✅ closed 2026-05-19 | 128 Level-2 skills, 36,773 chunk memberships, 10,579 reverse rows — REAL (derived from #413) |
+| 4 | **#418** runtime hierarchical ability resolver | ✅ closed 2026-05-19 | Pure resolver logic — REAL |
+| 5 | **#406 / #523** online mistake loop + MCP | ✅ closed 2026-05-20 | Machinery shipped; needs real predictor mistakes to validate `mistake_repeat_rate ≤ 0.05` convergence (rebaseline gates this) |
+| 6 | **#407** threshold-calibration partition-disjointness audit | OPEN p1 — defer until rebaseline | Cheapest move likely to detect under-calibration once real predictor exists. Pre-rebaseline, calibration is meaningless. |
+| 7 | **#511** information-entropy auxiliary loss | OPEN p1 — defer until rebaseline | Was filed against a synthetic-input Brier baseline; re-justify after rebaseline shows where the real gap is |
+| 8 | **#405** cross-panel triangulation Panel B | OPEN p0, blocked | Even hitting 0.95 on Panel A is not ship-eligible without Panel B. Defends 0.95 against encoder-matched Goodhart. **Order may change if Panel A rebaseline reveals 0.95 isn't reachable with current corpus + predictor — in which case other gap-closing work precedes Panel B.** |
 | 9 | **#379** multi-file structural patch holdout | OPEN p1 | Compositional generalization |
 | 10 | **#392** temporal constellation trajectory features | OPEN p1 | Exact-state movement across windows |
-| 11 | **#409** paper revision | OPEN p2 | Aligns PAPER §1 with binary doctrine. Not gate-blocking. |
+| 11 | **#409** paper revision | OPEN p2 | Aligns PAPER §1 with binary doctrine + adds synthetic-vector remediation section. Not gate-blocking. |
 
 ### 3.1 Slot-preserving constellation architecture (#385 parent — substantially shipped)
 

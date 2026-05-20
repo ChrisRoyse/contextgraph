@@ -1,5 +1,6 @@
 use anyhow::{bail, ensure, Context, Result};
 use candle_core::{DType, Device, Tensor};
+use candle_nn::loss::cross_entropy;
 use context_graph_mejepa::calibration::open_infer_rocksdb;
 use context_graph_mejepa::cli::{
     build_slot_preserving_cuda_compiler, write_json_0600,
@@ -48,16 +49,47 @@ const NATIVE_ACTIVE_ADAPTER_MODEL_ROOT: &str =
     "/zfs/archive/contextgraph/models/task-py-g-152-native-active-constellation-training-fsv";
 const NATIVE_ACTIVE_ADAPTER_FSV_ROOT: &str =
     "/zfs/archive/contextgraph/fsv/task-py-g-152-native-active-constellation-training-fsv";
-const REAL_CORPUS_BATCH_SIZE: usize = 4;
-const REAL_CORPUS_OPTIMIZER_STEPS: usize = 3;
+const REAL_CORPUS_BATCH_SIZE: usize = 256;
+const REAL_CORPUS_OPTIMIZER_STEPS: usize = 256;
+const ORACLE_LOSS_WEIGHT: f64 = 4.0;
 
 struct RealCorpusTrainingBatch {
     panel_t0: Tensor,
     panel_t1: Tensor,
     target_panel: Tensor,
+    oracle_targets: Tensor,
     corpus_sha256: String,
     summary: Value,
     direct_pack_edge: Value,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+struct LossScalars {
+    total: f32,
+    panel_predict: f32,
+    oracle_ce: f32,
+    oracle_loss_weight: f64,
+}
+
+impl LossScalars {
+    fn is_finite(&self) -> bool {
+        self.total.is_finite()
+            && self.panel_predict.is_finite()
+            && self.oracle_ce.is_finite()
+            && self.oracle_loss_weight.is_finite()
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+struct OracleTrainingDiagnostics {
+    sample_count: usize,
+    actual_pass_count: usize,
+    predicted_pass_count: usize,
+    accuracy: f32,
+    score_min: f32,
+    score_max: f32,
+    score_mean: f32,
+    non_degenerate: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -111,6 +143,7 @@ fn main() -> Result<()> {
         panel_t0,
         panel_t1,
         target_panel,
+        oracle_targets,
         corpus_sha256,
         summary: real_corpus_summary,
         direct_pack_edge,
@@ -119,25 +152,42 @@ fn main() -> Result<()> {
         Path::new(NATIVE_ACTIVE_ADAPTER_MODEL_ROOT),
         Path::new(NATIVE_ACTIVE_ADAPTER_FSV_ROOT),
     )?;
-    let (_loss_tensor, loss_before) =
-        predictor_training_loss(&predictor, &panel_t0, &panel_t1, &target_panel)?;
+    let (_loss_tensor, loss_before) = predictor_training_loss(
+        &predictor,
+        &panel_t0,
+        &panel_t1,
+        &target_panel,
+        &oracle_targets,
+    )?;
     let mut optimizer = build_adamw(
         &training_config,
-        REAL_CORPUS_BATCH_SIZE as u64,
+        REAL_CORPUS_OPTIMIZER_STEPS as u64,
         predictor.trainable_parameters(),
         Vec::new(),
         Vec::new(),
         Vec::new(),
     )?;
     for _ in 0..REAL_CORPUS_OPTIMIZER_STEPS {
-        let (step_loss, _step_scalar) =
-            predictor_training_loss(&predictor, &panel_t0, &panel_t1, &target_panel)?;
+        let (step_loss, _step_scalar) = predictor_training_loss(
+            &predictor,
+            &panel_t0,
+            &panel_t1,
+            &target_panel,
+            &oracle_targets,
+        )?;
         optimizer.adamw.step(&step_loss)?;
         device.synchronize()?;
     }
     let trained_weight_sha256 = predictor_weight_content_sha256(&predictor)?;
-    let (_loss_after_tensor, loss_after) =
-        predictor_training_loss(&predictor, &panel_t0, &panel_t1, &target_panel)?;
+    let (_loss_after_tensor, loss_after) = predictor_training_loss(
+        &predictor,
+        &panel_t0,
+        &panel_t1,
+        &target_panel,
+        &oracle_targets,
+    )?;
+    let oracle_diagnostics =
+        oracle_training_diagnostics(&predictor, &panel_t0, &panel_t1, &oracle_targets)?;
     let weight_delta_observed = trained_weight_sha256 != initial_weight_sha256;
     ensure!(
         weight_delta_observed,
@@ -151,10 +201,12 @@ fn main() -> Result<()> {
         "optimizer": "AdamW",
         "optimizer_steps": optimizer.adamw.global_step(),
         "loss": {
-            "kind": "L_predict(predicted_panel, target_panel)",
+            "kind": "L_predict(predicted_panel, target_panel) + oracle_cross_entropy(class0=pass,class1=fail)",
+            "oracle_loss_weight": ORACLE_LOSS_WEIGHT,
             "before": loss_before,
             "after": loss_after
         },
+        "oracle_training_diagnostics": oracle_diagnostics.clone(),
         "real_corpus_batch": real_corpus_summary,
         "initial_weight_sha256": initial_weight_sha256,
         "trained_weight_sha256": trained_weight_sha256,
@@ -180,7 +232,7 @@ fn main() -> Result<()> {
         PredictorCheckpointExportMetadata {
             payload_step: 1,
             optimizer_steps: optimizer.adamw.global_step() as u64,
-            training_mode: "full_finetune_predictor_smoke".to_string(),
+            training_mode: "full_finetune_predictor_oracle_supervised".to_string(),
             initial_weight_sha256: initial_weight_sha256.clone(),
             training_certificate_sha256: training_certificate_sha256.clone(),
             native_active_constellation_adapter: Some(native_adapter.evidence.clone()),
@@ -228,7 +280,11 @@ fn main() -> Result<()> {
         && runtime["prediction_has_native_active_constellation_adapter_checkpoint_sha_attestation"] == true
         && runtime["prediction_has_native_active_constellation_adapter_training_certificate_sha_attestation"] == true
         && runtime["prediction_persisted"] == true
+        && optimizer.adamw.global_step() as usize == REAL_CORPUS_OPTIMIZER_STEPS
+        && oracle_diagnostics.non_degenerate
+        && oracle_diagnostics.predicted_pass_count > 0
         && real_corpus_summary["label_diversity_passed"] == true
+        && real_corpus_summary["batch_size"] == REAL_CORPUS_BATCH_SIZE
         && native_adapter.summary["adapter_fsv_all_passed"] == true
         && real_corpus_summary["synthetic_seed_features_used"] == false
         && direct_pack_edge["passed"] == true
@@ -256,6 +312,7 @@ fn main() -> Result<()> {
             "weight_delta_observed": weight_delta_observed,
             "training_certificate_sha256": training_certificate_sha256,
             "corpus_sha256": corpus_sha256,
+            "oracle_training_diagnostics": oracle_diagnostics,
             "native_active_constellation_adapter": native_adapter.summary.clone(),
             "real_corpus_batch": real_corpus_summary
         },
@@ -300,12 +357,95 @@ fn predictor_training_loss(
     panel_t0: &Tensor,
     panel_t1: &Tensor,
     target_panel: &Tensor,
-) -> Result<(Tensor, f32)> {
+    oracle_targets: &Tensor,
+) -> Result<(Tensor, LossScalars)> {
     let predicted = predictor.forward(panel_t0, panel_t1)?;
     let target = target_panel.to_dtype(predicted.tensor.dtype())?;
-    let loss = l_predict(&predicted.tensor, &target)?;
-    let scalar = loss.to_dtype(DType::F32)?.to_scalar::<f32>()?;
-    Ok((loss, scalar))
+    let panel_loss = l_predict(&predicted.tensor, &target)?.to_dtype(DType::F32)?;
+    let logits = predictor.oracle_head().predict_logits(&predicted)?;
+    let oracle_loss = cross_entropy(&logits.tensor.to_dtype(DType::F32)?, oracle_targets)?;
+    let weighted_oracle_loss = oracle_loss.affine(ORACLE_LOSS_WEIGHT, 0.0)?;
+    let total_loss = (&panel_loss + &weighted_oracle_loss)?;
+    let scalars = LossScalars {
+        total: total_loss.to_scalar::<f32>()?,
+        panel_predict: panel_loss.to_scalar::<f32>()?,
+        oracle_ce: oracle_loss.to_scalar::<f32>()?,
+        oracle_loss_weight: ORACLE_LOSS_WEIGHT,
+    };
+    Ok((total_loss, scalars))
+}
+
+fn oracle_training_diagnostics(
+    predictor: &MeJepaPredictor,
+    panel_t0: &Tensor,
+    panel_t1: &Tensor,
+    oracle_targets: &Tensor,
+) -> Result<OracleTrainingDiagnostics> {
+    let predicted = predictor.forward(panel_t0, panel_t1)?;
+    let logits = predictor.oracle_head().predict_logits(&predicted)?;
+    let probabilities = predictor.oracle_head().predict_probabilities(&logits)?;
+    let dims = probabilities.tensor.dims();
+    ensure!(
+        dims.len() == 2 && dims[0] > 0 && dims[1] >= 2,
+        "TASK-PY-G-127_ORACLE_PROBABILITY_SHAPE_INVALID: {:?}",
+        dims
+    );
+    let batch = dims[0];
+    let classes = dims[1];
+    let scores = probabilities
+        .tensor
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
+    let targets = oracle_targets
+        .to_dtype(DType::U32)?
+        .flatten_all()?
+        .to_vec1::<u32>()?;
+    ensure!(
+        targets.len() == batch,
+        "TASK-PY-G-127_ORACLE_TARGET_COUNT_MISMATCH"
+    );
+    let mut actual_pass_count = 0usize;
+    let mut predicted_pass_count = 0usize;
+    let mut correct = 0usize;
+    let mut pass_scores = Vec::with_capacity(batch);
+    for row_idx in 0..batch {
+        let pass_score = scores[row_idx * classes];
+        ensure!(
+            pass_score.is_finite() && (0.0..=1.0).contains(&pass_score),
+            "TASK-PY-G-127_ORACLE_SCORE_INVALID: {pass_score}"
+        );
+        let actual_pass = targets[row_idx] == 0;
+        let predicted_pass = pass_score >= 0.5;
+        if actual_pass {
+            actual_pass_count += 1;
+        }
+        if predicted_pass {
+            predicted_pass_count += 1;
+        }
+        if actual_pass == predicted_pass {
+            correct += 1;
+        }
+        pass_scores.push(pass_score);
+    }
+    let score_min = pass_scores.iter().copied().fold(f32::INFINITY, f32::min);
+    let score_max = pass_scores
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, f32::max);
+    let score_mean = pass_scores.iter().sum::<f32>() / pass_scores.len() as f32;
+    Ok(OracleTrainingDiagnostics {
+        sample_count: batch,
+        actual_pass_count,
+        predicted_pass_count,
+        accuracy: correct as f32 / batch as f32,
+        score_min,
+        score_max,
+        score_mean,
+        non_degenerate: predicted_pass_count > 0
+            && predicted_pass_count < batch
+            && (score_max - score_min) > 0.05,
+    })
 }
 
 fn real_corpus_training_batch(
@@ -356,6 +496,7 @@ fn real_corpus_training_batch(
     let mut panel_t0_values = Vec::with_capacity(batch_size * PANEL_DIM);
     let mut panel_t1_values = Vec::with_capacity(batch_size * PANEL_DIM);
     let mut target_values = Vec::with_capacity(batch_size * PANEL_DIM);
+    let mut oracle_target_values = Vec::with_capacity(batch_size);
     let mut selected_summary = Vec::with_capacity(batch_size);
     let mut label_counts: BTreeMap<String, usize> = BTreeMap::new();
     for (idx, row) in selected_rows.iter().enumerate() {
@@ -376,6 +517,7 @@ fn real_corpus_training_batch(
         panel_t0_values.extend_from_slice(panel_t0.data());
         panel_t1_values.extend_from_slice(panel_t1.data());
         target_values.extend_from_slice(target_panel.data());
+        oracle_target_values.push(if oracle_all_passed { 0u32 } else { 1u32 });
         selected_summary.push(json!({
             "row_key": key,
             "partition": row["partition"],
@@ -455,6 +597,7 @@ fn real_corpus_training_batch(
             .to_dtype(DType::BF16)?,
         target_panel: Tensor::from_slice(&target_values, (batch_size, PANEL_DIM), device)?
             .to_dtype(DType::BF16)?,
+        oracle_targets: Tensor::from_slice(&oracle_target_values, batch_size, device)?,
         corpus_sha256,
         summary,
         direct_pack_edge,
@@ -502,39 +645,51 @@ fn select_real_corpus_rows(
         eligible.len(),
         batch_size
     );
+    let pass_rows = eligible
+        .iter()
+        .copied()
+        .filter(|row| row["labels"]["oracle_all_passed"].as_bool() == Some(true))
+        .collect::<Vec<_>>();
+    let fail_rows = eligible
+        .iter()
+        .copied()
+        .filter(|row| row["labels"]["oracle_all_passed"].as_bool() == Some(false))
+        .collect::<Vec<_>>();
+    ensure!(
+        !pass_rows.is_empty() && !fail_rows.is_empty(),
+        "TASK-PY-G-127_REAL_CORPUS_LABELS_DEGENERATE: pass={} fail={}",
+        pass_rows.len(),
+        fail_rows.len()
+    );
     let mut selected = Vec::with_capacity(batch_size);
     let mut selected_keys = BTreeSet::new();
-    let mut add_row = |row: &Value, selected: &mut Vec<Value>| -> Result<()> {
-        let key = row_key(row)?;
-        if selected_keys.insert(key) {
-            selected.push(row.clone());
-        }
-        Ok(())
-    };
     if let Some(max_coverage) = eligible
         .iter()
         .copied()
         .max_by_key(|row| row["slots"].as_array().map_or(0, Vec::len))
     {
-        add_row(max_coverage, &mut selected)?;
+        push_selected_row(max_coverage, &mut selected_keys, &mut selected)?;
     }
-    for wanted in [true, false] {
+    let max_label_len = pass_rows.len().max(fail_rows.len());
+    for idx in 0..max_label_len {
         if selected.len() >= batch_size {
             break;
         }
-        if let Some(row) = eligible
-            .iter()
-            .copied()
-            .find(|row| row["labels"]["oracle_all_passed"].as_bool() == Some(wanted))
-        {
-            add_row(row, &mut selected)?;
+        if let Some(row) = fail_rows.get(idx) {
+            push_selected_row(row, &mut selected_keys, &mut selected)?;
+        }
+        if selected.len() >= batch_size {
+            break;
+        }
+        if let Some(row) = pass_rows.get(idx) {
+            push_selected_row(row, &mut selected_keys, &mut selected)?;
         }
     }
     for row in eligible {
         if selected.len() >= batch_size {
             break;
         }
-        add_row(row, &mut selected)?;
+        push_selected_row(row, &mut selected_keys, &mut selected)?;
     }
     ensure!(
         selected.len() == batch_size,
@@ -552,6 +707,18 @@ fn select_real_corpus_rows(
         labels
     );
     Ok(selected)
+}
+
+fn push_selected_row(
+    row: &Value,
+    selected_keys: &mut BTreeSet<String>,
+    selected: &mut Vec<Value>,
+) -> Result<()> {
+    let key = row_key(row)?;
+    if selected_keys.insert(key) {
+        selected.push(row.clone());
+    }
+    Ok(())
 }
 
 fn read_candidate_chunk_pairs(

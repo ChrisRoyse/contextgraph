@@ -6,15 +6,28 @@ Source: aiwonder `/zfs/archive/contextgraph/fsv/` for production evidence; git l
 
 ---
 
+## 0. ⚠ CRITICAL: pre-fix evidence partially invalidated
+
+Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-seeded synthetic vectors (`crates/context-graph-mejepa/src/compiler.rs::vectors_for` calling `deterministic_vector(slot, &digest)`) instead of real `E*Instrument` encoders. **The 0.866667 ship-gate measurement and every ablation that compared against it are INVALID** — they measured a synthetic-input pipeline, not the real predictor. See `01_overview.md §1.7` for the full forensic.
+
+| Status | Evidence |
+|---|---|
+| **REAL (no rebaseline)** | AST chunks, 391-shard forward cache, #388 tensors, #389 calibration, #413 labels, #414 skills, #404 hierarchy, anti-compensation invariants |
+| **INVALID (must rebaseline)** | Ship-gate 0.866667; `λ_inv` ablation; #393 / #398 ablations; "labels are the bottleneck" claim; "slot-preserving doesn't close gap" claim |
+
+The corpus survives. The measurement does not. Rebaseline is the P0 blocker before any further Phase G gate work.
+
+---
+
 ## 1. Current Ship-Gate Status
 
-| Metric | Target | Latest measurement | Source |
+| Metric | Target | Latest measurement | Status |
 |---|---|---|---|
-| `prediction_oracle_correlation` | ≥ 0.95 (stable × 4 rolling windows × all Python mutation cells) | **0.866667** (8/30 holdout) | `swebench-300x8-ship-gate-fsv/ship-gate-fsv.json` |
-| Cross-panel oracle correlation (Panel B) | ≥ 0.95 with `\|corr_a − corr_b\| ≤ 0.05` | **no measurement yet** | #405 produces the first |
-| `mistake_repeat_rate` | ≤ 0.05 (rolling 100-mistake window) | byte-readable via `mejepa_mistake_loop_status` | `CF_MEJEPA_MISTAKE_LOG` |
+| `prediction_oracle_correlation` | ≥ 0.95 (stable × 4 rolling windows × all Python mutation cells) | **PENDING REBASELINE** | Previous 0.866667 measurement (`/mnt/d/...ship-gate-fsv/ship-gate-fsv.json`) **INVALID** — measured against synthetic-input inference path. Awaiting post-fix end-to-end run on aiwonder with real instruments + real trained checkpoint. |
+| Cross-panel oracle correlation (Panel B) | ≥ 0.95 with `\|corr_a − corr_b\| ≤ 0.05` | no measurement yet | #405 produces the first (after Panel A rebaseline lands) |
+| `mistake_repeat_rate` | ≤ 0.05 (rolling 100-mistake window) | byte-readable via `mejepa_mistake_loop_status` | Awaits real predictor mistakes (machinery shipped #406/#523; needs post-fix predictor to generate disagreements) |
 
-**Gap to ship:** 0.083 correlation points on Panel A. Panel B has no measurement yet.
+**Gap to ship:** unknown until rebaseline. Pre-fix gap was 0.083 against the synthetic-input number; the real-input number could be anywhere from worse-than-0.866 to already-past-0.95.
 
 ---
 
@@ -64,7 +77,13 @@ FSV: `/zfs/archive/contextgraph/fsv/task-py-g-120-skill-linkage-surface-fsv/run-
 
 FSV: `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/q4_doctrine_freeze_fsv.json`, sha256 `23408b7d…`. Proves: `q4RowCountDelta=0`, `q4LossCoefficientMax=0.0`, `q4InputsToShipGate=0`, historical Q4 remains readable, new Q4 fields empty, weekly dashboard fails closed on frozen CF growth.
 
-### 2.9 Slot-preserving constellation architecture (#385/#386/#387/#388/#389/#390/#391/#393/#394/#395/#396/#398 — closed 2026-05-19)
+### 2.9 Slot-preserving constellation architecture (#385/#386/#387/#388/#389/#390/#391/#393/#394/#395/#396/#398 — closed 2026-05-19) — partially invalidated
+
+**⚠ The architectural / invariant work (#386 schema, #387 late-fusion structure, #388 tensor materialization, #389 calibration state, #391 attribution surfaces, #394 anti-compensation invariant) SURVIVES.** Those proofs are about structural properties — they hold regardless of input signal quality.
+
+**❌ The numerical ablation results (#393 / #398) are INVALID.** They measured the slot-preserving predictor against synthetic-input panels coming out of `compiler.rs::vectors_for` → `deterministic_vector`. The "best ablation `per_slot_pairwise_temporal` ΔBrier `+0.21353…` Δcorrelation `-0.5790…`" finding is meaningless — the predictor was fitting hash noise, not real cross-embedder relationships. Same for the `no_promotion` recommendation (calibrated full-constellation Brier `0.7539…` vs best local baseline `0.00855…`).
+
+**❌ The framing "slot-preserving architecture is correct but doesn't close the 0.083 gap by itself" is also INVALID.** This conclusion is untestable until the rebaseline lands — pre-fix, neither architecture could have closed the gap because the input was synthetic for both.
 
 Architectural correction from flat-panel projection to slot-preserving array operations. All children closed; remaining open child #392 (temporal trajectory features) is a follow-up signal surface.
 
@@ -134,21 +153,27 @@ Open work targeting the 0.95 ship gate. See `08_roadmap_and_open_work.md`.
 
 ## 5. Key Recent Architectural Discoveries
 
-### 5.1 Slot-preserving refactor is correct but doesn't close the gap
+### 5.1 Synthetic-vector contamination invalidated every pre-fix correlation finding
 
-The architectural correction from flat-panel projection (#385) to slot-preserving array operations (#386-#398) is doctrinally correct: cross-embedder dim-wise compares are now structurally forbidden, anti-compensation is enforced, per-slot calibration + OOD reasons persist. But the calibrated ablation suite (#398) recommends `no_promotion` because calibrated full-constellation Brier (`0.7539…`) is worse than best local baseline (`0.00855…`). **The 0.083 correlation gap is bottlenecked by what the predictor learned to perceive, not by raw embedding architecture.**
+**This is the headline discovery.** Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path bypassed the real frozen instruments and filled panel slots with SHA256-seeded synthetic vectors. The predictor was learning a hash-derived prior, not real code semantics. The same number 0.8666666746139526 verbatim appeared across every single ablation (`λ_inv ∈ {0, 0.25, 0.5, 1.0}`) precisely because the input never changed — only downstream compute did, and a deterministic-input system converges to a deterministic-output fixed point.
 
-### 5.2 Evidence-weighted ordering (#383, locked-in pinned context)
+Six P0 issues (#422 / #424 / #426 / #437 / #438 / #441 / #452) document and fix this. The corpus + label substrate survive (real Candle CUDA forward generated them); only the inference-path measurements were contaminated.
 
-Gate-active issue order must be evidence-weighted, not vision-weighted. After #388/#389/#398 showed slot-preserving features alone don't close the gap → next bandwidth shifts to label producers, threshold-calibration disjointness audit, and cross-panel triangulation, **not** more architectural refactors.
+### 5.2 Slot-preserving refactor is doctrinally correct (status update)
 
-### 5.3 The labeling layer is the meaning surface (#404 / #413 / #414 / #418)
+The architectural correction from flat-panel projection (#385) to slot-preserving array operations (#386-#398) IS doctrinally correct: cross-embedder dim-wise compares are now structurally forbidden, anti-compensation is enforced, per-slot calibration + OOD reasons persist. **But the previous claim that "slot-preserving architecture doesn't close the 0.083 gap by itself" is INVALID** — that conclusion was drawn from #398's calibrated ablation rerun, which ran the slot-preserving predictor against synthetic-input panels. Whether slot-preserving features close the gap on REAL inputs is untestable until rebaseline.
 
-Raw slot violations + cross-embedder correlations only become actionable when clustered into a 4-level hierarchy of named failure modes grounded by closest historical exemplars. The 491-row accepted Level-0 registry + 128 Level-2 skills + 379 Level-3 constellations + 36,773 chunk-skill memberships are the meaning layer over the embedding outputs.
+### 5.3 Evidence-weighted ordering (#383, pinned context) — recheck required
 
-### 5.4 The mistake loop replaces best-of-K (#406)
+#383 says gate-active issue order must be evidence-weighted, not vision-weighted. **The "evidence" that drove the recent reordering was from synthetic-input ablations and is itself invalidated.** Re-rank after rebaseline. Until then, the top of the queue is the rebaseline itself.
 
-Best-of-K papers over an under-trained predictor by spending compute at inference time. The online mistake loop pays the cost at *learning* time and converges to a predictor that is right on the first try. Current shipped primitive: key-local exact-panel online-head state with `protection_mode=exactPanelKeyIsolation`. Convergence target: `mistake_repeat_rate ≤ 0.05`.
+### 5.4 The labeling layer is the meaning surface (#404 / #413 / #414 / #418) — substrate stands
+
+Raw slot violations + cross-embedder correlations only become actionable when clustered into a 4-level hierarchy of named failure modes grounded by closest historical exemplars. The 491-row accepted Level-0 registry + 128 Level-2 skills + 379 Level-3 constellations + 36,773 chunk-skill memberships are all derived from the real forward cache and survive the synthetic-vector bug. The HOLDOUT measurements (114/114 named-mode coverage, 1.0 closest-exemplar agreement) were against pre-fix prediction rows and need re-validation on post-fix predictions.
+
+### 5.5 The mistake loop replaces best-of-K (#406)
+
+Best-of-K papers over an under-trained predictor by spending compute at inference time. The online mistake loop pays the cost at *learning* time and converges to a predictor that is right on the first try. Current shipped primitive: key-local exact-panel online-head state with `protection_mode=exactPanelKeyIsolation`. Convergence target: `mistake_repeat_rate ≤ 0.05`. The machinery is shipped; needs real predictor mistakes from a real trained checkpoint to validate convergence.
 
 ### 5.5 Connectome topology features are diagnostic-only (#513 / #527)
 

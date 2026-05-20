@@ -1,5 +1,7 @@
 # 02 — Source Code Map
 
+⚠ **Synthetic-vector remediation (2026-05-19/20) — fixed-module index:** `crates/context-graph-mejepa/src/compiler.rs::vectors_for` was producing SHA256-seeded synthetic vectors; replaced by `build_inference_panel_inputs` calling real `E*Instrument` encoders (commit `e2c51669`). `crates/context-graph-mejepa/src/project_cache.rs` was writing `deterministic_vector_blob` hashes as embeddings; now fails closed (commit `5330629e`). `crates/context-graph-mejepa/src/predictor_checkpoint.rs` now rejects `MEJEPA_BEST_STUB_V1` text-stub checkpoints at load and export (`:147-158, 239-250`). `crates/context-graph-mejepa-train` trainer now owns real `MeJepaPredictor` weights and exports manifest-verified checkpoints (commit `db83923a`). See `01_overview.md §1.7` for forensic and `08 §0.5` for rebaseline blocker. **`crates/context-graph-mejepa-embedders/` forward-cache pipeline was unaffected** — fail-closed guards in `src/forward.rs:122,207,349,422` ("no deterministic vector fallback is permitted") prevented contamination there.
+
 Source files: `Cargo.toml`, every `crates/*/Cargo.toml`, every `crates/*/src/lib.rs`, every `crates/*/src/main.rs`, every `[[bin]]` and `[[example]]` declaration.
 
 Totals: **1,600** src/lib `.rs` files · **210** examples · **258** test files.
