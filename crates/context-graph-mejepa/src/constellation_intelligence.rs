@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -8,6 +8,9 @@ use crate::types::{validate_probability, ChunkId, DdaSignals};
 
 pub const CONSTELLATION_INTELLIGENCE_SCHEMA_VERSION: u16 = 1;
 pub const CONSTELLATION_RELATIONSHIP_PATTERN_SCHEMA_VERSION: u16 = 1;
+pub const CONNECTOME_TOPOLOGY_FEATURE_SCHEMA_VERSION: u16 = 1;
+pub const CONNECTOME_DEFAULT_STRONG_EDGE_THRESHOLD: f32 = 0.5;
+pub const CONNECTOME_DEFAULT_RICH_CLUB_FRACTION: f32 = 0.30;
 pub const CONSTELLATION_DISAGREEMENT_ACTIVE_LEARNING_REASON: &str =
     "constellation_high_value_disagreement";
 
@@ -115,6 +118,149 @@ impl ConstellationConsequencePressures {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct ConnectomeTopologyEdge {
+    pub left_slot_id: String,
+    pub right_slot_id: String,
+    pub weight: f32,
+}
+
+impl ConnectomeTopologyEdge {
+    pub fn validate(&self, field: &str) -> Result<(), MejepaInferError> {
+        validate_text(&format!("{field}.left_slot_id"), &self.left_slot_id, 128)?;
+        validate_text(&format!("{field}.right_slot_id"), &self.right_slot_id, 128)?;
+        if self.left_slot_id == self.right_slot_id {
+            return invalid(field, "topology edge must use distinct slots");
+        }
+        validate_probability(&format!("{field}.weight"), self.weight)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectomeTopologyFeatures {
+    pub schema_version: u16,
+    pub cell_id: String,
+    pub window_index: u32,
+    pub edge_threshold: f32,
+    pub node_count: u32,
+    pub source_edge_count: u32,
+    pub strong_edge_count: u32,
+    pub rich_club_slot_ids: Vec<String>,
+    pub rich_club_pair_ids: Vec<String>,
+    pub rich_club_coefficient: f32,
+    pub rich_club_null_mean: f32,
+    pub rich_club_above_null: bool,
+    pub dominant_3node_motif_id: String,
+    pub dominant_3node_motif_count: u32,
+    pub modularity_q: f32,
+    pub modularity_null_mean: f32,
+    pub modularity_above_null: bool,
+    #[serde(default)]
+    pub split_rich_club_pair_jaccard: Option<f32>,
+}
+
+impl ConnectomeTopologyFeatures {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        if self.schema_version != CONNECTOME_TOPOLOGY_FEATURE_SCHEMA_VERSION {
+            return invalid(
+                "connectome_topology.schema_version",
+                format!(
+                    "expected {CONNECTOME_TOPOLOGY_FEATURE_SCHEMA_VERSION}; got {}",
+                    self.schema_version
+                ),
+            );
+        }
+        validate_text("connectome_topology.cell_id", &self.cell_id, 256)?;
+        validate_probability("connectome_topology.edge_threshold", self.edge_threshold)?;
+        if self.node_count < 3 {
+            return invalid("connectome_topology.node_count", "must be >= 3");
+        }
+        if self.source_edge_count == 0 {
+            return invalid("connectome_topology.source_edge_count", "must be non-zero");
+        }
+        if self.strong_edge_count > self.source_edge_count {
+            return invalid(
+                "connectome_topology.strong_edge_count",
+                "cannot exceed source_edge_count",
+            );
+        }
+        if self.rich_club_slot_ids.len() < 2 {
+            return invalid(
+                "connectome_topology.rich_club_slot_ids",
+                "must contain at least two slots",
+            );
+        }
+        let mut rich_slots = BTreeSet::new();
+        for (idx, slot_id) in self.rich_club_slot_ids.iter().enumerate() {
+            validate_text(
+                &format!("connectome_topology.rich_club_slot_ids[{idx}]"),
+                slot_id,
+                128,
+            )?;
+            if !rich_slots.insert(slot_id) {
+                return invalid(
+                    "connectome_topology.rich_club_slot_ids",
+                    "must not contain duplicate slots",
+                );
+            }
+        }
+        let mut rich_pairs = BTreeSet::new();
+        for (idx, pair_id) in self.rich_club_pair_ids.iter().enumerate() {
+            validate_text(
+                &format!("connectome_topology.rich_club_pair_ids[{idx}]"),
+                pair_id,
+                256,
+            )?;
+            if !pair_id.contains("--") {
+                return invalid(
+                    "connectome_topology.rich_club_pair_ids",
+                    "pair id must use left--right slot syntax",
+                );
+            }
+            if !rich_pairs.insert(pair_id) {
+                return invalid(
+                    "connectome_topology.rich_club_pair_ids",
+                    "must not contain duplicate pairs",
+                );
+            }
+        }
+        validate_probability(
+            "connectome_topology.rich_club_coefficient",
+            self.rich_club_coefficient,
+        )?;
+        validate_probability(
+            "connectome_topology.rich_club_null_mean",
+            self.rich_club_null_mean,
+        )?;
+        validate_text(
+            "connectome_topology.dominant_3node_motif_id",
+            &self.dominant_3node_motif_id,
+            64,
+        )?;
+        if self.dominant_3node_motif_count == 0 {
+            return invalid(
+                "connectome_topology.dominant_3node_motif_count",
+                "must be non-zero",
+            );
+        }
+        validate_finite("connectome_topology.modularity_q", self.modularity_q)?;
+        if !(-1.0..=1.0).contains(&self.modularity_q) {
+            return invalid("connectome_topology.modularity_q", "must be in [-1,1]");
+        }
+        validate_finite(
+            "connectome_topology.modularity_null_mean",
+            self.modularity_null_mean,
+        )?;
+        if let Some(jaccard) = self.split_rich_club_pair_jaccard {
+            validate_probability("connectome_topology.split_jaccard", jaccard)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConstellationIntelligenceEvidence {
     pub schema_version: u16,
     pub consensus_score: f32,
@@ -126,6 +272,8 @@ pub struct ConstellationIntelligenceEvidence {
     pub active_learning_recommended: bool,
     #[serde(default)]
     pub relationship_pattern_id: Option<String>,
+    #[serde(default)]
+    pub topology_features: Option<ConnectomeTopologyFeatures>,
     pub slot_pair_evidence: Vec<SlotPairEvidence>,
     pub source: String,
 }
@@ -169,6 +317,9 @@ impl ConstellationIntelligenceEvidence {
                 128,
             )?;
         }
+        if let Some(topology_features) = &self.topology_features {
+            topology_features.validate()?;
+        }
         if self.slot_pair_evidence.len() > MAX_SLOT_PAIR_EVIDENCE {
             return Err(MejepaInferError::DimMismatch {
                 expected: MAX_SLOT_PAIR_EVIDENCE,
@@ -205,6 +356,7 @@ impl ConstellationIntelligenceEvidence {
             },
             active_learning_recommended: false,
             relationship_pattern_id: None,
+            topology_features: None,
             slot_pair_evidence: Vec::new(),
             source: source.into(),
         };
@@ -496,6 +648,7 @@ pub fn summarize_dda_constellation_intelligence(
             || blind_spot_z_score >= 0.65
             || novelty_score >= 0.65,
         relationship_pattern_id: None,
+        topology_features: None,
         pressures,
         slot_pair_evidence: evidence,
         source,
@@ -508,7 +661,7 @@ pub fn granger_attestations_from_constellation_intelligence(
     evidence: &ConstellationIntelligenceEvidence,
 ) -> Result<BTreeMap<String, f32>, MejepaInferError> {
     evidence.validate()?;
-    Ok(BTreeMap::from([
+    let mut attestations = BTreeMap::from([
         (
             "constellation:consensus_score".to_string(),
             evidence.consensus_score,
@@ -545,7 +698,172 @@ pub fn granger_attestations_from_constellation_intelligence(
             "constellation:q5_replay_uncertainty".to_string(),
             evidence.pressures.q5_replay_uncertainty,
         ),
-    ]))
+    ]);
+    if let Some(topology) = &evidence.topology_features {
+        attestations.insert(
+            "constellation:connectome_rich_club_coefficient".to_string(),
+            topology.rich_club_coefficient,
+        );
+        attestations.insert(
+            "constellation:connectome_rich_club_lift_over_null".to_string(),
+            (topology.rich_club_coefficient - topology.rich_club_null_mean).max(0.0),
+        );
+        attestations.insert(
+            "constellation:connectome_modularity_q".to_string(),
+            topology.modularity_q,
+        );
+        if let Some(jaccard) = topology.split_rich_club_pair_jaccard {
+            attestations.insert(
+                "constellation:connectome_split_jaccard".to_string(),
+                jaccard,
+            );
+        }
+    }
+    Ok(attestations)
+}
+
+pub fn compute_connectome_topology_features(
+    cell_id: impl Into<String>,
+    window_index: u32,
+    edges: &[ConnectomeTopologyEdge],
+    edge_threshold: f32,
+) -> Result<ConnectomeTopologyFeatures, MejepaInferError> {
+    let cell_id = cell_id.into();
+    validate_text("connectome_topology.cell_id", &cell_id, 256)?;
+    validate_probability("connectome_topology.edge_threshold", edge_threshold)?;
+    if edges.is_empty() {
+        return invalid("connectome_topology.edges", "requires at least one edge");
+    }
+
+    let mut nodes = BTreeSet::new();
+    let mut accum: BTreeMap<(String, String), (f64, u32)> = BTreeMap::new();
+    for (idx, edge) in edges.iter().enumerate() {
+        edge.validate(&format!("connectome_topology.edges[{idx}]"))?;
+        let (left, right) = normalized_pair(&edge.left_slot_id, &edge.right_slot_id);
+        nodes.insert(left.clone());
+        nodes.insert(right.clone());
+        let entry = accum.entry((left, right)).or_insert((0.0, 0));
+        entry.0 += f64::from(edge.weight);
+        entry.1 += 1;
+    }
+    if nodes.len() < 3 {
+        return invalid("connectome_topology.nodes", "requires at least three slots");
+    }
+    let node_ids = nodes.into_iter().collect::<Vec<_>>();
+    let mut weights: BTreeMap<(String, String), f32> = BTreeMap::new();
+    for ((left, right), (sum, count)) in accum {
+        weights.insert((left, right), (sum / f64::from(count)) as f32);
+    }
+
+    let mut weighted_degree: BTreeMap<String, f32> = node_ids
+        .iter()
+        .map(|slot_id| (slot_id.clone(), 0.0))
+        .collect();
+    let mut total_weight = 0.0f32;
+    let mut strong_edge_count = 0u32;
+    for ((left, right), weight) in &weights {
+        *weighted_degree.entry(left.clone()).or_insert(0.0) += *weight;
+        *weighted_degree.entry(right.clone()).or_insert(0.0) += *weight;
+        total_weight += *weight;
+        if *weight >= edge_threshold {
+            strong_edge_count += 1;
+        }
+    }
+    if total_weight <= 0.0 {
+        return invalid(
+            "connectome_topology.edges",
+            "requires positive total edge weight",
+        );
+    }
+
+    let rich_count = ((node_ids.len() as f32) * CONNECTOME_DEFAULT_RICH_CLUB_FRACTION)
+        .ceil()
+        .max(2.0) as usize;
+    let rich_count = rich_count.min(node_ids.len());
+    let mut degree_rank = node_ids
+        .iter()
+        .map(|slot_id| (slot_id.clone(), weighted_degree[slot_id]))
+        .collect::<Vec<_>>();
+    degree_rank.sort_by(|left, right| {
+        right
+            .1
+            .total_cmp(&left.1)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    let rich_club_slot_ids = degree_rank
+        .into_iter()
+        .take(rich_count)
+        .map(|(slot_id, _)| slot_id)
+        .collect::<Vec<_>>();
+    let rich_possible_pairs = pair_count(rich_club_slot_ids.len()) as f32;
+    let all_possible_pairs = pair_count(node_ids.len()) as f32;
+    let mut rich_strong_pairs = 0u32;
+    let mut rich_club_pair_ids = Vec::new();
+    for idx in 0..rich_club_slot_ids.len() {
+        for jdx in (idx + 1)..rich_club_slot_ids.len() {
+            let (left, right) = normalized_pair(&rich_club_slot_ids[idx], &rich_club_slot_ids[jdx]);
+            let weight = *weights.get(&(left.clone(), right.clone())).unwrap_or(&0.0);
+            if weight >= edge_threshold {
+                rich_strong_pairs += 1;
+                rich_club_pair_ids.push(pair_id(&left, &right));
+            }
+        }
+    }
+    rich_club_pair_ids.sort();
+    let rich_club_coefficient = if rich_possible_pairs > 0.0 {
+        (rich_strong_pairs as f32 / rich_possible_pairs).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let rich_club_null_mean = if all_possible_pairs > 0.0 {
+        (strong_edge_count as f32 / all_possible_pairs).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let motif_counts = motif_counts(&node_ids, &weights, edge_threshold);
+    let (dominant_3node_motif_id, dominant_3node_motif_count) = dominant_motif(motif_counts);
+    let modularity_q =
+        strong_edge_component_modularity(&node_ids, &weights, &weighted_degree, edge_threshold);
+    let value = ConnectomeTopologyFeatures {
+        schema_version: CONNECTOME_TOPOLOGY_FEATURE_SCHEMA_VERSION,
+        cell_id,
+        window_index,
+        edge_threshold,
+        node_count: node_ids.len() as u32,
+        source_edge_count: weights.len() as u32,
+        strong_edge_count,
+        rich_club_slot_ids,
+        rich_club_pair_ids,
+        rich_club_coefficient,
+        rich_club_null_mean,
+        rich_club_above_null: rich_club_coefficient > rich_club_null_mean,
+        dominant_3node_motif_id,
+        dominant_3node_motif_count,
+        modularity_q,
+        modularity_null_mean: 0.0,
+        modularity_above_null: modularity_q > 0.0,
+        split_rich_club_pair_jaccard: None,
+    };
+    value.validate()?;
+    Ok(value)
+}
+
+pub fn rich_club_pair_jaccard(left: &[String], right: &[String]) -> Result<f32, MejepaInferError> {
+    let left_set = left.iter().cloned().collect::<BTreeSet<_>>();
+    let right_set = right.iter().cloned().collect::<BTreeSet<_>>();
+    for pair_id in left_set.iter().chain(right_set.iter()) {
+        validate_text(
+            "connectome_topology.rich_pair_jaccard.pair_id",
+            pair_id,
+            256,
+        )?;
+    }
+    if left_set.is_empty() && right_set.is_empty() {
+        return Ok(1.0);
+    }
+    let intersection = left_set.intersection(&right_set).count() as f32;
+    let union = left_set.union(&right_set).count() as f32;
+    Ok((intersection / union).clamp(0.0, 1.0))
 }
 
 fn pair_slots_for_upper_triangle_index(
@@ -566,6 +884,149 @@ fn pair_slots_for_upper_triangle_index(
         actual: target + 1,
         context: "upper-triangle pair index out of bounds".to_string(),
     })
+}
+
+fn normalized_pair(left: &str, right: &str) -> (String, String) {
+    if left <= right {
+        (left.to_string(), right.to_string())
+    } else {
+        (right.to_string(), left.to_string())
+    }
+}
+
+fn pair_id(left: &str, right: &str) -> String {
+    let (left, right) = normalized_pair(left, right);
+    format!("{left}--{right}")
+}
+
+fn pair_count(node_count: usize) -> usize {
+    node_count * node_count.saturating_sub(1) / 2
+}
+
+fn edge_weight(weights: &BTreeMap<(String, String), f32>, left: &str, right: &str) -> f32 {
+    let key = normalized_pair(left, right);
+    *weights.get(&key).unwrap_or(&0.0)
+}
+
+fn motif_counts(
+    node_ids: &[String],
+    weights: &BTreeMap<(String, String), f32>,
+    edge_threshold: f32,
+) -> BTreeMap<&'static str, u32> {
+    let mut counts = BTreeMap::from([
+        ("empty_triad", 0u32),
+        ("single_edge", 0u32),
+        ("open_triad", 0u32),
+        ("triangle", 0u32),
+    ]);
+    for idx in 0..node_ids.len() {
+        for jdx in (idx + 1)..node_ids.len() {
+            for kdx in (jdx + 1)..node_ids.len() {
+                let strong_edges = [
+                    edge_weight(weights, &node_ids[idx], &node_ids[jdx]) >= edge_threshold,
+                    edge_weight(weights, &node_ids[idx], &node_ids[kdx]) >= edge_threshold,
+                    edge_weight(weights, &node_ids[jdx], &node_ids[kdx]) >= edge_threshold,
+                ]
+                .into_iter()
+                .filter(|strong| *strong)
+                .count();
+                let motif = match strong_edges {
+                    0 => "empty_triad",
+                    1 => "single_edge",
+                    2 => "open_triad",
+                    _ => "triangle",
+                };
+                *counts.entry(motif).or_default() += 1;
+            }
+        }
+    }
+    counts
+}
+
+fn dominant_motif(counts: BTreeMap<&'static str, u32>) -> (String, u32) {
+    let rank = ["triangle", "open_triad", "single_edge", "empty_triad"];
+    rank.into_iter()
+        .map(|motif| (motif, counts.get(motif).copied().unwrap_or(0)))
+        .max_by(|left, right| left.1.cmp(&right.1))
+        .map(|(motif, count)| (motif.to_string(), count))
+        .unwrap_or_else(|| ("empty_triad".to_string(), 0))
+}
+
+fn strong_edge_component_modularity(
+    node_ids: &[String],
+    weights: &BTreeMap<(String, String), f32>,
+    weighted_degree: &BTreeMap<String, f32>,
+    edge_threshold: f32,
+) -> f32 {
+    let total_weight = weights.values().sum::<f32>();
+    if total_weight <= 0.0 {
+        return 0.0;
+    }
+    let communities = strong_edge_components(node_ids, weights, edge_threshold);
+    let mut q = 0.0f32;
+    for community in communities {
+        if community.is_empty() {
+            continue;
+        }
+        let mut internal_weight = 0.0f32;
+        let mut degree_sum = 0.0f32;
+        for slot_id in &community {
+            degree_sum += *weighted_degree.get(slot_id).unwrap_or(&0.0);
+        }
+        let members = community.iter().collect::<Vec<_>>();
+        for idx in 0..members.len() {
+            for jdx in (idx + 1)..members.len() {
+                internal_weight += edge_weight(weights, members[idx], members[jdx]);
+            }
+        }
+        q += internal_weight / total_weight - (degree_sum / (2.0 * total_weight)).powi(2);
+    }
+    q.clamp(-1.0, 1.0)
+}
+
+fn strong_edge_components(
+    node_ids: &[String],
+    weights: &BTreeMap<(String, String), f32>,
+    edge_threshold: f32,
+) -> Vec<BTreeSet<String>> {
+    let mut adjacency: BTreeMap<String, BTreeSet<String>> = node_ids
+        .iter()
+        .map(|slot_id| (slot_id.clone(), BTreeSet::new()))
+        .collect();
+    for ((left, right), weight) in weights {
+        if *weight >= edge_threshold {
+            adjacency
+                .entry(left.clone())
+                .or_default()
+                .insert(right.clone());
+            adjacency
+                .entry(right.clone())
+                .or_default()
+                .insert(left.clone());
+        }
+    }
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for slot_id in node_ids {
+        if seen.contains(slot_id) {
+            continue;
+        }
+        let mut component = BTreeSet::new();
+        let mut stack = vec![slot_id.clone()];
+        while let Some(current) = stack.pop() {
+            if !seen.insert(current.clone()) {
+                continue;
+            }
+            component.insert(current.clone());
+            for next in adjacency.get(&current).into_iter().flatten() {
+                if !seen.contains(next) {
+                    stack.push(next.clone());
+                }
+            }
+        }
+        out.push(component);
+    }
+    out
 }
 
 #[derive(Debug, Clone)]
@@ -892,6 +1353,58 @@ mod tests {
         pattern.evidence.relationship_pattern_id = Some("sha256:stale".to_string());
 
         assert!(pattern.validate().is_err());
+    }
+
+    #[test]
+    fn connectome_topology_detects_slot_preserving_rich_club() {
+        let edges = vec![
+            ConnectomeTopologyEdge {
+                left_slot_id: "e1".to_string(),
+                right_slot_id: "e6".to_string(),
+                weight: 0.92,
+            },
+            ConnectomeTopologyEdge {
+                left_slot_id: "e1".to_string(),
+                right_slot_id: "e8".to_string(),
+                weight: 0.88,
+            },
+            ConnectomeTopologyEdge {
+                left_slot_id: "e6".to_string(),
+                right_slot_id: "e8".to_string(),
+                weight: 0.84,
+            },
+            ConnectomeTopologyEdge {
+                left_slot_id: "e2".to_string(),
+                right_slot_id: "e3".to_string(),
+                weight: 0.12,
+            },
+        ];
+        let topology =
+            compute_connectome_topology_features("python:unit", 0, &edges, 0.5).expect("topology");
+        assert!(topology.rich_club_coefficient > topology.rich_club_null_mean);
+        assert!(topology.rich_club_above_null);
+        assert!(topology.modularity_above_null);
+        assert_eq!(topology.dominant_3node_motif_id, "single_edge");
+        assert!(topology.rich_club_pair_ids.contains(&"e1--e6".to_string()));
+    }
+
+    #[test]
+    fn connectome_topology_rejects_bad_edges() {
+        assert!(compute_connectome_topology_features("python:unit", 0, &[], 0.5).is_err());
+        let duplicate_slot = vec![ConnectomeTopologyEdge {
+            left_slot_id: "e1".to_string(),
+            right_slot_id: "e1".to_string(),
+            weight: 0.5,
+        }];
+        assert!(
+            compute_connectome_topology_features("python:unit", 0, &duplicate_slot, 0.5).is_err()
+        );
+        let non_finite = vec![ConnectomeTopologyEdge {
+            left_slot_id: "e1".to_string(),
+            right_slot_id: "e2".to_string(),
+            weight: f32::NAN,
+        }];
+        assert!(compute_connectome_topology_features("python:unit", 0, &non_finite, 0.5).is_err());
     }
 
     /// F-024 regression: zero-sample input must fail closed in constellation_intelligence too.

@@ -283,3 +283,7 @@ path = "examples/task_py_g_091_slot_attribution_explanation_fsv.rs"
 [[example]]
 name = "task_py_g_078_q4_trust_gate_fsv"
 path = "examples/task_py_g_078_q4_trust_gate_fsv.rs"
+
+[[example]]
+name = "python_connectome_topology_fsv"
+path = "examples/python_connectome_topology_fsv.rs"
