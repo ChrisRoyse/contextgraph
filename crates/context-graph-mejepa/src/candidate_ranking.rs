@@ -250,19 +250,24 @@ mod tests {
         fs::create_dir_all(repo_root.join("tests")).unwrap();
         let compiler = compiler_for(temp.path(), &repo_root);
         let context = context(&repo_root, "task-fp-105-unit");
+        // Production `panel_source_text` rejects empty `before`; provide
+        // minimal real prior content for the safe/risky candidates so they
+        // satisfy the panel-materialization contract. The ranking logic
+        // under test depends on path patterns and patch shape, not the
+        // specific content of `before`.
         let candidates = vec![
             candidate(
                 &repo_root,
                 "candidate-safe",
                 "src/safe.py",
-                "",
+                "def normalize(value):\n    return value\n",
                 "def normalize(value):\n    return value.strip()\n",
             ),
             candidate(
                 &repo_root,
                 "candidate-risky",
                 "src/risky.py",
-                "",
+                "def normalize(values):\n    return values\n",
                 "# TODO: add owner\ndef normalize(values):\n    return [v.clone() for v in values]\n",
             ),
             candidate(

@@ -673,19 +673,27 @@ mod tests {
     fn candidate(repo_root: &Path, candidate_id: &str, seed: &[u8]) -> LatentActionCandidate {
         let file_name = format!("src/{candidate_id}.py");
         let path = PathBuf::from(&file_name);
+        // Production `panel_source_text` rejects empty `before`, and the
+        // semantic instrument parser (ruff) rejects invalid Python. The
+        // candidate-id may contain hyphens (e.g. "candidate-a") which are
+        // illegal in Python identifiers, so derive a syntactically-valid
+        // function name from it.
+        let fn_name = candidate_id.replace('-', "_");
+        let before = format!("def {fn_name}():\n    return 'before'\n");
         let contents = format!(
-            "def {candidate_id}():\n    return '{}'\n",
+            "def {fn_name}():\n    return '{}'\n",
             hex::encode(seed)
         );
         fs::write(repo_root.join(&path), contents.as_bytes()).unwrap();
+        let pre_sha = sha256_bytes(before.as_bytes());
         let post_sha = sha256_bytes(contents.as_bytes());
         let patch = PatchBundle::try_new(
             AstDiff {
                 hunks: vec![DiffHunk {
                     path,
-                    pre_sha: post_sha,
+                    pre_sha,
                     post_sha,
-                    before: String::new(),
+                    before,
                     after: contents,
                 }],
             },
