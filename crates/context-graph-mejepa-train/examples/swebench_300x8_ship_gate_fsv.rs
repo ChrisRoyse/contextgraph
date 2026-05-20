@@ -46,6 +46,8 @@ const FISHER_Z_95: f32 = 1.959_964;
 const ECE_BIN_COUNT: usize = 10;
 const REQUIRED_HOLDOUT_COUNT: usize = 240;
 const REQUIRED_SPLIT_COUNTS: (usize, usize, usize) = (1920, 240, 240);
+const RANK_REVERSAL_MIN_CLASS_SUPPORT: usize = 8;
+const RANK_REVERSAL_MAX_RAW_CALIBRATION_CORRELATION: f32 = -0.25;
 const REQUIRED_CATEGORIES: [&str; 8] = [
     "known_good",
     "subtle_flip",
@@ -392,6 +394,8 @@ struct OracleCalibrationPolicy {
 struct CategoryCalibrationPolicy {
     category: String,
     candidate_count: usize,
+    rank_reversal_candidates_allowed: bool,
+    rank_reversal_policy_reason: String,
     transform: ScoreTransform,
     raw_calibration_metrics: MetricBlock,
     selected_calibration_metrics: MetricBlock,
@@ -563,13 +567,13 @@ fn fit_calibration_policy(rows: &[PredictionRow]) -> Result<OracleCalibrationPol
         );
     }
     Ok(OracleCalibrationPolicy {
-        schema_version: 1,
-        issue: 533,
+        schema_version: 2,
+        issue: 534,
         fitted_on_bucket: "calibration".to_string(),
         fitted_rows: rows.len(),
         holdout_rows_used_for_fitting: false,
         selection_objective:
-            "minimize calibration Brier + 0.25*ECE - 0.10*Pearson; constants allowed only for structurally degenerate cells; undefined Pearson is penalized for non-degenerate cells"
+            "minimize calibration Brier + 0.25*ECE - 0.10*Pearson; constants allowed only for structurally degenerate cells; rank-reversing transforms require calibration split mixed-class support >= 8 per class and raw Pearson <= -0.25"
                 .to_string(),
         by_category,
     })
@@ -581,7 +585,10 @@ fn fit_category_calibration_policy(
 ) -> CategoryCalibrationPolicy {
     let expected_degenerate = expected_degenerate_category(category);
     let raw_metrics = metrics_for(rows);
-    let candidates = score_transform_candidates(rows, expected_degenerate);
+    let (rank_reversal_candidates_allowed, rank_reversal_policy_reason) =
+        rank_reversal_policy(&raw_metrics, expected_degenerate);
+    let candidates =
+        score_transform_candidates(rows, expected_degenerate, rank_reversal_candidates_allowed);
     let mut best_transform = ScoreTransform::Identity;
     let mut best_metrics = raw_metrics.clone();
     let mut best_objective = f32::INFINITY;
@@ -598,6 +605,8 @@ fn fit_category_calibration_policy(
     CategoryCalibrationPolicy {
         category: category.to_string(),
         candidate_count: candidates.len(),
+        rank_reversal_candidates_allowed,
+        rank_reversal_policy_reason,
         transform: best_transform,
         raw_calibration_metrics: raw_metrics,
         selected_calibration_metrics: best_metrics,
@@ -612,10 +621,14 @@ fn expected_degenerate_category(category: &str) -> bool {
 fn score_transform_candidates(
     rows: &[PredictionRow],
     include_constant: bool,
+    include_rank_reversing: bool,
 ) -> Vec<ScoreTransform> {
     let pass_rate =
         rows.iter().filter(|row| row.actual_oracle_pass).count() as f32 / rows.len() as f32;
-    let mut candidates = vec![ScoreTransform::Identity, ScoreTransform::Invert];
+    let mut candidates = vec![ScoreTransform::Identity];
+    if include_rank_reversing {
+        candidates.push(ScoreTransform::Invert);
+    }
     if include_constant {
         candidates.push(ScoreTransform::Constant { value: pass_rate });
     }
@@ -624,10 +637,12 @@ fn score_transform_candidates(
             alpha,
             invert: false,
         });
-        candidates.push(ScoreTransform::Shrink {
-            alpha,
-            invert: true,
-        });
+        if include_rank_reversing {
+            candidates.push(ScoreTransform::Shrink {
+                alpha,
+                invert: true,
+            });
+        }
     }
     for threshold in [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99] {
         candidates.push(ScoreTransform::Threshold {
@@ -636,14 +651,64 @@ fn score_transform_candidates(
             low: 0.05,
             high: 0.95,
         });
-        candidates.push(ScoreTransform::Threshold {
-            threshold,
-            invert: true,
-            low: 0.05,
-            high: 0.95,
-        });
+        if include_rank_reversing {
+            candidates.push(ScoreTransform::Threshold {
+                threshold,
+                invert: true,
+                low: 0.05,
+                high: 0.95,
+            });
+        }
     }
     candidates
+}
+
+fn rank_reversal_policy(raw_metrics: &MetricBlock, expected_degenerate: bool) -> (bool, String) {
+    if expected_degenerate {
+        return (
+            false,
+            "disabled: structurally degenerate cells use constant calibration, not rank reversal"
+                .to_string(),
+        );
+    }
+    if raw_metrics.oracle_variance_class != OracleVarianceClass::Mixed {
+        return (
+            false,
+            format!(
+                "disabled: calibration oracle variance is {:?}, not mixed",
+                raw_metrics.oracle_variance_class
+            ),
+        );
+    }
+    let min_class_support = raw_metrics
+        .actual_pass_count
+        .min(raw_metrics.actual_fail_count);
+    if min_class_support < RANK_REVERSAL_MIN_CLASS_SUPPORT {
+        return (
+            false,
+            format!(
+                "disabled: calibration split min class support {min_class_support} < {RANK_REVERSAL_MIN_CLASS_SUPPORT}"
+            ),
+        );
+    }
+    match raw_metrics.prediction_oracle_correlation {
+        Some(value) if value <= RANK_REVERSAL_MAX_RAW_CALIBRATION_CORRELATION => (
+            true,
+            format!(
+                "enabled: raw calibration Pearson {value:.6} <= {RANK_REVERSAL_MAX_RAW_CALIBRATION_CORRELATION:.2} with min class support {min_class_support}"
+            ),
+        ),
+        Some(value) => (
+            false,
+            format!(
+                "disabled: raw calibration Pearson {value:.6} is not strong negative evidence <= {RANK_REVERSAL_MAX_RAW_CALIBRATION_CORRELATION:.2}"
+            ),
+        ),
+        None => (
+            false,
+            "disabled: raw calibration Pearson is undefined".to_string(),
+        ),
+    }
 }
 
 fn calibration_objective(metrics: &MetricBlock, expected_degenerate: bool) -> f32 {

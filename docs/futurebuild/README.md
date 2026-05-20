@@ -22,10 +22,10 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, the **inference path** in `crates
 - The **0.866667** ship-gate measurement (came from inference path through synthetic vectors + untrained predictor + `MEJEPA_BEST_STUB_V1` checkpoint)
 - The `λ_inv ∈ {0, 0.25, 0.5, 1.0}` ablation (every variant measured 0.8666666746139526 — same synthetic input)
 - #393 capability-discovery ablation suite + #398 calibrated rerun (Brier 0.7539 was against synthetic-input predictor)
-- The "slot-preserving architecture doesn't close the 0.083 gap by itself" claim (untestable until post-fix rebaseline)
-- The framing that "the 0.866 → 0.95 gap is a function of labels, not embedders/storage" (also untestable)
+- The "slot-preserving architecture doesn't close the 0.083 gap by itself" claim (invalid until #393/#398 are rerun against the real Panel A baseline)
+- The framing that "the 0.866 → 0.95 gap is a function of labels, not embedders/storage" (invalid until real-input ablations identify actual gate movers)
 
-**P0 blocker:** rebaseline the ship-gate FSV against real-instruments inference path + real trained checkpoint before continuing #407 / #511 / #405 work. Tracked under new context issue (filed alongside this doc refresh).
+**Post-fix baseline:** aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T162923Z/` is the current Panel A measurement of record: raw `prediction_oracle_correlation = 0.4843192995`, rank-safe calibrated `0.6916886568`. The remaining gap is mixed-cell ranking on real slot-preserving signals plus Panel B cross-check, not another synthetic-vector rebaseline.
 
 ---
 
@@ -55,14 +55,14 @@ Plus:
 
 Human review of AI patches becomes statistically unjustified once `prediction_oracle_correlation ≥ 0.95` × 4 rolling windows on the 300×8 SWE-bench Lite Python corpus **AND** Panel B (non-overlapping encoder triangulation, #405) confirms within 0.05.
 
-**Current ship-gate status: PENDING REBASELINE.** The previous 0.866667 figure was measured against a synthetic-input inference pipeline (see ⚠ box above). No post-fix end-to-end ship-gate measurement exists yet on aiwonder.
+**Current ship-gate status:** `0.6916886568` rank-safe calibrated (`0.4843192995` raw) from aiwonder run `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T162923Z/`. The previous 0.866667 figure was measured against a synthetic-input inference pipeline (see warning box above) and is invalid.
 
 ---
 
 ## Critical-path one-liner (read `08` for detail)
 
-**P0 blocker:** rebaseline ship-gate FSV against real-instruments inference path + real trained checkpoint.
+**P0 blocker:** lift real mixed-cell ranking from the `0.6916886568` Panel A baseline while preserving calibration split/holdout disjointness (#535).
 
-After rebaseline: `#404 hierarchy` ✅ → `#413 labels` ✅ → `#414 skills` ✅ → `#418 resolver` ✅ → `#406/#523 mistake loop + MCP` ✅ → **rebaseline #393/#398/`λ_inv` ablations on real inputs** → **`#407 calibration disjointness`** (p1) → `#511 entropy loss` (p1) → **`#405 Panel B`** (blocked p0) → 0.95 ship gate.
+Critical path: `#404 hierarchy` ✅ → `#413 labels` ✅ → `#414 skills` ✅ → `#418 resolver` ✅ → `#406/#523 mistake loop + MCP` ✅ → **#535 mixed-cell rank lift on real labels** → **rebaseline #393/#398/`λ_inv` ablations on real inputs** → **`#407 calibration disjointness`** (p1) → `#511 entropy loss` (p1) → **`#405 Panel B`** (blocked p0) → 0.95 ship gate.
 
 Post-0.95: pathway exploration (#416), skill-linkage MCP (#417), info-physics formalization (#511/#512/#514), creativity engine (#516-#520).

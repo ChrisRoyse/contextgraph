@@ -353,7 +353,7 @@ ME-JEPA-Code is pre-production (no SLA, no backwards compatibility per CLAUDE.md
 
 ## 10.5 ⚠ Synthetic-vector rebaseline FSV protocol (P0)
 
-Until the inference-path synthetic-vector contamination fix (#422 / #424 / #426 / #437 / #438 / #441 / #452 — all closed 2026-05-19/20) is re-validated end-to-end, the ship-gate measurement of record is **PENDING REBASELINE**. Every closeout that compares to the pre-fix `0.866667` baseline is invalid.
+The inference-path synthetic-vector contamination fix (#422 / #424 / #426 / #437 / #438 / #441 / #452 — all closed 2026-05-19/20) has been re-validated end-to-end on aiwonder. The current ship-gate measurement of record is `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T162923Z/`: raw `prediction_oracle_correlation = 0.4843192995`, rank-safe calibrated `0.6916886568`, report sha256 `c1a5b8522836ce6bcafa7ec3fb19d5da55a36ef872804768786c608325ff6a6a`. Every closeout that compares to the pre-fix `0.866667` baseline is invalid.
 
 **Rebaseline FSV harness assertions (required before ship-gate `0.95 × 4 windows` claim can resume):**
 
@@ -361,7 +361,7 @@ Until the inference-path synthetic-vector contamination fix (#422 / #424 / #426 
 2. **Checkpoint anti-stub guard live.** `crates/context-graph-mejepa/src/predictor_checkpoint.rs::PREDICTOR_CHECKPOINT_STUB_MAGIC` is rejected at both export (`:147-158`) and load (`:239-250`).
 3. **Trained-weight invariant.** `LoadedPredictorCheckpoint.trained_weight_sha256 != initial_weight_sha256` (proves trainer actually optimized weights, not stub-copy).
 4. **Forward-cache substrate revalidated.** Confirm `precision_class: "candle_real_forward"` (pretrained slots) or `"algorithmic_real_forward"` (E2/E3/E4/E9) on packed records read back from `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-<TS>/`.
-5. **End-to-end ship-gate measurement.** Run `swebench_300x8_ship_gate_fsv` on aiwonder against the post-fix runtime + verified trained checkpoint; persist `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-<TS>/ship-gate-fsv.json` with new `prediction_oracle_correlation`. Independent readback of the JSON + sha256.
+5. **End-to-end ship-gate measurement.** Last run: `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T162923Z/ship-gate-fsv.json`; independent readback sha256 `b07e49a6feb588e6d98ecece5f3342287c00c7d4def25716d934c5867e5dedc4`.
 6. **`λ_inv` ablation re-run.** Re-run `task_ek_012_bidirectional_ablation_fsv` against real inputs; persist new variant numbers. The 0.8666666746139526 verbatim across `{0, 0.25, 0.5, 1.0}` was the synthetic-input signature; any spread between variants now is real signal.
 7. **#393 / #398 ablation re-run.** Re-run `task_py_g_093_constellation_ablation_suite_fsv` and `task_py_g_097_constellation_ablation_with_calibration_fsv` against real inputs; document new Brier + correlation deltas.
 8. **#129 OOD serving gate re-validation.** Re-derive AUC against post-fix predictions; confirm `OOD_CELL_AUC_REGRESSION` does not fire spuriously.

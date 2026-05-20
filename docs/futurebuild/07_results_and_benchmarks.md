@@ -15,7 +15,7 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-se
 | **REAL (no rebaseline)** | AST chunks, 391-shard forward cache, #388 tensors, #389 calibration, #413 labels, #414 skills, #404 hierarchy, anti-compensation invariants |
 | **INVALID (must rebaseline)** | Ship-gate 0.866667; `λ_inv` ablation; #393 / #398 ablations; "labels are the bottleneck" claim; "slot-preserving doesn't close gap" claim |
 
-The corpus survives. The measurement does not. Rebaseline is the P0 blocker before any further Phase G gate work.
+The corpus survives. The pre-fix measurement does not. The post-fix real-input rebaseline now exists, and Phase G is working from that number.
 
 ---
 
@@ -23,15 +23,15 @@ The corpus survives. The measurement does not. Rebaseline is the P0 blocker befo
 
 | Metric | Target | Latest measurement | Status |
 |---|---|---|---|
-| `prediction_oracle_correlation` | ≥ 0.95 (stable × 4 rolling windows × all Python mutation cells) | **0.6631761193 calibrated** (`0.4843192995` raw) | Post-fix aiwonder real-input rebaseline now exists. Calibration improved correlation by `+0.1788568199`, Brier by `0.0969572812`, and ECE by `0.1294860840`; gate still fails on mixed-cell ranking and statistical-power blockers. |
+| `prediction_oracle_correlation` | ≥ 0.95 (stable × 4 rolling windows × all Python mutation cells) | **0.6916886568 rank-safe calibrated** (`0.4843192995` raw) | Post-fix aiwonder real-input rebaseline now exists. #534 rank-safe calibration improved correlation by `+0.2073693573`, Brier by `0.1084784716`, and ECE by `0.1661239266`; gate still fails on mixed-cell ranking and statistical-power blockers. |
 | Cross-panel oracle correlation (Panel B) | ≥ 0.95 with `\|corr_a − corr_b\| ≤ 0.05` | no measurement yet | #405 produces the first (after Panel A rebaseline lands) |
 | `mistake_repeat_rate` | ≤ 0.05 (rolling 100-mistake window) | byte-readable via `mejepa_mistake_loop_status` | Awaits real predictor mistakes (machinery shipped #406/#523; needs post-fix predictor to generate disagreements) |
 
-**Gap to ship:** `0.2868238807` against the calibrated real-input Panel A measurement. Pre-fix `0.866667` is not comparable because it measured synthetic vectors.
+**Gap to ship:** `0.2583113432` against the rank-safe calibrated real-input Panel A measurement. Pre-fix `0.866667` is not comparable because it measured synthetic vectors.
 
 **Metric contract update (#532).** Per-cell Pearson is not defined for zero-variance oracle cells. The active ship-gate FSV now classifies every block as `mixed`, `all_fail`, `all_pass`, or `empty`: mixed blocks use Pearson correlation; degenerate all-fail/all-pass blocks use target-class recall plus calibration (`actual_class_confidence_mean`, Brier, ECE). Each block also carries statistical-power diagnostics so a point estimate cannot be mistaken for a powered readiness claim.
 
-**Calibration + invalid-source update (#533/#531).** The ship-gate FSV fits a deterministic calibration policy on the 240-row calibration split only, then evaluates the 240-row holdout. Constants are allowed only for structurally degenerate `compile_error` / `wrong_file` cells; non-degenerate cells preserve ranking evidence to avoid calibration-split overfit. Latest FSV: `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T161430Z/`, report sha256 `2e1fc55063522ff85d67c62cc1f1f4e38cd366d7479172903fc4c8b3295228d0`, readback sha256 `7ed982cf0a33d92e0848c29195fb1c76a2300e382ecf9c3687124810151bf74f`. `compile_error` rows now use raw invalid-source diagnostic panels rather than carrier modules. The measured remaining blocker is mixed-cell ranking (#534): `delete_test_call`, `known_good`, `off_by_one`, `over_engineer`, `subtle_flip`, and `swap_variable` remain far below 0.95 after calibration.
+**Calibration + invalid-source + rank-safety update (#533/#531/#534).** The ship-gate FSV fits a deterministic calibration policy on the 240-row calibration split only, then evaluates the 240-row holdout. Constants are allowed only for structurally degenerate `compile_error` / `wrong_file` cells. Rank-reversing transforms are now allowed only when the calibration split has mixed-class support ≥ 8 per class and raw Pearson ≤ -0.25; this prevents calibration-split overfit from flipping holdout ranking. Latest FSV: `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T162923Z/`, report sha256 `c1a5b8522836ce6bcafa7ec3fb19d5da55a36ef872804768786c608325ff6a6a`, readback sha256 `b07e49a6feb588e6d98ecece5f3342287c00c7d4def25716d934c5867e5dedc4`. `compile_error` rows use raw invalid-source diagnostic panels rather than carrier modules. #534 moved `subtle_flip::python` from `-0.3561776280` to `+0.3561775386` without regressing the overall calibrated correlation (`0.6631761193` → `0.6916886568`). Remaining mixed-cell blockers are tracked by #535: `delete_test_call`, `known_good`, `off_by_one`, `over_engineer`, `subtle_flip`, and `swap_variable` remain below 0.95.
 
 ---
 
@@ -87,7 +87,7 @@ FSV: `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/q4_doctrine_freeze_fs
 
 **❌ The numerical ablation results (#393 / #398) are INVALID.** They measured the slot-preserving predictor against synthetic-input panels coming out of `compiler.rs::vectors_for` → `deterministic_vector`. The "best ablation `per_slot_pairwise_temporal` ΔBrier `+0.21353…` Δcorrelation `-0.5790…`" finding is meaningless — the predictor was fitting hash noise, not real cross-embedder relationships. Same for the `no_promotion` recommendation (calibrated full-constellation Brier `0.7539…` vs best local baseline `0.00855…`).
 
-**❌ The framing "slot-preserving architecture is correct but doesn't close the 0.083 gap by itself" is also INVALID.** This conclusion is untestable until the rebaseline lands — pre-fix, neither architecture could have closed the gap because the input was synthetic for both.
+**❌ The framing "slot-preserving architecture is correct but doesn't close the 0.083 gap by itself" is also INVALID.** The new real-input Panel A baseline is `0.6916886568`, but #393/#398 have not yet been rerun against that baseline. Pre-fix, neither architecture could have closed the gap because the input was synthetic for both.
 
 Architectural correction from flat-panel projection to slot-preserving array operations. All children closed; remaining open child #392 (temporal trajectory features) is a follow-up signal surface.
 
@@ -96,7 +96,7 @@ Key results:
 - **#388 cross-embedder correlation tensors:** 516 per-cell/window/slot distribution tensors, 2,838 per-cell/window upper-triangle pair tensors, 1,400 valid pair rows, 8 full cell/windows with all 66 active pair rows.
 - **#389 per-slot calibration + OOD:** 12 global slot calibrations, 84 fail-closed per-cell slot rows, 66 pair calibrations, strict-conjunction OOD policy. `RealityPrediction.per_slot_ood_reasons` persists through `CF_MEJEPA_LIVE_PREDICTIONS`.
 - **#390 constellation intelligence:** found real e7/e9 `zero_fraction` pair AUC `0.5882968` vs own-slot baseline `0.40438873` over 109 rows, lift `+0.18390805`.
-- **#393 / #398 ablations:** flat-vector baseline comparison-only (`ship_gate_eligible=false`); every ship-gate-eligible scalar constellation ablation demoted vs local baseline ladder. `no_promotion` recommendation — calibrated full-constellation Brier `0.7539…` worse than best local baseline `0.00855…`. **The slot-preserving refactor is correct but does not close the 0.083 gap by itself.**
+- **#393 / #398 ablations:** invalid numerically. They must be rerun against the real Panel A baseline (`0.6916886568`) before any conclusion is drawn about local baselines, promotion, or which constellation features move the gate.
 - **#394 anti-compensation FSV:** corrupted/missing/stale/dimension-shifted slots, contradictory pair relationships, and temporal jumps remain non-ship-gate-eligible even when aggregate normalized scores would pass.
 
 ### 2.10 OOD harvest + serving gate (#276 / #129 — closed 2026-05-19)
@@ -165,11 +165,11 @@ Six P0 issues (#422 / #424 / #426 / #437 / #438 / #441 / #452) document and fix 
 
 ### 5.2 Slot-preserving refactor is doctrinally correct (status update)
 
-The architectural correction from flat-panel projection (#385) to slot-preserving array operations (#386-#398) IS doctrinally correct: cross-embedder dim-wise compares are now structurally forbidden, anti-compensation is enforced, per-slot calibration + OOD reasons persist. **But the previous claim that "slot-preserving architecture doesn't close the 0.083 gap by itself" is INVALID** — that conclusion was drawn from #398's calibrated ablation rerun, which ran the slot-preserving predictor against synthetic-input panels. Whether slot-preserving features close the gap on REAL inputs is untestable until rebaseline.
+The architectural correction from flat-panel projection (#385) to slot-preserving array operations (#386-#398) IS doctrinally correct: cross-embedder dim-wise compares are now structurally forbidden, anti-compensation is enforced, per-slot calibration + OOD reasons persist. **But the previous claim that "slot-preserving architecture doesn't close the 0.083 gap by itself" is INVALID** — that conclusion was drawn from #398's calibrated ablation rerun, which ran the slot-preserving predictor against synthetic-input panels. Rerun #393/#398 against the `0.6916886568` real Panel A baseline before using those numbers for queue ordering.
 
 ### 5.3 Evidence-weighted ordering (#383, pinned context) — recheck required
 
-#383 says gate-active issue order must be evidence-weighted, not vision-weighted. **The "evidence" that drove the recent reordering was from synthetic-input ablations and is itself invalidated.** Re-rank after rebaseline. Until then, the top of the queue is the rebaseline itself.
+#383 says gate-active issue order must be evidence-weighted, not vision-weighted. **The "evidence" that drove the recent reordering was from synthetic-input ablations and is itself invalidated.** Re-rank from the `0.6916886568` real Panel A baseline; the top of the queue is now mixed-cell rank lift plus real-input ablation reruns.
 
 ### 5.4 The labeling layer is the meaning surface (#404 / #413 / #414 / #418) — substrate stands
 

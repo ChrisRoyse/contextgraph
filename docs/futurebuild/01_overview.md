@@ -1,6 +1,6 @@
 # 01 — System Overview
 
-**Status:** Phase G in flight (ship gate `prediction_oracle_correlation ≥ 0.95 × 4 rolling windows` open). **Ship-gate measurement is PENDING REBASELINE** after the 2026-05-19/20 synthetic-vector inference-path fixes; previous 0.866667 figure was measured against a contaminated pipeline (see §1.7 below and `README.md ⚠ box`). Phases A–F + H code/FSV-shipped.
+**Status:** Phase G in flight (ship gate `prediction_oracle_correlation ≥ 0.95 × 4 rolling windows` open). Post-fix real-input aiwonder rebaseline exists; previous 0.866667 figure was measured against a contaminated synthetic-vector pipeline and is invalid (see §1.7 below and `README.md ⚠ box`). Phases A–F + H code/FSV-shipped.
 
 Source files: `Cargo.toml`, `CLAUDE.md`, `AGENTS.md`, `crates/context-graph-mcp/src/lib.rs`, `crates/context-graph-mejepa/src/lib.rs`, `crates/context-graph-mejepa-cf/src/lib.rs`, `crates/context-graph-mejepa-instruments/src/lib.rs`, `crates/context-graph-mejepa-corpus/src/lib.rs`, `crates/context-graph-storage/src/lib.rs`, `crates/context-graph-mcp/src/tools/definitions/mod.rs`.
 
@@ -47,7 +47,7 @@ prediction_oracle_correlation ≥ 0.95
 
 **Degenerate-cell metric contract (#532).** Pearson correlation is used only when the oracle target has both Pass and Fail rows. Single-class cells such as `compile_error::python` and `wrong_file::python` have zero oracle variance, so the FSV gates them with target-class recall ≥ 0.95, actual-class confidence ≥ 0.95, Brier ≤ 0.05, ECE ≤ 0.05, and explicit power diagnostics (Fisher-z CI for mixed cells; Wilson lower bound for degenerate recall). The report must never emit a bare "correlation unavailable" blocker without this replacement metric.
 
-**Current real-input measurement (#531).** Latest aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T161430Z/` reports raw holdout `prediction_oracle_correlation = 0.4843192995` and calibrated holdout `0.6631761193`. Calibration uses only the 240-row calibration split and improves Brier/ECE. `compile_error` rows now use raw invalid-source diagnostic panels instead of the carrier workaround. The remaining ship gap is mixed-cell ranking on real slot-preserving signals (#534), not the invalid pre-fix `0.866667` synthetic-vector number.
+**Current real-input measurement (#534).** Latest aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T162923Z/` reports raw holdout `prediction_oracle_correlation = 0.4843192995` and rank-safe calibrated holdout `0.6916886568`. Calibration uses only the 240-row calibration split, constants are limited to structurally degenerate cells, and rank-reversing transforms are blocked unless calibration evidence has enough mixed-class support and strong negative Pearson evidence. `compile_error` rows use raw invalid-source diagnostic panels instead of the carrier workaround. The remaining ship gap is mixed-cell ranking on real slot-preserving signals (#535) plus Panel B cross-check, not the invalid pre-fix `0.866667` synthetic-vector number.
 
 **Product boundary.** LLM agents are untrusted edit generators. Hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, and docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`.
 
@@ -281,8 +281,8 @@ The result was deterministic for the same `(task_id, patch_sha)`. Every ablation
 | `λ_inv ∈ {0, 0.25, 0.5, 1.0}` bidirectional ablation (all 0.8666666746139526) | Verbatim identical because input was deterministic-from-hash |
 | #393 capability-discovery ablation suite | Measured against synthetic inputs; "no movement" finding meaningless |
 | #398 calibrated constellation ablation rerun (Brier 0.7539) | Same |
-| "Slot-preserving architecture doesn't close the 0.083 gap" claim | Untestable until rebaseline |
-| "Gap is a function of labels, not embedder count" claim | Untestable until rebaseline |
+| "Slot-preserving architecture doesn't close the 0.083 gap" claim | Invalid until #393/#398 are rerun against the `0.6916886568` real Panel A baseline |
+| "Gap is a function of labels, not embedder count" claim | Invalid until real-input ablations identify actual gate movers |
 | #129 OOD serving gate AUC measurements | Pre-fix calibrator; needs re-validation |
 | #130 Gτ guard audit pass/fail counts | Pre-fix training data |
 

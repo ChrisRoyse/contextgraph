@@ -4,7 +4,7 @@ Source files: `crates/context-graph-mejepa-embedders/src/lib.rs` + modules, `cra
 
 ---
 
-## 0a. ⚠ Synthetic-vector remediation (2026-05-19/20) — pipeline rebaseline pending
+## 0a. ⚠ Synthetic-vector remediation (2026-05-19/20) — real-input baseline active
 
 Between Phase G ramp and 2026-05-19 22:45 UTC, the **inference path** in `crates/context-graph-mejepa/src/compiler.rs::vectors_for` filled instrument-panel slots with SHA256-seeded synthetic vectors via `deterministic_vector(slot, &digest)` instead of calling the real frozen `E*Instrument` encoders. The forward cache pipeline (`crates/context-graph-mejepa-embedders/examples/python_forward_cache_fsv.rs`, ~24h GPU run, `precision_class: "candle_real_forward"`) was unaffected — it always used real Candle CUDA forward with SHA-pinned safetensors.
 
@@ -27,7 +27,7 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, the **inference path** in `crates
 - `validate_aiwonder_checkpoint_path` rejects non-aiwonder roots
 - `trained_weight_sha256 != initial_weight_sha256` invariant on every manifest
 
-**P0 blocker for further gate work:** the real-input rebaseline now exists and is below gate: raw holdout `prediction_oracle_correlation = 0.4843192995`, calibrated holdout `0.6631761193` from `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T161430Z/`. The previous `0.866667` ship-gate measurement remains invalidated. `compile_error` now uses first-class invalid-source panels instead of the carrier workaround; next gate work must lift mixed-cell ranking on real slot-preserving signals (#534), not repeat the synthetic-input path. See `01_overview.md §1.7` and `08_roadmap_and_open_work.md §0.5`.
+**P0 blocker for further gate work:** the real-input rebaseline exists and is below gate: raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe calibrated holdout `0.6916886568` from `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T162923Z/`. The previous `0.866667` ship-gate measurement remains invalidated. `compile_error` now uses first-class invalid-source panels instead of the carrier workaround; rank-reversing calibration transforms are blocked unless calibration support and raw Pearson justify them. Next gate work must lift mixed-cell ranking on real slot-preserving signals, not repeat the synthetic-input path. See `01_overview.md §1.7` and `08_roadmap_and_open_work.md §0.5`.
 
 ---
 
