@@ -751,7 +751,7 @@ fn fsv_t5b_cli_dry_run_against_real_db_counts_correctly() {
 
         for (i, id) in ids.iter().enumerate() {
             let mut fp =
-                context_graph_test_utils::fingerprints::create_real_fingerprint_with_id(*id);
+                context_graph_test_utils::fingerprints::create_random_fingerprint_with_id(*id);
             // Force E14 empty for 2 of 3; leave populated on the 3rd.
             if i < 2 {
                 fp.semantic.e14_bge_m3_dense = Vec::new();

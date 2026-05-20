@@ -1,6 +1,6 @@
 # 08 — Roadmap and Open Work
 
-**Last refreshed:** 2026-05-19.
+**Last refreshed:** 2026-05-20.
 
 Source: `gh issue list --state open`, recent `type:decision` closes, git log, GitHub issue comments, and archived roadmap history.
 
@@ -23,6 +23,7 @@ The 2026-05-19 reframe (`01_overview.md §1.1`, `05_predictor_pipeline.md §0`) 
 | **#416 / TASK-PY-G-119** — Pathway exploration surface (binary-leaf butterfly-effect tree) | L3 counterfactual rollouts for decision support: top-K (3-5) most-probable future trajectories per candidate patch, chains of Q1/Q2/Q5 binary leaves only (Q4 strictly excluded), operator picks which future to realize; downstream consumer of #413 Level-0 registry, #404 hierarchical naming, #406 mistake loop, #407 calibration disjointness; precedes #335 reverse-prediction | OPEN p1 (filed 2026-05-19) |
 | **#417 / TASK-PY-G-120** — Bidirectional chunk↔skill linkage capability surface | Expose the already-shipped #413 + #414 data (399,777 chunks ↔ 491 accepted labels ↔ 128 named skills ↔ 36,773 chunk-skill memberships ↔ 10,579 skill-chunk reverse rows) through MCP tools for code→skill, skill→code, set queries, refactoring blast-radius, cross-repo skill transfer, pathway-leaf-to-code attachment, skill graph, coverage-gap audit, conflict graph, and lifecycle updates when reality refutes a prediction. Read-only navigation over training substrate; no new prediction head; binary-leaf constraint preserved at prediction boundaries. | OPEN p1; first read-only MCP slice shipped 2026-05-19 in `a330b342` with aiwonder FSV under `/zfs/archive/contextgraph/fsv/task-py-g-120-skill-linkage-surface-fsv/run-20260519Tcodex1Z/`; remaining graph/impact/transfer/pathway/mistake-loop consumers stay open |
 | **#418 / TASK-PY-G-121** — Runtime hierarchical ability resolver | Resolve live chunks into all Level-1 groups, Level-2 skills, Level-3 constellations, and higher abilities before prediction; carry all memberships into `PredictionLabelContext`; on wrong predictions repair the ontology through update/split/create/demote/no-change lifecycle decisions | OPEN p0 (filed 2026-05-19); FSV root `/zfs/archive/contextgraph/fsv/task-py-g-121-runtime-ability-resolver-fsv/` |
+| **#452 / TASK-PY-G-128** — Native active-embedder constellation adapter | #396 proves the active embedder corpus is a ragged set of separate deterministic vector spaces (not a 5,120-d panel). Build the native masked/per-embedder adapter/training path so ME-JEPA learns from the real constellation arrays without flat concatenation or silent projection. | OPEN p0 (filed 2026-05-20); blocks full #441 completion |
 
 ---
 
@@ -118,6 +119,8 @@ Child issue split:
 | #392 / TASK-PY-G-092 | Temporal constellation trajectory features | Tracks exact-state constellation movement across time/windows |
 | #393 / TASK-PY-G-093 | Capability-discovery ablation suite | Measures which constellation features move oracle correlation |
 | #398 / TASK-PY-G-097 | Rerun ablations with #388/#389 artifacts | Tests the richer tensor + per-slot calibration state before predictor changes |
+| #441 / TASK-PY-G-127 | Real trained checkpoint export/load FSV | Blocked on #452 after 2026-05-20 aiwonder FSV proved real #396-row checkpoint smoke (`all_passed=true`, report `/zfs/archive/contextgraph/fsv/task-py-g-127-trained-checkpoint-export-fsv/trained_checkpoint_export_fsv.json`, sha256 `1cc9692054b1d76c050f86360c4d0b318340f737b3f45a21f34e5384e649b8f1`) but still through the 5,120-d frozen-instrument panel path |
+| #452 / TASK-PY-G-128 | Native active-embedder constellation adapter | Required before #396 active embedder vectors can train ME-JEPA directly; preserves per-embedder vector spaces and ragged coverage masks instead of flattening 11,136 dims into one vector |
 | #394 / TASK-PY-G-094 | Anti-compensation FSV suite | ✅ closed 2026-05-19; prevents regressions back to flat-vector scoring |
 | #395 / TASK-PY-G-095 | Real-corpus constellation smoke | Starts from the completed 391/391 aiwonder forward-cache substrate, not synthetic data |
 | #396 / TASK-PY-G-096 | Constellation fine-tuning objective | Trains on per-slot vectors, pairwise tensors, contradiction/consensus features, temporal metadata, and oracle labels as separate loss components |
@@ -364,7 +367,7 @@ All calibration items below are now qualified by #385: their evidence must be pe
 | #367 / TASK-AIWONDER-016 | Project-ingest/runtime data locality audit for arbitrary repo folders | ✅ closed 2026-05-18 |
 | #368 / TASK-AIWONDER-017 | Host capability utilization audit + scheduler profile | open p1 |
 | #369 / TASK-AIWONDER-018 | Revalidate post-migration Phase G FSV artifacts on aiwonder | ✅ closed 2026-05-18 |
-| #412 / TASK-AIWONDER-022 | Remove `/mnt/d` from active ME-JEPA production paths and archive hot-only AST chunks | in-progress p0 |
+| #412 / TASK-AIWONDER-022 | Remove `/mnt/d` from active ME-JEPA production paths and archive hot-only AST chunks | ✅ closed 2026-05-20 |
 | #372 / TASK-AIWONDER-019 | ContextGraph roots must be mounted on aiwonder ZFS pools (paths-policy enforcement) | open p0 `status:blocked` |
 | #380 / TASK-AIWONDER-020 | Off-host backup for `/zfs/archive` proof history (#296 backup posture follow-up) | open p1 |
 | #384 / TASK-AIWONDER-021 | CUDA/candle rollback and reproducibility lane | open p2 |
@@ -395,6 +398,7 @@ All calibration items below are now qualified by #385: their evidence must be pe
 | #320 | phase_g_project_merkle_cache_fsv example fails clippy — `ProjectMerkleCache` doesn't impl `Debug` | needs-triage p1 |
 | #338 | Capture agent response bodies in runtime/agent-history for Q1 claim FSV | needs-triage p2 |
 | #312 | hot_root on ext4 is the throughput bottleneck — move to /hotpool ZFS | open `phase:f-followup` |
+| #453 | Residual Sherlock/investigation findings after first cleanup pass | needs-triage p1 |
 
 ---
 

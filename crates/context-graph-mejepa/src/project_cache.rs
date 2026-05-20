@@ -50,6 +50,25 @@ pub enum ProjectCacheError {
         embedder_id: String,
         embedder_version: String,
     },
+    /// Filesystem metadata could not be read or its mtime is outside the
+    /// representable range of `i64` nanoseconds since `UNIX_EPOCH`.
+    ///
+    /// Per F-021 (Sherlock investigation 2026-05-19): the legacy
+    /// `metadata_modified_ns` helper returned `0` on any failure, conflating
+    /// "metadata read error" with "row not present" downstream. The current
+    /// implementation propagates this error; the caller may choose to either
+    /// abort the scan or treat the file as "definitely changed" and re-hash.
+    #[error("MEJEPA_PROJECT_CACHE_FILESYSTEM_METADATA_INVALID: {path}: {reason}")]
+    FilesystemMetadataInvalid { path: String, reason: String },
+    /// System clock returned a `SystemTimeError` (clock went backwards across
+    /// `UNIX_EPOCH`).
+    ///
+    /// Per F-022 (Sherlock investigation 2026-05-19): the legacy `now_ms`
+    /// helper returned `0` on `SystemTimeError`, clustering corrupted scans
+    /// with epoch-time timestamps. The current implementation propagates the
+    /// error so the caller aborts the scan.
+    #[error("MEJEPA_PROJECT_CACHE_SYSTEM_TIME_INVALID: {reason}")]
+    SystemTimeInvalid { reason: String },
 }
 
 impl ProjectCacheError {
@@ -65,6 +84,10 @@ impl ProjectCacheError {
             Self::ChunkFailed { .. } => "MEJEPA_PROJECT_CACHE_CHUNK_FAILED",
             Self::HashCollision { .. } => "MEJEPA_PROJECT_CACHE_HASH_COLLISION",
             Self::RealEmbeddingRequired { .. } => "MEJEPA_PROJECT_CACHE_REAL_EMBEDDING_REQUIRED",
+            Self::FilesystemMetadataInvalid { .. } => {
+                "MEJEPA_PROJECT_CACHE_FILESYSTEM_METADATA_INVALID"
+            }
+            Self::SystemTimeInvalid { .. } => "MEJEPA_PROJECT_CACHE_SYSTEM_TIME_INVALID",
         }
     }
 }
@@ -246,7 +269,9 @@ impl ProjectMerkleCache {
         &self,
         embedder_versions: &[EmbedderVersion],
     ) -> Result<ProjectCacheReport, ProjectCacheError> {
-        let scan_started_unix_ms = now_ms();
+        // F-022 fail-closed (Sherlock investigation 2026-05-19): SystemTime
+        // errors abort the scan rather than silently coercing to epoch.
+        let scan_started_unix_ms = now_ms()?;
         let conn = self.open_connection()?;
         let previous = load_existing_files(&conn)?;
         let tracked = project_files(&self.config.repo_path)?
@@ -277,11 +302,32 @@ impl ProjectMerkleCache {
                 source,
             })?;
             let size_bytes = metadata.len();
-            let mtime_ns = metadata_modified_ns(&metadata);
+            // F-021 fail-closed (Sherlock investigation 2026-05-19):
+            // metadata read errors are surfaced via warning + sentinel 0
+            // which forces a re-hash on the current scan AND on future scans
+            // until metadata becomes readable again. The legacy
+            // `unwrap_or(0)` path conflated "metadata error" with "row not
+            // present yet" downstream — now they are explicitly distinct.
+            let mtime_ns: i64 = match metadata_modified_ns(&metadata, rel_path) {
+                Ok(value) => value,
+                Err(err) => {
+                    tracing::warn!(
+                        path = %rel_path,
+                        error = %err,
+                        "MEJEPA_PROJECT_CACHE_FILESYSTEM_METADATA_INVALID: forcing re-hash"
+                    );
+                    0
+                }
+            };
+            let metadata_invalid = mtime_ns == 0;
             let previous_row = previous.get(rel_path);
-            let metadata_unchanged = previous_row.is_some_and(|old| {
-                old.size_bytes == size_bytes && old.mtime_ns != 0 && old.mtime_ns == mtime_ns
-            });
+            // metadata_invalid forces re-hash regardless of cached mtime (F-021).
+            let metadata_unchanged = !metadata_invalid
+                && previous_row.is_some_and(|old| {
+                    old.size_bytes == size_bytes
+                        && old.mtime_ns != 0
+                        && old.mtime_ns == mtime_ns
+                });
             let (file_hash, bytes) = if metadata_unchanged {
                 (
                     previous_row
@@ -406,7 +452,8 @@ impl ProjectMerkleCache {
         embedder_versions: &[EmbedderVersion],
         changed_paths: &[String],
     ) -> Result<ProjectCacheReport, ProjectCacheError> {
-        let scan_started_unix_ms = now_ms();
+        // F-022 fail-closed (Sherlock investigation 2026-05-19).
+        let scan_started_unix_ms = now_ms()?;
         let conn = self.open_connection()?;
         let mut current = load_existing_files(&conn)?;
         let mut changed_files = Vec::new();
@@ -460,7 +507,19 @@ impl ProjectMerkleCache {
             })?;
             let file_hash = blake3_hex(&bytes);
             let size_bytes = metadata.len();
-            let mtime_ns = metadata_modified_ns(&metadata);
+            // F-021 fail-closed: metadata read errors fall back to mtime_ns=0
+            // (force re-hash on next scan); error surfaced as warning.
+            let mtime_ns: i64 = match metadata_modified_ns(&metadata, &rel_path) {
+                Ok(value) => value,
+                Err(err) => {
+                    tracing::warn!(
+                        path = %rel_path,
+                        error = %err,
+                        "MEJEPA_PROJECT_CACHE_FILESYSTEM_METADATA_INVALID: forcing re-hash"
+                    );
+                    0
+                }
+            };
             let changed = current
                 .get(&rel_path)
                 .map(|old| old.blake3 != file_hash)
@@ -1010,6 +1069,9 @@ fn persist_file(
 }
 
 fn persist_chunk(conn: &Connection, chunk: &CacheChunk) -> Result<(), ProjectCacheError> {
+    // F-022 fail-closed (Sherlock investigation 2026-05-19): propagate
+    // system-clock failures rather than silently writing 0 as updated_at.
+    let updated_at = now_ms()?;
     conn.execute(
         "\
         INSERT OR IGNORE INTO chunks(
@@ -1026,7 +1088,7 @@ fn persist_chunk(conn: &Connection, chunk: &CacheChunk) -> Result<(), ProjectCac
             chunk.line_start as i64,
             chunk.line_end as i64,
             chunk.content_sha256,
-            now_ms(),
+            updated_at,
         ],
     )
     .map_err(|source| ProjectCacheError::Sqlite {
@@ -1104,11 +1166,15 @@ fn queue_lazy_rescans(
                 source,
             })?;
             if path != dependency_path {
+                // F-022 fail-closed (Sherlock investigation 2026-05-19): the
+                // legacy `now_ms()` returned 0 on SystemTimeError; clustering
+                // corrupted queue entries with epoch-time timestamps.
+                let queued_at = now_ms()?;
                 conn.execute(
                     "\
                     INSERT OR REPLACE INTO lazy_rescan_queue(path, reason, dependency_path, queued_at)
                     VALUES (?1, 'lazy_transitive_dependency_changed', ?2, ?3)",
-                    params![path, dependency_path, now_ms()],
+                    params![path, dependency_path, queued_at],
                 )
                 .map_err(|source| ProjectCacheError::Sqlite {
                     context: "insert lazy rescan",
@@ -1304,20 +1370,54 @@ fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-fn metadata_modified_ns(metadata: &fs::Metadata) -> i64 {
-    metadata
+/// Read `mtime` from `metadata` and convert to nanoseconds since `UNIX_EPOCH`.
+///
+/// # Fail-closed contract (F-021, Sherlock investigation 2026-05-19)
+///
+/// The legacy implementation returned `0` on any error path
+/// (`metadata.modified()` failed; or `duration_since(UNIX_EPOCH)` failed
+/// because the file mtime is pre-1970). `0` was then used as a sentinel in
+/// the `metadata_unchanged` comparison at the caller, conflating "metadata
+/// error" with "row not present yet."
+///
+/// The current implementation returns
+/// `ProjectCacheError::FilesystemMetadataInvalid` so the caller can decide
+/// whether to abort the scan or treat the file as "definitely changed" and
+/// re-hash. `path` is embedded in the error so operators can identify the
+/// specific file whose metadata is bad.
+fn metadata_modified_ns(
+    metadata: &fs::Metadata,
+    path: &str,
+) -> Result<i64, ProjectCacheError> {
+    let modified = metadata
         .modified()
-        .ok()
-        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_nanos().min(i64::MAX as u128) as i64)
-        .unwrap_or(0)
+        .map_err(|err| ProjectCacheError::FilesystemMetadataInvalid {
+            path: path.to_string(),
+            reason: format!("metadata.modified() failed: {err}"),
+        })?;
+    let duration = modified
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| ProjectCacheError::FilesystemMetadataInvalid {
+            path: path.to_string(),
+            reason: format!("duration_since(UNIX_EPOCH) failed: {err}"),
+        })?;
+    Ok(duration.as_nanos().min(i64::MAX as u128) as i64)
 }
 
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as i64)
-        .unwrap_or(0)
+/// Current wall-clock milliseconds since `UNIX_EPOCH`.
+///
+/// # Fail-closed contract (F-022, Sherlock investigation 2026-05-19)
+///
+/// The legacy implementation returned `0` on `SystemTimeError`, clustering
+/// corrupted scans with epoch-time timestamps. The current implementation
+/// propagates the error so the caller aborts the scan.
+fn now_ms() -> Result<i64, ProjectCacheError> {
+    let duration = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|err| {
+        ProjectCacheError::SystemTimeInvalid {
+            reason: format!("SystemTime::now().duration_since(UNIX_EPOCH) failed: {err}"),
+        }
+    })?;
+    Ok(duration.as_millis() as i64)
 }
 
 #[cfg(test)]
@@ -1393,5 +1493,111 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM embeddings", [], |row| row.get(0))
             .expect("count embeddings");
         assert_eq!(rows, 0);
+    }
+
+    // =========================================================================
+    // F-021 + F-022 REGRESSION TESTS (Sherlock investigation 2026-05-19)
+    //
+    // These tests assert that metadata_modified_ns and now_ms return Result
+    // rather than silently returning 0 on error. If anyone re-introduces the
+    // `.unwrap_or(0)` shortcut, these tests fail.
+    // =========================================================================
+
+    #[test]
+    fn test_f021_metadata_modified_ns_succeeds_on_real_temp_file() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "sherlock_f021_real_{}.tmp",
+            std::process::id()
+        ));
+        fs::write(&temp_path, b"sherlock-f021-payload").expect("write temp file");
+        let metadata = fs::metadata(&temp_path).expect("read metadata");
+        let label = temp_path.display().to_string();
+
+        let result = metadata_modified_ns(&metadata, &label);
+        let _ = fs::remove_file(&temp_path);
+
+        let ns = result.expect("real-filesystem metadata must succeed");
+        assert!(
+            ns > 0,
+            "mtime_ns should be positive for a newly-written file, got {ns}"
+        );
+    }
+
+    #[test]
+    fn test_f021_helper_signature_returns_result_not_i64() {
+        // Type-level assertion: prevents silent regression to `fn() -> i64`.
+        let temp_path = std::env::temp_dir().join(format!(
+            "sherlock_f021_sig_{}.tmp",
+            std::process::id()
+        ));
+        fs::write(&temp_path, b"sig-check").expect("write temp file");
+        let metadata = fs::metadata(&temp_path).expect("read metadata");
+        let label = temp_path.display().to_string();
+
+        let result: Result<i64, ProjectCacheError> = metadata_modified_ns(&metadata, &label);
+        let _ = fs::remove_file(&temp_path);
+
+        assert!(result.is_ok(), "real-filesystem metadata must succeed");
+    }
+
+    #[test]
+    fn test_f021_metadata_invalid_error_variant_uses_screaming_snake_case() {
+        let err = ProjectCacheError::FilesystemMetadataInvalid {
+            path: "some/repo/path.py".to_string(),
+            reason: "test-induced metadata failure".to_string(),
+        };
+        assert_eq!(
+            err.code(),
+            "MEJEPA_PROJECT_CACHE_FILESYSTEM_METADATA_INVALID"
+        );
+        let display = err.to_string();
+        assert!(
+            display.contains("MEJEPA_PROJECT_CACHE_FILESYSTEM_METADATA_INVALID"),
+            "error display must include the code, got {display}"
+        );
+        assert!(
+            display.contains("some/repo/path.py"),
+            "error display must include the path, got {display}"
+        );
+    }
+
+    #[test]
+    fn test_f022_now_ms_succeeds_on_healthy_system_clock() {
+        let first = now_ms().expect("system clock must be valid");
+        let second = now_ms().expect("system clock must be valid");
+        assert!(first > 0, "now_ms must return positive ms");
+        assert!(
+            second >= first,
+            "wall clock must not move backwards across calls ({first} -> {second})"
+        );
+        // Must be well past UNIX_EPOCH; sanity check that we're past 2023-11.
+        assert!(
+            first > 1_700_000_000_000,
+            "now_ms should be > 2023-11 (1.7e12 ms), got {first}"
+        );
+    }
+
+    #[test]
+    fn test_f022_helper_signature_returns_result_not_i64() {
+        // Type-level assertion: prevents silent regression to `fn() -> i64`.
+        let result: Result<i64, ProjectCacheError> = now_ms();
+        assert!(result.is_ok(), "system clock must be valid");
+    }
+
+    #[test]
+    fn test_f022_now_ms_error_variant_uses_screaming_snake_case() {
+        let err = ProjectCacheError::SystemTimeInvalid {
+            reason: "test-induced clock failure".to_string(),
+        };
+        assert_eq!(err.code(), "MEJEPA_PROJECT_CACHE_SYSTEM_TIME_INVALID");
+        let display = err.to_string();
+        assert!(
+            display.contains("MEJEPA_PROJECT_CACHE_SYSTEM_TIME_INVALID"),
+            "error display must include the code, got {display}"
+        );
+        assert!(
+            display.contains("test-induced clock failure"),
+            "error display must include the reason, got {display}"
+        );
     }
 }

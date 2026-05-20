@@ -10,7 +10,7 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use crate::helpers::{
-    create_initialized_store, create_real_fingerprint, create_real_fingerprint_with_id,
+    create_initialized_store, create_random_fingerprint, create_random_fingerprint_with_id,
 };
 
 // =============================================================================
@@ -25,7 +25,7 @@ async fn test_update_and_delete_operations() {
     let store = create_initialized_store(temp_dir.path());
 
     // Store initial fingerprint
-    let fp = create_real_fingerprint();
+    let fp = create_random_fingerprint();
     let id = fp.id;
 
     store.store(fp).await.expect("Failed to store");
@@ -71,7 +71,7 @@ async fn test_update_and_delete_operations() {
     println!("[SOFT DELETED] Fingerprint {} no longer retrievable", id);
 
     // Store another fingerprint for hard delete test
-    let fp2 = create_real_fingerprint();
+    let fp2 = create_random_fingerprint();
     let id2 = fp2.id;
     store.store(fp2).await.expect("Failed to store");
 
@@ -121,7 +121,7 @@ async fn test_edge_cases() {
     println!("[EDGE] Delete non-existent ID returns false - OK");
 
     // Test 3: Update non-existent fingerprint
-    let fp = create_real_fingerprint();
+    let fp = create_random_fingerprint();
     let updated = store.update(fp).await.expect("Update should not error");
     assert!(!updated, "Update non-existent should return false");
     println!("[EDGE] Update non-existent returns false - OK");
@@ -143,7 +143,7 @@ async fn test_edge_cases() {
     // which are not yet implemented. They are intentionally skipped in HNSW indexing.
     // Once inverted indexes are implemented (TASK-CORE-009+), this test should be updated
     // to verify proper validation.
-    let mut empty_sparse_fp = create_real_fingerprint();
+    let mut empty_sparse_fp = create_random_fingerprint();
     empty_sparse_fp.semantic.e6_sparse = SparseVector::empty();
     empty_sparse_fp.semantic.e13_splade = SparseVector::empty();
 
@@ -157,7 +157,7 @@ async fn test_edge_cases() {
     println!("[EDGE] Empty sparse vectors accepted (inverted indexes TODO) - OK");
 
     // Test 6: Double store (should work, overwrites)
-    let fp2 = create_real_fingerprint_with_id(Uuid::new_v4());
+    let fp2 = create_random_fingerprint_with_id(Uuid::new_v4());
     let _id2 = fp2.id;
     store
         .store(fp2.clone())

@@ -96,6 +96,16 @@ pub enum SearchError {
     /// Generic storage layer error (RocksDB, registry, etc).
     #[error("Store error: {0}")]
     Store(String),
+
+    /// Timestamp value is outside the representable range of `chrono::DateTime<Utc>`.
+    ///
+    /// Per F-007 (Sherlock investigation 2026-05-19): the legacy
+    /// `extract_temporal_components` helper used to substitute `Utc::now()` for
+    /// malformed timestamps, which silently fabricated a "current" hour/dow for
+    /// corrupted memory records. This variant forces the caller to reject the
+    /// record from temporal scoring rather than coerce it to wall-clock time.
+    #[error("MEJEPA_TEMPORAL_TIMESTAMP_INVALID: timestamp_ms={timestamp_ms} is outside chrono::DateTime range")]
+    TimestampInvalid { timestamp_ms: i64 },
 }
 
 /// Result type for search operations.

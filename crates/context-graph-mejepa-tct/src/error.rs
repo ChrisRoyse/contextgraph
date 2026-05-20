@@ -64,6 +64,10 @@ pub enum TctError {
     Json(#[from] serde_json::Error),
     #[error("MEJEPA_TCT_BINCODE: {0}")]
     Bincode(#[from] Box<bincode::ErrorKind>),
+    #[error("MEJEPA_TCT_CALIBRATION_MISSING_FRESHNESS_TIMESTAMP: slot={slot} scope={scope}")]
+    CalibrationMissingFreshnessTimestamp { slot: String, scope: String },
+    #[error("MEJEPA_TCT_CELL_KEY_MALFORMED: value={value:?} context={context}")]
+    CellKeyMalformed { value: String, context: String },
 }
 
 impl TctError {
@@ -83,6 +87,10 @@ impl TctError {
             Self::Io { .. } => "MEJEPA_TCT_IO",
             Self::Json(_) => "MEJEPA_TCT_JSON",
             Self::Bincode(_) => "MEJEPA_TCT_BINCODE",
+            Self::CalibrationMissingFreshnessTimestamp { .. } => {
+                "MEJEPA_TCT_CALIBRATION_MISSING_FRESHNESS_TIMESTAMP"
+            }
+            Self::CellKeyMalformed { .. } => "MEJEPA_TCT_CELL_KEY_MALFORMED",
         }
     }
 

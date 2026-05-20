@@ -1,3 +1,29 @@
+//! ME-JEPA Phase-B prediction surfaces (Q3 explanation layer).
+//!
+//! **DOCTRINAL STATUS (CLAUDE.md §1, F-020 / issue #473):** the heuristic helpers
+//! at the bottom of this module (`is_passes_but_should_fail_context`,
+//! `contains_secret_like_token`, `patch_has_flakiness_risk`,
+//! `contains_merge_conflict`, `contains_auth_guard`, `is_dependency_manifest`,
+//! `symbol_hint`, and similar `lower.contains(...)` / lowercase string-contains
+//! predicates) are **Q3 display-only** heuristic hints attached to the Q2
+//! `Verdict` for operator explanation. They are NOT gating predicates and they
+//! are NOT a binary-doctrine prediction surface.
+//!
+//! Returning `false` on every code path where no heuristic substring matches is
+//! the *correct* behavior for a hint: "no observed risk signal." It MUST NOT be
+//! "fixed" into a fail-closed `Result` because a non-match is semantically
+//! "nothing to report," not "evaluation failed." If you find yourself wanting
+//! these to gate a verdict, instead emit a real binary head (Q1/Q2/Q5) with a
+//! grounded source-of-truth — see `crate::verdict_assembly` and the
+//! conformal/OOD path in `crate::ood` for the gate primitive.
+//!
+//! The Q3 status is also documented in:
+//! - `CLAUDE.md` §1 (binary doctrine — Q3 is the named-failure-mode explanation
+//!   surface attached to Q2 `Fail` verdicts; #408 closed the ambiguous-head
+//!   Q4 producer track).
+//! - `docs/SHERLOCK_INVESTIGATION_WORKAROUNDS_FALLBACKS.md` F-020 (MEDIUM-soft).
+//! - GitHub issue #473 (this clarification).
+
 use crate::error::MejepaInferError;
 use crate::head_projection::{E_AST, E_TEST, E_TYPE_GRAPH};
 use crate::types::{

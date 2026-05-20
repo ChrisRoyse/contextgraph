@@ -68,7 +68,13 @@ mod tests {
         let id = Uuid::new_v4();
         let embeddings = create_test_embeddings();
         let topic_profile = [0.5f32; 14];
-        let content_hash = [0u8; 32];
+        // M-L2 (GH #493, 2026-05-19): use 0x42-fill (matching
+        // `no_fake_data_test.rs:418`) instead of all-zero. This test verifies
+        // construction-time SHAPE validation only — checksum content is
+        // irrelevant to what is under test, but the constant is now
+        // consistent with the AP-007 fake-detection convention used elsewhere
+        // in the embeddings crate.
+        let content_hash = [0x42u8; 32];
 
         let fp = StoredQuantizedFingerprint::new(id, embeddings, topic_profile, content_hash);
 
@@ -85,7 +91,7 @@ mod tests {
         embeddings.remove(&5); // Remove one embedder
 
         let _ =
-            StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0u8; 32]);
+            StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0x42u8; 32]);
     }
 
     #[test]
@@ -166,7 +172,7 @@ mod tests {
             Uuid::new_v4(),
             create_test_embeddings(),
             [0.5f32; 14],
-            [0u8; 32],
+            [0x42u8; 32], // M-L2: 0x42 fill matches no_fake_data_test.rs:418 convention
         );
 
         let size = fp.estimated_size_bytes();
@@ -188,7 +194,7 @@ mod tests {
 
         // This MUST panic with "CONSTRUCTION ERROR"
         let _ =
-            StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0u8; 32]);
+            StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0x42u8; 32]);
     }
 
     /// Edge Case 2: Zero-norm vector in IndexEntry
@@ -270,7 +276,7 @@ mod tests {
         );
 
         let _ =
-            StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0u8; 32]);
+            StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0x42u8; 32]);
     }
 
     /// Test get_embedding panics for missing index
@@ -281,7 +287,7 @@ mod tests {
             Uuid::new_v4(),
             create_test_embeddings(),
             [0.5f32; 14],
-            [0u8; 32],
+            [0x42u8; 32], // M-L2
         );
 
         // This should panic because 15 is not a valid index
@@ -315,7 +321,7 @@ mod tests {
             Uuid::new_v4(),
             create_test_embeddings(),
             [0.5f32; 14],
-            [0u8; 32],
+            [0x42u8; 32], // M-L2
         );
 
         // Our test embeddings use the correct methods per Constitution

@@ -404,14 +404,21 @@ pub fn run_gtau_guard_audit(
 
     for row in read_jsonl_file(&paths.per_cell_slot_calibration_path())? {
         let cell_key = required_str(&row, "cell_key")?;
-        let acc = cells.entry(cell_key.to_string()).or_insert_with(|| {
-            let (language, mutation_category) = split_cell_key(cell_key);
-            CellAccumulator {
-                language,
-                mutation_category,
-                ..CellAccumulator::default()
-            }
-        });
+        // Fail closed on malformed `cell_key` (F-031). Pre-compute the components so the
+        // `?` propagates out of the surrounding `for` loop rather than being swallowed
+        // inside an `or_insert_with` closure.
+        let acc = if let Some(existing) = cells.get_mut(cell_key) {
+            existing
+        } else {
+            let (language, mutation_category) = split_cell_key(cell_key)?;
+            cells
+                .entry(cell_key.to_string())
+                .or_insert(CellAccumulator {
+                    language,
+                    mutation_category,
+                    ..CellAccumulator::default()
+                })
+        };
         if required_bool(&row, "valid")? {
             acc.per_cell_calibrated_slots += 1;
         } else {
@@ -442,6 +449,17 @@ pub fn run_gtau_guard_audit(
         .iter()
         .cloned()
         .collect::<BTreeSet<_>>();
+    // Count global slots that are both valid and fresh. `is_stale` returns Err when
+    // `stale_after_utc` is missing (F-002 fail-closed), so we explicitly propagate `?` per
+    // slot rather than silently degrading. Note: `read_global_calibrations` already rejects
+    // rows missing `stale_after_utc`, so this loop should not actually error in practice;
+    // the explicit propagation defends against future divergence between the two paths.
+    let mut global_calibrated_slots: usize = 0;
+    for (slot_id, cal) in global_calibrations.iter() {
+        if cal.valid && !is_stale(slot_id, "global", cal, config.now_utc)? {
+            global_calibrated_slots += 1;
+        }
+    }
     let mut summary = GtauGuardAuditSummary {
         expected_cell_count: expected_cells.len(),
         reported_cell_count: 0,
@@ -452,10 +470,7 @@ pub fn run_gtau_guard_audit(
         total_slot_guard_fail_count: 0,
         total_slot_rows_seen: 0,
         total_valid_slot_rows: 0,
-        global_calibrated_slots: global_calibrations
-            .values()
-            .filter(|cal| cal.valid && !is_stale(cal, config.now_utc))
-            .count(),
+        global_calibrated_slots,
         required_slot_count: required_slots.len(),
         all_expected_cells_reported: true,
         slot_identity_preserved,
@@ -473,7 +488,10 @@ pub fn run_gtau_guard_audit(
     };
 
     for cell_key in expected_cells {
-        let (language, mutation_category) = split_cell_key(&cell_key);
+        // EXPECTED_PYTHON_CELLS is curated and always well-formed, but we still propagate
+        // the structured error so future expansion (e.g. dynamic cell registries) inherits
+        // fail-closed semantics (F-031).
+        let (language, mutation_category) = split_cell_key(&cell_key)?;
         let acc = cells.remove(&cell_key).unwrap_or_else(|| CellAccumulator {
             language,
             mutation_category,
@@ -667,7 +685,7 @@ fn read_global_calibrations(
             variance_mean_tau: nested_f64(thresholds, "variance_mean_tau")?,
             ood_tau: nested_f64(thresholds, "ood_tau")?,
         };
-        if is_stale(&calibration, config.now_utc) {
+        if is_stale(&slot_id, "global", &calibration, config.now_utc)? {
             out.insert(
                 slot_id,
                 SlotCalibration {
@@ -830,18 +848,50 @@ fn parse_utc(value: &str) -> Result<DateTime<Utc>, TctError> {
         })
 }
 
-fn is_stale(calibration: &SlotCalibration, now: DateTime<Utc>) -> bool {
-    calibration
-        .stale_after_utc
-        .map(|stale_after| now > stale_after)
-        .unwrap_or(false)
+/// Returns `Ok(true)` when the calibration is stale relative to `now`, `Ok(false)` when fresh.
+/// Returns `Err(TctError::CalibrationMissingFreshnessTimestamp)` when `stale_after_utc` is `None`.
+///
+/// A `SlotCalibration` without a freshness fence is a doctrinal invariant violation per
+/// CLAUDE.md §1 Q2 (TCT G-tau guard) + FSV-PROTOCOL §3.5 (missing required metadata fails closed).
+/// Treating `None` as "permanently fresh" (the original F-002 bug) silently accepts arbitrarily
+/// old calibration rows; treating `None` as "always stale" hides the malformed input from
+/// operators. The fail-closed contract surfaces the missing metadata as a structured error so
+/// the calibration generator can be corrected at source.
+fn is_stale(
+    slot_id: &str,
+    scope: &str,
+    calibration: &SlotCalibration,
+    now: DateTime<Utc>,
+) -> Result<bool, TctError> {
+    match calibration.stale_after_utc {
+        Some(stale_after) => Ok(now > stale_after),
+        None => Err(TctError::CalibrationMissingFreshnessTimestamp {
+            slot: slot_id.to_string(),
+            scope: scope.to_string(),
+        }),
+    }
 }
 
-fn split_cell_key(cell_key: &str) -> (String, String) {
+/// Splits a `language:mutation_category` cell key into its two components.
+///
+/// Returns `Err(TctError::CellKeyMalformed)` when the key does not contain exactly one
+/// non-empty `language` and one non-empty `mutation_category` separated by ':'.
+/// The original F-031 implementation silently substituted `"unknown"` for both halves,
+/// which caused multiple distinct malformed keys to fold into the same BTreeMap bucket
+/// and corrupted per-cell aggregation (FSV-PROTOCOL §3.5).
+fn split_cell_key(cell_key: &str) -> Result<(String, String), TctError> {
     let mut parts = cell_key.splitn(2, ':');
-    let language = parts.next().unwrap_or("unknown").to_string();
-    let mutation_category = parts.next().unwrap_or("unknown").to_string();
-    (language, mutation_category)
+    let language = parts.next().unwrap_or("");
+    let mutation_category = parts.next().unwrap_or("");
+    if language.is_empty() || mutation_category.is_empty() {
+        return Err(TctError::CellKeyMalformed {
+            value: cell_key.to_string(),
+            context:
+                "cell_key must match '<language>:<mutation_category>' with both halves non-empty"
+                    .to_string(),
+        });
+    }
+    Ok((language.to_string(), mutation_category.to_string()))
 }
 
 fn bump(map: &mut BTreeMap<String, usize>, key: impl Into<String>) {
@@ -869,4 +919,131 @@ fn optional_sha256_file(path: &Path) -> Result<Option<String>, TctError> {
         return Ok(None);
     }
     sha256_file(path).map(Some)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    fn calibration(stale_after_utc: Option<DateTime<Utc>>) -> SlotCalibration {
+        SlotCalibration {
+            valid: true,
+            stale_after_utc,
+            distance_mean_tau: Some(0.1),
+            distance_max_tau: Some(0.2),
+            variance_mean_tau: Some(0.3),
+            ood_tau: Some(0.4),
+        }
+    }
+
+    #[test]
+    fn missing_stale_after_timestamp_fails_closed() {
+        let now = Utc::now();
+
+        let err = is_stale("E_AST", "global", &calibration(None), now)
+            .expect_err("missing freshness timestamp must fail closed");
+        assert_eq!(
+            err.code(),
+            "MEJEPA_TCT_CALIBRATION_MISSING_FRESHNESS_TIMESTAMP"
+        );
+    }
+
+    #[test]
+    fn future_stale_after_timestamp_is_fresh() {
+        let now = Utc::now();
+
+        assert!(!is_stale(
+            "E_AST",
+            "global",
+            &calibration(Some(now + Duration::minutes(1))),
+            now
+        )
+        .expect("future timestamp should be fresh"));
+    }
+
+    #[test]
+    fn past_stale_after_timestamp_is_stale() {
+        let now = Utc::now();
+
+        assert!(is_stale(
+            "E_AST",
+            "global",
+            &calibration(Some(now - Duration::minutes(1))),
+            now
+        )
+        .expect("past timestamp should be stale"));
+    }
+
+    /// F-002 regression: the slot_id and scope must be carried into the structured error so
+    /// operators can locate the malformed calibration row in /zfs/archive/.../per_slot_calibration.jsonl.
+    #[test]
+    fn missing_stale_after_error_carries_slot_and_scope() {
+        let now = Utc::now();
+        let err = is_stale(
+            "E_DATA_FLOW",
+            "per_cell:python:wrong_file",
+            &calibration(None),
+            now,
+        )
+        .expect_err("missing freshness must fail closed");
+        match err {
+            TctError::CalibrationMissingFreshnessTimestamp { slot, scope } => {
+                assert_eq!(slot, "E_DATA_FLOW");
+                assert_eq!(scope, "per_cell:python:wrong_file");
+            }
+            other => panic!("expected CalibrationMissingFreshnessTimestamp, got: {other:?}"),
+        }
+    }
+
+    /// F-031 regression: well-formed cell_keys split cleanly into both halves.
+    #[test]
+    fn split_cell_key_accepts_well_formed_key() {
+        let (lang, mutation) = split_cell_key("python:known_good").expect("well-formed");
+        assert_eq!(lang, "python");
+        assert_eq!(mutation, "known_good");
+    }
+
+    /// F-031 regression: a key with no ':' separator must fail closed rather than
+    /// silently substitute "unknown".
+    #[test]
+    fn split_cell_key_missing_separator_fails_closed() {
+        let err = split_cell_key("python_only").expect_err("must fail closed");
+        assert_eq!(err.code(), "MEJEPA_TCT_CELL_KEY_MALFORMED");
+        match err {
+            TctError::CellKeyMalformed { value, .. } => assert_eq!(value, "python_only"),
+            other => panic!("expected CellKeyMalformed, got: {other:?}"),
+        }
+    }
+
+    /// F-031 regression: the empty string must fail closed; before the fix, multiple distinct
+    /// malformed keys folded into ("unknown", "unknown") and collided in the BTreeMap.
+    #[test]
+    fn split_cell_key_empty_input_fails_closed() {
+        let err = split_cell_key("").expect_err("empty must fail closed");
+        assert_eq!(err.code(), "MEJEPA_TCT_CELL_KEY_MALFORMED");
+    }
+
+    /// F-031 regression: an empty language half must fail closed.
+    #[test]
+    fn split_cell_key_empty_language_fails_closed() {
+        let err = split_cell_key(":subtle_flip").expect_err("empty language must fail closed");
+        assert_eq!(err.code(), "MEJEPA_TCT_CELL_KEY_MALFORMED");
+    }
+
+    /// F-031 regression: an empty mutation_category half must fail closed.
+    #[test]
+    fn split_cell_key_empty_mutation_category_fails_closed() {
+        let err = split_cell_key("python:").expect_err("empty mutation must fail closed");
+        assert_eq!(err.code(), "MEJEPA_TCT_CELL_KEY_MALFORMED");
+    }
+
+    /// F-031 regression: a key with two colons treats the second as part of the mutation_category
+    /// (splitn(2,':')); both halves remain non-empty so this is a legitimate Ok.
+    #[test]
+    fn split_cell_key_extra_colon_kept_in_mutation_category() {
+        let (lang, mutation) = split_cell_key("python:sub:category").expect("well-formed");
+        assert_eq!(lang, "python");
+        assert_eq!(mutation, "sub:category");
+    }
 }

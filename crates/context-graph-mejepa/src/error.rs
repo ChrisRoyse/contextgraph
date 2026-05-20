@@ -240,6 +240,14 @@ pub enum MejepaInferError {
     Tct(#[from] context_graph_mejepa_tct::TctError),
     #[error("MEJEPA_INFER_PREDICTOR: {0}")]
     Predictor(#[from] PredictorError),
+    #[error("MEJEPA_INFER_CONSTELLATION_INTELLIGENCE_UNAVAILABLE: prediction_id={prediction_id_hex}")]
+    ConstellationIntelligenceUnavailable { prediction_id_hex: String },
+    #[error("MEJEPA_INFER_CONSTELLATION_VERSION_ID_MISSING: detail={detail}")]
+    ConstellationVersionIdMissing { detail: String },
+    #[error("MEJEPA_INFER_COSINE_MEAN_UNDEFINED_NO_SAMPLES: context={context}")]
+    CosineMeanUndefinedNoSamples { context: String },
+    #[error("MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE: detail={detail}")]
+    InferTestCalibrationHoldoutUnavailable { detail: String },
 }
 
 impl MejepaInferError {
@@ -280,6 +288,18 @@ impl MejepaInferError {
             Self::Instrument(_) => "MEJEPA_INFER_INSTRUMENT",
             Self::Tct(_) => "MEJEPA_INFER_TCT",
             Self::Predictor(_) => "MEJEPA_INFER_PREDICTOR",
+            Self::ConstellationIntelligenceUnavailable { .. } => {
+                "MEJEPA_INFER_CONSTELLATION_INTELLIGENCE_UNAVAILABLE"
+            }
+            Self::ConstellationVersionIdMissing { .. } => {
+                "MEJEPA_INFER_CONSTELLATION_VERSION_ID_MISSING"
+            }
+            Self::CosineMeanUndefinedNoSamples { .. } => {
+                "MEJEPA_INFER_COSINE_MEAN_UNDEFINED_NO_SAMPLES"
+            }
+            Self::InferTestCalibrationHoldoutUnavailable { .. } => {
+                "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE"
+            }
         }
     }
 

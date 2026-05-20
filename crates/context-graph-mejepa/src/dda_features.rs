@@ -210,8 +210,16 @@ pub fn project_dda_features(
         embedder_count: embedder_count.unwrap_or(0),
         pairwise_count_per_row: pairwise_count_per_row.unwrap_or(0),
         feature_scalar_count,
-        mean_per_embedder_cosine_unit: cosine_mean_to_unit(per_embedder_sum, per_embedder_n),
-        mean_pairwise_cosine_unit: cosine_mean_to_unit(pairwise_sum, pairwise_n),
+        mean_per_embedder_cosine_unit: cosine_mean_to_unit(
+            per_embedder_sum,
+            per_embedder_n,
+            "dda_features.mean_per_embedder_cosine_unit",
+        )?,
+        mean_pairwise_cosine_unit: cosine_mean_to_unit(
+            pairwise_sum,
+            pairwise_n,
+            "dda_features.mean_pairwise_cosine_unit",
+        )?,
         pairwise_mi_health: mi_mean_to_health(mi_sum, mi_n)?,
         blind_spot_health: 1.0 / (1.0 + max_abs_z),
     };
@@ -219,12 +227,20 @@ pub fn project_dda_features(
     Ok(projection)
 }
 
-fn cosine_mean_to_unit(sum: f64, n: usize) -> f32 {
+/// Converts a sum of cosines (range `[-n, n]`) into a unit-interval mean in `[0, 1]`.
+///
+/// Returns `Err(MejepaInferError::CosineMeanUndefinedNoSamples)` when `n == 0`.
+/// The original F-024 implementation silently substituted `0.5` ("neutral cosine") for
+/// the empty-sample case, which conflated "vectors are on average orthogonal" with
+/// "no input was observed." A DDA projection with zero per-embedder cosines or zero
+/// pairwise cosines is an upstream invariant violation that must surface to the operator.
+fn cosine_mean_to_unit(sum: f64, n: usize, context: &str) -> Result<f32, MejepaInferError> {
     if n == 0 {
-        0.5
-    } else {
-        (((sum / n as f64) + 1.0) / 2.0).clamp(0.0, 1.0) as f32
+        return Err(MejepaInferError::CosineMeanUndefinedNoSamples {
+            context: context.to_string(),
+        });
     }
+    Ok((((sum / n as f64) + 1.0) / 2.0).clamp(0.0, 1.0) as f32)
 }
 
 fn mi_mean_to_health(sum: f64, n: usize) -> Result<f32, MejepaInferError> {
@@ -243,4 +259,56 @@ fn mi_mean_to_health(sum: f64, n: usize) -> Result<f32, MejepaInferError> {
         });
     }
     Ok((1.0 / (1.0 + mean)) as f32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// F-024 regression: happy path on a non-degenerate sample maps `mean(cos)` into `[0, 1]`.
+    #[test]
+    fn cosine_mean_to_unit_maps_positive_mean_into_unit_interval() {
+        // mean cos = 0.5 → unit = (0.5 + 1) / 2 = 0.75
+        let v = cosine_mean_to_unit(1.0, 2, "dda_features.happy_path").expect("ok");
+        assert!((v - 0.75).abs() < 1e-6, "expected ~0.75, got {v}");
+    }
+
+    /// F-024 regression: a perfectly anti-correlated sample maps to 0.0.
+    #[test]
+    fn cosine_mean_to_unit_maps_minus_one_to_zero() {
+        let v = cosine_mean_to_unit(-1.0, 1, "dda_features.anti_correlated").expect("ok");
+        assert!((v - 0.0).abs() < 1e-6, "expected 0.0, got {v}");
+    }
+
+    /// F-024 regression: a perfectly correlated sample maps to 1.0.
+    #[test]
+    fn cosine_mean_to_unit_maps_plus_one_to_one() {
+        let v = cosine_mean_to_unit(1.0, 1, "dda_features.correlated").expect("ok");
+        assert!((v - 1.0).abs() < 1e-6, "expected 1.0, got {v}");
+    }
+
+    /// F-024 regression: zero-sample input must fail closed, not silently return 0.5.
+    /// Before the fix, `cosine_mean_to_unit(0.0, 0)` returned 0.5, which downstream consumed
+    /// as "neutral cosine" — indistinguishable from "vectors are on average orthogonal."
+    #[test]
+    fn cosine_mean_to_unit_zero_samples_fails_closed() {
+        let err = cosine_mean_to_unit(0.0, 0, "dda_features.empty_sample")
+            .expect_err("zero samples must fail closed");
+        assert_eq!(err.code(), "MEJEPA_INFER_COSINE_MEAN_UNDEFINED_NO_SAMPLES");
+        match err {
+            MejepaInferError::CosineMeanUndefinedNoSamples { context } => {
+                assert_eq!(context, "dda_features.empty_sample");
+            }
+            other => panic!("expected CosineMeanUndefinedNoSamples, got: {other:?}"),
+        }
+    }
+
+    /// F-024 regression: even a nonzero sum is still undefined when n=0
+    /// (would otherwise NaN out via 0/0; but we caught it via the explicit Err).
+    #[test]
+    fn cosine_mean_to_unit_nonzero_sum_zero_n_fails_closed() {
+        let err = cosine_mean_to_unit(3.7, 0, "dda_features.malformed")
+            .expect_err("zero samples must fail closed regardless of sum");
+        assert_eq!(err.code(), "MEJEPA_INFER_COSINE_MEAN_UNDEFINED_NO_SAMPLES");
+    }
 }

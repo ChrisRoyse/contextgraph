@@ -570,10 +570,22 @@ impl MeJepaCompiler {
             safety_constraint_violation_count: objective_report.constraint_violations.len(),
             objective_total_cost: objective_report.cost.total_cost,
             objective_cost_ceiling: objective_report.objective.pass_cost_ceiling,
-            constellation_verdict_pressure: constellation_intelligence
-                .as_ref()
-                .map(|evidence| evidence.pressures.q2_verdict_pressure)
-                .unwrap_or(0.0),
+            // F-003 fix: when DDA features are required (the doctrinal Q2-pressure
+            // configuration), `constellation_intelligence` MUST be `Some` because it is
+            // unconditionally populated above when `require_dda_features = true`. A `None`
+            // here is therefore an internal invariant violation; we fail closed rather
+            // than silently substitute `0.0` for the Q2 verdict pressure feature.
+            // When DDA features are explicitly disabled (`require_dda_features = false`),
+            // `0.0` is the documented contract — the Q2-pressure surface is opt-in.
+            constellation_verdict_pressure: match (&constellation_intelligence, self.config.require_dda_features) {
+                (Some(evidence), _) => evidence.pressures.q2_verdict_pressure,
+                (None, false) => 0.0,
+                (None, true) => {
+                    return Err(MejepaInferError::ConstellationIntelligenceUnavailable {
+                        prediction_id_hex: hex::encode(prediction_id),
+                    });
+                }
+            },
         });
         let verdict = verdict_output.verdict;
         annotate_contradiction_decision(
@@ -586,12 +598,21 @@ impl MeJepaCompiler {
         )?;
         let fingerprint_evidence =
             self.live_fingerprint_evidence_for_panel(&predicted, verdict, context, prediction_id)?;
+        // F-005 fix: chain-of-custody requires a reproducible constellation version_id.
+        // Both production `ConstellationGuard` impls (DeterministicConstellationGuard and
+        // TctConstellationGuard) unconditionally return `Some(_)`; the previous
+        // `unwrap_or_else(|| "unversioned".to_string())` masked a future contract drift
+        // (e.g. a stub guard accidentally returning None) by stamping
+        // `PredictionProvenance::constellation_version = "unversioned"` and silently
+        // breaking reproducibility of the witness chain.
+        let constellation_version = self.constellation_guard.version_id().ok_or(
+            MejepaInferError::ConstellationVersionIdMissing {
+                detail: "ConstellationGuard::version_id() returned None; PredictionProvenance.constellation_version must be reproducible (CLAUDE.md §1 Q2 chain-of-custody)".to_string(),
+            },
+        )?;
         let provenance = PredictionProvenance {
             predictor_version: env!("CARGO_PKG_VERSION").to_string(),
-            constellation_version: self
-                .constellation_guard
-                .version_id()
-                .unwrap_or_else(|| "unversioned".to_string()),
+            constellation_version,
             calibration_version: calibration.version.clone(),
             active_pointer: hex::encode(prediction_id),
         };

@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Shared test utilities for context-graph workspace — NO MOCK DATA"
+description = "Shared test utilities — deterministic-by-shape, random-by-content. NOT a substitute for a real embedder."
 
 [dependencies]
 # Core types (SemanticFingerprint, TeleologicalFingerprint, SparseVector)

@@ -1,13 +1,27 @@
-//! Integration tests for teleological storage with real RocksDB.
+//! ROCKSDB STRUCTURAL ROUND-TRIP TESTS
 //!
-//! # CRITICAL: NO MOCK DATA
+//! M-H3 (GH #486, 2026-05-19): docstring corrected. These tests exercise REAL
+//! RocksDB instances and REAL serialization code paths, but the fingerprint
+//! *content* is a **fixed placeholder**: every fingerprint embedder slot is
+//! filled with `SemanticFingerprint::stub()` (vec of `0.1`) and every
+//! `content_hash` is the identical `0xDE 0xAD .. 0xBE 0xEF` filler (see
+//! `create_placeholder_hash`). Fingerprint `id` (Uuid::new_v4()) is the only
+//! field that varies between fingerprints.
 //!
-//! All tests use REAL RocksDB instances and REAL data structures.
-//! Tests verify:
+//! ## What these tests verify
 //! 1. 16 column families can be opened together
-//! 2. TeleologicalFingerprint can be stored and retrieved
-//! 3. E13 SPLADE inverted index operations work correctly
-//! 4. E1 Matryoshka 128D index operations work correctly
+//! 2. `serialize_teleological_fingerprint` / deserialize round-trip preserves
+//!    `id` and `content_hash` bytes
+//! 3. E13 SPLADE inverted index put/get works
+//! 4. E1 Matryoshka 128D index put/get works
+//! 5. Multi-fingerprint persistence keyed off `id`
+//!
+//! ## What these tests do NOT verify
+//! - Embedder-output semantics (content is identical 0.1-fill)
+//! - Deduplication / collision behavior (all hashes are identical filler)
+//! - Similarity ranking (all 0.1-fill vectors are cosine-1.0 with each other)
+//! For those, see `tests/full_integration_real_data/` which uses seeded
+//! pseudo-random fingerprints from `context-graph-test-utils`.
 
 use context_graph_core::types::fingerprint::{SemanticFingerprint, TeleologicalFingerprint};
 use context_graph_storage::column_families::cf_names;
@@ -23,19 +37,34 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 // =========================================================================
-// Helper Functions - Create REAL data (no mocks)
+// Helper Functions — placeholder fingerprint for RocksDB round-trip tests
 // =========================================================================
+//
+// M-H3 (GH #486, 2026-05-19): renamed from `create_real_*`. The original
+// naming over-claimed; these helpers produce a *fixed placeholder*
+// fingerprint with constant 0.1-fill vectors and a constant `0xDEADBEEF`-
+// style hash. Only `id` (Uuid::new_v4()) varies between fingerprints.
+// Suitable for RocksDB serialize/deserialize round-trip and CF open/close
+// tests; NOT suitable for any test that depends on embedder-output
+// semantics, similarity ranking, or content-hash collision behavior.
 
-/// Create a SemanticFingerprint with non-zero stub embeddings for testing.
+/// Build a `SemanticFingerprint` whose every dense slot is `vec![0.1; N]`.
 ///
-/// STOR-M1: Uses stub() (0.1-filled vectors) instead of zeroed() because zero-norm
-/// vectors are now correctly rejected by validate_vector() (cosine similarity undefined).
-fn create_real_semantic() -> SemanticFingerprint {
+/// STOR-M1: 0.1-filled (non-zero) so `validate_vector()` does not reject it
+/// for zero-norm-undefined-cosine reasons. All fingerprints produced by this
+/// helper are cosine-1.0 with each other, so this is NOT suitable for any
+/// similarity-ranking test.
+fn create_placeholder_semantic() -> SemanticFingerprint {
     SemanticFingerprint::stub()
 }
 
-/// Create a REAL content hash.
-fn create_real_hash() -> [u8; 32] {
+/// Build a 32-byte content hash with the `0xDEADBEEF`-style filler pattern.
+///
+/// EVERY fingerprint produced by `create_placeholder_fingerprint` has the
+/// EXACT SAME hash. Tests that depend on hash uniqueness must use a different
+/// helper (e.g.,
+/// `context_graph_test_utils::generate_random_content_hash_with_seed`).
+fn create_placeholder_hash() -> [u8; 32] {
     let mut hash = [0u8; 32];
     hash[0] = 0xDE;
     hash[1] = 0xAD;
@@ -44,9 +73,12 @@ fn create_real_hash() -> [u8; 32] {
     hash
 }
 
-/// Create a REAL TeleologicalFingerprint.
-fn create_real_fingerprint() -> TeleologicalFingerprint {
-    TeleologicalFingerprint::new(create_real_semantic(), create_real_hash())
+/// Build a `TeleologicalFingerprint` with placeholder semantic + hash.
+///
+/// `id` is `Uuid::new_v4()` (via `TeleologicalFingerprint::new`); all other
+/// fields are constant filler.
+fn create_placeholder_fingerprint() -> TeleologicalFingerprint {
+    TeleologicalFingerprint::new(create_placeholder_semantic(), create_placeholder_hash())
 }
 
 // =========================================================================
@@ -124,8 +156,8 @@ fn test_rocksdb_store_retrieve_fingerprint() {
     let db = DB::open_cf_descriptors(&opts, temp_dir.path(), descriptors)
         .expect("Failed to open RocksDB");
 
-    // Create REAL fingerprint
-    let original = create_real_fingerprint();
+    // Build placeholder fingerprint (constant 0.1-fill content, unique id).
+    let original = create_placeholder_fingerprint();
     let id = original.id;
 
     println!("BEFORE: Storing fingerprint {}", id);
@@ -248,7 +280,7 @@ fn test_rocksdb_multiple_fingerprints() {
 
     // Create and store 10 fingerprints
     let fingerprints: Vec<TeleologicalFingerprint> =
-        (0..10).map(|_| create_real_fingerprint()).collect();
+        (0..10).map(|_| create_placeholder_fingerprint()).collect();
 
     println!("BEFORE: Storing {} fingerprints", fingerprints.len());
 
@@ -370,7 +402,7 @@ fn test_rocksdb_cf_isolation() {
         .expect("Failed to open RocksDB");
 
     // Store data in fingerprints CF
-    let fp = create_real_fingerprint();
+    let fp = create_placeholder_fingerprint();
     let key = fingerprint_key(&fp.id);
     let fp_cf = db
         .cf_handle(CF_FINGERPRINTS)
@@ -401,7 +433,7 @@ fn test_rocksdb_persistence() {
     let db_path = temp_dir.path().to_path_buf();
     let cache = Cache::new_lru_cache(256 * 1024 * 1024);
 
-    let fp = create_real_fingerprint();
+    let fp = create_placeholder_fingerprint();
     let fp_id = fp.id;
 
     // Store data and close DB

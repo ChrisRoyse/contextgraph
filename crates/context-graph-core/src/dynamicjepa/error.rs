@@ -288,6 +288,16 @@ pub enum DynamicJepaError {
         expected: usize,
         actual: usize,
     },
+    #[error(
+        "operator USER env var unset: cannot record run-manifest chain-of-custody operator field"
+    )]
+    OperatorUserEnvUnset,
+    #[error("release-aggregate sort key generation failed: table={table} row_index={row_index}: {message}")]
+    ReleaseAggregateKeyGenerationFailed {
+        table: String,
+        row_index: usize,
+        message: String,
+    },
 }
 
 impl DynamicJepaError {
@@ -390,6 +400,10 @@ impl DynamicJepaError {
             Self::BridgeActionMappingIncomplete { .. } => "BRIDGE_ACTION_MAPPING_INCOMPLETE",
             Self::BridgeInstrumentCountDrift { .. } => "BRIDGE_INSTRUMENT_COUNT_DRIFT",
             Self::BridgePredictorInputDimMismatch { .. } => "BRIDGE_PREDICTOR_INPUT_DIM_MISMATCH",
+            Self::OperatorUserEnvUnset => "OPERATOR_USER_ENV_UNSET",
+            Self::ReleaseAggregateKeyGenerationFailed { .. } => {
+                "RELEASE_AGGREGATE_KEY_GENERATION_FAILED"
+            }
         }
     }
 }

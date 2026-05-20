@@ -308,13 +308,7 @@ fn csharp_command(
     source_path: &Path,
     work_dir: &Path,
 ) -> Result<(String, String, Vec<String>), Box<dyn std::error::Error>> {
-    let dotnet_root = std::env::var("DOTNET_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            std::env::var("HOME")
-                .map(|home| PathBuf::from(home).join(".dotnet"))
-                .unwrap_or_else(|_| PathBuf::from("/home/cabdru/.dotnet"))
-        });
+    let dotnet_root = resolve_dotnet_root()?;
     let csc = newest_matching_file(&dotnet_root.join("sdk"), &["Roslyn", "bincore", "csc.dll"])?;
     let system_runtime = newest_matching_file(
         &dotnet_root.join("packs").join("Microsoft.NETCore.App.Ref"),
@@ -333,6 +327,113 @@ fn csharp_command(
             source_path.display().to_string(),
         ],
     ))
+}
+
+/// Resolve `DOTNET_ROOT` for the C# fixture toolchain with explicit fail-closed
+/// semantics. Resolution order is:
+///   1. `DOTNET_ROOT` env var, if set to a non-empty value.
+///   2. `$HOME/.dotnet`, if `HOME` is set to a non-empty value.
+///   3. Structured `MutationError::InvalidInput` with code `MEJEPA_CORPUS_INVALID_INPUT`.
+///
+/// No operator-specific absolute path is baked into source (was
+/// `/home/cabdru/.dotnet`, see F-006 / #459).
+fn resolve_dotnet_root() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    resolve_dotnet_root_from(
+        std::env::var("DOTNET_ROOT").ok().as_deref(),
+        std::env::var("HOME").ok().as_deref(),
+    )
+}
+
+/// Pure resolver used by both the production path and FSV tests. Splitting out
+/// the env-read keeps tests free of `std::env::set_var` races (Rust tests run
+/// in parallel and Rust 1.78+ marks `set_var` unsafe due to those races).
+fn resolve_dotnet_root_from(
+    dotnet_root_env: Option<&str>,
+    home_env: Option<&str>,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if let Some(raw) = dotnet_root_env {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+    if let Some(raw) = home_env {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed).join(".dotnet"));
+        }
+    }
+    Err(MutationError::invalid(
+        "dotnet_root",
+        "DOTNET_ROOT_NOT_RESOLVED: neither DOTNET_ROOT nor HOME is set to a non-empty value; \
+         the C# fixture toolchain cannot locate Roslyn csc.dll",
+        "export DOTNET_ROOT to the .NET SDK root, or set HOME so $HOME/.dotnet can be used",
+    )
+    .into())
+}
+
+#[cfg(test)]
+mod dotnet_root_tests {
+    use super::resolve_dotnet_root_from;
+    use std::path::PathBuf;
+
+    #[test]
+    fn fails_closed_when_both_env_unset() {
+        let err = resolve_dotnet_root_from(None, None)
+            .expect_err("must fail when neither DOTNET_ROOT nor HOME is set");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("DOTNET_ROOT_NOT_RESOLVED"),
+            "expected structured DOTNET_ROOT_NOT_RESOLVED marker, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn fails_closed_when_both_env_empty_after_trim() {
+        let err = resolve_dotnet_root_from(Some("   "), Some(""))
+            .expect_err("must fail when both env values trim to empty");
+        assert!(err.to_string().contains("DOTNET_ROOT_NOT_RESOLVED"));
+    }
+
+    #[test]
+    fn uses_dotnet_root_when_set() {
+        let resolved = resolve_dotnet_root_from(Some("/opt/dotnet-9.0"), Some("/home/operator"))
+            .expect("DOTNET_ROOT must take precedence");
+        assert_eq!(resolved, PathBuf::from("/opt/dotnet-9.0"));
+    }
+
+    #[test]
+    fn falls_back_to_home_dotnet_when_only_home_set() {
+        let resolved = resolve_dotnet_root_from(None, Some("/home/operator"))
+            .expect("HOME fallback must succeed when set");
+        assert_eq!(resolved, PathBuf::from("/home/operator/.dotnet"));
+    }
+
+    #[test]
+    fn falls_back_to_home_when_dotnet_root_empty() {
+        let resolved = resolve_dotnet_root_from(Some(""), Some("/home/operator"))
+            .expect("empty DOTNET_ROOT must defer to HOME");
+        assert_eq!(resolved, PathBuf::from("/home/operator/.dotnet"));
+    }
+
+    #[test]
+    fn dotnet_root_whitespace_only_does_not_satisfy() {
+        let resolved = resolve_dotnet_root_from(Some("   "), Some("/home/operator"))
+            .expect("whitespace-only DOTNET_ROOT must defer to HOME");
+        assert_eq!(resolved, PathBuf::from("/home/operator/.dotnet"));
+    }
+
+    #[test]
+    fn does_not_bake_legacy_operator_path() {
+        // Regression test for F-006: ensure the retired /home/cabdru/.dotnet
+        // fallback is gone. With both env unset, we must error, not return
+        // any specific operator path.
+        let err = resolve_dotnet_root_from(None, None).unwrap_err();
+        assert!(
+            !err.to_string().contains("/home/cabdru/.dotnet"),
+            "fallback must not leak the retired /home/cabdru/.dotnet operator path"
+        );
+    }
 }
 
 fn newest_matching_file(

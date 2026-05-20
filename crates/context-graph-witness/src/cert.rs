@@ -45,8 +45,25 @@ pub enum CertError {
     },
     #[error("merkle proof rejected: leaf at index {index} did not derive the root")]
     ProofRejected { index: usize },
-    #[error("witness chain segment failed verification at offset {offset}")]
-    WitnessChainInvalid { offset: usize },
+    /// Witness chain segment was rejected during chain integrity verification.
+    /// `cause` preserves the underlying `WitnessError` so downstream auditors
+    /// can distinguish a prev-hash mismatch from a chain-length-invalid from
+    /// a witness-type-rejected failure (see F-023 / #476).
+    #[error("witness chain segment failed verification at offset {offset}: {cause}")]
+    WitnessChainInvalid {
+        offset: usize,
+        #[source]
+        cause: Box<WitnessError>,
+    },
+    /// Witness chain segment bytes failed to parse into a `WitnessEntry`.
+    /// Distinct from `WitnessChainInvalid` (which signals a verification
+    /// failure on a parseable chain) — this signals a structural decode
+    /// failure on the raw bytes.
+    #[error("witness chain segment entry failed to parse: {cause}")]
+    WitnessEntryParseFailed {
+        #[source]
+        cause: Box<WitnessError>,
+    },
     #[error("witness chain segment is missing or empty")]
     WitnessChainMissing,
     #[error(
@@ -75,12 +92,36 @@ impl CertError {
             Self::MerkleRootMismatch { .. } => "CERT_MERKLE_ROOT_MISMATCH",
             Self::ProofRejected { .. } => "CERT_MERKLE_PROOF_REJECTED",
             Self::WitnessChainInvalid { .. } => "CERT_WITNESS_CHAIN_INVALID",
+            Self::WitnessEntryParseFailed { .. } => "CERT_WITNESS_ENTRY_PARSE_FAILED",
             Self::WitnessChainMissing => "CERT_WITNESS_CHAIN_MISSING",
             Self::WitnessEntryCountMismatch { .. } => "CERT_WITNESS_ENTRY_COUNT_MISMATCH",
             Self::ManifestHashMismatch { .. } => "CERT_MANIFEST_HASH_MISMATCH",
             Self::ArtifactsEmpty => "CERT_ARTIFACTS_EMPTY",
             Self::TrajectoriesEmpty => "CERT_TRAJECTORIES_EMPTY",
             Self::TrajectoryCountMismatch { .. } => "CERT_TRAJECTORY_COUNT_MISMATCH",
+        }
+    }
+
+    /// Extract the offset claimed by a `WitnessChainInvalid` variant.
+    /// Returns `None` for variants that do not carry an offset. Used by
+    /// auditors that want to know which entry index in the chain failed.
+    pub fn witness_chain_offset(&self) -> Option<usize> {
+        match self {
+            Self::WitnessChainInvalid { offset, .. } => Some(*offset),
+            _ => None,
+        }
+    }
+
+    /// Return the underlying `WitnessError` cause when the variant carries
+    /// one. `None` for variants unrelated to the witness chain. This is the
+    /// API auditors should use to recover the precise chain-failure mode
+    /// (F-023 / #476).
+    pub fn witness_cause(&self) -> Option<&WitnessError> {
+        match self {
+            Self::WitnessChainInvalid { cause, .. } | Self::WitnessEntryParseFailed { cause } => {
+                Some(cause)
+            }
+            _ => None,
         }
     }
 }
@@ -340,10 +381,7 @@ fn verify_certificate_witness_binding(
     }
     let report = match verify_chain_bytes(segment) {
         Ok(report) => report,
-        Err(WitnessError::PrevHashMismatch { offset, .. }) => {
-            return Err(CertError::WitnessChainInvalid { offset });
-        }
-        Err(_) => return Err(CertError::WitnessChainInvalid { offset: 0 }),
+        Err(err) => return Err(witness_chain_invalid(err)),
     };
     if report.entries != 1 {
         return Err(CertError::WitnessEntryCountMismatch {
@@ -351,8 +389,10 @@ fn verify_certificate_witness_binding(
             actual: report.entries,
         });
     }
-    let entry = WitnessEntry::from_bytes(segment)
-        .map_err(|_| CertError::WitnessChainInvalid { offset: 0 })?;
+    let entry =
+        WitnessEntry::from_bytes(segment).map_err(|cause| CertError::WitnessEntryParseFailed {
+            cause: Box::new(cause),
+        })?;
     if entry.action_hash != *expected_action_hash {
         return Err(CertError::ManifestHashMismatch {
             claimed: entry.action_hash,
@@ -360,6 +400,22 @@ fn verify_certificate_witness_binding(
         });
     }
     Ok(report)
+}
+
+/// Map a `WitnessError` from `verify_chain_bytes` into a cause-preserving
+/// `CertError::WitnessChainInvalid`. Offsets are extracted from variants that
+/// carry them; variants without an offset use `0` (the chain prefix) and the
+/// underlying cause makes the precise reason recoverable (F-023 / #476).
+fn witness_chain_invalid(err: WitnessError) -> CertError {
+    let offset = match &err {
+        WitnessError::PrevHashMismatch { offset, .. } => *offset,
+        WitnessError::WitnessTypeRejected { offset, .. } => *offset,
+        WitnessError::EntryLengthInvalid { .. } | WitnessError::ChainLengthInvalid { .. } => 0,
+    };
+    CertError::WitnessChainInvalid {
+        offset,
+        cause: Box::new(err),
+    }
 }
 
 #[cfg(test)]

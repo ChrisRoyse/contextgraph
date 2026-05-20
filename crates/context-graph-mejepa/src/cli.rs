@@ -22,7 +22,7 @@ use crate::data_models::{PredictedPanel, TargetProvenance};
 use crate::error::MejepaInferError;
 use crate::fixtures::fixture_patch_context;
 use crate::frozen_target::FrozenTargetAdapter;
-use crate::ood::separation_auc;
+use crate::ood::{ood_score_from_norm_sq, separation_auc, squared_l2};
 use crate::predictor::MeJepaPredictor;
 use crate::predictor_checkpoint::{
     load_verified_trained_predictor_checkpoint, LoadedPredictorCheckpoint,
@@ -57,6 +57,7 @@ pub struct InferTestReport {
     pub prediction_latency_p50_ms: f32,
     pub prediction_latency_p99_ms: f32,
     pub ood_separation_auc: f32,
+    pub ood_separation_auc_source: String,
     pub num_calibration_samples: usize,
     pub calibration_version: String,
 }
@@ -99,6 +100,31 @@ pub fn run_infer_test(
         .count();
     let empirical_coverage = covered as f32 / holdout.len() as f32;
 
+    // M-H1 / issue #484: compute REAL OOD separation AUC from the calibration
+    // holdout split using the production OOD subsystem (`crate::ood`). The
+    // previous synthetic `vec![0.05; 100]` vs `vec![0.95; 100]` distributions
+    // are replaced with per-holdout-example residual-driven OOD scores produced
+    // by the same `ood_score_from_norm_sq(norm_sq, sigma_squared)` primitive the
+    // production predictor uses (`crate::compiler` / `crate::verdict_assembly`).
+    //
+    // The two populations for `separation_auc`:
+    // - in_dist: holdout examples whose binary predicted_test_pass (rounded at
+    //   0.5) MATCHES the binary actual_test_pass (oracle agreement).
+    // - ood:     holdout examples whose predictor disagreed with the oracle.
+    //
+    // The AUC then measures: "do held-out examples where the predictor was
+    // wrong actually receive higher OOD scores than examples where the
+    // predictor was right?" That is the binary-doctrine OOD discrimination
+    // question — a property the OOD subsystem must satisfy on the calibration
+    // holdout to be admissible per CLAUDE.md §1 Q2.
+    //
+    // If either partition is empty, the holdout cannot answer the OOD
+    // discrimination question — we fail closed with
+    // MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE rather than synthesize
+    // a passing AUC.
+    let (ood_separation_auc, ood_separation_auc_source) =
+        compute_real_ood_separation_auc(holdout, record.sigma_squared)?;
+
     let repo_root = args.output_fsv.join("infer-test-repo");
     let (patch, context) = fixture_patch_context(&repo_root, "approve")?;
     let mut latencies = Vec::with_capacity(1_000);
@@ -111,16 +137,13 @@ pub fn run_infer_test(
     let p50 = latencies[latencies.len() / 2];
     let p99 = latencies[(latencies.len() * 99 / 100).min(latencies.len() - 1)];
 
-    let in_dist_scores = vec![0.05; 100];
-    let ood_scores = vec![0.95; 100];
-    let auc = separation_auc(&in_dist_scores, &ood_scores)?;
-
     let report = InferTestReport {
         stated_coverage: 1.0 - args.alpha,
         empirical_coverage,
         prediction_latency_p50_ms: p50,
         prediction_latency_p99_ms: p99,
-        ood_separation_auc: auc,
+        ood_separation_auc,
+        ood_separation_auc_source,
         num_calibration_samples: examples.len(),
         calibration_version: record.version,
     };
@@ -129,9 +152,99 @@ pub fn run_infer_test(
     Ok(report)
 }
 
+/// Compute the real OOD separation AUC from the calibration holdout split.
+///
+/// Each holdout example contributes one real OOD score (via
+/// `ood_score_from_norm_sq(squared_l2, sigma_squared)`). Examples whose
+/// predictor agreed with the oracle (binary rounded match) form the
+/// in-distribution population; examples whose predictor disagreed form the OOD
+/// population. The AUC is the pairwise probability that an OOD example
+/// receives a higher OOD score than an in-distribution example.
+///
+/// Returns `Err(InferTestCalibrationHoldoutUnavailable)` if the holdout is
+/// empty, single-class (all-agree or all-disagree), or all residual norms are
+/// non-finite — in any of those cases no real OOD discrimination metric can be
+/// computed and we must NOT synthesize a passing AUC.
+pub(crate) fn compute_real_ood_separation_auc(
+    holdout: &[CalibrationExample],
+    sigma_squared: f32,
+) -> Result<(f32, String), MejepaInferError> {
+    if holdout.is_empty() {
+        return Err(MejepaInferError::InferTestCalibrationHoldoutUnavailable {
+            detail: "calibration holdout split is empty; cannot exercise OOD subsystem"
+                .to_string(),
+        });
+    }
+    if !sigma_squared.is_finite() || sigma_squared <= 0.0 {
+        return Err(MejepaInferError::InferTestCalibrationHoldoutUnavailable {
+            detail: format!(
+                "calibration sigma_squared={sigma_squared} is not a valid OOD scale; refusing to compute AUC"
+            ),
+        });
+    }
+    let mut in_dist_scores: Vec<f32> = Vec::with_capacity(holdout.len());
+    let mut ood_scores: Vec<f32> = Vec::with_capacity(holdout.len());
+    for (idx, example) in holdout.iter().enumerate() {
+        if example.predicted_test_pass.len() != example.actual_test_pass.len() {
+            return Err(MejepaInferError::InferTestCalibrationHoldoutUnavailable {
+                detail: format!(
+                    "holdout[{idx}].predicted_test_pass.len={} != actual_test_pass.len={}",
+                    example.predicted_test_pass.len(),
+                    example.actual_test_pass.len()
+                ),
+            });
+        }
+        if example.predicted_test_pass.is_empty() {
+            return Err(MejepaInferError::InferTestCalibrationHoldoutUnavailable {
+                detail: format!("holdout[{idx}] has zero test predictions"),
+            });
+        }
+        let norm_sq =
+            squared_l2(&example.predicted_test_pass, &example.actual_test_pass).map_err(|err| {
+                MejepaInferError::InferTestCalibrationHoldoutUnavailable {
+                    detail: format!(
+                        "holdout[{idx}] squared_l2 failed: {err} (real OOD score requires finite residuals)"
+                    ),
+                }
+            })?;
+        let score = ood_score_from_norm_sq(norm_sq, sigma_squared);
+        if !score.is_finite() {
+            return Err(MejepaInferError::InferTestCalibrationHoldoutUnavailable {
+                detail: format!(
+                    "holdout[{idx}] ood_score_from_norm_sq returned non-finite for norm_sq={norm_sq} sigma_squared={sigma_squared}"
+                ),
+            });
+        }
+        // Per-test binary agreement: predictor agreed iff (predicted_test_pass[i] >= 0.5)
+        // matches (actual_test_pass[i] >= 0.5) for ALL tests in the example.
+        let predictor_agreed_with_oracle = example
+            .predicted_test_pass
+            .iter()
+            .zip(example.actual_test_pass.iter())
+            .all(|(predicted, actual)| (*predicted >= 0.5) == (*actual >= 0.5));
+        if predictor_agreed_with_oracle {
+            in_dist_scores.push(score);
+        } else {
+            ood_scores.push(score);
+        }
+    }
+    if in_dist_scores.is_empty() || ood_scores.is_empty() {
+        return Err(MejepaInferError::InferTestCalibrationHoldoutUnavailable {
+            detail: format!(
+                "holdout is single-class: in_dist={} ood={}; cannot compute OOD separation AUC without both populations",
+                in_dist_scores.len(),
+                ood_scores.len()
+            ),
+        });
+    }
+    let auc = separation_auc(&in_dist_scores, &ood_scores)?;
+    Ok((auc, "real_ood_score_readback".to_string()))
+}
+
 pub fn dod_satisfied(report: &InferTestReport) -> bool {
     (0.88..=0.92).contains(&report.empirical_coverage)
         && report.prediction_latency_p50_ms < 100.0
+        && report.ood_separation_auc_source == "real_ood_score_readback"
         && report.ood_separation_auc > 0.85
 }
 
@@ -479,4 +592,153 @@ pub fn write_json_0600<T: Serialize>(path: &PathBuf, value: &T) -> Result<(), Me
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn infer_report(
+        empirical_coverage: f32,
+        latency_p50_ms: f32,
+        ood_separation_auc: f32,
+        ood_separation_auc_source: &str,
+    ) -> InferTestReport {
+        InferTestReport {
+            stated_coverage: 0.90,
+            empirical_coverage,
+            prediction_latency_p50_ms: latency_p50_ms,
+            prediction_latency_p99_ms: latency_p50_ms,
+            ood_separation_auc,
+            ood_separation_auc_source: ood_separation_auc_source.to_string(),
+            num_calibration_samples: 100,
+            calibration_version: "test-calibration".to_string(),
+        }
+    }
+
+    #[test]
+    fn dod_rejects_not_measured_ood_auc_even_when_perfect() {
+        let report = infer_report(0.90, 10.0, 1.0, "not_measured_no_real_ood_scores");
+
+        assert!(!dod_satisfied(&report));
+    }
+
+    #[test]
+    fn dod_accepts_real_ood_readback_when_all_thresholds_pass() {
+        let report = infer_report(0.90, 10.0, 0.90, "real_ood_score_readback");
+
+        assert!(dod_satisfied(&report));
+    }
+
+    #[test]
+    fn dod_rejects_low_real_ood_auc() {
+        let report = infer_report(0.90, 10.0, 0.85, "real_ood_score_readback");
+
+        assert!(!dod_satisfied(&report));
+    }
+
+    #[test]
+    fn dod_rejects_bad_coverage_even_with_real_ood_readback() {
+        let report = infer_report(0.87, 10.0, 0.90, "real_ood_score_readback");
+
+        assert!(!dod_satisfied(&report));
+    }
+
+    // ------ M-H1 / issue #484 regression tests for real OOD readback ------
+
+    fn calibration_example(predicted: Vec<f32>, actual: Vec<f32>) -> CalibrationExample {
+        CalibrationExample {
+            language: crate::Language::Python,
+            predicted_test_pass: predicted,
+            actual_test_pass: actual,
+        }
+    }
+
+    #[test]
+    fn ood_separation_auc_fails_closed_on_empty_holdout() {
+        // M-H1 regression: empty holdout means OOD subsystem cannot be
+        // exercised — must fail closed, never synthesize.
+        let err = compute_real_ood_separation_auc(&[], 1.0).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+    }
+
+    #[test]
+    fn ood_separation_auc_fails_closed_on_single_class_holdout_all_agree() {
+        // M-H1 regression: if every holdout example has predictor=oracle
+        // agreement, the OOD population is empty and AUC is undefined.
+        // Must fail closed.
+        let holdout = vec![
+            calibration_example(vec![0.9, 0.95], vec![1.0, 1.0]),
+            calibration_example(vec![0.1, 0.05], vec![0.0, 0.0]),
+            calibration_example(vec![0.85, 0.92], vec![1.0, 1.0]),
+        ];
+        let err = compute_real_ood_separation_auc(&holdout, 1.0).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+    }
+
+    #[test]
+    fn ood_separation_auc_fails_closed_on_single_class_holdout_all_disagree() {
+        // M-H1 regression: if every holdout example has predictor≠oracle,
+        // the in-distribution population is empty and AUC is undefined.
+        let holdout = vec![
+            calibration_example(vec![0.9, 0.95], vec![0.0, 0.0]),
+            calibration_example(vec![0.1, 0.05], vec![1.0, 1.0]),
+        ];
+        let err = compute_real_ood_separation_auc(&holdout, 1.0).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+    }
+
+    #[test]
+    fn ood_separation_auc_fails_closed_on_invalid_sigma_squared() {
+        // M-H1 regression: sigma_squared must come from the real calibration
+        // record; if it's non-positive/non-finite the OOD scale is invalid.
+        let holdout = vec![calibration_example(vec![0.9], vec![1.0])];
+        let err_zero = compute_real_ood_separation_auc(&holdout, 0.0).unwrap_err();
+        assert_eq!(err_zero.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+
+        let err_nan = compute_real_ood_separation_auc(&holdout, f32::NAN).unwrap_err();
+        assert_eq!(err_nan.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+
+        let err_neg = compute_real_ood_separation_auc(&holdout, -1.0).unwrap_err();
+        assert_eq!(err_neg.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+    }
+
+    #[test]
+    fn ood_separation_auc_returns_real_score_with_mixed_holdout() {
+        // M-H1 regression: with a real two-class holdout (some predictor=oracle
+        // and some predictor≠oracle), the AUC must come from
+        // ood::separation_auc against the REAL ood_score_from_norm_sq output.
+        //
+        // Construction:
+        //  - in_dist examples: predicted close to actual → small residual → low OOD score
+        //  - ood examples:     predicted far from actual → large residual → high OOD score
+        // Therefore separation_auc should be ~1.0 (perfect discrimination).
+        let holdout = vec![
+            // in_dist: predicted matches actual at threshold 0.5
+            calibration_example(vec![0.95, 0.05], vec![1.0, 0.0]),
+            calibration_example(vec![0.9, 0.1], vec![1.0, 0.0]),
+            calibration_example(vec![0.85, 0.15], vec![1.0, 0.0]),
+            // ood: predictor flipped vs oracle
+            calibration_example(vec![0.9, 0.05], vec![0.0, 1.0]),
+            calibration_example(vec![0.95, 0.1], vec![0.0, 1.0]),
+        ];
+        let (auc, source) = compute_real_ood_separation_auc(&holdout, 1.0).unwrap();
+        assert_eq!(source, "real_ood_score_readback");
+        // OOD examples have far larger residuals than in_dist; AUC must be ≥ in_dist AUC
+        // and strictly > 0.5 because of the structural separation.
+        assert!(
+            auc > 0.5,
+            "real OOD subsystem must discriminate; got auc={auc}"
+        );
+        assert!(auc.is_finite() && (0.0..=1.0).contains(&auc), "auc out of range: {auc}");
+    }
+
+    #[test]
+    fn ood_separation_auc_fails_closed_on_dim_mismatch() {
+        // M-H1 regression: malformed holdout (predicted/actual length mismatch)
+        // must fail closed rather than silently truncate or zero-pad.
+        let holdout = vec![calibration_example(vec![0.9, 0.1], vec![1.0])];
+        let err = compute_real_ood_separation_auc(&holdout, 1.0).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+    }
 }

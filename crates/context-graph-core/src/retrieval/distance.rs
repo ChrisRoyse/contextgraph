@@ -18,10 +18,48 @@
 use crate::teleological::Embedder;
 use crate::types::fingerprint::{EmbeddingRef, SemanticFingerprint, SparseVector};
 
+/// Structured error variants for `try_cosine_similarity` /
+/// `try_cosine_similarity_raw`.
+///
+/// Per F-025 (Sherlock investigation 2026-05-19): the legacy
+/// `cosine_similarity` helper conflated **two distinct** failure modes —
+/// (a) the AP-10 zero-magnitude case, and (b) dimension mismatch — into a
+/// single sentinel `0.0`. Dim-mismatch is a structural bug (CLAUDE.md §6.2
+/// slot-identity violation in panel contexts); zero-magnitude is a valid
+/// runtime state. This enum lets callers distinguish them.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum CosineSimilarityError {
+    /// Both vectors are empty (zero-length slices).
+    #[error("VECTOR_EMPTY_INPUT")]
+    EmptyInput,
+    /// Vector lengths disagree.
+    #[error("VECTOR_DIM_MISMATCH: left={left} right={right}")]
+    DimensionMismatch { left: usize, right: usize },
+    /// At least one vector has zero magnitude (all-zero or numerically zero).
+    #[error("VECTOR_ZERO_MAGNITUDE: left_norm_sq={left_norm_sq} right_norm_sq={right_norm_sq}")]
+    ZeroMagnitude {
+        left_norm_sq: f32,
+        right_norm_sq: f32,
+    },
+}
+
 /// Compute cosine similarity between two dense vectors.
 ///
 /// Zero-allocation implementation using direct slice computation.
 /// Returns 0.0 for zero-magnitude vectors (AP-10: no NaN).
+///
+/// # Failure modes (F-025 Sherlock investigation 2026-05-19)
+///
+/// This **legacy / panic-free** helper exists for backwards compatibility
+/// with callers that cannot easily propagate `Result`. It returns `0.0` for
+/// BOTH zero-magnitude inputs (AP-10) AND dimension mismatch — conflating
+/// two structurally different errors. The dim-mismatch arm trips a
+/// `debug_assert_eq!` so the violation is loud in dev/test builds; in
+/// release builds it silently returns `0.0` for backwards compatibility.
+///
+/// **Prefer `try_cosine_similarity` for new code.** It returns
+/// `Result<f32, CosineSimilarityError>` and lets the caller distinguish the
+/// failure modes (`EmptyInput`, `DimensionMismatch`, `ZeroMagnitude`).
 ///
 /// # Arguments
 /// * `a` - First dense embedding as f32 slice
@@ -30,6 +68,17 @@ use crate::types::fingerprint::{EmbeddingRef, SemanticFingerprint, SparseVector}
 /// # Returns
 /// Similarity in [0.0, 1.0] where 1.0 = identical direction
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    // F-025 dim-mismatch loudness in dev/test. In release the legacy 0.0
+    // is preserved to avoid breaking existing callers; new code should
+    // adopt `try_cosine_similarity` instead.
+    debug_assert_eq!(
+        a.len(),
+        b.len(),
+        "VECTOR_DIM_MISMATCH (F-025): cosine_similarity left.len()={} right.len()={}. \
+         This is a structural bug — use try_cosine_similarity to surface it.",
+        a.len(),
+        b.len()
+    );
     if a.is_empty() || b.is_empty() || a.len() != b.len() {
         return 0.0;
     }
@@ -45,7 +94,9 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         mag_b_sq += bi * bi;
     }
 
-    // AP-10: zero-magnitude vectors return 0.0 (no NaN)
+    // AP-10: zero-magnitude vectors return 0.0 (no NaN). This is a distinct
+    // failure mode from dim-mismatch above; new callers should use
+    // `try_cosine_similarity` to tell them apart.
     if mag_a_sq == 0.0 || mag_b_sq == 0.0 {
         return 0.0;
     }
@@ -56,6 +107,54 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     (raw_sim + 1.0) / 2.0
 }
 
+/// Result-returning cosine similarity. **Prefer this for new code.**
+///
+/// Per F-025 (Sherlock investigation 2026-05-19): the legacy
+/// `cosine_similarity` returns `0.0` for both `DimensionMismatch` and
+/// `ZeroMagnitude`. This variant surfaces the failure mode explicitly so the
+/// caller can route correctly (dim-mismatch = structural slot-identity
+/// violation in panel contexts per CLAUDE.md §6.2; zero-magnitude = valid
+/// runtime state that may legitimately produce no signal).
+///
+/// # Returns
+/// `Ok(similarity)` in `[0.0, 1.0]` where `1.0` = identical direction.
+/// `Err(CosineSimilarityError::{EmptyInput | DimensionMismatch | ZeroMagnitude})`
+/// for the three distinguishable failure modes.
+pub fn try_cosine_similarity(a: &[f32], b: &[f32]) -> Result<f32, CosineSimilarityError> {
+    if a.is_empty() && b.is_empty() {
+        return Err(CosineSimilarityError::EmptyInput);
+    }
+    if a.len() != b.len() {
+        return Err(CosineSimilarityError::DimensionMismatch {
+            left: a.len(),
+            right: b.len(),
+        });
+    }
+    if a.is_empty() {
+        // Same length AND both empty: caller passed two zero-length slices.
+        return Err(CosineSimilarityError::EmptyInput);
+    }
+
+    let mut dot = 0.0_f32;
+    let mut mag_a_sq = 0.0_f32;
+    let mut mag_b_sq = 0.0_f32;
+    for (ai, bi) in a.iter().zip(b.iter()) {
+        dot += ai * bi;
+        mag_a_sq += ai * ai;
+        mag_b_sq += bi * bi;
+    }
+
+    if mag_a_sq == 0.0 || mag_b_sq == 0.0 {
+        return Err(CosineSimilarityError::ZeroMagnitude {
+            left_norm_sq: mag_a_sq,
+            right_norm_sq: mag_b_sq,
+        });
+    }
+
+    let raw_sim = (dot / (mag_a_sq.sqrt() * mag_b_sq.sqrt())).clamp(-1.0, 1.0);
+    Ok((raw_sim + 1.0) / 2.0)
+}
+
 /// Compute raw cosine similarity between two dense vectors.
 ///
 /// CORE-M3: Canonical raw cosine implementation returning [-1.0, 1.0].
@@ -63,7 +162,21 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 /// without the SRC-3 normalization to [0, 1] that `cosine_similarity()` applies.
 ///
 /// Zero-allocation, NaN-safe, clamped to [-1.0, 1.0].
+///
+/// # F-025 dim-mismatch loudness
+///
+/// Same caveats as `cosine_similarity`: dim-mismatch is loud in dev/test
+/// (via `debug_assert_eq!`) and silently returns `0.0` in release for legacy
+/// caller compatibility. Prefer `try_cosine_similarity_raw` for new code.
 pub fn cosine_similarity_raw(a: &[f32], b: &[f32]) -> f32 {
+    debug_assert_eq!(
+        a.len(),
+        b.len(),
+        "VECTOR_DIM_MISMATCH (F-025): cosine_similarity_raw left.len()={} right.len()={}. \
+         This is a structural bug — use try_cosine_similarity_raw to surface it.",
+        a.len(),
+        b.len()
+    );
     if a.is_empty() || b.is_empty() || a.len() != b.len() {
         return 0.0;
     }
@@ -83,6 +196,42 @@ pub fn cosine_similarity_raw(a: &[f32], b: &[f32]) -> f32 {
     }
 
     (dot / (mag_a_sq.sqrt() * mag_b_sq.sqrt())).clamp(-1.0, 1.0)
+}
+
+/// Result-returning raw cosine similarity in `[-1.0, 1.0]`.
+///
+/// See `try_cosine_similarity` (F-025) for rationale.
+pub fn try_cosine_similarity_raw(a: &[f32], b: &[f32]) -> Result<f32, CosineSimilarityError> {
+    if a.is_empty() && b.is_empty() {
+        return Err(CosineSimilarityError::EmptyInput);
+    }
+    if a.len() != b.len() {
+        return Err(CosineSimilarityError::DimensionMismatch {
+            left: a.len(),
+            right: b.len(),
+        });
+    }
+    if a.is_empty() {
+        return Err(CosineSimilarityError::EmptyInput);
+    }
+
+    let mut dot = 0.0_f32;
+    let mut mag_a_sq = 0.0_f32;
+    let mut mag_b_sq = 0.0_f32;
+    for (ai, bi) in a.iter().zip(b.iter()) {
+        dot += ai * bi;
+        mag_a_sq += ai * ai;
+        mag_b_sq += bi * bi;
+    }
+
+    if mag_a_sq == 0.0 || mag_b_sq == 0.0 {
+        return Err(CosineSimilarityError::ZeroMagnitude {
+            left_norm_sq: mag_a_sq,
+            right_norm_sq: mag_b_sq,
+        });
+    }
+
+    Ok((dot / (mag_a_sq.sqrt() * mag_b_sq.sqrt())).clamp(-1.0, 1.0))
 }
 
 /// Compute Jaccard similarity between two sparse vectors.
@@ -317,15 +466,180 @@ mod tests {
         let b = vec![0.0, 1.0, 0.0];
         assert!((cosine_similarity(&a, &b) - 0.5).abs() < 1e-5);
 
-        // Zero vector: AP-10 compliance
+        // Zero vector: AP-10 compliance — same-dim zero vs nonzero returns 0.0.
         let zero = vec![0.0, 0.0, 0.0];
         let normal = vec![1.0, 2.0, 3.0];
         assert_eq!(cosine_similarity(&zero, &normal), 0.0);
         assert!(!cosine_similarity(&zero, &zero).is_nan());
 
-        // Empty and dimension mismatch
-        assert_eq!(cosine_similarity(&[], &normal), 0.0);
-        assert_eq!(cosine_similarity(&[1.0, 2.0], &normal), 0.0);
+        // F-025: dim-mismatch is now classified via `try_cosine_similarity`.
+        // The legacy `cosine_similarity` debug_assert_eq! fires in dev/test
+        // when lengths disagree, so we drive the dim-mismatch path through
+        // the Result-returning variant instead. New callers should adopt
+        // `try_cosine_similarity` to distinguish the failure modes.
+        match try_cosine_similarity(&[], &normal) {
+            Err(CosineSimilarityError::DimensionMismatch { left, right }) => {
+                assert_eq!(left, 0);
+                assert_eq!(right, 3);
+            }
+            other => panic!("expected DimensionMismatch, got {:?}", other),
+        }
+        match try_cosine_similarity(&[1.0, 2.0], &normal) {
+            Err(CosineSimilarityError::DimensionMismatch { left, right }) => {
+                assert_eq!(left, 2);
+                assert_eq!(right, 3);
+            }
+            other => panic!("expected DimensionMismatch, got {:?}", other),
+        }
+    }
+
+    // =========================================================================
+    // F-025 REGRESSION TESTS (Sherlock investigation 2026-05-19)
+    //
+    // These tests assert that `try_cosine_similarity` distinguishes the three
+    // failure modes (EmptyInput, DimensionMismatch, ZeroMagnitude) that the
+    // legacy `cosine_similarity` collapsed into 0.0. If anyone re-collapses
+    // them, these tests fail.
+    //
+    // Uses deterministic Gaussian samples via SplitMix64 + Box-Muller per
+    // tier-compression test convention — NOT sin waves.
+    // =========================================================================
+
+    fn splitmix64_distance(seed: u64) -> u64 {
+        let mut z = seed.wrapping_add(0x9E3779B97F4A7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+        z ^ (z >> 31)
+    }
+
+    fn gaussian_sample_distance(seed: u64) -> f32 {
+        let r1 = splitmix64_distance(seed.wrapping_mul(2)) >> 11;
+        let r2 = splitmix64_distance(seed.wrapping_mul(2).wrapping_add(1)) >> 11;
+        let u1 = (r1 as f64 + 1.0) / ((1u64 << 53) as f64 + 1.0);
+        let u2 = (r2 as f64 + 1.0) / ((1u64 << 53) as f64 + 1.0);
+        let r = (-2.0 * u1.ln()).sqrt();
+        let theta = 2.0 * std::f64::consts::PI * u2;
+        let z = r * theta.cos();
+        z.tanh() as f32
+    }
+
+    fn synthetic_gaussian(n: usize, seed: u64) -> Vec<f32> {
+        (0..n)
+            .map(|i| gaussian_sample_distance(seed.wrapping_add(i as u64)))
+            .collect()
+    }
+
+    #[test]
+    fn test_f025_try_cosine_similarity_empty_input_classified() {
+        let result = try_cosine_similarity(&[], &[]);
+        assert_eq!(result, Err(CosineSimilarityError::EmptyInput));
+        let display = format!("{}", result.unwrap_err());
+        assert!(display.contains("VECTOR_EMPTY_INPUT"), "got {display}");
+    }
+
+    #[test]
+    fn test_f025_try_cosine_similarity_dim_mismatch_classified() {
+        let a = synthetic_gaussian(128, 0xDEAD_BEEF);
+        let b = synthetic_gaussian(256, 0xDEAD_BEEF);
+        match try_cosine_similarity(&a, &b) {
+            Err(CosineSimilarityError::DimensionMismatch { left, right }) => {
+                assert_eq!(left, 128);
+                assert_eq!(right, 256);
+            }
+            other => panic!("expected DimensionMismatch, got {:?}", other),
+        }
+        let err = try_cosine_similarity(&a, &b).unwrap_err();
+        assert!(
+            format!("{err}").contains("VECTOR_DIM_MISMATCH"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn test_f025_try_cosine_similarity_zero_magnitude_classified() {
+        let zero = vec![0.0_f32; 128];
+        let nonzero = synthetic_gaussian(128, 0xABCDEF);
+        // left zero, right finite
+        match try_cosine_similarity(&zero, &nonzero) {
+            Err(CosineSimilarityError::ZeroMagnitude {
+                left_norm_sq,
+                right_norm_sq,
+            }) => {
+                assert_eq!(left_norm_sq, 0.0);
+                assert!(right_norm_sq > 0.0);
+            }
+            other => panic!("expected ZeroMagnitude, got {:?}", other),
+        }
+        // both zero
+        match try_cosine_similarity(&zero, &zero) {
+            Err(CosineSimilarityError::ZeroMagnitude {
+                left_norm_sq,
+                right_norm_sq,
+            }) => {
+                assert_eq!(left_norm_sq, 0.0);
+                assert_eq!(right_norm_sq, 0.0);
+            }
+            other => panic!("expected ZeroMagnitude, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_f025_try_cosine_similarity_real_vectors_match_legacy() {
+        // For valid same-dim inputs, the Result-returning variant must agree
+        // with the legacy helper to within numerical tolerance.
+        let a = synthetic_gaussian(1024, 0x123_456);
+        let b = synthetic_gaussian(1024, 0x789_abc);
+        let legacy = cosine_similarity(&a, &b);
+        let try_ok = try_cosine_similarity(&a, &b).expect("valid inputs");
+        assert!(
+            (legacy - try_ok).abs() < 1e-5,
+            "legacy={legacy} try={try_ok}"
+        );
+    }
+
+    #[test]
+    fn test_f025_try_cosine_similarity_raw_variant() {
+        let a = synthetic_gaussian(64, 0xDEAD_BEEF);
+        let b = a.clone();
+        // Identical: raw cosine = 1.0
+        let result = try_cosine_similarity_raw(&a, &b).expect("identical inputs valid");
+        assert!((result - 1.0).abs() < 1e-5, "got {result}");
+
+        // Dim mismatch surfaces structured error.
+        let c = synthetic_gaussian(96, 0xDEAD_BEEF);
+        match try_cosine_similarity_raw(&a, &c) {
+            Err(CosineSimilarityError::DimensionMismatch { left, right }) => {
+                assert_eq!(left, 64);
+                assert_eq!(right, 96);
+            }
+            other => panic!("expected DimensionMismatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_f025_legacy_helper_still_returns_zero_on_zero_magnitude() {
+        // Legacy contract: AP-10 zero-magnitude returns 0.0. This stays
+        // intact for backwards-compat callers that cannot adopt Result.
+        let zero = vec![0.0_f32; 128];
+        let nonzero = synthetic_gaussian(128, 0x999);
+        assert_eq!(cosine_similarity(&zero, &nonzero), 0.0);
+        assert_eq!(cosine_similarity_raw(&zero, &nonzero), 0.0);
+    }
+
+    #[test]
+    fn test_f025_error_variants_are_structured_screaming_snake_case() {
+        let empty = CosineSimilarityError::EmptyInput;
+        let mismatch = CosineSimilarityError::DimensionMismatch {
+            left: 10,
+            right: 20,
+        };
+        let zero = CosineSimilarityError::ZeroMagnitude {
+            left_norm_sq: 0.0,
+            right_norm_sq: 1.0,
+        };
+        assert!(format!("{empty}").contains("VECTOR_EMPTY_INPUT"));
+        assert!(format!("{mismatch}").contains("VECTOR_DIM_MISMATCH"));
+        assert!(format!("{zero}").contains("VECTOR_ZERO_MAGNITUDE"));
     }
 
     #[test]

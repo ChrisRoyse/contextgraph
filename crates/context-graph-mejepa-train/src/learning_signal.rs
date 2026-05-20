@@ -131,6 +131,22 @@ pub enum DeltaPAggregator {
 #[serde(deny_unknown_fields)]
 pub struct DeltaPComponents {
     pub delta_p_real: f32,
+    /// Optional counterfactual ("imagined") trajectory probability mass.
+    ///
+    /// F-027 contract:
+    /// * `None` is a legitimate semantic state meaning "no imagined trajectory
+    ///   was generated for this training row" (e.g., real-only batches, trainer
+    ///   driver paths, replay rows that predate the imagined-trajectory
+    ///   feature). When `None`, `compute_delta_p` treats the imagined component
+    ///   as `0.0`, which collapses `max(real, gamma * imagined)` to `real`.
+    ///   That is the intended contract for "no imagined branch was sampled."
+    /// * `Some(value)` requires `value` to be finite and in `[0, 1]`. This is
+    ///   enforced by `DeltaPComponents::validate()` via `validate_unit` BEFORE
+    ///   any `unwrap_or(0.0)` collapse, so corrupted rows (NaN, Inf,
+    ///   out-of-range) surface as `UtmlErrorCode::NonFinite` /
+    ///   `UtmlErrorCode::OutOfRange` rather than degrading to "real-only"
+    ///   silently. Regression tests in this module exercise both legitimate
+    ///   states and every corrupted state to keep the contract durable.
     pub delta_p_imagined: Option<f32>,
     pub snr: f32,
     pub exploration_bonus: f32,
@@ -412,6 +428,13 @@ impl DeltaXiComponents {
 }
 
 pub fn compute_delta_p(c: DeltaPComponents) -> Result<f32, UtmlError> {
+    // F-027 contract: `validate()` runs BEFORE the `unwrap_or(0.0)` collapse.
+    // Corrupted rows (NaN, Inf, out-of-range) are rejected here as
+    // `UtmlErrorCode::NonFinite` or `OutOfRange`, so the only way to reach the
+    // `unwrap_or(0.0)` line below is the legitimate "no imagined trajectory"
+    // semantic state documented on `DeltaPComponents::delta_p_imagined`.
+    // The `max(real, gamma * 0.0) = real` collapse is the intended contract
+    // for that case.
     c.validate()?;
     let imagined = c.delta_p_imagined.unwrap_or(0.0);
     Ok(clamp01(
@@ -995,5 +1018,140 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(err.code(), "UTML_SNR_BELOW_FLOOR");
+    }
+
+    // --- F-027 regression coverage ---
+    //
+    // `delta_p_imagined: Option<f32>` has TWO legitimate states:
+    //   1) `None`         → "no imagined trajectory" — fold to 0.0
+    //   2) `Some(value)`  → imagined branch generated; value finite, in [0,1]
+    //
+    // Corrupted rows (NaN/Inf, out-of-range) must NOT silently degrade the
+    // signal. They must surface as `UtmlErrorCode::NonFinite` or `OutOfRange`
+    // BEFORE compute_delta_p ever reaches `unwrap_or(0.0)`.
+
+    #[test]
+    fn delta_p_imagined_none_collapses_to_real_only() {
+        let real = 0.42_f32;
+        let signal = compute_delta_p(DeltaPComponents {
+            delta_p_real: real,
+            delta_p_imagined: None,
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![real],
+        })
+        .expect("legitimate None must be accepted");
+        assert!(
+            (signal - real).abs() < 1e-6,
+            "expected real-only collapse {real}, got {signal}"
+        );
+    }
+
+    #[test]
+    fn delta_p_imagined_some_dominates_when_above_real() {
+        let signal = compute_delta_p(DeltaPComponents {
+            delta_p_real: 0.10,
+            delta_p_imagined: Some(0.80),
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.10],
+        })
+        .expect("legitimate Some must be accepted");
+        // expected = max(0.10, 0.7 * 0.80) = 0.56
+        assert!((signal - 0.56).abs() < 1e-6, "got {signal}");
+    }
+
+    #[test]
+    fn delta_p_imagined_nan_rejected_by_validate() {
+        let err = compute_delta_p(DeltaPComponents {
+            delta_p_real: 0.5,
+            delta_p_imagined: Some(f32::NAN),
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.5],
+        })
+        .expect_err("NaN imagined must fail closed");
+        assert_eq!(err.code(), "UTML_NON_FINITE");
+        assert!(err.message.contains("delta_p_imagined"));
+    }
+
+    #[test]
+    fn delta_p_imagined_infinite_rejected_by_validate() {
+        let err = compute_delta_p(DeltaPComponents {
+            delta_p_real: 0.5,
+            delta_p_imagined: Some(f32::INFINITY),
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.5],
+        })
+        .expect_err("infinite imagined must fail closed");
+        assert_eq!(err.code(), "UTML_NON_FINITE");
+    }
+
+    #[test]
+    fn delta_p_imagined_above_unit_interval_rejected() {
+        let err = compute_delta_p(DeltaPComponents {
+            delta_p_real: 0.5,
+            delta_p_imagined: Some(1.5),
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.5],
+        })
+        .expect_err("imagined > 1 must fail closed");
+        assert_eq!(err.code(), "UTML_OUT_OF_RANGE");
+        assert!(err.message.contains("delta_p_imagined"));
+    }
+
+    #[test]
+    fn delta_p_imagined_negative_rejected() {
+        let err = compute_delta_p(DeltaPComponents {
+            delta_p_real: 0.5,
+            delta_p_imagined: Some(-0.01),
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.5],
+        })
+        .expect_err("negative imagined must fail closed");
+        assert_eq!(err.code(), "UTML_OUT_OF_RANGE");
+    }
+
+    #[test]
+    fn delta_p_some_zero_equals_none_branch() {
+        // Sanity: `Some(0.0)` and `None` MUST yield IDENTICAL output. This
+        // pins the documented contract that None folds to 0.0 inside
+        // compute_delta_p.
+        let with_none = compute_delta_p(DeltaPComponents {
+            delta_p_real: 0.42,
+            delta_p_imagined: None,
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.42],
+        })
+        .expect("None");
+        let with_some_zero = compute_delta_p(DeltaPComponents {
+            delta_p_real: 0.42,
+            delta_p_imagined: Some(0.0),
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.42],
+        })
+        .expect("Some(0.0)");
+        assert!((with_none - with_some_zero).abs() < 1e-6);
     }
 }

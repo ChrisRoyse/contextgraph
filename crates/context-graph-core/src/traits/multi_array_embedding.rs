@@ -1296,12 +1296,21 @@ mod tests {
     }
 
     /// Test that dimensions() returns correct values for all 13 embedders.
+    ///
+    /// M-M3 (GH #489, 2026-05-19): SCOPE NOTE — this test exercises the
+    /// DEFAULT TRAIT METHOD `MultiArrayEmbeddingProvider::dimensions()`, which
+    /// returns a compile-time constant array of slot dimensions. It does NOT
+    /// call `embed_all` / `embed_batch_all`; those return `Err(...)` here so
+    /// any future test that accidentally invokes them fails closed instead of
+    /// silently returning fake vectors. Verdict on the original Sherlock
+    /// finding: this `MockProvider` is correctly bounded and is the doctrinal
+    /// "test double for a default trait method" — no rewrite needed.
     #[test]
     fn test_dimensions_returns_correct_values() {
         use crate::error::CoreError;
-        // Create a mock implementation to test default
-        // NOTE: MockProvider returns errors instead of using unimplemented!()
-        // to avoid panics - per fail-fast philosophy, errors are preferable to panics.
+        // Test double for the default trait method `dimensions()`.
+        // `embed_all` / `embed_batch_all` deliberately return Err to fail-fast
+        // if any future test attempts to use them as a real embedder source.
         struct MockProvider;
 
         #[async_trait]

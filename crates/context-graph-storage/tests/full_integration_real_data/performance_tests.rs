@@ -10,7 +10,7 @@ use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 use tempfile::TempDir;
 use uuid::Uuid;
 
-use crate::helpers::{create_initialized_store, create_real_fingerprint};
+use crate::helpers::{create_initialized_store, create_random_fingerprint};
 
 // =============================================================================
 // TEST 5: Batch Operation Performance Test
@@ -29,7 +29,7 @@ async fn test_batch_store_retrieve_performance() {
     println!("[GENERATING] {} fingerprints...", BATCH_SIZE);
     let generate_start = Instant::now();
     let fingerprints: Vec<TeleologicalFingerprint> =
-        (0..BATCH_SIZE).map(|_| create_real_fingerprint()).collect();
+        (0..BATCH_SIZE).map(|_| create_random_fingerprint()).collect();
     let generate_duration = generate_start.elapsed();
     println!(
         "[GENERATED] {} fingerprints in {:?}",
@@ -154,7 +154,7 @@ async fn test_concurrent_access() {
     for _ in 0..CONCURRENT_OPS {
         let store_clone = store.clone();
         let handle = tokio::spawn(async move {
-            let fp = create_real_fingerprint();
+            let fp = create_random_fingerprint();
             let id = fp.id;
             store_clone
                 .store(fp)

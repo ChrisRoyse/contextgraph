@@ -22,7 +22,7 @@ use crate::witness_compress::{verify_witness_integrity, witness_compress_old_seg
 
 pub fn gc_run_nightly(env: &HygieneEnv) -> OpsResult<GcReport> {
     let started_unix = env.now_unix();
-    let lock_path = gc_lock_path();
+    let lock_path = gc_lock_path()?;
     let _lock = open_exclusive_lock(&lock_path)?;
     let retention_rules = retention_rules_for_env(env)?;
 
@@ -470,9 +470,85 @@ fn retention_rules_for_env(env: &HygieneEnv) -> OpsResult<BTreeMap<String, Reten
     load_retention_policy(path)?.by_cf()
 }
 
-fn gc_lock_path() -> PathBuf {
-    let root = std::env::var("CONTEXTGRAPH_DATA_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/zfs/archive/contextgraph"));
-    root.join("state/locks/mejepa-gc.lock")
+/// Resolve the GC lock-file path. Reads `CONTEXTGRAPH_DATA_ROOT` from the
+/// environment and fails closed with `MEJEPA_HYGIENE_INVALID_CONFIG` when the
+/// env var is unset, empty, or invalid UTF-8. The retired fallback to the
+/// hardcoded `/zfs/archive/contextgraph` production root has been removed (see
+/// F-015 / #468) because silently using a production path on dev workstations
+/// without aiwonder mounted violates CLAUDE.md §6.7.
+fn gc_lock_path() -> OpsResult<PathBuf> {
+    let root = std::env::var("CONTEXTGRAPH_DATA_ROOT").map_err(|_| {
+        OpsError::invalid(
+            "CONTEXTGRAPH_DATA_ROOT",
+            "CONTEXTGRAPH_DATA_ROOT env var unset (or invalid UTF-8); the hygiene GC \
+             lock cannot be sited without a durable-data root. Set CONTEXTGRAPH_DATA_ROOT \
+             to the aiwonder /zfs/archive/contextgraph root before invoking gc_run_nightly",
+        )
+    })?;
+    resolve_gc_lock_path_from_root(&root)
+}
+
+/// Pure resolver shared between the production code path and tests.
+/// Validates that the env-supplied root is non-empty after trimming.
+fn resolve_gc_lock_path_from_root(root_raw: &str) -> OpsResult<PathBuf> {
+    let trimmed = root_raw.trim();
+    if trimmed.is_empty() {
+        return Err(OpsError::invalid(
+            "CONTEXTGRAPH_DATA_ROOT",
+            "CONTEXTGRAPH_DATA_ROOT is empty after trimming; refusing to site the GC \
+             lock at an unspecified root",
+        ));
+    }
+    Ok(PathBuf::from(trimmed).join("state/locks/mejepa-gc.lock"))
+}
+
+#[cfg(test)]
+mod gc_lock_path_tests {
+    use super::resolve_gc_lock_path_from_root;
+    use std::path::PathBuf;
+
+    #[test]
+    fn empty_root_fails_closed() {
+        let err = resolve_gc_lock_path_from_root("").expect_err("empty must fail");
+        assert_eq!(err.code, "MEJEPA_HYGIENE_INVALID_CONFIG");
+    }
+
+    #[test]
+    fn whitespace_root_fails_closed() {
+        let err = resolve_gc_lock_path_from_root("   ").expect_err("whitespace must fail");
+        assert_eq!(err.code, "MEJEPA_HYGIENE_INVALID_CONFIG");
+        let detail = format!("{}", err);
+        assert!(detail.contains("CONTEXTGRAPH_DATA_ROOT"));
+    }
+
+    #[test]
+    fn populated_root_resolves_to_lock_path() {
+        let resolved =
+            resolve_gc_lock_path_from_root("/zfs/archive/contextgraph").expect("must resolve");
+        assert_eq!(
+            resolved,
+            PathBuf::from("/zfs/archive/contextgraph/state/locks/mejepa-gc.lock")
+        );
+    }
+
+    #[test]
+    fn root_is_trimmed_before_use() {
+        let resolved = resolve_gc_lock_path_from_root("  /tmp/cg-test  ").expect("must trim");
+        assert_eq!(
+            resolved,
+            PathBuf::from("/tmp/cg-test/state/locks/mejepa-gc.lock")
+        );
+    }
+
+    #[test]
+    fn does_not_bake_legacy_production_root() {
+        // F-015 regression: empty env must NOT silently default to the
+        // /zfs/archive/contextgraph production root.
+        let err = resolve_gc_lock_path_from_root("").unwrap_err();
+        let detail = format!("{}", err);
+        assert!(
+            !detail.contains("/zfs/archive/contextgraph/state/locks"),
+            "must not leak retired /zfs/archive production-root fallback: {detail}"
+        );
+    }
 }

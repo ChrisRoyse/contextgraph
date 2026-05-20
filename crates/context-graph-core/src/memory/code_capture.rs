@@ -480,18 +480,27 @@ mod tests {
     use std::collections::HashMap;
     use tokio::sync::RwLock;
 
-    /// Mock embedding provider for testing.
-    /// Returns zeroed SemanticFingerprint for all code.
-    struct MockCodeEmbedder;
+    /// M-M4 (GH #490, 2026-05-19): renamed from `MockCodeEmbedder`.
+    ///
+    /// Returns zeroed fingerprints (dimensions correct, values uniform). Used
+    /// only for CRUD glue-logic tests in this module — `test_capture_chunk`,
+    /// `test_capture_batch`, `test_delete_by_file` verify that the
+    /// `CodeCaptureService` correctly stores/retrieves/deletes entities keyed
+    /// off `id`. These tests do NOT verify embedding semantics, similarity
+    /// ranking, or search quality — those are covered by integration tests
+    /// against the production embedder pipeline.
+    struct IdentityCodeEmbedder;
 
     #[async_trait]
-    impl CodeEmbeddingProvider for MockCodeEmbedder {
+    impl CodeEmbeddingProvider for IdentityCodeEmbedder {
         async fn embed_code(
             &self,
             _code: &str,
             _context: Option<&str>,
         ) -> Result<SemanticFingerprint, CodeEmbedderError> {
-            // Return a zeroed fingerprint for testing
+            // Returns zeroed fingerprint — content-independent. The
+            // CRUD-glue tests in this module key off `entity.id`, not on
+            // fingerprint content, so the constant zero output is correct.
             Ok(SemanticFingerprint::zeroed())
         }
 
@@ -510,14 +519,18 @@ mod tests {
         }
     }
 
-    /// Mock storage for testing.
-    /// Stores full SemanticFingerprint per entity.
-    struct MockCodeStorage {
+    /// M-M4 (GH #490, 2026-05-19): renamed from `MockCodeStorage`.
+    ///
+    /// In-memory storage double whose `search_by_fingerprint` always returns
+    /// an empty Vec (CRUD-glue tests in this module do not exercise search).
+    /// `store` / `get` / `get_by_file` / `delete_file` are real in-memory
+    /// HashMap operations and are the actual subject under test.
+    struct EmptyResultCodeStorage {
         entities: RwLock<HashMap<Uuid, (CodeEntity, SemanticFingerprint)>>,
         file_index: RwLock<HashMap<String, Vec<Uuid>>>,
     }
 
-    impl MockCodeStorage {
+    impl EmptyResultCodeStorage {
         fn new() -> Self {
             Self {
                 entities: RwLock::new(HashMap::new()),
@@ -527,7 +540,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl CodeStorage for MockCodeStorage {
+    impl CodeStorage for EmptyResultCodeStorage {
         async fn store(
             &self,
             entity: &CodeEntity,
@@ -619,8 +632,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_capture_chunk() {
-        let embedder = Arc::new(MockCodeEmbedder);
-        let storage = Arc::new(MockCodeStorage::new());
+        let embedder = Arc::new(IdentityCodeEmbedder);
+        let storage = Arc::new(EmptyResultCodeStorage::new());
         let service =
             CodeCaptureService::new(embedder, storage.clone(), "test-session".to_string());
 
@@ -645,8 +658,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_capture_batch() {
-        let embedder = Arc::new(MockCodeEmbedder);
-        let storage = Arc::new(MockCodeStorage::new());
+        let embedder = Arc::new(IdentityCodeEmbedder);
+        let storage = Arc::new(EmptyResultCodeStorage::new());
         let service =
             CodeCaptureService::new(embedder, storage.clone(), "test-session".to_string());
 
@@ -667,8 +680,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_by_file() {
-        let embedder = Arc::new(MockCodeEmbedder);
-        let storage = Arc::new(MockCodeStorage::new());
+        let embedder = Arc::new(IdentityCodeEmbedder);
+        let storage = Arc::new(EmptyResultCodeStorage::new());
         let service =
             CodeCaptureService::new(embedder, storage.clone(), "test-session".to_string());
 
@@ -692,8 +705,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_content_error() {
-        let embedder = Arc::new(MockCodeEmbedder);
-        let storage = Arc::new(MockCodeStorage::new());
+        let embedder = Arc::new(IdentityCodeEmbedder);
+        let storage = Arc::new(EmptyResultCodeStorage::new());
         let service = CodeCaptureService::new(embedder, storage, "test-session".to_string());
 
         let chunk = create_test_chunk("empty", "   ");
@@ -705,25 +718,25 @@ mod tests {
     #[test]
     fn test_entity_type_conversion() {
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(
+            CodeCaptureService::<IdentityCodeEmbedder, EmptyResultCodeStorage>::convert_entity_type(
                 ChunkEntityType::Function
             ),
             Some(CodeEntityType::Function)
         );
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(
+            CodeCaptureService::<IdentityCodeEmbedder, EmptyResultCodeStorage>::convert_entity_type(
                 ChunkEntityType::Struct
             ),
             Some(CodeEntityType::Struct)
         );
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(
+            CodeCaptureService::<IdentityCodeEmbedder, EmptyResultCodeStorage>::convert_entity_type(
                 ChunkEntityType::Impl
             ),
             Some(CodeEntityType::Impl)
         );
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(
+            CodeCaptureService::<IdentityCodeEmbedder, EmptyResultCodeStorage>::convert_entity_type(
                 ChunkEntityType::Unknown
             ),
             None
@@ -733,27 +746,27 @@ mod tests {
     #[test]
     fn test_language_from_string() {
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string("rust"),
+            CodeCaptureService::<IdentityCodeEmbedder, EmptyResultCodeStorage>::language_from_string("rust"),
             Some(CodeLanguage::Rust)
         );
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string("Python"),
+            CodeCaptureService::<IdentityCodeEmbedder, EmptyResultCodeStorage>::language_from_string("Python"),
             Some(CodeLanguage::Python)
         );
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string("csharp"),
+            CodeCaptureService::<IdentityCodeEmbedder, EmptyResultCodeStorage>::language_from_string("csharp"),
             Some(CodeLanguage::CSharp)
         );
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string("Ruby"),
+            CodeCaptureService::<IdentityCodeEmbedder, EmptyResultCodeStorage>::language_from_string("Ruby"),
             Some(CodeLanguage::Ruby)
         );
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string("PHP"),
+            CodeCaptureService::<IdentityCodeEmbedder, EmptyResultCodeStorage>::language_from_string("PHP"),
             Some(CodeLanguage::Php)
         );
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string(
+            CodeCaptureService::<IdentityCodeEmbedder, EmptyResultCodeStorage>::language_from_string(
                 "unknown_lang"
             ),
             None

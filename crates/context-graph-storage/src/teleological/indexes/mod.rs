@@ -99,6 +99,13 @@ pub use hnsw_config::{
 pub use metrics::{
     compute_distance, cosine_similarity, distance_to_similarity, recommended_metric,
 };
+// F-026 Result-returning siblings (Sherlock investigation 2026-05-19).
+// New MCP-server callers MUST use these so bad input returns a structured
+// error instead of crashing the process.
+pub use metrics::{
+    try_compute_distance, try_cosine_similarity, try_distance_to_similarity,
+    try_recommended_metric, MetricError,
+};
 
 // Re-export from per-embedder index modules (TASK-CORE-007)
 pub use embedder_index::{validate_vector, EmbedderIndexOps, IndexError, IndexResult};

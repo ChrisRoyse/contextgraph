@@ -1804,8 +1804,22 @@ fn weekly_operational_summary(db: &DB) -> Result<WeeklyOperationalSummary> {
         weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_OOD_ESCALATIONS)?,
         weekly_session_cleanup_gc_event_count(db)?,
     );
-    summary.curiosity_ranking_section = weekly_curiosity_ranking_section(db).ok();
-    summary.operator_contributions_section = weekly_operator_contributions_section(db).ok();
+    // F-018 fail-closed: capture per-section errors into the rendered markdown
+    // so the operator sees a `status: error` section with the underlying error
+    // message, rather than silently omitting the section (which is
+    // indistinguishable from "queue empty" or "section never computed").
+    summary.curiosity_ranking_section = Some(match weekly_curiosity_ranking_section(db) {
+        Ok(section) => section,
+        Err(err) => format!(
+            "## Curiosity Ranking\n\n- status: error\n- error_message: {err}\n- source_of_truth: CF_MEJEPA_ACTIVE_LEARNING_QUEUE\n"
+        ),
+    });
+    summary.operator_contributions_section = Some(match weekly_operator_contributions_section(db) {
+        Ok(section) => section,
+        Err(err) => format!(
+            "## Operator Contributions\n\n- status: error\n- error_message: {err}\n- source_of_truth: CF_MEJEPA_OPERATOR_CONTRIBUTIONS\n"
+        ),
+    });
     Ok(summary)
 }
 
@@ -2782,5 +2796,61 @@ mod tests {
             }
             _ => panic!("expected panic task exit"),
         }
+    }
+
+    // ---------------------------------------------------------------
+    // F-018 / TASK-FIX-F-018 regression: weekly operational summary
+    // MUST capture per-section errors into the rendered markdown as
+    // `status: error` sections — never silently drop with `.ok()`.
+    // ---------------------------------------------------------------
+    #[test]
+    fn f_018_curiosity_section_captures_error_when_queue_bincode_is_corrupt() {
+        let temp = private_tempdir();
+        let db = open_mejepa_test_db(temp.path());
+        // Inject a deliberately corrupt bincode payload into the
+        // active-learning queue CF. The legitimate `active` key holds the
+        // bincode-encoded queue state; non-decodable bytes must surface as a
+        // structured weekly-report section, not be silently dropped.
+        let cf_name = context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE;
+        let cf = db.cf_handle(cf_name).expect("queue CF present");
+        db.put_cf(cf, b"active", b"\xff\xff\xff\xffnot-bincode")
+            .expect("write corrupt bytes");
+
+        let summary = weekly_operational_summary(&db).expect("summary returns Ok");
+        let section = summary
+            .curiosity_ranking_section
+            .as_deref()
+            .expect("F-018: curiosity section must be Some, never None");
+        assert!(
+            section.contains("status: error"),
+            "F-018: curiosity section must surface error status when bincode decode fails, got:\n{section}"
+        );
+        assert!(
+            section.contains("source_of_truth: CF_MEJEPA_ACTIVE_LEARNING_QUEUE"),
+            "F-018: error section must still report source-of-truth, got:\n{section}"
+        );
+    }
+
+    #[test]
+    fn f_018_curiosity_section_records_no_queue_when_active_key_absent() {
+        let temp = private_tempdir();
+        let db = open_mejepa_test_db(temp.path());
+        // No `active` key written → the legitimate "no_queue" early-return
+        // path in weekly_curiosity_ranking_section. Confirm the F-018 fix
+        // does NOT misclassify this as an error.
+        let summary = weekly_operational_summary(&db).expect("summary returns Ok");
+        let section = summary
+            .curiosity_ranking_section
+            .as_deref()
+            .expect("section is Some");
+        assert!(
+            section.contains("status: no_queue"),
+            "F-018: empty queue must surface as 'no_queue', not 'error', got:\n{section}"
+        );
+        // Negative assertion: must not have masked into a generic error.
+        assert!(
+            !section.contains("status: error"),
+            "F-018: empty queue must not be misclassified as error"
+        );
     }
 }

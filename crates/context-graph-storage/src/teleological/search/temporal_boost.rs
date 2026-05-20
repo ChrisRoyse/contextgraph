@@ -26,8 +26,10 @@ use context_graph_core::traits::{
     DecayFunction, SequenceDirection, TeleologicalSearchResult, TemporalSearchOptions, TimeWindow,
 };
 use context_graph_core::types::fingerprint::SemanticFingerprint;
-use tracing::debug;
+use tracing::{debug, warn};
 use uuid::Uuid;
+
+use super::error::SearchError;
 
 // =============================================================================
 // SHARED UTILITY FUNCTIONS
@@ -59,13 +61,25 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 
 /// Extract hour and day-of-week from a timestamp in milliseconds.
 ///
-/// Returns (hour: 0-23, day_of_week: 0-6 where 0=Sunday).
-fn extract_temporal_components(timestamp_ms: i64) -> (u8, u8) {
-    let datetime = DateTime::from_timestamp_millis(timestamp_ms).unwrap_or_else(Utc::now);
+/// Returns (hour: 0-23, day_of_week: 0-6 where 0=Sunday) on success.
+///
+/// # Fail-closed contract (F-007, Sherlock investigation 2026-05-19)
+///
+/// `chrono::DateTime::from_timestamp_millis` returns `None` for inputs outside
+/// the representable range (very negative values, values greater than
+/// ~8.64e15 ms ~= year 275760). The legacy implementation silently substituted
+/// `Utc::now()` here, which fabricated a "current" hour/dow for the corrupted
+/// record and made E2/E3/E4 features non-deterministic. The current
+/// implementation returns
+/// `SearchError::TimestampInvalid { timestamp_ms }` so the caller rejects the
+/// record from temporal scoring rather than coercing it to wall-clock time.
+fn extract_temporal_components(timestamp_ms: i64) -> Result<(u8, u8), SearchError> {
+    let datetime = DateTime::<Utc>::from_timestamp_millis(timestamp_ms)
+        .ok_or(SearchError::TimestampInvalid { timestamp_ms })?;
     let hour = datetime.hour() as u8;
     // chrono weekday: Mon=0, Sun=6, but we use Sun=0, Sat=6
     let dow = datetime.weekday().num_days_from_sunday() as u8;
-    (hour, dow)
+    Ok((hour, dow))
 }
 
 // =============================================================================
@@ -594,14 +608,42 @@ pub fn apply_temporal_boosts_v2(
                         &fp.e3_temporal_periodic,
                     );
                 } else {
-                    // Fall back to hour/day matching using chrono
-                    let (memory_hour, memory_dow) = extract_temporal_components(memory_ts);
-                    data.periodic_score = compute_periodic_match_fallback(
-                        periodic_opts.effective_hour(),
-                        memory_hour,
-                        periodic_opts.effective_day_of_week(),
-                        memory_dow,
-                    );
+                    // Fall back to hour/day matching using chrono.
+                    // F-007 fail-closed (Sherlock investigation 2026-05-19):
+                    // a memory record with a timestamp outside chrono's
+                    // representable range is REJECTED from temporal scoring
+                    // (recency / periodic / sequence all forced to 0.0)
+                    // rather than coerced to wall-clock time.
+                    match extract_temporal_components(memory_ts) {
+                        Ok((memory_hour, memory_dow)) => {
+                            data.periodic_score = compute_periodic_match_fallback(
+                                periodic_opts.effective_hour(),
+                                memory_hour,
+                                periodic_opts.effective_day_of_week(),
+                                memory_dow,
+                            );
+                        }
+                        Err(SearchError::TimestampInvalid { timestamp_ms }) => {
+                            warn!(
+                                memory_id = %id,
+                                timestamp_ms,
+                                "MEJEPA_TEMPORAL_TIMESTAMP_INVALID: rejecting memory from temporal periodic scoring"
+                            );
+                            data.recency_score = 0.0;
+                            data.periodic_score = 0.0;
+                            data.sequence_score = 0.0;
+                        }
+                        Err(other) => {
+                            warn!(
+                                memory_id = %id,
+                                error = ?other,
+                                "Unexpected SearchError from extract_temporal_components — rejecting memory from temporal scoring"
+                            );
+                            data.recency_score = 0.0;
+                            data.periodic_score = 0.0;
+                            data.sequence_score = 0.0;
+                        }
+                    }
                 }
             }
         }
@@ -1089,5 +1131,94 @@ mod tests {
             false,
         );
         assert_eq!(score, 0.0, "Before memory should fail After direction");
+    }
+
+    // =============================================================================
+    // F-007 REGRESSION TESTS (Sherlock investigation 2026-05-19)
+    //
+    // These tests assert that extract_temporal_components fails CLOSED on
+    // malformed timestamps rather than silently substituting Utc::now().
+    // The legacy implementation used `.unwrap_or_else(Utc::now)`, which made
+    // E2/E3/E4 features non-deterministic and let corrupted records appear
+    // artificially "current."
+    //
+    // If anyone re-introduces the `.unwrap_or_else(Utc::now)` shortcut, these
+    // tests fail.
+    // =============================================================================
+
+    #[test]
+    fn test_f007_extract_temporal_components_valid_timestamp_succeeds() {
+        // 2024-01-15T14:30:00Z = 1705328400000 ms
+        // Should resolve to hour=14, dow=Monday=1 (Sun=0 convention).
+        let (hour, dow) = extract_temporal_components(1_705_328_400_000)
+            .expect("valid timestamp must succeed");
+        assert_eq!(hour, 14, "hour should be 14 (UTC)");
+        assert_eq!(dow, 1, "day-of-week should be 1 (Monday, Sun=0 convention)");
+    }
+
+    #[test]
+    fn test_f007_extract_temporal_components_negative_overflow_rejected() {
+        // i64::MIN is far below chrono's representable range.
+        let result = extract_temporal_components(i64::MIN);
+        match result {
+            Err(SearchError::TimestampInvalid { timestamp_ms }) => {
+                assert_eq!(timestamp_ms, i64::MIN);
+            }
+            Ok(value) => panic!(
+                "F-007 REGRESSION: i64::MIN must fail closed, got Ok({:?})",
+                value
+            ),
+            Err(other) => panic!("expected TimestampInvalid, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_f007_extract_temporal_components_positive_overflow_rejected() {
+        // 1e18 ms = year ~33,658,089 — far beyond chrono's range.
+        let bad = 1_000_000_000_000_000_000_i64;
+        let result = extract_temporal_components(bad);
+        match result {
+            Err(SearchError::TimestampInvalid { timestamp_ms }) => {
+                assert_eq!(timestamp_ms, bad);
+            }
+            Ok(value) => panic!(
+                "F-007 REGRESSION: 1e18 ms must fail closed, got Ok({:?})",
+                value
+            ),
+            Err(other) => panic!("expected TimestampInvalid, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_f007_extract_temporal_components_i64_max_rejected() {
+        let result = extract_temporal_components(i64::MAX);
+        match result {
+            Err(SearchError::TimestampInvalid { timestamp_ms }) => {
+                assert_eq!(timestamp_ms, i64::MAX);
+            }
+            Ok(value) => panic!(
+                "F-007 REGRESSION: i64::MAX must fail closed, got Ok({:?})",
+                value
+            ),
+            Err(other) => panic!("expected TimestampInvalid, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_f007_extract_temporal_components_is_deterministic_on_error() {
+        // CRITICAL: the legacy implementation returned (current_hour, current_dow)
+        // from Utc::now() on malformed input — non-deterministic across calls.
+        // The current Err path MUST be deterministic.
+        let first = extract_temporal_components(i64::MAX);
+        let second = extract_temporal_components(i64::MAX);
+        match (first, second) {
+            (
+                Err(SearchError::TimestampInvalid { timestamp_ms: a }),
+                Err(SearchError::TimestampInvalid { timestamp_ms: b }),
+            ) => {
+                assert_eq!(a, b, "Err timestamp_ms must be deterministic across calls");
+            }
+            other => panic!("expected two TimestampInvalid errs, got {:?}", other),
+        }
     }
 }

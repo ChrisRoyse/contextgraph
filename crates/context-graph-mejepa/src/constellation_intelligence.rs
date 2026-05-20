@@ -457,7 +457,11 @@ pub fn summarize_dda_constellation_intelligence(
         .map(|acc| acc.finish(&source))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let consensus_from_embedder = cosine_mean_to_unit(per_embedder_sum, per_embedder_count);
+    let consensus_from_embedder = cosine_mean_to_unit(
+        per_embedder_sum,
+        per_embedder_count,
+        "constellation_intelligence.consensus_from_embedder",
+    )?;
     let pair_consensus =
         mean_probability(all_pair_evidence.iter().map(|pair| pair.consensus_score));
     let contradiction_score = max_probability(
@@ -690,12 +694,21 @@ fn pair_sort_score(pair: &SlotPairEvidence) -> f32 {
         .max(pair.redundancy_score)
 }
 
-fn cosine_mean_to_unit(sum: f64, n: usize) -> f32 {
+/// Converts a sum of cosines (range `[-n, n]`) into a unit-interval mean in `[0, 1]`.
+///
+/// Returns `Err(MejepaInferError::CosineMeanUndefinedNoSamples)` when `n == 0`.
+/// The original F-024 implementation silently substituted `0.5` ("neutral cosine") for
+/// the empty-sample case, which conflated "vectors are on average orthogonal" with "no
+/// input was observed." Downstream consumers consume this value as `consensus_score`
+/// and feed it into the Q2 verdict pressure; per FSV-PROTOCOL §3.5, missing-input fails
+/// closed with a structured `SCREAMING_SNAKE_CASE` error.
+fn cosine_mean_to_unit(sum: f64, n: usize, context: &str) -> Result<f32, MejepaInferError> {
     if n == 0 {
-        0.5
-    } else {
-        (((sum / n as f64) + 1.0) / 2.0).clamp(0.0, 1.0) as f32
+        return Err(MejepaInferError::CosineMeanUndefinedNoSamples {
+            context: context.to_string(),
+        });
     }
+    Ok((((sum / n as f64) + 1.0) / 2.0).clamp(0.0, 1.0) as f32)
 }
 
 fn mean_probability(values: impl IntoIterator<Item = f32>) -> f32 {
@@ -879,5 +892,25 @@ mod tests {
         pattern.evidence.relationship_pattern_id = Some("sha256:stale".to_string());
 
         assert!(pattern.validate().is_err());
+    }
+
+    /// F-024 regression: zero-sample input must fail closed in constellation_intelligence too.
+    /// Before the fix, `cosine_mean_to_unit(0.0, 0)` returned 0.5 ("neutral cosine"), which
+    /// downstream consumed as the `consensus_from_embedder` half of `consensus_score`. The
+    /// fail-closed contract surfaces upstream invariant violations rather than masking them
+    /// as a benign "orthogonal vectors" reading.
+    #[test]
+    fn cosine_mean_to_unit_zero_samples_fails_closed() {
+        let err = cosine_mean_to_unit(0.0, 0, "constellation_intelligence.unit_test")
+            .expect_err("zero samples must fail closed");
+        assert_eq!(err.code(), "MEJEPA_INFER_COSINE_MEAN_UNDEFINED_NO_SAMPLES");
+    }
+
+    /// F-024 regression: happy path agrees with the previous 0.5/perfectly-correlated semantics.
+    #[test]
+    fn cosine_mean_to_unit_perfect_correlation_yields_one() {
+        let v = cosine_mean_to_unit(3.0, 3, "constellation_intelligence.unit_test")
+            .expect("ok");
+        assert!((v - 1.0).abs() < 1e-6, "expected 1.0, got {v}");
     }
 }

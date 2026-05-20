@@ -212,12 +212,45 @@ impl LibraryChunkFoundationalityScore {
     }
 }
 
+/// Per-chunk scoring failure surfaced when `library_score_from_parts` returned
+/// an error during bedrock assembly. F-013 (#466) replaced the previous
+/// `filter_map(.ok())` silent-drop with explicit accumulation so operators can
+/// see WHICH chunks were dropped and WHY rather than only observing a smaller
+/// `top_chunks` list.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LibraryBedrockScoringFailure {
+    pub chunk_id: String,
+    pub reason: String,
+}
+
+impl LibraryBedrockScoringFailure {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_single_line(
+            "library_bedrock_scoring_failure.chunk_id",
+            &self.chunk_id,
+            512,
+        )?;
+        validate_single_line(
+            "library_bedrock_scoring_failure.reason",
+            &self.reason,
+            2048,
+        )?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct LibraryBedrockSummary {
     pub library_id: LibraryId,
     pub library_slug: String,
     pub top_chunks: Vec<LibraryChunkFoundationalityScore>,
+    /// F-013 (#466): per-library list of chunks whose bedrock scoring failed
+    /// during assembly. Empty when all chunks scored successfully. Surfaces
+    /// dropped rows so operators do not silently see an incomplete top-K.
+    #[serde(default)]
+    pub scoring_failures: Vec<LibraryBedrockScoringFailure>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -236,6 +269,11 @@ pub struct LibraryFoundationalityReport {
     pub cross_library_references: Vec<CrossLibraryReferenceCount>,
     pub per_library_bedrock: Vec<LibraryBedrockSummary>,
     pub cross_library_bedrock: Vec<LibraryChunkFoundationalityScore>,
+    /// F-013 (#466): cross-library bedrock scoring failures. Same semantic as
+    /// `LibraryBedrockSummary.scoring_failures` but for the cross-library
+    /// top-K assembly. Empty when all chunks scored successfully.
+    #[serde(default)]
+    pub cross_library_scoring_failures: Vec<LibraryBedrockScoringFailure>,
 }
 
 impl LibraryFoundationalityReport {
@@ -290,6 +328,17 @@ impl LibraryFoundationalityReport {
                     "reference hash must match report hash",
                 );
             }
+        }
+        // F-013 (#466): validate any per-library and cross-library scoring
+        // failures attached to the report so a malformed failure row (empty
+        // chunk_id, oversized reason) cannot slip through silently.
+        for bedrock in &self.per_library_bedrock {
+            for failure in &bedrock.scoring_failures {
+                failure.validate()?;
+            }
+        }
+        for failure in &self.cross_library_scoring_failures {
+            failure.validate()?;
         }
         Ok(())
     }
@@ -416,28 +465,42 @@ pub fn compute_library_foundationality(
                 ),
             );
         }
-        let mut library_scores = within_score_by_chunk
+        // F-013 (#466): replace the previous `filter_map(.ok())` silent drop
+        // with explicit failure accumulation so operators see WHICH chunks
+        // were dropped and WHY. The top_chunks list rank ordering is now
+        // explicitly auditable: any chunk missing from top_chunks either lost
+        // the rank race or has a corresponding entry in scoring_failures.
+        let mut library_scores: Vec<LibraryChunkFoundationalityScore> = Vec::new();
+        let mut library_scoring_failures: Vec<LibraryBedrockScoringFailure> = Vec::new();
+        for (_, within_hash, within_score) in within_score_by_chunk
             .values()
             .filter(|(score_library_id, _, _)| score_library_id == library_id)
-            .filter_map(|(_, within_hash, within_score)| {
-                library_score_from_parts(
-                    library_id,
-                    within_hash,
-                    within_score,
-                    &cross_score_by_chunk,
-                    &cross_counts,
-                    &cross_report.dependency_graph_sha256,
-                    computed_at_unix_ms,
-                )
-                .ok()
-            })
-            .collect::<Vec<_>>();
+        {
+            match library_score_from_parts(
+                library_id,
+                within_hash,
+                within_score,
+                &cross_score_by_chunk,
+                &cross_counts,
+                &cross_report.dependency_graph_sha256,
+                computed_at_unix_ms,
+            ) {
+                Ok(score) => library_scores.push(score),
+                Err(err) => library_scoring_failures.push(LibraryBedrockScoringFailure {
+                    chunk_id: within_score.chunk_id.clone(),
+                    reason: format!("{}: {err}", err.code()),
+                }),
+            }
+        }
         library_scores.sort_by(sort_within_library_scores);
         library_scores.truncate(10);
+        library_scoring_failures
+            .sort_by(|left, right| left.chunk_id.cmp(&right.chunk_id));
         per_library_bedrock.push(LibraryBedrockSummary {
             library_id: library_id.clone(),
             library_slug: library_id.slug(),
             top_chunks: library_scores,
+            scoring_failures: library_scoring_failures,
         });
     }
 
@@ -495,6 +558,13 @@ pub fn compute_library_foundationality(
         cross_library_references,
         per_library_bedrock,
         cross_library_bedrock,
+        // F-013 (#466): cross-library bedrock scoring is currently strict
+        // (errors propagate via `?` at the cross-library `scores` build above),
+        // so this vector is empty under the current implementation. The field
+        // is present in the schema so future relaxation of the cross-library
+        // path (matching the per-library failure-accumulation pattern) can
+        // populate it without a breaking schema change.
+        cross_library_scoring_failures: Vec::new(),
     };
     report.validate()?;
     Ok(report)
@@ -988,6 +1058,80 @@ mod tests {
             report.cross_library_bedrock[0].cross_library_upstream_count
                 > report.scores.last().unwrap().cross_library_upstream_count
         );
+    }
+
+    #[test]
+    fn happy_path_emits_empty_scoring_failures() {
+        // F-013 (#466) regression: on a well-formed corpus, all chunk rows
+        // score successfully, so every LibraryBedrockSummary.scoring_failures
+        // must be empty AND the report cross_library_scoring_failures must be
+        // empty. This guarantees the new sibling field is wired and serializes,
+        // and that we haven't accidentally elevated benign empty rows into
+        // failure entries.
+        let edges = fixture_edges();
+        let report = compute_library_foundationality(
+            &edges,
+            &fixture_registrations(),
+            42,
+            ChunkFoundationalityConfig::default(),
+        )
+        .unwrap();
+        for bedrock in &report.per_library_bedrock {
+            assert!(
+                bedrock.scoring_failures.is_empty(),
+                "library {} should have no scoring failures on the happy path; got {:?}",
+                bedrock.library_slug,
+                bedrock.scoring_failures
+            );
+        }
+        assert!(report.cross_library_scoring_failures.is_empty());
+    }
+
+    #[test]
+    fn library_bedrock_scoring_failure_validates_chunk_id_and_reason() {
+        // F-013 (#466) regression: ensure the validate() implementation
+        // rejects empty / oversized fields so a malformed failure row cannot
+        // slip past the persistence path.
+        let ok = LibraryBedrockScoringFailure {
+            chunk_id: "py:core".to_string(),
+            reason: "MEJEPA_INFER_INVALID_INPUT: deterministic test reason".to_string(),
+        };
+        ok.validate().expect("well-formed failure must validate");
+
+        let empty_chunk = LibraryBedrockScoringFailure {
+            chunk_id: String::new(),
+            reason: "any".to_string(),
+        };
+        assert!(empty_chunk.validate().is_err());
+
+        let huge_reason = LibraryBedrockScoringFailure {
+            chunk_id: "py:core".to_string(),
+            reason: "x".repeat(5_000),
+        };
+        assert!(huge_reason.validate().is_err());
+    }
+
+    #[test]
+    fn report_validate_rejects_invalid_scoring_failure_attached() {
+        // F-013 (#466) regression: validate() must traverse into the new
+        // scoring_failures fields. A report with a malformed failure must not
+        // survive validation.
+        let edges = fixture_edges();
+        let mut report = compute_library_foundationality(
+            &edges,
+            &fixture_registrations(),
+            42,
+            ChunkFoundationalityConfig::default(),
+        )
+        .unwrap();
+        assert!(report.validate().is_ok());
+        // Inject a malformed failure on the first per-library bedrock.
+        report.per_library_bedrock[0].scoring_failures = vec![LibraryBedrockScoringFailure {
+            chunk_id: String::new(),
+            reason: "synthetic injection".to_string(),
+        }];
+        let err = report.validate().unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_INVALID_INPUT");
     }
 
     #[test]

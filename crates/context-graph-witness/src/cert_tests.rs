@@ -332,3 +332,133 @@ fn manifest_hash_changes_when_artifacts_reordered() {
         compute_artifact_manifest_hash(&b)
     );
 }
+
+// -----------------------------------------------------------------------------
+// F-023 / #476 regression tests: WitnessChainInvalid must preserve the
+// underlying `WitnessError` cause rather than collapsing every failure to
+// `{ offset: 0 }`. Forensic auditors need the exact failure mode to recover.
+// -----------------------------------------------------------------------------
+
+fn issue_stage0() -> Stage0Certificate {
+    let artifacts = vec![ArtifactRef {
+        kind: "privacy_policy".into(),
+        content_hash: fixed_hash(0xAA),
+    }];
+    Stage0Certificate::issue("corpus-a", artifacts, "v1", 1, 1).unwrap()
+}
+
+#[test]
+fn witness_chain_invalid_preserves_prev_hash_mismatch_cause() {
+    let mut cert = issue_stage0();
+    // Append a second entry whose prev_hash is wrong (use ZERO_HASH instead
+    // of the first entry's chain_hash). verify_chain_bytes will report
+    // PrevHashMismatch { offset: 1 }.
+    let bogus_second = WitnessEntry::new(ZERO_HASH, fixed_hash(0xBB), 2, 1);
+    cert.witness_chain_segment
+        .extend_from_slice(&bogus_second.to_bytes());
+    let err = cert.verify().expect_err("prev-hash mismatch must reject");
+    assert_eq!(err.code(), "CERT_WITNESS_CHAIN_INVALID");
+    assert_eq!(
+        err.witness_chain_offset(),
+        Some(1),
+        "must preserve offset from PrevHashMismatch"
+    );
+    let cause = err
+        .witness_cause()
+        .expect("F-023: WitnessChainInvalid must carry an underlying cause");
+    assert!(
+        matches!(cause, WitnessError::PrevHashMismatch { offset: 1, .. }),
+        "cause must be PrevHashMismatch with the matching offset; got {cause:?}"
+    );
+    assert_eq!(cause.code(), "WITNESS_PREV_HASH_MISMATCH");
+}
+
+#[test]
+fn witness_chain_invalid_preserves_chain_length_invalid_cause() {
+    let mut cert = issue_stage0();
+    // Truncate to 50 bytes — not a multiple of WITNESS_ENTRY_SIZE (73).
+    cert.witness_chain_segment.truncate(50);
+    let err = cert.verify().expect_err("chain-length invalid must reject");
+    assert_eq!(err.code(), "CERT_WITNESS_CHAIN_INVALID");
+    assert_eq!(err.witness_chain_offset(), Some(0));
+    let cause = err
+        .witness_cause()
+        .expect("F-023: chain-length errors must carry cause");
+    assert!(
+        matches!(cause, WitnessError::ChainLengthInvalid { len: 50, .. }),
+        "cause must be ChainLengthInvalid with len=50; got {cause:?}"
+    );
+    assert_eq!(cause.code(), "WITNESS_CHAIN_LENGTH_INVALID");
+}
+
+#[test]
+fn witness_chain_invalid_does_not_collapse_distinct_causes() {
+    // F-023: BEFORE the fix, all errors collapsed to { offset: 0 } and were
+    // string-equal. AFTER the fix, the cause must be distinguishable.
+    let mut cert_prev = issue_stage0();
+    let bogus = WitnessEntry::new(ZERO_HASH, fixed_hash(0xBB), 2, 1);
+    cert_prev
+        .witness_chain_segment
+        .extend_from_slice(&bogus.to_bytes());
+    let err_prev = cert_prev.verify().unwrap_err();
+
+    let mut cert_len = issue_stage0();
+    cert_len.witness_chain_segment.truncate(50);
+    let err_len = cert_len.verify().unwrap_err();
+
+    // Same outer code, distinct preserved causes.
+    assert_eq!(err_prev.code(), err_len.code());
+    let cause_prev = err_prev.witness_cause().unwrap();
+    let cause_len = err_len.witness_cause().unwrap();
+    assert_ne!(
+        cause_prev.code(),
+        cause_len.code(),
+        "F-023: distinct WitnessErrors must remain distinguishable on CertError"
+    );
+    // And the Display output must include the cause.
+    let display_prev = format!("{err_prev}");
+    assert!(
+        display_prev.contains("prev hash"),
+        "Display must surface underlying cause; got: {display_prev}"
+    );
+}
+
+#[test]
+fn witness_entry_parse_failed_distinct_from_chain_invalid() {
+    // F-023 refinement: a parse failure on the segment must be the
+    // `WitnessEntryParseFailed` variant, not collapsed into WitnessChainInvalid.
+    //
+    // We construct a segment whose length IS a multiple of 73 (so the chain
+    // verification passes the length check) but where the second entry's
+    // prev_hash is INVALID. verify_chain_bytes finds the prev_hash mismatch
+    // first, so this exercises the WitnessChainInvalid path with cause
+    // preservation.
+    //
+    // To exercise the `from_bytes` failure path we need a single-entry chain
+    // that passes verify_chain_bytes (entries==1) but whose bytes still fail
+    // re-parse. Since from_bytes only checks length, and verify_chain_bytes
+    // also enforces length-as-multiple, both fail on the same length check.
+    // The structural guarantee is that any path that calls from_bytes after
+    // a successful verify_chain_bytes will succeed on input that has
+    // already been validated. Therefore the explicit WitnessEntryParseFailed
+    // variant exists as a defensive surface for future contract changes;
+    // we verify the variant + code are wired correctly via code().
+    use crate::cert::CertError;
+    let err = CertError::WitnessEntryParseFailed {
+        cause: Box::new(WitnessError::EntryLengthInvalid {
+            expected: 73,
+            actual: 50,
+        }),
+    };
+    assert_eq!(err.code(), "CERT_WITNESS_ENTRY_PARSE_FAILED");
+    let cause = err.witness_cause().expect("parse-failed must carry cause");
+    assert_eq!(cause.code(), "WITNESS_ENTRY_LENGTH_INVALID");
+}
+
+#[test]
+fn witness_cause_returns_none_for_non_witness_variants() {
+    use crate::cert::CertError;
+    let err = CertError::EmptyLeaves;
+    assert!(err.witness_cause().is_none());
+    assert!(err.witness_chain_offset().is_none());
+}

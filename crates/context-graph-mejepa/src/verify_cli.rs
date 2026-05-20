@@ -103,15 +103,31 @@ fn run_verify_report(
 
     let sample = sample_holdout_5pct(task, holdout_sample_pct, &corpus_root.join("holdout"))?;
     let (before, after) = append_corpus_entry(corpus_root, task, &patch_sha, &patch_bytes)?;
-    let (agreement_count, mut blockers) =
-        check_agreement(corpus_root, &sample, prediction_pass.unwrap_or(false))?;
+    // F-016 / issue #469: when the verdict is EscalateToHuman (no Pass|Fail
+    // emission), `prediction_pass == None`. The previous code passed
+    // `.unwrap_or(false)` into `check_agreement`, fabricating a phantom `false`
+    // verdict and polluting `agreement_count` with comparisons that never
+    // happened. Per CLAUDE.md §1 binary doctrine, an EscalateToHuman is NOT a
+    // Q2 binary emission and must NOT be compared against the oracle. We now
+    // branch explicitly: Some(value) runs the real agreement check; None skips
+    // it entirely and emits zero counts. The MEJEPA_VERIFY_VERDICT_NOT_APPROVED
+    // blocker remains the singular signal that no binary prediction was made.
+    let (agreement_count, mut blockers) = match prediction_pass {
+        Some(prediction_pass_value) => {
+            check_agreement(corpus_root, &sample, prediction_pass_value)?
+        }
+        None => (0usize, Vec::<String>::new()),
+    };
     let me_jepa_predicts_match_oracle =
         prediction_pass.is_some() && agreement_count == sample.len() && !sample.is_empty();
 
     if prediction_pass.is_none() {
         blockers.push("MEJEPA_VERIFY_VERDICT_NOT_APPROVED".to_string());
-    }
-    if !me_jepa_predicts_match_oracle {
+    } else if !me_jepa_predicts_match_oracle {
+        // Only emit a disagreement blocker if a real prediction was made.
+        // When prediction_pass is None, MEJEPA_VERIFY_VERDICT_NOT_APPROVED is
+        // the correct semantic and a fabricated DISAGREEMENT would mis-attribute
+        // the failure mode.
         blockers.push(format!(
             "MEJEPA_VERIFY_ORACLE_DISAGREEMENT:sample_size={} agreement_count={agreement_count}",
             sample.len()

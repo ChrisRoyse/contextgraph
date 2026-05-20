@@ -15,6 +15,18 @@ pub enum TrainerErrorCode {
     MejepaTrainConfigInvalid,
     MejepaTrainEmbedderDigestMismatch,
     ReplayBufferDegeneratePriority,
+    /// Trainer-side gate (F-001): observed (adversarial + cross_task) fallback ratio
+    /// exceeded `DEFAULT_FALLBACK_WARNING_RATIO` for the current batch plan. Emitted
+    /// by `sampler::cross_task::enforce_fallback_warning_ratio`.
+    MejepaTrainFallbackRatioExceeded,
+    /// Patch-similarity cosine helper (F-008/F-009): the two vectors disagreed on
+    /// dimension. This is a structural slot-identity violation per CLAUDE.md §6.2,
+    /// not a runtime "low similarity" event.
+    MejepaTrainPatchSimilarityDimMismatch,
+    /// Patch-similarity cosine helper (F-008/F-009): one or both vectors had an L2
+    /// norm of zero. A zero vector has no defined cosine and must not silently
+    /// collapse to 0.0 (orthogonal).
+    MejepaTrainPatchSimilarityZeroNormVector,
 }
 
 impl TrainerErrorCode {
@@ -31,6 +43,13 @@ impl TrainerErrorCode {
             Self::MejepaTrainConfigInvalid => "MEJEPA_TRAIN_CONFIG_INVALID",
             Self::MejepaTrainEmbedderDigestMismatch => "MEJEPA_TRAIN_EMBEDDER_DIGEST_MISMATCH",
             Self::ReplayBufferDegeneratePriority => "REPLAY_BUFFER_DEGENERATE_PRIORITY",
+            Self::MejepaTrainFallbackRatioExceeded => "MEJEPA_TRAIN_FALLBACK_RATIO_EXCEEDED",
+            Self::MejepaTrainPatchSimilarityDimMismatch => {
+                "MEJEPA_TRAIN_PATCH_SIMILARITY_DIM_MISMATCH"
+            }
+            Self::MejepaTrainPatchSimilarityZeroNormVector => {
+                "MEJEPA_TRAIN_PATCH_SIMILARITY_ZERO_NORM_VECTOR"
+            }
         }
     }
 }

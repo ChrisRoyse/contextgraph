@@ -185,10 +185,25 @@ fn run_skill_set_query(request: SkillSetQueryRequest) -> AnyhowResult<Value> {
 fn run_skill_coverage_audit(request: SkillCoverageAuditRequest) -> AnyhowResult<Value> {
     let db_path = resolve_skill_db_path(request.db_path)?;
     let source_index = optional_source_index(request.chunks_jsonl.as_deref())?;
-    let chunk_universe = source_index
-        .as_ref()
-        .map(context_graph_mejepa_train::ChunkSourceIndex::chunk_ids)
-        .unwrap_or_default();
+    // F-029 / #481: make the universe-resolution semantics explicit.
+    //
+    // `skill_coverage_audit` interprets an empty `chunk_universe` slice as
+    // "use the universe derived from CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP rows"
+    // (see skill_linkage.rs:288). When the caller supplies a `chunks_jsonl`
+    // file, the audit is bounded to that explicit universe; when omitted,
+    // the audit derives the universe from the CF rows.
+    //
+    // Encoding this as `unwrap_or_default()` collapsed the two distinct
+    // modes into a single Vec<String> with no audit trail. We now branch
+    // explicitly so the MCP response payload distinguishes the two modes
+    // via `chunk_universe_source`, restoring SoT readback integrity.
+    let (chunk_universe, chunk_universe_source) = match source_index.as_ref() {
+        Some(index) => (
+            context_graph_mejepa_train::ChunkSourceIndex::chunk_ids(index),
+            "explicit_jsonl",
+        ),
+        None => (Vec::new(), "cf_derived"),
+    };
     let db = context_graph_mejepa_train::open_skill_linkage_rocksdb(&db_path, false)
         .with_context(|| format!("open skill linkage DB {}", db_path.display()))?;
     let report = context_graph_mejepa_train::skill_coverage_audit(
@@ -199,6 +214,8 @@ fn run_skill_coverage_audit(request: SkillCoverageAuditRequest) -> AnyhowResult<
     Ok(json!({
         "tool": tool_names::MEJEPA_SKILL_COVERAGE_AUDIT,
         "sourceOfTruth": source_of_truth(&db_path, request.chunks_jsonl.as_deref()),
+        "chunkUniverseSource": chunk_universe_source,
+        "chunkUniverseSize": chunk_universe.len(),
         "report": report
     }))
 }

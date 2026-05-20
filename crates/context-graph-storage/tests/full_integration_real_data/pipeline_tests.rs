@@ -17,8 +17,8 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use crate::helpers::{
-    create_initialized_store, create_real_fingerprint, generate_real_semantic_fingerprint,
-    generate_real_sparse_vector,
+    create_initialized_store, create_random_fingerprint, generate_random_semantic_fingerprint,
+    generate_random_sparse_vector,
 };
 
 // =============================================================================
@@ -49,7 +49,7 @@ async fn test_full_storage_pipeline_real_data() {
     let mut stored: Vec<TeleologicalFingerprint> = Vec::with_capacity(COUNT);
 
     for _ in 0..COUNT {
-        let fp = create_real_fingerprint();
+        let fp = create_random_fingerprint();
         store.store(fp.clone()).await.expect("Failed to store");
         stored.push(fp);
     }
@@ -66,7 +66,7 @@ async fn test_full_storage_pipeline_real_data() {
         ..Default::default()
     };
 
-    let query_semantic = generate_real_semantic_fingerprint();
+    let query_semantic = generate_random_semantic_fingerprint();
     let semantic_results = store
         .search_semantic(&query_semantic, search_options.clone())
         .await
@@ -82,7 +82,7 @@ async fn test_full_storage_pipeline_real_data() {
     );
 
     // Test sparse search
-    let query_sparse = generate_real_sparse_vector(50);
+    let query_sparse = generate_random_sparse_vector(50);
     let sparse_results = store
         .search_sparse(&query_sparse, 10)
         .await
@@ -146,7 +146,7 @@ async fn test_physical_persistence_across_restart() {
 
     // Generate fingerprints with known IDs
     let test_fingerprints: Vec<TeleologicalFingerprint> =
-        (0..10).map(|_| create_real_fingerprint()).collect();
+        (0..10).map(|_| create_random_fingerprint()).collect();
 
     let test_ids: Vec<Uuid> = test_fingerprints.iter().map(|fp| fp.id).collect();
 
@@ -258,7 +258,7 @@ async fn test_all_column_families_populated() {
     let store = create_initialized_store(temp_dir.path());
 
     // Store a fingerprint
-    let fp = create_real_fingerprint();
+    let fp = create_random_fingerprint();
     let id = fp.id;
 
     println!("[BEFORE] Storing fingerprint {} to populate CFs", id);

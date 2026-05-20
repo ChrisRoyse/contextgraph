@@ -3,8 +3,41 @@
 //! # FAIL FAST. NO FALLBACKS.
 //!
 //! Invalid inputs panic immediately. No silent defaults.
+//!
+//! # F-026 Sherlock investigation 2026-05-19
+//!
+//! Panics are fail-closed but they CRASH the MCP server process. Per the
+//! audit findings, the MCP server must return a structured error response,
+//! not abort. This module now exposes `try_*` siblings of every panicking
+//! function (`try_recommended_metric`, `try_compute_distance`,
+//! `try_distance_to_similarity`, `try_cosine_similarity`) that return
+//! `Result<_, MetricError>` instead of panicking. New callers MUST use the
+//! `try_*` variants; legacy callers (and the existing `#[should_panic]`
+//! tests) continue to use the panicking variants.
 
 use super::hnsw_config::{DistanceMetric, EmbedderIndex};
+
+/// Structured errors for the Result-returning metric helpers (F-026).
+///
+/// Per F-026 (Sherlock investigation 2026-05-19): the legacy `panic!`
+/// helpers crash the MCP server process on bad input. These structured
+/// errors let the server return a JSON-RPC error instead of aborting.
+///
+/// All variants use `SCREAMING_SNAKE_CASE` codes in their `Display`
+/// implementation so operators can grep logs for the failure mode.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MetricError {
+    #[error("METRIC_INDEX_OUT_OF_RANGE: embedder_idx={embedder_idx} valid_max=12")]
+    IndexOutOfRange { embedder_idx: usize },
+    #[error("METRIC_INVERTED_INDEX_EMBEDDER: embedder={embedder:?} uses inverted index, not vector distance")]
+    InvertedIndexEmbedder { embedder: EmbedderIndex },
+    #[error("METRIC_DIMENSION_MISMATCH: left={left} right={right}")]
+    DimensionMismatch { left: usize, right: usize },
+    #[error("METRIC_EMPTY_VECTORS")]
+    EmptyVectors,
+    #[error("METRIC_MAXSIM_REQUIRES_TOKEN_LEVEL: cannot use MaxSim at vector level")]
+    MaxSimRequiresTokenLevel,
+}
 
 /// Get recommended distance metric for embedder by 0-12 index.
 ///
@@ -167,6 +200,138 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 
     dot / denominator
+}
+
+// ============================================================================
+// F-026 Result-returning siblings (Sherlock investigation 2026-05-19)
+//
+// These functions mirror the panicking ones above but return
+// `Result<_, MetricError>` so the MCP server can surface a JSON-RPC error
+// instead of crashing on bad input. New callers MUST use these.
+// ============================================================================
+
+/// Result-returning variant of `recommended_metric` (F-026).
+pub fn try_recommended_metric(embedder_idx: usize) -> Result<DistanceMetric, MetricError> {
+    if embedder_idx >= 13 {
+        return Err(MetricError::IndexOutOfRange { embedder_idx });
+    }
+    let embedder = EmbedderIndex::from_index(embedder_idx);
+    match embedder {
+        EmbedderIndex::E5Causal => Ok(DistanceMetric::AsymmetricCosine),
+        EmbedderIndex::E6Sparse | EmbedderIndex::E13Splade => {
+            Err(MetricError::InvertedIndexEmbedder { embedder })
+        }
+        EmbedderIndex::E12LateInteraction => Ok(DistanceMetric::MaxSim),
+        _ => Ok(DistanceMetric::Cosine),
+    }
+}
+
+/// Result-returning variant of `compute_distance` (F-026).
+///
+/// Returns `MetricError::DimensionMismatch` / `EmptyVectors` /
+/// `MaxSimRequiresTokenLevel` instead of panicking.
+pub fn try_compute_distance(
+    a: &[f32],
+    b: &[f32],
+    metric: DistanceMetric,
+) -> Result<f32, MetricError> {
+    if a.len() != b.len() {
+        return Err(MetricError::DimensionMismatch {
+            left: a.len(),
+            right: b.len(),
+        });
+    }
+    if a.is_empty() {
+        return Err(MetricError::EmptyVectors);
+    }
+
+    match metric {
+        DistanceMetric::Cosine | DistanceMetric::AsymmetricCosine => {
+            let mut dot = 0.0f32;
+            let mut norm_a = 0.0f32;
+            let mut norm_b = 0.0f32;
+            for i in 0..a.len() {
+                dot += a[i] * b[i];
+                norm_a += a[i] * a[i];
+                norm_b += b[i] * b[i];
+            }
+            let norm_a = norm_a.sqrt();
+            let norm_b = norm_b.sqrt();
+            if norm_a < f32::EPSILON || norm_b < f32::EPSILON {
+                return Ok(1.0); // Maximum distance for zero vectors
+            }
+            Ok(1.0 - (dot / (norm_a * norm_b)))
+        }
+        DistanceMetric::DotProduct => {
+            let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+            Ok(-dot)
+        }
+        DistanceMetric::Euclidean => Ok(a
+            .iter()
+            .zip(b.iter())
+            .map(|(x, y)| (x - y).powi(2))
+            .sum::<f32>()
+            .sqrt()),
+        DistanceMetric::MaxSim => Err(MetricError::MaxSimRequiresTokenLevel),
+    }
+}
+
+/// Result-returning variant of `distance_to_similarity` (F-026).
+pub fn try_distance_to_similarity(
+    distance: f32,
+    metric: DistanceMetric,
+) -> Result<f32, MetricError> {
+    match metric {
+        DistanceMetric::Cosine | DistanceMetric::AsymmetricCosine => {
+            Ok(((2.0 - distance) / 2.0).clamp(0.0, 1.0))
+        }
+        DistanceMetric::DotProduct => {
+            let dp = -distance;
+            Ok(1.0 / (1.0 + (-dp).exp()))
+        }
+        DistanceMetric::Euclidean => Ok((-distance).exp()),
+        DistanceMetric::MaxSim => Err(MetricError::MaxSimRequiresTokenLevel),
+    }
+}
+
+/// Result-returning variant of `cosine_similarity` (F-026).
+///
+/// Returns `MetricError::DimensionMismatch` / `EmptyVectors` instead of
+/// panicking, so the MCP server can surface a JSON-RPC error rather than
+/// crashing the process.
+pub fn try_cosine_similarity(a: &[f32], b: &[f32]) -> Result<f32, MetricError> {
+    if a.len() != b.len() {
+        return Err(MetricError::DimensionMismatch {
+            left: a.len(),
+            right: b.len(),
+        });
+    }
+    if a.is_empty() {
+        return Err(MetricError::EmptyVectors);
+    }
+
+    let mut dot = 0.0f32;
+    let mut norm_a = 0.0f32;
+    let mut norm_b = 0.0f32;
+    for i in 0..a.len() {
+        dot += a[i] * b[i];
+        norm_a += a[i] * a[i];
+        norm_b += b[i] * b[i];
+    }
+
+    let denominator = norm_a.sqrt() * norm_b.sqrt();
+    if denominator < f32::EPSILON {
+        // Same zero-norm semantics as the panicking sibling — diagnostic
+        // log + 0.0 return (NOT an error variant). Zero-norm is a valid
+        // runtime state (already rejected at insertion per STOR-M1); a
+        // dimension mismatch is the structural bug we surface as Err.
+        tracing::warn!(
+            "Zero-norm vector detected in try_cosine_similarity — should have been rejected at insertion"
+        );
+        return Ok(0.0);
+    }
+
+    Ok(dot / denominator)
 }
 
 // ============================================================================
@@ -588,4 +753,183 @@ mod tests {
     // -------------------------------------------------------------------------
     // Verification Log Test
     // -------------------------------------------------------------------------
+
+    // =========================================================================
+    // F-026 REGRESSION TESTS (Sherlock investigation 2026-05-19)
+    //
+    // These tests assert that the `try_*` siblings return structured errors
+    // instead of panicking. If anyone replaces them with the panicking
+    // helpers, these tests fail because they expect Result.
+    //
+    // Uses deterministic Gaussian samples via SplitMix64+Box-Muller per
+    // tier-compression test convention — NOT sin waves.
+    // =========================================================================
+
+    fn f026_splitmix64(seed: u64) -> u64 {
+        let mut z = seed.wrapping_add(0x9E3779B97F4A7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+        z ^ (z >> 31)
+    }
+
+    fn f026_gaussian(seed: u64) -> f32 {
+        let r1 = f026_splitmix64(seed.wrapping_mul(2)) >> 11;
+        let r2 = f026_splitmix64(seed.wrapping_mul(2).wrapping_add(1)) >> 11;
+        let u1 = (r1 as f64 + 1.0) / ((1u64 << 53) as f64 + 1.0);
+        let u2 = (r2 as f64 + 1.0) / ((1u64 << 53) as f64 + 1.0);
+        let r = (-2.0 * u1.ln()).sqrt();
+        let theta = 2.0 * std::f64::consts::PI * u2;
+        let z = r * theta.cos();
+        z.tanh() as f32
+    }
+
+    fn f026_vec(n: usize, seed: u64) -> Vec<f32> {
+        (0..n)
+            .map(|i| f026_gaussian(seed.wrapping_add(i as u64)))
+            .collect()
+    }
+
+    #[test]
+    fn test_f026_try_recommended_metric_oob_returns_err() {
+        match try_recommended_metric(13) {
+            Err(MetricError::IndexOutOfRange { embedder_idx }) => {
+                assert_eq!(embedder_idx, 13);
+            }
+            other => panic!("expected IndexOutOfRange, got {:?}", other),
+        }
+        match try_recommended_metric(99) {
+            Err(MetricError::IndexOutOfRange { embedder_idx }) => {
+                assert_eq!(embedder_idx, 99);
+            }
+            other => panic!("expected IndexOutOfRange, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_f026_try_recommended_metric_inverted_returns_err() {
+        match try_recommended_metric(5) {
+            Err(MetricError::InvertedIndexEmbedder { embedder }) => {
+                assert_eq!(embedder, EmbedderIndex::E6Sparse);
+            }
+            other => panic!("expected InvertedIndexEmbedder, got {:?}", other),
+        }
+        match try_recommended_metric(12) {
+            Err(MetricError::InvertedIndexEmbedder { embedder }) => {
+                assert_eq!(embedder, EmbedderIndex::E13Splade);
+            }
+            other => panic!("expected InvertedIndexEmbedder, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_f026_try_recommended_metric_happy_path() {
+        assert_eq!(try_recommended_metric(0).unwrap(), DistanceMetric::Cosine);
+        assert_eq!(
+            try_recommended_metric(4).unwrap(),
+            DistanceMetric::AsymmetricCosine
+        );
+        assert_eq!(try_recommended_metric(11).unwrap(), DistanceMetric::MaxSim);
+    }
+
+    #[test]
+    fn test_f026_try_compute_distance_dim_mismatch_returns_err() {
+        let a = f026_vec(64, 0x111);
+        let b = f026_vec(128, 0x222);
+        match try_compute_distance(&a, &b, DistanceMetric::Cosine) {
+            Err(MetricError::DimensionMismatch { left, right }) => {
+                assert_eq!(left, 64);
+                assert_eq!(right, 128);
+            }
+            other => panic!("expected DimensionMismatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_f026_try_compute_distance_empty_returns_err() {
+        let result = try_compute_distance(&[], &[], DistanceMetric::Cosine);
+        assert_eq!(result, Err(MetricError::EmptyVectors));
+    }
+
+    #[test]
+    fn test_f026_try_compute_distance_maxsim_returns_err() {
+        let a = f026_vec(64, 0xAAA);
+        let b = f026_vec(64, 0xBBB);
+        let result = try_compute_distance(&a, &b, DistanceMetric::MaxSim);
+        assert_eq!(result, Err(MetricError::MaxSimRequiresTokenLevel));
+    }
+
+    #[test]
+    fn test_f026_try_compute_distance_happy_path_matches_panic_helper() {
+        let a = f026_vec(128, 0x5_a_d_b_e_e_f);
+        let b = f026_vec(128, 0x5_a_d_b_e_e_f);
+        let try_val = try_compute_distance(&a, &b, DistanceMetric::Cosine)
+            .expect("identical inputs valid");
+        let panic_val = compute_distance(&a, &b, DistanceMetric::Cosine);
+        assert!(
+            (try_val - panic_val).abs() < 1e-5,
+            "try={try_val} panic={panic_val}"
+        );
+    }
+
+    #[test]
+    fn test_f026_try_cosine_similarity_dim_mismatch_returns_err() {
+        let a = f026_vec(32, 0x1234);
+        let b = f026_vec(64, 0x1234);
+        match try_cosine_similarity(&a, &b) {
+            Err(MetricError::DimensionMismatch { left, right }) => {
+                assert_eq!(left, 32);
+                assert_eq!(right, 64);
+            }
+            other => panic!("expected DimensionMismatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_f026_try_cosine_similarity_empty_returns_err() {
+        let result = try_cosine_similarity(&[], &[]);
+        assert_eq!(result, Err(MetricError::EmptyVectors));
+    }
+
+    #[test]
+    fn test_f026_try_cosine_similarity_zero_norm_returns_zero() {
+        // Zero-norm is a valid runtime state (per STOR-M1 rejection at
+        // insertion); return 0.0 not an error variant.
+        let zero = vec![0.0_f32; 128];
+        let nonzero = f026_vec(128, 0xC0DE);
+        let result = try_cosine_similarity(&zero, &nonzero);
+        assert_eq!(result, Ok(0.0));
+    }
+
+    #[test]
+    fn test_f026_try_cosine_similarity_happy_path() {
+        let a = f026_vec(256, 0x99);
+        let b = a.clone();
+        let result = try_cosine_similarity(&a, &b).expect("identical inputs valid");
+        assert!((result - 1.0).abs() < 1e-5, "identical cosine ≈ 1.0, got {result}");
+    }
+
+    #[test]
+    fn test_f026_try_distance_to_similarity_maxsim_returns_err() {
+        let result = try_distance_to_similarity(0.5, DistanceMetric::MaxSim);
+        assert_eq!(result, Err(MetricError::MaxSimRequiresTokenLevel));
+    }
+
+    #[test]
+    fn test_f026_metric_error_variants_use_screaming_snake_case() {
+        let oob = MetricError::IndexOutOfRange { embedder_idx: 99 };
+        let mismatch = MetricError::DimensionMismatch {
+            left: 1,
+            right: 2,
+        };
+        let empty = MetricError::EmptyVectors;
+        let inverted = MetricError::InvertedIndexEmbedder {
+            embedder: EmbedderIndex::E6Sparse,
+        };
+        let maxsim = MetricError::MaxSimRequiresTokenLevel;
+        assert!(format!("{oob}").contains("METRIC_INDEX_OUT_OF_RANGE"));
+        assert!(format!("{mismatch}").contains("METRIC_DIMENSION_MISMATCH"));
+        assert!(format!("{empty}").contains("METRIC_EMPTY_VECTORS"));
+        assert!(format!("{inverted}").contains("METRIC_INVERTED_INDEX_EMBEDDER"));
+        assert!(format!("{maxsim}").contains("METRIC_MAXSIM_REQUIRES_TOKEN_LEVEL"));
+    }
 }

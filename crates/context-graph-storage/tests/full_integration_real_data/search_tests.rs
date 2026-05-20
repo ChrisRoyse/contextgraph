@@ -6,7 +6,7 @@ use context_graph_core::traits::TeleologicalMemoryStore;
 use context_graph_core::types::fingerprint::SemanticFingerprint;
 use tempfile::TempDir;
 
-use crate::helpers::{create_initialized_store, create_real_fingerprint};
+use crate::helpers::{create_initialized_store, create_random_fingerprint};
 
 // =============================================================================
 // TEST 6: Search Accuracy Test
@@ -22,12 +22,12 @@ async fn test_search_returns_correct_results() {
     // Store 50 random fingerprints
     println!("[SETUP] Storing 50 fingerprints...");
     for _ in 0..50 {
-        let fp = create_real_fingerprint();
+        let fp = create_random_fingerprint();
         store.store(fp).await.expect("Failed to store");
     }
 
     // Store one fingerprint with known E1 vector for searching
-    let mut known_fp = create_real_fingerprint();
+    let mut known_fp = create_random_fingerprint();
     // Set E1 to a known pattern: first 100 elements = 1/sqrt(100), rest = 0
     let norm = 100.0_f32.sqrt();
     known_fp.semantic.e1_semantic = vec![0.0; 1024];

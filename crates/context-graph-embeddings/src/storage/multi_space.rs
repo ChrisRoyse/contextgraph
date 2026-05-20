@@ -364,15 +364,27 @@ mod tests {
     use super::*;
 
     // -------------------------------------------------------------------------
-    // TEST FIXTURES (REAL DATA, NO MOCKS)
+    // TEST DOUBLES — pre-seeded results for index-infrastructure testing
+    // (NOT search-quality tests).
+    //
+    // M-L1 (GH #492, 2026-05-19): banner corrected. `PreSeededTestStorage::
+    // get_fingerprint` always returns Ok(None) and `PreSeededHnswManager::
+    // search_embedder` returns whatever the test author injected via
+    // `set_results()`. Tests in this module exercise ranking / dedup / RRF /
+    // weight-application machinery, NOT search quality against real embedder
+    // outputs.
     // -------------------------------------------------------------------------
 
-    /// Test storage that uses in-memory HashMap (still real data structures)
-    struct TestStorage {
+    /// Pre-seeded storage double for index-infrastructure tests.
+    ///
+    /// `get_fingerprint` always returns Ok(None) — these tests do not depend
+    /// on stored fingerprint payloads. `get_topic_profile` returns whatever
+    /// was previously installed via `add_topic_profile`.
+    struct PreSeededTestStorage {
         topic_profiles: HashMap<Uuid, [f32; 14]>,
     }
 
-    impl TestStorage {
+    impl PreSeededTestStorage {
         fn new() -> Self {
             Self {
                 topic_profiles: HashMap::new(),
@@ -385,7 +397,7 @@ mod tests {
         }
     }
 
-    impl QuantizedFingerprintRetriever for TestStorage {
+    impl QuantizedFingerprintRetriever for PreSeededTestStorage {
         fn get_fingerprint(
             &self,
             _id: Uuid,
@@ -399,12 +411,17 @@ mod tests {
         }
     }
 
-    /// Test HNSW manager with fixed results
-    struct TestHnswManager {
+    /// Pre-seeded HNSW manager double — `search_embedder` returns whatever
+    /// was injected via `set_results()`, regardless of the query vector.
+    ///
+    /// Tests using this double verify ranking / dedup / RRF / weight
+    /// machinery; they do NOT verify HNSW recall quality or embedder-output
+    /// semantics.
+    struct PreSeededHnswManager {
         results: HashMap<u8, Vec<(Uuid, f32)>>,
     }
 
-    impl TestHnswManager {
+    impl PreSeededHnswManager {
         fn new() -> Self {
             Self {
                 results: HashMap::new(),
@@ -416,7 +433,7 @@ mod tests {
         }
     }
 
-    impl MultiSpaceIndexProvider for TestHnswManager {
+    impl MultiSpaceIndexProvider for PreSeededHnswManager {
         fn search_embedder(
             &self,
             embedder_idx: u8,
@@ -447,14 +464,14 @@ mod tests {
     // LOW-3 Note: Tests in this module use zeroed query vectors (vec![0.0f32; N])
     // intentionally. They test index *infrastructure* — ranking, deduplication,
     // RRF formula, weight application, and error handling — NOT search quality.
-    // The TestHnswManager returns pre-configured results regardless of query
+    // The PreSeededHnswManager returns pre-configured results regardless of query
     // content, so the query vector values are irrelevant. Search quality with
     // real embeddings is validated by benchmark suites.
 
     #[test]
     fn test_single_space_search_returns_ranked_results() {
-        let storage = Arc::new(TestStorage::new());
-        let mut hnsw = TestHnswManager::new();
+        let storage = Arc::new(PreSeededTestStorage::new());
+        let mut hnsw = PreSeededHnswManager::new();
 
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
@@ -481,8 +498,8 @@ mod tests {
 
     #[test]
     fn test_rrf_fusion_formula_matches_constitution() {
-        let storage = Arc::new(TestStorage::new());
-        let mut hnsw = TestHnswManager::new();
+        let storage = Arc::new(PreSeededTestStorage::new());
+        let mut hnsw = PreSeededHnswManager::new();
 
         let id1 = Uuid::new_v4();
 
@@ -529,8 +546,8 @@ mod tests {
 
     #[test]
     fn test_purpose_weights_affect_ranking() {
-        let storage = Arc::new(TestStorage::new());
-        let mut hnsw = TestHnswManager::new();
+        let storage = Arc::new(PreSeededTestStorage::new());
+        let mut hnsw = PreSeededHnswManager::new();
 
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
@@ -588,8 +605,8 @@ mod tests {
     /// Edge Case 1: RRF with single embedder (degenerate case)
     #[test]
     fn test_edge_case_single_embedder_rrf() {
-        let storage = Arc::new(TestStorage::new());
-        let mut hnsw = TestHnswManager::new();
+        let storage = Arc::new(PreSeededTestStorage::new());
+        let mut hnsw = PreSeededHnswManager::new();
 
         let ids: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
         hnsw.set_results(
@@ -625,8 +642,8 @@ mod tests {
     /// Edge Case 2: Document appears in subset of queried spaces
     #[test]
     fn test_edge_case_partial_space_coverage() {
-        let storage = Arc::new(TestStorage::new());
-        let mut hnsw = TestHnswManager::new();
+        let storage = Arc::new(PreSeededTestStorage::new());
+        let mut hnsw = PreSeededHnswManager::new();
 
         let doc_partial = Uuid::new_v4();
         let doc_full = Uuid::new_v4();
@@ -662,8 +679,8 @@ mod tests {
     /// Edge Case 3: All results have same similarity
     #[test]
     fn test_edge_case_tied_similarities() {
-        let storage = Arc::new(TestStorage::new());
-        let mut hnsw = TestHnswManager::new();
+        let storage = Arc::new(PreSeededTestStorage::new());
+        let mut hnsw = PreSeededHnswManager::new();
 
         let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
 
@@ -696,8 +713,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Invalid embedder_idx")]
     fn test_invalid_embedder_panics() {
-        let storage = Arc::new(TestStorage::new());
-        let hnsw = TestHnswManager::new();
+        let storage = Arc::new(PreSeededTestStorage::new());
+        let hnsw = PreSeededHnswManager::new();
         let engine = MultiSpaceSearchEngine::new(storage, Arc::new(hnsw));
 
         // embedder_idx=15 is invalid
@@ -707,8 +724,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Empty queries map")]
     fn test_empty_queries_panics() {
-        let storage = Arc::new(TestStorage::new());
-        let hnsw = TestHnswManager::new();
+        let storage = Arc::new(PreSeededTestStorage::new());
+        let hnsw = PreSeededHnswManager::new();
         let engine = MultiSpaceSearchEngine::new(storage, Arc::new(hnsw));
 
         let queries: HashMap<u8, Vec<f32>> = HashMap::new();
@@ -718,8 +735,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "does not use HNSW")]
     fn test_sparse_embedder_panics() {
-        let storage = Arc::new(TestStorage::new());
-        let hnsw = TestHnswManager::new();
+        let storage = Arc::new(PreSeededTestStorage::new());
+        let hnsw = PreSeededHnswManager::new();
         let engine = MultiSpaceSearchEngine::new(storage, Arc::new(hnsw));
 
         // E6 (index 5) is sparse, not HNSW

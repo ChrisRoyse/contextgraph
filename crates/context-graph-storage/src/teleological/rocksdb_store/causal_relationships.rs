@@ -687,14 +687,28 @@ impl RocksDbTeleologicalStore {
             let cf = db.cf_handle(CF_CAUSAL_RELATIONSHIPS).ok_or_else(|| {
                 CoreError::Internal("CF_CAUSAL_RELATIONSHIPS not found".to_string())
             })?;
-            let filtered: Vec<(Uuid, f32)> = results
-                .into_iter()
-                .filter(|(id, _)| {
-                    let key = causal_relationship_key(id);
-                    db.get_cf(cf, key).ok().flatten().is_some()
-                })
-                .take(top_k)
-                .collect();
+            // F-017 fail-closed (Sherlock investigation 2026-05-19):
+            // the legacy comprehension used `.ok().flatten().is_some()`,
+            // which silently treated RocksDB I/O / corruption errors as
+            // "row not found" and dropped the match. The current
+            // implementation surfaces those errors via `?` so corruption
+            // cannot masquerade as a clean miss.
+            let mut filtered: Vec<(Uuid, f32)> = Vec::with_capacity(results.len().min(top_k));
+            for (id, score) in results.into_iter() {
+                if filtered.len() >= top_k {
+                    break;
+                }
+                let key = causal_relationship_key(&id);
+                let row = db.get_cf(cf, key).map_err(|err| {
+                    CoreError::Internal(format!(
+                        "MEJEPA_CAUSAL_PRIMARY_LOOKUP_FAILED: id={} err={}",
+                        id, err
+                    ))
+                })?;
+                if row.is_some() {
+                    filtered.push((id, score));
+                }
+            }
 
             debug!(
                 query_dim = query_vec.len(),
@@ -946,7 +960,21 @@ impl RocksDbTeleologicalStore {
 
                 for causal_id in &causal_ids {
                     let primary_key = causal_relationship_key(causal_id);
-                    if db2.get_cf(cf_primary, primary_key).ok().flatten().is_some() {
+                    // F-017 fail-closed (Sherlock investigation 2026-05-19):
+                    // the legacy `.ok().flatten().is_some()` swallowed RocksDB
+                    // I/O errors and silently classified them as "orphan",
+                    // which would then DELETE a still-valid secondary-index
+                    // entry. The current implementation surfaces the I/O
+                    // error via `?` so the entire repair operation aborts
+                    // (preserving the secondary index) rather than corrupting
+                    // it further.
+                    let primary_row = db2.get_cf(cf_primary, primary_key).map_err(|err| {
+                        CoreError::Internal(format!(
+                            "MEJEPA_CAUSAL_PRIMARY_LOOKUP_FAILED: causal_id={} err={}",
+                            causal_id, err
+                        ))
+                    })?;
+                    if primary_row.is_some() {
                         valid_ids.push(*causal_id);
                     } else {
                         any_orphaned = true;

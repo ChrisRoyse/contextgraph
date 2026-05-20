@@ -12,7 +12,7 @@ use context_graph_storage::teleological::{
 use tempfile::TempDir;
 use uuid::Uuid;
 
-use crate::helpers::{create_initialized_store, create_real_fingerprint};
+use crate::helpers::{create_initialized_store, create_random_fingerprint};
 
 // =============================================================================
 // TEST 1: RocksDB + Store Roundtrip Integration Test
@@ -43,7 +43,7 @@ async fn test_rocksdb_store_roundtrip_real_data() {
     let store_start = Instant::now();
 
     for i in 0..TEST_COUNT {
-        let fp = create_real_fingerprint();
+        let fp = create_random_fingerprint();
         let id = fp.id;
 
         // Verify fingerprint has correct dimensions before storage
@@ -172,7 +172,7 @@ async fn test_rocksdb_store_roundtrip_real_data() {
 fn test_serialization_size_verification() {
     println!("\n=== TEST: Serialization Size Verification ===\n");
 
-    let fp = create_real_fingerprint();
+    let fp = create_random_fingerprint();
     let id = fp.id;
 
     // Serialize

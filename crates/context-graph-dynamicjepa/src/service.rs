@@ -772,7 +772,14 @@ pub fn record_surprise(
             actual: vec![observed_vec.len()],
         });
     }
-    let cosine = cosine_f32(&prediction.predicted_next_panel_vec, &observed_vec);
+    // F-010 fail-closed: silent cosine_f32 deleted; use exact form which fails-closed on
+    // dim-mismatch / empty / zero-norm rather than silently returning 0.0 (which would
+    // erroneously trip the surprise threshold by appearing maximally non-similar).
+    let cosine = cosine_f32_exact(
+        &prediction.predicted_next_panel_vec,
+        &observed_vec,
+        "record_surprise.cosine",
+    )?;
     let error_norm = l2_distance(&prediction.predicted_next_panel_vec, &observed_vec);
     let threshold = calibrated_surprise_threshold(&artifact, &candidate_action)?;
     if cosine >= threshold {
@@ -2316,22 +2323,9 @@ fn cosine_f32_exact(lhs: &[f32], rhs: &[f32], field: &str) -> DynamicJepaResult<
     Ok(value.clamp(-1.0, 1.0) as f32)
 }
 
-fn cosine_f32(lhs: &[f32], rhs: &[f32]) -> f32 {
-    let mut dot = 0.0f32;
-    let mut ln = 0.0f32;
-    let mut rn = 0.0f32;
-    for (left, right) in lhs.iter().zip(rhs.iter()) {
-        dot += *left * *right;
-        ln += *left * *left;
-        rn += *right * *right;
-    }
-    let denom = ln.sqrt() * rn.sqrt();
-    if denom <= f32::EPSILON {
-        0.0
-    } else {
-        (dot / denom).clamp(-1.0, 1.0)
-    }
-}
+// F-010: silent `cosine_f32` deleted 2026-05-19. All callers now use
+// `cosine_f32_exact`, which fails-closed on dim-mismatch / empty / zero-norm
+// inputs with `DynamicJepaError::PanelShapeMismatch` or `Validation`.
 
 fn instrument_artifact_hash32(spec: &InstrumentSpec) -> DynamicJepaResult<[u8; 32]> {
     let bytes = serde_json::to_vec(spec).map_err(|err| {
@@ -2727,5 +2721,90 @@ fn attach_run_id(err: DynamicJepaError, training_run_id: TrainingRunId) -> Dynam
             remediation,
         },
         other => other,
+    }
+}
+
+#[cfg(test)]
+mod f_010_tests {
+    use super::*;
+
+    // ---------------------------------------------------------------
+    // F-010 / TASK-FIX-F-010 regression: the silent `cosine_f32` helper
+    // MUST be deleted; all callers MUST use `cosine_f32_exact` which
+    // returns Result and fails-closed on zero-norm / dim-mismatch.
+    // ---------------------------------------------------------------
+    #[test]
+    fn f_010_silent_cosine_f32_helper_is_deleted() {
+        // Static source guard: the silent `fn cosine_f32(...)` MUST NOT exist.
+        let path = env!("CARGO_MANIFEST_DIR");
+        let source =
+            std::fs::read_to_string(std::path::Path::new(path).join("src/service.rs"))
+                .expect("read service.rs source");
+        // The silent signature pattern that must be gone:
+        assert!(
+            !source.contains("fn cosine_f32(lhs: &[f32], rhs: &[f32]) -> f32"),
+            "F-010: silent fn cosine_f32 must be deleted"
+        );
+        // The fail-closed signature that must remain:
+        assert!(
+            source.contains("fn cosine_f32_exact"),
+            "F-010: cosine_f32_exact must remain"
+        );
+        // No caller should reference bare cosine_f32 (substring distinguishes
+        // it from cosine_f32_exact).
+        let bare_refs = source
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| {
+                let trimmed = l.trim_start();
+                if trimmed.starts_with("//") {
+                    return false;
+                }
+                trimmed.contains("cosine_f32(") && !trimmed.contains("cosine_f32_exact(")
+            })
+            .map(|(i, l)| format!("line {}: {}", i + 1, l))
+            .collect::<Vec<_>>();
+        assert!(
+            bare_refs.is_empty(),
+            "F-010: no caller may invoke bare cosine_f32(); remaining: {bare_refs:?}"
+        );
+    }
+
+    #[test]
+    fn f_010_cosine_f32_exact_fails_closed_on_zero_norm() {
+        let lhs = vec![0.0_f32, 0.0, 0.0, 0.0];
+        let rhs = vec![1.0_f32, 0.5, -0.25, 0.125];
+        let err = cosine_f32_exact(&lhs, &rhs, "f_010_test.zero_norm")
+            .expect_err("F-010: zero-norm input must fail-closed");
+        assert_eq!(err.code(), "VALIDATION");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("zero norm"),
+            "F-010: error must describe zero norm, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn f_010_cosine_f32_exact_fails_closed_on_dim_mismatch() {
+        let lhs = vec![1.0_f32, 0.0, 0.0];
+        let rhs = vec![1.0_f32, 0.0];
+        let err = cosine_f32_exact(&lhs, &rhs, "f_010_test.dim_mismatch")
+            .expect_err("F-010: dim-mismatch must fail-closed");
+        assert_eq!(err.code(), "PANEL_SHAPE_MISMATCH");
+    }
+
+    #[test]
+    fn f_010_cosine_f32_exact_returns_value_for_valid_inputs() {
+        let lhs = vec![1.0_f32, 0.0];
+        let rhs = vec![1.0_f32, 0.0];
+        let v = cosine_f32_exact(&lhs, &rhs, "f_010_test.identity")
+            .expect("identical unit vectors → cosine=1");
+        assert!((v - 1.0).abs() < 1e-6);
+
+        let orth_lhs = vec![1.0_f32, 0.0];
+        let orth_rhs = vec![0.0_f32, 1.0];
+        let v2 = cosine_f32_exact(&orth_lhs, &orth_rhs, "f_010_test.orthogonal")
+            .expect("orthogonal → cosine=0");
+        assert!(v2.abs() < 1e-6);
     }
 }
