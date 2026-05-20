@@ -28,8 +28,9 @@ async fn test_batch_store_retrieve_performance() {
     // Generate all fingerprints first (exclude from timing)
     println!("[GENERATING] {} fingerprints...", BATCH_SIZE);
     let generate_start = Instant::now();
-    let fingerprints: Vec<TeleologicalFingerprint> =
-        (0..BATCH_SIZE).map(|_| create_random_fingerprint()).collect();
+    let fingerprints: Vec<TeleologicalFingerprint> = (0..BATCH_SIZE)
+        .map(|_| create_random_fingerprint())
+        .collect();
     let generate_duration = generate_start.elapsed();
     println!(
         "[GENERATED] {} fingerprints in {:?}",

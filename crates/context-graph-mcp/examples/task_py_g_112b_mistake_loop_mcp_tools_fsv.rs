@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, ensure};
+use anyhow::{ensure, Context, Result};
 use async_trait::async_trait;
 use context_graph_core::traits::{
     EmbeddingMetadata, MultiArrayEmbeddingOutput, MultiArrayEmbeddingProvider,
@@ -20,22 +20,22 @@ use context_graph_mejepa_train::label_bridge::{
     skill_signature_hash,
 };
 use context_graph_mejepa_train::{
+    ability_aware_replay_cell_id, count_cf_rows, lifecycle_audit_id_from_parts,
+    mistake_id_from_evidence_parts, open_ability_resolver_rocksdb, read_all_mistake_log_rows,
+    read_all_replay_rows, read_all_skill_lifecycle_audit_rows, read_online_head_state_row,
+    read_repeat_metric_row, repeat_metric_key, write_skill_lifecycle_audit_row_sync_readback,
     MistakeLogRow, MistakeTruthSource, OnlineHeadRepeatMetricRow, OnlineHeadStateRow,
     ReplayBufferRow, ReplayBufferSource, ReplayRetentionTier, SkillLifecycleAuditRow,
-    SkillLifecycleDecision, ability_aware_replay_cell_id, count_cf_rows,
-    lifecycle_audit_id_from_parts, mistake_id_from_evidence_parts, open_ability_resolver_rocksdb,
-    read_all_mistake_log_rows, read_all_replay_rows, read_all_skill_lifecycle_audit_rows,
-    read_online_head_state_row, read_repeat_metric_row, repeat_metric_key,
-    write_skill_lifecycle_audit_row_sync_readback,
+    SkillLifecycleDecision,
 };
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use context_graph_storage::{BackgroundGraphBuilder, EdgeRepository, GraphBuilderConfig};
-use rocksdb::{ColumnFamilyDescriptor, DB, Options};
-use serde_json::{Value, json};
+use rocksdb::{ColumnFamilyDescriptor, Options, DB};
+use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-112b-mistake-loop-mcp-tools-fsv";

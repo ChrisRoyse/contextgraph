@@ -29,6 +29,8 @@ The corpus survives. The measurement does not. Rebaseline is the P0 blocker befo
 
 **Gap to ship:** unknown until rebaseline. Pre-fix gap was 0.083 against the synthetic-input number; the real-input number could be anywhere from worse-than-0.866 to already-past-0.95.
 
+**Metric contract update (#532).** Per-cell Pearson is not defined for zero-variance oracle cells. The active ship-gate FSV now classifies every block as `mixed`, `all_fail`, `all_pass`, or `empty`: mixed blocks use Pearson correlation; degenerate all-fail/all-pass blocks use target-class recall plus calibration (`actual_class_confidence_mean`, Brier, ECE). Each block also carries statistical-power diagnostics so a point estimate cannot be mistaken for a powered readiness claim.
+
 ---
 
 ## 2. Recent Closures (recent → older)

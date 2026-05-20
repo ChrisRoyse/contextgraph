@@ -1150,8 +1150,8 @@ mod tests {
     fn test_f007_extract_temporal_components_valid_timestamp_succeeds() {
         // 2024-01-15T14:30:00Z = 1705328400000 ms
         // Should resolve to hour=14, dow=Monday=1 (Sun=0 convention).
-        let (hour, dow) = extract_temporal_components(1_705_328_400_000)
-            .expect("valid timestamp must succeed");
+        let (hour, dow) =
+            extract_temporal_components(1_705_328_400_000).expect("valid timestamp must succeed");
         assert_eq!(hour, 14, "hour should be 14 (UTC)");
         assert_eq!(dow, 1, "day-of-week should be 1 (Monday, Sun=0 convention)");
     }

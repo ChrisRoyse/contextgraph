@@ -38,6 +38,12 @@ const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-f
 const REPORT_NAME: &str = "ship-gate-fsv.json";
 const READBACK_NAME: &str = "ship-gate-readback.json";
 const SHIP_GATE_TARGET: f32 = 0.95;
+const DEGENERATE_RECALL_TARGET: f32 = 0.95;
+const DEGENERATE_CLASS_CONFIDENCE_TARGET: f32 = 0.95;
+const DEGENERATE_BRIER_MAX: f32 = 0.05;
+const DEGENERATE_ECE_MAX: f32 = 0.05;
+const FISHER_Z_95: f32 = 1.959_964;
+const ECE_BIN_COUNT: usize = 10;
 const REQUIRED_HOLDOUT_COUNT: usize = 240;
 const REQUIRED_SPLIT_COUNTS: (usize, usize, usize) = (1920, 240, 240);
 const REQUIRED_CATEGORIES: [&str; 8] = [
@@ -138,6 +144,7 @@ fn run() -> Result<()> {
     let per_category_metrics = per_category_metrics(&predictions);
     let rolling_windows = rolling_window_reports(&predictions);
     let final_blockers = ship_gate_blockers(&final_metrics, &per_category_metrics);
+    let final_power_blockers = statistical_power_blockers(&final_metrics, &per_category_metrics);
     let rolling_blockers = rolling_windows
         .iter()
         .flat_map(|window| {
@@ -147,7 +154,19 @@ fn run() -> Result<()> {
                 .map(move |blocker| format!("window_{}:{blocker}", window.window_index))
         })
         .collect::<Vec<_>>();
-    let ship_gate_passed = final_blockers.is_empty() && rolling_blockers.is_empty();
+    let rolling_power_blockers = rolling_windows
+        .iter()
+        .flat_map(|window| {
+            window
+                .power_blockers
+                .iter()
+                .map(move |blocker| format!("window_{}:{blocker}", window.window_index))
+        })
+        .collect::<Vec<_>>();
+    let ship_gate_passed = final_blockers.is_empty()
+        && final_power_blockers.is_empty()
+        && rolling_blockers.is_empty()
+        && rolling_power_blockers.is_empty();
     let report_path = run_dir.join(REPORT_NAME);
     let readback_path = run_dir.join(READBACK_NAME);
     let source_audit = source_audit()?;
@@ -241,7 +260,9 @@ fn run() -> Result<()> {
             "rolling_windows": rolling_windows,
             "ship_gate_passed": ship_gate_passed,
             "ship_gate_blockers": final_blockers,
+            "statistical_power_blockers": final_power_blockers,
             "rolling_window_blockers": rolling_blockers,
+            "rolling_window_statistical_power_blockers": rolling_power_blockers,
             "sample_predictions": predictions.iter().take(16).collect::<Vec<_>>()
         },
         "edge_case_audit": {
@@ -329,12 +350,58 @@ struct MetricBlock {
     sample_count: usize,
     accuracy: f32,
     prediction_oracle_correlation: Option<f32>,
+    oracle_variance_class: OracleVarianceClass,
+    gate_contract: GateContract,
+    statistical_power: StatisticalPowerReport,
     brier: f32,
+    ece: f32,
     predicted_pass_count: usize,
+    predicted_fail_count: usize,
     actual_pass_count: usize,
+    actual_fail_count: usize,
+    pass_recall: Option<f32>,
+    fail_recall: Option<f32>,
+    actual_class_confidence_mean: f32,
     score_min: f32,
     score_max: f32,
     score_mean: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum OracleVarianceClass {
+    Empty,
+    AllFail,
+    AllPass,
+    Mixed,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct GateContract {
+    metric_name: String,
+    metric_value: Option<f32>,
+    target: f32,
+    passed: bool,
+    blockers: Vec<String>,
+    rationale: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CorrelationConfidenceInterval {
+    lower: f32,
+    upper: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct StatisticalPowerReport {
+    sample_count: usize,
+    actual_pass_count: usize,
+    actual_fail_count: usize,
+    pearson_defined: bool,
+    fisher_z_95_ci: Option<CorrelationConfidenceInterval>,
+    actual_class_recall_wilson_lower_95: Option<f32>,
+    standalone_readiness_claim_powered: bool,
+    blockers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -345,6 +412,7 @@ struct RollingWindowReport {
     per_category_metrics: BTreeMap<String, MetricBlock>,
     ship_gate_passed: bool,
     blockers: Vec<String>,
+    power_blockers: Vec<String>,
 }
 
 fn read_index(path: impl AsRef<Path>) -> Result<CorpusIndex> {
@@ -581,9 +649,18 @@ fn metrics_for(rows: &[PredictionRow]) -> MetricBlock {
             sample_count: 0,
             accuracy: 0.0,
             prediction_oracle_correlation: None,
+            oracle_variance_class: OracleVarianceClass::Empty,
+            gate_contract: empty_gate_contract(),
+            statistical_power: empty_power_report(),
             brier: 0.0,
+            ece: 0.0,
             predicted_pass_count: 0,
+            predicted_fail_count: 0,
             actual_pass_count: 0,
+            actual_fail_count: 0,
+            pass_recall: None,
+            fail_recall: None,
+            actual_class_confidence_mean: 0.0,
             score_min: 0.0,
             score_max: 0.0,
             score_mean: 0.0,
@@ -595,6 +672,9 @@ fn metrics_for(rows: &[PredictionRow]) -> MetricBlock {
     let mut brier = 0.0f32;
     let mut predicted_pass_count = 0usize;
     let mut actual_pass_count = 0usize;
+    let mut true_pass = 0usize;
+    let mut true_fail = 0usize;
+    let mut actual_class_confidence = 0.0f32;
     for row in rows {
         let target = if row.actual_oracle_pass { 1.0 } else { 0.0 };
         predicted.push(row.predicted_oracle_pass);
@@ -607,19 +687,63 @@ fn metrics_for(rows: &[PredictionRow]) -> MetricBlock {
         }
         if row.actual_oracle_pass {
             actual_pass_count += 1;
+            if row.predicted_pass {
+                true_pass += 1;
+            }
+            actual_class_confidence += row.predicted_oracle_pass;
+        } else {
+            if !row.predicted_pass {
+                true_fail += 1;
+            }
+            actual_class_confidence += 1.0 - row.predicted_oracle_pass;
         }
         brier += (row.predicted_oracle_pass - target).powi(2);
     }
+    let actual_fail_count = rows.len() - actual_pass_count;
+    let predicted_fail_count = rows.len() - predicted_pass_count;
+    let pass_recall = ratio_opt(true_pass, actual_pass_count);
+    let fail_recall = ratio_opt(true_fail, actual_fail_count);
     let score_min = predicted.iter().copied().fold(f32::INFINITY, f32::min);
     let score_max = predicted.iter().copied().fold(f32::NEG_INFINITY, f32::max);
     let score_mean = predicted.iter().sum::<f32>() / predicted.len() as f32;
+    let correlation = pearson(&predicted, &actual);
+    let brier = brier / rows.len() as f32;
+    let ece = expected_calibration_error(rows);
+    let actual_class_confidence_mean = actual_class_confidence / rows.len() as f32;
+    let oracle_variance_class = oracle_variance_class(actual_pass_count, actual_fail_count);
+    let gate_contract = gate_contract_for(
+        oracle_variance_class,
+        correlation,
+        pass_recall,
+        fail_recall,
+        actual_class_confidence_mean,
+        brier,
+        ece,
+    );
+    let statistical_power = power_report_for(
+        rows.len(),
+        actual_pass_count,
+        actual_fail_count,
+        correlation,
+        pass_recall,
+        fail_recall,
+    );
     MetricBlock {
         sample_count: rows.len(),
         accuracy: correct as f32 / rows.len() as f32,
-        prediction_oracle_correlation: pearson(&predicted, &actual),
-        brier: brier / rows.len() as f32,
+        prediction_oracle_correlation: correlation,
+        oracle_variance_class,
+        gate_contract,
+        statistical_power,
+        brier,
+        ece,
         predicted_pass_count,
+        predicted_fail_count,
         actual_pass_count,
+        actual_fail_count,
+        pass_recall,
+        fail_recall,
+        actual_class_confidence_mean,
         score_min,
         score_max,
         score_mean,
@@ -660,13 +784,16 @@ fn rolling_window_reports(rows: &[PredictionRow]) -> Vec<RollingWindowReport> {
         let metrics = metrics_for(&window_rows);
         let per_category = per_category_metrics(&window_rows);
         let blockers = ship_gate_blockers(&metrics, &per_category);
+        let power_blockers = statistical_power_blockers(&metrics, &per_category);
+        let ship_gate_passed = blockers.is_empty() && power_blockers.is_empty();
         reports.push(RollingWindowReport {
             window_index,
             sample_count: window_rows.len(),
             metrics,
             per_category_metrics: per_category,
-            ship_gate_passed: blockers.is_empty(),
+            ship_gate_passed,
             blockers,
+            power_blockers,
         });
     }
     reports
@@ -677,25 +804,293 @@ fn ship_gate_blockers(
     per_category: &BTreeMap<String, MetricBlock>,
 ) -> Vec<String> {
     let mut blockers = Vec::new();
-    match metrics.prediction_oracle_correlation {
-        Some(value) if value >= SHIP_GATE_TARGET => {}
-        Some(value) => blockers.push(format!(
-            "overall prediction_oracle_correlation {value:.6} < {SHIP_GATE_TARGET:.6}"
-        )),
-        None => blockers.push("overall prediction_oracle_correlation unavailable".to_string()),
+    if !metrics.gate_contract.passed {
+        blockers.extend(
+            metrics
+                .gate_contract
+                .blockers
+                .iter()
+                .map(|blocker| format!("overall {blocker}")),
+        );
     }
     for (category, block) in per_category {
-        match block.prediction_oracle_correlation {
-            Some(value) if value >= SHIP_GATE_TARGET => {}
-            Some(value) => blockers.push(format!(
-                "{category}::python prediction_oracle_correlation {value:.6} < {SHIP_GATE_TARGET:.6}"
-            )),
-            None => blockers.push(format!(
-                "{category}::python prediction_oracle_correlation unavailable"
-            )),
+        if block.gate_contract.passed {
+            continue;
         }
+        blockers.extend(
+            block
+                .gate_contract
+                .blockers
+                .iter()
+                .map(|blocker| format!("{category}::python {blocker}")),
+        );
     }
     blockers
+}
+
+fn statistical_power_blockers(
+    metrics: &MetricBlock,
+    per_category: &BTreeMap<String, MetricBlock>,
+) -> Vec<String> {
+    let mut blockers = metrics
+        .statistical_power
+        .blockers
+        .iter()
+        .map(|blocker| format!("overall {blocker}"))
+        .collect::<Vec<_>>();
+    for (category, block) in per_category {
+        blockers.extend(
+            block
+                .statistical_power
+                .blockers
+                .iter()
+                .map(|blocker| format!("{category}::python {blocker}")),
+        );
+    }
+    blockers
+}
+
+fn gate_contract_for(
+    variance_class: OracleVarianceClass,
+    correlation: Option<f32>,
+    pass_recall: Option<f32>,
+    fail_recall: Option<f32>,
+    actual_class_confidence_mean: f32,
+    brier: f32,
+    ece: f32,
+) -> GateContract {
+    match variance_class {
+        OracleVarianceClass::Mixed => {
+            let mut blockers = Vec::new();
+            match correlation {
+                Some(value) if value >= SHIP_GATE_TARGET => {}
+                Some(value) => blockers.push(format!(
+                    "prediction_oracle_correlation {value:.6} < {SHIP_GATE_TARGET:.6}"
+                )),
+                None => blockers.push(
+                    "prediction_oracle_correlation undefined despite mixed oracle classes"
+                        .to_string(),
+                ),
+            }
+            GateContract {
+                metric_name: "pearson_prediction_oracle_correlation".to_string(),
+                metric_value: correlation,
+                target: SHIP_GATE_TARGET,
+                passed: blockers.is_empty(),
+                blockers,
+                rationale:
+                    "Mixed oracle cells have target variance; Pearson correlation remains the ship-gate metric."
+                        .to_string(),
+            }
+        }
+        OracleVarianceClass::AllFail => degenerate_gate_contract(
+            "all_fail_recall_confidence_brier_ece",
+            fail_recall,
+            actual_class_confidence_mean,
+            brier,
+            ece,
+            "All-fail oracle cells have zero target variance; Pearson is undefined, so the cell gates on fail recall plus calibration.",
+        ),
+        OracleVarianceClass::AllPass => degenerate_gate_contract(
+            "all_pass_recall_confidence_brier_ece",
+            pass_recall,
+            actual_class_confidence_mean,
+            brier,
+            ece,
+            "All-pass oracle cells have zero target variance; Pearson is undefined, so the cell gates on pass recall plus calibration.",
+        ),
+        OracleVarianceClass::Empty => empty_gate_contract(),
+    }
+}
+
+fn degenerate_gate_contract(
+    metric_name: &str,
+    recall: Option<f32>,
+    actual_class_confidence_mean: f32,
+    brier: f32,
+    ece: f32,
+    rationale: &str,
+) -> GateContract {
+    let mut blockers = Vec::new();
+    match recall {
+        Some(value) if value >= DEGENERATE_RECALL_TARGET => {}
+        Some(value) => blockers.push(format!(
+            "{metric_name}.recall {value:.6} < {DEGENERATE_RECALL_TARGET:.6}"
+        )),
+        None => blockers.push(format!("{metric_name}.recall unavailable")),
+    }
+    if actual_class_confidence_mean < DEGENERATE_CLASS_CONFIDENCE_TARGET {
+        blockers.push(format!(
+            "{metric_name}.actual_class_confidence_mean {actual_class_confidence_mean:.6} < {DEGENERATE_CLASS_CONFIDENCE_TARGET:.6}"
+        ));
+    }
+    if brier > DEGENERATE_BRIER_MAX {
+        blockers.push(format!(
+            "{metric_name}.brier {brier:.6} > {DEGENERATE_BRIER_MAX:.6}"
+        ));
+    }
+    if ece > DEGENERATE_ECE_MAX {
+        blockers.push(format!(
+            "{metric_name}.ece {ece:.6} > {DEGENERATE_ECE_MAX:.6}"
+        ));
+    }
+    GateContract {
+        metric_name: metric_name.to_string(),
+        metric_value: recall,
+        target: DEGENERATE_RECALL_TARGET,
+        passed: blockers.is_empty(),
+        blockers,
+        rationale: rationale.to_string(),
+    }
+}
+
+fn empty_gate_contract() -> GateContract {
+    GateContract {
+        metric_name: "empty_cell_unavailable".to_string(),
+        metric_value: None,
+        target: SHIP_GATE_TARGET,
+        passed: false,
+        blockers: vec!["empty cell has no gate metric".to_string()],
+        rationale: "No samples means no gate metric is mathematically defined.".to_string(),
+    }
+}
+
+fn power_report_for(
+    sample_count: usize,
+    actual_pass_count: usize,
+    actual_fail_count: usize,
+    correlation: Option<f32>,
+    pass_recall: Option<f32>,
+    fail_recall: Option<f32>,
+) -> StatisticalPowerReport {
+    let pearson_defined = correlation.is_some();
+    let fisher_z_95_ci = correlation.and_then(|value| fisher_z_ci(value, sample_count));
+    let actual_class_recall = if actual_pass_count == 0 {
+        fail_recall
+    } else if actual_fail_count == 0 {
+        pass_recall
+    } else {
+        None
+    };
+    let actual_class_recall_wilson_lower_95 = actual_class_recall.map(|value| {
+        let successes = (value * sample_count as f32).round() as usize;
+        wilson_lower_bound(successes, sample_count)
+    });
+    let mut blockers = Vec::new();
+    if let Some(interval) = &fisher_z_95_ci {
+        if interval.lower < SHIP_GATE_TARGET {
+            blockers.push(format!(
+                "statistical_power fisher_z_lower_95 {:.6} < {:.6}",
+                interval.lower, SHIP_GATE_TARGET
+            ));
+        }
+    } else if pearson_defined && sample_count <= 3 {
+        blockers.push(format!(
+            "statistical_power sample_count {sample_count} insufficient for Fisher-z CI"
+        ));
+    }
+    if actual_pass_count == 0 || actual_fail_count == 0 {
+        match actual_class_recall_wilson_lower_95 {
+            Some(lower) if lower >= DEGENERATE_RECALL_TARGET => {}
+            Some(lower) => blockers.push(format!(
+                "statistical_power degenerate_recall_wilson_lower_95 {lower:.6} < {DEGENERATE_RECALL_TARGET:.6}"
+            )),
+            None => blockers.push("statistical_power degenerate recall CI unavailable".to_string()),
+        }
+    }
+    StatisticalPowerReport {
+        sample_count,
+        actual_pass_count,
+        actual_fail_count,
+        pearson_defined,
+        fisher_z_95_ci,
+        actual_class_recall_wilson_lower_95,
+        standalone_readiness_claim_powered: blockers.is_empty(),
+        blockers,
+    }
+}
+
+fn empty_power_report() -> StatisticalPowerReport {
+    StatisticalPowerReport {
+        sample_count: 0,
+        actual_pass_count: 0,
+        actual_fail_count: 0,
+        pearson_defined: false,
+        fisher_z_95_ci: None,
+        actual_class_recall_wilson_lower_95: None,
+        standalone_readiness_claim_powered: false,
+        blockers: vec!["statistical_power empty cell".to_string()],
+    }
+}
+
+fn oracle_variance_class(
+    actual_pass_count: usize,
+    actual_fail_count: usize,
+) -> OracleVarianceClass {
+    match (actual_pass_count, actual_fail_count) {
+        (0, 0) => OracleVarianceClass::Empty,
+        (0, _) => OracleVarianceClass::AllFail,
+        (_, 0) => OracleVarianceClass::AllPass,
+        _ => OracleVarianceClass::Mixed,
+    }
+}
+
+fn ratio_opt(numerator: usize, denominator: usize) -> Option<f32> {
+    if denominator == 0 {
+        None
+    } else {
+        Some(numerator as f32 / denominator as f32)
+    }
+}
+
+fn expected_calibration_error(rows: &[PredictionRow]) -> f32 {
+    if rows.is_empty() {
+        return 0.0;
+    }
+    let mut bins = vec![(0usize, 0.0f32, 0.0f32); ECE_BIN_COUNT];
+    for row in rows {
+        let index = ((row.predicted_oracle_pass * ECE_BIN_COUNT as f32).floor() as usize)
+            .min(ECE_BIN_COUNT - 1);
+        let target = if row.actual_oracle_pass { 1.0 } else { 0.0 };
+        bins[index].0 += 1;
+        bins[index].1 += row.predicted_oracle_pass;
+        bins[index].2 += target;
+    }
+    bins.into_iter()
+        .filter(|(count, _, _)| *count > 0)
+        .map(|(count, confidence_sum, target_sum)| {
+            let weight = count as f32 / rows.len() as f32;
+            let avg_confidence = confidence_sum / count as f32;
+            let avg_target = target_sum / count as f32;
+            weight * (avg_confidence - avg_target).abs()
+        })
+        .sum()
+}
+
+fn fisher_z_ci(correlation: f32, sample_count: usize) -> Option<CorrelationConfidenceInterval> {
+    if sample_count <= 3 || !correlation.is_finite() {
+        return None;
+    }
+    let bounded = correlation.clamp(-0.999_999, 0.999_999);
+    let z = bounded.atanh();
+    let se = 1.0 / ((sample_count as f32 - 3.0).sqrt());
+    Some(CorrelationConfidenceInterval {
+        lower: (z - FISHER_Z_95 * se).tanh().clamp(-1.0, 1.0),
+        upper: (z + FISHER_Z_95 * se).tanh().clamp(-1.0, 1.0),
+    })
+}
+
+fn wilson_lower_bound(successes: usize, total: usize) -> f32 {
+    if total == 0 {
+        return 0.0;
+    }
+    let n = total as f32;
+    let z2 = FISHER_Z_95 * FISHER_Z_95;
+    let phat = successes as f32 / n;
+    let denominator = 1.0 + z2 / n;
+    let centre = phat + z2 / (2.0 * n);
+    let margin = FISHER_Z_95 * ((phat * (1.0 - phat) + z2 / (4.0 * n)) / n).sqrt();
+    ((centre - margin) / denominator).clamp(0.0, 1.0)
 }
 
 fn pearson(xs: &[f32], ys: &[f32]) -> Option<f32> {

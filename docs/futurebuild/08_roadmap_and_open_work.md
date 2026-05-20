@@ -31,7 +31,8 @@ Tracked under a new context issue filed alongside this roadmap refresh. **All is
 ```
 prediction_oracle_correlation ≥ 0.95
   stable × 4 consecutive rolling windows
-  per (mutation_category × language)
+  per mathematically-valid mixed (mutation_category × language) cell
+  with all-pass/all-fail cells using the #532 degenerate-cell replacement metric
   on the 300×8 Python SWE-bench Lite corpus
   using Q2 Docker-oracle agreement as the binary verdict
   AND cross-panel oracle correlation ≥ 0.95 on Panel B
@@ -41,6 +42,8 @@ prediction_oracle_correlation ≥ 0.95
 **Last holdout measurement:** **PENDING REBASELINE.** Previous `0.866667` figure (from `/mnt/d/...ship-gate-fsv/ship-gate-fsv.json`) was measured against the synthetic-vector inference path and is invalidated. No post-fix end-to-end ship-gate measurement exists on aiwonder yet.
 
 **Gap to ship:** unknown until rebaseline. Could be anywhere from worse than 0.866 to already past 0.95.
+
+**Degenerate-cell rule (#532).** `compile_error::python`, `wrong_file::python`, or any future single-class cell cannot honestly use Pearson correlation. The FSV must emit the cell's variance class, the replacement gate metric (`all_fail_recall_confidence_brier_ece` or `all_pass_recall_confidence_brier_ece`), and statistical-power diagnostics instead of a bare `correlation unavailable` blocker.
 
 **P0 product contract (#397):** ME-JEPA is the binary reality predictor. It returns `Pass | Fail` for each candidate code change against the Docker oracle (Q2), with named-failure-mode + closest-exemplar explanation (Q3) on Fail. Q1 (claim-exists) and Q5 (predicted-shift-event) are additional binary predictions. Q4 ambiguous surfaces are out of scope.
 

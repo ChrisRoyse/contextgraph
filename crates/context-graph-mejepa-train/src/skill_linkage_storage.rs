@@ -3,7 +3,7 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP, CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS,
     CF_MEJEPA_SKILL_LIFECYCLE_AUDIT, CF_MEJEPA_SKILL_REVERSE_INDEX,
 };
-use rocksdb::{ColumnFamilyDescriptor, DB, Options};
+use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::path::Path;
 
 use super::{invalid, validate_path_not_mntd};

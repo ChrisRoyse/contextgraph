@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::error::{
-    PathwayError, PathwayResult, require, validate_hex, validate_id, validate_probability,
-    validate_sha,
+    require, validate_hex, validate_id, validate_probability, validate_sha, PathwayError,
+    PathwayResult,
 };
 use super::{MAX_Q5_EVENTS, MAX_TOP_K, PATHWAY_AMBIGUOUS_LEAF_REJECTED, PATHWAY_SCHEMA_VERSION};
 

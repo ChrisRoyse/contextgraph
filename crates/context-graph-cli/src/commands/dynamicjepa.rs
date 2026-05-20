@@ -28341,10 +28341,9 @@ public readonly struct Vector {
         // the binary as a literal so the fix cannot be silently reverted.
         // This is a smoke test guarding the F-019 contract.
         let path = env!("CARGO_MANIFEST_DIR");
-        let source = std::fs::read_to_string(
-            std::path::Path::new(path).join("src/commands/dynamicjepa.rs"),
-        )
-        .expect("read dynamicjepa.rs source");
+        let source =
+            std::fs::read_to_string(std::path::Path::new(path).join("src/commands/dynamicjepa.rs"))
+                .expect("read dynamicjepa.rs source");
         assert!(
             source.contains("SERIALIZE_FAILURE"),
             "F-019: SERIALIZE_FAILURE code must remain in compare_ci_reference"
@@ -28363,7 +28362,8 @@ public readonly struct Vector {
             "F-019: canned 'structural drift detected' fallback must be removed"
         );
         assert!(
-            !source.contains(".unwrap_or_else(|_| \"metric drift exceeded tolerance\".to_string())"),
+            !source
+                .contains(".unwrap_or_else(|_| \"metric drift exceeded tolerance\".to_string())"),
             "F-019: canned 'metric drift exceeded tolerance' fallback must be removed"
         );
     }

@@ -1,9 +1,9 @@
 use context_graph_mejepa_cf::{
     CF_MEJEPA_OPERATOR_PATHWAY_CHOICES, CF_MEJEPA_PATHWAY_TREES, CF_MEJEPA_SURFACED_PATHWAYS,
 };
-use rocksdb::{DB, IteratorMode, WriteOptions};
+use rocksdb::{IteratorMode, WriteOptions, DB};
 
-use super::error::{PathwayError, PathwayResult, require, validate_hex, validate_id};
+use super::error::{require, validate_hex, validate_id, PathwayError, PathwayResult};
 use super::{
     OperatorPathwayChoiceRecord, PathwaySurfaceReport, PathwayTreeRecord, SurfacedPathwayRecord,
 };

@@ -540,7 +540,7 @@ Each ground-truth event materializes a `MistakeRow` with full context (predictio
 - **Pause** — `mejepa_pause_predictions`
 - **Distill** — distill from champion to smaller learner
 
-Per-cell convergence driver tracks per-cell `prediction_oracle_correlation`, drives targeted mutation expansion, conformal recalibration, holdout rotation, four-window ship-gate stability, per-cell exemptions.
+Per-cell convergence driver tracks per-cell ship-gate status. Mixed oracle cells use `prediction_oracle_correlation`; zero-variance all-pass/all-fail cells use the #532 replacement contract (target-class recall + actual-class confidence + Brier/ECE) because Pearson is undefined there. The driver then uses those typed metrics for targeted mutation expansion, conformal recalibration, holdout rotation, four-window ship-gate stability, and per-cell exemptions.
 
 MCP surfaces: `mejepa_heal_status`, `mejepa_daemon_status`, `mejepa_rollback_to`, `mejepa_promote_approval`.
 

@@ -680,10 +680,7 @@ mod tests {
         // function name from it.
         let fn_name = candidate_id.replace('-', "_");
         let before = format!("def {fn_name}():\n    return 'before'\n");
-        let contents = format!(
-            "def {fn_name}():\n    return '{}'\n",
-            hex::encode(seed)
-        );
+        let contents = format!("def {fn_name}():\n    return '{}'\n", hex::encode(seed));
         fs::write(repo_root.join(&path), contents.as_bytes()).unwrap();
         let pre_sha = sha256_bytes(before.as_bytes());
         let post_sha = sha256_bytes(contents.as_bytes());

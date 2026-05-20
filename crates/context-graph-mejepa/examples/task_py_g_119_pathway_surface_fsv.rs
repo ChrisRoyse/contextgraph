@@ -1,15 +1,15 @@
 use context_graph_mejepa::{
-    OperatorPathwayChoiceRecord, PATHWAY_AMBIGUOUS_LEAF_REJECTED, PATHWAY_SCHEMA_VERSION,
-    PathwayLeaf, PathwayLeafCalibrationReference, PathwayLeafEvidence, PathwayLeafKind,
-    PathwayLeafOutcome, PathwaySurfaceInput, Q5PathwayEventInput, UNKNOWN_PATHWAY_SIGNATURE,
     pathway_leaf_credit_assignment, persist_pathway_surface, read_operator_pathway_choices,
     read_pathway_tree, read_surfaced_pathways_for_prediction, reject_ambiguous_leaf,
-    surface_pathways, write_operator_pathway_choice,
+    surface_pathways, write_operator_pathway_choice, OperatorPathwayChoiceRecord, PathwayLeaf,
+    PathwayLeafCalibrationReference, PathwayLeafEvidence, PathwayLeafKind, PathwayLeafOutcome,
+    PathwaySurfaceInput, Q5PathwayEventInput, PATHWAY_AMBIGUOUS_LEAF_REJECTED,
+    PATHWAY_SCHEMA_VERSION, UNKNOWN_PATHWAY_SIGNATURE,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_OPERATOR_PATHWAY_CHOICES, CF_MEJEPA_PATHWAY_TREES, CF_MEJEPA_SURFACED_PATHWAYS,
 };
-use rocksdb::{ColumnFamilyDescriptor, DB, IteratorMode, Options};
+use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::env;

@@ -37,12 +37,15 @@ The five Q-questions are **binary predictions** (Q1, Q2, Q5), an **explanation s
 ```
 prediction_oracle_correlation ≥ 0.95
   stable × 4 consecutive rolling windows
-  per (mutation_category × language)
+  per mathematically-valid (mutation_category × language) mixed cell
+  with degenerate all-pass/all-fail cells gated by the #532 replacement contract
   on the 300×8 SWE-bench Lite Python corpus
   using Q2 Docker-oracle agreement as the binary verdict
   AND cross-panel oracle correlation ≥ 0.95 on Panel B (#405)
   AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
+
+**Degenerate-cell metric contract (#532).** Pearson correlation is used only when the oracle target has both Pass and Fail rows. Single-class cells such as `compile_error::python` and `wrong_file::python` have zero oracle variance, so the FSV gates them with target-class recall ≥ 0.95, actual-class confidence ≥ 0.95, Brier ≤ 0.05, ECE ≤ 0.05, and explicit power diagnostics (Fisher-z CI for mixed cells; Wilson lower bound for degenerate recall). The report must never emit a bare "correlation unavailable" blocker without this replacement metric.
 
 **Product boundary.** LLM agents are untrusted edit generators. Hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, and docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`.
 

@@ -1,7 +1,7 @@
 use super::*;
 use crate::chunk_skill_membership::{
-    SkillLifecycleDecision, materialize_skill_memberships, membership_key,
-    read_all_chunk_skill_membership_rows, write_skill_materialization_sync_readback,
+    materialize_skill_memberships, membership_key, read_all_chunk_skill_membership_rows,
+    write_skill_materialization_sync_readback, SkillLifecycleDecision,
 };
 use crate::label_bridge::{
     ability_signature_hash, accepted_label_signature_hash, membership_signature_hash,
@@ -268,11 +268,9 @@ fn resolver_preserves_many_to_many_memberships() {
 
     assert_eq!(context.active_skill_ids, vec![skill_a, skill_b]);
     assert_eq!(context.source_membership_keys.len(), 2);
-    assert!(
-        context
-            .accepted_label_ids
-            .contains(&"ast_surface:function".to_string())
-    );
+    assert!(context
+        .accepted_label_ids
+        .contains(&"ast_surface:function".to_string()));
     assert!(context.no_new_prediction_head_introduced);
     assert!(!context.flat_vector_concat_used);
 }

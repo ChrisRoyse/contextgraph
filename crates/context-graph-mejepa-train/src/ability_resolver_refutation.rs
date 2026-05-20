@@ -1,18 +1,18 @@
 use crate::chunk_skill_membership::{
-    SkillLifecycleAuditRow, SkillLifecycleDecision, lifecycle_audit_id_from_parts,
-    write_skill_lifecycle_audit_row_sync_readback,
+    lifecycle_audit_id_from_parts, write_skill_lifecycle_audit_row_sync_readback,
+    SkillLifecycleAuditRow, SkillLifecycleDecision,
 };
 use crate::error::{TrainerError, TrainerErrorCode};
 use crate::label_bridge::accepted_label_signature_hash;
 use crate::mistake_log::{
-    MistakeLogRow, mistake_id_from_evidence_parts, write_mistake_log_row_sync_readback,
+    mistake_id_from_evidence_parts, write_mistake_log_row_sync_readback, MistakeLogRow,
 };
 use crate::online_head_state::{
-    OnlineHeadUpdateConfig, OnlineHeadUpdateInput, apply_online_mistake_update_sync_readback,
+    apply_online_mistake_update_sync_readback, OnlineHeadUpdateConfig, OnlineHeadUpdateInput,
 };
 use crate::replay_buffer::{
-    ReplayBufferRow, ReplayBufferSource, ReplayRetentionTier, ability_aware_replay_cell_id,
-    prediction_hex, write_replay_row_sync_readback,
+    ability_aware_replay_cell_id, prediction_hex, write_replay_row_sync_readback, ReplayBufferRow,
+    ReplayBufferSource, ReplayRetentionTier,
 };
 use crate::skill_sequence_discovery::SKILL_SEQUENCE_SCHEMA_VERSION;
 use context_graph_mejepa::{PredictionLabelContext, Verdict};
@@ -21,7 +21,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use super::{
-    AbilityContext, AbilityRefutationInput, AbilityRefutationReport, invalid, validate_id,
+    invalid, validate_id, AbilityContext, AbilityRefutationInput, AbilityRefutationReport,
 };
 
 pub fn record_ability_refutation_sync_readback(

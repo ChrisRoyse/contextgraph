@@ -1,14 +1,14 @@
 use std::collections::BTreeSet;
 
 use super::error::{
-    PathwayResult, first_closest_historical_pathway_id, invert_interval, require, validate_id,
-    validate_probability,
+    first_closest_historical_pathway_id, invert_interval, require, validate_id,
+    validate_probability, PathwayResult,
 };
 use super::{
-    NORMALIZATION_EPSILON, PATHWAY_SCHEMA_VERSION, PathwayLeaf, PathwayLeafCalibrationReference,
-    PathwayLeafCreditAssignment, PathwayLeafEvidence, PathwayLeafKind, PathwayLeafOutcome,
-    PathwayNode, PathwaySurfaceInput, PathwaySurfaceReport, PathwayTreeRecord, Q5PathwayEventInput,
-    SurfacedPathwayRecord, pathway_cfs,
+    pathway_cfs, PathwayLeaf, PathwayLeafCalibrationReference, PathwayLeafCreditAssignment,
+    PathwayLeafEvidence, PathwayLeafKind, PathwayLeafOutcome, PathwayNode, PathwaySurfaceInput,
+    PathwaySurfaceReport, PathwayTreeRecord, Q5PathwayEventInput, SurfacedPathwayRecord,
+    NORMALIZATION_EPSILON, PATHWAY_SCHEMA_VERSION,
 };
 
 pub fn surface_pathways(input: PathwaySurfaceInput) -> PathwayResult<PathwaySurfaceReport> {
@@ -413,28 +413,22 @@ mod tests {
         assert_eq!(report.ambiguous_leaves_in_pathway, 0);
         assert!((report.top_k_probability_sum - 1.0).abs() <= NORMALIZATION_EPSILON);
         assert_eq!(report.surfaced_pathways.len(), 5);
-        assert!(
-            report
-                .surfaced_pathways
-                .iter()
-                .flat_map(|pathway| pathway.leaf_chain.iter())
-                .any(|leaf| leaf
-                    .evidence
-                    .active_skill_ids
-                    .contains(&"skill:api".to_string()))
-        );
-        assert!(
-            report
-                .surfaced_pathways
-                .iter()
-                .any(|pathway| pathway.unknown_pathway_signature)
-        );
-        assert!(
-            report
-                .leaf_calibration_references
-                .iter()
-                .any(|reference| reference.leaf_id == "q2:oracle:pass")
-        );
+        assert!(report
+            .surfaced_pathways
+            .iter()
+            .flat_map(|pathway| pathway.leaf_chain.iter())
+            .any(|leaf| leaf
+                .evidence
+                .active_skill_ids
+                .contains(&"skill:api".to_string())));
+        assert!(report
+            .surfaced_pathways
+            .iter()
+            .any(|pathway| pathway.unknown_pathway_signature));
+        assert!(report
+            .leaf_calibration_references
+            .iter()
+            .any(|reference| reference.leaf_id == "q2:oracle:pass"));
     }
 
     #[test]
@@ -461,11 +455,9 @@ mod tests {
         assert_eq!(credit.predicted_outcome, PathwayLeafOutcome::Fail);
         assert_eq!(credit.observed_outcome, PathwayLeafOutcome::Pass);
         assert!(credit.active_skill_ids.contains(&"skill:api".to_string()));
-        assert!(
-            credit
-                .source_membership_keys
-                .contains(&"member:chunk-1".to_string())
-        );
+        assert!(credit
+            .source_membership_keys
+            .contains(&"member:chunk-1".to_string()));
     }
 
     fn fixture_input() -> PathwaySurfaceInput {

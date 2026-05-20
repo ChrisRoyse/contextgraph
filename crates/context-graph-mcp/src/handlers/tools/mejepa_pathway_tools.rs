@@ -3,23 +3,23 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result as AnyhowResult, bail};
-use rocksdb::{ColumnFamilyDescriptor, DB, Options};
-use serde::Deserialize;
+use anyhow::{bail, Context, Result as AnyhowResult};
+use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use serde::de::DeserializeOwned;
-use serde_json::{Value, json};
+use serde::Deserialize;
+use serde_json::{json, Value};
 
 use context_graph_mejepa::{
-    OperatorPathwayChoiceRecord, PathwayLeafOutcome, PathwaySurfaceInput,
     pathway_leaf_credit_assignment, persist_pathway_surface, read_operator_pathway_choices,
-    read_pathway_tree, read_surfaced_pathway, surface_pathways,
+    read_pathway_tree, read_surfaced_pathway, surface_pathways, OperatorPathwayChoiceRecord,
+    PathwayLeafOutcome, PathwaySurfaceInput,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_OPERATOR_PATHWAY_CHOICES, CF_MEJEPA_PATHWAY_TREES, CF_MEJEPA_SURFACED_PATHWAYS,
 };
 
-use crate::handlers::Handlers;
 use crate::handlers::tools::helpers::ToolErrorKind;
+use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use crate::tools::names as tool_names;
 

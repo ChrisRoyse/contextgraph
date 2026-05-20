@@ -862,8 +862,8 @@ mod tests {
     fn test_f026_try_compute_distance_happy_path_matches_panic_helper() {
         let a = f026_vec(128, 0x5_a_d_b_e_e_f);
         let b = f026_vec(128, 0x5_a_d_b_e_e_f);
-        let try_val = try_compute_distance(&a, &b, DistanceMetric::Cosine)
-            .expect("identical inputs valid");
+        let try_val =
+            try_compute_distance(&a, &b, DistanceMetric::Cosine).expect("identical inputs valid");
         let panic_val = compute_distance(&a, &b, DistanceMetric::Cosine);
         assert!(
             (try_val - panic_val).abs() < 1e-5,
@@ -905,7 +905,10 @@ mod tests {
         let a = f026_vec(256, 0x99);
         let b = a.clone();
         let result = try_cosine_similarity(&a, &b).expect("identical inputs valid");
-        assert!((result - 1.0).abs() < 1e-5, "identical cosine ≈ 1.0, got {result}");
+        assert!(
+            (result - 1.0).abs() < 1e-5,
+            "identical cosine ≈ 1.0, got {result}"
+        );
     }
 
     #[test]
@@ -917,10 +920,7 @@ mod tests {
     #[test]
     fn test_f026_metric_error_variants_use_screaming_snake_case() {
         let oob = MetricError::IndexOutOfRange { embedder_idx: 99 };
-        let mismatch = MetricError::DimensionMismatch {
-            left: 1,
-            right: 2,
-        };
+        let mismatch = MetricError::DimensionMismatch { left: 1, right: 2 };
         let empty = MetricError::EmptyVectors;
         let inverted = MetricError::InvertedIndexEmbedder {
             embedder: EmbedderIndex::E6Sparse,
