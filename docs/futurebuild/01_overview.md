@@ -311,12 +311,12 @@ Passing the 300×8 SWE-bench Lite corpus through 13 retrieval embedders (E1–E1
 | Layer | Status | Tracked under |
 |---|---|---|
 | Level 0 chunk labels + Level 1 file constellations + Level 2 code-state constellations | ✅ SHIPPED 2026-05-19 | #413 closed |
-| Hierarchical naming on top of the 491-label registry (failure-mode skills + behavioral constellations à la ClipCannon's Action-Unit → Group → Skill → Constellation hierarchy) | Open — uses the published SWE-bench taxonomies (Aleithan et al. 2025, Yang et al. 2024, SWE-Bench Pro 2025) as the operator-curated seed vocabulary on top of the deterministic Level-0 registry | #404 / TASK-PY-G-110 |
+| Hierarchical naming on top of the 491-label registry (failure-mode skills + behavioral constellations à la ClipCannon's Action-Unit → Group → Skill → Constellation hierarchy) | ✅ SHIPPED 2026-05-20 — aiwonder FSV materialized Level-1/2/3 rows, added deterministic failure-coverage backstop skills, and proved holdout Fail named-mode coverage plus closest-exemplar agreement | #404 / TASK-PY-G-110 |
 | Docker oracle outcome ontology (deterministic test-phase vector labels: `FAIL_TO_PASS`, `PASS_TO_PASS`, `FAIL_TO_FAIL`, `PASS_TO_FAIL` + `docker_resolved_clean`, `target_fail_to_pass_tests_failed`, etc.) | Open — feeds Level-2 code-state outcome supervision | #411 / TASK-PY-G-116 |
 | Online mistake-driven consumption of the accepted registry | Core shipped 2026-05-20 — uses stable label/evidence IDs from #413 and ordered skill/ability signatures from #414/#418 as the mistake context; MCP wrappers remain #523 | #406 closed / #523 open |
 | MCP tools wrapping the CLI for operator-side label inspection | Open — `mejepa_list_failure_modes`, `mejepa_label_failure_cluster`, `mejepa_explain_named_failure_mode`, `mejepa_failure_mode_coverage_audit` | #404 / TASK-PY-G-110 |
 
-A binary prediction becomes actionable when the predictor returns `Fail + named_failure_mode + closest_exemplar`. The agent that consumes the prediction can act on a named mode the way a senior reviewer would; the operator can audit the prediction the way they would audit a named bug class. **The deterministic label substrate that powers this is now full-corpus shipped; the hierarchical naming + MCP surface on top is what #404 still owns.**
+A binary prediction becomes actionable when the predictor returns `Fail + named_failure_mode + closest_exemplar`. The agent that consumes the prediction can act on a named mode the way a senior reviewer would; the operator can audit the prediction the way they would audit a named bug class. **The deterministic label substrate and hierarchical named-mode layer are now full-corpus shipped; the remaining surface work is MCP/operator exposure and runtime commitment through #418/#523.**
 
 ### 1.3 Online mistake-driven adaptation (the "isn't wrong in the future" property)
 

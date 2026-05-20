@@ -9,8 +9,9 @@ use crate::chunk_skill_membership::{materialize_skill_memberships, SkillMaterial
 use crate::error::{TrainerError, TrainerErrorCode};
 use crate::label_bridge::{load_label_learning_bridge, LabelLearningBridge};
 use crate::skill_sequence_discovery::{
-    discover_skill_candidates, SkillDiscoveryConfig, SkillEpisodeRow, SkillOutcomeObservation,
-    SkillOutcomeVerdict, SkillPromotionStatus, SkillStepEvidence,
+    discover_skill_candidates, skill_id_from_parts, Level2SkillRow, SkillDiscoveryConfig,
+    SkillEpisodeRow, SkillOutcomeDistribution, SkillOutcomeObservation, SkillOutcomeVerdict,
+    SkillPromotionStatus, SkillStepEvidence, SkillStepTemplate, SkillTransitionEdge,
 };
 use crate::skill_validation;
 use serde::{Deserialize, Serialize};
@@ -78,6 +79,8 @@ pub struct SkillCorpusMaterializationReport {
     pub materialized_membership_count: usize,
     pub materialized_reverse_index_count: usize,
     pub materialized_lifecycle_audit_count: usize,
+    pub failure_coverage_backstop_skill_count: usize,
+    pub failure_coverage_backstop_membership_count: usize,
     pub pass_episode_count: usize,
     pub fail_episode_count: usize,
     pub slot_identity_preserved: bool,
@@ -213,6 +216,11 @@ pub fn build_skill_corpus_materialization(
         let partial = materialize_skill_memberships(skill, &episodes, created_at_unix_ms)?;
         extend_materialization(&mut materialization, partial);
     }
+    let backstop =
+        materialize_failure_coverage_backstop(&materialization, &episodes, created_at_unix_ms)?;
+    let failure_coverage_backstop_skill_count = backstop.level2_skills.len();
+    let failure_coverage_backstop_membership_count = backstop.chunk_memberships.len();
+    extend_materialization(&mut materialization, backstop);
 
     let sample_skill_ids = materialization
         .level2_skills
@@ -241,6 +249,8 @@ pub fn build_skill_corpus_materialization(
         materialized_membership_count: materialization.chunk_memberships.len(),
         materialized_reverse_index_count: materialization.reverse_indexes.len(),
         materialized_lifecycle_audit_count: materialization.lifecycle_audits.len(),
+        failure_coverage_backstop_skill_count,
+        failure_coverage_backstop_membership_count,
         pass_episode_count,
         fail_episode_count,
         slot_identity_preserved: true,
@@ -735,15 +745,29 @@ fn verdict(oracle_all_passed: bool) -> SkillOutcomeVerdict {
     }
 }
 
-fn candidate_rank(skill: &crate::skill_sequence_discovery::Level2SkillRow) -> (u8, u64, i64, i64) {
+fn candidate_rank(
+    skill: &crate::skill_sequence_discovery::Level2SkillRow,
+) -> (u8, u8, u64, u64, i64, i64) {
     let status = match skill.promotion_status {
         SkillPromotionStatus::PromotionReady => 3,
         SkillPromotionStatus::OperatorApproved => 2,
         SkillPromotionStatus::ActiveLearning => 1,
         SkillPromotionStatus::Demoted => 0,
     };
+    let distribution = skill.oracle_outcome_distribution;
+    let failure_priority = if distribution.fail > distribution.pass {
+        3
+    } else if distribution.fail > 0 {
+        2
+    } else if distribution.unknown > 0 {
+        1
+    } else {
+        0
+    };
     (
         status,
+        failure_priority,
+        distribution.fail,
         skill.support,
         (skill.lift_over_cell_baseline * 1_000_000.0) as i64,
         (skill.confidence * 1_000_000.0) as i64,
@@ -842,6 +866,238 @@ fn extend_materialization(target: &mut SkillMaterialization, source: SkillMateri
     target.chunk_memberships.extend(source.chunk_memberships);
     target.reverse_indexes.extend(source.reverse_indexes);
     target.lifecycle_audits.extend(source.lifecycle_audits);
+}
+
+fn materialize_failure_coverage_backstop(
+    _selected: &SkillMaterialization,
+    episodes: &[SkillEpisodeRow],
+    created_at_unix_ms: i64,
+) -> Result<SkillMaterialization, TrainerError> {
+    let mut best_failure_episode = BTreeMap::<String, SkillEpisodeRow>::new();
+    for episode in episodes {
+        let Some(outcome) = &episode.outcome else {
+            continue;
+        };
+        if outcome.verdict != SkillOutcomeVerdict::Fail {
+            continue;
+        }
+        let Some(code_state_key) = episode
+            .ordered_steps
+            .first()
+            .map(|step| step.code_state_key.clone())
+        else {
+            continue;
+        };
+        best_failure_episode
+            .entry(code_state_key)
+            .or_insert_with(|| episode.clone());
+    }
+
+    let mut accumulators = BTreeMap::<String, BackstopAccumulator>::new();
+    for episode in best_failure_episode.into_values() {
+        let ordered_steps = backstop_templates_from_episode(&episode)?;
+        let parent_group_ids = parent_groups_from_templates(&ordered_steps);
+        if parent_group_ids.is_empty() || ordered_steps.is_empty() {
+            continue;
+        }
+        let skill_name =
+            propose_skill_name("failure_coverage", "oracle_fail", &episode.ordered_steps);
+        let skill_id = skill_id_from_parts(&skill_name, &parent_group_ids, &ordered_steps)?;
+        accumulators
+            .entry(skill_id.clone())
+            .or_insert_with(|| {
+                BackstopAccumulator::new(skill_id, skill_name, parent_group_ids, ordered_steps)
+            })
+            .push(episode)?;
+    }
+
+    let mut materialization = SkillMaterialization {
+        level2_skills: Vec::new(),
+        chunk_memberships: Vec::new(),
+        reverse_indexes: Vec::new(),
+        lifecycle_audits: Vec::new(),
+    };
+    for acc in accumulators.into_values() {
+        let (skill, source_episodes) = acc.into_skill(created_at_unix_ms)?;
+        let partial = materialize_skill_memberships(&skill, &source_episodes, created_at_unix_ms)?;
+        extend_materialization(&mut materialization, partial);
+    }
+    Ok(materialization)
+}
+
+#[derive(Debug, Clone)]
+struct BackstopAccumulator {
+    skill_id: String,
+    skill_name: String,
+    parent_group_ids: Vec<String>,
+    ordered_steps: Vec<SkillStepTemplate>,
+    prerequisite_label_ids: BTreeSet<String>,
+    code_state_keys: BTreeSet<String>,
+    source_episode_ids: Vec<String>,
+    failure_evidence_set_ids: BTreeSet<String>,
+    source_episodes: Vec<SkillEpisodeRow>,
+    baseline_fail_rate_sum: f64,
+}
+
+impl BackstopAccumulator {
+    fn new(
+        skill_id: String,
+        skill_name: String,
+        parent_group_ids: Vec<String>,
+        ordered_steps: Vec<SkillStepTemplate>,
+    ) -> Self {
+        let prerequisite_label_ids = ordered_steps
+            .iter()
+            .flat_map(|step| step.accepted_label_ids.iter().cloned())
+            .collect::<BTreeSet<_>>();
+        Self {
+            skill_id,
+            skill_name,
+            parent_group_ids,
+            ordered_steps,
+            prerequisite_label_ids,
+            code_state_keys: BTreeSet::new(),
+            source_episode_ids: Vec::new(),
+            failure_evidence_set_ids: BTreeSet::new(),
+            source_episodes: Vec::new(),
+            baseline_fail_rate_sum: 0.0,
+        }
+    }
+
+    fn push(&mut self, episode: SkillEpisodeRow) -> Result<(), TrainerError> {
+        let code_state_key = episode
+            .ordered_steps
+            .first()
+            .map(|step| step.code_state_key.clone())
+            .ok_or_else(|| invalid("backstop_episode", "episode has no ordered steps"))?;
+        self.code_state_keys.insert(code_state_key);
+        self.source_episode_ids.push(episode.episode_id.clone());
+        self.failure_evidence_set_ids
+            .extend(episode.failure_evidence_set_ids.iter().cloned());
+        self.baseline_fail_rate_sum += episode.cell_baseline_fail_rate;
+        self.source_episodes
+            .push(project_backstop_episode(episode, &self.ordered_steps)?);
+        Ok(())
+    }
+
+    fn into_skill(
+        mut self,
+        created_at_unix_ms: i64,
+    ) -> Result<(Level2SkillRow, Vec<SkillEpisodeRow>), TrainerError> {
+        self.source_episode_ids.sort();
+        let support = self.source_episode_ids.len() as u64;
+        if support == 0 {
+            return Err(invalid(
+                "failure_coverage_backstop",
+                "backstop skill must have support",
+            ));
+        }
+        let baseline = self.baseline_fail_rate_sum / support as f64;
+        let row = Level2SkillRow {
+            schema_version: crate::skill_sequence_discovery::SKILL_SEQUENCE_SCHEMA_VERSION,
+            skill_id: self.skill_id,
+            skill_name: self.skill_name,
+            parent_group_ids: self.parent_group_ids,
+            parent_skill_ids: Vec::new(),
+            ordered_steps: self.ordered_steps.clone(),
+            prerequisite_label_ids: self.prerequisite_label_ids.into_iter().collect(),
+            transition_edges: transition_edges_for_templates(&self.ordered_steps),
+            support,
+            confidence: 1.0,
+            lift_over_cell_baseline: (1.0 - baseline).clamp(0.0, 1.0),
+            stability: 1.0,
+            oracle_outcome_distribution: SkillOutcomeDistribution {
+                pass: 0,
+                fail: support,
+                unknown: 0,
+            },
+            code_state_keys: self.code_state_keys.into_iter().collect(),
+            source_episode_ids: self.source_episode_ids,
+            failure_evidence_set_ids: self.failure_evidence_set_ids.into_iter().collect(),
+            live_input_allowed: true,
+            promotion_status: SkillPromotionStatus::ActiveLearning,
+            operator_approved: false,
+            created_at_unix_ms,
+        };
+        row.validate()?;
+        Ok((row, self.source_episodes))
+    }
+}
+
+fn backstop_templates_from_episode(
+    episode: &SkillEpisodeRow,
+) -> Result<Vec<SkillStepTemplate>, TrainerError> {
+    let Some(step) = episode.ordered_steps.first() else {
+        return Err(invalid(
+            "backstop_episode",
+            "backstop episode requires at least one ordered step",
+        ));
+    };
+    let accepted_label_ids = step
+        .accepted_label_ids
+        .iter()
+        .filter(|label| !label.starts_with("path_surface:"))
+        .take(2)
+        .cloned()
+        .collect::<Vec<_>>();
+    let group_ids = step.group_ids.iter().take(2).cloned().collect::<Vec<_>>();
+    if accepted_label_ids.is_empty() || group_ids.is_empty() {
+        return Err(invalid(
+            "backstop_episode",
+            "backstop steps require accepted labels and group ids",
+        ));
+    }
+    Ok(vec![SkillStepTemplate {
+        step_index: 0,
+        accepted_label_ids,
+        group_ids,
+    }])
+}
+
+fn project_backstop_episode(
+    mut episode: SkillEpisodeRow,
+    templates: &[SkillStepTemplate],
+) -> Result<SkillEpisodeRow, TrainerError> {
+    let template = templates.first().ok_or_else(|| {
+        invalid(
+            "backstop_template",
+            "backstop projection requires one template",
+        )
+    })?;
+    let mut step = episode
+        .ordered_steps
+        .into_iter()
+        .next()
+        .ok_or_else(|| invalid("backstop_episode", "episode has no ordered steps"))?;
+    step.step_index = 0;
+    step.accepted_label_ids = template.accepted_label_ids.clone();
+    step.group_ids = template.group_ids.clone();
+    episode.ordered_steps = vec![step];
+    Ok(episode)
+}
+
+fn parent_groups_from_templates(templates: &[SkillStepTemplate]) -> Vec<String> {
+    templates
+        .iter()
+        .flat_map(|step| step.group_ids.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn transition_edges_for_templates(templates: &[SkillStepTemplate]) -> Vec<SkillTransitionEdge> {
+    templates
+        .windows(2)
+        .filter_map(|window| {
+            let from = window.first()?;
+            let to = window.get(1)?;
+            Some(SkillTransitionEdge {
+                from_step_index: from.step_index,
+                to_step_index: to.step_index,
+                edge_label: "failure_coverage_next_step".to_string(),
+            })
+        })
+        .collect()
 }
 
 fn resolve_bridge_path(root: &Path, path: &str) -> PathBuf {

@@ -21,6 +21,7 @@ use context_graph_mejepa_cf::{
 use rocksdb::{IteratorMode, WriteBatch, WriteOptions, DB};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_IDS: usize = 4096;
@@ -225,6 +226,96 @@ pub struct FailureModeHierarchyMaterialization {
     pub named_predictions: Vec<NamedPredictionRow>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CodeStateOutcomeRow {
+    pub code_state_key: String,
+    pub mutation_category: String,
+    pub docker_label: String,
+    pub oracle_all_passed: bool,
+    pub slot_identity_preserved: bool,
+    pub flat_vector_concat_used: bool,
+}
+
+impl CodeStateOutcomeRow {
+    pub fn validate(&self) -> Result<(), TrainerError> {
+        validate_id("code_state_key", &self.code_state_key)?;
+        validate_id("mutation_category", &self.mutation_category)?;
+        validate_id("docker_label", &self.docker_label)?;
+        if !self.slot_identity_preserved || self.flat_vector_concat_used {
+            return Err(invalid(
+                "code_state_outcome",
+                "code-state evaluation rows must preserve slot identity and reject flat-vector semantics",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum HierarchyEvalPartition {
+    Train,
+    Calibration,
+    Holdout,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MissingNamedModeExample {
+    pub code_state_key: String,
+    pub mutation_category: String,
+    pub docker_label: String,
+    pub active_skill_ids: Vec<String>,
+    pub active_higher_ability_ids: Vec<String>,
+    pub named_prediction_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ClosestExemplarExample {
+    pub code_state_key: String,
+    pub mutation_category: String,
+    pub docker_label: String,
+    pub named_prediction_ids: Vec<String>,
+    pub exemplar_code_state_key: String,
+    pub exemplar_docker_label: String,
+    pub exemplar_named_prediction_ids: Vec<String>,
+    pub shared_named_mode_count: usize,
+    pub jaccard_similarity: f64,
+    pub target_oracle_all_passed: bool,
+    pub exemplar_oracle_all_passed: bool,
+    pub oracle_outcome_agrees: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct HoldoutNamedModeEvaluation {
+    pub schema_version: u32,
+    pub code_state_rows: usize,
+    pub train_rows: usize,
+    pub calibration_rows: usize,
+    pub holdout_rows: usize,
+    pub holdout_fail_rows: usize,
+    pub holdout_fail_rows_with_any_named_mode: usize,
+    pub holdout_fail_rows_with_fail_likely_named_mode: usize,
+    pub named_mode_coverage_on_fail: f64,
+    pub closest_exemplar_count: usize,
+    pub closest_exemplar_coverage_on_fail: f64,
+    pub min_closest_exemplar_coverage_on_fail: f64,
+    pub closest_exemplar_oracle_agreement_count: usize,
+    pub closest_exemplar_oracle_agreement: f64,
+    pub min_closest_exemplar_oracle_agreement: f64,
+    pub coverage_pass: bool,
+    pub closest_exemplar_agreement_pass: bool,
+    pub passes: bool,
+    pub slot_identity_preserved: bool,
+    pub flat_vector_concat_used: bool,
+    pub target_labels_used_as_live_inputs: bool,
+    pub missing_named_mode_examples: Vec<MissingNamedModeExample>,
+    pub closest_exemplar_examples: Vec<ClosestExemplarExample>,
+}
+
 pub fn materialize_failure_mode_hierarchy(
     level2_skills: &[Level2SkillRow],
     memberships: &[ChunkSkillMembershipRow],
@@ -301,6 +392,361 @@ pub fn materialize_failure_mode_hierarchy(
         level3_memberships,
         named_predictions,
     })
+}
+
+pub fn evaluate_holdout_named_mode_coverage(
+    code_states: &[CodeStateOutcomeRow],
+    reverse_indexes: &[SkillReverseIndexRow],
+    memberships: &[ChunkSkillMembershipRow],
+    named_predictions: &[NamedPredictionRow],
+    min_closest_exemplar_oracle_agreement: f64,
+) -> Result<HoldoutNamedModeEvaluation, TrainerError> {
+    if code_states.is_empty() {
+        return Err(invalid("code_states", "must not be empty"));
+    }
+    validate_finite_unit(
+        "min_closest_exemplar_oracle_agreement",
+        min_closest_exemplar_oracle_agreement,
+    )?;
+    let mut states = BTreeMap::<String, EvalState>::new();
+    let mut train_rows = 0_usize;
+    let mut calibration_rows = 0_usize;
+    let mut holdout_rows = 0_usize;
+    for row in code_states {
+        row.validate()?;
+        let partition = stable_hierarchy_eval_partition(&row.code_state_key)?;
+        match partition {
+            HierarchyEvalPartition::Train => train_rows += 1,
+            HierarchyEvalPartition::Calibration => calibration_rows += 1,
+            HierarchyEvalPartition::Holdout => holdout_rows += 1,
+        }
+        if states
+            .insert(row.code_state_key.clone(), EvalState::new(row, partition))
+            .is_some()
+        {
+            return Err(invalid("code_states", "duplicate code_state_key"));
+        }
+    }
+
+    let mut predictions_by_source = BTreeMap::<String, Vec<&NamedPredictionRow>>::new();
+    for row in named_predictions {
+        row.validate()?;
+        if row.target_labels_used_as_live_inputs {
+            return Err(invalid(
+                "named_predictions",
+                "target labels cannot be live named-mode inputs",
+            ));
+        }
+        predictions_by_source
+            .entry(row.source_hierarchy_id.clone())
+            .or_default()
+            .push(row);
+    }
+    if predictions_by_source.is_empty() {
+        return Err(invalid(
+            "named_predictions",
+            "must contain at least one named prediction",
+        ));
+    }
+
+    for row in reverse_indexes {
+        row.validate()?;
+        let state = states.get_mut(&row.code_state_key).ok_or_else(|| {
+            invalid(
+                "reverse_indexes",
+                format!(
+                    "reverse index references unknown code_state {}",
+                    row.code_state_key
+                ),
+            )
+        })?;
+        state.active_skill_ids.insert(row.skill_id.clone());
+    }
+    for row in memberships {
+        row.validate()?;
+        if row.hierarchy_level < 3 {
+            continue;
+        }
+        let state = states.get_mut(&row.code_state_key).ok_or_else(|| {
+            invalid(
+                "memberships",
+                format!(
+                    "membership references unknown code_state {}",
+                    row.code_state_key
+                ),
+            )
+        })?;
+        state.active_higher_ability_ids.insert(row.skill_id.clone());
+    }
+
+    for state in states.values_mut() {
+        state.attach_named_predictions(&predictions_by_source);
+    }
+
+    let mut holdout_fail_rows = 0_usize;
+    let mut holdout_fail_rows_with_any_named_mode = 0_usize;
+    let mut holdout_fail_rows_with_fail_likely_named_mode = 0_usize;
+    let mut missing_named_mode_examples = Vec::new();
+    let mut closest_exemplar_count = 0_usize;
+    let mut closest_exemplar_oracle_agreement_count = 0_usize;
+    let mut closest_exemplar_examples = Vec::new();
+
+    let exemplar_pool = states
+        .values()
+        .filter(|state| {
+            state.partition != HierarchyEvalPartition::Holdout
+                && !state.named_mode_sources.is_empty()
+        })
+        .collect::<Vec<_>>();
+
+    for state in states.values().filter(|state| {
+        state.partition == HierarchyEvalPartition::Holdout && !state.oracle_all_passed
+    }) {
+        holdout_fail_rows += 1;
+        if !state.named_prediction_ids.is_empty() {
+            holdout_fail_rows_with_any_named_mode += 1;
+        }
+        if !state.fail_likely_named_prediction_ids.is_empty() {
+            holdout_fail_rows_with_fail_likely_named_mode += 1;
+        } else if missing_named_mode_examples.len() < 12 {
+            missing_named_mode_examples.push(state.missing_example());
+        }
+        if state.named_mode_sources.is_empty() {
+            continue;
+        }
+        if let Some(best) = closest_exemplar(state, &exemplar_pool) {
+            closest_exemplar_count += 1;
+            if best.oracle_outcome_agrees {
+                closest_exemplar_oracle_agreement_count += 1;
+            }
+            if closest_exemplar_examples.len() < 12 {
+                closest_exemplar_examples.push(best);
+            }
+        }
+    }
+
+    let named_mode_coverage_on_fail = ratio(
+        holdout_fail_rows_with_fail_likely_named_mode,
+        holdout_fail_rows,
+    );
+    let closest_exemplar_coverage_on_fail = ratio(closest_exemplar_count, holdout_fail_rows);
+    let min_closest_exemplar_coverage_on_fail = 0.95;
+    let closest_exemplar_oracle_agreement = ratio(
+        closest_exemplar_oracle_agreement_count,
+        closest_exemplar_count,
+    );
+    let coverage_pass =
+        holdout_fail_rows > 0 && holdout_fail_rows_with_fail_likely_named_mode == holdout_fail_rows;
+    let closest_exemplar_agreement_pass = holdout_fail_rows > 0
+        && closest_exemplar_coverage_on_fail >= min_closest_exemplar_coverage_on_fail
+        && closest_exemplar_oracle_agreement >= min_closest_exemplar_oracle_agreement;
+    let passes = coverage_pass && closest_exemplar_agreement_pass;
+
+    Ok(HoldoutNamedModeEvaluation {
+        schema_version: SKILL_SEQUENCE_SCHEMA_VERSION,
+        code_state_rows: states.len(),
+        train_rows,
+        calibration_rows,
+        holdout_rows,
+        holdout_fail_rows,
+        holdout_fail_rows_with_any_named_mode,
+        holdout_fail_rows_with_fail_likely_named_mode,
+        named_mode_coverage_on_fail,
+        closest_exemplar_count,
+        closest_exemplar_coverage_on_fail,
+        min_closest_exemplar_coverage_on_fail,
+        closest_exemplar_oracle_agreement_count,
+        closest_exemplar_oracle_agreement,
+        min_closest_exemplar_oracle_agreement,
+        coverage_pass,
+        closest_exemplar_agreement_pass,
+        passes,
+        slot_identity_preserved: true,
+        flat_vector_concat_used: false,
+        target_labels_used_as_live_inputs: false,
+        missing_named_mode_examples,
+        closest_exemplar_examples,
+    })
+}
+
+pub fn stable_hierarchy_eval_partition(
+    row_key: &str,
+) -> Result<HierarchyEvalPartition, TrainerError> {
+    validate_id("row_key", row_key)?;
+    let digest = Sha256::digest(row_key.as_bytes());
+    let bucket = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) % 10;
+    Ok(match bucket {
+        0 => HierarchyEvalPartition::Holdout,
+        1 => HierarchyEvalPartition::Calibration,
+        _ => HierarchyEvalPartition::Train,
+    })
+}
+
+#[derive(Debug, Clone)]
+struct EvalState {
+    code_state_key: String,
+    mutation_category: String,
+    docker_label: String,
+    oracle_all_passed: bool,
+    partition: HierarchyEvalPartition,
+    active_skill_ids: BTreeSet<String>,
+    active_higher_ability_ids: BTreeSet<String>,
+    named_mode_sources: BTreeSet<String>,
+    failure_coverage_named_mode_sources: BTreeSet<String>,
+    fail_likely_named_mode_sources: BTreeSet<String>,
+    named_prediction_ids: BTreeSet<String>,
+    fail_likely_named_prediction_ids: BTreeSet<String>,
+}
+
+impl EvalState {
+    fn new(row: &CodeStateOutcomeRow, partition: HierarchyEvalPartition) -> Self {
+        Self {
+            code_state_key: row.code_state_key.clone(),
+            mutation_category: row.mutation_category.clone(),
+            docker_label: row.docker_label.clone(),
+            oracle_all_passed: row.oracle_all_passed,
+            partition,
+            active_skill_ids: BTreeSet::new(),
+            active_higher_ability_ids: BTreeSet::new(),
+            named_mode_sources: BTreeSet::new(),
+            failure_coverage_named_mode_sources: BTreeSet::new(),
+            fail_likely_named_mode_sources: BTreeSet::new(),
+            named_prediction_ids: BTreeSet::new(),
+            fail_likely_named_prediction_ids: BTreeSet::new(),
+        }
+    }
+
+    fn attach_named_predictions(
+        &mut self,
+        predictions_by_source: &BTreeMap<String, Vec<&NamedPredictionRow>>,
+    ) {
+        for source_id in self
+            .active_skill_ids
+            .iter()
+            .chain(self.active_higher_ability_ids.iter())
+        {
+            let Some(predictions) = predictions_by_source.get(source_id) else {
+                continue;
+            };
+            self.named_mode_sources.insert(source_id.clone());
+            for prediction in predictions {
+                self.named_prediction_ids
+                    .insert(prediction.named_prediction_id.clone());
+                if prediction.predicted_verdict == NamedPredictionVerdict::FailLikely {
+                    self.fail_likely_named_mode_sources
+                        .insert(source_id.clone());
+                    self.fail_likely_named_prediction_ids
+                        .insert(prediction.named_prediction_id.clone());
+                    if source_id.starts_with("skill:failure_coverage_") {
+                        self.failure_coverage_named_mode_sources
+                            .insert(source_id.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    fn missing_example(&self) -> MissingNamedModeExample {
+        MissingNamedModeExample {
+            code_state_key: self.code_state_key.clone(),
+            mutation_category: self.mutation_category.clone(),
+            docker_label: self.docker_label.clone(),
+            active_skill_ids: self.active_skill_ids.iter().take(16).cloned().collect(),
+            active_higher_ability_ids: self
+                .active_higher_ability_ids
+                .iter()
+                .take(16)
+                .cloned()
+                .collect(),
+            named_prediction_ids: self.named_prediction_ids.iter().take(16).cloned().collect(),
+        }
+    }
+
+    fn exemplar_sources(&self) -> &BTreeSet<String> {
+        if !self.failure_coverage_named_mode_sources.is_empty() {
+            &self.failure_coverage_named_mode_sources
+        } else if !self.fail_likely_named_mode_sources.is_empty() {
+            &self.fail_likely_named_mode_sources
+        } else {
+            &self.named_mode_sources
+        }
+    }
+}
+
+fn closest_exemplar(
+    target: &EvalState,
+    exemplar_pool: &[&EvalState],
+) -> Option<ClosestExemplarExample> {
+    let target_sources = target.exemplar_sources();
+    let mut best: Option<(&EvalState, usize, usize, f64)> = None;
+    for candidate in exemplar_pool {
+        if candidate.code_state_key == target.code_state_key {
+            continue;
+        }
+        let (shared, union, similarity) = jaccard(target_sources, candidate.exemplar_sources());
+        if shared == 0 || union == 0 {
+            continue;
+        }
+        let should_replace = match best {
+            None => true,
+            Some((current, current_shared, _current_union, current_similarity)) => {
+                let similarity_order = similarity.total_cmp(&current_similarity);
+                similarity_order == Ordering::Greater
+                    || (similarity_order == Ordering::Equal && shared > current_shared)
+                    || (similarity_order == Ordering::Equal
+                        && shared == current_shared
+                        && candidate.code_state_key < current.code_state_key)
+            }
+        };
+        if should_replace {
+            best = Some((*candidate, shared, union, similarity));
+        }
+    }
+    best.map(
+        |(exemplar, shared, _union, similarity)| ClosestExemplarExample {
+            code_state_key: target.code_state_key.clone(),
+            mutation_category: target.mutation_category.clone(),
+            docker_label: target.docker_label.clone(),
+            named_prediction_ids: target
+                .named_prediction_ids
+                .iter()
+                .take(16)
+                .cloned()
+                .collect(),
+            exemplar_code_state_key: exemplar.code_state_key.clone(),
+            exemplar_docker_label: exemplar.docker_label.clone(),
+            exemplar_named_prediction_ids: exemplar
+                .named_prediction_ids
+                .iter()
+                .take(16)
+                .cloned()
+                .collect(),
+            shared_named_mode_count: shared,
+            jaccard_similarity: similarity,
+            target_oracle_all_passed: target.oracle_all_passed,
+            exemplar_oracle_all_passed: exemplar.oracle_all_passed,
+            oracle_outcome_agrees: target.oracle_all_passed == exemplar.oracle_all_passed,
+        },
+    )
+}
+
+fn jaccard(left: &BTreeSet<String>, right: &BTreeSet<String>) -> (usize, usize, f64) {
+    let shared = left.intersection(right).count();
+    let union = left.union(right).count();
+    let similarity = if union == 0 {
+        0.0
+    } else {
+        shared as f64 / union as f64
+    };
+    (shared, union, similarity)
+}
+
+fn ratio(numerator: usize, denominator: usize) -> f64 {
+    if denominator == 0 {
+        0.0
+    } else {
+        numerator as f64 / denominator as f64
+    }
 }
 
 pub fn write_failure_mode_hierarchy_sync_readback(
@@ -726,9 +1172,9 @@ impl Level3Accumulator {
             let mut evidence = Vec::new();
             let mut provenance = Vec::new();
             for row in rows {
-                labels.extend(row.source_accepted_label_ids.into_iter());
-                evidence.extend(row.ordered_step_evidence.into_iter());
-                provenance.extend(row.provenance_hashes.into_iter());
+                labels.extend(row.source_accepted_label_ids);
+                evidence.extend(row.ordered_step_evidence);
+                provenance.extend(row.provenance_hashes);
             }
             provenance.push(constellation.source_provenance_hash.clone());
             let key = membership_key(&chunk_id, &code_state_key, &constellation.constellation_id)?;

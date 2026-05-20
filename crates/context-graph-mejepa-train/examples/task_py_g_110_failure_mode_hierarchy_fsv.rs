@@ -12,20 +12,23 @@ use context_graph_mejepa_train::chunk_skill_membership::{
     read_all_skill_reverse_index_rows, write_skill_materialization_sync_readback,
 };
 use context_graph_mejepa_train::failure_mode_hierarchy::{
-    materialize_failure_mode_hierarchy, read_all_level1_failure_mode_group_rows,
-    read_all_level3_constellation_rows, read_all_named_prediction_rows,
-    write_failure_mode_hierarchy_sync_readback,
+    evaluate_holdout_named_mode_coverage, materialize_failure_mode_hierarchy,
+    read_all_level1_failure_mode_group_rows, read_all_level3_constellation_rows,
+    read_all_named_prediction_rows, write_failure_mode_hierarchy_sync_readback,
+    CodeStateOutcomeRow,
 };
 use context_graph_mejepa_train::label_bridge::load_label_learning_bridge;
 use context_graph_mejepa_train::skill_corpus_materialization::{
     build_skill_corpus_materialization, SkillCorpusMaterializationConfig,
 };
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
+use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::env;
-use std::fs;
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -79,6 +82,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let level3_readback = read_all_level3_constellation_rows(&readback_db)?;
     let named_readback = read_all_named_prediction_rows(&readback_db)?;
     let all_membership_readback = read_all_chunk_skill_membership_rows(&readback_db)?;
+    let reverse_readback = read_all_skill_reverse_index_rows(&readback_db)?;
+    let code_state_outcomes = read_code_state_outcomes(&args.label_root)?;
+    let holdout_eval = evaluate_holdout_named_mode_coverage(
+        &code_state_outcomes,
+        &reverse_readback,
+        &all_membership_readback,
+        &named_readback,
+        0.85,
+    )?;
     let sample_level3_membership = hierarchy
         .level3_memberships
         .first()
@@ -138,7 +150,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && !build.report.flat_vector_concat_used
         && !build.report.target_labels_used_as_live_inputs
         && !build.report.mnt_d_active_reads_or_writes;
-    let all_passed = readback_pass && hierarchy_pass && runtime_pass && substrate_pass;
+    let holdout_pass = holdout_eval.passes;
+    let all_passed =
+        readback_pass && hierarchy_pass && runtime_pass && substrate_pass && holdout_pass;
 
     let report_path = run_root.join("task_py_g_110_failure_mode_hierarchy_fsv.json");
     let report = json!({
@@ -168,6 +182,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "expectedNamedPredictionCount": expected_named_count,
             "expectedMembershipCount": expected_membership_count
         },
+        "holdout_named_mode_evaluation": holdout_eval,
         "runtime_resolver": {
             "sampleAbilityId": sample_level3_membership.skill_id,
             "sampleMembershipKey": sample_level3_membership.membership_key,
@@ -180,7 +195,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "drop_reopen_readback_rows_agree": readback_pass,
             "hierarchy_rows_materialized": hierarchy_pass,
             "runtime_resolver_consumes_level3_membership": runtime_pass,
-            "substrate_slot_identity_and_live_label_policy_preserved": substrate_pass
+            "substrate_slot_identity_and_live_label_policy_preserved": substrate_pass,
+            "holdout_named_mode_coverage_and_exemplar_agreement": holdout_pass
         },
         "active_path_policy": {
             "mnt_d_active_reads_or_writes": false,
@@ -210,6 +226,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "report_sha256": format!("sha256:{}", hex::encode(Sha256::digest(fs::read(&report_path)?))),
             "cf_counts": final_report.pointer("/after/cf_counts"),
             "hierarchy_materialization": final_report.get("hierarchy_materialization"),
+            "holdout_named_mode_evaluation": final_report.get("holdout_named_mode_evaluation"),
             "runtime_resolver": {
                 "sampleAbilityId": final_report.pointer("/runtime_resolver/sampleAbilityId"),
                 "activeHigherAbilityIds": final_report.pointer("/runtime_resolver/activeHigherAbilityIds")
@@ -280,6 +297,74 @@ impl Args {
         }
         Ok(out)
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct CodeStateOutcomeJsonRow {
+    group_key: String,
+    mutation_category: String,
+    docker_label: String,
+    oracle_all_passed: bool,
+    slot_identity_preserved: bool,
+    flat_vector_concat_used: bool,
+}
+
+fn read_code_state_outcomes(
+    label_root: &Path,
+) -> Result<Vec<CodeStateOutcomeRow>, Box<dyn std::error::Error>> {
+    let bridge = load_label_learning_bridge(label_root)?;
+    let code_state_path =
+        resolve_label_path(label_root, &bridge.manifest.paths.code_state_constellations);
+    let mut rows = Vec::new();
+    for row in read_jsonl::<CodeStateOutcomeJsonRow>(&code_state_path)? {
+        rows.push(CodeStateOutcomeRow {
+            code_state_key: row.group_key,
+            mutation_category: row.mutation_category,
+            docker_label: row.docker_label,
+            oracle_all_passed: row.oracle_all_passed,
+            slot_identity_preserved: row.slot_identity_preserved,
+            flat_vector_concat_used: row.flat_vector_concat_used,
+        });
+    }
+    if rows.is_empty() {
+        return Err(format!(
+            "code-state outcome file produced no rows: {}",
+            code_state_path.display()
+        )
+        .into());
+    }
+    Ok(rows)
+}
+
+fn resolve_label_path(root: &Path, path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        path
+    } else {
+        root.join(path)
+    }
+}
+
+fn read_jsonl<T: for<'de> Deserialize<'de>>(
+    path: &Path,
+) -> Result<Vec<T>, Box<dyn std::error::Error>> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut rows = Vec::new();
+    for (idx, line) in reader.lines().enumerate() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        rows.push(serde_json::from_str(&line).map_err(|err| {
+            format!(
+                "{}:{} failed JSON parse for code-state outcome row: {err}",
+                path.display(),
+                idx + 1
+            )
+        })?);
+    }
+    Ok(rows)
 }
 
 fn open_db(path: &Path) -> Result<DB, Box<dyn std::error::Error>> {

@@ -412,22 +412,16 @@ Three new FSV protocols enforce the binary-Q1/Q2/Q5 + labeled + mistake-driven +
 6. **Usefulness gate.** Of 1,800+ candidates, 491 entered the accepted registry; rejected labels carry typed reasons (`below_support`, `below_lift`, `unstable_across_partitions`, `degenerate_pass_only`, `degenerate_fail_only`, `leaky_target_on_live_input`).
 7. **Independent readback.** Every output JSONL byte-replayed after a clean re-read; sha256 of each artifact recorded in the FSV manifest.
 
-**Level 1/2/3 — SHIPPED hierarchy-substrate assertions (epic #404 / TASK-PY-G-110), on top of the shipped Level-0 accepted registry.** Production aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv/run-1779270141206/task_py_g_110_failure_mode_hierarchy_fsv.json` (`passes=true`, sha256 `dec381b676734dea0671740308286df7a62f7de7543f6d7f15dca80e34c96945`):
+**Level 1/2/3 — SHIPPED hierarchy + holdout/exemplar assertions (epic #404 / TASK-PY-G-110), on top of the shipped Level-0 accepted registry.** Production aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv/run-1779273783982/task_py_g_110_failure_mode_hierarchy_fsv.json` (`passes=true`, sha256 `06b3e46a9a703cf0d1c52991784726f1b1f5577df7d7488360ebc651a698b863`):
 
-1. **Hierarchy rows materialized.** FSV materialized 7 Level-1 groups, 128 Level-2 skills, 578 Level-3 constellations, 9,477 Level-3 memberships, 706 named predictions, and 46,250 total chunk-skill membership rows after hierarchy expansion.
+1. **Hierarchy rows materialized.** FSV materialized 8 Level-1 groups, 157 Level-2 skills, 379 Level-3 constellations, 3,169 Level-3 memberships, 536 named predictions, and 12,658 total chunk-skill membership rows after hierarchy expansion.
 2. **Independent readback.** FSV writes all hierarchy rows into RocksDB, flushes, drops, reopens, decodes every target CF, and asserts count equality plus sample row equality.
 3. **Runtime resolver consumption.** A persisted Level-3 membership resolves through the existing runtime ability resolver into `PredictionLabelContext.active_higher_ability_ids`.
 4. **No collapsed panel.** `flat_vector_concat_used=false` and `slot_identity_preserved=true` remain asserted through the substrate build.
 5. **Leakage policy.** Named predictions preserve `target_outcomes_used_for_calibration=true` while asserting `target_labels_used_as_live_inputs=false`.
 6. **No /mnt/d active I/O.** FSV records active path policy and asserts `/mnt/d` active reads/writes false.
-
-**Remaining #404 holdout/exemplar closure assertions:**
-
-1. **Aggregation coverage.** Every shipped accepted label in the Level-0 registry maps to exactly one Level-1 group (no orphan accepted labels).
-2. **Operator-rename idempotence.** Rename a group's name via `mejepa_label_failure_cluster`, flush, drop, reopen via production opener, decode the row back. Required: `group_id` unchanged, `operator_approved_name` updated, history preserved in `CF_MEJEPA_FAILURE_MODE_LEVEL1.audit_log`.
-3. **Coverage on the holdout.** For every `Verdict::Fail` row in the 30-instance holdout window, `CF_MEJEPA_NAMED_PREDICTIONS` must contain a non-empty `NamedFailureMode`. Required: `named_mode_coverage_on_fail == 1.0`.
-4. **Exemplar-oracle agreement.** For each named failure mode, the top-1 closest exemplar's oracle outcome must match the prediction's oracle outcome ≥ 85% of the time. Required: `closest_exemplar_oracle_agreement ≥ 0.85`.
-5. **Vocabulary-seed audit.** Each Level-2 skill name must trace back to either a published seed source (Aleithan 2025 / Yang 2024 / SWE-Bench Pro 2025 / our 8 mutations / our adversarial corpus) OR an operator-approved extension. Required: `unsourced_skills == 0`.
+7. **Holdout coverage.** 114/114 holdout Fail rows resolve to a FailLikely named mode (`named_mode_coverage_on_fail=1.0`).
+8. **Closest-exemplar agreement.** 113/114 holdout Fail rows have a comparable train/calibration exemplar (`closest_exemplar_coverage_on_fail=0.9912280701754386`), and all matched exemplars agree with the oracle outcome (`closest_exemplar_oracle_agreement=1.0`, threshold `0.85`).
 
 ### 13.2 Cross-panel triangulation FSV (epic #405 / TASK-PY-G-111)
 

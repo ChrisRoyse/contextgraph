@@ -388,7 +388,7 @@ pub fn build_native_active_constellation_batch(
             }
             counts
         });
-    if coverage_counts.iter().any(|count| *count == 0) {
+    if coverage_counts.contains(&0) {
         return Err(config_error(
             "native constellation selected a row with zero embedder coverage",
         ));

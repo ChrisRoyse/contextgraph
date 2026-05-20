@@ -319,15 +319,13 @@ Source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.
 | CLI entrypoint `python-auto-label-discovery` | ✅ SHIPPED 2026-05-19 | Registered through `scripts/swebench_lite_ops/cli.py`; the operator-facing surface for running the compiler against the aiwonder corpus. |
 | FSV: `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/python_auto_label_discovery_fsv.json` | ✅ PASS (full corpus) | manifest sha256 `3cd0e3c6…`; full 399,777 chunks + 4,665,772 forward records + 491 accepted registry rows; 12/12 manual review reproductions matched |
 
-**Level 1/2/3 hierarchical naming (consumes Level-0 registry) — open under #404 / TASK-PY-G-110:**
+**Level 1/2/3 hierarchical naming (consumes Level-0 registry) — shipped under #404 / TASK-PY-G-110:**
 
-| Planned module | Crate | Role |
+| Module | Crate | Role |
 |---|---|---|
-| `src/failure_mode_hierarchy.rs` | `context-graph-mejepa` | 4-level hierarchy types (`FailureModeGroupId`, `FailureModeSkillName`, `FailureModeConstellationName`, `NamedFailureMode`). Reads the 491-row accepted label registry from #413; aggregates Level-0 labels by co-occurrence into Level-1 groups, named via published SWE-bench taxonomies (Aleithan et al. 2025, Yang et al. 2024, SWE-Bench Pro 2025). |
-| `src/failure_mode_clusters.rs` | `context-graph-mejepa` | Aggregation over the deterministic Level-0 label IDs (NOT a new K-means clustering pass — the K-means equivalent already lives in `python_auto_label_discovery.py` as the slot-region label emitter). |
-| `src/failure_mode_vocabulary.rs` | `context-graph-mejepa` | Operator-curated failure-mode vocabulary seeded from the published taxonomies + our 8-mutation operator set + adversarial corpus. Names attach to Level-1 groups already discovered by #413. |
-| `src/failure_mode_consumer.rs` | `context-graph-mejepa` | Reads aggregated Level-1/2/3 names, writes `CF_MEJEPA_FAILURE_MODE_LEVEL1/2/3`, exposes lookup for `compiler.rs::compile`. |
-| `examples/task_py_g_110_failure_mode_hierarchy_fsv.rs` | `context-graph-mejepa` | FSV harness: every shipped Fail prediction in the holdout receives at least one named mode; operator-rename idempotence; named-mode → closest-exemplar oracle agreement ≥ 0.85. |
+| `src/failure_mode_hierarchy.rs` | `context-graph-mejepa-train` | Level-1/2/3 hierarchy rows, named prediction rows, holdout named-mode coverage evaluation, and closest-exemplar agreement evaluation. Preserves slot identity and marks target outcomes as calibration-only. |
+| `src/skill_corpus_materialization.rs` | `context-graph-mejepa-train` | Streams the #413 live-split label artifacts, ranks failure-skewed skill candidates, and materializes deterministic failure-coverage backstop skills for Fail rows. |
+| `examples/task_py_g_110_failure_mode_hierarchy_fsv.rs` | `context-graph-mejepa-train` | aiwonder FSV harness: writes and reopens hierarchy CFs, proves runtime resolver consumption, verifies 114/114 Fail named-mode coverage, and verifies closest-exemplar oracle agreement ≥ 0.85. |
 
 ### 12.2 Cross-panel triangulation (epic #405 / TASK-PY-G-111)
 

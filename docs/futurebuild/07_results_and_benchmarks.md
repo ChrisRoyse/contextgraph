@@ -398,10 +398,10 @@ These measurements anchor the new Q1/Q2/Q5-binary + labeled + cross-panel + mist
 |---|---|---|---|
 | Deterministic auto-label compiler coverage | 399,777 chunk rows, 4,665,772 slot records, no active `/mnt/d` I/O | `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/python_auto_label_discovery_fsv.json` (`passes=true`) | #413 / TASK-PY-G-117 |
 | Accepted label registry materialization | accepted registry rows > 0; target labels supervision-only; manual review reproduction passes | same; output root `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/` | #413 |
-| Failure-mode hierarchy substrate | 7 Level-1 groups, 128 Level-2 skills, 578 Level-3 constellations, 9,477 Level-3 memberships, 706 named predictions; runtime resolver consumes Level-3 as higher ability | `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv/run-1779270141206/task_py_g_110_failure_mode_hierarchy_fsv.json` (`passes=true`, sha256 `dec381b676734dea0671740308286df7a62f7de7543f6d7f15dca80e34c96945`) | #404 / TASK-PY-G-110 |
+| Failure-mode hierarchy substrate | 8 Level-1 groups, 157 Level-2 skills, 379 Level-3 constellations, 3,169 Level-3 memberships, 536 named predictions; runtime resolver consumes Level-3 as higher ability | `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv/run-1779273783982/task_py_g_110_failure_mode_hierarchy_fsv.json` (`passes=true`, sha256 `06b3e46a9a703cf0d1c52991784726f1b1f5577df7d7488360ebc651a698b863`) | #404 / TASK-PY-G-110 |
 | Failure-mode cluster purity (silhouette) on 300×8 holdout | `mean_silhouette ≥ 0.7` | `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-clustering-fsv/` | #404 / TASK-PY-G-110 |
-| Named failure mode coverage on Fail rows | `named_mode_coverage_on_fail == 1.0` | same | #404 |
-| Closest-exemplar oracle-outcome agreement | `≥ 0.85` | same | #404 |
+| Named failure mode coverage on Fail rows | `named_mode_coverage_on_fail == 1.0` (measured `1.0`, 114/114 holdout Fail rows) | same | #404 |
+| Closest-exemplar oracle-outcome agreement | `≥ 0.85` (measured `1.0` over 113/114 comparable holdout Fail rows; exemplar coverage `0.9912280701754386`) | same | #404 |
 | Cross-panel ship-gate metric — Panel A | `≥ 0.95 × 4 windows` | `/zfs/archive/contextgraph/fsv/task-py-g-111-cross-panel-triangulation-fsv/` | #405 / TASK-PY-G-111 |
 | Cross-panel ship-gate metric — Panel B | `≥ 0.95 × 4 windows` AND `\|corr_a − corr_b\| ≤ 0.05` | same | #405 |
 | `CROSS_PANEL_GOODHART_DETECTED` synthetic-injection edge | flag fires on injected divergence | same | #405 |
