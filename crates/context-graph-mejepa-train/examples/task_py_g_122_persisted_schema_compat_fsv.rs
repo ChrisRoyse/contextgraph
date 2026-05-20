@@ -505,19 +505,19 @@ fn write_legacy_ability_rows(
     put_cf_bytes(
         db,
         CF_MEJEPA_MISTAKE_LOG,
-        b"mistake:legacy",
+        mistake.mistake_id.as_bytes(),
         &bincode::serialize(&mistake)?,
     )?;
     put_cf_bytes(
         db,
         CF_MEJEPA_REPLAY_BUFFER,
-        replay_row_key.as_bytes(),
+        &prediction_id.0,
         &bincode::serialize(&replay)?,
     )?;
     put_cf_bytes(
         db,
         CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
-        b"skill_audit:legacy",
+        lifecycle.skill_audit_id.as_bytes(),
         &bincode::serialize(&lifecycle)?,
     )?;
     Ok(())
