@@ -365,6 +365,10 @@ mod tests {
         let verdict = compiler
             .verify(&panel.patch, &panel.context)
             .expect("verify predicted failure panel");
+        assert!(
+            matches!(verdict, VerifyVerdict::EscalateToHuman { .. }),
+            "predicted failure must produce an escalation verdict"
+        );
         let (_gtau_passed, approved, live_prediction_readback) =
             verification_state(compiler.as_ref(), &verdict).expect("verification state");
 

@@ -1893,7 +1893,10 @@ fn apply_ood_gate_to_prediction(
 }
 
 fn ood_gate_failed(decision: &OodGateDecision) -> bool {
-    decision.reason == OOD_CALIBRATOR_MISSING
+    matches!(
+        decision.verdict,
+        Verdict::OutOfDistribution | Verdict::GuardRejected
+    ) || decision.reason == OOD_CALIBRATOR_MISSING
         || decision.reason == crate::ood_harvest::OOD_SCORE_ABOVE_THRESHOLD
         || decision.reason == "OOD_SCORE_ABOVE_STATIC_THRESHOLD"
 }
@@ -2520,6 +2523,18 @@ mod tests {
         assert_eq!(panel_t2.slot(InstrumentSlot::ERuntime)[16], 1.0);
         assert_eq!(panel_t2.slot(InstrumentSlot::ERuntime)[3], 0.0);
         assert_eq!(panel_t2.slot(InstrumentSlot::Scalars)[7], 1.0);
+    }
+
+    #[test]
+    fn ood_gate_failed_escalates_base_ood_verdict_even_when_static_score_within_threshold() {
+        let decision = OodGateDecision {
+            verdict: Verdict::OutOfDistribution,
+            reason: "OOD_SCORE_WITHIN_STATIC_THRESHOLD".to_string(),
+            ood_score: 0.0,
+            threshold: Some(1.0),
+        };
+
+        assert!(ood_gate_failed(&decision));
     }
 
     #[test]
