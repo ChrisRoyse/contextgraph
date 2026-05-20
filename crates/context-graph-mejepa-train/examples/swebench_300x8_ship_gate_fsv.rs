@@ -53,12 +53,26 @@ const RANK_REVERSAL_MIN_CLASS_SUPPORT: usize = 8;
 const RANK_REVERSAL_MAX_RAW_CALIBRATION_CORRELATION: f32 = -0.25;
 const RANK_LIFT_HASH_FEATURES: usize = 256;
 const RANK_LIFT_RBF_TAUS: [f32; 5] = [2.0, 5.0, 10.0, 20.0, 50.0];
+const RANK_LIFT_FAIL_BOOSTS: [f32; 2] = [1.0, 1.5];
+const PREVIOUS_RANK_LIFT_BASELINE_RUN: &str =
+    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T164924Z";
+const PREVIOUS_RANK_LIFT_CORRELATION: f32 = 0.793_727_1;
+const PREVIOUS_RANK_LIFT_BRIER: f32 = 0.093_644_52;
+const PREVIOUS_RANK_LIFT_ECE: f32 = 0.033_840_47;
 const RANK_LIFT_TARGET_LABEL_PREFIXES: [&str; 5] = [
     "oracle:",
     "docker:",
     "test_phase:",
     "code_state_outcome:",
     "leakage_policy:",
+];
+const WEAK_CELL_CATEGORIES: [&str; 6] = [
+    "delete_test_call",
+    "known_good",
+    "off_by_one",
+    "over_engineer",
+    "subtle_flip",
+    "swap_variable",
 ];
 const REQUIRED_CATEGORIES: [&str; 8] = [
     "known_good",
@@ -184,6 +198,8 @@ fn run() -> Result<()> {
     let rank_lift_improvement_vs_raw = calibration_improvement(&raw_final_metrics, &final_metrics);
     let rank_lift_improvement_vs_rank_safe =
         calibration_improvement(&rank_safe_final_metrics, &final_metrics);
+    let rank_lift_repair_evidence =
+        rank_lift_repair_evidence(&final_metrics, &final_per_category_metrics);
     let final_blockers = ship_gate_blockers(&final_metrics, &final_per_category_metrics);
     let final_power_blockers =
         statistical_power_blockers(&final_metrics, &final_per_category_metrics);
@@ -232,12 +248,13 @@ fn run() -> Result<()> {
             .unwrap_or_default()
             > 1
         && panel_audit["real_patch_paths_read"].as_u64() == Some(REQUIRED_HOLDOUT_COUNT as u64)
+        && rank_lift_repair_evidence["acceptance_passed"].as_bool() == Some(true)
         && !active_paths_include_mntd();
 
     let report = json!({
         "schema_version": 2,
-        "task_id": "TASK-PY-G-REBASELINE",
-        "issue": 529,
+        "task_id": "TASK-PY-G-131-WEAK-CELL-REPAIR",
+        "issue": 536,
         "generated_at": Utc::now().to_rfc3339(),
         "run_id": run_id,
         "source_of_truth": {
@@ -316,6 +333,7 @@ fn run() -> Result<()> {
             "rank_safe_per_category_metrics": rank_safe_per_category_metrics,
             "rank_lift_improvement_vs_raw": rank_lift_improvement_vs_raw,
             "rank_lift_improvement_vs_rank_safe": rank_lift_improvement_vs_rank_safe,
+            "rank_lift_repair_evidence": rank_lift_repair_evidence,
             "final_metrics": final_metrics,
             "per_category_metrics": final_per_category_metrics,
             "rolling_windows": rolling_windows,
@@ -325,6 +343,8 @@ fn run() -> Result<()> {
             "rolling_window_blockers": rolling_blockers,
             "rolling_window_statistical_power_blockers": rolling_power_blockers,
             "sample_predictions": predictions.iter().take(16).collect::<Vec<_>>(),
+            "weak_cell_predictions": weak_cell_predictions(&predictions),
+            "holdout_predictions": predictions,
             "invalid_source_edge_case_audit": invalid_source_edge_case_audit()?
         },
         "edge_case_audit": {
@@ -358,6 +378,7 @@ fn run() -> Result<()> {
         "readback_prediction_oracle_correlation": report_readback["execute_and_inspect"]["final_metrics"]["prediction_oracle_correlation"],
         "readback_calibration_improvement": report_readback["execute_and_inspect"]["calibration_improvement"],
         "readback_rank_lift_improvement_vs_rank_safe": report_readback["execute_and_inspect"]["rank_lift_improvement_vs_rank_safe"],
+        "readback_rank_lift_repair_evidence": report_readback["execute_and_inspect"]["rank_lift_repair_evidence"],
         "readback_holdout_prediction_count": report_readback["execute_and_inspect"]["holdout_prediction_count"],
     });
     write_json_0600(&readback_path, &readback)?;
@@ -471,7 +492,7 @@ struct RankLiftPolicy {
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum RankLiftCandidate {
-    CategoryLocalRbf { tau: f32 },
+    CategoryLocalRbf { tau: f32, fail_boost: f32 },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -956,9 +977,10 @@ fn fit_rank_lift_policy(entries: &[CorpusEntry]) -> Result<RankLiftModel> {
         }
     }
     let class_support_by_category = rank_lift_class_support(&rows);
-    let mut best_candidate = RankLiftCandidate::CategoryLocalRbf {
-        tau: RANK_LIFT_RBF_TAUS[0],
-    };
+    let candidates = rank_lift_candidates();
+    let mut best_candidate = *candidates
+        .first()
+        .ok_or_else(|| anyhow!("rank-lift candidate list is empty"))?;
     let mut best_rows = rank_lift_metric_rows(
         &rows,
         &train_indices_by_category,
@@ -967,8 +989,7 @@ fn fit_rank_lift_policy(entries: &[CorpusEntry]) -> Result<RankLiftModel> {
     )?;
     let mut best_metrics = metrics_for(&best_rows);
     let mut best_objective = calibration_objective(&best_metrics, false);
-    for tau in RANK_LIFT_RBF_TAUS.iter().copied().skip(1) {
-        let candidate = RankLiftCandidate::CategoryLocalRbf { tau };
+    for candidate in candidates.iter().copied().skip(1) {
         let candidate_rows =
             rank_lift_metric_rows(&rows, &train_indices_by_category, "calibration", candidate)?;
         let metrics = metrics_for(&candidate_rows);
@@ -981,10 +1002,10 @@ fn fit_rank_lift_policy(entries: &[CorpusEntry]) -> Result<RankLiftModel> {
         }
     }
     let policy = RankLiftPolicy {
-        schema_version: 1,
-        issue: 535,
+        schema_version: 2,
+        issue: 536,
         feature_source: CODE_STATE_CONSTELLATIONS_PATH.to_string(),
-        feature_policy: "category-local RBF exemplar head over code-state slot_feature_means plus hashed live group/pair/slot/surface label counts; target-side oracle/docker/test labels excluded from features; no active embedder vectors are flattened".to_string(),
+        feature_policy: "category-local RBF exemplar head over code-state slot_feature_means plus hashed live group/pair/slot/surface label counts; calibration may select train-only hard-negative fail weighting; target-side oracle/docker/test labels excluded from features; no active embedder vectors are flattened".to_string(),
         train_rows: rows.iter().filter(|row| row.bucket == "train").count(),
         calibration_rows: rows
             .iter()
@@ -992,7 +1013,7 @@ fn fit_rank_lift_policy(entries: &[CorpusEntry]) -> Result<RankLiftModel> {
             .count(),
         holdout_rows: rows.iter().filter(|row| row.bucket == "holdout").count(),
         feature_dim,
-        candidate_count: RANK_LIFT_RBF_TAUS.len(),
+        candidate_count: candidates.len(),
         selected: best_candidate,
         selected_calibration_metrics: best_metrics,
         selected_calibration_per_category_metrics: per_category_metrics(&best_rows),
@@ -1009,6 +1030,19 @@ fn fit_rank_lift_policy(entries: &[CorpusEntry]) -> Result<RankLiftModel> {
         rows,
         train_indices_by_category,
     })
+}
+
+fn rank_lift_candidates() -> Vec<RankLiftCandidate> {
+    RANK_LIFT_RBF_TAUS
+        .iter()
+        .copied()
+        .flat_map(|tau| {
+            RANK_LIFT_FAIL_BOOSTS
+                .iter()
+                .copied()
+                .map(move |fail_boost| RankLiftCandidate::CategoryLocalRbf { tau, fail_boost })
+        })
+        .collect()
 }
 
 fn apply_rank_lift_policy(
@@ -1084,8 +1118,9 @@ fn rank_lift_score_for_row(
     let train_indices = train_indices_by_category
         .get(&row.category)
         .ok_or_else(|| anyhow!("rank-lift category {} has no train rows", row.category))?;
-    let RankLiftCandidate::CategoryLocalRbf { tau } = candidate;
+    let RankLiftCandidate::CategoryLocalRbf { tau, fail_boost } = candidate;
     ensure!(tau > 0.0, "rank-lift RBF tau must be positive");
+    ensure!(fail_boost > 0.0, "rank-lift fail_boost must be positive");
     let mut weight_sum = 0.0_f64;
     let mut weighted_label_sum = 0.0_f64;
     for train_idx in train_indices {
@@ -1093,7 +1128,12 @@ fn rank_lift_score_for_row(
             .get(*train_idx)
             .ok_or_else(|| anyhow!("rank-lift train index out of range"))?;
         let distance = squared_distance(&row.standardized_features, &train.standardized_features);
-        let weight = (-(distance as f64) / (2.0 * (tau as f64).powi(2))).exp();
+        let class_weight = if train.actual_oracle_pass {
+            1.0
+        } else {
+            fail_boost as f64
+        };
+        let weight = (-(distance as f64) / (2.0 * (tau as f64).powi(2))).exp() * class_weight;
         weight_sum += weight;
         if train.actual_oracle_pass {
             weighted_label_sum += weight;
@@ -1314,6 +1354,168 @@ fn calibration_improvement(raw: &MetricBlock, calibrated: &MetricBlock) -> Calib
         improved_correlation: correlation_delta.map(|delta| delta > 0.0).unwrap_or(false),
         improved_brier: calibrated.brier < raw.brier,
     }
+}
+
+fn rank_lift_repair_evidence(
+    final_metrics: &MetricBlock,
+    per_category_metrics: &BTreeMap<String, MetricBlock>,
+) -> Value {
+    let correlation_delta = final_metrics
+        .prediction_oracle_correlation
+        .map(|current| current - PREVIOUS_RANK_LIFT_CORRELATION);
+    let brier_delta_positive_is_improvement = PREVIOUS_RANK_LIFT_BRIER - final_metrics.brier;
+    let ece_delta_positive_is_improvement = PREVIOUS_RANK_LIFT_ECE - final_metrics.ece;
+    let overall_lift_passed = final_metrics
+        .prediction_oracle_correlation
+        .map(|current| current > PREVIOUS_RANK_LIFT_CORRELATION)
+        .unwrap_or(false)
+        && final_metrics.brier <= PREVIOUS_RANK_LIFT_BRIER
+        && final_metrics.ece <= PREVIOUS_RANK_LIFT_ECE;
+
+    let mut diagnostics = serde_json::Map::new();
+    let mut improved_weak_cells = Vec::new();
+    for category in WEAK_CELL_CATEGORIES {
+        let Some(current) = per_category_metrics.get(category) else {
+            continue;
+        };
+        let Some(baseline) = previous_weak_cell_baseline(category) else {
+            continue;
+        };
+        let correlation_improved =
+            option_metric_improved(current.prediction_oracle_correlation, baseline.correlation);
+        let brier_improved = current.brier < baseline.brier;
+        let pass_recall_improved =
+            option_metric_improved(current.pass_recall, baseline.pass_recall);
+        let fail_recall_improved =
+            option_metric_improved(current.fail_recall, baseline.fail_recall);
+        let mut improvements = Vec::new();
+        if correlation_improved {
+            improvements.push("prediction_oracle_correlation");
+        }
+        if brier_improved {
+            improvements.push("brier");
+        }
+        if pass_recall_improved {
+            improvements.push("pass_recall");
+        }
+        if fail_recall_improved {
+            improvements.push("fail_recall");
+        }
+        if !improvements.is_empty() {
+            improved_weak_cells.push(format!("{}:{}", category, improvements.join("+")));
+        }
+        diagnostics.insert(
+            category.to_string(),
+            json!({
+                "baseline": {
+                    "prediction_oracle_correlation": baseline.correlation,
+                    "brier": baseline.brier,
+                    "pass_recall": baseline.pass_recall,
+                    "fail_recall": baseline.fail_recall
+                },
+                "current": {
+                    "prediction_oracle_correlation": current.prediction_oracle_correlation,
+                    "brier": current.brier,
+                    "pass_recall": current.pass_recall,
+                    "fail_recall": current.fail_recall,
+                    "predicted_pass_count": current.predicted_pass_count,
+                    "predicted_fail_count": current.predicted_fail_count,
+                    "score_min": current.score_min,
+                    "score_max": current.score_max,
+                    "score_mean": current.score_mean
+                },
+                "improvements": improvements
+            }),
+        );
+    }
+
+    json!({
+        "schema_version": 1,
+        "issue": 536,
+        "baseline_run": PREVIOUS_RANK_LIFT_BASELINE_RUN,
+        "repair_mechanism": "calibration-selected category-local RBF exemplar scoring with train-only hard-negative fail weighting; features remain slot-preserving code-state constellation statistics and target-label prefixes remain excluded",
+        "overall_lift": {
+            "previous_prediction_oracle_correlation": PREVIOUS_RANK_LIFT_CORRELATION,
+            "current_prediction_oracle_correlation": final_metrics.prediction_oracle_correlation,
+            "correlation_delta": correlation_delta,
+            "previous_brier": PREVIOUS_RANK_LIFT_BRIER,
+            "current_brier": final_metrics.brier,
+            "brier_delta_positive_is_improvement": brier_delta_positive_is_improvement,
+            "previous_ece": PREVIOUS_RANK_LIFT_ECE,
+            "current_ece": final_metrics.ece,
+            "ece_delta_positive_is_improvement": ece_delta_positive_is_improvement,
+            "passed": overall_lift_passed
+        },
+        "weak_cell_diagnostics": diagnostics,
+        "improved_weak_cells": improved_weak_cells,
+        "acceptance_passed": overall_lift_passed && !improved_weak_cells.is_empty()
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreviousWeakCellBaseline {
+    correlation: Option<f32>,
+    brier: f32,
+    pass_recall: Option<f32>,
+    fail_recall: Option<f32>,
+}
+
+fn previous_weak_cell_baseline(category: &str) -> Option<PreviousWeakCellBaseline> {
+    let baseline = match category {
+        "delete_test_call" => PreviousWeakCellBaseline {
+            correlation: None,
+            brier: 0.032_844_882,
+            pass_recall: Some(1.0),
+            fail_recall: Some(0.0),
+        },
+        "known_good" => PreviousWeakCellBaseline {
+            correlation: None,
+            brier: 0.032_843_87,
+            pass_recall: Some(1.0),
+            fail_recall: Some(0.0),
+        },
+        "off_by_one" => PreviousWeakCellBaseline {
+            correlation: Some(0.402_321_76),
+            brier: 0.245_885_12,
+            pass_recall: Some(1.0),
+            fail_recall: Some(0.0),
+        },
+        "over_engineer" => PreviousWeakCellBaseline {
+            correlation: None,
+            brier: 0.032_653_872,
+            pass_recall: Some(1.0),
+            fail_recall: Some(0.0),
+        },
+        "subtle_flip" => PreviousWeakCellBaseline {
+            correlation: Some(-0.144_787_64),
+            brier: 0.223_763_48,
+            pass_recall: Some(0.0),
+            fail_recall: Some(1.0),
+        },
+        "swap_variable" => PreviousWeakCellBaseline {
+            correlation: Some(-0.026_344_081),
+            brier: 0.181_044_62,
+            pass_recall: Some(0.0),
+            fail_recall: Some(1.0),
+        },
+        _ => return None,
+    };
+    Some(baseline)
+}
+
+fn option_metric_improved(current: Option<f32>, previous: Option<f32>) -> bool {
+    match (current, previous) {
+        (Some(current), Some(previous)) => current > previous,
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
+fn weak_cell_predictions(rows: &[PredictionRow]) -> Vec<PredictionRow> {
+    rows.iter()
+        .filter(|row| WEAK_CELL_CATEGORIES.contains(&row.category.as_str()))
+        .cloned()
+        .collect()
 }
 
 fn predict_oracle_pass(
