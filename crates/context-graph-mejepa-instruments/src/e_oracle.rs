@@ -122,13 +122,18 @@ pub struct OracleVerdict {
     /// Set if execution crashed before tests ran OR the test framework
     /// itself raised an exception.
     pub exception: Option<ExceptionClass>,
+    /// True when the oracle has not run yet and the slot is intentionally
+    /// unavailable. This is distinct from observed Skip/Error outcomes.
+    #[serde(default)]
+    pub evidence_unavailable: bool,
 }
 
 impl OracleVerdict {
     /// True if every test passed AND no exception was raised. The "happy"
     /// oracle outcome ME-JEPA's predict head is trying to learn.
     pub fn all_passed(&self) -> bool {
-        self.exception.is_none()
+        !self.evidence_unavailable
+            && self.exception.is_none()
             && !self.per_test.is_empty()
             && self.per_test.iter().all(|t| t.outcome == TestOutcome::Pass)
     }
@@ -150,6 +155,18 @@ impl Instrument for EOracleInstrument {
     }
 
     fn encode(&self, input: &Self::Input) -> InstrumentResult<Vec<f32>> {
+        if input.evidence_unavailable {
+            if !input.per_test.is_empty() || input.exception.is_some() {
+                return Err(InstrumentError::invalid(
+                    "input.evidence_unavailable",
+                    "unavailable oracle evidence cannot also carry observed outcomes",
+                    "set evidence_unavailable=false before recording observed oracle rows",
+                ));
+            }
+            let mut out = vec![0.0_f32; self.output_dim()];
+            out[16] = 1.0;
+            return Ok(out);
+        }
         if input.per_test.is_empty() && input.exception.is_none() {
             return Err(InstrumentError::invalid(
                 "input",

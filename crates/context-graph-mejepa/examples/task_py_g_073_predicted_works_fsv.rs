@@ -405,6 +405,7 @@ fn known_good_exemplar() -> ExemplarMatch {
                 runtime_ms: 12,
             }],
             exception: None,
+            evidence_unavailable: false,
         },
         failure_mode_class: None,
         evidence_path: Some(

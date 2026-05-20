@@ -160,6 +160,7 @@ fn edge_invalid_key(store: &OracleStore) -> Value {
             runtime_ms: 3,
         }],
         exception: None,
+        evidence_unavailable: false,
     };
     let result = store.put_corpus_row("bad|task", MutationCategory::KnownGood, &mutation, &verdict);
     let actual = result.err().map(|e| e.code());

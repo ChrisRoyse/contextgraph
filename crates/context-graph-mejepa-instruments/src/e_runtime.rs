@@ -13,6 +13,11 @@ pub struct RuntimeInput {
     pub coverage_percent: Option<f32>,
     pub network_events: u32,
     pub filesystem_writes: u32,
+    /// True when runtime evidence is intentionally unavailable because the
+    /// code has not been executed yet. This is distinct from an observed
+    /// timeout or non-zero exit code.
+    #[serde(default)]
+    pub evidence_unavailable: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -28,6 +33,11 @@ impl Instrument for ERuntimeInstrument {
     fn encode(&self, input: &Self::Input) -> InstrumentResult<Vec<f32>> {
         validate_runtime(input)?;
         let mut out = vec![0.0_f32; InstrumentSlot::ERuntime.dim()];
+        if input.evidence_unavailable {
+            out[16] = 1.0;
+            validate_finite_output("e_runtime.output", &out)?;
+            return Ok(out);
+        }
         out[0] = bounded_ratio(input.wall_time_ms as f32, 3_600_000.0);
         out[1] = bounded_ratio(
             input.peak_rss_bytes as f32,
@@ -58,6 +68,23 @@ impl Instrument for ERuntimeInstrument {
 }
 
 fn validate_runtime(input: &RuntimeInput) -> InstrumentResult<()> {
+    if input.evidence_unavailable {
+        if input.wall_time_ms != 0
+            || input.peak_rss_bytes != 0
+            || input.exit_code != -1
+            || input.timed_out
+            || input.coverage_percent.is_some()
+            || input.network_events != 0
+            || input.filesystem_writes != 0
+        {
+            return Err(InstrumentError::invalid(
+                "input.evidence_unavailable",
+                "unavailable runtime evidence cannot also carry observed runtime values",
+                "set evidence_unavailable=false before recording runtime observations",
+            ));
+        }
+        return Ok(());
+    }
     if input.wall_time_ms == 0 && !input.timed_out {
         return Err(InstrumentError::invalid(
             "input.wall_time_ms",

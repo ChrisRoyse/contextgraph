@@ -13,6 +13,11 @@ pub struct ScalarInput {
     pub repo_health_score: f32,
     pub files_touched: u32,
     pub hunks_touched: u32,
+    /// True when runtime/repository scalar evidence is unavailable. Patch
+    /// structure scalars may still be present, but neutral coverage/health
+    /// values must not be read as observed measurements.
+    #[serde(default)]
+    pub evidence_unavailable: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -35,6 +40,7 @@ impl Instrument for ScalarsInstrument {
         out[4] = input.repo_health_score;
         out[5] = bounded_ratio(input.files_touched as f32, 10_000.0);
         out[6] = bounded_ratio(input.hunks_touched as f32, 100_000.0);
+        out[7] = if input.evidence_unavailable { 1.0 } else { 0.0 };
         for (idx, value) in out.iter_mut().enumerate().skip(16) {
             let mix = input.bfs_depth as u64
                 ^ ((input.blame_age_days as u64) << 9)

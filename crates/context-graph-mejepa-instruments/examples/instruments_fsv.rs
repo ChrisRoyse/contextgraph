@@ -89,6 +89,7 @@ fn verdict_all_pass() -> OracleVerdict {
             })
             .collect(),
         exception: None,
+        evidence_unavailable: false,
     }
 }
 
@@ -122,6 +123,7 @@ fn verdict_mixed() -> OracleVerdict {
             },
         ],
         exception: None,
+        evidence_unavailable: false,
     }
 }
 
@@ -129,6 +131,7 @@ fn verdict_crash(class: ExceptionClass) -> OracleVerdict {
     OracleVerdict {
         per_test: vec![],
         exception: Some(class),
+        evidence_unavailable: false,
     }
 }
 
@@ -162,6 +165,7 @@ fn static_analysis_input() -> StaticAnalysisInput {
             },
         ],
         churn_30d: Some(7),
+        evidence_unavailable: false,
     }
 }
 
@@ -284,6 +288,7 @@ fn boundary_empty_test_id() -> FsvResult<Value> {
             runtime_ms: 1,
         }],
         exception: None,
+        evidence_unavailable: false,
     };
     let result = inst.encode(&verdict);
     ensure(
@@ -313,6 +318,7 @@ fn boundary_empty_verdict() -> FsvResult<Value> {
     let verdict = OracleVerdict {
         per_test: vec![],
         exception: None,
+        evidence_unavailable: false,
     };
     let result = inst.encode(&verdict);
     ensure(
@@ -364,6 +370,7 @@ fn boundary_invalid_runtime() -> FsvResult<Value> {
             runtime_ms: -2,
         }],
         exception: None,
+        evidence_unavailable: false,
     };
     let result = inst.encode(&verdict);
     ensure(

@@ -642,18 +642,21 @@ pub fn swebench_report_to_verdict(
         return Ok(OracleVerdict {
             per_test: Vec::new(),
             exception: Some(ExceptionClass::Other),
+            evidence_unavailable: false,
         });
     }
     if !report.patch_exists {
         return Ok(OracleVerdict {
             per_test: Vec::new(),
             exception: Some(ExceptionClass::Other),
+            evidence_unavailable: false,
         });
     }
     if !report.patch_successfully_applied {
         return Ok(OracleVerdict {
             per_test: Vec::new(),
             exception: Some(ExceptionClass::Other),
+            evidence_unavailable: false,
         });
     }
 
@@ -750,6 +753,7 @@ pub fn swebench_report_to_verdict(
     Ok(normalize_swebench_oracle_verdict(OracleVerdict {
         per_test,
         exception: None,
+        evidence_unavailable: false,
     }))
 }
 

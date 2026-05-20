@@ -361,6 +361,7 @@ pub fn extract_q4_security_labels(
             })
             .collect(),
         churn_30d: None,
+        evidence_unavailable: false,
     };
     Ok(Q4SecurityExtraction {
         labels,

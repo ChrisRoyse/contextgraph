@@ -295,6 +295,7 @@ fn oracle_from_manifest(manifest: &Value) -> OracleVerdict {
     OracleVerdict {
         per_test,
         exception: None,
+        evidence_unavailable: false,
     }
 }
 
@@ -307,6 +308,7 @@ fn trace_input() -> TraceInput {
             timestamp_ms: 7,
             kind: TraceEventKind::LineHit,
         }],
+        evidence_unavailable: false,
     }
 }
 
@@ -327,6 +329,7 @@ fn static_analysis(source: &str) -> StaticAnalysisInput {
             column: 1,
         }],
         churn_30d: Some(2),
+        evidence_unavailable: false,
     }
 }
 
@@ -339,6 +342,7 @@ fn runtime_input() -> RuntimeInput {
         coverage_percent: Some(91.0),
         network_events: 0,
         filesystem_writes: 1,
+        evidence_unavailable: false,
     }
 }
 
@@ -364,6 +368,7 @@ fn scalar_input() -> ScalarInput {
         repo_health_score: 0.95,
         files_touched: 1,
         hunks_touched: 1,
+        evidence_unavailable: false,
     }
 }
 

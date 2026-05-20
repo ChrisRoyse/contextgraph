@@ -220,6 +220,7 @@ fn build_oracle_verdict_synthetic(test_id: &str, ok: bool) -> OracleVerdict {
         } else {
             Some(ExceptionClass::AssertionError)
         },
+        evidence_unavailable: false,
     }
 }
 

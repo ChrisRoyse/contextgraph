@@ -8,13 +8,12 @@ use context_graph_mejepa_instruments::materialize::{
     materialize_panel, PanelVectorInput, TimeStep,
 };
 use context_graph_mejepa_instruments::{
-    CodeInstrumentInput, Diagnostic, DiagnosticSeverity, DiffInstrumentInput, EAstInstrument,
-    ECfgInstrument, ECommitMsgInstrument, EDataFlowInstrument, EDiffInstrument, EOracleInstrument,
-    EProblemInstrument, EReasoningInstrument, ERuntimeInstrument, EStaticAnalysisInstrument,
-    ETestInstrument, ETraceInstrument, ETypeGraphInstrument, EWitnessInstrument, Instrument,
-    InstrumentSlot, OracleVerdict as InstrumentOracleVerdict, Panel, PerTestOutcome,
-    ReasoningEvent, ReasoningInput, RuntimeInput, ScalarInput, ScalarsInstrument,
-    StaticAnalysisInput, TestOutcome, TextInstrumentInput, TraceEvent, TraceEventKind, TraceInput,
+    CodeInstrumentInput, DiffInstrumentInput, EAstInstrument, ECfgInstrument, ECommitMsgInstrument,
+    EDataFlowInstrument, EDiffInstrument, EOracleInstrument, EProblemInstrument,
+    EReasoningInstrument, ERuntimeInstrument, EStaticAnalysisInstrument, ETestInstrument,
+    ETraceInstrument, ETypeGraphInstrument, EWitnessInstrument, Instrument, InstrumentSlot,
+    OracleVerdict as InstrumentOracleVerdict, Panel, ReasoningEvent, ReasoningInput, RuntimeInput,
+    ScalarInput, ScalarsInstrument, StaticAnalysisInput, TextInstrumentInput, TraceInput,
     WitnessChainInput, CANONICAL_WITNESS_FORMAT_VERSION,
 };
 use context_graph_mejepa_tct::{
@@ -577,7 +576,10 @@ impl MeJepaCompiler {
             // than silently substitute `0.0` for the Q2 verdict pressure feature.
             // When DDA features are explicitly disabled (`require_dda_features = false`),
             // `0.0` is the documented contract — the Q2-pressure surface is opt-in.
-            constellation_verdict_pressure: match (&constellation_intelligence, self.config.require_dda_features) {
+            constellation_verdict_pressure: match (
+                &constellation_intelligence,
+                self.config.require_dda_features,
+            ) {
                 (Some(evidence), _) => evidence.pressures.q2_verdict_pressure,
                 (None, false) => 0.0,
                 (None, true) => {
@@ -1455,17 +1457,6 @@ fn build_inference_panel_inputs(
         .map(|hunk| hunk.path.clone())
         .collect::<BTreeSet<_>>()
         .len();
-    let value_hash = hex::encode(sha256_panel_input(patch, context));
-    let runtime_tests = context
-        .tests
-        .iter()
-        .map(|test| PerTestOutcome {
-            test_id: format!("{}::__not_observed__", test.0),
-            outcome: TestOutcome::Skip,
-            runtime_ms: -1,
-        })
-        .collect();
-
     Ok(InferencePanelInputs {
         before_code: CodeInstrumentInput {
             language: language.clone(),
@@ -1507,37 +1498,29 @@ fn build_inference_panel_inputs(
             chain_bytes: patch.witness_chain_segment.clone(),
         },
         oracle: InstrumentOracleVerdict {
-            per_test: runtime_tests,
+            per_test: Vec::new(),
             exception: None,
+            evidence_unavailable: true,
         },
         trace: TraceInput {
-            events: vec![TraceEvent {
-                function_id: "mejepa.inference.not_observed".to_string(),
-                line: 1,
-                value_hash,
-                timestamp_ms: 1,
-                kind: TraceEventKind::ValueSnapshot,
-            }],
+            events: Vec::new(),
+            evidence_unavailable: true,
         },
         static_analysis: StaticAnalysisInput {
             source_text: after_source.clone(),
-            diagnostics: vec![Diagnostic {
-                tool: "mejepa_inference".to_string(),
-                severity: DiagnosticSeverity::Info,
-                category: "static_analysis_not_observed".to_string(),
-                line: 1,
-                column: 1,
-            }],
-            churn_30d: Some(changed_lines.min(u32::MAX as usize) as u32),
+            diagnostics: Vec::new(),
+            churn_30d: None,
+            evidence_unavailable: true,
         },
         runtime: RuntimeInput {
             wall_time_ms: 0,
             peak_rss_bytes: 0,
             exit_code: -1,
-            timed_out: true,
+            timed_out: false,
             coverage_percent: None,
             network_events: 0,
             filesystem_writes: 0,
+            evidence_unavailable: true,
         },
         reasoning: ReasoningInput {
             task_id: context.task_id.0.clone(),
@@ -1567,6 +1550,7 @@ fn build_inference_panel_inputs(
             repo_health_score: 0.5,
             files_touched: file_count.min(u32::MAX as usize) as u32,
             hunks_touched: patch.ast_diff.hunks.len().min(u32::MAX as usize) as u32,
+            evidence_unavailable: true,
         },
     })
 }
@@ -1725,20 +1709,6 @@ fn max_path_depth(patch: &PatchBundle) -> u32 {
         .max()
         .unwrap_or(0)
         .min(u32::MAX as usize) as u32
-}
-
-fn sha256_panel_input(patch: &PatchBundle, context: &TaskContext) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(context.task_id.0.as_bytes());
-    hasher.update(context.session_id);
-    hasher.update(context.problem_statement.as_bytes());
-    hasher.update(patch.patch_sha);
-    for hunk in &patch.ast_diff.hunks {
-        hasher.update(path_text(&hunk.path).as_bytes());
-        hasher.update(hunk.before.as_bytes());
-        hasher.update(hunk.after.as_bytes());
-    }
-    hasher.finalize().into()
 }
 
 fn language_slug(language: crate::types::Language) -> &'static str {
@@ -2523,6 +2493,33 @@ mod tests {
             panel_t2.slot(InstrumentSlot::EOracle),
             direct_oracle.as_slice()
         );
+    }
+
+    #[test]
+    fn t2_unavailable_evidence_uses_typed_absent_state() {
+        let (patch, context) = sample_patch_context("change answer increment");
+        let inputs = build_inference_panel_inputs(&patch, &context).unwrap();
+        assert!(inputs.oracle.evidence_unavailable);
+        assert!(inputs.oracle.per_test.is_empty());
+        assert!(inputs.oracle.exception.is_none());
+        assert!(inputs.trace.evidence_unavailable);
+        assert!(inputs.trace.events.is_empty());
+        assert!(inputs.static_analysis.evidence_unavailable);
+        assert!(inputs.static_analysis.diagnostics.is_empty());
+        assert!(inputs.runtime.evidence_unavailable);
+        assert!(!inputs.runtime.timed_out);
+        assert!(inputs.scalars.evidence_unavailable);
+
+        let (_, _, panel_t2) = materialize_inference_panels(&patch, &context).unwrap();
+        assert_eq!(panel_t2.slot(InstrumentSlot::EOracle)[16], 1.0);
+        assert_eq!(panel_t2.slot(InstrumentSlot::EOracle)[2], 0.0);
+        assert_eq!(panel_t2.slot(InstrumentSlot::ETrace)[16], 1.0);
+        assert_eq!(panel_t2.slot(InstrumentSlot::ETrace)[3], 0.0);
+        assert_eq!(panel_t2.slot(InstrumentSlot::EStaticAnalysis)[16], 1.0);
+        assert_eq!(panel_t2.slot(InstrumentSlot::EStaticAnalysis)[67], 0.0);
+        assert_eq!(panel_t2.slot(InstrumentSlot::ERuntime)[16], 1.0);
+        assert_eq!(panel_t2.slot(InstrumentSlot::ERuntime)[3], 0.0);
+        assert_eq!(panel_t2.slot(InstrumentSlot::Scalars)[7], 1.0);
     }
 
     #[test]

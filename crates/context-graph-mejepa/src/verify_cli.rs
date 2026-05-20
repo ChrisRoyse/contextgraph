@@ -470,6 +470,7 @@ fn append_corpus_entry(
             runtime_ms: 1,
         }],
         exception: None,
+        evidence_unavailable: false,
     };
     store.put_corpus_row(&row_task, MutationCategory::KnownGood, &outcome, &verdict)?;
     let after = store.count_cf(CF_MEJEPA_MUTATION_CORPUS)? as u64;

@@ -271,6 +271,7 @@ fn oracle_verdict(id: u8) -> OracleVerdict {
             runtime_ms: 10 + i64::from(id),
         }],
         exception: None,
+        evidence_unavailable: false,
     }
 }
 

@@ -100,6 +100,7 @@ fn oracle_verdict_reexport_round_trip() {
             runtime_ms: 1,
         }],
         exception: Some(ExceptionClass::AssertionError),
+        evidence_unavailable: false,
     };
     let text = serde_json::to_string(&verdict).unwrap();
     let readback: OracleVerdict = serde_json::from_str(&text).unwrap();

@@ -33,6 +33,7 @@ fn verdict_all_pass(n: usize) -> OracleVerdict {
             })
             .collect(),
         exception: None,
+        evidence_unavailable: false,
     }
 }
 
@@ -293,6 +294,7 @@ fn e_static_analysis_encodes_diagnostics_and_shape() {
             },
         ],
         churn_30d: Some(42),
+        evidence_unavailable: false,
     };
     let v = inst.encode(&input).unwrap();
     assert_eq!(v.len(), InstrumentSlot::EStaticAnalysis.dim());
@@ -311,6 +313,7 @@ fn e_static_analysis_rejects_invalid_source_and_diagnostic_lines() {
             source_text: " \n\t".into(),
             diagnostics: vec![],
             churn_30d: None,
+            evidence_unavailable: false,
         })
         .unwrap_err();
     assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
@@ -326,6 +329,7 @@ fn e_static_analysis_rejects_invalid_source_and_diagnostic_lines() {
                 column: 1,
             }],
             churn_30d: None,
+            evidence_unavailable: false,
         })
         .unwrap_err();
     assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
@@ -374,6 +378,7 @@ fn sample_trace_input() -> TraceInput {
                 kind: TraceEventKind::LineHit,
             },
         ],
+        evidence_unavailable: false,
     }
 }
 
@@ -386,6 +391,7 @@ fn sample_runtime_input() -> RuntimeInput {
         coverage_percent: Some(83.5),
         network_events: 0,
         filesystem_writes: 12,
+        evidence_unavailable: false,
     }
 }
 
@@ -410,6 +416,7 @@ fn sample_scalar_input() -> ScalarInput {
         repo_health_score: 0.91,
         files_touched: 2,
         hunks_touched: 3,
+        evidence_unavailable: false,
     }
 }
 
@@ -424,6 +431,7 @@ fn sample_static_input() -> StaticAnalysisInput {
             column: 1,
         }],
         churn_30d: Some(18),
+        evidence_unavailable: false,
     }
 }
 
@@ -629,7 +637,10 @@ loose = solver.compute([1])
 #[test]
 fn runtime_trace_reasoning_and_scalars_reject_missing_or_invalid_state() {
     let err = ETraceInstrument
-        .encode(&TraceInput { events: vec![] })
+        .encode(&TraceInput {
+            events: vec![],
+            evidence_unavailable: false,
+        })
         .unwrap_err();
     assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
 
@@ -647,6 +658,56 @@ fn runtime_trace_reasoning_and_scalars_reject_missing_or_invalid_state() {
     scalars.repo_health_score = 1.25;
     let err = ScalarsInstrument.encode(&scalars).unwrap_err();
     assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+}
+
+#[test]
+fn unavailable_evidence_is_typed_absent_runtime_or_trace() {
+    let unavailable_trace = ETraceInstrument
+        .encode(&TraceInput {
+            events: vec![],
+            evidence_unavailable: true,
+        })
+        .unwrap();
+    let observed_trace = ETraceInstrument.encode(&sample_trace_input()).unwrap();
+    assert_eq!(unavailable_trace[16], 1.0);
+    assert_eq!(observed_trace[16], 0.0);
+    assert_eq!(
+        unavailable_trace[3], 0.0,
+        "must not look like ValueSnapshot"
+    );
+
+    let unavailable_runtime = ERuntimeInstrument
+        .encode(&RuntimeInput {
+            wall_time_ms: 0,
+            peak_rss_bytes: 0,
+            exit_code: -1,
+            timed_out: false,
+            coverage_percent: None,
+            network_events: 0,
+            filesystem_writes: 0,
+            evidence_unavailable: true,
+        })
+        .unwrap();
+    let mut timeout = sample_runtime_input();
+    timeout.timed_out = true;
+    timeout.exit_code = 124;
+    let observed_timeout = ERuntimeInstrument.encode(&timeout).unwrap();
+    assert_eq!(unavailable_runtime[16], 1.0);
+    assert_eq!(unavailable_runtime[3], 0.0, "must not look like timeout");
+    assert_eq!(observed_timeout[16], 0.0);
+    assert_eq!(observed_timeout[3], 1.0);
+}
+
+#[test]
+fn scalar_unavailable_flag_marks_neutral_runtime_scalars() {
+    let mut unavailable = sample_scalar_input();
+    unavailable.coverage_delta = 0.0;
+    unavailable.repo_health_score = 0.5;
+    unavailable.evidence_unavailable = true;
+    let unavailable_vec = ScalarsInstrument.encode(&unavailable).unwrap();
+    let observed_vec = ScalarsInstrument.encode(&sample_scalar_input()).unwrap();
+    assert_eq!(unavailable_vec[7], 1.0);
+    assert_eq!(observed_vec[7], 0.0);
 }
 
 #[test]
@@ -766,6 +827,7 @@ fn e_oracle_mixed_outcomes_yield_distribution_shaped_counts() {
             },
         ],
         exception: None,
+        evidence_unavailable: false,
     };
     let v = inst.encode(&verdict).unwrap();
     assert!((v[0] - 0.4).abs() < 1e-6); // 2/5 pass
@@ -786,6 +848,7 @@ fn e_oracle_exception_sets_one_hot_bit() {
     let verdict = OracleVerdict {
         per_test: vec![],
         exception: Some(ExceptionClass::AssertionError),
+        evidence_unavailable: false,
     };
     let v = inst.encode(&verdict).unwrap();
     assert_eq!(v[5], 1.0); // has_exception
@@ -802,6 +865,48 @@ fn e_oracle_exception_sets_one_hot_bit() {
 }
 
 #[test]
+fn e_oracle_unavailable_differs_from_observed_skip() {
+    let inst = EOracleInstrument;
+    let unavailable = OracleVerdict {
+        per_test: vec![],
+        exception: None,
+        evidence_unavailable: true,
+    };
+    let observed_skip = OracleVerdict {
+        per_test: vec![PerTestOutcome {
+            test_id: "tests/test_x.py::test_skip".into(),
+            outcome: TestOutcome::Skip,
+            runtime_ms: -1,
+        }],
+        exception: None,
+        evidence_unavailable: false,
+    };
+    let unavailable_vec = inst.encode(&unavailable).unwrap();
+    let skip_vec = inst.encode(&observed_skip).unwrap();
+    assert_eq!(unavailable_vec[16], 1.0);
+    assert_eq!(unavailable_vec[2], 0.0, "must not look like Skip");
+    assert_eq!(unavailable_vec[4], 0.0, "must not count observed tests");
+    assert_eq!(skip_vec[16], 0.0);
+    assert_eq!(skip_vec[2], 1.0);
+    assert_eq!(skip_vec[4], 1.0);
+}
+
+#[test]
+fn e_oracle_rejects_unavailable_mixed_with_observed_rows() {
+    let verdict = OracleVerdict {
+        per_test: vec![PerTestOutcome {
+            test_id: "tests/test_x.py::test_a".into(),
+            outcome: TestOutcome::Pass,
+            runtime_ms: 1,
+        }],
+        exception: None,
+        evidence_unavailable: true,
+    };
+    let err = EOracleInstrument.encode(&verdict).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+}
+
+#[test]
 fn e_oracle_each_exception_class_lands_in_distinct_one_hot_bit() {
     let inst = EOracleInstrument;
     for class in ExceptionClass::all() {
@@ -809,6 +914,7 @@ fn e_oracle_each_exception_class_lands_in_distinct_one_hot_bit() {
             .encode(&OracleVerdict {
                 per_test: vec![],
                 exception: Some(class),
+                evidence_unavailable: false,
             })
             .unwrap();
         let hot_indices: Vec<usize> = (6..16).filter(|i| v[*i] == 1.0).collect();
@@ -828,6 +934,7 @@ fn e_oracle_rejects_no_tests_no_exception() {
     let verdict = OracleVerdict {
         per_test: vec![],
         exception: None,
+        evidence_unavailable: false,
     };
     let err = inst.encode(&verdict).unwrap_err();
     assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
@@ -843,6 +950,7 @@ fn e_oracle_rejects_empty_test_id() {
             runtime_ms: 1,
         }],
         exception: None,
+        evidence_unavailable: false,
     };
     let err = inst.encode(&verdict).unwrap_err();
     assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
@@ -859,6 +967,7 @@ fn e_oracle_rejects_whitespace_or_control_character_test_id() {
                 runtime_ms: 1,
             }],
             exception: None,
+            evidence_unavailable: false,
         };
         let err = inst.encode(&verdict).unwrap_err();
         assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
@@ -875,6 +984,7 @@ fn e_oracle_rejects_invalid_runtime_sentinel() {
             runtime_ms: -2,
         }],
         exception: None,
+        evidence_unavailable: false,
     };
     let err = inst.encode(&verdict).unwrap_err();
     assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
@@ -916,6 +1026,7 @@ fn all_passed_helper_matches_oracle_verdict_semantics() {
     let v_empty = OracleVerdict {
         per_test: vec![],
         exception: None,
+        evidence_unavailable: false,
     };
     assert!(!v_empty.all_passed());
 }

@@ -794,6 +794,7 @@ fn panel_with_oracle_label(panel: &Panel, oracle_all_passed: bool) -> Result<Pan
             runtime_ms: -1,
         }],
         exception: None,
+        evidence_unavailable: false,
     };
     let oracle_vector = EOracleInstrument.encode(&verdict)?;
     let (offset, dim) = InstrumentSlot::EOracle.extent();

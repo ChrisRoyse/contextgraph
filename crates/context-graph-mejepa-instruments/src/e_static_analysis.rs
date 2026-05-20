@@ -43,6 +43,10 @@ pub struct StaticAnalysisInput {
     pub source_text: String,
     pub diagnostics: Vec<Diagnostic>,
     pub churn_30d: Option<u32>,
+    /// True when analyzer output is intentionally unavailable. This is
+    /// distinct from an observed clean analyzer run with zero diagnostics.
+    #[serde(default)]
+    pub evidence_unavailable: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -58,6 +62,12 @@ impl Instrument for EStaticAnalysisInstrument {
     fn encode(&self, input: &Self::Input) -> InstrumentResult<Vec<f32>> {
         validate_input(input)?;
         let mut out = vec![0.0_f32; InstrumentSlot::EStaticAnalysis.dim()];
+        if input.evidence_unavailable {
+            out[16] = 1.0;
+            out[64] = bounded_ratio(input.source_text.lines().count().max(1) as f32, 10_000.0);
+            validate_output(&out)?;
+            return Ok(out);
+        }
         let diag_count = input.diagnostics.len().max(1) as f32;
         let line_count = input.source_text.lines().count().max(1);
         let non_ws_chars = input
@@ -128,6 +138,16 @@ fn validate_input(input: &StaticAnalysisInput) -> InstrumentResult<()> {
             ),
             "aggregate or shard extremely large static-analysis reports",
         ));
+    }
+    if input.evidence_unavailable {
+        if !input.diagnostics.is_empty() || input.churn_30d.is_some() {
+            return Err(InstrumentError::invalid(
+                "input.evidence_unavailable",
+                "unavailable static-analysis evidence cannot include diagnostics or churn",
+                "set evidence_unavailable=false before recording analyzer output",
+            ));
+        }
+        return Ok(());
     }
     let line_count = input.source_text.lines().count();
     for (idx, diagnostic) in input.diagnostics.iter().enumerate() {
@@ -229,6 +249,7 @@ mod tests {
                 },
             ],
             churn_30d: Some(4),
+            evidence_unavailable: false,
         }
     }
 
@@ -249,9 +270,33 @@ mod tests {
             diagnostics: vec![],
             source_text: "x = 1\n".into(),
             churn_30d: None,
+            evidence_unavailable: false,
         };
         let encoded = inst.encode(&clean).unwrap();
         assert_eq!(encoded[67], 1.0);
+    }
+
+    #[test]
+    fn static_analysis_unavailable_differs_from_clean_observed_run() {
+        let inst = EStaticAnalysisInstrument;
+        let unavailable = StaticAnalysisInput {
+            diagnostics: vec![],
+            source_text: "x = 1\n".into(),
+            churn_30d: None,
+            evidence_unavailable: true,
+        };
+        let clean = StaticAnalysisInput {
+            diagnostics: vec![],
+            source_text: "x = 1\n".into(),
+            churn_30d: None,
+            evidence_unavailable: false,
+        };
+        let unavailable_vec = inst.encode(&unavailable).unwrap();
+        let clean_vec = inst.encode(&clean).unwrap();
+        assert_eq!(unavailable_vec[16], 1.0);
+        assert_eq!(unavailable_vec[67], 0.0);
+        assert_eq!(clean_vec[16], 0.0);
+        assert_eq!(clean_vec[67], 1.0);
     }
 
     #[test]

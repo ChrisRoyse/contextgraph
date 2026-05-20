@@ -319,6 +319,7 @@ fn boundary_bad_store_key(db_path: &Path) -> FsvResult<Value> {
             runtime_ms: 1,
         }],
         exception: None,
+        evidence_unavailable: false,
     };
     let result = store.put_corpus_row("bad|task", MutationCategory::KnownGood, &mutation, &verdict);
     ensure(

@@ -865,6 +865,7 @@ fn parse_pytest_json_value(root: &Value) -> OracleResult<OracleVerdict> {
     Ok(OracleVerdict {
         per_test,
         exception,
+        evidence_unavailable: false,
     })
 }
 

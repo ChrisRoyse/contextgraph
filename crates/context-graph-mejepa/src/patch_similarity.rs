@@ -669,6 +669,7 @@ mod tests {
                 runtime_ms: 12,
             }],
             exception: None::<ExceptionClass>,
+            evidence_unavailable: false,
         }
     }
 

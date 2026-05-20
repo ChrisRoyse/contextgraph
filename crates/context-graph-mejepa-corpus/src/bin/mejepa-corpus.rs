@@ -1732,6 +1732,7 @@ fn toolchain_verdict(
             runtime_ms: -1,
         }],
         exception: (!expected_success).then_some(ExceptionClass::Other),
+        evidence_unavailable: false,
     }
 }
 
@@ -3786,6 +3787,7 @@ mod tests {
                 runtime_ms: 7,
             }],
             exception: None,
+            evidence_unavailable: false,
         };
         let entry = GeneratedEntry {
             task_id: "synthetic_task_repeat_schema".to_string(),

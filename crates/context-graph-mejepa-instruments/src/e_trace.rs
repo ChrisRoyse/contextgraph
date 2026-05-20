@@ -31,6 +31,10 @@ pub struct TraceEvent {
 #[serde(deny_unknown_fields)]
 pub struct TraceInput {
     pub events: Vec<TraceEvent>,
+    /// True when runtime trace evidence is intentionally unavailable.
+    /// This is not an observed ValueSnapshot/Exception event.
+    #[serde(default)]
+    pub evidence_unavailable: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -46,6 +50,11 @@ impl Instrument for ETraceInstrument {
     fn encode(&self, input: &Self::Input) -> InstrumentResult<Vec<f32>> {
         validate_trace(input)?;
         let mut out = vec![0.0_f32; InstrumentSlot::ETrace.dim()];
+        if input.evidence_unavailable {
+            out[16] = 1.0;
+            validate_finite_output("e_trace.output", &out)?;
+            return Ok(out);
+        }
         let denom = input.events.len() as f32;
         let mut last_ts = 0u64;
         for event in &input.events {
@@ -74,6 +83,16 @@ impl Instrument for ETraceInstrument {
 }
 
 fn validate_trace(input: &TraceInput) -> InstrumentResult<()> {
+    if input.evidence_unavailable {
+        if !input.events.is_empty() {
+            return Err(InstrumentError::invalid(
+                "input.evidence_unavailable",
+                "unavailable trace evidence cannot include observed trace events",
+                "set evidence_unavailable=false before recording runtime trace events",
+            ));
+        }
+        return Ok(());
+    }
     if input.events.is_empty() {
         return Err(InstrumentError::invalid(
             "input.events",
