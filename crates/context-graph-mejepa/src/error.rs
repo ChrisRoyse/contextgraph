@@ -240,7 +240,9 @@ pub enum MejepaInferError {
     Tct(#[from] context_graph_mejepa_tct::TctError),
     #[error("MEJEPA_INFER_PREDICTOR: {0}")]
     Predictor(#[from] PredictorError),
-    #[error("MEJEPA_INFER_CONSTELLATION_INTELLIGENCE_UNAVAILABLE: prediction_id={prediction_id_hex}")]
+    #[error(
+        "MEJEPA_INFER_CONSTELLATION_INTELLIGENCE_UNAVAILABLE: prediction_id={prediction_id_hex}"
+    )]
     ConstellationIntelligenceUnavailable { prediction_id_hex: String },
     #[error("MEJEPA_INFER_CONSTELLATION_VERSION_ID_MISSING: detail={detail}")]
     ConstellationVersionIdMissing { detail: String },

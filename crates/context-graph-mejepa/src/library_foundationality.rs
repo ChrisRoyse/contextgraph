@@ -231,11 +231,7 @@ impl LibraryBedrockScoringFailure {
             &self.chunk_id,
             512,
         )?;
-        validate_single_line(
-            "library_bedrock_scoring_failure.reason",
-            &self.reason,
-            2048,
-        )?;
+        validate_single_line("library_bedrock_scoring_failure.reason", &self.reason, 2048)?;
         Ok(())
     }
 }
@@ -494,8 +490,7 @@ pub fn compute_library_foundationality(
         }
         library_scores.sort_by(sort_within_library_scores);
         library_scores.truncate(10);
-        library_scoring_failures
-            .sort_by(|left, right| left.chunk_id.cmp(&right.chunk_id));
+        library_scoring_failures.sort_by(|left, right| left.chunk_id.cmp(&right.chunk_id));
         per_library_bedrock.push(LibraryBedrockSummary {
             library_id: library_id.clone(),
             library_slug: library_id.slug(),

@@ -175,6 +175,41 @@ The panel is an array of 15 per-embedder vectors. This is the structural rule th
 - Slot-preserving predictor: `crates/context-graph-mejepa/src/predictor/` (per-slot input encoders + late fusion)
 - Anti-compensation FSV: `crates/context-graph-mejepa/examples/python_anti_compensation_fsv.rs` (#394)
 
+### 1.5quart Stars as Vectors — the formal celestial-cartography model (2026-05-20)
+
+The teleological-constellation primitive is named after star constellations and the analogy is formal, not decorative. See `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md` for the full derivation; this section is the locked-in summary.
+
+**The literal claim.** A real star is not a 2D dot in the sky. It is a high-dimensional vector — Gaia DR3 (arXiv:2503.19997) catalogs ~30 million stars as `(3D position, 3D velocity, photometry across 5 bands, T_eff, [Fe/H], log g, per-element abundances)` — 100+ dimensions. The Big Dipper's seven stars *are not in a line in 3D*: Alkaid is 104 ly away, Mizar is 83, Dubhe is 124. The Big Dipper is a 2D projection from Earth's specific viewing angle of seven independent high-dimensional vectors. **The constellation is in the observer, not in the sky.** From Alpha Centauri the Sun would appear in Cassiopeia.
+
+**Structural identity to ContextGraph.**
+
+| Astronomy | ContextGraph / ME-JEPA |
+|---|---|
+| One star = one vector in ~100-dim observational space | One AST chunk = array of 15 per-embedder vectors (`Panel`, §1.5ter) |
+| Same-spectrum-band cosine valid (G-band to G-band) | Same-embedder cosine valid (`E_AST` to `E_AST`, etc.) |
+| Cross-band dim-wise comparison nonsense | Cross-embedder dim-wise comparison forbidden (§1.5ter) |
+| Constellations perceived from a viewing angle | Teleological constellations perceived from `(mutation_category × language × cell)` |
+| Big Dipper = 7 stars whose Earth-projection forms a pattern | #413 Level-2 code-state constellation = `(task_instance_id, mutation_category, workspace_state)` triple with recognizable multi-slot signature |
+| Gaia DR3 = 30M-star catalog with full vectors | Production AST chunk corpus = 399,777 chunks with full 15-slot vectors |
+| Star foundation model predicts missing parameters from observed | ME-JEPA predicts missing reality outcomes (Q1/Q2/Q5) from observed slot evidence |
+| Lux model (arXiv:2502.01745): latent z_n projects to (labels, spectra) | Slot-preserving predictor: late-fused latent projects to (verdict, named failure mode) |
+
+**The non-obvious implication: the constellation isn't in the data, it's in the predictor.** The 15-slot panel for a given chunk exists independently of any constellation labeling. The named failure modes (#404), the skills (#414), the code-state constellations (#413 Level-2) are *the predictor's perceived patterns*. Re-train the predictor, change the panel, swap encoders — and the constellations change shape. This explains a phenomenon the project has observed empirically: the slot-preserving refactor (#385 / #387) shipped, the architecture was correct, the calibration tensors materialized — and the ship-gate correlation did not close (still 0.866 vs 0.95). The labels the predictor learned to perceive are the bottleneck, which is why the next critical-path work (`08_roadmap_and_open_work.md §3.−1`) is #404 (hierarchical failure-mode labeling) and the already-shipped #413 (auto-label discovery) — these are the predictor's "perceptual training," not its raw input pipeline.
+
+**Operator-facing tools (extending the existing #417 read surface — see `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md` Proposal D):**
+
+- `mejepa_chunk_as_star(chunk_id)` — stellar parameter card view of an AST chunk: per-slot vector summaries, slot calibration cell, closest accepted Level-0 labels, active skills, closest exemplars. Output structurally analogous to a Gaia DR3 catalog row.
+- `mejepa_constellation_membership(chunk_id)` — named constellations (Level-0 / Level-1 / Level-2 / skill / higher ability) the chunk participates in. Layered on `code_to_skill` (shipped 2026-05-19 in `a330b342`).
+
+**Information-physics framing (Vopson, Gates, FlyWire, Wheeler — peer-reviewed).** The project independently arrives at four established principles:
+
+1. **Wheeler "it from bit" (1989)** = the binary Q1/Q2/Q5 contract (§1.1). The system predicts only questions with free binary form against reality.
+2. **Vopson 2nd law of information dynamics (AIP Advances 12, 075310, 2022)** = the project's entropy-decreasing operations (tier compression, Q4 freeze #408, slot-preserving fusion #387). Formalized as a trainer loss term in #511 / TASK-IP-001.
+3. **Gates' self-dual error-correcting codes in supersymmetry (Doran et al. 2008)** = the formal version of the heuristic anti-compensation property (#394, shipped). Filed as #512 / TASK-IP-002.
+4. **FlyWire whole-brain connectome (Nature 634, 2024-10-02)** = the project's 78-column cross-embedder correlation tensor (#388). FlyWire found rich-club organization (30% of regions drive flow); the same analysis applied to ME-JEPA's tensor is filed as #513 / TASK-IP-003.
+
+The project is, in scope, building a digital twin of "what happens when a code change goes live" — structurally the same operation as connectome → physics-engine → behaviour the Eon Systems fly demonstration (March 2026) validated. The cold-load behavioural FSV that proves the predictor's behaviour is encoded in the weights (not in transient training state) is filed as #514 / TASK-IP-005.
+
 ### 1.6 The ambiguity boundary (locked-in rule)
 
 ME-JEPA only predicts questions that have a *free binary form against reality*. Free means: the binary verdict comes from observing reality directly, not from imposing an arbitrary threshold on a continuous heuristic. The system does not predict ambiguous things, because:

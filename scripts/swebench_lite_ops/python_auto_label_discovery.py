@@ -67,7 +67,25 @@ DEFAULT_MIN_SUPPORT = 20
 DEFAULT_MIN_LIFT = 0.05
 
 SCALAR_FEATURES = ("norm_l2", "std", "abs_mean", "entropy_proxy", "zero_fraction")
-TARGET_LEAKY_FAMILIES = {"oracle", "docker", "test_phase", "code_state_outcome", "partition", "leakage_policy"}
+TARGET_LEAKY_FAMILIES = {
+    "oracle",
+    "oracle_exception",
+    "docker",
+    "test_phase",
+    "test_result",
+    "code_state_outcome",
+    "partition",
+    "leakage_policy",
+    "ground_truth",
+    "truth",
+    "post_tool_use",
+}
+CORPUS_ONLY_LIVE_FAMILIES = {
+    "code_state_identity",
+    "mutation",
+    "mutation_micro",
+    "mutation_mechanism",
+}
 GROUP_SLOT_SETS = {
     "temporal_triad": ("e2", "e3", "e4"),
     "semantic_content_panel": ("e1", "e7", "e8", "e10", "e12", "e14"),
@@ -830,7 +848,7 @@ def register_label(
         partition=partition,
         scope=scope,
         row_key=row_key,
-        leaky_target=leaky_target or family in TARGET_LEAKY_FAMILIES,
+        leaky_target=leaky_target or not is_live_predictor_label(label_id),
     )
 
 
@@ -858,6 +876,34 @@ def register_labels(
             row_key=row_key,
             leaky_target=leaky_target,
         )
+
+
+def is_live_predictor_label(label_id: str) -> bool:
+    family = label_id.split(":", 1)[0]
+    return family not in TARGET_LEAKY_FAMILIES and family not in CORPUS_ONLY_LIVE_FAMILIES
+
+
+def split_live_and_supervision_labels(labels: Iterable[str]) -> tuple[list[str], list[str]]:
+    live: list[str] = []
+    supervision: list[str] = []
+    for label in sorted(set(labels)):
+        if is_live_predictor_label(label):
+            live.append(label)
+        else:
+            supervision.append(label)
+    return live, supervision
+
+
+def aggregate_outcome_supervision_labels(agg: AggregateState) -> list[str]:
+    labels = [f"docker:{agg.docker_label}"]
+    if agg.oracle_all_passed is not None:
+        labels.append("oracle:pass" if bool(agg.oracle_all_passed) else "oracle:fail_or_error")
+    labels.append(
+        "code_state_outcome:working_as_intended"
+        if agg.docker_label == "docker_resolved_clean"
+        else "code_state_outcome:failed_or_problematic"
+    )
+    return sorted(set(labels))
 
 
 def code_state_labels(agg: AggregateState) -> list[str]:
@@ -893,6 +939,8 @@ def aggregate_row(agg: AggregateState, labels: list[str]) -> dict[str, Any]:
     for embedder_id, sums in sorted(agg.slot_feature_sums.items()):
         count = max(1, agg.slot_feature_counts[embedder_id])
         slot_feature_means[embedder_id] = {name: finite_float(float(sums[name]) / count) for name in SCALAR_FEATURES if name in sums}
+    live_labels, supervision_labels = split_live_and_supervision_labels(labels)
+    supervision_labels = sorted(set(supervision_labels + aggregate_outcome_supervision_labels(agg)))
     return {
         "artifact_kind": f"{ARTIFACT_KIND}_{agg.scope}_constellation",
         "schema_version": SCHEMA_VERSION,
@@ -909,6 +957,8 @@ def aggregate_row(agg: AggregateState, labels: list[str]) -> dict[str, Any]:
         "docker_label": agg.docker_label,
         "oracle_all_passed": agg.oracle_all_passed,
         "labels": labels,
+        "live_predictor_labels": live_labels,
+        "target_supervision_labels": supervision_labels,
         "surface_counts_top": dict(agg.surface_counts.most_common(16)),
         "slot_label_counts_top": dict(agg.slot_label_counts.most_common(16)),
         "pair_label_counts_top": dict(agg.pair_label_counts.most_common(16)),
@@ -986,7 +1036,7 @@ def usefulness_rows(
             for part, count in sorted(item.partition_counts.items())
             if count > 0
         }
-        if item.leaky_target or item.family in TARGET_LEAKY_FAMILIES:
+        if item.leaky_target or not is_live_predictor_label(label_id):
             status = "rejected_leaky_target"
             reasons = ["target_or_supervision_label_not_live_predictor_input"]
         elif item.support < min_support:
@@ -1224,12 +1274,15 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                 pair_label_count += len(pair_labels)
                 group_labels = group_signatures(work["slot_features"], pair_labels)
                 group_label_count += len(group_labels)
-                all_live_labels = sorted(set(surface + relation_labels + mutation_labels + slot_label_values + pair_labels + group_labels))
-                all_labels = sorted(set(all_live_labels + target_labels))
+                corpus_supervision_labels = mutation_labels
+                live_candidates = surface + relation_labels + slot_label_values + pair_labels + group_labels
+                all_live_labels, live_rejected_supervision = split_live_and_supervision_labels(live_candidates)
+                all_target_supervision_labels = sorted(set(target_labels + corpus_supervision_labels + live_rejected_supervision))
+                all_labels = sorted(set(all_live_labels + all_target_supervision_labels))
 
                 register_labels(
                     label_stats,
-                    surface + relation_labels + mutation_labels + slot_label_values + pair_labels + group_labels,
+                    live_candidates,
                     failed=failed,
                     category=category,
                     docker_label=docker_label,
@@ -1239,7 +1292,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                 )
                 register_labels(
                     label_stats,
-                    target_labels + [f"partition:{partition}"],
+                    all_target_supervision_labels + [f"partition:{partition}"],
                     failed=failed,
                     category=category,
                     docker_label=docker_label,
@@ -1333,7 +1386,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                         "partition": partition,
                         "labels": all_labels,
                         "live_predictor_labels": all_live_labels,
-                        "target_supervision_labels": target_labels,
+                        "target_supervision_labels": all_target_supervision_labels,
                         "source_site_relation_labels": relation_labels,
                         "slot_labels": slot_label_values,
                         "slot_dims": dict(sorted(work["slot_dims"].items())),
@@ -1355,11 +1408,12 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
     file_rows = []
     for agg in sorted(file_states.values(), key=lambda item: item.group_key):
         labels = file_path_labels(agg)
+        live_labels, supervision_labels = split_live_and_supervision_labels(labels)
         failed = failure_outcome(agg.docker_label, agg.oracle_all_passed)
         partition = stable_partition(agg.group_key)
         register_labels(
             label_stats,
-            [label for label in labels if not label.startswith("code_state_outcome:")],
+            live_labels,
             failed=failed,
             category=agg.mutation_category,
             docker_label=agg.docker_label,
@@ -1369,7 +1423,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
         )
         register_labels(
             label_stats,
-            [label for label in labels if label.startswith("code_state_outcome:")],
+            sorted(set(supervision_labels + aggregate_outcome_supervision_labels(agg))),
             failed=failed,
             category=agg.mutation_category,
             docker_label=agg.docker_label,
@@ -1383,11 +1437,12 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
     code_rows = []
     for agg in sorted(code_states.values(), key=lambda item: item.group_key):
         labels = code_state_labels(agg)
+        live_labels, supervision_labels = split_live_and_supervision_labels(labels)
         failed = failure_outcome(agg.docker_label, agg.oracle_all_passed)
         partition = stable_partition(agg.group_key)
         register_labels(
             label_stats,
-            [label for label in labels if not label.startswith("code_state_outcome:")],
+            live_labels,
             failed=failed,
             category=agg.mutation_category,
             docker_label=agg.docker_label,
@@ -1397,7 +1452,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
         )
         register_labels(
             label_stats,
-            [label for label in labels if label.startswith("code_state_outcome:")],
+            sorted(set(supervision_labels + aggregate_outcome_supervision_labels(agg))),
             failed=failed,
             category=agg.mutation_category,
             docker_label=agg.docker_label,
@@ -1417,15 +1472,35 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
         mode = localization_mode(candidates, failed)
         partition = stable_partition(code_key)
         mode_labels = [mode] + [f"evidence:{reason}" for candidate in candidates[:10] for reason in candidate.reasons]
+        live_mode_labels, supervision_mode_labels = split_live_and_supervision_labels(mode_labels)
+        outcome_supervision_labels = [
+            f"docker:{evidence.docker_label}",
+            "code_state_outcome:failed_or_problematic",
+        ]
+        if evidence.oracle_all_passed is not None:
+            outcome_supervision_labels.append(
+                "oracle:pass" if bool(evidence.oracle_all_passed) else "oracle:fail_or_error"
+            )
         register_labels(
             label_stats,
-            mode_labels,
+            live_mode_labels,
             failed=failed,
             category=evidence.mutation_category,
             docker_label=evidence.docker_label,
             partition=partition,
             scope="failure_evidence_set",
             row_key=code_key,
+        )
+        register_labels(
+            label_stats,
+            sorted(set(supervision_mode_labels + outcome_supervision_labels)),
+            failed=failed,
+            category=evidence.mutation_category,
+            docker_label=evidence.docker_label,
+            partition=partition,
+            scope="failure_evidence_set",
+            row_key=code_key,
+            leaky_target=True,
         )
         failure_rows.append(
             {
@@ -1441,6 +1516,8 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                 "source_relative_path": evidence.source_relative_path,
                 "localization_mode": mode,
                 "labels": sorted(set(mode_labels)),
+                "live_predictor_labels": live_mode_labels,
+                "target_supervision_labels": sorted(set(supervision_mode_labels + outcome_supervision_labels)),
                 "candidate_count": len(candidates),
                 "candidate_sample": [
                     {
@@ -1453,6 +1530,8 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                         "score": item.score,
                         "reasons": item.reasons,
                         "labels": item.labels,
+                        "live_predictor_labels": split_live_and_supervision_labels(item.labels)[0],
+                        "target_supervision_labels": split_live_and_supervision_labels(item.labels)[1],
                     }
                     for item in candidates[:20]
                 ],
@@ -1542,6 +1621,8 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
             "baseline_seed_not_static_ontology": True,
             "new_data_uses_same_label_compiler": True,
             "target_labels_are_supervision_only": True,
+            "corpus_only_mutation_labels_are_supervision_only": True,
+            "live_predictor_labels_are_explicit": True,
         },
         "summary": summary,
         "forward_summary": forward_summary,

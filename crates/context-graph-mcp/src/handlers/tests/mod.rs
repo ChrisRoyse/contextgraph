@@ -42,7 +42,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tempfile::TempDir;
 
-use context_graph_core::monitoring::{LayerStatusProvider, HardcodedActiveLayerStatusProvider};
+use context_graph_core::monitoring::{HardcodedActiveLayerStatusProvider, LayerStatusProvider};
 use context_graph_core::traits::{
     EmbeddingMetadata, MultiArrayEmbeddingOutput, MultiArrayEmbeddingProvider,
     TeleologicalMemoryStore,
@@ -414,7 +414,8 @@ async fn create_handlers_from_store_with_provider(
 
     let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(rocksdb_store);
 
-    let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(HardcodedActiveLayerStatusProvider);
+    let layer_status_provider: Arc<dyn LayerStatusProvider> =
+        Arc::new(HardcodedActiveLayerStatusProvider);
 
     let handlers = {
         let edge_repository = EdgeRepository::new(db_arc);

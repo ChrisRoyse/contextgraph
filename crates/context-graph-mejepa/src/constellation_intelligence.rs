@@ -909,8 +909,7 @@ mod tests {
     /// F-024 regression: happy path agrees with the previous 0.5/perfectly-correlated semantics.
     #[test]
     fn cosine_mean_to_unit_perfect_correlation_yields_one() {
-        let v = cosine_mean_to_unit(3.0, 3, "constellation_intelligence.unit_test")
-            .expect("ok");
+        let v = cosine_mean_to_unit(3.0, 3, "constellation_intelligence.unit_test").expect("ok");
         assert!((v - 1.0).abs() < 1e-6, "expected 1.0, got {v}");
     }
 }

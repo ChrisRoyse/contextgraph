@@ -158,12 +158,17 @@ pub fn is_target_only_live_label(label: &str) -> bool {
         label.split_once(':').map(|(family, _)| family),
         Some(
             "oracle"
+                | "oracle_exception"
                 | "docker"
                 | "test_phase"
                 | "test_result"
                 | "code_state_outcome"
                 | "partition"
                 | "leakage_policy"
+                | "code_state_identity"
+                | "mutation"
+                | "mutation_micro"
+                | "mutation_mechanism"
                 | "ground_truth"
                 | "truth"
                 | "post_tool_use"

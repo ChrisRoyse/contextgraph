@@ -173,8 +173,7 @@ pub(crate) fn compute_real_ood_separation_auc(
 ) -> Result<(f32, String), MejepaInferError> {
     if holdout.is_empty() {
         return Err(MejepaInferError::InferTestCalibrationHoldoutUnavailable {
-            detail: "calibration holdout split is empty; cannot exercise OOD subsystem"
-                .to_string(),
+            detail: "calibration holdout split is empty; cannot exercise OOD subsystem".to_string(),
         });
     }
     if !sigma_squared.is_finite() || sigma_squared <= 0.0 {
@@ -688,7 +687,10 @@ mod tests {
         // M-H1 regression: empty holdout means OOD subsystem cannot be
         // exercised — must fail closed, never synthesize.
         let err = compute_real_ood_separation_auc(&[], 1.0).unwrap_err();
-        assert_eq!(err.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+        assert_eq!(
+            err.code(),
+            "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE"
+        );
     }
 
     #[test]
@@ -702,7 +704,10 @@ mod tests {
             calibration_example(vec![0.85, 0.92], vec![1.0, 1.0]),
         ];
         let err = compute_real_ood_separation_auc(&holdout, 1.0).unwrap_err();
-        assert_eq!(err.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+        assert_eq!(
+            err.code(),
+            "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE"
+        );
     }
 
     #[test]
@@ -714,7 +719,10 @@ mod tests {
             calibration_example(vec![0.1, 0.05], vec![1.0, 1.0]),
         ];
         let err = compute_real_ood_separation_auc(&holdout, 1.0).unwrap_err();
-        assert_eq!(err.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+        assert_eq!(
+            err.code(),
+            "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE"
+        );
     }
 
     #[test]
@@ -723,13 +731,22 @@ mod tests {
         // record; if it's non-positive/non-finite the OOD scale is invalid.
         let holdout = vec![calibration_example(vec![0.9], vec![1.0])];
         let err_zero = compute_real_ood_separation_auc(&holdout, 0.0).unwrap_err();
-        assert_eq!(err_zero.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+        assert_eq!(
+            err_zero.code(),
+            "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE"
+        );
 
         let err_nan = compute_real_ood_separation_auc(&holdout, f32::NAN).unwrap_err();
-        assert_eq!(err_nan.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+        assert_eq!(
+            err_nan.code(),
+            "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE"
+        );
 
         let err_neg = compute_real_ood_separation_auc(&holdout, -1.0).unwrap_err();
-        assert_eq!(err_neg.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+        assert_eq!(
+            err_neg.code(),
+            "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE"
+        );
     }
 
     #[test]
@@ -759,7 +776,10 @@ mod tests {
             auc > 0.5,
             "real OOD subsystem must discriminate; got auc={auc}"
         );
-        assert!(auc.is_finite() && (0.0..=1.0).contains(&auc), "auc out of range: {auc}");
+        assert!(
+            auc.is_finite() && (0.0..=1.0).contains(&auc),
+            "auc out of range: {auc}"
+        );
     }
 
     #[test]
@@ -768,6 +788,9 @@ mod tests {
         // must fail closed rather than silently truncate or zero-pad.
         let holdout = vec![calibration_example(vec![0.9, 0.1], vec![1.0])];
         let err = compute_real_ood_separation_auc(&holdout, 1.0).unwrap_err();
-        assert_eq!(err.code(), "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE");
+        assert_eq!(
+            err.code(),
+            "MEJEPA_INFER_TEST_CALIBRATION_HOLDOUT_UNAVAILABLE"
+        );
     }
 }

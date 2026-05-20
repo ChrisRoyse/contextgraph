@@ -28,6 +28,13 @@ Three architectural primitives back the binary contract:
 2. **Online mistake loop (§9.6 below).** When the binary prediction disagrees with reality (oracle / PostToolUse capture / shift-log replay), the disagreement materializes as a `CF_MEJEPA_MISTAKE_LOG` row and the trainer consumes it under EWC++ protection. The convergence target is: never repeat the same mistake on the same `(cell × failure_mode)` cell.
 3. **Cross-panel triangulation (§4.4 below).** Panel B (a deliberately non-overlapping instrument panel) re-scores every gate-relevant patch. A 0.95 result on Panel A only counts when Panel B agrees within 0.05; Goodhart on Panel A fails closed.
 
+**Info-physics additions (2026-05-20).** Four issues filed against `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md` formalize properties the architecture already embodies but does not name:
+
+- **#511 / TASK-IP-001 — entropy auxiliary loss** (§9.x below) — Vopson's second-law-of-infodynamics minimization (`L_entropy = λ·H(z_latent)`) added to the trainer's `L_step`. On the road to 0.95.
+- **#512 / TASK-IP-002 — self-dual ECC over the 15-slot panel** (§3 below) — Gates-style formal anti-compensation replacing #394's heuristic FSV. Hygiene.
+- **#513 / TASK-IP-003 — connectome rich-club analysis** (§4 below) — FlyWire-style topology features added to #390's constellation-intelligence head over the #388 correlation tensor. On the road to 0.95.
+- **#514 / TASK-IP-005 — Eon-style cold-load behavioural FSV** (§10 below) — Safety net asserting predictor behaviour is encoded in weights, not transient training state.
+
 **No best-of-K at the product surface.** `mejepa_rank_candidates` and `mejepa_search_latent_actions` remain available as *internal* tools for training-time exploration and operator debugging, but the AI agent calling MCP only ever sees one binary verdict per candidate. "Pass with 0.74 confidence" is not a product output; if the predictor cannot be confident enough to commit, the lack of confidence is itself a mistake to be learned from on the next ground-truth observation.
 
 **Internal Abstain / OOD / GuardRejected are not product hedges.** They are present-tense failures to be eliminated. The path out is the mistake loop, not "try K alternatives." When the gate is at 0.95, the `Abstain` rate must asymptotically approach 0; an Abstain that ships to the agent is a wrong answer.
@@ -232,6 +239,8 @@ That chain is how ME-JEPA learns to predict what happens when code is live. The 
 
 **Structural collapse-immunity invariant.** Instruments carry zero trainable parameters. `FrozenGuard` / `FrozenSnapshot` / `hash_f32s` (`frozen_hook.rs`) enforce `ΔΞ.target_collapse = 0` by construction. `crates/context-graph-mejepa/src/grad_hook.rs::run_gradient_hook` checks for `MEJEPA_INSTRUMENT_GRADIENT_LEAK` and fails closed if any gradient touches a frozen-target tensor.
 
+**Anti-compensation invariant — formal ECC (planned, #512 / TASK-IP-002).** The existing heuristic check (`crates/context-graph-mejepa/examples/python_anti_compensation_fsv.rs`, #394 shipped) proves that *some* specific corruptions are rejected. The planned replacement is a self-dual doubly-even error-correcting code over the 15-slot occupancy bitmap (e.g. [16, 8, 4] extended Hamming with one parity slot), in the lineage of Gates et al.'s codes-classify-N-extended-SUSY result (Doran et al. 2008 et seq.). Recovery radius `t = 2`: corrupt up to 2 slots → guaranteed reconstruction; corrupt more → guaranteed detection with `PANEL_ECC_UNCORRECTABLE` reason into `CF_MEJEPA_MISTAKE_LOG`. This converts the anti-compensation property from heuristic to mathematically proven without changing the §1.5ter slot-identity rule.
+
 **Retired Q4/RWD producer surfaces.** The unconsumed TASK-RWD producer modules (`composite_reward_signals.rs`, `static_analysis_reward.rs`, `telemetry_signals.rs`, `type_graph_signals.rs`, `live_session_signals.rs`, plus the standalone coverage/cyclomatic/diff-topology helpers) were removed from the active crate surface on 2026-05-19. This does not remove durable historical CF evidence and does not remove the live deterministic target instruments (`e_code`, `e_static_analysis`, `e_runtime`, `e_oracle`, `e_witness`, etc.). The only Q4-related code that remains compiled is the deprecated-readable label/trust-gate surface described in §16.
 
 ---
@@ -328,6 +337,14 @@ Decision flow (per `compiler.rs::compile`):
 **Contradiction gate (TASK-PY-G-044 / #263).** `contradiction.rs`, `verdict_assembly.rs`, and `compiler.rs` read per-cell thresholds from `CF_MEJEPA_CONTRADICTION_THRESHOLDS`. The active gate abstains when calibrated Q2/pass confidence and high-severity Q3 explanation/TCT consequence-pressure evidence conflict, records structured evidence in the prediction/park-list path, fails closed on missing thresholds, and skips only when there is genuinely a single head of evidence. Historical Q4 contradiction rows remain readable but are frozen display-only under #408. aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-044-multi-head-contradiction-fsv/run-20260519T114854Z/multi_head_contradiction_fsv.json`, sha256 `39fac46044f4a3a8a9d43a5ff117af8c1b8b46906f186f284c89120460b1cf48`.
 
 **Constellation intelligence heads (TASK-PY-G-090 / #390).** `constellation_intelligence.rs`, `compiler.rs`, `verdict_assembly.rs`, `eval/queue.rs`, and `store.rs` now convert DDA/slot-pair relationship rows into structured consensus, contradiction, redundancy, novelty, blind-spot, and consequence-pressure evidence. The live prediction surface carries `RealityPrediction.constellation_intelligence`; `CF_MEJEPA_CONSTELLATION_PATTERNS` stores promoted real-corpus pair patterns; high-value disagreement can enter `CF_MEJEPA_ACTIVE_LEARNING_QUEUE`; and high Q2 pressure abstains before a false confident pass. aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-090-consensus-contradiction-heads-fsv/run-20260519T124035Z/consensus_contradiction_heads_fsv.json`, sha256 `b1d500f008b0a14a704c4c2f83fe8cd19349f0dfb0c78baedb35c711abc50b64`.
+
+**Connectome rich-club topology features (planned, #513 / TASK-IP-003).** FlyWire 2024 (Nature 634, 124-138) found that the 78-region fly brain network has rich-club organization — 30% of regions are highly interconnected and drive dominant information flow — plus 3-node motif structure and identifiable modular communities. ME-JEPA's #388 cross-embedder correlation tensor is structurally the same kind of network (12 active embedders as nodes, 66 pairwise correlations as weighted edges, per `(mutation_category × language × cell)`). The planned feature extension adds three per-cell scalars to `RealityPrediction.constellation_intelligence`:
+
+- `rich_club_coefficient` (Colizza et al. 2006 *Nature Physics* formalism, φ(k) computed over the 66 pair edges with cumulative degree threshold)
+- `dominant_3node_motif_id` (Milo et al. 2002 *Science* enumeration over the connectome's significant motif vocabulary)
+- `modularity_q` (Newman 2006 PNAS — community detection over the slot-pair network)
+
+These scalars feed into the existing #390 intelligence head as per-cell features; identifying the rich-club pairs lets the verdict head weight those pairs disproportionately. On the road to 0.95; expected to close 1-3 correlation points if the topology has the predicted structure. New CF `CF_MEJEPA_CONNECTOME_TOPOLOGY_FEATURES` per cell. New FSV `crates/context-graph-mejepa/examples/python_connectome_topology_fsv.rs`.
 
 ---
 
@@ -583,6 +600,10 @@ Performance gate (per phase-g-roadmap §4): fresh ingest of 50-file Python proje
 
 `CF_MEJEPA_FINGERPRINT_FISHER` + `CF_MEJEPA_FINGERPRINT_DORMANCY`. Per-fingerprint EWC + CBP for catalog stability under continual learning.
 
+### 9.5bis Information-entropy auxiliary loss (planned, #511 / TASK-IP-001)
+
+`crates/context-graph-mejepa-train/src/loss/entropy.rs` (planned). Adds `L_entropy = λ · H(z_latent)` to `L_step` where `H` is differential entropy of the slot-preserving predictor's late-fused latent (Kraskov k-NN estimator or variational lower bound for autodiff). Formalizes the Vopson second-law-of-infodynamics principle (AIP Advances 12, 075310, 2022) that the project's already-successful entropy-decreasing choices (tier compression, Q4 freeze #408, slot-preserving fusion #387) embody. λ starts at 1e-4 and is auto-calibrated against holdout Brier; the entropy term operates on the late-fused latent *after* slot identity has been preserved by the per-slot encoders — no cross-embedder dim-wise compares. On the road to 0.95; worst case = no gate movement, best case = 1-2 correlation points closed.
+
 ### 9.6 Online mistake-driven adaptation ("isn't wrong in the future" property)
 
 Source files (planned): `crates/context-graph-mejepa/src/mistake_log.rs`, `crates/context-graph-mejepa-train/src/mistake_consumer.rs`, `crates/context-graph-mejepa-train/src/online_perceptron.rs`. Storage CFs: `CF_MEJEPA_MISTAKE_LOG`, `CF_MEJEPA_MISTAKE_REPLAY_PRIORITY`, `CF_MEJEPA_ONLINE_HEAD_STATE`. MCP tools (planned): `mejepa_record_mistake`, `mejepa_mistake_history`, `mejepa_mistake_loop_status`. Tracked by **#406 (new) / TASK-PY-G-112 — Online mistake-driven learning loop**.
@@ -658,6 +679,8 @@ Stored in `CF_MEJEPA_MISTAKE_LOG` keyed by `mistake_id` with secondary index by 
 Per-cell convergence driver (TASK-G-002) tracks per-cell `prediction_oracle_correlation`, drives targeted mutation expansion (TASK-G-003), conformal recalibration (TASK-G-004), holdout rotation (TASK-G-005), four-window ship-gate stability (TASK-G-006), per-cell exemptions (TASK-G-007).
 
 MCP surfaces: `mejepa_heal_status`, `mejepa_daemon_status`, `mejepa_rollback_to`, `mejepa_promote_approval`.
+
+**Cold-load behavioural FSV (planned, #514 / TASK-IP-005).** The Eon-style behavioural guarantee complements the existing `mejepa_promote_approval` flow: after promotion, a sealed cold-load run on a 30-instance random holdout must reproduce the promotion-time oracle correlation within `0.02` and per-cell verdict distribution within `5%` — with no further training, calibration update, or replay-buffer access. This catches training-state Goodhart (orthogonal to #405's encoder-matched Goodhart defense) by asserting that the predictor's behaviour is encoded in the weights, not in transient runtime state. Promotion-time snapshots persist into `CF_MEJEPA_COLD_LOAD_SNAPSHOTS` for replay comparison. Blocked on the same #452 native active-embedder adapter that gates #441.
 
 ---
 
