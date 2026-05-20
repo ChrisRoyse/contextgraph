@@ -35,6 +35,7 @@ use thiserror::Error;
 
 const PREDICTOR_VERSION: &str = "task-py-g-063-project-ingest-v1";
 const PROJECT_EMBEDDING_TIMESTAMP_BASE_SECS: i64 = 1_700_000_000;
+const PROJECT_EMBEDDING_TIMESTAMP_WINDOW_MS: u64 = 1_000_000_000;
 
 pub struct MultiArrayProjectEmbeddingProvider {
     inner: Arc<dyn MultiArrayEmbeddingProvider>,
@@ -107,10 +108,18 @@ fn project_embedding_metadata(
         .ok_or_else(|| ProjectCacheError::EmbeddingProviderFailed {
             reason: "invalid deterministic project embedding timestamp base".to_string(),
         })?;
+    let offset_ms = (sequence % PROJECT_EMBEDDING_TIMESTAMP_WINDOW_MS) as i64;
+    let timestamp = base
+        .checked_add_signed(ChronoDuration::milliseconds(offset_ms))
+        .ok_or_else(|| ProjectCacheError::EmbeddingProviderFailed {
+            reason: format!(
+                "deterministic project embedding timestamp overflow for sequence {sequence}"
+            ),
+        })?;
     Ok(EmbeddingMetadata {
         session_id: Some(format!("project-ingest:{project_id}")),
         session_sequence: Some(sequence),
-        timestamp: Some(base + ChronoDuration::milliseconds(sequence.min(i64::MAX as u64) as i64)),
+        timestamp: Some(timestamp),
         causal_hint: None,
     })
 }
@@ -1845,4 +1854,27 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn project_embedding_metadata_bounds_hashed_sequence_timestamp() {
+        let metadata = project_embedding_metadata("project", u64::MAX)
+            .expect("large stable chunk sequence should not overflow timestamp");
+        let base_ms = PROJECT_EMBEDDING_TIMESTAMP_BASE_SECS * 1_000;
+        let expected_offset = (u64::MAX % PROJECT_EMBEDDING_TIMESTAMP_WINDOW_MS) as i64;
+
+        assert_eq!(
+            metadata.session_id.as_deref(),
+            Some("project-ingest:project")
+        );
+        assert_eq!(metadata.session_sequence, Some(u64::MAX));
+        assert_eq!(
+            metadata.timestamp.unwrap().timestamp_millis(),
+            base_ms + expected_offset
+        );
+    }
 }
