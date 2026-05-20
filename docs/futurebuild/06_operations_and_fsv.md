@@ -487,6 +487,8 @@ Source: `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md`. Four new FSV 
 3. **Modularity above null.** At least 5 of 8 cells have modularity Q above the null distribution (p < 0.05).
 4. **Ablation re-run.** #398-style ablation with topology features enabled vs disabled, matched corpus + calibration. Correlation comparison reported and persisted in FSV.
 
+**Current #513 status (2026-05-20).** The harness exists, but production evidence is negative. Aiwonder report `/zfs/archive/contextgraph/fsv/task-ip-003-connectome-topology-fsv/python_connectome_topology_fsv.json` sha256 `ff7e98a87c8ea34c0c9bf3773f507051219a31ee991f1f1d79c03a00abd29b35` proves `flatVectorConcatUsedAny=false`, `slotIdentityPreservedAll=true`, `cellsAboveRichClubNull=7`, and `cellsAboveModularityNull=6`, but fails the split gate with `cellsSplitReproducibleAt0_8=0`. #526 is the blocker; do not weaken the Jaccard gate or promote topology features until a split-stable tensor rerun passes.
+
 **#514 / TASK-IP-005 — cold-load behavioural FSV.** Required assertions:
 
 1. **Promotion snapshot persisted.** Every promotion writes `CF_MEJEPA_COLD_LOAD_SNAPSHOTS[promotion_id]` with `oracle_correlation` and `per_cell_verdict_distribution`. Required: `snapshot_persist_count_per_promotion == 1`.
