@@ -689,7 +689,12 @@ impl Handlers {
                 );
             }
         };
-        match context_graph_mejepa::run_project_ingest(request) {
+        match context_graph_mejepa::run_project_ingest_with_multi_array_provider(
+            request,
+            self.multi_array_provider.clone(),
+        )
+        .await
+        {
             Ok(report) => self.tool_result(id, json!(report)),
             Err(err) => self.tool_error_typed(
                 id,

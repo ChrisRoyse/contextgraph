@@ -1,4 +1,9 @@
+use async_trait::async_trait;
 use context_graph_core::memory::ast::{self, AstChunk, AstChunkOptions};
+use context_graph_core::types::fingerprint::{
+    SparseVector, E10_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E14_DIM, E1_DIM, E2_DIM, E3_DIM,
+    E4_DIM, E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -8,7 +13,7 @@ use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
-const CACHE_SCHEMA_VERSION: u32 = 1;
+const CACHE_SCHEMA_VERSION: u32 = 2;
 const WATCHER_STATUS_FILE: &str = "watcher.status";
 pub const PROJECT_CACHE_DEBOUNCE_MS: u64 = 250;
 
@@ -50,6 +55,24 @@ pub enum ProjectCacheError {
         embedder_id: String,
         embedder_version: String,
     },
+    #[error("MEJEPA_PROJECT_CACHE_EMBEDDING_PROVIDER_FAILED: {reason}")]
+    EmbeddingProviderFailed { reason: String },
+    #[error(
+        "MEJEPA_PROJECT_CACHE_EMBEDDING_OUTPUT_INVALID: chunk_key={chunk_key} embedder_id={embedder_id}: {reason}"
+    )]
+    EmbeddingOutputInvalid {
+        chunk_key: String,
+        embedder_id: String,
+        reason: String,
+    },
+    #[error(
+        "MEJEPA_PROJECT_CACHE_EMBEDDING_OUTPUT_MISSING: chunk_key={chunk_key} embedder_id={embedder_id} embedder_version={embedder_version}"
+    )]
+    EmbeddingOutputMissing {
+        chunk_key: String,
+        embedder_id: String,
+        embedder_version: String,
+    },
     /// Filesystem metadata could not be read or its mtime is outside the
     /// representable range of `i64` nanoseconds since `UNIX_EPOCH`.
     ///
@@ -84,6 +107,11 @@ impl ProjectCacheError {
             Self::ChunkFailed { .. } => "MEJEPA_PROJECT_CACHE_CHUNK_FAILED",
             Self::HashCollision { .. } => "MEJEPA_PROJECT_CACHE_HASH_COLLISION",
             Self::RealEmbeddingRequired { .. } => "MEJEPA_PROJECT_CACHE_REAL_EMBEDDING_REQUIRED",
+            Self::EmbeddingProviderFailed { .. } => {
+                "MEJEPA_PROJECT_CACHE_EMBEDDING_PROVIDER_FAILED"
+            }
+            Self::EmbeddingOutputInvalid { .. } => "MEJEPA_PROJECT_CACHE_EMBEDDING_OUTPUT_INVALID",
+            Self::EmbeddingOutputMissing { .. } => "MEJEPA_PROJECT_CACHE_EMBEDDING_OUTPUT_MISSING",
             Self::FilesystemMetadataInvalid { .. } => {
                 "MEJEPA_PROJECT_CACHE_FILESYSTEM_METADATA_INVALID"
             }
@@ -192,6 +220,86 @@ impl EmbedderVersion {
             embedder_version: embedder_version.into(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectEmbeddingVectorFormat {
+    DenseF32Le,
+    SparseJson,
+    TokenF32Json,
+}
+
+impl ProjectEmbeddingVectorFormat {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::DenseF32Le => "dense_f32_le",
+            Self::SparseJson => "sparse_json",
+            Self::TokenF32Json => "token_f32_json",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProjectEmbeddingInput {
+    pub chunk_key: String,
+    pub path: String,
+    pub role: ChunkRole,
+    pub kind: String,
+    pub content_text: String,
+    pub content_sha256: String,
+    pub sequence: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProjectEmbeddingRow {
+    pub chunk_key: String,
+    pub embedder_id: String,
+    pub embedder_version: String,
+    pub vector_format: ProjectEmbeddingVectorFormat,
+    pub dimension: u32,
+    pub vector_blob: Vec<u8>,
+    pub model_id: String,
+    pub precision_class: String,
+    pub output_sha256: String,
+    pub provenance: String,
+}
+
+impl ProjectEmbeddingRow {
+    pub fn new(
+        chunk_key: impl Into<String>,
+        embedder_id: impl Into<String>,
+        embedder_version: impl Into<String>,
+        vector_format: ProjectEmbeddingVectorFormat,
+        dimension: u32,
+        vector_blob: Vec<u8>,
+        model_id: impl Into<String>,
+        precision_class: impl Into<String>,
+        provenance: impl Into<String>,
+    ) -> Self {
+        let output_sha256 = sha256_hex(&vector_blob);
+        Self {
+            chunk_key: chunk_key.into(),
+            embedder_id: embedder_id.into(),
+            embedder_version: embedder_version.into(),
+            vector_format,
+            dimension,
+            vector_blob,
+            model_id: model_id.into(),
+            precision_class: precision_class.into(),
+            output_sha256,
+            provenance: provenance.into(),
+        }
+    }
+}
+
+#[async_trait]
+pub trait ProjectEmbeddingProvider: Send + Sync {
+    async fn embed_project_chunks(
+        &self,
+        chunks: &[ProjectEmbeddingInput],
+        embedder_versions: &[EmbedderVersion],
+    ) -> Result<Vec<ProjectEmbeddingRow>, ProjectCacheError>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -324,9 +432,7 @@ impl ProjectMerkleCache {
             // metadata_invalid forces re-hash regardless of cached mtime (F-021).
             let metadata_unchanged = !metadata_invalid
                 && previous_row.is_some_and(|old| {
-                    old.size_bytes == size_bytes
-                        && old.mtime_ns != 0
-                        && old.mtime_ns == mtime_ns
+                    old.size_bytes == size_bytes && old.mtime_ns != 0 && old.mtime_ns == mtime_ns
                 });
             let (file_hash, bytes) = if metadata_unchanged {
                 (
@@ -437,6 +543,187 @@ impl ProjectMerkleCache {
             per_embedder_reembedded,
         };
         Ok(report)
+    }
+
+    pub async fn scan_project_with_embedding_provider(
+        &self,
+        embedder_versions: &[EmbedderVersion],
+        provider: &dyn ProjectEmbeddingProvider,
+    ) -> Result<ProjectCacheReport, ProjectCacheError> {
+        let scan_started_unix_ms = now_ms()?;
+        let (tracked, files_by_hash, changed_files, deleted_files, chunks_to_refresh) = {
+            let conn = self.open_connection()?;
+            let previous = load_existing_files(&conn)?;
+            let tracked = project_files(&self.config.repo_path)?
+                .into_iter()
+                .filter(|path| {
+                    self.config
+                        .single_file
+                        .as_ref()
+                        .map(|only| only == path)
+                        .unwrap_or(true)
+                })
+                .filter(|path| self.config.scope.includes_path(path))
+                .collect::<Vec<_>>();
+            let tracked_set: BTreeSet<String> = tracked.iter().cloned().collect();
+            let deleted_files: Vec<String> = previous
+                .keys()
+                .filter(|path| !tracked_set.contains(*path))
+                .cloned()
+                .collect();
+            let mut changed_files = Vec::new();
+            let mut files_by_hash: BTreeMap<String, Vec<(String, u64)>> = BTreeMap::new();
+            let mut chunks_to_refresh = BTreeMap::new();
+
+            for rel_path in &tracked {
+                let absolute = self.config.repo_path.join(rel_path);
+                let metadata = fs::metadata(&absolute).map_err(|source| ProjectCacheError::Io {
+                    path: absolute.display().to_string(),
+                    source,
+                })?;
+                let size_bytes = metadata.len();
+                let mtime_ns: i64 = match metadata_modified_ns(&metadata, rel_path) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        tracing::warn!(
+                            path = %rel_path,
+                            error = %err,
+                            "MEJEPA_PROJECT_CACHE_FILESYSTEM_METADATA_INVALID: forcing re-hash"
+                        );
+                        0
+                    }
+                };
+                let metadata_invalid = mtime_ns == 0;
+                let previous_row = previous.get(rel_path);
+                let metadata_unchanged = !metadata_invalid
+                    && previous_row.is_some_and(|old| {
+                        old.size_bytes == size_bytes
+                            && old.mtime_ns != 0
+                            && old.mtime_ns == mtime_ns
+                    });
+                let (file_hash, bytes) = if metadata_unchanged {
+                    (
+                        previous_row
+                            .map(|old| old.blake3.clone())
+                            .unwrap_or_default(),
+                        None,
+                    )
+                } else {
+                    let bytes = fs::read(&absolute).map_err(|source| ProjectCacheError::Io {
+                        path: absolute.display().to_string(),
+                        source,
+                    })?;
+                    (blake3_hex(&bytes), Some(bytes))
+                };
+                files_by_hash
+                    .entry(file_hash.clone())
+                    .or_default()
+                    .push((rel_path.clone(), size_bytes));
+                let changed = previous_row
+                    .map(|old| !metadata_unchanged && old.blake3 != file_hash)
+                    .unwrap_or(true);
+                if changed {
+                    changed_files.push(rel_path.clone());
+                }
+                persist_file(
+                    &conn,
+                    rel_path,
+                    &file_hash,
+                    size_bytes,
+                    mtime_ns,
+                    scan_started_unix_ms,
+                )?;
+                if !changed {
+                    continue;
+                }
+                let bytes = bytes.ok_or_else(|| ProjectCacheError::Io {
+                    path: absolute.display().to_string(),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "changed file missing content bytes",
+                    ),
+                })?;
+                delete_chunk_paths_for_file(&conn, rel_path)?;
+                delete_imports_for_file(&conn, rel_path)?;
+                for imported in python_imports(rel_path, &bytes) {
+                    conn.execute(
+                        "INSERT OR IGNORE INTO imports(path, imported_module) VALUES (?1, ?2)",
+                        params![rel_path, imported],
+                    )
+                    .map_err(|source| ProjectCacheError::Sqlite {
+                        context: "insert import",
+                        source,
+                    })?;
+                }
+                for chunk in chunks_for_file(rel_path, &bytes, &self.config.chunk_schema_version)? {
+                    chunks_to_refresh.insert(chunk.chunk_key.clone(), chunk.embedding_input());
+                    persist_chunk(&conn, &chunk)?;
+                    conn.execute(
+                        "INSERT OR REPLACE INTO chunk_paths(path, chunk_key, file_blake3) VALUES (?1, ?2, ?3)",
+                        params![rel_path, chunk.chunk_key, file_hash],
+                    )
+                    .map_err(|source| ProjectCacheError::Sqlite {
+                        context: "insert chunk path",
+                        source,
+                    })?;
+                }
+            }
+
+            reject_hash_collisions(&files_by_hash)?;
+            for deleted in &deleted_files {
+                conn.execute("DELETE FROM files WHERE path = ?1", params![deleted])
+                    .map_err(|source| ProjectCacheError::Sqlite {
+                        context: "delete file row",
+                        source,
+                    })?;
+                delete_chunk_paths_for_file(&conn, deleted)?;
+                delete_imports_for_file(&conn, deleted)?;
+            }
+            prune_orphan_chunks(&conn)?;
+            queue_lazy_rescans(&conn, &changed_files, &deleted_files)?;
+            purge_legacy_synthetic_embeddings(&conn)?;
+            if !embedder_versions.is_empty() {
+                delete_embeddings_for_chunk_inputs(&conn, &chunks_to_refresh)?;
+            }
+            (
+                tracked,
+                files_by_hash,
+                changed_files,
+                deleted_files,
+                chunks_to_refresh,
+            )
+        };
+        let rows =
+            embedding_rows_with_provider(embedder_versions, &chunks_to_refresh, provider).await?;
+        let conn = self.open_connection()?;
+        let per_embedder_reembedded =
+            persist_embedding_rows(&conn, embedder_versions, &chunks_to_refresh, &rows)?;
+        let merkle_root = merkle_root(&tracked, &files_by_hash);
+        let status = WatcherStatus {
+            project_id: self.config.project_id.clone(),
+            heartbeat_unix_ms: scan_started_unix_ms,
+            lag_count: 0,
+            file_count: tracked.len(),
+            merkle_root: merkle_root.clone(),
+        };
+        write_status(&self.status_path, &status)?;
+        Ok(ProjectCacheReport {
+            project_id: self.config.project_id.clone(),
+            repo_path: self.config.repo_path.display().to_string(),
+            db_path: self.db_path.display().to_string(),
+            watcher_status_path: self.status_path.display().to_string(),
+            merkle_root,
+            scan_started_unix_ms,
+            file_count: count_rows(&conn, "files")?,
+            chunk_path_count: count_rows(&conn, "chunk_paths")?,
+            unique_chunk_count: count_rows(&conn, "chunks")?,
+            embedding_count: count_rows(&conn, "embeddings")?,
+            changed_files,
+            deleted_files,
+            deduped_chunk_paths: count_deduped_chunk_paths(&conn)?,
+            lazy_rescan_queued: count_rows(&conn, "lazy_rescan_queue")?,
+            per_embedder_reembedded,
+        })
     }
 
     pub fn scan_after_debounce(
@@ -604,6 +891,173 @@ impl ProjectMerkleCache {
         })
     }
 
+    pub async fn scan_project_paths_with_embedding_provider(
+        &self,
+        embedder_versions: &[EmbedderVersion],
+        changed_paths: &[String],
+        provider: &dyn ProjectEmbeddingProvider,
+    ) -> Result<ProjectCacheReport, ProjectCacheError> {
+        let scan_started_unix_ms = now_ms()?;
+        let (current, changed_files, deleted_files, chunks_to_refresh) = {
+            let conn = self.open_connection()?;
+            let mut current = load_existing_files(&conn)?;
+            let mut changed_files = Vec::new();
+            let mut deleted_files = Vec::new();
+            let mut chunks_to_refresh = BTreeMap::new();
+            let mut requested = changed_paths
+                .iter()
+                .map(|path| normalize_requested_project_path(path))
+                .collect::<Result<Vec<_>, _>>()?;
+            requested.sort();
+            requested.dedup();
+
+            for rel_path in requested {
+                if self
+                    .config
+                    .single_file
+                    .as_ref()
+                    .map(|only| only != &rel_path)
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                if !is_supported_project_file(&rel_path)
+                    || !self.config.scope.includes_path(&rel_path)
+                {
+                    return Err(ProjectCacheError::UnsupportedFile { path: rel_path });
+                }
+                let absolute = self.config.repo_path.join(&rel_path);
+                if !absolute.exists() {
+                    if current.remove(&rel_path).is_some() {
+                        deleted_files.push(rel_path.clone());
+                        conn.execute("DELETE FROM files WHERE path = ?1", params![rel_path])
+                            .map_err(|source| ProjectCacheError::Sqlite {
+                                context: "delete changed-path file row",
+                                source,
+                            })?;
+                        delete_chunk_paths_for_file(&conn, &rel_path)?;
+                        delete_imports_for_file(&conn, &rel_path)?;
+                    }
+                    continue;
+                }
+                let metadata = fs::metadata(&absolute).map_err(|source| ProjectCacheError::Io {
+                    path: absolute.display().to_string(),
+                    source,
+                })?;
+                if !metadata.is_file() {
+                    return Err(ProjectCacheError::UnsupportedFile { path: rel_path });
+                }
+                let bytes = fs::read(&absolute).map_err(|source| ProjectCacheError::Io {
+                    path: absolute.display().to_string(),
+                    source,
+                })?;
+                let file_hash = blake3_hex(&bytes);
+                let size_bytes = metadata.len();
+                let mtime_ns: i64 = match metadata_modified_ns(&metadata, &rel_path) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        tracing::warn!(
+                            path = %rel_path,
+                            error = %err,
+                            "MEJEPA_PROJECT_CACHE_FILESYSTEM_METADATA_INVALID: forcing re-hash"
+                        );
+                        0
+                    }
+                };
+                let changed = current
+                    .get(&rel_path)
+                    .map(|old| old.blake3 != file_hash)
+                    .unwrap_or(true);
+                persist_file(
+                    &conn,
+                    &rel_path,
+                    &file_hash,
+                    size_bytes,
+                    mtime_ns,
+                    scan_started_unix_ms,
+                )?;
+                current.insert(
+                    rel_path.clone(),
+                    ExistingFile {
+                        blake3: file_hash.clone(),
+                        size_bytes,
+                        mtime_ns,
+                    },
+                );
+                if !changed {
+                    continue;
+                }
+                changed_files.push(rel_path.clone());
+                delete_chunk_paths_for_file(&conn, &rel_path)?;
+                delete_imports_for_file(&conn, &rel_path)?;
+                for imported in python_imports(&rel_path, &bytes) {
+                    conn.execute(
+                        "INSERT OR IGNORE INTO imports(path, imported_module) VALUES (?1, ?2)",
+                        params![rel_path, imported],
+                    )
+                    .map_err(|source| ProjectCacheError::Sqlite {
+                        context: "insert changed-path import",
+                        source,
+                    })?;
+                }
+                for chunk in chunks_for_file(&rel_path, &bytes, &self.config.chunk_schema_version)?
+                {
+                    chunks_to_refresh.insert(chunk.chunk_key.clone(), chunk.embedding_input());
+                    persist_chunk(&conn, &chunk)?;
+                    conn.execute(
+                        "INSERT OR REPLACE INTO chunk_paths(path, chunk_key, file_blake3) VALUES (?1, ?2, ?3)",
+                        params![rel_path, chunk.chunk_key, file_hash],
+                    )
+                    .map_err(|source| ProjectCacheError::Sqlite {
+                        context: "insert changed-path chunk path",
+                        source,
+                    })?;
+                }
+            }
+
+            let files_by_hash = files_by_hash_from_existing(&current);
+            reject_hash_collisions(&files_by_hash)?;
+            prune_orphan_chunks(&conn)?;
+            queue_lazy_rescans(&conn, &changed_files, &deleted_files)?;
+            purge_legacy_synthetic_embeddings(&conn)?;
+            if !embedder_versions.is_empty() {
+                delete_embeddings_for_chunk_inputs(&conn, &chunks_to_refresh)?;
+            }
+            (current, changed_files, deleted_files, chunks_to_refresh)
+        };
+        let rows =
+            embedding_rows_with_provider(embedder_versions, &chunks_to_refresh, provider).await?;
+        let conn = self.open_connection()?;
+        let per_embedder_reembedded =
+            persist_embedding_rows(&conn, embedder_versions, &chunks_to_refresh, &rows)?;
+        let merkle_root = merkle_root_from_existing(&current);
+        let status = WatcherStatus {
+            project_id: self.config.project_id.clone(),
+            heartbeat_unix_ms: scan_started_unix_ms,
+            lag_count: 0,
+            file_count: current.len(),
+            merkle_root: merkle_root.clone(),
+        };
+        write_status(&self.status_path, &status)?;
+        Ok(ProjectCacheReport {
+            project_id: self.config.project_id.clone(),
+            repo_path: self.config.repo_path.display().to_string(),
+            db_path: self.db_path.display().to_string(),
+            watcher_status_path: self.status_path.display().to_string(),
+            merkle_root,
+            scan_started_unix_ms,
+            file_count: current.len(),
+            chunk_path_count: count_rows(&conn, "chunk_paths")?,
+            unique_chunk_count: count_rows(&conn, "chunks")?,
+            embedding_count: count_rows(&conn, "embeddings")?,
+            changed_files,
+            deleted_files,
+            deduped_chunk_paths: count_deduped_chunk_paths(&conn)?,
+            lazy_rescan_queued: count_rows(&conn, "lazy_rescan_queue")?,
+            per_embedder_reembedded,
+        })
+    }
+
     fn init_schema(&self) -> Result<(), ProjectCacheError> {
         let conn = self.open_connection()?;
         conn.execute_batch(
@@ -645,6 +1099,12 @@ impl ProjectMerkleCache {
                 embedder_id TEXT NOT NULL,
                 embedder_version TEXT NOT NULL,
                 vector_blob BLOB NOT NULL,
+                vector_format TEXT NOT NULL DEFAULT 'legacy_unknown',
+                dimension INTEGER NOT NULL DEFAULT 0,
+                model_id TEXT NOT NULL DEFAULT '',
+                precision_class TEXT NOT NULL DEFAULT '',
+                output_sha256 TEXT NOT NULL DEFAULT '',
+                provenance TEXT NOT NULL DEFAULT '',
                 updated_at INTEGER NOT NULL,
                 PRIMARY KEY(chunk_key, embedder_id),
                 FOREIGN KEY(chunk_key) REFERENCES chunks(chunk_key) ON DELETE CASCADE
@@ -690,6 +1150,16 @@ impl ProjectMerkleCache {
                 source,
             })?;
         }
+        ensure_embedding_column(
+            &conn,
+            "vector_format",
+            "TEXT NOT NULL DEFAULT 'legacy_unknown'",
+        )?;
+        ensure_embedding_column(&conn, "dimension", "INTEGER NOT NULL DEFAULT 0")?;
+        ensure_embedding_column(&conn, "model_id", "TEXT NOT NULL DEFAULT ''")?;
+        ensure_embedding_column(&conn, "precision_class", "TEXT NOT NULL DEFAULT ''")?;
+        ensure_embedding_column(&conn, "output_sha256", "TEXT NOT NULL DEFAULT ''")?;
+        ensure_embedding_column(&conn, "provenance", "TEXT NOT NULL DEFAULT ''")?;
         conn.execute(
             "INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', ?1)",
             params![CACHE_SCHEMA_VERSION.to_string()],
@@ -710,6 +1180,35 @@ impl ProjectMerkleCache {
     }
 }
 
+fn ensure_embedding_column(
+    conn: &Connection,
+    name: &'static str,
+    ddl: &'static str,
+) -> Result<(), ProjectCacheError> {
+    let exists: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM pragma_table_info('embeddings') WHERE name = ?1",
+            params![name],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|source| ProjectCacheError::Sqlite {
+            context: "inspect embeddings column",
+            source,
+        })?;
+    if exists.is_none() {
+        conn.execute(
+            &format!("ALTER TABLE embeddings ADD COLUMN {name} {ddl}"),
+            [],
+        )
+        .map_err(|source| ProjectCacheError::Sqlite {
+            context: "add embeddings metadata column",
+            source,
+        })?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 struct ExistingFile {
     blake3: String,
@@ -723,11 +1222,27 @@ struct CacheChunk {
     file_blake3: String,
     role: ChunkRole,
     kind: String,
+    path: String,
     byte_start: u64,
     byte_end: u64,
     line_start: u32,
     line_end: u32,
     content_sha256: String,
+    content_text: String,
+}
+
+impl CacheChunk {
+    fn embedding_input(&self) -> ProjectEmbeddingInput {
+        ProjectEmbeddingInput {
+            chunk_key: self.chunk_key.clone(),
+            path: self.path.clone(),
+            role: self.role.clone(),
+            kind: self.kind.clone(),
+            content_text: self.content_text.clone(),
+            content_sha256: self.content_sha256.clone(),
+            sequence: stable_chunk_sequence(&self.chunk_key),
+        }
+    }
 }
 
 fn canonicalize_existing_dir(path: &Path) -> Result<PathBuf, std::io::Error> {
@@ -957,11 +1472,13 @@ fn chunks_for_file(
         file_blake3,
         role,
         kind: "whole_file".to_string(),
+        path: rel_path.to_string(),
         byte_start: 0,
         byte_end: bytes.len() as u64,
         line_start: 1,
         line_end: text.lines().count().max(1) as u32,
         content_sha256,
+        content_text: text,
     }])
 }
 
@@ -983,11 +1500,13 @@ fn cache_chunk_from_ast(
         file_blake3: file_blake3.to_string(),
         role: role_for_path(rel_path),
         kind,
+        path: rel_path.to_string(),
         byte_start: chunk.start_byte as u64,
         byte_end: chunk.end_byte as u64,
         line_start: chunk.line_start,
         line_end: chunk.line_end,
         content_sha256: chunk.sha256.clone(),
+        content_text: chunk.content.clone(),
     })
 }
 
@@ -1195,6 +1714,7 @@ fn refresh_embeddings(
     if chunk_keys.is_empty() || embedder_versions.is_empty() {
         return Ok(BTreeMap::new());
     }
+    delete_embeddings_for_chunk_keys(conn, chunk_keys)?;
     let chunk_key = chunk_keys.iter().next().cloned().unwrap_or_default();
     let embedder = &embedder_versions[0];
     Err(ProjectCacheError::RealEmbeddingRequired {
@@ -1204,12 +1724,310 @@ fn refresh_embeddings(
     })
 }
 
+async fn embedding_rows_with_provider(
+    embedder_versions: &[EmbedderVersion],
+    chunks: &BTreeMap<String, ProjectEmbeddingInput>,
+    provider: &dyn ProjectEmbeddingProvider,
+) -> Result<Vec<ProjectEmbeddingRow>, ProjectCacheError> {
+    if chunks.is_empty() || embedder_versions.is_empty() {
+        return Ok(Vec::new());
+    }
+    let inputs = chunks.values().cloned().collect::<Vec<_>>();
+    provider
+        .embed_project_chunks(&inputs, embedder_versions)
+        .await
+}
+
+fn persist_embedding_rows(
+    conn: &Connection,
+    embedder_versions: &[EmbedderVersion],
+    chunks: &BTreeMap<String, ProjectEmbeddingInput>,
+    rows: &[ProjectEmbeddingRow],
+) -> Result<BTreeMap<String, usize>, ProjectCacheError> {
+    let expected = chunks
+        .keys()
+        .flat_map(|chunk_key| {
+            embedder_versions.iter().map(move |embedder| {
+                (
+                    chunk_key.clone(),
+                    embedder.embedder_id.clone(),
+                    embedder.embedder_version.clone(),
+                )
+            })
+        })
+        .collect::<BTreeSet<_>>();
+    let mut seen = BTreeSet::new();
+    let mut per_embedder = BTreeMap::new();
+    for row in rows {
+        validate_embedding_row(row, &expected)?;
+        let key = (
+            row.chunk_key.clone(),
+            row.embedder_id.clone(),
+            row.embedder_version.clone(),
+        );
+        if !seen.insert(key) {
+            return Err(ProjectCacheError::EmbeddingOutputInvalid {
+                chunk_key: row.chunk_key.clone(),
+                embedder_id: row.embedder_id.clone(),
+                reason: "duplicate provider output row".to_string(),
+            });
+        }
+        *per_embedder.entry(row.embedder_id.clone()).or_insert(0) += 1;
+    }
+    for (chunk_key, embedder_id, embedder_version) in expected.difference(&seen) {
+        return Err(ProjectCacheError::EmbeddingOutputMissing {
+            chunk_key: chunk_key.clone(),
+            embedder_id: embedder_id.clone(),
+            embedder_version: embedder_version.clone(),
+        });
+    }
+    let updated_at = now_ms()?;
+    for row in rows {
+        conn.execute(
+            "\
+            INSERT OR REPLACE INTO embeddings(
+                chunk_key,
+                embedder_id,
+                embedder_version,
+                vector_blob,
+                vector_format,
+                dimension,
+                model_id,
+                precision_class,
+                output_sha256,
+                provenance,
+                updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                &row.chunk_key,
+                &row.embedder_id,
+                &row.embedder_version,
+                &row.vector_blob,
+                row.vector_format.as_str(),
+                row.dimension,
+                &row.model_id,
+                &row.precision_class,
+                &row.output_sha256,
+                &row.provenance,
+                updated_at,
+            ],
+        )
+        .map_err(|source| ProjectCacheError::Sqlite {
+            context: "insert real project embedding row",
+            source,
+        })?;
+    }
+    Ok(per_embedder)
+}
+
+fn validate_embedding_row(
+    row: &ProjectEmbeddingRow,
+    expected: &BTreeSet<(String, String, String)>,
+) -> Result<(), ProjectCacheError> {
+    if !expected.contains(&(
+        row.chunk_key.clone(),
+        row.embedder_id.clone(),
+        row.embedder_version.clone(),
+    )) {
+        return Err(ProjectCacheError::EmbeddingOutputInvalid {
+            chunk_key: row.chunk_key.clone(),
+            embedder_id: row.embedder_id.clone(),
+            reason: "provider returned an unexpected chunk/embedder/version tuple".to_string(),
+        });
+    }
+    if row.vector_blob.len() == 32 {
+        return Err(ProjectCacheError::EmbeddingOutputInvalid {
+            chunk_key: row.chunk_key.clone(),
+            embedder_id: row.embedder_id.clone(),
+            reason: "32-byte vector blob is reserved for legacy synthetic hashes".to_string(),
+        });
+    }
+    if row.vector_blob.is_empty() || row.dimension == 0 {
+        return Err(ProjectCacheError::EmbeddingOutputInvalid {
+            chunk_key: row.chunk_key.clone(),
+            embedder_id: row.embedder_id.clone(),
+            reason: "empty vector blob or zero dimension".to_string(),
+        });
+    }
+    let Some((expected_format, expected_dimension)) =
+        expected_project_embedding_shape(&row.embedder_id)
+    else {
+        return Err(ProjectCacheError::EmbeddingOutputInvalid {
+            chunk_key: row.chunk_key.clone(),
+            embedder_id: row.embedder_id.clone(),
+            reason: "unsupported project-ingest embedder id".to_string(),
+        });
+    };
+    if row.vector_format != expected_format {
+        return Err(ProjectCacheError::EmbeddingOutputInvalid {
+            chunk_key: row.chunk_key.clone(),
+            embedder_id: row.embedder_id.clone(),
+            reason: format!(
+                "vector_format {} does not match expected {}",
+                row.vector_format.as_str(),
+                expected_format.as_str()
+            ),
+        });
+    }
+    if row.dimension != expected_dimension {
+        return Err(ProjectCacheError::EmbeddingOutputInvalid {
+            chunk_key: row.chunk_key.clone(),
+            embedder_id: row.embedder_id.clone(),
+            reason: format!(
+                "dimension {} does not match expected {}",
+                row.dimension, expected_dimension
+            ),
+        });
+    }
+    match &row.vector_format {
+        ProjectEmbeddingVectorFormat::DenseF32Le => {
+            let expected_bytes = row.dimension as usize * std::mem::size_of::<f32>();
+            if row.vector_blob.len() != expected_bytes {
+                return Err(ProjectCacheError::EmbeddingOutputInvalid {
+                    chunk_key: row.chunk_key.clone(),
+                    embedder_id: row.embedder_id.clone(),
+                    reason: format!(
+                        "dense_f32_le byte length {} does not match dimension {}",
+                        row.vector_blob.len(),
+                        row.dimension
+                    ),
+                });
+            }
+        }
+        ProjectEmbeddingVectorFormat::SparseJson => {
+            let parsed: SparseVector = serde_json::from_slice(&row.vector_blob).map_err(|err| {
+                ProjectCacheError::EmbeddingOutputInvalid {
+                    chunk_key: row.chunk_key.clone(),
+                    embedder_id: row.embedder_id.clone(),
+                    reason: format!("sparse_json did not decode as SparseVector: {err}"),
+                }
+            })?;
+            if parsed.indices.len() != parsed.values.len()
+                || !parsed.values.iter().all(|value| value.is_finite())
+                || SparseVector::new(parsed.indices.clone(), parsed.values.clone()).is_err()
+            {
+                return Err(ProjectCacheError::EmbeddingOutputInvalid {
+                    chunk_key: row.chunk_key.clone(),
+                    embedder_id: row.embedder_id.clone(),
+                    reason: "sparse_json has mismatched or non-finite values".to_string(),
+                });
+            }
+        }
+        ProjectEmbeddingVectorFormat::TokenF32Json => {
+            let parsed: Vec<Vec<f32>> =
+                serde_json::from_slice(&row.vector_blob).map_err(|err| {
+                    ProjectCacheError::EmbeddingOutputInvalid {
+                        chunk_key: row.chunk_key.clone(),
+                        embedder_id: row.embedder_id.clone(),
+                        reason: format!("token_f32_json did not decode as token matrix: {err}"),
+                    }
+                })?;
+            if parsed
+                .iter()
+                .flat_map(|token| token.iter())
+                .any(|value| !value.is_finite())
+                || parsed.iter().any(|token| token.len() != E12_TOKEN_DIM)
+            {
+                return Err(ProjectCacheError::EmbeddingOutputInvalid {
+                    chunk_key: row.chunk_key.clone(),
+                    embedder_id: row.embedder_id.clone(),
+                    reason: "token_f32_json contains non-finite values or wrong token dimension"
+                        .to_string(),
+                });
+            }
+        }
+    }
+    if row.model_id.trim().is_empty()
+        || row.precision_class.trim().is_empty()
+        || row.provenance.trim().is_empty()
+    {
+        return Err(ProjectCacheError::EmbeddingOutputInvalid {
+            chunk_key: row.chunk_key.clone(),
+            embedder_id: row.embedder_id.clone(),
+            reason: "model_id, precision_class, and provenance are required".to_string(),
+        });
+    }
+    let actual_hash = sha256_hex(&row.vector_blob);
+    if row.output_sha256 != actual_hash {
+        return Err(ProjectCacheError::EmbeddingOutputInvalid {
+            chunk_key: row.chunk_key.clone(),
+            embedder_id: row.embedder_id.clone(),
+            reason: "output_sha256 does not match vector_blob".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn expected_project_embedding_shape(
+    embedder_id: &str,
+) -> Option<(ProjectEmbeddingVectorFormat, u32)> {
+    match embedder_id {
+        "e1" => Some((ProjectEmbeddingVectorFormat::DenseF32Le, E1_DIM as u32)),
+        "e2" => Some((ProjectEmbeddingVectorFormat::DenseF32Le, E2_DIM as u32)),
+        "e3" => Some((ProjectEmbeddingVectorFormat::DenseF32Le, E3_DIM as u32)),
+        "e4" => Some((ProjectEmbeddingVectorFormat::DenseF32Le, E4_DIM as u32)),
+        "e6" => Some((
+            ProjectEmbeddingVectorFormat::SparseJson,
+            E6_SPARSE_VOCAB as u32,
+        )),
+        "e7" => Some((ProjectEmbeddingVectorFormat::DenseF32Le, E7_DIM as u32)),
+        "e8" => Some((ProjectEmbeddingVectorFormat::DenseF32Le, E8_DIM as u32)),
+        "e9" => Some((ProjectEmbeddingVectorFormat::DenseF32Le, E9_DIM as u32)),
+        "e10" => Some((ProjectEmbeddingVectorFormat::DenseF32Le, E10_DIM as u32)),
+        "e12" => Some((
+            ProjectEmbeddingVectorFormat::TokenF32Json,
+            E12_TOKEN_DIM as u32,
+        )),
+        "e13" => Some((
+            ProjectEmbeddingVectorFormat::SparseJson,
+            E13_SPLADE_VOCAB as u32,
+        )),
+        "e14" => Some((ProjectEmbeddingVectorFormat::DenseF32Le, E14_DIM as u32)),
+        _ => None,
+    }
+}
+
 fn purge_legacy_synthetic_embeddings(conn: &Connection) -> Result<(), ProjectCacheError> {
     conn.execute("DELETE FROM embeddings WHERE length(vector_blob) = 32", [])
         .map_err(|source| ProjectCacheError::Sqlite {
             context: "purge legacy synthetic embedding rows",
             source,
         })?;
+    Ok(())
+}
+
+fn delete_embeddings_for_chunk_keys(
+    conn: &Connection,
+    chunk_keys: &BTreeSet<String>,
+) -> Result<(), ProjectCacheError> {
+    for chunk_key in chunk_keys {
+        conn.execute(
+            "DELETE FROM embeddings WHERE chunk_key = ?1",
+            params![chunk_key],
+        )
+        .map_err(|source| ProjectCacheError::Sqlite {
+            context: "delete stale embeddings for changed chunk",
+            source,
+        })?;
+    }
+    Ok(())
+}
+
+fn delete_embeddings_for_chunk_inputs(
+    conn: &Connection,
+    chunks: &BTreeMap<String, ProjectEmbeddingInput>,
+) -> Result<(), ProjectCacheError> {
+    for chunk_key in chunks.keys() {
+        conn.execute(
+            "DELETE FROM embeddings WHERE chunk_key = ?1",
+            params![chunk_key],
+        )
+        .map_err(|source| ProjectCacheError::Sqlite {
+            context: "delete stale embeddings for changed chunk",
+            source,
+        })?;
+    }
     Ok(())
 }
 
@@ -1354,6 +2172,18 @@ fn chunk_key(schema_version: &str, file_blake3: &str, start: u64, end: u64, kind
     blake3_hex(format!("{schema_version}\0{file_blake3}\0{start}\0{end}\0{kind}").as_bytes())
 }
 
+fn stable_chunk_sequence(chunk_key: &str) -> u64 {
+    if chunk_key.len() >= 16 {
+        if let Ok(value) = u64::from_str_radix(&chunk_key[..16], 16) {
+            return value;
+        }
+    }
+    let digest = blake3::hash(chunk_key.as_bytes());
+    let mut bytes = [0_u8; 8];
+    bytes.copy_from_slice(&digest.as_bytes()[..8]);
+    u64::from_le_bytes(bytes)
+}
+
 fn decode_utf8_or_latin1(bytes: &[u8]) -> String {
     match std::str::from_utf8(bytes) {
         Ok(text) => text.to_string(),
@@ -1385,22 +2215,20 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// whether to abort the scan or treat the file as "definitely changed" and
 /// re-hash. `path` is embedded in the error so operators can identify the
 /// specific file whose metadata is bad.
-fn metadata_modified_ns(
-    metadata: &fs::Metadata,
-    path: &str,
-) -> Result<i64, ProjectCacheError> {
-    let modified = metadata
-        .modified()
-        .map_err(|err| ProjectCacheError::FilesystemMetadataInvalid {
-            path: path.to_string(),
-            reason: format!("metadata.modified() failed: {err}"),
-        })?;
-    let duration = modified
-        .duration_since(UNIX_EPOCH)
-        .map_err(|err| ProjectCacheError::FilesystemMetadataInvalid {
+fn metadata_modified_ns(metadata: &fs::Metadata, path: &str) -> Result<i64, ProjectCacheError> {
+    let modified =
+        metadata
+            .modified()
+            .map_err(|err| ProjectCacheError::FilesystemMetadataInvalid {
+                path: path.to_string(),
+                reason: format!("metadata.modified() failed: {err}"),
+            })?;
+    let duration = modified.duration_since(UNIX_EPOCH).map_err(|err| {
+        ProjectCacheError::FilesystemMetadataInvalid {
             path: path.to_string(),
             reason: format!("duration_since(UNIX_EPOCH) failed: {err}"),
-        })?;
+        }
+    })?;
     Ok(duration.as_nanos().min(i64::MAX as u128) as i64)
 }
 
@@ -1412,11 +2240,11 @@ fn metadata_modified_ns(
 /// corrupted scans with epoch-time timestamps. The current implementation
 /// propagates the error so the caller aborts the scan.
 fn now_ms() -> Result<i64, ProjectCacheError> {
-    let duration = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|err| {
-        ProjectCacheError::SystemTimeInvalid {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| ProjectCacheError::SystemTimeInvalid {
             reason: format!("SystemTime::now().duration_since(UNIX_EPOCH) failed: {err}"),
-        }
-    })?;
+        })?;
     Ok(duration.as_millis() as i64)
 }
 
@@ -1433,6 +2261,12 @@ mod tests {
                 embedder_id TEXT NOT NULL,
                 embedder_version TEXT NOT NULL,
                 vector_blob BLOB NOT NULL,
+                vector_format TEXT NOT NULL DEFAULT 'legacy_unknown',
+                dimension INTEGER NOT NULL DEFAULT 0,
+                model_id TEXT NOT NULL DEFAULT '',
+                precision_class TEXT NOT NULL DEFAULT '',
+                output_sha256 TEXT NOT NULL DEFAULT '',
+                provenance TEXT NOT NULL DEFAULT '',
                 updated_at INTEGER NOT NULL,
                 PRIMARY KEY(chunk_key, embedder_id)
             );
@@ -1440,6 +2274,43 @@ mod tests {
         )
         .expect("create embeddings table");
         conn
+    }
+
+    struct FixtureProjectEmbeddingProvider;
+
+    #[async_trait]
+    impl ProjectEmbeddingProvider for FixtureProjectEmbeddingProvider {
+        async fn embed_project_chunks(
+            &self,
+            chunks: &[ProjectEmbeddingInput],
+            embedder_versions: &[EmbedderVersion],
+        ) -> Result<Vec<ProjectEmbeddingRow>, ProjectCacheError> {
+            let mut rows = Vec::new();
+            for chunk in chunks {
+                for embedder in embedder_versions {
+                    let seed = (chunk.sequence as f32) + embedder.embedder_id.len() as f32;
+                    let (format, dimension) =
+                        expected_project_embedding_shape(&embedder.embedder_id)
+                            .expect("fixture uses supported embedder");
+                    let mut bytes = Vec::new();
+                    for offset in 0..dimension {
+                        bytes.extend_from_slice(&(seed + offset as f32).to_le_bytes());
+                    }
+                    rows.push(ProjectEmbeddingRow::new(
+                        chunk.chunk_key.clone(),
+                        embedder.embedder_id.clone(),
+                        embedder.embedder_version.clone(),
+                        format,
+                        dimension,
+                        bytes,
+                        format!("fixture-model-{}", embedder.embedder_id),
+                        "fixture_real_provider_dense_f32",
+                        format!("fixture provenance for {}", chunk.content_sha256),
+                    ));
+                }
+            }
+            Ok(rows)
+        }
     }
 
     #[test]
@@ -1482,6 +2353,28 @@ mod tests {
     }
 
     #[test]
+    fn refresh_embeddings_deletes_stale_rows_before_fail_closed() {
+        let conn = memory_conn_with_embeddings_table();
+        conn.execute(
+            "\
+            INSERT INTO embeddings(chunk_key, embedder_id, embedder_version, vector_blob, updated_at)
+            VALUES ('chunk-a', 'e1', 'project-ingest-v1', ?1, 1)",
+            params![vec![7_u8; E1_DIM * std::mem::size_of::<f32>()]],
+        )
+        .expect("insert stale real-shaped row");
+        let chunk_keys = BTreeSet::from(["chunk-a".to_string()]);
+        let embedders = vec![EmbedderVersion::new("e1", "project-ingest-v1")];
+
+        let err = refresh_embeddings(&conn, &embedders, &chunk_keys).unwrap_err();
+
+        assert_eq!(err.code(), "MEJEPA_PROJECT_CACHE_REAL_EMBEDDING_REQUIRED");
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM embeddings", [], |row| row.get(0))
+            .expect("count embeddings");
+        assert_eq!(rows, 0, "changed chunks must not retain stale embeddings");
+    }
+
+    #[test]
     fn refresh_embeddings_cache_only_scan_writes_no_embeddings() {
         let conn = memory_conn_with_embeddings_table();
         let chunk_keys = BTreeSet::from(["chunk-a".to_string()]);
@@ -1495,6 +2388,110 @@ mod tests {
         assert_eq!(rows, 0);
     }
 
+    #[tokio::test]
+    async fn refresh_embeddings_with_provider_persists_typed_non_synthetic_rows() {
+        let conn = memory_conn_with_embeddings_table();
+        let embedders = vec![
+            EmbedderVersion::new("e1", "project-ingest-v1"),
+            EmbedderVersion::new("e7", "project-ingest-v1"),
+        ];
+        let chunks = BTreeMap::from([(
+            "chunk-a".to_string(),
+            ProjectEmbeddingInput {
+                chunk_key: "chunk-a".to_string(),
+                path: "src/app.py".to_string(),
+                role: ChunkRole::Source,
+                kind: "function".to_string(),
+                content_text: "def app():\n    return 1\n".to_string(),
+                content_sha256: "sha256-a".to_string(),
+                sequence: 0,
+            },
+        )]);
+
+        purge_legacy_synthetic_embeddings(&conn).expect("purge legacy rows");
+        let rows =
+            embedding_rows_with_provider(&embedders, &chunks, &FixtureProjectEmbeddingProvider)
+                .await
+                .expect("provider rows");
+        let counts = persist_embedding_rows(&conn, &embedders, &chunks, &rows)
+            .expect("real provider rows persist");
+
+        assert_eq!(counts.get("e1"), Some(&1));
+        assert_eq!(counts.get("e7"), Some(&1));
+        let rows: Vec<(String, i64, i64, String, String)> = {
+            let mut stmt = conn
+                .prepare(
+                    "\
+                    SELECT embedder_id, length(vector_blob), dimension, vector_format, output_sha256
+                    FROM embeddings
+                    ORDER BY embedder_id",
+                )
+                .expect("prepare readback");
+            stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            })
+            .expect("query rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect rows")
+        };
+        assert_eq!(rows.len(), 2);
+        for (embedder, blob_len, dimension, format, output_sha256) in rows {
+            let expected_dimension = match embedder.as_str() {
+                "e1" => E1_DIM as i64,
+                "e7" => E7_DIM as i64,
+                other => panic!("unexpected embedder {other}"),
+            };
+            assert_ne!(blob_len, 32);
+            assert_eq!(blob_len, expected_dimension * 4);
+            assert_eq!(dimension, expected_dimension);
+            assert_eq!(format, "dense_f32_le");
+            assert_eq!(output_sha256.len(), 64);
+        }
+    }
+
+    #[tokio::test]
+    async fn persist_embedding_rows_rejects_missing_output_before_writing() {
+        let conn = memory_conn_with_embeddings_table();
+        let embedders = vec![
+            EmbedderVersion::new("e1", "project-ingest-v1"),
+            EmbedderVersion::new("e7", "project-ingest-v1"),
+        ];
+        let chunks = BTreeMap::from([(
+            "chunk-a".to_string(),
+            ProjectEmbeddingInput {
+                chunk_key: "chunk-a".to_string(),
+                path: "src/app.py".to_string(),
+                role: ChunkRole::Source,
+                kind: "function".to_string(),
+                content_text: "def app():\n    return 1\n".to_string(),
+                content_sha256: "sha256-a".to_string(),
+                sequence: 0,
+            },
+        )]);
+        let mut rows =
+            embedding_rows_with_provider(&embedders, &chunks, &FixtureProjectEmbeddingProvider)
+                .await
+                .expect("provider rows");
+        rows.pop();
+
+        let err = persist_embedding_rows(&conn, &embedders, &chunks, &rows).unwrap_err();
+
+        assert_eq!(err.code(), "MEJEPA_PROJECT_CACHE_EMBEDDING_OUTPUT_MISSING");
+        let persisted: i64 = conn
+            .query_row("SELECT COUNT(*) FROM embeddings", [], |row| row.get(0))
+            .expect("count embeddings");
+        assert_eq!(
+            persisted, 0,
+            "missing provider rows must fail before writes"
+        );
+    }
+
     // =========================================================================
     // F-021 + F-022 REGRESSION TESTS (Sherlock investigation 2026-05-19)
     //
@@ -1505,10 +2502,8 @@ mod tests {
 
     #[test]
     fn test_f021_metadata_modified_ns_succeeds_on_real_temp_file() {
-        let temp_path = std::env::temp_dir().join(format!(
-            "sherlock_f021_real_{}.tmp",
-            std::process::id()
-        ));
+        let temp_path =
+            std::env::temp_dir().join(format!("sherlock_f021_real_{}.tmp", std::process::id()));
         fs::write(&temp_path, b"sherlock-f021-payload").expect("write temp file");
         let metadata = fs::metadata(&temp_path).expect("read metadata");
         let label = temp_path.display().to_string();
@@ -1526,10 +2521,8 @@ mod tests {
     #[test]
     fn test_f021_helper_signature_returns_result_not_i64() {
         // Type-level assertion: prevents silent regression to `fn() -> i64`.
-        let temp_path = std::env::temp_dir().join(format!(
-            "sherlock_f021_sig_{}.tmp",
-            std::process::id()
-        ));
+        let temp_path =
+            std::env::temp_dir().join(format!("sherlock_f021_sig_{}.tmp", std::process::id()));
         fs::write(&temp_path, b"sig-check").expect("write temp file");
         let metadata = fs::metadata(&temp_path).expect("read metadata");
         let label = temp_path.display().to_string();

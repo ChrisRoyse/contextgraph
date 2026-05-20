@@ -1104,6 +1104,7 @@ name = "context-graph-mejepa"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bincode",
  "blake3",
  "candle-core",

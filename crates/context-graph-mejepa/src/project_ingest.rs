@@ -4,7 +4,8 @@ use crate::compiler::MejepaStore;
 use crate::error::MejepaInferError;
 use crate::project_cache::{
     blake3_hex, project_role_for_path, ChunkRole, EmbedderVersion, ProjectCacheConfig,
-    ProjectCacheError, ProjectFileScope, ProjectMerkleCache,
+    ProjectCacheError, ProjectEmbeddingInput, ProjectEmbeddingProvider, ProjectEmbeddingRow,
+    ProjectEmbeddingVectorFormat, ProjectFileScope, ProjectMerkleCache,
 };
 use crate::store::RocksDbInferStore;
 use crate::types::{
@@ -14,6 +15,12 @@ use crate::types::{
     RealityPrediction, RealityPredictionBuilder, RootCauseClass, SecurityConcernClass, Severity,
     TaskId, Verdict, WitnessHash,
 };
+use async_trait::async_trait;
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use context_graph_core::traits::{
+    EmbeddingMetadata, MultiArrayEmbeddingOutput, MultiArrayEmbeddingProvider,
+};
+use context_graph_core::types::fingerprint::EmbeddingSlice;
 use context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS;
 use rocksdb::{IteratorMode, WriteOptions, DB};
 use rusqlite::Connection;
@@ -22,10 +29,216 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 const PREDICTOR_VERSION: &str = "task-py-g-063-project-ingest-v1";
+const PROJECT_EMBEDDING_TIMESTAMP_BASE_SECS: i64 = 1_700_000_000;
+
+pub struct MultiArrayProjectEmbeddingProvider {
+    inner: Arc<dyn MultiArrayEmbeddingProvider>,
+    project_id: String,
+}
+
+impl MultiArrayProjectEmbeddingProvider {
+    pub fn new(inner: Arc<dyn MultiArrayEmbeddingProvider>, project_id: impl Into<String>) -> Self {
+        Self {
+            inner,
+            project_id: project_id.into(),
+        }
+    }
+}
+
+#[async_trait]
+impl ProjectEmbeddingProvider for MultiArrayProjectEmbeddingProvider {
+    async fn embed_project_chunks(
+        &self,
+        chunks: &[ProjectEmbeddingInput],
+        embedder_versions: &[EmbedderVersion],
+    ) -> Result<Vec<ProjectEmbeddingRow>, ProjectCacheError> {
+        if chunks.is_empty() || embedder_versions.is_empty() {
+            return Ok(Vec::new());
+        }
+        let contents = chunks
+            .iter()
+            .map(|chunk| chunk.content_text.clone())
+            .collect::<Vec<_>>();
+        let metadata = chunks
+            .iter()
+            .map(|chunk| project_embedding_metadata(&self.project_id, chunk.sequence))
+            .collect::<Result<Vec<_>, _>>()?;
+        let outputs = self
+            .inner
+            .embed_batch_all(&contents, &metadata)
+            .await
+            .map_err(|err| ProjectCacheError::EmbeddingProviderFailed {
+                reason: err.to_string(),
+            })?;
+        if outputs.len() != chunks.len() {
+            return Err(ProjectCacheError::EmbeddingProviderFailed {
+                reason: format!(
+                    "provider returned {} outputs for {} chunks",
+                    outputs.len(),
+                    chunks.len()
+                ),
+            });
+        }
+        let mut rows = Vec::with_capacity(chunks.len() * embedder_versions.len());
+        for (chunk, output) in chunks.iter().zip(outputs.iter()) {
+            for embedder in embedder_versions {
+                rows.push(project_embedding_row(
+                    &self.project_id,
+                    chunk,
+                    embedder,
+                    output,
+                )?);
+            }
+        }
+        Ok(rows)
+    }
+}
+
+fn project_embedding_metadata(
+    project_id: &str,
+    sequence: u64,
+) -> Result<EmbeddingMetadata, ProjectCacheError> {
+    let base = DateTime::<Utc>::from_timestamp(PROJECT_EMBEDDING_TIMESTAMP_BASE_SECS, 0)
+        .ok_or_else(|| ProjectCacheError::EmbeddingProviderFailed {
+            reason: "invalid deterministic project embedding timestamp base".to_string(),
+        })?;
+    Ok(EmbeddingMetadata {
+        session_id: Some(format!("project-ingest:{project_id}")),
+        session_sequence: Some(sequence),
+        timestamp: Some(base + ChronoDuration::milliseconds(sequence.min(i64::MAX as u64) as i64)),
+        causal_hint: None,
+    })
+}
+
+fn project_embedding_row(
+    project_id: &str,
+    chunk: &ProjectEmbeddingInput,
+    embedder: &EmbedderVersion,
+    output: &MultiArrayEmbeddingOutput,
+) -> Result<ProjectEmbeddingRow, ProjectCacheError> {
+    let idx = active_embedder_index(&embedder.embedder_id).ok_or_else(|| {
+        ProjectCacheError::EmbeddingOutputInvalid {
+            chunk_key: chunk.chunk_key.clone(),
+            embedder_id: embedder.embedder_id.clone(),
+            reason: "unsupported project-ingest embedder id".to_string(),
+        }
+    })?;
+    let slice = output.fingerprint.get_embedding(idx).ok_or_else(|| {
+        ProjectCacheError::EmbeddingOutputInvalid {
+            chunk_key: chunk.chunk_key.clone(),
+            embedder_id: embedder.embedder_id.clone(),
+            reason: "provider fingerprint did not expose requested embedder slot".to_string(),
+        }
+    })?;
+    let (format, dimension, bytes) = encode_project_embedding_slice(&embedder.embedder_id, slice)
+        .map_err(|reason| {
+        ProjectCacheError::EmbeddingOutputInvalid {
+            chunk_key: chunk.chunk_key.clone(),
+            embedder_id: embedder.embedder_id.clone(),
+            reason,
+        }
+    })?;
+    let model_id = output.model_ids[idx].clone();
+    let provenance = serde_json::json!({
+        "producer": "MultiArrayEmbeddingProvider.embed_batch_all",
+        "project_id": project_id,
+        "path": chunk.path,
+        "role": chunk.role,
+        "kind": chunk.kind,
+        "content_sha256": chunk.content_sha256,
+        "sequence": chunk.sequence,
+        "model_id": model_id,
+    })
+    .to_string();
+    Ok(ProjectEmbeddingRow::new(
+        chunk.chunk_key.clone(),
+        embedder.embedder_id.clone(),
+        embedder.embedder_version.clone(),
+        format,
+        dimension,
+        bytes,
+        model_id,
+        "multi_array_provider_slot_preserving",
+        provenance,
+    ))
+}
+
+fn encode_project_embedding_slice(
+    embedder_id: &str,
+    slice: EmbeddingSlice<'_>,
+) -> Result<(ProjectEmbeddingVectorFormat, u32, Vec<u8>), String> {
+    match slice {
+        EmbeddingSlice::Dense(values) => {
+            if values.is_empty() {
+                return Err("dense vector is empty".to_string());
+            }
+            if !values.iter().all(|value| value.is_finite()) {
+                return Err("dense vector contains NaN or Inf".to_string());
+            }
+            let mut bytes = Vec::with_capacity(values.len() * std::mem::size_of::<f32>());
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            Ok((
+                ProjectEmbeddingVectorFormat::DenseF32Le,
+                values.len() as u32,
+                bytes,
+            ))
+        }
+        EmbeddingSlice::Sparse(values) => {
+            if !values.values.iter().all(|value| value.is_finite()) {
+                return Err("sparse vector contains NaN or Inf".to_string());
+            }
+            let bytes = serde_json::to_vec(values).map_err(|err| err.to_string())?;
+            Ok((
+                ProjectEmbeddingVectorFormat::SparseJson,
+                sparse_dimension(embedder_id)?,
+                bytes,
+            ))
+        }
+        EmbeddingSlice::TokenLevel(tokens) => {
+            if tokens
+                .iter()
+                .flat_map(|token| token.iter())
+                .any(|value| !value.is_finite())
+            {
+                return Err("token vector contains NaN or Inf".to_string());
+            }
+            let bytes = serde_json::to_vec(tokens).map_err(|err| err.to_string())?;
+            Ok((ProjectEmbeddingVectorFormat::TokenF32Json, 128, bytes))
+        }
+    }
+}
+
+fn active_embedder_index(embedder_id: &str) -> Option<usize> {
+    match embedder_id {
+        "e1" => Some(0),
+        "e2" => Some(1),
+        "e3" => Some(2),
+        "e4" => Some(3),
+        "e6" => Some(5),
+        "e7" => Some(6),
+        "e8" => Some(7),
+        "e9" => Some(8),
+        "e10" => Some(9),
+        "e12" => Some(11),
+        "e13" => Some(12),
+        "e14" => Some(13),
+        _ => None,
+    }
+}
+
+fn sparse_dimension(embedder_id: &str) -> Result<u32, String> {
+    match embedder_id {
+        "e6" | "e13" => Ok(30_522),
+        _ => Err(format!("{embedder_id} is not a sparse embedder")),
+    }
+}
 
 #[derive(Debug, Clone)]
 struct ProjectSourcePath {
@@ -304,6 +517,135 @@ pub fn run_project_ingest(
         } else {
             cache.scan_project(&default_embedder_versions())?
         };
+    finish_project_ingest(
+        &request,
+        &source,
+        project_id,
+        project_root,
+        manifest_path,
+        previous_manifest,
+        predictions_db_path,
+        &cache,
+        cache_report,
+        files_before,
+        fast_changed_path_incremental,
+    )
+}
+
+pub async fn run_project_ingest_with_multi_array_provider(
+    request: ProjectIngestRequest,
+    provider: Arc<dyn MultiArrayEmbeddingProvider>,
+) -> Result<ProjectIngestReport, ProjectIngestError> {
+    let source = canonicalize_source_path(&request.repo_path)?;
+    require_operator_permitted_root(&source.input_path)?;
+    let fast_changed_path_incremental =
+        request.mode == ProjectIngestMode::Incremental && !request.changed_paths.is_empty();
+    if fast_changed_path_incremental {
+        validate_scope_content_for_paths(
+            &source.source_root,
+            request.scope,
+            &request.changed_paths,
+        )?;
+    } else {
+        validate_scope_content(
+            &source.source_root,
+            source.single_file.as_deref(),
+            request.scope,
+        )?;
+    }
+
+    let project_id = match &request.project_id {
+        Some(value) => validate_project_id(value)?,
+        None => derive_project_id(&source.input_path),
+    };
+    let project_root = project_root(&project_id)?;
+    let manifest_path = project_root.join("manifest.json");
+    let previous_manifest = read_manifest_if_present(&manifest_path)?;
+    validate_collision_policy(
+        request.mode,
+        request.overwrite,
+        &project_id,
+        &source.input_path,
+        previous_manifest.as_ref(),
+    )?;
+
+    let cache_dir = project_root.join("cache");
+    let panels_dir = project_root.join("panels");
+    let predictions_dir = project_root.join("predictions");
+    let report_dir = project_root.join("report");
+    for dir in [&cache_dir, &panels_dir, &predictions_dir, &report_dir] {
+        fs::create_dir_all(dir).map_err(|source| ProjectIngestError::Io {
+            path: dir.display().to_string(),
+            source,
+        })?;
+    }
+    let predictions_db_path = predictions_dir.join("live-predictions.rocksdb");
+    if let Some(parent) = predictions_db_path.parent() {
+        fs::create_dir_all(parent).map_err(|source| ProjectIngestError::Io {
+            path: parent.display().to_string(),
+            source,
+        })?;
+    }
+
+    let cache = ProjectMerkleCache::open(
+        ProjectCacheConfig::new(project_id.clone(), source.source_root.clone())
+            .with_cache_dir(cache_dir.clone())
+            .with_scope(request.scope.into())
+            .with_single_file(source.single_file.clone()),
+    )?;
+    let files_before = if fast_changed_path_incremental {
+        previous_manifest
+            .as_ref()
+            .map(|manifest| manifest.file_count)
+            .unwrap_or(0)
+    } else {
+        cached_file_count(cache.db_path())?
+    };
+    let project_provider = MultiArrayProjectEmbeddingProvider::new(provider, project_id.clone());
+    let cache_report = if request.mode == ProjectIngestMode::Incremental
+        && !request.changed_paths.is_empty()
+    {
+        cache
+            .scan_project_paths_with_embedding_provider(
+                &default_embedder_versions(),
+                &request.changed_paths,
+                &project_provider,
+            )
+            .await?
+    } else {
+        cache
+            .scan_project_with_embedding_provider(&default_embedder_versions(), &project_provider)
+            .await?
+    };
+    finish_project_ingest(
+        &request,
+        &source,
+        project_id,
+        project_root,
+        manifest_path,
+        previous_manifest,
+        predictions_db_path,
+        &cache,
+        cache_report,
+        files_before,
+        fast_changed_path_incremental,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn finish_project_ingest(
+    request: &ProjectIngestRequest,
+    source: &ProjectSourcePath,
+    project_id: String,
+    project_root: PathBuf,
+    manifest_path: PathBuf,
+    previous_manifest: Option<ProjectIngestManifest>,
+    predictions_db_path: PathBuf,
+    cache: &ProjectMerkleCache,
+    cache_report: crate::project_cache::ProjectCacheReport,
+    files_before: usize,
+    fast_changed_path_incremental: bool,
+) -> Result<ProjectIngestReport, ProjectIngestError> {
     let files_after = if fast_changed_path_incremental {
         cache_report.file_count
     } else {
