@@ -50,6 +50,7 @@ pub use context_graph_mejepa_instruments::{
 
 mod compile_error;
 mod delete_test_call;
+pub mod docker_outcome_labels;
 pub mod generate;
 mod generic_language_ops;
 mod known_good;

@@ -1152,8 +1152,10 @@ version = "0.1.0"
 name = "context-graph-mejepa-corpus"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "clap",
  "context-graph-core",
+ "context-graph-mejepa-cf",
  "context-graph-mejepa-instruments",
  "context-graph-paths",
  "ctrlc",
