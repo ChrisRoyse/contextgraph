@@ -387,3 +387,21 @@ Source: `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md` Proposals A/B/
 | `mcp__cgreality__mejepa_cold_load_status` | `MEJEPA_COLD_LOAD_STATUS` | #514 inspection: last cold-load drift (correlation Δ, per-cell distribution Δ), promotion-time baseline snapshot | `promotionId?` | Read-only over `CF_MEJEPA_COLD_LOAD_SNAPSHOTS` |
 
 The four info-physics tools are inspection-only (no mutations). They expose the planned CFs from `03_storage_schema.md §9.4quart` once those CFs land.
+
+### 9.9 Creativity-engine inspection tools (post-0.95, #516 / #517 / #518 / #519 / #520)
+
+Source: `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md` + creativity-engine synthesis. Read-only inspection over the planned creativity-engine CFs (`03 §9.4quint`).
+
+| Tool (planned) | Const | Purpose | Key params | Side effects |
+|---|---|---|---|---|
+| `mcp__cgreality__mejepa_embedder_proposal_audit` | `MEJEPA_EMBEDDER_PROPOSAL_AUDIT` | #516 — list embedder proposals with novelty/utility decisions and rejection reasons | `limit: int=50`, `filter?: {decision, embedder_id_prefix}` | Read-only over `CF_MEJEPA_EMBEDDER_PROPOSAL_AUDIT` |
+| `mcp__cgreality__mejepa_embedder_demand_inspect` | `MEJEPA_EMBEDDER_DEMAND_INSPECT` | #517 — list current mistake-driven embedder demands with residual signatures and closest-inadequate slots | `limit: int=20`, `cellId?` | Read-only over `CF_MEJEPA_EMBEDDER_DEMAND` |
+| `mcp__cgreality__mejepa_embedder_retirement_audit` | `MEJEPA_EMBEDDER_RETIREMENT_AUDIT` | #518 — list retired embedders with dominating-combination evidence and storage freed | `limit: int=50` | Read-only over `CF_MEJEPA_EMBEDDER_RETIREMENT_AUDIT` |
+| `mcp__cgreality__mejepa_domain_routing_status` | `MEJEPA_DOMAIN_ROUTING_STATUS` | #519 — domain registry + per-embedder universal vs extension classification + per-chunk domain assignment counts | `domainId?` | Read-only over the three #519 CFs |
+| `mcp__cgreality__mejepa_consolidation_status` | `MEJEPA_CONSOLIDATION_STATUS` | #520 — consolidation audit history + per-chunk consolidated-vs-raw breakdown + storage savings cumulative | `limit: int=20` | Read-only over `CF_MEJEPA_CONSOLIDATION_AUDIT` |
+
+The CLI surface also gains one mutation:
+
+| CLI command | Issue | Purpose |
+|---|---|---|
+| `context-graph-cli mejepa retire-embedder <id>` | #518 | Manual operator override to force-retire a specific embedder. Writes the retirement audit row with operator attribution; respects the grace period. |

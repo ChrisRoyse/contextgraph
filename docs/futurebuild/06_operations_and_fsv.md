@@ -494,3 +494,46 @@ Source: `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md`. Four new FSV 
 3. **Cell verdict distribution drift.** Per-cell distributions must be within `5%` of the snapshot. Required: `max_per_cell_distribution_drift ≤ 0.05`.
 4. **Three independent cold-load runs.** Three sequential runs on different aiwonder restart cycles all pass; FSV JSONs pinned by sha256 at `/zfs/archive/contextgraph/fsv/task-ip-005-cold-load-fsv/run-{1,2,3}/`.
 5. **ECC syndrome consistency (after #512).** Each cold-load run reproduces the same panel ECC syndromes for the holdout instances as the original promotion-time run. Required: `syndrome_drift_per_panel == 0`.
+
+### 13.7 Creativity-engine FSV protocols (post-0.95, #516 / #517 / #518 / #519 / #520)
+
+Source: `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md` + creativity-engine synthesis. All five FSV harnesses are post-0.95; they validate the autonomous-bounded-growth + storage-management loop. None override existing §13 protocols.
+
+**#516 / TASK-CR-001 — Novelty + Utility oracle FSV.** Required assertions:
+
+1. **E1-rotation rejection.** A synthetic candidate that is a deterministic rotation of E1's output → REJECTED with `NOVELTY_BELOW_TAU`; max per-slot correlation > τ_novelty recorded.
+2. **Random-Gaussian rejection.** A candidate emitting independent Gaussian noise per chunk → REJECTED with `UTILITY_BELOW_DELTA`; orthogonal but contributes no oracle-correlation lift.
+3. **Informative + orthogonal acceptance.** A candidate that adds a deterministically-derivable structural signature uncorrelated with existing slots AND improves per-cell oracle correlation by ≥ δ_utility → ACCEPTED; the per-cell Δ_oracle_correlation persisted in the audit row.
+4. **Holdout regression rejection.** A candidate that lifts the train partition's correlation but regresses the disjoint holdout → REJECTED with `HOLDOUT_REGRESSION`.
+5. **Audit table readback.** Independent re-open of `CF_MEJEPA_EMBEDDER_PROPOSAL_AUDIT` reads all four decision rows; sha256 pinned.
+
+**#517 / TASK-CR-002 — Mistake-driven embedder demand FSV.** Required assertions:
+
+1. **No-demand path.** A mistake where slot-attribution has a clear winner (max per-slot attribution > τ_attribution_floor) → no demand row written; the standard #406 mistake-loop path runs.
+2. **Demand path.** A mistake where all per-slot attribution scores are below τ_attribution_min → `CF_MEJEPA_EMBEDDER_DEMAND` row written with the residual signature, closest-inadequate slots, cell ID, and source mistake ID.
+3. **End-to-end composition.** Pipe a demand row's residual signature into the #516 novelty+utility oracle as a candidate seed; confirm the gating path runs (accept or reject) and the resulting audit row references the demand row.
+4. **Idempotence.** Re-running the same mistake with the same attribution does not write duplicate demand rows; existing demand row is updated with incremented `recurrence_count`.
+
+**#518 / TASK-CR-003 — Embedder retirement audit FSV.** Required assertions:
+
+1. **Dominated-embedder identification.** Inject a synthetic E1-rotation embedder into the active panel; periodic retirement audit must identify it as dominated by E1, run ablation, confirm `Δ_oracle_correlation < δ_retire`, write retirement audit row.
+2. **Grace period.** Embedder marked `archived_pending_grace_period` for K windows; during grace period it is still computed on new chunks; after K windows passes without re-emergence of need, transitioned to `archived` and stops running on new chunks.
+3. **Informative-embedder preservation.** An informative non-redundant embedder → NOT identified for retirement; retirement audit row NOT written.
+4. **End-to-end storage savings.** Measure pre-retirement and post-retirement storage; the freed bytes match the predicted `storage_bytes_freed` field in the audit row within 5% tolerance.
+5. **Operator override.** Force-retire via `context-graph-cli mejepa retire-embedder <id>` writes the audit row with `operator_attribution` populated; independent ldb readback confirms.
+
+**#519 / TASK-CR-004 — Domain-routed sparse panel FSV.** Required assertions:
+
+1. **Per-domain routing.** A Python chunk fires universal slots + Python-extension slots; Rust-extension slots NOT fired (filled_mask bits explicitly zero). Same for Rust chunk in the opposite direction.
+2. **Cross-domain reclassification.** A chunk's domain changes (Python → TypeScript by re-classifier); old extension's filled_mask bits clear; new extension's bits set; universal subset unchanged.
+3. **Storage measurement.** Total storage for a mixed-domain corpus is 3-5× smaller than the same chunks under a unified panel that fires every embedder on every chunk; reported delta matches prediction within 10%.
+4. **Predictor compatibility.** The slot-preserving late-fusion predictor (#387) handles the variable-K filled_mask correctly; per-cell oracle correlation does NOT regress vs the unified-panel baseline within `±0.005`.
+5. **Domain registry readback.** Independent ldb readback of `CF_MEJEPA_DOMAIN_REGISTRY` returns the same domain manifest as the in-memory state.
+
+**#520 / TASK-CR-005 — Episodic-to-semantic consolidation FSV.** Required assertions:
+
+1. **Settled-chunk consolidation.** A chunk near its cluster centroid (distance < outlier_threshold) with stable cluster assignment for ≥ stability_window weeks → consolidated to `(cluster_id, residual)`.
+2. **Outlier preservation.** A chunk above the outlier threshold OR with unstable cluster assignment → NOT consolidated; remains raw in `CF_MEJEPA_PANELS`.
+3. **Lossless reconstruction.** Settled chunk's full panel reconstructed as `cluster_centroid + residual`; reconstructed panel byte-equals original within float epsilon (1e-6 per element).
+4. **Storage measurement.** Pre-consolidation corpus size vs post-consolidation; predicted savings match measured to within 5% tolerance.
+5. **Witness chain integrity.** Consolidation audit row includes `before_witness_hash` and `after_witness_hash`; both readable from independent ldb; provenance chain from raw to consolidated is verifiable.

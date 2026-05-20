@@ -167,6 +167,14 @@ Retired 2026-05-19 investigation cleanup: `e_coverage.rs`, `e_cyclomatic.rs`, `e
 
 **Planned (#512 / TASK-IP-002):** `ecc.rs` — self-dual doubly-even error-correcting code over the 15-slot occupancy bitmap. Defines `PARITY_CHECK_MATRIX`, `Syndrome`, `RecoveryRadius`. `PanelBuilder::build()` extended to call `panel.syndrome()` and fail-closed on `PANEL_ECC_UNCORRECTABLE`. Gates-style formal anti-compensation replacing the heuristic FSV in `python_anti_compensation_fsv.rs` (#394).
 
+**Planned (post-0.95 creativity engine — #516-#520):**
+
+- `crates/context-graph-mejepa/src/embedder_growth.rs` (#516 / TASK-CR-001) — `NoveltyOracle`, `UtilityOracle`, `EmbedderProposalDecision`. Two-test gate for autonomous embedder proposals.
+- `crates/context-graph-mejepa-train/src/embedder_demand.rs` (#517 / TASK-CR-002) — Extends the mistake loop with residual-signature emission when no slot can explain a disagreement.
+- `crates/context-graph-mejepa/src/embedder_retirement.rs` (#518 / TASK-CR-003) — `ParetoFrontier`, `RetirementCandidate`, `RetirementDecision`. Periodic audit + grace-period archival of dominated embedders.
+- `crates/context-graph-mejepa-instruments/src/domain_routing.rs` (#519 / TASK-CR-004) — Domain detector + per-domain panel manifest + sparse fill routing. Replaces fixed-15 panel layout with variable-K active panel per chunk.
+- `crates/context-graph-mejepa-hygiene/src/consolidation.rs` (#520 / TASK-CR-005) — Episodic→semantic consolidation: settled chunks replaced by `(cluster_id, residual)`, with on-demand reconstruction. Runs under the heal scheduler on a multi-week cadence.
+
 ---
 
 ## 6. `context-graph-mejepa-train` Modules

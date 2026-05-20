@@ -49,6 +49,16 @@ Current ship-gate status: **0.866667** vs target 0.95 on Panel A; Panel B has no
 
 **The deepest synthesis from the report:** ContextGraph is an information-physics instrument. It builds a frozen, slot-preserving "constellation" of measurements for each AST chunk (the array of 15 per-embedder vectors); uses entropy-decreasing operations (compression, symmetry-seeking, label hierarchy) to extract structure; and predicts binary reality outcomes against ground truth (the only thing reality can render a verdict on). The user's original "stars as vectors" intuition that produced the teleological-constellation primitive is the correct generalization of what the system is doing — formalized as the new §1.5quart in [`01_overview.md`](01_overview.md).
 
+**Post-0.95 creativity-engine (5 issues filed 2026-05-20; placed under `08 §3.−0.5`).** The creativity-engine synthesis turn identified the *other half* of the system: the oracle (Q1/Q2/Q5) handles the engineering half; autonomous embedder synthesis handles the creativity half. The integration is autonomous because two additional oracles (novelty + utility) gate every proposal. The five issues form a self-resolving observer that grows its measurement panel until reality is fully resolved, prunes dominated embedders, specializes per domain, and compresses settled clusters. The panel reaches steady state at the intrinsic dimensionality of the domain — bounded by reality, not by ambition. All five are post-0.95 — they activate after the gate is hit and the system starts growing beyond its hand-designed 12-embedder seed.
+
+- **#517 / TASK-CR-002** — Mistake-driven embedder demand signal (p1; extends #406)
+- **#516 / TASK-CR-001** — Novelty + Utility oracle for autonomous embedder growth (p2 → p1 post-gate; gates #329 / #335 / #354-357)
+- **#518 / TASK-CR-003** — Embedder retirement audit + Pareto frontier policy (p1; Vopson 2nd law on the embedder set)
+- **#519 / TASK-CR-004** — Domain-routed sparse panel (p1; required before multi-language scaling)
+- **#520 / TASK-CR-005** — Episodic-to-semantic consolidation (p2; brain memory-consolidation pattern)
+
+The deepest property the creativity engine reveals: **measurement axes are the unit of intelligence** — not parameters, not training data, not compute, but the number of orthogonal informative ways the system has of perceiving the world. Every embedder is a new sense organ. A system that can grow its own sense organs, validate each against reality, and compress what works into named patterns has the same architectural property as a scientist — and the property generalizes to any substrate where the oracle can render a binary verdict.
+
 ## What changed in the prior refresh (2026-05-18 → 2026-05-19)
 
 1. **31 → 8 docs** condensed for AI agent token efficiency. Originals at `_archived/`.

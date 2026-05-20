@@ -35,6 +35,14 @@ Three architectural primitives back the binary contract:
 - **#513 / TASK-IP-003 — connectome rich-club analysis** (§4 below) — FlyWire-style topology features added to #390's constellation-intelligence head over the #388 correlation tensor. On the road to 0.95.
 - **#514 / TASK-IP-005 — Eon-style cold-load behavioural FSV** (§10 below) — Safety net asserting predictor behaviour is encoded in weights, not transient training state.
 
+**Post-0.95 creativity-engine additions (2026-05-20).** Five further issues form the autonomous-bounded-growth + storage-management loop (`08_roadmap_and_open_work.md §3.−0.5`). None are gate-movers for 0.95; all activate after the gate is hit and the system starts growing beyond its hand-designed seed configuration:
+
+- **#516 / TASK-CR-001 — Novelty + Utility oracle for autonomous embedder growth.** Two-test gate (cross-correlation novelty ≤ τ_novelty ~0.7, oracle-correlation utility ≥ δ_utility ~0.005) that converts unbounded synthesis into bounded growth.
+- **#517 / TASK-CR-002 — Mistake-driven embedder demand signal.** When mistake-loop attribution (#391, shipped) shows no slot can explain a disagreement, write a residual signature to `CF_MEJEPA_EMBEDDER_DEMAND`. Extends the #406 mistake loop.
+- **#518 / TASK-CR-003 — Embedder retirement audit + Pareto frontier policy.** Vopson 2nd-law applied to the embedder set itself: dominated embedders retire with grace period. Bacterial-genome compression principle.
+- **#519 / TASK-CR-004 — Domain-routed sparse panel.** Universal ~30 slots + per-domain ~15 extension. 3-5× storage saving with zero signal loss. Required infrastructure before multi-language scaling.
+- **#520 / TASK-CR-005 — Episodic-to-semantic consolidation.** Settled chunks replaced by `(cluster_id, residual)`; boundary chunks keep raw. Brain memory-consolidation pattern.
+
 **No best-of-K at the product surface.** `mejepa_rank_candidates` and `mejepa_search_latent_actions` remain available as *internal* tools for training-time exploration and operator debugging, but the AI agent calling MCP only ever sees one binary verdict per candidate. "Pass with 0.74 confidence" is not a product output; if the predictor cannot be confident enough to commit, the lack of confidence is itself a mistake to be learned from on the next ground-truth observation.
 
 **Internal Abstain / OOD / GuardRejected are not product hedges.** They are present-tense failures to be eliminated. The path out is the mistake loop, not "try K alternatives." When the gate is at 0.95, the `Abstain` rate must asymptotically approach 0; an Abstain that ships to the agent is a wrong answer.

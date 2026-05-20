@@ -456,6 +456,23 @@ Four new CFs land with the info-physics issues (see `docs/INFORMATION_PHYSICS_AN
 
 Neither #511 nor #513 changes the prediction or panel schema; both are additive feature tables. #512 adds a syndrome field to `CF_MEJEPA_PANELS` JSON envelope (one bitmap byte + one version byte) which IS a schema change requiring the combined wipe. #514 only adds the snapshot CF.
 
+### 9.4quint Creativity-engine CFs (post-0.95, #516 / #517 / #518 / #519 / #520)
+
+Five new CFs land with the creativity-engine issues (`08_roadmap_and_open_work.md §3.−0.5`):
+
+| CF | Issue | Key | Value | Purpose |
+|---|---|---|---|---|
+| `CF_MEJEPA_EMBEDDER_PROPOSAL_AUDIT` | #516 / TASK-CR-001 | `(proposal_id)` | bincode `{candidate_id, novelty_score, utility_delta, decision: Accept\|Reject(reason), witness_sha256}` | Audit table for every embedder proposed by NAS (#356), cross-library proposals (#357), or operator. Reason variants: `NOVELTY_BELOW_TAU`, `UTILITY_BELOW_DELTA`, `HOLDOUT_REGRESSION`, `ACCEPTED`. |
+| `CF_MEJEPA_EMBEDDER_DEMAND` | #517 / TASK-CR-002 | `(demand_id)` | bincode `{residual_signature: Vec<f32>, cell_id, closest_existing_slots: Vec<(EmbedderId, f32)>, mistake_id, corpus_context}` | When the mistake loop's slot-attribution finds no slot can explain a disagreement, write the residual signature here. Downstream consumer: embedder-synthesis pipeline. |
+| `CF_MEJEPA_EMBEDDER_RETIREMENT_AUDIT` | #518 / TASK-CR-003 | `(embedder_id, retirement_id)` | bincode `{dominating_combination: Vec<EmbedderId>, info_gain_lost, storage_bytes_freed, grace_period_windows, operator_attribution, archived_at_unix_ms}` | Retirement audit row. Grace period default 4 windows; final `archived` mark drops embedder from future chunks. |
+| `CF_MEJEPA_DOMAIN_REGISTRY` | #519 / TASK-CR-004 | `(domain_id)` | bincode `{domain_name, detector_signature_hash, extension_embedder_ids: Vec<EmbedderId>, created_at_unix_ms}` | Per-domain panel manifest. Universal embedders are stored separately in `CF_MEJEPA_EMBEDDER_DOMAIN_MEMBERSHIP`. |
+| `CF_MEJEPA_CHUNK_DOMAIN_ASSIGNMENT` | #519 / TASK-CR-004 | `(chunk_id)` | bincode `{domain_id, detection_confidence_q8, detection_method}` | Per-chunk domain assignment driving the sparse-fill routing. Immutable after first write unless explicit re-detection event. |
+| `CF_MEJEPA_EMBEDDER_DOMAIN_MEMBERSHIP` | #519 / TASK-CR-004 | `(embedder_id)` | bincode `{universal: bool, domain_extensions: Vec<DomainId>}` | Universal vs per-domain-extension classification per embedder. |
+| `CF_MEJEPA_CHUNK_CONSOLIDATED` | #520 / TASK-CR-005 | `(chunk_id)` | bincode `{cluster_id, residual_per_slot: Vec<Vec<f32>>, consolidation_timestamp, witness_hash}` | Settled chunks. Reconstruction = cluster_centroid + residual. Original `CF_MEJEPA_PANELS` row can be dropped or moved to cold storage. |
+| `CF_MEJEPA_CONSOLIDATION_AUDIT` | #520 / TASK-CR-005 | `(audit_id)` | bincode `{settled_chunk_count, outlier_chunk_count, storage_bytes_freed, before_witness_hash, after_witness_hash}` | Per-consolidation-run audit row. |
+
+**Schema migration impact.** All five issues land additive CFs only (no modifications to existing CFs except for one: #519 changes the `Panel` envelope to allow variable-K slot occupancy where the existing schema assumes the full 15-slot layout — that IS a schema change requiring the combined wipe per `CLAUDE.md §6.6`). Recommend bundling the #519 schema change with the other planned schema changes (#511 / #512 / #404 / #405 / #406) into a single wipe + rebuild event.
+
 ### 9.5 Canonical opener slice update
 
 When CFs land, they get added to `ALL_HYGIENE_REFERENCED_CFS` (`mejepa-cf/lib.rs`). #414 registered `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP`, `CF_MEJEPA_SKILL_REVERSE_INDEX`, and `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` in `FAILURE_MODE_CFS`, `INFER_CFS`, `EVAL_CFS`, `HYGIENE_CFS`, and the canonical all-CF opener. The `canonical_hygiene_cfs_match_group_union` test now explicitly includes `FAILURE_MODE_CFS` and continues to enforce that the grouped CF contract matches `ALL_HYGIENE_REFERENCED_CFS`.

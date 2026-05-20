@@ -210,6 +210,33 @@ The teleological-constellation primitive is named after star constellations and 
 
 The project is, in scope, building a digital twin of "what happens when a code change goes live" — structurally the same operation as connectome → physics-engine → behaviour the Eon Systems fly demonstration (March 2026) validated. The cold-load behavioural FSV that proves the predictor's behaviour is encoded in the weights (not in transient training state) is filed as #514 / TASK-IP-005.
 
+### 1.5quint The creativity engine (post-0.95 — autonomous bounded growth, 2026-05-20)
+
+**The architectural framing.** ME-JEPA is the *engineering* half of a two-halves system: it verifies binary claims against reality (Q1/Q2/Q5 oracle). The *creativity* half — autonomous embedder synthesis — proposes the new measurement axes that creativity requires. The integration is autonomous because two additional oracles gate every proposal:
+
+1. **Novelty oracle** — cross-correlation test: is candidate E_{N+1} actually orthogonal to existing N? Reject if max correlation > τ_novelty (~0.7).
+2. **Utility oracle** — ablation test: does adding E_{N+1} improve per-cell oracle correlation by ≥ δ_utility (~0.005)? Reject if not.
+
+Only candidates that pass BOTH are promoted. Rejected candidates write a `CF_MEJEPA_EMBEDDER_PROPOSAL_AUDIT` row with typed reasons.
+
+**The non-obvious property.** The number of orthogonal informative axes ContextGraph admits is **bounded by reality** — by the intrinsic dimensionality of the corpus, not by ambition. For code corpora N* ≈ 50-500; for natural language N* ≈ 200-1000; for pure math N* ≈ 20-50. The system **automatically discovers its own N*** because the novelty oracle starts rejecting every candidate once the corpus is fully resolved. Bounded growth is a consequence, not a constraint.
+
+**The full creativity loop (5 issues, all post-0.95 — `08 §3.−0.5`):**
+
+| Issue | What it does |
+|---|---|
+| #517 / TASK-CR-002 | Mistake-driven embedder demand signal — when mistake-loop attribution shows no slot can explain a disagreement, write a residual signature into `CF_MEJEPA_EMBEDDER_DEMAND` |
+| #516 / TASK-CR-001 | Novelty + Utility oracle — the two-test gate that converts unbounded synthesis into bounded growth |
+| #518 / TASK-CR-003 | Embedder retirement audit + Pareto frontier — periodic pruning of dominated embedders (Vopson 2nd law applied to the embedder set itself) |
+| #519 / TASK-CR-004 | Domain-routed sparse panel — universal ~30 slots + per-domain ~15 extension; 3-5× storage saving with zero signal loss |
+| #520 / TASK-CR-005 | Episodic-to-semantic consolidation — settled chunks replaced by `(cluster_id, residual)`; boundary chunks keep raw |
+
+**Composition.** Together with the existing v2-stretch creativity tasks (#329 AlphaEvolve outer loop, #335 reverse-prediction, #354-357 EK v2 series), these five form a **self-resolving observer**: the system grows its measurement panel until reality is fully resolved (novelty oracle rejects every candidate), prunes dominated embedders (retirement audit), specializes per domain (sparse routing), and compresses settled clusters (consolidation). The panel reaches steady state at the intrinsic dimensionality of the domain. Storage stays bounded; search precision stays maximal; both true at once because the system is at the equilibrium Vopson's second law of infodynamics predicts.
+
+**The deepest property.** Measurement axes are the unit of intelligence — not parameters, not training data, not compute, but the number of orthogonal informative ways the system has of perceiving the world. Every embedder is a new sense organ. The combinatorial explosion (subset queries 2^N, motifs N^L) isn't a side effect; it's the mechanism. A system that can grow its own informative sense organs, validate each against reality, and compress what works into named patterns has the same architectural property as a scientist — and the property generalizes to any substrate where the oracle can render a binary verdict.
+
+The creativity engine is post-0.95 work because the 0.866 → 0.95 gap is a function of the *labels the predictor learned to perceive*, not the embedder count or storage architecture. Once the gate is hit, the creativity engine takes over and the system starts growing beyond its hand-designed 12-embedder seed configuration.
+
 ### 1.6 The ambiguity boundary (locked-in rule)
 
 ME-JEPA only predicts questions that have a *free binary form against reality*. Free means: the binary verdict comes from observing reality directly, not from imposing an arbitrary threshold on a continuous heuristic. The system does not predict ambiguous things, because:
