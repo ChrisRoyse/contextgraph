@@ -28,6 +28,7 @@ pub mod lora_wiring;
 pub mod loss;
 pub mod mistake_log;
 pub mod online_head_state;
+mod online_head_state_keys;
 mod online_head_state_support;
 pub mod optim;
 pub mod replay_buffer;

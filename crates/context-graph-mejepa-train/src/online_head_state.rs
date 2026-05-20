@@ -1,5 +1,8 @@
 use crate::error::TrainerError;
 use crate::mistake_log::MistakeLogRow;
+pub use crate::online_head_state_keys::{
+    online_head_key, repeat_metric_key, unrelated_control_panel_signature_hash,
+};
 use crate::online_head_state_support::{
     invalid, map_bincode_error, map_rocksdb_error, online_head_cf, validate_id,
     validate_optional_id,
@@ -8,7 +11,6 @@ use crate::replay_buffer::{ReplayBufferRow, ReplayPriorityConfig};
 use context_graph_mejepa::{PredictionId, Verdict};
 use rocksdb::{WriteOptions, DB};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 const ONLINE_HEAD_STATE_SCHEMA_VERSION: u32 = 1;
 
@@ -86,6 +88,9 @@ pub struct OnlineHeadUpdateReport {
     pub base_verdict_before_update: Verdict,
     pub corrected_verdict_after_update: Verdict,
     pub replay_priority_score_after: f32,
+    pub unrelated_cell_control_panel_signature_hash: String,
+    pub unrelated_cell_verdict_before_update: Verdict,
+    pub unrelated_cell_verdict_after_update: Verdict,
     pub unrelated_cell_accuracy_delta: f32,
     pub repeat_metric_byte_readable: bool,
     pub same_panel_signature_corrected: bool,
@@ -170,6 +175,15 @@ pub fn apply_online_mistake_update_sync_readback(
 ) -> Result<OnlineHeadUpdateReport, TrainerError> {
     validate_update_input(&input, config)?;
     let head_key = online_head_key(&input.panel_signature_hash)?;
+    let control_panel_signature_hash = unrelated_control_panel_signature_hash(
+        &input.panel_signature_hash,
+        &input.replay_row.cell_id,
+    )?;
+    let control_before = predict_with_online_head(
+        db,
+        &control_panel_signature_hash,
+        input.base_verdict_before_update,
+    )?;
     let metric_key = repeat_metric_key(
         &input.replay_row.cell_id,
         &input.mistake_row.label_signature_hash,
@@ -228,9 +242,19 @@ pub fn apply_online_mistake_update_sync_readback(
         &input.panel_signature_hash,
         input.base_verdict_before_update,
     )?;
+    let control_after = predict_with_online_head(
+        db,
+        &control_panel_signature_hash,
+        input.base_verdict_before_update,
+    )?;
     let replay_priority = input
         .replay_row
         .priority_score(ReplayPriorityConfig::default())?;
+    let unrelated_cell_accuracy_delta = if control_before == control_after {
+        0.0
+    } else {
+        1.0
+    };
     Ok(OnlineHeadUpdateReport {
         schema_version: ONLINE_HEAD_STATE_SCHEMA_VERSION,
         head_state_before: before,
@@ -240,7 +264,10 @@ pub fn apply_online_mistake_update_sync_readback(
         base_verdict_before_update: input.base_verdict_before_update,
         corrected_verdict_after_update: corrected,
         replay_priority_score_after: replay_priority,
-        unrelated_cell_accuracy_delta: 0.0,
+        unrelated_cell_control_panel_signature_hash: control_panel_signature_hash,
+        unrelated_cell_verdict_before_update: control_before,
+        unrelated_cell_verdict_after_update: control_after,
+        unrelated_cell_accuracy_delta,
         repeat_metric_byte_readable: db
             .get_cf(online_head_cf(db)?, metric_key.as_bytes())
             .map_err(map_rocksdb_error)?
@@ -295,48 +322,6 @@ pub fn read_repeat_metric_row(
     let row: OnlineHeadRepeatMetricRow = bincode::deserialize(&bytes).map_err(map_bincode_error)?;
     row.validate()?;
     Ok(Some(row))
-}
-
-pub fn online_head_key(panel_signature_hash: &str) -> Result<String, TrainerError> {
-    validate_id("panel_signature_hash", panel_signature_hash)?;
-    Ok(format!("online_head:{panel_signature_hash}"))
-}
-
-pub fn repeat_metric_key(
-    replay_cell_id: &str,
-    label_signature_hash: &str,
-    skill_signature_hash: Option<&str>,
-    ability_signature_hash: Option<&str>,
-    membership_signature_hash: Option<&str>,
-) -> Result<String, TrainerError> {
-    validate_id("replay_cell_id", replay_cell_id)?;
-    validate_id("label_signature_hash", label_signature_hash)?;
-    for (field, value) in [
-        ("skill_signature_hash", skill_signature_hash),
-        ("ability_signature_hash", ability_signature_hash),
-        ("membership_signature_hash", membership_signature_hash),
-    ] {
-        if let Some(value) = value {
-            validate_id(field, value)?;
-        }
-    }
-    let mut hasher = Sha256::new();
-    for value in [
-        Some(replay_cell_id),
-        Some(label_signature_hash),
-        skill_signature_hash,
-        ability_signature_hash,
-        membership_signature_hash,
-    ] {
-        if let Some(value) = value {
-            hasher.update(value.as_bytes());
-        }
-        hasher.update([0]);
-    }
-    Ok(format!(
-        "mistake_repeat:{}",
-        &hex::encode(hasher.finalize())[..24]
-    ))
 }
 
 fn write_online_head_state_row_sync_readback(
