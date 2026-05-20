@@ -277,17 +277,32 @@ async fn test_identical_fingerprints_produce_high_similarity() {
 
 #[tokio::test]
 async fn test_performance_pair_under_5ms() {
+    // V-006 fix (#501): previous version discarded the Result with `let _ =`
+    // so a broken `compute_similarity` returning an immediate Err passed
+    // the perf gate more easily than a working one. Now we unwrap and
+    // assert the similarity is a finite value in [0.0, 1.0].
     let engine = DefaultCrossSpaceEngine::new();
     let fp1 = create_test_fingerprint(1);
     let fp2 = create_test_fingerprint(2);
     let config = CrossSpaceConfig::default();
 
     let start = std::time::Instant::now();
-    let _ = engine.compute_similarity(&fp1, &fp2, &config).await;
+    let result = engine
+        .compute_similarity(&fp1, &fp2, &config)
+        .await
+        .expect("compute_similarity must succeed in perf test");
     let elapsed = start.elapsed();
 
-    println!("[TEST] Pair similarity took {:?}", elapsed);
+    println!(
+        "[TEST] Pair similarity took {:?}, score={}",
+        elapsed, result.score
+    );
 
+    assert!(
+        result.score.is_finite() && (0.0..=1.0).contains(&result.score),
+        "similarity score must be finite and in [0.0, 1.0], got {}",
+        result.score
+    );
     assert!(
         elapsed.as_millis() < 5,
         "Took {}ms, expected <5ms",

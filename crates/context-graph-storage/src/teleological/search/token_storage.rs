@@ -765,6 +765,9 @@ mod tests {
         println!("[VERIFIED] Empty tokens handled correctly");
     }
 
+    /// V-008 fix (#503): previously only `retrieved.unwrap().len() == 1`
+    /// was checked. A storage backend bug that returned `Some(vec![vec![]])`
+    /// would have passed. Now we compare token-by-token with float epsilon.
     #[test]
     fn test_single_token() {
         println!("=== TEST: Single Token ===");
@@ -777,13 +780,19 @@ mod tests {
 
         storage.store(id, &tokens).expect("Store failed");
 
-        let retrieved = storage.get(id).expect("Get failed");
-        assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().len(), 1);
+        let retrieved = storage
+            .get(id)
+            .expect("Get failed")
+            .expect("token row must be Some after store");
+        assert_eq!(retrieved.len(), 1, "must round-trip exactly 1 token");
+        assert_token_vectors_equal(&tokens, &retrieved);
 
-        println!("[VERIFIED] Single token handled correctly");
+        println!("[VERIFIED] Single token round-trip exact");
     }
 
+    /// V-008 fix (#503): same pattern as test_single_token but at
+    /// MAX_TOKENS_PER_MEMORY scale. Catches encoder/decoder bugs that
+    /// preserve the outer length but corrupt inner f32 vectors.
     #[test]
     fn test_max_tokens() {
         println!("=== TEST: Max Tokens ===");
@@ -796,10 +805,44 @@ mod tests {
 
         storage.store(id, &tokens).expect("Store failed");
 
-        let retrieved = storage.get(id).expect("Get failed");
-        assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().len(), MAX_TOKENS_PER_MEMORY);
+        let retrieved = storage
+            .get(id)
+            .expect("Get failed")
+            .expect("token row must be Some after store");
+        assert_eq!(
+            retrieved.len(),
+            MAX_TOKENS_PER_MEMORY,
+            "outer token count must match"
+        );
+        assert_token_vectors_equal(&tokens, &retrieved);
 
-        println!("[VERIFIED] Max tokens handled correctly");
+        println!("[VERIFIED] Max tokens round-trip exact");
+    }
+
+    /// Per-token, per-element equality with f32 epsilon. Fails fast on
+    /// any divergence with concrete (i, j, original, retrieved) location.
+    fn assert_token_vectors_equal(orig: &[Vec<f32>], retrieved: &[Vec<f32>]) {
+        assert_eq!(
+            orig.len(),
+            retrieved.len(),
+            "token count mismatch: orig={}, retrieved={}",
+            orig.len(),
+            retrieved.len()
+        );
+        for (i, (o, r)) in orig.iter().zip(retrieved.iter()).enumerate() {
+            assert_eq!(
+                o.len(),
+                r.len(),
+                "token[{i}] dim mismatch: orig={}, retrieved={}",
+                o.len(),
+                r.len()
+            );
+            for (j, (ov, rv)) in o.iter().zip(r.iter()).enumerate() {
+                assert!(
+                    (ov - rv).abs() < 1e-6,
+                    "token[{i}][{j}] value diverged: orig={ov}, retrieved={rv}"
+                );
+            }
+        }
     }
 }

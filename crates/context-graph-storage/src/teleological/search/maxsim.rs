@@ -376,13 +376,37 @@ mod tests {
         }
     }
 
-    /// Generate normalized test token.
+    /// Deterministic SplitMix64 hash (matches the gold-standard test pattern in
+    /// `context-graph-tier-compression/src/tests.rs`). Used to generate test
+    /// tokens without the sin-wave pattern that `no_fake_data_test.rs::
+    /// detect_sin_wave_pattern` is built to reject (M-M2 / #488).
+    fn splitmix64(seed: u64) -> u64 {
+        let mut z = seed.wrapping_add(0x9E3779B97F4A7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+        z ^ (z >> 31)
+    }
+
+    /// Box-Muller-style pseudo-Gaussian sample in `[-1, 1]` (tanh-clamped).
+    fn gaussian_sample(seed: u64) -> f32 {
+        let r1 = splitmix64(seed.wrapping_mul(2)) >> 11;
+        let r2 = splitmix64(seed.wrapping_mul(2).wrapping_add(1)) >> 11;
+        let u1 = (r1 as f64 + 1.0) / ((1u64 << 53) as f64 + 1.0);
+        let u2 = (r2 as f64 + 1.0) / ((1u64 << 53) as f64 + 1.0);
+        let r = (-2.0 * u1.ln()).sqrt();
+        let theta = 2.0 * std::f64::consts::PI * u2;
+        (r * theta.cos()).tanh() as f32
+    }
+
+    /// Generate a normalized 128-dim test token from a deterministic Gaussian
+    /// distribution. The MaxSim kernel only cares that inputs are valid
+    /// real-valued unit vectors; Gaussian samples preserve that property
+    /// without tripping AP-007 sin-wave detection.
     fn generate_normalized_token(seed: usize) -> Vec<f32> {
         let mut token: Vec<f32> = (0..E12_TOKEN_DIM)
-            .map(|j| ((seed * 128 + j) as f32 / 1000.0).sin())
+            .map(|j| gaussian_sample((seed as u64).wrapping_mul(128).wrapping_add(j as u64)))
             .collect();
 
-        // Normalize
         let norm: f32 = token.iter().map(|x| x * x).sum::<f32>().sqrt();
         if norm > f32::EPSILON {
             for x in &mut token {

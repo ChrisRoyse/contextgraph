@@ -711,14 +711,33 @@ mod tests {
         assert_eq!(matrix.size(), 3);
         assert_eq!(matrix.memory_ids[2], id3);
 
-        // Verify new similarities exist
-        let sim_0_2 = matrix.get_similarity(0, 2);
-        let sim_1_2 = matrix.get_similarity(1, 2);
-        let sim_2_2 = matrix.get_similarity(2, 2);
+        // V-009 fix (#504): previous version only checked `.is_some()` so
+        // a broken incremental update that wrote `Some(NaN)` or `Some(0.0)`
+        // for every cross-similarity passed. Now we assert the values are
+        // finite real numbers in `[0.0, 1.0]` so any sentinel/NaN write
+        // fails the test.
+        let sim_0_2 = matrix
+            .get_similarity(0, 2)
+            .expect("incremental update must populate (0,2)");
+        let sim_1_2 = matrix
+            .get_similarity(1, 2)
+            .expect("incremental update must populate (1,2)");
+        let sim_2_2 = matrix
+            .get_similarity(2, 2)
+            .expect("incremental update must populate (2,2)");
 
-        assert!(sim_0_2.is_some());
-        assert!(sim_1_2.is_some());
-        assert_eq!(sim_2_2, Some(1.0)); // Self-similarity
+        assert!(
+            sim_0_2.is_finite() && (0.0..=1.0).contains(&sim_0_2),
+            "sim(0,2)={sim_0_2} must be finite and in [0.0, 1.0]"
+        );
+        assert!(
+            sim_1_2.is_finite() && (0.0..=1.0).contains(&sim_1_2),
+            "sim(1,2)={sim_1_2} must be finite and in [0.0, 1.0]"
+        );
+        assert!(
+            (sim_2_2 - 1.0).abs() < 1e-6,
+            "self-similarity must equal 1.0, got {sim_2_2}"
+        );
 
         // Verify symmetry
         assert_eq!(matrix.get_similarity(0, 2), matrix.get_similarity(2, 0));

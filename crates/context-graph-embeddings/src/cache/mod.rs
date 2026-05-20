@@ -535,14 +535,46 @@ mod tests {
     use super::*;
     use crate::types::{ModelEmbedding, ModelId};
 
-    /// Create a test embedding with real data (NOT mocks).
+    /// SplitMix64 — deterministic 64-bit hash for reproducible test inputs.
+    /// Matches the gold-standard pattern in
+    /// `context-graph-tier-compression/src/tests.rs`. Used to replace the
+    /// previous sin-wave generator (M-M5 / #491) which contradicted the
+    /// AP-007 fake-data detector in
+    /// `crates/context-graph-embeddings/tests/no_fake_data_test.rs`.
+    fn splitmix64(seed: u64) -> u64 {
+        let mut z = seed.wrapping_add(0x9E3779B97F4A7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+        z ^ (z >> 31)
+    }
+
+    /// Box-Muller-style pseudo-Gaussian sample in `[-1, 1]` (tanh-clamped).
+    fn gaussian_sample(seed: u64) -> f32 {
+        let r1 = splitmix64(seed.wrapping_mul(2)) >> 11;
+        let r2 = splitmix64(seed.wrapping_mul(2).wrapping_add(1)) >> 11;
+        let u1 = (r1 as f64 + 1.0) / ((1u64 << 53) as f64 + 1.0);
+        let u2 = (r2 as f64 + 1.0) / ((1u64 << 53) as f64 + 1.0);
+        let r = (-2.0 * u1.ln()).sqrt();
+        let theta = 2.0 * std::f64::consts::PI * u2;
+        (r * theta.cos()).tanh() as f32
+    }
+
+    /// Create a test embedding with deterministic Gaussian samples.
+    ///
+    /// The cache-roundtrip tests only verify that what we put in we get back
+    /// (insert / get / expire / evict). Vector *content* is irrelevant; what
+    /// matters is shape, finiteness, and a non-zero norm. Deterministic
+    /// Gaussian samples preserve those properties without the sin-wave
+    /// pattern that AP-007 detection rejects.
     fn create_test_embedding(filled_models: &[ModelId]) -> MultiArrayEmbedding {
         let mut multi = MultiArrayEmbedding::new();
 
         for &model_id in filled_models {
             let dim = model_id.projected_dimension();
-            // Create real vector data with deterministic values
-            let vector: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.001).sin()).collect();
+            let model_seed = model_id as u64;
+            let vector: Vec<f32> = (0..dim)
+                .map(|i| gaussian_sample(model_seed.wrapping_mul(4096).wrapping_add(i as u64)))
+                .collect();
             let mut emb = ModelEmbedding::new(model_id, vector, 1000);
             emb.set_projected(true);
             multi.set(emb);

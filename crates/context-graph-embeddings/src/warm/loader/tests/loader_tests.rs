@@ -152,35 +152,28 @@ fn test_preflight_checks_gpu_requirements() {
 // Test 5: Fail Fast on Allocation Error
 // ============================================================================
 
-/// Test that allocation errors are handled with fail-fast behavior.
-///
-/// CUDA feature required because initialize_cuda_for_test() and allocate_model_vram()
-/// are only defined with cuda feature.
+/// V-002 fix (#497): allocation fail-fast on a CUDA host. Asserts that an
+/// over-budget request returns `WarmError::VramAllocationFailed`. The
+/// previous version silently returned on `cuda_init_result.is_err()`, which
+/// caused the test to pass on every non-CUDA host without ever exercising
+/// the allocation path. Now `#[ignore]`-gated so it only runs when the
+/// operator explicitly invokes `cargo test -- --ignored` on a CUDA box.
 #[test]
 #[cfg(feature = "candle")]
+#[ignore = "requires CUDA host; run with --ignored"]
 fn test_fail_fast_on_allocation_error() {
     let mut config = test_config();
-    // Set a very small VRAM budget to trigger allocation failure
-    config.vram_budget_bytes = 1024; // Only 1KB
+    config.vram_budget_bytes = 1024; // 1KB — guaranteed to fail any real allocation
 
     let mut loader = WarmLoader::new(config).expect("Failed to create loader");
 
-    // Initialize CUDA for test - required per Constitution AP-007
-    let cuda_init_result = loader.initialize_cuda_for_test();
+    loader
+        .initialize_cuda_for_test()
+        .expect("CUDA init must succeed on a CUDA host");
 
-    // If CUDA feature is not enabled, initialization returns Ok but allocator is None
-    // In that case, allocate_model_vram will return CudaInitFailed (expected behavior)
-    if cuda_init_result.is_err() {
-        // CUDA init failed - this is acceptable in non-CUDA environments
-        // The fail-fast behavior is working correctly
-        return;
-    }
-
-    // Try to allocate more than available
     let result = loader.allocate_model_vram("test_model", 1024 * 1024 * 1024);
-    assert!(result.is_err());
-
-    match result.unwrap_err() {
+    let err = result.expect_err("over-budget allocation must error");
+    match err {
         WarmError::VramAllocationFailed {
             requested_bytes,
             available_bytes,
@@ -189,12 +182,31 @@ fn test_fail_fast_on_allocation_error() {
             assert_eq!(requested_bytes, 1024 * 1024 * 1024);
             assert!(available_bytes < requested_bytes);
         }
-        WarmError::CudaInitFailed { .. } => {
-            // CUDA not available - allocator is None after init
-            // This is expected behavior when cuda feature is disabled
+        other => panic!("Expected VramAllocationFailed, got: {:?}", other),
+    }
+}
+
+/// V-002 companion: explicit no-CUDA assertion. Runs on every host
+/// (including CI) and verifies that `allocate_model_vram` returns
+/// `WarmError::CudaInitFailed` (or a related InvalidState variant) when
+/// CUDA is not available. This is the path that previously hid behind
+/// the silent `return` above.
+#[test]
+#[cfg(feature = "candle")]
+fn test_allocate_without_cuda_returns_structured_error() {
+    let config = test_config();
+    let mut loader = WarmLoader::new(config).expect("Failed to create loader");
+
+    // We do NOT call initialize_cuda_for_test() here so the allocator
+    // is guaranteed to be None.
+    let result = loader.allocate_model_vram("test_model", 1024);
+    let err = result.expect_err("allocation without CUDA must error");
+    match err {
+        WarmError::CudaInitFailed { .. } | WarmError::CudaUnavailable { .. } => {
+            // expected: structured fail-closed.
         }
         other => panic!(
-            "Expected VramAllocationFailed or CudaInitFailed, got: {:?}",
+            "Expected CudaInitFailed or CudaUnavailable, got: {:?}",
             other
         ),
     }

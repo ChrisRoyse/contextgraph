@@ -188,6 +188,9 @@ pub fn run_e2e_happy_path_fsv(fsv_root: &Path) -> Result<E2eFsvReport> {
             predictions_after == predictions_before + 1,
             "first prediction count did not increment"
         );
+        // V-011 fix (#506): derive pass from observable SoT instead of literal true.
+        let predict_pass = predictions_after == predictions_before + 1
+            && first_prediction.prediction_id != [0u8; 16];
         happy_path.push(StepEvidence {
             step: "predict_readback".to_string(),
             trigger: "MeJepaCompiler::verify(problematic patch)".to_string(),
@@ -196,7 +199,7 @@ pub fn run_e2e_happy_path_fsv(fsv_root: &Path) -> Result<E2eFsvReport> {
             after: prediction_summary(&first_prediction, predictions_after),
             expected: json!({"rows": predictions_before + 1, "persisted": true}),
             actual: json!({"rows": predictions_after, "persisted": true}),
-            pass: true,
+            pass: predict_pass,
         });
 
         let markdown = render_prediction_markdown(&first_prediction);
@@ -206,6 +209,10 @@ pub fn run_e2e_happy_path_fsv(fsv_root: &Path) -> Result<E2eFsvReport> {
             injected.contains("Reality prediction") && injected.contains("Prediction ID"),
             "injection markdown missing prediction block"
         );
+        // V-011 fix (#506): derived from observable SoT.
+        let inject_pass = injected.contains("Reality prediction")
+            && injected.contains("Prediction ID")
+            && !injected.is_empty();
         happy_path.push(StepEvidence {
             step: "inject_markdown".to_string(),
             trigger: "render latest RealityPrediction into UserPromptSubmit-style markdown"
@@ -215,7 +222,7 @@ pub fn run_e2e_happy_path_fsv(fsv_root: &Path) -> Result<E2eFsvReport> {
             after: json!({"bytes": injected.len(), "containsPredictionId": injected.contains("Prediction ID")}),
             expected: json!({"containsPredictionId": true}),
             actual: json!({"containsPredictionId": injected.contains("Prediction ID")}),
-            pass: true,
+            pass: inject_pass,
         });
 
         let feedback = harness.persist_feedback(db.as_ref(), &first_prediction)?;

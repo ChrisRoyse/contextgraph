@@ -469,29 +469,32 @@ impl Handlers {
         // the caller's `Result<TrainingRecord, String>`. The MCP-tool entry
         // point counts these failures into `fetch_failures` so the JSON-RPC
         // response surfaces the structured error to consumers.
-        let (outgoing_edges, incoming_edges, knn) = if include_edges {
-            let repo = self.edge_repository.as_ref();
-            let outgoing = match repo {
-                Some(r) => fetch_outgoing_edges(r, fp.id).map_err(|e| e.to_string())?,
-                None => Vec::new(),
-            };
-            let incoming = if include_incoming {
-                incoming_index.get(&fp.id).cloned().unwrap_or_default()
+        let (outgoing_edges, incoming_edges, knn) =
+            if include_edges {
+                let repo = self.edge_repository.as_ref();
+                let outgoing = match repo {
+                    Some(r) => fetch_outgoing_edges(r, fp.id)
+                        .map_err(|e| format!("{}: {}", e.code(), e))?,
+                    None => Vec::new(),
+                };
+                let incoming = if include_incoming {
+                    incoming_index.get(&fp.id).cloned().unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                let knn = match repo {
+                    Some(r) => fetch_knn_per_embedder(r, fp.id)
+                        .map_err(|e| format!("{}: {}", e.code(), e))?,
+                    None => (0..NUM_EMBEDDERS).map(|_| Vec::new()).collect(),
+                };
+                (outgoing, incoming, knn)
             } else {
-                Vec::new()
+                (
+                    Vec::new(),
+                    Vec::new(),
+                    (0..NUM_EMBEDDERS).map(|_| Vec::new()).collect(),
+                )
             };
-            let knn = match repo {
-                Some(r) => fetch_knn_per_embedder(r, fp.id).map_err(|e| e.to_string())?,
-                None => (0..NUM_EMBEDDERS).map(|_| Vec::new()).collect(),
-            };
-            (outgoing, incoming, knn)
-        } else {
-            (
-                Vec::new(),
-                Vec::new(),
-                (0..NUM_EMBEDDERS).map(|_| Vec::new()).collect(),
-            )
-        };
 
         // Causal labels (fix #1: rel_id + mechanism_type, peer stays Uuid::nil()
         // because CausalRelationship has no separate effect-fingerprint field).

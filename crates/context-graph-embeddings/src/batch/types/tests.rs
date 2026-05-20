@@ -310,13 +310,29 @@ fn test_batch_queue_drain_batch_sorts_by_length() {
 
     let batch = queue.drain_batch().unwrap();
 
-    // After sorting by tokens, short should be first
+    // V-012 fix (#507): previous version only checked batch.inputs[0]
+    // contained "Short". A broken sort that placed Short first then left
+    // the rest in arbitrary order would have passed. Now we extract all
+    // three positions and assert the full expected ordering by length.
     assert_eq!(batch.inputs.len(), 3);
 
-    // Verify ordering by checking content
-    if let ModelInput::Text { content, .. } = &batch.inputs[0] {
-        assert_eq!(content, "Short");
-    }
+    let texts: Vec<&str> = batch
+        .inputs
+        .iter()
+        .map(|inp| match inp {
+            ModelInput::Text { content, .. } => content.as_str(),
+            other => panic!("expected ModelInput::Text, got {:?}", other),
+        })
+        .collect();
+    assert_eq!(
+        texts,
+        vec![
+            "Short",
+            "Medium length text",
+            "This is a very long sentence that has many words",
+        ],
+        "drain_batch must sort by length ascending"
+    );
 }
 
 #[test]

@@ -235,24 +235,49 @@ fn fsv_state_observability() {
     println!("\n[FSV-7 VERIFIED] State is observable and consistent");
 }
 
-/// FSV-EDGE-1: Test very long content in status queries (no crash)
+/// FSV-EDGE-1: V-004 fix (#499). Verify repeated calls do NOT mutate
+/// observable state. Captures the initial (init, status) tuple and
+/// asserts every one of 1000 subsequent calls returns the same value;
+/// the previous version discarded every return value with `let _ =`
+/// and could not detect state drift, accidental writes, or memoization
+/// leaks under repeated queries.
 #[test]
 fn fsv_edge_long_queries() {
     println!("\n============================================================");
     println!("=== FSV-EDGE-1: Long Query Handling ===");
     println!("============================================================\n");
 
-    // Just verify repeated calls don't accumulate state incorrectly
+    let baseline_init = is_warm_initialized();
+    let baseline_status = warm_status_message();
+    assert!(
+        !baseline_status.is_empty(),
+        "baseline status must not be empty"
+    );
+
     for i in 0..1000 {
-        let _ = is_warm_initialized();
-        let _ = warm_status_message();
+        let init = is_warm_initialized();
+        let status = warm_status_message();
+
+        assert_eq!(
+            init, baseline_init,
+            "iteration {i}: is_warm_initialized drifted from baseline"
+        );
+        assert_eq!(
+            status, baseline_status,
+            "iteration {i}: warm_status_message drifted from baseline"
+        );
+        assert!(
+            !status.is_empty(),
+            "iteration {i}: status went empty mid-loop"
+        );
+
         if i % 250 == 0 {
-            println!("Iteration {}: status = {}", i, warm_status_message());
+            println!("Iteration {i}: status = {status}");
         }
     }
 
-    println!("COMPLETED 1000 iterations without issues");
-    println!("\n[FSV-EDGE-1 VERIFIED] Long repeated queries handled correctly");
+    println!("COMPLETED 1000 iterations with stable state");
+    println!("\n[FSV-EDGE-1 VERIFIED] Long repeated queries are observably idempotent");
 }
 
 /// FSV-EDGE-2: Test status during theoretical race conditions

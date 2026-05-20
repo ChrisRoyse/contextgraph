@@ -98,6 +98,10 @@ async fn test_search_semantic() {
 
 #[tokio::test]
 async fn test_batch_store_and_retrieve() {
+    // V-010 fix (#505): previous version only checked `.is_some()` on each
+    // retrieved entry. A broken retrieve_batch returning 10 unrelated
+    // fingerprints would have passed. Now we zip ids with retrieved
+    // fingerprints and assert id-equality per pair.
     let store = InMemoryTeleologicalStore::new();
     let fingerprints: Vec<_> = (0..10).map(|_| create_test_fingerprint()).collect();
     let ids: Vec<_> = fingerprints.iter().map(|fp| fp.id).collect();
@@ -105,7 +109,16 @@ async fn test_batch_store_and_retrieve() {
     assert_eq!(stored_ids.len(), 10);
     let retrieved = store.retrieve_batch(&ids).await.unwrap();
     assert_eq!(retrieved.len(), 10);
-    assert!(retrieved.iter().all(|r| r.is_some()));
+    for (i, (expected_id, fp)) in ids.iter().zip(retrieved.iter()).enumerate() {
+        let fp = fp
+            .as_ref()
+            .unwrap_or_else(|| panic!("retrieved[{i}] missing (id={expected_id})"));
+        assert_eq!(
+            fp.id, *expected_id,
+            "retrieved[{i}] id mismatch: expected {expected_id}, got {}",
+            fp.id
+        );
+    }
 }
 
 #[tokio::test]
