@@ -1,6 +1,7 @@
 pub mod aux;
 pub mod constellation;
 pub mod counterfactual;
+pub mod entropy;
 pub mod inverse;
 pub mod predict;
 pub mod sigreg;
@@ -85,6 +86,13 @@ pub fn compose_l_full(
         predicted_latent,
         batch_metadata.current_task_centroids.as_deref(),
     )?;
+    let (l_entropy, entropy_report) = entropy::latent_entropy_loss(
+        predicted_latent,
+        entropy::LatentEntropyConfig {
+            lambda: coefficients.lambda_entropy,
+            ..entropy::LatentEntropyConfig::default()
+        },
+    )?;
 
     let effective_alpha_reasoning = coefficients
         .alpha_reasoning
@@ -108,14 +116,17 @@ pub fn compose_l_full(
             coefficients.delta,
             &l_constellation,
         ),
+        ("entropy", coefficients.lambda_entropy, &l_entropy),
     ];
     let mut total_tensor = Tensor::new(0f32, predicted_latent.device())?;
     let mut components = HashMap::new();
     for (name, coeff, tensor) in weighted {
         let scalar = scalar(tensor)?;
         components.insert(name.to_string(), scalar);
+        components.insert(format!("{name}_weighted"), scalar * coeff);
         total_tensor = (&total_tensor + &tensor.affine(coeff as f64, 0.0)?)?;
     }
+    components.insert("entropy_lambda".to_string(), entropy_report.lambda);
     let total = scalar(&total_tensor)?;
     if !total.is_finite() {
         return Err(TrainerError::new(
@@ -187,8 +198,10 @@ mod tests {
             current_task_centroids: Some(vec![p.clone()]),
         };
         let loss = compose_l_full(&p, &t, &aux, &meta, &LossCoefficients::default()).unwrap();
-        assert_eq!(loss.components.len(), 14);
+        assert_eq!(loss.components.len(), 31);
         assert!(loss.components["sigreg"].is_finite());
+        assert_eq!(loss.components["entropy"], 0.0);
+        assert_eq!(loss.components["entropy_weighted"], 0.0);
         assert!(loss.total.is_finite());
     }
 
@@ -234,5 +247,50 @@ mod tests {
         .unwrap();
         assert!(base.components["reasoning"] > 0.0);
         assert!((base.total - forced_q4.total).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn entropy_loss_adds_weighted_component_when_enabled() {
+        let device = Device::Cpu;
+        let p =
+            Tensor::from_slice(&[0.5f32, 0.25, 2., 1., 4., 4., 6., 9.], (4, 2), &device).unwrap();
+        let t = p.clone();
+        let aux = AuxOutputs {
+            warnings: Tensor::zeros((4, 1), candle_core::DType::F32, &device).unwrap(),
+            runtime_log: Tensor::zeros((4, 1), candle_core::DType::F32, &device).unwrap(),
+            rss: Tensor::zeros((4, 1), candle_core::DType::F32, &device).unwrap(),
+            traceback_cluster_logits: Tensor::zeros((4, 2), candle_core::DType::F32, &device)
+                .unwrap(),
+            hunk_verdicts: Tensor::zeros((4, 1), candle_core::DType::F32, &device).unwrap(),
+            adjacent_outcomes: Tensor::zeros((4, 1), candle_core::DType::F32, &device).unwrap(),
+            reasoning_embedding: p.clone(),
+            operator_match: Tensor::zeros((4, 2), candle_core::DType::F32, &device).unwrap(),
+        };
+        let meta = BatchMetadata {
+            actual_warnings: aux.warnings.clone(),
+            actual_runtime_log: aux.runtime_log.clone(),
+            actual_rss: aux.rss.clone(),
+            actual_traceback_cluster_id: Tensor::from_slice(&[0u32, 1, 0, 1], 4, &device).unwrap(),
+            actual_hunk_verdicts: aux.hunk_verdicts.clone(),
+            actual_adjacent_outcomes: aux.adjacent_outcomes.clone(),
+            actual_cot_cluster_id: Tensor::from_slice(&[0u32, 1, 0, 1], 4, &device).unwrap(),
+            override_flags: vec![false, false, false, false],
+            override_gold_labels: Tensor::zeros((4, 2), candle_core::DType::F32, &device).unwrap(),
+            current_task_centroids: Some(vec![p.clone()]),
+        };
+        let loss = compose_l_full(
+            &p,
+            &t,
+            &aux,
+            &meta,
+            &LossCoefficients {
+                lambda_entropy: 1e-4,
+                ..LossCoefficients::default()
+            },
+        )
+        .unwrap();
+        assert!(loss.components["entropy"] > 0.0);
+        assert!(loss.components["entropy_weighted"] > 0.0);
+        assert_eq!(loss.components["entropy_lambda"], 1e-4);
     }
 }

@@ -81,6 +81,12 @@ pub(crate) struct SlotPredictorBlock {
     output_proj: Linear,
 }
 
+struct LateFusionLatent {
+    hidden: Tensor,
+    slot_hidden: Vec<Tensor>,
+    batch: usize,
+}
+
 impl MeJepaPredictor {
     pub fn new(
         config: PredictorConfig,
@@ -177,6 +183,26 @@ impl MeJepaPredictor {
         self.forward_inner(panel_t0, panel_t1, true)
     }
 
+    pub fn forward_late_fused_latent(
+        &self,
+        panel_t0: &Tensor,
+        panel_t1: &Tensor,
+    ) -> Result<Tensor, PredictorError> {
+        Ok(self
+            .encode_late_fused_latent(panel_t0, panel_t1, false)?
+            .hidden)
+    }
+
+    pub fn forward_late_fused_latent_dryrun(
+        &self,
+        panel_t0: &Tensor,
+        panel_t1: &Tensor,
+    ) -> Result<Tensor, PredictorError> {
+        Ok(self
+            .encode_late_fused_latent(panel_t0, panel_t1, true)?
+            .hidden)
+    }
+
     pub fn forward_inverse(
         &self,
         target_panel: &Tensor,
@@ -217,6 +243,69 @@ impl MeJepaPredictor {
         panel_t1: &Tensor,
         validate_finite: bool,
     ) -> Result<PredictedPanel, PredictorError> {
+        let latent = self.encode_late_fused_latent(panel_t0, panel_t1, validate_finite)?;
+        let batch = latent.batch;
+        let hidden = latent.hidden;
+        let slot_hidden = latent.slot_hidden;
+        let mut predicted_slots = Vec::with_capacity(self.slot_blocks.len());
+        for (block, slot_hidden) in self.slot_blocks.iter().zip(&slot_hidden) {
+            let slot_context = (slot_hidden + &hidden)?.to_dtype(self.dtype)?;
+            let slot_predicted =
+                (block.output_proj.forward(&slot_context)? / 4.0)?.to_dtype(self.dtype)?;
+            if slot_predicted.dims() != [batch, block.slot.dim()] {
+                return Err(PredictorError::DimMismatch {
+                    detail: format!(
+                        "{} slot output expected (B, {}); got {:?}",
+                        block.slot.slug(),
+                        block.slot.dim(),
+                        slot_predicted.dims()
+                    ),
+                    observed: serde_json::json!({
+                        "slot": block.slot.slug(),
+                        "slot_output": slot_predicted.dims()
+                    }),
+                    expected_panel_dim: PANEL_DIM,
+                });
+            }
+            if validate_finite {
+                ensure_finite(
+                    &slot_predicted,
+                    NanSource::Output,
+                    None,
+                    &format!("{}_slot_predicted", block.slot.slug()),
+                )?;
+            }
+            predicted_slots.push(slot_predicted);
+        }
+        let predicted_slot_refs = predicted_slots.iter().collect::<Vec<_>>();
+        let predicted = Tensor::cat(&predicted_slot_refs, 1)?;
+        if predicted.dims() != [batch, PANEL_DIM] {
+            return Err(PredictorError::DimMismatch {
+                detail: format!(
+                    "output expected (B, {PANEL_DIM}); got {:?}",
+                    predicted.dims()
+                ),
+                observed: serde_json::json!({ "predicted": predicted.dims() }),
+                expected_panel_dim: PANEL_DIM,
+            });
+        }
+        if validate_finite {
+            ensure_finite(&predicted, NanSource::Output, None, "predicted_panel")?;
+        }
+        Ok(PredictedPanel {
+            tensor: predicted,
+            batch_size: batch,
+            panel_dim: PANEL_DIM,
+            dtype: format!("{:?}", self.dtype),
+        })
+    }
+
+    fn encode_late_fused_latent(
+        &self,
+        panel_t0: &Tensor,
+        panel_t1: &Tensor,
+        validate_finite: bool,
+    ) -> Result<LateFusionLatent, PredictorError> {
         validate_panel_pair(panel_t0, panel_t1)?;
         if validate_finite {
             ensure_finite(panel_t0, NanSource::Input, None, "panel_t0")?;
@@ -293,56 +382,13 @@ impl MeJepaPredictor {
             .forward(&fusion_input)?
             .to_dtype(self.dtype)?;
         let hidden = self.forward_shared_trunk(hidden, validate_finite)?;
-        let mut predicted_slots = Vec::with_capacity(self.slot_blocks.len());
-        for (block, slot_hidden) in self.slot_blocks.iter().zip(&slot_hidden) {
-            let slot_context = (slot_hidden + &hidden)?.to_dtype(self.dtype)?;
-            let slot_predicted =
-                (block.output_proj.forward(&slot_context)? / 4.0)?.to_dtype(self.dtype)?;
-            if slot_predicted.dims() != [batch, block.slot.dim()] {
-                return Err(PredictorError::DimMismatch {
-                    detail: format!(
-                        "{} slot output expected (B, {}); got {:?}",
-                        block.slot.slug(),
-                        block.slot.dim(),
-                        slot_predicted.dims()
-                    ),
-                    observed: serde_json::json!({
-                        "slot": block.slot.slug(),
-                        "slot_output": slot_predicted.dims()
-                    }),
-                    expected_panel_dim: PANEL_DIM,
-                });
-            }
-            if validate_finite {
-                ensure_finite(
-                    &slot_predicted,
-                    NanSource::Output,
-                    None,
-                    &format!("{}_slot_predicted", block.slot.slug()),
-                )?;
-            }
-            predicted_slots.push(slot_predicted);
-        }
-        let predicted_slot_refs = predicted_slots.iter().collect::<Vec<_>>();
-        let predicted = Tensor::cat(&predicted_slot_refs, 1)?;
-        if predicted.dims() != [batch, PANEL_DIM] {
-            return Err(PredictorError::DimMismatch {
-                detail: format!(
-                    "output expected (B, {PANEL_DIM}); got {:?}",
-                    predicted.dims()
-                ),
-                observed: serde_json::json!({ "predicted": predicted.dims() }),
-                expected_panel_dim: PANEL_DIM,
-            });
-        }
         if validate_finite {
-            ensure_finite(&predicted, NanSource::Output, None, "predicted_panel")?;
+            ensure_finite(&hidden, NanSource::Output, None, "late_fused_latent")?;
         }
-        Ok(PredictedPanel {
-            tensor: predicted,
-            batch_size: batch,
-            panel_dim: PANEL_DIM,
-            dtype: format!("{:?}", self.dtype),
+        Ok(LateFusionLatent {
+            hidden,
+            slot_hidden,
+            batch,
         })
     }
 

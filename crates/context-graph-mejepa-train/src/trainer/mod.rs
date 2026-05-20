@@ -14,6 +14,7 @@ use crate::learning_signal::{
     compute_l_step, compute_per_head_learning_signal, pairwise_mi_audit, DeltaKComponents,
     DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents, DeltaXiComponents, HeadSignalInput,
 };
+use crate::loss::entropy::{latent_entropy_loss, LatentEntropyConfig, LatentEntropyLossReport};
 use crate::loss::inverse::{inverse_map_loss, InverseMapOutputs, InverseMapTargets};
 use crate::sampler::{BatchSampler, PatchSimilarityGraph};
 use candle_core::{DType, Device, Tensor};
@@ -244,6 +245,20 @@ impl Trainer {
                 ("covariance".to_string(), 0.01),
                 ("invariance".to_string(), 0.0),
             ]);
+            let entropy_loss_report = batch_latent_entropy_loss(
+                dataset,
+                &plan.indices,
+                &self.device,
+                self.config.loss_coefficients.lambda_entropy,
+            )?;
+            if entropy_loss_report.enabled {
+                loss_components.insert("entropy".to_string(), entropy_loss_report.entropy_nats);
+                loss_components.insert(
+                    "entropy_weighted".to_string(),
+                    entropy_loss_report.weighted_loss,
+                );
+                loss_components.insert("entropy_lambda".to_string(), entropy_loss_report.lambda);
+            }
             let conditional_description_length_bits =
                 crate::compression_progress::conditional_description_length_bits_from_probability(
                     signal.delta_p,
@@ -280,6 +295,22 @@ impl Trainer {
                 loss_components,
                 conditional_description_length_bits: Some(conditional_description_length_bits),
                 inverse_map_quality_bits,
+                l_entropy_nats: entropy_loss_report
+                    .enabled
+                    .then_some(entropy_loss_report.entropy_nats),
+                l_entropy_weighted: entropy_loss_report
+                    .enabled
+                    .then_some(entropy_loss_report.weighted_loss),
+                l_entropy_lambda: entropy_loss_report
+                    .enabled
+                    .then_some(entropy_loss_report.lambda),
+                l_entropy_sample_count: entropy_loss_report
+                    .estimate
+                    .as_ref()
+                    .map(|estimate| estimate.batch_size),
+                l_entropy_estimator: entropy_loss_report
+                    .enabled
+                    .then_some("knn-radius-v1-slot-preserving-latent".to_string()),
                 training_mode: if self.config.full_finetune {
                     "full_finetune".to_string()
                 } else {
@@ -562,6 +593,87 @@ fn batch_inverse_map_loss(
             action,
         },
     )
+}
+
+fn batch_latent_entropy_loss(
+    dataset: &TrainingDataset,
+    indices: &[usize],
+    device: &Device,
+    lambda: f32,
+) -> Result<LatentEntropyLossReport, TrainerError> {
+    if lambda == 0.0 {
+        return Ok(LatentEntropyLossReport {
+            enabled: false,
+            lambda: 0.0,
+            entropy_nats: 0.0,
+            weighted_loss: 0.0,
+            estimate: None,
+        });
+    }
+    let (tensor, report) = latent_entropy_loss(
+        &batch_latent_tensor(dataset, indices, device)?,
+        LatentEntropyConfig {
+            lambda,
+            ..LatentEntropyConfig::default()
+        },
+    )?;
+    drop(tensor);
+    Ok(report)
+}
+
+fn batch_latent_tensor(
+    dataset: &TrainingDataset,
+    indices: &[usize],
+    device: &Device,
+) -> Result<Tensor, TrainerError> {
+    if indices.is_empty() {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "latent entropy requires at least one selected batch example",
+        ));
+    }
+    let mut rows = Vec::new();
+    let mut latent_dim = None;
+    for idx in indices {
+        let example = dataset.train.examples.get(*idx).ok_or_else(|| {
+            TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                format!("sampler selected train index {idx} outside train split"),
+            )
+        })?;
+        let latent = example
+            .panel_t01
+            .to_dtype(DType::F32)?
+            .flatten_all()?
+            .to_vec1::<f32>()?;
+        if latent.is_empty() {
+            return Err(TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                format!("latent entropy train index {idx} has an empty panel_t01 tensor"),
+            ));
+        }
+        match latent_dim {
+            Some(dim) if dim != latent.len() => {
+                return Err(TrainerError::new(
+                    TrainerErrorCode::MejepaTrainConfigInvalid,
+                    format!(
+                        "latent entropy batch has mixed latent dims: expected {dim}, got {} at train index {idx}",
+                        latent.len()
+                    ),
+                ));
+            }
+            None => latent_dim = Some(latent.len()),
+            _ => {}
+        }
+        rows.extend(latent);
+    }
+    let dim = latent_dim.ok_or_else(|| {
+        TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "latent entropy batch has no latent dimension",
+        )
+    })?;
+    Tensor::from_slice(&rows, (indices.len(), dim), device).map_err(TrainerError::from)
 }
 
 fn inverse_action_target_vector(

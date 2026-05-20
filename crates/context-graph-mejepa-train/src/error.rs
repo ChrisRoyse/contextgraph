@@ -27,6 +27,10 @@ pub enum TrainerErrorCode {
     /// norm of zero. A zero vector has no defined cosine and must not silently
     /// collapse to 0.0 (orthogonal).
     MejepaTrainPatchSimilarityZeroNormVector,
+    /// TASK-IP-001: latent entropy was requested for a constant or effectively
+    /// one-dimensional latent batch. The entropy term must fail closed rather
+    /// than convert collapse into a finite training reward.
+    UtmlLatentEntropyDegenerate,
 }
 
 impl TrainerErrorCode {
@@ -50,6 +54,7 @@ impl TrainerErrorCode {
             Self::MejepaTrainPatchSimilarityZeroNormVector => {
                 "MEJEPA_TRAIN_PATCH_SIMILARITY_ZERO_NORM_VECTOR"
             }
+            Self::UtmlLatentEntropyDegenerate => "UTML_LATENT_ENTROPY_DEGENERATE",
         }
     }
 }

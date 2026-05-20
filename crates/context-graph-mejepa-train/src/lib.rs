@@ -61,6 +61,11 @@ pub use learning_signal::{
     DeltaPComponents, DeltaXiComponents, HeadSignalInput, LearningSignal, PerHeadLearningSignal,
     SkipReason, UtmlError, UtmlErrorCode,
 };
+pub use loss::entropy::{
+    estimate_latent_entropy_nats, latent_entropy_loss, EntropyLambdaDecision,
+    EntropyLambdaScheduler, LatentEntropyConfig, LatentEntropyEstimate, LatentEntropyLossReport,
+    UTML_LATENT_ENTROPY_DEGENERATE,
+};
 pub use loss::inverse::{
     compose_bidirectional_l_full, inverse_map_loss, unit_gaussian_nll_bits,
     InverseMapLossBreakdown, InverseMapOutputs, InverseMapTargets,

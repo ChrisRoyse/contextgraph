@@ -56,6 +56,16 @@ pub struct TrainingCertificate {
     pub conditional_description_length_bits: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inverse_map_quality_bits: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub l_entropy_nats: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub l_entropy_weighted: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub l_entropy_lambda: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub l_entropy_sample_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub l_entropy_estimator: Option<String>,
     pub training_mode: String,
     pub distillation_cycle_id: Option<u64>,
     pub distillation_loss_mean: Option<f32>,
@@ -242,6 +252,59 @@ impl TrainingCertificate {
                 )
                 .with_step(self.step));
             }
+        }
+        if let Some(value) = self.l_entropy_nats {
+            if !value.is_finite() || value < 0.0 {
+                return Err(crate::error::TrainerError::new(
+                    crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                    format!(
+                        "l_entropy_nats={} at step {} must be finite and non-negative",
+                        value, self.step
+                    ),
+                )
+                .with_step(self.step));
+            }
+        }
+        if let Some(value) = self.l_entropy_weighted {
+            if !value.is_finite() || value < 0.0 {
+                return Err(crate::error::TrainerError::new(
+                    crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                    format!(
+                        "l_entropy_weighted={} at step {} must be finite and non-negative",
+                        value, self.step
+                    ),
+                )
+                .with_step(self.step));
+            }
+        }
+        if let Some(value) = self.l_entropy_lambda {
+            if !value.is_finite() || value < 0.0 {
+                return Err(crate::error::TrainerError::new(
+                    crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                    format!(
+                        "l_entropy_lambda={} at step {} must be finite and non-negative",
+                        value, self.step
+                    ),
+                )
+                .with_step(self.step));
+            }
+        }
+        if matches!(self.l_entropy_sample_count, Some(0)) {
+            return Err(crate::error::TrainerError::new(
+                crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                format!("l_entropy_sample_count=0 at step {}", self.step),
+            )
+            .with_step(self.step));
+        }
+        if self.l_entropy_nats.is_some() && !self.loss_components.contains_key("entropy") {
+            return Err(crate::error::TrainerError::new(
+                crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                format!(
+                    "l_entropy_nats present but loss_components.entropy missing at step {}",
+                    self.step
+                ),
+            )
+            .with_step(self.step));
         }
         Ok(())
     }

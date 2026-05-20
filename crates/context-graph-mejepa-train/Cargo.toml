@@ -163,3 +163,7 @@ path = "examples/task_py_g_120_skill_linkage_surface_fsv.rs"
 [[example]]
 name = "task_py_g_121_runtime_ability_resolver_fsv"
 path = "examples/task_py_g_121_runtime_ability_resolver_fsv.rs"
+
+[[example]]
+name = "task_ip_001_entropy_loss_fsv"
+path = "examples/task_ip_001_entropy_loss_fsv.rs"
