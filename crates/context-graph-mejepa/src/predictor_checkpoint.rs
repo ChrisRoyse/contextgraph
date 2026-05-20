@@ -35,10 +35,20 @@ pub struct PredictorCheckpointManifest {
     pub initial_weight_sha256: String,
     pub trained_weight_sha256: String,
     pub training_certificate_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_active_constellation_adapter: Option<NativeActiveConstellationAdapterEvidence>,
     pub corpus_sha256: String,
     pub config_sha256: String,
     pub code_version: String,
     pub created_at_unix_ms: u128,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeActiveConstellationAdapterEvidence {
+    pub manifest_sha256: String,
+    pub checkpoint_sha256: String,
+    pub training_certificate_sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,6 +67,7 @@ pub struct LoadedPredictorCheckpoint {
     pub initial_weight_sha256: String,
     pub trained_weight_sha256: String,
     pub training_certificate_sha256: String,
+    pub native_active_constellation_adapter: Option<NativeActiveConstellationAdapterEvidence>,
     pub corpus_sha256: String,
     pub config_sha256: String,
     pub code_version: String,
@@ -70,6 +81,7 @@ pub struct PredictorCheckpointExportMetadata {
     pub training_mode: String,
     pub initial_weight_sha256: String,
     pub training_certificate_sha256: String,
+    pub native_active_constellation_adapter: Option<NativeActiveConstellationAdapterEvidence>,
     pub corpus_sha256: String,
     pub config_sha256: String,
     pub code_version: String,
@@ -92,6 +104,7 @@ pub struct ExportedPredictorCheckpoint {
     pub initial_weight_sha256: String,
     pub trained_weight_sha256: String,
     pub training_certificate_sha256: String,
+    pub native_active_constellation_adapter: Option<NativeActiveConstellationAdapterEvidence>,
     pub corpus_sha256: String,
     pub config_sha256: String,
     pub code_version: String,
@@ -161,6 +174,7 @@ pub fn export_trained_predictor_checkpoint(
         initial_weight_sha256: metadata.initial_weight_sha256,
         trained_weight_sha256,
         training_certificate_sha256: metadata.training_certificate_sha256,
+        native_active_constellation_adapter: metadata.native_active_constellation_adapter,
         corpus_sha256: metadata.corpus_sha256,
         config_sha256: metadata.config_sha256,
         code_version: metadata.code_version,
@@ -193,6 +207,7 @@ pub fn export_trained_predictor_checkpoint(
         initial_weight_sha256: manifest.initial_weight_sha256,
         trained_weight_sha256: manifest.trained_weight_sha256,
         training_certificate_sha256: manifest.training_certificate_sha256,
+        native_active_constellation_adapter: manifest.native_active_constellation_adapter,
         corpus_sha256: manifest.corpus_sha256,
         config_sha256: manifest.config_sha256,
         code_version: manifest.code_version,
@@ -289,6 +304,7 @@ pub fn load_verified_trained_predictor_checkpoint(
         initial_weight_sha256: manifest.initial_weight_sha256,
         trained_weight_sha256: manifest.trained_weight_sha256,
         training_certificate_sha256: manifest.training_certificate_sha256,
+        native_active_constellation_adapter: manifest.native_active_constellation_adapter,
         corpus_sha256: manifest.corpus_sha256,
         config_sha256: manifest.config_sha256,
         code_version: manifest.code_version,
@@ -410,6 +426,9 @@ fn validate_manifest(manifest: &PredictorCheckpointManifest) -> Result<(), Predi
             detail: "training_mode and code_version must be non-empty".to_string(),
         });
     }
+    if let Some(evidence) = &manifest.native_active_constellation_adapter {
+        validate_native_active_constellation_adapter_evidence(evidence)?;
+    }
     if manifest.training_status != PREDICTOR_CHECKPOINT_TRAINING_STATUS_TRAINED {
         return Err(PredictorError::ConfigInvalid {
             detail: format!(
@@ -441,8 +460,29 @@ fn validate_export_metadata(
         "training_certificate_sha256",
         &metadata.training_certificate_sha256,
     )?;
+    if let Some(evidence) = &metadata.native_active_constellation_adapter {
+        validate_native_active_constellation_adapter_evidence(evidence)?;
+    }
     validate_lower_sha256("corpus_sha256", &metadata.corpus_sha256)?;
     validate_lower_sha256("config_sha256", &metadata.config_sha256)?;
+    Ok(())
+}
+
+fn validate_native_active_constellation_adapter_evidence(
+    evidence: &NativeActiveConstellationAdapterEvidence,
+) -> Result<(), PredictorError> {
+    validate_lower_sha256(
+        "native_active_constellation_adapter.manifest_sha256",
+        &evidence.manifest_sha256,
+    )?;
+    validate_lower_sha256(
+        "native_active_constellation_adapter.checkpoint_sha256",
+        &evidence.checkpoint_sha256,
+    )?;
+    validate_lower_sha256(
+        "native_active_constellation_adapter.training_certificate_sha256",
+        &evidence.training_certificate_sha256,
+    )?;
     Ok(())
 }
 

@@ -38,6 +38,8 @@ pub const SLOT_PRESERVING_CUDA_COMPILER_EVIDENCE_CLASS: &str =
 pub const SLOT_PRESERVING_CUDA_TRAINED_COMPILER_EVIDENCE_CLASS: &str =
     "slot_preserving_cuda_trained_checkpoint_loaded";
 pub const TRAINED_CHECKPOINT_ATTESTATION_KEY: &str = "MEJEPA_TRAINED_CHECKPOINT_LOADED";
+pub const NATIVE_ACTIVE_CONSTELLATION_ADAPTER_ATTESTATION_KEY: &str =
+    "MEJEPA_NATIVE_ACTIVE_CONSTELLATION_ADAPTER_CITED";
 
 #[derive(Debug, Clone, Args)]
 pub struct InferTestArgs {
@@ -452,6 +454,33 @@ impl OracleHead for SlotPreservingCudaOracleHead {
                 ),
                 1.0,
             );
+            if let Some(adapter) = &checkpoint.native_active_constellation_adapter {
+                granger_attestations.insert(
+                    NATIVE_ACTIVE_CONSTELLATION_ADAPTER_ATTESTATION_KEY.to_string(),
+                    1.0,
+                );
+                granger_attestations.insert(
+                    format!(
+                        "native_active_constellation_adapter_manifest_sha256:{}",
+                        adapter.manifest_sha256
+                    ),
+                    1.0,
+                );
+                granger_attestations.insert(
+                    format!(
+                        "native_active_constellation_adapter_checkpoint_sha256:{}",
+                        adapter.checkpoint_sha256
+                    ),
+                    1.0,
+                );
+                granger_attestations.insert(
+                    format!(
+                        "native_active_constellation_adapter_training_certificate_sha256:{}",
+                        adapter.training_certificate_sha256
+                    ),
+                    1.0,
+                );
+            }
         }
         Ok(OracleScores {
             predicted_oracle_pass: values[0],

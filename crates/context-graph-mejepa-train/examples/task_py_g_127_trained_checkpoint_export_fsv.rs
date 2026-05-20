@@ -2,16 +2,17 @@ use anyhow::{bail, ensure, Context, Result};
 use candle_core::{DType, Device, Tensor};
 use context_graph_mejepa::calibration::open_infer_rocksdb;
 use context_graph_mejepa::cli::{
-    build_slot_preserving_cuda_compiler, write_json_0600, TRAINED_CHECKPOINT_ATTESTATION_KEY,
+    build_slot_preserving_cuda_compiler, write_json_0600,
+    NATIVE_ACTIVE_CONSTELLATION_ADAPTER_ATTESTATION_KEY, TRAINED_CHECKPOINT_ATTESTATION_KEY,
 };
 use context_graph_mejepa::conformal::{non_conformity_score, CalibrationExample};
 use context_graph_mejepa::{
     export_trained_predictor_checkpoint, fixture_patch_context,
     load_verified_trained_predictor_checkpoint, materialize_inference_panels, panel_sha,
     predictor_weight_content_sha256, valid_witness_segment, AstDiff, CalibrationStore, DiffHunk,
-    FrozenTargetAdapter, Language, MeJepaInferConfig, MeJepaPredictor, MejepaStore, PatchBundle,
-    PredictorCheckpointExportMetadata, PredictorConfig, RocksDbInferStore, TaskContext,
-    TaskEnvironment, TaskId, TestId, PANEL_DIM,
+    FrozenTargetAdapter, Language, MeJepaInferConfig, MeJepaPredictor, MejepaStore,
+    NativeActiveConstellationAdapterEvidence, PatchBundle, PredictorCheckpointExportMetadata,
+    PredictorConfig, RocksDbInferStore, TaskContext, TaskEnvironment, TaskId, TestId, PANEL_DIM,
 };
 use context_graph_mejepa_instruments::{
     EOracleInstrument, Instrument, InstrumentSlot, OracleVerdict as InstrumentOracleVerdict, Panel,
@@ -43,6 +44,10 @@ const CONSTELLATION_ARTIFACT_ROOT: &str =
     "/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts";
 const AST_CHUNKS_JSONL: &str =
     "/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl";
+const NATIVE_ACTIVE_ADAPTER_MODEL_ROOT: &str =
+    "/zfs/archive/contextgraph/models/task-py-g-152-native-active-constellation-training-fsv";
+const NATIVE_ACTIVE_ADAPTER_FSV_ROOT: &str =
+    "/zfs/archive/contextgraph/fsv/task-py-g-152-native-active-constellation-training-fsv";
 const REAL_CORPUS_BATCH_SIZE: usize = 4;
 const REAL_CORPUS_OPTIMIZER_STEPS: usize = 3;
 
@@ -59,6 +64,12 @@ struct RealCorpusTrainingBatch {
 struct ChunkPair {
     before: Value,
     after: Value,
+}
+
+#[derive(Clone, Debug)]
+struct NativeAdapterEvidenceReadback {
+    evidence: NativeActiveConstellationAdapterEvidence,
+    summary: Value,
 }
 
 fn main() -> Result<()> {
@@ -104,6 +115,10 @@ fn main() -> Result<()> {
         summary: real_corpus_summary,
         direct_pack_edge,
     } = real_batch;
+    let native_adapter = native_active_constellation_adapter_evidence(
+        Path::new(NATIVE_ACTIVE_ADAPTER_MODEL_ROOT),
+        Path::new(NATIVE_ACTIVE_ADAPTER_FSV_ROOT),
+    )?;
     let (_loss_tensor, loss_before) =
         predictor_training_loss(&predictor, &panel_t0, &panel_t1, &target_panel)?;
     let mut optimizer = build_adamw(
@@ -145,6 +160,7 @@ fn main() -> Result<()> {
         "trained_weight_sha256": trained_weight_sha256,
         "weight_delta_observed": weight_delta_observed,
         "corpus_sha256": corpus_sha256,
+        "native_active_constellation_adapter": native_adapter.summary.clone(),
         "training_config_sha256": sha256_json(&training_config)?,
         "predictor_config_sha256": context_graph_mejepa::predictor_config_sha256(&predictor_config)?,
     });
@@ -167,6 +183,7 @@ fn main() -> Result<()> {
             training_mode: "full_finetune_predictor_smoke".to_string(),
             initial_weight_sha256: initial_weight_sha256.clone(),
             training_certificate_sha256: training_certificate_sha256.clone(),
+            native_active_constellation_adapter: Some(native_adapter.evidence.clone()),
             corpus_sha256: corpus_sha256.clone(),
             config_sha256: sha256_json(&training_config)?,
             code_version: option_env!("GIT_HASH")
@@ -206,8 +223,13 @@ fn main() -> Result<()> {
         && reloaded_weight_sha256 == trained_weight_sha256
         && runtime["prediction_has_loaded_checkpoint_attestation"] == true
         && runtime["prediction_has_checkpoint_sha_attestation"] == true
+        && runtime["prediction_has_native_active_constellation_adapter_attestation"] == true
+        && runtime["prediction_has_native_active_constellation_adapter_manifest_sha_attestation"] == true
+        && runtime["prediction_has_native_active_constellation_adapter_checkpoint_sha_attestation"] == true
+        && runtime["prediction_has_native_active_constellation_adapter_training_certificate_sha_attestation"] == true
         && runtime["prediction_persisted"] == true
         && real_corpus_summary["label_diversity_passed"] == true
+        && native_adapter.summary["adapter_fsv_all_passed"] == true
         && real_corpus_summary["synthetic_seed_features_used"] == false
         && direct_pack_edge["passed"] == true
         && unchanged_export_edge["passed"] == true
@@ -234,6 +256,7 @@ fn main() -> Result<()> {
             "weight_delta_observed": weight_delta_observed,
             "training_certificate_sha256": training_certificate_sha256,
             "corpus_sha256": corpus_sha256,
+            "native_active_constellation_adapter": native_adapter.summary.clone(),
             "real_corpus_batch": real_corpus_summary
         },
         "export": {
@@ -858,6 +881,7 @@ fn unchanged_weights_export_edge(
             training_mode: "unchanged_edge".to_string(),
             initial_weight_sha256: initial_weight_sha256.to_string(),
             training_certificate_sha256: "a".repeat(64),
+            native_active_constellation_adapter: None,
             corpus_sha256: "b".repeat(64),
             config_sha256: "c".repeat(64),
             code_version: "task-py-g-127-unchanged-edge".to_string(),
@@ -1009,6 +1033,21 @@ fn runtime_loaded_checkpoint_edge(fsv_root: &Path, manifest_path: &Path) -> Resu
     let training_cert_sha = manifest["training_certificate_sha256"]
         .as_str()
         .context("manifest training_certificate_sha256")?;
+    let adapter = manifest["native_active_constellation_adapter"]
+        .as_object()
+        .context("manifest native_active_constellation_adapter")?;
+    let adapter_manifest_sha = adapter
+        .get("manifest_sha256")
+        .and_then(Value::as_str)
+        .context("manifest native adapter manifest_sha256")?;
+    let adapter_checkpoint_sha = adapter
+        .get("checkpoint_sha256")
+        .and_then(Value::as_str)
+        .context("manifest native adapter checkpoint_sha256")?;
+    let adapter_training_cert_sha = adapter
+        .get("training_certificate_sha256")
+        .and_then(Value::as_str)
+        .context("manifest native adapter training_certificate_sha256")?;
     Ok(json!({
         "name": "runtime_compiler_loads_manifest_backed_trained_checkpoint",
         "source_of_truth": {
@@ -1028,8 +1067,121 @@ fn runtime_loaded_checkpoint_edge(fsv_root: &Path, manifest_path: &Path) -> Resu
         "prediction_has_training_certificate_attestation": prediction
             .granger_attestations
             .contains_key(&format!("checkpoint_training_certificate_sha256:{training_cert_sha}")),
+        "prediction_has_native_active_constellation_adapter_attestation": prediction
+            .granger_attestations
+            .get(NATIVE_ACTIVE_CONSTELLATION_ADAPTER_ATTESTATION_KEY) == Some(&1.0),
+        "prediction_has_native_active_constellation_adapter_manifest_sha_attestation": prediction
+            .granger_attestations
+            .contains_key(&format!(
+                "native_active_constellation_adapter_manifest_sha256:{adapter_manifest_sha}"
+            )),
+        "prediction_has_native_active_constellation_adapter_checkpoint_sha_attestation": prediction
+            .granger_attestations
+            .contains_key(&format!(
+                "native_active_constellation_adapter_checkpoint_sha256:{adapter_checkpoint_sha}"
+            )),
+        "prediction_has_native_active_constellation_adapter_training_certificate_sha_attestation": prediction
+            .granger_attestations
+            .contains_key(&format!(
+                "native_active_constellation_adapter_training_certificate_sha256:{adapter_training_cert_sha}"
+            )),
         "predicted_oracle_pass": prediction.predicted_oracle_pass
     }))
+}
+
+fn native_active_constellation_adapter_evidence(
+    model_root: &Path,
+    fsv_root: &Path,
+) -> Result<NativeAdapterEvidenceReadback> {
+    let manifest_path = model_root.join("native_active_constellation_adapter.manifest.json");
+    let checkpoint_path = model_root.join("native_active_constellation_adapter.safetensors");
+    let certificate_path = model_root.join("native_training_certificate.json");
+    let report_path = fsv_root.join("native_active_constellation_training_fsv.json");
+    for path in [
+        &manifest_path,
+        &checkpoint_path,
+        &certificate_path,
+        &report_path,
+    ] {
+        ensure!(
+            path.is_file(),
+            "TASK-PY-G-127_NATIVE_ACTIVE_ADAPTER_EVIDENCE_MISSING: {}",
+            path.display()
+        );
+    }
+
+    let manifest: Value = serde_json::from_slice(&fs::read(&manifest_path)?)?;
+    let certificate: Value = serde_json::from_slice(&fs::read(&certificate_path)?)?;
+    let report: Value = serde_json::from_slice(&fs::read(&report_path)?)?;
+    let manifest_sha256 = sha256_file(&manifest_path)?;
+    let checkpoint_sha256 = sha256_file(&checkpoint_path)?;
+    let training_certificate_sha256 = sha256_file(&certificate_path)?;
+    ensure!(
+        report["all_passed"] == true,
+        "TASK-PY-G-127_NATIVE_ACTIVE_ADAPTER_FSV_NOT_PASSED: {}",
+        report_path.display()
+    );
+    ensure!(
+        manifest["model_kind"] == "native_active_embedder_constellation_adapter"
+            && certificate["model_kind"] == "native_active_embedder_constellation_adapter",
+        "TASK-PY-G-127_NATIVE_ACTIVE_ADAPTER_KIND_MISMATCH"
+    );
+    ensure!(
+        manifest["flat_vector_concat_used"] == false
+            && manifest["active_vectors_directly_packed_into_5120_panel"] == false
+            && certificate["flat_vector_concat_used"] == false
+            && certificate["synthetic_seed_features_used"] == false,
+        "TASK-PY-G-127_NATIVE_ACTIVE_ADAPTER_FORBIDDEN_PATH"
+    );
+    ensure!(
+        certificate["coverage_masks_honored"] == true
+            && certificate["pairwise_relation_masks_honored"] == true,
+        "TASK-PY-G-127_NATIVE_ACTIVE_ADAPTER_MASKS_NOT_HONORED"
+    );
+    let manifest_checkpoint_file = manifest["checkpoint_file"]
+        .as_str()
+        .context("native adapter checkpoint_file")?;
+    ensure!(
+        manifest_checkpoint_file == "native_active_constellation_adapter.safetensors",
+        "TASK-PY-G-127_NATIVE_ACTIVE_ADAPTER_CHECKPOINT_FILE_MISMATCH"
+    );
+    ensure!(
+        manifest["checkpoint_sha256"].as_str() == Some(checkpoint_sha256.as_str())
+            && manifest["training_certificate_sha256"].as_str()
+                == Some(training_certificate_sha256.as_str())
+            && report["checkpoint"]["checkpoint_sha256"].as_str()
+                == Some(checkpoint_sha256.as_str())
+            && report["checkpoint"]["training_certificate_sha256"].as_str()
+                == Some(training_certificate_sha256.as_str()),
+        "TASK-PY-G-127_NATIVE_ACTIVE_ADAPTER_HASH_MISMATCH"
+    );
+    let evidence = NativeActiveConstellationAdapterEvidence {
+        manifest_sha256,
+        checkpoint_sha256,
+        training_certificate_sha256,
+    };
+    let summary = json!({
+        "schema_version": 1,
+        "source_issue": 452,
+        "source_task_id": "TASK-PY-G-152",
+        "model_root": model_root.display().to_string(),
+        "fsv_root": fsv_root.display().to_string(),
+        "manifest_path": manifest_path.display().to_string(),
+        "checkpoint_path": checkpoint_path.display().to_string(),
+        "training_certificate_path": certificate_path.display().to_string(),
+        "report_path": report_path.display().to_string(),
+        "adapter_fsv_all_passed": true,
+        "model_kind": "native_active_embedder_constellation_adapter",
+        "flat_vector_concat_used": false,
+        "active_vectors_directly_packed_into_5120_panel": false,
+        "coverage_masks_honored": true,
+        "pairwise_relation_masks_honored": true,
+        "manifest_sha256": evidence.manifest_sha256.clone(),
+        "checkpoint_sha256": evidence.checkpoint_sha256.clone(),
+        "training_certificate_sha256": evidence.training_certificate_sha256.clone(),
+        "runtime_policy": "trained predictor manifests must cite this native separate-slot adapter evidence before active-embedder-trained predictions can count toward ship-gate accounting",
+    });
+    Ok(NativeAdapterEvidenceReadback { evidence, summary })
 }
 
 fn seed_calibration(calibration: &CalibrationStore) -> Result<()> {
