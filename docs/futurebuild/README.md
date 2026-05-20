@@ -43,7 +43,7 @@ Current ship-gate status: **0.866667** vs target 0.95 on Panel A; Panel B has no
 
 - **#511 / TASK-IP-001** — Information-entropy auxiliary loss on slot-preserving predictor latent. **On the road to 0.95.** Formalizes Vopson's second law of infodynamics as a trainer loss term; expected to close 1-2 correlation points.
 - **#512 / TASK-IP-002** — Self-dual ECC over the 15-slot panel. Replaces #394's heuristic anti-compensation FSV with a Gates-style formal error-correcting code. Hygiene.
-- **#513 / TASK-IP-003** — Connectome rich-club analysis over the #388 cross-embedder correlation tensor. **Blocked by #526.** The feature/CF/FSV harness exists, and the real tensor shows rich-club signal, but aiwonder FSV `ff7e98a8...` found split reproducibility `0/7` at Jaccard ≥ 0.8 across tested split units. Do not treat this as a 0.95 gate-mover until the tensor substrate becomes split-stable.
+- **#513 / TASK-IP-003** — Connectome rich-club analysis over the #388 cross-embedder correlation tensor. **Blocked by #527.** #526 regenerated a larger split-stable tensor (`s96/r256`) and fixed the original split issue (`7/8` cells at Jaccard ≥ 0.8), but the same aiwonder evidence shows modularity above null only `1/8` and full finite-edge coverage `0`; do not treat this as a 0.95 gate-mover.
 - **#514 / TASK-IP-005** — Eon-style cold-load behavioural FSV. Safety net asserting predictor behaviour is encoded in weights, not transient training state. Catches training-state Goodhart orthogonal to #405's encoder-matched Goodhart defense.
 - **#417 augmentation** — Stars-as-vectors slice adds `mejepa_chunk_as_star` + `mejepa_constellation_membership` MCP tools as read-only navigation over the already-shipped #413 + #414 substrate. Operator UX; no new prediction head.
 
