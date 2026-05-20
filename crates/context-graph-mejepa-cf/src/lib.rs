@@ -120,6 +120,9 @@ pub const CF_MEJEPA_Q4_PASS_ANNOTATIONS: &str = "CF_MEJEPA_Q4_PASS_ANNOTATIONS";
 // for non-Q4 calibration rows until the next schema-version cleanup.
 // TASK-PY-G-050 / TASK-PY-G-012 — per-head calibration rows.
 pub const CF_MEJEPA_HEAD_CALIBRATIONS: &str = "CF_MEJEPA_HEAD_CALIBRATIONS";
+// TASK-PY-G-113 — sidecar provenance for every ship-gate-eligible threshold.
+pub const CF_MEJEPA_THRESHOLD_CALIBRATION_PROVENANCE: &str =
+    "CF_MEJEPA_THRESHOLD_CALIBRATION_PROVENANCE";
 pub const FROZEN_Q4_CFS: &[&str] = &[
     CF_MEJEPA_Q4_SECURITY_LABELS,
     CF_MEJEPA_Q4_PERF_LABELS,
@@ -255,6 +258,8 @@ pub const CROSS_PANEL_CFS: &[&str] = &[
 ];
 
 pub const OOD_HARVEST_CFS: &[&str] = &[CF_MEJEPA_OOD_HARVEST, CF_MEJEPA_OOD_CALIBRATIONS];
+
+pub const THRESHOLD_CALIBRATION_CFS: &[&str] = &[CF_MEJEPA_THRESHOLD_CALIBRATION_PROVENANCE];
 
 pub const FAILURE_MODE_CFS: &[&str] = &[
     CF_MEJEPA_FAILURE_MODE_LEVEL0,
@@ -398,6 +403,7 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_Q4_REASONING_LABELS,
     CF_MEJEPA_Q4_PASS_ANNOTATIONS,
     CF_MEJEPA_HEAD_CALIBRATIONS,
+    CF_MEJEPA_THRESHOLD_CALIBRATION_PROVENANCE,
     CF_MEJEPA_CONTRADICTION_THRESHOLDS,
     CF_MEJEPA_CONSTELLATION_PATTERNS,
     CF_MEJEPA_CONNECTOME_TOPOLOGY_FEATURES,
@@ -482,6 +488,7 @@ pub const EVAL_CFS: &[&str] = &[
     CF_MEJEPA_Q4_REASONING_LABELS,
     CF_MEJEPA_Q4_PASS_ANNOTATIONS,
     CF_MEJEPA_HEAD_CALIBRATIONS,
+    CF_MEJEPA_THRESHOLD_CALIBRATION_PROVENANCE,
     CF_MEJEPA_CONTRADICTION_THRESHOLDS,
     CF_MEJEPA_CONSTELLATION_PATTERNS,
     CF_MEJEPA_CONNECTOME_TOPOLOGY_FEATURES,
@@ -590,6 +597,7 @@ pub const HYGIENE_CFS: &[&str] = &[
     CF_MEJEPA_Q4_REASONING_LABELS,
     CF_MEJEPA_Q4_PASS_ANNOTATIONS,
     CF_MEJEPA_HEAD_CALIBRATIONS,
+    CF_MEJEPA_THRESHOLD_CALIBRATION_PROVENANCE,
     CF_MEJEPA_CONTRADICTION_THRESHOLDS,
     CF_MEJEPA_CONSTELLATION_PATTERNS,
     CF_MEJEPA_CONNECTOME_TOPOLOGY_FEATURES,
@@ -720,6 +728,7 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_Q4_REASONING_LABELS,
     CF_MEJEPA_Q4_PASS_ANNOTATIONS,
     CF_MEJEPA_HEAD_CALIBRATIONS,
+    CF_MEJEPA_THRESHOLD_CALIBRATION_PROVENANCE,
     CF_MEJEPA_CONTRADICTION_THRESHOLDS,
     CF_MEJEPA_CONSTELLATION_PATTERNS,
     CF_MEJEPA_CONNECTOME_TOPOLOGY_FEATURES,
@@ -811,6 +820,7 @@ mod tests {
             .chain(FINGERPRINT_CFS.iter())
             .chain(ADVERSARIAL_CFS.iter())
             .chain(OOD_HARVEST_CFS.iter())
+            .chain(THRESHOLD_CALIBRATION_CFS.iter())
             .chain(FAILURE_MODE_CFS.iter())
             .chain(REWARD_SIGNAL_CFS.iter())
             .chain(EXPLANATORY_KNOWLEDGE_CFS.iter())
@@ -900,6 +910,10 @@ mod tests {
             "CF_MEJEPA_Q4_PASS_ANNOTATIONS"
         );
         assert_eq!(CF_MEJEPA_HEAD_CALIBRATIONS, "CF_MEJEPA_HEAD_CALIBRATIONS");
+        assert_eq!(
+            CF_MEJEPA_THRESHOLD_CALIBRATION_PROVENANCE,
+            "CF_MEJEPA_THRESHOLD_CALIBRATION_PROVENANCE"
+        );
         assert_eq!(
             CF_MEJEPA_CONTRADICTION_THRESHOLDS,
             "CF_MEJEPA_CONTRADICTION_THRESHOLDS"
@@ -1074,6 +1088,17 @@ mod tests {
             assert!(
                 names.contains(cf),
                 "OOD harvest CF {cf} missing from daemon opener; TASK-PY-G-057 rows would not persist.",
+            );
+        }
+    }
+
+    #[test]
+    fn threshold_calibration_cfs_are_registered_in_daemon_opener() {
+        let names = all_hygiene_referenced_cfs();
+        for cf in THRESHOLD_CALIBRATION_CFS {
+            assert!(
+                names.contains(cf),
+                "threshold calibration CF {cf} missing from daemon opener; TASK-PY-G-113 rows would not persist.",
             );
         }
     }
