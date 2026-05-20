@@ -400,7 +400,7 @@ ME-JEPA-Code is pre-production (no SLA, no backwards compatibility per CLAUDE.md
 
 Three new FSV protocols enforce the binary-Q1/Q2/Q5 + labeled + mistake-driven + cross-panel-triangulated contract. Each protocol slots into the universal FSV-PROTOCOL §1.1–§1.5 (Source-of-truth, Trigger→Process→Outcome, hard rules, evidence, independent readback) — the additions below are protocol-specific assertions every FSV harness for these features must enforce.
 
-### 13.1 Failure-mode labeling FSV — Level 0 SHIPPED via #413; Level 1/2/3 planned via #404
+### 13.1 Failure-mode labeling FSV — Level 0 SHIPPED via #413; Level 1/2/3 substrate SHIPPED via #404
 
 **Level 0 — SHIPPED 2026-05-19.** The deterministic label compiler (`python_auto_label_discovery.py`) ran on the full aiwonder corpus with FSV PASS. Reference assertions enforced by the shipped FSV at `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/python_auto_label_discovery_fsv.json` (manifest sha256 `3cd0e3c6…`):
 
@@ -412,7 +412,16 @@ Three new FSV protocols enforce the binary-Q1/Q2/Q5 + labeled + mistake-driven +
 6. **Usefulness gate.** Of 1,800+ candidates, 491 entered the accepted registry; rejected labels carry typed reasons (`below_support`, `below_lift`, `unstable_across_partitions`, `degenerate_pass_only`, `degenerate_fail_only`, `leaky_target_on_live_input`).
 7. **Independent readback.** Every output JSONL byte-replayed after a clean re-read; sha256 of each artifact recorded in the FSV manifest.
 
-**Level 1/2/3 — Planned FSV assertions (epic #404 / TASK-PY-G-110), on top of the shipped Level-0 accepted registry:**
+**Level 1/2/3 — SHIPPED hierarchy-substrate assertions (epic #404 / TASK-PY-G-110), on top of the shipped Level-0 accepted registry.** Production aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv/run-1779270141206/task_py_g_110_failure_mode_hierarchy_fsv.json` (`passes=true`, sha256 `dec381b676734dea0671740308286df7a62f7de7543f6d7f15dca80e34c96945`):
+
+1. **Hierarchy rows materialized.** FSV materialized 7 Level-1 groups, 128 Level-2 skills, 578 Level-3 constellations, 9,477 Level-3 memberships, 706 named predictions, and 46,250 total chunk-skill membership rows after hierarchy expansion.
+2. **Independent readback.** FSV writes all hierarchy rows into RocksDB, flushes, drops, reopens, decodes every target CF, and asserts count equality plus sample row equality.
+3. **Runtime resolver consumption.** A persisted Level-3 membership resolves through the existing runtime ability resolver into `PredictionLabelContext.active_higher_ability_ids`.
+4. **No collapsed panel.** `flat_vector_concat_used=false` and `slot_identity_preserved=true` remain asserted through the substrate build.
+5. **Leakage policy.** Named predictions preserve `target_outcomes_used_for_calibration=true` while asserting `target_labels_used_as_live_inputs=false`.
+6. **No /mnt/d active I/O.** FSV records active path policy and asserts `/mnt/d` active reads/writes false.
+
+**Remaining #404 holdout/exemplar closure assertions:**
 
 1. **Aggregation coverage.** Every shipped accepted label in the Level-0 registry maps to exactly one Level-1 group (no orphan accepted labels).
 2. **Operator-rename idempotence.** Rename a group's name via `mejepa_label_failure_cluster`, flush, drop, reopen via production opener, decode the row back. Required: `group_id` unchanged, `operator_approved_name` updated, history preserved in `CF_MEJEPA_FAILURE_MODE_LEVEL1.audit_log`.

@@ -21,6 +21,7 @@ pub mod dda;
 pub mod distill;
 pub mod error;
 pub mod eval;
+pub mod failure_mode_hierarchy;
 pub mod label_bridge;
 pub mod labels;
 pub mod learning_signal;
@@ -54,6 +55,7 @@ pub use compression_progress::{
 };
 pub use config::{LossCoefficients, TrainingConfig, Q4_LOSS_COEFFICIENT_MAX};
 pub use error::{TrainerError, TrainerErrorCode};
+pub use failure_mode_hierarchy::*;
 pub use learning_signal::{
     compute_l_step, compute_per_head_learning_signal, DeltaKComponents, DeltaOmegaComponents,
     DeltaPComponents, DeltaXiComponents, HeadSignalInput, LearningSignal, PerHeadLearningSignal,

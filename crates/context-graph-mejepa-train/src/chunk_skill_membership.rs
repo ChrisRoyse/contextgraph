@@ -486,6 +486,23 @@ pub fn read_level2_skill_row(
     Ok(row)
 }
 
+pub fn read_all_level2_skill_rows(db: &DB) -> Result<Vec<Level2SkillRow>, TrainerError> {
+    let cf_handle = cf(db, CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS)?;
+    let mut rows = Vec::new();
+    for item in db.iterator_cf(cf_handle, IteratorMode::Start) {
+        let (key, value) = item.map_err(map_rocksdb_error)?;
+        let key = String::from_utf8(key.to_vec())
+            .map_err(|err| invalid("level2_skill.key", err.to_string()))?;
+        let row: Level2SkillRow = bincode::deserialize(&value).map_err(map_bincode_error)?;
+        if key != row.skill_id {
+            return Err(invalid("level2_skill.key", "key does not match payload"));
+        }
+        row.validate()?;
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
 pub fn read_chunk_skill_membership_row(
     db: &DB,
     membership_key: &str,
@@ -508,6 +525,28 @@ pub fn read_skill_reverse_index_row(
         row.validate()?;
     }
     Ok(row)
+}
+
+pub fn read_all_skill_reverse_index_rows(
+    db: &DB,
+) -> Result<Vec<SkillReverseIndexRow>, TrainerError> {
+    let cf_handle = cf(db, CF_MEJEPA_SKILL_REVERSE_INDEX)?;
+    let mut rows = Vec::new();
+    for item in db.iterator_cf(cf_handle, IteratorMode::Start) {
+        let (key, value) = item.map_err(map_rocksdb_error)?;
+        let key = String::from_utf8(key.to_vec())
+            .map_err(|err| invalid("skill_reverse_index.key", err.to_string()))?;
+        let row: SkillReverseIndexRow = bincode::deserialize(&value).map_err(map_bincode_error)?;
+        if key != row.reverse_index_key {
+            return Err(invalid(
+                "skill_reverse_index.key",
+                "key does not match payload",
+            ));
+        }
+        row.validate()?;
+        rows.push(row);
+    }
+    Ok(rows)
 }
 
 pub fn read_skill_lifecycle_audit_row(
