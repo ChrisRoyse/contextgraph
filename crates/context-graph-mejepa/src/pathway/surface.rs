@@ -1,11 +1,14 @@
+use std::collections::BTreeSet;
+
 use super::error::{
-    PathwayResult, first_closest_historical_pathway_id, invert_interval, require,
+    PathwayResult, first_closest_historical_pathway_id, invert_interval, require, validate_id,
     validate_probability,
 };
 use super::{
-    NORMALIZATION_EPSILON, PATHWAY_SCHEMA_VERSION, PathwayLeaf, PathwayLeafEvidence,
-    PathwayLeafKind, PathwayLeafOutcome, PathwayNode, PathwaySurfaceInput, PathwaySurfaceReport,
-    PathwayTreeRecord, Q5PathwayEventInput, SurfacedPathwayRecord, pathway_cfs,
+    NORMALIZATION_EPSILON, PATHWAY_SCHEMA_VERSION, PathwayLeaf, PathwayLeafCalibrationReference,
+    PathwayLeafCreditAssignment, PathwayLeafEvidence, PathwayLeafKind, PathwayLeafOutcome,
+    PathwayNode, PathwaySurfaceInput, PathwaySurfaceReport, PathwayTreeRecord, Q5PathwayEventInput,
+    SurfacedPathwayRecord, pathway_cfs,
 };
 
 pub fn surface_pathways(input: PathwaySurfaceInput) -> PathwayResult<PathwaySurfaceReport> {
@@ -15,18 +18,22 @@ pub fn surface_pathways(input: PathwaySurfaceInput) -> PathwayResult<PathwaySurf
         input.prediction_id_hex,
         &input.candidate_patch_sha256[..16]
     );
+    let leaf_calibration_references = input.leaf_calibration_references.clone();
+    let require_non_cold_calibration = input.require_non_cold_calibration;
     let mut branches = Vec::new();
     let q1_yes = q1_leaf(
         "q1:claim_exists:yes",
         PathwayLeafOutcome::Yes,
         input.q1_claim_exists_probability,
         input.q1_conformal_interval,
+        input.q1_claim_evidence.clone(),
     );
     let q1_no = q1_leaf(
         "q1:claim_exists:no",
         PathwayLeafOutcome::No,
         1.0 - input.q1_claim_exists_probability,
         invert_interval(input.q1_conformal_interval),
+        input.q1_claim_evidence.clone(),
     );
     branches.push(PathwayBranch {
         leaves: vec![q1_no],
@@ -37,7 +44,7 @@ pub fn surface_pathways(input: PathwaySurfaceInput) -> PathwayResult<PathwaySurf
         PathwayLeafOutcome::Pass,
         input.q2_oracle_pass_probability,
         input.q2_conformal_interval,
-        PathwayLeafEvidence::unknown(),
+        input.q2_pass_evidence.clone(),
     );
     let q2_fail = q2_leaf(
         "q2:oracle:fail",
@@ -91,6 +98,11 @@ pub fn surface_pathways(input: PathwaySurfaceInput) -> PathwayResult<PathwaySurf
         selected.push(branches[0].clone());
     }
     selected.truncate(input.top_k);
+    if require_non_cold_calibration {
+        validate_non_cold_calibration_coverage(&selected, &leaf_calibration_references)?;
+    }
+    let used_leaf_calibration_references =
+        used_leaf_calibration_references(&selected, &leaf_calibration_references);
     let raw_sum = selected
         .iter()
         .map(|branch| branch.joint_probability)
@@ -166,6 +178,7 @@ pub fn surface_pathways(input: PathwaySurfaceInput) -> PathwayResult<PathwaySurf
         schema_version: PATHWAY_SCHEMA_VERSION,
         tree,
         surfaced_pathways,
+        leaf_calibration_references: used_leaf_calibration_references,
         top_k_probability_sum,
         ambiguous_leaves_in_pathway: 0,
         source_of_truth_cfs: pathway_cfs(),
@@ -174,6 +187,49 @@ pub fn surface_pathways(input: PathwaySurfaceInput) -> PathwayResult<PathwaySurf
 
 pub fn reject_ambiguous_leaf(leaf: &PathwayLeaf) -> PathwayResult<()> {
     leaf.validate()
+}
+
+pub fn pathway_leaf_credit_assignment(
+    pathway: &SurfacedPathwayRecord,
+    leaf_id: &str,
+    observed_outcome: PathwayLeafOutcome,
+) -> PathwayResult<PathwayLeafCreditAssignment> {
+    pathway.validate()?;
+    validate_id("leaf_id", leaf_id)?;
+    let leaf = pathway
+        .leaf_chain
+        .iter()
+        .find(|candidate| candidate.leaf_id == leaf_id)
+        .ok_or_else(|| super::PathwayError::new("leaf_id is not present in pathway"))?;
+    require(
+        outcome_allowed_for_kind(leaf.leaf_kind, observed_outcome),
+        "observed outcome is not valid for leaf kind",
+    )?;
+    require(
+        leaf.predicted_outcome != observed_outcome,
+        "credit assignment requires observed outcome to disagree with prediction",
+    )?;
+    let credit = PathwayLeafCreditAssignment {
+        schema_version: PATHWAY_SCHEMA_VERSION,
+        pathway_id: pathway.pathway_id.clone(),
+        leaf_id: leaf.leaf_id.clone(),
+        prediction_id_hex: pathway.prediction_id_hex.clone(),
+        predicted_outcome: leaf.predicted_outcome,
+        observed_outcome,
+        mistake_context_key: format!(
+            "pathway-credit::{}::{}::{:?}",
+            pathway.pathway_id, leaf.leaf_id, observed_outcome
+        ),
+        accepted_label_ids: leaf.evidence.accepted_label_ids.clone(),
+        active_skill_ids: leaf.evidence.active_skill_ids.clone(),
+        higher_ability_ids: leaf.evidence.higher_ability_ids.clone(),
+        source_membership_keys: leaf.evidence.source_membership_keys.clone(),
+        skill_signature_hash: leaf.evidence.skill_signature_hash.clone(),
+        closest_historical_pathway_id: leaf.evidence.closest_historical_pathway_id.clone(),
+        unknown_signature: leaf.evidence.unknown_signature,
+    };
+    credit.validate()?;
+    Ok(credit)
 }
 
 #[derive(Debug, Clone)]
@@ -206,6 +262,7 @@ fn q1_leaf(
     predicted_outcome: PathwayLeafOutcome,
     predicted_probability: f32,
     conformal_interval: [f32; 2],
+    evidence: PathwayLeafEvidence,
 ) -> PathwayLeaf {
     PathwayLeaf {
         leaf_id: leaf_id.to_string(),
@@ -216,7 +273,7 @@ fn q1_leaf(
         event_id: None,
         event_label: Some("claim_exists".to_string()),
         cold_cell_warning: false,
-        evidence: PathwayLeafEvidence::unknown(),
+        evidence,
     }
 }
 
@@ -270,6 +327,64 @@ fn q5_leaf(
     }
 }
 
+fn validate_non_cold_calibration_coverage(
+    branches: &[PathwayBranch],
+    references: &[PathwayLeafCalibrationReference],
+) -> PathwayResult<()> {
+    let referenced = references
+        .iter()
+        .map(|reference| reference.leaf_id.as_str())
+        .collect::<BTreeSet<_>>();
+    for branch in branches {
+        for leaf in &branch.leaves {
+            if !leaf.cold_cell_warning {
+                require(
+                    referenced.contains(leaf.leaf_id.as_str()),
+                    format!(
+                        "non-cold pathway leaf {} is missing calibration row reference",
+                        leaf.leaf_id
+                    ),
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn used_leaf_calibration_references(
+    branches: &[PathwayBranch],
+    references: &[PathwayLeafCalibrationReference],
+) -> Vec<PathwayLeafCalibrationReference> {
+    let leaf_ids = branches
+        .iter()
+        .flat_map(|branch| branch.leaves.iter().map(|leaf| leaf.leaf_id.as_str()))
+        .collect::<BTreeSet<_>>();
+    let mut used = references
+        .iter()
+        .filter(|reference| leaf_ids.contains(reference.leaf_id.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    used.sort_by(|left, right| {
+        left.leaf_id
+            .cmp(&right.leaf_id)
+            .then_with(|| left.calibration_source_cf.cmp(&right.calibration_source_cf))
+            .then_with(|| left.calibration_row_key.cmp(&right.calibration_row_key))
+    });
+    used
+}
+
+fn outcome_allowed_for_kind(leaf_kind: PathwayLeafKind, outcome: PathwayLeafOutcome) -> bool {
+    match leaf_kind {
+        PathwayLeafKind::Q1ClaimExists | PathwayLeafKind::Q5ShiftEvent => {
+            matches!(outcome, PathwayLeafOutcome::Yes | PathwayLeafOutcome::No)
+        }
+        PathwayLeafKind::Q2OraclePass => {
+            matches!(outcome, PathwayLeafOutcome::Pass | PathwayLeafOutcome::Fail)
+        }
+        PathwayLeafKind::Ambiguous => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,6 +429,43 @@ mod tests {
                 .iter()
                 .any(|pathway| pathway.unknown_pathway_signature)
         );
+        assert!(
+            report
+                .leaf_calibration_references
+                .iter()
+                .any(|reference| reference.leaf_id == "q2:oracle:pass")
+        );
+    }
+
+    #[test]
+    fn pathway_credit_assignment_preserves_leaf_context() {
+        let report = surface_pathways(fixture_input()).unwrap();
+        let fail_pathway = report
+            .surfaced_pathways
+            .iter()
+            .find(|pathway| {
+                pathway
+                    .leaf_chain
+                    .iter()
+                    .any(|leaf| leaf.leaf_id == "q2:oracle:fail")
+            })
+            .unwrap();
+        let credit = pathway_leaf_credit_assignment(
+            fail_pathway,
+            "q2:oracle:fail",
+            PathwayLeafOutcome::Pass,
+        )
+        .unwrap();
+        assert_eq!(credit.pathway_id, fail_pathway.pathway_id);
+        assert_eq!(credit.leaf_id, "q2:oracle:fail");
+        assert_eq!(credit.predicted_outcome, PathwayLeafOutcome::Fail);
+        assert_eq!(credit.observed_outcome, PathwayLeafOutcome::Pass);
+        assert!(credit.active_skill_ids.contains(&"skill:api".to_string()));
+        assert!(
+            credit
+                .source_membership_keys
+                .contains(&"member:chunk-1".to_string())
+        );
     }
 
     fn fixture_input() -> PathwaySurfaceInput {
@@ -322,9 +474,7 @@ mod tests {
             active_skill_ids: vec!["skill:api".to_string()],
             higher_ability_ids: vec!["ability:service_contract".to_string()],
             source_membership_keys: vec!["member:chunk-1".to_string()],
-            skill_signature_hash: Some(
-                "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-            ),
+            skill_signature_hash: Some("skills:api-contract".to_string()),
             closest_historical_pathway_id: Some("historical:pathway:api".to_string()),
             unknown_signature: false,
         };
@@ -334,8 +484,10 @@ mod tests {
                 "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd".to_string(),
             q1_claim_exists_probability: 0.9,
             q1_conformal_interval: [0.82, 0.95],
+            q1_claim_evidence: evidence.clone(),
             q2_oracle_pass_probability: 0.7,
             q2_conformal_interval: [0.61, 0.77],
+            q2_pass_evidence: evidence.clone(),
             q2_fail_evidence: evidence.clone(),
             q5_events: vec![
                 Q5PathwayEventInput {
@@ -352,9 +504,42 @@ mod tests {
                     occurred_probability: 0.6,
                     conformal_interval: [0.50, 0.68],
                     cold_cell_warning: true,
-                    evidence,
+                    evidence: PathwayLeafEvidence::unknown(),
                 },
             ],
+            leaf_calibration_references: vec![
+                PathwayLeafCalibrationReference {
+                    leaf_id: "q1:claim_exists:yes".to_string(),
+                    calibration_source_cf: "CF_MEJEPA_HEAD_CALIBRATIONS".to_string(),
+                    calibration_row_key: "head:q1:claim_exists".to_string(),
+                },
+                PathwayLeafCalibrationReference {
+                    leaf_id: "q1:claim_exists:no".to_string(),
+                    calibration_source_cf: "CF_MEJEPA_HEAD_CALIBRATIONS".to_string(),
+                    calibration_row_key: "head:q1:claim_exists".to_string(),
+                },
+                PathwayLeafCalibrationReference {
+                    leaf_id: "q2:oracle:pass".to_string(),
+                    calibration_source_cf: "CF_MEJEPA_HEAD_CALIBRATIONS".to_string(),
+                    calibration_row_key: "head:q2:oracle_pass".to_string(),
+                },
+                PathwayLeafCalibrationReference {
+                    leaf_id: "q2:oracle:fail".to_string(),
+                    calibration_source_cf: "CF_MEJEPA_HEAD_CALIBRATIONS".to_string(),
+                    calibration_row_key: "head:q2:oracle_pass".to_string(),
+                },
+                PathwayLeafCalibrationReference {
+                    leaf_id: "q5:event:test_isolation:yes".to_string(),
+                    calibration_source_cf: "CF_MEJEPA_Q5_CALIBRATIONS".to_string(),
+                    calibration_row_key: "q5:event:test_isolation".to_string(),
+                },
+                PathwayLeafCalibrationReference {
+                    leaf_id: "q5:event:test_isolation:no".to_string(),
+                    calibration_source_cf: "CF_MEJEPA_Q5_CALIBRATIONS".to_string(),
+                    calibration_row_key: "q5:event:test_isolation".to_string(),
+                },
+            ],
+            require_non_cold_calibration: true,
             top_k: 5,
             prune_epsilon: 0.01,
             created_at_unix_ms: 1_779_360_000_000,

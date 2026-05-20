@@ -13,11 +13,12 @@ pub use store::{
     read_surfaced_pathway, read_surfaced_pathways_for_prediction, write_operator_pathway_choice,
     write_pathway_tree, write_surfaced_pathway,
 };
-pub use surface::{reject_ambiguous_leaf, surface_pathways};
+pub use surface::{pathway_leaf_credit_assignment, reject_ambiguous_leaf, surface_pathways};
 pub use types::{
-    OperatorPathwayChoiceRecord, PathwayLeaf, PathwayLeafEvidence, PathwayLeafKind,
-    PathwayLeafOutcome, PathwayNode, PathwaySurfaceInput, PathwaySurfaceReport, PathwayTreeRecord,
-    Q5PathwayEventInput, SurfacedPathwayRecord,
+    OperatorPathwayChoiceRecord, PathwayLeaf, PathwayLeafCalibrationReference,
+    PathwayLeafCreditAssignment, PathwayLeafEvidence, PathwayLeafKind, PathwayLeafOutcome,
+    PathwayNode, PathwaySurfaceInput, PathwaySurfaceReport, PathwayTreeRecord, Q5PathwayEventInput,
+    SurfacedPathwayRecord,
 };
 
 pub const PATHWAY_SCHEMA_VERSION: u32 = 1;

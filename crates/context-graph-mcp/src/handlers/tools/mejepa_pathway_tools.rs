@@ -10,8 +10,9 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use context_graph_mejepa::{
-    OperatorPathwayChoiceRecord, PathwaySurfaceInput, persist_pathway_surface,
-    read_operator_pathway_choices, read_pathway_tree, read_surfaced_pathway, surface_pathways,
+    OperatorPathwayChoiceRecord, PathwayLeafOutcome, PathwaySurfaceInput,
+    pathway_leaf_credit_assignment, persist_pathway_surface, read_operator_pathway_choices,
+    read_pathway_tree, read_surfaced_pathway, surface_pathways,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_OPERATOR_PATHWAY_CHOICES, CF_MEJEPA_PATHWAY_TREES, CF_MEJEPA_SURFACED_PATHWAYS,
@@ -154,11 +155,17 @@ fn run_pathway_inspect(request: PathwayInspectRequest) -> AnyhowResult<Value> {
         .map(|id| read_pathway_tree(&db, id))
         .transpose()?
         .flatten();
+    let credit_assignments_if_refuted = pathway
+        .as_ref()
+        .map(credit_assignments_if_refuted)
+        .transpose()?
+        .unwrap_or_default();
     Ok(json!({
         "tool": tool_names::MEJEPA_PATHWAY_INSPECT,
         "sourceOfTruth": source_of_truth(&db_path),
         "tree": tree,
-        "pathway": pathway
+        "pathway": pathway,
+        "creditAssignmentsIfRefuted": credit_assignments_if_refuted
     }))
 }
 
@@ -279,6 +286,28 @@ fn source_of_truth(db_path: &Path) -> Value {
         "binaryLeafOnly": true,
         "ambiguousLeafRejectCode": context_graph_mejepa::PATHWAY_AMBIGUOUS_LEAF_REJECTED
     })
+}
+
+fn credit_assignments_if_refuted(
+    pathway: &context_graph_mejepa::SurfacedPathwayRecord,
+) -> AnyhowResult<Vec<context_graph_mejepa::PathwayLeafCreditAssignment>> {
+    pathway
+        .leaf_chain
+        .iter()
+        .map(|leaf| {
+            let observed = opposite_outcome(leaf.predicted_outcome);
+            pathway_leaf_credit_assignment(pathway, &leaf.leaf_id, observed).map_err(Into::into)
+        })
+        .collect()
+}
+
+fn opposite_outcome(outcome: PathwayLeafOutcome) -> PathwayLeafOutcome {
+    match outcome {
+        PathwayLeafOutcome::Yes => PathwayLeafOutcome::No,
+        PathwayLeafOutcome::No => PathwayLeafOutcome::Yes,
+        PathwayLeafOutcome::Pass => PathwayLeafOutcome::Fail,
+        PathwayLeafOutcome::Fail => PathwayLeafOutcome::Pass,
+    }
 }
 
 fn default_limit() -> usize {
