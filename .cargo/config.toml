@@ -14,6 +14,13 @@ rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 # Keep that layer serial unless a caller explicitly opts into more parallelism.
 CMAKE_BUILD_PARALLEL_LEVEL = { value = "1", force = false }
 
+# aiwonder runs GCC 15.2.0. The vendored librocksdb-sys trace headers used by
+# this workspace can be compiled before <cstdint> is visible in fresh target
+# dirs, which fails on uint32_t/uint64_t. Keep the shim defaulted but not forced
+# so operators can override it if the dependency is upgraded.
+CXXFLAGS = { value = "-include cstdint", force = false }
+CXXFLAGS_x86_64_unknown_linux_gnu = { value = "-include cstdint", force = false }
+
 # Keep CUDA compiler/toolkit selection coherent. Without this, CMake can pair
 # CUDA 13.2 headers from /usr/local with the distro /usr/bin/nvcc 12.0.
 CUDA_HOME = { value = "/usr/local/cuda-13.2", force = false }

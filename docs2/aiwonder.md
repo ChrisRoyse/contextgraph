@@ -124,6 +124,17 @@ Per `~/.config/aiwonder.env`:
 
 The Cisco VPN must be active on Windows; WSL2 inherits the routes. Allowed UFW source subnet on aiwonder is the Cisco-assigned one — if it changes on reconnect, escalate per `leapablememory/docs2/aiwonder-system.md §3`.
 
+### 3.4 Cargo build environment
+
+The repo-level `.cargo/config.toml` is part of the aiwonder build contract. It pins native C++ build scripts to one job by default, pins CUDA 13.2 paths, and sets a non-forced RocksDB/GCC 15 shim:
+
+```toml
+CXXFLAGS = { value = "-include cstdint", force = false }
+CXXFLAGS_x86_64_unknown_linux_gnu = { value = "-include cstdint", force = false }
+```
+
+Why: aiwonder currently exposes GCC 15.2.0 as `c++`. Fresh target builds of the vendored `librocksdb-sys` trace replay sources can fail before ContextGraph code compiles because RocksDB's trace headers use `uint32_t` / `uint64_t` before `<cstdint>` is visible to that translation unit. The shim is harmless for C++ builds, is not forced over an operator-provided `CXXFLAGS`, and should be removed once RocksDB or the dependency wrapper includes `<cstdint>` directly. Tracked by #525.
+
 ---
 
 ## 4. The corpus run on aiwonder (target architecture)
