@@ -11,7 +11,7 @@
 use serde_json::json;
 use tracing::debug;
 
-use crate::protocol::{JsonRpcId, JsonRpcResponse, error_codes};
+use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
 use crate::tools::{get_tool_definitions, tool_names};
 
 use super::super::Handlers;
@@ -268,6 +268,9 @@ impl Handlers {
             tool_names::MEJEPA_SKILL_COVERAGE_AUDIT => call_mejepa_skill_coverage_audit(arguments),
             tool_names::MEJEPA_CHUNK_AS_STAR => call_mejepa_chunk_as_star(arguments),
             tool_names::MEJEPA_CONSTELLATION_MEMBERSHIP => call_mejepa_constellation_membership(arguments),
+            tool_names::MEJEPA_SKILL_IMPACT => call_mejepa_skill_impact(arguments),
+            tool_names::MEJEPA_SKILL_GRAPH_INSPECT => call_mejepa_skill_graph_inspect(arguments),
+            tool_names::MEJEPA_SKILL_CONFLICT_GRAPH => call_mejepa_skill_conflict_graph(arguments),
             tool_names::MEJEPA_RECORD_MISTAKE => call_mejepa_record_mistake(arguments),
             tool_names::MEJEPA_MISTAKE_HISTORY => call_mejepa_mistake_history(arguments),
             tool_names::MEJEPA_MISTAKE_LOOP_STATUS => call_mejepa_mistake_loop_status(arguments),

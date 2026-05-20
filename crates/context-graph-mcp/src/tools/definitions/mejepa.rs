@@ -2,7 +2,7 @@
 
 use crate::tools::names as tool_names;
 use crate::tools::types::ToolDefinition;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
@@ -1354,6 +1354,47 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "codeStateKey": {"type": "string", "minLength": 1},
                     "dbPath": {"type": "string"},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 20}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_SKILL_IMPACT,
+            "TASK-PY-G-120 read-only skill-impact traversal: chunk -> skills -> co-member chunks to expose refactoring blast radius without adding a prediction head.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["chunkId"],
+                "properties": {
+                    "chunkId": {"type": "string", "minLength": 1},
+                    "codeStateKey": {"type": "string", "minLength": 1},
+                    "dbPath": {"type": "string"},
+                    "depth": {"type": "integer", "minimum": 0, "maximum": 8, "default": 2},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 100}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_SKILL_GRAPH_INSPECT,
+            "TASK-PY-G-120 skill graph inspect: derive co-member skill edges from persisted chunk-skill memberships.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "skillId": {"type": "string", "minLength": 1},
+                    "dbPath": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 100}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_SKILL_CONFLICT_GRAPH,
+            "TASK-PY-G-120 skill conflict graph: derive mutually-exclusive candidate pairs from zero co-occurrence over persisted chunk-skill memberships.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 100}
                 }
             }),
         ),

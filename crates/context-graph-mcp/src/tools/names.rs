@@ -213,6 +213,12 @@ pub const MEJEPA_SKILL_COVERAGE_AUDIT: &str = "mcp__cgreality__mejepa_skill_cove
 pub const MEJEPA_CHUNK_AS_STAR: &str = "mcp__cgreality__mejepa_chunk_as_star";
 /// TASK-PY-G-120 named constellation membership readback for a chunk.
 pub const MEJEPA_CONSTELLATION_MEMBERSHIP: &str = "mcp__cgreality__mejepa_constellation_membership";
+/// TASK-PY-G-120 refactoring blast-radius traversal over chunk-skill memberships.
+pub const MEJEPA_SKILL_IMPACT: &str = "mcp__cgreality__mejepa_skill_impact";
+/// TASK-PY-G-120 skill co-membership graph inspect surface.
+pub const MEJEPA_SKILL_GRAPH_INSPECT: &str = "mcp__cgreality__mejepa_skill_graph_inspect";
+/// TASK-PY-G-120 zero-cooccurrence conflict candidate graph.
+pub const MEJEPA_SKILL_CONFLICT_GRAPH: &str = "mcp__cgreality__mejepa_skill_conflict_graph";
 /// TASK-PY-G-112B durable mistake-loop writer over online-head state.
 pub const MEJEPA_RECORD_MISTAKE: &str = "mcp__cgreality__mejepa_record_mistake";
 /// TASK-PY-G-112B durable mistake-loop history readback.

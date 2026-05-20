@@ -2,7 +2,7 @@
 
 Source files: `crates/context-graph-mcp/src/tools/definitions/mod.rs`, `crates/context-graph-mcp/src/tools/names.rs`, `crates/context-graph-mcp/src/tools/definitions/mejepa.rs`, all sibling `definitions/*.rs`, `crates/context-graph-mcp/src/deprecation.rs`.
 
-**Total tools registered** in `get_tool_definitions()`: **204** (test-enforced at `definitions/mod.rs:150`).
+**Total tools registered** in `get_tool_definitions()`: **213** (test-enforced at `definitions/mod.rs:150`).
 
 ---
 
@@ -10,7 +10,7 @@ Source files: `crates/context-graph-mcp/src/tools/definitions/mod.rs`, `crates/c
 
 | Function | Returns | Notes |
 |---|---|---|
-| `get_tool_definitions()` | `Vec<ToolDefinition>` (204 tools) | Default `--mode stdio` registry. Builds from 28 submodules. |
+| `get_tool_definitions()` | `Vec<ToolDefinition>` (213 tools) | Default `--mode stdio` registry. Builds from 28 submodules. |
 | `get_reality_loop_tool_definitions()` | smaller subset | `--mode reality-loop` lightweight surface |
 
 Tests enforce: exact total count + no duplicate names, exact per-submodule counts, retired `RETIRED_CGREALITY_TOOLS` not advertised in any registry. Retired callers receive `CCREALITY_ENGINE_RETIRED`.
@@ -31,7 +31,7 @@ Tests enforce: exact total count + no duplicate names, exact per-submodule count
 | `graph` | 2 | Deterministic graph read/query |
 | `entity` | 6 | E11 KEPLER/TransE: `extract_entities`, `infer_relationship`, `validate_knowledge`, etc. |
 | `embedder` | 10 + 2 standalone | Per-embedder search + `search_by_tokens` (E12) + standalone E13 |
-| **`mejepa`** | **57** | Predictor + heal + observe + ship-gate + chunk-skill linkage + mistake loop — see §3 |
+| **`mejepa`** | **66** | Predictor + heal + observe + ship-gate + chunk-skill linkage + mistake loop — see §3 |
 | `temporal` | 2 | `search_recent` (E2), `search_periodic` (E3) |
 | `graph_link` | 4 | K-NN navigation + typed edges |
 | `maintenance` | 1 | `repair_causal_relationships` |
@@ -45,13 +45,13 @@ Tests enforce: exact total count + no duplicate names, exact per-submodule count
 | `typed_edges` | 3 | Typed-edge training surface |
 | `dynamicjepa` | 39 | 5090jepa MCP surface |
 | `capability` | 1 | `get_capability_matrix` |
-| **Total** | **204** | |
+| **Total** | **213** | |
 
 ---
 
-## 3. The 57 `mejepa_*` Tools (the product surface)
+## 3. The 66 `mejepa_*` Tools (the product surface)
 
-Names live in `crates/context-graph-mcp/src/tools/names.rs:96-203`. Most are namespaced `mcp__cgreality__mejepa_*`; a small set use bare `mejepa_*`.
+Names live in `crates/context-graph-mcp/src/tools/names.rs`. Most are namespaced `mcp__cgreality__mejepa_*`; a small set use bare `mejepa_*`.
 
 ### 3.1 Predictor / Inference (Q1-Q5 RealityPrediction)
 
@@ -77,7 +77,7 @@ FSV: `/zfs/archive/contextgraph/fsv/task-py-g-112b-mistake-loop-mcp-tools-fsv/ru
 | `mejepa_mistake_history` | List mistake rows; optionally joined with replay rows and skill lifecycle audit | Read-only |
 | `mejepa_mistake_loop_status` | Aggregate: exact panel online-head state, repeat metrics, latest mistake, source-of-truth CF counts. Target: `mistake_repeat_rate ≤ 0.05`. | Read-only |
 
-### 3.3 Skill↔code linkage (#417 first slice, shipped 2026-05-19)
+### 3.3 Skill↔code linkage (#417 read surface, shipped 2026-05-19/20)
 
 Read-only navigation over training substrate; no new prediction surface. Binary-leaf constraint preserved at prediction boundaries.
 
@@ -87,6 +87,11 @@ Read-only navigation over training substrate; no new prediction surface. Binary-
 | `mejepa_code_to_skill` | Reverse: given `chunkId`, return every skill/higher-ability membership |
 | `mejepa_skill_set_query` | Boolean set query: chunks that have all `mustHave` skills AND none of `mustNotHave` |
 | `mejepa_skill_coverage_audit` | Coverage-gap audit: partition chunks with zero, one, or multiple memberships |
+| `mejepa_chunk_as_star` | Slot-routed constellation card for a chunk; preserves per-slot labels and does not flatten vectors |
+| `mejepa_constellation_membership` | Level-0/Level-1/Level-2/higher-ability membership view for a chunk |
+| `mejepa_skill_impact` | Refactoring blast-radius traversal: chunk → skills → co-member chunks |
+| `mejepa_skill_graph_inspect` | Skill co-membership graph readback derived from persisted chunk-skill rows |
+| `mejepa_skill_conflict_graph` | Zero-cooccurrence mutually-exclusive candidate pairs over persisted memberships |
 
 ### 3.4 Reality Compiler (per-project ingest)
 
@@ -212,7 +217,7 @@ Response format: tools return JSON. Errors carry `code: SCREAMING_SNAKE_CASE` ma
 
 | Mode | Tools advertised | Transport | Purpose |
 |---|---|---|---|
-| `--mode stdio` (default) | 204 (`get_tool_definitions`) | JSON-RPC over stdio | Production agent surface |
+| `--mode stdio` (default) | 213 (`get_tool_definitions`) | JSON-RPC over stdio | Production agent surface |
 | `--mode reality-loop` | smaller subset | JSON-RPC over stdio | Post-pivot Claude-Code-outer-loop surface |
 | HTTP transport | same as configured mode | HTTP | Multi-agent deployments |
 
@@ -282,20 +287,10 @@ Strict binary-leaf rule: any non-Q1/Q2/Q5 leaf → `PATHWAY_AMBIGUOUS_LEAF_REJEC
 
 | Tool (planned) | Purpose |
 |---|---|
-| `mejepa_skill_impact` | Refactoring blast-radius via skill graph |
-| `mejepa_skill_graph_inspect` | Read skill-of-skills graph (depends-on / composes-with / mutually-exclusive) |
 | `mejepa_cross_repo_skill_transfer` | Run Level-0 compiler over new project; match against existing skill signatures |
-| `mejepa_skill_conflict_graph` | Mutually exclusive skill graph from co-occurrence |
 | `mejepa_skill_browse` | Skill catalog browse: 128 skills + chunk counts + lifecycle |
 
-### 9.5 Stars-as-Vectors (#417 sub-capability)
-
-| Tool (planned) | Purpose |
-|---|---|
-| `mejepa_chunk_as_star` | "Stellar parameter card" view of an AST chunk: per-slot vector summaries + slot calibration cell + closest accepted Level-0 labels + active skills + closest exemplars |
-| `mejepa_constellation_membership` | Named constellations the chunk participates in across all hierarchy levels |
-
-### 9.6 Information-physics inspection (#511 / #512 / #514)
+### 9.5 Information-physics inspection (#511 / #512 / #514)
 
 | Tool (planned) | Purpose |
 |---|---|
@@ -303,7 +298,7 @@ Strict binary-leaf rule: any non-Q1/Q2/Q5 leaf → `PATHWAY_AMBIGUOUS_LEAF_REJEC
 | `mejepa_panel_ecc_inspect` | #512 — panel ECC syndrome, recovered slots, uncorrectable detection |
 | `mejepa_cold_load_status` | #514 — last cold-load drift; promotion-time baseline snapshot |
 
-### 9.7 Post-0.95 creativity-engine inspection (#516-#520)
+### 9.6 Post-0.95 creativity-engine inspection (#516-#520)
 
 | Tool (planned) | Purpose |
 |---|---|

@@ -2,13 +2,13 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result as AnyhowResult, bail};
-use serde::Deserialize;
+use anyhow::{bail, Context, Result as AnyhowResult};
 use serde::de::DeserializeOwned;
-use serde_json::{Value, json};
+use serde::Deserialize;
+use serde_json::{json, Value};
 
-use crate::handlers::Handlers;
 use crate::handlers::tools::helpers::ToolErrorKind;
+use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use crate::tools::names as tool_names;
 
@@ -80,6 +80,35 @@ struct ConstellationMembershipRequest {
     code_state_key: Option<String>,
     db_path: Option<PathBuf>,
     #[serde(default = "default_limit")]
+    limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SkillImpactRequest {
+    chunk_id: String,
+    code_state_key: Option<String>,
+    db_path: Option<PathBuf>,
+    #[serde(default = "default_impact_depth")]
+    depth: u32,
+    #[serde(default = "default_set_query_limit")]
+    limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SkillGraphInspectRequest {
+    skill_id: Option<String>,
+    db_path: Option<PathBuf>,
+    #[serde(default = "default_set_query_limit")]
+    limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SkillConflictGraphRequest {
+    db_path: Option<PathBuf>,
+    #[serde(default = "default_set_query_limit")]
     limit: usize,
 }
 
@@ -173,6 +202,51 @@ impl Handlers {
             Err(err) => {
                 skill_linkage_error(self, id, "MEJEPA_CONSTELLATION_MEMBERSHIP_FAILED", err)
             }
+        }
+    }
+
+    pub(crate) async fn call_mejepa_skill_impact(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request = match parse_tool_request(args, tool_names::MEJEPA_SKILL_IMPACT) {
+            Ok(value) => value,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_skill_impact(request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => skill_linkage_error(self, id, "MEJEPA_SKILL_IMPACT_FAILED", err),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_skill_graph_inspect(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request = match parse_tool_request(args, tool_names::MEJEPA_SKILL_GRAPH_INSPECT) {
+            Ok(value) => value,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_skill_graph_inspect(request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => skill_linkage_error(self, id, "MEJEPA_SKILL_GRAPH_INSPECT_FAILED", err),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_skill_conflict_graph(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request = match parse_tool_request(args, tool_names::MEJEPA_SKILL_CONFLICT_GRAPH) {
+            Ok(value) => value,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_skill_conflict_graph(request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => skill_linkage_error(self, id, "MEJEPA_SKILL_CONFLICT_GRAPH_FAILED", err),
         }
     }
 }
@@ -314,6 +388,52 @@ fn run_constellation_membership(request: ConstellationMembershipRequest) -> Anyh
     }))
 }
 
+fn run_skill_impact(request: SkillImpactRequest) -> AnyhowResult<Value> {
+    let db_path = resolve_skill_db_path(request.db_path)?;
+    let db = context_graph_mejepa_train::open_skill_linkage_rocksdb(&db_path, false)
+        .with_context(|| format!("open skill linkage DB {}", db_path.display()))?;
+    let report = context_graph_mejepa_train::skill_impact(
+        &db,
+        &request.chunk_id,
+        request.code_state_key.as_deref(),
+        request.depth,
+        request.limit,
+    )?;
+    Ok(json!({
+        "tool": tool_names::MEJEPA_SKILL_IMPACT,
+        "sourceOfTruth": source_of_truth(&db_path, None),
+        "report": report
+    }))
+}
+
+fn run_skill_graph_inspect(request: SkillGraphInspectRequest) -> AnyhowResult<Value> {
+    let db_path = resolve_skill_db_path(request.db_path)?;
+    let db = context_graph_mejepa_train::open_skill_linkage_rocksdb(&db_path, false)
+        .with_context(|| format!("open skill linkage DB {}", db_path.display()))?;
+    let report = context_graph_mejepa_train::skill_graph_inspect(
+        &db,
+        request.skill_id.as_deref(),
+        request.limit,
+    )?;
+    Ok(json!({
+        "tool": tool_names::MEJEPA_SKILL_GRAPH_INSPECT,
+        "sourceOfTruth": source_of_truth(&db_path, None),
+        "report": report
+    }))
+}
+
+fn run_skill_conflict_graph(request: SkillConflictGraphRequest) -> AnyhowResult<Value> {
+    let db_path = resolve_skill_db_path(request.db_path)?;
+    let db = context_graph_mejepa_train::open_skill_linkage_rocksdb(&db_path, false)
+        .with_context(|| format!("open skill linkage DB {}", db_path.display()))?;
+    let report = context_graph_mejepa_train::skill_conflict_graph(&db, request.limit)?;
+    Ok(json!({
+        "tool": tool_names::MEJEPA_SKILL_CONFLICT_GRAPH,
+        "sourceOfTruth": source_of_truth(&db_path, None),
+        "report": report
+    }))
+}
+
 fn optional_source_index(
     path: Option<&Path>,
 ) -> AnyhowResult<Option<context_graph_mejepa_train::ChunkSourceIndex>> {
@@ -328,6 +448,10 @@ fn default_limit() -> usize {
 
 fn default_set_query_limit() -> usize {
     100
+}
+
+fn default_impact_depth() -> u32 {
+    2
 }
 
 fn parse_tool_request<T: DeserializeOwned>(

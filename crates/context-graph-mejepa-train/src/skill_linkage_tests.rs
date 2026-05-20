@@ -3,8 +3,8 @@ use crate::chunk_skill_membership::{
     materialize_skill_memberships, write_skill_materialization_sync_readback,
 };
 use crate::skill_sequence_discovery::{
-    Level2SkillRow, SKILL_SEQUENCE_SCHEMA_VERSION, SkillOutcomeDistribution, SkillPromotionStatus,
-    SkillStepEvidence, SkillStepTemplate, SkillTransitionEdge,
+    Level2SkillRow, SkillOutcomeDistribution, SkillPromotionStatus, SkillStepEvidence,
+    SkillStepTemplate, SkillTransitionEdge, SKILL_SEQUENCE_SCHEMA_VERSION,
 };
 
 fn step(
@@ -174,6 +174,26 @@ fn seed_db() -> (tempfile::TempDir, Vec<String>, String, String) {
     (temp, chunk_ids, skill_a.skill_id, skill_b.skill_id)
 }
 
+fn write_isolated_skill(db: &DB) -> String {
+    let skill_c = skill(
+        "skill:isolated_state_transition:test",
+        "isolated_state_transition",
+        vec!["episode:c:other"],
+        ["ast_surface:for_loop", "pair_relation:state_mutation"],
+    );
+    let episodes_c = vec![episode(
+        "episode:c:other",
+        "chunk:c_only",
+        "pkg/c.py",
+        "state:other",
+        ["ast_surface:for_loop", "pair_relation:state_mutation"],
+    )];
+    let materialized_c =
+        materialize_skill_memberships(&skill_c, &episodes_c, 1_779_211_000_200).unwrap();
+    write_skill_materialization_sync_readback(db, &materialized_c).unwrap();
+    skill_c.skill_id
+}
+
 fn source_index(chunk_ids: &[String]) -> ChunkSourceIndex {
     let mut index = ChunkSourceIndex::default();
     index
@@ -210,6 +230,95 @@ fn source_index(chunk_ids: &[String]) -> ChunkSourceIndex {
 }
 
 #[test]
+fn skill_impact_walks_transitive_comemberships_monotonically() {
+    let (temp, _chunk_ids, skill_a, skill_b) = seed_db();
+    let db = open_test_db(temp.path());
+
+    let depth_one = skill_impact(&db, "chunk:a_only", Some("state:other"), 1, 20).unwrap();
+    let depth_two = skill_impact(&db, "chunk:a_only", Some("state:other"), 2, 20).unwrap();
+    let depth_one_chunks = depth_one
+        .impacted_chunks
+        .iter()
+        .map(|row| row.chunk_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let depth_two_chunks = depth_two
+        .impacted_chunks
+        .iter()
+        .map(|row| row.chunk_id.as_str())
+        .collect::<BTreeSet<_>>();
+
+    assert!(depth_one.no_new_prediction_head_introduced);
+    assert!(depth_two.no_new_prediction_head_introduced);
+    assert!(depth_one_chunks.contains("chunk:a_only"));
+    assert!(depth_one_chunks.contains("chunk:shared"));
+    assert!(!depth_one_chunks.contains("chunk:b_only"));
+    assert!(depth_two_chunks.contains("chunk:b_only"));
+    assert!(depth_two.total_impacted_chunks >= depth_one.total_impacted_chunks);
+    assert!(depth_two.touched_skill_ids.contains(&skill_a));
+    assert!(depth_two.touched_skill_ids.contains(&skill_b));
+}
+
+#[test]
+fn skill_graph_inspect_derives_comember_edges() {
+    let (temp, _chunk_ids, skill_a, skill_b) = seed_db();
+    let db = open_test_db(temp.path());
+
+    let report = skill_graph_inspect(&db, Some(&skill_a), 20).unwrap();
+
+    assert!(report.no_new_prediction_head_introduced);
+    assert_eq!(report.total_edges, 1);
+    let edge = report
+        .edges
+        .iter()
+        .find(|edge| {
+            (edge.skill_a_id == skill_a && edge.skill_b_id == skill_b)
+                || (edge.skill_a_id == skill_b && edge.skill_b_id == skill_a)
+        })
+        .unwrap();
+    assert_eq!(edge.relation, "co_member_chunk");
+    assert_eq!(edge.support_count, 2);
+    assert!(edge.shared_chunk_ids.contains(&"chunk:shared".to_string()));
+    assert!(edge
+        .shared_chunk_ids
+        .contains(&"chunk:shared:next".to_string()));
+}
+
+#[test]
+fn skill_conflict_graph_reports_zero_cooccurrence_candidates() {
+    let (temp, _chunk_ids, skill_a, skill_b) = seed_db();
+    let db = open_test_db(temp.path());
+    let skill_c = write_isolated_skill(&db);
+
+    let report = skill_conflict_graph(&db, 20).unwrap();
+    let pairs = report
+        .conflict_pairs
+        .iter()
+        .map(|pair| {
+            (
+                pair.skill_a_id.as_str().min(pair.skill_b_id.as_str()),
+                pair.skill_a_id.as_str().max(pair.skill_b_id.as_str()),
+                pair.relation.as_str(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+
+    assert!(report.no_new_prediction_head_introduced);
+    assert_eq!(report.skill_count, 3);
+    assert_eq!(report.evaluated_pair_count, 3);
+    assert_eq!(report.total_conflict_pairs, 2);
+    assert!(pairs.contains(&(
+        skill_a.as_str().min(skill_c.as_str()),
+        skill_a.as_str().max(skill_c.as_str()),
+        "mutually_exclusive_candidate"
+    )));
+    assert!(pairs.contains(&(
+        skill_b.as_str().min(skill_c.as_str()),
+        skill_b.as_str().max(skill_c.as_str()),
+        "mutually_exclusive_candidate"
+    )));
+}
+
+#[test]
 fn skill_to_code_returns_source_bytes() {
     let (temp, chunk_ids, skill_a, _skill_b) = seed_db();
     let db = open_test_db(temp.path());
@@ -228,12 +337,10 @@ fn skill_to_code_returns_source_bytes() {
 
     assert_eq!(report.total_matching_memberships, 4);
     assert!(report.no_new_prediction_head_introduced);
-    assert!(
-        report
-            .chunks
-            .iter()
-            .any(|row| row.chunk_id == "chunk:shared" && row.source_text.is_some())
-    );
+    assert!(report
+        .chunks
+        .iter()
+        .any(|row| row.chunk_id == "chunk:shared" && row.source_text.is_some()));
 }
 
 #[test]
@@ -274,16 +381,12 @@ fn constellation_membership_returns_named_levels_for_chunk() {
     assert_eq!(report.memberships.len(), 2);
     assert!(report.level2_skill_ids.contains(&skill_a));
     assert!(report.level2_skill_ids.contains(&skill_b));
-    assert!(
-        report
-            .level1_group_ids
-            .contains(&"group:sequence".to_string())
-    );
-    assert!(
-        report
-            .live_level0_label_ids
-            .contains(&"ast_surface:import_from".to_string())
-    );
+    assert!(report
+        .level1_group_ids
+        .contains(&"group:sequence".to_string()));
+    assert!(report
+        .live_level0_label_ids
+        .contains(&"ast_surface:import_from".to_string()));
     assert!(report.no_new_prediction_head_introduced);
 }
 
@@ -307,27 +410,21 @@ fn chunk_as_star_uses_label_routes_without_flat_vector_stats() {
 
     assert!(report.active_skill_ids.contains(&skill_a));
     assert!(report.active_skill_ids.contains(&skill_b));
-    assert!(
-        report
-            .source
-            .as_ref()
-            .is_some_and(|row| row.source_text.is_some())
-    );
-    assert!(
-        report
-            .slot_parameter_cards
-            .iter()
-            .any(|card| card.slot_id == "e_ast")
-    );
+    assert!(report
+        .source
+        .as_ref()
+        .is_some_and(|row| row.source_text.is_some()));
+    assert!(report
+        .slot_parameter_cards
+        .iter()
+        .any(|card| card.slot_id == "e_ast"));
     assert!(report.no_new_prediction_head_introduced);
     assert!(!report.flat_vector_concat_used);
     assert!(!report.target_outcomes_used_as_live_inputs);
-    assert!(
-        report
-            .slot_parameter_cards
-            .iter()
-            .all(|card| card.vector_norm.is_none() && card.sparsity.is_none())
-    );
+    assert!(report
+        .slot_parameter_cards
+        .iter()
+        .all(|card| card.vector_norm.is_none() && card.sparsity.is_none()));
 }
 
 #[test]
@@ -348,26 +445,18 @@ fn skill_set_query_returns_intersection_minus_exclusion() {
         intersection.matching_chunk_ids,
         vec!["chunk:shared", "chunk:shared:next"]
     );
-    assert!(
-        !excluded
-            .matching_chunk_ids
-            .contains(&"chunk:shared".to_string())
-    );
-    assert!(
-        !excluded
-            .matching_chunk_ids
-            .contains(&"chunk:shared:next".to_string())
-    );
-    assert!(
-        excluded
-            .matching_chunk_ids
-            .contains(&"chunk:a_only".to_string())
-    );
-    assert!(
-        excluded
-            .matching_chunk_ids
-            .contains(&"chunk:a_only:next".to_string())
-    );
+    assert!(!excluded
+        .matching_chunk_ids
+        .contains(&"chunk:shared".to_string()));
+    assert!(!excluded
+        .matching_chunk_ids
+        .contains(&"chunk:shared:next".to_string()));
+    assert!(excluded
+        .matching_chunk_ids
+        .contains(&"chunk:a_only".to_string()));
+    assert!(excluded
+        .matching_chunk_ids
+        .contains(&"chunk:a_only:next".to_string()));
 }
 
 #[test]

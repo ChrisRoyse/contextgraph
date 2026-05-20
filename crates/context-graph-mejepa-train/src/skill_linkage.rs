@@ -1,25 +1,32 @@
 //! TASK-PY-G-120 byte-grounded read surface over the persisted #414 chunk-skill substrate.
 
 use crate::chunk_skill_membership::{
-    ChunkSkillMembershipRow, membership_key, read_level2_skill_row,
+    membership_key, read_level2_skill_row, ChunkSkillMembershipRow,
 };
 use crate::error::TrainerError;
 use crate::skill_sequence_discovery::{Level2SkillRow, SKILL_SEQUENCE_SCHEMA_VERSION};
 use crate::skill_validation;
 use context_graph_mejepa_cf::CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP;
-use rocksdb::{DB, IteratorMode};
+use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+#[path = "skill_linkage_graph.rs"]
+mod skill_linkage_graph;
 #[path = "skill_linkage_source.rs"]
 mod skill_linkage_source;
 #[path = "skill_linkage_storage.rs"]
 mod skill_linkage_storage;
 
+pub use skill_linkage_graph::{
+    skill_conflict_graph, skill_graph_inspect, skill_impact, SkillConflictGraphReport,
+    SkillConflictPair, SkillGraphEdge, SkillGraphInspectReport, SkillImpactChunk,
+    SkillImpactReport,
+};
 pub use skill_linkage_source::{
-    ChunkSourceIndex, ChunkSourceRow, load_chunk_source_index_jsonl,
-    load_chunk_source_index_jsonl_with_limit,
+    load_chunk_source_index_jsonl, load_chunk_source_index_jsonl_with_limit, ChunkSourceIndex,
+    ChunkSourceRow,
 };
 pub use skill_linkage_storage::{open_skill_linkage_rocksdb, skill_linkage_cfs};
 

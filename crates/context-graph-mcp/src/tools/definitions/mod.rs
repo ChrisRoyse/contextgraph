@@ -1,6 +1,6 @@
 //! Tool definitions for the MCP surface.
 //!
-//! The current default registry exposes 204 tools, including the 39-tool
+//! The current default registry exposes 213 tools, including the 39-tool
 //! DynamicJEPA MCP surface. The
 //! ccreality tool surface is listed separately in reality-loop mode.
 
@@ -38,7 +38,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(204);
+    let mut tools = Vec::with_capacity(213);
 
     // Capability discovery tools (1) - compact map of embedders, CFs, and tools
     tools.extend(capability::definitions());
@@ -88,7 +88,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // E12/E13 standalone search tools (2)
     tools.extend(embedder::standalone_definitions());
 
-    // ME-JEPA Phase 4 inference/TCT + Phase 5 self-healing + Phase 6 hygiene + Phase 8 eval tools + UTML audit + Phase F/G/EK runbook/status tools (54)
+    // ME-JEPA Phase 4 inference/TCT + Phase 5 self-healing + Phase 6 hygiene + Phase 8 eval tools + UTML audit + Phase F/G/EK runbook/status tools (66)
     tools.extend(mejepa::definitions());
 
     // Temporal tools (2) - E2 recency search, E3 periodic search
@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
-        assert_eq!(tools.len(), 204);
+        assert_eq!(tools.len(), 213);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(entity::definitions().len(), 6);
         assert_eq!(embedder::definitions().len(), 10);
         assert_eq!(embedder::standalone_definitions().len(), 2);
-        assert_eq!(mejepa::definitions().len(), 54);
+        assert_eq!(mejepa::definitions().len(), 66);
         assert_eq!(temporal::definitions().len(), 2);
         assert_eq!(graph_link::definitions().len(), 4);
         assert_eq!(maintenance::definitions().len(), 1);

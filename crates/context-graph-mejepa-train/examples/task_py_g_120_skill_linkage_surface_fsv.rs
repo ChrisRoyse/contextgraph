@@ -6,14 +6,14 @@ use context_graph_mejepa_train::chunk_skill_membership::{
     count_cf_rows, materialize_skill_memberships, write_skill_materialization_sync_readback,
 };
 use context_graph_mejepa_train::skill_linkage::{
-    SkillLinkageOptions, chunk_as_star, code_to_skill, constellation_membership,
-    load_chunk_source_index_jsonl, open_skill_linkage_rocksdb, skill_coverage_audit,
-    skill_set_query, skill_to_code,
+    chunk_as_star, code_to_skill, constellation_membership, load_chunk_source_index_jsonl,
+    open_skill_linkage_rocksdb, skill_conflict_graph, skill_coverage_audit, skill_graph_inspect,
+    skill_impact, skill_set_query, skill_to_code, SkillLinkageOptions,
 };
 use context_graph_mejepa_train::skill_sequence_discovery::{
-    Level2SkillRow, SKILL_SEQUENCE_SCHEMA_VERSION, SkillEpisodeRow, SkillOutcomeDistribution,
-    SkillOutcomeObservation, SkillOutcomeVerdict, SkillPromotionStatus, SkillStepEvidence,
-    SkillStepTemplate, SkillTransitionEdge,
+    Level2SkillRow, SkillEpisodeRow, SkillOutcomeDistribution, SkillOutcomeObservation,
+    SkillOutcomeVerdict, SkillPromotionStatus, SkillStepEvidence, SkillStepTemplate,
+    SkillTransitionEdge, SKILL_SEQUENCE_SCHEMA_VERSION,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -86,6 +86,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
     let materialized_b = materialize_skill_memberships(&skill_b, &episodes_b, 1_779_212_000_100)?;
     write_skill_materialization_sync_readback(&db, &materialized_b)?;
+
+    let skill_c = skill(
+        "skill:isolated_state_transition:fsv",
+        "isolated_state_transition",
+        vec!["episode:c:other"],
+        ["ast_surface:for_loop", "pair_relation:state_mutation"],
+    );
+    let episodes_c = vec![episode(
+        "episode:c:other",
+        "chunk:c_only",
+        "pkg/c.py",
+        "state:other",
+        ["ast_surface:for_loop", "pair_relation:state_mutation"],
+    )];
+    let materialized_c = materialize_skill_memberships(&skill_c, &episodes_c, 1_779_212_000_200)?;
+    write_skill_materialization_sync_readback(&db, &materialized_c)?;
     db.flush()?;
     let after_counts = cf_counts(&db)?;
     drop(db);
@@ -126,6 +142,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "chunk:a_only:next".to_string(),
             "chunk:b_only".to_string(),
             "chunk:b_only:next".to_string(),
+            "chunk:c_only".to_string(),
+            "chunk:c_only:next".to_string(),
             "chunk:orphan".to_string(),
         ],
         10,
@@ -142,6 +160,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             require_source_text: true,
         },
     )?;
+    let skill_impact_depth_one =
+        skill_impact(&readback_db, "chunk:a_only", Some("state:other"), 1, 20)?;
+    let skill_impact_depth_two =
+        skill_impact(&readback_db, "chunk:a_only", Some("state:other"), 2, 20)?;
+    let skill_graph_report = skill_graph_inspect(&readback_db, Some(&skill_a.skill_id), 20)?;
+    let conflict_graph_report = skill_conflict_graph(&readback_db, 20)?;
 
     let edge_missing_source_fails_closed = skill_to_code(
         &readback_db,
@@ -213,22 +237,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .is_some()
         && !chunk_as_star_report.flat_vector_concat_used
         && !chunk_as_star_report.target_outcomes_used_as_live_inputs;
-    let counts_pass = after_counts.get("level2Skills") == Some(&json!(2))
-        && after_counts.get("chunkSkillMembership") == Some(&json!(8))
-        && after_counts.get("skillReverseIndex") == Some(&json!(4))
-        && after_counts.get("skillLifecycleAudit") == Some(&json!(2));
+    let skill_impact_pass = skill_impact_depth_one
+        .impacted_chunks
+        .iter()
+        .any(|row| row.chunk_id == "chunk:shared")
+        && !skill_impact_depth_one
+            .impacted_chunks
+            .iter()
+            .any(|row| row.chunk_id == "chunk:b_only")
+        && skill_impact_depth_two
+            .impacted_chunks
+            .iter()
+            .any(|row| row.chunk_id == "chunk:b_only")
+        && skill_impact_depth_two.total_impacted_chunks
+            >= skill_impact_depth_one.total_impacted_chunks;
+    let skill_graph_pass = skill_graph_report.edges.iter().any(|edge| {
+        edge.relation == "co_member_chunk"
+            && edge.shared_chunk_ids.contains(&"chunk:shared".to_string())
+            && ((edge.skill_a_id == skill_a.skill_id && edge.skill_b_id == skill_b.skill_id)
+                || (edge.skill_a_id == skill_b.skill_id && edge.skill_b_id == skill_a.skill_id))
+    });
+    let conflict_graph_pass = conflict_graph_report.total_conflict_pairs >= 2
+        && conflict_graph_report.conflict_pairs.iter().any(|pair| {
+            (pair.skill_a_id == skill_a.skill_id && pair.skill_b_id == skill_c.skill_id)
+                || (pair.skill_a_id == skill_c.skill_id && pair.skill_b_id == skill_a.skill_id)
+        })
+        && conflict_graph_report.conflict_pairs.iter().any(|pair| {
+            (pair.skill_a_id == skill_b.skill_id && pair.skill_b_id == skill_c.skill_id)
+                || (pair.skill_a_id == skill_c.skill_id && pair.skill_b_id == skill_b.skill_id)
+        });
+    let counts_pass = after_counts.get("level2Skills") == Some(&json!(3))
+        && after_counts.get("chunkSkillMembership") == Some(&json!(10))
+        && after_counts.get("skillReverseIndex") == Some(&json!(5))
+        && after_counts.get("skillLifecycleAudit") == Some(&json!(3));
     let no_new_head_pass = skill_to_code_report.no_new_prediction_head_introduced
         && code_to_skill_report.no_new_prediction_head_introduced
         && set_query_report.no_new_prediction_head_introduced
         && coverage_audit.no_new_prediction_head_introduced
         && constellation_membership_report.no_new_prediction_head_introduced
-        && chunk_as_star_report.no_new_prediction_head_introduced;
+        && chunk_as_star_report.no_new_prediction_head_introduced
+        && skill_impact_depth_one.no_new_prediction_head_introduced
+        && skill_impact_depth_two.no_new_prediction_head_introduced
+        && skill_graph_report.no_new_prediction_head_introduced
+        && conflict_graph_report.no_new_prediction_head_introduced;
     let all_passed = skill_to_code_pass
         && code_to_skill_pass
         && set_query_pass
         && coverage_pass
         && constellation_membership_pass
         && chunk_as_star_pass
+        && skill_impact_pass
+        && skill_graph_pass
+        && conflict_graph_pass
         && counts_pass
         && no_new_head_pass
         && edge_missing_source_fails_closed
@@ -267,6 +327,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "coverage_audit_partitions_universe": coverage_pass,
             "constellation_membership_returns_named_levels": constellation_membership_pass,
             "chunk_as_star_preserves_slot_routes": chunk_as_star_pass,
+            "skill_impact_blast_radius_monotonic": skill_impact_pass,
+            "skill_graph_inspect_derives_comember_edges": skill_graph_pass,
+            "skill_conflict_graph_derives_zero_cooccurrence_pairs": conflict_graph_pass,
             "cf_counts_match_expected": counts_pass,
             "no_new_prediction_head_introduced": no_new_head_pass
         },
@@ -276,7 +339,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "skill_set_query": set_query_report,
             "coverage_audit": coverage_audit,
             "constellation_membership": constellation_membership_report,
-            "chunk_as_star": chunk_as_star_report
+            "chunk_as_star": chunk_as_star_report,
+            "skill_impact_depth_one": skill_impact_depth_one,
+            "skill_impact_depth_two": skill_impact_depth_two,
+            "skill_graph_inspect": skill_graph_report,
+            "skill_conflict_graph": conflict_graph_report
         },
         "edge_cases": {
             "require_source_text_without_source_index_fails_closed": edge_missing_source_fails_closed,
@@ -416,6 +483,8 @@ fn write_source_jsonl(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         ("chunk:a_only:next", "pkg/a.py"),
         ("chunk:b_only", "pkg/b.py"),
         ("chunk:b_only:next", "pkg/b.py"),
+        ("chunk:c_only", "pkg/c.py"),
+        ("chunk:c_only:next", "pkg/c.py"),
     ];
     let mut file = fs::File::create(path)?;
     for (chunk_id, relative_path) in chunks {
