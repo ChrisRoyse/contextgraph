@@ -271,6 +271,10 @@ impl Handlers {
             tool_names::MEJEPA_RECORD_MISTAKE => call_mejepa_record_mistake(arguments),
             tool_names::MEJEPA_MISTAKE_HISTORY => call_mejepa_mistake_history(arguments),
             tool_names::MEJEPA_MISTAKE_LOOP_STATUS => call_mejepa_mistake_loop_status(arguments),
+            tool_names::MEJEPA_PATHWAY_SURFACE => call_mejepa_pathway_surface(arguments),
+            tool_names::MEJEPA_PATHWAY_INSPECT => call_mejepa_pathway_inspect(arguments),
+            tool_names::MEJEPA_PATHWAY_RECORD_CHOICE => call_mejepa_pathway_record_choice(arguments),
+            tool_names::MEJEPA_PATHWAY_HISTORY => call_mejepa_pathway_history(arguments),
             // Provenance tools (Phase P3)
             tool_names::GET_AUDIT_TRAIL => call_get_audit_trail(arguments),
             tool_names::GET_MERGE_HISTORY => call_get_merge_history(arguments),

@@ -48,6 +48,7 @@ pub mod mejepa_eval_tools;
 mod mejepa_fingerprint_tools;
 mod mejepa_hygiene_tools;
 mod mejepa_mistake_loop_tools;
+mod mejepa_pathway_tools;
 mod mejepa_phase7_storage;
 mod mejepa_phase7_tools;
 mod mejepa_reward_audit_tools;

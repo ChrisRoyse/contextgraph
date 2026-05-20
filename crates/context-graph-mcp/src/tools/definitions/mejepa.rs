@@ -1444,6 +1444,101 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 }
             }),
         ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_PATHWAY_SURFACE,
+            "TASK-PY-G-119 pathway surface: persist and return top-K normalized Q1/Q2/Q5 binary-leaf consequence pathways from explicit predictor leaf probabilities. Q4/ambiguous leaves fail closed.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["input"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "createIfMissing": {"type": "boolean", "default": false},
+                    "input": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "predictionIdHex",
+                            "candidatePatchSha256",
+                            "q1ClaimExistsProbability",
+                            "q1ConformalInterval",
+                            "q2OraclePassProbability",
+                            "q2ConformalInterval",
+                            "q2FailEvidence",
+                            "q5Events",
+                            "topK",
+                            "pruneEpsilon",
+                            "createdAtUnixMs"
+                        ],
+                        "properties": {
+                            "predictionIdHex": {"type": "string", "pattern": "^[0-9A-Fa-f]{8,}$"},
+                            "candidatePatchSha256": {"type": "string", "pattern": "^[0-9A-Fa-f]{64}$"},
+                            "q1ClaimExistsProbability": {"type": "number", "minimum": 0, "maximum": 1},
+                            "q1ConformalInterval": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number", "minimum": 0, "maximum": 1}},
+                            "q2OraclePassProbability": {"type": "number", "minimum": 0, "maximum": 1},
+                            "q2ConformalInterval": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number", "minimum": 0, "maximum": 1}},
+                            "q2FailEvidence": {"type": "object", "additionalProperties": true},
+                            "q5Events": {"type": "array", "maxItems": 8, "items": {"type": "object", "additionalProperties": true}},
+                            "topK": {"type": "integer", "minimum": 1, "maximum": 20},
+                            "pruneEpsilon": {"type": "number", "minimum": 0, "maximum": 1},
+                            "createdAtUnixMs": {"type": "integer"}
+                        }
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_PATHWAY_INSPECT,
+            "TASK-PY-G-119 pathway inspect: read a persisted pathway and/or tree from CF_MEJEPA_SURFACED_PATHWAYS and CF_MEJEPA_PATHWAY_TREES.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "pathwayId": {"type": "string", "minLength": 1},
+                    "treeId": {"type": "string", "minLength": 1}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_PATHWAY_RECORD_CHOICE,
+            "TASK-PY-G-119 pathway choice writer: idempotently persist the operator-selected future in CF_MEJEPA_OPERATOR_PATHWAY_CHOICES.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["choice"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "choice": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": ["schemaVersion", "choiceId", "predictionIdHex", "pathwayId", "operatorId", "chosenAtUnixMs"],
+                        "properties": {
+                            "schemaVersion": {"type": "integer", "const": 1},
+                            "choiceId": {"type": "string", "minLength": 1},
+                            "predictionIdHex": {"type": "string", "pattern": "^[0-9A-Fa-f]{8,}$"},
+                            "pathwayId": {"type": "string", "minLength": 1},
+                            "operatorId": {"type": "string", "minLength": 1},
+                            "rationaleText": {"type": ["string", "null"]},
+                            "chosenAtUnixMs": {"type": "integer"}
+                        }
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_PATHWAY_HISTORY,
+            "TASK-PY-G-119 pathway history: read operator pathway choices and joined surfaced pathways from RocksDB source of truth.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "predictionIdHex": {"type": "string", "pattern": "^[0-9A-Fa-f]{8,}$"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 100}
+                }
+            }),
+        ),
     ]
 }
 

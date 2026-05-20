@@ -219,6 +219,14 @@ pub const MEJEPA_RECORD_MISTAKE: &str = "mcp__cgreality__mejepa_record_mistake";
 pub const MEJEPA_MISTAKE_HISTORY: &str = "mcp__cgreality__mejepa_mistake_history";
 /// TASK-PY-G-112B online-head repeat-mistake status readback.
 pub const MEJEPA_MISTAKE_LOOP_STATUS: &str = "mcp__cgreality__mejepa_mistake_loop_status";
+/// TASK-PY-G-119 top-K binary-leaf consequence pathway surface.
+pub const MEJEPA_PATHWAY_SURFACE: &str = "mcp__cgreality__mejepa_pathway_surface";
+/// TASK-PY-G-119 single pathway/tree inspection readback.
+pub const MEJEPA_PATHWAY_INSPECT: &str = "mcp__cgreality__mejepa_pathway_inspect";
+/// TASK-PY-G-119 operator pathway choice writer.
+pub const MEJEPA_PATHWAY_RECORD_CHOICE: &str = "mcp__cgreality__mejepa_pathway_record_choice";
+/// TASK-PY-G-119 operator pathway choice history.
+pub const MEJEPA_PATHWAY_HISTORY: &str = "mcp__cgreality__mejepa_pathway_history";
 /// Phase A bootstrap status readback from ME-JEPA RocksDB sources of truth.
 pub const MEJEPA_BOOTSTRAP_STATUS: &str = "mcp__cgreality__mejepa_bootstrap_status";
 // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========
