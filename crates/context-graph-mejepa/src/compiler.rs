@@ -1763,13 +1763,15 @@ fn invalid_source_diagnostic(
         Ok(_) => None,
         Err(err) => {
             let start_byte = err.range().start().to_usize();
+            let line = line_for_byte(code.source.as_bytes(), start_byte)
+                .clamp(1, source_line_count.min(u32::MAX as usize) as u32);
             Some(InvalidSourceDiagnostic {
                 side,
                 language: code.language.clone(),
                 path: code.path.clone(),
                 kind: sanitize_diagnostic_text(&format!("{:?}", err.error)),
                 detail: sanitize_diagnostic_text(&err.to_string()),
-                line: line_for_byte(code.source.as_bytes(), start_byte),
+                line,
                 column: column_for_byte(code.source.as_bytes(), start_byte),
                 source_len_bytes: code.source.len(),
                 source_line_count,
@@ -2824,6 +2826,20 @@ mod tests {
         let (_, panel_t1, panel_t2) = materialize_inference_panels(&patch, &context).unwrap();
         assert!(panel_t1.slot(InstrumentSlot::EAst)[0] > 0.90);
         assert!(panel_t1.slot(InstrumentSlot::EDiff)[0] > 0.90);
+        assert!(panel_t2.slot(InstrumentSlot::EStaticAnalysis)[0] > 0.0);
+    }
+
+    #[test]
+    fn eof_parse_error_line_is_clamped_to_source_line_count() {
+        let (mut patch, context) = sample_patch_context("change answer increment");
+        let mut after = String::new();
+        for _ in 0..29 {
+            after.push_str("x = 1\n");
+        }
+        after.push_str("def broken(\n");
+        patch.ast_diff.hunks[0].after = after;
+        let (_, panel_t1, panel_t2) = materialize_inference_panels(&patch, &context).unwrap();
+        assert!(panel_t1.slot(InstrumentSlot::EAst)[0] > 0.90);
         assert!(panel_t2.slot(InstrumentSlot::EStaticAnalysis)[0] > 0.0);
     }
 

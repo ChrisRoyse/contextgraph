@@ -35,6 +35,8 @@ The corpus survives. The pre-fix measurement does not. The post-fix real-input r
 
 **Real-input constellation ablation rerun (#537 partial).** The #398-style calibrated constellation ablation was rerun against the #535 `0.7937270999` baseline: `/zfs/archive/contextgraph/fsv/task-py-g-097-constellation-ablation-with-calibration-realinput-fsv/run-20260520T170156Z/`, FSV sha256 `03096e466278f60631328207b07fe0aba6c6ffca622d21a468fa167ad33d730a`, report sha256 `4d0f8af83f5ab7ffdf6541979336c55d232dfa2fdd2c88e231cd4a7deb2a6ee4`, metrics sha256 `62c2774fc05658bb4529b608a48e2a181299057ad6125b87bf22c16151a32e30`. Result remains `no_promotion`: calibrated full constellation correlation is `null`, Brier is `0.7539461538`, best local baseline Brier is `0.0085552058`, and all ship-eligible component ablations are `demote`. This is not a gate mover.
 
+**Real-input `lambda_inv` ablation rerun (#546 / #537).** The EK-012 ablation harness was replaced after discovering the old path used `EchoPredictor` + `CategoryMajorityOracle`. New aiwonder FSV: `/zfs/archive/contextgraph/fsv/task-ek-012-bidirectional-ablation-realinput-fsv/run-20260520T172657Z/bidirectional_ablation_realinput_fsv.json`, report sha256 `bebb84c8b7800fd5567803a43025ee19a88182b32c77f8a4eeee4c9eb2dc2dd4`, readback sha256 `f9e24a09758a38e90c7579181dbf5956f28648ea7de86d4a1b53c517d43c5cbe`. Result: all variants regress against the #535 `0.7937270999` rank-lift baseline of record. Best rank-safe predictor-output variant is `lambda_inv=0.0` at `0.6704055071` (`-0.1233215928` vs #535); positive lambdas are worse (`0.25 → 0.5562775135`, `0.5 → 0.5049043894`, `1.0 → 0.5726367831`). Typed finding: `regression`; keep `lambda_inv=0.0` for ship-gate ordering.
+
 ---
 
 ## 2. Recent Closures (recent → older)
@@ -89,7 +91,7 @@ FSV: `/zfs/archive/contextgraph/fsv/q4-doctrine-freeze-fsv/q4_doctrine_freeze_fs
 
 **❌ The numerical ablation results (#393 / #398) are INVALID.** They measured the slot-preserving predictor against synthetic-input panels coming out of `compiler.rs::vectors_for` → `deterministic_vector`. The "best ablation `per_slot_pairwise_temporal` ΔBrier `+0.21353…` Δcorrelation `-0.5790…`" finding is meaningless — the predictor was fitting hash noise, not real cross-embedder relationships. Same for the `no_promotion` recommendation (calibrated full-constellation Brier `0.7539…` vs best local baseline `0.00855…`).
 
-**❌ The framing "slot-preserving architecture is correct but doesn't close the 0.083 gap by itself" is also INVALID.** The new real-input Panel A baseline is `0.7937270999`, but #393/#398 have not yet been rerun against that baseline. Pre-fix, neither architecture could have closed the gap because the input was synthetic for both.
+**❌ The framing "slot-preserving architecture is correct but doesn't close the 0.083 gap by itself" is also INVALID.** That conclusion came from synthetic-input measurements. The real-input Panel A baseline is now `0.7937270999`; the #398-style calibrated rerun and EK-012 `λ_inv` rerun are complete and negative, but they do not validate the old pre-fix conclusion.
 
 Architectural correction from flat-panel projection to slot-preserving array operations. All children closed; remaining open child #392 (temporal trajectory features) is a follow-up signal surface.
 
@@ -98,7 +100,7 @@ Key results:
 - **#388 cross-embedder correlation tensors:** 516 per-cell/window/slot distribution tensors, 2,838 per-cell/window upper-triangle pair tensors, 1,400 valid pair rows, 8 full cell/windows with all 66 active pair rows.
 - **#389 per-slot calibration + OOD:** 12 global slot calibrations, 84 fail-closed per-cell slot rows, 66 pair calibrations, strict-conjunction OOD policy. `RealityPrediction.per_slot_ood_reasons` persists through `CF_MEJEPA_LIVE_PREDICTIONS`.
 - **#390 constellation intelligence:** found real e7/e9 `zero_fraction` pair AUC `0.5882968` vs own-slot baseline `0.40438873` over 109 rows, lift `+0.18390805`.
-- **#393 / #398 ablations:** #398-style calibrated rerun is now remeasured against the real Panel A baseline (`0.7937270999`) and remains `no_promotion`. #393 / uncalibrated companion evidence and `lambda_inv` remain open under #537; the old EK-012 `lambda_inv` evaluator is not ship-gate-valid and is tracked by #546.
+- **#393 / #398 ablations:** #398-style calibrated rerun is now remeasured against the real Panel A baseline (`0.7937270999`) and remains `no_promotion`. EK-012 `lambda_inv` is also remeasured by #546; best rank-safe variant is `lambda_inv=0.0` at `0.6704055071`, so positive `lambda_inv` is not a gate mover. #393 / uncalibrated companion evidence remains open under #537.
 - **#394 anti-compensation FSV:** corrupted/missing/stale/dimension-shifted slots, contradictory pair relationships, and temporal jumps remain non-ship-gate-eligible even when aggregate normalized scores would pass.
 
 ### 2.10 OOD harvest + serving gate (#276 / #129 — closed 2026-05-19)
@@ -167,11 +169,11 @@ Six P0 issues (#422 / #424 / #426 / #437 / #438 / #441 / #452) document and fix 
 
 ### 5.2 Slot-preserving refactor is doctrinally correct (status update)
 
-The architectural correction from flat-panel projection (#385) to slot-preserving array operations (#386-#398) IS doctrinally correct: cross-embedder dim-wise compares are now structurally forbidden, anti-compensation is enforced, per-slot calibration + OOD reasons persist. **But the previous claim that "slot-preserving architecture doesn't close the 0.083 gap by itself" is INVALID** — that conclusion was drawn from #398's calibrated ablation rerun, which ran the slot-preserving predictor against synthetic-input panels. Rerun #393/#398 against the `0.7937270999` real Panel A baseline before using those numbers for queue ordering.
+The architectural correction from flat-panel projection (#385) to slot-preserving array operations (#386-#398) IS doctrinally correct: cross-embedder dim-wise compares are now structurally forbidden, anti-compensation is enforced, per-slot calibration + OOD reasons persist. **But the previous claim that "slot-preserving architecture doesn't close the 0.083 gap by itself" is INVALID** — that conclusion was drawn from #398's calibrated ablation rerun, which ran the slot-preserving predictor against synthetic-input panels. The real-input #398-style rerun and #546 `lambda_inv` rerun are now negative evidence; finish the remaining #393 companion evidence before using ablation numbers for queue ordering.
 
 ### 5.3 Evidence-weighted ordering (#383, pinned context) — recheck required
 
-#383 says gate-active issue order must be evidence-weighted, not vision-weighted. **The "evidence" that drove the recent reordering was from synthetic-input ablations and is itself invalidated.** Re-rank from the `0.7937270999` real Panel A baseline; the top of the queue is now real-input ablation reruns plus targeted repair for the remaining weak cells.
+#383 says gate-active issue order must be evidence-weighted, not vision-weighted. **The "evidence" that drove the recent reordering was from synthetic-input ablations and is itself invalidated.** Re-rank from the `0.7937270999` real Panel A baseline; the top of the queue is now remaining real-input companion evidence plus targeted repair for the weak cells exposed by #535/#546.
 
 ### 5.4 The labeling layer is the meaning surface (#404 / #413 / #414 / #418) — substrate stands
 
