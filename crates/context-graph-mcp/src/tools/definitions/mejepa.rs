@@ -1326,6 +1326,38 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_CHUNK_AS_STAR,
+            "TASK-PY-G-120 chunk-as-star readback: show a chunk's slot-routed labels, active skills, membership keys, and optional source bytes without flattening slot identity or inventing vector stats.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["chunkId"],
+                "properties": {
+                    "chunkId": {"type": "string", "minLength": 1},
+                    "codeStateKey": {"type": "string", "minLength": 1},
+                    "dbPath": {"type": "string"},
+                    "chunksJsonl": {"type": "string", "description": "Optional AST chunk JSONL with source_text/source byte spans for literal code readback."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 20},
+                    "requireSourceText": {"type": "boolean", "default": false}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_CONSTELLATION_MEMBERSHIP,
+            "TASK-PY-G-120 constellation-membership readback: return the Level-0 labels, Level-1 groups, Level-2 skills, higher abilities, and source membership keys for a chunk.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["chunkId"],
+                "properties": {
+                    "chunkId": {"type": "string", "minLength": 1},
+                    "codeStateKey": {"type": "string", "minLength": 1},
+                    "dbPath": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 20}
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_RECORD_MISTAKE,
             "TASK-PY-G-112B mistake-loop writer: persist a durable mistake row and replay row, then apply the exact-panel online-head update through RocksDB source-of-truth readback.",
             json!({

@@ -6,13 +6,14 @@ use context_graph_mejepa_train::chunk_skill_membership::{
     count_cf_rows, materialize_skill_memberships, write_skill_materialization_sync_readback,
 };
 use context_graph_mejepa_train::skill_linkage::{
-    code_to_skill, load_chunk_source_index_jsonl, open_skill_linkage_rocksdb, skill_coverage_audit,
-    skill_set_query, skill_to_code, SkillLinkageOptions,
+    SkillLinkageOptions, chunk_as_star, code_to_skill, constellation_membership,
+    load_chunk_source_index_jsonl, open_skill_linkage_rocksdb, skill_coverage_audit,
+    skill_set_query, skill_to_code,
 };
 use context_graph_mejepa_train::skill_sequence_discovery::{
-    Level2SkillRow, SkillEpisodeRow, SkillOutcomeDistribution, SkillOutcomeObservation,
-    SkillOutcomeVerdict, SkillPromotionStatus, SkillStepEvidence, SkillStepTemplate,
-    SkillTransitionEdge, SKILL_SEQUENCE_SCHEMA_VERSION,
+    Level2SkillRow, SKILL_SEQUENCE_SCHEMA_VERSION, SkillEpisodeRow, SkillOutcomeDistribution,
+    SkillOutcomeObservation, SkillOutcomeVerdict, SkillPromotionStatus, SkillStepEvidence,
+    SkillStepTemplate, SkillTransitionEdge,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -129,6 +130,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ],
         10,
     )?;
+    let constellation_membership_report =
+        constellation_membership(&readback_db, "chunk:shared", Some("state:shared"), 10)?;
+    let chunk_as_star_report = chunk_as_star(
+        &readback_db,
+        "chunk:shared",
+        Some("state:shared"),
+        Some(&source_index_readback),
+        SkillLinkageOptions {
+            limit: 10,
+            require_source_text: true,
+        },
+    )?;
 
     let edge_missing_source_fails_closed = skill_to_code(
         &readback_db,
@@ -170,6 +183,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let coverage_pass = coverage_audit.total_chunk_universe
         == coverage_audit.chunks_with_membership + coverage_audit.chunks_without_membership
         && coverage_audit.zero_membership_chunk_ids == vec!["chunk:orphan"];
+    let constellation_membership_pass = constellation_membership_report.memberships.len() == 2
+        && constellation_membership_report
+            .level2_skill_ids
+            .contains(&skill_a.skill_id)
+        && constellation_membership_report
+            .level2_skill_ids
+            .contains(&skill_b.skill_id)
+        && constellation_membership_report
+            .level1_group_ids
+            .contains(&"group:sequence".to_string())
+        && constellation_membership_report
+            .live_level0_label_ids
+            .contains(&"ast_surface:import_from".to_string());
+    let chunk_as_star_pass = chunk_as_star_report
+        .slot_parameter_cards
+        .iter()
+        .any(|card| card.slot_id == "e_ast")
+        && chunk_as_star_report
+            .active_skill_ids
+            .contains(&skill_a.skill_id)
+        && chunk_as_star_report
+            .active_skill_ids
+            .contains(&skill_b.skill_id)
+        && chunk_as_star_report
+            .source
+            .as_ref()
+            .and_then(|source| source.source_text.as_ref())
+            .is_some()
+        && !chunk_as_star_report.flat_vector_concat_used
+        && !chunk_as_star_report.target_outcomes_used_as_live_inputs;
     let counts_pass = after_counts.get("level2Skills") == Some(&json!(2))
         && after_counts.get("chunkSkillMembership") == Some(&json!(8))
         && after_counts.get("skillReverseIndex") == Some(&json!(4))
@@ -177,11 +220,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let no_new_head_pass = skill_to_code_report.no_new_prediction_head_introduced
         && code_to_skill_report.no_new_prediction_head_introduced
         && set_query_report.no_new_prediction_head_introduced
-        && coverage_audit.no_new_prediction_head_introduced;
+        && coverage_audit.no_new_prediction_head_introduced
+        && constellation_membership_report.no_new_prediction_head_introduced
+        && chunk_as_star_report.no_new_prediction_head_introduced;
     let all_passed = skill_to_code_pass
         && code_to_skill_pass
         && set_query_pass
         && coverage_pass
+        && constellation_membership_pass
+        && chunk_as_star_pass
         && counts_pass
         && no_new_head_pass
         && edge_missing_source_fails_closed
@@ -218,6 +265,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "code_to_skill_preserves_many_to_many_membership": code_to_skill_pass,
             "skill_set_query_exact_intersection": set_query_pass,
             "coverage_audit_partitions_universe": coverage_pass,
+            "constellation_membership_returns_named_levels": constellation_membership_pass,
+            "chunk_as_star_preserves_slot_routes": chunk_as_star_pass,
             "cf_counts_match_expected": counts_pass,
             "no_new_prediction_head_introduced": no_new_head_pass
         },
@@ -225,7 +274,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "skill_to_code": skill_to_code_report,
             "code_to_skill": code_to_skill_report,
             "skill_set_query": set_query_report,
-            "coverage_audit": coverage_audit
+            "coverage_audit": coverage_audit,
+            "constellation_membership": constellation_membership_report,
+            "chunk_as_star": chunk_as_star_report
         },
         "edge_cases": {
             "require_source_text_without_source_index_fails_closed": edge_missing_source_fails_closed,

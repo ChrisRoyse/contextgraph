@@ -2,13 +2,13 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result as AnyhowResult};
-use serde::de::DeserializeOwned;
+use anyhow::{Context, Result as AnyhowResult, bail};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde::de::DeserializeOwned;
+use serde_json::{Value, json};
 
-use crate::handlers::tools::helpers::ToolErrorKind;
 use crate::handlers::Handlers;
+use crate::handlers::tools::helpers::ToolErrorKind;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use crate::tools::names as tool_names;
 
@@ -58,6 +58,29 @@ struct SkillCoverageAuditRequest {
     chunks_jsonl: Option<PathBuf>,
     #[serde(default = "default_set_query_limit")]
     sample_limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ChunkAsStarRequest {
+    chunk_id: String,
+    code_state_key: Option<String>,
+    db_path: Option<PathBuf>,
+    chunks_jsonl: Option<PathBuf>,
+    #[serde(default = "default_limit")]
+    limit: usize,
+    #[serde(default)]
+    require_source_text: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ConstellationMembershipRequest {
+    chunk_id: String,
+    code_state_key: Option<String>,
+    db_path: Option<PathBuf>,
+    #[serde(default = "default_limit")]
+    limit: usize,
 }
 
 impl Handlers {
@@ -118,6 +141,38 @@ impl Handlers {
         match run_skill_coverage_audit(request) {
             Ok(value) => self.tool_result(id, value),
             Err(err) => skill_linkage_error(self, id, "MEJEPA_SKILL_COVERAGE_AUDIT_FAILED", err),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_chunk_as_star(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request = match parse_tool_request(args, tool_names::MEJEPA_CHUNK_AS_STAR) {
+            Ok(value) => value,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_chunk_as_star(request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => skill_linkage_error(self, id, "MEJEPA_CHUNK_AS_STAR_FAILED", err),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_constellation_membership(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request = match parse_tool_request(args, tool_names::MEJEPA_CONSTELLATION_MEMBERSHIP) {
+            Ok(value) => value,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_constellation_membership(request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => {
+                skill_linkage_error(self, id, "MEJEPA_CONSTELLATION_MEMBERSHIP_FAILED", err)
+            }
         }
     }
 }
@@ -216,6 +271,45 @@ fn run_skill_coverage_audit(request: SkillCoverageAuditRequest) -> AnyhowResult<
         "sourceOfTruth": source_of_truth(&db_path, request.chunks_jsonl.as_deref()),
         "chunkUniverseSource": chunk_universe_source,
         "chunkUniverseSize": chunk_universe.len(),
+        "report": report
+    }))
+}
+
+fn run_chunk_as_star(request: ChunkAsStarRequest) -> AnyhowResult<Value> {
+    let db_path = resolve_skill_db_path(request.db_path)?;
+    let source_index = optional_source_index(request.chunks_jsonl.as_deref())?;
+    let db = context_graph_mejepa_train::open_skill_linkage_rocksdb(&db_path, false)
+        .with_context(|| format!("open skill linkage DB {}", db_path.display()))?;
+    let report = context_graph_mejepa_train::chunk_as_star(
+        &db,
+        &request.chunk_id,
+        request.code_state_key.as_deref(),
+        source_index.as_ref(),
+        context_graph_mejepa_train::SkillLinkageOptions {
+            limit: request.limit,
+            require_source_text: request.require_source_text,
+        },
+    )?;
+    Ok(json!({
+        "tool": tool_names::MEJEPA_CHUNK_AS_STAR,
+        "sourceOfTruth": source_of_truth(&db_path, request.chunks_jsonl.as_deref()),
+        "report": report
+    }))
+}
+
+fn run_constellation_membership(request: ConstellationMembershipRequest) -> AnyhowResult<Value> {
+    let db_path = resolve_skill_db_path(request.db_path)?;
+    let db = context_graph_mejepa_train::open_skill_linkage_rocksdb(&db_path, false)
+        .with_context(|| format!("open skill linkage DB {}", db_path.display()))?;
+    let report = context_graph_mejepa_train::constellation_membership(
+        &db,
+        &request.chunk_id,
+        request.code_state_key.as_deref(),
+        request.limit,
+    )?;
+    Ok(json!({
+        "tool": tool_names::MEJEPA_CONSTELLATION_MEMBERSHIP,
+        "sourceOfTruth": source_of_truth(&db_path, None),
         "report": report
     }))
 }
