@@ -580,7 +580,7 @@ pub trait TeleologicalMemoryStore: Send + Sync {
 
     /// Store a causal relationship with embedded description.
     ///
-    /// Stores the LLM-generated causal description with its E1 embedding
+    /// Stores the retained causal description with its E1 embedding
     /// and full provenance (source content + fingerprint ID).
     ///
     /// # Arguments
@@ -686,7 +686,7 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     /// Search causal relationships using hybrid source + explanation scoring.
     ///
     /// Combines source-anchored embeddings with explanation embeddings to prevent
-    /// LLM-generated explanations from clustering together. Source content is unique
+    /// explanation text from clustering together. Source content is unique
     /// per document, providing diversity; explanation provides mechanism detail.
     ///
     /// # Hybrid Scoring

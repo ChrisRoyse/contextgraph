@@ -37,7 +37,7 @@ pub enum MemorySource {
         /// Total number of chunks from the file.
         total_chunks: u32,
     },
-    /// Memory created from LLM-generated causal explanation.
+    /// Memory created from a legacy generated causal explanation.
     ///
     /// Legacy source type for old generated causal explanations. The E5+LLM
     /// generation path is retired; new ME-JEPA training should use active

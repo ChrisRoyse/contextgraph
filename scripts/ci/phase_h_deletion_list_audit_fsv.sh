@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# retired-inner-actor audit: checks the Phase H deletion ledger for retired
+# local LLM/reality-loop artifacts; not an active runtime path.
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FSV_ROOT="${FSV_ROOT:-/zfs/archive/contextgraph/fsv/phase-h-deletion-list-audit-fsv}"
 RUN_ID="run-$(date -u +%s)-$$"
 RUN_ROOT="$FSV_ROOT/$RUN_ID"
 ARTIFACT="$FSV_ROOT/deletion_list_audit_fsv.json"
-AUDIT_REPORT="memory/reports/phase-h-deletion-list-audit.md"
-DELETION_LIST="docs/futurebuild/11_DELETION_LIST_INNER_LOOP.md"
+AUDIT_REPORT="backupdocs/memory.archive/reports/phase-h-deletion-list-audit.md"
+DELETION_LIST="docs/futurebuild/_archived/11_DELETION_LIST_INNER_LOOP.md"
 EXPECTED_ENTRY_COUNT=81
 
 mkdir -p "$RUN_ROOT"
@@ -18,6 +21,7 @@ build_release_sha="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')
 frontmatter_value() {
   local path="$1"
   local key="$2"
+  [[ -f "$path" ]] || return 0
   awk -v key="$key" '
     NR == 1 && $0 == "---" { in_frontmatter = 1; next }
     in_frontmatter && $0 == "---" { exit }
@@ -27,6 +31,32 @@ frontmatter_value() {
       exit
     }
   ' "$path"
+}
+
+skill_absent_or_retired() {
+  local path="$1"
+  local superseded_by="${2:-}"
+  local forbidden_regex="${3:-}"
+
+  if [[ ! -e "$path" ]]; then
+    return 0
+  fi
+
+  local status
+  status="$(frontmatter_value "$path" status || true)"
+  [[ "$status" == "retired" ]] || return 1
+
+  if [[ -n "$superseded_by" ]]; then
+    local superseded
+    superseded="$(frontmatter_value "$path" superseded_by || true)"
+    [[ "$superseded" == "$superseded_by" ]] || return 1
+  fi
+
+  if [[ -n "$forbidden_regex" ]] && rg -q "$forbidden_regex" "$path"; then
+    return 1
+  fi
+
+  return 0
 }
 
 ENTRY_JSONL="$RUN_ROOT/audit_entries.jsonl"
@@ -113,37 +143,29 @@ fi
 iterate_skill=".claude/skills/ccreality-iterate/SKILL.md"
 trigger_skill=".claude/skills/ccreality-trigger-check/SKILL.md"
 readback_skill=".claude/skills/ccreality-readback/SKILL.md"
-iterate_status="$(frontmatter_value "$iterate_skill" status || true)"
-iterate_superseded_by="$(frontmatter_value "$iterate_skill" superseded_by || true)"
-trigger_status="$(frontmatter_value "$trigger_skill" status || true)"
 dl041_iterate_retired=false
-if [[ "$iterate_status" == "retired" && "$iterate_superseded_by" == ".claude/loop.md" ]] \
-  && ! rg -q 'mcp__cgreality__reality_latest_root|mcp__cgreality__reality_trigger_decision|cc-reality-harness-editor|cc-reality-diagnostician|cc-reality-reward-analyst|next_inner_prompt_delta' "$iterate_skill"; then
+if skill_absent_or_retired "$iterate_skill" ".claude/loop.md" 'mcp__cgreality__reality_latest_root|mcp__cgreality__reality_trigger_decision|cc-reality-harness-editor|cc-reality-diagnostician|cc-reality-reward-analyst|next_inner_prompt_delta'; then
   dl041_iterate_retired=true
 fi
 
 trigger_skill_retired=false
-if [[ "$trigger_status" == "retired" ]] \
-  && ! rg -q 'mcp__cgreality__reality_latest_root|mcp__cgreality__reality_trigger_decision|/ccreality-iterate' "$trigger_skill"; then
+if skill_absent_or_retired "$trigger_skill" "" 'mcp__cgreality__reality_latest_root|mcp__cgreality__reality_trigger_decision|/ccreality-iterate'; then
   trigger_skill_retired=true
 fi
 
 readback_no_retired_iterate=false
-if ! rg -q '/ccreality-iterate' "$readback_skill"; then
+if [[ ! -e "$readback_skill" ]] || ! rg -q '/ccreality-iterate' "$readback_skill"; then
   readback_no_retired_iterate=true
 fi
 
-current_phase_updated=false
-if rg -q 'Phase G convergence plus Phase H residue closure' memory/context/current-phase.md \
-  && ! rg -q 'Qwen|Hermes|Ollama|reality_run_attempt|Engine PID|fire-and-forget|wallclock budget' memory/context/current-phase.md; then
-  current_phase_updated=true
+memory_archive_pointer_current=false
+if rg -q 'backupdocs/memory\.archive' AGENTS.md CLAUDE.md; then
+  memory_archive_pointer_current=true
 fi
 
-futurebuild_docs_updated=false
-if rg -q 'TASK-LOOP-008.*complete.*#136' docs/futurebuild/12_IMPLEMENTATION_PHASES.md \
-  && rg -q 'TASK-LOOP-008.*complete.*#136' docs/futurebuild/13_TASK_INDEX.md \
-  && rg -q '/ccreality-iterate.*RETIRED.*#136' docs/futurebuild/11_DELETION_LIST_INNER_LOOP.md; then
-  futurebuild_docs_updated=true
+archived_deletion_list_current=false
+if rg -q '/ccreality-iterate.*RETIRED.*#136|TASK-LOOP-008.*complete.*#136' "$DELETION_LIST"; then
+  archived_deletion_list_current=true
 fi
 
 all_passed=false
@@ -160,8 +182,8 @@ if [[ "$report_exists" == "true" \
   && "$dl041_iterate_retired" == "true" \
   && "$trigger_skill_retired" == "true" \
   && "$readback_no_retired_iterate" == "true" \
-  && "$current_phase_updated" == "true" \
-  && "$futurebuild_docs_updated" == "true" ]]; then
+  && "$memory_archive_pointer_current" == "true" \
+  && "$archived_deletion_list_current" == "true" ]]; then
   all_passed=true
 fi
 
@@ -194,8 +216,8 @@ jq -n \
   --argjson dl041_iterate_retired "$dl041_iterate_retired" \
   --argjson trigger_skill_retired "$trigger_skill_retired" \
   --argjson readback_no_retired_iterate "$readback_no_retired_iterate" \
-  --argjson current_phase_updated "$current_phase_updated" \
-  --argjson futurebuild_docs_updated "$futurebuild_docs_updated" \
+  --argjson memory_archive_pointer_current "$memory_archive_pointer_current" \
+  --argjson archived_deletion_list_current "$archived_deletion_list_current" \
   --argjson all_passed "$all_passed" \
   '{
     task_id: $task_id,
@@ -231,15 +253,15 @@ jq -n \
       },
       {
         case: "phase_h_skill_and_context_cleanup_applied",
-        expected: "retired skills are fail-closed, readback no longer points to retired iterate skill, current-phase context is post-pivot, futurebuild docs include TASK-LOOP-008",
+        expected: "retired skills are absent or fail-closed, readback no longer points to retired iterate skill, docs point to the archived memory namespace, and the archived deletion list records TASK-LOOP-008/ccreality retirement",
         actual: {
           dl041_iterate_retired: $dl041_iterate_retired,
           trigger_skill_retired: $trigger_skill_retired,
           readback_no_retired_iterate: $readback_no_retired_iterate,
-          current_phase_updated: $current_phase_updated,
-          futurebuild_docs_updated: $futurebuild_docs_updated
+          memory_archive_pointer_current: $memory_archive_pointer_current,
+          archived_deletion_list_current: $archived_deletion_list_current
         },
-        pass: ($dl041_iterate_retired and $trigger_skill_retired and $readback_no_retired_iterate and $current_phase_updated and $futurebuild_docs_updated)
+        pass: ($dl041_iterate_retired and $trigger_skill_retired and $readback_no_retired_iterate and $memory_archive_pointer_current and $archived_deletion_list_current)
       }
     ],
     boundary_cases: [

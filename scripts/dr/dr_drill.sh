@@ -3,21 +3,19 @@
 #
 # Simulates RocksDB corruption against a *snapshot copy* of the
 # inference DB, then restores from the most recent backup and verifies
-# the daemon binary can re-open the restored tree and that storage
-# verify passes. Records wall-clock time so the RTO budget can be
-# audited against `20_DISASTER_RECOVERY_AND_BACKUP.md`.
+# the daemon binary can re-open the restored tree and that storage verify
+# passes. Records wall-clock time so the RTO budget can be audited.
 #
-# The live inference DB at /mnt/d/contextgraph/storage/contextgraph-rocksdb
-# is NEVER touched: corruption only happens inside the scratch root that
-# this script owns.
+# The live aiwonder inference DB is NEVER touched: corruption only happens
+# inside the scratch root that this script owns.
 
 set -euo pipefail
 
 REPO_ROOT="${MEJEPA_DR_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-BACKUP_ROOT="${MEJEPA_BACKUP_ROOT:-/mnt/d/contextgraph-backups/local}"
-SCRATCH_ROOT="${MEJEPA_DR_SCRATCH_ROOT:-/mnt/d/contextgraph/state/dr-scratch}"
+BACKUP_ROOT="${MEJEPA_BACKUP_ROOT:-/zfs/archive/contextgraph/backups/local}"
+SCRATCH_ROOT="${MEJEPA_DR_SCRATCH_ROOT:-/zfs/hot/contextgraph/dr-scratch}"
 CLI_BIN="${MEJEPA_CLI_BIN:-${REPO_ROOT}/target/release/context-graph-cli}"
-EVIDENCE_ROOT="${MEJEPA_DR_EVIDENCE_ROOT:-/mnt/d/contextgraph/fsv/dr-drill-fsv}"
+EVIDENCE_ROOT="${MEJEPA_DR_EVIDENCE_ROOT:-/zfs/archive/contextgraph/fsv/dr-drill-fsv}"
 RTO_BUDGET_SECONDS="${MEJEPA_DR_RTO_BUDGET_SECONDS:-1800}"
 
 if [[ ! -d "${BACKUP_ROOT}" ]]; then

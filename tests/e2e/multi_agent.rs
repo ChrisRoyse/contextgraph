@@ -117,7 +117,7 @@ struct FeedbackArtifact {
 }
 
 pub fn default_fsv_root() -> PathBuf {
-    PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-multi-agent-fsv")
+    PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-multi-agent-fsv")
 }
 
 pub fn default_report_path(fsv_root: &Path) -> PathBuf {
@@ -798,10 +798,10 @@ fn remove_existing_fsv_root(path: &Path) -> Result<()> {
         return Ok(());
     }
     let temp_dir = std::env::temp_dir();
-    let allowed = path.starts_with("/mnt/d/contextgraph/fsv/") || path.starts_with(&temp_dir);
+    let allowed = path.starts_with("/zfs/archive/contextgraph/fsv/") || path.starts_with(&temp_dir);
     ensure!(
         allowed,
-        "refusing to remove existing multi-agent FSV root outside /mnt/d/contextgraph/fsv or temp dir: {}",
+        "refusing to remove existing multi-agent FSV root outside /zfs/archive/contextgraph/fsv or temp dir: {}",
         path.display()
     );
     let mut last_err = None;

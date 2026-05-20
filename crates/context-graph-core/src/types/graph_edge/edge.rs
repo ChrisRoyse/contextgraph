@@ -222,8 +222,9 @@ pub struct GraphEdge {
     /// Timestamp when this edge was last traversed.
     pub last_traversed_at: Option<DateTime<Utc>>,
 
-    /// LLM provenance metadata for how this edge was discovered (Phase 1.3).
-    /// Populated by the graph discovery agent when it creates edges via LLM analysis.
+    /// Retired compatibility metadata from the deleted local LLM graph agent.
+    /// Active ME-JEPA code must leave this as `None`; the field remains to
+    /// preserve old serialized record layout.
     #[serde(default)]
     pub discovery_provenance: Option<LLMProvenance>,
 }
@@ -298,7 +299,7 @@ impl GraphEdge {
         self
     }
 
-    /// Add LLM discovery provenance to an existing edge.
+    /// Add retired generator provenance to an existing edge.
     pub fn with_discovery_provenance(mut self, provenance: LLMProvenance) -> Self {
         self.discovery_provenance = Some(provenance);
         self

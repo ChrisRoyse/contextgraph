@@ -261,14 +261,14 @@ impl CausalDirectionHint {
     }
 }
 
-/// LLM-generated hint for E5 embedding enhancement.
+/// Legacy generated hint for E5 embedding enhancement.
 ///
 /// Used at store-time to enhance E5 (V_causality) embeddings based on
-/// LLM analysis of whether content describes causes or effects.
+/// causal analysis of whether content describes causes or effects.
 ///
 /// # Description Field
 ///
-/// When confidence >= 0.5, the LLM generates a 1-3 paragraph description
+/// When confidence >= 0.5, the legacy generator produced a description
 /// explaining the causal relationship. This description is:
 /// - Embedded separately using E1 (1024D) for semantic search
 /// - Stored in CF_CAUSAL_RELATIONSHIPS with provenance
@@ -283,7 +283,7 @@ pub struct CausalHint {
     pub confidence: f32,
     /// Key causal phrases detected.
     pub key_phrases: Vec<String>,
-    /// LLM-generated 1-3 paragraph description of the causal relationship.
+    /// Legacy generated description of the causal relationship.
     ///
     /// Generated when confidence >= 0.5. Contains:
     /// - Paragraph 1: What is the causal relationship
@@ -294,7 +294,7 @@ pub struct CausalHint {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// LLM-identified cause entity spans in the original text.
+    /// Legacy identified cause entity spans in the original text.
     /// Each span is (start_char, end_char) pointing into the content string.
     /// Tokens overlapping these spans get MARKER_BOOST in cause-weighted pooling.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -399,7 +399,7 @@ impl CausalHint {
     }
 }
 
-/// LLM guidance for marker detection. Lightweight, no LLM text content.
+/// Legacy guidance for marker detection. Lightweight, no generated text content.
 /// Passed from CausalHint down to the embedder's marker detection pipeline.
 #[derive(Debug, Clone, Default)]
 pub struct CausalHintGuidance {
@@ -407,11 +407,11 @@ pub struct CausalHintGuidance {
     pub cause_spans: Vec<(usize, usize)>,
     /// Char offsets of effect entities in source text.
     pub effect_spans: Vec<(usize, usize)>,
-    /// Additional marker words/phrases from LLM analysis.
+    /// Additional marker words/phrases from legacy causal analysis.
     pub key_phrases: Vec<String>,
-    /// Asymmetry strength [0.0-1.0] from LLM.
+    /// Asymmetry strength [0.0-1.0] from legacy causal analysis.
     pub asymmetry_strength: f32,
-    /// Overall confidence of the LLM hint.
+    /// Overall confidence of the legacy hint.
     pub confidence: f32,
 }
 
@@ -627,7 +627,7 @@ pub struct EmbeddingMetadata {
     /// If not provided, defaults to `Utc::now()`.
     pub timestamp: Option<DateTime<Utc>>,
 
-    /// Optional LLM-generated causal hint for E5 (V_causality) enhancement.
+    /// Optional legacy causal hint for E5 (V_causality) enhancement.
     ///
     /// When provided, the E5 embedder can use direction hints to generate
     /// better cause/effect vectors. If None, falls back to marker detection.
@@ -664,7 +664,7 @@ impl EmbeddingMetadata {
     /// Set a causal hint for E5 embedding enhancement.
     ///
     /// # Arguments
-    /// * `hint` - LLM-generated causal hint
+    /// * `hint` - legacy generated causal hint
     #[must_use]
     pub fn with_causal_hint(mut self, hint: CausalHint) -> Self {
         self.causal_hint = Some(hint);

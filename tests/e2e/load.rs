@@ -184,7 +184,7 @@ pub fn default_fsv_root() -> PathBuf {
 
 pub fn process_thread_scoped_fsv_root(task_dir: &str) -> PathBuf {
     let thread_id = sanitize_path_segment(&format!("{:?}", std::thread::current().id()));
-    PathBuf::from("/mnt/d/contextgraph/fsv")
+    PathBuf::from("/zfs/archive/contextgraph/fsv")
         .join(task_dir)
         .join("runs")
         .join(format!("pid-{}-{thread_id}", std::process::id()))
@@ -866,10 +866,10 @@ fn remove_existing_fsv_root(path: &Path) -> Result<()> {
         return Ok(());
     }
     let temp_dir = std::env::temp_dir();
-    let allowed = path.starts_with("/mnt/d/contextgraph/fsv/") || path.starts_with(&temp_dir);
+    let allowed = path.starts_with("/zfs/archive/contextgraph/fsv/") || path.starts_with(&temp_dir);
     ensure!(
         allowed,
-        "refusing to remove existing load FSV root outside /mnt/d/contextgraph/fsv or temp dir: {}",
+        "refusing to remove existing load FSV root outside /zfs/archive/contextgraph/fsv or temp dir: {}",
         path.display()
     );
     let mut last_err = None;

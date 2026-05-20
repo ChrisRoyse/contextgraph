@@ -155,7 +155,7 @@ pub enum EntityExtractionMethod {
     HeuristicPattern,
     /// Inferred via TransE relationship prediction.
     TransEInferred,
-    /// Extracted by LLM analysis.
+    /// Extracted by the retired local generator path.
     LLMExtracted,
 }
 

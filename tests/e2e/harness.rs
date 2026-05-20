@@ -992,10 +992,10 @@ fn remove_existing_fsv_root(path: &Path) -> Result<()> {
         return Ok(());
     }
     let temp_dir = std::env::temp_dir();
-    let allowed = path.starts_with("/mnt/d/contextgraph/fsv/") || path.starts_with(&temp_dir);
+    let allowed = path.starts_with("/zfs/archive/contextgraph/fsv/") || path.starts_with(&temp_dir);
     ensure!(
         allowed,
-        "refusing to remove existing E2E FSV root outside /mnt/d/contextgraph/fsv or temp dir: {}",
+        "refusing to remove existing E2E FSV root outside /zfs/archive/contextgraph/fsv or temp dir: {}",
         path.display()
     );
     fs::remove_dir_all(path).with_context(|| format!("remove {}", path.display()))

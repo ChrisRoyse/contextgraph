@@ -167,9 +167,9 @@ pub(super) fn find_ledger_for_run(
         [ledger] => Ok(ledger.clone()),
         [] => Err(CCRealityError::new(
             "CCREALITY_LEDGER_MISSING",
-            "no ledger.sqlite or blackbox.sqlite was found under requested run_id",
+            "no ledger.sqlite was found under requested run_id",
             "ledger.path",
-            "run an attempt that initializes the BlackBox ledger for this run_id",
+            "run an attempt that initializes the ledger for this run_id",
             json!({"runtime_root": root.display().to_string(), "run_id": run_id, "target_instance": target_instance}),
             Some(file_sot(&run_dir)),
         )),
@@ -208,7 +208,7 @@ fn collect_ledgers(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         } else if path
             .file_name()
             .and_then(|n| n.to_str())
-            .is_some_and(|n| n == "ledger.sqlite" || n == "blackbox.sqlite")
+            .is_some_and(|n| n == "ledger.sqlite")
         {
             out.push(path);
         }
@@ -261,12 +261,8 @@ mod tests {
     #[test]
     fn ledger_locator_scopes_to_run_id_and_target_component() {
         let root = tempfile::tempdir().expect("runtime root");
-        let run_a_ledger = root
-            .path()
-            .join("run-a/tasks/target-a/model/blackbox.sqlite");
-        let run_b_ledger = root
-            .path()
-            .join("run-b/tasks/target-b/model/blackbox.sqlite");
+        let run_a_ledger = root.path().join("run-a/tasks/target-a/model/ledger.sqlite");
+        let run_b_ledger = root.path().join("run-b/tasks/target-b/model/ledger.sqlite");
         std::fs::create_dir_all(run_a_ledger.parent().expect("parent")).expect("run a parent");
         std::fs::create_dir_all(run_b_ledger.parent().expect("parent")).expect("run b parent");
         std::fs::write(&run_a_ledger, b"sqlite-a").expect("run a ledger");
@@ -280,8 +276,8 @@ mod tests {
     #[test]
     fn ledger_locator_rejects_ambiguous_run_ledgers() {
         let root = tempfile::tempdir().expect("runtime root");
-        let ledger_a = root.path().join("run-a/tasks/target-a/blackbox.sqlite");
-        let ledger_b = root.path().join("run-a/tasks/target-b/blackbox.sqlite");
+        let ledger_a = root.path().join("run-a/tasks/target-a/ledger.sqlite");
+        let ledger_b = root.path().join("run-a/tasks/target-b/ledger.sqlite");
         std::fs::create_dir_all(ledger_a.parent().expect("parent")).expect("target a parent");
         std::fs::create_dir_all(ledger_b.parent().expect("parent")).expect("target b parent");
         std::fs::write(&ledger_a, b"sqlite-a").expect("target a ledger");
@@ -298,7 +294,7 @@ mod tests {
     #[test]
     fn ledger_locator_rejects_active_target_mismatch() {
         let root = tempfile::tempdir().expect("runtime root");
-        let ledger = root.path().join("run-a/tasks/target-a/blackbox.sqlite");
+        let ledger = root.path().join("run-a/tasks/target-a/ledger.sqlite");
         std::fs::create_dir_all(ledger.parent().expect("parent")).expect("target parent");
         std::fs::write(&ledger, b"sqlite-a").expect("ledger");
 

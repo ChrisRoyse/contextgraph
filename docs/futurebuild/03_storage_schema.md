@@ -232,7 +232,7 @@ GitHub issue #363 (closed, `type:decision`) — supersedes the pre-migration aiw
 | **Production durable SoT** | `/zfs/archive/contextgraph/` (aiwonder) | All post-migration production runs: corpus, FSV evidence, runtime shift logs, test outcomes, project-ingest outputs, weekly exports, durable state | Multi-month; never auto-pruned |
 | **Production hot** | `/zfs/hot/contextgraph/` (aiwonder) | Hot work: repo checkout, model weights, stable hot inputs, active scheduler logs | Days to weeks |
 | **Aiwonder scratch** | Explicitly budgeted aiwonder dirs | Issue-scoped one-off smokes | Per-issue |
-| **Legacy / local** | `/mnt/d/contextgraph/` (operator WSL2) | Pre-migration corpus, FSV, shift-log — historical evidence only; #369 reclassifies | Frozen; no new writes for production work |
+| **Legacy / local** | `/mnt/d/contextgraph/` (operator WSL2) | Pre-migration corpus, FSV, shift-log — historical evidence only; #369 closed the revalidation sweep and #412 owns residual path cleanup | Frozen; no new writes for production work |
 | **Ephemeral** | `/tmp/contextgraph-*` | Test scratch | Process lifetime |
 
 ### 5.1 Aiwonder production directory layout
@@ -245,8 +245,8 @@ GitHub issue #363 (closed, `type:decision`) — supersedes the pre-migration aiw
 │   │   ├── packed_records/                  # Packed stores
 │   │   └── ...
 │   └── frozen-instrument-registry/          # ~78 KB
-├── fsv/                                     # post-migration target; currently empty as of 2026-05-18
-│                                            # production FSV still being authored under /mnt/d (TASK-AIWONDER-018 / #369 tracks revalidation)
+├── fsv/                                     # post-migration production FSV target
+│                                            # /mnt/d FSV paths are historical provenance only; active closeout writes here
 ├── runtime/
 │   ├── shift-log.jsonl                      # JSONL shift log (tailed by shift-subscriber)
 │   ├── test-outcomes/<hash>.jsonl           # PostToolUse capture (per session)
@@ -300,7 +300,6 @@ GitHub issue #363 (closed, `type:decision`) — supersedes the pre-migration aiw
 - `.env` and `.env.*` anywhere
 - `swebench/**` (upstream evaluator)
 - `tests/oracle_**/**`
-- `crates/context-graph-benchmark/datasets/swe_bench_*/**`
 - `crates/*/src/reward_specs/**`
 - `crates/*/src/verifiers/**`
 - `*.pem`, `*.key`, `**/credentials.json`

@@ -18,8 +18,18 @@ cd "$REPO_ROOT"
 
 build_release_sha="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
 
+DEFAULT_MODEL_ROOT="${INNER_ACTOR_MODEL_ROOT:-/zfs/hot/contextgraph/models}"
+HAPPY_MODEL_ROOT="$DEFAULT_MODEL_ROOT"
+HAPPY_MODEL_ROOT_MODE="configured"
+if [[ ! -e "$HAPPY_MODEL_ROOT" ]]; then
+  HAPPY_MODEL_ROOT="$RUN_ROOT/empty-model-root"
+  HAPPY_MODEL_ROOT_MODE="local_empty_root"
+  mkdir -p "$HAPPY_MODEL_ROOT"
+fi
+
 set +e
-OUTPUT_JSON="$HAPPY_JSON" scripts/audit/no_inner_actor_models.sh >"$RUN_ROOT/happy_scan.stdout" 2>"$RUN_ROOT/happy_scan.stderr"
+INNER_ACTOR_MODEL_ROOT="$HAPPY_MODEL_ROOT" OUTPUT_JSON="$HAPPY_JSON" \
+  scripts/audit/no_inner_actor_models.sh >"$RUN_ROOT/happy_scan.stdout" 2>"$RUN_ROOT/happy_scan.stderr"
 happy_status=$?
 set -e
 happy_match_count="$(jq '.match_count' "$HAPPY_JSON")"
@@ -31,7 +41,7 @@ touch "$SYNTHETIC_ROOT/models/Hermes-2-Pro-Mistral-7B.Q5_K_M.gguf"
 touch "$SYNTHETIC_ROOT/vendor/llama.cpp/llama-server"
 
 set +e
-INNER_ACTOR_EXTRA_SCAN_ROOTS="$SYNTHETIC_ROOT" OUTPUT_JSON="$SYNTHETIC_JSON" \
+INNER_ACTOR_MODEL_ROOT="$HAPPY_MODEL_ROOT" INNER_ACTOR_EXTRA_SCAN_ROOTS="$SYNTHETIC_ROOT" OUTPUT_JSON="$SYNTHETIC_JSON" \
   scripts/audit/no_inner_actor_models.sh >"$RUN_ROOT/synthetic_scan.stdout" 2>"$RUN_ROOT/synthetic_scan.stderr"
 synthetic_status=$?
 set -e
@@ -60,6 +70,8 @@ jq -n \
   --arg fsv_root "$FSV_ROOT" \
   --arg run_root "$RUN_ROOT" \
   --arg audit_script "scripts/audit/no_inner_actor_models.sh" \
+  --arg happy_model_root "$HAPPY_MODEL_ROOT" \
+  --arg happy_model_root_mode "$HAPPY_MODEL_ROOT_MODE" \
   --arg happy_json "$HAPPY_JSON" \
   --arg synthetic_json "$SYNTHETIC_JSON" \
   --arg synthetic_root "$SYNTHETIC_ROOT" \
@@ -80,6 +92,8 @@ jq -n \
     run_root: $run_root,
     source_of_truth: {
       audit_script: $audit_script,
+      happy_model_root: $happy_model_root,
+      happy_model_root_mode: $happy_model_root_mode,
       happy_scan_json: $happy_json,
       synthetic_scan_json: $synthetic_json,
       synthetic_root: $synthetic_root
@@ -92,7 +106,9 @@ jq -n \
         actual: {
           exit_status: $happy_status,
           match_count: $happy_match_count,
-          missing_root_count: $happy_missing_root_count
+          missing_root_count: $happy_missing_root_count,
+          model_root: $happy_model_root,
+          model_root_mode: $happy_model_root_mode
         },
         pass: ($happy_status == 0 and $happy_match_count == 0 and $happy_missing_root_count == 0)
       }

@@ -2,7 +2,7 @@
 
 **Last refreshed:** 2026-05-19. **Style:** source-grounded WHAT-IS reference for AI agents. **Doc count:** 8 (down from 31).
 
-Source code: `/home/cabdru/contextgraph/crates/` (22 default-build crates; 1 excluded benchmark suite).
+Source code: `/home/cabdru/contextgraph/crates/` (22 active workspace crates; no excluded benchmark crate).
 Authority hierarchy: **universal doctrine** (`docs2/AICodingAgentSuperPrompt.md`) > **project addendum** (`CLAUDE.md`) > **this suite**.
 
 ---
@@ -42,7 +42,7 @@ Current ship-gate status: **0.866667** vs target 0.95 on Panel A; Panel B has no
 1. **31 → 8 docs** condensed for AI agent token efficiency. Originals at `_archived/`.
 2. **WHAT-IS rewrite** — every claim now traces to a source file/line. No aspirational content. Planning content compressed into `08_roadmap_and_open_work.md`.
 3. **Dedicated proof-history doc** (`07_results_and_benchmarks.md`) — FSV evidence index, ablation results, audit history, benchmark numbers, ship-gate progress.
-4. **Aiwonder storage policy** (`/zfs/archive/contextgraph/` durable + `/zfs/hot/contextgraph/` hot) made first-class in `01_overview.md §6-7` and `03_storage_schema.md §5`. Legacy `/mnt/d/contextgraph/` evidence reclassified as historical (#369 tracks revalidation).
+4. **Aiwonder storage policy** (`/zfs/archive/contextgraph/` durable + `/zfs/hot/contextgraph/` hot) made first-class in `01_overview.md §6-7` and `03_storage_schema.md §5`. Legacy `/mnt/d/contextgraph/` evidence is historical only; #369 closed the revalidation sweep and #412 owns residual path cleanup.
 5. **Phase H** (inner-loop retirement) marked complete throughout. `feature = "llm"` triggers `compile_error!` at `crates/context-graph-mcp/src/lib.rs:13`.
 6. **EK / FP / RWD epic shipping status** captured in `07 §2.9-§2.11`.
 

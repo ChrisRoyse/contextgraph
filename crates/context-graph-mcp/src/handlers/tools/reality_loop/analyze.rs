@@ -276,7 +276,7 @@ pub async fn dynamicjepa_reality_for_attempt(args: Value) -> Result<Value> {
             "CCREALITY_DYNAMICJEPA_REALITY_READBACK_NOT_PASSED",
             "dynamicjepa_reality ledger readback did not pass",
             "dynamicjepa_reality.ledger_record.readback.status",
-            "inspect the BlackBox ledger row before trusting DynamicJEPA reward features",
+            "inspect the ledger row before trusting DynamicJEPA reward features",
             json!({"dynamicjepa_reality": block, "packet": file_sot(&packet_path)}),
             Some(file_sot(&packet_path)),
         ));
@@ -329,7 +329,7 @@ fn verify_dynamicjepa_reality_sqlite_row(
                 packet_path,
                 "dynamicjepa_reality.ledger_record.ledger_sequence",
                 "dynamicjepa_reality packet is missing the ledger sequence to verify",
-                "rerun the attempt so the packet includes the BlackBox readback record identity",
+                "rerun the attempt so the packet includes the ledger readback record identity",
                 json!({"packet": file_sot(packet_path), "dynamicjepa_reality": packet_block}),
                 Some(file_sot(packet_path)),
             )
@@ -344,7 +344,7 @@ fn verify_dynamicjepa_reality_sqlite_row(
                 packet_path,
                 "dynamicjepa_reality.ledger_record.payload_sha256",
                 "dynamicjepa_reality packet is missing payload_sha256",
-                "rerun the attempt so the packet includes the BlackBox append hash",
+                "rerun the attempt so the packet includes the ledger append hash",
                 json!({"packet": file_sot(packet_path), "dynamicjepa_reality": packet_block}),
                 Some(file_sot(packet_path)),
             )
@@ -359,7 +359,7 @@ fn verify_dynamicjepa_reality_sqlite_row(
                 packet_path,
                 "dynamicjepa_reality.ledger_record.record_sha256",
                 "dynamicjepa_reality packet is missing record_sha256",
-                "rerun the attempt so the packet includes the BlackBox append hash",
+                "rerun the attempt so the packet includes the ledger append hash",
                 json!({"packet": file_sot(packet_path), "dynamicjepa_reality": packet_block}),
                 Some(file_sot(packet_path)),
             )
@@ -383,7 +383,7 @@ fn verify_dynamicjepa_reality_sqlite_row(
             packet_path,
             "dynamicjepa_reality.ledger_record.payload_sha256",
             "packet payload hash does not match the packet's ledger_record payload_sha256",
-            "rebuild the packet from the physical BlackBox ledger row",
+            "rebuild the packet from the physical ledger row",
             json!({
                 "packet": file_sot(packet_path),
                 "expected_from_block": expected_payload_canonical_sha256,
@@ -424,14 +424,18 @@ fn verify_dynamicjepa_reality_sqlite_row(
             },
         )
         .optional()
-        .map_err(|err| dynamicjepa_rusqlite_error("CCREALITY_DYNAMICJEPA_LEDGER_QUERY_FAILED", ledger, err))?
+        .map_err(|err| {
+            dynamicjepa_rusqlite_error("CCREALITY_DYNAMICJEPA_LEDGER_QUERY_FAILED", ledger, err)
+        })?
         .ok_or_else(|| {
             dynamicjepa_sqlite_error(
                 "CCREALITY_DYNAMICJEPA_LEDGER_ROW_MISSING",
                 ledger,
                 "ledger_records.sequence",
-                format!("dynamicjepa_reality ledger row sequence {expected_sequence} was not found"),
-                "inspect the active runtime root and BlackBox ledger path before trusting the packet",
+                format!(
+                    "dynamicjepa_reality ledger row sequence {expected_sequence} was not found"
+                ),
+                "inspect the active runtime root and ledger path before trusting the packet",
                 json!({"ledger": ledger.display().to_string(), "sequence": expected_sequence}),
                 Some(format!("sqlite:{}#ledger_records", ledger.display())),
             )
@@ -858,7 +862,7 @@ fn compact_attempt_summary(summary: &Value) -> Value {
         "attempt": summary.get("attempt").cloned().unwrap_or(Value::Null),
         "ledger_counts": summary.get("ledger_counts").cloned().unwrap_or(Value::Null),
         "reality_signal_verifier": compact_verifier(summary.get("reality_signal_verifier")),
-        "blackbox_verifier": compact_verifier(summary.get("blackbox_verifier")),
+        "ledger_verifier": compact_verifier(summary.get("ledger_verifier")),
         "score": summary.pointer("/score/score").cloned().unwrap_or(Value::Null),
         "reward": summary.pointer("/reward/reward").cloned().unwrap_or(Value::Null),
         "reward_components": summary.pointer("/reward/components").cloned().unwrap_or(Value::Null),
@@ -940,7 +944,7 @@ mod tests {
         run_id: &str,
         payload: &Value,
     ) -> (PathBuf, String, String) {
-        let ledger = dir.join("blackbox.sqlite");
+        let ledger = dir.join("ledger.sqlite");
         let conn = Connection::open(&ledger).expect("open real temp sqlite ledger");
         conn.execute_batch(
             "CREATE TABLE ledger_records (

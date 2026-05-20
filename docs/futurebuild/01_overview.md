@@ -326,9 +326,9 @@ This is the analogue of PAPER §6.3's named-future-work item "cross-encoder tria
 
 ---
 
-## 4. Workspace Members (22 active default + 1 excluded)
+## 4. Workspace Members (22 active workspace crates)
 
-`Cargo.toml:6-32` lists all members; `default-members` (lines 36-61) excludes `context-graph-benchmark` (87K lines, build explicitly with `-p`). Retired `context-graph-causal-agent` and `context-graph-graph-agent` were deleted on 2026-05-19 after the ME-JEPA pivot left them with zero workspace dependents. Full per-crate detail in `02_source_map.md`.
+`Cargo.toml:6-30` lists all members; `default-members` mirrors the same 22 crates. Retired `context-graph-causal-agent`, `context-graph-graph-agent`, and `context-graph-benchmark` were deleted after the ME-JEPA pivot left them with no ship-gate role. Full per-crate detail in `02_source_map.md`.
 
 | Crate | Role | LOC (src lib.rs only) |
 |---|---|---|
@@ -354,7 +354,6 @@ This is the analogue of PAPER §6.3's named-future-work item "cross-encoder tria
 | `context-graph-mejepa-shift-subscriber` | JSONL shift-log tail → panel materialization | 26 |
 | `context-graph-dynamicjepa` | 5090jepa MCP surface (39 tools) | — |
 | `context-graph-test-utils` | Shared test fixtures (NO MOCK DATA) | 23 |
-| `context-graph-benchmark` *(excluded from default build)* | 87K-line benchmarking suite | — |
 
 ---
 
@@ -415,7 +414,7 @@ backupdocs/memory.archive/              — read-only legacy SAMP/SMAP (do not w
 
 | Tier | What | Where | Regenerable? |
 |---|---|---|---|
-| **Sacred** (never edit) | Operator `.env`/`.env.*`; `swebench/**`; `tests/oracle_**/**`; `crates/*/src/reward_specs/**`; `crates/*/src/verifiers/**`; `crates/context-graph-benchmark/datasets/swe_bench_*/**`; `*.pem`, `*.key`, `**/credentials.json` | various | No |
+| **Sacred** (never edit) | Operator `.env`/`.env.*`; `swebench/**`; `tests/oracle_**/**`; `crates/*/src/reward_specs/**`; `crates/*/src/verifiers/**`; `*.pem`, `*.key`, `**/credentials.json` | various | No |
 | **Durable production** | RocksDB CFs (51+ teleological/quantized/code/causal + 120+ ME-JEPA); FSV evidence; project-ingest manifests; weekly exports | `/zfs/archive/contextgraph/` on aiwonder | Source-recoverable (corpus) or replay-from-shift-log (predictions). Many FSV artifacts are irreplaceable single events. |
 | **Hot** | Active checkpoints, model weights, hot run state | `/zfs/hot/contextgraph/` on aiwonder | Yes (re-download / rebuild) |
 | **Ephemeral** | `/tmp/contextgraph-*` scratch | `/tmp/` | Yes |
@@ -474,7 +473,7 @@ Every crate defines its own `Error` enum with `SCREAMING_SNAKE_CASE` code via `.
 ## 10. What This System Is NOT
 
 - Not a generative inference engine — no inner LLM. The product is the *verifier*, not a code-writer.
-- Not a benchmark harness — `context-graph-benchmark` exists separately and is intentionally not in the default build.
+- Not a benchmark harness — the old `context-graph-benchmark` suite was retired as pre-pivot evidence.
 - Not a hosted service — runs locally on operator hardware (aiwonder for production durable state).
 - Not a Python codebase — Python only shows up as the *corpus subject* (SWE-bench Lite) and in tool wrappers (`scripts/swebench_lite_ops/*`).
 - Not cross-language at ship-gate time — current ship gate is Python-only (300×8 Python corpus). Non-Python `Language::*` variants exist in the corpus generator but are deferred from the current gate.

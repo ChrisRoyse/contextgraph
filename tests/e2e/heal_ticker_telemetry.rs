@@ -40,7 +40,7 @@ pub struct FileArtifact {
 }
 
 pub fn default_fsv_root() -> PathBuf {
-    PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-heal-ticker-telemetry-fsv")
+    PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-heal-ticker-telemetry-fsv")
 }
 
 pub fn default_report_path(fsv_root: &Path) -> PathBuf {
@@ -314,8 +314,8 @@ fn remove_existing_fsv_root(path: &Path) -> Result<()> {
     }
     let temp_dir = std::env::temp_dir();
     ensure!(
-        path.starts_with("/mnt/d/contextgraph/fsv/") || path.starts_with(&temp_dir),
-        "refusing to remove FSV root outside /mnt/d/contextgraph/fsv or temp dir: {}",
+        path.starts_with("/zfs/archive/contextgraph/fsv/") || path.starts_with(&temp_dir),
+        "refusing to remove FSV root outside /zfs/archive/contextgraph/fsv or temp dir: {}",
         path.display()
     );
     fs::remove_dir_all(path)?;
@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn task_obs_018_heal_ticker_telemetry_fsv_passes() {
         let fsv_root = tempfile::tempdir().expect("tempdir");
-        assert!(default_fsv_root().starts_with("/mnt/d/contextgraph/fsv/"));
+        assert!(default_fsv_root().starts_with("/zfs/archive/contextgraph/fsv/"));
         let report = run_heal_ticker_telemetry_fsv(fsv_root.path()).expect("run FSV");
         let report_path = default_report_path(fsv_root.path());
         write_report_with_readback(&report, &report_path).expect("write FSV");

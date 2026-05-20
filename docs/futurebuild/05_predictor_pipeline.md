@@ -720,7 +720,7 @@ PageRank scores weight `BatchSampler` and Fisher (TASK-EK-016 / EK-017 / EK-016-
 
 - usearch HNSW index over L2-normalized `(E_AST, E_CFG, E_DataFlow, E_TypeGraph)` signatures.
 - Metadata in `CF_MEJEPA_PATCH_SIMILARITY_META`.
-- Index storage at `/mnt/d/contextgraph/storage/patch-similarity-index-v1/...` (local FSV; aiwonder production path equivalent).
+- Index storage at `/zfs/archive/contextgraph/storage/patch-similarity-index-v1/...` for production; any `/mnt/d/contextgraph/storage/...` copy is legacy/local provenance only.
 - Compiler-side `RealityPrediction.closest_exemplars` population.
 - 2026-05-18 FSV: top-1 same-failure-mode accuracy `1.0`.
 

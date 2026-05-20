@@ -1,5 +1,5 @@
 # Context Graph - Workspace Manifest
-# 14-Embedder Context Graph for semantic memory retrieval
+# ME-JEPA-Code: binary reality predictor for AI-generated patches
 
 [workspace]
 resolver = "2"
@@ -25,12 +25,8 @@ members = [
     "crates/context-graph-tier-compression",
     "crates/context-graph-dynamicjepa",
     "crates/context-graph-cli",
-    "crates/context-graph-benchmark",
     "crates/context-graph-test-utils",
 ]
-# Exclude benchmark from default builds — it's 87K lines (22% of codebase)
-# and never compiled into the MCP server. Build explicitly with:
-#   cargo build -p context-graph-benchmark
 default-members = [
     "crates/context-graph-mcp",
     "crates/context-graph-core",

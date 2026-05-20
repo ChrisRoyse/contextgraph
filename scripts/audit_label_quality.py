@@ -20,7 +20,7 @@ from typing import Any
 
 
 CF_NAME = "CF_MEJEPA_FAILURE_EXEMPLARS"
-DEFAULT_EXPORT_ROOT = Path("/mnt/d/contextgraph/exports/eval")
+DEFAULT_EXPORT_ROOT = Path("/zfs/archive/contextgraph/exports/eval")
 LANGUAGES = (
     "python",
     "rust",

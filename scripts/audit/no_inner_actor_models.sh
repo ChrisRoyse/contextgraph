@@ -5,7 +5,7 @@ set -euo pipefail
 # named below; this scanner exists only to prevent their return.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MODEL_ROOT="${INNER_ACTOR_MODEL_ROOT:-/mnt/d/cabdru/contextgraph/models}"
+MODEL_ROOT="${INNER_ACTOR_MODEL_ROOT:-/zfs/hot/contextgraph/models}"
 SOURCE_ROOT="${INNER_ACTOR_SOURCE_ROOT:-$REPO_ROOT}"
 OUTPUT_JSON="${OUTPUT_JSON:-}"
 

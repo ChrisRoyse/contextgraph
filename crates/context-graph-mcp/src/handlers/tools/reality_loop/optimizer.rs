@@ -10,7 +10,6 @@ use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
-use tokio::process::Command;
 
 impl Handlers {
     pub(crate) async fn call_optimizer_record_decision(
@@ -77,16 +76,6 @@ pub async fn optimizer_record_decision(args: Value) -> Result<Value> {
     });
     write_json_checked(&path, &payload)?;
     write_json_checked(&trigger_path, &payload)?;
-    let ledger_append = append_optimizer_ledger(
-        &runtime_root,
-        &optimizer_dir,
-        &run_id,
-        Some(&task),
-        "optimizer_record_decision",
-        &payload,
-    )
-    .await?;
-
     let mut shift = ShiftRecord::new(
         "optimizer_record_decision",
         payload
@@ -109,8 +98,6 @@ pub async fn optimizer_record_decision(args: Value) -> Result<Value> {
         "decision_path": file_sot(&path),
         "trigger_decision_path": file_sot(&trigger_path),
         "sha256": sha256_file(&path)?,
-        "ledger_record_id": ledger_append.get("record_id").cloned().unwrap_or(Value::Null),
-        "ledger_append": ledger_append,
         "witness_preflight": witness_preflight,
         "witness_append": witness_append,
         "shift_id": shift.shift_id,
@@ -146,16 +133,6 @@ pub async fn optimizer_record_recommendation(args: Value) -> Result<Value> {
     }
     validator.validate(&payload)?;
     write_json_checked(&path, &payload)?;
-    let ledger_append = append_optimizer_ledger(
-        &runtime_root,
-        &optimizer_dir,
-        &run_id,
-        Some(&task),
-        "optimizer_record_recommendation",
-        &payload,
-    )
-    .await?;
-
     let mut shift = ShiftRecord::new(
         "optimizer_record_recommendation",
         &session,
@@ -174,8 +151,6 @@ pub async fn optimizer_record_recommendation(args: Value) -> Result<Value> {
     Ok(json!({
         "recommendation_path": file_sot(&path),
         "sha256": sha256_file(&path)?,
-        "ledger_record_id": ledger_append.get("record_id").cloned().unwrap_or(Value::Null),
-        "ledger_append": ledger_append,
         "witness_preflight": witness_preflight,
         "witness_append": witness_append,
         "shift_id": shift.shift_id,
@@ -464,123 +439,4 @@ fn next_round(dir: &Path) -> Result<u64> {
         }
     }
     Ok(max_round + 1)
-}
-
-async fn append_optimizer_ledger(
-    runtime_root: &Path,
-    optimizer_dir: &Path,
-    run_id: &str,
-    target_instance: Option<&str>,
-    tool_name: &str,
-    payload: &Value,
-) -> Result<Value> {
-    let ledger = super::interact::find_ledger_for_run(runtime_root, run_id, target_instance)?;
-    let blackbox_run_id = latest_blackbox_run_id(&ledger)?;
-    let input_path =
-        optimizer_dir.join(format!("ledger-input-{}-{}.json", tool_name, unix_secs()?));
-    write_json_checked(&input_path, payload)?;
-    let bin = project_root()?.join("target/debug/context-graph");
-    if !bin.is_file() {
-        return Err(super::errors::CCRealityError::new(
-            "CCREALITY_OPTIMIZER_BLACKBOX_BINARY_MISSING",
-            "target/debug/context-graph is missing",
-            "optimizer.ledger.binary",
-            "run cargo build -p context-graph-cli --bin context-graph",
-            json!({"path": bin.display().to_string()}),
-            Some(file_sot(&bin)),
-        ));
-    }
-    let mut cmd = Command::new(&bin);
-    cmd.arg("blackbox")
-        .arg("record")
-        .arg("tool-call")
-        .arg("--ledger")
-        .arg(&ledger)
-        .arg("--run-id")
-        .arg(&blackbox_run_id)
-        .arg("--tool")
-        .arg(tool_name)
-        .arg("--input")
-        .arg(&input_path)
-        .arg("--agent")
-        .arg("cgreality_optimizer")
-        .arg("--capability")
-        .arg("ccreality.optimizer")
-        .arg("--status")
-        .arg("ok");
-    if let Some(model) = payload.get("claude_model").and_then(Value::as_str) {
-        cmd.arg("--model").arg(model);
-    }
-    cmd.kill_on_drop(true);
-    let output = cmd.output().await.map_err(|e| {
-        super::errors::CCRealityError::new(
-            "CCREALITY_OPTIMIZER_LEDGER_APPEND_SPAWN_FAILED",
-            format!("failed to spawn BlackBox ledger append: {e}"),
-            "optimizer.ledger.spawn",
-            "ensure target/debug/context-graph is executable",
-            json!({"bin": bin.display().to_string(), "ledger": ledger.display().to_string()}),
-            Some(file_sot(&bin)),
-        )
-    })?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    if !output.status.success() {
-        return Err(super::errors::CCRealityError::new(
-            "CCREALITY_OPTIMIZER_LEDGER_APPEND_FAILED",
-            "BlackBox ledger append failed",
-            "optimizer.ledger.append",
-            "inspect the ledger, run id, and ledger input artifact",
-            json!({
-                "exit_code": output.status.code(),
-                "stdout": stdout,
-                "stderr": stderr,
-                "ledger_input": file_sot(&input_path)
-            }),
-            Some(format!("sqlite:{}#ledger_records", ledger.display())),
-        ));
-    }
-    let mut parsed: Value = serde_json::from_str(&stdout).map_err(|e| {
-        super::errors::CCRealityError::new(
-            "CCREALITY_OPTIMIZER_LEDGER_APPEND_JSON_INVALID",
-            format!("BlackBox ledger append stdout was not JSON: {e}"),
-            "optimizer.ledger.stdout",
-            "inspect BlackBox stdout/stderr",
-            json!({"stdout": stdout, "stderr": stderr}),
-            Some(format!("sqlite:{}#ledger_records", ledger.display())),
-        )
-    })?;
-    if let Value::Object(map) = &mut parsed {
-        map.insert("ledger_input".to_string(), json!(file_sot(&input_path)));
-    }
-    Ok(parsed)
-}
-
-fn latest_blackbox_run_id(ledger: &Path) -> Result<String> {
-    let conn =
-        rusqlite::Connection::open_with_flags(ledger, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(|e| {
-            super::errors::CCRealityError::new(
-                "CCREALITY_OPTIMIZER_LEDGER_OPEN_FAILED",
-                format!("failed to open ledger: {e}"),
-                "optimizer.ledger.open",
-                "inspect the ledger path and SQLite permissions",
-                json!({"path": ledger.display().to_string(), "error": e.to_string()}),
-                Some(format!("sqlite:{}#ledger_records", ledger.display())),
-            )
-        })?;
-    conn.query_row(
-        "SELECT run_id FROM ledger_records WHERE record_kind = 'agent_run' AND run_id IS NOT NULL ORDER BY sequence DESC LIMIT 1",
-        [],
-        |row| row.get::<_, String>(0),
-    )
-    .map_err(|e| {
-        super::errors::CCRealityError::new(
-            "CCREALITY_OPTIMIZER_LEDGER_RUN_MISSING",
-            format!("could not read a BlackBox agent_run row: {e}"),
-            "optimizer.ledger.run_id",
-            "record a real BlackBox agent_run before optimizer artifacts",
-            json!({"path": ledger.display().to_string(), "error": e.to_string()}),
-            Some(format!("sqlite:{}#ledger_records", ledger.display())),
-        )
-    })
 }

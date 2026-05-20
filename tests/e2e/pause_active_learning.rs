@@ -76,7 +76,7 @@ pub struct FileArtifact {
 }
 
 pub fn default_fsv_root() -> PathBuf {
-    PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-pause-active-learning-fsv")
+    PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-pause-active-learning-fsv")
 }
 
 pub fn default_report_path(fsv_root: &Path) -> PathBuf {
@@ -545,8 +545,8 @@ fn remove_existing_fsv_root(path: &Path) -> Result<()> {
     if !path.exists() {
         return Ok(());
     }
-    let allowed =
-        path.starts_with("/mnt/d/contextgraph/fsv/") || path.starts_with(std::env::temp_dir());
+    let allowed = path.starts_with("/zfs/archive/contextgraph/fsv/")
+        || path.starts_with(std::env::temp_dir());
     ensure!(allowed, "refusing to remove FSV root {}", path.display());
     fs::remove_dir_all(path).with_context(|| format!("remove {}", path.display()))
 }

@@ -91,8 +91,8 @@ async fn main() -> FsvResult<()> {
         },
         "capacity_evidence": {
             "root": df_capacity("/")?,
-            "mnt_c": df_capacity("/mnt/c")?,
-            "mnt_d": df_capacity("/mnt/d")?,
+            "zfs_archive": df_capacity("/zfs/archive")?,
+            "zfs_hot": df_capacity("/zfs/hot")?,
         },
         "assertions": assertions,
         "model_run": model_run,

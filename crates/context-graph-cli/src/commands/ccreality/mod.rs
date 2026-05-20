@@ -517,7 +517,7 @@ fn parse_attempt_name(name: &str) -> Option<u64> {
 fn project_root() -> CCResult<PathBuf> {
     if let Ok(root) = env::var("CONTEXTGRAPH_ROOT") {
         let root = PathBuf::from(root);
-        if root.join("Cargo.toml").is_file() {
+        if is_contextgraph_project_root(&root) {
             return Ok(root);
         }
         return Err(ccreality_error(
@@ -541,11 +541,7 @@ fn project_root() -> CCResult<PathBuf> {
         )
     })?;
     for ancestor in cwd.ancestors() {
-        if ancestor.join("Cargo.toml").is_file()
-            && ancestor
-                .join("config/ccreality_governed_paths.json")
-                .is_file()
-        {
+        if is_contextgraph_project_root(ancestor) {
             return Ok(ancestor.to_path_buf());
         }
     }
@@ -557,6 +553,14 @@ fn project_root() -> CCResult<PathBuf> {
         json!({"cwd": cwd.display().to_string()}),
         None,
     ))
+}
+
+fn is_contextgraph_project_root(path: &Path) -> bool {
+    path.join("Cargo.toml").is_file()
+        && path.join("AGENTS.md").is_file()
+        && path.join("CLAUDE.md").is_file()
+        && path.join(".mcp.json").is_file()
+        && path.join("crates/context-graph-mcp").is_dir()
 }
 
 /// Resolve the MCP binary the CLI shells out to.

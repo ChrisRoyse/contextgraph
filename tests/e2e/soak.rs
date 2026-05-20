@@ -469,10 +469,10 @@ fn remove_existing_fsv_root(path: &Path) -> Result<()> {
         return Ok(());
     }
     let temp_dir = std::env::temp_dir();
-    let allowed = path.starts_with("/mnt/d/contextgraph/fsv/") || path.starts_with(&temp_dir);
+    let allowed = path.starts_with("/zfs/archive/contextgraph/fsv/") || path.starts_with(&temp_dir);
     ensure!(
         allowed,
-        "refusing to remove existing soak FSV root outside /mnt/d/contextgraph/fsv or temp dir: {}",
+        "refusing to remove existing soak FSV root outside /zfs/archive/contextgraph/fsv or temp dir: {}",
         path.display()
     );
     let mut last_err = None;
@@ -559,11 +559,11 @@ mod tests {
     fn default_fsv_root_is_process_thread_scoped_to_prevent_readback_races() {
         let fsv_root = default_fsv_root();
         let root_text = fsv_root.to_string_lossy();
-        assert!(fsv_root.starts_with("/mnt/d/contextgraph/fsv/phase-f-soak-test-fsv/runs"));
+        assert!(fsv_root.starts_with("/zfs/archive/contextgraph/fsv/phase-f-soak-test-fsv/runs"));
         assert!(root_text.contains(&format!("pid-{}", std::process::id())));
         assert_ne!(
             fsv_root,
-            PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-soak-test-fsv")
+            PathBuf::from("/zfs/archive/contextgraph/fsv/phase-f-soak-test-fsv")
         );
     }
 }

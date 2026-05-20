@@ -298,7 +298,6 @@ Current counts shift weekly; the source of truth is `cargo test --release` (or p
 | **Adversarial harnesses** | `crates/context-graph-mejepa/examples/phase_f_adversarial_corpus_fsv.rs`, `adversarial_corpus.rs` (30 cases) | TASK-PY-G-060 / TASK-FP-009 |
 | **Synthetic stress harness** | `examples/task_py_g_071_synthetic_stress_fsv.rs` (alias) + `synthetic_stress.rs` (30 known-answer) | TASK-PY-G-071 |
 | **End-to-end stress harness** | `project_stress.rs` | TASK-PY-G-072 |
-| **Benchmark suite** | `crates/context-graph-benchmark/` (excluded from default build; 87K LOC; 21 explicit bins + 2 Criterion benches) | Diagnostic embedder/graph/real-data benchmarks only. Not ship-gate evidence unless an issue declares a run and FSV root. |
 
 ### 7.3 How to run
 
@@ -315,10 +314,6 @@ cargo run --release -p context-graph-mejepa --example phase_f_adversarial_corpus
 # Clippy + tests + examples (FSV-PROTOCOL §6.3)
 cargo clippy -p <crate> --no-deps --tests --examples -- -D warnings
 
-# Benchmarks (explicit; excluded from default builds)
-cargo check -p context-graph-benchmark --bins
-cargo bench --release -p context-graph-benchmark --bench comparative_suite
-cargo bench --release -p context-graph-benchmark --bench scaling_analysis
 ```
 
 ### 7.4 Key fixtures / utilities

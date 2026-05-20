@@ -51,21 +51,3 @@ toml.workspace = true
 context-graph-core = { path = "../context-graph-core", features = ["test-utils"] }
 # Shared test utilities (C5: cross-crate deduplication)
 context-graph-test-utils = { path = "../context-graph-test-utils" }
-# TASK-STORAGE-P2-001: Benchmarking for MaxSim performance validation
-criterion = { version = "0.5", features = ["html_reports"] }
-
-[[bench]]
-name = "maxsim_bench"
-harness = false
-
-[[bench]]
-name = "causal_relationships_bench"
-harness = false
-
-[[bench]]
-name = "hybrid_effectiveness_bench"
-harness = false
-
-[[bench]]
-name = "e11_quality_bench"
-harness = false

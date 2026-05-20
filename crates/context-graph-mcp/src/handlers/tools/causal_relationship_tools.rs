@@ -1,7 +1,7 @@
 //! Causal relationship search tool implementation.
 //!
 //! Provides the `search_causal_relationships` MCP tool for semantic search
-//! of LLM-generated causal descriptions with full provenance.
+//! of retained causal descriptions with full provenance.
 //!
 //! # E5 Asymmetric Search
 //!
@@ -36,7 +36,7 @@ const MAX_TOP_K: u64 = 100;
 const DEFAULT_TOP_K: u64 = 10;
 
 /// Default hybrid search weights
-/// Source-anchored embeddings prevent LLM output clustering
+/// Source-anchored embeddings prevent explanation-template clustering.
 const DEFAULT_SOURCE_WEIGHT: f32 = 0.6;
 const DEFAULT_EXPLANATION_WEIGHT: f32 = 0.4;
 
@@ -66,9 +66,9 @@ impl Handlers {
     /// - id: Causal relationship UUID
     /// - causeStatement: Brief statement of the cause
     /// - effectStatement: Brief statement of the effect
-    /// - explanation: LLM-generated 1-2 paragraph explanation
+    /// - explanation: causal explanation text
     /// - mechanismType: "direct", "mediated", "feedback", or "temporal"
-    /// - confidence: LLM confidence score
+    /// - confidence: confidence score
     /// - sourceContent: Original content (if includeSource=true)
     /// - sourceMemoryId: ID of source memory for provenance
     /// - similarity: Search similarity score
@@ -395,18 +395,7 @@ impl Handlers {
                                 "e5": e5_weight,
                                 "e8": e8_weight,
                                 "e11": e11_weight
-                            },
-                            "llmProvenance": rel.llm_provenance.as_ref().map(|p| json!({
-                                "modelName": p.model_name,
-                                "modelVersion": p.model_version,
-                                "quantization": p.quantization,
-                                "temperature": p.temperature,
-                                "maxTokens": p.max_tokens,
-                                "promptTemplateHash": p.prompt_template_hash,
-                                "grammarType": p.grammar_type,
-                                "tokensConsumed": p.tokens_consumed,
-                                "generationTimeMs": p.generation_time_ms
-                            }))
+                            }
                         });
                     }
 
@@ -618,18 +607,7 @@ impl Handlers {
                             "hybridWeights": {
                                 "sourceWeight": source_weight,
                                 "explanationWeight": explanation_weight
-                            },
-                            "llmProvenance": rel.llm_provenance.as_ref().map(|p| json!({
-                                "modelName": p.model_name,
-                                "modelVersion": p.model_version,
-                                "quantization": p.quantization,
-                                "temperature": p.temperature,
-                                "maxTokens": p.max_tokens,
-                                "promptTemplateHash": p.prompt_template_hash,
-                                "grammarType": p.grammar_type,
-                                "tokensConsumed": p.tokens_consumed,
-                                "generationTimeMs": p.generation_time_ms
-                            }))
+                            }
                         });
                     }
 

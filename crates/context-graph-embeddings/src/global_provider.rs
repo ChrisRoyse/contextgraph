@@ -77,7 +77,7 @@ mod cuda_impl {
     use super::*;
     use crate::config::GpuConfig;
     use crate::provider::ProductionMultiArrayProvider;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     /// Resolve models directory path.
     ///
@@ -86,29 +86,56 @@ mod cuda_impl {
     /// 2. CONTEXTGRAPH_MODELS_ROOT environment variable
     /// 3. Canonical local model registry path used by this workspace
     /// 4. ./models relative to current directory
-    fn resolve_models_dir() -> PathBuf {
+    fn resolve_models_dir() -> EmbeddingResult<PathBuf> {
         if let Ok(path) = std::env::var("CONTEXT_GRAPH_MODELS_PATH") {
             let p = PathBuf::from(&path);
             tracing::info!("Using models path from CONTEXT_GRAPH_MODELS_PATH: {:?}", p);
-            return p;
+            return validate_model_root(p, "CONTEXT_GRAPH_MODELS_PATH");
         }
 
         if let Ok(path) = std::env::var("CONTEXTGRAPH_MODELS_ROOT") {
             let p = PathBuf::from(&path);
             tracing::info!("Using models path from CONTEXTGRAPH_MODELS_ROOT: {:?}", p);
-            return p;
+            return validate_model_root(p, "CONTEXTGRAPH_MODELS_ROOT");
         }
 
         let canonical = PathBuf::from("/zfs/hot/contextgraph/models");
         if canonical.join("mejepa_models_config.toml").is_file() {
             tracing::info!("Using canonical ME-JEPA models path: {:?}", canonical);
-            return canonical;
+            return validate_model_root(canonical, "canonical_model_root");
         }
 
-        // Default: ./models relative to current directory
-        let default_path = PathBuf::from("./models");
+        let default_path = PathBuf::from("/zfs/hot/contextgraph/models");
         tracing::info!("Using default models path: {:?}", default_path);
-        default_path
+        validate_model_root(default_path, "default_model_root")
+    }
+
+    pub(super) fn validate_model_root(
+        path: PathBuf,
+        field: &'static str,
+    ) -> EmbeddingResult<PathBuf> {
+        if !path.is_absolute() {
+            return Err(model_root_error(field, &path));
+        }
+        let allowed_roots = [
+            Path::new("/zfs/hot/contextgraph"),
+            Path::new("/zfs/archive/contextgraph"),
+            Path::new("/home/croyse/.cache/contextgraph"),
+        ];
+        if allowed_roots.iter().any(|root| path.starts_with(root)) {
+            return Ok(path);
+        }
+        Err(model_root_error(field, &path))
+    }
+
+    fn model_root_error(field: &'static str, path: &Path) -> EmbeddingError {
+        EmbeddingError::InternalError {
+            message: format!(
+                "MEJEPA_MODEL_ROOT_NOT_AIWONDER: {field}={} is not an aiwonder model root; \
+                 use /zfs/hot/contextgraph, /zfs/archive/contextgraph, or explicit aiwonder scratch",
+                path.display()
+            ),
+        }
     }
 
     /// Initialize the global warm provider (CUDA version).
@@ -119,7 +146,7 @@ mod cuda_impl {
     /// MUST be called ONCE at startup before any embedding operations.
     /// Subsequent calls are no-ops if initialization succeeded.
     pub async fn initialize_global_warm_provider_impl() -> EmbeddingResult<()> {
-        initialize_global_warm_provider_with_models_dir_impl(resolve_models_dir()).await
+        initialize_global_warm_provider_with_models_dir_impl(resolve_models_dir()?).await
     }
 
     /// Initialize the global warm provider from an explicitly resolved model path.
@@ -130,6 +157,7 @@ mod cuda_impl {
     pub async fn initialize_global_warm_provider_with_models_dir_impl(
         models_dir: PathBuf,
     ) -> EmbeddingResult<()> {
+        let models_dir = validate_model_root(models_dir, "models_dir")?;
         let slot =
             GLOBAL_WARM_PROVIDER.get_or_init(|| Arc::new(RwLock::new(ProviderState::default())));
 
@@ -437,6 +465,7 @@ pub async fn reset_global_provider_for_testing() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn test_is_warm_initialized_before_init() {
@@ -473,5 +502,23 @@ mod tests {
                 msg
             );
         }
+    }
+
+    #[cfg(feature = "candle")]
+    #[test]
+    fn test_model_root_guard_rejects_legacy_mount() {
+        let err =
+            cuda_impl::validate_model_root(PathBuf::from("/mnt/d/contextgraph/models"), "test")
+                .expect_err("legacy D mount must not be accepted as a model root");
+        assert!(err.to_string().contains("MEJEPA_MODEL_ROOT_NOT_AIWONDER"));
+    }
+
+    #[cfg(feature = "candle")]
+    #[test]
+    fn test_model_root_guard_accepts_aiwonder_hot_root() {
+        let path =
+            cuda_impl::validate_model_root(PathBuf::from("/zfs/hot/contextgraph/models"), "test")
+                .expect("aiwonder hot model root must be accepted");
+        assert_eq!(path, PathBuf::from("/zfs/hot/contextgraph/models"));
     }
 }

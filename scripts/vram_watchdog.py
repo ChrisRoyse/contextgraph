@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""VRAM Safety Watchdog for Shakespeare Resurrection Pipeline.
+"""VRAM safety watchdog for aiwonder ME-JEPA jobs.
 
 Monitors RTX 5090 VRAM usage every POLL_INTERVAL_S seconds via pynvml (reliable)
 and kills the newest GPU process if total VRAM exceeds HARD_KILL_GB.
 
 Source of truth rationale:
-- pynvml / nvidia-smi: reliable on RTX 5090 + WSL2 + driver 595.71, system-wide view
-- torch.cuda.mem_get_info: UNRELIABLE on WSL2 — only sees current process, NOT other procs
-  See: memory/discoveries/agent-s2-sherlock-vram--nvidia-smi-is-reliable-torch-memgetinfo-is-not.md
+- pynvml / nvidia-smi: reliable on RTX 5090 + driver 595.71, system-wide view
+- torch.cuda.mem_get_info: process-local only; do not use it for host-wide pressure
 
 Usage:
     python3 scripts/vram_watchdog.py                 # run until Ctrl+C
@@ -42,7 +41,7 @@ WHITELIST_CMDS = {
     # to whitelist something add its exact /proc/<pid>/comm here, e.g. "Xorg"
 }
 # Filesystem
-DATA_ROOT = Path(os.environ.get("CONTEXTGRAPH_DATA_ROOT", "/mnt/d/contextgraph"))
+DATA_ROOT = Path(os.environ.get("CONTEXTGRAPH_DATA_ROOT", "/zfs/archive/contextgraph"))
 LOGFILE = DATA_ROOT / "logs" / "vram_watchdog.log"
 MAX_LOG_BYTES = 10 * 1024 * 1024
 LOG_BACKUPS = 3

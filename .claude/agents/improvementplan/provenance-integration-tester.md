@@ -2,7 +2,7 @@
 name: provenance-integration-tester
 description: |
   Cross-cutting integration test specialist for provenance features. Writes comprehensive
-  tests verifying audit logging, operator attribution, LLM provenance, retrieval
+  tests verifying audit logging, operator attribution, retrieval
   transparency, entity provenance, lifecycle tracking, and embedding versioning all
   work together correctly. Use after other provenance agents complete their work.
   Keywords: integration tests, provenance testing, end-to-end, verification.
@@ -34,14 +34,7 @@ Write comprehensive integration tests that validate the complete provenance chai
 - `test_boost_with_operator` - operator_id recorded in importance change
 - `test_backward_compatibility` - Operations without operator_id still work
 
-### 3. LLM Provenance Tests (`tests/provenance/llm_provenance_tests.rs`)
-
-- `test_causal_relationship_has_llm_provenance` - After discovery, LLMProvenance populated
-- `test_graph_edge_has_discovery_provenance` - After graph discovery, provenance populated
-- `test_llm_provenance_serialization` - Roundtrip test
-- `test_prompt_template_hash_consistency` - Same template produces same hash
-
-### 4. Retrieval Transparency Tests (`tests/provenance/retrieval_tests.rs`)
+### 3. Retrieval Transparency Tests (`tests/provenance/retrieval_tests.rs`)
 
 - `test_search_without_provenance` - Default behavior unchanged
 - `test_search_with_provenance` - include_provenance=true returns SearchResultProvenance
@@ -49,14 +42,14 @@ Write comprehensive integration tests that validate the complete provenance chai
 - `test_insight_annotations_blind_spot` - Unique contribution gets annotation
 - `test_insight_annotations_consensus` - High consensus gets annotation
 
-### 5. Lifecycle Tests (`tests/provenance/lifecycle_tests.rs`)
+### 4. Lifecycle Tests (`tests/provenance/lifecycle_tests.rs`)
 
 - `test_deletion_metadata_complete` - reason, operator, deadlines populated
 - `test_merge_history_permanent` - Merge records persist beyond 30 days
 - `test_importance_history_tracking` - Full change history recorded
 - `test_derived_from_set_on_merge` - Merged fingerprint has lineage
 
-### 6. End-to-End Provenance Chain (`tests/provenance/chain_tests.rs`)
+### 5. End-to-End Provenance Chain (`tests/provenance/chain_tests.rs`)
 
 - `test_full_provenance_chain` - Store memory -> search -> get_provenance_chain returns complete data
 - `test_provenance_chain_after_merge` - Chain includes merge history

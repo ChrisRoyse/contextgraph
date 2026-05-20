@@ -186,7 +186,6 @@
   },
   "env": {
     "CONTEXTGRAPH_ROOT": "/home/cabdru/contextgraph",
-    "CGREALITY_GOVERNED_PATHS": "/home/cabdru/contextgraph/config/ccreality_governed_paths.json",
     "CGREALITY_RECOMMENDATION_SCHEMA": "/home/cabdru/contextgraph/config/ccreality_recommendation_schema.json"
   }
 }

@@ -1051,36 +1051,7 @@ mod tests {
     use serial_test::serial;
     use tempfile::TempDir;
 
-    struct EnvGuard {
-        key: &'static str,
-        old: Option<String>,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: &Path) -> Self {
-            let old = std::env::var(key).ok();
-            std::env::set_var(key, value);
-            Self { key, old }
-        }
-
-        fn remove(key: &'static str) -> Self {
-            let old = std::env::var(key).ok();
-            std::env::remove_var(key);
-            Self { key, old }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            if let Some(old) = &self.old {
-                std::env::set_var(self.key, old);
-            } else {
-                std::env::remove_var(self.key);
-            }
-        }
-    }
-
-    fn init_real_governed_git_repo() -> (TempDir, PathBuf, PathBuf) {
+    fn init_real_governed_git_repo() -> (TempDir, PathBuf) {
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path().join("repo");
         create_dir_checked(&root).expect("repo dir");
@@ -1117,15 +1088,6 @@ mod tests {
         create_dir_checked(&root.join("docs/ccreality")).expect("docs dir");
         write_text_checked(&root.join("docs/ccreality/example.md"), "alpha\nbeta\n")
             .expect("doc write");
-        write_text_checked(
-            &root.join("policy.json"),
-            &serde_json::to_string_pretty(&json!({
-                "allow": ["Cargo.toml", "docs/ccreality/**", "crates/**"],
-                "deny": [".env", ".env.*", "swebench/**", "tests/oracle_**", "crates/*/src/reward_specs/**", "crates/*/src/verifiers/**"]
-            }))
-            .unwrap(),
-        )
-        .expect("policy write");
         run_required(
             &["git", "add", "Cargo.toml", "docs/ccreality/example.md"],
             &root,
@@ -1142,15 +1104,13 @@ mod tests {
             "test.git.commit",
         )
         .expect("git commit");
-        let policy = root.join("policy.json");
-        (temp, root, policy)
+        (temp, root)
     }
 
     #[test]
     #[serial]
     fn project_edit_tool_updates_real_file_and_reads_back_diff() {
-        let (_temp, root, policy) = init_real_governed_git_repo();
-        let _guard = EnvGuard::set("CGREALITY_GOVERNED_PATHS", &policy);
+        let (_temp, root) = init_real_governed_git_repo();
         let source = root.join("docs/ccreality/example.md");
         let window = project_file_window(&root, "docs/ccreality/example.md", 1, 2)
             .expect("project file window");
@@ -1196,8 +1156,7 @@ mod tests {
     #[test]
     #[serial]
     fn project_edit_rejects_stale_observed_sha256() {
-        let (_temp, root, policy) = init_real_governed_git_repo();
-        let _guard = EnvGuard::set("CGREALITY_GOVERNED_PATHS", &policy);
+        let (_temp, root) = init_real_governed_git_repo();
         let source = root.join("docs/ccreality/example.md");
         let before = fs::read_to_string(&source).expect("before");
         let tool_dir = root.join("attempt/governed-tool");
@@ -1251,8 +1210,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn governed_path_validation_does_not_require_policy_env() {
-        let _guard = EnvGuard::remove("CGREALITY_GOVERNED_PATHS");
+    fn governed_path_validation_has_no_policy_env_dependency() {
         let source = validate_governed_path("Cargo.toml").expect("policy env is not required");
         eprintln!("PATH_VALIDATION_NO_POLICY allowed={source}");
         assert_eq!(source, "Cargo.toml");
@@ -1261,8 +1219,7 @@ mod tests {
     #[test]
     #[serial]
     fn governed_command_runs_allowlisted_command_and_writes_readback() {
-        let (_temp, root, policy) = init_real_governed_git_repo();
-        let _guard = EnvGuard::set("CGREALITY_GOVERNED_PATHS", &policy);
+        let (_temp, root) = init_real_governed_git_repo();
         let tool_dir = root.join("attempt/governed-command");
         let result =
             run_governed_command(&root, &tool_dir, "git status --short", 30).expect("git status");
@@ -1281,7 +1238,7 @@ mod tests {
     #[test]
     #[serial]
     fn governed_command_denies_shell_metachar_bypass() {
-        let (_temp, root, _policy) = init_real_governed_git_repo();
+        let (_temp, root) = init_real_governed_git_repo();
         let marker = root.join("should-not-exist");
         let command = format!("cargo build && touch {}", path_str(&marker));
         let err = run_governed_command(&root, &root.join("attempt/denied"), &command, 30)

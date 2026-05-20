@@ -208,9 +208,6 @@ A query like *"Why does the authentication service fail under load?"*:
 | `context-graph-embeddings` | 13-model embedding pipeline (HuggingFace candle) |
 | `context-graph-cuda` | GPU acceleration (CUDA / candle) |
 | `context-graph-cli` | CLI tools, Claude Code hooks |
-| `context-graph-causal-agent` | LLM-based causal discovery |
-| `context-graph-graph-agent` | LLM-based graph relationship discovery (via causal-agent) |
-| `context-graph-benchmark` | Performance benchmarking suite |
 | `context-graph-test-utils` | Shared test utilities |
 
 ---
@@ -519,9 +516,6 @@ contextgraph/
 │   ├── context-graph-embeddings/   # 13-model embedding pipeline (candle)
 │   ├── context-graph-cuda/         # GPU acceleration
 │   ├── context-graph-cli/          # CLI and Claude Code hooks
-│   ├── context-graph-causal-agent/ # LLM-based causal discovery
-│   ├── context-graph-graph-agent/  # LLM-based graph relationship discovery
-│   ├── context-graph-benchmark/    # Performance benchmarking suite
 │   └── context-graph-test-utils/   # Shared test helpers
 ├── config/                         # Configuration files (TOML)
 ├── scripts/                        # Build and maintenance scripts

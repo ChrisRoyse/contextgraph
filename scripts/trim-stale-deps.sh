@@ -30,16 +30,16 @@ done
 CRATE_PREFIXES=(
     "context_graph_mcp"
     "context_graph_cli"
-    "libcontext_graph_benchmark"
     "libcontext_graph_core"
     "libcontext_graph_embeddings"
     "libcontext_graph_storage"
     "libcontext_graph_mcp"
-    "libcontext_graph_graph"
-    "libcontext_graph_causal_agent"
     "libcontext_graph_cuda"
-    "libcontext_graph_graph_agent"
     "libcontext_graph_test_utils"
+    # Retired crate artifacts can still occupy target/deps after crate deletion.
+    "libcontext_graph_benchmark"
+    "libcontext_graph_causal_agent"
+    "libcontext_graph_graph_agent"
     "libllama_cpp_sys_2"
 )
 

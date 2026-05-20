@@ -13,7 +13,7 @@ use serde_json::json;
 /// Returns causal tool definitions (4 tools).
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
-        // search_causal_relationships - Search LLM-generated causal descriptions with provenance
+        // search_causal_relationships - Retired causal-description search with provenance.
         ToolDefinition::new(
             "search_causal_relationships",
             "Retired. The E5 causal relationship search backend is disabled and this tool \

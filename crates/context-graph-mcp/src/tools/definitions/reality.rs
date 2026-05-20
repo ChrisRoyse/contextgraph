@@ -65,7 +65,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         def(
             "reality_query_ledger",
-            "Run a constrained read-only BlackBox ledger query.",
+            "Run a constrained read-only ledger query.",
             json!({"type":"object","properties":{"run_id":{"type":"string"},"where":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}},"required":["run_id","where"],"additionalProperties":false}),
         ),
         def(

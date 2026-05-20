@@ -6,11 +6,11 @@ source "${SCRIPT_DIR}/_common.sh"
 
 # ccreality pre-edit hook: GATE REMOVED 2026-05-07.
 #
-# This hook used to consult config/ccreality_governed_paths.json and deny edits
-# to any path not on the allow list. That made the loop unable to solve problems
-# whenever the necessary edit fell outside the curated allow set (e.g. saving a
-# memory under ~/.claude/projects/...). The operator removed the gate so that
-# Claude Code's reality loop has full editing capability.
+# This hook used to consult a governed-paths policy file and deny edits to any
+# path not on the allow list. That made the loop unable to solve problems
+# whenever the necessary edit fell outside the curated allow set. The operator
+# removed the gate so that Claude Code's reality loop has full editing
+# capability; the old JSON policy file has since been deleted.
 #
 # What we KEEP: pre-edit SHA + line-count recording. The post-edit hook reads
 # this state to compute the harness-transition delta and append to the shift

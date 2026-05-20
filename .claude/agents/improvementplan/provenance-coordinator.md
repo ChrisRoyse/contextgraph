@@ -19,12 +19,11 @@ Coordinate the phased implementation of the provenance improvement plan, ensurin
 ## Implementation Sequence
 
 ### Phase 1: Foundation (Must Complete First)
-**Agents:** `audit-log-architect` -> `operator-attribution` -> `llm-provenance-tracker`
+**Agents:** `audit-log-architect` -> `operator-attribution`
 
 Dependencies:
 - `audit-log-architect` creates CF_AUDIT_LOG that all other agents write to
 - `operator-attribution` adds created_by fields that lifecycle-provenance extends
-- `llm-provenance-tracker` is independent but completes the P0 set
 
 ### Phase 2: Retrieval (After Phase 1)
 **Agent:** `retrieval-transparency`
@@ -77,7 +76,7 @@ Dependencies:
 ## Coordination Process
 
 1. **Verify prerequisites:** Check that the codebase compiles before starting
-2. **Run Phase 1 agents** in sequence (audit-log -> operator -> llm)
+2. **Run Phase 1 agents** in sequence (audit-log -> operator)
 3. **Run Phases 2, 3, 6** in parallel (retrieval-transparency, entity+code provenance, embedding-tracker)
 4. **Run Phase 4** (lifecycle-provenance)
 5. **Run Phase 5** (hook-tool-provenance)

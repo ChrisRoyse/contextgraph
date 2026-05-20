@@ -143,12 +143,10 @@ pub enum SourceType {
     ClaudeResponse,
     /// User-injected via MCP tools
     Manual,
-    /// LLM-generated causal explanation (E5+LLM knowledge generation)
+    /// Legacy generated causal explanation.
     ///
-    /// E5+LLM is the ONLY embedder pair that GENERATES new knowledge.
-    /// This source type indicates the memory content is an LLM-articulated
-    /// causal relationship, stored as a first-class teleological fingerprint
-    /// with all 13 embeddings.
+    /// The pre-pivot generator path is retired. This source type remains only
+    /// so older records can still be read and classified.
     CausalExplanation,
     /// Unknown source
     Unknown,

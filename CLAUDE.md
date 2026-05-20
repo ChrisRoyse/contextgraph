@@ -49,19 +49,19 @@ Beyond the binary primitive ME-JEPA exposes two derived operator-facing surfaces
 
 **Phases A–H complete.** 35/35 Phase A–D items audit-verified 2026-05-12. Phase H (inner-actor LLM retirement) FSV-verified 2026-05-13 — `feature = "llm"` triggers `compile_error!` at `crates/context-graph-mcp/src/lib.rs:13`; deletion of `Qwen3.6-27B`, `Hermes-2-Pro`, `Ollama`, `llama.cpp` generative inference enforced by 9 `scripts/ci/phase_h_*.sh` absence-checks.
 
-**The only outstanding gate is Phase G model-quality convergence:** `prediction_oracle_correlation = 0.866667 < 0.95` on Panel A (legacy `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; pending revalidation on aiwonder under #369).
+**The only outstanding gate is Phase G model-quality convergence:** `prediction_oracle_correlation = 0.866667 < 0.95` on Panel A (legacy `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; #369 closed the aiwonder migration revalidation sweep, and #405 produces the first Panel B cross-panel measurement).
 
 **Post-migration storage:** Production durable state lives on aiwonder under `/zfs/archive/contextgraph/...`; hot work under `/zfs/hot/contextgraph/...` (per #363 / #412). Local `/mnt/d/contextgraph/...` is **legacy provenance only** — not an active read/write target. If needed data only exists there, move it to aiwonder first.
 
 **2026-05-19 cleanup pass (this session).** Investigation reports at `./docs/INVESTIGATION_{1,2,3}_*.md` drove ~314,000 LOC removed across 4 commits, including:
 
-- Retired crates **`context-graph-causal-agent`** + **`context-graph-graph-agent`** (had zero workspace dependents after the 2026-05-09 LLM cutover). Workspace: 25 → 23 active members.
+- Retired crates **`context-graph-causal-agent`**, **`context-graph-graph-agent`**, and **`context-graph-benchmark`** (had no ship-gate role after the 2026-05-09 LLM cutover and ME-JEPA pivot). Workspace: 25 → 22 active members.
 - Retired **BlackBoxFix** subsystem from `context-graph-cli` (~52K LOC + 26 tests + `axum`/`reqwest`/`rusqlite` deps).
 - Retired **Q4 producer modules** (#408 closed): `composite_reward_signals`, `static_analysis_reward`, `telemetry_signals`, `live_session_signals`, `type_graph_signals`, `e_coverage`, `e_cyclomatic`, `e_diff_topology`, `e_embedder_heads` + their FSV examples. `q4_trust_gate.rs` (the freeze enforcement) remains. Q4 CFs are read-only forensic continuity.
 - Removed `linear_probe.rs`, `stdlib_registry.rs`, pre-pivot benchmark bins (`causal_*`, `multimodal_*`, `embedder_impact_*`, `weight_profile_bench`, `e2_manual_verification`, `e10_modifier_tuning`, `e11_entity_bench`).
 - Removed 42 retired Shakespeare LoRA training scripts (4 historical-only stubs retained — Phase H absence-check tracks them).
 - Removed `.claude/skills/ccreality-{iterate,readback,smoke,trigger-check}/`, `docs2/contextgraphspecs/`, `docs2/realitywhitepaper/`, `backupdocs/*` numbered duplicates.
-- Re-pointed `INSTALL.md`, `systemd/contextgraph-mcp-http.service`, `scripts/restart_pipeline_services.sh` from `/mnt/d/...` to aiwonder.
+- Retired obsolete WSL/Shakespeare/EXP-2 script trees and re-pointed remaining active runtime defaults from `/mnt/d/...` to aiwonder.
 - Re-branded 7 storage-test `validator_version: "hermes-2-pro-mistral-7b-q5-km@2026-04"` strings → `"deterministic-validator-v1@2026-05"`.
 
 **Current work source.** GitHub Issues are the live source of truth. Read pinned `type:context` issues first, then `docs/futurebuild/README.md` for the 8-doc map and `docs/futurebuild/08_roadmap_and_open_work.md` for the latest roadmap.
@@ -90,9 +90,9 @@ Historical 2026-05-12 audit trail lived at `./memory/discoveries/2026-05-12--pha
 
 ---
 
-## 3. The crates (23 active workspace members)
+## 3. The crates (22 active workspace members)
 
-Workspace manifest: `Cargo.toml:6-30`. `default-members` excludes `context-graph-benchmark` (still 80K+ LOC excluded from default build).
+Workspace manifest: `Cargo.toml:6-30`. `default-members` mirrors the 22 active workspace crates.
 
 **Product surface:**
 
@@ -124,11 +124,11 @@ Workspace manifest: `Cargo.toml:6-30`. `default-members` excludes `context-graph
 - **`context-graph-tier-compression`** — 8/7/5/3-bit groupwise scalar quantization with magic+version header.
 - **`context-graph-dynamicjepa`** — 5090jepa MCP surface (39 tools): adapter shipping, plan trace, surprise log.
 - **`context-graph-test-utils`** — Shared test utilities — NO MOCK DATA (per FSV-PROTOCOL §3).
-- **`context-graph-benchmark`** *(excluded from default build)* — Benchmarking suite. Build explicitly with `cargo build -p context-graph-benchmark`. Pre-pivot bins were retired 2026-05-19; live bins are E1/E4/E7/graph-linking/sparse/temporal/multimodal-stripped.
 
 **Legacy and retired:**
 
 - `context-graph-reality-loop` binary — deleted 2026-05-09 (Phase H). Do not reanimate without explicit operator authorization and new FSV evidence.
+- `context-graph-benchmark` crate — deleted 2026-05-20 after aiwonder FSV readback found no live benchmark evidence path and the ME-JEPA ship gate no longer uses pre-pivot benchmark bins.
 - Inner-actor LLM stack (Qwen3.6-27B / Hermes-2-Pro / Ollama / llama.cpp generative inference) — deleted 2026-05-09; Phase H absence-checks at `scripts/ci/phase_h_*.sh` assert continued absence.
 - `context-graph-causal-agent`, `context-graph-graph-agent` — deleted 2026-05-19; LLM-backed callers were retired in the 2026-05-09 ME-JEPA pivot and the crates had zero workspace dependents.
 
@@ -195,7 +195,6 @@ The MCP-server-side path-policy gate and pre-edit hook deny-list were both remov
 - `.env` and `.env.*` anywhere
 - `swebench/**` (the upstream evaluator)
 - `tests/oracle_**/**` (benchmark fixtures)
-- `crates/context-graph-benchmark/datasets/swe_bench_*/**`
 - `crates/*/src/reward_specs/**`
 - `crates/*/src/verifiers/**`
 - Any `*.pem`, `*.key`, `**/credentials.json`
@@ -207,7 +206,7 @@ If editing one of these is genuinely the right thing for an operator-directed ta
 ## 8. Directory layout
 
 ```
-./crates/         — Rust workspace (23 active members; benchmark crate excluded from default build)
+./crates/         — Rust workspace (22 active members)
 ./docs/           — futurebuild plan (8-doc live suite + _archived/) + PAPER.md + investigation reports
 ./docs2/          — AICodingAgentSuperPrompt.md (master doctrine) + hardeningprompt.md (14-axis deep-dive) + prdtospec.md + aiwonder.md + flagprompt.md (SUPERSEDED, kept as reference)
 ./scripts/        — CC hook scripts (scripts/cc/), CI lint + Phase G/H FSV audit harnesses (scripts/ci/), setup, swebench_lite_ops/, label bootstrap (gh-labels-bootstrap.sh)
@@ -244,7 +243,7 @@ If editing one of these is genuinely the right thing for an operator-directed ta
 /mnt/d/contextgraph/
 ```
 
-CI lint `scripts/ci/check_no_c_drive_paths.sh` blocks C-drive paths in code or FSV files. `scripts/ci/no_mnt_d_production_paths_fsv.py` sweeps for stale `/mnt/d` references (#369).
+CI lint `scripts/ci/check_no_c_drive_paths.sh` blocks C-drive paths in code or FSV files. `scripts/ci/no_mnt_d_production_paths_fsv.py` classifies residual `/mnt/d` references and fails on active production reads/writes (#412 / #434).
 
 ---
 
@@ -341,9 +340,8 @@ RCA: 5 Whys → Fishbone → Fault Tree Analysis → first-principles debugging 
 cargo build --release -p context-graph-cli      # workhorse CLI
 cargo build --release -p context-graph-mcp      # MCP protocol shim
 cargo build --release -p <touched-crate>        # after any change
-cargo build --release                            # full default workspace (excludes benchmark crate)
+cargo build --release                            # full workspace
 cargo build --release --examples                 # also compile every FSV harness
-cargo build -p context-graph-benchmark           # benchmark suite (explicitly opted-in)
 cargo test                                       # full suite
 cargo test -p <touched-crate>                    # scoped
 cargo clippy --no-deps --tests --examples -- -D warnings

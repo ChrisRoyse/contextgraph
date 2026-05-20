@@ -363,7 +363,8 @@ All calibration items below are now qualified by #385: their evidence must be pe
 | #366 / TASK-AIWONDER-015 | Rerun TASK-PY-G-056 live-session FSV on aiwonder | ✅ closed 2026-05-18 |
 | #367 / TASK-AIWONDER-016 | Project-ingest/runtime data locality audit for arbitrary repo folders | ✅ closed 2026-05-18 |
 | #368 / TASK-AIWONDER-017 | Host capability utilization audit + scheduler profile | open p1 |
-| #369 / TASK-AIWONDER-018 | Revalidate post-migration Phase G FSV artifacts on aiwonder | open p0 (blocks transition of all Phase G FSV from `/mnt/d` to `/zfs/archive`) |
+| #369 / TASK-AIWONDER-018 | Revalidate post-migration Phase G FSV artifacts on aiwonder | ✅ closed 2026-05-18 |
+| #412 / TASK-AIWONDER-022 | Remove `/mnt/d` from active ME-JEPA production paths and archive hot-only AST chunks | in-progress p0 |
 | #372 / TASK-AIWONDER-019 | ContextGraph roots must be mounted on aiwonder ZFS pools (paths-policy enforcement) | open p0 `status:blocked` |
 | #380 / TASK-AIWONDER-020 | Off-host backup for `/zfs/archive` proof history (#296 backup posture follow-up) | open p1 |
 | #384 / TASK-AIWONDER-021 | CUDA/candle rollback and reproducibility lane | open p2 |

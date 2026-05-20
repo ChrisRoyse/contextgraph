@@ -93,9 +93,9 @@ pub struct CausalEdge {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reverse_embeddings: Option<(Vec<f32>, Vec<f32>)>,
 
-    // ========== LLM PROVENANCE ==========
-    /// LLM confidence score for this relationship [0, 1].
-    /// Separate from strength to preserve original LLM assessment.
+    // ========== RETIRED LOCAL-ACTOR COMPATIBILITY ==========
+    /// Retired local-actor confidence score for this relationship [0, 1].
+    /// Active ME-JEPA code must not populate this field.
     #[serde(default)]
     pub llm_confidence: f32,
 
@@ -103,7 +103,7 @@ pub struct CausalEdge {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mechanism_type: Option<String>,
 
-    /// Provenance of LLM guidance applied during E5 embedding generation.
+    /// Retired compatibility provenance for guidance once applied during E5 embedding generation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding_hint_provenance: Option<crate::traits::EmbeddingHintProvenance>,
 }
@@ -163,7 +163,7 @@ impl CausalEdge {
         }
     }
 
-    /// Set LLM provenance information.
+    /// Set retired local-actor provenance information.
     pub fn with_llm_provenance(mut self, confidence: f32, mechanism_type: Option<String>) -> Self {
         self.llm_confidence = confidence.clamp(0.0, 1.0);
         self.mechanism_type = mechanism_type;

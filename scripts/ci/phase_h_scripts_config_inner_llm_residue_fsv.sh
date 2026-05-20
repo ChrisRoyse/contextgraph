@@ -3,6 +3,8 @@ set -euo pipefail
 
 # retired-inner-actor audit: historical, do not reanimate the local LLM names
 # scanned below; this FSV prevents active scripts/config from carrying them.
+# Real generated EXP-2 snapshots are no longer required to stay in the tree;
+# the synthetic boundary case still proves unmarked generated snapshots fail.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FSV_ROOT="${FSV_ROOT:-/zfs/archive/contextgraph/fsv/phase-h-scripts-config-inner-llm-residue-fsv}"
@@ -24,6 +26,7 @@ is_audit_scanner() {
     scripts/cc/tests/mejepa_retirement_fsv.sh | \
     scripts/ci/phase_h_no_inner_actor_models_fsv.sh | \
     scripts/ci/phase_h_claude_inner_loop_reference_fsv.sh | \
+    scripts/ci/phase_h_deletion_list_audit_fsv.sh | \
     scripts/ci/phase_h_smap_superseded_decisions_fsv.sh | \
     scripts/ci/phase_h_scripts_config_inner_llm_residue_fsv.sh)
       return 0
@@ -208,7 +211,6 @@ if [[ "$real_active_disallowed_count" == "0" \
   && "$real_total_file_count" -gt "0" \
   && "$real_historical_only_count" -gt "0" \
   && "$real_audit_allow_count" -gt "0" \
-  && "$real_generated_snapshot_count" -gt "0" \
   && "$synthetic_active_detected" == "true" \
   && "$synthetic_historical_allowed" == "true" \
   && "$synthetic_unmarked_generated_detected" == "true" \
