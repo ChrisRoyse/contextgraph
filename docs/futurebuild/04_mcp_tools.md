@@ -282,9 +282,9 @@ No tool sends HTTP from action paths (CLAUDE.md §6.8). No tool writes outside `
 
 ## 9. Planned New MCP Tools (Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop)
 
-Planned MCP surfaces supporting the 2026-05-19 binary doctrine (`01_overview.md §1.1`, `05_predictor_pipeline.md §0`). Tracked under epic issues #404 / #405 / #406. All planned tools are `mejepa_*` namespaced and registered through `definitions/mejepa.rs`.
+Planned MCP surfaces supporting the 2026-05-19 binary doctrine (`01_overview.md §1.1`, `05_predictor_pipeline.md §0`). Tracked under epic issues #405 / #417 / #523. All planned tools are `mejepa_*` namespaced and registered through `definitions/mejepa.rs`.
 
-### 9.1 Failure-mode labeling tools — CLI SHIPPED via #413; MCP wrappers planned via #404
+### 9.1 Failure-mode labeling tools — CLI SHIPPED via #413/#404; MCP wrappers tracked via #417/#523
 
 **Shipped CLI surface (deterministic Level-0 compiler, 2026-05-19):**
 
@@ -292,7 +292,7 @@ Planned MCP surfaces supporting the 2026-05-19 binary doctrine (`01_overview.md 
 |---|---|---|
 | `python-auto-label-discovery` (registered via `scripts/swebench_lite_ops/cli.py`) | ✅ SHIPPED 2026-05-19 (#413) | Run the full deterministic label compiler against the aiwonder corpus. Writes all 7 Level-0 JSONL artifacts under `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/` plus the FSV at `/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv/`. Deterministic by `FORMULA_VERSION=deterministic_slot_label_compiler_v1`. |
 
-**Planned MCP wrappers (`mejepa_*` namespace; on top of the shipped CLI) — open under #404 / TASK-PY-G-110:**
+**Planned MCP wrappers (`mejepa_*` namespace; on top of the shipped CLI/FSV substrate) — open under #417 / TASK-PY-G-120 and #523 / TASK-PY-G-112B:**
 
 | Tool (planned) | Const | Purpose | Key params | Side effects |
 |---|---|---|---|---|
@@ -333,7 +333,7 @@ No tool deletion (would break stored agent prompts referencing them); behaviour 
 
 ### 9.5 Tool-count update
 
-Current count after the first #417 slice is **201**. When #404/#405/#406 land, the total tool count increases by the exact tools shipped in those slices and the `test_total_tool_count_and_no_duplicates` threshold must be updated in the same change. Q4 tool deprecation does not change the count (tools remain registered, just behaviour-changed).
+Current count after the first #417 slice is **201**. When #405/#417/#523 land more MCP wrappers, the total tool count increases by the exact tools shipped in those slices and the `test_total_tool_count_and_no_duplicates` threshold must be updated in the same change. Q4 tool deprecation does not change the count (tools remain registered, just behaviour-changed).
 
 ### 9.6 Pathway exploration surface tools (#416 / TASK-PY-G-119, planned)
 

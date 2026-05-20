@@ -307,7 +307,7 @@ Full FSV evidence index (327 directories on `/mnt/d/contextgraph/fsv/`) → `07_
 
 ## 12. Modules for the Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop
 
-Source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`). The Level-0 label compiler (#413), skill-sequence substrate (#414), runtime ability resolver slice (#418), and core online-head mistake consumer (#406) are shipped; #404 / #405 / #407 / #523 remain active follow-ons. All are additive to existing crates — no new top-level crate.
+Source files supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`). The Level-0 label compiler (#413), Level-1/2/3 hierarchy (#404), skill-sequence substrate (#414), runtime ability resolver slice (#418), and core online-head mistake consumer (#406) are shipped; #405 / #407 / #523 remain active follow-ons. All are additive to existing crates — no new top-level crate.
 
 ### 12.1 Failure-mode labeling hierarchy
 

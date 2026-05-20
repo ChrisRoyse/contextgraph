@@ -347,7 +347,7 @@ Predecessor: `a1e6a842 Make aiwonder production storage policy explicit` — dec
 
 ## 9. Planned New Column Families (Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop)
 
-Additive CFs supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`, `02_source_map.md §12`). The #414 skill-membership CFs and #406 online-head CF are registered in `mejepa-cf/src/lib.rs`; #404/#405 runtime consumers remain tracked by their issue gates. No rename of existing CFs.
+Additive CFs supporting the 2026-05-19 binary doctrine (see `01_overview.md §1.1`, `05_predictor_pipeline.md §0`, `02_source_map.md §12`). The #404 hierarchy CFs, #414 skill-membership CFs, #418 runtime-resolver rows, and #406 online-head CF are registered in `mejepa-cf/src/lib.rs`; #405 runtime consumers remain tracked by their issue gate. No rename of existing CFs.
 
 ### 9.1 Failure-mode labeling — Level-0 SHIPPED as JSONL artifacts; #414 skill CFs registered
 
@@ -482,4 +482,4 @@ When CFs land, they get added to `ALL_HYGIENE_REFERENCED_CFS` (`mejepa-cf/lib.rs
 
 #414 production FSV (`/zfs/archive/contextgraph/fsv/task-py-g-118-skill-sequence-discovery-fsv/run-1779213075188/task_py_g_118_aiwonder_skill_materialization_fsv.json`, `sha256:0df1437ae5e0542b356777b29df700b521b83b054113697ca280ae3d242d3dee`) streamed all 399,777 #413 chunk-label rows and wrote/read back 128 `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` rows, 36,773 `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` rows, 10,579 `CF_MEJEPA_SKILL_REVERSE_INDEX` rows, and 128 `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` rows. External aiwonder `ldb` readback with `LD_LIBRARY_PATH=/zfs/hot/contextgraph/lib` matched the reopened Rust counts exactly.
 
-Because adding a CF is a schema change and ME-JEPA has no migrations (`CLAUDE.md §6.6`), landing #404/#405 means a deliberate DB wipe + rebuild. The #406 online-head CF is already registered; future Fisher/EWC rows for #524 must either reuse an existing declared CF with a documented key prefix or land with an explicit wipe/rebuild plan.
+Because adding a CF is a schema change and ME-JEPA has no migrations (`CLAUDE.md §6.6`), landing #405 means a deliberate DB wipe + rebuild. The #404 hierarchy CFs and #406 online-head CF are already registered; future Fisher/EWC rows for #524 must either reuse an existing declared CF with a documented key prefix or land with an explicit wipe/rebuild plan.
