@@ -342,6 +342,7 @@ cargo build --release -p context-graph-mcp      # MCP protocol shim
 cargo build --release -p <touched-crate>        # after any change
 cargo build --release                            # full workspace
 cargo build --release --examples                 # also compile every FSV harness
+cargo check --workspace --tests --examples       # MANDATORY after changing any shared type
 cargo test                                       # full suite
 cargo test -p <touched-crate>                    # scoped
 cargo clippy --no-deps --tests --examples -- -D warnings
@@ -349,6 +350,10 @@ cargo fmt
 ```
 
 **`cargo check` is NOT a substitute for `cargo build --release`.** Always run release build after a `changed` recommendation.
+
+**`cargo check --workspace --tests --examples` IS REQUIRED** after touching any type, trait, or function signature that crosses crate boundaries. `cargo build --release` does NOT compile test or example targets, and `cargo test -p <crate>` only recompiles tests for that crate — neither catches downstream test-compile drift in other crates. The 2026-05-20 cleanup discovered three production-crate tests had been silently broken since 2026-05-19 (`OracleVerdict::evidence_unavailable` and `ReleaseAggregateTableSpec::numeric_columns` fields added but downstream `#[cfg(test)]` call sites missed) because no workspace-wide test-compile gate was being run. **Discovery: the test contract for "compiles" is part of the test contract — a test that doesn't compile is worse than no test.**
+
+**Self-referential static-source tests are forbidden.** A test that does `source.contains(forbidden_literal)` against its own file will self-match if the literal appears in the test itself (e.g., inside `r#"..."#` raw strings). Such tests always fail in CI and look like a real regression. If a contract must be enforced at the source level, do it via a separate tool (build script, `scripts/ci/*.sh` grep) or use a behavior test against the real error code, not the production source's substring shape.
 
 Phase H absence-checks run from `scripts/ci/phase_h_*.sh` — operator-invoked, no CI wiring by design. Phase G audit harnesses live at `scripts/ci/phase_g_*.sh`.
 

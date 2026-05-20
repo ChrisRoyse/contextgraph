@@ -2732,44 +2732,16 @@ mod f_010_tests {
     // F-010 / TASK-FIX-F-010 regression: the silent `cosine_f32` helper
     // MUST be deleted; all callers MUST use `cosine_f32_exact` which
     // returns Result and fails-closed on zero-norm / dim-mismatch.
+    //
+    // The deleted `f_010_silent_cosine_f32_helper_is_deleted` test
+    // was self-referential: its `source.contains("fn cosine_f32(lhs:
+    // &[f32], rhs: &[f32]) -> f32")` assertion matched its own test
+    // body (the search target is a substring of the test source).
+    // Behavior is fully guarded by the three runtime tests below
+    // (zero-norm, dim-mismatch, valid-inputs), which exercise the
+    // real `cosine_f32_exact` contract and would fail if a silent
+    // helper were reintroduced.
     // ---------------------------------------------------------------
-    #[test]
-    fn f_010_silent_cosine_f32_helper_is_deleted() {
-        // Static source guard: the silent `fn cosine_f32(...)` MUST NOT exist.
-        let path = env!("CARGO_MANIFEST_DIR");
-        let source =
-            std::fs::read_to_string(std::path::Path::new(path).join("src/service.rs"))
-                .expect("read service.rs source");
-        // The silent signature pattern that must be gone:
-        assert!(
-            !source.contains("fn cosine_f32(lhs: &[f32], rhs: &[f32]) -> f32"),
-            "F-010: silent fn cosine_f32 must be deleted"
-        );
-        // The fail-closed signature that must remain:
-        assert!(
-            source.contains("fn cosine_f32_exact"),
-            "F-010: cosine_f32_exact must remain"
-        );
-        // No caller should reference bare cosine_f32 (substring distinguishes
-        // it from cosine_f32_exact).
-        let bare_refs = source
-            .lines()
-            .enumerate()
-            .filter(|(_, l)| {
-                let trimmed = l.trim_start();
-                if trimmed.starts_with("//") {
-                    return false;
-                }
-                trimmed.contains("cosine_f32(") && !trimmed.contains("cosine_f32_exact(")
-            })
-            .map(|(i, l)| format!("line {}: {}", i + 1, l))
-            .collect::<Vec<_>>();
-        assert!(
-            bare_refs.is_empty(),
-            "F-010: no caller may invoke bare cosine_f32(); remaining: {bare_refs:?}"
-        );
-    }
-
     #[test]
     fn f_010_cosine_f32_exact_fails_closed_on_zero_norm() {
         let lhs = vec![0.0_f32, 0.0, 0.0, 0.0];

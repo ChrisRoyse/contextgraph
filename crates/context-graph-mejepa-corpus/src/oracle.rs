@@ -1680,6 +1680,7 @@ mod tests {
                 runtime_ms: 3,
             }],
             exception: None,
+            evidence_unavailable: false,
         };
         let patch_sha256 =
             "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -1753,6 +1754,7 @@ mod tests {
                 runtime_ms: 3,
             }],
             exception: None,
+            evidence_unavailable: false,
         };
         let outcome = apply_mutation(
             MutationCategory::KnownGood,

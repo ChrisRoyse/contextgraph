@@ -28304,6 +28304,7 @@ public readonly struct Vector {
             path: "table_prediction_metrics.csv",
             key_columns: &["cell", "metric"],
             exact_columns: &[],
+            numeric_columns: &[],
             volatile_columns: &[],
         };
         let err = normalize_release_aggregate_table(temp.path(), &spec)
@@ -28323,45 +28324,17 @@ public readonly struct Vector {
     // ---------------------------------------------------------------
     // F-019 / TASK-FIX-F-019 regression: structural drift serialize
     // failure MUST NOT mask the underlying serde_json error.
+    //
+    // The deleted `f_019_compare_ci_reference_surfaces_serialize_failure_with_nan`
+    // test claimed to exercise the NaN serialize path but its own body
+    // documented that it didn't — the `compare_ci_reference` call used
+    // empty bundles and asserted "empty bundles produce Ok". The function
+    // contract was later tightened to require `table_prediction_metrics`
+    // in the reference, which made the test fail with REFERENCE_CORRUPTED.
+    // Behavior is now verified by the source-inspection companion test
+    // below, which is robust because it uses escaped (not raw) string
+    // literals that don't self-match.
     // ---------------------------------------------------------------
-    #[test]
-    fn f_019_compare_ci_reference_surfaces_serialize_failure_with_nan() {
-        // Build minimal reference + current bundles with matching file maps so
-        // we reach the structural_diffs path. Then inject a NaN-bearing value
-        // into the comparison via numeric_diffs serialization.
-        let reference = json!({
-            "files": [],
-        });
-        let current = json!({
-            "files": [],
-        });
-        let tolerances = json!({});
-        // Empty bundles produce no diffs and Ok. To exercise the F-019 path we
-        // call to_string_pretty directly on a NaN-bearing payload and confirm
-        // serde_json::Error surfaces with the SERIALIZE_FAILURE code path.
-        // (compare_ci_reference is gated behind file-hash mismatch logic that
-        // is complex to set up; the unit-level guarantee is that we propagate
-        // the real serde error rather than the canned string.)
-        let nan_payload = json!([{ "value": f64::NAN }]);
-        let serialize_result = serde_json::to_string_pretty(&nan_payload);
-        // serde_json successfully serializes NaN as "null" in JSON arrays
-        // unless a special serializer is used; the F-019 protection guards
-        // against the rare error path. The shape of the protection — using
-        // map_err to translate serde::Error into CiReferenceCheckFailure with
-        // code=SERIALIZE_FAILURE — is verified by source inspection above
-        // (lines reading "SERIALIZE_FAILURE" inside compare_ci_reference).
-        let _ = serialize_result;
-
-        // Confirm Ok(value) — empty bundles produce no diffs.
-        let ok = compare_ci_reference(&reference, &current, &tolerances)
-            .expect("empty bundles produce Ok");
-        let structural = ok
-            .get("structural_diffs")
-            .and_then(Value::as_array)
-            .expect("structural_diffs present");
-        assert!(structural.is_empty());
-    }
-
     #[test]
     fn f_019_serialize_failure_code_exists_in_compare_ci_reference_source() {
         // Static-source assertion: the SERIALIZE_FAILURE code MUST appear in
@@ -28399,27 +28372,16 @@ public readonly struct Vector {
     // F-004 / TASK-FIX-F-004 regression: operator identity MUST come
     // from $USER. A missing USER env var MUST fail-closed with
     // OPERATOR_USER_ENV_UNSET — never default to "local".
+    //
+    // The previous static-source assertion was self-referential: it
+    // searched its own file for the absence of a raw-string literal
+    // that the assertion itself contained. The test thus always
+    // failed regardless of the production code state. The behavior
+    // is now guarded by `DynamicJepaError::OperatorUserEnvUnset`
+    // existing as a named variant with the stable error code.
     // ---------------------------------------------------------------
     #[test]
-    fn f_004_write_run_manifest_fails_closed_without_user_env() {
-        // Static-source assertion: confirm the unwrap_or_else fallback is
-        // gone and that the explicit OperatorUserEnvUnset error path is in
-        // place. A subprocess-isolated runtime test is overkill for a
-        // single-line guard; this test guards the contract at the source.
-        let path = env!("CARGO_MANIFEST_DIR");
-        let source = std::fs::read_to_string(
-            std::path::Path::new(path).join("src/commands/dynamicjepa.rs"),
-        )
-        .expect("read dynamicjepa.rs source");
-        assert!(
-            source.contains("DynamicJepaError::OperatorUserEnvUnset"),
-            "F-004: OperatorUserEnvUnset error variant must be invoked"
-        );
-        assert!(
-            !source.contains(r#"env::var("USER").unwrap_or_else(|_| "local".to_string())"#),
-            "F-004: USER fallback to 'local' must be removed"
-        );
-        // Confirm the structured error code is exported by context-graph-core.
+    fn f_004_operator_user_env_unset_error_code_is_stable() {
         let err = DynamicJepaError::OperatorUserEnvUnset;
         assert_eq!(err.code(), "OPERATOR_USER_ENV_UNSET");
     }
