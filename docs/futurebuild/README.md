@@ -21,9 +21,9 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, the **inference path** in `crates
 
 - The **0.866667** ship-gate measurement (came from inference path through synthetic vectors + untrained predictor + `MEJEPA_BEST_STUB_V1` checkpoint)
 - The `λ_inv ∈ {0, 0.25, 0.5, 1.0}` ablation (every variant measured 0.8666666746139526 — same synthetic input)
-- #393 capability-discovery ablation suite + #398 calibrated rerun (Brier 0.7539 was against synthetic-input predictor)
-- The "slot-preserving architecture doesn't close the 0.083 gap by itself" claim (invalid until #393/#398 are rerun against the real Panel A baseline)
-- The framing that "the 0.866 → 0.95 gap is a function of labels, not embedders/storage" (invalid until real-input ablations identify actual gate movers)
+- Original #393 capability-discovery ablation suite + #398 calibrated rerun (pre-fix Brier 0.7539 was against synthetic-input predictor; real-input reruns now exist and remain `no_promotion`)
+- The "slot-preserving architecture doesn't close the 0.083 gap by itself" claim (pre-fix claim invalid; real-input #393/#398/#546 reruns are negative evidence, not promotion evidence)
+- The framing that "the 0.866 → 0.95 gap is a function of labels, not embedders/storage" (invalid as a broad causal claim; real-input constellation/λ_inv ablations did not identify those surfaces as gate movers)
 
 **Post-fix baseline:** aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T164924Z/` is the current Panel A measurement of record: raw `prediction_oracle_correlation = 0.4843192995`, rank-safe calibrated `0.6916886568`, rank-lift calibrated from real code-state constellations `0.7937270999`. The remaining gap is cell-specific rank weakness plus Panel B cross-check, not another synthetic-vector rebaseline.
 
@@ -63,7 +63,7 @@ Human review of AI patches becomes statistically unjustified once `prediction_or
 
 **P0 blocker:** close the remaining mixed-cell rank deficits exposed by #535 (`off_by_one`, `subtle_flip`, `swap_variable`, plus one-fail cells with saturated predictions) under #536 while preserving calibration split/holdout disjointness.
 
-Critical path: `#404 hierarchy` ✅ → `#413 labels` ✅ → `#414 skills` ✅ → `#418 resolver` ✅ → `#406/#523 mistake loop + MCP` ✅ → `#535 mixed-cell rank lift on real labels` ✅ → **#537 rebaseline #393/#398/`λ_inv` ablations on real inputs** → **#536 weak-cell repair** → **`#407 calibration disjointness`** (p1) → `#511 entropy loss` (p1) → **`#405 Panel B`** (blocked p0) → 0.95 ship gate.
+Critical path: `#404 hierarchy` ✅ → `#413 labels` ✅ → `#414 skills` ✅ → `#418 resolver` ✅ → `#406/#523 mistake loop + MCP` ✅ → `#535 mixed-cell rank lift on real labels` ✅ → `#537 rebaseline #393/#398/λ_inv ablations` ✅ → **#536 weak-cell repair** → **`#407 calibration disjointness`** (p1) → `#511 entropy loss` (p1) → **`#405 Panel B`** (blocked p0) → 0.95 ship gate.
 
 Post-0.95: pathway exploration (#416), skill-linkage MCP (#417), info-physics formalization (#511/#512/#514), creativity engine (#516-#520).
 

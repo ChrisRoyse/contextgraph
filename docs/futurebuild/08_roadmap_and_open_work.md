@@ -18,11 +18,10 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-se
 
 **Remaining revalidation queue:**
 
-1. Finish the uncalibrated #393 companion evidence under #537. The #398-style calibrated rerun and EK-012 `λ_inv` rerun are complete and not gate movers.
-2. Repair remaining weak cells from the #535 report (#536): `off_by_one`, `subtle_flip`, `swap_variable`, plus one-fail `delete_test_call` / `known_good` / `over_engineer` cells whose current predictions saturate and leave Pearson undefined.
-3. Re-validate #129 OOD serving gate + #130 Gτ guard audit + #404 holdout coverage against real-input predictions.
+1. Repair remaining weak cells from the #535 report (#536): `off_by_one`, `subtle_flip`, `swap_variable`, plus one-fail `delete_test_call` / `known_good` / `over_engineer` cells whose current predictions saturate and leave Pearson undefined.
+2. Re-validate #129 OOD serving gate + #130 Gτ guard audit + #404 holdout coverage against real-input predictions.
 
-Tracked under #529 plus #536/#537. **All issues listed in §3 below assume the real-input rebaseline and #535 rank-lift exist unless explicitly noted otherwise.**
+Tracked under #529 plus #536; #537 is closed as negative ablation evidence. **All issues listed in §3 below assume the real-input rebaseline and #535 rank-lift exist unless explicitly noted otherwise.**
 
 ---
 
@@ -83,8 +82,8 @@ Per pinned context #383 (LOCKED): gate-active issue order is **evidence-weighted
 |---|---|---|---|
 | **0** | **REBASELINE + RANK-SAFE CALIBRATION** — run `swebench_300x8_ship_gate_fsv` against real-instruments inference + real trained checkpoint | ✅ landed #531/#534 | Valid Panel A rank-safe measurement exists: `0.6916886568`. |
 | **0.5** | **#535** mixed-cell rank lift from real labels | ✅ landed 2026-05-20 | Valid Panel A rank-lift measurement exists: `0.7937270999`, Brier `0.0936445221`, ECE `0.0338404700`. |
-| 1 | **#537** finish remaining real-input ablation revalidation | OPEN p0; #398-style rerun done; #546 real-input `λ_inv` rerun done | Pre-fix ablations measured nothing meaningful. Reruns so far are not gate movers: calibrated full constellation remains `no_promotion`, and best `λ_inv` variant is `0.0` at `0.6704055071` rank-safe (`-0.1233215928` vs #535 rank-lift baseline). |
-| 1.5 | **#536** repair remaining weak cells after #535 | OPEN p0 | Directly targets `off_by_one`, `subtle_flip`, `swap_variable`, and one-fail saturated cells exposed by the latest measurement. |
+| 1 | **#537** real-input ablation revalidation | ✅ complete 2026-05-20 | #393 uncalibrated, #398 calibrated, and EK-012 `λ_inv` reruns are all not gate movers. Best #393 family: `0.2876047260`; best `λ_inv`: `0.6704055071`; #535 rank-lift baseline remains `0.7937270999`. |
+| 1.5 | **#536** repair remaining weak cells after #535 | OPEN p0 | Directly targets `off_by_one`, `subtle_flip`, `swap_variable`, and one-fail saturated cells exposed by the latest measurement. This is now the active gate-moving queue head. |
 | 2 | **#404** failure-mode hierarchy | ✅ closed 2026-05-20 | Substrate REAL (deterministic over real corpus); holdout measurements need re-validation against post-fix predictions |
 | 3 | **#413** auto-label discovery | ✅ closed 2026-05-19 | 491-row accepted Level-0 registry — REAL (deterministic over real forward cache) |
 | 4 | **#414** skill substrate | ✅ closed 2026-05-19 | 128 Level-2 skills, 36,773 chunk memberships, 10,579 reverse rows — REAL (derived from #413) |
@@ -103,7 +102,7 @@ The slot-preserving refactor is largely shipped and architecturally correct. Clo
 
 Remaining open children: #392 (temporal trajectory features), #382 (frozen-panel dimensionality ablation).
 
-**Current finding:** the slot-preserving architecture is correct and remains the required representation contract, but the pre-fix numerical conclusions are invalid because they measured synthetic-input panels. The real-input #398-style calibrated rerun and EK-012 `λ_inv` rerun are now negative evidence, not promotion evidence; finish the remaining #393 companion evidence before using ablations for queue ordering.
+**Current finding:** the slot-preserving architecture is correct and remains the required representation contract, but the pre-fix numerical conclusions are invalid because they measured synthetic-input panels. The real-input #393 uncalibrated, #398 calibrated, and EK-012 `λ_inv` reruns are now negative evidence, not promotion evidence; do not promote another constellation-wide feature family from these results.
 
 ### 3.2 Q4 head training — CLOSED (ambiguity boundary)
 

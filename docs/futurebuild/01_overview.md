@@ -279,18 +279,18 @@ The result was deterministic for the same `(task_id, patch_sha)`. Every ablation
 |---|---|
 | Ship-gate `prediction_oracle_correlation = 0.866667` | Measured against synthetic-input inference pipeline |
 | `λ_inv ∈ {0, 0.25, 0.5, 1.0}` bidirectional ablation (all 0.8666666746139526) | Verbatim identical because input was deterministic-from-hash |
-| #393 capability-discovery ablation suite | Measured against synthetic inputs; "no movement" finding meaningless |
-| #398 calibrated constellation ablation rerun (Brier 0.7539) | Same |
-| "Slot-preserving architecture doesn't close the 0.083 gap" claim | Invalid until #393/#398 are rerun against the `0.7937270999` real Panel A baseline |
-| "Gap is a function of labels, not embedder count" claim | Invalid until real-input ablations identify actual gate movers |
+| #393 capability-discovery ablation suite | Original measurement invalid; real-input rerun now exists and remains `no_promotion` |
+| #398 calibrated constellation ablation rerun (Brier 0.7539) | Original measurement invalid; real-input rerun now exists and remains `no_promotion` |
+| "Slot-preserving architecture doesn't close the 0.083 gap" claim | Original claim invalid; real-input #393/#398/#546 reruns are negative evidence but do not validate the pre-fix 0.083 framing |
+| "Gap is a function of labels, not embedder count" claim | Invalid as a broad causal claim; real-input constellation/`λ_inv` ablations did not identify those surfaces as gate movers |
 | #129 OOD serving gate AUC measurements | Pre-fix calibrator; needs re-validation |
 | #130 Gτ guard audit pass/fail counts | Pre-fix training data |
 
 **Rebaseline action plan (current P0 gate work).**
 
 1. ✅ Run `swebench_300x8_ship_gate_fsv` end-to-end on aiwonder with real-instruments inference path + real trained checkpoint (from #441's now-shipped trainer pipeline + #127 / TASK-PY-G-127 trained-checkpoint export FSV). Current measurement: `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T164924Z/`.
-2. Re-run `λ_inv` bidirectional ablation with real inputs.
-3. Re-run #393 / #398 ablation suites against real-input inference path.
+2. ✅ Re-run `λ_inv` bidirectional ablation with real inputs. Current measurement: `/zfs/archive/contextgraph/fsv/task-ek-012-bidirectional-ablation-realinput-fsv/run-20260520T172657Z/`.
+3. ✅ Re-run #393 / #398 ablation suites against real-input inference path. Current measurements: `/zfs/archive/contextgraph/fsv/task-py-g-093-constellation-ablation-suite-realinput-fsv/run-20260520T181900Z/` and `/zfs/archive/contextgraph/fsv/task-py-g-097-constellation-ablation-with-calibration-realinput-fsv/run-20260520T170156Z/`.
 4. ✅ Verify trained-weight manifest: `trained_weight_sha256 != initial_weight_sha256` (proves real training happened, not stub copy).
 5. Repair remaining weak cells from #535 (`off_by_one`, `subtle_flip`, `swap_variable`, plus one-fail saturated cells) and re-check Panel B before any 0.95 claim.
 

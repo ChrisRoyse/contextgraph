@@ -64,6 +64,10 @@ from .python_constellation_training_objective import add_arguments as add_python
 from .python_constellation_training_objective import command_python_constellation_training_objective
 from .python_constellation_ablation_suite import add_arguments as add_python_constellation_ablation_suite_arguments
 from .python_constellation_ablation_suite import command_python_constellation_ablation_suite
+from .python_constellation_ablation_uncalibrated import (
+    add_arguments as add_python_constellation_ablation_uncalibrated_arguments,
+)
+from .python_constellation_ablation_uncalibrated import command_python_constellation_ablation_uncalibrated
 from .python_constellation_tensors import add_arguments as add_python_constellation_tensors_arguments
 from .python_constellation_tensors import command_python_constellation_tensors
 from .python_per_slot_calibration_ood import add_arguments as add_python_per_slot_calibration_ood_arguments
@@ -517,6 +521,16 @@ def build_parser() -> argparse.ArgumentParser:
     constellation_ablation_suite.set_defaults(
         func=command_python_constellation_ablation_suite,
         evidence_name="python-constellation-ablation-suite-command-evidence.json",
+    )
+
+    constellation_ablation_uncalibrated = sub.add_parser(
+        "python-constellation-ablation-uncalibrated",
+        help="TASK-PY-G-093: rerun uncalibrated #396 constellation ablations against real aiwonder arrays.",
+    )
+    add_python_constellation_ablation_uncalibrated_arguments(constellation_ablation_uncalibrated)
+    constellation_ablation_uncalibrated.set_defaults(
+        func=command_python_constellation_ablation_uncalibrated,
+        evidence_name="python-constellation-ablation-uncalibrated-command-evidence.json",
     )
 
     constellation_tensors = sub.add_parser(
