@@ -112,6 +112,15 @@ struct SkillConflictGraphRequest {
     limit: usize,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SkillBrowseRequest {
+    db_path: Option<PathBuf>,
+    filter: Option<String>,
+    #[serde(default = "default_set_query_limit")]
+    limit: usize,
+}
+
 impl Handlers {
     pub(crate) async fn call_mejepa_skill_to_code(
         &self,
@@ -247,6 +256,21 @@ impl Handlers {
         match run_skill_conflict_graph(request) {
             Ok(value) => self.tool_result(id, value),
             Err(err) => skill_linkage_error(self, id, "MEJEPA_SKILL_CONFLICT_GRAPH_FAILED", err),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_skill_browse(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request = match parse_tool_request(args, tool_names::MEJEPA_SKILL_BROWSE) {
+            Ok(value) => value,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_skill_browse(request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => skill_linkage_error(self, id, "MEJEPA_SKILL_BROWSE_FAILED", err),
         }
     }
 }
@@ -429,6 +453,19 @@ fn run_skill_conflict_graph(request: SkillConflictGraphRequest) -> AnyhowResult<
     let report = context_graph_mejepa_train::skill_conflict_graph(&db, request.limit)?;
     Ok(json!({
         "tool": tool_names::MEJEPA_SKILL_CONFLICT_GRAPH,
+        "sourceOfTruth": source_of_truth(&db_path, None),
+        "report": report
+    }))
+}
+
+fn run_skill_browse(request: SkillBrowseRequest) -> AnyhowResult<Value> {
+    let db_path = resolve_skill_db_path(request.db_path)?;
+    let db = context_graph_mejepa_train::open_skill_linkage_rocksdb(&db_path, false)
+        .with_context(|| format!("open skill linkage DB {}", db_path.display()))?;
+    let report =
+        context_graph_mejepa_train::skill_browse(&db, request.filter.as_deref(), request.limit)?;
+    Ok(json!({
+        "tool": tool_names::MEJEPA_SKILL_BROWSE,
         "sourceOfTruth": source_of_truth(&db_path, None),
         "report": report
     }))

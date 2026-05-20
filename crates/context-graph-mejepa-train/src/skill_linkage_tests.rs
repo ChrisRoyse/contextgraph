@@ -319,6 +319,29 @@ fn skill_conflict_graph_reports_zero_cooccurrence_candidates() {
 }
 
 #[test]
+fn skill_browse_returns_catalog_counts_and_filter() {
+    let (temp, _chunk_ids, skill_a, skill_b) = seed_db();
+    let db = open_test_db(temp.path());
+
+    let report = skill_browse(&db, None, 20).unwrap();
+    let filtered = skill_browse(&db, Some("mock"), 20).unwrap();
+
+    assert!(report.no_new_prediction_head_introduced);
+    assert_eq!(report.total_catalog_skills, 2);
+    assert_eq!(report.total_matching_skills, 2);
+    let row_a = report
+        .skills
+        .iter()
+        .find(|row| row.skill_id == skill_a)
+        .unwrap();
+    assert_eq!(row_a.membership_count, 4);
+    assert_eq!(row_a.distinct_chunk_count, 4);
+    assert_eq!(row_a.source_episode_count, 2);
+    assert_eq!(filtered.total_matching_skills, 1);
+    assert_eq!(filtered.skills[0].skill_id, skill_b);
+}
+
+#[test]
 fn skill_to_code_returns_source_bytes() {
     let (temp, chunk_ids, skill_a, _skill_b) = seed_db();
     let db = open_test_db(temp.path());

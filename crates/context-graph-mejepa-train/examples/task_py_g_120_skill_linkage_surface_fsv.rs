@@ -7,8 +7,8 @@ use context_graph_mejepa_train::chunk_skill_membership::{
 };
 use context_graph_mejepa_train::skill_linkage::{
     chunk_as_star, code_to_skill, constellation_membership, load_chunk_source_index_jsonl,
-    open_skill_linkage_rocksdb, skill_conflict_graph, skill_coverage_audit, skill_graph_inspect,
-    skill_impact, skill_set_query, skill_to_code, SkillLinkageOptions,
+    open_skill_linkage_rocksdb, skill_browse, skill_conflict_graph, skill_coverage_audit,
+    skill_graph_inspect, skill_impact, skill_set_query, skill_to_code, SkillLinkageOptions,
 };
 use context_graph_mejepa_train::skill_sequence_discovery::{
     Level2SkillRow, SkillEpisodeRow, SkillOutcomeDistribution, SkillOutcomeObservation,
@@ -166,6 +166,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         skill_impact(&readback_db, "chunk:a_only", Some("state:other"), 2, 20)?;
     let skill_graph_report = skill_graph_inspect(&readback_db, Some(&skill_a.skill_id), 20)?;
     let conflict_graph_report = skill_conflict_graph(&readback_db, 20)?;
+    let skill_browse_report = skill_browse(&readback_db, None, 20)?;
+    let skill_browse_filter_report = skill_browse(&readback_db, Some("mock"), 20)?;
 
     let edge_missing_source_fails_closed = skill_to_code(
         &readback_db,
@@ -266,6 +268,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (pair.skill_a_id == skill_b.skill_id && pair.skill_b_id == skill_c.skill_id)
                 || (pair.skill_a_id == skill_c.skill_id && pair.skill_b_id == skill_b.skill_id)
         });
+    let skill_browse_pass = skill_browse_report.total_catalog_skills == 3
+        && skill_browse_report.total_matching_skills == 3
+        && skill_browse_report.skills.iter().any(|row| {
+            row.skill_id == skill_a.skill_id
+                && row.membership_count == 4
+                && row.distinct_chunk_count == 4
+        })
+        && skill_browse_filter_report.total_matching_skills == 1
+        && skill_browse_filter_report
+            .skills
+            .iter()
+            .any(|row| row.skill_id == skill_b.skill_id);
     let counts_pass = after_counts.get("level2Skills") == Some(&json!(3))
         && after_counts.get("chunkSkillMembership") == Some(&json!(10))
         && after_counts.get("skillReverseIndex") == Some(&json!(5))
@@ -279,7 +293,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && skill_impact_depth_one.no_new_prediction_head_introduced
         && skill_impact_depth_two.no_new_prediction_head_introduced
         && skill_graph_report.no_new_prediction_head_introduced
-        && conflict_graph_report.no_new_prediction_head_introduced;
+        && conflict_graph_report.no_new_prediction_head_introduced
+        && skill_browse_report.no_new_prediction_head_introduced
+        && skill_browse_filter_report.no_new_prediction_head_introduced;
     let all_passed = skill_to_code_pass
         && code_to_skill_pass
         && set_query_pass
@@ -289,6 +305,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && skill_impact_pass
         && skill_graph_pass
         && conflict_graph_pass
+        && skill_browse_pass
         && counts_pass
         && no_new_head_pass
         && edge_missing_source_fails_closed
@@ -330,6 +347,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "skill_impact_blast_radius_monotonic": skill_impact_pass,
             "skill_graph_inspect_derives_comember_edges": skill_graph_pass,
             "skill_conflict_graph_derives_zero_cooccurrence_pairs": conflict_graph_pass,
+            "skill_browse_returns_catalog_counts": skill_browse_pass,
             "cf_counts_match_expected": counts_pass,
             "no_new_prediction_head_introduced": no_new_head_pass
         },
@@ -343,7 +361,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "skill_impact_depth_one": skill_impact_depth_one,
             "skill_impact_depth_two": skill_impact_depth_two,
             "skill_graph_inspect": skill_graph_report,
-            "skill_conflict_graph": conflict_graph_report
+            "skill_conflict_graph": conflict_graph_report,
+            "skill_browse": skill_browse_report,
+            "skill_browse_filter": skill_browse_filter_report
         },
         "edge_cases": {
             "require_source_text_without_source_index_fails_closed": edge_missing_source_fails_closed,

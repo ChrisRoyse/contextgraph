@@ -1399,6 +1399,19 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_SKILL_BROWSE,
+            "TASK-PY-G-120 skill catalog browse: list Level-2 skills with persisted membership counts, chunk counts, lifecycle status, and source membership key samples.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "filter": {"type": "string", "minLength": 1, "maxLength": 256},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 100}
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_RECORD_MISTAKE,
             "TASK-PY-G-112B mistake-loop writer: persist a durable mistake row and replay row, then apply the exact-panel online-head update through RocksDB source-of-truth readback.",
             json!({

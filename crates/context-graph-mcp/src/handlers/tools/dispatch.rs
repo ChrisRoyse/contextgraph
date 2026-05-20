@@ -271,6 +271,7 @@ impl Handlers {
             tool_names::MEJEPA_SKILL_IMPACT => call_mejepa_skill_impact(arguments),
             tool_names::MEJEPA_SKILL_GRAPH_INSPECT => call_mejepa_skill_graph_inspect(arguments),
             tool_names::MEJEPA_SKILL_CONFLICT_GRAPH => call_mejepa_skill_conflict_graph(arguments),
+            tool_names::MEJEPA_SKILL_BROWSE => call_mejepa_skill_browse(arguments),
             tool_names::MEJEPA_RECORD_MISTAKE => call_mejepa_record_mistake(arguments),
             tool_names::MEJEPA_MISTAKE_HISTORY => call_mejepa_mistake_history(arguments),
             tool_names::MEJEPA_MISTAKE_LOOP_STATUS => call_mejepa_mistake_loop_status(arguments),

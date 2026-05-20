@@ -3,9 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
-use crate::chunk_skill_membership::ChunkSkillMembershipRow;
+use crate::chunk_skill_membership::{read_all_level2_skill_rows, ChunkSkillMembershipRow};
 use crate::error::TrainerError;
-use crate::skill_sequence_discovery::SKILL_SEQUENCE_SCHEMA_VERSION;
+use crate::skill_sequence_discovery::{SkillPromotionStatus, SKILL_SEQUENCE_SCHEMA_VERSION};
 
 use super::{invalid, scan_memberships, skill_linkage_cfs, validate_id, validate_limit};
 
@@ -77,6 +77,41 @@ pub struct SkillConflictGraphReport {
     pub evaluated_pair_count: u64,
     pub conflict_pairs: Vec<SkillConflictPair>,
     pub total_conflict_pairs: u64,
+    pub no_new_prediction_head_introduced: bool,
+    pub source_of_truth_cfs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SkillBrowseRow {
+    pub skill_id: String,
+    pub skill_name: String,
+    pub parent_group_ids: Vec<String>,
+    pub parent_skill_ids: Vec<String>,
+    pub support: u64,
+    pub confidence: f64,
+    pub lift_over_cell_baseline: f64,
+    pub stability: f64,
+    pub promotion_status: SkillPromotionStatus,
+    pub operator_approved: bool,
+    pub live_input_allowed: bool,
+    pub source_episode_count: u64,
+    pub failure_evidence_set_count: u64,
+    pub membership_count: u64,
+    pub distinct_chunk_count: u64,
+    pub code_state_keys: Vec<String>,
+    pub source_membership_keys_sample: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SkillBrowseReport {
+    pub schema_version: u32,
+    pub filter: Option<String>,
+    pub skills: Vec<SkillBrowseRow>,
+    pub total_matching_skills: u64,
+    pub total_catalog_skills: u64,
+    pub returned_skill_limit: usize,
     pub no_new_prediction_head_introduced: bool,
     pub source_of_truth_cfs: Vec<String>,
 }
@@ -272,6 +307,93 @@ pub fn skill_conflict_graph(
     })
 }
 
+pub fn skill_browse(
+    db: &DB,
+    filter: Option<&str>,
+    limit: usize,
+) -> Result<SkillBrowseReport, TrainerError> {
+    validate_browse_filter(filter)?;
+    validate_limit(limit)?;
+
+    let filter_normalized = filter.map(|value| value.to_ascii_lowercase());
+    let skills = read_all_level2_skill_rows(db)?;
+    let total_catalog_skills = skills.len() as u64;
+    let rows = scan_memberships(db)?;
+    let mut membership_by_skill = BTreeMap::<String, Vec<ChunkSkillMembershipRow>>::new();
+    for row in rows {
+        membership_by_skill
+            .entry(row.skill_id.clone())
+            .or_default()
+            .push(row);
+    }
+
+    let mut browse_rows = Vec::new();
+    for skill in skills {
+        if let Some(filter) = &filter_normalized {
+            let matches = skill.skill_id.to_ascii_lowercase().contains(filter)
+                || skill.skill_name.to_ascii_lowercase().contains(filter)
+                || skill
+                    .parent_group_ids
+                    .iter()
+                    .any(|group| group.to_ascii_lowercase().contains(filter));
+            if !matches {
+                continue;
+            }
+        }
+        let memberships = membership_by_skill
+            .get(&skill.skill_id)
+            .cloned()
+            .unwrap_or_default();
+        let distinct_chunks = memberships
+            .iter()
+            .map(|row| row.chunk_id.clone())
+            .collect::<BTreeSet<_>>();
+        let mut source_membership_keys_sample = memberships
+            .iter()
+            .map(|row| row.membership_key.clone())
+            .collect::<Vec<_>>();
+        source_membership_keys_sample.sort();
+        source_membership_keys_sample.truncate(limit.min(20));
+        browse_rows.push(SkillBrowseRow {
+            skill_id: skill.skill_id,
+            skill_name: skill.skill_name,
+            parent_group_ids: skill.parent_group_ids,
+            parent_skill_ids: skill.parent_skill_ids,
+            support: skill.support,
+            confidence: skill.confidence,
+            lift_over_cell_baseline: skill.lift_over_cell_baseline,
+            stability: skill.stability,
+            promotion_status: skill.promotion_status,
+            operator_approved: skill.operator_approved,
+            live_input_allowed: skill.live_input_allowed,
+            source_episode_count: skill.source_episode_ids.len() as u64,
+            failure_evidence_set_count: skill.failure_evidence_set_ids.len() as u64,
+            membership_count: memberships.len() as u64,
+            distinct_chunk_count: distinct_chunks.len() as u64,
+            code_state_keys: skill.code_state_keys,
+            source_membership_keys_sample,
+        });
+    }
+    let total_matching_skills = browse_rows.len() as u64;
+    browse_rows.sort_by(|left, right| {
+        right
+            .membership_count
+            .cmp(&left.membership_count)
+            .then_with(|| left.skill_id.cmp(&right.skill_id))
+    });
+    browse_rows.truncate(limit);
+    Ok(SkillBrowseReport {
+        schema_version: SKILL_SEQUENCE_SCHEMA_VERSION,
+        filter: filter.map(ToOwned::to_owned),
+        skills: browse_rows,
+        total_matching_skills,
+        total_catalog_skills,
+        returned_skill_limit: limit,
+        no_new_prediction_head_introduced: true,
+        source_of_truth_cfs: skill_linkage_cfs(),
+    })
+}
+
 fn derive_skill_edges(
     rows: &[ChunkSkillMembershipRow],
 ) -> Result<Vec<SkillGraphEdge>, TrainerError> {
@@ -320,6 +442,19 @@ fn validate_depth(depth: u32) -> Result<(), TrainerError> {
         return Err(invalid(
             "depth",
             format!("must be within 0..={MAX_IMPACT_DEPTH}"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_browse_filter(filter: Option<&str>) -> Result<(), TrainerError> {
+    let Some(value) = filter else {
+        return Ok(());
+    };
+    if value.trim().is_empty() || value.len() > 256 {
+        return Err(invalid(
+            "filter",
+            "must be non-empty and no longer than 256 bytes",
         ));
     }
     Ok(())

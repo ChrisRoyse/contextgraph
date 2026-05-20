@@ -2,7 +2,7 @@
 
 Source files: `crates/context-graph-mcp/src/tools/definitions/mod.rs`, `crates/context-graph-mcp/src/tools/names.rs`, `crates/context-graph-mcp/src/tools/definitions/mejepa.rs`, all sibling `definitions/*.rs`, `crates/context-graph-mcp/src/deprecation.rs`.
 
-**Total tools registered** in `get_tool_definitions()`: **213** (test-enforced at `definitions/mod.rs:150`).
+**Total tools registered** in `get_tool_definitions()`: **214** (test-enforced at `definitions/mod.rs:150`).
 
 ---
 
@@ -10,7 +10,7 @@ Source files: `crates/context-graph-mcp/src/tools/definitions/mod.rs`, `crates/c
 
 | Function | Returns | Notes |
 |---|---|---|
-| `get_tool_definitions()` | `Vec<ToolDefinition>` (213 tools) | Default `--mode stdio` registry. Builds from 28 submodules. |
+| `get_tool_definitions()` | `Vec<ToolDefinition>` (214 tools) | Default `--mode stdio` registry. Builds from 28 submodules. |
 | `get_reality_loop_tool_definitions()` | smaller subset | `--mode reality-loop` lightweight surface |
 
 Tests enforce: exact total count + no duplicate names, exact per-submodule counts, retired `RETIRED_CGREALITY_TOOLS` not advertised in any registry. Retired callers receive `CCREALITY_ENGINE_RETIRED`.
@@ -31,7 +31,7 @@ Tests enforce: exact total count + no duplicate names, exact per-submodule count
 | `graph` | 2 | Deterministic graph read/query |
 | `entity` | 6 | E11 KEPLER/TransE: `extract_entities`, `infer_relationship`, `validate_knowledge`, etc. |
 | `embedder` | 10 + 2 standalone | Per-embedder search + `search_by_tokens` (E12) + standalone E13 |
-| **`mejepa`** | **66** | Predictor + heal + observe + ship-gate + chunk-skill linkage + mistake loop — see §3 |
+| **`mejepa`** | **67** | Predictor + heal + observe + ship-gate + chunk-skill linkage + mistake loop — see §3 |
 | `temporal` | 2 | `search_recent` (E2), `search_periodic` (E3) |
 | `graph_link` | 4 | K-NN navigation + typed edges |
 | `maintenance` | 1 | `repair_causal_relationships` |
@@ -45,11 +45,11 @@ Tests enforce: exact total count + no duplicate names, exact per-submodule count
 | `typed_edges` | 3 | Typed-edge training surface |
 | `dynamicjepa` | 39 | 5090jepa MCP surface |
 | `capability` | 1 | `get_capability_matrix` |
-| **Total** | **213** | |
+| **Total** | **214** | |
 
 ---
 
-## 3. The 66 `mejepa_*` Tools (the product surface)
+## 3. The 67 `mejepa_*` Tools (the product surface)
 
 Names live in `crates/context-graph-mcp/src/tools/names.rs`. Most are namespaced `mcp__cgreality__mejepa_*`; a small set use bare `mejepa_*`.
 
@@ -92,6 +92,7 @@ Read-only navigation over training substrate; no new prediction surface. Binary-
 | `mejepa_skill_impact` | Refactoring blast-radius traversal: chunk → skills → co-member chunks |
 | `mejepa_skill_graph_inspect` | Skill co-membership graph readback derived from persisted chunk-skill rows |
 | `mejepa_skill_conflict_graph` | Zero-cooccurrence mutually-exclusive candidate pairs over persisted memberships |
+| `mejepa_skill_browse` | Operator browse over the Level-2 skill catalog with membership counts and source key samples |
 
 ### 3.4 Reality Compiler (per-project ingest)
 
@@ -217,7 +218,7 @@ Response format: tools return JSON. Errors carry `code: SCREAMING_SNAKE_CASE` ma
 
 | Mode | Tools advertised | Transport | Purpose |
 |---|---|---|---|
-| `--mode stdio` (default) | 213 (`get_tool_definitions`) | JSON-RPC over stdio | Production agent surface |
+| `--mode stdio` (default) | 214 (`get_tool_definitions`) | JSON-RPC over stdio | Production agent surface |
 | `--mode reality-loop` | smaller subset | JSON-RPC over stdio | Post-pivot Claude-Code-outer-loop surface |
 | HTTP transport | same as configured mode | HTTP | Multi-agent deployments |
 
@@ -288,7 +289,6 @@ Strict binary-leaf rule: any non-Q1/Q2/Q5 leaf → `PATHWAY_AMBIGUOUS_LEAF_REJEC
 | Tool (planned) | Purpose |
 |---|---|
 | `mejepa_cross_repo_skill_transfer` | Run Level-0 compiler over new project; match against existing skill signatures |
-| `mejepa_skill_browse` | Skill catalog browse: 128 skills + chunk counts + lifecycle |
 
 ### 9.5 Information-physics inspection (#511 / #512 / #514)
 

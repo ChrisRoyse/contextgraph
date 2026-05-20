@@ -20,9 +20,9 @@ mod skill_linkage_source;
 mod skill_linkage_storage;
 
 pub use skill_linkage_graph::{
-    skill_conflict_graph, skill_graph_inspect, skill_impact, SkillConflictGraphReport,
-    SkillConflictPair, SkillGraphEdge, SkillGraphInspectReport, SkillImpactChunk,
-    SkillImpactReport,
+    skill_browse, skill_conflict_graph, skill_graph_inspect, skill_impact, SkillBrowseReport,
+    SkillBrowseRow, SkillConflictGraphReport, SkillConflictPair, SkillGraphEdge,
+    SkillGraphInspectReport, SkillImpactChunk, SkillImpactReport,
 };
 pub use skill_linkage_source::{
     load_chunk_source_index_jsonl, load_chunk_source_index_jsonl_with_limit, ChunkSourceIndex,

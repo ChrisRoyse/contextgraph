@@ -219,6 +219,8 @@ pub const MEJEPA_SKILL_IMPACT: &str = "mcp__cgreality__mejepa_skill_impact";
 pub const MEJEPA_SKILL_GRAPH_INSPECT: &str = "mcp__cgreality__mejepa_skill_graph_inspect";
 /// TASK-PY-G-120 zero-cooccurrence conflict candidate graph.
 pub const MEJEPA_SKILL_CONFLICT_GRAPH: &str = "mcp__cgreality__mejepa_skill_conflict_graph";
+/// TASK-PY-G-120 operator browse surface for the skill catalog.
+pub const MEJEPA_SKILL_BROWSE: &str = "mcp__cgreality__mejepa_skill_browse";
 /// TASK-PY-G-112B durable mistake-loop writer over online-head state.
 pub const MEJEPA_RECORD_MISTAKE: &str = "mcp__cgreality__mejepa_record_mistake";
 /// TASK-PY-G-112B durable mistake-loop history readback.
