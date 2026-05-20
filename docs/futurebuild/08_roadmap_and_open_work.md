@@ -10,19 +10,21 @@ The prediction contract is **three binary surfaces against ground truth** (Q1 by
 
 ---
 
-## 0.5. ⚠ P0 BLOCKER: Ship-gate measurement requires rebaseline
+## 0.5. ⚠ P0 BLOCKER: Ship-gate measurement requires rank-lift after real-input rebaseline
 
 Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-seeded synthetic vectors instead of calling real `E*Instrument` encoders. Six P0 fixes (#422 / #424 / #426 / #437 / #438 / #441 / #452, all closed 2026-05-19/20) replaced the broken pipeline. **The previous `0.866667` ship-gate measurement is INVALID** — it was the deterministic fixed-point output of a hash-derived predictor, not a real measurement of model quality on real code semantics. See `01_overview.md §1.7` and `07_results_and_benchmarks.md §0` for forensic detail.
 
-**Before any further Phase G gate work** (#407 / #511 / #405 / #379 / #392), the rebaseline must complete:
+**Current real-input state (#533):** aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T155822Z/` reports raw holdout `prediction_oracle_correlation = 0.5255988836` and calibrated holdout `prediction_oracle_correlation = 0.6631761193`. Calibration is fitted only on the 240-row calibration split and improves Brier/ECE, but the gate still fails. The next lift is mixed-cell ranking (#534), first-class invalid-source panelization (#531), and cross-panel Goodhart defense (#405), not another synthetic-input rebaseline.
 
-1. Run `swebench_300x8_ship_gate_fsv` on aiwonder against the real-instruments inference path + the real trained checkpoint (from #441's now-shipped trainer pipeline).
-2. Verify manifest: `trained_weight_sha256 != initial_weight_sha256` (proves real training, not stub copy).
+**Remaining revalidation queue:**
+
+1. Replace the `compile_error` carrier workaround with first-class invalid-source panels (#531).
+2. Train or refit rank-aware mixed-cell predictors for `known_good`, `delete_test_call`, `off_by_one`, `over_engineer`, `subtle_flip`, and `swap_variable` from real slot-preserving labels (#534).
 3. Re-run `λ_inv` bidirectional ablation against real inputs.
 4. Re-run #393 / #398 ablation suites against real inputs.
 5. Re-validate #129 OOD serving gate + #130 Gτ guard audit + #404 holdout coverage against real-input predictions.
 
-Tracked under a new context issue filed alongside this roadmap refresh. **All issues listed in §3 below assume the rebaseline has completed unless explicitly noted otherwise.**
+Tracked under #529 plus the measured blockers #531 and #534. **All issues listed in §3 below assume the real-input rebaseline exists unless explicitly noted otherwise.**
 
 ---
 
@@ -39,9 +41,9 @@ prediction_oracle_correlation ≥ 0.95
   AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
 
-**Last holdout measurement:** **PENDING REBASELINE.** Previous `0.866667` figure (from `/mnt/d/...ship-gate-fsv/ship-gate-fsv.json`) was measured against the synthetic-vector inference path and is invalidated. No post-fix end-to-end ship-gate measurement exists on aiwonder yet.
+**Last holdout measurement:** `0.6631761193` calibrated (`0.5255988836` raw) from `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T155822Z/`. Previous `0.866667` figure (from `/mnt/d/...ship-gate-fsv/ship-gate-fsv.json`) was measured against the synthetic-vector inference path and is invalidated.
 
-**Gap to ship:** unknown until rebaseline. Could be anywhere from worse than 0.866 to already past 0.95.
+**Gap to ship:** `0.2868238807` against the calibrated real-input Panel A measurement, plus four-window stability and Panel B cross-checks.
 
 **Degenerate-cell rule (#532).** `compile_error::python`, `wrong_file::python`, or any future single-class cell cannot honestly use Pearson correlation. The FSV must emit the cell's variance class, the replacement gate metric (`all_fail_recall_confidence_brier_ece` or `all_pass_recall_confidence_brier_ece`), and statistical-power diagnostics instead of a bare `correlation unavailable` blocker.
 

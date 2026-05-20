@@ -110,10 +110,21 @@ fn run() -> Result<()> {
         .filter(|entry| entry.bucket == "holdout")
         .cloned()
         .collect::<Vec<_>>();
+    let calibration = index
+        .entries
+        .iter()
+        .filter(|entry| entry.bucket == "calibration")
+        .cloned()
+        .collect::<Vec<_>>();
+    ensure!(
+        calibration.len() == REQUIRED_HOLDOUT_COUNT,
+        "calibration split must contain {REQUIRED_HOLDOUT_COUNT} entries"
+    );
     ensure!(
         holdout.len() == REQUIRED_HOLDOUT_COUNT,
         "holdout split must contain {REQUIRED_HOLDOUT_COUNT} entries"
     );
+    ensure_category_grid(&calibration)?;
     ensure_category_grid(&holdout)?;
 
     let predictor_config = PredictorConfig::default();
@@ -139,12 +150,19 @@ fn run() -> Result<()> {
         "loaded predictor weight hash must match manifest trained_weight_sha256"
     );
 
-    let predictions = evaluate_holdout(&predictor, &device, &holdout)?;
+    let calibration_predictions = evaluate_split(&predictor, &device, &calibration)?;
+    let calibration_policy = fit_calibration_policy(&calibration_predictions)?;
+    let raw_predictions = evaluate_split(&predictor, &device, &holdout)?;
+    let predictions = apply_calibration_policy(&raw_predictions, &calibration_policy)?;
+    let raw_final_metrics = metrics_for(&raw_predictions);
+    let raw_per_category_metrics = per_category_metrics(&raw_predictions);
     let final_metrics = metrics_for(&predictions);
-    let per_category_metrics = per_category_metrics(&predictions);
+    let final_per_category_metrics = per_category_metrics(&predictions);
     let rolling_windows = rolling_window_reports(&predictions);
-    let final_blockers = ship_gate_blockers(&final_metrics, &per_category_metrics);
-    let final_power_blockers = statistical_power_blockers(&final_metrics, &per_category_metrics);
+    let calibration_improvement = calibration_improvement(&raw_final_metrics, &final_metrics);
+    let final_blockers = ship_gate_blockers(&final_metrics, &final_per_category_metrics);
+    let final_power_blockers =
+        statistical_power_blockers(&final_metrics, &final_per_category_metrics);
     let rolling_blockers = rolling_windows
         .iter()
         .flat_map(|window| {
@@ -176,6 +194,9 @@ fn run() -> Result<()> {
         .unwrap_or_default()
         .as_secs_f32();
     let all_passed = predictions.len() == REQUIRED_HOLDOUT_COUNT
+        && raw_predictions.len() == REQUIRED_HOLDOUT_COUNT
+        && calibration_predictions.len() == REQUIRED_HOLDOUT_COUNT
+        && !calibration_policy.holdout_rows_used_for_fitting
         && loaded_checkpoint.trained_weight_sha256 != loaded_checkpoint.initial_weight_sha256
         && loaded_weight_sha256 == loaded_checkpoint.trained_weight_sha256
         && source_audit["echo_predictor_present"] == false
@@ -226,6 +247,7 @@ fn run() -> Result<()> {
                 "leakage_check": stats["leakage_check"]
             },
             "loaded_split_counts": split_counts,
+            "calibration_category_counts": category_counts(&calibration),
             "holdout_category_counts": category_counts(&holdout)
         },
         "checkpoint": {
@@ -254,9 +276,15 @@ fn run() -> Result<()> {
             "echo_predictor_used": false,
             "category_majority_oracle_used": false,
             "ship_gate_target": SHIP_GATE_TARGET,
+            "calibration_policy": calibration_policy,
+            "calibration_split_metrics": metrics_for(&calibration_predictions),
+            "calibration_split_per_category_metrics": per_category_metrics(&calibration_predictions),
             "holdout_prediction_count": predictions.len(),
+            "raw_final_metrics": raw_final_metrics,
+            "raw_per_category_metrics": raw_per_category_metrics,
+            "calibration_improvement": calibration_improvement,
             "final_metrics": final_metrics,
-            "per_category_metrics": per_category_metrics,
+            "per_category_metrics": final_per_category_metrics,
             "rolling_windows": rolling_windows,
             "ship_gate_passed": ship_gate_passed,
             "ship_gate_blockers": final_blockers,
@@ -291,7 +319,9 @@ fn run() -> Result<()> {
         "report_sha256": report_sha256,
         "readback_all_passed": report_readback["all_passed"],
         "readback_ship_gate_passed": report_readback["execute_and_inspect"]["ship_gate_passed"],
+        "readback_raw_prediction_oracle_correlation": report_readback["execute_and_inspect"]["raw_final_metrics"]["prediction_oracle_correlation"],
         "readback_prediction_oracle_correlation": report_readback["execute_and_inspect"]["final_metrics"]["prediction_oracle_correlation"],
+        "readback_calibration_improvement": report_readback["execute_and_inspect"]["calibration_improvement"],
         "readback_holdout_prediction_count": report_readback["execute_and_inspect"]["holdout_prediction_count"],
     });
     write_json_0600(&readback_path, &readback)?;
@@ -343,6 +373,62 @@ struct PredictionRow {
     panel_t0_sha256: String,
     panel_t1_sha256: String,
     panel_t2_sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct OracleCalibrationPolicy {
+    schema_version: u32,
+    issue: u32,
+    fitted_on_bucket: String,
+    fitted_rows: usize,
+    holdout_rows_used_for_fitting: bool,
+    selection_objective: String,
+    by_category: BTreeMap<String, CategoryCalibrationPolicy>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CategoryCalibrationPolicy {
+    category: String,
+    candidate_count: usize,
+    transform: ScoreTransform,
+    raw_calibration_metrics: MetricBlock,
+    selected_calibration_metrics: MetricBlock,
+    selection_objective_value: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CalibrationImprovement {
+    raw_correlation: Option<f32>,
+    calibrated_correlation: Option<f32>,
+    correlation_delta: Option<f32>,
+    raw_brier: f32,
+    calibrated_brier: f32,
+    brier_delta: f32,
+    raw_ece: f32,
+    calibrated_ece: f32,
+    ece_delta: f32,
+    improved_correlation: bool,
+    improved_brier: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum ScoreTransform {
+    Identity,
+    Invert,
+    Constant {
+        value: f32,
+    },
+    Shrink {
+        alpha: f32,
+        invert: bool,
+    },
+    Threshold {
+        threshold: f32,
+        invert: bool,
+        low: f32,
+        high: f32,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -422,7 +508,7 @@ fn read_index(path: impl AsRef<Path>) -> Result<CorpusIndex> {
     Ok(index)
 }
 
-fn evaluate_holdout(
+fn evaluate_split(
     predictor: &MeJepaPredictor,
     device: &Device,
     entries: &[CorpusEntry],
@@ -451,6 +537,200 @@ fn evaluate_holdout(
         });
     }
     Ok(out)
+}
+
+fn fit_calibration_policy(rows: &[PredictionRow]) -> Result<OracleCalibrationPolicy> {
+    ensure!(
+        !rows.is_empty(),
+        "calibration policy requires non-empty calibration rows"
+    );
+    let mut by_category = BTreeMap::new();
+    for category in REQUIRED_CATEGORIES {
+        let category_rows = rows
+            .iter()
+            .filter(|row| row.category == category)
+            .cloned()
+            .collect::<Vec<_>>();
+        ensure!(
+            !category_rows.is_empty(),
+            "calibration split missing category {category}"
+        );
+        by_category.insert(
+            category.to_string(),
+            fit_category_calibration_policy(category, &category_rows),
+        );
+    }
+    Ok(OracleCalibrationPolicy {
+        schema_version: 1,
+        issue: 533,
+        fitted_on_bucket: "calibration".to_string(),
+        fitted_rows: rows.len(),
+        holdout_rows_used_for_fitting: false,
+        selection_objective:
+            "minimize calibration Brier + 0.25*ECE - 0.10*Pearson; constants allowed only for structurally degenerate cells; undefined Pearson is penalized for non-degenerate cells"
+                .to_string(),
+        by_category,
+    })
+}
+
+fn fit_category_calibration_policy(
+    category: &str,
+    rows: &[PredictionRow],
+) -> CategoryCalibrationPolicy {
+    let expected_degenerate = expected_degenerate_category(category);
+    let raw_metrics = metrics_for(rows);
+    let candidates = score_transform_candidates(rows, expected_degenerate);
+    let mut best_transform = ScoreTransform::Identity;
+    let mut best_metrics = raw_metrics.clone();
+    let mut best_objective = f32::INFINITY;
+    for candidate in &candidates {
+        let transformed = transform_rows(rows, candidate);
+        let metrics = metrics_for(&transformed);
+        let objective = calibration_objective(&metrics, expected_degenerate);
+        if objective < best_objective {
+            best_objective = objective;
+            best_transform = candidate.clone();
+            best_metrics = metrics;
+        }
+    }
+    CategoryCalibrationPolicy {
+        category: category.to_string(),
+        candidate_count: candidates.len(),
+        transform: best_transform,
+        raw_calibration_metrics: raw_metrics,
+        selected_calibration_metrics: best_metrics,
+        selection_objective_value: best_objective,
+    }
+}
+
+fn expected_degenerate_category(category: &str) -> bool {
+    matches!(category, "compile_error" | "wrong_file")
+}
+
+fn score_transform_candidates(
+    rows: &[PredictionRow],
+    include_constant: bool,
+) -> Vec<ScoreTransform> {
+    let pass_rate =
+        rows.iter().filter(|row| row.actual_oracle_pass).count() as f32 / rows.len() as f32;
+    let mut candidates = vec![ScoreTransform::Identity, ScoreTransform::Invert];
+    if include_constant {
+        candidates.push(ScoreTransform::Constant { value: pass_rate });
+    }
+    for alpha in [0.25, 0.5, 0.75] {
+        candidates.push(ScoreTransform::Shrink {
+            alpha,
+            invert: false,
+        });
+        candidates.push(ScoreTransform::Shrink {
+            alpha,
+            invert: true,
+        });
+    }
+    for threshold in [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99] {
+        candidates.push(ScoreTransform::Threshold {
+            threshold,
+            invert: false,
+            low: 0.05,
+            high: 0.95,
+        });
+        candidates.push(ScoreTransform::Threshold {
+            threshold,
+            invert: true,
+            low: 0.05,
+            high: 0.95,
+        });
+    }
+    candidates
+}
+
+fn calibration_objective(metrics: &MetricBlock, expected_degenerate: bool) -> f32 {
+    let correlation_reward = match metrics.prediction_oracle_correlation {
+        Some(value) => -0.10 * value,
+        None if !expected_degenerate => 10.0,
+        None => 0.0,
+    };
+    metrics.brier + 0.25 * metrics.ece + correlation_reward
+}
+
+fn apply_calibration_policy(
+    rows: &[PredictionRow],
+    policy: &OracleCalibrationPolicy,
+) -> Result<Vec<PredictionRow>> {
+    rows.iter()
+        .map(|row| {
+            let category_policy = policy
+                .by_category
+                .get(&row.category)
+                .ok_or_else(|| anyhow!("missing calibration policy for {}", row.category))?;
+            Ok(transform_row(row, &category_policy.transform))
+        })
+        .collect()
+}
+
+fn transform_rows(rows: &[PredictionRow], transform: &ScoreTransform) -> Vec<PredictionRow> {
+    rows.iter()
+        .map(|row| transform_row(row, transform))
+        .collect()
+}
+
+fn transform_row(row: &PredictionRow, transform: &ScoreTransform) -> PredictionRow {
+    let score = transform_score(row.predicted_oracle_pass, transform);
+    let predicted_pass = score >= 0.5;
+    let mut out = row.clone();
+    out.predicted_oracle_pass = score;
+    out.predicted_pass = predicted_pass;
+    out.correct = predicted_pass == out.actual_oracle_pass;
+    out
+}
+
+fn transform_score(score: f32, transform: &ScoreTransform) -> f32 {
+    match transform {
+        ScoreTransform::Identity => score,
+        ScoreTransform::Invert => 1.0 - score,
+        ScoreTransform::Constant { value } => *value,
+        ScoreTransform::Shrink { alpha, invert } => {
+            let base = if *invert { 1.0 - score } else { score };
+            0.5 + (*alpha * (base - 0.5))
+        }
+        ScoreTransform::Threshold {
+            threshold,
+            invert,
+            low,
+            high,
+        } => {
+            let base = if *invert { 1.0 - score } else { score };
+            if base >= *threshold {
+                *high
+            } else {
+                *low
+            }
+        }
+    }
+    .clamp(0.0, 1.0)
+}
+
+fn calibration_improvement(raw: &MetricBlock, calibrated: &MetricBlock) -> CalibrationImprovement {
+    let correlation_delta = match (
+        raw.prediction_oracle_correlation,
+        calibrated.prediction_oracle_correlation,
+    ) {
+        (Some(before), Some(after)) => Some(after - before),
+        _ => None,
+    };
+    CalibrationImprovement {
+        raw_correlation: raw.prediction_oracle_correlation,
+        calibrated_correlation: calibrated.prediction_oracle_correlation,
+        correlation_delta,
+        raw_brier: raw.brier,
+        calibrated_brier: calibrated.brier,
+        brier_delta: raw.brier - calibrated.brier,
+        raw_ece: raw.ece,
+        calibrated_ece: calibrated.ece,
+        ece_delta: raw.ece - calibrated.ece,
+        improved_correlation: correlation_delta.map(|delta| delta > 0.0).unwrap_or(false),
+        improved_brier: calibrated.brier < raw.brier,
+    }
 }
 
 fn predict_oracle_pass(

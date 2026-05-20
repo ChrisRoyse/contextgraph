@@ -47,6 +47,8 @@ prediction_oracle_correlation ≥ 0.95
 
 **Degenerate-cell metric contract (#532).** Pearson correlation is used only when the oracle target has both Pass and Fail rows. Single-class cells such as `compile_error::python` and `wrong_file::python` have zero oracle variance, so the FSV gates them with target-class recall ≥ 0.95, actual-class confidence ≥ 0.95, Brier ≤ 0.05, ECE ≤ 0.05, and explicit power diagnostics (Fisher-z CI for mixed cells; Wilson lower bound for degenerate recall). The report must never emit a bare "correlation unavailable" blocker without this replacement metric.
 
+**Current real-input measurement (#533).** Latest aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T155822Z/` reports raw holdout `prediction_oracle_correlation = 0.5255988836` and calibrated holdout `0.6631761193`. Calibration uses only the 240-row calibration split and improves Brier/ECE, but the remaining ship gap is mixed-cell ranking on real slot-preserving signals plus first-class invalid-source handling (#531), not the invalid pre-fix `0.866667` synthetic-vector number.
+
 **Product boundary.** LLM agents are untrusted edit generators. Hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, and docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`.
 
 **Consequence-prediction contract (#397).** The model observes explicit task text, agent claims, edits, AST deltas, frozen instruments, oracle outcomes, and verification feedback. It does NOT infer or classify hidden human intent. Predicted consequences + evidence are presented to the operator/agent so they decide whether to proceed, repair, or pick a different route.

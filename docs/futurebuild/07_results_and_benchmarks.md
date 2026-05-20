@@ -23,13 +23,15 @@ The corpus survives. The measurement does not. Rebaseline is the P0 blocker befo
 
 | Metric | Target | Latest measurement | Status |
 |---|---|---|---|
-| `prediction_oracle_correlation` | ≥ 0.95 (stable × 4 rolling windows × all Python mutation cells) | **PENDING REBASELINE** | Previous 0.866667 measurement (`/mnt/d/...ship-gate-fsv/ship-gate-fsv.json`) **INVALID** — measured against synthetic-input inference path. Awaiting post-fix end-to-end run on aiwonder with real instruments + real trained checkpoint. |
+| `prediction_oracle_correlation` | ≥ 0.95 (stable × 4 rolling windows × all Python mutation cells) | **0.6631761193 calibrated** (`0.5255988836` raw) | Post-fix aiwonder real-input rebaseline now exists. Calibration improved correlation by `+0.1375772357`, Brier by `0.0795894414`, and ECE by `0.1124976203`; gate still fails on mixed-cell ranking and statistical-power blockers. |
 | Cross-panel oracle correlation (Panel B) | ≥ 0.95 with `\|corr_a − corr_b\| ≤ 0.05` | no measurement yet | #405 produces the first (after Panel A rebaseline lands) |
 | `mistake_repeat_rate` | ≤ 0.05 (rolling 100-mistake window) | byte-readable via `mejepa_mistake_loop_status` | Awaits real predictor mistakes (machinery shipped #406/#523; needs post-fix predictor to generate disagreements) |
 
-**Gap to ship:** unknown until rebaseline. Pre-fix gap was 0.083 against the synthetic-input number; the real-input number could be anywhere from worse-than-0.866 to already-past-0.95.
+**Gap to ship:** `0.2868238807` against the calibrated real-input Panel A measurement. Pre-fix `0.866667` is not comparable because it measured synthetic vectors.
 
 **Metric contract update (#532).** Per-cell Pearson is not defined for zero-variance oracle cells. The active ship-gate FSV now classifies every block as `mixed`, `all_fail`, `all_pass`, or `empty`: mixed blocks use Pearson correlation; degenerate all-fail/all-pass blocks use target-class recall plus calibration (`actual_class_confidence_mean`, Brier, ECE). Each block also carries statistical-power diagnostics so a point estimate cannot be mistaken for a powered readiness claim.
+
+**Calibration update (#533).** The ship-gate FSV now fits a deterministic calibration policy on the 240-row calibration split only, then evaluates the 240-row holdout. Constants are allowed only for structurally degenerate `compile_error` / `wrong_file` cells; non-degenerate cells preserve ranking evidence to avoid calibration-split overfit. Latest FSV: `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T155822Z/`, report sha256 `11c942c07b72e6e60a2e17c347b82add7fae6491bb6db948a2b7dd3ea26978ab`, readback sha256 `63dcc97ac15cabc1f57bf0f637e724fdd87aa9c30495d9644b3ee063b830345f`. The measured remaining blocker is mixed-cell ranking (#534): `delete_test_call`, `known_good`, `off_by_one`, `over_engineer`, `subtle_flip`, and `swap_variable` remain far below 0.95 after calibration.
 
 ---
 
