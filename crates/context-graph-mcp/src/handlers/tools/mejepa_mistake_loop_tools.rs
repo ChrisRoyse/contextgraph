@@ -2,11 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, bail, Context, Result as AnyhowResult};
+use anyhow::{Context, Result as AnyhowResult, anyhow, bail};
 use rocksdb::IteratorMode;
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde::de::DeserializeOwned;
+use serde_json::{Value, json};
 
 use context_graph_mejepa::{PredictionId, Verdict};
 use context_graph_mejepa_cf::{
@@ -14,16 +14,15 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
 };
 use context_graph_mejepa_train::{
-    apply_online_mistake_update_sync_readback, count_cf_rows, online_head_key,
-    open_ability_resolver_rocksdb, read_all_mistake_log_rows, read_all_skill_lifecycle_audit_rows,
-    read_mistake_log_row, read_online_head_state_row, read_replay_row,
-    write_mistake_log_row_sync_readback, write_replay_row_sync_readback, MistakeLogRow,
-    OnlineHeadRepeatMetricRow, OnlineHeadStateRow, OnlineHeadUpdateConfig, OnlineHeadUpdateInput,
-    ReplayBufferRow,
+    MistakeLogRow, OnlineHeadRepeatMetricRow, OnlineHeadStateRow, OnlineHeadUpdateConfig,
+    OnlineHeadUpdateInput, ReplayBufferRow, apply_online_mistake_update_sync_readback,
+    count_cf_rows, online_head_key, open_ability_resolver_rocksdb, read_all_mistake_log_rows,
+    read_all_skill_lifecycle_audit_rows, read_mistake_log_row, read_online_head_state_row,
+    read_replay_row, write_mistake_log_row_sync_readback, write_replay_row_sync_readback,
 };
 
-use crate::handlers::tools::helpers::ToolErrorKind;
 use crate::handlers::Handlers;
+use crate::handlers::tools::helpers::ToolErrorKind;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use crate::tools::names as tool_names;
 
@@ -51,6 +50,8 @@ struct MistakeHistoryRequest {
     code_state_key: Option<String>,
     label_signature_hash: Option<String>,
     skill_signature_hash: Option<String>,
+    ability_signature_hash: Option<String>,
+    membership_signature_hash: Option<String>,
     #[serde(default = "default_history_limit")]
     limit: usize,
     #[serde(default = "default_true")]
@@ -220,6 +221,14 @@ fn run_mistake_history(request: MistakeHistoryRequest) -> AnyhowResult<Value> {
                 .skill_signature_hash
                 .as_ref()
                 .is_none_or(|value| row.skill_signature_hash.as_ref() == Some(value))
+            && request
+                .ability_signature_hash
+                .as_ref()
+                .is_none_or(|value| row.ability_signature_hash.as_ref() == Some(value))
+            && request
+                .membership_signature_hash
+                .as_ref()
+                .is_none_or(|value| row.membership_signature_hash.as_ref() == Some(value))
     });
     rows.sort_by(|a, b| {
         b.created_at_unix_ms

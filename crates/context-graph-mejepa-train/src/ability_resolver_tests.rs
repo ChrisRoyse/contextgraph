@@ -1,7 +1,7 @@
 use super::*;
 use crate::chunk_skill_membership::{
-    materialize_skill_memberships, membership_key, read_all_chunk_skill_membership_rows,
-    write_skill_materialization_sync_readback, SkillLifecycleDecision,
+    SkillLifecycleDecision, materialize_skill_memberships, membership_key,
+    read_all_chunk_skill_membership_rows, write_skill_materialization_sync_readback,
 };
 use crate::label_bridge::{
     ability_signature_hash, accepted_label_signature_hash, membership_signature_hash,
@@ -268,9 +268,11 @@ fn resolver_preserves_many_to_many_memberships() {
 
     assert_eq!(context.active_skill_ids, vec![skill_a, skill_b]);
     assert_eq!(context.source_membership_keys.len(), 2);
-    assert!(context
-        .accepted_label_ids
-        .contains(&"ast_surface:function".to_string()));
+    assert!(
+        context
+            .accepted_label_ids
+            .contains(&"ast_surface:function".to_string())
+    );
     assert!(context.no_new_prediction_head_introduced);
     assert!(!context.flat_vector_concat_used);
 }
@@ -314,6 +316,32 @@ fn ordered_skill_signature_tracks_chunk_order() {
 }
 
 #[test]
+fn repeated_same_skill_steps_are_distinguished_by_membership_signature() {
+    let (_temp, db, skill_a, _skill_b) = seed_db();
+
+    let first_step =
+        resolve_ability_context(&db, request_with_state("state:other", &["chunk:a_only"])).unwrap();
+    let two_steps = resolve_ability_context(
+        &db,
+        request_with_state("state:other", &["chunk:a_only", "chunk:a_only:next"]),
+    )
+    .unwrap();
+
+    assert_eq!(first_step.active_skill_ids, vec![skill_a.clone()]);
+    assert_eq!(two_steps.active_skill_ids, vec![skill_a]);
+    assert_eq!(
+        first_step.skill_signature_hash,
+        two_steps.skill_signature_hash
+    );
+    assert_eq!(first_step.source_membership_keys.len(), 1);
+    assert_eq!(two_steps.source_membership_keys.len(), 2);
+    assert_ne!(
+        first_step.membership_signature_hash,
+        two_steps.membership_signature_hash
+    );
+}
+
+#[test]
 fn refutation_writes_replay_mistake_and_lifecycle_rows() {
     let (_temp, db, skill_a, _skill_b) = seed_db();
     let ability_id = write_higher_ability_membership(&db, &skill_a);
@@ -341,6 +369,20 @@ fn refutation_writes_replay_mistake_and_lifecycle_rows() {
             .same_panel_signature_corrected
     );
     assert!(report.online_head_update_report.repeat_metric_byte_readable);
+}
+
+#[test]
+fn refutation_rejects_stale_label_context_signatures() {
+    let (_temp, db, skill_a, _skill_b) = seed_db();
+    write_higher_ability_membership(&db, &skill_a);
+    let context = resolve_ability_context(&db, request(&["chunk:shared"])).unwrap();
+    let mut label_context = label_context(&context);
+    label_context.membership_signature_hash = Some("memberships:stale".to_string());
+
+    let err = record_ability_refutation_sync_readback(&db, &context, &label_context, input(0x43))
+        .unwrap_err();
+
+    assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
 }
 
 #[test]

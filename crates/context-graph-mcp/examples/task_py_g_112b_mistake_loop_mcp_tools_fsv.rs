@@ -1,4 +1,4 @@
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use async_trait::async_trait;
 use context_graph_core::traits::{
     EmbeddingMetadata, MultiArrayEmbeddingOutput, MultiArrayEmbeddingProvider,
@@ -20,21 +20,22 @@ use context_graph_mejepa_train::label_bridge::{
     skill_signature_hash,
 };
 use context_graph_mejepa_train::{
-    ability_aware_replay_cell_id, count_cf_rows, lifecycle_audit_id_from_parts,
-    mistake_id_from_evidence_parts, open_ability_resolver_rocksdb, read_all_mistake_log_rows,
-    read_all_replay_rows, read_online_head_state_row, read_repeat_metric_row, repeat_metric_key,
-    write_skill_lifecycle_audit_row_sync_readback, MistakeLogRow, MistakeTruthSource,
+    MistakeLogRow, MistakeTruthSource, OnlineHeadRepeatMetricRow, OnlineHeadStateRow,
     ReplayBufferRow, ReplayBufferSource, ReplayRetentionTier, SkillLifecycleAuditRow,
-    SkillLifecycleDecision,
+    SkillLifecycleDecision, ability_aware_replay_cell_id, count_cf_rows,
+    lifecycle_audit_id_from_parts, mistake_id_from_evidence_parts, open_ability_resolver_rocksdb,
+    read_all_mistake_log_rows, read_all_replay_rows, read_all_skill_lifecycle_audit_rows,
+    read_online_head_state_row, read_repeat_metric_row, repeat_metric_key,
+    write_skill_lifecycle_audit_row_sync_readback,
 };
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use context_graph_storage::{BackgroundGraphBuilder, EdgeRepository, GraphBuilderConfig};
-use rocksdb::{ColumnFamilyDescriptor, Options, DB};
-use serde_json::{json, Value};
+use rocksdb::{ColumnFamilyDescriptor, DB, Options};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tokio::sync::RwLock;
 
 const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-112b-mistake-loop-mcp-tools-fsv";
@@ -75,6 +76,10 @@ fn main() -> Result<()> {
         json!({
             "dbPath": db_path,
             "mistakeId": seed.mistake_row.mistake_id,
+            "labelSignatureHash": seed.mistake_row.label_signature_hash,
+            "skillSignatureHash": seed.mistake_row.skill_signature_hash,
+            "abilitySignatureHash": seed.mistake_row.ability_signature_hash,
+            "membershipSignatureHash": seed.mistake_row.membership_signature_hash,
             "includeReplayRows": true,
             "includeLifecycleAudits": true
         }),
@@ -318,9 +323,18 @@ fn independent_readback(db_path: &Path, seed: &SeedRows) -> Result<Value> {
     let db = open_ability_resolver_rocksdb(db_path, false)?;
     let mistakes = read_all_mistake_log_rows(&db)?;
     let replay_rows = read_all_replay_rows(&db)?;
+    let lifecycle_audits = read_all_skill_lifecycle_audit_rows(&db)?;
     let head_key = context_graph_mejepa_train::online_head_key(&seed.panel_signature_hash)?;
     let head_state = read_online_head_state_row(&db, &head_key)?;
     let repeat_metric = read_repeat_metric_row(&db, &seed.repeat_metric_key)?;
+    let joined_evidence = joined_evidence_readback(
+        seed,
+        &mistakes,
+        &replay_rows,
+        head_state.as_ref(),
+        repeat_metric.as_ref(),
+        &lifecycle_audits,
+    );
     let pass = mistakes.len() == 1
         && replay_rows.len() == 1
         && head_state
@@ -331,13 +345,15 @@ fn independent_readback(db_path: &Path, seed: &SeedRows) -> Result<Value> {
             .as_ref()
             .map(|row| row.mistake_repeat_rate == 0.0)
             .unwrap_or(false)
-        && count_cf_rows(&db, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT)? == 1;
+        && count_cf_rows(&db, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT)? == 1
+        && joined_evidence["pass"].as_bool() == Some(true);
     Ok(json!({
         "pass": pass,
         "mistakeRows": mistakes.len(),
         "replayRows": replay_rows.len(),
         "onlineHeadState": head_state,
         "repeatMetric": repeat_metric,
+        "joinedEvidence": joined_evidence,
         "cfCounts": {
             CF_MEJEPA_MISTAKE_LOG: count_cf_rows(&db, CF_MEJEPA_MISTAKE_LOG)?,
             CF_MEJEPA_REPLAY_BUFFER: count_cf_rows(&db, CF_MEJEPA_REPLAY_BUFFER)?,
@@ -345,6 +361,74 @@ fn independent_readback(db_path: &Path, seed: &SeedRows) -> Result<Value> {
             CF_MEJEPA_SKILL_LIFECYCLE_AUDIT: count_cf_rows(&db, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT)?
         }
     }))
+}
+
+fn joined_evidence_readback(
+    seed: &SeedRows,
+    mistakes: &[MistakeLogRow],
+    replay_rows: &[ReplayBufferRow],
+    head_state: Option<&OnlineHeadStateRow>,
+    repeat_metric: Option<&OnlineHeadRepeatMetricRow>,
+    lifecycle_audits: &[SkillLifecycleAuditRow],
+) -> Value {
+    let mistake = mistakes
+        .iter()
+        .find(|row| row.mistake_id == seed.mistake_row.mistake_id);
+    let replay = replay_rows
+        .iter()
+        .find(|row| row.prediction_id == seed.replay_row.prediction_id);
+    let lifecycle = lifecycle_audits
+        .iter()
+        .find(|row| row.mistake_id.as_deref() == Some(seed.mistake_row.mistake_id.as_str()));
+    let mistake_replay_match = mistake
+        .zip(replay)
+        .map(|(mistake, replay)| {
+            mistake.accepted_label_ids == replay.accepted_label_ids
+                && mistake.active_skill_ids == replay.active_skill_ids
+                && mistake.active_higher_ability_ids == replay.active_higher_ability_ids
+                && mistake.source_membership_keys == replay.source_membership_keys
+                && Some(mistake.label_signature_hash.clone()) == replay.label_signature_hash
+                && mistake.skill_signature_hash == replay.skill_signature_hash
+                && mistake.ability_signature_hash == replay.ability_signature_hash
+                && mistake.membership_signature_hash == replay.membership_signature_hash
+                && replay.cell_id == seed.replay_row.cell_id
+        })
+        .unwrap_or(false);
+    let lifecycle_match = lifecycle
+        .map(|row| {
+            row.evidence_label_ids == seed.mistake_row.accepted_label_ids
+                && row.evidence_skill_ids == seed.mistake_row.active_skill_ids
+                && row.evidence_higher_ability_ids == seed.mistake_row.active_higher_ability_ids
+                && row.source_membership_keys == seed.mistake_row.source_membership_keys
+        })
+        .unwrap_or(false);
+    let online_head_match = head_state
+        .map(|row| {
+            row.replay_cell_id == seed.replay_row.cell_id
+                && row.label_signature_hash == seed.mistake_row.label_signature_hash
+                && row.skill_signature_hash == seed.mistake_row.skill_signature_hash
+                && row.ability_signature_hash == seed.mistake_row.ability_signature_hash
+                && row.membership_signature_hash == seed.mistake_row.membership_signature_hash
+                && row.last_mistake_id == seed.mistake_row.mistake_id
+                && row.last_replay_row_key == seed.mistake_row.replay_row_key
+        })
+        .unwrap_or(false);
+    let repeat_metric_match = repeat_metric
+        .map(|row| {
+            row.replay_cell_id == seed.replay_row.cell_id
+                && row.label_signature_hash == seed.mistake_row.label_signature_hash
+                && row.skill_signature_hash == seed.mistake_row.skill_signature_hash
+                && row.ability_signature_hash == seed.mistake_row.ability_signature_hash
+                && row.membership_signature_hash == seed.mistake_row.membership_signature_hash
+        })
+        .unwrap_or(false);
+    json!({
+        "pass": mistake_replay_match && lifecycle_match && online_head_match && repeat_metric_match,
+        "mistakeReplayMatch": mistake_replay_match,
+        "lifecycleMatch": lifecycle_match,
+        "onlineHeadMatch": online_head_match,
+        "repeatMetricMatch": repeat_metric_match
+    })
 }
 
 fn independent_counts(db_path: &Path) -> Result<Value> {

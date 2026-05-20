@@ -1,17 +1,18 @@
 use crate::chunk_skill_membership::{
-    lifecycle_audit_id_from_parts, write_skill_lifecycle_audit_row_sync_readback,
-    SkillLifecycleAuditRow, SkillLifecycleDecision,
+    SkillLifecycleAuditRow, SkillLifecycleDecision, lifecycle_audit_id_from_parts,
+    write_skill_lifecycle_audit_row_sync_readback,
 };
 use crate::error::{TrainerError, TrainerErrorCode};
+use crate::label_bridge::accepted_label_signature_hash;
 use crate::mistake_log::{
-    mistake_id_from_evidence_parts, write_mistake_log_row_sync_readback, MistakeLogRow,
+    MistakeLogRow, mistake_id_from_evidence_parts, write_mistake_log_row_sync_readback,
 };
 use crate::online_head_state::{
-    apply_online_mistake_update_sync_readback, OnlineHeadUpdateConfig, OnlineHeadUpdateInput,
+    OnlineHeadUpdateConfig, OnlineHeadUpdateInput, apply_online_mistake_update_sync_readback,
 };
 use crate::replay_buffer::{
-    ability_aware_replay_cell_id, prediction_hex, write_replay_row_sync_readback, ReplayBufferRow,
-    ReplayBufferSource, ReplayRetentionTier,
+    ReplayBufferRow, ReplayBufferSource, ReplayRetentionTier, ability_aware_replay_cell_id,
+    prediction_hex, write_replay_row_sync_readback,
 };
 use crate::skill_sequence_discovery::SKILL_SEQUENCE_SCHEMA_VERSION;
 use context_graph_mejepa::{PredictionLabelContext, Verdict};
@@ -20,7 +21,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use super::{
-    invalid, validate_id, AbilityContext, AbilityRefutationInput, AbilityRefutationReport,
+    AbilityContext, AbilityRefutationInput, AbilityRefutationReport, invalid, validate_id,
 };
 
 pub fn record_ability_refutation_sync_readback(
@@ -241,14 +242,28 @@ fn report_rows_agree(
     let skills = &context.active_skill_ids;
     let abilities = &context.active_higher_ability_ids;
     let memberships = &context.source_membership_keys;
+    let label_signature_matches = match accepted_label_signature_hash(labels) {
+        Ok(expected) => {
+            mistake.label_signature_hash == expected
+                && replay.label_signature_hash.as_deref() == Some(expected.as_str())
+        }
+        Err(_) => false,
+    };
     mistake.accepted_label_ids == *labels
         && mistake.active_skill_ids == *skills
         && mistake.active_higher_ability_ids == *abilities
         && mistake.source_membership_keys == *memberships
+        && label_signature_matches
+        && mistake.skill_signature_hash == context.skill_signature_hash
+        && mistake.ability_signature_hash == context.ability_signature_hash
+        && mistake.membership_signature_hash == context.membership_signature_hash
         && replay.accepted_label_ids == *labels
         && replay.active_skill_ids == *skills
         && replay.active_higher_ability_ids == *abilities
         && replay.source_membership_keys == *memberships
+        && replay.skill_signature_hash == context.skill_signature_hash
+        && replay.ability_signature_hash == context.ability_signature_hash
+        && replay.membership_signature_hash == context.membership_signature_hash
         && audits.iter().all(|row| {
             row.evidence_label_ids == *labels
                 && row.evidence_skill_ids == *skills
@@ -315,6 +330,17 @@ fn validate_label_context_matches(
         return Err(invalid(
             "label_context",
             "PredictionLabelContext must match resolved AbilityContext",
+        ));
+    }
+    let expected_label_signature = accepted_label_signature_hash(&context.accepted_label_ids)?;
+    if label_context.label_signature_hash.as_deref() != Some(expected_label_signature.as_str())
+        || label_context.skill_signature_hash != context.skill_signature_hash
+        || label_context.ability_signature_hash != context.ability_signature_hash
+        || label_context.membership_signature_hash != context.membership_signature_hash
+    {
+        return Err(invalid(
+            "label_context",
+            "PredictionLabelContext signatures must match resolved AbilityContext",
         ));
     }
     Ok(())

@@ -2,7 +2,7 @@
 
 use crate::tools::names as tool_names;
 use crate::tools::types::ToolDefinition;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
@@ -1385,6 +1385,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "codeStateKey": {"type": "string", "minLength": 1, "maxLength": 512},
                     "labelSignatureHash": {"type": "string", "minLength": 1, "maxLength": 512},
                     "skillSignatureHash": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "abilitySignatureHash": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "membershipSignatureHash": {"type": "string", "minLength": 1, "maxLength": 512},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 100},
                     "includeReplayRows": {"type": "boolean", "default": true},
                     "includeLifecycleAudits": {"type": "boolean", "default": true}
