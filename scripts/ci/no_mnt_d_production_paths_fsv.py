@@ -141,6 +141,10 @@ def classify_repo_line(rel: str, lines: list[str], index: int) -> tuple[str, str
     if rel.endswith("production_root_guard_fsv.rs"):
         return "historical_provenance", "path-policy guard FSV negative case"
 
+    if rel.endswith("scripts/swebench_lite_ops/python_forward_shard_scheduler.py"):
+        if "FORBIDDEN_LOCAL_ROOT" in line or "Deprecated no-op" in line:
+            return "historical_provenance", "scheduler forbidden-root sentinel or deprecated no-op help"
+
     if "legacy/local" in text or "legacy provenance" in text:
         return "historical_provenance", "explicit legacy provenance wording"
 
@@ -211,18 +215,13 @@ def classify_repo_line(rel: str, lines: list[str], index: int) -> tuple[str, str
 
 
 def explicit_negative_context(rel: str, text: str, window: str) -> bool:
-    if any(marker in window for marker in ["expect_err", "return err", "return err("]):
-        return True
-    if "/tests/" in f"/{rel}" or rel.endswith("_test.rs"):
-        return any(marker in window for marker in ["expect_err", "must not", "reject", "guard"])
-    negative_shapes = [
+    same_expression_markers = [
+        ".is_err()",
+        ".expect_err(",
         "expect_err",
-        "assert",
-        "not (",
-        "not path_is_under",
-        'value == "/mnt/d"',
-        'startswith("/mnt/d/',
-        'starts_with("/mnt/d/',
+        "assert!(",
+        "assert_eq!",
+        "assert_ne!",
         "return err",
         "return err(",
         "return err!",
@@ -231,23 +230,28 @@ def explicit_negative_context(rel: str, text: str, window: str) -> bool:
         "return err,",
         "return error",
         "return err(invalid",
-        "return err(",
         "return err {",
-        "return err;",
         "return err)",
         "return err:",
         "return err<",
         "return err?",
         "return err_",
         "return err-",
-        "return err;",
-        "return err",
         "return Err".lower(),
-        "must not",
-        "cannot",
-        "forbidden",
-        "reject",
-        "denied",
+    ]
+    if any(marker in text for marker in same_expression_markers):
+        return True
+    if any(marker in window for marker in [".expect_err(", ".is_err()"]):
+        return True
+    if "/tests/" in f"/{rel}" or rel.endswith("_test.rs"):
+        return any(marker in window for marker in same_expression_markers)
+    negative_shapes = [
+        "expect_err",
+        "not (",
+        "not path_is_under",
+        'value == "/mnt/d"',
+        'startswith("/mnt/d/',
+        'starts_with("/mnt/d/',
     ]
     return any(shape in text for shape in negative_shapes)
 
@@ -394,6 +398,10 @@ def classify_issue_line(line: str) -> tuple[str, str]:
 def synthetic_cases() -> dict[str, object]:
     env_line = f"CONTEXT_GRAPH_MODELS_PATH={FORBIDDEN}/contextgraph/models"
     guard_line = f"active production paths must not use {FORBIDDEN}"
+    negative_is_err_line = (
+        f'open_ability_resolver_rocksdb(Path::new("{FORBIDDEN}/contextgraph/bad"), true)'
+        ".is_err();"
+    )
     stale_line = f"production FSV still being authored under {FORBIDDEN}"
     issue_tracking_line = f"#412 tracks no-{FORBIDDEN} cleanup"
     issue_active_line = f"--fsv-root {FORBIDDEN}/contextgraph/fsv/task"
@@ -401,12 +409,18 @@ def synthetic_cases() -> dict[str, object]:
     results = [
         classify_repo_line("scripts/synthetic_env.sh", [env_line], 0)[0],
         classify_repo_line("crates/context-graph-mejepa-train/src/guard.rs", [guard_line], 0)[0],
+        classify_repo_line(
+            "crates/context-graph-mejepa-train/examples/synthetic_fsv.rs",
+            [negative_is_err_line],
+            0,
+        )[0],
         classify_repo_line("docs/futurebuild/03_storage_schema.md", [stale_line], 0)[0],
         classify_issue_line(issue_tracking_line)[0],
         classify_issue_line(issue_active_line)[0],
     ]
     expected = [
         "active_violation",
+        "historical_provenance",
         "historical_provenance",
         "stale_doc",
         "historical_provenance",
@@ -417,9 +431,14 @@ def synthetic_cases() -> dict[str, object]:
         "cases": [
             {"name": "env_override_default", "expected": expected[0], "actual": results[0]},
             {"name": "guard_negative_case", "expected": expected[1], "actual": results[1]},
-            {"name": "stale_active_doc", "expected": expected[2], "actual": results[2]},
-            {"name": "issue_tracking_line", "expected": expected[3], "actual": results[3]},
-            {"name": "issue_active_default", "expected": expected[4], "actual": results[4]},
+            {
+                "name": "same_expression_is_err_negative_case",
+                "expected": expected[2],
+                "actual": results[2],
+            },
+            {"name": "stale_active_doc", "expected": expected[3], "actual": results[3]},
+            {"name": "issue_tracking_line", "expected": expected[4], "actual": results[4]},
+            {"name": "issue_active_default", "expected": expected[5], "actual": results[5]},
         ],
     }
 
@@ -460,9 +479,14 @@ def main(argv: list[str]) -> int:
         hits.extend(scan_open_issues(repo))
 
     counts = summarize(hits)
-    active_path_gate_passed = synthetic["passed"] and counts.get("active_violation", 0) == 0
-    stale_cleanup_tracked = issue_exists(repo, STALE_CLEANUP_ISSUE) or (
-        counts.get("stale_doc", 0) == 0 and counts.get("stale_issue", 0) == 0
+    active_violation_gate_passed = synthetic["passed"] and counts.get("active_violation", 0) == 0
+    stale_doc_count_zero = counts.get("stale_doc", 0) == 0
+    stale_issue_count_zero = counts.get("stale_issue", 0) == 0
+    stale_cleanup_tracked = args.skip_issues or issue_exists(repo, STALE_CLEANUP_ISSUE) or (
+        stale_doc_count_zero and stale_issue_count_zero
+    )
+    full_cleanup_passed = (
+        active_violation_gate_passed and stale_doc_count_zero and stale_issue_count_zero
     )
     payload = {
         "schema": "contextgraph.task-aiwonder-022.no-mnt-d-production-paths-fsv.v1",
@@ -474,9 +498,14 @@ def main(argv: list[str]) -> int:
         "assertions": {
             "syntheticCasesPassed": synthetic["passed"],
             "activeViolationCountZero": counts.get("active_violation", 0) == 0,
-            "activePathGatePassed": active_path_gate_passed,
+            "activeViolationGatePassed": active_violation_gate_passed,
+            "activePathGatePassed": active_violation_gate_passed,
+            "issueScanSkipped": args.skip_issues,
+            "staleDocCountZero": stale_doc_count_zero,
+            "staleIssueCountZero": stale_issue_count_zero,
             "staleFindingsTracked": stale_cleanup_tracked,
-            "allPassed": active_path_gate_passed and stale_cleanup_tracked,
+            "fullCleanupPassed": full_cleanup_passed,
+            "allPassed": active_violation_gate_passed and stale_cleanup_tracked,
         },
         "counts": counts,
         "syntheticCases": synthetic["cases"],
