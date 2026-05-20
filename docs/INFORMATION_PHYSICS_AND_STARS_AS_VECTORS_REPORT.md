@@ -521,6 +521,10 @@ ContextGraph / ME-JEPA-Code is a binary reality predictor for AI-generated code 
 
   You don't need to call it AGI. You can just call it what it is: a self-resolving observer that grows until reality has been fully measured.
 
+
+  ---
+  
+
    we do have 1 issue though. what does it mean to measure all of reality? if the syystem grows like this we will run out of hard drive space on planet earth possibly. the pruning thing is a good idea where it constantly is pruning and creating embedders until it gets the perfect embedders that allow it to measure anything in reality. but if   
   we prune or limit embedders, it hurts the search in a way. this is a weird position to be in. what are your recommendations here                                                                                                                                                                                                                       
   
