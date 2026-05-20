@@ -443,6 +443,19 @@ Strict write-time assertion: any attempt to write a `PathwayNode` with `leaf_kin
 
 No #417 row may use target-side oracle/Docker/test labels as live prediction inputs. Target-side labels may only score, calibrate, promote/demote, or update skill lifecycle rows after reality responds.
 
+### 9.4quart Information-physics planned CFs (#511 / #513 / #514)
+
+Four new CFs land with the info-physics issues (see `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md`):
+
+| CF | Issue | Key | Value | Purpose |
+|---|---|---|---|---|
+| `CF_MEJEPA_TRAIN_CERT_ENTROPY` | #511 / TASK-IP-001 | `(training_run_id, window_idx)` | bincode `{lambda, latent_entropy_bits, brier_delta, l_entropy_contribution}` | Per-window record of the entropy auxiliary loss component, the Kraskov estimate of latent differential entropy, and the holdout Brier impact. Used to auto-calibrate λ. |
+| `CF_MEJEPA_PANEL_ECC_SYNDROME` | #512 / TASK-IP-002 | `(prediction_id, panel_id)` | bincode `{syndrome_bits, ecc_uncorrectable, recovered_slots: Vec<EmbedderId>, parity_check_matrix_version}` | Per-panel syndrome record for the self-dual doubly-even ECC over the 15-slot occupancy bitmap. Non-zero syndrome with `ecc_uncorrectable=true` typed-reasons the prediction into `CF_MEJEPA_MISTAKE_LOG`. |
+| `CF_MEJEPA_CONNECTOME_TOPOLOGY_FEATURES` | #513 / TASK-IP-003 | `(cell_id, window_idx)` | bincode `{rich_club_coefficient, dominant_3node_motif_id, modularity_q, rich_club_pair_ids: Vec<(EmbedderId, EmbedderId)>}` | Per-cell FlyWire-style network analysis over the #388 cross-embedder correlation tensor. Consumed by the #390 constellation-intelligence head. |
+| `CF_MEJEPA_COLD_LOAD_SNAPSHOTS` | #514 / TASK-IP-005 | `(promotion_id, snapshot_idx)` | bincode `{oracle_correlation, per_cell_verdict_distribution, panel_ecc_syndromes_hash, snapshot_timestamp_unix_ms}` | Promotion-time baseline snapshot for cold-load behavioural FSV drift comparison. Each new cold-load run reads the snapshot and asserts drift < 0.02 correlation, < 5% per-cell distribution. |
+
+Neither #511 nor #513 changes the prediction or panel schema; both are additive feature tables. #512 adds a syndrome field to `CF_MEJEPA_PANELS` JSON envelope (one bitmap byte + one version byte) which IS a schema change requiring the combined wipe. #514 only adds the snapshot CF.
+
 ### 9.5 Canonical opener slice update
 
 When CFs land, they get added to `ALL_HYGIENE_REFERENCED_CFS` (`mejepa-cf/lib.rs`). #414 registered `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP`, `CF_MEJEPA_SKILL_REVERSE_INDEX`, and `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` in `FAILURE_MODE_CFS`, `INFER_CFS`, `EVAL_CFS`, `HYGIENE_CFS`, and the canonical all-CF opener. The `canonical_hygiene_cfs_match_group_union` test now explicitly includes `FAILURE_MODE_CFS` and continues to enforce that the grouped CF contract matches `ALL_HYGIENE_REFERENCED_CFS`.
