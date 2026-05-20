@@ -57,6 +57,10 @@ name = "task_py_g_127_trained_checkpoint_export_fsv"
 path = "examples/task_py_g_127_trained_checkpoint_export_fsv.rs"
 
 [[example]]
+name = "task_py_g_152_native_active_constellation_training_fsv"
+path = "examples/task_py_g_152_native_active_constellation_training_fsv.rs"
+
+[[example]]
 name = "train_full_fsv"
 path = "examples/train_full_fsv.rs"
 
