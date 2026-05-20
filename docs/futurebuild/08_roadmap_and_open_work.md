@@ -84,7 +84,7 @@ Per pinned context #383 (LOCKED): gate-active issue order is **evidence-weighted
 |---|---|---|---|
 | **0** | **REBASELINE + RANK-SAFE CALIBRATION** — run `swebench_300x8_ship_gate_fsv` against real-instruments inference + real trained checkpoint | ✅ landed #531/#534 | Valid Panel A rank-safe measurement exists: `0.6916886568`. |
 | **0.5** | **#535** mixed-cell rank lift from real labels | ✅ landed 2026-05-20 | Valid Panel A rank-lift measurement exists: `0.7937270999`, Brier `0.0936445221`, ECE `0.0338404700`. |
-| 1 | **#537** re-run `λ_inv` bidirectional ablation + #393/#398 ablation suites against real inputs | OPEN p0 | Pre-fix ablations measured nothing meaningful; redoing them should identify actual gap-closing levers |
+| 1 | **#537** re-run `λ_inv` bidirectional ablation + #393/#398 ablation suites against real inputs | OPEN p0; #398-style rerun done, #546 tracks invalid lambda evaluator | Pre-fix ablations measured nothing meaningful; redoing them should identify actual gap-closing levers. First rerun says calibrated full constellation is still `no_promotion` against `0.7937270999`. |
 | 1.5 | **#536** repair remaining weak cells after #535 | OPEN p0 | Directly targets `off_by_one`, `subtle_flip`, `swap_variable`, and one-fail saturated cells exposed by the latest measurement. |
 | 2 | **#404** failure-mode hierarchy | ✅ closed 2026-05-20 | Substrate REAL (deterministic over real corpus); holdout measurements need re-validation against post-fix predictions |
 | 3 | **#413** auto-label discovery | ✅ closed 2026-05-19 | 491-row accepted Level-0 registry — REAL (deterministic over real forward cache) |

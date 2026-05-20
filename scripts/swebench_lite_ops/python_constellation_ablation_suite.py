@@ -755,7 +755,7 @@ def next_predictor_recommendation(full: dict[str, Any], best_local_brier: float,
     if not full_beats_local or not full_beats_historical or full["anti_compensation"]["passes"] is not True:
         return {
             "decision": "no_promotion",
-            "reason": "calibrated_full_constellation did not beat both the local baseline ladder and historical 0.866667 correlation context",
+            "reason": "calibrated_full_constellation did not beat both the local baseline ladder and configured correlation baseline",
             "candidate_components": [],
             "full_constellation_brier": metrics["brier"],
             "full_constellation_correlation": corr,
