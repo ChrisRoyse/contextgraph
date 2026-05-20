@@ -609,13 +609,17 @@ fn write_label_bridge_fixture(root: &Path) -> Result<(), Box<dyn std::error::Err
         [
             json!({
                 "group_key": "state:shared",
-                "labels": ["group_scope:code_state", "dominant_surface:function"],
+                "labels": ["group_scope:code_state", "dominant_surface:function", "code_state_outcome:fail"],
+                "live_predictor_labels": ["ast_surface:function"],
+                "target_supervision_labels": ["code_state_outcome:fail", "oracle:fail"],
                 "slot_identity_preserved": true,
                 "flat_vector_concat_used": false
             }),
             json!({
                 "group_key": "state:other",
-                "labels": ["group_scope:code_state", "dominant_surface:import"],
+                "labels": ["group_scope:code_state", "dominant_surface:import", "code_state_outcome:pass"],
+                "live_predictor_labels": ["ast_surface:import_from"],
+                "target_supervision_labels": ["code_state_outcome:pass", "oracle:pass"],
                 "slot_identity_preserved": true,
                 "flat_vector_concat_used": false
             }),

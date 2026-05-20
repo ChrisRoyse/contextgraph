@@ -303,8 +303,10 @@ struct FailureCandidateJsonRow {
     relative_path: String,
     #[serde(default)]
     byte_span: Vec<u64>,
+    #[serde(default, rename = "labels")]
+    _labels: Vec<String>,
     #[serde(default)]
-    labels: Vec<String>,
+    live_predictor_labels: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -410,12 +412,7 @@ fn read_failure_evidence_episodes(
         }
         let mut seeds = Vec::new();
         for candidate in &row.candidate_sample {
-            if let Some(seed) = step_from_candidate(
-                bridge,
-                &row.code_state_key,
-                candidate,
-                candidate.labels.as_slice(),
-            )? {
+            if let Some(seed) = step_from_candidate(bridge, &row.code_state_key, candidate)? {
                 seeds.push(seed);
             }
         }
@@ -602,9 +599,12 @@ fn step_from_candidate(
     bridge: &LabelLearningBridge,
     code_state_key: &str,
     candidate: &FailureCandidateJsonRow,
-    labels: &[String],
 ) -> Result<Option<StepSeed>, TrainerError> {
-    let (accepted_label_ids, group_ids) = select_live_skill_labels(bridge, labels)?;
+    if candidate.live_predictor_labels.is_empty() {
+        return Ok(None);
+    }
+    let (accepted_label_ids, group_ids) =
+        select_live_skill_labels(bridge, &candidate.live_predictor_labels)?;
     if accepted_label_ids.is_empty() || group_ids.is_empty() {
         return Ok(None);
     }
@@ -656,7 +656,12 @@ fn select_live_skill_labels(
     for label in labels {
         validate_id("label", label)?;
         if target_or_corpus_only_label(label) {
-            continue;
+            return Err(invalid(
+                "live_predictor_labels",
+                format!(
+                    "{label} is target/corpus-only and cannot be selected as a live skill label"
+                ),
+            ));
         }
         if bridge.accepted_label(label).is_none() {
             continue;
@@ -1089,7 +1094,7 @@ mod tests {
 
     fn candidate(task: &str, suffix: &str, start: u64) -> String {
         format!(
-            r#"{{"chunk_id":"chunk:{task}:{suffix}","row_key":"{task}|row|{suffix}","relative_path":"pkg/{task}.py","byte_span":[{start},{end}],"labels":["ast_surface:call_api_surface","ast_surface:function_contract_surface","group:semantic_content_panel:present","group:cross_panel:high_disagreement_cluster:medium","oracle:fail","mutation_micro:numeric_boundary_shift"]}}"#,
+            r#"{{"chunk_id":"chunk:{task}:{suffix}","row_key":"{task}|row|{suffix}","relative_path":"pkg/{task}.py","byte_span":[{start},{end}],"labels":["ast_surface:call_api_surface","ast_surface:function_contract_surface","group:semantic_content_panel:present","group:cross_panel:high_disagreement_cluster:medium","oracle:fail","mutation_micro:numeric_boundary_shift"],"live_predictor_labels":["ast_surface:call_api_surface","ast_surface:function_contract_surface","group:semantic_content_panel:present","group:cross_panel:high_disagreement_cluster:medium"]}}"#,
             end = start + 5
         )
     }
@@ -1099,13 +1104,12 @@ mod tests {
         workspace: &str,
         mutation: &str,
         chunk_id: &str,
-        pass: bool,
+        _pass: bool,
         start: u64,
     ) -> String {
         format!(
-            r#"{{"row_key":"{task}|{workspace}|{chunk_id}","chunk_id":"{chunk_id}","task_instance_id":"{task}","workspace_state":"{workspace}","mutation_category":"{mutation}","relative_path":"pkg/{task}.py","byte_span":[{start},{end}],"slot_identity_preserved":true,"flat_vector_concat_used":false,"live_predictor_labels":["ast_surface:call_api_surface","ast_surface:function_contract_surface","group:semantic_content_panel:present","group:cross_panel:high_disagreement_cluster:medium","oracle:{oracle}","mutation_micro:numeric_boundary_shift"]}}"#,
-            end = start + 5,
-            oracle = if pass { "pass" } else { "fail" }
+            r#"{{"row_key":"{task}|{workspace}|{chunk_id}","chunk_id":"{chunk_id}","task_instance_id":"{task}","workspace_state":"{workspace}","mutation_category":"{mutation}","relative_path":"pkg/{task}.py","byte_span":[{start},{end}],"slot_identity_preserved":true,"flat_vector_concat_used":false,"live_predictor_labels":["ast_surface:call_api_surface","ast_surface:function_contract_surface","group:semantic_content_panel:present","group:cross_panel:high_disagreement_cluster:medium"]}}"#,
+            end = start + 5
         )
     }
 }

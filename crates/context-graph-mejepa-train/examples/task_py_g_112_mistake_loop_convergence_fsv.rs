@@ -39,6 +39,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Vec::new(),
         active_skill_ids.clone(),
     )?;
+    let code_state_row = bridge
+        .code_state_constellations
+        .get("python:before:unit")
+        .ok_or("missing code-state row")?;
+    let failure_evidence_row = bridge
+        .failure_evidence_sets
+        .get("python:before:unit")
+        .ok_or("missing failure evidence row")?;
+    let target_labels_preserved_as_provenance = code_state_row
+        .labels
+        .iter()
+        .any(|label| label == "code_state_outcome:fail")
+        && code_state_row
+            .target_supervision_labels
+            .iter()
+            .any(|label| label == "oracle:fail")
+        && failure_evidence_row
+            .labels
+            .iter()
+            .any(|label| label == "oracle:fail");
+    let live_context_omits_target_labels = label_context
+        .accepted_label_ids
+        .iter()
+        .chain(label_context.failure_evidence_set_ids.iter())
+        .all(|label| {
+            !label.starts_with("oracle:")
+                && !label.starts_with("docker:")
+                && !label.starts_with("test_result:")
+                && !label.starts_with("code_state_outcome:")
+        });
     let label_signature = label_context
         .label_signature_hash
         .clone()
@@ -154,11 +184,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && edge_same_verdict
         && edge_bad_cell_component
         && edge_leaky_label
-        && edge_target_failure_evidence_rejected;
+        && edge_target_failure_evidence_rejected
+        && target_labels_preserved_as_provenance
+        && live_context_omits_target_labels;
     let report = json!({
         "artifact_kind": "task_py_g_112_mistake_loop_convergence_fsv",
         "schema_version": 1,
         "task_id": "TASK-PY-G-112",
+        "covered_github_issues": [112, 430],
         "passes": all_passed,
         "before": before,
         "after": tree_state(&fsv_root)?,
@@ -171,9 +204,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "same_verdict_mistake_rejected": edge_same_verdict,
             "control_char_cell_component_rejected": edge_bad_cell_component,
             "leaky_live_label_rejected": edge_leaky_label,
-            "target_failure_evidence_rejected_as_live_input": edge_target_failure_evidence_rejected
+            "target_failure_evidence_rejected_as_live_input": edge_target_failure_evidence_rejected,
+            "target_labels_preserved_as_provenance": target_labels_preserved_as_provenance,
+            "live_context_omits_target_labels": live_context_omits_target_labels
         },
-        "proof_scope": "label-bridge, mistake-log, and replay persistence/readback; online convergence remains the surrounding TASK-PY-G-112 implementation scope",
+        "leakage_boundary": {
+            "live_prediction_inputs": "live_predictor_labels plus accepted registry rows with live_prediction_input_allowed=true",
+            "target_only_provenance": "labels and target_supervision_labels may preserve oracle/outcome/test labels but cannot feed live prediction context"
+        },
+        "proof_scope": "label-bridge, mistake-log, replay persistence/readback, and #430 live-label leakage boundary; online convergence remains the surrounding TASK-PY-G-112 implementation scope",
         "slot_identity_preserved": true,
         "flat_vector_concat_used": false,
         "active_path_policy": {"mnt_d_active_reads_or_writes": false}
@@ -233,11 +272,11 @@ fn write_label_fixture(root: &Path, live_allowed: bool) -> Result<(), Box<dyn st
     fs::write(&chunks, "{}\n")?;
     fs::write(
         &code_states,
-        r#"{"group_key":"python:before:unit","labels":["group_scope:code_state","dominant_surface:function"],"slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
+        r#"{"group_key":"python:before:unit","labels":["group_scope:code_state","dominant_surface:function","code_state_outcome:fail"],"live_predictor_labels":["ast_surface:function"],"target_supervision_labels":["code_state_outcome:fail","oracle:fail"],"slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
     )?;
     fs::write(
         &failure_sets,
-        r#"{"code_state_key":"python:before:unit","labels":["evidence:multi_point"],"localization_mode":"failure_localization:multi_point","slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
+        r#"{"code_state_key":"python:before:unit","labels":["evidence:multi_point","oracle:fail"],"target_supervision_labels":["oracle:fail"],"localization_mode":"failure_localization:multi_point","slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
     )?;
     let manifest = json!({
         "artifact_kind": "python_auto_label_discovery_learning_bridge_manifest",

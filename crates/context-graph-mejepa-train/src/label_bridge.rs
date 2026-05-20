@@ -6,6 +6,7 @@
 //! panel into one fused semantic vector.
 
 use crate::error::{TrainerError, TrainerErrorCode};
+use crate::skill_validation;
 use context_graph_mejepa::PredictionLabelContext;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -69,6 +70,10 @@ pub struct FailureEvidenceSetRow {
     pub formula_version: String,
     pub code_state_key: String,
     pub labels: Vec<String>,
+    #[serde(default)]
+    pub live_predictor_labels: Vec<String>,
+    #[serde(default)]
+    pub target_supervision_labels: Vec<String>,
     pub localization_mode: String,
     pub slot_identity_preserved: bool,
     pub flat_vector_concat_used: bool,
@@ -84,6 +89,10 @@ pub struct CodeStateConstellationRow {
     pub code_state_key: Option<String>,
     #[serde(default)]
     pub labels: Vec<String>,
+    #[serde(default)]
+    pub live_predictor_labels: Vec<String>,
+    #[serde(default)]
+    pub target_supervision_labels: Vec<String>,
     pub slot_identity_preserved: bool,
     pub flat_vector_concat_used: bool,
 }
@@ -288,7 +297,7 @@ pub fn build_prediction_label_context_with_abilities(
                 format!("{key} is not present in code_state_constellations"),
             )
         })?;
-        validate_code_state_live_input(row)?;
+        validate_code_state_live_input(bridge, row)?;
     }
     for id in &failure_evidence_set_ids {
         let row = bridge.failure_evidence_sets.get(id).ok_or_else(|| {
@@ -305,6 +314,7 @@ pub fn build_prediction_label_context_with_abilities(
                 ),
             ));
         }
+        validate_failure_evidence_live_input(bridge, row)?;
     }
     Ok(PredictionLabelContext {
         accepted_label_ids: accepted_label_ids.clone(),
@@ -499,6 +509,20 @@ fn validate_accepted_label(row: &AcceptedLabelRegistryRow) -> Result<(), Trainer
 fn validate_failure_evidence_set(row: &FailureEvidenceSetRow) -> Result<(), TrainerError> {
     validate_label_id("failure_evidence_set.code_state_key", &row.code_state_key)?;
     validate_id_list("failure_evidence_set.labels", &row.labels, MAX_LABEL_IDS)?;
+    validate_id_list(
+        "failure_evidence_set.live_predictor_labels",
+        &row.live_predictor_labels,
+        MAX_LABEL_IDS,
+    )?;
+    validate_id_list(
+        "failure_evidence_set.target_supervision_labels",
+        &row.target_supervision_labels,
+        MAX_LABEL_IDS,
+    )?;
+    validate_live_label_list(
+        "failure_evidence_set.live_predictor_labels",
+        &row.live_predictor_labels,
+    )?;
     validate_label_id(
         "failure_evidence_set.localization_mode",
         &row.localization_mode,
@@ -526,6 +550,20 @@ fn validate_code_state_constellation(
         &row.labels,
         MAX_LABEL_IDS,
     )?;
+    validate_id_list(
+        "code_state_constellation.live_predictor_labels",
+        &row.live_predictor_labels,
+        MAX_LABEL_IDS,
+    )?;
+    validate_id_list(
+        "code_state_constellation.target_supervision_labels",
+        &row.target_supervision_labels,
+        MAX_LABEL_IDS,
+    )?;
+    validate_live_label_list(
+        "code_state_constellation.live_predictor_labels",
+        &row.live_predictor_labels,
+    )?;
     if !row.slot_identity_preserved || row.flat_vector_concat_used {
         return Err(invalid(
             "code_state_constellation.slot_policy",
@@ -535,32 +573,64 @@ fn validate_code_state_constellation(
     Ok(key)
 }
 
-fn validate_code_state_live_input(row: &CodeStateConstellationRow) -> Result<(), TrainerError> {
-    for label in &row.labels {
-        if is_target_only_label(label) {
+fn validate_code_state_live_input(
+    bridge: &LabelLearningBridge,
+    row: &CodeStateConstellationRow,
+) -> Result<(), TrainerError> {
+    validate_live_registry_membership(
+        bridge,
+        "code_state_constellation.live_predictor_labels",
+        &row.live_predictor_labels,
+    )
+}
+
+fn validate_failure_evidence_live_input(
+    bridge: &LabelLearningBridge,
+    row: &FailureEvidenceSetRow,
+) -> Result<(), TrainerError> {
+    validate_live_registry_membership(
+        bridge,
+        "failure_evidence_set.live_predictor_labels",
+        &row.live_predictor_labels,
+    )
+}
+
+fn validate_live_registry_membership(
+    bridge: &LabelLearningBridge,
+    field: &str,
+    label_ids: &[String],
+) -> Result<(), TrainerError> {
+    if label_ids.is_empty() {
+        return Err(invalid(
+            field,
+            "live prediction input requires explicit live_predictor_labels; raw labels and target_supervision_labels are provenance only",
+        ));
+    }
+    validate_live_label_list(field, label_ids)?;
+    for label_id in label_ids {
+        let row = bridge.accepted_labels.get(label_id).ok_or_else(|| {
+            invalid(
+                field,
+                format!("{label_id} is not present in accepted live label registry"),
+            )
+        })?;
+        validate_accepted_label(row)?;
+    }
+    Ok(())
+}
+
+fn validate_live_label_list(field: &str, label_ids: &[String]) -> Result<(), TrainerError> {
+    for label_id in label_ids {
+        if skill_validation::is_target_only_live_label(label_id) {
             return Err(invalid(
-                "code_state_key",
+                field,
                 format!(
-                    "code-state row contains target-only label {label}; live prediction context must be compiled from observable labels only"
+                    "{label_id} is target-side supervision and cannot be a live prediction input"
                 ),
             ));
         }
     }
     Ok(())
-}
-
-fn is_target_only_label(label: &str) -> bool {
-    matches!(
-        label.split_once(':').map(|(family, _)| family),
-        Some(
-            "oracle"
-                | "docker"
-                | "test_phase"
-                | "code_state_outcome"
-                | "partition"
-                | "leakage_policy"
-        )
-    )
 }
 
 fn read_json_file<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, TrainerError> {
@@ -669,12 +739,12 @@ mod tests {
         fs::write(&chunks, "{}\n").unwrap();
         fs::write(
             &code_states,
-            r#"{"group_key":"python:before:unit","labels":["group_scope:code_state","dominant_surface:function"],"slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
+            r#"{"group_key":"python:before:unit","labels":["group_scope:code_state","dominant_surface:function","code_state_outcome:fail"],"live_predictor_labels":["ast_surface:function"],"target_supervision_labels":["code_state_outcome:fail","oracle:fail"],"slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
         )
         .unwrap();
         fs::write(
             &failure_sets,
-            r#"{"code_state_key":"python:before:unit","labels":["evidence:multi_point"],"localization_mode":"failure_localization:multi_point","slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
+            r#"{"code_state_key":"python:before:unit","labels":["evidence:multi_point","oracle:fail"],"target_supervision_labels":["oracle:fail"],"localization_mode":"failure_localization:multi_point","slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
         )
         .unwrap();
         let manifest = serde_json::json!({
@@ -750,6 +820,79 @@ mod tests {
             vec!["ast_surface:function".to_string()],
             Some("python:before:unit".to_string()),
             vec!["python:before:unit".to_string()],
+            Vec::new(),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
+    }
+
+    #[test]
+    fn code_state_target_labels_remain_provenance_only_when_live_split_is_safe() {
+        let temp = tempfile::tempdir().unwrap();
+        write_bridge_fixture(temp.path(), true);
+        let bridge = load_label_learning_bridge(temp.path()).unwrap();
+        let row = bridge
+            .code_state_constellations
+            .get("python:before:unit")
+            .expect("fixture code-state row");
+
+        assert!(row
+            .labels
+            .iter()
+            .any(|label| label == "code_state_outcome:fail"));
+        assert!(row
+            .target_supervision_labels
+            .iter()
+            .any(|label| label == "oracle:fail"));
+
+        let context = build_prediction_label_context(
+            &bridge,
+            vec!["ast_surface:function".to_string()],
+            Some("python:before:unit".to_string()),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+
+        assert_eq!(context.accepted_label_ids, vec!["ast_surface:function"]);
+        assert!(!context
+            .accepted_label_ids
+            .iter()
+            .any(|label| label.starts_with("oracle:") || label.starts_with("code_state_outcome:")));
+    }
+
+    #[test]
+    fn bridge_rejects_target_label_in_code_state_live_predictor_split() {
+        let temp = tempfile::tempdir().unwrap();
+        write_bridge_fixture(temp.path(), true);
+        fs::write(
+            temp.path().join("code_state_constellations.jsonl"),
+            r#"{"group_key":"python:before:unit","labels":["group_scope:code_state","code_state_outcome:fail"],"live_predictor_labels":["oracle:fail"],"target_supervision_labels":["oracle:fail"],"slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
+        )
+        .unwrap();
+
+        let err = load_label_learning_bridge(temp.path()).unwrap_err();
+
+        assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
+    }
+
+    #[test]
+    fn bridge_rejects_missing_code_state_live_predictor_split() {
+        let temp = tempfile::tempdir().unwrap();
+        write_bridge_fixture(temp.path(), true);
+        fs::write(
+            temp.path().join("code_state_constellations.jsonl"),
+            r#"{"group_key":"python:before:unit","labels":["group_scope:code_state","dominant_surface:function"],"slot_identity_preserved":true,"flat_vector_concat_used":false}"#,
+        )
+        .unwrap();
+        let bridge = load_label_learning_bridge(temp.path()).unwrap();
+
+        let err = build_prediction_label_context(
+            &bridge,
+            vec!["ast_surface:function".to_string()],
+            Some("python:before:unit".to_string()),
+            Vec::new(),
             Vec::new(),
         )
         .unwrap_err();
