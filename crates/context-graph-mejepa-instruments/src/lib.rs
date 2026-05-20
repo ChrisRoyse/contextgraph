@@ -42,6 +42,7 @@ pub mod e_witness;
 mod features;
 pub mod frozen_hook;
 pub mod materialize;
+pub mod panel_b;
 pub mod panel_json;
 pub mod panel_store;
 pub mod q4_accuracy_labels;
@@ -542,6 +543,11 @@ pub use frozen_hook::{hash_f32s, FrozenGuard, FrozenSnapshot};
 pub use materialize::{
     active_slots, materialize_panel, vectors_from_panel, zero_slots, MaterializedPanel,
     PanelVectorInput, TimeStep,
+};
+pub use panel_b::{
+    default_panel_b_artifact_specs, require_panel_b_artifacts, resolve_panel_b_artifact_manifest,
+    validate_aiwonder_models_root, MissingPanelBArtifact, PanelBArtifact, PanelBArtifactManifest,
+    PanelBArtifactSpec, PanelBSlot, PANEL_B_ARTIFACT_SCHEMA_VERSION,
 };
 pub use panel_json::{PanelEnvelope, PanelProvenance, PANEL_JSON_SCHEMA_VERSION};
 pub use panel_store::{
