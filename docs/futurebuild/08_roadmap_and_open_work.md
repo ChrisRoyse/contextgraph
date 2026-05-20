@@ -10,20 +10,20 @@ The prediction contract is **three binary surfaces against ground truth** (Q1 by
 
 ---
 
-## 0.5. P0 BLOCKER: Ship-gate measurement requires rank-lift after real-input rebaseline
+## 0.5. P0 BLOCKER: Ship-gate measurement requires targeted cell repair after rank-lift
 
 Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-seeded synthetic vectors instead of calling real `E*Instrument` encoders. Six P0 fixes (#422 / #424 / #426 / #437 / #438 / #441 / #452, all closed 2026-05-19/20) replaced the broken pipeline. **The previous `0.866667` ship-gate measurement is INVALID** — it was the deterministic fixed-point output of a hash-derived predictor, not a real measurement of model quality on real code semantics. See `01_overview.md §1.7` and `07_results_and_benchmarks.md §0` for forensic detail.
 
-**Current real-input state (#534):** aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T162923Z/` reports raw holdout `prediction_oracle_correlation = 0.4843192995` and rank-safe calibrated holdout `prediction_oracle_correlation = 0.6916886568`. Calibration is fitted only on the 240-row calibration split, constants are restricted to structurally degenerate cells, and rank-reversing transforms require mixed-class support ≥ 8 per class plus raw Pearson ≤ -0.25. This moved `subtle_flip::python` from negative to positive without regressing the overall calibrated correlation. The next lift is true mixed-cell ranking from real slot-preserving labels (#535) plus cross-panel Goodhart defense (#405), not another synthetic-input rebaseline.
+**Current real-input state (#535):** aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T164924Z/` reports raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe calibrated holdout `0.6916886568`, and real code-state-constellation rank-lift holdout `0.7937270999`. Calibration/rank-lift are fitted only on the 240-row calibration split, constants are restricted to structurally degenerate cells, rank-reversing transforms require mixed-class support ≥ 8 per class plus raw Pearson ≤ -0.25, and rank-lift excludes target-side oracle/docker/test labels. The next lift is targeted repair for remaining weak cells plus cross-panel Goodhart defense (#405), not another synthetic-input rebaseline.
 
 **Remaining revalidation queue:**
 
-1. Train or refit true mixed-cell predictors for `known_good`, `delete_test_call`, `off_by_one`, `over_engineer`, `subtle_flip`, and `swap_variable` from real slot-preserving labels (#535); #534 supplied the rank-safety guard but did not close the cells.
-2. Re-run `λ_inv` bidirectional ablation against real inputs.
-3. Re-run #393 / #398 ablation suites against real inputs.
+1. Re-run `λ_inv` bidirectional ablation against real inputs (#537).
+2. Re-run #393 / #398 ablation suites against real inputs (#537).
+3. Repair remaining weak cells from the #535 report (#536): `off_by_one`, `subtle_flip`, `swap_variable`, plus one-fail `delete_test_call` / `known_good` / `over_engineer` cells whose current predictions saturate and leave Pearson undefined.
 4. Re-validate #129 OOD serving gate + #130 Gτ guard audit + #404 holdout coverage against real-input predictions.
 
-Tracked under #529 plus the measured blocker #535. **All issues listed in §3 below assume the real-input rebaseline exists unless explicitly noted otherwise.**
+Tracked under #529 plus #536/#537. **All issues listed in §3 below assume the real-input rebaseline and #535 rank-lift exist unless explicitly noted otherwise.**
 
 ---
 
@@ -40,9 +40,9 @@ prediction_oracle_correlation ≥ 0.95
   AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
 
-**Last holdout measurement:** `0.6916886568` rank-safe calibrated (`0.4843192995` raw) from `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T162923Z/`. Previous `0.866667` figure (from legacy pre-migration evidence) was measured against the synthetic-vector inference path and is invalidated.
+**Last holdout measurement:** `0.7937270999` rank-lift calibrated from real code-state constellation labels (`0.6916886568` rank-safe calibrated, `0.4843192995` raw) from `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T164924Z/`. Previous `0.866667` figure (from legacy pre-migration evidence) was measured against the synthetic-vector inference path and is invalidated.
 
-**Gap to ship:** `0.2583113432` against the rank-safe calibrated real-input Panel A measurement, plus four-window stability and Panel B cross-checks.
+**Gap to ship:** `0.1562729001` against the rank-lift calibrated real-input Panel A measurement, plus four-window stability and Panel B cross-checks.
 
 **Degenerate-cell rule (#532).** `compile_error::python`, `wrong_file::python`, or any future single-class cell cannot honestly use Pearson correlation. The FSV must emit the cell's variance class, the replacement gate metric (`all_fail_recall_confidence_brier_ece` or `all_pass_recall_confidence_brier_ece`), and statistical-power diagnostics instead of a bare `correlation unavailable` blocker.
 
@@ -82,16 +82,17 @@ Per pinned context #383 (LOCKED): gate-active issue order is **evidence-weighted
 
 | Rank | Epic | Status | Why it moves the gate |
 |---|---|---|---|
-| **0** | **REBASELINE + RANK-SAFE CALIBRATION** — run `swebench_300x8_ship_gate_fsv` against real-instruments inference + real trained checkpoint | ✅ landed #531/#534 | Valid Panel A measurement exists: `0.6916886568` rank-safe calibrated. This is the baseline for all remaining gate work. |
-| **0.5** | Re-run `λ_inv` bidirectional ablation + #393/#398 ablation suites against real inputs | P0 follow-up | Pre-fix ablations measured nothing meaningful; redoing them should identify actual gap-closing levers |
-| 1 | **#535** mixed-cell rank lift from real labels | P0 follow-up | Remaining blockers are low or negative per-cell Pearson on real slot-preserving signals, especially one-fail cells with poor fail recall and multi-class cells with weak ranking. |
+| **0** | **REBASELINE + RANK-SAFE CALIBRATION** — run `swebench_300x8_ship_gate_fsv` against real-instruments inference + real trained checkpoint | ✅ landed #531/#534 | Valid Panel A rank-safe measurement exists: `0.6916886568`. |
+| **0.5** | **#535** mixed-cell rank lift from real labels | ✅ landed 2026-05-20 | Valid Panel A rank-lift measurement exists: `0.7937270999`, Brier `0.0936445221`, ECE `0.0338404700`. |
+| 1 | **#537** re-run `λ_inv` bidirectional ablation + #393/#398 ablation suites against real inputs | OPEN p0 | Pre-fix ablations measured nothing meaningful; redoing them should identify actual gap-closing levers |
+| 1.5 | **#536** repair remaining weak cells after #535 | OPEN p0 | Directly targets `off_by_one`, `subtle_flip`, `swap_variable`, and one-fail saturated cells exposed by the latest measurement. |
 | 2 | **#404** failure-mode hierarchy | ✅ closed 2026-05-20 | Substrate REAL (deterministic over real corpus); holdout measurements need re-validation against post-fix predictions |
 | 3 | **#413** auto-label discovery | ✅ closed 2026-05-19 | 491-row accepted Level-0 registry — REAL (deterministic over real forward cache) |
 | 4 | **#414** skill substrate | ✅ closed 2026-05-19 | 128 Level-2 skills, 36,773 chunk memberships, 10,579 reverse rows — REAL (derived from #413) |
 | 5 | **#418** runtime hierarchical ability resolver | ✅ closed 2026-05-19 | Pure resolver logic — REAL |
 | 6 | **#406 / #523** online mistake loop + MCP | ✅ closed 2026-05-20 | Machinery shipped; needs real predictor mistakes to validate `mistake_repeat_rate ≤ 0.05` convergence |
 | 7 | **#407** threshold-calibration partition-disjointness audit | OPEN p1 | Needed now that real calibration exists; must prove no holdout leakage or calibration Goodhart. |
-| 8 | **#511** information-entropy auxiliary loss | OPEN p1 | Re-justify against the `0.6916886568` real baseline before training. |
+| 8 | **#511** information-entropy auxiliary loss | OPEN p1 | Re-justify against the `0.7937270999` real baseline before training. |
 | 9 | **#405** cross-panel triangulation Panel B | OPEN p0, blocked | Even hitting 0.95 on Panel A is not ship-eligible without Panel B. Defends 0.95 against encoder-matched Goodhart. |
 | 10 | **#379** multi-file structural patch holdout | OPEN p1 | Compositional generalization |
 | 11 | **#392** temporal constellation trajectory features | OPEN p1 | Exact-state movement across windows |
@@ -103,7 +104,7 @@ The slot-preserving refactor is largely shipped and architecturally correct. Clo
 
 Remaining open children: #392 (temporal trajectory features), #382 (frozen-panel dimensionality ablation).
 
-**Current finding:** the slot-preserving architecture is correct and remains the required representation contract, but #398's numerical conclusion is invalid because it measured synthetic-input panels. Re-run ablations on the `0.6916886568` real Panel A baseline before drawing any conclusion about which label, trajectory, entropy, or cross-panel features move the gate.
+**Current finding:** the slot-preserving architecture is correct and remains the required representation contract, but #398's numerical conclusion is invalid because it measured synthetic-input panels. Re-run ablations on the `0.7937270999` real Panel A baseline before drawing any conclusion about which label, trajectory, entropy, or cross-panel features move the gate.
 
 ### 3.2 Q4 head training — CLOSED (ambiguity boundary)
 
@@ -242,7 +243,7 @@ Only candidates passing BOTH are promoted. Rejected candidates write a `CF_MEJEP
 
 **Composition.** Together with v2-stretch creativity tasks (#329 AlphaEvolve outer loop, #335 reverse-prediction, #354-357 EK v2 series), these form a **self-resolving observer**: system grows panel until corpus is resolved, prunes dominated embedders, specializes per domain, compresses settled clusters. Bounded by reality, not ambition. Storage bounded; search precision maximal.
 
-**Why none are gate-movers for 0.95.** The current 0.866 → 0.95 gap is a function of *labels the predictor learned to perceive*, not embedder count or storage architecture. The labeling work + cross-panel + calibration + entropy loss + mistake loop closes the gap. The creativity engine takes over after 0.95 is hit.
+**Why none are gate-movers for 0.95.** The current `0.7937270999 → 0.95` gap is a function of remaining cell-specific ranking weakness and unproven cross-panel generalization, not embedder count or storage architecture. The targeted cell repair + real-input ablation reruns + cross-panel + calibration + entropy loss + mistake loop closes the gap. The creativity engine takes over after 0.95 is hit.
 
 **NOT in scope.** No new ambiguous-head prediction surfaces. No consciousness / sentience / phenomenology framing. No simulation-hacking / reality-bending capability claims. The creativity engine is bounded creativity within a falsifiable substrate.
 

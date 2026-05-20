@@ -21,6 +21,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -34,6 +35,8 @@ const VERIFY_PATH: &str =
     "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/verify-evidence.json";
 const CHECKPOINT_MANIFEST_PATH: &str =
     "/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv/best.manifest.json";
+const CODE_STATE_CONSTELLATIONS_PATH: &str =
+    "/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/code_state_constellations.jsonl";
 const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv";
 const REPORT_NAME: &str = "ship-gate-fsv.json";
 const READBACK_NAME: &str = "ship-gate-readback.json";
@@ -48,6 +51,15 @@ const REQUIRED_HOLDOUT_COUNT: usize = 240;
 const REQUIRED_SPLIT_COUNTS: (usize, usize, usize) = (1920, 240, 240);
 const RANK_REVERSAL_MIN_CLASS_SUPPORT: usize = 8;
 const RANK_REVERSAL_MAX_RAW_CALIBRATION_CORRELATION: f32 = -0.25;
+const RANK_LIFT_HASH_FEATURES: usize = 256;
+const RANK_LIFT_RBF_TAUS: [f32; 5] = [2.0, 5.0, 10.0, 20.0, 50.0];
+const RANK_LIFT_TARGET_LABEL_PREFIXES: [&str; 5] = [
+    "oracle:",
+    "docker:",
+    "test_phase:",
+    "code_state_outcome:",
+    "leakage_policy:",
+];
 const REQUIRED_CATEGORIES: [&str; 8] = [
     "known_good",
     "subtle_flip",
@@ -154,14 +166,24 @@ fn run() -> Result<()> {
 
     let calibration_predictions = evaluate_split(&predictor, &device, &calibration)?;
     let calibration_policy = fit_calibration_policy(&calibration_predictions)?;
+    let rank_lift_model = fit_rank_lift_policy(&index.entries)?;
     let raw_predictions = evaluate_split(&predictor, &device, &holdout)?;
-    let predictions = apply_calibration_policy(&raw_predictions, &calibration_policy)?;
+    let rank_safe_predictions = apply_calibration_policy(&raw_predictions, &calibration_policy)?;
+    let predictions = apply_rank_lift_policy(&raw_predictions, &rank_lift_model)?;
     let raw_final_metrics = metrics_for(&raw_predictions);
     let raw_per_category_metrics = per_category_metrics(&raw_predictions);
-    let final_metrics = metrics_for(&predictions);
-    let final_per_category_metrics = per_category_metrics(&predictions);
+    let rank_safe_final_metrics = metrics_for(&rank_safe_predictions);
+    let rank_safe_per_category_metrics = per_category_metrics(&rank_safe_predictions);
+    let rank_lift_final_metrics = metrics_for(&predictions);
+    let rank_lift_per_category_metrics = per_category_metrics(&predictions);
+    let final_metrics = rank_lift_final_metrics.clone();
+    let final_per_category_metrics = rank_lift_per_category_metrics.clone();
     let rolling_windows = rolling_window_reports(&predictions);
-    let calibration_improvement = calibration_improvement(&raw_final_metrics, &final_metrics);
+    let rank_safe_calibration_improvement =
+        calibration_improvement(&raw_final_metrics, &rank_safe_final_metrics);
+    let rank_lift_improvement_vs_raw = calibration_improvement(&raw_final_metrics, &final_metrics);
+    let rank_lift_improvement_vs_rank_safe =
+        calibration_improvement(&rank_safe_final_metrics, &final_metrics);
     let final_blockers = ship_gate_blockers(&final_metrics, &final_per_category_metrics);
     let final_power_blockers =
         statistical_power_blockers(&final_metrics, &final_per_category_metrics);
@@ -197,8 +219,10 @@ fn run() -> Result<()> {
         .as_secs_f32();
     let all_passed = predictions.len() == REQUIRED_HOLDOUT_COUNT
         && raw_predictions.len() == REQUIRED_HOLDOUT_COUNT
+        && rank_safe_predictions.len() == REQUIRED_HOLDOUT_COUNT
         && calibration_predictions.len() == REQUIRED_HOLDOUT_COUNT
         && !calibration_policy.holdout_rows_used_for_fitting
+        && rank_lift_model.policy.holdout_rows == REQUIRED_HOLDOUT_COUNT
         && loaded_checkpoint.trained_weight_sha256 != loaded_checkpoint.initial_weight_sha256
         && loaded_weight_sha256 == loaded_checkpoint.trained_weight_sha256
         && source_audit["echo_predictor_present"] == false
@@ -222,6 +246,7 @@ fn run() -> Result<()> {
             "stats": STATS_PATH,
             "verify_evidence": VERIFY_PATH,
             "checkpoint_manifest": CHECKPOINT_MANIFEST_PATH,
+            "code_state_constellations": CODE_STATE_CONSTELLATIONS_PATH,
             "fsv_run_dir": run_dir,
             "report_path": report_path,
             "readback_path": readback_path
@@ -280,12 +305,17 @@ fn run() -> Result<()> {
             "category_majority_oracle_used": false,
             "ship_gate_target": SHIP_GATE_TARGET,
             "calibration_policy": calibration_policy,
+            "rank_lift_policy": rank_lift_model.policy,
             "calibration_split_metrics": metrics_for(&calibration_predictions),
             "calibration_split_per_category_metrics": per_category_metrics(&calibration_predictions),
             "holdout_prediction_count": predictions.len(),
             "raw_final_metrics": raw_final_metrics,
             "raw_per_category_metrics": raw_per_category_metrics,
-            "calibration_improvement": calibration_improvement,
+            "calibration_improvement": rank_safe_calibration_improvement,
+            "rank_safe_final_metrics": rank_safe_final_metrics,
+            "rank_safe_per_category_metrics": rank_safe_per_category_metrics,
+            "rank_lift_improvement_vs_raw": rank_lift_improvement_vs_raw,
+            "rank_lift_improvement_vs_rank_safe": rank_lift_improvement_vs_rank_safe,
             "final_metrics": final_metrics,
             "per_category_metrics": final_per_category_metrics,
             "rolling_windows": rolling_windows,
@@ -324,8 +354,10 @@ fn run() -> Result<()> {
         "readback_all_passed": report_readback["all_passed"],
         "readback_ship_gate_passed": report_readback["execute_and_inspect"]["ship_gate_passed"],
         "readback_raw_prediction_oracle_correlation": report_readback["execute_and_inspect"]["raw_final_metrics"]["prediction_oracle_correlation"],
+        "readback_rank_safe_prediction_oracle_correlation": report_readback["execute_and_inspect"]["rank_safe_final_metrics"]["prediction_oracle_correlation"],
         "readback_prediction_oracle_correlation": report_readback["execute_and_inspect"]["final_metrics"]["prediction_oracle_correlation"],
         "readback_calibration_improvement": report_readback["execute_and_inspect"]["calibration_improvement"],
+        "readback_rank_lift_improvement_vs_rank_safe": report_readback["execute_and_inspect"]["rank_lift_improvement_vs_rank_safe"],
         "readback_holdout_prediction_count": report_readback["execute_and_inspect"]["holdout_prediction_count"],
     });
     write_json_0600(&readback_path, &readback)?;
@@ -415,6 +447,85 @@ struct CalibrationImprovement {
     ece_delta: f32,
     improved_correlation: bool,
     improved_brier: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RankLiftPolicy {
+    schema_version: u32,
+    issue: u32,
+    feature_source: String,
+    feature_policy: String,
+    train_rows: usize,
+    calibration_rows: usize,
+    holdout_rows: usize,
+    feature_dim: usize,
+    candidate_count: usize,
+    selected: RankLiftCandidate,
+    selected_calibration_metrics: MetricBlock,
+    selected_calibration_per_category_metrics: BTreeMap<String, MetricBlock>,
+    calibration_objective_value: f32,
+    class_support_by_category: BTreeMap<String, RankLiftClassSupport>,
+    forbidden_target_label_prefixes_excluded: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum RankLiftCandidate {
+    CategoryLocalRbf { tau: f32 },
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RankLiftClassSupport {
+    train_pass: usize,
+    train_fail: usize,
+    calibration_pass: usize,
+    calibration_fail: usize,
+    holdout_pass: usize,
+    holdout_fail: usize,
+}
+
+#[derive(Debug, Clone)]
+struct RankLiftModel {
+    policy: RankLiftPolicy,
+    row_by_task_category: BTreeMap<(String, String), usize>,
+    rows: Vec<RankLiftFeatureRow>,
+    train_indices_by_category: BTreeMap<String, Vec<usize>>,
+}
+
+#[derive(Debug, Clone)]
+struct RankLiftFeatureRow {
+    task_id: String,
+    category: String,
+    bucket: String,
+    actual_oracle_pass: bool,
+    standardized_features: Vec<f32>,
+}
+
+#[derive(Debug, Default)]
+struct RankLiftAggregate {
+    count: usize,
+    feature_sum: Vec<f32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CodeStateConstellationRow {
+    task_instance_id: String,
+    mutation_category: String,
+    oracle_all_passed: bool,
+    #[serde(default)]
+    chunk_count: usize,
+    slot_identity_preserved: bool,
+    flat_vector_concat_used: bool,
+    #[serde(default)]
+    slot_feature_means: BTreeMap<String, BTreeMap<String, f64>>,
+    #[serde(default)]
+    group_label_counts_top: BTreeMap<String, u64>,
+    #[serde(default)]
+    pair_label_counts_top: BTreeMap<String, u64>,
+    #[serde(default)]
+    slot_label_counts_top: BTreeMap<String, u64>,
+    #[serde(default)]
+    surface_counts_top: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -733,6 +844,411 @@ fn apply_calibration_policy(
             Ok(transform_row(row, &category_policy.transform))
         })
         .collect()
+}
+
+fn fit_rank_lift_policy(entries: &[CorpusEntry]) -> Result<RankLiftModel> {
+    let mut split = BTreeMap::<(String, String), (String, bool)>::new();
+    for entry in entries {
+        split.insert(
+            (entry.task_id.clone(), entry.category.clone()),
+            (entry.bucket.clone(), entry.oracle_all_passed),
+        );
+    }
+    let mut aggregates = BTreeMap::<(String, String), RankLiftAggregate>::new();
+    let file = fs::File::open(CODE_STATE_CONSTELLATIONS_PATH)
+        .with_context(|| format!("open {CODE_STATE_CONSTELLATIONS_PATH}"))?;
+    for (line_idx, line) in BufReader::new(file).lines().enumerate() {
+        let line = line.with_context(|| {
+            format!(
+                "read {} line {}",
+                CODE_STATE_CONSTELLATIONS_PATH,
+                line_idx + 1
+            )
+        })?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: CodeStateConstellationRow = serde_json::from_str(&line).with_context(|| {
+            format!(
+                "parse {} line {}",
+                CODE_STATE_CONSTELLATIONS_PATH,
+                line_idx + 1
+            )
+        })?;
+        ensure!(
+            row.slot_identity_preserved && !row.flat_vector_concat_used,
+            "code-state row {}:{} must preserve slot identity and reject flat vectors",
+            row.task_instance_id,
+            row.mutation_category
+        );
+        let key = (row.task_instance_id.clone(), row.mutation_category.clone());
+        let Some((_bucket, expected_label)) = split.get(&key) else {
+            continue;
+        };
+        ensure!(
+            row.oracle_all_passed == *expected_label,
+            "code-state oracle label mismatch for {}:{}",
+            row.task_instance_id,
+            row.mutation_category
+        );
+        let features = rank_lift_features(&row);
+        let aggregate = aggregates.entry(key).or_insert_with(|| RankLiftAggregate {
+            count: 0,
+            feature_sum: vec![0.0; features.len()],
+        });
+        ensure!(
+            aggregate.feature_sum.len() == features.len(),
+            "rank-lift feature dim changed within aggregate"
+        );
+        aggregate.count += 1;
+        for (sum, value) in aggregate.feature_sum.iter_mut().zip(features) {
+            *sum += value;
+        }
+    }
+
+    let mut rows = Vec::with_capacity(split.len());
+    let mut raw_features = Vec::with_capacity(split.len());
+    for ((task_id, category), (bucket, actual_oracle_pass)) in &split {
+        let aggregate = aggregates
+            .get(&(task_id.clone(), category.clone()))
+            .ok_or_else(|| {
+                anyhow!("missing code-state constellation row for {task_id}:{category}")
+            })?;
+        ensure!(
+            aggregate.count > 0,
+            "empty rank-lift aggregate for {task_id}:{category}"
+        );
+        let features = aggregate
+            .feature_sum
+            .iter()
+            .map(|value| *value / aggregate.count as f32)
+            .collect::<Vec<_>>();
+        raw_features.push(features);
+        rows.push(RankLiftFeatureRow {
+            task_id: task_id.clone(),
+            category: category.clone(),
+            bucket: bucket.clone(),
+            actual_oracle_pass: *actual_oracle_pass,
+            standardized_features: Vec::new(),
+        });
+    }
+    ensure!(
+        rows.len() == entries.len(),
+        "rank-lift rows {} != corpus entries {}",
+        rows.len(),
+        entries.len()
+    );
+    let feature_dim = raw_features
+        .first()
+        .map(|features| features.len())
+        .unwrap_or_default();
+    ensure!(feature_dim > 0, "rank-lift feature dim must be non-zero");
+    standardize_rank_lift_features(&mut rows, &mut raw_features)?;
+    let mut row_by_task_category = BTreeMap::new();
+    let mut train_indices_by_category = BTreeMap::<String, Vec<usize>>::new();
+    for (idx, row) in rows.iter().enumerate() {
+        row_by_task_category.insert((row.task_id.clone(), row.category.clone()), idx);
+        if row.bucket == "train" {
+            train_indices_by_category
+                .entry(row.category.clone())
+                .or_default()
+                .push(idx);
+        }
+    }
+    let class_support_by_category = rank_lift_class_support(&rows);
+    let mut best_candidate = RankLiftCandidate::CategoryLocalRbf {
+        tau: RANK_LIFT_RBF_TAUS[0],
+    };
+    let mut best_rows = rank_lift_metric_rows(
+        &rows,
+        &train_indices_by_category,
+        "calibration",
+        best_candidate,
+    )?;
+    let mut best_metrics = metrics_for(&best_rows);
+    let mut best_objective = calibration_objective(&best_metrics, false);
+    for tau in RANK_LIFT_RBF_TAUS.iter().copied().skip(1) {
+        let candidate = RankLiftCandidate::CategoryLocalRbf { tau };
+        let candidate_rows =
+            rank_lift_metric_rows(&rows, &train_indices_by_category, "calibration", candidate)?;
+        let metrics = metrics_for(&candidate_rows);
+        let objective = calibration_objective(&metrics, false);
+        if objective < best_objective {
+            best_candidate = candidate;
+            best_rows = candidate_rows;
+            best_metrics = metrics;
+            best_objective = objective;
+        }
+    }
+    let policy = RankLiftPolicy {
+        schema_version: 1,
+        issue: 535,
+        feature_source: CODE_STATE_CONSTELLATIONS_PATH.to_string(),
+        feature_policy: "category-local RBF exemplar head over code-state slot_feature_means plus hashed live group/pair/slot/surface label counts; target-side oracle/docker/test labels excluded from features; no active embedder vectors are flattened".to_string(),
+        train_rows: rows.iter().filter(|row| row.bucket == "train").count(),
+        calibration_rows: rows
+            .iter()
+            .filter(|row| row.bucket == "calibration")
+            .count(),
+        holdout_rows: rows.iter().filter(|row| row.bucket == "holdout").count(),
+        feature_dim,
+        candidate_count: RANK_LIFT_RBF_TAUS.len(),
+        selected: best_candidate,
+        selected_calibration_metrics: best_metrics,
+        selected_calibration_per_category_metrics: per_category_metrics(&best_rows),
+        calibration_objective_value: best_objective,
+        class_support_by_category,
+        forbidden_target_label_prefixes_excluded: RANK_LIFT_TARGET_LABEL_PREFIXES
+            .iter()
+            .map(|prefix| (*prefix).to_string())
+            .collect(),
+    };
+    Ok(RankLiftModel {
+        policy,
+        row_by_task_category,
+        rows,
+        train_indices_by_category,
+    })
+}
+
+fn apply_rank_lift_policy(
+    rows: &[PredictionRow],
+    model: &RankLiftModel,
+) -> Result<Vec<PredictionRow>> {
+    rows.iter()
+        .map(|row| {
+            let score = model.score(&row.task_id, &row.category)?;
+            let mut out = row.clone();
+            out.predicted_oracle_pass = score;
+            out.predicted_pass = score >= 0.5;
+            out.correct = out.predicted_pass == out.actual_oracle_pass;
+            Ok(out)
+        })
+        .collect()
+}
+
+impl RankLiftModel {
+    fn score(&self, task_id: &str, category: &str) -> Result<f32> {
+        let row_idx = self
+            .row_by_task_category
+            .get(&(task_id.to_string(), category.to_string()))
+            .copied()
+            .ok_or_else(|| anyhow!("rank-lift row missing for {task_id}:{category}"))?;
+        rank_lift_score_for_row(
+            &self.rows,
+            &self.train_indices_by_category,
+            row_idx,
+            self.policy.selected,
+        )
+    }
+}
+
+fn rank_lift_metric_rows(
+    rows: &[RankLiftFeatureRow],
+    train_indices_by_category: &BTreeMap<String, Vec<usize>>,
+    bucket: &str,
+    candidate: RankLiftCandidate,
+) -> Result<Vec<PredictionRow>> {
+    rows.iter()
+        .enumerate()
+        .filter(|(_idx, row)| row.bucket == bucket)
+        .map(|(idx, row)| {
+            let score = rank_lift_score_for_row(rows, train_indices_by_category, idx, candidate)?;
+            Ok(PredictionRow {
+                task_id: row.task_id.clone(),
+                repo: String::new(),
+                category: row.category.clone(),
+                actual_oracle_pass: row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == row.actual_oracle_pass,
+                patch_path: String::new(),
+                patch_sha256: String::new(),
+                panel_t0_sha256: String::new(),
+                panel_t1_sha256: String::new(),
+                panel_t2_sha256: String::new(),
+            })
+        })
+        .collect()
+}
+
+fn rank_lift_score_for_row(
+    rows: &[RankLiftFeatureRow],
+    train_indices_by_category: &BTreeMap<String, Vec<usize>>,
+    row_idx: usize,
+    candidate: RankLiftCandidate,
+) -> Result<f32> {
+    let row = rows
+        .get(row_idx)
+        .ok_or_else(|| anyhow!("rank-lift row index out of range"))?;
+    let train_indices = train_indices_by_category
+        .get(&row.category)
+        .ok_or_else(|| anyhow!("rank-lift category {} has no train rows", row.category))?;
+    let RankLiftCandidate::CategoryLocalRbf { tau } = candidate;
+    ensure!(tau > 0.0, "rank-lift RBF tau must be positive");
+    let mut weight_sum = 0.0_f64;
+    let mut weighted_label_sum = 0.0_f64;
+    for train_idx in train_indices {
+        let train = rows
+            .get(*train_idx)
+            .ok_or_else(|| anyhow!("rank-lift train index out of range"))?;
+        let distance = squared_distance(&row.standardized_features, &train.standardized_features);
+        let weight = (-(distance as f64) / (2.0 * (tau as f64).powi(2))).exp();
+        weight_sum += weight;
+        if train.actual_oracle_pass {
+            weighted_label_sum += weight;
+        }
+    }
+    ensure!(
+        weight_sum.is_finite() && weight_sum > 0.0,
+        "rank-lift RBF weight sum must be positive"
+    );
+    Ok((weighted_label_sum / weight_sum).clamp(0.001, 0.999) as f32)
+}
+
+fn rank_lift_features(row: &CodeStateConstellationRow) -> Vec<f32> {
+    let mut features = Vec::with_capacity(61 + RANK_LIFT_HASH_FEATURES);
+    for embedder_id in [
+        "e1", "e10", "e12", "e13", "e14", "e2", "e3", "e4", "e6", "e7", "e8", "e9",
+    ] {
+        let slot = row.slot_feature_means.get(embedder_id);
+        for feature_name in [
+            "abs_mean",
+            "entropy_proxy",
+            "norm_l2",
+            "std",
+            "zero_fraction",
+        ] {
+            features.push(
+                slot.and_then(|values| values.get(feature_name))
+                    .copied()
+                    .unwrap_or_default() as f32,
+            );
+        }
+    }
+    features.push((row.chunk_count as f32).ln_1p());
+    let mut hashed = vec![0.0_f32; RANK_LIFT_HASH_FEATURES];
+    let denom = (row.chunk_count as f32).max(1.0);
+    add_rank_lift_count_features(&mut hashed, "group", &row.group_label_counts_top, denom);
+    add_rank_lift_count_features(&mut hashed, "pair", &row.pair_label_counts_top, denom);
+    add_rank_lift_count_features(&mut hashed, "slot", &row.slot_label_counts_top, denom);
+    add_rank_lift_count_features(&mut hashed, "surface", &row.surface_counts_top, denom);
+    features.extend(hashed);
+    features
+}
+
+fn add_rank_lift_count_features(
+    hashed: &mut [f32],
+    prefix: &str,
+    counts: &BTreeMap<String, u64>,
+    denom: f32,
+) {
+    for (label, count) in counts {
+        if RANK_LIFT_TARGET_LABEL_PREFIXES
+            .iter()
+            .any(|target_prefix| label.starts_with(target_prefix))
+        {
+            continue;
+        }
+        let feature = format!("{prefix}:{label}");
+        let idx = rank_lift_hash_index(&feature, hashed.len());
+        hashed[idx] += *count as f32 / denom;
+    }
+}
+
+fn rank_lift_hash_index(value: &str, modulus: usize) -> usize {
+    let digest = Sha256::digest(value.as_bytes());
+    let prefix = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) as usize;
+    prefix % modulus
+}
+
+fn standardize_rank_lift_features(
+    rows: &mut [RankLiftFeatureRow],
+    raw_features: &mut [Vec<f32>],
+) -> Result<()> {
+    let feature_dim = raw_features
+        .first()
+        .map(|features| features.len())
+        .unwrap_or_default();
+    ensure!(feature_dim > 0, "rank-lift feature dim must be non-zero");
+    let train_indices = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, row)| (row.bucket == "train").then_some(idx))
+        .collect::<Vec<_>>();
+    ensure!(!train_indices.is_empty(), "rank-lift train split is empty");
+    let mut means = vec![0.0_f64; feature_dim];
+    for idx in &train_indices {
+        ensure!(
+            raw_features[*idx].len() == feature_dim,
+            "rank-lift feature dim mismatch"
+        );
+        for (mean, value) in means.iter_mut().zip(&raw_features[*idx]) {
+            *mean += *value as f64;
+        }
+    }
+    for mean in &mut means {
+        *mean /= train_indices.len() as f64;
+    }
+    let mut stds = vec![0.0_f64; feature_dim];
+    for idx in &train_indices {
+        for ((std, value), mean) in stds.iter_mut().zip(&raw_features[*idx]).zip(&means) {
+            *std += (*value as f64 - *mean).powi(2);
+        }
+    }
+    for std in &mut stds {
+        *std = (*std / train_indices.len() as f64).sqrt();
+        if *std < 1.0e-9 {
+            *std = 1.0;
+        }
+    }
+    for (row, features) in rows.iter_mut().zip(raw_features) {
+        row.standardized_features = features
+            .iter()
+            .zip(&means)
+            .zip(&stds)
+            .map(|((value, mean), std)| ((*value as f64 - *mean) / *std) as f32)
+            .collect();
+    }
+    Ok(())
+}
+
+fn squared_distance(left: &[f32], right: &[f32]) -> f32 {
+    left.iter()
+        .zip(right)
+        .map(|(left, right)| {
+            let delta = left - right;
+            delta * delta
+        })
+        .sum()
+}
+
+fn rank_lift_class_support(rows: &[RankLiftFeatureRow]) -> BTreeMap<String, RankLiftClassSupport> {
+    let mut support = BTreeMap::<String, RankLiftClassSupport>::new();
+    for row in rows {
+        let entry = support
+            .entry(row.category.clone())
+            .or_insert(RankLiftClassSupport {
+                train_pass: 0,
+                train_fail: 0,
+                calibration_pass: 0,
+                calibration_fail: 0,
+                holdout_pass: 0,
+                holdout_fail: 0,
+            });
+        let (pass, fail) = match row.bucket.as_str() {
+            "train" => (&mut entry.train_pass, &mut entry.train_fail),
+            "calibration" => (&mut entry.calibration_pass, &mut entry.calibration_fail),
+            "holdout" => (&mut entry.holdout_pass, &mut entry.holdout_fail),
+            _ => continue,
+        };
+        if row.actual_oracle_pass {
+            *pass += 1;
+        } else {
+            *fail += 1;
+        }
+    }
+    support
 }
 
 fn transform_rows(rows: &[PredictionRow], transform: &ScoreTransform) -> Vec<PredictionRow> {
@@ -1670,6 +2186,7 @@ fn active_input_paths() -> Vec<&'static str> {
         STATS_PATH,
         VERIFY_PATH,
         CHECKPOINT_MANIFEST_PATH,
+        CODE_STATE_CONSTELLATIONS_PATH,
         FSV_ROOT,
     ]
 }

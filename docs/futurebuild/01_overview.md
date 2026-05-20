@@ -47,7 +47,7 @@ prediction_oracle_correlation ≥ 0.95
 
 **Degenerate-cell metric contract (#532).** Pearson correlation is used only when the oracle target has both Pass and Fail rows. Single-class cells such as `compile_error::python` and `wrong_file::python` have zero oracle variance, so the FSV gates them with target-class recall ≥ 0.95, actual-class confidence ≥ 0.95, Brier ≤ 0.05, ECE ≤ 0.05, and explicit power diagnostics (Fisher-z CI for mixed cells; Wilson lower bound for degenerate recall). The report must never emit a bare "correlation unavailable" blocker without this replacement metric.
 
-**Current real-input measurement (#534).** Latest aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T162923Z/` reports raw holdout `prediction_oracle_correlation = 0.4843192995` and rank-safe calibrated holdout `0.6916886568`. Calibration uses only the 240-row calibration split, constants are limited to structurally degenerate cells, and rank-reversing transforms are blocked unless calibration evidence has enough mixed-class support and strong negative Pearson evidence. `compile_error` rows use raw invalid-source diagnostic panels instead of the carrier workaround. The remaining ship gap is mixed-cell ranking on real slot-preserving signals (#535) plus Panel B cross-check, not the invalid pre-fix `0.866667` synthetic-vector number.
+**Current real-input measurement (#535).** Latest aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T164924Z/` reports raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe calibrated holdout `0.6916886568`, and real code-state-constellation rank-lift holdout `0.7937270999`. Calibration uses only the 240-row calibration split, constants are limited to structurally degenerate cells, rank-reversing transforms are blocked unless calibration evidence has enough mixed-class support and strong negative Pearson evidence, and rank-lift excludes target-side oracle/docker/test labels. `compile_error` rows use raw invalid-source diagnostic panels instead of the carrier workaround. The remaining ship gap is cell-specific rank weakness plus Panel B cross-check, not the invalid pre-fix `0.866667` synthetic-vector number.
 
 **Product boundary.** LLM agents are untrusted edit generators. Hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, and docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`.
 
@@ -281,18 +281,18 @@ The result was deterministic for the same `(task_id, patch_sha)`. Every ablation
 | `λ_inv ∈ {0, 0.25, 0.5, 1.0}` bidirectional ablation (all 0.8666666746139526) | Verbatim identical because input was deterministic-from-hash |
 | #393 capability-discovery ablation suite | Measured against synthetic inputs; "no movement" finding meaningless |
 | #398 calibrated constellation ablation rerun (Brier 0.7539) | Same |
-| "Slot-preserving architecture doesn't close the 0.083 gap" claim | Invalid until #393/#398 are rerun against the `0.6916886568` real Panel A baseline |
+| "Slot-preserving architecture doesn't close the 0.083 gap" claim | Invalid until #393/#398 are rerun against the `0.7937270999` real Panel A baseline |
 | "Gap is a function of labels, not embedder count" claim | Invalid until real-input ablations identify actual gate movers |
 | #129 OOD serving gate AUC measurements | Pre-fix calibrator; needs re-validation |
 | #130 Gτ guard audit pass/fail counts | Pre-fix training data |
 
-**Rebaseline action plan (the P0 blocker before further Phase G gate work).**
+**Rebaseline action plan (current P0 gate work).**
 
-1. Run `swebench_300x8_ship_gate_fsv` end-to-end on aiwonder with real-instruments inference path + real trained checkpoint (from #441's now-shipped trainer pipeline + #127 / TASK-PY-G-127 trained-checkpoint export FSV).
+1. ✅ Run `swebench_300x8_ship_gate_fsv` end-to-end on aiwonder with real-instruments inference path + real trained checkpoint (from #441's now-shipped trainer pipeline + #127 / TASK-PY-G-127 trained-checkpoint export FSV). Current measurement: `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T164924Z/`.
 2. Re-run `λ_inv` bidirectional ablation with real inputs.
 3. Re-run #393 / #398 ablation suites against real-input inference path.
-4. Verify trained-weight manifest: `trained_weight_sha256 != initial_weight_sha256` (proves real training happened, not stub copy).
-5. Decide what work remains needed (some downstream gap-closing work may turn out unnecessary if the real-input baseline already exceeds 0.866667 or even hits 0.95).
+4. ✅ Verify trained-weight manifest: `trained_weight_sha256 != initial_weight_sha256` (proves real training happened, not stub copy).
+5. Repair remaining weak cells from #535 (`off_by_one`, `subtle_flip`, `swap_variable`, plus one-fail saturated cells) and re-check Panel B before any 0.95 claim.
 
 Tracked under new context issue filed alongside this doc refresh; gate-active critical path in `08_roadmap_and_open_work.md §3.0` reordered so rebaseline precedes #407 / #511 / #405.
 
