@@ -6,12 +6,15 @@ use crate::error::{TrainerError, TrainerErrorCode};
 use crate::mistake_log::{
     mistake_id_from_evidence_parts, write_mistake_log_row_sync_readback, MistakeLogRow,
 };
+use crate::online_head_state::{
+    apply_online_mistake_update_sync_readback, OnlineHeadUpdateConfig, OnlineHeadUpdateInput,
+};
 use crate::replay_buffer::{
     ability_aware_replay_cell_id, prediction_hex, write_replay_row_sync_readback, ReplayBufferRow,
     ReplayBufferSource, ReplayRetentionTier,
 };
 use crate::skill_sequence_discovery::SKILL_SEQUENCE_SCHEMA_VERSION;
-use context_graph_mejepa::PredictionLabelContext;
+use context_graph_mejepa::{PredictionLabelContext, Verdict};
 use rocksdb::DB;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -106,6 +109,17 @@ pub fn record_ability_refutation_sync_readback(
     for audit in &lifecycle_audits {
         write_skill_lifecycle_audit_row_sync_readback(db, audit)?;
     }
+    let online_head_update_report = apply_online_mistake_update_sync_readback(
+        db,
+        OnlineHeadUpdateInput {
+            panel_signature_hash: input.panel_signature_hash.clone(),
+            mistake_row: mistake_row.clone(),
+            replay_row: replay_row.clone(),
+            base_verdict_before_update: input.predicted_verdict,
+            now_unix_ms: input.created_at_unix_ms,
+        },
+        OnlineHeadUpdateConfig::default(),
+    )?;
     let candidate_created_when_no_existing_ability = context.active_skill_ids.is_empty()
         && context.active_higher_ability_ids.is_empty()
         && lifecycle_audits
@@ -121,6 +135,7 @@ pub fn record_ability_refutation_sync_readback(
         ),
         mistake_row,
         replay_row,
+        online_head_update_report,
         lifecycle_audits,
         candidate_created_when_no_existing_ability,
         no_new_prediction_head_introduced: true,
@@ -246,10 +261,19 @@ fn validate_refutation_input(input: &AbilityRefutationInput) -> Result<(), Train
     if input.prediction_id.0 == [0_u8; 16] {
         return Err(invalid("prediction_id", "must be non-zero"));
     }
+    validate_id("panel_signature_hash", &input.panel_signature_hash)?;
     if input.predicted_verdict == input.ground_truth_verdict {
         return Err(invalid(
             "verdicts",
             "refutation requires predicted_verdict != ground_truth_verdict",
+        ));
+    }
+    if !matches!(input.predicted_verdict, Verdict::Pass | Verdict::Fail)
+        || !matches!(input.ground_truth_verdict, Verdict::Pass | Verdict::Fail)
+    {
+        return Err(invalid(
+            "verdicts",
+            "online mistake refutation requires pass/fail verdicts",
         ));
     }
     for (field, value) in [

@@ -1,7 +1,8 @@
 use crate::error::TrainerError;
 use context_graph_mejepa_cf::{
     CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP, CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS, CF_MEJEPA_MISTAKE_LOG,
-    CF_MEJEPA_REPLAY_BUFFER, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT, CF_MEJEPA_SKILL_REVERSE_INDEX,
+    CF_MEJEPA_ONLINE_HEAD_STATE, CF_MEJEPA_REPLAY_BUFFER, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
+    CF_MEJEPA_SKILL_REVERSE_INDEX,
 };
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::path::Path;
@@ -41,6 +42,7 @@ pub fn ability_resolver_cfs() -> Vec<String> {
         CF_MEJEPA_SKILL_LIFECYCLE_AUDIT.to_string(),
         CF_MEJEPA_MISTAKE_LOG.to_string(),
         CF_MEJEPA_REPLAY_BUFFER.to_string(),
+        CF_MEJEPA_ONLINE_HEAD_STATE.to_string(),
     ]
 }
 

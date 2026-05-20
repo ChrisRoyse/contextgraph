@@ -4,6 +4,7 @@ use crate::label_bridge::{
     ability_signature_hash, membership_signature_hash, skill_signature_hash,
 };
 use crate::mistake_log::{MistakeLogRow, MistakeTruthSource};
+use crate::online_head_state::OnlineHeadUpdateReport;
 use crate::replay_buffer::ReplayBufferRow;
 use context_graph_mejepa::{PredictionId, Verdict};
 use serde::{Deserialize, Serialize};
@@ -215,6 +216,7 @@ fn push_first_seen(target: &mut Vec<String>, seen: &mut BTreeSet<String>, value:
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct AbilityRefutationInput {
     pub prediction_id: PredictionId,
+    pub panel_signature_hash: String,
     pub predicted_verdict: Verdict,
     pub ground_truth_verdict: Verdict,
     pub truth_source: MistakeTruthSource,
@@ -232,6 +234,7 @@ pub struct AbilityRefutationReport {
     pub schema_version: u32,
     pub mistake_row: MistakeLogRow,
     pub replay_row: ReplayBufferRow,
+    pub online_head_update_report: OnlineHeadUpdateReport,
     pub lifecycle_audits: Vec<SkillLifecycleAuditRow>,
     pub label_skill_ability_membership_ids_agree: bool,
     pub candidate_created_when_no_existing_ability: bool,

@@ -1,7 +1,8 @@
 use context_graph_mejepa::{PredictionId, PredictionLabelContext, Verdict};
 use context_graph_mejepa_cf::{
     CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP, CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS, CF_MEJEPA_MISTAKE_LOG,
-    CF_MEJEPA_REPLAY_BUFFER, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT, CF_MEJEPA_SKILL_REVERSE_INDEX,
+    CF_MEJEPA_ONLINE_HEAD_STATE, CF_MEJEPA_REPLAY_BUFFER, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
+    CF_MEJEPA_SKILL_REVERSE_INDEX,
 };
 use context_graph_mejepa_train::ability_resolver::{
     open_ability_resolver_rocksdb, prediction_label_context_from_ability_context,
@@ -15,6 +16,9 @@ use context_graph_mejepa_train::chunk_skill_membership::{
 };
 use context_graph_mejepa_train::label_bridge::load_label_learning_bridge;
 use context_graph_mejepa_train::mistake_log::{read_all_mistake_log_rows, MistakeTruthSource};
+use context_graph_mejepa_train::online_head_state::{
+    read_online_head_state_row, read_repeat_metric_row,
+};
 use context_graph_mejepa_train::replay_buffer::read_all_replay_rows;
 use context_graph_mejepa_train::skill_sequence_discovery::{
     Level2SkillRow, SkillEpisodeRow, SkillOutcomeDistribution, SkillOutcomeObservation,
@@ -112,6 +116,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mistake_rows = read_all_mistake_log_rows(&readback_db)?;
     let replay_rows = read_all_replay_rows(&readback_db)?;
     let lifecycle_rows = read_all_skill_lifecycle_audit_rows(&readback_db)?;
+    let active_online_head_readback = read_online_head_state_row(
+        &readback_db,
+        &refutation_report
+            .online_head_update_report
+            .head_state_after
+            .head_key,
+    )?
+    .ok_or("missing active online head state")?;
+    let active_repeat_metric_readback = read_repeat_metric_row(
+        &readback_db,
+        &refutation_report
+            .online_head_update_report
+            .repeat_metric_after
+            .metric_key,
+    )?
+    .ok_or("missing active repeat metric")?;
+    let candidate_online_head_readback = read_online_head_state_row(
+        &readback_db,
+        &candidate_report
+            .online_head_update_report
+            .head_state_after
+            .head_key,
+    )?
+    .ok_or("missing candidate online head state")?;
+    let candidate_repeat_metric_readback = read_repeat_metric_row(
+        &readback_db,
+        &candidate_report
+            .online_head_update_report
+            .repeat_metric_after
+            .metric_key,
+    )?
+    .ok_or("missing candidate repeat metric")?;
     let readback_counts = cf_counts(&readback_db)?;
 
     let active_report_pass = refutation_report.label_skill_ability_membership_ids_agree
@@ -134,6 +170,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && replay_rows.len() == 2
         && lifecycle_rows.len() == 6
         && readback_counts == after_counts
+        && active_online_head_readback
+            == refutation_report.online_head_update_report.head_state_after
+        && active_repeat_metric_readback
+            == refutation_report
+                .online_head_update_report
+                .repeat_metric_after
+        && candidate_online_head_readback
+            == candidate_report.online_head_update_report.head_state_after
+        && candidate_repeat_metric_readback
+            == candidate_report
+                .online_head_update_report
+                .repeat_metric_after
         && joined_rows_agree(
             &refutation_report,
             &mistake_rows,
@@ -155,6 +203,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && !refutation_report.hidden_intent_inference_used
         && !refutation_report.target_side_labels_used_as_live_inputs
         && !refutation_report.flat_vector_concat_used
+        && online_update_pass(&refutation_report)
+        && online_update_pass(&candidate_report)
         && prediction_label_context.validate().is_ok()
         && no_forbidden_runtime_policy(&prediction_label_context);
     let all_passed =
@@ -175,7 +225,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 CF_MEJEPA_SKILL_REVERSE_INDEX,
                 CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
                 CF_MEJEPA_MISTAKE_LOG,
-                CF_MEJEPA_REPLAY_BUFFER
+                CF_MEJEPA_REPLAY_BUFFER,
+                CF_MEJEPA_ONLINE_HEAD_STATE
             ]
         },
         "before": {"tree": before_tree, "cf_counts": before_counts},
@@ -184,7 +235,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "cf_counts": readback_counts,
             "mistake_rows": mistake_rows,
             "replay_rows": replay_rows,
-            "lifecycle_rows": lifecycle_rows
+            "lifecycle_rows": lifecycle_rows,
+            "active_online_head_readback": active_online_head_readback,
+            "active_repeat_metric_readback": active_repeat_metric_readback,
+            "candidate_online_head_readback": candidate_online_head_readback,
+            "candidate_repeat_metric_readback": candidate_repeat_metric_readback
         },
         "ability_context": ability_context,
         "prediction_label_context": prediction_label_context,
@@ -194,6 +249,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "active_report_writes_one_lifecycle_decision_per_skill_or_ability": active_report_pass,
             "candidate_created_when_no_existing_ability_explains_evidence": candidate_pass,
             "drop_reopen_readback_rows_agree": readback_pass,
+            "active_online_head_update_pass": online_update_pass(&refutation_report),
+            "candidate_online_head_update_pass": online_update_pass(&candidate_report),
             "edge_cases_pass": edge_pass,
             "invariants_pass": invariant_pass
         },
@@ -378,6 +435,7 @@ fn path_for_chunk(chunk_id: &str) -> &'static str {
 fn refutation_input(byte: u8, created_at_unix_ms: i64) -> AbilityRefutationInput {
     AbilityRefutationInput {
         prediction_id: PredictionId([byte; 16]),
+        panel_signature_hash: format!("panel:fsv:{byte:02x}"),
         predicted_verdict: Verdict::Pass,
         ground_truth_verdict: Verdict::Fail,
         truth_source: MistakeTruthSource::ShiftLogReplay,
@@ -388,6 +446,16 @@ fn refutation_input(byte: u8, created_at_unix_ms: i64) -> AbilityRefutationInput
         coverage_gap_score: 0.7,
         created_at_unix_ms,
     }
+}
+
+fn online_update_pass(report: &AbilityRefutationReport) -> bool {
+    let update = &report.online_head_update_report;
+    update.same_panel_signature_corrected
+        && update.corrected_verdict_after_update == report.mistake_row.ground_truth_verdict
+        && update.repeat_metric_byte_readable
+        && update.label_skill_ability_membership_ids_agree
+        && !update.flat_vector_concat_used
+        && update.unrelated_cell_accuracy_delta.abs() <= 0.02
 }
 
 fn no_forbidden_runtime_policy(label_context: &PredictionLabelContext) -> bool {

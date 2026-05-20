@@ -247,6 +247,7 @@ fn label_context(context: &AbilityContext) -> PredictionLabelContext {
 fn input(byte: u8) -> AbilityRefutationInput {
     AbilityRefutationInput {
         prediction_id: PredictionId([byte; 16]),
+        panel_signature_hash: format!("panel:test:{byte:02x}"),
         predicted_verdict: Verdict::Pass,
         ground_truth_verdict: Verdict::Fail,
         truth_source: MistakeTruthSource::ShiftLogReplay,
@@ -334,6 +335,12 @@ fn refutation_writes_replay_mistake_and_lifecycle_rows() {
         report.replay_row.source_membership_keys,
         context.source_membership_keys
     );
+    assert!(
+        report
+            .online_head_update_report
+            .same_panel_signature_corrected
+    );
+    assert!(report.online_head_update_report.repeat_metric_byte_readable);
 }
 
 #[test]
@@ -352,6 +359,12 @@ fn refutation_without_existing_skill_creates_candidate() {
     assert_eq!(
         report.lifecycle_audits[0].decision,
         SkillLifecycleDecision::CreateNewCandidateSkill
+    );
+    assert_eq!(
+        report
+            .online_head_update_report
+            .corrected_verdict_after_update,
+        Verdict::Fail
     );
 }
 
