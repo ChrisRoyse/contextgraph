@@ -461,3 +461,36 @@ Per `01_overview.md §1.1` and ClipCannon PAPER §5.4 same-session-band-floor pa
 - The τ value matches the 10th-percentile floor of authentic-sample cosines on the calibration partition, recomputed at audit time (tolerance ±1e-4).
 
 Failures of any assertion fail closed with `THRESHOLD_CALIBRATION_NONDISJOINT` and block ship eligibility for that cell.
+
+### 13.6 Information-physics FSV protocols (planned, #511 / #512 / #513 / #514)
+
+Source: `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md`. Four new FSV harnesses enforce the info-physics extensions on top of the existing critical-path assertions:
+
+**#511 / TASK-IP-001 — entropy auxiliary loss FSV.** Required assertions:
+
+1. **No-regression baseline.** With λ=0 the trainer's `L_step` must be byte-equal to a baseline reference recorded at `/zfs/archive/contextgraph/fsv/task-ip-001-entropy-loss-fsv/baseline_l_step.json`. Required: `lambda_zero_l_step_byte_equal == true`.
+2. **Monotonic entropy decrease.** Across N≥4 training windows with λ > 0, the Kraskov entropy estimate of the latent must monotonically decrease (allowing a small noise floor). Required: `latent_entropy_monotonicity_violations == 0`.
+3. **Brier no-regression.** Holdout Brier score with λ > 0 must be ≤ baseline Brier + 0.005. If exceeded, λ auto-zeroes via the calibrator; FSV records the auto-zeroing event.
+4. **Degenerate-latent fail-closed.** Inject a constant latent. Required: `UTML_LATENT_ENTROPY_DEGENERATE` typed error on the next training step; no NaN/-∞ propagation.
+
+**#512 / TASK-IP-002 — panel ECC FSV.** Required assertions:
+
+1. **Clean-panel syndrome zero.** Every cleanly-built `Panel` has `panel.syndrome() == 0`. Required across the 30-instance holdout window.
+2. **2-slot corruption recoverable.** Synthetic 1-slot and 2-slot corruption are reconstructed correctly; reconstructed `Panel` byte-equals the original up to the recovered slots. Required: 100% recovery rate within radius `t = 2`.
+3. **3+-slot corruption detected.** Synthetic 3-slot corruption triggers `PANEL_ECC_UNCORRECTABLE` and writes a `CF_MEJEPA_MISTAKE_LOG` row. Required: 100% detection rate; zero false negatives.
+4. **All #394 fixtures preserved.** Existing `python_anti_compensation_fsv.rs` fixtures continue to be rejected. Required: regression suite unchanged.
+
+**#513 / TASK-IP-003 — connectome topology FSV.** Required assertions:
+
+1. **Rich-club above null.** At least 5 of 8 Python cells have rich-club coefficient φ > random-graph null (configuration-model permutation test, n_perms=1000, p < 0.05).
+2. **Reproducibility across splits.** Two random splits of the corpus identify rich-club pairs with Jaccard similarity ≥ 0.8.
+3. **Modularity above null.** At least 5 of 8 cells have modularity Q above the null distribution (p < 0.05).
+4. **Ablation re-run.** #398-style ablation with topology features enabled vs disabled, matched corpus + calibration. Correlation comparison reported and persisted in FSV.
+
+**#514 / TASK-IP-005 — cold-load behavioural FSV.** Required assertions:
+
+1. **Promotion snapshot persisted.** Every promotion writes `CF_MEJEPA_COLD_LOAD_SNAPSHOTS[promotion_id]` with `oracle_correlation` and `per_cell_verdict_distribution`. Required: `snapshot_persist_count_per_promotion == 1`.
+2. **Cold-load correlation drift.** After fresh-process reload, 30-instance holdout correlation must be within `0.02` of the snapshot value. Required: `correlation_drift ≤ 0.02`.
+3. **Cell verdict distribution drift.** Per-cell distributions must be within `5%` of the snapshot. Required: `max_per_cell_distribution_drift ≤ 0.05`.
+4. **Three independent cold-load runs.** Three sequential runs on different aiwonder restart cycles all pass; FSV JSONs pinned by sha256 at `/zfs/archive/contextgraph/fsv/task-ip-005-cold-load-fsv/run-{1,2,3}/`.
+5. **ECC syndrome consistency (after #512).** Each cold-load run reproduces the same panel ECC syndromes for the holdout instances as the original promotion-time run. Required: `syndrome_drift_per_panel == 0`.

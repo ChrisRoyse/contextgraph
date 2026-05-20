@@ -365,3 +365,25 @@ Exposes the already-shipped bidirectional chunk↔skill data (#413 Level-0 regis
 | `mcp__cgreality__mejepa_skill_browse` | `MEJEPA_SKILL_BROWSE` | Operator-facing skill catalog browse: 128 skills + chunk counts + lifecycle audit | `filter?: {minSupport, minLift, status}` | Read-only |
 
 The first #417 slice adds 4 tools and moves the current registry to **201**. Remaining #417 tools still planned: skill impact, skill graph inspect, cross-repo skill transfer, skill conflict graph, and skill browse.
+
+### 9.7 Stars-as-Vectors navigation tools (#417 sub-capability, planned)
+
+Source: `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md` Proposal D. Operator-facing tools that formalize the teleological-constellation primitive as a celestial-cartography surface over the already-shipped #413 + #414 substrate. Read-only; no new prediction head.
+
+| Tool (planned) | Const | Purpose | Key params | Side effects |
+|---|---|---|---|---|
+| `mcp__cgreality__mejepa_chunk_as_star` | `MEJEPA_CHUNK_AS_STAR` | "Stellar parameter card" view of an AST chunk: per-slot vector summaries (norm, sparsity, occupancy), slot-specific calibration cell membership, closest accepted Level-0 labels from #413's 491-row registry, active skills from #414's 128 skills + 36,773 memberships, closest exemplars from `CF_MEJEPA_PATCH_SIMILARITY_META`. Output structurally analogous to a Gaia DR3 catalog row. | `chunkId`, `includeExemplars?: bool=true`, `exemplarLimit: int=5` | Read-only over `CF_MEJEPA_PANELS`, label CFs, skill CFs, exemplar CFs |
+| `mcp__cgreality__mejepa_constellation_membership` | `MEJEPA_CONSTELLATION_MEMBERSHIP` | Named constellations the chunk participates in across all hierarchy levels: Level-0 accepted labels (from #413), Level-1 file-path constellations, Level-2 code-state constellations, Level-2.5 skills (from #414), Level-3+ higher abilities (planned via #418). | `chunkId`, `levels?: [0,1,2,2.5,3+]=all` | Read-only |
+
+### 9.8 Information-physics planned tools (#511 / #512 / #513 / #514)
+
+Source: `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md` Proposals A/B/C/E. Inspection surfaces over the planned info-physics CFs.
+
+| Tool (planned) | Const | Purpose | Key params | Side effects |
+|---|---|---|---|---|
+| `mcp__cgreality__mejepa_entropy_training_status` | `MEJEPA_ENTROPY_TRAINING_STATUS` | #511 inspection: current λ for `L_entropy`, latent entropy in bits, holdout Brier impact, λ-auto-calibration history | `windowLimit: int=10` | Read-only over `CF_MEJEPA_TRAIN_CERT_ENTROPY` |
+| `mcp__cgreality__mejepa_panel_ecc_inspect` | `MEJEPA_PANEL_ECC_INSPECT` | #512 inspection: panel ECC syndrome, recovered slots, uncorrectable detection | `predictionId` OR `panelId` | Read-only over `CF_MEJEPA_PANEL_ECC_SYNDROME` |
+| `mcp__cgreality__mejepa_connectome_topology` | `MEJEPA_CONNECTOME_TOPOLOGY` | #513 inspection: per-cell rich-club coefficient, dominant 3-node motif, modularity Q, identified rich-club pair IDs | `cellId`, `windowIdx?` | Read-only over `CF_MEJEPA_CONNECTOME_TOPOLOGY_FEATURES` |
+| `mcp__cgreality__mejepa_cold_load_status` | `MEJEPA_COLD_LOAD_STATUS` | #514 inspection: last cold-load drift (correlation Δ, per-cell distribution Δ), promotion-time baseline snapshot | `promotionId?` | Read-only over `CF_MEJEPA_COLD_LOAD_SNAPSHOTS` |
+
+The four info-physics tools are inspection-only (no mutations). They expose the planned CFs from `03_storage_schema.md §9.4quart` once those CFs land.

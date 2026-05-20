@@ -165,6 +165,8 @@ Build profiles (`Cargo.toml:112-128`):
 
 Retired 2026-05-19 investigation cleanup: `e_coverage.rs`, `e_cyclomatic.rs`, `e_diff_topology.rs`, `e_embedder_heads.rs`, `composite_reward_signals.rs`, `static_analysis_reward.rs`, `telemetry_signals.rs`, `type_graph_signals.rs`, `live_session_signals.rs`, `linear_probe.rs`, and `stdlib_registry.rs`. These were unconsumed producer/helper surfaces after the Q4 freeze and binary Q1/Q2/Q5 contract. Keep `e_static_analysis.rs`, `e_code.rs`, `e_runtime.rs`, and the frozen `q4_*` label readers until the schema-version cleanup that drops deprecated-readable Q4 CFs.
 
+**Planned (#512 / TASK-IP-002):** `ecc.rs` — self-dual doubly-even error-correcting code over the 15-slot occupancy bitmap. Defines `PARITY_CHECK_MATRIX`, `Syndrome`, `RecoveryRadius`. `PanelBuilder::build()` extended to call `panel.syndrome()` and fail-closed on `PANEL_ECC_UNCORRECTABLE`. Gates-style formal anti-compensation replacing the heuristic FSV in `python_anti_compensation_fsv.rs` (#394).
+
 ---
 
 ## 6. `context-graph-mejepa-train` Modules
@@ -187,7 +189,7 @@ Retired 2026-05-19 investigation cleanup: `e_coverage.rs`, `e_cyclomatic.rs`, `e
 | `labels.rs` (~29K) | Label assembly across all instrument outputs |
 | `learning_signal.rs` (~33K) + `learning_signal/` | UTML `compute_l_step` — `ΔP` × `ΔK` × `ΔΩ` × `ΔΞ` components, `compute_per_head_learning_signal` |
 | `lora_wiring.rs` | LoRA adapter wiring (cell weight transforms) |
-| `loss/` | VICReg loss + Huber + inverse-map loss (`InverseMapLossBreakdown`) |
+| `loss/` | VICReg loss + Huber + inverse-map loss (`InverseMapLossBreakdown`); planned `loss/entropy.rs` for #511 / TASK-IP-001 (Kraskov-style differential entropy estimator on the late-fused latent — Vopson 2nd-law-of-infodynamics minimization) |
 | `optim/` | Optimizer state |
 | `replay_buffer.rs` (~20K) | TASK-RWD-210 / TASK-PY-G-068 surprise-prioritized M(t) replay buffer over `CF_MEJEPA_REPLAY_BUFFER`; `BatchSampler::next_replay_batch` |
 | `sampler/` | Batch sampling strategies (uniform / replay / curiosity / operator-override) |

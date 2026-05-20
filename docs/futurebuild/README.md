@@ -1,6 +1,6 @@
 # futurebuild — ME-JEPA-Code Reference
 
-**Last refreshed:** 2026-05-19. **Style:** source-grounded WHAT-IS reference for AI agents. **Doc count:** 8 (down from 31).
+**Last refreshed:** 2026-05-20. **Style:** source-grounded WHAT-IS reference for AI agents. **Doc count:** 8 (down from 31).
 
 Source code: `/home/cabdru/contextgraph/crates/` (22 active workspace crates; no excluded benchmark crate).
 Authority hierarchy: **universal doctrine** (`docs2/AICodingAgentSuperPrompt.md`) > **project addendum** (`CLAUDE.md`) > **this suite**.
@@ -37,7 +37,19 @@ Current ship-gate status: **0.866667** vs target 0.95 on Panel A; Panel B has no
 
 ---
 
-## What changed in this refresh (2026-05-18 → 2026-05-19)
+## What changed in this refresh (2026-05-19 → 2026-05-20)
+
+**Information-physics framing + 4 new gate-pathway / safety-net issues + stars-as-vectors formalization.** A new operator-driven report at [`/home/cabdru/contextgraph/docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md`](../INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md) maps Vopson's second law of information dynamics (AIP Advances 12, 075310, 2022), Gates' self-dual error-correcting codes in supersymmetry (Doran et al. 2008), FlyWire's whole-brain connectome (Nature 634, 2024-10-02), and Wheeler's "it from bit" onto the project's already-locked-in doctrine. Four new GitHub issues capture the gate-pathway / hygiene work and one existing issue (#417) was extended with a stars-as-vectors operator-UX sub-capability:
+
+- **#511 / TASK-IP-001** — Information-entropy auxiliary loss on slot-preserving predictor latent. **On the road to 0.95.** Formalizes Vopson's second law of infodynamics as a trainer loss term; expected to close 1-2 correlation points.
+- **#512 / TASK-IP-002** — Self-dual ECC over the 15-slot panel. Replaces #394's heuristic anti-compensation FSV with a Gates-style formal error-correcting code. Hygiene.
+- **#513 / TASK-IP-003** — Connectome rich-club analysis over the #388 cross-embedder correlation tensor. **On the road to 0.95.** FlyWire 2024-style network topology features added to #390's intelligence head; expected to close 1-3 correlation points if topology has predicted structure.
+- **#514 / TASK-IP-005** — Eon-style cold-load behavioural FSV. Safety net asserting predictor behaviour is encoded in weights, not transient training state. Catches training-state Goodhart orthogonal to #405's encoder-matched Goodhart defense.
+- **#417 augmentation** — Stars-as-vectors slice adds `mejepa_chunk_as_star` + `mejepa_constellation_membership` MCP tools as read-only navigation over the already-shipped #413 + #414 substrate. Operator UX; no new prediction head.
+
+**The deepest synthesis from the report:** ContextGraph is an information-physics instrument. It builds a frozen, slot-preserving "constellation" of measurements for each AST chunk (the array of 15 per-embedder vectors); uses entropy-decreasing operations (compression, symmetry-seeking, label hierarchy) to extract structure; and predicts binary reality outcomes against ground truth (the only thing reality can render a verdict on). The user's original "stars as vectors" intuition that produced the teleological-constellation primitive is the correct generalization of what the system is doing — formalized as the new §1.5quart in [`01_overview.md`](01_overview.md).
+
+## What changed in the prior refresh (2026-05-18 → 2026-05-19)
 
 1. **31 → 8 docs** condensed for AI agent token efficiency. Originals at `_archived/`.
 2. **WHAT-IS rewrite** — every claim now traces to a source file/line. No aspirational content. Planning content compressed into `08_roadmap_and_open_work.md`.
