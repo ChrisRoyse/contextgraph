@@ -717,6 +717,32 @@ Operator picks one. System (when #335 ships) reverse-engineers patch-shape const
 
 ---
 
+## 18.5. Neuroscience-Inspired Reserve (filed 2026-05-20, DO NOT START until current queue concludes)
+
+Eight contingency issues (#538-#545) document neuroscience-inspired architectural enhancements that would activate **only if** the current Phase G queue + creativity engine fail to close the remaining ship-gate gap. All filed at `priority:p3`, `status:needs-triage`, with explicit `⚠ DO NOT START — Neuroscience-reserve contingency` markers. Reassess only after post-queue gap analysis identifies need.
+
+**Tier 1 — high-impact, addresses the gap directly:**
+
+| Issue | Planned modules / pipeline addition |
+|---|---|
+| **#538** Predictive-coding head (Rao & Ballard 1999; Friston free-energy) | `crates/context-graph-mejepa/src/predictor/top_down_prediction.rs` per-slot top-down prediction + residual against observation. `crates/context-graph-mejepa-train/src/loss/predictive_coding.rs` per-slot prediction-error term in `L_step`. Rewires bottom-up-only → bidirectional predict-then-observe-then-residual. Slot identity preserved. |
+| **#539** Schema-prioritized replay (Mattar & Daw 2018; Liu et al. 2019) | `crates/context-graph-mejepa-train/src/replay_scheduler.rs` schema-grouped batch sampler over #414 skill IDs. `reverse_replay.rs` for pathway credit assignment (#416 dependency). `generative_replay.rs` for idle-time rehearsal. |
+| **#540** Hierarchical predictive coding on #404 hierarchy | `crates/context-graph-mejepa/src/hierarchical_prediction.rs` Level-3 → 2 → 1 → 0 backward prediction; per-level error attribution feeds skill lifecycle audit (#414). No new substrate. |
+| **#541** Mixed-selectivity binding (Rigotti et al. 2013) | `crates/context-graph-mejepa/src/predictor/mixed_selectivity_binding.rs` nonlinear basis layer between per-slot encoders and late fusion; replaces #390's linear pairwise statistics. Inputs are same-embedder scalar summaries only (anti-compensation preserved). |
+
+**Tier 2 — design-influence on existing epics:**
+
+| Issue | Design influence on |
+|---|---|
+| **#542** Population-dynamics trajectories | #416 pathway exploration design |
+| **#543** Per-slot sparse representations | Micro-analog of #519 macro-sparsity; per-slot top-k gates |
+| **#544** Synchrony-based temporal binding | #392 temporal trajectory features design |
+| **#545** Idle-time generative rollouts | Composes with #416 / #517 / #406 / #520 |
+
+**Doctrinal compatibility verified before filing:** slot identity preserved, anti-compensation invariant (#394) preserved, binary contract preserved, ambiguity boundary preserved, no inner LLM, no synthetic-input shortcuts. See `08_roadmap_and_open_work.md §6.9` for activation rule and full index.
+
+---
+
 ## 19. What This Doc Does NOT Cover
 
 - Exact transformer layer counts / hidden dims at runtime — read `MeJepaInferConfig` from the active checkpoint manifest.

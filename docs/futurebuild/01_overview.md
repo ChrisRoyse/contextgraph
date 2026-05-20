@@ -296,6 +296,16 @@ The result was deterministic for the same `(task_id, patch_sha)`. Every ablation
 
 Tracked under new context issue filed alongside this doc refresh; gate-active critical path in `08_roadmap_and_open_work.md §3.0` reordered so rebaseline precedes #407 / #511 / #405.
 
+### 1.5sext Neuroscience-inspired reserve (filed 2026-05-20, DO NOT START until current queue concludes)
+
+Eight contingency issues (#538-#545) document neuroscience-inspired architectural enhancements that would activate if the current Phase G queue + creativity engine fail to close the remaining ship-gate gap. All filed at `priority:p3` with explicit `⚠ DO NOT START` markers. Reassess only after post-queue gap analysis.
+
+**Tier 1** (high-impact, doctrine-compatible, addresses gap directly): predictive-coding head with top-down per-slot prediction + bottom-up residual (#538, Rao & Ballard 1999 / Friston free-energy), hippocampal schema-prioritized replay with reverse replay for pathway credit assignment (#539, Mattar & Daw 2018 / Liu et al. 2019), hierarchical predictive coding tied to the #404 label hierarchy (#540, Felleman & Van Essen 1991 / Bastos et al. 2012), mixed-selectivity cross-slot binding layer (#541, Rigotti et al. 2013 / Fusi et al. 2016).
+
+**Tier 2** (more speculative; design-influence on existing epics): population-dynamics low-dim trajectories for #416 pathway surface (#542, Shenoy/Churchland/Cunningham), sparse distributed representations per slot (#543, Hawkins/Numenta), synchrony-based temporal binding for #392 (#544, Singer & Engel / Fries 2005), idle-time generative rollouts (#545, default-mode network analog).
+
+All eight verified doctrine-compatible before filing: slot identity preserved, anti-compensation invariant preserved, binary contract preserved, ambiguity boundary preserved, no inner LLM, no synthetic-input shortcuts. See `08_roadmap_and_open_work.md §6.9` for full index + activation rule + risk note.
+
 ### 1.6 The ambiguity boundary (locked-in rule)
 
 ME-JEPA only predicts questions with a **free binary form against reality**. Free = verdict comes from observing reality directly, not from imposing arbitrary thresholds on continuous heuristics.

@@ -392,6 +392,26 @@ When CFs land, they get added to `ALL_HYGIENE_REFERENCED_CFS`. The `canonical_hy
 
 ---
 
+## 8.7 Neuroscience-Inspired Reserve — Planned CFs (DO NOT START until current queue concludes)
+
+Eight contingency issues (#538-#545) document neuroscience-inspired architectural enhancements. All filed at `priority:p3` with explicit `⚠ DO NOT START` markers. See `08_roadmap_and_open_work.md §6.9` for activation rule.
+
+CFs that would land **if** activated:
+
+| CF Constant (planned) | Issue | Key | Value | Purpose |
+|---|---|---|---|---|
+| `CF_MEJEPA_PER_SLOT_PREDICTIONS` | #538 | `(prediction_id, slot)` | bincode `{predicted_vector, observed_vector, residual_norm, slot_identity_preserved: true}` | Top-down prediction + observation pair per slot |
+| `CF_MEJEPA_PREDICTION_ERRORS` | #538 | `(prediction_id, slot)` | bincode `{residual_l2, residual_cosine_to_predicted, error_class}` | Aggregated prediction error per slot per prediction |
+| `CF_MEJEPA_REPLAY_SCHEDULE` | #539 | `(replay_batch_id)` | bincode `{schema_skill_ids, reverse_order, expected_utility_score}` | Schema-grouped batch schedule audit |
+| `CF_MEJEPA_GENERATIVE_REPLAY_AUDIT` | #539 | `(idle_run_id, rehearsal_id)` | bincode `{schema_id, synthetic_panel_sha, forgetting_drift_observed}` | Idle-time rehearsal accountability; explicit `synthetic=true` flag prevents live-input contamination (anti-#529 guard) |
+| `CF_MEJEPA_BINDING_BASIS_REGISTRY` | #541 | `(basis_function_id)` | bincode `{slot_pair, summary_statistics, learned_params_sha, validation_correlation_lift}` | Per-basis-function registry with empirical contribution audit |
+
+**No new CFs from** #540 (consumes shipped #404 / #413 / #414 substrate via backward prediction), #542 / #544 / #545 (design-influence on existing planned CFs), #543 (rides existing quantized embedder CFs `CF_EMB_0..CF_EMB_12`).
+
+All planned CFs preserve doctrine: slot identity, anti-compensation (#394), binary contract, ambiguity boundary, no synthetic-input shortcuts. Adding any of these is a schema change → deliberate DB wipe + rebuild (no migrations).
+
+---
+
 ## 9. What This Doc Does NOT Cover
 
 - Per-CF RocksDB tuning (block cache, bloom filters, write buffer size) — see per-crate `column_families.rs::*_options` functions.

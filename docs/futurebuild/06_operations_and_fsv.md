@@ -489,3 +489,37 @@ Any failure → `THRESHOLD_CALIBRATION_NONDISJOINT` and ship eligibility blocked
 3. Lossless reconstruction: `cluster_centroid + residual` byte-equals original within 1e-6.
 4. Predicted storage savings match measured within 5%.
 5. Witness chain integrity: `before_witness_hash` + `after_witness_hash` readable; provenance verifiable.
+
+---
+
+## 11.8 Neuroscience-Inspired Reserve FSV Protocols (DO NOT START until current queue concludes)
+
+Eight reserve issues (#538-#545) at `priority:p3` with explicit `⚠ DO NOT START` markers. If activated, each requires the following FSV protocol assertions:
+
+**#538 Predictive-coding head FSV:**
+1. Top-down per-slot prediction matches `InstrumentSlot::dim()` per slot.
+2. Per-slot residual computed in same-embedder space (no cross-embedder dim-wise compare; `MEJEPA_TCT_DIM_MISMATCH` on violation).
+3. Independent RocksDB readback of `CF_MEJEPA_PER_SLOT_PREDICTIONS` after flush/drop/reopen.
+4. Ablation: predictor-with-PC-head vs current late-fusion head; persist correlation delta against real Panel A baseline.
+5. OOD-by-residual rank-orders OOD calibrator at Spearman ≥ 0.7.
+
+**#539 Schema-prioritized replay FSV:**
+1. ≥80% of each batch shares the same Level-2 skill ID.
+2. Reverse replay: N-leaf pathway produces N reverse-temporal update rows.
+3. `synthetic=true` flag set on all `CF_MEJEPA_GENERATIVE_REPLAY_AUDIT` rows; explicitly fail if any row leaks into `CF_MEJEPA_LIVE_PREDICTIONS` (anti-#529 guard).
+4. `mistake_repeat_rate` across schema clusters drops relative to baseline replay.
+
+**#540 Hierarchical predictive coding FSV:**
+1. Per-level error scalars byte-replayable.
+2. Predicted-but-not-fired skill triggers `SkillLifecycleAuditRow` decision.
+3. Ablation: backward-prediction-hierarchy vs aggregator-only-hierarchy; persist correlation + Brier deltas.
+
+**#541 Mixed-selectivity binding FSV:**
+1. Slot identity preserved at binding inputs (same-embedder scalar summaries only).
+2. Anti-compensation (#394) holds with binding layer active.
+3. Per-basis-function attribution composable with #391 slot attribution.
+4. Ablation: mixed-selectivity vs linear pairwise statistics (#390); persist deltas.
+
+**#542 / #543 / #544 / #545:** design-influence on host-epic FSVs (#416 / #519 / #392 / #517 respectively); no separate top-level FSV harness.
+
+All eight verified doctrine-compatible (slot identity, anti-compensation, binary contract, ambiguity boundary, no inner LLM, no synthetic shortcuts) before filing. See `08_roadmap_and_open_work.md §6.9` for activation rule.

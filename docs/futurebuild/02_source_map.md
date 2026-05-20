@@ -280,6 +280,30 @@ Full FSV evidence index → `07_results_and_benchmarks.md`.
 
 ---
 
+## 10.5 Neuroscience-Inspired Reserve — Planned Modules (DO NOT START until current queue concludes)
+
+Eight contingency issues (#538-#545) document neuroscience-inspired architectural enhancements. All filed at `priority:p3` with explicit `⚠ DO NOT START` markers. See `08_roadmap_and_open_work.md §6.9` for activation rule.
+
+**Tier 1 planned modules (if activated):**
+
+| Issue | Planned crate / module path | Tied existing crate |
+|---|---|---|
+| #538 Predictive-coding head | `crates/context-graph-mejepa/src/predictor/top_down_prediction.rs` + `crates/context-graph-mejepa-train/src/loss/predictive_coding.rs` | `context-graph-mejepa`, `context-graph-mejepa-train` |
+| #539 Schema-prioritized replay | `crates/context-graph-mejepa-train/src/replay_scheduler.rs` + `reverse_replay.rs` + `generative_replay.rs` | `context-graph-mejepa-train` (extends `replay_buffer.rs`) |
+| #540 Hierarchical predictive coding | `crates/context-graph-mejepa/src/hierarchical_prediction.rs` + `crates/context-graph-mejepa-train/src/loss/hierarchical_predictive.rs` | `context-graph-mejepa`, `context-graph-mejepa-train` (consumes shipped #404 / #414 substrate) |
+| #541 Mixed-selectivity binding | `crates/context-graph-mejepa/src/predictor/mixed_selectivity_binding.rs` + `binding_basis_audit.rs` | `context-graph-mejepa` (extends `predictor/` and #390 surface) |
+
+**Tier 2 design influence (no separate modules; affect existing epic implementations):**
+
+- #542 → influences #416 `pathway/` design (manifold trajectories option)
+- #543 → influences #519 sparse-panel design + per-instrument top-k gates
+- #544 → influences #392 temporal-feature design + #390 synchrony scoring
+- #545 → background tokio task composing with #416 / #517 / #406 / #520
+
+All eight verified doctrine-compatible (slot identity, anti-compensation, binary contract, ambiguity boundary, no inner LLM, no synthetic shortcuts) before filing.
+
+---
+
 ## 11. What Is NOT Included
 
 - No vendored upstream code. Clean-room only (per `CLAUDE.md §6.7`). Never vendor / path-dep / npm-depend on `ruvnet/agentdb` or `ruvnet/ruvector`.

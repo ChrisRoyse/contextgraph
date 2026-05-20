@@ -221,6 +221,22 @@ Frozen Q4 producer/calibration FSVs (display-only after #408): #266 perf labels 
 
 ---
 
+## 6.5 Neuroscience-Inspired Reserve (filed 2026-05-20, DO NOT START until current queue concludes)
+
+No results yet — all eight neuroscience-reserve issues (#538-#545) are filed at `priority:p3` with explicit `⚠ DO NOT START — Neuroscience-reserve contingency` markers. Activation depends on post-current-queue gap analysis identifying need. **If** activated and shipped, expected FSV evidence shape:
+
+| Issue | Expected proof artifact | Expected ablation comparison |
+|---|---|---|
+| #538 predictive-coding head | `task_py_neuro_001_predictive_coding_head_fsv.json` with per-slot predictions, residuals, slot-identity-preserved=true | Real-input baseline vs predictor-with-PC-head; persist correlation + Brier deltas |
+| #539 schema-prioritized replay | `task_py_neuro_002_replay_consolidation_fsv.json` with schema-grouped batch evidence, reverse-replay credit attribution | `mistake_repeat_rate` across schema clusters vs uniform-prior baseline |
+| #540 hierarchical predictive coding | `task_py_neuro_003_hierarchical_predictive_fsv.json` with per-level error attribution | Hierarchy as backward-prediction vs hierarchy-as-aggregator-only |
+| #541 mixed-selectivity binding | `task_py_neuro_004_mixed_selectivity_binding_fsv.json` with basis-function attribution + slot-identity preserved | Mixed-selectivity vs current #390 linear pairwise statistics |
+| #542 / #543 / #544 / #545 | Design-influence; no separate FSV; manifest as additions to existing planned epic FSVs (#416 / #519 / #392 / #517) | Per-host-epic ablations |
+
+See `08_roadmap_and_open_work.md §6.9` for activation rule and `05_predictor_pipeline.md §18.5` for pipeline-integration sketch.
+
+---
+
 ## 7. What This Doc Does NOT Cover
 
 - Per-test timing or flake history (not centrally tracked beyond TASK-G-019 oracle flakiness quarantine).

@@ -320,6 +320,23 @@ When these land, the tool count moves accordingly. Q4 tool deprecation does not 
 
 ---
 
+## 9.95 Neuroscience-Inspired Reserve (DO NOT START until current queue concludes)
+
+Eight neuroscience-reserve issues (#538-#545) at `priority:p3` with explicit `⚠ DO NOT START` markers. If activated, two contingency tool slices may emerge but **no new public MCP tools are pre-planned** — the changes are predominantly internal pipeline / training / replay-scheduler architecture, not new operator-facing surfaces.
+
+The closest candidate inspection tools (only if operator opts in post-activation):
+
+| Tool (would-be planned) | Issue | Purpose |
+|---|---|---|
+| `mcp__cgreality__mejepa_inspect_per_slot_prediction` | #538 | Read `CF_MEJEPA_PER_SLOT_PREDICTIONS` for a `prediction_id`; per-slot predicted vs observed residual diagnostic (composes with `mejepa_explain_prediction`) |
+| `mcp__cgreality__mejepa_replay_schedule_audit` | #539 | Read `CF_MEJEPA_REPLAY_SCHEDULE` rows; schema-grouped batch evidence |
+| `mcp__cgreality__mejepa_binding_basis_inspect` | #541 | Read `CF_MEJEPA_BINDING_BASIS_REGISTRY`; per-basis-function attribution joining #391 slot attribution |
+| `mcp__cgreality__mejepa_hierarchical_prediction_inspect` | #540 | Per-level prediction error attribution joining the #404 / #414 substrate |
+
+These would extend the existing 214-tool registry, not replace existing tools. All would be **read-only** (audit/inspection only — no new write paths past what underlying CFs already accept). See `08_roadmap_and_open_work.md §6.9` for activation rule and `03_storage_schema.md §8.7` for the planned CFs.
+
+---
+
 ## 10. What This Doc Does NOT Cover
 
 - Full JSON schema for every parameter — read `definitions/*.rs::definitions()`; each has a literal `json!({...})` schema.

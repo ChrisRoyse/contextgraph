@@ -249,6 +249,51 @@ Only candidates passing BOTH are promoted. Rejected candidates write a `CF_MEJEP
 
 ---
 
+## 6.9. Neuroscience-Inspired Reserve (filed 2026-05-20, DO NOT START until current queue concludes)
+
+**Status:** all eight issues filed at `priority:p3`, `status:needs-triage`, with explicit `⚠ DO NOT START — Neuroscience-reserve contingency` markers in their bodies.
+
+**Activation rule:** these are *contingency plans* for if the current Phase G queue + creativity engine fail to close the remaining ship-gate gap. **They are NOT to be started until:**
+
+1. The current queue concludes (#529 rebaseline → #535 rank lift → #536 weak-cell repair → #407 calibration disjointness → #511 entropy loss → #405 Panel B → #379 multi-file holdout → #392 temporal features).
+2. A post-queue gap analysis has been run and concludes the remaining gap is not closable with the current architecture + corpus + label substrate.
+3. The operator explicitly re-prioritizes any of these (or all) from `p3` based on what gap analysis identifies as needed.
+
+If the gate closes via the current queue, these issues stay in `p3` reserve indefinitely. If the gate does not close, they become the candidate lever set for the next architectural sweep.
+
+### Tier 1 — high-impact, doctrine-compatible, addresses the current gap directly
+
+| Issue | Title | Neuroscience source |
+|---|---|---|
+| **#538 / TASK-PY-NEURO-001** | Predictive-coding head: top-down per-slot prediction + bottom-up residual | Rao & Ballard 1999 (*Nature Neuroscience*); Friston free-energy principle |
+| **#539 / TASK-PY-NEURO-002** | Hippocampal schema-prioritized replay consolidation (incl. reverse replay for pathway credit assignment) | Mattar & Daw 2018 (*Nature Neuroscience*); Liu et al. 2019 (*Cell*) |
+| **#540 / TASK-PY-NEURO-003** | Hierarchical predictive coding tied to the #404 / #413 / #414 label hierarchy | Felleman & Van Essen 1991 (*Cerebral Cortex*); Bastos et al. 2012 (*Neuron*) |
+| **#541 / TASK-PY-NEURO-004** | Mixed-selectivity cross-slot binding layer (replaces #390's linear pairwise statistics) | Rigotti et al. 2013 (*Nature*); Fusi et al. 2016 (*Current Opinion in Neurobiology*) |
+
+### Tier 2 — promising but more speculative; design-influence on existing epics
+
+| Issue | Title | Composes with |
+|---|---|---|
+| **#542 / TASK-PY-NEURO-005** | Population-dynamics low-dim trajectories for #416 pathway surface (Shenoy/Churchland/Cunningham) | #416 pathway exploration; #392 temporal trajectories |
+| **#543 / TASK-PY-NEURO-006** | Sparse distributed representations per slot (Hawkins/Numenta; Olshausen & Field 1996) | #519 domain-routed sparse panel; #389 OOD |
+| **#544 / TASK-PY-NEURO-007** | Synchrony-based temporal binding for #392 trajectory features (Singer & Engel; Fries 2005) | #392 temporal features; #390 constellation intelligence |
+| **#545 / TASK-PY-NEURO-008** | Idle-time generative rollouts for proactive active learning (default-mode network analog) | #416, #517, #406, #520 |
+
+### Doctrinal compatibility check (all eight verified before filing)
+
+- ✅ Slot identity invariant preserved (no cross-embedder dim-wise compare anywhere)
+- ✅ Anti-compensation invariant (#394) preserved (strong slots cannot silence weak slots)
+- ✅ Binary contract preserved (final verdict still Q2 Pass/Fail; Q3 explanation-only; Q4 frozen)
+- ✅ Ambiguity boundary preserved (no ambiguous heads introduced)
+- ✅ No inner-LLM assumption introduced
+- ✅ No synthetic-input shortcut (all extensions ride the real instrument substrate)
+
+### Honest risk note
+
+Neuroscience-inspired architectures have a mixed history in ML. Predictive coding (Tier 1A/1C) has the strongest empirical track record; mixed selectivity (Tier 1D) is the most theoretically grounded; replay consolidation (Tier 1B) is the most directly tied to an existing problem (#406 convergence). The Tier-2 items are more speculative. None is a guarantee — they are a documented option set, not a commitment.
+
+---
+
 ## 7. EK Series (Explanatory Knowledge programme #321) — open tail
 
 | Issue | Status |
