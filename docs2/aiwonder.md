@@ -5,7 +5,8 @@
 > **Hard rules.** aiwonder is a **shared production server** for the Leapable platform. ContextGraph training **must coexist** with the resident leapable services without disrupting them. Every operation must follow the universal doctrine (`docs2/AICodingAgentSuperPrompt.md`) and the aiwonder rules (`leapablememory/docs2/aiwonder-system.md §8`).
 >
 > **Last verified against live host:** 2026-05-15. Verify before relying on any claim.
-
+>
+> **EVERYTHING FOR THIS SYSTEM IS RUNNING AND SHOULD ALL BE RUNNING ON AIWONDER DATACENTER PC. everything gets stored there, all fsv ran there, whole system runs and works over there. ensure that is where all the work is happening, is on the aiwonder datacenter pc.
 ---
 
 ## 1. Why ContextGraph runs on aiwonder
