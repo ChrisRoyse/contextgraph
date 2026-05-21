@@ -26,14 +26,6 @@ pub(crate) fn validate_id(
             "must be single-line text up to 512 bytes",
         ));
     }
-    if value.contains("/mnt/d") {
-        return Err(invalid(
-            source_file,
-            remediation,
-            field,
-            "must not reference legacy /mnt/d state",
-        ));
-    }
     Ok(())
 }
 

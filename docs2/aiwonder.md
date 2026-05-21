@@ -11,13 +11,13 @@
 
 ## 1. Why ContextGraph runs on aiwonder
 
-ContextGraph training was originally on the operator's WSL2 box (`/mnt/d/contextgraph/...`). Three structural problems forced the move:
+ContextGraph training was originally on the operator's WSL2 box. Three structural problems forced the move:
 
-1. **D-drive I/O bottleneck.** `/mnt/d/` on WSL2 is NTFS-on-VHDX with cross-FS translation overhead. Per-shard wall in the local corpus run was ~323 s, **of which ~106 s was unaccounted subprocess spawn + I/O overhead**.
+1. **Local I/O bottleneck.** Local WSL2 storage is NTFS-on-VHDX with cross-FS translation overhead. Per-shard wall in the local corpus run was ~323 s, **of which ~106 s was unaccounted subprocess spawn + I/O overhead**.
 2. **HD space limit.** The operator's local disk can't hold the full corpus reward field (~73 GB projected) + the Q3 SWE-bench Lite Python Docker images (~1-2 TB future requirement).
 3. **No CUDA MPS in WSL2.** Multi-process kernel overlap on the GPU is not supported on WSL2 → parallel-isolated mode in the scheduler can't actually deliver kernel-level concurrency. aiwonder runs `nvidia-cuda-mps-control.service` → MPS is active → parallel-isolated **does** get true kernel overlap on aiwonder.
 
-The aiwonder migration completed on 2026-05-17 (#296). The 2026-05-18 storage correction (#363), tightened by #412 on 2026-05-19, makes aiwonder the production durable source of truth for Phase G and later work. Local `/mnt/d/contextgraph/...` paths are legacy provenance only and must not be used for active reads or writes. Move any needed data to aiwonder first.
+The aiwonder migration completed on 2026-05-17 (#296). The 2026-05-18 storage correction (#363), tightened by #412 on 2026-05-19, makes aiwonder the production durable source of truth for Phase G and later work.
 
 ---
 
@@ -148,7 +148,7 @@ Goal: replicate the local-WSL corpus run with the speedups that aiwonder enables
 |---|---|---|---|
 | Shard cold-start (subprocess spawn + model load) | ~106 s | ~50-80 s (no WSL FS tax + faster NVMe) | ~1.5× |
 | Per-embedder GPU compute (e7 dominant) | sequential | **parallel via MPS** (4-6 wave) | ~3× |
-| I/O (cache writes, FSV readback) | `/mnt/d/` cross-FS | `/zfs/hot/` direct NVMe | ~2× |
+| I/O (cache writes, FSV readback) | local WSL cross-FS | `/zfs/hot/` direct NVMe | ~2× |
 | **Estimated per-shard wall (1024-chunk shards)** | ~1100 s | **~250-400 s** | **2.5-4.5×** |
 | **Estimated full 391-shard run** | ~4.9 days | **~1.5-2 days** | **~2.5-3×** |
 
@@ -253,12 +253,10 @@ Do **not** relaunch the production corpus run into parallel mode after a single 
 
 Current corrective work after the #363 storage decision:
 
-- #364 updates docs/context so agents stop treating `/mnt/d/contextgraph` as production SoT.
 - #365 adds fail-closed production-root guards.
 - #366 reruns TASK-PY-G-056 on aiwonder.
 - #367 audits project-ingest/runtime locality.
 - #368 audits aiwonder capability utilization.
-- #369 revalidates post-migration Phase G FSV artifacts that still cite `/mnt/d`.
 
 ---
 
@@ -269,8 +267,7 @@ Current corrective work after the #363 storage decision:
 3. **Never disable MPS.** `nvidia-cuda-mps-control.service` is load-bearing for the leapable-tei warm contexts and our own parallel-isolated mode benefits from it.
 4. **Never write secrets into this repo.** Use Infisical CLI or env-var names; see `leapablememory/docs2/infisical-secrets-guide.md §0`.
 5. **`/zfs/hot/` has no redundancy** (single NVMe). The corpus run's checkpoint + cache should go to `/zfs/archive/` (HDD mirror) for durability; only the in-flight hot-stage scratch should live on `/zfs/hot/contextgraph/` or `/home/croyse/.cache/`.
-6. **Production SoT is aiwonder.** Durable production corpus, runtime, project, cache, export, and FSV outputs go under `/zfs/archive/contextgraph/...`; local `/mnt/d/contextgraph` is historical provenance only and never an active input/output path.
-7. **Verify by SoT readback.** Per doctrine §4. Remote `systemctl is-active`, `du -sh`, `df -B1`, file hashes, RocksDB read-only reopen — not just SSH return codes.
+6. **Production SoT is aiwonder.** Durable production corpus, runtime, project, cache, export, and FSV outputs go under `/zfs/archive/contextgraph/...`; local 7. **Verify by SoT readback.** Per doctrine §4. Remote `systemctl is-active`, `du -sh`, `df -B1`, file hashes, RocksDB read-only reopen — not just SSH return codes.
 8. **Comment on the relevant GitHub Issue at every milestone.** Per doctrine §3.5.
 
 ---

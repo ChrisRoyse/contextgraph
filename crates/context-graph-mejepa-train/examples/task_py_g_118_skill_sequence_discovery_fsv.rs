@@ -186,7 +186,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         "proof_scope": "deterministic skill-sequence candidate discovery, chunk-skill reverse membership, lifecycle audit rows, sync write/flush/drop-reopen readback over synthetic known-answer episodes",
         "active_path_policy": {
-            "mnt_d_active_reads_or_writes": false,
             "target_outcomes_supervise_only": true,
             "flat_vector_concat_used": false
         }

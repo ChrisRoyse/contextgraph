@@ -25,7 +25,6 @@ fn main() -> FsvResult<()> {
     let fsv_root = arg_path("--fsv-root").unwrap_or_else(|| {
         PathBuf::from("/zfs/archive/contextgraph/fsv/task-py-g-119-pathway-surface-fsv")
     });
-    reject_mntd_root(&fsv_root)?;
     if fsv_root.exists() {
         std::fs::remove_dir_all(&fsv_root)?;
     }
@@ -431,14 +430,6 @@ fn arg_path(flag: &str) -> Option<PathBuf> {
         }
     }
     None
-}
-
-fn reject_mntd_root(path: &Path) -> FsvResult<()> {
-    let value = path.display().to_string();
-    if value == "/mnt/d" || value.starts_with("/mnt/d/") {
-        return Err("TASK-PY-G-119 FSV root must not use legacy /mnt/d".into());
-    }
-    Ok(())
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

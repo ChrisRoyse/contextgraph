@@ -10,11 +10,9 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 pub const ENV_DATA_ROOT: &str = "CONTEXTGRAPH_DATA_ROOT";
-pub const ENV_LOCAL_SMOKE_ISSUE: &str = "CONTEXTGRAPH_LOCAL_SMOKE_ISSUE";
 pub const AIWONDER_DURABLE_ROOT: &str = "/zfs/archive/contextgraph";
 pub const AIWONDER_HOT_ROOT: &str = "/zfs/hot/contextgraph";
 pub const AIWONDER_EXPLICIT_SCRATCH_ROOT: &str = "/home/croyse/.cache/contextgraph";
-pub const LEGACY_LOCAL_DATA_ROOT: &str = "/mnt/d/contextgraph";
 pub const DEFAULT_DATA_ROOT: &str = AIWONDER_DURABLE_ROOT;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,21 +137,6 @@ pub fn require_production_durable_root(path: &Path, field: &'static str) -> Resu
     )
 }
 
-pub fn require_production_durable_root_or_named_local_smoke(
-    path: &Path,
-    field: &'static str,
-) -> Result<PathBuf> {
-    let normalized = normalize_absolute_lexical(&make_absolute(path)?)?;
-    if is_under_legacy_local_root(&normalized) {
-        return Err(production_root_not_aiwonder(
-            field,
-            &normalized,
-            "local /mnt/d roots are never active inputs or outputs; move required data to /zfs/archive/contextgraph on aiwonder",
-        ));
-    }
-    require_production_durable_root(&normalized, field)
-}
-
 pub fn require_production_hot_root(path: &Path, field: &'static str) -> Result<PathBuf> {
     require_aiwonder_prefix(
         path,
@@ -182,13 +165,9 @@ pub fn require_production_hot_or_explicit_scratch_root(
 
 pub fn production_data_root() -> Result<PathBuf> {
     let root = configured_data_root_path()?;
-    let guarded = require_production_durable_root_or_named_local_smoke(&root, ENV_DATA_ROOT)?;
+    let guarded = require_production_durable_root(&root, ENV_DATA_ROOT)?;
     validate_data_root(&guarded)?;
     Ok(guarded)
-}
-
-pub fn named_local_smoke_issue() -> Option<String> {
-    None
 }
 
 pub fn mejepa_image_prep_log_dir() -> Result<PathBuf> {
@@ -218,7 +197,7 @@ pub fn ensure_subdir(relative: impl AsRef<Path>) -> Result<PathBuf> {
         PathError::new(
             "CONTEXTGRAPH_DATA_SUBDIR_STAT_FAILED",
             format!("failed to stat {}: {err}", path.display()),
-            "inspect the D: mount and directory permissions",
+            "inspect the aiwonder mount and directory permissions",
         )
     })?;
     if !metadata.is_dir() {
@@ -258,15 +237,6 @@ pub fn require_under_data_root(path: &Path, field: &'static str) -> Result<PathB
 ///   live for the duration of a single mutation operation and are deleted
 ///   after the corpus row commits.
 ///
-/// In the old WSL2 setup the data root `/mnt/d/contextgraph` lived behind the 9P filesystem
-/// shim, which is ~100× slower than ext4 for small-file workloads (validated
-/// via direct benchmark on 2026-05-11: 50 sequential `echo > file` calls
-/// took 0.227 s on 9P vs 0.002 s on ext4). Forcing every ephemeral working
-/// path through 9P added ~28 hours to corpus generation. Pinning ephemeral
-/// state to ext4 restored native throughput while leaving durable corpus output
-/// on the then-current D-drive. Post-migration production hot state belongs on
-/// aiwonder `/zfs/hot/contextgraph` or explicitly budgeted aiwonder scratch.
-///
 /// Contract: the path MUST be absolute, lexically normalizable, and live
 /// outside the C-drive policy deny list. It is explicitly allowed OUTSIDE
 /// the data root (that is the entire point of this validator). Callers
@@ -275,9 +245,6 @@ pub fn require_under_data_root(path: &Path, field: &'static str) -> Result<PathB
 pub fn require_ephemeral_path(path: &Path, field: &'static str) -> Result<PathBuf> {
     let absolute = make_absolute(path)?;
     let normalized = normalize_absolute_lexical(&absolute)?;
-    // Hard-deny the C-drive (and anything that would route into 9P windows
-    // mounts other than /mnt/d/contextgraph). The data-root constraint is
-    // intentionally NOT applied here.
     let denied_prefixes = ["/mnt/c/", "/mnt/c"];
     for prefix in &denied_prefixes {
         if normalized.to_string_lossy().starts_with(prefix) {
@@ -354,10 +321,6 @@ fn production_root_not_aiwonder(
         ),
         remediation,
     )
-}
-
-fn is_under_legacy_local_root(path: &Path) -> bool {
-    path.starts_with(LEGACY_LOCAL_DATA_ROOT)
 }
 
 fn validate_relative_path(path: &Path, label: &'static str) -> Result<()> {
@@ -520,10 +483,10 @@ mod tests {
     }
 
     #[test]
-    fn production_durable_root_rejects_local_d_drive() {
+    fn production_durable_root_rejects_non_aiwonder() {
         let err =
-            require_production_durable_root(Path::new("/mnt/d/contextgraph/fsv/run"), "fsv_root")
-                .expect_err("local D-drive must not count as production");
+            require_production_durable_root(Path::new("/tmp/contextgraph/fsv/run"), "fsv_root")
+                .expect_err("non-aiwonder root must not count as production");
         assert_eq!(err.code, "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER");
     }
 
@@ -544,23 +507,13 @@ mod tests {
     fn production_data_root_checks_env_var_root() {
         let _guard = env_lock().lock().expect("env lock");
         let prior_data = env::var(ENV_DATA_ROOT).ok();
-        let prior_smoke = env::var(ENV_LOCAL_SMOKE_ISSUE).ok();
-        env::set_var(ENV_DATA_ROOT, "/mnt/d/contextgraph");
-        env::remove_var(ENV_LOCAL_SMOKE_ISSUE);
+        env::set_var(ENV_DATA_ROOT, "/tmp/contextgraph");
 
-        let err = production_data_root().expect_err("production env root must reject local D");
-        assert_eq!(err.code, "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER");
-
-        env::set_var(ENV_LOCAL_SMOKE_ISSUE, "issue-365-local-smoke-test");
-        let err = require_production_durable_root_or_named_local_smoke(
-            Path::new("/mnt/d/contextgraph"),
-            ENV_DATA_ROOT,
-        )
-        .expect_err("local D root stays rejected even when legacy local-smoke env is set");
+        let err =
+            production_data_root().expect_err("production env root must reject non-aiwonder roots");
         assert_eq!(err.code, "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER");
 
         restore_env(prior_data);
-        restore_local_smoke_env(prior_smoke);
     }
 
     #[test]
@@ -595,14 +548,6 @@ mod tests {
             env::set_var(ENV_DATA_ROOT, value);
         } else {
             env::remove_var(ENV_DATA_ROOT);
-        }
-    }
-
-    fn restore_local_smoke_env(prior: Option<String>) {
-        if let Some(value) = prior {
-            env::set_var(ENV_LOCAL_SMOKE_ISSUE, value);
-        } else {
-            env::remove_var(ENV_LOCAL_SMOKE_ISSUE);
         }
     }
 }

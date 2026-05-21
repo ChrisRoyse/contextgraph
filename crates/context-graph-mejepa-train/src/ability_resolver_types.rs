@@ -6,6 +6,7 @@ use crate::label_bridge::{
 use crate::mistake_log::{MistakeLogRow, MistakeTruthSource};
 use crate::online_head_state::OnlineHeadUpdateReport;
 use crate::replay_buffer::ReplayBufferRow;
+use crate::skill_sequence_discovery::Level2SkillRow;
 use context_graph_mejepa::{PredictionId, Verdict};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -236,6 +237,8 @@ pub struct AbilityRefutationReport {
     pub replay_row: ReplayBufferRow,
     pub online_head_update_report: OnlineHeadUpdateReport,
     pub lifecycle_audits: Vec<SkillLifecycleAuditRow>,
+    pub updated_skill_rows: Vec<Level2SkillRow>,
+    pub candidate_skill_rows: Vec<Level2SkillRow>,
     pub label_skill_ability_membership_ids_agree: bool,
     pub candidate_created_when_no_existing_ability: bool,
     pub no_new_prediction_head_introduced: bool,

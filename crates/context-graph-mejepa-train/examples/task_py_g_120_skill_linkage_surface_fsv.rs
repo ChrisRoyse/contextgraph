@@ -186,7 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         10,
     )
     .is_err();
-    let edge_mntd_source_path_rejected =
+    let edge_missing_source_path_rejected =
         load_chunk_source_index_jsonl(Path::new("/zfs/archive/contextgraph/forbidden.jsonl"))
             .is_err();
 
@@ -310,7 +310,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && no_new_head_pass
         && edge_missing_source_fails_closed
         && edge_overlap_set_query_rejected
-        && edge_mntd_source_path_rejected;
+        && edge_missing_source_path_rejected;
 
     let report_path = fsv_root.join("task_py_g_120_skill_linkage_surface_fsv.json");
     let report = json!({
@@ -368,10 +368,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "edge_cases": {
             "require_source_text_without_source_index_fails_closed": edge_missing_source_fails_closed,
             "overlapping_must_have_must_not_have_fails_closed": edge_overlap_set_query_rejected,
-            "active_mntd_source_path_rejected": edge_mntd_source_path_rejected
+            "missing_source_path_rejected": edge_missing_source_path_rejected
         },
         "active_path_policy": {
-            "mnt_d_active_reads_or_writes": false,
             "flat_vector_concat_used": false,
             "target_outcomes_used_as_live_inputs": false
         }

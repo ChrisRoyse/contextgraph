@@ -299,8 +299,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         "proof_scope": "label-bridge, mistake-log, replay persistence/readback, #430 live-label leakage boundary, online head-state correction/readback, exact-panel protection-mode clarity, and fail-closed rejection of unbacked Fisher/EWC claims",
         "slot_identity_preserved": true,
-        "flat_vector_concat_used": false,
-        "active_path_policy": {"mnt_d_active_reads_or_writes": false}
+        "flat_vector_concat_used": false
     });
     fs::write(&report_path, serde_json::to_vec_pretty(&report)?)?;
     let final_report: serde_json::Value = serde_json::from_slice(&fs::read(&report_path)?)?;

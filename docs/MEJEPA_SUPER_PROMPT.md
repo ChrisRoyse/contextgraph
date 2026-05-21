@@ -31,7 +31,7 @@
 >
 > **Authored:** 2026-05-12. **Phase A–D readiness:** independently audited
 > 2026-05-12, zero gaps. **Phase E:** code/FSV-shipped 2026-05-13 with
-> evidence at `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`.
+> evidence at `/zfs/archive/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`.
 > Phase G remains the 0.95 correlation convergence gate.
 
 ---
@@ -249,7 +249,7 @@ an oracle label.
 
 ### 3.5 D-drive only for bulk durable state
 
-All bulk durable state lives under `/mnt/d/contextgraph/`:
+All bulk durable state lives under `/zfs/archive/contextgraph/`:
 
 - `corpus/` — generated mutation corpora.
 - `fsv/` — FSV evidence artifacts.
@@ -311,7 +311,7 @@ dollar budgets, or any other cost-cap concept.
 
 **Independent audit completed 2026-05-12.** Source-of-truth readback of
 every Phase A–D claim against the live code tree and the FSV evidence
-files on `/mnt/d/contextgraph/fsv/`.
+files on `/zfs/archive/contextgraph/fsv/`.
 
 | Phase | Items | PRESENT | MISSING | PARTIAL |
 |---|---|---|---|---|
@@ -321,7 +321,7 @@ files on `/mnt/d/contextgraph/fsv/`.
 | D — Neural embedder forwards + DDA substrate | 10 | 10 | 0 | 0 |
 | **Total** | **35** | **35** | **0** | **0** |
 
-**16/16 cited FSV evidence files verified present on /mnt/d:**
+**16/16 cited FSV evidence files verified present:**
 
 - `mcp-daemon-supervision-fsv/daemon-supervision-evidence.json` (500 KB)
 - `contextgraph-phase-b-fsv/phase-b-prediction-fsv.json` (2.2 KB)
@@ -372,7 +372,7 @@ AgentSurprise fast-pathing, dissipation, lambda ramp, per-head Fisher,
 per-head dormancy, constellation refresh policy, catastrophic approval,
 emergency eviction suppression, and per-cell promotion rejection.
 
-**Phase E evidence:** `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`
+**Phase E evidence:** `/zfs/archive/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`
 contains 11 source-of-truth readback cases over RocksDB CFs and scheduler
 status files. The remaining human-review-replacement gate is Phase G:
 `prediction_oracle_correlation ≥ 0.95` stable over four rolling windows.
@@ -414,7 +414,7 @@ At the start of every turn, in order:
 9. **VERIFY.** Build (`cargo build --release -p <crate>`), test (`cargo
    test -p <crate>`), lint (`cargo clippy -p <crate> --no-deps --tests
    --examples -- -D warnings`), FSV harness write to
-   `/mnt/d/contextgraph/fsv/<task>-fsv/<artifact>.json`, independent
+   `/zfs/archive/contextgraph/fsv/<task>-fsv/<artifact>.json`, independent
    re-open readback for any RocksDB write. See §14.
 10. **SIMPLIFY.** Run the code-simplifier discipline (§16) on every
     shipped primitive before merging. Confirm no BLOCKER refinements
@@ -448,7 +448,7 @@ At the start of every turn, in order:
 | 12 | Never silently overwrite a superseded decision. | Set `status: superseded`, link forward, write the new decision. |
 | 13 | Never commit secrets, `.env` files, or credentials. | Run `gitleaks` pre-commit + CI; leak = p0 → revoke now. |
 | 14 | Never proactively create documentation files (`*.md`) or READMEs unless explicitly requested. | Per CLAUDE.md §2.4. |
-| 15 | Never save working files, ad-hoc tests, or scratch markdown to the project root. | Use `./memory/`, `/tmp/`, or `/mnt/d/contextgraph/`. |
+| 15 | Never save working files, ad-hoc tests, or scratch markdown to the project root. | Use `./memory/`, `/tmp/`, or `/zfs/archive/contextgraph/`. |
 | 16 | Never add cost caps, dollar budgets, `cost_cap_reached` blocked status, or `cost_estimate_usd` fields. | System runs locally; no spend caps. |
 | 17 | Never cater a primitive to a specific task. | GENERIC-ONLY rule (§3.3). |
 | 18 | Never trust a function's return value as evidence of work. | FSV is the contract — read the SoT (§14). |
@@ -478,7 +478,7 @@ At the start of every turn, in order:
 | 5 | Do file reading, synthesis, code edits, and decisions personally. No delegation — own every step. |
 | 6 | Run `cargo build --release` for touched crates after every meaningful change. |
 | 7 | Run `cargo test` and `cargo clippy --no-deps --tests --examples -- -D warnings` for verification. |
-| 8 | Produce FSV evidence at `/mnt/d/contextgraph/fsv/<task>-fsv/<artifact>.json` for every task. |
+| 8 | Produce FSV evidence at `/zfs/archive/contextgraph/fsv/<task>-fsv/<artifact>.json` for every task. |
 | 9 | Use `WriteOptions::set_sync(true)` for RocksDB FSV writes; flush + drop + reopen + readback for any persistence claim. |
 | 10 | Use `#[serde(deny_unknown_fields)]` on every persisted struct. |
 | 11 | Validate input at system boundaries; never trust raw user/MCP/RPC input. |
@@ -764,7 +764,7 @@ judge edge cases instead of blindly following the rule.
 - Clippy: {clean | warnings | failing}
 
 ## FSV evidence
-- /mnt/d/contextgraph/fsv/<path> — sha256:<hex>
+- /zfs/archive/contextgraph/fsv/<path> — sha256:<hex>
 
 ## GitHub issues touched
 - #N — claimed/commented/closed — comment URL
@@ -918,7 +918,7 @@ ME-JEPA-flavored example *observe shift*:
 - `CF_MEJEPA_LIVE_PREDICTIONS` row written ✓
 - `mejepa_subscriber_status` MCP tool reports new shift consumed ✓
 - shift-log line offset advanced in
-  `/mnt/d/contextgraph/runtime/cgreality-shift-log/<sid>.jsonl` ✓
+  `/zfs/archive/contextgraph/runtime/cgreality-shift-log/<sid>.jsonl` ✓
 
 ### 14.4 Mandatory boundary case set (≥ 3 from this list per code path)
 
@@ -980,11 +980,11 @@ For every task, produce all of the following:
 3. **Clippy evidence.** `cargo clippy -p <crates> --no-deps --tests
    --examples -- -D warnings` output. `-D warnings` is non-optional.
 4. **SoT readback JSON** at
-   `/mnt/d/contextgraph/fsv/<task-domain>-fsv/<artifact>.json`:
+   `/zfs/archive/contextgraph/fsv/<task-domain>-fsv/<artifact>.json`:
 
 ```json
 {
-  "fsv_root": "/mnt/d/contextgraph/fsv/<task-domain>-fsv",
+  "fsv_root": "/zfs/archive/contextgraph/fsv/<task-domain>-fsv",
   "task_id": "TASK-EXAMPLE-NNN",
   "started_at_unix_ms": 0,
   "build_release_sha": "<git HEAD short sha>",
@@ -1013,7 +1013,7 @@ For every task, produce all of the following:
 ```
 
 5. **Physical artifact verification.** If RocksDB: list SST files
-   (`find /mnt/d/...-fsv/rocks-* -name '*.sst' -printf '%p %s
+   (`find <fsv-root>/rocks-* -name '*.sst' -printf '%p %s
    bytes\n'`). If file: `wc -c` and `sha256sum`. If metric: confirm
    counter increment.
 6. **Independent re-open verification (RocksDB only).** Close the handle
@@ -2336,7 +2336,7 @@ Defer to OWASP Top 10:2025 + CIS Benchmarks + NIST CSF 2.0 + ASVS 5.0.
 - **No HTTP from action paths.** Per §3.8. The MCP server is the only
   network surface.
 - **D-drive permission validation.** Daemon startup must verify
-  `/mnt/d/contextgraph/` is readable + writable by the service user;
+  `/zfs/archive/contextgraph/` is readable + writable by the service user;
   fail closed if not.
 - **Secret discipline.** `.env` and `.env.*` are never touched. PATs
   / API keys live in OS keychain or vault, never in source.
@@ -2376,7 +2376,7 @@ Defer to OWASP Top 10:2025 + CIS Benchmarks + NIST CSF 2.0 + ASVS 5.0.
 - Immutable backups (S3 Object Lock / Azure immutable) for ransomware
   defense.
 
-For ME-JEPA: `/mnt/d/contextgraph/` is the durable SoT. Backup
+For ME-JEPA: `/zfs/archive/contextgraph/` is the durable SoT. Backup
 strategy lives in `docs/futurebuild/20_DISASTER_RECOVERY_AND_BACKUP.md`.
 
 ---
@@ -2404,7 +2404,7 @@ strategy lives in `docs/futurebuild/20_DISASTER_RECOVERY_AND_BACKUP.md`.
 
 For ME-JEPA specifically: FSV harnesses are the per-task evidence
 contract. Every Phase A–D primitive ships with an FSV file under
-`/mnt/d/contextgraph/fsv/<task>-fsv/`.
+`/zfs/archive/contextgraph/fsv/<task>-fsv/`.
 
 ### 25.2 When a test fails
 
@@ -3205,7 +3205,7 @@ For ME-JEPA specifically:
   latency, VRAM free/required/total → `CF_MEJEPA_PRODUCTION_TELEMETRY`.
 - **Pairwise MI heatmap** rendered weekly via
   `mejepa_audit_pairwise_mi`.
-- **Weekly eval report** at `/mnt/d/contextgraph/exports/eval/<date>/weekly.md`.
+- **Weekly eval report** at `/zfs/archive/contextgraph/exports/eval/<date>/weekly.md`.
 - **Daemon status** via `mejepa_subscriber_status`,
   `mejepa_heal_status`, `mejepa_quota_status`.
 - **VRAM SoT**: CUDA-driver `cuMemGetInfo_v2`. `nvidia-smi` is
@@ -3660,7 +3660,7 @@ readback.
 │      ↓ (PreToolUse hook captures pre-SHA)                       │
 │      ↓ (PostToolUse hook: cargo check + git diff + shift-log)   │
 │                                                                  │
-│  /mnt/d/contextgraph/runtime/cgreality-shift-log/<sid>.jsonl    │
+│  /zfs/archive/contextgraph/runtime/cgreality-shift-log/<sid>.jsonl    │
 │      ↓                                                           │
 │  ShiftSubscriber (Tokio task in MCP daemon) tails JSONL         │
 │      ↓                                                           │
@@ -3745,7 +3745,7 @@ module-decl) targeting ~500 non-whitespace characters per Qodo / cAST
 methodology — never raw text, never fixed-size windows.
 
 **Routing table:** 143 rows (11 languages × 13 entity types). FSV at
-`/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/routing-forward-resolution.json`.
+`/zfs/archive/contextgraph/fsv/contextgraph-mejepa-forward-fsv/routing-forward-resolution.json`.
 
 **Embedder forward surface:** `EmbedderForward` trait in
 `crates/context-graph-mejepa-embedders/src/forward.rs` with
@@ -3990,7 +3990,7 @@ emergency_eviction   # disk-quota guard
 
 **Phase E has shipped these policies at code/FSV level.** The scheduler
 acts from durable reality rows, not LLM claims. Evidence lives at
-`/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`.
+`/zfs/archive/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`.
 Ship-gate ladders:
 
 1. Inject controlled soft drift (860/1000 obs); scheduler
@@ -4024,7 +4024,7 @@ rolling windows** on the full 300×8 SWE-bench Lite corpus.
 
 **Current state (2026-05-12).** Final agreement `0.866667 < 0.95`.
 Rolling windows `0.775`, `0.8375`, `0.9875`. Source of truth:
-`/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`.
+`/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`.
 
 ### 50.1 Falsifiable predictions (the project's public commitments)
 
@@ -4060,13 +4060,13 @@ should revise — not paper over.
 - Source identifier + corpus SHA.
 
 FSV evidence:
-`/mnt/d/contextgraph/fsv/contextgraph-mejepa-production-telemetry-fsv/production-telemetry-evidence.json`.
+`/zfs/archive/contextgraph/fsv/contextgraph-mejepa-production-telemetry-fsv/production-telemetry-evidence.json`.
 
 ### 51.2 Pairwise MI heatmap
 
 CSV → PNG / markdown rendering via `PairwiseMiAuditor` + CSV writer
 + `mejepa_audit_pairwise_mi` MCP tool. Weekly cron writes a report
-to `/mnt/d/contextgraph/exports/eval/<date>/weekly.md` (Phase F
+to `/zfs/archive/contextgraph/exports/eval/<date>/weekly.md` (Phase F
 target).
 
 ### 51.3 VRAM accounting
@@ -4186,7 +4186,7 @@ CI runs the full suite; `cargo test` is allowed and encouraged.
     └── skills/                          # Operator-driven skills
 
 # D-drive (durable bulk state)
-/mnt/d/contextgraph/
+/zfs/archive/contextgraph/
 ├── corpus/                              # 7,520 corpus rows + index/verify
 ├── fsv/                                 # Per-task FSV evidence
 ├── runtime/
@@ -4199,8 +4199,8 @@ CI runs the full suite; `cargo test` is allowed and encouraged.
 
 **Never write scratch files to the project root.** Tests of
 interactive flows may live under `/tmp/`. Bulk durable state lives
-under `/mnt/d/contextgraph/`. Per-session evidence belongs under
-`/mnt/d/contextgraph/fsv/<task>-fsv/`.
+under `/zfs/archive/contextgraph/`. Per-session evidence belongs under
+`/zfs/archive/contextgraph/fsv/<task>-fsv/`.
 
 ---
 
@@ -4415,7 +4415,7 @@ Familiarize yourself with the skill list at session start.
 Before declaring the turn complete:
 
 - [ ] **FSV evidence** captured at
-  `/mnt/d/contextgraph/fsv/<task>-fsv/<artifact>.json` with
+  `/zfs/archive/contextgraph/fsv/<task>-fsv/<artifact>.json` with
   `all_passed: true`, `cf_counts_before` / `cf_counts_after`,
   `readback_equal: true`, ≥ 3 boundary cases.
 - [ ] **Physical artifacts** verified — SST files exist with

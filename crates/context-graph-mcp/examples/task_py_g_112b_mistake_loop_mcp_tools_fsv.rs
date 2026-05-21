@@ -108,15 +108,6 @@ fn main() -> Result<()> {
     let edge_record_invalid_panel =
         record_invalid_panel_no_partial_write_case(&root, &db_path, &seed)?;
     let edge_target_label = target_label_case(&root, &db_path, &seed)?;
-    let edge_mntd = tool_error_case(
-        &root,
-        tool_names::MEJEPA_MISTAKE_LOOP_STATUS,
-        json!({
-            "dbPath": "/mnt/d/contextgraph/legacy-mistake-loop.db",
-            "panelSignatureHash": seed.panel_signature_hash
-        }),
-        "MEJEPA_MISTAKE_LOOP_STATUS_FAILED",
-    )?;
 
     let all_passed = definitions_case["pass"].as_bool() == Some(true)
         && happy_record["onlineHeadUpdate"]["samePanelSignatureCorrected"].as_bool() == Some(true)
@@ -130,8 +121,7 @@ fn main() -> Result<()> {
         && edge_missing_cfs["pass"].as_bool() == Some(true)
         && edge_invalid_panel["pass"].as_bool() == Some(true)
         && edge_record_invalid_panel["pass"].as_bool() == Some(true)
-        && edge_target_label["pass"].as_bool() == Some(true)
-        && edge_mntd["pass"].as_bool() == Some(true);
+        && edge_target_label["pass"].as_bool() == Some(true);
 
     let report = json!({
         "artifactKind": "task_py_g_112b_mistake_loop_mcp_tools_fsv",
@@ -159,11 +149,9 @@ fn main() -> Result<()> {
             "missingCfs": edge_missing_cfs,
             "invalidPanelSignature": edge_invalid_panel,
             "recordInvalidPanelNoPartialWrite": edge_record_invalid_panel,
-            "targetSideLabelsAsLiveInputs": edge_target_label,
-            "legacyMntDRoot": edge_mntd
+            "targetSideLabelsAsLiveInputs": edge_target_label
         },
-        "noCachedJsonSummary": true,
-        "mntDActiveReadsOrWrites": false
+        "noCachedJsonSummary": true
     });
     let report_path = root.join(REPORT_NAME);
     fs::write(&report_path, serde_json::to_vec_pretty(&report)?)?;

@@ -117,7 +117,6 @@ pub struct DockerOutcomeMaterializationReport {
     pub resolved_index_mismatch_count: u64,
     pub oracle_per_test_count_mismatch_count: u64,
     pub prediction_patch_rows_attached: u64,
-    pub active_mnt_d_reads_or_writes: bool,
 }
 
 impl DockerOutcomeMaterializationReport {
@@ -128,7 +127,6 @@ impl DockerOutcomeMaterializationReport {
             && self.docker_report_missing_count == 0
             && self.resolved_index_mismatch_count == 0
             && self.oracle_per_test_count_mismatch_count == 0
-            && !self.active_mnt_d_reads_or_writes
     }
 }
 

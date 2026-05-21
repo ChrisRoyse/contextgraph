@@ -31,11 +31,6 @@ const DEFAULT_FSV_ROOT: &str =
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse()?;
     let created_at = now_ms()?;
-    if args.fsv_root.to_string_lossy().contains("/mnt/d")
-        || args.label_root.to_string_lossy().contains("/mnt/d")
-    {
-        return Err("active TASK-PY-G-118 FSV paths must not use /mnt/d".into());
-    }
     fs::create_dir_all(&args.fsv_root)?;
     let run_root = args.fsv_root.join(format!("run-{created_at}"));
     fs::create_dir_all(&run_root)?;
@@ -104,12 +99,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let edge_target_label_rejected = target_label_edge_rejected();
     let edge_too_broad_rejected = too_broad_pattern_edge_rejected()?;
-    let edge_mnt_d_rejected = build_skill_corpus_materialization(
-        "/zfs/archive/contextgraph/not-active",
-        config,
-        created_at,
-    )
-    .is_err();
 
     let expected_counts_match = reopened_counts == after_counts
         && after_counts["level2Skills"] == build.report.materialized_skill_count as u64
@@ -125,12 +114,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && build.report.slot_identity_preserved
         && !build.report.flat_vector_concat_used
         && !build.report.target_labels_used_as_live_inputs
-        && !build.report.mnt_d_active_reads_or_writes
         && expected_counts_match
         && readback_matches
         && edge_target_label_rejected
-        && edge_too_broad_rejected
-        && edge_mnt_d_rejected;
+        && edge_too_broad_rejected;
 
     let report_path = run_root.join("task_py_g_118_aiwonder_skill_materialization_fsv.json");
     let report = json!({
@@ -163,11 +150,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         "edge_cases": {
             "target_oracle_label_rejected_as_live_skill_input": edge_target_label_rejected,
-            "too_broad_high_support_static_pattern_rejected": edge_too_broad_rejected,
-            "mnt_d_active_path_rejected": edge_mnt_d_rejected
+            "too_broad_high_support_static_pattern_rejected": edge_too_broad_rejected
         },
         "active_path_policy": {
-            "mnt_d_active_reads_or_writes": false,
             "aiwonder_label_root": true,
             "target_outcomes_supervise_only": true,
             "flat_vector_concat_used": false

@@ -104,8 +104,7 @@ fn run() -> Result<()> {
         && code_state_audit["passed"].as_bool() == Some(true)
         && policy_audit["passed"].as_bool() == Some(true)
         && source_audit["passed"].as_bool() == Some(true)
-        && fail_closed["passed"].as_bool() == Some(true)
-        && !active_paths_include_mntd();
+        && fail_closed["passed"].as_bool() == Some(true);
 
     let report_path = run_dir.join(REPORT_NAME);
     let readback_path = run_dir.join(READBACK_NAME);
@@ -129,7 +128,6 @@ fn run() -> Result<()> {
             "readback_path": readback_path
         },
         "active_path_policy": {
-            "mnt_d_active_reads_or_writes": false,
             "active_inputs": active_input_paths()
         },
         "ship_gate_measurement": {
@@ -652,12 +650,6 @@ fn active_input_paths() -> Vec<&'static str> {
         CODE_STATE_CONSTELLATIONS_PATH,
         SHIP_GATE_SOURCE_PATH,
     ]
-}
-
-fn active_paths_include_mntd() -> bool {
-    active_input_paths()
-        .iter()
-        .any(|path| path.contains("/mnt/d"))
 }
 
 fn read_json(path: impl AsRef<Path>) -> Result<Value> {

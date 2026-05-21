@@ -191,11 +191,6 @@ fn read_checkpoint_evidence(manifest_path: &Path) -> Result<CheckpointEvidence> 
         "TASK-PY-G-126_TRAINED_CHECKPOINT_NOT_ON_AIWONDER_ZFS: {}",
         manifest_path.display()
     );
-    ensure!(
-        !manifest_path.starts_with("/mnt/d"),
-        "TASK-PY-G-126_TRAINED_CHECKPOINT_MNT_D_FORBIDDEN: {}",
-        manifest_path.display()
-    );
     let manifest_bytes = fs::read(manifest_path).with_context(|| {
         format!(
             "read trained checkpoint manifest {}",

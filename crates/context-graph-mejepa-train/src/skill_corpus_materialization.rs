@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 const SOURCE_FILE: &str =
     "file:crates/context-graph-mejepa-train/src/skill_corpus_materialization.rs";
 const REMEDIATION: &str =
-    "production skill materialization must stream aiwonder #413 labels, preserve live/target label boundaries, and avoid /mnt/d";
+    "production skill materialization must stream aiwonder #413 labels and preserve live/target label boundaries";
 const MAX_STEP_LABELS: usize = 8;
 const MAX_GROUP_IDS: usize = 4;
 
@@ -90,7 +90,6 @@ pub struct SkillCorpusMaterializationReport {
     pub slot_identity_preserved: bool,
     pub flat_vector_concat_used: bool,
     pub target_labels_used_as_live_inputs: bool,
-    pub mnt_d_active_reads_or_writes: bool,
     pub sample_episodes: Vec<SkillEpisodeSummary>,
     pub sample_skill_ids: Vec<String>,
 }
@@ -272,7 +271,6 @@ pub fn build_skill_corpus_materialization(
         slot_identity_preserved: true,
         flat_vector_concat_used: false,
         target_labels_used_as_live_inputs: false,
-        mnt_d_active_reads_or_writes: false,
         sample_episodes,
         sample_skill_ids,
     };
@@ -1192,12 +1190,6 @@ fn validate_config(config: &SkillCorpusMaterializationConfig) -> Result<(), Trai
 
 fn validate_path(field: &str, path: &Path) -> Result<(), TrainerError> {
     let value = path.display().to_string();
-    if value.contains("/mnt/d") {
-        return Err(invalid(
-            field,
-            "active production paths must not use /mnt/d",
-        ));
-    }
     validate_id(field, &value)
 }
 

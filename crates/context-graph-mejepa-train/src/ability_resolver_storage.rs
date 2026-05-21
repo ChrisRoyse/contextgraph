@@ -13,7 +13,6 @@ pub fn open_ability_resolver_rocksdb(
     path: &Path,
     create_if_missing: bool,
 ) -> Result<DB, TrainerError> {
-    validate_path_not_mntd("ability_resolver_db", path)?;
     let mut opts = Options::default();
     opts.create_if_missing(create_if_missing);
     opts.create_missing_column_families(create_if_missing);
@@ -46,10 +45,3 @@ pub fn ability_resolver_cfs() -> Vec<String> {
     ]
 }
 
-fn validate_path_not_mntd(field: &str, path: &Path) -> Result<(), TrainerError> {
-    let value = path.display().to_string();
-    if value == "/mnt/d" || value.starts_with("/mnt/d/") {
-        return Err(invalid(field, "must not reference legacy /mnt/d state"));
-    }
-    Ok(())
-}

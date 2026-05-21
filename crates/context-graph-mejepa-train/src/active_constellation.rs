@@ -778,13 +778,6 @@ fn build_pairwise_tensors(
 }
 
 fn validate_aiwonder_artifact_root(path: &Path) -> Result<(), TrainerError> {
-    let text = path.to_string_lossy();
-    if text.contains("/mnt/d") {
-        return Err(config_error(format!(
-            "native constellation artifacts must not use /mnt/d: {}",
-            path.display()
-        )));
-    }
     if !path.starts_with("/zfs/archive/contextgraph") && !path.starts_with("/zfs/hot/contextgraph")
     {
         return Err(config_error(format!(

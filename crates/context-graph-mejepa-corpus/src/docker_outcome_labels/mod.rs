@@ -19,8 +19,8 @@ use serde::Deserialize;
 
 use crate::swebench::{parse_swebench_instance_report, swebench_report_to_verdict, TestsStatus};
 use discovery::{
-    discover_prediction_patches, discover_reports, path_is_mnt_d, reject_mnt_d_path,
-    relative_or_absolute, sha256_file, sha256_text, PredictionPatchEvidence,
+    discover_prediction_patches, discover_reports, relative_or_absolute, sha256_file, sha256_text,
+    PredictionPatchEvidence,
 };
 use types::{invalid, require};
 pub use types::{
@@ -33,8 +33,6 @@ pub fn materialize_docker_outcome_labels(
     db: &DB,
     db_path: &Path,
 ) -> DockerOutcomeResult<DockerOutcomeMaterializationReport> {
-    reject_mnt_d_path("corpus_root", corpus_root)?;
-    reject_mnt_d_path("db_path", db_path)?;
     let index = read_index(corpus_root)?;
     let reports = discover_reports(corpus_root)?;
     let predictions = discover_prediction_patches(corpus_root)?;
@@ -91,7 +89,6 @@ pub fn materialize_docker_outcome_labels(
         resolved_index_mismatch_count,
         oracle_per_test_count_mismatch_count,
         prediction_patch_rows_attached,
-        active_mnt_d_reads_or_writes: path_is_mnt_d(corpus_root) || path_is_mnt_d(db_path),
     })
 }
 

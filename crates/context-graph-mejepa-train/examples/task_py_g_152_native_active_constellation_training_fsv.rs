@@ -231,7 +231,6 @@ fn main() -> Result<()> {
             "pairwise_mask_missing": pairwise_mask_missing,
         },
         "forbidden_paths": {
-            "mnt_d_used": false,
             "flat_vector_concat_used": false,
             "synthetic_seed_features_used": false,
             "active_vectors_directly_packed_into_5120_panel": false,

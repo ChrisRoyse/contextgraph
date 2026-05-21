@@ -49,9 +49,9 @@ Beyond the binary primitive ME-JEPA exposes two derived operator-facing surfaces
 
 **Phases A–H complete.** 35/35 Phase A–D items audit-verified 2026-05-12. Phase H (inner-actor LLM retirement) FSV-verified 2026-05-13 — `feature = "llm"` triggers `compile_error!` at `crates/context-graph-mcp/src/lib.rs:13`; deletion of `Qwen3.6-27B`, `Hermes-2-Pro`, `Ollama`, `llama.cpp` generative inference enforced by 9 `scripts/ci/phase_h_*.sh` absence-checks.
 
-**The only outstanding gate is Phase G model-quality convergence:** `prediction_oracle_correlation = 0.866667 < 0.95` on Panel A (legacy `/mnt/d/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; #369 closed the aiwonder migration revalidation sweep, and #405 produces the first Panel B cross-panel measurement).
+**The only outstanding gate is Phase G model-quality convergence:** `prediction_oracle_correlation = 0.866667 < 0.95` on Panel A (legacy `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; #369 closed the aiwonder migration revalidation sweep, and #405 produces the first Panel B cross-panel measurement).
 
-**Post-migration storage:** Production durable state lives on aiwonder under `/zfs/archive/contextgraph/...`; hot work under `/zfs/hot/contextgraph/...` (per #363 / #412). Local `/mnt/d/contextgraph/...` is **legacy provenance only** — not an active read/write target. If needed data only exists there, move it to aiwonder first.
+**Post-migration storage:** Production durable state lives on aiwonder under `/zfs/archive/contextgraph/...`; hot work under `/zfs/hot/contextgraph/...` (per #363 / #412).
 
 **2026-05-19 cleanup pass (this session).** Investigation reports at `./docs/INVESTIGATION_{1,2,3}_*.md` drove ~314,000 LOC removed across 4 commits, including:
 
@@ -61,7 +61,7 @@ Beyond the binary primitive ME-JEPA exposes two derived operator-facing surfaces
 - Removed `linear_probe.rs`, `stdlib_registry.rs`, pre-pivot benchmark bins (`causal_*`, `multimodal_*`, `embedder_impact_*`, `weight_profile_bench`, `e2_manual_verification`, `e10_modifier_tuning`, `e11_entity_bench`).
 - Removed 42 retired Shakespeare LoRA training scripts (4 historical-only stubs retained — Phase H absence-check tracks them).
 - Removed `.claude/skills/ccreality-{iterate,readback,smoke,trigger-check}/`, `docs2/contextgraphspecs/`, `docs2/realitywhitepaper/`, `backupdocs/*` numbered duplicates.
-- Retired obsolete WSL/Shakespeare/EXP-2 script trees and re-pointed remaining active runtime defaults from `/mnt/d/...` to aiwonder.
+- Retired obsolete WSL/Shakespeare/EXP-2 script trees and re-pointed remaining active runtime defaults to aiwonder.
 - Re-branded 7 storage-test `validator_version: "hermes-2-pro-mistral-7b-q5-km@2026-04"` strings → `"deterministic-validator-v1@2026-05"`.
 
 **Current work source.** GitHub Issues are the live source of truth. Read pinned `type:context` issues first, then `docs/futurebuild/README.md` for the 8-doc map and `docs/futurebuild/08_roadmap_and_open_work.md` for the latest roadmap.
@@ -177,7 +177,7 @@ These are non-negotiable and project-specific. Doctrine universal rules still ap
 4. **Reality-shift principle.** No alteration without current state. No alteration without a delta back into perception. Pre/post-tool hooks enforce this.
 5. **GENERIC-ONLY in the trained model.** Every trained primitive must generalize across every SWE-bench task, every Python repo, every bug class. Mental check: *"would this be load-bearing for `psf__requests-2317` / `django__django-12286` / `sympy__sympy-13895` and any future repo?"* You may reason task-specifically when attempting a SWE-bench task; never bake task-specifics into the trained model.
 6. **Single outer loop around the invoking agent.** No inner LLM. The agent (Claude / Codex / Cursor) IS the actor. Its Edit / Write / Bash / tests ARE the data-generating process. Phase H absence-checks at `scripts/ci/phase_h_*.sh` assert this stays true.
-7. **aiwonder only for post-migration production durable state.** Production corpora, FSV evidence, runtime shift logs, test outcomes, project-ingest outputs, and weekly exports live under `/zfs/archive/contextgraph/...` on aiwonder; hot staging lives under `/zfs/hot/contextgraph/...` or explicitly budgeted aiwonder scratch. Local `/mnt/d/contextgraph/...` is legacy provenance only and must not be used for active reads or writes.
+7. **aiwonder only for post-migration production durable state.** Production corpora, FSV evidence, runtime shift logs, test outcomes, project-ingest outputs, and weekly exports live under `/zfs/archive/contextgraph/...` on aiwonder; hot staging lives under `/zfs/hot/contextgraph/...` or explicitly budgeted aiwonder scratch. 
 8. **No backwards compatibility.** Pre-production tree. Wipe DB on schema change; fail fast with structured errors; never write migration shims.
 9. **Upstream reference-only — clean-room.** Never vendor / path-dep / npm-depend on `ruvnet/agentdb` or `ruvnet/ruvector`. Reimplement borrowed ideas in our own crates.
 10. **No HTTP from action paths.** MCP server is the only network surface. `WebSearch` / `WebFetch` / `mcp__exa__*` are read-only research tools. No `curl` / `wget` / `fetch` in action code paths.
@@ -240,10 +240,10 @@ If editing one of these is genuinely the right thing for an operator-directed ta
 └── runtime/                             # Active scheduler logs and hot run state
 
 # local legacy provenance only — NOT an active data root
-/mnt/d/contextgraph/
+/zfs/archive/contextgraph/
 ```
 
-CI lint `scripts/ci/check_no_c_drive_paths.sh` blocks C-drive paths in code or FSV files. `scripts/ci/no_mnt_d_production_paths_fsv.py` classifies residual `/mnt/d` references and fails on active production reads/writes (#412 / #434).
+CI lint `scripts/ci/check_no_c_drive_paths.sh` blocks C-drive paths in code or FSV files.
 
 ---
 
@@ -257,7 +257,7 @@ CI lint `scripts/ci/check_no_c_drive_paths.sh` blocks C-drive paths in code or F
 6. **Audit the task** against the live tree per `docs/futurebuild/specs/FSV-PROTOCOL.md` §7. `ASSUME THE TASK IS WRONG`. Examine code BEFORE reading claims (Linear Sequential Unmasking, doctrine §2.8).
 7. **Plan.** Trigger → Process → Outcome (doctrine §2.2). Name the SoT. List ≥3 boundary cases.
 8. **Work.** Ship one primitive end-to-end. Comment milestone updates on the issue (doctrine §3.5) — discovery / direction-change / heartbeat / sibling-issue. Never silent.
-9. **Verify** per doctrine §4: `cargo build --release -p <crate>`, `cargo test -p <crate>`, `cargo clippy -p <crate> --no-deps --tests --examples -- -D warnings`. Production FSV harnesses write to `/zfs/archive/contextgraph/fsv/<task>-fsv/<artifact>.json` on aiwonder, with independent re-open readback for any RocksDB write. `/mnt/d/contextgraph/fsv/...` is historical provenance only, not an active closeout target.
+9. **Verify** per doctrine §4: `cargo build --release -p <crate>`, `cargo test -p <crate>`, `cargo clippy -p <crate> --no-deps --tests --examples -- -D warnings`. Production FSV harnesses write to `/zfs/archive/contextgraph/fsv/<task>-fsv/<artifact>.json` on aiwonder, with independent re-open readback for any RocksDB write. not an active closeout target.
 10. **Simplify** (doctrine §17.1 / per-PR gate): files ≤500 lines, functions ≤30 lines, cyclomatic ≤10; avoid nested ternaries; prefer `match` / `if let` / explicit `if / else if / else`.
 11. **Forensic pass** (doctrine §11) for non-trivial primitives: Cold Read, Contradiction Engine, ≥3 hypotheses, LSU bias check.
 12. **Close out** (doctrine §3.6–§3.8) — comment RESOLVED / PAUSE / BLOCKED on each worked issue. RESOLVED comment includes: fix summary (root cause + structural fix), build/test/clippy status, FSV evidence (SoT before → action → SoT after with values), regression test name, side effects observed, follow-up issues filed.
@@ -395,7 +395,7 @@ All independent tool calls in a single response MUST be made in one message. Bat
 - **Minimal impact.** Changes touch only what's necessary; avoid introducing bugs in unrelated code.
 - **Document failure as carefully as success — in issue comments.** Failure is the next agent's lesson.
 - **GitHub Issues are the single source of truth for memory across agents** (doctrine §3). If it isn't in Issues, it dies with the session.
-- **`/zfs/archive/contextgraph/` on aiwonder is the production durable SoT** for post-migration FSV evidence. Local `/mnt/d/contextgraph/` evidence does not count for production closeout and must not be used as an active input.
+- **`/zfs/archive/contextgraph/` on aiwonder is the production durable SoT** for post-migration FSV evidence. 
 - **Binary > calibrated.** The system was reframed 2026-05-19 from "calibrated multi-head RealityPrediction" to "binary reality predictor with labeled explanation surfaces". Q4 ambiguous heads are out of scope.
 
 ---

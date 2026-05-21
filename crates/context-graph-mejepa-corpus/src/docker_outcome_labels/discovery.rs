@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use super::types::{invalid, require, DockerOutcomeLabelRow, DockerOutcomeResult};
+use super::types::{DockerOutcomeLabelRow, DockerOutcomeResult};
 
 #[derive(Debug, Clone)]
 pub(crate) struct PredictionPatchEvidence {
@@ -101,9 +101,6 @@ fn recursive_files(root: &Path, suffix: &str) -> DockerOutcomeResult<Vec<PathBuf
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path_is_mnt_d(&path) {
-                return Err(invalid(format!("refusing /mnt/d path {}", path.display())));
-            }
             if path.is_dir() {
                 stack.push(path);
             } else if path
@@ -140,17 +137,3 @@ fn sha256_bytes(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub(crate) fn reject_mnt_d_path(field: &str, path: &Path) -> DockerOutcomeResult<()> {
-    require(
-        !path_is_mnt_d(path),
-        format!("{field} must not point at legacy /mnt/d storage"),
-    )
-}
-
-pub(crate) fn path_is_mnt_d(path: &Path) -> bool {
-    path.components()
-        .map(|component| component.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .windows(2)
-        .any(|window| window[0] == "mnt" && window[1].eq_ignore_ascii_case("d"))
-}

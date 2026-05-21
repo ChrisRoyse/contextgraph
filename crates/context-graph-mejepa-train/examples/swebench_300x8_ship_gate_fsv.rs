@@ -105,7 +105,6 @@ fn run() -> Result<()> {
 
     let verify_evidence = read_json(VERIFY_PATH)?;
     let verify_evidence_sha256 = sha256_file(VERIFY_PATH)?;
-    let legacy_mntd_in_verify_evidence = json_contains_string(&verify_evidence, "/mnt/d/");
     ensure!(
         verify_evidence["passes"].as_bool() == Some(true),
         "corpus verify evidence must pass"
@@ -256,8 +255,7 @@ fn run() -> Result<()> {
             .unwrap_or_default()
             > 1
         && panel_audit["real_patch_paths_read"].as_u64() == Some(REQUIRED_HOLDOUT_COUNT as u64)
-        && rank_lift_repair_evidence["acceptance_passed"].as_bool() == Some(true)
-        && !active_paths_include_mntd();
+        && rank_lift_repair_evidence["acceptance_passed"].as_bool() == Some(true);
 
     let report = json!({
         "schema_version": 2,
@@ -278,9 +276,7 @@ fn run() -> Result<()> {
         },
         "pre_state": {
             "active_path_policy": {
-                "mnt_d_active_reads_or_writes": false,
                 "active_inputs": active_input_paths(),
-                "legacy_mntd_strings_in_verify_evidence": legacy_mntd_in_verify_evidence,
                 "verify_evidence_sha256": verify_evidence_sha256
             },
             "corpus_verify": {
@@ -2404,21 +2400,6 @@ fn active_input_paths() -> Vec<&'static str> {
         CODE_STATE_CONSTELLATIONS_PATH,
         FSV_ROOT,
     ]
-}
-
-fn active_paths_include_mntd() -> bool {
-    active_input_paths()
-        .iter()
-        .any(|path| path.starts_with("/mnt/d/"))
-}
-
-fn json_contains_string(value: &Value, needle: &str) -> bool {
-    match value {
-        Value::String(text) => text.contains(needle),
-        Value::Array(items) => items.iter().any(|item| json_contains_string(item, needle)),
-        Value::Object(map) => map.values().any(|item| json_contains_string(item, needle)),
-        _ => false,
-    }
 }
 
 fn read_json(path: impl AsRef<Path>) -> Result<Value> {

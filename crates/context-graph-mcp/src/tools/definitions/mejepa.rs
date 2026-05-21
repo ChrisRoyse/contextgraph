@@ -1497,7 +1497,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "properties": {
                     "dbPath": {
                         "type": "string",
-                        "description": "Optional #406/#418 RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_TRAIN_DB or CONTEXTGRAPH_MEJEPA_INFER_DB is used. Legacy /mnt/d roots fail closed."
+                        "description": "Optional #406/#418 RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_TRAIN_DB or CONTEXTGRAPH_MEJEPA_INFER_DB is used. Path must live under aiwonder /zfs/archive/contextgraph or /zfs/hot/contextgraph."
                     },
                     "panelSignatureHash": {
                         "type": "string",

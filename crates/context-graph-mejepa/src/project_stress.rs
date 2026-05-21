@@ -819,16 +819,12 @@ fn default_trace_root() -> PathBuf {
 }
 
 fn require_stress_trace_root(path: &Path) -> Result<PathBuf, ProjectStressError> {
-    let normalized = context_graph_paths::require_production_durable_root_or_named_local_smoke(
+    let normalized = context_graph_paths::require_production_durable_root(
         path,
         "project_stress.trace_root",
     )?;
     let production_runtime = Path::new(context_graph_paths::AIWONDER_DURABLE_ROOT).join("runtime");
-    let legacy_runtime = Path::new(context_graph_paths::LEGACY_LOCAL_DATA_ROOT).join("runtime");
-    if normalized.starts_with(&production_runtime)
-        || (context_graph_paths::named_local_smoke_issue().is_some()
-            && normalized.starts_with(&legacy_runtime))
-    {
+    if normalized.starts_with(&production_runtime) {
         Ok(normalized)
     } else {
         Err(ProjectStressError::InvalidInput {

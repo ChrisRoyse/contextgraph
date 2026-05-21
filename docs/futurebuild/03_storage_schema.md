@@ -243,7 +243,6 @@ Dimension constants: `E1_DIM`, `E1_MATRYOSHKA_DIM`, `E2_DIM`, …, `E13_SPLADE_V
 | **Production durable SoT** | `/zfs/archive/contextgraph/` (aiwonder) | All production: corpus, FSV evidence, runtime shift logs, test outcomes, project-ingest outputs, weekly exports, durable state | Multi-month; never auto-pruned |
 | **Production hot** | `/zfs/hot/contextgraph/` (aiwonder) | Hot work: repo checkout, model weights, stable hot inputs, active scheduler logs | Days to weeks |
 | **Aiwonder scratch** | Explicitly budgeted dirs | Issue-scoped smokes | Per-issue |
-| **Legacy / local** | `/mnt/d/contextgraph/` | **Historical provenance only.** No active reads/writes for production. | Frozen |
 | **Ephemeral** | `/tmp/contextgraph-*` | Test scratch | Process lifetime |
 
 ### 5.1 Aiwonder production directory layout
@@ -304,7 +303,7 @@ Dimension constants: `E1_DIM`, `E1_MATRYOSHKA_DIM`, `E2_DIM`, …, `E13_SPLADE_V
 - `crates/*/src/verifiers/**`
 - `*.pem`, `*.key`, `**/credentials.json`
 
-CI lint blocks C-drive paths (`scripts/ci/check_no_c_drive_paths.sh`) and classifies residual `/mnt/d` references (`scripts/ci/no_mnt_d_production_paths_fsv.py`).
+CI lint blocks C-drive paths (`scripts/ci/check_no_c_drive_paths.sh`).py`).
 
 ### 5.4 Fail-closed on non-aiwonder production roots
 

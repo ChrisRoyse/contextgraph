@@ -40,9 +40,6 @@ const DEFAULT_FSV_ROOT: &str =
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse()?;
     let created_at = now_ms()?;
-    if contains_mntd(&args.fsv_root) || contains_mntd(&args.label_root) {
-        return Err("TASK-PY-G-110 hierarchy FSV paths must not use /mnt/d".into());
-    }
     fs::create_dir_all(&args.fsv_root)?;
     let run_root = args.fsv_root.join(format!("run-{created_at}"));
     fs::create_dir_all(&run_root)?;
@@ -148,8 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && build.report.chunk_rows_with_live_skill_labels == build.report.chunk_rows_streamed
         && build.report.slot_identity_preserved
         && !build.report.flat_vector_concat_used
-        && !build.report.target_labels_used_as_live_inputs
-        && !build.report.mnt_d_active_reads_or_writes;
+        && !build.report.target_labels_used_as_live_inputs;
     let holdout_pass = holdout_eval.passes;
     let all_passed =
         readback_pass && hierarchy_pass && runtime_pass && substrate_pass && holdout_pass;
@@ -199,7 +195,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "holdout_named_mode_coverage_and_exemplar_agreement": holdout_pass
         },
         "active_path_policy": {
-            "mnt_d_active_reads_or_writes": false,
             "aiwonder_label_root": true,
             "flat_vector_concat_used": false,
             "target_labels_used_as_live_inputs": false
@@ -440,11 +435,6 @@ fn tree_state(path: &Path) -> Result<serde_json::Value, Box<dyn std::error::Erro
             .cmp(right["name"].as_str().unwrap_or_default())
     });
     Ok(json!({"path": path, "entries": entries}))
-}
-
-fn contains_mntd(path: &Path) -> bool {
-    let value = path.to_string_lossy();
-    value == "/mnt/d" || value.starts_with("/mnt/d/")
 }
 
 fn now_ms() -> Result<i64, Box<dyn std::error::Error>> {

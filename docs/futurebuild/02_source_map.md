@@ -275,7 +275,6 @@ Full FSV evidence index → `07_results_and_benchmarks.md`.
 - `.github/workflows/` — GitHub Free plan budget: `runs-on: ubuntu-latest` only, `timeout-minutes: ≤30` default / `≤60` cap, Actions pinned to SHA, cron weekly for SAST / daily for stale.
 - `.github/labels.yml` + `scripts/gh-labels-bootstrap.sh` — label set (memory = Issues).
 - `scripts/ci/check_no_c_drive_paths.sh` — blocks C-drive paths in code/FSV files.
-- `scripts/ci/no_mnt_d_production_paths_fsv.py` — classifies `/mnt/d` references; fails on active production reads/writes.
 - `scripts/ci/phase_g_*.sh`, `scripts/ci/phase_h_*.sh` — operator-invoked Phase G/H audit harnesses.
 
 ---

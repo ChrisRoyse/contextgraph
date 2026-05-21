@@ -37,11 +37,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     )
     .validate()
     .is_err();
-    let legacy_d_rejected =
-        validate_aiwonder_models_root(Path::new("/mnt/d/contextgraph/models")).is_err();
+    let non_aiwonder_root_rejected =
+        validate_aiwonder_models_root(Path::new("/tmp/contextgraph/models")).is_err();
     let missing_have_no_synthetic_sha = manifest.missing.is_empty()
         || manifest.artifact_shas_by_slot().len() == manifest.artifacts.len();
-    let all_passed = artifact_contract_valid && synthetic_rejected && legacy_d_rejected;
+    let all_passed = artifact_contract_valid && synthetic_rejected && non_aiwonder_root_rejected;
     let evidence = json!({
         "artifactKind": "task_py_g_111b_panel_b_artifact_preflight_fsv",
         "schemaVersion": 1,
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "missingArtifactCount": manifest.missing.len(),
             "artifactContractValid": artifact_contract_valid,
             "syntheticArtifactIdsRejected": synthetic_rejected,
-            "legacyDDriveModelRootRejected": legacy_d_rejected,
+            "nonAiwonderModelRootRejected": non_aiwonder_root_rejected,
             "missingArtifactsHaveNoSyntheticSha": missing_have_no_synthetic_sha,
             "activePathPolicy": {
                 "mntDActiveReadsOrWrites": false

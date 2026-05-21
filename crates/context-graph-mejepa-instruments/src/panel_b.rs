@@ -246,9 +246,6 @@ pub fn validate_aiwonder_models_root(path: &Path) -> InstrumentResult<PathBuf> {
     if !path.is_absolute() {
         return Err(model_root_error(path));
     }
-    if path.starts_with("/mnt/d") {
-        return Err(model_root_error(path));
-    }
     for root in [
         Path::new("/zfs/hot/contextgraph"),
         Path::new("/zfs/archive/contextgraph"),
@@ -340,9 +337,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rejects_legacy_d_mount_model_root() {
-        let err = validate_aiwonder_models_root(Path::new("/mnt/d/contextgraph/models"))
-            .expect_err("legacy D mount must be rejected");
+    fn rejects_non_aiwonder_model_root() {
+        let err = validate_aiwonder_models_root(Path::new("/tmp/contextgraph/models"))
+            .expect_err("non-aiwonder root must be rejected");
         assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
     }
 

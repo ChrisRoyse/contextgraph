@@ -314,11 +314,6 @@ pub(crate) fn validate_aiwonder_checkpoint_path(
         });
     }
     let display = path.to_string_lossy();
-    if display.contains("/mnt/d") || display.contains("\\mnt\\d") {
-        return Err(PredictorError::ConfigInvalid {
-            detail: format!("{field} must not reference legacy /mnt/d storage: {display}"),
-        });
-    }
     if !display.starts_with("/zfs/archive/contextgraph/")
         && !display.starts_with("/zfs/hot/contextgraph/")
     {

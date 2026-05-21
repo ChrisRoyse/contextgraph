@@ -381,12 +381,11 @@ Universal FSV-PROTOCOL §1.1–§1.5 applies. The additions below are protocol-s
 **Level 0 reference assertions (shipped):**
 
 1. `slot_identity_preserved=true` and `flat_vector_concat_used=false` recorded in FSV manifest.
-2. No `/mnt/d` active I/O.
-3. Manual review reproduction: 12/12 deterministic conclusions reproduced.
-4. **Coverage:** every chunk in the 399,777-row corpus emits ≥1 Level-0 label.
-5. **Leakage policy:** outcome labels marked `leakage_policy:target_side_only`; live predictor inputs do NOT include them.
-6. **Usefulness gate:** 491 entered accepted registry; rejected labels carry typed reasons.
-7. **Independent readback:** every JSONL byte-replayed after clean re-read; sha256 recorded.
+2. Manual review reproduction: 12/12 deterministic conclusions reproduced.
+3. **Coverage:** every chunk in the 399,777-row corpus emits ≥1 Level-0 label.
+4. **Leakage policy:** outcome labels marked `leakage_policy:target_side_only`; live predictor inputs do NOT include them.
+5. **Usefulness gate:** 491 entered accepted registry; rejected labels carry typed reasons.
+6. **Independent readback:** every JSONL byte-replayed after clean re-read; sha256 recorded.
 
 **Level 1/2/3 hierarchy assertions (shipped):**
 

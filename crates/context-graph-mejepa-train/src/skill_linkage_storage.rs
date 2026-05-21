@@ -6,13 +6,12 @@ use context_graph_mejepa_cf::{
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::path::Path;
 
-use super::{invalid, validate_path_not_mntd};
+use super::invalid;
 
 pub fn open_skill_linkage_rocksdb(
     path: &Path,
     create_if_missing: bool,
 ) -> Result<DB, TrainerError> {
-    validate_path_not_mntd("skill_linkage_db", path)?;
     let mut opts = Options::default();
     opts.create_if_missing(create_if_missing);
     opts.create_missing_column_families(create_if_missing);

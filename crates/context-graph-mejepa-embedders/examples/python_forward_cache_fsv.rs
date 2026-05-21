@@ -1053,8 +1053,8 @@ fn materialize_hot_model_registration(
     require("pretrained model source root exists", source_root.is_dir())?;
     let hot_root = paths.hot_model_cache_root();
     require(
-        "hot model cache root is WSL ext4, not a Windows mount",
-        !hot_root.starts_with("/mnt/c") && !hot_root.starts_with("/mnt/d"),
+        "hot model cache root is not a Windows mount",
+        !hot_root.starts_with("/mnt/c"),
     )?;
     fs::create_dir_all(&hot_root)?;
     fs::set_permissions(&hot_root, fs::Permissions::from_mode(0o700))?;

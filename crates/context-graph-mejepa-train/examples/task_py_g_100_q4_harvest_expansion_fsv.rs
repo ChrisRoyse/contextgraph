@@ -154,7 +154,7 @@ fn main() -> FsvResult<()> {
         "implementation_notes": {
             "slot_policy": "The Q4 catalog cites per-slot evidence and exact active embedder slots; no flat vector concatenation can satisfy this FSV.",
             "unsupported_head_policy": "Security and structural heads remain excluded from aggregate Q4 eligibility until producer and calibration evidence exists.",
-            "legacy_storage_policy": "All default paths are aiwonder /zfs/archive/contextgraph roots; /mnt/d is not a production SoT for this FSV."
+            "legacy_storage_policy": "All default paths are aiwonder /zfs/archive/contextgraph roots."
         }
     });
     write_json_checked(&evidence_path, &evidence)?;

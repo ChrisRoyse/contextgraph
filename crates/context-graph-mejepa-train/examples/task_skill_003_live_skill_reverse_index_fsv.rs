@@ -140,9 +140,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     )
     .is_err();
-    let mntd_path_rejected =
-        open_ability_resolver_rocksdb(Path::new("/mnt/d/contextgraph/bad.rocksdb"), true).is_err();
-
     db.flush()?;
     let after_counts = cf_counts(&db)?;
     drop(db);
@@ -193,10 +190,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             row.candidate_skill_id
                 .starts_with("skill_candidate:live_partial:")
         });
-    let edge_cases_pass = target_label_rejected
-        && missing_order_evidence_rejected
-        && file_path_order_rejected
-        && mntd_path_rejected;
+    let edge_cases_pass =
+        target_label_rejected && missing_order_evidence_rejected && file_path_order_rejected;
     let readback_pass = readback_counts == after_counts
         && readback_skills.len() == seeded_skills.len()
         && readback_memberships.len()
@@ -227,8 +222,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && synthetic_prediction_context.validate().is_ok()
         && swebench_prediction_context.validate().is_ok()
         && no_forbidden_runtime_policy(&synthetic_prediction_context)
-        && no_forbidden_runtime_policy(&swebench_prediction_context)
-        && !report_contains_forbidden_paths(&fsv_root);
+        && no_forbidden_runtime_policy(&swebench_prediction_context);
     let all_passed = synthetic_live_project_pass
         && swebench_replay_pass
         && partial_candidate_pass
@@ -283,7 +277,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "target_side_live_label_rejected": target_label_rejected,
             "missing_order_evidence_rejected": missing_order_evidence_rejected,
             "file_path_order_rejected": file_path_order_rejected,
-            "legacy_mnt_d_db_rejected": mntd_path_rejected,
             "passes": edge_cases_pass
         },
         "required_invariants": {
@@ -853,10 +846,6 @@ fn no_forbidden_runtime_policy(
                 )
             )
         })
-}
-
-fn report_contains_forbidden_paths(root: &Path) -> bool {
-    root.display().to_string().contains("/mnt/d")
 }
 
 fn tree_state(root: &Path) -> Result<BTreeMap<String, u64>, Box<dyn std::error::Error>> {

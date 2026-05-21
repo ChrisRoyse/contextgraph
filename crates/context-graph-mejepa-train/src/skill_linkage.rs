@@ -10,7 +10,6 @@ use context_graph_mejepa_cf::CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP;
 use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 
 #[path = "skill_linkage_graph.rs"]
 mod skill_linkage_graph;
@@ -725,14 +724,6 @@ fn validate_limit(limit: usize) -> Result<(), TrainerError> {
             "limit",
             format!("must be within 1..={MAX_QUERY_LIMIT}"),
         ));
-    }
-    Ok(())
-}
-
-fn validate_path_not_mntd(field: &str, path: &Path) -> Result<(), TrainerError> {
-    let value = path.display().to_string();
-    if value == "/mnt/d" || value.starts_with("/mnt/d/") {
-        return Err(invalid(field, "must not reference legacy /mnt/d state"));
     }
     Ok(())
 }

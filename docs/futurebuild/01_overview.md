@@ -416,7 +416,7 @@ docs/futurebuild/specs/FSV-PROTOCOL.md  — mandatory verification contract
 docs2/AICodingAgentSuperPrompt.md       — master doctrine
 docs2/hardeningprompt.md                — 14-axis hardening deep-dive
 scripts/cc/                             — Claude Code hook scripts
-scripts/ci/                             — CI lint (e.g. check_no_c_drive_paths.sh, no_mnt_d_production_paths_fsv.py)
+scripts/ci/                             — CI lint (e.g. check_no_c_drive_paths.sh)
 scripts/swebench_lite_ops/              — Python redaction + SWE-bench Lite helpers
 tasks/swebench-lite/                    — task manifest JSON
 config/                                 — governed paths, model pins
@@ -451,8 +451,7 @@ config/                                 — governed paths, model pins
 | **Hot** | Active checkpoints, model weights, hot run state | `/zfs/hot/contextgraph/` on aiwonder | Yes (re-download / rebuild) |
 | **Ephemeral** | `/tmp/contextgraph-*` scratch | `/tmp/` | Yes |
 
-`/mnt/d/contextgraph/` is **legacy provenance only** — not an active data root. CI lint `scripts/ci/no_mnt_d_production_paths_fsv.py` (#412 / #434) fails on active production reads/writes.
-
+`/zfs/archive/contextgraph/` is **legacy provenance only** — not an active data root. 
 ---
 
 ## 8. Exception Hierarchy (fail-closed structured errors)

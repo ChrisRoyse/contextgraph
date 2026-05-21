@@ -298,16 +298,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         decode_reality_prediction(&bytes).is_err()
     };
     let direct_decode_defaulted = decoded_direct.label_context == PredictionLabelContext::default();
-    let mntd_rejected =
-        open_ability_resolver_rocksdb(Path::new("/mnt/d/contextgraph/bad"), true).is_err();
 
     let all_passed = live_rows.len() == 2
         && live_current_defaulted
         && live_legacy_label_defaulted
         && ability_rows_defaulted
         && direct_decode_defaulted
-        && corrupt_old_live_row_fails_closed
-        && mntd_rejected;
+        && corrupt_old_live_row_fails_closed;
 
     let report_path = fsv_root.join("task_py_g_122_persisted_schema_compat_fsv.json");
     let report = json!({
@@ -331,8 +328,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "live_prediction_legacy_v1_label_context_defaults_new_ability_fields": live_legacy_label_defaulted,
             "direct_decode_legacy_live_row_defaults_label_context": direct_decode_defaulted,
             "mistake_replay_lifecycle_legacy_rows_default_new_fields": ability_rows_defaulted,
-            "corrupt_old_live_row_fails_closed": corrupt_old_live_row_fails_closed,
-            "legacy_mnt_d_path_rejected": mntd_rejected
+            "corrupt_old_live_row_fails_closed": corrupt_old_live_row_fails_closed
         },
         "readback": {
             "live_prediction_rows": live_rows,
@@ -340,7 +336,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "replay_rows": replay_rows,
             "lifecycle_rows": lifecycle_rows
         },
-        "active_path_policy": {"mnt_d_active_reads_or_writes": false}
+        "active_path_policy": {}
     });
     fs::write(&report_path, serde_json::to_vec_pretty(&report)?)?;
     let readback: serde_json::Value = serde_json::from_slice(&fs::read(&report_path)?)?;
@@ -538,9 +534,6 @@ fn put_cf_bytes(
 }
 
 fn open_live_db(path: &Path) -> Result<Arc<DB>, Box<dyn std::error::Error>> {
-    if path.display().to_string().starts_with("/mnt/d/") {
-        return Err("live prediction db path must not use /mnt/d".into());
-    }
     let mut opts = Options::default();
     opts.create_if_missing(true);
     opts.create_missing_column_families(true);

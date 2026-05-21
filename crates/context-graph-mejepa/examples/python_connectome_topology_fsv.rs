@@ -79,10 +79,6 @@ struct CellLoad {
 fn main() -> Result<()> {
     let fsv_root = env_path("CG_CONNECTOME_TOPOLOGY_FSV_ROOT", DEFAULT_FSV_ROOT);
     let tensor_root = env_path("CG_CONNECTOME_TOPOLOGY_TENSOR_ROOT", DEFAULT_TENSOR_ROOT);
-    ensure!(
-        !starts_with_mnt_d(&fsv_root) && !starts_with_mnt_d(&tensor_root),
-        "active #513 FSV paths must not use /mnt/d"
-    );
     fs::create_dir_all(&fsv_root)?;
     let run_id = format!("run-{}", chrono::Utc::now().format("%Y%m%dT%H%M%SZ"));
     let run_root = fsv_root.join(&run_id);
@@ -594,16 +590,6 @@ fn env_path(name: &str, default: &str) -> PathBuf {
     std::env::var(name)
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(default))
-}
-
-fn starts_with_mnt_d(path: &Path) -> bool {
-    path.components()
-        .take(3)
-        .map(|component| component.as_os_str().to_string_lossy().to_string())
-        .collect::<Vec<_>>()
-        .join("/")
-        .starts_with("//mnt/d")
-        || path.to_string_lossy().starts_with("/mnt/d")
 }
 
 fn distinct_pair_count(edges: &[ConnectomeTopologyEdge]) -> usize {

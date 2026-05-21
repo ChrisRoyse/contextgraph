@@ -73,7 +73,7 @@ The corpus survives. The pre-fix measurement does not. The post-fix real-input r
 
 `mejepa_record_mistake`, `mejepa_mistake_history`, `mejepa_mistake_loop_status` shipped.
 
-FSV: `/zfs/archive/contextgraph/fsv/task-py-g-112b-mistake-loop-mcp-tools-fsv/run-20260520T113125Z/task_py_g_112b_mistake_loop_mcp_tools_fsv.json`, sha256 `9a9e50b6d6fdf8d3e4b64ab6edd992802121eb13b17663bc0f11786446411ae7`. Proves: all three tools registered; writes/reads land in RocksDB CFs; online head corrects same-panel mistake; lifecycle audit joins byte-readable; missing CFs fail closed; target-side oracle labels rejected as live inputs; invalid panel signatures leave no partial mistake/replay writes; `/mnt/d` not used for active I/O.
+FSV: `/zfs/archive/contextgraph/fsv/task-py-g-112b-mistake-loop-mcp-tools-fsv/run-20260520T113125Z/task_py_g_112b_mistake_loop_mcp_tools_fsv.json`, sha256 `9a9e50b6d6fdf8d3e4b64ab6edd992802121eb13b17663bc0f11786446411ae7`. Proves: all three tools registered; writes/reads land in RocksDB CFs; online head corrects same-panel mistake; lifecycle audit joins byte-readable; missing CFs fail closed; target-side oracle labels rejected as live inputs; invalid panel signatures leave no partial mistake/replay writes.
 
 ### 2.2 Failure-mode hierarchy (#404 / TASK-PY-G-110 — closed 2026-05-20)
 

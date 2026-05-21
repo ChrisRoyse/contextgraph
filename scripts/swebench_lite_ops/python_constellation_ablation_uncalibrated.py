@@ -66,7 +66,6 @@ def validate_baseline(value: float) -> None:
 def validate_aiwonder_paths(*paths: Path) -> None:
     for path in paths:
         require(str(path).startswith("/zfs/"), "MEJEPA_CONSTELLATION_ABLATION_NON_AIWONDER_PATH", str(path))
-        require("/mnt/d/" not in str(path), "MEJEPA_CONSTELLATION_ABLATION_MNT_D_PATH", str(path))
 
 
 def temporal_key(row: dict[str, Any]) -> str:

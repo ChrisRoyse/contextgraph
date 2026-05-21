@@ -182,7 +182,6 @@ fn main() -> Result<()> {
         },
         "task560CalibrationBlockerTrace": calibration_blocker,
         "independentReadback": readback,
-        "activeMntDReadsOrWrites": false,
         "innerLlmInvoked": false,
         "flatVectorConcatUsed": false
     });

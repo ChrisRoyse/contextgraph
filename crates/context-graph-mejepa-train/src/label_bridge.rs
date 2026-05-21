@@ -444,12 +444,6 @@ fn validate_path_set(paths: &LearningBridgePaths) -> Result<(), TrainerError> {
         ),
         ("failure_evidence_sets", &paths.failure_evidence_sets),
     ] {
-        if path.contains("/mnt/d") {
-            return Err(invalid(
-                field,
-                "active label bridge paths must not use /mnt/d",
-            ));
-        }
         validate_label_id(field, path)?;
     }
     Ok(())

@@ -1016,16 +1016,7 @@ fn require_operator_permitted_root(path: &Path) -> Result<(), ProjectIngestError
         Path::new("/zfs/archive/contextgraph"),
         Path::new("/home/croyse"),
     ];
-    let local_smoke_allowed = [
-        Path::new("/home/cabdru"),
-        Path::new("/zfs/archive/contextgraph"),
-    ];
-    if aiwonder_allowed.iter().any(|root| path.starts_with(root))
-        || (context_graph_paths::named_local_smoke_issue().is_some()
-            && local_smoke_allowed
-                .iter()
-                .any(|root| path.starts_with(root)))
-    {
+    if aiwonder_allowed.iter().any(|root| path.starts_with(root)) {
         Ok(())
     } else {
         Err(ProjectIngestError::RepoPathDenied {

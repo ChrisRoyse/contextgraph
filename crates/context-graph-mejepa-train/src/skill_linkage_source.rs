@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use super::{invalid, validate_id, validate_path_not_mntd, validate_project_relative_path};
+use super::{invalid, validate_id, validate_project_relative_path};
 
 const DEFAULT_MAX_SOURCE_BYTES: usize = 32 * 1024;
 
@@ -76,7 +76,6 @@ pub fn load_chunk_source_index_jsonl_with_limit(
     path: &Path,
     max_source_bytes: usize,
 ) -> Result<ChunkSourceIndex, TrainerError> {
-    validate_path_not_mntd("chunk_source_jsonl", path)?;
     if max_source_bytes == 0 {
         return Err(invalid("max_source_bytes", "must be positive"));
     }

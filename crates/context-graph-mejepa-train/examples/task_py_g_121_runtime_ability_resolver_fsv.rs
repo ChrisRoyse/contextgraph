@@ -103,8 +103,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     )
     .is_err();
-    let edge_mntd_db_rejected =
-        open_ability_resolver_rocksdb(Path::new("/mnt/d/contextgraph/bad.rocksdb"), true).is_err();
     let edge_leaky_membership_rejected = leaky_membership_rejected(&fsv_root, &skill_a.skill_id)?;
 
     db.flush()?;
@@ -196,7 +194,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let edge_pass = edge_ordered_signature_distinguishes_ab
         && edge_empty_chunk_request_rejected
         && edge_target_label_rejected
-        && edge_mntd_db_rejected
         && edge_leaky_membership_rejected;
     let invariant_pass = refutation_report.no_new_prediction_head_introduced
         && !refutation_report.hidden_intent_inference_used
@@ -257,7 +254,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "ordered_signature_distinguishes_a_then_b_from_b_then_a": edge_ordered_signature_distinguishes_ab,
             "empty_chunk_request_rejected": edge_empty_chunk_request_rejected,
             "target_side_live_label_rejected": edge_target_label_rejected,
-            "legacy_mnt_d_db_rejected": edge_mntd_db_rejected,
             "leaky_membership_row_rejected": edge_leaky_membership_rejected
         },
         "required_invariants": {

@@ -16,9 +16,6 @@ const DEFAULT_FSV_ROOT: &str =
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fsv_root = parse_fsv_root()?;
-    if fsv_root.to_string_lossy().contains("/mnt/d") {
-        return Err("TASK-SKILL-001 FSV must not use /mnt/d active paths".into());
-    }
     fs::create_dir_all(&fsv_root)?;
     let run_root = fsv_root.join(format!("run-{}", now_ms()?));
     fs::create_dir_all(&run_root)?;
@@ -258,7 +255,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "ordered_sequence_identity_preserved": true,
             "target_side_labels_used_as_live_inputs": false,
             "flat_vector_concat_used": false,
-            "mnt_d_active_reads_or_writes": false,
             "generic_background_scaffold_promoted_as_failure_skill": false
         }
     });

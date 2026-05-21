@@ -66,7 +66,7 @@ By priority:
 
 | Priority | Examples |
 |---|---|
-| `priority:p0` | #397 consequence-prediction contract, #392 temporal trajectory, #551 skill trajectory coverage gap, #405 Panel B (blocked), #383 evidence-weighted ordering, #372 aiwonder ZFS mount, #521 Panel B model-backed encoders (blocked), #528 no_mnt_d audit hardening |
+| `priority:p0` | #397 consequence-prediction contract, #392 temporal trajectory, #551 skill trajectory coverage gap, #405 Panel B (blocked), #383 evidence-weighted ordering, #372 aiwonder ZFS mount, #521 Panel B model-backed encoders (blocked) |
 | `priority:p1` | #379 multi-file holdout, #416 pathway, #417 skill linkage remaining, #511 entropy loss, #380 off-host backup, #433 ability resolver replay completeness |
 | `priority:p2` | EK series tail, post-ship policies, #382 frozen-panel dimensionality ablation, #378 tool-usage telemetry |
 | `priority:p3` | Deferred (SWE-bench Verified subset, v2 stretch tasks, future Docker image plan) |
@@ -328,8 +328,6 @@ Neuroscience-inspired architectures have a mixed history in ML. Predictive codin
 | #306 | SWE-bench Lite Python Docker image plan (future / Q3) | p3 |
 | #312 | hot_root on ext4 throughput bottleneck — move to /hotpool ZFS | open `phase:f-followup` |
 | #442 | Track aiwonder librocksdb-sys cstdint native build requirement | open p1 |
-| #451 | Clean stale legacy /mnt/d prose from older open issue bodies | open p2 |
-| #528 | Harden no_mnt_d audit semantics and comment scanning | open p0 in-progress |
 
 ---
 

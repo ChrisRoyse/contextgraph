@@ -1261,17 +1261,13 @@ fn canonicalize_existing_dir(path: &Path) -> Result<PathBuf, std::io::Error> {
 }
 
 fn require_project_cache_root(path: &Path) -> Result<PathBuf, ProjectCacheError> {
-    let normalized = context_graph_paths::require_production_durable_root_or_named_local_smoke(
+    let normalized = context_graph_paths::require_production_durable_root(
         path,
         "project_cache.cache_dir",
     )?;
     let production_projects =
         Path::new(context_graph_paths::AIWONDER_DURABLE_ROOT).join("projects");
-    let legacy_projects = Path::new(context_graph_paths::LEGACY_LOCAL_DATA_ROOT).join("projects");
-    if normalized.starts_with(&production_projects)
-        || (context_graph_paths::named_local_smoke_issue().is_some()
-            && normalized.starts_with(&legacy_projects))
-    {
+    if normalized.starts_with(&production_projects) {
         Ok(normalized)
     } else {
         Err(ProjectCacheError::InvalidCacheRoot {

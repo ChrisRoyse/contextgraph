@@ -54,10 +54,6 @@ validate_production_data_root() {
 
     case "$DATA_ROOT" in
         /zfs/archive/contextgraph|/zfs/archive/contextgraph/*) ;;
-        /mnt/d/contextgraph|/mnt/d/contextgraph/*)
-            echo "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER: production daemon root cannot be local /mnt/d; move required data to aiwonder under /zfs/archive/contextgraph" >&2
-            exit 1
-            ;;
         *)
             echo "MEJEPA_PRODUCTION_ROOT_NOT_AIWONDER: production daemon root must be under /zfs/archive/contextgraph: $DATA_ROOT" >&2
             exit 1

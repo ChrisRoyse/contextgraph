@@ -41,7 +41,6 @@ _PROMOTE_HOT_STAGE_LOCK = threading.Lock()
 AIWONDER_DURABLE_ROOT = Path("/zfs/archive/contextgraph")
 AIWONDER_HOT_ROOT = Path("/zfs/hot/contextgraph")
 AIWONDER_SCRATCH_ROOT = Path("/home/croyse/.cache/contextgraph")
-FORBIDDEN_LOCAL_ROOT = Path("/mnt/d/contextgraph")
 
 DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
 DEFAULT_CACHE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1")
@@ -114,11 +113,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-root", type=Path, default=DEFAULT_CACHE_ROOT)
     parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
     parser.add_argument("--hot-root", type=Path, default=DEFAULT_HOT_ROOT)
-    parser.add_argument(
-        "--local-smoke-issue",
-        default="",
-        help="Deprecated no-op. /mnt/d inputs and outputs are always rejected; move required data to aiwonder first.",
-    )
     parser.add_argument("--task-id", default=TASK_ID)
     parser.add_argument("--start-offset", type=int, default=0)
     parser.add_argument("--shard-size", type=int, required=True)
@@ -354,14 +348,8 @@ def production_root_error(label: str, path: Path, expected: str) -> SchedulerErr
     )
 
 
-def require_production_durable_path(path: Path, label: str, local_smoke_issue: str) -> Path:
+def require_production_durable_path(path: Path, label: str) -> Path:
     normalized = normalize_guard_path(path)
-    if path_is_under(normalized, FORBIDDEN_LOCAL_ROOT.resolve(strict=False)):
-        raise production_root_error(
-            label,
-            normalized,
-            f"use {AIWONDER_DURABLE_ROOT}; move required data to aiwonder before running",
-        )
     if path_is_under(normalized, AIWONDER_DURABLE_ROOT):
         return normalized
     raise production_root_error(label, normalized, f"use {AIWONDER_DURABLE_ROOT}")
@@ -378,14 +366,8 @@ def require_aiwonder_hot_or_scratch_path(path: Path, label: str) -> Path:
     )
 
 
-def require_aiwonder_input_path(path: Path, label: str, local_smoke_issue: str) -> Path:
+def require_aiwonder_input_path(path: Path, label: str) -> Path:
     normalized = normalize_guard_path(path)
-    if path_is_under(normalized, FORBIDDEN_LOCAL_ROOT.resolve(strict=False)):
-        raise production_root_error(
-            label,
-            normalized,
-            "inputs for production corpus runs must live on aiwonder, not local /mnt/d",
-        )
     if path_is_under(normalized, AIWONDER_DURABLE_ROOT) or path_is_under(normalized, AIWONDER_HOT_ROOT):
         return normalized
     raise production_root_error(
@@ -396,12 +378,10 @@ def require_aiwonder_input_path(path: Path, label: str, local_smoke_issue: str) 
 
 
 def validate_production_roots(args: argparse.Namespace) -> dict[str, Any]:
-    local_smoke_issue = args.local_smoke_issue.strip()
     checked = {
-        "local_smoke_issue_deprecated_ignored": local_smoke_issue or None,
-        "chunks_jsonl": str(require_aiwonder_input_path(args.chunks_jsonl, "chunks_jsonl", local_smoke_issue)),
-        "cache_root": str(require_production_durable_path(args.cache_root, "cache_root", local_smoke_issue)),
-        "fsv_root": str(require_production_durable_path(args.fsv_root, "fsv_root", local_smoke_issue)),
+        "chunks_jsonl": str(require_aiwonder_input_path(args.chunks_jsonl, "chunks_jsonl")),
+        "cache_root": str(require_production_durable_path(args.cache_root, "cache_root")),
+        "fsv_root": str(require_production_durable_path(args.fsv_root, "fsv_root")),
         "hot_root": str(require_aiwonder_hot_or_scratch_path(args.hot_root, "hot_root")),
     }
     for attr in (
@@ -414,7 +394,7 @@ def validate_production_roots(args: argparse.Namespace) -> dict[str, Any]:
         "full_ast_corpus_fsv",
     ):
         checked[attr] = str(
-            require_production_durable_path(getattr(args, attr), attr, local_smoke_issue)
+            require_production_durable_path(getattr(args, attr), attr)
         )
     return checked
 
@@ -2615,7 +2595,6 @@ def prepare_hot_stage(
     seed_from_durable: bool = True,
 ) -> dict[str, Any]:
     require("packed hot-stage root is not /mnt/c", not path_is_under(stage_root.resolve(strict=False), Path("/mnt/c")))
-    require("packed hot-stage root is WSL ext4, not /mnt/d", not path_is_under(stage_root.resolve(strict=False), Path("/mnt/d")))
     archive = archive_interrupted_hot_stage(
         args,
         durable_shard,

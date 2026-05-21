@@ -263,7 +263,6 @@ fn consequence_trace_hint_for_leaf(pathway: &SurfacedPathwayRecord, leaf: &Pathw
 }
 
 fn open_pathway_rocksdb(path: &Path, create_if_missing: bool) -> AnyhowResult<DB> {
-    validate_path_not_mntd(path)?;
     let mut opts = Options::default();
     opts.create_if_missing(create_if_missing);
     opts.create_missing_column_families(create_if_missing);
@@ -300,10 +299,7 @@ fn pathway_cfs() -> [&'static str; 3] {
 
 fn resolve_pathway_db_path(input: Option<PathBuf>) -> AnyhowResult<PathBuf> {
     match input {
-        Some(path) if !path.as_os_str().is_empty() => {
-            validate_path_not_mntd(&path)?;
-            Ok(path)
-        }
+        Some(path) if !path.as_os_str().is_empty() => Ok(path),
         Some(_) => bail!("dbPath must be a non-empty path"),
         None => {
             let raw = std::env::var(ENV_TRAIN_DB)
@@ -314,19 +310,9 @@ fn resolve_pathway_db_path(input: Option<PathBuf>) -> AnyhowResult<PathBuf> {
             if raw.trim().is_empty() {
                 bail!("{ENV_TRAIN_DB}/{ENV_INFER_DB} must not be empty");
             }
-            let path = PathBuf::from(raw);
-            validate_path_not_mntd(&path)?;
-            Ok(path)
+            Ok(PathBuf::from(raw))
         }
     }
-}
-
-fn validate_path_not_mntd(path: &Path) -> AnyhowResult<()> {
-    let value = path.display().to_string();
-    if value == "/mnt/d" || value.starts_with("/mnt/d/") {
-        bail!("legacy /mnt/d roots are not valid for pathway source-of-truth");
-    }
-    Ok(())
 }
 
 fn source_of_truth(db_path: &Path) -> Value {

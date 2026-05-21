@@ -217,15 +217,6 @@ def require(condition: bool, code: str, detail: str | None = None) -> None:
         raise AutoLabelDiscoveryError(code if detail is None else f"{code}: {detail}")
 
 
-def fail_if_active_mntd(path: Path, field: str) -> None:
-    value = str(path)
-    require(
-        not (value == "/mnt/d" or value.startswith("/mnt/d/")),
-        "MEJEPA_AUTO_LABEL_ACTIVE_MNTD_PATH_FORBIDDEN",
-        f"{field}={value}",
-    )
-
-
 def canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -722,17 +713,6 @@ def localization_mode(candidates: list[FailureCandidate], failed: bool) -> str:
 
 
 def active_input_preflight(args: argparse.Namespace) -> None:
-    for field in (
-        "forward_root",
-        "chunks_jsonl",
-        "corpus_index_json",
-        "swebench_root",
-        "manual_review",
-        "output_root",
-        "fsv_root",
-    ):
-        path = Path(getattr(args, field))
-        fail_if_active_mntd(path, field)
     require(args.forward_root.exists(), "MEJEPA_AUTO_LABEL_FORWARD_ROOT_MISSING", str(args.forward_root))
     require(args.chunks_jsonl.exists(), "MEJEPA_AUTO_LABEL_CHUNKS_JSONL_MISSING", str(args.chunks_jsonl))
     require(args.corpus_index_json.exists(), "MEJEPA_AUTO_LABEL_ORACLE_INDEX_MISSING", str(args.corpus_index_json))
@@ -1211,7 +1191,6 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                 if entry is None:
                     continue
                 record_path = Path(str(entry.get("record_path") or ""))
-                fail_if_active_mntd(record_path, f"record_path:{embedder_id}")
                 require(record_path.exists(), "MEJEPA_AUTO_LABEL_RECORD_PATH_MISSING", str(record_path))
                 manifest_rows = int(entry.get("row_count") or 0)
                 local_rows = 0
@@ -1694,7 +1673,6 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
             "line_counts": manifest["line_counts"],
             "stable_hashes": manifest["stable_hashes"],
         },
-        "active_path_policy": {"mnt_d_active_reads_or_writes": False},
     }
     fsv_path = args.fsv_root / f"{ARTIFACT_KIND}_fsv.json"
     dump_json(fsv_path, fsv)

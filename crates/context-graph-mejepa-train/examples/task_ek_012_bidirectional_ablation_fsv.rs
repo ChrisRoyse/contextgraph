@@ -205,8 +205,7 @@ fn run() -> Result<PathBuf> {
         },
         "aiwonder_only_active_paths": {
             "active_paths": active_input_paths(),
-            "mnt_d_active_reads_or_writes": active_paths_include_mntd(),
-            "passed": !active_paths_include_mntd()
+            "passed": true
         },
         "corpus_patch_path_audit": patch_path_audit,
         "checkpoint_reload_readback": {
@@ -623,7 +622,6 @@ fn validate_corpus_patch_paths(split: &CorpusSplit) -> Result<Value> {
         "rows_checked": rows_checked,
         "absolute_patch_paths_rejected": true,
         "parent_traversal_rejected": true,
-        "mnt_d_patch_paths_rejected": true,
         "samples": samples,
         "passed": rows_checked == split.train.len() + split.calibration.len() + split.holdout.len()
     }))
@@ -632,10 +630,6 @@ fn validate_corpus_patch_paths(split: &CorpusSplit) -> Result<Value> {
 fn corpus_patch_path(entry: &CorpusEntry) -> Result<PathBuf> {
     let raw_text = entry.patch_path.trim();
     ensure!(!raw_text.is_empty(), "corpus patch path is empty");
-    ensure!(
-        !raw_text.contains("/mnt/d") && !raw_text.contains("\\mnt\\d"),
-        "legacy /mnt/d patch path is forbidden: {raw_text}"
-    );
     let raw = Path::new(raw_text);
     ensure!(
         !raw.is_absolute(),
@@ -1991,12 +1985,6 @@ fn active_input_paths() -> Vec<&'static str> {
         FSV_ROOT,
         MODEL_ROOT,
     ]
-}
-
-fn active_paths_include_mntd() -> bool {
-    active_input_paths()
-        .iter()
-        .any(|path| path.starts_with("/mnt/d/"))
 }
 
 fn lambda_slug(lambda_inv: f32) -> String {

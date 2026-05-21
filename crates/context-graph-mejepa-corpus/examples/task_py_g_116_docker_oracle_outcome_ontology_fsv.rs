@@ -15,8 +15,6 @@ type FsvResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 fn main() -> FsvResult<()> {
     let args = Args::parse()?;
-    reject_mnt_d("corpus_root", &args.corpus_root)?;
-    reject_mnt_d("fsv_root", &args.fsv_root)?;
     fs::create_dir_all(&args.fsv_root)?;
     let db_path = args.fsv_root.join("docker-outcome-labels.rocksdb");
     if db_path.exists() {
@@ -55,9 +53,6 @@ fn main() -> FsvResult<()> {
             "dbPath": db_path,
             "labelCf": CF_MEJEPA_DOCKER_OUTCOME_LABELS,
         },
-        "activePathPolicy": {
-            "mntDActiveReadsOrWrites": false,
-        },
         "materialization": report,
         "readback": readback_report,
         "checks": {
@@ -67,7 +62,6 @@ fn main() -> FsvResult<()> {
             "allReportsPresent": readback_report["dockerReportMissingCount"] == json!(0),
             "testPhaseCountsMatchOraclePerTest": readback_report["oraclePerTestCountMismatchCount"] == json!(0),
             "predictionPatchRowsAttached": report.prediction_patch_rows_attached,
-            "noMntD": true,
         },
     });
     let report_path = args.fsv_root.join("docker_outcome_ontology_fsv.json");
@@ -167,22 +161,6 @@ fn label_counts(
         }
     }
     counts
-}
-
-fn reject_mnt_d(field: &str, path: &Path) -> FsvResult<()> {
-    if path
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .windows(2)
-        .any(|window| window[0] == "mnt" && window[1].eq_ignore_ascii_case("d"))
-    {
-        return Err(invalid(format!(
-            "{field} must not point at /mnt/d: {}",
-            path.display()
-        )));
-    }
-    Ok(())
 }
 
 fn invalid(detail: impl Into<String>) -> Box<dyn Error + Send + Sync> {

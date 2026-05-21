@@ -120,11 +120,6 @@ fn run() -> Result<()> {
     let run_dir = Path::new(&fsv_root).join(&run_id);
     fs::create_dir_all(&run_dir)?;
 
-    ensure!(
-        !active_paths_include_mntd(),
-        "active diagnostic inputs must not use /mnt/d"
-    );
-
     let baseline_report = read_json(BASELINE_REPORT_PATH)?;
     ensure!(
         baseline_report["all_passed"].as_bool() == Some(true),
@@ -272,8 +267,7 @@ fn run() -> Result<()> {
         && (promotable_candidate_found || typed_blocker.accepted)
         && score_fusion.edge_cases.all_passed
         && skill_policy_ablation.all_passed
-        && edge_cases.all_passed
-        && !active_paths_include_mntd();
+        && edge_cases.all_passed;
     let report = json!({
         "schema_version": 1,
         "issue": 392,
@@ -1213,11 +1207,6 @@ fn load_skill_feature_index(
         hierarchy_report["passes"].as_bool() == Some(true),
         "hierarchy FSV report must have passes=true"
     );
-    ensure!(
-        hierarchy_report["active_path_policy"]["mnt_d_active_reads_or_writes"].as_bool()
-            == Some(false),
-        "hierarchy FSV must not use /mnt/d active paths"
-    );
     let db = open_hierarchy_db_read_only(Path::new(&hierarchy_db_path))?;
     let level2_skills = read_all_level2_skill_rows(&db)?;
     let memberships = read_all_chunk_skill_membership_rows(&db)?;
@@ -1577,10 +1566,6 @@ fn empty_skill_usefulness_policy_report() -> SkillUsefulnessPolicyReport {
 }
 
 fn open_hierarchy_db_read_only(path: &Path) -> Result<DB> {
-    ensure!(
-        !path.to_string_lossy().starts_with("/mnt/d/"),
-        "hierarchy DB active path must not use /mnt/d"
-    );
     let mut opts = Options::default();
     opts.set_paranoid_checks(true);
     let existing = DB::list_cf(&opts, path)
@@ -5383,12 +5368,6 @@ fn active_input_paths() -> Vec<String> {
         BASELINE_REPORT_PATH.to_string(),
         fsv_root(),
     ]
-}
-
-fn active_paths_include_mntd() -> bool {
-    active_input_paths()
-        .iter()
-        .any(|path| path.starts_with("/mnt/d/"))
 }
 
 fn hierarchy_db_path() -> String {

@@ -177,6 +177,10 @@ name = "task_skill_003_live_skill_reverse_index_fsv"
 path = "examples/task_skill_003_live_skill_reverse_index_fsv.rs"
 
 [[example]]
+name = "task_skill_004_mistake_loop_skill_lifecycle_fsv"
+path = "examples/task_skill_004_mistake_loop_skill_lifecycle_fsv.rs"
+
+[[example]]
 name = "task_py_g_110_failure_mode_hierarchy_fsv"
 path = "examples/task_py_g_110_failure_mode_hierarchy_fsv.rs"
 

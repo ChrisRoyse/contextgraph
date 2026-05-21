@@ -69,11 +69,6 @@ fn run() -> Result<()> {
     let run_dir = Path::new(FSV_ROOT).join(&run_id);
     fs::create_dir_all(&run_dir)?;
 
-    ensure!(
-        !active_paths_include_mntd(),
-        "active diagnostic inputs must not use /mnt/d"
-    );
-
     let baseline_report = read_json(BASELINE_REPORT_PATH)?;
     ensure!(
         baseline_report["all_passed"].as_bool() == Some(true),
@@ -130,8 +125,7 @@ fn run() -> Result<()> {
 
     let all_passed = reproduction.passed
         && typed_blocker.accepted
-        && edge_cases.all_passed
-        && !active_paths_include_mntd();
+        && edge_cases.all_passed;
     let report = json!({
         "schema_version": 1,
         "issue": 548,
@@ -1434,12 +1428,6 @@ fn active_input_paths() -> Vec<&'static str> {
         BASELINE_REPORT_PATH,
         FSV_ROOT,
     ]
-}
-
-fn active_paths_include_mntd() -> bool {
-    active_input_paths()
-        .iter()
-        .any(|path| path.starts_with("/mnt/d/"))
 }
 
 fn read_json(path: impl AsRef<Path>) -> Result<Value> {
