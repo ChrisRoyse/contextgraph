@@ -72,6 +72,8 @@ from .python_per_slot_calibration_ood import add_arguments as add_python_per_slo
 from .python_per_slot_calibration_ood import command_python_per_slot_calibration_ood
 from .python_per_cell_smooth_ece import add_arguments as add_python_per_cell_smooth_ece_arguments
 from .python_per_cell_smooth_ece import command_python_per_cell_smooth_ece
+from .python_calibration_active_gate import add_arguments as add_python_calibration_active_gate_arguments
+from .python_calibration_active_gate import command_python_calibration_active_gate
 from .python_anti_compensation_fsv import add_arguments as add_python_anti_compensation_fsv_arguments
 from .python_anti_compensation_fsv import command_python_anti_compensation_fsv
 from .python_auto_label_discovery import add_arguments as add_python_auto_label_discovery_arguments
@@ -557,6 +559,16 @@ def build_parser() -> argparse.ArgumentParser:
     per_cell_smooth_ece.set_defaults(
         func=command_python_per_cell_smooth_ece,
         evidence_name="python-per-cell-smooth-ece-command-evidence.json",
+    )
+
+    calibration_active_gate = sub.add_parser(
+        "python-calibration-active-gate",
+        help="TASK-PY-G-122: fit calibration-only active/abstain policy and report holdout gate impact.",
+    )
+    add_python_calibration_active_gate_arguments(calibration_active_gate)
+    calibration_active_gate.set_defaults(
+        func=command_python_calibration_active_gate,
+        evidence_name="python-calibration-active-gate-command-evidence.json",
     )
 
     anti_compensation = sub.add_parser(
