@@ -24,6 +24,7 @@ SHIP_GATE_TARGET = 0.95
 def add_arguments(parser: Any) -> None:
     parser.add_argument("--ship-gate-report", type=Path, default=DEFAULT_SHIP_GATE_REPORT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--evidence-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--expected-holdout-count", type=int, default=240)
 
 
@@ -204,7 +205,20 @@ def pearson_or_none(labels: list[int], scores: list[float]) -> float | None:
 def spearman_or_none(labels: list[int], scores: list[float]) -> float | None:
     if len(labels) < 3 or len(set(labels)) < 2 or len(set(scores)) < 2:
         return None
-    return pearson_or_none([int(value) for value in rank_values([float(v) for v in labels])], rank_values(scores))
+    return pearson_float_or_none(rank_values([float(v) for v in labels]), rank_values(scores))
+
+
+def pearson_float_or_none(xs: list[float], ys: list[float]) -> float | None:
+    if len(xs) < 3:
+        return None
+    x_mean = sum(xs) / len(xs)
+    y_mean = sum(ys) / len(ys)
+    x_var = sum((value - x_mean) ** 2 for value in xs)
+    y_var = sum((value - y_mean) ** 2 for value in ys)
+    if x_var <= 1.0e-12 or y_var <= 1.0e-12:
+        return None
+    cov = sum((x - x_mean) * (y - y_mean) for x, y in zip(xs, ys))
+    return cov / math.sqrt(x_var * y_var)
 
 
 def rank_values(values: list[float]) -> list[float]:

@@ -70,6 +70,8 @@ from .python_constellation_tensors import add_arguments as add_python_constellat
 from .python_constellation_tensors import command_python_constellation_tensors
 from .python_per_slot_calibration_ood import add_arguments as add_python_per_slot_calibration_ood_arguments
 from .python_per_slot_calibration_ood import command_python_per_slot_calibration_ood
+from .python_per_cell_smooth_ece import add_arguments as add_python_per_cell_smooth_ece_arguments
+from .python_per_cell_smooth_ece import command_python_per_cell_smooth_ece
 from .python_anti_compensation_fsv import add_arguments as add_python_anti_compensation_fsv_arguments
 from .python_anti_compensation_fsv import command_python_anti_compensation_fsv
 from .python_auto_label_discovery import add_arguments as add_python_auto_label_discovery_arguments
@@ -545,6 +547,16 @@ def build_parser() -> argparse.ArgumentParser:
     per_slot_calibration_ood.set_defaults(
         func=command_python_per_slot_calibration_ood,
         evidence_name="python-per-slot-calibration-ood-command-evidence.json",
+    )
+
+    per_cell_smooth_ece = sub.add_parser(
+        "python-per-cell-smooth-ece",
+        help="TASK-PY-G-121: report per-cell SmoothECE and active/abstain coverage for the current ship-gate surface.",
+    )
+    add_python_per_cell_smooth_ece_arguments(per_cell_smooth_ece)
+    per_cell_smooth_ece.set_defaults(
+        func=command_python_per_cell_smooth_ece,
+        evidence_name="python-per-cell-smooth-ece-command-evidence.json",
     )
 
     anti_compensation = sub.add_parser(
