@@ -38,6 +38,7 @@ DEFAULT_TRAINING_ARRAY_ROOT = Path(
 )
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/state/tracin/post-fix-real-input-v1")
 DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-123-tracin-abstain-pool-fsv")
+DEFAULT_EXACT_GRADIENT_ROOT = Path("/zfs/archive/contextgraph/state/tracin/post-fix-real-input-v2")
 WEAK_CELLS = {"delete_test_call", "off_by_one", "subtle_flip"}
 TARGET_CORRELATION = 0.95
 
@@ -75,6 +76,7 @@ def add_arguments(parser: Any) -> None:
     parser.add_argument("--row-diagnostics-report", type=Path, default=DEFAULT_ROW_DIAGNOSTICS_REPORT)
     parser.add_argument("--ship-gate-report", type=Path, default=DEFAULT_SHIP_GATE_REPORT)
     parser.add_argument("--training-array-root", type=Path, default=DEFAULT_TRAINING_ARRAY_ROOT)
+    parser.add_argument("--exact-gradient-root", type=Path, default=DEFAULT_EXACT_GRADIENT_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--evidence-root", type=Path, default=DEFAULT_FSV_ROOT)
     parser.add_argument("--top-k", type=int, default=8)
@@ -86,11 +88,13 @@ def command_python_tracin_abstain_pool(args: Any) -> dict[str, Any]:
     row_diagnostics_report = args.row_diagnostics_report.expanduser().resolve(strict=False)
     ship_gate_report = args.ship_gate_report.expanduser().resolve(strict=False)
     training_array_root = args.training_array_root.expanduser().resolve(strict=False)
+    exact_gradient_root = args.exact_gradient_root.expanduser().resolve(strict=False)
     output_root = args.output_root.expanduser().resolve(strict=False)
     for name, path in (
         ("row_diagnostics_report", row_diagnostics_report),
         ("ship_gate_report", ship_gate_report),
         ("training_array_root", training_array_root),
+        ("exact_gradient_root", exact_gradient_root),
         ("output_root", output_root),
     ):
         reject_mounted_drive(name, path)
@@ -129,11 +133,22 @@ def command_python_tracin_abstain_pool(args: Any) -> dict[str, Any]:
             {"row_diagnostics_report": str(row_diagnostics_report)},
         )
 
-    influence_rows, per_holdout = compute_influence(calibration, target_rows, top_k=args.top_k)
+    exact_gradient_artifact = load_exact_gradient_artifact(exact_gradient_root)
+    if exact_gradient_artifact["available"]:
+        influence_rows, per_holdout = compute_exact_projected_influence(
+            calibration,
+            target_rows,
+            exact_gradient_artifact,
+            top_k=args.top_k,
+        )
+        influence_method = "exact_projected_gradient_rows_v2"
+    else:
+        influence_rows, per_holdout = compute_influence(calibration, target_rows, top_k=args.top_k)
+        influence_method = "projected_gradient_evidence_key_proxy_v1"
     top_bottom = top_bottom_counterfactual(per_holdout, top_k=args.top_k)
     influence_stats = aggregate_influence_stats(calibration, influence_rows)
     foundationality_corr = foundationality_correlation(calibration, influence_rows)
-    training_array = summarize_training_array(training_array_root)
+    training_array = summarize_training_array(training_array_root, exact_gradient_artifact)
     recommendation = binary_recommendation(top_bottom, foundationality_corr, training_array)
 
     output_root.mkdir(parents=True, exist_ok=True)
@@ -150,10 +165,14 @@ def command_python_tracin_abstain_pool(args: Any) -> dict[str, Any]:
         "shipGateReportSha256": sha256_file(ship_gate_report),
         "trainingArrayRoot": str(training_array_root),
         "trainingArray": training_array,
+        "exactGradientRoot": str(exact_gradient_root),
+        "exactGradientArtifact": exact_gradient_artifact,
         "method": {
-            "name": "projected_gradient_evidence_key_proxy_v1",
-            "exactTracInGradientsAvailable": False,
-            "exactTracInBlockedReason": "No 1,920-row retained gradient/checkpoint artifact was present in the inspected aiwonder SoT paths.",
+            "name": influence_method,
+            "exactTracInGradientsAvailable": exact_gradient_artifact["available"],
+            "exactTracInBlockedReason": None
+            if exact_gradient_artifact["available"]
+            else "No retained exact projected gradient artifact was present at the configured aiwonder root.",
             "calibrationRowsUsedAsInfluenceSource": len(calibration),
             "holdoutRowsUsedForEvaluation": len(holdout),
             "featureSpace": "evidence_key_sample + category + ece_bin + score/cause scalar diagnostics",
@@ -331,10 +350,77 @@ def compute_influence(
     return all_rows, per_holdout
 
 
+def compute_exact_projected_influence(
+    train_rows: list[DiagnosticRow],
+    holdout_rows: list[DiagnosticRow],
+    exact_artifact: dict[str, Any],
+    *,
+    top_k: int,
+) -> tuple[list[InfluenceRow], dict[str, list[InfluenceRow]]]:
+    gradients = exact_artifact["diagnosticGradientsById"]
+    all_rows: list[InfluenceRow] = []
+    per_holdout: dict[str, list[InfluenceRow]] = {}
+    for holdout in holdout_rows:
+        holdout_id = row_id(holdout)
+        holdout_gradient = gradients.get(holdout_id)
+        if holdout_gradient is None:
+            raise SwebenchOpsError(
+                "PY_G_123_EXACT_HOLDOUT_GRADIENT_MISSING",
+                "exact gradient artifact is missing a target holdout row",
+                "Regenerate TASK-PY-G-126 against the same row diagnostics report.",
+                {"holdout_id": holdout_id, "exact_gradient_root": exact_artifact.get("root")},
+            )
+        scored: list[InfluenceRow] = []
+        for train in train_rows:
+            train_id = row_id(train)
+            train_gradient = gradients.get(train_id)
+            if train_gradient is None:
+                raise SwebenchOpsError(
+                    "PY_G_123_EXACT_SOURCE_GRADIENT_MISSING",
+                    "exact gradient artifact is missing a calibration source row",
+                    "Regenerate TASK-PY-G-126 against the same row diagnostics report.",
+                    {"train_id": train_id, "exact_gradient_root": exact_artifact.get("root")},
+                )
+            gradient_alignment = vector_dot(train_gradient, holdout_gradient)
+            influence = -gradient_alignment
+            similarity = gradient_cosine(train_gradient, holdout_gradient)
+            scored.append(
+                InfluenceRow(
+                    holdout_id=holdout_id,
+                    train_id=train_id,
+                    holdout_category=holdout.category,
+                    train_category=train.category,
+                    influence=influence,
+                    similarity=similarity,
+                    gradient_alignment=gradient_alignment,
+                    train_label=train.label,
+                    holdout_label=holdout.label,
+                    train_score=train.score,
+                    holdout_score=holdout.score,
+                )
+            )
+        ranked = sorted(scored, key=lambda item: (-abs(item.influence), item.train_id))
+        selected = ranked[: max(top_k, 1)] + ranked[-max(top_k, 1) :]
+        per_holdout[holdout_id] = ranked
+        all_rows.extend(selected)
+    return all_rows, per_holdout
+
+
 def sparse_dot(left: dict[str, float], right: dict[str, float]) -> float:
     if len(left) > len(right):
         left, right = right, left
     return sum(value * right.get(key, 0.0) for key, value in left.items())
+
+
+def vector_dot(left: list[float], right: list[float]) -> float:
+    return sum(a * b for a, b in zip(left, right))
+
+
+def gradient_cosine(left: list[float], right: list[float]) -> float:
+    denom = math.sqrt(vector_dot(left, left)) * math.sqrt(vector_dot(right, right))
+    if denom <= 1.0e-12:
+        return 0.0
+    return vector_dot(left, right) / denom
 
 
 def top_bottom_counterfactual(per_holdout: dict[str, list[InfluenceRow]], *, top_k: int) -> dict[str, Any]:
@@ -424,7 +510,52 @@ def foundationality_correlation(train_rows: list[DiagnosticRow], influence_rows:
     }
 
 
-def summarize_training_array(root: Path) -> dict[str, Any]:
+def load_exact_gradient_artifact(root: Path) -> dict[str, Any]:
+    manifest_path = root / "exact_tracin_gradient_manifest.json"
+    gradients_path = root / "diagnostic_projected_gradients.jsonl"
+    if not manifest_path.is_file() or not gradients_path.is_file():
+        return {
+            "available": False,
+            "root": str(root),
+            "reason": "exact_gradient_manifest_or_diagnostic_rows_missing",
+        }
+    manifest = read_json_object(manifest_path, "exact_gradient_manifest")
+    if manifest.get("ok") is not True:
+        return {
+            "available": False,
+            "root": str(root),
+            "reason": "exact_gradient_manifest_not_ok",
+            "manifestPath": str(manifest_path),
+        }
+    gradients: dict[str, list[float]] = {}
+    split_counts: Counter[str] = Counter()
+    category_counts: Counter[str] = Counter()
+    with gradients_path.open("r", encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            row = require_object(json.loads(line), f"{gradients_path}:{line_no}")
+            row_id_value = required_string(row, "rowId")
+            vector = require_array(row.get("projectedGradient"), "projectedGradient")
+            gradients[row_id_value] = [float(value) for value in vector]
+            split_counts[str(row.get("split"))] += 1
+            category_counts[str(row.get("category"))] += 1
+    return {
+        "available": True,
+        "root": str(root),
+        "manifestPath": str(manifest_path),
+        "manifestSha256": sha256_file(manifest_path),
+        "diagnosticGradientsPath": str(gradients_path),
+        "diagnosticGradientsSha256": sha256_file(gradients_path),
+        "diagnosticGradientsById": gradients,
+        "diagnosticGradientRowCount": len(gradients),
+        "splitCounts": dict(sorted(split_counts.items())),
+        "categoryCounts": dict(sorted(category_counts.items())),
+        "method": manifest.get("method"),
+    }
+
+
+def summarize_training_array(root: Path, exact_artifact: dict[str, Any]) -> dict[str, Any]:
     rows_path = root / "constellation_training_rows.jsonl"
     manifest_path = root / "constellation_training_manifest.json"
     certificate_path = root / "constellation_training_certificate.json"
@@ -448,8 +579,10 @@ def summarize_training_array(root: Path) -> dict[str, Any]:
         "certificateSha256": sha256_file(certificate_path) if certificate_path.is_file() else None,
         "partitionCounts": dict(sorted(partition_counts.items())),
         "categoryCounts": dict(sorted(category_counts.items())),
-        "exactTracInReady": False,
-        "exactTracInBlocker": "No retained per-checkpoint gradients found with this row set.",
+        "exactTracInReady": bool(exact_artifact.get("available")),
+        "exactTracInBlocker": None
+        if exact_artifact.get("available")
+        else "No retained exact projected gradient rows found with this row set.",
     }
 
 

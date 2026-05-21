@@ -76,6 +76,10 @@ from .python_calibration_active_gate import add_arguments as add_python_calibrat
 from .python_calibration_active_gate import command_python_calibration_active_gate
 from .python_tracin_abstain_pool import add_arguments as add_python_tracin_abstain_pool_arguments
 from .python_tracin_abstain_pool import command_python_tracin_abstain_pool
+from .python_exact_tracin_gradient_rows import (
+    add_arguments as add_python_exact_tracin_gradient_rows_arguments,
+)
+from .python_exact_tracin_gradient_rows import command_python_exact_tracin_gradient_rows
 from .python_anti_compensation_fsv import add_arguments as add_python_anti_compensation_fsv_arguments
 from .python_anti_compensation_fsv import command_python_anti_compensation_fsv
 from .python_auto_label_discovery import add_arguments as add_python_auto_label_discovery_arguments
@@ -581,6 +585,16 @@ def build_parser() -> argparse.ArgumentParser:
     tracin_abstain_pool.set_defaults(
         func=command_python_tracin_abstain_pool,
         evidence_name="python-tracin-abstain-pool-command-evidence.json",
+    )
+
+    exact_tracin_gradient_rows = sub.add_parser(
+        "python-exact-tracin-gradient-rows",
+        help="TASK-PY-G-126: materialize exact projected row-gradient artifacts for abstain-pool falsification.",
+    )
+    add_python_exact_tracin_gradient_rows_arguments(exact_tracin_gradient_rows)
+    exact_tracin_gradient_rows.set_defaults(
+        func=command_python_exact_tracin_gradient_rows,
+        evidence_name="python-exact-tracin-gradient-rows-command-evidence.json",
     )
 
     anti_compensation = sub.add_parser(
