@@ -123,9 +123,7 @@ fn run() -> Result<()> {
     let typed_blocker = typed_blocker(&legal_best_candidate, &forbidden_threshold);
     let edge_cases = edge_case_audit(&feature_table, &forbidden_threshold)?;
 
-    let all_passed = reproduction.passed
-        && typed_blocker.accepted
-        && edge_cases.all_passed;
+    let all_passed = reproduction.passed && typed_blocker.accepted && edge_cases.all_passed;
     let report = json!({
         "schema_version": 1,
         "issue": 548,

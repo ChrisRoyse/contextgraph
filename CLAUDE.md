@@ -34,7 +34,7 @@ prediction_oracle_correlation ≥ 0.95
   AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
 
-Once met → human review of AI-generated Python patches is statistically unjustified. Current measurement: `0.866667` (Panel A); Panel B has no measurement yet (#405 produces the first).
+Once met → human review of AI-generated Python patches is statistically unjustified. Current valid Panel A binary baseline: rank-lift `prediction_oracle_correlation = 0.7942190170` (raw `0.4843192995`, rank-safe `0.6916886568`) from aiwonder real-input FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`; the older `0.866667` measurement is invalid synthetic-vector evidence. The #392 active/abstain diagnostic clears aggregate active correlation (`0.9526350498`) but is not a ship-gate pass because per-cell and rolling-window/power gates still fail. Panel B has no measurement yet (#405/#521).
 
 **Product boundary.** ME-JEPA is the product. LLM agents are untrusted edit generators. Hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, and docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`. A feature belongs in the architecture only if it captures durable reality, densifies frozen target panels, improves predictor calibration/coverage/OOD, converts prediction mistakes into replay weight, or proves to the operator (by SoT readback) that the system functions as claimed.
 
@@ -49,7 +49,7 @@ Beyond the binary primitive ME-JEPA exposes two derived operator-facing surfaces
 
 **Phases A–H complete.** 35/35 Phase A–D items audit-verified 2026-05-12. Phase H (inner-actor LLM retirement) FSV-verified 2026-05-13 — `feature = "llm"` triggers `compile_error!` at `crates/context-graph-mcp/src/lib.rs:13`; deletion of `Qwen3.6-27B`, `Hermes-2-Pro`, `Ollama`, `llama.cpp` generative inference enforced by 9 `scripts/ci/phase_h_*.sh` absence-checks.
 
-**The only outstanding gate is Phase G model-quality convergence:** `prediction_oracle_correlation = 0.866667 < 0.95` on Panel A (legacy `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; #369 closed the aiwonder migration revalidation sweep, and #405 produces the first Panel B cross-panel measurement).
+**The only outstanding gate is Phase G model-quality convergence:** valid real-input Panel A binary baseline is `prediction_oracle_correlation = 0.7942190170 < 0.95`; latest ship-gate FSV is `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`. The #392 active/abstain diagnostic has aggregate active correlation `0.9526350498`, Brier `0.0231730901`, and ECE `0.0169885978` on `205 / 240` holdout rows, but full ship-gate remains false due per-cell and rolling-window/power blockers. Panel B (#405/#521) still has no model-backed measurement.
 
 **Post-migration storage:** Production durable state lives on aiwonder under `/zfs/archive/contextgraph/...`; hot work under `/zfs/hot/contextgraph/...` (per #363 / #412).
 

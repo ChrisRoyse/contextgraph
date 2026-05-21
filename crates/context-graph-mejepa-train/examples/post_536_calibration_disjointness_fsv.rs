@@ -22,13 +22,13 @@ const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/post-536-calibration-disjo
 const REPORT_NAME: &str = "post_536_calibration_disjointness_fsv.json";
 const READBACK_NAME: &str = "post_536_calibration_disjointness_readback.json";
 const SHIP_GATE_REPORT_PATH: &str =
-    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T175714Z/ship-gate-fsv.json";
+    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T185945Z/ship-gate-fsv.json";
 const SHIP_GATE_READBACK_PATH: &str =
-    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T175714Z/ship-gate-readback.json";
+    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T185945Z/ship-gate-readback.json";
 const EXPECTED_SHIP_GATE_REPORT_SHA256: &str =
-    "3162179b93011b8d9f51865fb3535f2b713b178199216f8e42dd43b45da102ce";
+    "781aa3f6527abed2add930a8a19f9eb790fdbe3c86b81f27006ae4ca48ca2506";
 const EXPECTED_SHIP_GATE_READBACK_SHA256: &str =
-    "731912054a9e95ecb23ab8a05a73d1bf4de7a04bca6f215bba7d68aca581d19b";
+    "47905c3915f2cb306dbaf2ecf26b3379c3e91e1f52bc66ec0917dee88dea9968";
 const INDEX_PATH: &str =
     "/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
 const LABEL_ROOT: &str =

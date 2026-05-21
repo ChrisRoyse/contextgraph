@@ -19,6 +19,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+if __package__ in {None, ""}:
+    import sys
+
+    sys.path.append(str(Path(__file__).resolve().parents[2]))
+    from scripts.swebench_lite_ops.core import DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT
+else:
+    from .core import DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT
+
 
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-G-076"
@@ -31,7 +39,7 @@ DEFAULT_METRIC_ARTIFACTS = (
     Path("/zfs/archive/contextgraph/fsv/task-py-g-097-constellation-ablation-with-calibration-fsv/artifacts/constellation_ablation_with_calibration_metrics.jsonl"),
 )
 DEFAULT_COMPLETED_FSVS = (
-    Path("/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/python_constellation_training_objective_fsv.json"),
+    DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT / "constellation_training_manifest.json",
     Path("/zfs/archive/contextgraph/fsv/task-py-g-093-constellation-ablation-suite-fsv/python_constellation_ablation_suite_fsv.json"),
     Path("/zfs/archive/contextgraph/fsv/task-py-g-097-constellation-ablation-with-calibration-fsv/python_constellation_ablation_with_calibration_fsv.json"),
     Path("/zfs/archive/contextgraph/fsv/task-py-g-057-ood-harvest-fsv/run-20260519T022705Z/ood_harvest_fsv.json"),

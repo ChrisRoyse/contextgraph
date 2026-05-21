@@ -9,8 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from .core import SwebenchOpsError
-from .python_constellation_training_objective import normalize_category
+from .core import SwebenchOpsError, normalize_category
 from .python_real_corpus_constellation_smoke import (
     EPS,
     SampleRecord,

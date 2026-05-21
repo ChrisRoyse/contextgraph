@@ -60,8 +60,6 @@ from .python_failure_fingerprint_calibrator import add_arguments as add_python_f
 from .python_failure_fingerprint_calibrator import command_python_failure_fingerprint_calibrator
 from .python_real_corpus_constellation_smoke import add_arguments as add_python_real_corpus_constellation_smoke_arguments
 from .python_real_corpus_constellation_smoke import command_python_real_corpus_constellation_smoke
-from .python_constellation_training_objective import add_arguments as add_python_constellation_training_objective_arguments
-from .python_constellation_training_objective import command_python_constellation_training_objective
 from .python_constellation_ablation_suite import add_arguments as add_python_constellation_ablation_suite_arguments
 from .python_constellation_ablation_suite import command_python_constellation_ablation_suite
 from .python_constellation_ablation_uncalibrated import (
@@ -501,16 +499,6 @@ def build_parser() -> argparse.ArgumentParser:
     real_corpus_constellation.set_defaults(
         func=command_python_real_corpus_constellation_smoke,
         evidence_name="python-real-corpus-constellation-smoke-command-evidence.json",
-    )
-
-    constellation_training_objective = sub.add_parser(
-        "python-constellation-training-objective",
-        help="TASK-PY-G-096: train/evaluate a slot-preserving constellation objective over real aiwonder forwards.",
-    )
-    add_python_constellation_training_objective_arguments(constellation_training_objective)
-    constellation_training_objective.set_defaults(
-        func=command_python_constellation_training_objective,
-        evidence_name="python-constellation-training-objective-command-evidence.json",
     )
 
     constellation_ablation_suite = sub.add_parser(

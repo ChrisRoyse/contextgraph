@@ -46,9 +46,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let after = counters.snapshot();
     let breakdown = SystemCostBreakdown::from_snapshots(&before, &after);
     let weekly_report = json!({
-        "reportDate": "2026-05-13",
+        "reportDate": "2026-05-21",
         "shipGatePassed": false,
-        "predictionOracleCorrelation": 0.866667
+        "predictionOracleCorrelation": 0.794219017
     });
     let extended_report = attach_system_cost_to_weekly_report(weekly_report, &breakdown)?;
     let weekly_report_path = run_root.join("weekly-report-with-system-cost.json");

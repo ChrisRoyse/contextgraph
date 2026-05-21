@@ -24,8 +24,8 @@ use sha2::{Digest, Sha256};
 
 const DEFAULT_FSV_ROOT: &str =
     "/zfs/archive/contextgraph/fsv/task-py-g-090-consensus-contradiction-heads-fsv";
-const TRAINING_ROWS: &str = "/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts/constellation_training_rows.jsonl";
-const PAIRWISE_OBSERVATIONS: &str = "/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts/constellation_pairwise_observations.jsonl";
+const TRAINING_ROWS: &str = "/zfs/archive/contextgraph/state/training-arrays/constellation-training-arrays-v1-realinput/constellation_training_rows.jsonl";
+const PAIRWISE_OBSERVATIONS: &str = "/zfs/archive/contextgraph/state/training-arrays/constellation-training-arrays-v1-realinput/constellation_pairwise_observations.jsonl";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

@@ -20,7 +20,7 @@ use sha2::{Digest, Sha256};
 
 const DEFAULT_FSV_ROOT: &str =
     "/zfs/archive/contextgraph/fsv/task-py-g-044-multi-head-contradiction-fsv";
-const TRAINING_ROWS: &str = "/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts/constellation_training_rows.jsonl";
+const TRAINING_ROWS: &str = "/zfs/archive/contextgraph/state/training-arrays/constellation-training-arrays-v1-realinput/constellation_training_rows.jsonl";
 const LEGITIMATE_CONTROLS_PER_CELL: usize = 20;
 const TARGET_CELLS: [&str; 3] = [
     "python:subtle_flip",

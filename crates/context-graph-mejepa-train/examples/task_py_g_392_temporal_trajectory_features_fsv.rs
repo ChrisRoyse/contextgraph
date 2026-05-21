@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 //! TASK-PY-G-392 temporal constellation trajectory diagnostic FSV.
 //!
 //! This deliberately does not rerun the CUDA predictor. It replays the
@@ -40,9 +42,9 @@ const CODE_STATE_CONSTELLATIONS_PATH: &str =
 const FILE_PATH_CONSTELLATIONS_PATH: &str =
     "/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v2-live-split/file_path_constellations.jsonl";
 const HIERARCHY_DB_PATH: &str =
-    "/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv/run-1779273783982/failure-mode-hierarchy.rocksdb";
+    "/zfs/archive/contextgraph/fsv/task-skill-009-targeted-skill-coverage-repair-fsv-default128-final/run-1779333467960/skill-corpus.rocksdb";
 const HIERARCHY_REPORT_PATH: &str =
-    "/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv/run-1779273783982/task_py_g_110_failure_mode_hierarchy_fsv.json";
+    "/zfs/archive/contextgraph/fsv/task-skill-009-targeted-skill-coverage-repair-fsv-default128-final/run-1779333467960/task_py_g_118_aiwonder_skill_materialization_fsv.json";
 const HIERARCHY_DB_PATH_ENV: &str = "CG_MEJEPA_HIERARCHY_DB_PATH";
 const HIERARCHY_REPORT_PATH_ENV: &str = "CG_MEJEPA_HIERARCHY_REPORT_PATH";
 const BASELINE_REPORT_PATH: &str =
@@ -87,7 +89,16 @@ const ECE_BIN_COUNT: usize = 10;
 const BASELINE_536_CORRELATION: f32 = 0.794_219;
 const BASELINE_536_BRIER: f32 = 0.092_373;
 const BASELINE_536_ECE: f32 = 0.024_032;
+const DEGENERATE_RECALL_TARGET: f32 = 0.95;
+const DEGENERATE_CLASS_CONFIDENCE_TARGET: f32 = 0.95;
+const DEGENERATE_BRIER_MAX: f32 = 0.05;
+const DEGENERATE_ECE_MAX: f32 = 0.05;
 const SELECTION_ECE_WEIGHT: f32 = 0.25;
+const SKILL_POLICY_OBJECTIVE_IMPROVEMENT_MARGIN: f32 = 1.0e-3;
+const SKILL_POLICY_ECE_REGRESSION_CAP: f32 = 6.0e-3;
+const FINAL_BIN_GRID_OBJECTIVE_EPSILON: f32 = 1.0e-6;
+const FINAL_BIN_LEGAL_BEST_OBJECTIVE_MARGIN: f32 = 1.0e-3;
+const FINAL_BIN_NONREGRESSION_EPSILON: f32 = 1.0e-6;
 const SLOT_IDS: [&str; 12] = [
     "e1", "e10", "e12", "e13", "e14", "e2", "e3", "e4", "e6", "e7", "e8", "e9",
 ];
@@ -119,6 +130,11 @@ fn run() -> Result<()> {
     let fsv_root = fsv_root();
     let run_dir = Path::new(&fsv_root).join(&run_id);
     fs::create_dir_all(&run_dir)?;
+
+    ensure!(
+        !active_paths_include_mntd(),
+        "active diagnostic inputs must not use /mnt/d"
+    );
 
     let baseline_report = read_json(BASELINE_REPORT_PATH)?;
     ensure!(
@@ -222,8 +238,38 @@ fn run() -> Result<()> {
     let legal_mean_bias_calibration = select_mean_bias_calibration_repair(feature_table)?;
     let legal_ece_focused_mean_bias_calibration =
         select_ece_focused_mean_bias_calibration_repair(feature_table)?;
+    let legal_cross_window_stability_calibration =
+        select_cross_window_stability_calibration_repair(feature_table)?;
+    let legal_cause_residual_calibration =
+        select_cause_residual_calibration_repair(feature_table, &legal_mean_bias_calibration)?;
+    let legal_cause_bin_calibration =
+        select_cause_bin_calibration_repair(feature_table, &legal_cause_residual_calibration)?;
+    let legal_score_sharpness_calibration =
+        select_score_sharpness_calibration_repair(feature_table, &legal_cause_bin_calibration)?;
+    let legal_score_sharpness_logit_calibration = select_score_sharpness_logit_calibration_repair(
+        feature_table,
+        &legal_score_sharpness_calibration,
+    )?;
+    let legal_score_sharpness_abstain_band = select_score_sharpness_abstain_band_repair(
+        feature_table,
+        &legal_score_sharpness_calibration,
+    )?;
+    let abstain_candidate_found = !legal_score_sharpness_abstain_band.selection_forbidden
+        && legal_score_sharpness_abstain_band.blockers.is_empty();
+    let legal_cause_band_calibration =
+        select_cause_band_calibration_repair(feature_table, &legal_cause_bin_calibration)?;
+    let legal_final_bin_calibration =
+        select_final_bin_calibration_repair(feature_table, &legal_cause_bin_calibration)?;
     let legal_support_shrink_calibration =
         select_support_shrink_calibration_repair(feature_table, &legal_mean_bias_calibration)?;
+    let legal_evidence_consequence_calibration = select_evidence_consequence_calibration_repair(
+        feature_table,
+        &legal_mean_bias_calibration,
+    )?;
+    let legal_bin_consequence_calibration = select_bin_consequence_calibration_repair(
+        feature_table,
+        &legal_evidence_consequence_calibration,
+    )?;
     let legal_probability_calibration = select_probability_calibration_repair(feature_table)?;
     let forbidden_threshold = select_threshold_repair(
         feature_table,
@@ -235,16 +281,69 @@ fn run() -> Result<()> {
         "holdout-selected threshold repair must be marked forbidden"
     );
 
-    let legal_best_candidate = legal_best_candidate(
+    let legal_candidate_reports = LegalCandidateReports {
+        threshold: &legal_threshold,
+        affine_calibration: &legal_affine_calibration,
+        prediction_blend: &legal_prediction_blend,
+        logit_calibration: &legal_logit_calibration,
+        mean_bias_calibration: &legal_mean_bias_calibration,
+        cross_window_stability_calibration: &legal_cross_window_stability_calibration,
+        cause_residual_calibration: &legal_cause_residual_calibration,
+        cause_bin_calibration: &legal_cause_bin_calibration,
+        score_sharpness_calibration: &legal_score_sharpness_calibration,
+        score_sharpness_logit_calibration: &legal_score_sharpness_logit_calibration,
+        cause_band_calibration: &legal_cause_band_calibration,
+        final_bin_calibration: &legal_final_bin_calibration,
+        support_shrink_calibration: &legal_support_shrink_calibration,
+        evidence_consequence_calibration: &legal_evidence_consequence_calibration,
+        bin_consequence_calibration: &legal_bin_consequence_calibration,
+        probability_calibration: &legal_probability_calibration,
+    };
+    let legal_best_candidate = legal_best_candidate(&best_legal_global, &legal_candidate_reports);
+    let legal_best_holdout_rows = legal_best_holdout_rows(
+        feature_table,
+        &legal_best_candidate,
         &best_legal_global,
         &legal_threshold,
         &legal_affine_calibration,
         &legal_prediction_blend,
+        &score_traces,
         &legal_logit_calibration,
         &legal_mean_bias_calibration,
+        &legal_cross_window_stability_calibration,
+        &legal_cause_residual_calibration,
+        &legal_cause_bin_calibration,
+        &legal_score_sharpness_calibration,
+        &legal_score_sharpness_logit_calibration,
+        &legal_cause_band_calibration,
+        &legal_final_bin_calibration,
         &legal_support_shrink_calibration,
+        &legal_evidence_consequence_calibration,
+        &legal_bin_consequence_calibration,
         &legal_probability_calibration,
+    )?;
+    let legal_best_row_reproduction = reproduction_report(
+        &legal_best_candidate.holdout.metrics,
+        &metrics_for(&legal_best_holdout_rows),
     );
+    let legal_best_row_audit = legal_best_row_audit(
+        feature_table,
+        &legal_best_candidate,
+        &legal_best_holdout_rows,
+        &legal_best_row_reproduction,
+    );
+    let legal_best_ece_breakdown = ece_breakdown_report(&legal_best_holdout_rows);
+    let legal_best_holdout_row_diagnostics = legal_best_holdout_row_diagnostics(
+        feature_table,
+        &legal_best_holdout_rows,
+        &legal_score_sharpness_calibration.model,
+    )?;
+    let legal_best_ece_breakdown_audit = ece_breakdown_audit(
+        &legal_best_candidate.holdout.metrics,
+        &legal_best_ece_breakdown,
+    );
+    let bin_consequence_candidate_audit =
+        bin_consequence_candidate_audit(feature_table, &legal_bin_consequence_calibration)?;
     let directional_signal =
         directional_signal_report(&baseline_final_metrics, &legal_best_candidate);
     let score_fusion = score_fusion_report(&baseline_report)?;
@@ -254,6 +353,12 @@ fn run() -> Result<()> {
         &forbidden_threshold,
         &legal_affine_calibration,
         &legal_support_shrink_calibration,
+        &legal_evidence_consequence_calibration,
+        &legal_bin_consequence_calibration,
+        &legal_cause_residual_calibration,
+        &legal_cause_bin_calibration,
+        &legal_score_sharpness_calibration,
+        &legal_cause_band_calibration,
     )?;
 
     let promotable_candidate_found = legal_best_candidate.blockers.is_empty();
@@ -264,10 +369,60 @@ fn run() -> Result<()> {
         && edge_cases.missing_file_path_row_fails_closed
         && edge_cases.hierarchy_db_readback_passed
         && directional_signal.passed
+        && legal_best_row_reproduction.passed
+        && legal_best_row_audit.all_passed
+        && legal_best_ece_breakdown_audit.all_passed
+        && legal_cross_window_stability_calibration
+            .model
+            .bias_stats
+            .values()
+            .any(|stats| stats.valid_window_count >= 2)
+        && legal_cause_residual_calibration.model.feature_count > 0
+        && !legal_cause_bin_calibration.model.key_stats.is_empty()
+        && legal_cause_bin_calibration
+            .calibration_application
+            .applied_row_count
+            > 0
+        && legal_cause_bin_calibration
+            .holdout_application
+            .applied_row_count
+            > 0
+        && legal_score_sharpness_calibration
+            .calibration_application
+            .low_tail_shaped_row_count
+            + legal_score_sharpness_calibration
+                .calibration_application
+                .high_tail_shaped_row_count
+            > 0
+        && legal_score_sharpness_calibration
+            .holdout_application
+            .low_tail_shaped_row_count
+            + legal_score_sharpness_calibration
+                .holdout_application
+                .high_tail_shaped_row_count
+            > 0
+        && !legal_score_sharpness_abstain_band
+            .calibration_application
+            .per_category
+            .is_empty()
+        && !legal_score_sharpness_abstain_band
+            .holdout_application
+            .per_category
+            .is_empty()
+        && legal_cause_band_calibration
+            .calibration_application
+            .applied_row_count
+            > 0
+        && legal_cause_band_calibration
+            .holdout_application
+            .applied_row_count
+            > 0
+        && bin_consequence_candidate_audit.all_passed
         && (promotable_candidate_found || typed_blocker.accepted)
         && score_fusion.edge_cases.all_passed
         && skill_policy_ablation.all_passed
-        && edge_cases.all_passed;
+        && edge_cases.all_passed
+        && !active_paths_include_mntd();
     let report = json!({
         "schema_version": 1,
         "issue": 392,
@@ -275,6 +430,7 @@ fn run() -> Result<()> {
         "started_at": started_at.to_rfc3339(),
         "all_passed": all_passed,
         "promotable_candidate_found": promotable_candidate_found,
+        "abstain_candidate_found": abstain_candidate_found,
         "selection_policy": {
             "objective": "brier + SELECTION_ECE_WEIGHT * ece - 0.10 * pearson_correlation",
             "selection_ece_weight": SELECTION_ECE_WEIGHT,
@@ -323,12 +479,28 @@ fn run() -> Result<()> {
         },
         "candidate_results": candidate_results,
         "legal_best_candidate": legal_best_candidate,
+        "legal_best_row_reproduction": legal_best_row_reproduction,
+        "legal_best_row_audit": legal_best_row_audit,
+        "legal_best_holdout_row_diagnostics": legal_best_holdout_row_diagnostics,
+        "legal_best_ece_breakdown": legal_best_ece_breakdown,
+        "legal_best_ece_breakdown_audit": legal_best_ece_breakdown_audit,
+        "bin_consequence_candidate_audit": bin_consequence_candidate_audit,
         "legal_affine_calibration": legal_affine_calibration,
         "legal_prediction_blend": legal_prediction_blend,
         "legal_logit_calibration": legal_logit_calibration,
         "legal_mean_bias_calibration": legal_mean_bias_calibration,
         "legal_ece_focused_mean_bias_calibration": legal_ece_focused_mean_bias_calibration,
+        "legal_cross_window_stability_calibration": legal_cross_window_stability_calibration,
+        "legal_cause_residual_calibration": legal_cause_residual_calibration,
+        "legal_cause_bin_calibration": legal_cause_bin_calibration,
+        "legal_score_sharpness_calibration": legal_score_sharpness_calibration,
+        "legal_score_sharpness_logit_calibration": legal_score_sharpness_logit_calibration,
+        "legal_score_sharpness_abstain_band": legal_score_sharpness_abstain_band,
+        "legal_cause_band_calibration": legal_cause_band_calibration,
+        "legal_final_bin_calibration": legal_final_bin_calibration,
         "legal_support_shrink_calibration": legal_support_shrink_calibration,
+        "legal_evidence_consequence_calibration": legal_evidence_consequence_calibration,
+        "legal_bin_consequence_calibration": legal_bin_consequence_calibration,
         "legal_probability_calibration": legal_probability_calibration,
         "directional_signal": directional_signal,
         "static_score_fusion_reference": score_fusion,
@@ -347,6 +519,36 @@ fn run() -> Result<()> {
         "diagnostic FSV failed: {}",
         serde_json::to_string_pretty(&report_readback["typed_blocker"])?
     );
+    ensure!(
+        report_readback["legal_best_row_audit"]["all_passed"].as_bool() == Some(true),
+        "legal best row audit failed closed"
+    );
+    ensure!(
+        report_readback["legal_best_ece_breakdown_audit"]["all_passed"].as_bool() == Some(true),
+        "legal best ECE breakdown audit failed closed"
+    );
+    ensure!(
+        report_readback["bin_consequence_candidate_audit"]["all_passed"].as_bool() == Some(true),
+        "bin-consequence candidate audit failed closed"
+    );
+    let worst_ece_bins = report_readback["legal_best_ece_breakdown"]["worst_bins"]
+        .as_array()
+        .ok_or_else(|| anyhow!("legal best ECE worst_bins missing or not an array"))?;
+    ensure!(
+        !worst_ece_bins.is_empty(),
+        "legal best ECE worst_bins must be non-empty for non-empty holdout rows"
+    );
+    let worst_ece_bin = worst_ece_bins[0].clone();
+    let row_diagnostics = report_readback["legal_best_holdout_row_diagnostics"]
+        .as_array()
+        .ok_or_else(|| anyhow!("legal best holdout row diagnostics missing or not an array"))?;
+    ensure!(
+        row_diagnostics.len()
+            == report_readback["legal_best_candidate"]["holdout"]["metrics"]["sample_count"]
+                .as_u64()
+                .unwrap_or_default() as usize,
+        "legal best holdout row diagnostics must cover every holdout row"
+    );
     let readback = json!({
         "schema_version": 1,
         "report_path": report_path,
@@ -357,6 +559,14 @@ fn run() -> Result<()> {
         "readback_legal_best_correlation": report_readback["legal_best_candidate"]["holdout"]["metrics"]["prediction_oracle_correlation"],
         "readback_legal_best_brier": report_readback["legal_best_candidate"]["holdout"]["metrics"]["brier"],
         "readback_legal_best_ece": report_readback["legal_best_candidate"]["holdout"]["metrics"]["ece"],
+        "readback_legal_best_row_audit": report_readback["legal_best_row_audit"],
+        "readback_legal_best_ece_aggregate": report_readback["legal_best_ece_breakdown"]["aggregate_ece"],
+        "readback_legal_best_ece_from_bins": report_readback["legal_best_ece_breakdown"]["ece_from_bins"],
+        "readback_legal_best_ece_non_empty_bin_count": report_readback["legal_best_ece_breakdown"]["non_empty_bin_count"],
+        "readback_legal_best_ece_breakdown_audit": report_readback["legal_best_ece_breakdown_audit"],
+        "readback_legal_best_worst_ece_bin": worst_ece_bin,
+        "readback_legal_best_holdout_row_diagnostic_count": row_diagnostics.len(),
+        "readback_bin_consequence_candidate_audit": report_readback["bin_consequence_candidate_audit"],
         "readback_directional_signal_passed": report_readback["directional_signal"]["passed"],
         "readback_legal_best_blockers": report_readback["legal_best_candidate"]["blockers"],
         "readback_forbidden_reason": report_readback["forbidden_holdout_oracle"]["forbidden_reason"],
@@ -367,7 +577,13 @@ fn run() -> Result<()> {
     println!(
         "{}",
         serde_json::to_string_pretty(&json!({
-            "report": report_readback,
+            "summary": {
+                "all_passed": report_readback["all_passed"],
+                "typed_blocker": report_readback["typed_blocker"],
+                "legal_best_kind": report_readback["legal_best_candidate"]["kind"],
+                "legal_best_metrics": report_readback["legal_best_candidate"]["holdout"]["metrics"],
+                "worst_ece_bin": worst_ece_bin,
+            },
             "readback": readback,
             "hashes": {
                 "report_sha256": report_sha256,
@@ -474,6 +690,8 @@ struct FeatureRow {
     actual_oracle_pass: bool,
     patch_path: String,
     repo: String,
+    evidence_keys: Vec<String>,
+    cause_features: Vec<f32>,
     standardized_features: Vec<f32>,
 }
 
@@ -826,6 +1044,280 @@ struct MeanBiasCalibrationReport {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct CrossWindowBiasStats {
+    support: usize,
+    positives: usize,
+    full_bias: f32,
+    stable_bias: f32,
+    window_bias_mean: f32,
+    window_bias_std: f32,
+    valid_window_count: usize,
+    min_window_support_seen: usize,
+    stability_weight: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CrossWindowStabilityCalibrationModel {
+    selected_on: String,
+    scope: CalibrationScope,
+    affine_model: AffineCalibrationModel,
+    shrinkage: f32,
+    window_count: usize,
+    min_window_support: usize,
+    instability_scale: f32,
+    bias_cap: f32,
+    bias_stats: BTreeMap<String, CrossWindowBiasStats>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CrossWindowStabilityCalibrationReport {
+    selected_on: String,
+    selection_forbidden: bool,
+    forbidden_reason: Option<String>,
+    selection_objective: f32,
+    model: CrossWindowStabilityCalibrationModel,
+    calibration: SplitReport,
+    holdout: SplitReport,
+    blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CauseResidualCalibrationModel {
+    selected_on: String,
+    base_model: MeanBiasCalibrationModel,
+    scope: CalibrationScope,
+    window_count: usize,
+    regularization: f32,
+    correction_scale: f32,
+    correction_cap: f32,
+    feature_count: usize,
+    feature_mean: Vec<f32>,
+    feature_std: Vec<f32>,
+    weights_by_key: BTreeMap<String, Vec<f32>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CauseResidualCalibrationReport {
+    selected_on: String,
+    selection_forbidden: bool,
+    forbidden_reason: Option<String>,
+    selection_objective: f32,
+    model: CauseResidualCalibrationModel,
+    calibration: SplitReport,
+    holdout: SplitReport,
+    blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CauseBinKeyStats {
+    support: usize,
+    positives: usize,
+    prior: f32,
+    score_mean: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CauseBinCalibrationModel {
+    selected_on: String,
+    base_model: CauseResidualCalibrationModel,
+    scope: CalibrationScope,
+    bin_count: usize,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+    key_stats: BTreeMap<String, CauseBinKeyStats>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CauseBinApplicationStats {
+    scoped_row_count: usize,
+    applied_row_count: usize,
+    missing_key_row_count: usize,
+    under_min_support_row_count: usize,
+    non_scoped_row_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CauseBinCalibrationReport {
+    selected_on: String,
+    selection_forbidden: bool,
+    forbidden_reason: Option<String>,
+    selection_objective: f32,
+    model: CauseBinCalibrationModel,
+    calibration: SplitReport,
+    holdout: SplitReport,
+    calibration_application: CauseBinApplicationStats,
+    holdout_application: CauseBinApplicationStats,
+    blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ScoreSharpnessCalibrationModel {
+    selected_on: String,
+    base_model: CauseBinCalibrationModel,
+    scope: CalibrationScope,
+    low_cutoff: f32,
+    low_tail_scale: f32,
+    high_cutoff: f32,
+    high_tail_scale: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ScoreSharpnessApplicationStats {
+    scoped_row_count: usize,
+    low_tail_shaped_row_count: usize,
+    high_tail_shaped_row_count: usize,
+    unchanged_scoped_row_count: usize,
+    non_scoped_row_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ScoreSharpnessCalibrationReport {
+    selected_on: String,
+    selection_forbidden: bool,
+    forbidden_reason: Option<String>,
+    selection_objective: f32,
+    model: ScoreSharpnessCalibrationModel,
+    calibration: SplitReport,
+    holdout: SplitReport,
+    calibration_application: ScoreSharpnessApplicationStats,
+    holdout_application: ScoreSharpnessApplicationStats,
+    blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ScoreSharpnessLogitCalibrationModel {
+    selected_on: String,
+    base_model: ScoreSharpnessCalibrationModel,
+    logit_model: LogitCalibrationModel,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ScoreSharpnessLogitCalibrationReport {
+    selected_on: String,
+    selection_forbidden: bool,
+    forbidden_reason: Option<String>,
+    selection_objective: f32,
+    model: ScoreSharpnessLogitCalibrationModel,
+    calibration: SplitReport,
+    holdout: SplitReport,
+    blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ScoreSharpnessAbstainBandModel {
+    selected_on: String,
+    base_model: ScoreSharpnessCalibrationModel,
+    abstain_low: f32,
+    abstain_high: f32,
+    min_active_coverage: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AbstainBandApplicationStats {
+    total_row_count: usize,
+    active_row_count: usize,
+    abstained_row_count: usize,
+    active_coverage: f32,
+    abstained_actual_pass_count: usize,
+    abstained_actual_fail_count: usize,
+    per_category: BTreeMap<String, AbstainBandCategoryStats>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AbstainBandCategoryStats {
+    total_row_count: usize,
+    active_row_count: usize,
+    abstained_row_count: usize,
+    active_coverage: f32,
+    active_actual_pass_count: usize,
+    active_actual_fail_count: usize,
+    active_predicted_pass_count: usize,
+    active_predicted_fail_count: usize,
+    abstained_actual_pass_count: usize,
+    abstained_actual_fail_count: usize,
+    active_oracle_variance_class: OracleVarianceClass,
+    active_gate_contract: String,
+    active_gate_passed: bool,
+    active_gate_blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ScoreSharpnessAbstainBandReport {
+    selected_on: String,
+    selection_forbidden: bool,
+    forbidden_reason: Option<String>,
+    selection_objective: f32,
+    model: ScoreSharpnessAbstainBandModel,
+    calibration: SplitReport,
+    holdout: SplitReport,
+    calibration_application: AbstainBandApplicationStats,
+    holdout_application: AbstainBandApplicationStats,
+    blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CauseBandKeyStats {
+    support: usize,
+    positives: usize,
+    prior: f32,
+    score_mean: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CauseBandCalibrationModel {
+    selected_on: String,
+    base_model: CauseBinCalibrationModel,
+    scope: CalibrationScope,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+    key_stats: BTreeMap<String, CauseBandKeyStats>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CauseBandApplicationStats {
+    scoped_row_count: usize,
+    applied_row_count: usize,
+    missing_key_row_count: usize,
+    under_min_support_row_count: usize,
+    non_scoped_row_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CauseBandCalibrationReport {
+    selected_on: String,
+    selection_forbidden: bool,
+    forbidden_reason: Option<String>,
+    selection_objective: f32,
+    model: CauseBandCalibrationModel,
+    calibration: SplitReport,
+    holdout: SplitReport,
+    calibration_application: CauseBandApplicationStats,
+    holdout_application: CauseBandApplicationStats,
+    blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct FinalBinCalibrationModel {
+    selected_on: String,
+    base_model: CauseBinCalibrationModel,
+    probability_model: ProbabilityCalibrationModel,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct FinalBinCalibrationReport {
+    selected_on: String,
+    selection_forbidden: bool,
+    forbidden_reason: Option<String>,
+    selection_objective: f32,
+    model: FinalBinCalibrationModel,
+    calibration: SplitReport,
+    holdout: SplitReport,
+    blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct SupportShrinkCalibrationModel {
     selected_on: String,
     base_model: MeanBiasCalibrationModel,
@@ -850,6 +1342,94 @@ struct SupportShrinkCalibrationReport {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct EvidenceConsequenceKeyStats {
+    support: usize,
+    positives: usize,
+    prior: f32,
+    score_mean: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct EvidenceConsequenceCalibrationModel {
+    selected_on: String,
+    base_model: MeanBiasCalibrationModel,
+    scope: CalibrationScope,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+    global_prior: f32,
+    key_stats: BTreeMap<String, EvidenceConsequenceKeyStats>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct EvidenceConsequenceCalibrationReport {
+    selected_on: String,
+    selection_forbidden: bool,
+    forbidden_reason: Option<String>,
+    selection_objective: f32,
+    model: EvidenceConsequenceCalibrationModel,
+    calibration: SplitReport,
+    holdout: SplitReport,
+    blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct BinConsequenceKeyStats {
+    support: usize,
+    positives: usize,
+    prior: f32,
+    score_mean: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct BinConsequenceCalibrationModel {
+    selected_on: String,
+    base_model: EvidenceConsequenceCalibrationModel,
+    scope: CalibrationScope,
+    bin_count: usize,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+    key_stats: BTreeMap<String, BinConsequenceKeyStats>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct BinConsequenceCalibrationReport {
+    selected_on: String,
+    selection_forbidden: bool,
+    forbidden_reason: Option<String>,
+    selection_objective: f32,
+    model: BinConsequenceCalibrationModel,
+    calibration: SplitReport,
+    holdout: SplitReport,
+    blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct BinConsequenceApplicationStats {
+    all_passed: bool,
+    sample_count: usize,
+    scoped_row_count: usize,
+    applied_row_count: usize,
+    noop_scoped_row_count: usize,
+    applied_fraction: f32,
+    scoped_applied_fraction: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct BinConsequenceCandidateAudit {
+    all_passed: bool,
+    calibration_row_reproduction: ReproductionReport,
+    holdout_row_reproduction: ReproductionReport,
+    calibration_row_audit: LegalBestRowAudit,
+    holdout_row_audit: LegalBestRowAudit,
+    calibration_ece_breakdown_audit: EceBreakdownAudit,
+    holdout_ece_breakdown_audit: EceBreakdownAudit,
+    calibration_application: BinConsequenceApplicationStats,
+    holdout_application: BinConsequenceApplicationStats,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct LegalBestCandidate {
     kind: String,
     candidate: Value,
@@ -857,6 +1437,25 @@ struct LegalBestCandidate {
     calibration: SplitReport,
     holdout: SplitReport,
     blockers: Vec<String>,
+}
+
+struct LegalCandidateReports<'a> {
+    threshold: &'a ThresholdRepairReport,
+    affine_calibration: &'a AffineCalibrationReport,
+    prediction_blend: &'a PredictionBlendReport,
+    logit_calibration: &'a LogitCalibrationReport,
+    mean_bias_calibration: &'a MeanBiasCalibrationReport,
+    cross_window_stability_calibration: &'a CrossWindowStabilityCalibrationReport,
+    cause_residual_calibration: &'a CauseResidualCalibrationReport,
+    cause_bin_calibration: &'a CauseBinCalibrationReport,
+    score_sharpness_calibration: &'a ScoreSharpnessCalibrationReport,
+    score_sharpness_logit_calibration: &'a ScoreSharpnessLogitCalibrationReport,
+    cause_band_calibration: &'a CauseBandCalibrationReport,
+    final_bin_calibration: &'a FinalBinCalibrationReport,
+    support_shrink_calibration: &'a SupportShrinkCalibrationReport,
+    evidence_consequence_calibration: &'a EvidenceConsequenceCalibrationReport,
+    bin_consequence_calibration: &'a BinConsequenceCalibrationReport,
+    probability_calibration: &'a ProbabilityCalibrationReport,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -887,6 +1486,30 @@ struct EdgeCaseAudit {
     support_shrink_missing_key_fails_closed: bool,
     support_shrink_non_scoped_row_unchanged: bool,
     support_shrink_clamp_passed: bool,
+    evidence_consequence_non_scoped_row_unchanged: bool,
+    bin_consequence_missing_key_noops: bool,
+    bin_consequence_non_scoped_row_unchanged: bool,
+    bin_consequence_clamp_passed: bool,
+    cause_residual_non_scoped_row_unchanged: bool,
+    cause_residual_missing_weight_noops: bool,
+    cause_residual_feature_dimension_mismatch_fails_closed: bool,
+    cause_residual_clamp_passed: bool,
+    cause_bin_missing_key_noops: bool,
+    cause_bin_under_min_support_noops: bool,
+    cause_bin_non_scoped_row_unchanged: bool,
+    cause_bin_clamp_passed: bool,
+    score_sharpness_non_scoped_row_unchanged: bool,
+    score_sharpness_low_tail_continuous_sharpens: bool,
+    score_sharpness_high_tail_continuous_compresses: bool,
+    score_sharpness_clamp_passed: bool,
+    cause_band_missing_key_noops: bool,
+    cause_band_under_min_support_noops: bool,
+    cause_band_non_scoped_row_unchanged: bool,
+    cause_band_dimension_mismatch_fails_closed: bool,
+    cause_band_clamp_passed: bool,
+    ece_empty_rows_zero: bool,
+    ece_boundary_bins_passed: bool,
+    ece_per_category_empty_subset_passed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -895,6 +1518,58 @@ struct ReproductionReport {
     correlation_delta_abs: Option<f32>,
     brier_delta_abs: f32,
     ece_delta_abs: f32,
+    tolerance: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct LegalBestRowAudit {
+    all_passed: bool,
+    expected_sample_count: usize,
+    actual_sample_count: usize,
+    sample_count_matches: bool,
+    expected_row_identity_sha256: String,
+    actual_row_identity_sha256: String,
+    row_identity_matches: bool,
+    expected_per_category_counts: BTreeMap<String, usize>,
+    actual_per_category_counts: BTreeMap<String, usize>,
+    per_category_counts_match: bool,
+    exact_metric_reproduction_passed: bool,
+    tight_tolerance: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct LegalBestRowDiagnostic {
+    row_index: usize,
+    task_id: String,
+    category: String,
+    repo: String,
+    patch_path: String,
+    actual_oracle_pass: bool,
+    predicted_oracle_pass: f32,
+    predicted_pass: bool,
+    correct: bool,
+    absolute_error: f32,
+    ece_bin_index: usize,
+    current_rbf_score: f32,
+    selected_knn_score: f32,
+    cause_bin_score: f32,
+    score_sharpness_score: f32,
+    evidence_key_count: usize,
+    evidence_key_sample: Vec<String>,
+    cause_feature_nonzero_count: usize,
+    cause_feature_large_magnitude_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct EceBreakdownAudit {
+    all_passed: bool,
+    metric_ece: f32,
+    aggregate_ece: f32,
+    ece_from_bins: f32,
+    sample_count_matches: bool,
+    aggregate_matches_metric: bool,
+    bins_sum_matches_aggregate: bool,
+    non_empty_bins_when_sampled: bool,
     tolerance: f32,
 }
 
@@ -964,9 +1639,45 @@ struct MetricBlock {
     actual_fail_count: usize,
     pass_recall: Option<f32>,
     fail_recall: Option<f32>,
+    actual_class_confidence_mean: f32,
     score_min: f32,
     score_max: f32,
     score_mean: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct EceBreakdownReport {
+    aggregate_ece: f32,
+    ece_from_bins: f32,
+    sample_count: usize,
+    non_empty_bin_count: usize,
+    worst_bins: Vec<EceBinBreakdown>,
+    per_category: BTreeMap<String, CategoryEceBreakdown>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CategoryEceBreakdown {
+    metrics: MetricBlock,
+    non_empty_bin_count: usize,
+    worst_gap: f32,
+    bins: Vec<EceBinBreakdown>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct EceBinBreakdown {
+    bin_index: usize,
+    range_start: f32,
+    range_end: f32,
+    sample_count: usize,
+    actual_pass_count: usize,
+    actual_fail_count: usize,
+    predicted_pass_count: usize,
+    predicted_fail_count: usize,
+    confidence_mean: f32,
+    empirical_pass_rate: f32,
+    abs_gap: f32,
+    weighted_ece: f32,
+    sample_task_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -1104,6 +1815,26 @@ fn load_feature_table(
         if include_metadata_features {
             features.extend(metadata_features(entry)?);
         }
+        let evidence_keys = consequence_evidence_keys(
+            &file_states,
+            skill_index.as_ref(),
+            mode,
+            entry,
+            base,
+            target,
+            test_patch,
+            &target_workspace,
+        )?;
+        let cause_features = cause_residual_feature_vector(
+            &file_states,
+            skill_index.as_ref(),
+            mode,
+            &entry.task_id,
+            &target_workspace,
+            base,
+            target,
+            test_patch,
+        )?;
         raw_features.push(features);
         rows.push(FeatureRow {
             task_id: entry.task_id.clone(),
@@ -1112,6 +1843,8 @@ fn load_feature_table(
             actual_oracle_pass: entry.oracle_all_passed,
             patch_path: entry.patch_path.clone(),
             repo: entry.repo.clone(),
+            evidence_keys,
+            cause_features,
             standardized_features: Vec::new(),
         });
     }
@@ -1137,6 +1870,608 @@ fn load_feature_table(
         train_indices_by_category,
         skill_coverage,
     })
+}
+
+fn consequence_evidence_keys(
+    file_states: &BTreeMap<(String, String, String), FilePathConstellationRow>,
+    skill_index: Option<&SkillFeatureIndex>,
+    mode: FeatureMode,
+    entry: &CorpusEntry,
+    base: &CodeStateConstellationRow,
+    target: &CodeStateConstellationRow,
+    test_patch: &CodeStateConstellationRow,
+    target_workspace: &str,
+) -> Result<Vec<String>> {
+    let category = key_component(&entry.category);
+    let slot_sig = slot_delta_evidence_signature(base, target)?;
+    let label_sig = label_delta_evidence_signature(base, target);
+    let file_sig = if matches!(
+        mode,
+        FeatureMode::FileTrajectory | FeatureMode::FileSkillTrajectory(_)
+    ) {
+        file_path_evidence_signature(file_states, &entry.task_id, target_workspace)?
+    } else {
+        "none".to_string()
+    };
+    let (skill_sig, skill_kind_sig) = if let FeatureMode::FileSkillTrajectory(policy) = mode {
+        let index = skill_index.ok_or_else(|| anyhow!("skill index missing for evidence keys"))?;
+        (
+            skill_evidence_signature(index, base, target, test_patch, policy)?,
+            skill_kind_evidence_signature(index, base, target, test_patch)?,
+        )
+    } else {
+        ("none".to_string(), "none".to_string())
+    };
+
+    let mut keys = Vec::new();
+    push_evidence_key(
+        &mut keys,
+        format!(
+            "cat:{category}|skill:{skill_sig}|file:{file_sig}|slot:{slot_sig}|label:{label_sig}"
+        ),
+    );
+    push_evidence_key(
+        &mut keys,
+        format!("cat:{category}|skill:{skill_sig}|slot:{slot_sig}|label:{label_sig}"),
+    );
+    push_evidence_key(
+        &mut keys,
+        format!("cat:{category}|file:{file_sig}|slot:{slot_sig}|label:{label_sig}"),
+    );
+    push_evidence_key(
+        &mut keys,
+        format!("cat:{category}|skill:{skill_sig}|file:{file_sig}"),
+    );
+    push_evidence_key(
+        &mut keys,
+        format!(
+            "cat:{category}|skill_kind:{skill_kind_sig}|file:{file_sig}|slot:{slot_sig}|label:{label_sig}"
+        ),
+    );
+    push_evidence_key(
+        &mut keys,
+        format!("cat:{category}|skill_kind:{skill_kind_sig}|slot:{slot_sig}|label:{label_sig}"),
+    );
+    push_evidence_key(
+        &mut keys,
+        format!("cat:{category}|skill_kind:{skill_kind_sig}|file:{file_sig}"),
+    );
+    push_evidence_key(
+        &mut keys,
+        format!("cat:{category}|skill_kind:{skill_kind_sig}|label:{label_sig}"),
+    );
+    push_evidence_key(
+        &mut keys,
+        format!("cat:{category}|skill_kind:{skill_kind_sig}"),
+    );
+    push_evidence_key(
+        &mut keys,
+        format!("cat:{category}|slot:{slot_sig}|label:{label_sig}"),
+    );
+    push_evidence_key(&mut keys, format!("cat:{category}|skill:{skill_sig}"));
+    push_evidence_key(&mut keys, format!("cat:{category}|file:{file_sig}"));
+    push_evidence_key(&mut keys, format!("cat:{category}|slot:{slot_sig}"));
+    push_evidence_key(&mut keys, format!("cat:{category}|label:{label_sig}"));
+    push_evidence_key(&mut keys, format!("cat:{category}"));
+    ensure!(!keys.is_empty(), "evidence key ladder is empty");
+    Ok(keys)
+}
+
+fn push_evidence_key(keys: &mut Vec<String>, key: String) {
+    if !keys.contains(&key) {
+        keys.push(key);
+    }
+}
+
+fn slot_delta_evidence_signature(
+    base: &CodeStateConstellationRow,
+    target: &CodeStateConstellationRow,
+) -> Result<String> {
+    let base_matrix = slot_matrix(base)?;
+    let target_matrix = slot_matrix(target)?;
+    let mut deltas = Vec::new();
+    for (slot_idx, (base_slot, target_slot)) in base_matrix.iter().zip(&target_matrix).enumerate() {
+        for (scalar_idx, (base_value, target_value)) in
+            base_slot.iter().zip(target_slot).enumerate()
+        {
+            let delta = target_value - base_value;
+            deltas.push((
+                delta.abs(),
+                format!(
+                    "{}.{}.{}",
+                    SLOT_IDS[slot_idx],
+                    SLOT_SCALAR_NAMES[scalar_idx],
+                    signed_magnitude_bucket(delta)
+                ),
+            ));
+        }
+    }
+    deltas.sort_by(|left, right| right.0.partial_cmp(&left.0).unwrap_or(Ordering::Equal));
+    let parts = deltas
+        .into_iter()
+        .take(4)
+        .filter(|(magnitude, _)| *magnitude > 1.0e-6)
+        .map(|(_, label)| label)
+        .collect::<Vec<_>>();
+    Ok(if parts.is_empty() {
+        "stable".to_string()
+    } else {
+        parts.join("+")
+    })
+}
+
+fn signed_magnitude_bucket(delta: f32) -> &'static str {
+    let prefix = if delta >= 0.0 { "up" } else { "down" };
+    let magnitude = delta.abs();
+    match (prefix, magnitude) {
+        ("up", value) if value >= 1.0 => "up_xl",
+        ("up", value) if value >= 0.25 => "up_l",
+        ("up", value) if value >= 0.05 => "up_m",
+        ("up", _) => "up_s",
+        (_, value) if value >= 1.0 => "down_xl",
+        (_, value) if value >= 0.25 => "down_l",
+        (_, value) if value >= 0.05 => "down_m",
+        _ => "down_s",
+    }
+}
+
+fn label_delta_evidence_signature(
+    from: &CodeStateConstellationRow,
+    to: &CodeStateConstellationRow,
+) -> String {
+    let from_labels = live_labels(from);
+    let to_labels = live_labels(to);
+    let added = compact_set_signature(to_labels.difference(&from_labels), 3);
+    let removed = compact_set_signature(from_labels.difference(&to_labels), 3);
+    format!("add:{added};rm:{removed}")
+}
+
+fn file_path_evidence_signature(
+    file_states: &BTreeMap<(String, String, String), FilePathConstellationRow>,
+    task_id: &str,
+    target_workspace: &str,
+) -> Result<String> {
+    let base_rows = required_file_rows(file_states, task_id, "base")?;
+    let target_rows = required_file_rows(file_states, task_id, target_workspace)?;
+    let test_rows = required_file_rows(file_states, task_id, "test_patch")?;
+    let base_paths = row_path_set(&base_rows)?;
+    let target_paths = row_path_set(&target_rows)?;
+    let test_paths = row_path_set(&test_rows)?;
+    let target_added = compact_path_shape_signature(target_paths.difference(&base_paths), 3);
+    let target_removed = compact_path_shape_signature(base_paths.difference(&target_paths), 3);
+    let test_added = compact_path_shape_signature(test_paths.difference(&target_paths), 3);
+    Ok(format!(
+        "bt_add:{target_added};bt_rm:{target_removed};tt_add:{test_added};bt_j:{:.2};tt_j:{:.2}",
+        set_jaccard(&base_paths, &target_paths),
+        set_jaccard(&target_paths, &test_paths)
+    ))
+}
+
+fn skill_evidence_signature(
+    skill_index: &SkillFeatureIndex,
+    base: &CodeStateConstellationRow,
+    target: &CodeStateConstellationRow,
+    test_patch: &CodeStateConstellationRow,
+    policy: SkillFeaturePolicy,
+) -> Result<String> {
+    let base_summary =
+        skill_projection_for_policy(skill_summary_for_state(skill_index, base)?, policy);
+    let target_summary =
+        skill_projection_for_policy(skill_summary_for_state(skill_index, target)?, policy);
+    let test_summary =
+        skill_projection_for_policy(skill_summary_for_state(skill_index, test_patch)?, policy);
+    let bt_added = compact_set_signature(
+        target_summary
+            .level2_skill_ids
+            .difference(&base_summary.level2_skill_ids),
+        4,
+    );
+    let bt_removed = compact_set_signature(
+        base_summary
+            .level2_skill_ids
+            .difference(&target_summary.level2_skill_ids),
+        4,
+    );
+    let tt_added = compact_set_signature(
+        test_summary
+            .level2_skill_ids
+            .difference(&target_summary.level2_skill_ids),
+        4,
+    );
+    let label_added = compact_set_signature(
+        target_summary
+            .accepted_label_ids
+            .difference(&base_summary.accepted_label_ids),
+        3,
+    );
+    Ok(format!(
+        "bt_add:{bt_added};bt_rm:{bt_removed};tt_add:{tt_added};label_add:{label_added};steps:{};multi:{}",
+        target_summary.ordered_step_count.saturating_sub(base_summary.ordered_step_count),
+        target_summary
+            .multi_step_membership_count
+            .saturating_sub(base_summary.multi_step_membership_count)
+    ))
+}
+
+fn skill_kind_evidence_signature(
+    skill_index: &SkillFeatureIndex,
+    base: &CodeStateConstellationRow,
+    target: &CodeStateConstellationRow,
+    test_patch: &CodeStateConstellationRow,
+) -> Result<String> {
+    let base_summary = skill_summary_for_state(skill_index, base)?;
+    let target_summary = skill_summary_for_state(skill_index, target)?;
+    let test_summary = skill_summary_for_state(skill_index, test_patch)?;
+    let mut parts = Vec::new();
+    for kind in [
+        "failure_skill",
+        "pass_stability_skill",
+        "context_negative_evidence",
+    ] {
+        let empty = SkillKindStateSummary::default();
+        let base_kind = base_summary.kind_summaries.get(kind).unwrap_or(&empty);
+        let target_kind = target_summary.kind_summaries.get(kind).unwrap_or(&empty);
+        let test_kind = test_summary.kind_summaries.get(kind).unwrap_or(&empty);
+        let signature = skill_kind_transition_signature(kind, base_kind, target_kind, test_kind);
+        if signature != "stable" {
+            parts.push(signature);
+        }
+    }
+    Ok(if parts.is_empty() {
+        "stable".to_string()
+    } else {
+        parts.join("+")
+    })
+}
+
+fn skill_kind_transition_signature(
+    kind: &str,
+    base: &SkillKindStateSummary,
+    target: &SkillKindStateSummary,
+    test_patch: &SkillKindStateSummary,
+) -> String {
+    let bt_added = target
+        .level2_skill_ids
+        .difference(&base.level2_skill_ids)
+        .count();
+    let bt_removed = base
+        .level2_skill_ids
+        .difference(&target.level2_skill_ids)
+        .count();
+    let tt_added = test_patch
+        .level2_skill_ids
+        .difference(&target.level2_skill_ids)
+        .count();
+    let label_added = target
+        .accepted_label_ids
+        .difference(&base.accepted_label_ids)
+        .count();
+    let step_delta = target.ordered_step_count as isize - base.ordered_step_count as isize;
+    let multi_delta =
+        target.multi_step_membership_count as isize - base.multi_step_membership_count as isize;
+    let usefulness_delta =
+        normalized_usefulness_weight(target) - normalized_usefulness_weight(base);
+    if bt_added == 0
+        && bt_removed == 0
+        && tt_added == 0
+        && label_added == 0
+        && step_delta == 0
+        && multi_delta == 0
+        && usefulness_delta.abs() < 1.0e-6
+    {
+        return "stable".to_string();
+    }
+    format!(
+        "{}:bt_add:{};bt_rm:{};tt_add:{};label_add:{};steps:{};multi:{};weight:{}",
+        key_component(kind),
+        count_bucket(bt_added),
+        count_bucket(bt_removed),
+        count_bucket(tt_added),
+        count_bucket(label_added),
+        signed_count_bucket(step_delta),
+        signed_count_bucket(multi_delta),
+        signed_weight_bucket(usefulness_delta)
+    )
+}
+
+fn cause_residual_feature_vector(
+    file_states: &BTreeMap<(String, String, String), FilePathConstellationRow>,
+    skill_index: Option<&SkillFeatureIndex>,
+    mode: FeatureMode,
+    task_id: &str,
+    target_workspace: &str,
+    base: &CodeStateConstellationRow,
+    target: &CodeStateConstellationRow,
+    test_patch: &CodeStateConstellationRow,
+) -> Result<Vec<f32>> {
+    ensure_ordered_states(base, target, test_patch)?;
+    let v0 = slot_matrix(base)?;
+    let v1 = slot_matrix(target)?;
+    let v2 = slot_matrix(test_patch)?;
+    let d10 = matrix_delta(&v1, &v0);
+    let d21 = matrix_delta(&v2, &v1);
+    let d20 = matrix_delta(&v2, &v0);
+    let mut features = Vec::with_capacity(64);
+    add_temporal_cause_features(&mut features, &d10, &d21, &d20);
+    add_live_label_cause_features(&mut features, base, target, test_patch);
+    if matches!(
+        mode,
+        FeatureMode::FileTrajectory | FeatureMode::FileSkillTrajectory(_)
+    ) {
+        let base_rows = required_file_rows(file_states, task_id, "base")?;
+        let target_rows = required_file_rows(file_states, task_id, target_workspace)?;
+        let test_rows = required_file_rows(file_states, task_id, "test_patch")?;
+        add_file_cause_features(&mut features, &base_rows, &target_rows, &test_rows)?;
+    } else {
+        features.extend([0.0_f32; 8]);
+    }
+    if let FeatureMode::FileSkillTrajectory(_) = mode {
+        let index = skill_index
+            .ok_or_else(|| anyhow!("skill index missing for cause residual features"))?;
+        add_skill_cause_features(
+            &mut features,
+            skill_summary_for_state(index, base)?,
+            skill_summary_for_state(index, target)?,
+            skill_summary_for_state(index, test_patch)?,
+        );
+    } else {
+        features.extend([0.0_f32; 18]);
+    }
+    ensure!(
+        features.iter().all(|value| value.is_finite()),
+        "cause residual feature vector contains non-finite value"
+    );
+    Ok(features)
+}
+
+fn add_temporal_cause_features(
+    features: &mut Vec<f32>,
+    d10: &[Vec<f32>],
+    d21: &[Vec<f32>],
+    d20: &[Vec<f32>],
+) {
+    for matrix in [d10, d21, d20] {
+        let temporal = mean_slot_norm(matrix, true);
+        let non_temporal = mean_slot_norm(matrix, false);
+        features.push(temporal);
+        features.push(non_temporal);
+        features.push(temporal - non_temporal);
+        features.push(temporal / (non_temporal + 1.0e-6));
+    }
+    features.push(flattened_cosine(d10, d21));
+    features.push(flattened_cosine(d10, d20));
+    features.push(flattened_cosine(d21, d20));
+    let d10_norm = matrix_l2_norm(d10);
+    let d21_norm = matrix_l2_norm(d21);
+    let d20_norm = matrix_l2_norm(d20);
+    features.push(d21_norm - d10_norm);
+    features.push(d20_norm / (d10_norm + 1.0e-6));
+    features.push((d10_norm + d21_norm - d20_norm).clamp(-10.0, 10.0));
+}
+
+fn mean_slot_norm(matrix: &[Vec<f32>], temporal: bool) -> f32 {
+    let mut sum = 0.0_f32;
+    let mut count = 0_usize;
+    for (idx, slot) in matrix.iter().enumerate() {
+        let is_temporal = matches!(SLOT_IDS[idx], "e2" | "e3" | "e4");
+        if is_temporal == temporal {
+            sum += l2_norm(slot);
+            count += 1;
+        }
+    }
+    if count == 0 {
+        0.0
+    } else {
+        sum / count as f32
+    }
+}
+
+fn matrix_l2_norm(matrix: &[Vec<f32>]) -> f32 {
+    matrix
+        .iter()
+        .flat_map(|slot| slot.iter())
+        .map(|value| value * value)
+        .sum::<f32>()
+        .sqrt()
+}
+
+fn flattened_cosine(left: &[Vec<f32>], right: &[Vec<f32>]) -> f32 {
+    let mut dot = 0.0_f32;
+    let mut left_norm = 0.0_f32;
+    let mut right_norm = 0.0_f32;
+    for (left_slot, right_slot) in left.iter().zip(right) {
+        for (left_value, right_value) in left_slot.iter().zip(right_slot) {
+            dot += left_value * right_value;
+            left_norm += left_value * left_value;
+            right_norm += right_value * right_value;
+        }
+    }
+    if left_norm <= f32::EPSILON || right_norm <= f32::EPSILON {
+        0.0
+    } else {
+        (dot / (left_norm.sqrt() * right_norm.sqrt())).clamp(-1.0, 1.0)
+    }
+}
+
+fn add_live_label_cause_features(
+    features: &mut Vec<f32>,
+    base: &CodeStateConstellationRow,
+    target: &CodeStateConstellationRow,
+    test_patch: &CodeStateConstellationRow,
+) {
+    let base_labels = live_labels(base);
+    let target_labels = live_labels(target);
+    let test_labels = live_labels(test_patch);
+    features.push(target_labels.difference(&base_labels).count() as f32);
+    features.push(base_labels.difference(&target_labels).count() as f32);
+    features.push(test_labels.difference(&target_labels).count() as f32);
+    features.push(set_jaccard(&base_labels, &target_labels));
+    features.push(set_jaccard(&target_labels, &test_labels));
+    features.push(set_jaccard(&base_labels, &test_labels));
+}
+
+fn add_file_cause_features(
+    features: &mut Vec<f32>,
+    base_rows: &[&FilePathConstellationRow],
+    target_rows: &[&FilePathConstellationRow],
+    test_rows: &[&FilePathConstellationRow],
+) -> Result<()> {
+    let base_paths = row_path_set(base_rows)?;
+    let target_paths = row_path_set(target_rows)?;
+    let test_paths = row_path_set(test_rows)?;
+    features.push(set_jaccard(&base_paths, &target_paths));
+    features.push(set_jaccard(&target_paths, &test_paths));
+    features.push(set_jaccard(&base_paths, &test_paths));
+    features.push((target_paths.difference(&base_paths).count() as f32).ln_1p());
+    features.push((base_paths.difference(&target_paths).count() as f32).ln_1p());
+    features.push((test_paths.difference(&target_paths).count() as f32).ln_1p());
+    features.push((target_paths.intersection(&test_paths).count() as f32).ln_1p());
+    features.push((target_paths.len() as f32 - base_paths.len() as f32).clamp(-50.0, 50.0));
+    Ok(())
+}
+
+fn add_skill_cause_features(
+    features: &mut Vec<f32>,
+    base: &SkillStateSummary,
+    target: &SkillStateSummary,
+    test_patch: &SkillStateSummary,
+) {
+    for kind in [
+        "failure_skill",
+        "pass_stability_skill",
+        "context_negative_evidence",
+    ] {
+        let empty = SkillKindStateSummary::default();
+        let base_kind = base.kind_summaries.get(kind).unwrap_or(&empty);
+        let target_kind = target.kind_summaries.get(kind).unwrap_or(&empty);
+        let test_kind = test_patch.kind_summaries.get(kind).unwrap_or(&empty);
+        features.push(
+            target_kind
+                .level2_skill_ids
+                .difference(&base_kind.level2_skill_ids)
+                .count() as f32,
+        );
+        features.push(
+            base_kind
+                .level2_skill_ids
+                .difference(&target_kind.level2_skill_ids)
+                .count() as f32,
+        );
+        features.push(
+            test_kind
+                .level2_skill_ids
+                .difference(&target_kind.level2_skill_ids)
+                .count() as f32,
+        );
+        features.push(target_kind.ordered_step_count as f32 - base_kind.ordered_step_count as f32);
+        features.push(
+            target_kind.multi_step_membership_count as f32
+                - base_kind.multi_step_membership_count as f32,
+        );
+        features.push(
+            (normalized_usefulness_weight(target_kind) - normalized_usefulness_weight(base_kind))
+                as f32,
+        );
+    }
+}
+
+fn normalized_usefulness_weight(summary: &SkillKindStateSummary) -> f64 {
+    let membership_count = summary.membership_count.max(1) as f64;
+    (summary.usefulness_weight_sum / membership_count).clamp(0.0, 1.0)
+}
+
+fn count_bucket(value: usize) -> &'static str {
+    match value {
+        0 => "0",
+        1 => "1",
+        2 => "2",
+        3..=5 => "3_5",
+        6..=10 => "6_10",
+        _ => "gt10",
+    }
+}
+
+fn signed_count_bucket(value: isize) -> String {
+    let prefix = if value >= 0 { "up" } else { "down" };
+    format!("{prefix}_{}", count_bucket(value.unsigned_abs()))
+}
+
+fn signed_weight_bucket(delta: f64) -> &'static str {
+    let magnitude = delta.abs();
+    match (delta >= 0.0, magnitude) {
+        (_, value) if value < 1.0e-6 => "stable",
+        (true, value) if value >= 0.25 => "up_l",
+        (true, value) if value >= 0.05 => "up_m",
+        (true, _) => "up_s",
+        (false, value) if value >= 0.25 => "down_l",
+        (false, value) if value >= 0.05 => "down_m",
+        (false, _) => "down_s",
+    }
+}
+
+fn compact_set_signature<'a, I>(values: I, limit: usize) -> String
+where
+    I: Iterator<Item = &'a String>,
+{
+    let parts = values
+        .take(limit)
+        .map(|value| key_component(value))
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        "none".to_string()
+    } else {
+        parts.join("+")
+    }
+}
+
+fn compact_path_shape_signature<'a, I>(values: I, limit: usize) -> String
+where
+    I: Iterator<Item = &'a String>,
+{
+    let parts = values
+        .take(limit)
+        .map(|path| path_shape_component(path))
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        "none".to_string()
+    } else {
+        parts.join("+")
+    }
+}
+
+fn path_shape_component(path: &str) -> String {
+    let top = path.split('/').next().unwrap_or("root");
+    let ext = path
+        .rsplit_once('.')
+        .map(|(_stem, ext)| ext)
+        .unwrap_or("noext");
+    format!("top:{}:ext:{}", key_component(top), key_component(ext))
+}
+
+fn key_component(value: &str) -> String {
+    let sanitized = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if sanitized.len() <= 80 {
+        sanitized
+    } else {
+        let digest = Sha256::digest(value.as_bytes());
+        format!(
+            "{}_{:02x}{:02x}{:02x}{:02x}",
+            &sanitized[..72],
+            digest[0],
+            digest[1],
+            digest[2],
+            digest[3]
+        )
+    }
 }
 
 fn load_file_path_states(
@@ -1206,6 +2541,11 @@ fn load_skill_feature_index(
     ensure!(
         hierarchy_report["passes"].as_bool() == Some(true),
         "hierarchy FSV report must have passes=true"
+    );
+    ensure!(
+        hierarchy_report["active_path_policy"]["mnt_d_active_reads_or_writes"].as_bool()
+            == Some(false),
+        "hierarchy FSV must not use /mnt/d active paths"
     );
     let db = open_hierarchy_db_read_only(Path::new(&hierarchy_db_path))?;
     let level2_skills = read_all_level2_skill_rows(&db)?;
@@ -1566,6 +2906,10 @@ fn empty_skill_usefulness_policy_report() -> SkillUsefulnessPolicyReport {
 }
 
 fn open_hierarchy_db_read_only(path: &Path) -> Result<DB> {
+    ensure!(
+        !path.to_string_lossy().starts_with("/mnt/d/"),
+        "hierarchy DB active path must not use /mnt/d"
+    );
     let mut opts = Options::default();
     opts.set_paranoid_checks(true);
     let existing = DB::list_cf(&opts, path)
@@ -2421,22 +3765,26 @@ fn skill_policy_ablation_report(
         raw_skill_feature_table,
         baseline_metrics,
         None,
+        None,
         true,
     )?;
-    let raw_metrics = raw_eval.mean_bias.holdout.metrics.clone();
+    let raw_calibration_metrics = raw_eval.mean_bias.calibration.metrics.clone();
+    let raw_selection_objective = raw_eval.mean_bias.selection_objective;
     let mut evaluations = vec![
         evaluate_skill_policy(
             "code_state_only",
             base_feature_table,
             baseline_metrics,
-            Some(&raw_metrics),
+            Some(&raw_calibration_metrics),
+            Some(raw_selection_objective),
             false,
         )?,
         evaluate_skill_policy(
             "no_skill_file_trajectory",
             no_skill_feature_table,
             baseline_metrics,
-            Some(&raw_metrics),
+            Some(&raw_calibration_metrics),
+            Some(raw_selection_objective),
             false,
         )?,
         raw_eval,
@@ -2444,28 +3792,32 @@ fn skill_policy_ablation_report(
             SkillFeaturePolicy::FailureOnly.label(),
             failure_skill_feature_table,
             baseline_metrics,
-            Some(&raw_metrics),
+            Some(&raw_calibration_metrics),
+            Some(raw_selection_objective),
             true,
         )?,
         evaluate_skill_policy(
             SkillFeaturePolicy::PassStabilityOnly.label(),
             pass_stability_skill_feature_table,
             baseline_metrics,
-            Some(&raw_metrics),
+            Some(&raw_calibration_metrics),
+            Some(raw_selection_objective),
             true,
         )?,
         evaluate_skill_policy(
             SkillFeaturePolicy::ContextOnly.label(),
             context_skill_feature_table,
             baseline_metrics,
-            Some(&raw_metrics),
+            Some(&raw_calibration_metrics),
+            Some(raw_selection_objective),
             true,
         )?,
         evaluate_skill_policy(
             SkillFeaturePolicy::UsefulnessCombined.label(),
             usefulness_feature_table,
             baseline_metrics,
-            Some(&raw_metrics),
+            Some(&raw_calibration_metrics),
+            Some(raw_selection_objective),
             true,
         )?,
     ];
@@ -2474,8 +3826,8 @@ fn skill_policy_ablation_report(
             eval.delta_vs_raw_current = Some(metric_delta(
                 "current_raw_skill_surface",
                 "current_raw_skill_surface",
-                &raw_metrics,
-                &eval.mean_bias.holdout.metrics,
+                &raw_calibration_metrics,
+                &eval.mean_bias.calibration.metrics,
             ));
             eval.selection_eligible = true;
             eval.rejection_reason = None;
@@ -2499,7 +3851,11 @@ fn skill_policy_ablation_report(
             .find(|eval| eval.policy == SkillFeaturePolicy::UsefulnessCombined.label())
             .ok_or_else(|| anyhow!("missing usefulness-weighted skill policy evaluation"))?;
         if useful.selection_eligible
-            && useful.mean_bias.holdout.metrics.ece < raw_metrics.ece
+            && skill_policy_objective_eligible(
+                useful.delta_vs_raw_current.as_ref(),
+                useful.mean_bias.selection_objective,
+                raw_selection_objective,
+            )
             && useful.mean_bias.selection_objective
                 <= selected.mean_bias.selection_objective + 0.002
         {
@@ -2507,17 +3863,16 @@ fn skill_policy_ablation_report(
         }
     }
     let selected_reason = if selected.policy == SkillFeaturePolicy::UsefulnessCombined.label() {
-        "usefulness-weighted ordered skills selected by calibration objective/non-regression"
-            .to_string()
+        "usefulness-weighted ordered skills selected by calibration-only objective gate".to_string()
     } else {
-        "usefulness-weighted ordered skills evaluated but not selected; current raw skill surface remains the non-regressing active policy".to_string()
+        "usefulness-weighted ordered skills evaluated but not selected; current raw skill surface remains the active policy".to_string()
     };
     let typed_blocker = if selected.policy == SkillFeaturePolicy::UsefulnessCombined.label()
         && selected.mean_bias.holdout.metrics.ece < BASELINE_536_ECE
     {
         "TASK_SKILL_002_USEFULNESS_WEIGHTED_CLEAR".to_string()
     } else if selected.selection_eligible {
-        "TASK_SKILL_002_USEFULNESS_WEIGHTED_NONREGRESSING_BUT_ECE_BLOCKED".to_string()
+        "TASK_SKILL_002_USEFULNESS_WEIGHTED_OBJECTIVE_CLEAR_BUT_ECE_BLOCKED".to_string()
     } else {
         "TASK_SKILL_002_USEFULNESS_WEIGHTED_REGRESSED_REJECTED".to_string()
     };
@@ -2545,6 +3900,7 @@ fn evaluate_skill_policy(
     table: &FeatureTable,
     baseline_metrics: &MetricBlock,
     raw_reference: Option<&MetricBlock>,
+    raw_selection_objective: Option<f32>,
     skill_policy_selectable: bool,
 ) -> Result<SkillPolicyEvaluation> {
     let current_rbf = candidate_split_report(table, CURRENT_RBF)?;
@@ -2560,21 +3916,28 @@ fn evaluate_skill_policy(
             "current_raw_skill_surface",
             policy,
             raw,
-            &mean_bias.holdout.metrics,
+            &mean_bias.calibration.metrics,
         )
     });
     let selection_eligible = if skill_policy_selectable {
-        delta_vs_raw_current
-            .as_ref()
-            .map(|delta| delta.non_regressing)
-            .unwrap_or(true)
+        match (&delta_vs_raw_current, raw_selection_objective) {
+            (Some(delta), Some(raw_objective)) => skill_policy_objective_eligible(
+                Some(delta),
+                mean_bias.selection_objective,
+                raw_objective,
+            ),
+            (Some(delta), None) => delta.non_regressing,
+            (None, _) => true,
+        }
     } else {
         false
     };
     let rejection_reason = if selection_eligible {
         None
     } else if skill_policy_selectable {
-        Some("policy regressed versus current raw skill surface".to_string())
+        Some(format!(
+            "policy failed calibration-only objective gate versus current raw skill surface; require non-regression or objective improvement >= {SKILL_POLICY_OBJECTIVE_IMPROVEMENT_MARGIN:.3} with ece regression <= {SKILL_POLICY_ECE_REGRESSION_CAP:.3}"
+        ))
     } else {
         Some("baseline-only comparison; not a selectable skill policy".to_string())
     };
@@ -2588,6 +3951,22 @@ fn evaluate_skill_policy(
         selection_eligible,
         rejection_reason,
     })
+}
+
+fn skill_policy_objective_eligible(
+    delta_vs_raw: Option<&MetricDeltaReport>,
+    candidate_objective: f32,
+    raw_objective: f32,
+) -> bool {
+    let objective_improved =
+        candidate_objective + SKILL_POLICY_OBJECTIVE_IMPROVEMENT_MARGIN <= raw_objective;
+    let ece_regression_within_cap = delta_vs_raw
+        .map(|delta| delta.ece_delta <= SKILL_POLICY_ECE_REGRESSION_CAP)
+        .unwrap_or(true);
+    let non_regressing = delta_vs_raw
+        .map(|delta| delta.non_regressing)
+        .unwrap_or(true);
+    non_regressing || (objective_improved && ece_regression_within_cap)
 }
 
 fn selected_skill_feature_table<'a>(
@@ -3493,6 +4872,2880 @@ fn apply_mean_bias_calibration(
     Ok((affine_score + bias).clamp(0.001, 0.999))
 }
 
+fn select_cross_window_stability_calibration_repair(
+    table: &FeatureTable,
+) -> Result<CrossWindowStabilityCalibrationReport> {
+    let mut best: Option<CrossWindowStabilityCalibrationReport> = None;
+    for base_candidate in ece_focused_base_candidates() {
+        let calibration_base_rows =
+            prediction_rows_for_candidate(table, "calibration", base_candidate)?;
+        let holdout_base_rows = prediction_rows_for_candidate(table, "holdout", base_candidate)?;
+        for affine_model in ece_focused_affine_models_for_candidate(base_candidate) {
+            for scope in [
+                CalibrationScope::PerCategory,
+                CalibrationScope::TrueMixedPerCategory,
+            ] {
+                for shrinkage in [0.25_f32, 0.50, 0.75, 1.0] {
+                    for min_window_support in [2_usize, 3, 4] {
+                        for instability_scale in [8.0_f32, 16.0, 32.0] {
+                            for bias_cap in [0.10_f32, 0.15, 0.25] {
+                                let model = fit_cross_window_stability_model(
+                                    &calibration_base_rows,
+                                    affine_model.clone(),
+                                    scope,
+                                    shrinkage,
+                                    4,
+                                    min_window_support,
+                                    instability_scale,
+                                    bias_cap,
+                                )?;
+                                let calibration = cross_window_stability_cross_split_report(
+                                    &calibration_base_rows,
+                                    &affine_model,
+                                    scope,
+                                    shrinkage,
+                                    4,
+                                    min_window_support,
+                                    instability_scale,
+                                    bias_cap,
+                                )?;
+                                let holdout = cross_window_stability_split_report(
+                                    &holdout_base_rows,
+                                    &model,
+                                )?;
+                                let selection_objective = selection_objective(&calibration.metrics)
+                                    + cross_window_stability_complexity_penalty(&model);
+                                let blockers = repair_blockers(
+                                    &holdout.metrics,
+                                    &holdout.per_category_metrics,
+                                );
+                                let report = CrossWindowStabilityCalibrationReport {
+                                    selected_on: "calibration_cross_window".to_string(),
+                                    selection_forbidden: false,
+                                    forbidden_reason: None,
+                                    selection_objective,
+                                    model,
+                                    calibration,
+                                    holdout,
+                                    blockers,
+                                };
+                                if best
+                                    .as_ref()
+                                    .map(|previous| {
+                                        report.selection_objective < previous.selection_objective
+                                    })
+                                    .unwrap_or(true)
+                                {
+                                    best = Some(report);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    best.ok_or_else(|| anyhow!("cross-window stability calibration sweep produced no candidates"))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fit_cross_window_stability_model(
+    rows: &[PredictionRow],
+    affine_model: AffineCalibrationModel,
+    scope: CalibrationScope,
+    shrinkage: f32,
+    window_count: usize,
+    min_window_support: usize,
+    instability_scale: f32,
+    bias_cap: f32,
+) -> Result<CrossWindowStabilityCalibrationModel> {
+    ensure!(
+        (0.0..=1.0).contains(&shrinkage),
+        "cross-window shrinkage must be in [0, 1]"
+    );
+    ensure!(window_count >= 2, "cross-window count must be >= 2");
+    ensure!(
+        min_window_support > 0,
+        "cross-window min support must be positive"
+    );
+    ensure!(
+        instability_scale >= 0.0,
+        "cross-window instability scale must be non-negative"
+    );
+    ensure!(bias_cap > 0.0, "cross-window bias cap must be positive");
+    let mut full_stats = BTreeMap::<String, (usize, usize, f32)>::new();
+    let mut window_stats = BTreeMap::<String, Vec<(usize, usize, f32)>>::new();
+    for row in rows {
+        if !calibration_scope_applies(scope, &row.category) {
+            continue;
+        }
+        let key = calibration_scope_key(scope, &row.category);
+        let affine_score = apply_affine_calibration(row, &affine_model);
+        let entry = full_stats.entry(key.clone()).or_insert((0, 0, 0.0));
+        entry.0 += 1;
+        entry.1 += usize::from(row.actual_oracle_pass);
+        entry.2 += affine_score;
+        let windows = window_stats
+            .entry(key)
+            .or_insert_with(|| vec![(0, 0, 0.0); window_count]);
+        let window_idx = cross_window_index(row, window_count);
+        let window_entry = &mut windows[window_idx];
+        window_entry.0 += 1;
+        window_entry.1 += usize::from(row.actual_oracle_pass);
+        window_entry.2 += affine_score;
+    }
+    ensure!(
+        !full_stats.is_empty(),
+        "cross-window stability calibration produced no scoped rows"
+    );
+    let mut bias_stats = BTreeMap::new();
+    for (key, (support, positives, score_sum)) in full_stats {
+        let score_mean = score_sum / support as f32;
+        let actual_rate = positives as f32 / support as f32;
+        let full_bias = (shrinkage * (actual_rate - score_mean)).clamp(-bias_cap, bias_cap);
+        let windows = window_stats
+            .get(&key)
+            .ok_or_else(|| anyhow!("cross-window stats missing key {key}"))?;
+        let mut window_biases = Vec::new();
+        let mut min_window_support_seen = usize::MAX;
+        for (window_support, window_positives, window_score_sum) in windows {
+            if *window_support == 0 {
+                min_window_support_seen = 0;
+                continue;
+            }
+            min_window_support_seen = min_window_support_seen.min(*window_support);
+            if *window_support < min_window_support {
+                continue;
+            }
+            let window_score_mean = *window_score_sum / *window_support as f32;
+            let window_actual_rate = *window_positives as f32 / *window_support as f32;
+            window_biases.push(
+                (shrinkage * (window_actual_rate - window_score_mean)).clamp(-bias_cap, bias_cap),
+            );
+        }
+        let valid_window_count = window_biases.len();
+        let window_bias_mean = if window_biases.is_empty() {
+            0.0
+        } else {
+            window_biases.iter().sum::<f32>() / window_biases.len() as f32
+        };
+        let window_bias_std = if window_biases.len() < 2 {
+            bias_cap
+        } else {
+            let variance = window_biases
+                .iter()
+                .map(|bias| (bias - window_bias_mean).powi(2))
+                .sum::<f32>()
+                / window_biases.len() as f32;
+            variance.sqrt()
+        };
+        let coverage_weight = valid_window_count as f32 / window_count as f32;
+        let instability_weight = 1.0 / (1.0 + instability_scale * window_bias_std);
+        let agreement_weight = if full_bias.abs() <= f32::EPSILON
+            || window_bias_mean.abs() <= f32::EPSILON
+            || full_bias.signum() == window_bias_mean.signum()
+        {
+            1.0
+        } else {
+            0.25
+        };
+        let stability_weight = if valid_window_count >= 2 {
+            (coverage_weight * instability_weight * agreement_weight).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        bias_stats.insert(
+            key,
+            CrossWindowBiasStats {
+                support,
+                positives,
+                full_bias,
+                stable_bias: (full_bias * stability_weight).clamp(-bias_cap, bias_cap),
+                window_bias_mean,
+                window_bias_std,
+                valid_window_count,
+                min_window_support_seen: if min_window_support_seen == usize::MAX {
+                    0
+                } else {
+                    min_window_support_seen
+                },
+                stability_weight,
+            },
+        );
+    }
+    Ok(CrossWindowStabilityCalibrationModel {
+        selected_on: "calibration_cross_window".to_string(),
+        scope,
+        affine_model,
+        shrinkage,
+        window_count,
+        min_window_support,
+        instability_scale,
+        bias_cap,
+        bias_stats,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cross_window_stability_cross_split_report(
+    rows: &[PredictionRow],
+    affine_model: &AffineCalibrationModel,
+    scope: CalibrationScope,
+    shrinkage: f32,
+    window_count: usize,
+    min_window_support: usize,
+    instability_scale: f32,
+    bias_cap: f32,
+) -> Result<SplitReport> {
+    ensure!(
+        rows.len() >= 2,
+        "cross-window stability cross split needs at least two rows"
+    );
+    let mut calibrated_rows = Vec::with_capacity(rows.len());
+    for held_out_fold in 0..2_u8 {
+        let fit_rows = rows
+            .iter()
+            .filter(|row| calibration_fold(row) != held_out_fold)
+            .cloned()
+            .collect::<Vec<_>>();
+        let eval_rows = rows
+            .iter()
+            .filter(|row| calibration_fold(row) == held_out_fold)
+            .cloned()
+            .collect::<Vec<_>>();
+        ensure!(
+            !fit_rows.is_empty() && !eval_rows.is_empty(),
+            "cross-window stability cross split produced an empty fold"
+        );
+        let model = fit_cross_window_stability_model(
+            &fit_rows,
+            affine_model.clone(),
+            scope,
+            shrinkage,
+            window_count,
+            min_window_support,
+            instability_scale,
+            bias_cap,
+        )?;
+        calibrated_rows.extend(cross_window_stability_calibrated_rows(&eval_rows, &model)?);
+    }
+    ensure!(
+        calibrated_rows.len() == rows.len(),
+        "cross-window stability cross split lost rows"
+    );
+    Ok(SplitReport {
+        metrics: metrics_for(&calibrated_rows),
+        per_category_metrics: per_category_metrics(&calibrated_rows),
+    })
+}
+
+fn cross_window_stability_split_report(
+    rows: &[PredictionRow],
+    model: &CrossWindowStabilityCalibrationModel,
+) -> Result<SplitReport> {
+    let calibrated_rows = cross_window_stability_calibrated_rows(rows, model)?;
+    Ok(SplitReport {
+        metrics: metrics_for(&calibrated_rows),
+        per_category_metrics: per_category_metrics(&calibrated_rows),
+    })
+}
+
+fn cross_window_stability_calibrated_rows(
+    rows: &[PredictionRow],
+    model: &CrossWindowStabilityCalibrationModel,
+) -> Result<Vec<PredictionRow>> {
+    rows.iter()
+        .map(|row| {
+            let score = apply_cross_window_stability_calibration(row, model)?;
+            Ok(PredictionRow {
+                task_id: row.task_id.clone(),
+                category: row.category.clone(),
+                actual_oracle_pass: row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == row.actual_oracle_pass,
+            })
+        })
+        .collect()
+}
+
+fn apply_cross_window_stability_calibration(
+    row: &PredictionRow,
+    model: &CrossWindowStabilityCalibrationModel,
+) -> Result<f32> {
+    let affine_score = apply_affine_calibration(row, &model.affine_model);
+    if !calibration_scope_applies(model.scope, &row.category) {
+        return Ok(affine_score);
+    }
+    let key = calibration_scope_key(model.scope, &row.category);
+    let stats = model
+        .bias_stats
+        .get(&key)
+        .ok_or_else(|| anyhow!("cross-window stability calibration missing key {key}"))?;
+    Ok((affine_score + stats.stable_bias).clamp(0.001, 0.999))
+}
+
+fn cross_window_index(row: &PredictionRow, window_count: usize) -> usize {
+    let digest =
+        Sha256::digest(format!("{}|{}|cross_window", row.task_id, row.category).as_bytes());
+    (digest[0] as usize) % window_count
+}
+
+fn cross_window_stability_complexity_penalty(model: &CrossWindowStabilityCalibrationModel) -> f32 {
+    let scope_penalty = match model.scope {
+        CalibrationScope::TrueMixedPerCategory => 0.0,
+        CalibrationScope::PerCategory => 0.004,
+        CalibrationScope::Global => 0.012,
+    };
+    let unstable_key_fraction = if model.bias_stats.is_empty() {
+        1.0
+    } else {
+        model
+            .bias_stats
+            .values()
+            .filter(|stats| stats.valid_window_count < 2 || stats.stability_weight < 0.25)
+            .count() as f32
+            / model.bias_stats.len() as f32
+    };
+    scope_penalty + 0.010 * unstable_key_fraction
+}
+
+fn select_cause_residual_calibration_repair(
+    table: &FeatureTable,
+    mean_bias: &MeanBiasCalibrationReport,
+) -> Result<CauseResidualCalibrationReport> {
+    let calibration_indices = bucket_indices(table, "calibration");
+    let holdout_indices = bucket_indices(table, "holdout");
+    let mut best: Option<CauseResidualCalibrationReport> = None;
+    for scope in [
+        CalibrationScope::TrueMixedPerCategory,
+        CalibrationScope::PerCategory,
+    ] {
+        for regularization in [1.0_f32, 10.0, 50.0, 100.0] {
+            for correction_scale in [0.25_f32, 0.50, 0.75] {
+                for correction_cap in [0.05_f32, 0.10, 0.15] {
+                    let model = fit_cause_residual_model(
+                        table,
+                        &calibration_indices,
+                        mean_bias.model.clone(),
+                        scope,
+                        4,
+                        regularization,
+                        correction_scale,
+                        correction_cap,
+                    )?;
+                    let calibration = cause_residual_cross_window_report(
+                        table,
+                        &calibration_indices,
+                        &mean_bias.model,
+                        scope,
+                        4,
+                        regularization,
+                        correction_scale,
+                        correction_cap,
+                    )?;
+                    let holdout = cause_residual_split_report(table, &holdout_indices, &model)?;
+                    let selection_objective = selection_objective(&calibration.metrics)
+                        + cause_residual_complexity_penalty(&model);
+                    let blockers = repair_blockers(&holdout.metrics, &holdout.per_category_metrics);
+                    let report = CauseResidualCalibrationReport {
+                        selected_on: "calibration_leave_one_window_out".to_string(),
+                        selection_forbidden: false,
+                        forbidden_reason: None,
+                        selection_objective,
+                        model,
+                        calibration,
+                        holdout,
+                        blockers,
+                    };
+                    if best
+                        .as_ref()
+                        .map(|previous| report.selection_objective < previous.selection_objective)
+                        .unwrap_or(true)
+                    {
+                        best = Some(report);
+                    }
+                }
+            }
+        }
+    }
+    best.ok_or_else(|| anyhow!("cause-residual calibration sweep produced no candidates"))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fit_cause_residual_model(
+    table: &FeatureTable,
+    indices: &[usize],
+    base_model: MeanBiasCalibrationModel,
+    scope: CalibrationScope,
+    window_count: usize,
+    regularization: f32,
+    correction_scale: f32,
+    correction_cap: f32,
+) -> Result<CauseResidualCalibrationModel> {
+    ensure!(
+        window_count >= 2,
+        "cause residual window count must be >= 2"
+    );
+    ensure!(
+        regularization > 0.0,
+        "cause residual regularization must be positive"
+    );
+    ensure!(
+        (0.0..=1.0).contains(&correction_scale),
+        "cause residual correction scale must be in [0, 1]"
+    );
+    ensure!(
+        correction_cap > 0.0,
+        "cause residual correction cap must be positive"
+    );
+    let base_rows = mean_bias_rows_for_indices(table, indices, &base_model)?;
+    let feature_count = indices
+        .iter()
+        .map(|idx| table.rows[*idx].cause_features.len())
+        .max()
+        .unwrap_or_default();
+    ensure!(
+        feature_count > 0,
+        "cause residual feature vectors must be non-empty"
+    );
+    let mut raw_samples = Vec::<(String, Vec<f32>, f32)>::new();
+    for (idx, base_row) in indices.iter().zip(&base_rows) {
+        if !calibration_scope_applies(scope, &base_row.category) {
+            continue;
+        }
+        let feature_row = &table.rows[*idx];
+        ensure!(
+            feature_row.cause_features.len() == feature_count,
+            "cause residual feature dimension drift for {}:{}",
+            feature_row.task_id,
+            feature_row.category
+        );
+        let key = calibration_scope_key(scope, &base_row.category);
+        let residual = if base_row.actual_oracle_pass {
+            1.0
+        } else {
+            0.0
+        } - base_row.predicted_oracle_pass;
+        raw_samples.push((key, feature_row.cause_features.clone(), residual));
+    }
+    ensure!(
+        !raw_samples.is_empty(),
+        "cause residual fit produced no scoped samples"
+    );
+    let (feature_mean, feature_std) = cause_feature_standardization(&raw_samples, feature_count)?;
+    let mut samples_by_key = BTreeMap::<String, Vec<(Vec<f32>, f32)>>::new();
+    for (key, features, residual) in raw_samples {
+        samples_by_key.entry(key).or_default().push((
+            standardize_cause_features(&features, &feature_mean, &feature_std)?,
+            residual,
+        ));
+    }
+    let mut weights_by_key = BTreeMap::new();
+    for (key, samples) in samples_by_key {
+        if samples.len() < 4 {
+            continue;
+        }
+        weights_by_key.insert(key, ridge_residual_weights(&samples, regularization)?);
+    }
+    ensure!(
+        !weights_by_key.is_empty(),
+        "cause residual fit produced no trained residual weights"
+    );
+    Ok(CauseResidualCalibrationModel {
+        selected_on: "calibration_leave_one_window_out".to_string(),
+        base_model,
+        scope,
+        window_count,
+        regularization,
+        correction_scale,
+        correction_cap,
+        feature_count,
+        feature_mean,
+        feature_std,
+        weights_by_key,
+    })
+}
+
+fn cause_feature_standardization(
+    samples: &[(String, Vec<f32>, f32)],
+    feature_count: usize,
+) -> Result<(Vec<f32>, Vec<f32>)> {
+    ensure!(
+        !samples.is_empty(),
+        "cause residual standardization needs samples"
+    );
+    let mut mean = vec![0.0_f64; feature_count];
+    for (_key, features, _residual) in samples {
+        ensure!(
+            features.len() == feature_count,
+            "cause residual standardization feature dimension mismatch"
+        );
+        for (idx, value) in features.iter().enumerate() {
+            mean[idx] += *value as f64;
+        }
+    }
+    let sample_count = samples.len() as f64;
+    for value in &mut mean {
+        *value /= sample_count;
+    }
+    let mut variance = vec![0.0_f64; feature_count];
+    for (_key, features, _residual) in samples {
+        for (idx, value) in features.iter().enumerate() {
+            let delta = *value as f64 - mean[idx];
+            variance[idx] += delta * delta;
+        }
+    }
+    let std = variance
+        .into_iter()
+        .map(|value| {
+            let std = (value / sample_count).sqrt();
+            if std.is_finite() && std > 1.0e-6 {
+                std as f32
+            } else {
+                1.0
+            }
+        })
+        .collect::<Vec<_>>();
+    Ok((mean.into_iter().map(|value| value as f32).collect(), std))
+}
+
+fn standardize_cause_features(features: &[f32], mean: &[f32], std: &[f32]) -> Result<Vec<f32>> {
+    ensure!(
+        features.len() == mean.len() && features.len() == std.len(),
+        "cause residual standardization dimension mismatch"
+    );
+    Ok(features
+        .iter()
+        .zip(mean)
+        .zip(std)
+        .map(|((feature, mean), std)| (*feature - *mean) / (*std).max(1.0e-6))
+        .collect())
+}
+
+fn ridge_residual_weights(samples: &[(Vec<f32>, f32)], regularization: f32) -> Result<Vec<f32>> {
+    let feature_count = samples
+        .first()
+        .map(|(features, _residual)| features.len())
+        .unwrap_or_default();
+    ensure!(feature_count > 0, "ridge residual features are empty");
+    let dim = feature_count + 1;
+    let mut lhs = vec![vec![0.0_f64; dim]; dim];
+    let mut rhs = vec![0.0_f64; dim];
+    for (features, residual) in samples {
+        ensure!(
+            features.len() == feature_count,
+            "ridge residual feature dimension mismatch"
+        );
+        let mut row = Vec::with_capacity(dim);
+        row.push(1.0_f64);
+        row.extend(features.iter().map(|value| *value as f64));
+        for i in 0..dim {
+            rhs[i] += row[i] * *residual as f64;
+            for j in 0..dim {
+                lhs[i][j] += row[i] * row[j];
+            }
+        }
+    }
+    for (idx, row) in lhs.iter_mut().enumerate().skip(1) {
+        row[idx] += regularization as f64;
+    }
+    lhs[0][0] += 1.0e-6;
+    solve_linear_system(lhs, rhs).map(|weights| weights.into_iter().map(|v| v as f32).collect())
+}
+
+fn solve_linear_system(mut lhs: Vec<Vec<f64>>, mut rhs: Vec<f64>) -> Result<Vec<f64>> {
+    let n = rhs.len();
+    ensure!(lhs.len() == n, "linear system row count mismatch");
+    for pivot_idx in 0..n {
+        let mut best_row = pivot_idx;
+        let mut best_abs = lhs[pivot_idx][pivot_idx].abs();
+        for (row_idx, row) in lhs.iter().enumerate().skip(pivot_idx + 1) {
+            let value = row[pivot_idx].abs();
+            if value > best_abs {
+                best_row = row_idx;
+                best_abs = value;
+            }
+        }
+        ensure!(
+            best_abs > 1.0e-10,
+            "linear system is singular at pivot {pivot_idx}"
+        );
+        if best_row != pivot_idx {
+            lhs.swap(best_row, pivot_idx);
+            rhs.swap(best_row, pivot_idx);
+        }
+        let pivot = lhs[pivot_idx][pivot_idx];
+        for value in lhs[pivot_idx].iter_mut().skip(pivot_idx) {
+            *value /= pivot;
+        }
+        rhs[pivot_idx] /= pivot;
+        let pivot_tail = lhs[pivot_idx][pivot_idx..].to_vec();
+        for row_idx in 0..n {
+            if row_idx == pivot_idx {
+                continue;
+            }
+            let factor = lhs[row_idx][pivot_idx];
+            if factor.abs() <= 1.0e-12 {
+                continue;
+            }
+            for (value, pivot_value) in lhs[row_idx].iter_mut().skip(pivot_idx).zip(&pivot_tail) {
+                *value -= factor * pivot_value;
+            }
+            rhs[row_idx] -= factor * rhs[pivot_idx];
+        }
+    }
+    ensure!(
+        rhs.iter().all(|value| value.is_finite()),
+        "linear system produced non-finite weights"
+    );
+    Ok(rhs)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cause_residual_cross_window_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    base_model: &MeanBiasCalibrationModel,
+    scope: CalibrationScope,
+    window_count: usize,
+    regularization: f32,
+    correction_scale: f32,
+    correction_cap: f32,
+) -> Result<SplitReport> {
+    ensure!(
+        indices.len() >= window_count,
+        "cause residual cross-window split needs at least one row per window"
+    );
+    let mut calibrated_rows_by_index = BTreeMap::<usize, PredictionRow>::new();
+    for held_out_window in 0..window_count {
+        let fit_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| cause_window_index(&table.rows[*idx], window_count) != held_out_window)
+            .collect::<Vec<_>>();
+        let eval_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| cause_window_index(&table.rows[*idx], window_count) == held_out_window)
+            .collect::<Vec<_>>();
+        ensure!(
+            !fit_indices.is_empty() && !eval_indices.is_empty(),
+            "cause residual cross-window split produced an empty window"
+        );
+        let fit_base_rows = prediction_rows_for_indices(
+            table,
+            &fit_indices,
+            base_model.affine_model.base_candidate,
+        )?;
+        let fold_base_model = fit_mean_bias_calibration_model(
+            &fit_base_rows,
+            base_model.affine_model.clone(),
+            base_model.scope,
+            base_model.shrinkage,
+        )?;
+        let model = fit_cause_residual_model(
+            table,
+            &fit_indices,
+            fold_base_model,
+            scope,
+            window_count,
+            regularization,
+            correction_scale,
+            correction_cap,
+        )?;
+        for (idx, row) in eval_indices
+            .iter()
+            .copied()
+            .zip(cause_residual_calibrated_rows(
+                table,
+                &eval_indices,
+                &model,
+            )?)
+        {
+            ensure!(
+                calibrated_rows_by_index.insert(idx, row).is_none(),
+                "cause residual cross-window produced duplicate row index {idx}"
+            );
+        }
+    }
+    let calibrated_rows = indices
+        .iter()
+        .map(|idx| {
+            calibrated_rows_by_index
+                .remove(idx)
+                .ok_or_else(|| anyhow!("cause residual cross-window missing row index {idx}"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(SplitReport {
+        metrics: metrics_for(&calibrated_rows),
+        per_category_metrics: per_category_metrics(&calibrated_rows),
+    })
+}
+
+fn cause_residual_split_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &CauseResidualCalibrationModel,
+) -> Result<SplitReport> {
+    let rows = cause_residual_calibrated_rows(table, indices, model)?;
+    Ok(SplitReport {
+        metrics: metrics_for(&rows),
+        per_category_metrics: per_category_metrics(&rows),
+    })
+}
+
+fn cause_residual_calibrated_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &CauseResidualCalibrationModel,
+) -> Result<Vec<PredictionRow>> {
+    let base_rows = mean_bias_rows_for_indices(table, indices, &model.base_model)?;
+    indices
+        .iter()
+        .zip(base_rows.iter())
+        .map(|(idx, base_row)| {
+            let score = apply_cause_residual_calibration(base_row, &table.rows[*idx], model)?;
+            Ok(PredictionRow {
+                task_id: base_row.task_id.clone(),
+                category: base_row.category.clone(),
+                actual_oracle_pass: base_row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == base_row.actual_oracle_pass,
+            })
+        })
+        .collect()
+}
+
+fn apply_cause_residual_calibration(
+    base_row: &PredictionRow,
+    feature_row: &FeatureRow,
+    model: &CauseResidualCalibrationModel,
+) -> Result<f32> {
+    let base_score = base_row.predicted_oracle_pass;
+    if !calibration_scope_applies(model.scope, &base_row.category) {
+        return Ok(base_score);
+    }
+    ensure!(
+        feature_row.cause_features.len() == model.feature_count,
+        "cause residual feature count mismatch for {}:{}",
+        feature_row.task_id,
+        feature_row.category
+    );
+    let key = calibration_scope_key(model.scope, &base_row.category);
+    let Some(weights) = model.weights_by_key.get(&key) else {
+        return Ok(base_score);
+    };
+    ensure!(
+        weights.len() == model.feature_count + 1,
+        "cause residual weight count mismatch for key {key}"
+    );
+    let standardized = standardize_cause_features(
+        &feature_row.cause_features,
+        &model.feature_mean,
+        &model.feature_std,
+    )?;
+    let correction = weights
+        .iter()
+        .skip(1)
+        .zip(&standardized)
+        .fold(weights[0], |sum, (weight, feature)| sum + weight * feature)
+        .clamp(-model.correction_cap, model.correction_cap);
+    Ok((base_score + model.correction_scale * correction).clamp(0.001, 0.999))
+}
+
+fn cause_window_index(row: &FeatureRow, window_count: usize) -> usize {
+    let digest =
+        Sha256::digest(format!("{}|{}|cause_window", row.task_id, row.category).as_bytes());
+    (digest[0] as usize) % window_count
+}
+
+fn cause_residual_complexity_penalty(model: &CauseResidualCalibrationModel) -> f32 {
+    let scope_penalty = match model.scope {
+        CalibrationScope::TrueMixedPerCategory => 0.0,
+        CalibrationScope::PerCategory => 0.006,
+        CalibrationScope::Global => 0.014,
+    };
+    let feature_penalty = (model.feature_count as f32 / 10_000.0).min(0.010);
+    let key_penalty = if model.weights_by_key.len() > TRUE_MIXED_CATEGORIES.len() {
+        0.006
+    } else {
+        0.0
+    };
+    scope_penalty + feature_penalty + key_penalty
+}
+
+fn select_cause_bin_calibration_repair(
+    table: &FeatureTable,
+    cause_residual: &CauseResidualCalibrationReport,
+) -> Result<CauseBinCalibrationReport> {
+    let calibration_indices = bucket_indices(table, "calibration");
+    let holdout_indices = bucket_indices(table, "holdout");
+    let mut best: Option<CauseBinCalibrationReport> = None;
+    for scope in [CalibrationScope::TrueMixedPerCategory] {
+        for bin_count in [10_usize] {
+            for min_support in [2_usize, 4] {
+                for smoothing in [1.0_f32, 3.0, 8.0] {
+                    for prior_weight in [0.25_f32, 0.50, 0.75] {
+                        let model = fit_cause_bin_calibration_model(
+                            table,
+                            &calibration_indices,
+                            cause_residual.model.clone(),
+                            scope,
+                            bin_count,
+                            min_support,
+                            smoothing,
+                            prior_weight,
+                        )?;
+                        let calibration = cause_bin_cross_window_report(
+                            table,
+                            &calibration_indices,
+                            &cause_residual.model,
+                            scope,
+                            bin_count,
+                            min_support,
+                            smoothing,
+                            prior_weight,
+                        )?;
+                        let holdout = cause_bin_split_report(table, &holdout_indices, &model)?;
+                        let calibration_application =
+                            cause_bin_application_stats(table, &calibration_indices, &model)?;
+                        let holdout_application =
+                            cause_bin_application_stats(table, &holdout_indices, &model)?;
+                        let selection_objective = selection_objective(&calibration.metrics)
+                            + cause_bin_complexity_penalty(&model);
+                        let blockers =
+                            repair_blockers(&holdout.metrics, &holdout.per_category_metrics);
+                        let report = CauseBinCalibrationReport {
+                            selected_on: "calibration_leave_one_window_out".to_string(),
+                            selection_forbidden: false,
+                            forbidden_reason: None,
+                            selection_objective,
+                            model,
+                            calibration,
+                            holdout,
+                            calibration_application,
+                            holdout_application,
+                            blockers,
+                        };
+                        if best
+                            .as_ref()
+                            .map(|previous| {
+                                report.selection_objective < previous.selection_objective
+                            })
+                            .unwrap_or(true)
+                        {
+                            best = Some(report);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    best.ok_or_else(|| anyhow!("cause-bin calibration sweep produced no candidates"))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fit_cause_bin_calibration_model(
+    table: &FeatureTable,
+    indices: &[usize],
+    base_model: CauseResidualCalibrationModel,
+    scope: CalibrationScope,
+    bin_count: usize,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+) -> Result<CauseBinCalibrationModel> {
+    ensure!(bin_count > 1, "cause-bin bin_count must be > 1");
+    ensure!(min_support > 0, "cause-bin min_support must be positive");
+    ensure!(smoothing >= 0.0, "cause-bin smoothing must be non-negative");
+    ensure!(
+        (0.0..=1.0).contains(&prior_weight),
+        "cause-bin prior_weight must be in [0, 1]"
+    );
+    let base_rows = cause_residual_calibrated_rows(table, indices, &base_model)?;
+    let global_prior = pass_rate(&base_rows);
+    let mut stats = BTreeMap::<String, (usize, usize, f32)>::new();
+    for base_row in &base_rows {
+        if !calibration_scope_applies(scope, &base_row.category) {
+            continue;
+        }
+        let scope_key = calibration_scope_key(scope, &base_row.category);
+        let bin_idx = probability_bin_index(base_row.predicted_oracle_pass, bin_count);
+        let entry = stats
+            .entry(cause_bin_key(&scope_key, bin_idx))
+            .or_insert((0, 0, 0.0));
+        entry.0 += 1;
+        entry.1 += usize::from(base_row.actual_oracle_pass);
+        entry.2 += base_row.predicted_oracle_pass;
+    }
+    ensure!(
+        !stats.is_empty(),
+        "cause-bin calibration produced no scoped score-bin stats"
+    );
+    let key_stats = stats
+        .into_iter()
+        .map(|(key, (support, positives, score_sum))| {
+            let prior =
+                (positives as f32 + smoothing * global_prior) / (support as f32 + smoothing);
+            (
+                key,
+                CauseBinKeyStats {
+                    support,
+                    positives,
+                    prior: prior.clamp(0.001, 0.999),
+                    score_mean: score_sum / support as f32,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    Ok(CauseBinCalibrationModel {
+        selected_on: "calibration".to_string(),
+        base_model,
+        scope,
+        bin_count,
+        min_support,
+        smoothing,
+        prior_weight,
+        key_stats,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cause_bin_cross_window_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    cause_model: &CauseResidualCalibrationModel,
+    scope: CalibrationScope,
+    bin_count: usize,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+) -> Result<SplitReport> {
+    let rows = cause_bin_cross_window_rows(
+        table,
+        indices,
+        cause_model,
+        scope,
+        bin_count,
+        min_support,
+        smoothing,
+        prior_weight,
+    )?;
+    Ok(SplitReport {
+        metrics: metrics_for(&rows),
+        per_category_metrics: per_category_metrics(&rows),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cause_bin_cross_window_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    cause_model: &CauseResidualCalibrationModel,
+    scope: CalibrationScope,
+    bin_count: usize,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+) -> Result<Vec<PredictionRow>> {
+    ensure!(
+        indices.len() >= cause_model.window_count,
+        "cause-bin cross-window split needs at least one row per window"
+    );
+    let mut calibrated_rows_by_index = BTreeMap::<usize, PredictionRow>::new();
+    for held_out_window in 0..cause_model.window_count {
+        let fit_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| {
+                cause_window_index(&table.rows[*idx], cause_model.window_count) != held_out_window
+            })
+            .collect::<Vec<_>>();
+        let eval_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| {
+                cause_window_index(&table.rows[*idx], cause_model.window_count) == held_out_window
+            })
+            .collect::<Vec<_>>();
+        ensure!(
+            !fit_indices.is_empty() && !eval_indices.is_empty(),
+            "cause-bin cross-window split produced an empty window"
+        );
+        let fit_base_rows = prediction_rows_for_indices(
+            table,
+            &fit_indices,
+            cause_model.base_model.affine_model.base_candidate,
+        )?;
+        let fold_mean_bias = fit_mean_bias_calibration_model(
+            &fit_base_rows,
+            cause_model.base_model.affine_model.clone(),
+            cause_model.base_model.scope,
+            cause_model.base_model.shrinkage,
+        )?;
+        let fold_cause = fit_cause_residual_model(
+            table,
+            &fit_indices,
+            fold_mean_bias,
+            cause_model.scope,
+            cause_model.window_count,
+            cause_model.regularization,
+            cause_model.correction_scale,
+            cause_model.correction_cap,
+        )?;
+        let model = fit_cause_bin_calibration_model(
+            table,
+            &fit_indices,
+            fold_cause,
+            scope,
+            bin_count,
+            min_support,
+            smoothing,
+            prior_weight,
+        )?;
+        for (idx, row) in eval_indices.iter().copied().zip(cause_bin_calibrated_rows(
+            table,
+            &eval_indices,
+            &model,
+        )?) {
+            ensure!(
+                calibrated_rows_by_index.insert(idx, row).is_none(),
+                "cause-bin cross-window produced duplicate row index {idx}"
+            );
+        }
+    }
+    indices
+        .iter()
+        .map(|idx| {
+            calibrated_rows_by_index
+                .remove(idx)
+                .ok_or_else(|| anyhow!("cause-bin cross-window missing row index {idx}"))
+        })
+        .collect()
+}
+
+fn cause_bin_split_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &CauseBinCalibrationModel,
+) -> Result<SplitReport> {
+    let rows = cause_bin_calibrated_rows(table, indices, model)?;
+    Ok(SplitReport {
+        metrics: metrics_for(&rows),
+        per_category_metrics: per_category_metrics(&rows),
+    })
+}
+
+fn cause_bin_calibrated_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &CauseBinCalibrationModel,
+) -> Result<Vec<PredictionRow>> {
+    let base_rows = cause_residual_calibrated_rows(table, indices, &model.base_model)?;
+    base_rows
+        .iter()
+        .map(|base_row| {
+            let score = apply_cause_bin_calibration(base_row, model);
+            Ok(PredictionRow {
+                task_id: base_row.task_id.clone(),
+                category: base_row.category.clone(),
+                actual_oracle_pass: base_row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == base_row.actual_oracle_pass,
+            })
+        })
+        .collect()
+}
+
+fn cause_bin_application_stats(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &CauseBinCalibrationModel,
+) -> Result<CauseBinApplicationStats> {
+    let base_rows = cause_residual_calibrated_rows(table, indices, &model.base_model)?;
+    let mut stats = CauseBinApplicationStats {
+        scoped_row_count: 0,
+        applied_row_count: 0,
+        missing_key_row_count: 0,
+        under_min_support_row_count: 0,
+        non_scoped_row_count: 0,
+    };
+    for base_row in &base_rows {
+        if !calibration_scope_applies(model.scope, &base_row.category) {
+            stats.non_scoped_row_count += 1;
+            continue;
+        }
+        stats.scoped_row_count += 1;
+        let scope_key = calibration_scope_key(model.scope, &base_row.category);
+        let bin_idx = probability_bin_index(base_row.predicted_oracle_pass, model.bin_count);
+        let Some(key_stats) = model.key_stats.get(&cause_bin_key(&scope_key, bin_idx)) else {
+            stats.missing_key_row_count += 1;
+            continue;
+        };
+        if key_stats.support < model.min_support {
+            stats.under_min_support_row_count += 1;
+            continue;
+        }
+        stats.applied_row_count += 1;
+    }
+    Ok(stats)
+}
+
+fn apply_cause_bin_calibration(base_row: &PredictionRow, model: &CauseBinCalibrationModel) -> f32 {
+    let base_score = base_row.predicted_oracle_pass;
+    if !calibration_scope_applies(model.scope, &base_row.category) {
+        return base_score;
+    }
+    let scope_key = calibration_scope_key(model.scope, &base_row.category);
+    let bin_idx = probability_bin_index(base_score, model.bin_count);
+    let Some(stats) = model.key_stats.get(&cause_bin_key(&scope_key, bin_idx)) else {
+        return base_score;
+    };
+    if stats.support < model.min_support {
+        return base_score;
+    }
+    let support_weight = if model.smoothing <= f32::EPSILON {
+        1.0
+    } else {
+        stats.support as f32 / (stats.support as f32 + model.smoothing)
+    };
+    let effective_weight = (model.prior_weight * support_weight).clamp(0.0, 1.0);
+    ((1.0 - effective_weight) * base_score + effective_weight * stats.prior).clamp(0.001, 0.999)
+}
+
+fn cause_bin_key(scope_key: &str, bin_idx: usize) -> String {
+    format!("scope:{}|bin:{}", key_component(scope_key), bin_idx)
+}
+
+fn cause_bin_complexity_penalty(model: &CauseBinCalibrationModel) -> f32 {
+    let scope_penalty = match model.scope {
+        CalibrationScope::TrueMixedPerCategory => 0.0,
+        CalibrationScope::PerCategory => 0.006,
+        CalibrationScope::Global => 0.014,
+    };
+    let bin_penalty = if model.bin_count > 10 { 0.004 } else { 0.0 };
+    let support_penalty = if model.min_support < 4 { 0.006 } else { 0.0 };
+    let weight_penalty = if model.prior_weight > 0.75 {
+        0.006
+    } else {
+        0.0
+    };
+    let sparse_penalty = if model.key_stats.is_empty() {
+        0.020
+    } else {
+        0.0
+    };
+    scope_penalty + bin_penalty + support_penalty + weight_penalty + sparse_penalty
+}
+
+fn select_score_sharpness_calibration_repair(
+    table: &FeatureTable,
+    cause_bin: &CauseBinCalibrationReport,
+) -> Result<ScoreSharpnessCalibrationReport> {
+    let calibration_indices = bucket_indices(table, "calibration");
+    let holdout_indices = bucket_indices(table, "holdout");
+    let mut best_allowed: Option<ScoreSharpnessCalibrationReport> = None;
+    let mut best_forbidden: Option<ScoreSharpnessCalibrationReport> = None;
+    for scope in [CalibrationScope::TrueMixedPerCategory] {
+        for low_cutoff in [0.20_f32, 0.30, 0.40, 0.50] {
+            for low_tail_scale in [1.25_f32, 1.50, 2.0, 3.0] {
+                for high_cutoff in [0.80_f32, 0.90] {
+                    for high_tail_scale in [0.50_f32, 0.75, 1.0] {
+                        let model = ScoreSharpnessCalibrationModel {
+                            selected_on: "calibration".to_string(),
+                            base_model: cause_bin.model.clone(),
+                            scope,
+                            low_cutoff,
+                            low_tail_scale,
+                            high_cutoff,
+                            high_tail_scale,
+                        };
+                        let calibration = score_sharpness_cross_window_report(
+                            table,
+                            &calibration_indices,
+                            &cause_bin.model,
+                            scope,
+                            low_cutoff,
+                            low_tail_scale,
+                            high_cutoff,
+                            high_tail_scale,
+                        )?;
+                        let holdout =
+                            score_sharpness_split_report(table, &holdout_indices, &model)?;
+                        let calibration_application =
+                            score_sharpness_application_stats(table, &calibration_indices, &model)?;
+                        let holdout_application =
+                            score_sharpness_application_stats(table, &holdout_indices, &model)?;
+                        let selection_objective = selection_objective(&calibration.metrics)
+                            + score_sharpness_complexity_penalty(&model);
+                        let forbidden_reason = score_sharpness_forbidden_reason(
+                            &calibration,
+                            &calibration_application,
+                            cause_bin,
+                        );
+                        let blockers =
+                            repair_blockers(&holdout.metrics, &holdout.per_category_metrics);
+                        let report = ScoreSharpnessCalibrationReport {
+                            selected_on: "calibration_leave_one_window_out".to_string(),
+                            selection_forbidden: forbidden_reason.is_some(),
+                            forbidden_reason,
+                            selection_objective,
+                            model,
+                            calibration,
+                            holdout,
+                            calibration_application,
+                            holdout_application,
+                            blockers,
+                        };
+                        let target = if report.selection_forbidden {
+                            &mut best_forbidden
+                        } else {
+                            &mut best_allowed
+                        };
+                        if target
+                            .as_ref()
+                            .map(|previous| {
+                                report.selection_objective < previous.selection_objective
+                            })
+                            .unwrap_or(true)
+                        {
+                            *target = Some(report);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    best_allowed
+        .or(best_forbidden)
+        .ok_or_else(|| anyhow!("score-sharpness calibration sweep produced no candidates"))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn score_sharpness_cross_window_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    cause_bin_model: &CauseBinCalibrationModel,
+    scope: CalibrationScope,
+    low_cutoff: f32,
+    low_tail_scale: f32,
+    high_cutoff: f32,
+    high_tail_scale: f32,
+) -> Result<SplitReport> {
+    let rows = score_sharpness_cross_window_rows(
+        table,
+        indices,
+        cause_bin_model,
+        scope,
+        low_cutoff,
+        low_tail_scale,
+        high_cutoff,
+        high_tail_scale,
+    )?;
+    Ok(SplitReport {
+        metrics: metrics_for(&rows),
+        per_category_metrics: per_category_metrics(&rows),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn score_sharpness_cross_window_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    cause_bin_model: &CauseBinCalibrationModel,
+    scope: CalibrationScope,
+    low_cutoff: f32,
+    low_tail_scale: f32,
+    high_cutoff: f32,
+    high_tail_scale: f32,
+) -> Result<Vec<PredictionRow>> {
+    ensure!(
+        indices.len() >= cause_bin_model.base_model.window_count,
+        "score-sharpness cross-window split needs at least one row per window"
+    );
+    let mut calibrated_rows_by_index = BTreeMap::<usize, PredictionRow>::new();
+    for held_out_window in 0..cause_bin_model.base_model.window_count {
+        let fit_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| {
+                cause_window_index(&table.rows[*idx], cause_bin_model.base_model.window_count)
+                    != held_out_window
+            })
+            .collect::<Vec<_>>();
+        let eval_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| {
+                cause_window_index(&table.rows[*idx], cause_bin_model.base_model.window_count)
+                    == held_out_window
+            })
+            .collect::<Vec<_>>();
+        ensure!(
+            !fit_indices.is_empty() && !eval_indices.is_empty(),
+            "score-sharpness cross-window split produced an empty window"
+        );
+        let fit_base_rows = prediction_rows_for_indices(
+            table,
+            &fit_indices,
+            cause_bin_model
+                .base_model
+                .base_model
+                .affine_model
+                .base_candidate,
+        )?;
+        let fold_mean_bias = fit_mean_bias_calibration_model(
+            &fit_base_rows,
+            cause_bin_model.base_model.base_model.affine_model.clone(),
+            cause_bin_model.base_model.base_model.scope,
+            cause_bin_model.base_model.base_model.shrinkage,
+        )?;
+        let fold_cause = fit_cause_residual_model(
+            table,
+            &fit_indices,
+            fold_mean_bias,
+            cause_bin_model.base_model.scope,
+            cause_bin_model.base_model.window_count,
+            cause_bin_model.base_model.regularization,
+            cause_bin_model.base_model.correction_scale,
+            cause_bin_model.base_model.correction_cap,
+        )?;
+        let fold_bin = fit_cause_bin_calibration_model(
+            table,
+            &fit_indices,
+            fold_cause,
+            cause_bin_model.scope,
+            cause_bin_model.bin_count,
+            cause_bin_model.min_support,
+            cause_bin_model.smoothing,
+            cause_bin_model.prior_weight,
+        )?;
+        let model = ScoreSharpnessCalibrationModel {
+            selected_on: "calibration".to_string(),
+            base_model: fold_bin,
+            scope,
+            low_cutoff,
+            low_tail_scale,
+            high_cutoff,
+            high_tail_scale,
+        };
+        for (idx, row) in eval_indices
+            .iter()
+            .copied()
+            .zip(score_sharpness_calibrated_rows(
+                table,
+                &eval_indices,
+                &model,
+            )?)
+        {
+            ensure!(
+                calibrated_rows_by_index.insert(idx, row).is_none(),
+                "score-sharpness cross-window produced duplicate row index {idx}"
+            );
+        }
+    }
+    indices
+        .iter()
+        .map(|idx| {
+            calibrated_rows_by_index
+                .remove(idx)
+                .ok_or_else(|| anyhow!("score-sharpness cross-window missing row index {idx}"))
+        })
+        .collect()
+}
+
+fn score_sharpness_split_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &ScoreSharpnessCalibrationModel,
+) -> Result<SplitReport> {
+    let rows = score_sharpness_calibrated_rows(table, indices, model)?;
+    Ok(SplitReport {
+        metrics: metrics_for(&rows),
+        per_category_metrics: per_category_metrics(&rows),
+    })
+}
+
+fn score_sharpness_calibrated_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &ScoreSharpnessCalibrationModel,
+) -> Result<Vec<PredictionRow>> {
+    let base_rows = cause_bin_calibrated_rows(table, indices, &model.base_model)?;
+    Ok(base_rows
+        .iter()
+        .map(|base_row| {
+            let score = apply_score_sharpness_calibration(base_row, model);
+            PredictionRow {
+                task_id: base_row.task_id.clone(),
+                category: base_row.category.clone(),
+                actual_oracle_pass: base_row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == base_row.actual_oracle_pass,
+            }
+        })
+        .collect())
+}
+
+fn score_sharpness_application_stats(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &ScoreSharpnessCalibrationModel,
+) -> Result<ScoreSharpnessApplicationStats> {
+    let base_rows = cause_bin_calibrated_rows(table, indices, &model.base_model)?;
+    let mut stats = ScoreSharpnessApplicationStats {
+        scoped_row_count: 0,
+        low_tail_shaped_row_count: 0,
+        high_tail_shaped_row_count: 0,
+        unchanged_scoped_row_count: 0,
+        non_scoped_row_count: 0,
+    };
+    for row in &base_rows {
+        if !calibration_scope_applies(model.scope, &row.category) {
+            stats.non_scoped_row_count += 1;
+            continue;
+        }
+        stats.scoped_row_count += 1;
+        let shaped = apply_score_sharpness_calibration(row, model);
+        if (shaped - row.predicted_oracle_pass).abs() < 1.0e-6 {
+            stats.unchanged_scoped_row_count += 1;
+        } else if row.predicted_oracle_pass < model.low_cutoff {
+            stats.low_tail_shaped_row_count += 1;
+        } else if row.predicted_oracle_pass > model.high_cutoff {
+            stats.high_tail_shaped_row_count += 1;
+        } else {
+            stats.unchanged_scoped_row_count += 1;
+        }
+    }
+    Ok(stats)
+}
+
+fn apply_score_sharpness_calibration(
+    base_row: &PredictionRow,
+    model: &ScoreSharpnessCalibrationModel,
+) -> f32 {
+    let base_score = base_row.predicted_oracle_pass;
+    if !calibration_scope_applies(model.scope, &base_row.category) {
+        return base_score;
+    }
+    let shaped = if base_score < model.low_cutoff {
+        model.low_cutoff - (model.low_cutoff - base_score) * model.low_tail_scale
+    } else if base_score > model.high_cutoff {
+        model.high_cutoff + (base_score - model.high_cutoff) * model.high_tail_scale
+    } else {
+        base_score
+    };
+    shaped.clamp(0.001, 0.999)
+}
+
+fn score_sharpness_forbidden_reason(
+    calibration: &SplitReport,
+    application: &ScoreSharpnessApplicationStats,
+    cause_bin: &CauseBinCalibrationReport,
+) -> Option<String> {
+    let shaped_rows =
+        application.low_tail_shaped_row_count + application.high_tail_shaped_row_count;
+    if application.scoped_row_count == 0 || shaped_rows == 0 {
+        return Some("score_sharpness_no_scoped_rows_shaped".to_string());
+    }
+    if calibration.metrics.ece > cause_bin.calibration.metrics.ece + 1.0e-6 {
+        return Some(format!(
+            "calibration_ece_regressed: score_sharpness={:.9} cause_bin={:.9}",
+            calibration.metrics.ece, cause_bin.calibration.metrics.ece
+        ));
+    }
+    if calibration.metrics.brier > cause_bin.calibration.metrics.brier + 0.001 {
+        return Some(format!(
+            "calibration_brier_regressed: score_sharpness={:.9} cause_bin={:.9}",
+            calibration.metrics.brier, cause_bin.calibration.metrics.brier
+        ));
+    }
+    if let (Some(sharp_corr), Some(cause_corr)) = (
+        calibration.metrics.prediction_oracle_correlation,
+        cause_bin.calibration.metrics.prediction_oracle_correlation,
+    ) {
+        if sharp_corr + 0.005 < cause_corr {
+            return Some(format!(
+                "calibration_correlation_regressed: score_sharpness={sharp_corr:.9} cause_bin={cause_corr:.9}"
+            ));
+        }
+    }
+    None
+}
+
+fn score_sharpness_complexity_penalty(model: &ScoreSharpnessCalibrationModel) -> f32 {
+    let scope_penalty = match model.scope {
+        CalibrationScope::TrueMixedPerCategory => 0.0,
+        CalibrationScope::PerCategory => 0.006,
+        CalibrationScope::Global => 0.014,
+    };
+    let low_penalty = if model.low_tail_scale > 2.0 {
+        0.003
+    } else {
+        0.0
+    };
+    let high_penalty = if (model.high_tail_scale - 1.0).abs() > f32::EPSILON {
+        0.002
+    } else {
+        0.0
+    };
+    scope_penalty + low_penalty + high_penalty
+}
+
+fn select_score_sharpness_logit_calibration_repair(
+    table: &FeatureTable,
+    score_sharpness: &ScoreSharpnessCalibrationReport,
+) -> Result<ScoreSharpnessLogitCalibrationReport> {
+    let calibration_indices = bucket_indices(table, "calibration");
+    let holdout_indices = bucket_indices(table, "holdout");
+    let mut best_allowed: Option<ScoreSharpnessLogitCalibrationReport> = None;
+    let mut best_forbidden: Option<ScoreSharpnessLogitCalibrationReport> = None;
+    for scope in [
+        CalibrationScope::Global,
+        CalibrationScope::TrueMixedPerCategory,
+    ] {
+        for slope in [0.70_f32, 0.80, 0.90, 1.0, 1.10, 1.20] {
+            for bias in [-0.20_f32, -0.10, -0.05, 0.0, 0.05, 0.10, 0.20] {
+                let logit_model = LogitCalibrationModel {
+                    selected_on: "calibration".to_string(),
+                    scope,
+                    base_candidate: CURRENT_RBF,
+                    slope,
+                    bias,
+                };
+                let model = ScoreSharpnessLogitCalibrationModel {
+                    selected_on: "calibration".to_string(),
+                    base_model: score_sharpness.model.clone(),
+                    logit_model: logit_model.clone(),
+                };
+                let calibration = score_sharpness_logit_cross_window_report(
+                    table,
+                    &calibration_indices,
+                    &score_sharpness.model,
+                    logit_model.clone(),
+                )?;
+                let holdout = score_sharpness_logit_split_report(table, &holdout_indices, &model)?;
+                let unpenalized_selection_objective = selection_objective(&calibration.metrics);
+                let selection_objective = unpenalized_selection_objective
+                    + score_sharpness_logit_complexity_penalty(&model);
+                let forbidden_reason = score_sharpness_logit_forbidden_reason(
+                    unpenalized_selection_objective,
+                    &calibration.metrics,
+                    score_sharpness,
+                    &logit_model,
+                );
+                let blockers = repair_blockers(&holdout.metrics, &holdout.per_category_metrics);
+                let report = ScoreSharpnessLogitCalibrationReport {
+                    selected_on: "calibration_leave_one_window_out".to_string(),
+                    selection_forbidden: forbidden_reason.is_some(),
+                    forbidden_reason,
+                    selection_objective,
+                    model,
+                    calibration,
+                    holdout,
+                    blockers,
+                };
+                let target = if report.selection_forbidden {
+                    &mut best_forbidden
+                } else {
+                    &mut best_allowed
+                };
+                if target
+                    .as_ref()
+                    .map(|previous| report.selection_objective < previous.selection_objective)
+                    .unwrap_or(true)
+                {
+                    *target = Some(report);
+                }
+            }
+        }
+    }
+    best_allowed
+        .or(best_forbidden)
+        .ok_or_else(|| anyhow!("score-sharpness logit calibration sweep produced no candidates"))
+}
+
+fn score_sharpness_logit_cross_window_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    score_sharpness_model: &ScoreSharpnessCalibrationModel,
+    logit_model: LogitCalibrationModel,
+) -> Result<SplitReport> {
+    let rows = score_sharpness_cross_window_rows(
+        table,
+        indices,
+        &score_sharpness_model.base_model,
+        score_sharpness_model.scope,
+        score_sharpness_model.low_cutoff,
+        score_sharpness_model.low_tail_scale,
+        score_sharpness_model.high_cutoff,
+        score_sharpness_model.high_tail_scale,
+    )?;
+    logit_calibration_split_report(&rows, &logit_model)
+}
+
+fn score_sharpness_logit_split_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &ScoreSharpnessLogitCalibrationModel,
+) -> Result<SplitReport> {
+    let rows = score_sharpness_logit_calibrated_rows(table, indices, model)?;
+    Ok(SplitReport {
+        metrics: metrics_for(&rows),
+        per_category_metrics: per_category_metrics(&rows),
+    })
+}
+
+fn score_sharpness_logit_calibrated_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &ScoreSharpnessLogitCalibrationModel,
+) -> Result<Vec<PredictionRow>> {
+    let score_sharpness_rows = score_sharpness_calibrated_rows(table, indices, &model.base_model)?;
+    Ok(score_sharpness_rows
+        .iter()
+        .map(|row| {
+            let score = apply_logit_calibration(row, &model.logit_model);
+            PredictionRow {
+                task_id: row.task_id.clone(),
+                category: row.category.clone(),
+                actual_oracle_pass: row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == row.actual_oracle_pass,
+            }
+        })
+        .collect())
+}
+
+fn score_sharpness_logit_forbidden_reason(
+    unpenalized_selection_objective: f32,
+    calibration: &MetricBlock,
+    score_sharpness: &ScoreSharpnessCalibrationReport,
+    logit_model: &LogitCalibrationModel,
+) -> Option<String> {
+    if logit_model_is_identity(logit_model) {
+        return Some("identity_logit_noop".to_string());
+    }
+    let base_unpenalized_objective = selection_objective(&score_sharpness.calibration.metrics);
+    if unpenalized_selection_objective + 1.0e-6 >= base_unpenalized_objective {
+        return Some(format!(
+            "unpenalized_objective_not_improved: score_sharpness_logit={unpenalized_selection_objective:.9} score_sharpness={base_unpenalized_objective:.9}"
+        ));
+    }
+    if calibration.ece > score_sharpness.calibration.metrics.ece + 1.0e-6 {
+        return Some(format!(
+            "calibration_ece_regressed: score_sharpness_logit={:.9} score_sharpness={:.9}",
+            calibration.ece, score_sharpness.calibration.metrics.ece
+        ));
+    }
+    if calibration.brier > score_sharpness.calibration.metrics.brier + 0.002 {
+        return Some(format!(
+            "calibration_brier_regressed: score_sharpness_logit={:.9} score_sharpness={:.9}",
+            calibration.brier, score_sharpness.calibration.metrics.brier
+        ));
+    }
+    None
+}
+
+fn logit_model_is_identity(model: &LogitCalibrationModel) -> bool {
+    (model.slope - 1.0).abs() <= f32::EPSILON && model.bias.abs() <= f32::EPSILON
+}
+
+fn score_sharpness_logit_complexity_penalty(model: &ScoreSharpnessLogitCalibrationModel) -> f32 {
+    let scope_penalty = match model.logit_model.scope {
+        CalibrationScope::Global => 0.002,
+        CalibrationScope::TrueMixedPerCategory => 0.004,
+        CalibrationScope::PerCategory => 0.008,
+    };
+    let non_identity_penalty = if (model.logit_model.slope - 1.0).abs() > f32::EPSILON
+        || model.logit_model.bias.abs() > f32::EPSILON
+    {
+        0.001
+    } else {
+        0.0
+    };
+    scope_penalty + non_identity_penalty
+}
+
+fn select_score_sharpness_abstain_band_repair(
+    table: &FeatureTable,
+    score_sharpness: &ScoreSharpnessCalibrationReport,
+) -> Result<ScoreSharpnessAbstainBandReport> {
+    let calibration_indices = bucket_indices(table, "calibration");
+    let holdout_indices = bucket_indices(table, "holdout");
+    let mut best_allowed: Option<ScoreSharpnessAbstainBandReport> = None;
+    let mut best_forbidden: Option<ScoreSharpnessAbstainBandReport> = None;
+    for (abstain_low, abstain_high) in [
+        (0.10_f32, 0.90_f32),
+        (0.20, 0.80),
+        (0.25, 0.75),
+        (0.30, 0.70),
+        (0.35, 0.65),
+        (0.40, 0.60),
+        (0.45, 0.55),
+    ] {
+        let model = ScoreSharpnessAbstainBandModel {
+            selected_on: "calibration".to_string(),
+            base_model: score_sharpness.model.clone(),
+            abstain_low,
+            abstain_high,
+            min_active_coverage: 0.85,
+        };
+        let (calibration, calibration_application) =
+            score_sharpness_abstain_band_cross_window_report(
+                table,
+                &calibration_indices,
+                &score_sharpness.model,
+                abstain_low,
+                abstain_high,
+            )?;
+        let (holdout, holdout_application) =
+            score_sharpness_abstain_band_split_report(table, &holdout_indices, &model)?;
+        let selection_objective = selection_objective(&calibration.metrics)
+            + abstain_band_complexity_penalty(&calibration_application, &model);
+        let forbidden_reason =
+            abstain_band_forbidden_reason(selection_objective, &calibration_application, &model);
+        let blockers = abstain_band_repair_blockers(&holdout, &holdout_application, &model);
+        let report = ScoreSharpnessAbstainBandReport {
+            selected_on: "calibration_leave_one_window_out".to_string(),
+            selection_forbidden: forbidden_reason.is_some(),
+            forbidden_reason,
+            selection_objective,
+            model,
+            calibration,
+            holdout,
+            calibration_application,
+            holdout_application,
+            blockers,
+        };
+        let target = if report.selection_forbidden {
+            &mut best_forbidden
+        } else {
+            &mut best_allowed
+        };
+        if target
+            .as_ref()
+            .map(|previous| report.selection_objective < previous.selection_objective)
+            .unwrap_or(true)
+        {
+            *target = Some(report);
+        }
+    }
+    best_allowed
+        .or(best_forbidden)
+        .ok_or_else(|| anyhow!("score-sharpness abstain-band sweep produced no candidates"))
+}
+
+fn score_sharpness_abstain_band_cross_window_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    score_sharpness_model: &ScoreSharpnessCalibrationModel,
+    abstain_low: f32,
+    abstain_high: f32,
+) -> Result<(SplitReport, AbstainBandApplicationStats)> {
+    let rows = score_sharpness_cross_window_rows(
+        table,
+        indices,
+        &score_sharpness_model.base_model,
+        score_sharpness_model.scope,
+        score_sharpness_model.low_cutoff,
+        score_sharpness_model.low_tail_scale,
+        score_sharpness_model.high_cutoff,
+        score_sharpness_model.high_tail_scale,
+    )?;
+    Ok(abstain_band_report_from_rows(
+        &rows,
+        abstain_low,
+        abstain_high,
+    ))
+}
+
+fn score_sharpness_abstain_band_split_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &ScoreSharpnessAbstainBandModel,
+) -> Result<(SplitReport, AbstainBandApplicationStats)> {
+    let rows = score_sharpness_calibrated_rows(table, indices, &model.base_model)?;
+    Ok(abstain_band_report_from_rows(
+        &rows,
+        model.abstain_low,
+        model.abstain_high,
+    ))
+}
+
+fn abstain_band_report_from_rows(
+    rows: &[PredictionRow],
+    abstain_low: f32,
+    abstain_high: f32,
+) -> (SplitReport, AbstainBandApplicationStats) {
+    let active_rows = rows
+        .iter()
+        .filter(|row| !score_in_abstain_band(row.predicted_oracle_pass, abstain_low, abstain_high))
+        .cloned()
+        .collect::<Vec<_>>();
+    let abstained_actual_pass_count = rows
+        .iter()
+        .filter(|row| {
+            row.actual_oracle_pass
+                && score_in_abstain_band(row.predicted_oracle_pass, abstain_low, abstain_high)
+        })
+        .count();
+    let abstained_actual_fail_count = rows
+        .iter()
+        .filter(|row| {
+            !row.actual_oracle_pass
+                && score_in_abstain_band(row.predicted_oracle_pass, abstain_low, abstain_high)
+        })
+        .count();
+    let active_row_count = active_rows.len();
+    let per_category = abstain_band_category_stats(rows, &active_rows);
+    let stats = AbstainBandApplicationStats {
+        total_row_count: rows.len(),
+        active_row_count,
+        abstained_row_count: rows.len().saturating_sub(active_row_count),
+        active_coverage: if rows.is_empty() {
+            0.0
+        } else {
+            active_row_count as f32 / rows.len() as f32
+        },
+        abstained_actual_pass_count,
+        abstained_actual_fail_count,
+        per_category,
+    };
+    (
+        SplitReport {
+            metrics: metrics_for(&active_rows),
+            per_category_metrics: per_category_metrics(&active_rows),
+        },
+        stats,
+    )
+}
+
+fn abstain_band_category_stats(
+    rows: &[PredictionRow],
+    active_rows: &[PredictionRow],
+) -> BTreeMap<String, AbstainBandCategoryStats> {
+    REQUIRED_CATEGORIES
+        .iter()
+        .map(|category| {
+            let category_rows = rows
+                .iter()
+                .filter(|row| row.category == *category)
+                .cloned()
+                .collect::<Vec<_>>();
+            let active_category_rows = active_rows
+                .iter()
+                .filter(|row| row.category == *category)
+                .cloned()
+                .collect::<Vec<_>>();
+            let active_metrics = metrics_for(&active_category_rows);
+            let (active_gate_contract, active_gate_blockers) =
+                abstain_active_gate_contract(category, &active_metrics);
+            let total_row_count = category_rows.len();
+            let active_row_count = active_category_rows.len();
+            let abstained_row_count = total_row_count.saturating_sub(active_row_count);
+            let active_actual_pass_count = active_metrics.actual_pass_count;
+            let active_actual_fail_count = active_metrics.actual_fail_count;
+            let active_predicted_pass_count = active_metrics.predicted_pass_count;
+            let active_predicted_fail_count = active_metrics.predicted_fail_count;
+            let abstained_actual_pass_count = category_rows
+                .iter()
+                .filter(|row| {
+                    row.actual_oracle_pass
+                        && !active_category_rows.iter().any(|active| {
+                            active.task_id == row.task_id && active.category == row.category
+                        })
+                })
+                .count();
+            let abstained_actual_fail_count = category_rows
+                .iter()
+                .filter(|row| {
+                    !row.actual_oracle_pass
+                        && !active_category_rows.iter().any(|active| {
+                            active.task_id == row.task_id && active.category == row.category
+                        })
+                })
+                .count();
+            (
+                (*category).to_string(),
+                AbstainBandCategoryStats {
+                    total_row_count,
+                    active_row_count,
+                    abstained_row_count,
+                    active_coverage: if total_row_count == 0 {
+                        0.0
+                    } else {
+                        active_row_count as f32 / total_row_count as f32
+                    },
+                    active_actual_pass_count,
+                    active_actual_fail_count,
+                    active_predicted_pass_count,
+                    active_predicted_fail_count,
+                    abstained_actual_pass_count,
+                    abstained_actual_fail_count,
+                    active_oracle_variance_class: active_metrics.oracle_variance_class,
+                    active_gate_contract,
+                    active_gate_passed: active_gate_blockers.is_empty(),
+                    active_gate_blockers,
+                },
+            )
+        })
+        .collect()
+}
+
+fn abstain_band_repair_blockers(
+    active_split: &SplitReport,
+    application: &AbstainBandApplicationStats,
+    model: &ScoreSharpnessAbstainBandModel,
+) -> Vec<String> {
+    let mut blockers = aggregate_repair_blockers(&active_split.metrics);
+    if application.active_coverage + 1.0e-6 < model.min_active_coverage {
+        blockers.push(format!(
+            "active_coverage_below_floor: {:.6} < {:.6}",
+            application.active_coverage, model.min_active_coverage
+        ));
+    }
+    for category in TRUE_MIXED_CATEGORIES {
+        let Some(stats) = application.per_category.get(category) else {
+            blockers.push(format!("{category}:missing_abstain_category_stats"));
+            continue;
+        };
+        for blocker in &stats.active_gate_blockers {
+            blockers.push(format!("{category}:{blocker}"));
+        }
+    }
+    blockers
+}
+
+fn aggregate_repair_blockers(metrics: &MetricBlock) -> Vec<String> {
+    let mut blockers = Vec::new();
+    if metrics
+        .prediction_oracle_correlation
+        .map(|value| value < BASELINE_536_CORRELATION)
+        .unwrap_or(true)
+    {
+        blockers.push(format!(
+            "aggregate_correlation_not_above_536: {:?}",
+            metrics.prediction_oracle_correlation
+        ));
+    }
+    if metrics.brier > BASELINE_536_BRIER {
+        blockers.push(format!("aggregate_brier_regressed: {:.9}", metrics.brier));
+    }
+    if metrics.ece > BASELINE_536_ECE {
+        blockers.push(format!("aggregate_ece_regressed: {:.9}", metrics.ece));
+    }
+    blockers
+}
+
+fn abstain_active_gate_contract(_category: &str, metrics: &MetricBlock) -> (String, Vec<String>) {
+    match metrics.oracle_variance_class {
+        OracleVarianceClass::Mixed => {
+            let mut blockers = Vec::new();
+            if metrics.predicted_pass_count == 0 || metrics.predicted_fail_count == 0 {
+                blockers.push(format!(
+                    "threshold_degenerate_predicted_pass={} predicted_fail={}",
+                    metrics.predicted_pass_count, metrics.predicted_fail_count
+                ));
+            }
+            if metrics
+                .prediction_oracle_correlation
+                .map(|value| value <= 0.0)
+                .unwrap_or(true)
+            {
+                blockers.push(format!(
+                    "non_positive_correlation={:?}",
+                    metrics.prediction_oracle_correlation
+                ));
+            }
+            (
+                "mixed_positive_correlation_and_threshold_support".to_string(),
+                blockers,
+            )
+        }
+        OracleVarianceClass::AllFail => degenerate_active_gate_contract(
+            "all_fail_recall_confidence_brier_ece",
+            metrics.fail_recall,
+            metrics.actual_class_confidence_mean,
+            metrics.brier,
+            metrics.ece,
+        ),
+        OracleVarianceClass::AllPass => degenerate_active_gate_contract(
+            "all_pass_recall_confidence_brier_ece",
+            metrics.pass_recall,
+            metrics.actual_class_confidence_mean,
+            metrics.brier,
+            metrics.ece,
+        ),
+        OracleVarianceClass::Empty => (
+            "empty_active_cell".to_string(),
+            vec!["active_row_count_zero".to_string()],
+        ),
+    }
+}
+
+fn degenerate_active_gate_contract(
+    metric_name: &str,
+    recall: Option<f32>,
+    actual_class_confidence_mean: f32,
+    brier: f32,
+    ece: f32,
+) -> (String, Vec<String>) {
+    let mut blockers = Vec::new();
+    match recall {
+        Some(value) if value >= DEGENERATE_RECALL_TARGET => {}
+        Some(value) => blockers.push(format!(
+            "{metric_name}.recall {value:.6} < {DEGENERATE_RECALL_TARGET:.6}"
+        )),
+        None => blockers.push(format!("{metric_name}.recall unavailable")),
+    }
+    if actual_class_confidence_mean < DEGENERATE_CLASS_CONFIDENCE_TARGET {
+        blockers.push(format!(
+            "{metric_name}.actual_class_confidence_mean {actual_class_confidence_mean:.6} < {DEGENERATE_CLASS_CONFIDENCE_TARGET:.6}"
+        ));
+    }
+    if brier > DEGENERATE_BRIER_MAX {
+        blockers.push(format!(
+            "{metric_name}.brier {brier:.6} > {DEGENERATE_BRIER_MAX:.6}"
+        ));
+    }
+    if ece > DEGENERATE_ECE_MAX {
+        blockers.push(format!(
+            "{metric_name}.ece {ece:.6} > {DEGENERATE_ECE_MAX:.6}"
+        ));
+    }
+    (metric_name.to_string(), blockers)
+}
+
+fn score_in_abstain_band(score: f32, abstain_low: f32, abstain_high: f32) -> bool {
+    score >= abstain_low && score <= abstain_high
+}
+
+fn abstain_band_forbidden_reason(
+    selection_objective: f32,
+    application: &AbstainBandApplicationStats,
+    model: &ScoreSharpnessAbstainBandModel,
+) -> Option<String> {
+    if application.active_coverage + 1.0e-6 < model.min_active_coverage {
+        return Some(format!(
+            "active_coverage_below_floor: {:.6} < {:.6}",
+            application.active_coverage, model.min_active_coverage
+        ));
+    }
+    if application.active_row_count < 2 {
+        return Some("active_row_count_below_minimum".to_string());
+    }
+    if !selection_objective.is_finite() {
+        return Some("selection_objective_non_finite".to_string());
+    }
+    None
+}
+
+fn abstain_band_complexity_penalty(
+    application: &AbstainBandApplicationStats,
+    model: &ScoreSharpnessAbstainBandModel,
+) -> f32 {
+    let abstain_fraction = 1.0 - application.active_coverage;
+    let floor_gap = (model.min_active_coverage - application.active_coverage).max(0.0);
+    0.05 * abstain_fraction + 0.50 * floor_gap
+}
+
+fn select_cause_band_calibration_repair(
+    table: &FeatureTable,
+    cause_bin: &CauseBinCalibrationReport,
+) -> Result<CauseBandCalibrationReport> {
+    let calibration_indices = bucket_indices(table, "calibration");
+    let holdout_indices = bucket_indices(table, "holdout");
+    let mut best: Option<CauseBandCalibrationReport> = None;
+    for scope in [CalibrationScope::TrueMixedPerCategory] {
+        for min_support in [3_usize, 5, 8] {
+            for smoothing in [1.0_f32, 3.0, 8.0, 16.0] {
+                for prior_weight in [0.20_f32, 0.35, 0.50, 0.65] {
+                    let model = fit_cause_band_calibration_model(
+                        table,
+                        &calibration_indices,
+                        cause_bin.model.clone(),
+                        scope,
+                        min_support,
+                        smoothing,
+                        prior_weight,
+                    )?;
+                    let calibration = cause_band_cross_window_report(
+                        table,
+                        &calibration_indices,
+                        &cause_bin.model,
+                        scope,
+                        min_support,
+                        smoothing,
+                        prior_weight,
+                    )?;
+                    let holdout = cause_band_split_report(table, &holdout_indices, &model)?;
+                    let calibration_application =
+                        cause_band_application_stats(table, &calibration_indices, &model)?;
+                    let holdout_application =
+                        cause_band_application_stats(table, &holdout_indices, &model)?;
+                    let selection_objective = selection_objective(&calibration.metrics)
+                        + cause_band_complexity_penalty(&model);
+                    let blockers = repair_blockers(&holdout.metrics, &holdout.per_category_metrics);
+                    let report = CauseBandCalibrationReport {
+                        selected_on: "calibration_leave_one_window_out".to_string(),
+                        selection_forbidden: false,
+                        forbidden_reason: None,
+                        selection_objective,
+                        model,
+                        calibration,
+                        holdout,
+                        calibration_application,
+                        holdout_application,
+                        blockers,
+                    };
+                    if best
+                        .as_ref()
+                        .map(|previous| report.selection_objective < previous.selection_objective)
+                        .unwrap_or(true)
+                    {
+                        best = Some(report);
+                    }
+                }
+            }
+        }
+    }
+    best.ok_or_else(|| anyhow!("cause-band calibration sweep produced no candidates"))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fit_cause_band_calibration_model(
+    table: &FeatureTable,
+    indices: &[usize],
+    base_model: CauseBinCalibrationModel,
+    scope: CalibrationScope,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+) -> Result<CauseBandCalibrationModel> {
+    ensure!(min_support > 0, "cause-band min_support must be positive");
+    ensure!(
+        smoothing >= 0.0,
+        "cause-band smoothing must be non-negative"
+    );
+    ensure!(
+        (0.0..=1.0).contains(&prior_weight),
+        "cause-band prior_weight must be in [0, 1]"
+    );
+    let base_rows = cause_bin_calibrated_rows(table, indices, &base_model)?;
+    let global_prior = pass_rate(&base_rows);
+    let mut stats = BTreeMap::<String, (usize, usize, f32)>::new();
+    for (idx, base_row) in indices.iter().zip(&base_rows) {
+        let feature_row = &table.rows[*idx];
+        if !calibration_scope_applies(scope, &feature_row.category) {
+            continue;
+        }
+        let scope_key = calibration_scope_key(scope, &feature_row.category);
+        for key in cause_band_keys(feature_row, &scope_key)? {
+            let entry = stats.entry(key).or_insert((0, 0, 0.0));
+            entry.0 += 1;
+            entry.1 += usize::from(base_row.actual_oracle_pass);
+            entry.2 += base_row.predicted_oracle_pass;
+        }
+    }
+    ensure!(
+        !stats.is_empty(),
+        "cause-band calibration produced no scoped cause-band stats"
+    );
+    let key_stats = stats
+        .into_iter()
+        .map(|(key, (support, positives, score_sum))| {
+            let prior =
+                (positives as f32 + smoothing * global_prior) / (support as f32 + smoothing);
+            (
+                key,
+                CauseBandKeyStats {
+                    support,
+                    positives,
+                    prior: prior.clamp(0.001, 0.999),
+                    score_mean: score_sum / support as f32,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    Ok(CauseBandCalibrationModel {
+        selected_on: "calibration".to_string(),
+        base_model,
+        scope,
+        min_support,
+        smoothing,
+        prior_weight,
+        key_stats,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cause_band_cross_window_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    cause_bin_model: &CauseBinCalibrationModel,
+    scope: CalibrationScope,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+) -> Result<SplitReport> {
+    let rows = cause_band_cross_window_rows(
+        table,
+        indices,
+        cause_bin_model,
+        scope,
+        min_support,
+        smoothing,
+        prior_weight,
+    )?;
+    Ok(SplitReport {
+        metrics: metrics_for(&rows),
+        per_category_metrics: per_category_metrics(&rows),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cause_band_cross_window_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    cause_bin_model: &CauseBinCalibrationModel,
+    scope: CalibrationScope,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+) -> Result<Vec<PredictionRow>> {
+    ensure!(
+        indices.len() >= cause_bin_model.base_model.window_count,
+        "cause-band cross-window split needs at least one row per window"
+    );
+    let mut calibrated_rows_by_index = BTreeMap::<usize, PredictionRow>::new();
+    for held_out_window in 0..cause_bin_model.base_model.window_count {
+        let fit_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| {
+                cause_window_index(&table.rows[*idx], cause_bin_model.base_model.window_count)
+                    != held_out_window
+            })
+            .collect::<Vec<_>>();
+        let eval_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| {
+                cause_window_index(&table.rows[*idx], cause_bin_model.base_model.window_count)
+                    == held_out_window
+            })
+            .collect::<Vec<_>>();
+        ensure!(
+            !fit_indices.is_empty() && !eval_indices.is_empty(),
+            "cause-band cross-window split produced an empty window"
+        );
+        let fit_base_rows = prediction_rows_for_indices(
+            table,
+            &fit_indices,
+            cause_bin_model
+                .base_model
+                .base_model
+                .affine_model
+                .base_candidate,
+        )?;
+        let fold_mean_bias = fit_mean_bias_calibration_model(
+            &fit_base_rows,
+            cause_bin_model.base_model.base_model.affine_model.clone(),
+            cause_bin_model.base_model.base_model.scope,
+            cause_bin_model.base_model.base_model.shrinkage,
+        )?;
+        let fold_cause = fit_cause_residual_model(
+            table,
+            &fit_indices,
+            fold_mean_bias,
+            cause_bin_model.base_model.scope,
+            cause_bin_model.base_model.window_count,
+            cause_bin_model.base_model.regularization,
+            cause_bin_model.base_model.correction_scale,
+            cause_bin_model.base_model.correction_cap,
+        )?;
+        let fold_cause_bin = fit_cause_bin_calibration_model(
+            table,
+            &fit_indices,
+            fold_cause,
+            cause_bin_model.scope,
+            cause_bin_model.bin_count,
+            cause_bin_model.min_support,
+            cause_bin_model.smoothing,
+            cause_bin_model.prior_weight,
+        )?;
+        let model = fit_cause_band_calibration_model(
+            table,
+            &fit_indices,
+            fold_cause_bin,
+            scope,
+            min_support,
+            smoothing,
+            prior_weight,
+        )?;
+        for (idx, row) in eval_indices.iter().copied().zip(cause_band_calibrated_rows(
+            table,
+            &eval_indices,
+            &model,
+        )?) {
+            ensure!(
+                calibrated_rows_by_index.insert(idx, row).is_none(),
+                "cause-band cross-window produced duplicate row index {idx}"
+            );
+        }
+    }
+    indices
+        .iter()
+        .map(|idx| {
+            calibrated_rows_by_index
+                .remove(idx)
+                .ok_or_else(|| anyhow!("cause-band cross-window missing row index {idx}"))
+        })
+        .collect()
+}
+
+fn cause_band_split_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &CauseBandCalibrationModel,
+) -> Result<SplitReport> {
+    let rows = cause_band_calibrated_rows(table, indices, model)?;
+    Ok(SplitReport {
+        metrics: metrics_for(&rows),
+        per_category_metrics: per_category_metrics(&rows),
+    })
+}
+
+fn cause_band_calibrated_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &CauseBandCalibrationModel,
+) -> Result<Vec<PredictionRow>> {
+    let base_rows = cause_bin_calibrated_rows(table, indices, &model.base_model)?;
+    indices
+        .iter()
+        .zip(base_rows.iter())
+        .map(|(idx, base_row)| {
+            let score = apply_cause_band_calibration(base_row, &table.rows[*idx], model)?;
+            Ok(PredictionRow {
+                task_id: base_row.task_id.clone(),
+                category: base_row.category.clone(),
+                actual_oracle_pass: base_row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == base_row.actual_oracle_pass,
+            })
+        })
+        .collect()
+}
+
+fn cause_band_application_stats(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &CauseBandCalibrationModel,
+) -> Result<CauseBandApplicationStats> {
+    let base_rows = cause_bin_calibrated_rows(table, indices, &model.base_model)?;
+    let mut stats = CauseBandApplicationStats {
+        scoped_row_count: 0,
+        applied_row_count: 0,
+        missing_key_row_count: 0,
+        under_min_support_row_count: 0,
+        non_scoped_row_count: 0,
+    };
+    for (idx, base_row) in indices.iter().zip(&base_rows) {
+        if !calibration_scope_applies(model.scope, &base_row.category) {
+            stats.non_scoped_row_count += 1;
+            continue;
+        }
+        stats.scoped_row_count += 1;
+        match cause_band_matching_stats(base_row, &table.rows[*idx], model)? {
+            Some(_matching) => stats.applied_row_count += 1,
+            None => {
+                let scope_key = calibration_scope_key(model.scope, &base_row.category);
+                let keys = cause_band_keys(&table.rows[*idx], &scope_key)?;
+                if keys.iter().any(|key| model.key_stats.contains_key(key)) {
+                    stats.under_min_support_row_count += 1;
+                } else {
+                    stats.missing_key_row_count += 1;
+                }
+            }
+        }
+    }
+    Ok(stats)
+}
+
+fn apply_cause_band_calibration(
+    base_row: &PredictionRow,
+    feature_row: &FeatureRow,
+    model: &CauseBandCalibrationModel,
+) -> Result<f32> {
+    let base_score = base_row.predicted_oracle_pass;
+    if !calibration_scope_applies(model.scope, &base_row.category) {
+        return Ok(base_score);
+    }
+    let Some(stats) = cause_band_matching_stats(base_row, feature_row, model)? else {
+        return Ok(base_score);
+    };
+    let support_weight = if model.smoothing <= f32::EPSILON {
+        1.0
+    } else {
+        stats.support as f32 / (stats.support as f32 + model.smoothing)
+    };
+    let effective_weight = (model.prior_weight * support_weight).clamp(0.0, 1.0);
+    Ok(
+        ((1.0 - effective_weight) * base_score + effective_weight * stats.prior)
+            .clamp(0.001, 0.999),
+    )
+}
+
+fn cause_band_matching_stats<'a>(
+    base_row: &PredictionRow,
+    feature_row: &FeatureRow,
+    model: &'a CauseBandCalibrationModel,
+) -> Result<Option<&'a CauseBandKeyStats>> {
+    let scope_key = calibration_scope_key(model.scope, &base_row.category);
+    let keys = cause_band_keys(feature_row, &scope_key)?;
+    Ok(keys
+        .iter()
+        .filter_map(|key| model.key_stats.get(key))
+        .filter(|stats| stats.support >= model.min_support)
+        .max_by(|left, right| {
+            left.support.cmp(&right.support).then_with(|| {
+                (left.prior - base_row.predicted_oracle_pass)
+                    .abs()
+                    .partial_cmp(&(right.prior - base_row.predicted_oracle_pass).abs())
+                    .unwrap_or(Ordering::Equal)
+            })
+        }))
+}
+
+fn cause_band_keys(feature_row: &FeatureRow, scope_key: &str) -> Result<Vec<String>> {
+    ensure!(
+        feature_row.cause_features.len() >= 50,
+        "cause-band feature count mismatch for {}:{} got {}",
+        feature_row.task_id,
+        feature_row.category,
+        feature_row.cause_features.len()
+    );
+    let f = &feature_row.cause_features;
+    let temporal_shift = bucket_feature(
+        [f[0].abs(), f[4].abs(), f[8].abs()]
+            .into_iter()
+            .fold(0.0_f32, f32::max),
+        &[0.01, 0.05, 0.10, 0.25, 0.50],
+    );
+    let temporal_ratio =
+        bucket_feature((f[3] + f[7] + f[11]) / 3.0, &[0.50, 0.90, 1.10, 1.50, 3.0]);
+    let live_label_delta = bucket_feature(f[18] + f[19] + f[20], &[0.5, 1.5, 3.5, 7.5, 15.0]);
+    let live_label_overlap = bucket_feature(
+        (f[21] + f[22] + f[23]) / 3.0,
+        &[0.20, 0.50, 0.75, 0.90, 0.98],
+    );
+    let file_movement = bucket_feature(
+        f[27] + f[28] + f[29] + f[31].abs(),
+        &[0.5, 1.5, 3.5, 7.5, 15.0],
+    );
+    let file_overlap = bucket_feature(
+        (f[24] + f[25] + f[26]) / 3.0,
+        &[0.20, 0.50, 0.75, 0.90, 0.98],
+    );
+    let failure_skill = signed_band(f[32] - f[33] + f[34] + f[35] + f[36] + f[37]);
+    let pass_skill = signed_band(f[38] - f[39] + f[40] + f[41] + f[42] + f[43]);
+    let context_skill = signed_band(f[44] - f[45] + f[46] + f[47] + f[48] + f[49]);
+
+    let prefix = format!("scope:{}", key_component(scope_key));
+    let mut keys = vec![
+        format!("{prefix}|temporal_shift:{temporal_shift}"),
+        format!("{prefix}|temporal_ratio:{temporal_ratio}"),
+        format!("{prefix}|live_label_delta:{live_label_delta}"),
+        format!("{prefix}|live_label_overlap:{live_label_overlap}"),
+        format!("{prefix}|file_movement:{file_movement}"),
+        format!("{prefix}|file_overlap:{file_overlap}"),
+        format!("{prefix}|failure_skill:{failure_skill}"),
+        format!("{prefix}|pass_skill:{pass_skill}"),
+        format!("{prefix}|context_skill:{context_skill}"),
+        format!("{prefix}|temporal_shift:{temporal_shift}|failure_skill:{failure_skill}"),
+        format!("{prefix}|file_movement:{file_movement}|pass_skill:{pass_skill}"),
+        format!("{prefix}|live_label_delta:{live_label_delta}|context_skill:{context_skill}"),
+    ];
+    keys.sort();
+    keys.dedup();
+    Ok(keys)
+}
+
+fn bucket_feature(value: f32, thresholds: &[f32]) -> usize {
+    let finite_value = if value.is_finite() { value } else { 0.0 };
+    thresholds
+        .iter()
+        .position(|threshold| finite_value <= *threshold)
+        .unwrap_or(thresholds.len())
+}
+
+fn signed_band(value: f32) -> &'static str {
+    if value <= -1.0 {
+        "neg_large"
+    } else if value < -0.05 {
+        "neg"
+    } else if value < 0.05 {
+        "zero"
+    } else if value < 1.0 {
+        "pos"
+    } else {
+        "pos_large"
+    }
+}
+
+fn cause_band_complexity_penalty(model: &CauseBandCalibrationModel) -> f32 {
+    let sparse_key_count = model
+        .key_stats
+        .values()
+        .filter(|stats| stats.support < model.min_support)
+        .count();
+    let sparse_penalty = if model.key_stats.is_empty() {
+        0.020
+    } else {
+        0.008 * sparse_key_count as f32 / model.key_stats.len() as f32
+    };
+    let support_penalty = if model.min_support < 5 { 0.006 } else { 0.0 };
+    let weight_penalty = if model.prior_weight > 0.50 {
+        0.006
+    } else {
+        0.0
+    };
+    sparse_penalty + support_penalty + weight_penalty
+}
+
+fn select_final_bin_calibration_repair(
+    table: &FeatureTable,
+    cause_bin: &CauseBinCalibrationReport,
+) -> Result<FinalBinCalibrationReport> {
+    let calibration_indices = bucket_indices(table, "calibration");
+    let holdout_indices = bucket_indices(table, "holdout");
+    let mut best_allowed: Option<FinalBinCalibrationReport> = None;
+    let mut best_forbidden: Option<FinalBinCalibrationReport> = None;
+    for scope in [
+        CalibrationScope::Global,
+        CalibrationScope::TrueMixedPerCategory,
+    ] {
+        for bin_count in [5_usize, 10] {
+            for smoothing in [3.0_f32, 10.0, 30.0] {
+                for raw_weight in [0.50_f32, 0.75, 0.90, 0.95] {
+                    let model = fit_final_bin_calibration_model(
+                        table,
+                        &calibration_indices,
+                        cause_bin.model.clone(),
+                        scope,
+                        bin_count,
+                        smoothing,
+                        raw_weight,
+                    )?;
+                    let calibration = final_bin_cross_window_report(
+                        table,
+                        &calibration_indices,
+                        &cause_bin.model,
+                        scope,
+                        bin_count,
+                        smoothing,
+                        raw_weight,
+                    )?;
+                    let holdout = final_bin_split_report(table, &holdout_indices, &model)?;
+                    let selection_objective = selection_objective(&calibration.metrics)
+                        + final_bin_complexity_penalty(&model);
+                    let forbidden_reason = final_bin_forbidden_reason(
+                        selection_objective,
+                        &calibration.metrics,
+                        &holdout.metrics,
+                        cause_bin,
+                    );
+                    let blockers = repair_blockers(&holdout.metrics, &holdout.per_category_metrics);
+                    let report = FinalBinCalibrationReport {
+                        selected_on: "calibration_leave_one_window_out".to_string(),
+                        selection_forbidden: forbidden_reason.is_some(),
+                        forbidden_reason,
+                        selection_objective,
+                        model,
+                        calibration,
+                        holdout,
+                        blockers,
+                    };
+                    let best_slot = if report.selection_forbidden {
+                        &mut best_forbidden
+                    } else {
+                        &mut best_allowed
+                    };
+                    if best_slot
+                        .as_ref()
+                        .map(|previous| {
+                            report.selection_objective + FINAL_BIN_GRID_OBJECTIVE_EPSILON
+                                < previous.selection_objective
+                        })
+                        .unwrap_or(true)
+                    {
+                        *best_slot = Some(report);
+                    }
+                }
+            }
+        }
+    }
+    best_allowed
+        .or(best_forbidden)
+        .ok_or_else(|| anyhow!("final-bin calibration sweep produced no candidates"))
+}
+
+fn final_bin_forbidden_reason(
+    selection_objective: f32,
+    calibration: &MetricBlock,
+    holdout: &MetricBlock,
+    cause_bin: &CauseBinCalibrationReport,
+) -> Option<String> {
+    if selection_objective + FINAL_BIN_LEGAL_BEST_OBJECTIVE_MARGIN >= cause_bin.selection_objective
+    {
+        return Some(format!(
+            "objective_delta_below_material_margin: final_bin={selection_objective:.9} cause_bin={:.9} required_margin={FINAL_BIN_LEGAL_BEST_OBJECTIVE_MARGIN:.9}",
+            cause_bin.selection_objective
+        ));
+    }
+    if let Some(reason) =
+        metric_nonregression_failure(calibration, &cause_bin.calibration.metrics, "calibration")
+    {
+        return Some(reason);
+    }
+    metric_nonregression_failure(holdout, &cause_bin.holdout.metrics, "holdout")
+}
+
+fn metric_nonregression_failure(
+    candidate: &MetricBlock,
+    incumbent: &MetricBlock,
+    split: &str,
+) -> Option<String> {
+    if !optional_metric_at_least(
+        candidate.prediction_oracle_correlation,
+        incumbent.prediction_oracle_correlation,
+    ) {
+        return Some(format!(
+            "{split}_correlation_regressed: final_bin={:?} cause_bin={:?}",
+            candidate.prediction_oracle_correlation, incumbent.prediction_oracle_correlation
+        ));
+    }
+    if candidate.brier > incumbent.brier + FINAL_BIN_NONREGRESSION_EPSILON {
+        return Some(format!(
+            "{split}_brier_regressed: final_bin={:.9} cause_bin={:.9}",
+            candidate.brier, incumbent.brier
+        ));
+    }
+    if candidate.ece > incumbent.ece + FINAL_BIN_NONREGRESSION_EPSILON {
+        return Some(format!(
+            "{split}_ece_regressed: final_bin={:.9} cause_bin={:.9}",
+            candidate.ece, incumbent.ece
+        ));
+    }
+    if candidate.accuracy + FINAL_BIN_NONREGRESSION_EPSILON < incumbent.accuracy {
+        return Some(format!(
+            "{split}_accuracy_regressed: final_bin={:.9} cause_bin={:.9}",
+            candidate.accuracy, incumbent.accuracy
+        ));
+    }
+    if !optional_metric_at_least(candidate.pass_recall, incumbent.pass_recall) {
+        return Some(format!(
+            "{split}_pass_recall_regressed: final_bin={:?} cause_bin={:?}",
+            candidate.pass_recall, incumbent.pass_recall
+        ));
+    }
+    if !optional_metric_at_least(candidate.fail_recall, incumbent.fail_recall) {
+        return Some(format!(
+            "{split}_fail_recall_regressed: final_bin={:?} cause_bin={:?}",
+            candidate.fail_recall, incumbent.fail_recall
+        ));
+    }
+    None
+}
+
+fn optional_metric_at_least(candidate: Option<f32>, incumbent: Option<f32>) -> bool {
+    match (candidate, incumbent) {
+        (Some(candidate), Some(incumbent)) => {
+            candidate + FINAL_BIN_NONREGRESSION_EPSILON >= incumbent
+        }
+        (Some(_), None) | (None, None) => true,
+        (None, Some(_)) => false,
+    }
+}
+
+fn fit_final_bin_calibration_model(
+    table: &FeatureTable,
+    indices: &[usize],
+    base_model: CauseBinCalibrationModel,
+    scope: CalibrationScope,
+    bin_count: usize,
+    smoothing: f32,
+    raw_weight: f32,
+) -> Result<FinalBinCalibrationModel> {
+    let base_rows = cause_bin_calibrated_rows(table, indices, &base_model)?;
+    let probability_model = fit_probability_calibration_model(
+        &base_rows,
+        CURRENT_RBF,
+        scope,
+        bin_count,
+        smoothing,
+        raw_weight,
+    )?;
+    Ok(FinalBinCalibrationModel {
+        selected_on: "calibration".to_string(),
+        base_model,
+        probability_model,
+    })
+}
+
+fn final_bin_cross_window_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    cause_model: &CauseBinCalibrationModel,
+    scope: CalibrationScope,
+    bin_count: usize,
+    smoothing: f32,
+    raw_weight: f32,
+) -> Result<SplitReport> {
+    ensure!(
+        indices.len() >= cause_model.base_model.window_count,
+        "final-bin cross-window split needs at least one row per window"
+    );
+    let mut calibrated_rows_by_index = BTreeMap::<usize, PredictionRow>::new();
+    for held_out_window in 0..cause_model.base_model.window_count {
+        let fit_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| {
+                cause_window_index(&table.rows[*idx], cause_model.base_model.window_count)
+                    != held_out_window
+            })
+            .collect::<Vec<_>>();
+        let eval_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| {
+                cause_window_index(&table.rows[*idx], cause_model.base_model.window_count)
+                    == held_out_window
+            })
+            .collect::<Vec<_>>();
+        ensure!(
+            !fit_indices.is_empty() && !eval_indices.is_empty(),
+            "final-bin cross-window split produced an empty window"
+        );
+        let fit_base_rows = prediction_rows_for_indices(
+            table,
+            &fit_indices,
+            cause_model
+                .base_model
+                .base_model
+                .affine_model
+                .base_candidate,
+        )?;
+        let fold_mean_bias = fit_mean_bias_calibration_model(
+            &fit_base_rows,
+            cause_model.base_model.base_model.affine_model.clone(),
+            cause_model.base_model.base_model.scope,
+            cause_model.base_model.base_model.shrinkage,
+        )?;
+        let fold_cause = fit_cause_residual_model(
+            table,
+            &fit_indices,
+            fold_mean_bias,
+            cause_model.base_model.scope,
+            cause_model.base_model.window_count,
+            cause_model.base_model.regularization,
+            cause_model.base_model.correction_scale,
+            cause_model.base_model.correction_cap,
+        )?;
+        let fold_cause_bin = fit_cause_bin_calibration_model(
+            table,
+            &fit_indices,
+            fold_cause,
+            cause_model.scope,
+            cause_model.bin_count,
+            cause_model.min_support,
+            cause_model.smoothing,
+            cause_model.prior_weight,
+        )?;
+        let model = fit_final_bin_calibration_model(
+            table,
+            &fit_indices,
+            fold_cause_bin,
+            scope,
+            bin_count,
+            smoothing,
+            raw_weight,
+        )?;
+        for (idx, row) in eval_indices.iter().copied().zip(final_bin_calibrated_rows(
+            table,
+            &eval_indices,
+            &model,
+        )?) {
+            ensure!(
+                calibrated_rows_by_index.insert(idx, row).is_none(),
+                "final-bin cross-window produced duplicate row index {idx}"
+            );
+        }
+    }
+    let calibrated_rows = indices
+        .iter()
+        .map(|idx| {
+            calibrated_rows_by_index
+                .remove(idx)
+                .ok_or_else(|| anyhow!("final-bin cross-window missing row index {idx}"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(SplitReport {
+        metrics: metrics_for(&calibrated_rows),
+        per_category_metrics: per_category_metrics(&calibrated_rows),
+    })
+}
+
+fn final_bin_split_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &FinalBinCalibrationModel,
+) -> Result<SplitReport> {
+    let rows = final_bin_calibrated_rows(table, indices, model)?;
+    Ok(SplitReport {
+        metrics: metrics_for(&rows),
+        per_category_metrics: per_category_metrics(&rows),
+    })
+}
+
+fn final_bin_calibrated_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &FinalBinCalibrationModel,
+) -> Result<Vec<PredictionRow>> {
+    let base_rows = cause_bin_calibrated_rows(table, indices, &model.base_model)?;
+    probability_calibrated_rows(&base_rows, &model.probability_model)
+}
+
+fn final_bin_complexity_penalty(model: &FinalBinCalibrationModel) -> f32 {
+    let layer_penalty = 0.006;
+    let scope_penalty = match model.probability_model.scope {
+        CalibrationScope::Global => 0.0,
+        CalibrationScope::TrueMixedPerCategory => 0.006,
+        CalibrationScope::PerCategory => 0.012,
+    };
+    let bin_penalty = if model.probability_model.bin_count > 5 {
+        0.004
+    } else {
+        0.0
+    };
+    let raw_weight_penalty = if model.probability_model.raw_weight < 0.75 {
+        0.006
+    } else {
+        0.0
+    };
+    layer_penalty + scope_penalty + bin_penalty + raw_weight_penalty
+}
+
 fn select_support_shrink_calibration_repair(
     table: &FeatureTable,
     mean_bias: &MeanBiasCalibrationReport,
@@ -3719,6 +7972,931 @@ fn support_shrink_effective_prior_weight(
         model.prior_weight * (model.smoothing / (support + model.smoothing))
     };
     Ok(weight.clamp(0.0, 1.0))
+}
+
+fn select_evidence_consequence_calibration_repair(
+    table: &FeatureTable,
+    mean_bias: &MeanBiasCalibrationReport,
+) -> Result<EvidenceConsequenceCalibrationReport> {
+    let calibration_indices = bucket_indices(table, "calibration");
+    let holdout_indices = bucket_indices(table, "holdout");
+    let mut best: Option<EvidenceConsequenceCalibrationReport> = None;
+    for scope in [
+        CalibrationScope::TrueMixedPerCategory,
+        CalibrationScope::PerCategory,
+        CalibrationScope::Global,
+    ] {
+        for min_support in [3_usize, 5, 8, 12] {
+            for smoothing in [0.0_f32, 1.0, 3.0, 10.0] {
+                for prior_weight in [0.10_f32, 0.20, 0.35, 0.50, 0.65] {
+                    let model = fit_evidence_consequence_calibration_model(
+                        table,
+                        &calibration_indices,
+                        mean_bias.model.clone(),
+                        scope,
+                        min_support,
+                        smoothing,
+                        prior_weight,
+                    )?;
+                    let calibration = evidence_consequence_cross_split_report(
+                        table,
+                        &calibration_indices,
+                        &mean_bias.model,
+                        scope,
+                        min_support,
+                        smoothing,
+                        prior_weight,
+                    )?;
+                    let holdout =
+                        evidence_consequence_split_report(table, &holdout_indices, &model)?;
+                    let selection_objective = selection_objective(&calibration.metrics)
+                        + evidence_consequence_complexity_penalty(&model);
+                    let blockers = repair_blockers(&holdout.metrics, &holdout.per_category_metrics);
+                    let report = EvidenceConsequenceCalibrationReport {
+                        selected_on: "calibration".to_string(),
+                        selection_forbidden: false,
+                        forbidden_reason: None,
+                        selection_objective,
+                        model,
+                        calibration,
+                        holdout,
+                        blockers,
+                    };
+                    if best
+                        .as_ref()
+                        .map(|previous| report.selection_objective < previous.selection_objective)
+                        .unwrap_or(true)
+                    {
+                        best = Some(report);
+                    }
+                }
+            }
+        }
+    }
+    best.ok_or_else(|| anyhow!("evidence-consequence calibration sweep produced no candidates"))
+}
+
+fn evidence_consequence_complexity_penalty(model: &EvidenceConsequenceCalibrationModel) -> f32 {
+    let scope_penalty = match model.scope {
+        CalibrationScope::TrueMixedPerCategory => 0.0,
+        CalibrationScope::PerCategory => 0.010,
+        CalibrationScope::Global => 0.020,
+    };
+    let support_penalty = if model.min_support < 5 { 0.010 } else { 0.0 };
+    let weight_penalty = if model.prior_weight > 0.50 {
+        0.010
+    } else {
+        0.0
+    };
+    scope_penalty + support_penalty + weight_penalty
+}
+
+fn evidence_consequence_cross_split_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    base_model: &MeanBiasCalibrationModel,
+    scope: CalibrationScope,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+) -> Result<SplitReport> {
+    ensure!(
+        indices.len() >= 2,
+        "evidence-consequence calibration cross split needs at least two rows"
+    );
+    let mut calibrated_rows = Vec::with_capacity(indices.len());
+    for held_out_fold in 0..2_u8 {
+        let fit_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| calibration_fold_feature(&table.rows[*idx]) != held_out_fold)
+            .collect::<Vec<_>>();
+        let eval_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| calibration_fold_feature(&table.rows[*idx]) == held_out_fold)
+            .collect::<Vec<_>>();
+        ensure!(
+            !fit_indices.is_empty() && !eval_indices.is_empty(),
+            "evidence-consequence calibration cross split produced an empty fold"
+        );
+        let fit_base_rows = prediction_rows_for_indices(
+            table,
+            &fit_indices,
+            base_model.affine_model.base_candidate,
+        )?;
+        let fold_mean_bias = fit_mean_bias_calibration_model(
+            &fit_base_rows,
+            base_model.affine_model.clone(),
+            base_model.scope,
+            base_model.shrinkage,
+        )?;
+        let model = fit_evidence_consequence_calibration_model(
+            table,
+            &fit_indices,
+            fold_mean_bias,
+            scope,
+            min_support,
+            smoothing,
+            prior_weight,
+        )?;
+        calibrated_rows.extend(evidence_consequence_calibrated_rows(
+            table,
+            &eval_indices,
+            &model,
+        )?);
+    }
+    ensure!(
+        calibrated_rows.len() == indices.len(),
+        "evidence-consequence calibration cross split lost rows"
+    );
+    Ok(SplitReport {
+        metrics: metrics_for(&calibrated_rows),
+        per_category_metrics: per_category_metrics(&calibrated_rows),
+    })
+}
+
+fn fit_evidence_consequence_calibration_model(
+    table: &FeatureTable,
+    indices: &[usize],
+    base_model: MeanBiasCalibrationModel,
+    scope: CalibrationScope,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+) -> Result<EvidenceConsequenceCalibrationModel> {
+    ensure!(
+        min_support > 0,
+        "evidence-consequence min_support must be positive"
+    );
+    ensure!(
+        smoothing >= 0.0,
+        "evidence-consequence smoothing must be non-negative"
+    );
+    ensure!(
+        (0.0..=1.0).contains(&prior_weight),
+        "evidence-consequence prior_weight must be in [0, 1]"
+    );
+    let base_rows = mean_bias_rows_for_indices(table, indices, &base_model)?;
+    let global_prior = pass_rate(&base_rows);
+    let mut stats = BTreeMap::<String, (usize, usize, f32)>::new();
+    for (idx, base_row) in indices.iter().zip(&base_rows) {
+        let feature_row = &table.rows[*idx];
+        if !calibration_scope_applies(scope, &feature_row.category) {
+            continue;
+        }
+        ensure!(
+            !feature_row.evidence_keys.is_empty(),
+            "evidence key ladder missing for {}:{}",
+            feature_row.task_id,
+            feature_row.category
+        );
+        for key in &feature_row.evidence_keys {
+            let entry = stats.entry(key.clone()).or_insert((0, 0, 0.0));
+            entry.0 += 1;
+            entry.1 += usize::from(base_row.actual_oracle_pass);
+            entry.2 += base_row.predicted_oracle_pass;
+        }
+    }
+    ensure!(
+        !stats.is_empty(),
+        "evidence-consequence calibration produced no scoped evidence stats"
+    );
+    let key_stats = stats
+        .into_iter()
+        .map(|(key, (support, positives, score_sum))| {
+            let prior =
+                (positives as f32 + smoothing * global_prior) / (support as f32 + smoothing);
+            let score_mean = score_sum / support as f32;
+            (
+                key,
+                EvidenceConsequenceKeyStats {
+                    support,
+                    positives,
+                    prior: prior.clamp(0.001, 0.999),
+                    score_mean,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    Ok(EvidenceConsequenceCalibrationModel {
+        selected_on: "calibration".to_string(),
+        base_model,
+        scope,
+        min_support,
+        smoothing,
+        prior_weight,
+        global_prior,
+        key_stats,
+    })
+}
+
+fn evidence_consequence_split_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &EvidenceConsequenceCalibrationModel,
+) -> Result<SplitReport> {
+    let rows = evidence_consequence_calibrated_rows(table, indices, model)?;
+    Ok(SplitReport {
+        metrics: metrics_for(&rows),
+        per_category_metrics: per_category_metrics(&rows),
+    })
+}
+
+fn evidence_consequence_calibrated_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &EvidenceConsequenceCalibrationModel,
+) -> Result<Vec<PredictionRow>> {
+    let base_rows = mean_bias_rows_for_indices(table, indices, &model.base_model)?;
+    indices
+        .iter()
+        .zip(base_rows.iter())
+        .map(|(idx, base_row)| {
+            let score = apply_evidence_consequence_calibration(base_row, &table.rows[*idx], model)?;
+            Ok(PredictionRow {
+                task_id: base_row.task_id.clone(),
+                category: base_row.category.clone(),
+                actual_oracle_pass: base_row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == base_row.actual_oracle_pass,
+            })
+        })
+        .collect()
+}
+
+fn apply_evidence_consequence_calibration(
+    base_row: &PredictionRow,
+    feature_row: &FeatureRow,
+    model: &EvidenceConsequenceCalibrationModel,
+) -> Result<f32> {
+    let base_score = base_row.predicted_oracle_pass;
+    if !calibration_scope_applies(model.scope, &base_row.category) {
+        return Ok(base_score);
+    }
+    let Some((_key, stats)) = feature_row
+        .evidence_keys
+        .iter()
+        .filter_map(|key| model.key_stats.get(key).map(|stats| (key, stats)))
+        .find(|(_key, stats)| stats.support >= model.min_support)
+    else {
+        return Ok(base_score);
+    };
+    let support_weight = if model.smoothing <= f32::EPSILON {
+        1.0
+    } else {
+        stats.support as f32 / (stats.support as f32 + model.smoothing)
+    };
+    let effective_weight = (model.prior_weight * support_weight).clamp(0.0, 1.0);
+    Ok(
+        ((1.0 - effective_weight) * base_score + effective_weight * stats.prior)
+            .clamp(0.001, 0.999),
+    )
+}
+
+fn select_bin_consequence_calibration_repair(
+    table: &FeatureTable,
+    evidence: &EvidenceConsequenceCalibrationReport,
+) -> Result<BinConsequenceCalibrationReport> {
+    let calibration_indices = bucket_indices(table, "calibration");
+    let holdout_indices = bucket_indices(table, "holdout");
+    let mut best: Option<BinConsequenceCalibrationReport> = None;
+    for scope in [CalibrationScope::TrueMixedPerCategory] {
+        for bin_count in [10_usize] {
+            for min_support in [5_usize, 8, 12] {
+                for smoothing in [3.0_f32, 10.0] {
+                    for prior_weight in [0.25_f32, 0.35, 0.50] {
+                        let model = fit_bin_consequence_calibration_model(
+                            table,
+                            &calibration_indices,
+                            evidence.model.clone(),
+                            scope,
+                            bin_count,
+                            min_support,
+                            smoothing,
+                            prior_weight,
+                        )?;
+                        let calibration = bin_consequence_cross_split_report(
+                            table,
+                            &calibration_indices,
+                            &evidence.model,
+                            scope,
+                            bin_count,
+                            min_support,
+                            smoothing,
+                            prior_weight,
+                        )?;
+                        let holdout =
+                            bin_consequence_split_report(table, &holdout_indices, &model)?;
+                        let calibration_application =
+                            bin_consequence_cross_split_application_stats(
+                                table,
+                                &calibration_indices,
+                                &evidence.model,
+                                scope,
+                                bin_count,
+                                min_support,
+                                smoothing,
+                                prior_weight,
+                            )?;
+                        if !calibration_application.all_passed {
+                            continue;
+                        }
+                        let selection_objective = selection_objective(&calibration.metrics)
+                            + bin_consequence_complexity_penalty(&model);
+                        let blockers =
+                            repair_blockers(&holdout.metrics, &holdout.per_category_metrics);
+                        let report = BinConsequenceCalibrationReport {
+                            selected_on: "calibration".to_string(),
+                            selection_forbidden: false,
+                            forbidden_reason: None,
+                            selection_objective,
+                            model,
+                            calibration,
+                            holdout,
+                            blockers,
+                        };
+                        if best
+                            .as_ref()
+                            .map(|previous| {
+                                report.selection_objective < previous.selection_objective
+                            })
+                            .unwrap_or(true)
+                        {
+                            best = Some(report);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    best.ok_or_else(|| anyhow!("bin-consequence calibration sweep produced no candidates"))
+}
+
+fn bin_consequence_complexity_penalty(model: &BinConsequenceCalibrationModel) -> f32 {
+    let scope_penalty = match model.scope {
+        CalibrationScope::TrueMixedPerCategory => 0.0,
+        CalibrationScope::PerCategory => 0.012,
+        CalibrationScope::Global => 0.020,
+    };
+    let bin_penalty = if model.bin_count > 5 { 0.006 } else { 0.0 };
+    let support_penalty = if model.min_support < 5 { 0.012 } else { 0.0 };
+    let weight_penalty = if model.prior_weight > 0.50 {
+        0.012
+    } else {
+        0.0
+    };
+    let sparse_key_count = model
+        .key_stats
+        .values()
+        .filter(|stats| stats.support < 5)
+        .count();
+    let sparse_penalty = if model.key_stats.is_empty() {
+        0.020
+    } else {
+        0.012 * sparse_key_count as f32 / model.key_stats.len() as f32
+    };
+    scope_penalty + bin_penalty + support_penalty + weight_penalty + sparse_penalty
+}
+
+fn bin_consequence_cross_split_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    base_model: &EvidenceConsequenceCalibrationModel,
+    scope: CalibrationScope,
+    bin_count: usize,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+) -> Result<SplitReport> {
+    let calibrated_rows = bin_consequence_cross_split_rows(
+        table,
+        indices,
+        base_model,
+        scope,
+        bin_count,
+        min_support,
+        smoothing,
+        prior_weight,
+    )?;
+    Ok(SplitReport {
+        metrics: metrics_for(&calibrated_rows),
+        per_category_metrics: per_category_metrics(&calibrated_rows),
+    })
+}
+
+fn bin_consequence_cross_split_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    base_model: &EvidenceConsequenceCalibrationModel,
+    scope: CalibrationScope,
+    bin_count: usize,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+) -> Result<Vec<PredictionRow>> {
+    ensure!(
+        indices.len() >= 2,
+        "bin-consequence calibration cross split needs at least two rows"
+    );
+    let mut calibrated_rows_by_index = BTreeMap::<usize, PredictionRow>::new();
+    for held_out_fold in 0..2_u8 {
+        let fit_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| calibration_fold_feature(&table.rows[*idx]) != held_out_fold)
+            .collect::<Vec<_>>();
+        let eval_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| calibration_fold_feature(&table.rows[*idx]) == held_out_fold)
+            .collect::<Vec<_>>();
+        ensure!(
+            !fit_indices.is_empty() && !eval_indices.is_empty(),
+            "bin-consequence calibration cross split produced an empty fold"
+        );
+        let fit_base_rows = prediction_rows_for_indices(
+            table,
+            &fit_indices,
+            base_model.base_model.affine_model.base_candidate,
+        )?;
+        let fold_mean_bias = fit_mean_bias_calibration_model(
+            &fit_base_rows,
+            base_model.base_model.affine_model.clone(),
+            base_model.base_model.scope,
+            base_model.base_model.shrinkage,
+        )?;
+        let fold_evidence = fit_evidence_consequence_calibration_model(
+            table,
+            &fit_indices,
+            fold_mean_bias,
+            base_model.scope,
+            base_model.min_support,
+            base_model.smoothing,
+            base_model.prior_weight,
+        )?;
+        let model = fit_bin_consequence_calibration_model(
+            table,
+            &fit_indices,
+            fold_evidence,
+            scope,
+            bin_count,
+            min_support,
+            smoothing,
+            prior_weight,
+        )?;
+        for (idx, row) in eval_indices
+            .iter()
+            .copied()
+            .zip(bin_consequence_calibrated_rows(
+                table,
+                &eval_indices,
+                &model,
+            )?)
+        {
+            ensure!(
+                calibrated_rows_by_index.insert(idx, row).is_none(),
+                "bin-consequence cross split produced duplicate row index {idx}"
+            );
+        }
+    }
+    let calibrated_rows = indices
+        .iter()
+        .map(|idx| {
+            calibrated_rows_by_index
+                .remove(idx)
+                .ok_or_else(|| anyhow!("bin-consequence cross split missing row index {idx}"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    ensure!(
+        calibrated_rows.len() == indices.len(),
+        "bin-consequence calibration cross split lost rows"
+    );
+    Ok(calibrated_rows)
+}
+
+fn fit_bin_consequence_calibration_model(
+    table: &FeatureTable,
+    indices: &[usize],
+    base_model: EvidenceConsequenceCalibrationModel,
+    scope: CalibrationScope,
+    bin_count: usize,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+) -> Result<BinConsequenceCalibrationModel> {
+    ensure!(bin_count > 1, "bin-consequence bin_count must be > 1");
+    ensure!(
+        min_support > 0,
+        "bin-consequence min_support must be positive"
+    );
+    ensure!(
+        smoothing >= 0.0,
+        "bin-consequence smoothing must be non-negative"
+    );
+    ensure!(
+        (0.0..=1.0).contains(&prior_weight),
+        "bin-consequence prior_weight must be in [0, 1]"
+    );
+    let base_rows = evidence_consequence_calibrated_rows(table, indices, &base_model)?;
+    let global_prior = pass_rate(&base_rows);
+    let mut stats = BTreeMap::<String, (usize, usize, f32)>::new();
+    for (idx, base_row) in indices.iter().zip(&base_rows) {
+        let feature_row = &table.rows[*idx];
+        if !calibration_scope_applies(scope, &feature_row.category) {
+            continue;
+        }
+        ensure!(
+            !feature_row.evidence_keys.is_empty(),
+            "bin-consequence evidence key ladder missing for {}:{}",
+            feature_row.task_id,
+            feature_row.category
+        );
+        let bin_idx = probability_bin_index(base_row.predicted_oracle_pass, bin_count);
+        for key in &feature_row.evidence_keys {
+            let entry = stats
+                .entry(bin_consequence_key(bin_idx, key))
+                .or_insert((0, 0, 0.0));
+            entry.0 += 1;
+            entry.1 += usize::from(base_row.actual_oracle_pass);
+            entry.2 += base_row.predicted_oracle_pass;
+        }
+    }
+    ensure!(
+        !stats.is_empty(),
+        "bin-consequence calibration produced no scoped evidence stats"
+    );
+    let key_stats = stats
+        .into_iter()
+        .map(|(key, (support, positives, score_sum))| {
+            let prior =
+                (positives as f32 + smoothing * global_prior) / (support as f32 + smoothing);
+            (
+                key,
+                BinConsequenceKeyStats {
+                    support,
+                    positives,
+                    prior: prior.clamp(0.001, 0.999),
+                    score_mean: score_sum / support as f32,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    Ok(BinConsequenceCalibrationModel {
+        selected_on: "calibration".to_string(),
+        base_model,
+        scope,
+        bin_count,
+        min_support,
+        smoothing,
+        prior_weight,
+        key_stats,
+    })
+}
+
+fn bin_consequence_split_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &BinConsequenceCalibrationModel,
+) -> Result<SplitReport> {
+    let rows = bin_consequence_calibrated_rows(table, indices, model)?;
+    Ok(SplitReport {
+        metrics: metrics_for(&rows),
+        per_category_metrics: per_category_metrics(&rows),
+    })
+}
+
+fn bin_consequence_calibrated_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &BinConsequenceCalibrationModel,
+) -> Result<Vec<PredictionRow>> {
+    let base_rows = evidence_consequence_calibrated_rows(table, indices, &model.base_model)?;
+    indices
+        .iter()
+        .zip(base_rows.iter())
+        .map(|(idx, base_row)| {
+            let score = apply_bin_consequence_calibration(base_row, &table.rows[*idx], model)?;
+            Ok(PredictionRow {
+                task_id: base_row.task_id.clone(),
+                category: base_row.category.clone(),
+                actual_oracle_pass: base_row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == base_row.actual_oracle_pass,
+            })
+        })
+        .collect()
+}
+
+fn apply_bin_consequence_calibration(
+    base_row: &PredictionRow,
+    feature_row: &FeatureRow,
+    model: &BinConsequenceCalibrationModel,
+) -> Result<f32> {
+    let base_score = base_row.predicted_oracle_pass;
+    if !calibration_scope_applies(model.scope, &base_row.category) {
+        return Ok(base_score);
+    }
+    let Some(stats) = bin_consequence_matching_stats(base_score, feature_row, model) else {
+        return Ok(base_score);
+    };
+    let support_weight = if model.smoothing <= f32::EPSILON {
+        1.0
+    } else {
+        stats.support as f32 / (stats.support as f32 + model.smoothing)
+    };
+    let effective_weight = (model.prior_weight * support_weight).clamp(0.0, 1.0);
+    Ok(
+        ((1.0 - effective_weight) * base_score + effective_weight * stats.prior)
+            .clamp(0.001, 0.999),
+    )
+}
+
+fn bin_consequence_matching_stats<'a>(
+    base_score: f32,
+    feature_row: &FeatureRow,
+    model: &'a BinConsequenceCalibrationModel,
+) -> Option<&'a BinConsequenceKeyStats> {
+    let bin_idx = probability_bin_index(base_score, model.bin_count);
+    feature_row
+        .evidence_keys
+        .iter()
+        .filter_map(|key| model.key_stats.get(&bin_consequence_key(bin_idx, key)))
+        .find(|stats| stats.support >= model.min_support)
+}
+
+fn bin_consequence_key(bin_idx: usize, key: &str) -> String {
+    format!("bin:{bin_idx}|{key}")
+}
+
+fn bin_consequence_candidate_audit(
+    table: &FeatureTable,
+    report: &BinConsequenceCalibrationReport,
+) -> Result<BinConsequenceCandidateAudit> {
+    let calibration_indices = bucket_indices(table, "calibration");
+    let holdout_indices = bucket_indices(table, "holdout");
+    let model = &report.model;
+    let calibration_rows = bin_consequence_cross_split_rows(
+        table,
+        &calibration_indices,
+        &model.base_model,
+        model.scope,
+        model.bin_count,
+        model.min_support,
+        model.smoothing,
+        model.prior_weight,
+    )?;
+    let holdout_rows = bin_consequence_calibrated_rows(table, &holdout_indices, model)?;
+    let calibration_row_reproduction =
+        reproduction_report(&report.calibration.metrics, &metrics_for(&calibration_rows));
+    let holdout_row_reproduction =
+        reproduction_report(&report.holdout.metrics, &metrics_for(&holdout_rows));
+    let calibration_row_audit = split_row_audit(
+        table,
+        "calibration",
+        &report.calibration,
+        &calibration_rows,
+        &calibration_row_reproduction,
+    );
+    let holdout_row_audit = split_row_audit(
+        table,
+        "holdout",
+        &report.holdout,
+        &holdout_rows,
+        &holdout_row_reproduction,
+    );
+    let calibration_ece_breakdown = ece_breakdown_report(&calibration_rows);
+    let holdout_ece_breakdown = ece_breakdown_report(&holdout_rows);
+    let calibration_ece_breakdown_audit =
+        ece_breakdown_audit(&report.calibration.metrics, &calibration_ece_breakdown);
+    let holdout_ece_breakdown_audit =
+        ece_breakdown_audit(&report.holdout.metrics, &holdout_ece_breakdown);
+    let calibration_application = bin_consequence_cross_split_application_stats(
+        table,
+        &calibration_indices,
+        &model.base_model,
+        model.scope,
+        model.bin_count,
+        model.min_support,
+        model.smoothing,
+        model.prior_weight,
+    )?;
+    let holdout_application = bin_consequence_application_stats(table, &holdout_indices, model)?;
+    Ok(BinConsequenceCandidateAudit {
+        all_passed: calibration_row_reproduction.passed
+            && holdout_row_reproduction.passed
+            && calibration_row_audit.all_passed
+            && holdout_row_audit.all_passed
+            && calibration_ece_breakdown_audit.all_passed
+            && holdout_ece_breakdown_audit.all_passed
+            && calibration_application.all_passed
+            && holdout_application.all_passed,
+        calibration_row_reproduction,
+        holdout_row_reproduction,
+        calibration_row_audit,
+        holdout_row_audit,
+        calibration_ece_breakdown_audit,
+        holdout_ece_breakdown_audit,
+        calibration_application,
+        holdout_application,
+    })
+}
+
+fn bin_consequence_cross_split_application_stats(
+    table: &FeatureTable,
+    indices: &[usize],
+    base_model: &EvidenceConsequenceCalibrationModel,
+    scope: CalibrationScope,
+    bin_count: usize,
+    min_support: usize,
+    smoothing: f32,
+    prior_weight: f32,
+) -> Result<BinConsequenceApplicationStats> {
+    let mut accumulator = BinConsequenceApplicationAccumulator::default();
+    for held_out_fold in 0..2_u8 {
+        let fit_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| calibration_fold_feature(&table.rows[*idx]) != held_out_fold)
+            .collect::<Vec<_>>();
+        let eval_indices = indices
+            .iter()
+            .copied()
+            .filter(|idx| calibration_fold_feature(&table.rows[*idx]) == held_out_fold)
+            .collect::<Vec<_>>();
+        let fit_base_rows = prediction_rows_for_indices(
+            table,
+            &fit_indices,
+            base_model.base_model.affine_model.base_candidate,
+        )?;
+        let fold_mean_bias = fit_mean_bias_calibration_model(
+            &fit_base_rows,
+            base_model.base_model.affine_model.clone(),
+            base_model.base_model.scope,
+            base_model.base_model.shrinkage,
+        )?;
+        let fold_evidence = fit_evidence_consequence_calibration_model(
+            table,
+            &fit_indices,
+            fold_mean_bias,
+            base_model.scope,
+            base_model.min_support,
+            base_model.smoothing,
+            base_model.prior_weight,
+        )?;
+        let model = fit_bin_consequence_calibration_model(
+            table,
+            &fit_indices,
+            fold_evidence,
+            scope,
+            bin_count,
+            min_support,
+            smoothing,
+            prior_weight,
+        )?;
+        accumulator.add(&bin_consequence_application_stats(
+            table,
+            &eval_indices,
+            &model,
+        )?);
+    }
+    Ok(accumulator.into_stats())
+}
+
+fn bin_consequence_application_stats(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &BinConsequenceCalibrationModel,
+) -> Result<BinConsequenceApplicationStats> {
+    let base_rows = evidence_consequence_calibrated_rows(table, indices, &model.base_model)?;
+    let mut scoped_row_count = 0usize;
+    let mut applied_row_count = 0usize;
+    for (idx, base_row) in indices.iter().zip(&base_rows) {
+        if !calibration_scope_applies(model.scope, &base_row.category) {
+            continue;
+        }
+        scoped_row_count += 1;
+        if bin_consequence_matching_stats(base_row.predicted_oracle_pass, &table.rows[*idx], model)
+            .is_some()
+        {
+            applied_row_count += 1;
+        }
+    }
+    let sample_count = indices.len();
+    let noop_scoped_row_count = scoped_row_count.saturating_sub(applied_row_count);
+    let applied_fraction = if sample_count == 0 {
+        0.0
+    } else {
+        applied_row_count as f32 / sample_count as f32
+    };
+    let scoped_applied_fraction = if scoped_row_count == 0 {
+        0.0
+    } else {
+        applied_row_count as f32 / scoped_row_count as f32
+    };
+    Ok(BinConsequenceApplicationStats {
+        all_passed: sample_count > 0
+            && scoped_row_count > 0
+            && applied_row_count > 0
+            && applied_row_count <= scoped_row_count,
+        sample_count,
+        scoped_row_count,
+        applied_row_count,
+        noop_scoped_row_count,
+        applied_fraction,
+        scoped_applied_fraction,
+    })
+}
+
+#[derive(Default)]
+struct BinConsequenceApplicationAccumulator {
+    sample_count: usize,
+    scoped_row_count: usize,
+    applied_row_count: usize,
+}
+
+impl BinConsequenceApplicationAccumulator {
+    fn add(&mut self, stats: &BinConsequenceApplicationStats) {
+        self.sample_count += stats.sample_count;
+        self.scoped_row_count += stats.scoped_row_count;
+        self.applied_row_count += stats.applied_row_count;
+    }
+
+    fn into_stats(self) -> BinConsequenceApplicationStats {
+        let noop_scoped_row_count = self.scoped_row_count.saturating_sub(self.applied_row_count);
+        let applied_fraction = if self.sample_count == 0 {
+            0.0
+        } else {
+            self.applied_row_count as f32 / self.sample_count as f32
+        };
+        let scoped_applied_fraction = if self.scoped_row_count == 0 {
+            0.0
+        } else {
+            self.applied_row_count as f32 / self.scoped_row_count as f32
+        };
+        BinConsequenceApplicationStats {
+            all_passed: self.sample_count > 0
+                && self.scoped_row_count > 0
+                && self.applied_row_count > 0
+                && self.applied_row_count <= self.scoped_row_count,
+            sample_count: self.sample_count,
+            scoped_row_count: self.scoped_row_count,
+            applied_row_count: self.applied_row_count,
+            noop_scoped_row_count,
+            applied_fraction,
+            scoped_applied_fraction,
+        }
+    }
+}
+
+fn bucket_indices(table: &FeatureTable, bucket: &str) -> Vec<usize> {
+    table
+        .rows
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, row)| (row.bucket == bucket).then_some(idx))
+        .collect()
+}
+
+fn prediction_rows_for_indices(
+    table: &FeatureTable,
+    indices: &[usize],
+    candidate: Candidate,
+) -> Result<Vec<PredictionRow>> {
+    indices
+        .iter()
+        .map(|idx| {
+            let row = table
+                .rows
+                .get(*idx)
+                .ok_or_else(|| anyhow!("row index out of range"))?;
+            let score = score_candidate(table, *idx, candidate)?;
+            Ok(PredictionRow {
+                task_id: row.task_id.clone(),
+                category: row.category.clone(),
+                actual_oracle_pass: row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == row.actual_oracle_pass,
+            })
+        })
+        .collect()
+}
+
+fn mean_bias_rows_for_indices(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &MeanBiasCalibrationModel,
+) -> Result<Vec<PredictionRow>> {
+    let raw_rows = prediction_rows_for_indices(table, indices, model.affine_model.base_candidate)?;
+    mean_bias_calibrated_rows(&raw_rows, model)
+}
+
+fn calibration_fold_feature(row: &FeatureRow) -> u8 {
+    let digest = Sha256::digest(format!("{}|{}", row.task_id, row.category).as_bytes());
+    digest[0] % 2
 }
 
 fn calibration_scope_applies(scope: CalibrationScope, category: &str) -> bool {
@@ -4177,114 +9355,268 @@ fn repair_blockers(
 
 fn legal_best_candidate(
     best_global: &RankedCandidate,
-    legal_threshold: &ThresholdRepairReport,
-    legal_affine_calibration: &AffineCalibrationReport,
-    legal_prediction_blend: &PredictionBlendReport,
-    legal_logit_calibration: &LogitCalibrationReport,
-    legal_mean_bias_calibration: &MeanBiasCalibrationReport,
-    legal_support_shrink_calibration: &SupportShrinkCalibrationReport,
-    legal_probability_calibration: &ProbabilityCalibrationReport,
+    reports: &LegalCandidateReports<'_>,
 ) -> LegalBestCandidate {
     let mut best_kind = "calibration_selected_global_candidate";
     let mut best_objective = best_global.selection_objective;
-    if legal_threshold.selection_objective < best_objective {
+    if reports.threshold.selection_objective < best_objective {
         best_kind = "calibration_selected_threshold_repair";
-        best_objective = legal_threshold.selection_objective;
+        best_objective = reports.threshold.selection_objective;
     }
-    if legal_affine_calibration.selection_objective < best_objective {
+    if reports.affine_calibration.selection_objective < best_objective {
         best_kind = "calibration_selected_affine_calibration";
-        best_objective = legal_affine_calibration.selection_objective;
+        best_objective = reports.affine_calibration.selection_objective;
     }
-    if legal_prediction_blend.selection_objective < best_objective {
+    if reports.prediction_blend.selection_objective < best_objective {
         best_kind = "calibration_selected_prediction_blend";
-        best_objective = legal_prediction_blend.selection_objective;
+        best_objective = reports.prediction_blend.selection_objective;
     }
-    if legal_logit_calibration.selection_objective < best_objective {
+    if reports.logit_calibration.selection_objective < best_objective {
         best_kind = "calibration_selected_logit_calibration";
-        best_objective = legal_logit_calibration.selection_objective;
+        best_objective = reports.logit_calibration.selection_objective;
     }
-    if legal_mean_bias_calibration.selection_objective < best_objective {
+    if reports.mean_bias_calibration.selection_objective < best_objective {
         best_kind = "calibration_selected_mean_bias_calibration";
-        best_objective = legal_mean_bias_calibration.selection_objective;
+        best_objective = reports.mean_bias_calibration.selection_objective;
     }
-    if legal_support_shrink_calibration.selection_objective < best_objective {
+    if reports
+        .cross_window_stability_calibration
+        .selection_objective
+        < best_objective
+    {
+        best_kind = "calibration_selected_cross_window_stability_calibration";
+        best_objective = reports
+            .cross_window_stability_calibration
+            .selection_objective;
+    }
+    if reports.cause_residual_calibration.selection_objective < best_objective {
+        best_kind = "calibration_selected_cause_residual_calibration";
+        best_objective = reports.cause_residual_calibration.selection_objective;
+    }
+    if reports.cause_bin_calibration.selection_objective < best_objective {
+        best_kind = "calibration_selected_cause_bin_calibration";
+        best_objective = reports.cause_bin_calibration.selection_objective;
+    }
+    if !reports.score_sharpness_calibration.selection_forbidden
+        && reports.score_sharpness_calibration.selection_objective < best_objective
+    {
+        best_kind = "calibration_selected_score_sharpness_calibration";
+        best_objective = reports.score_sharpness_calibration.selection_objective;
+    }
+    if !reports
+        .score_sharpness_logit_calibration
+        .selection_forbidden
+        && reports
+            .score_sharpness_logit_calibration
+            .selection_objective
+            < best_objective
+    {
+        best_kind = "calibration_selected_score_sharpness_logit_calibration";
+        best_objective = reports
+            .score_sharpness_logit_calibration
+            .selection_objective;
+    }
+    if reports.cause_band_calibration.selection_objective < best_objective {
+        best_kind = "calibration_selected_cause_band_calibration";
+        best_objective = reports.cause_band_calibration.selection_objective;
+    }
+    if !reports.final_bin_calibration.selection_forbidden
+        && reports.final_bin_calibration.selection_objective + FINAL_BIN_LEGAL_BEST_OBJECTIVE_MARGIN
+            < best_objective
+    {
+        best_kind = "calibration_selected_final_bin_calibration";
+        best_objective = reports.final_bin_calibration.selection_objective;
+    }
+    if reports.support_shrink_calibration.selection_objective < best_objective {
         best_kind = "calibration_selected_support_shrink_calibration";
-        best_objective = legal_support_shrink_calibration.selection_objective;
+        best_objective = reports.support_shrink_calibration.selection_objective;
     }
-    if legal_probability_calibration.selection_objective < best_objective {
+    if reports.evidence_consequence_calibration.selection_objective < best_objective {
+        best_kind = "calibration_selected_evidence_consequence_calibration";
+        best_objective = reports.evidence_consequence_calibration.selection_objective;
+    }
+    if reports.bin_consequence_calibration.selection_objective < best_objective {
+        best_kind = "calibration_selected_bin_consequence_calibration";
+        best_objective = reports.bin_consequence_calibration.selection_objective;
+    }
+    if reports.probability_calibration.selection_objective < best_objective {
         best_kind = "calibration_selected_probability_calibration";
+        best_objective = reports.probability_calibration.selection_objective;
     }
+    let _ = best_objective;
     match best_kind {
         "calibration_selected_threshold_repair" => LegalBestCandidate {
             kind: best_kind.to_string(),
-            candidate: serde_json::to_value(legal_threshold).unwrap_or(Value::Null),
+            candidate: serde_json::to_value(reports.threshold).unwrap_or(Value::Null),
             selection_reason:
                 "best calibration-selected off_by_one threshold transform by calibration objective"
                     .to_string(),
-            calibration: legal_threshold.calibration.clone(),
-            holdout: legal_threshold.holdout.clone(),
-            blockers: legal_threshold.blockers.clone(),
+            calibration: reports.threshold.calibration.clone(),
+            holdout: reports.threshold.holdout.clone(),
+            blockers: reports.threshold.blockers.clone(),
         },
         "calibration_selected_affine_calibration" => LegalBestCandidate {
             kind: best_kind.to_string(),
-            candidate: serde_json::to_value(legal_affine_calibration).unwrap_or(Value::Null),
+            candidate: serde_json::to_value(reports.affine_calibration).unwrap_or(Value::Null),
             selection_reason:
                 "best calibration-selected affine score calibration by calibration objective"
                     .to_string(),
-            calibration: legal_affine_calibration.calibration.clone(),
-            holdout: legal_affine_calibration.holdout.clone(),
-            blockers: legal_affine_calibration.blockers.clone(),
+            calibration: reports.affine_calibration.calibration.clone(),
+            holdout: reports.affine_calibration.holdout.clone(),
+            blockers: reports.affine_calibration.blockers.clone(),
         },
         "calibration_selected_prediction_blend" => LegalBestCandidate {
             kind: best_kind.to_string(),
-            candidate: serde_json::to_value(legal_prediction_blend).unwrap_or(Value::Null),
+            candidate: serde_json::to_value(reports.prediction_blend).unwrap_or(Value::Null),
             selection_reason:
                 "best calibration-selected affine/rank-lift prediction blend by calibration objective"
                     .to_string(),
-            calibration: legal_prediction_blend.calibration.clone(),
-            holdout: legal_prediction_blend.holdout.clone(),
-            blockers: legal_prediction_blend.blockers.clone(),
+            calibration: reports.prediction_blend.calibration.clone(),
+            holdout: reports.prediction_blend.holdout.clone(),
+            blockers: reports.prediction_blend.blockers.clone(),
         },
         "calibration_selected_logit_calibration" => LegalBestCandidate {
             kind: best_kind.to_string(),
-            candidate: serde_json::to_value(legal_logit_calibration).unwrap_or(Value::Null),
+            candidate: serde_json::to_value(reports.logit_calibration).unwrap_or(Value::Null),
             selection_reason:
                 "best calibration-selected logit score calibration by calibration objective"
                     .to_string(),
-            calibration: legal_logit_calibration.calibration.clone(),
-            holdout: legal_logit_calibration.holdout.clone(),
-            blockers: legal_logit_calibration.blockers.clone(),
+            calibration: reports.logit_calibration.calibration.clone(),
+            holdout: reports.logit_calibration.holdout.clone(),
+            blockers: reports.logit_calibration.blockers.clone(),
         },
         "calibration_selected_mean_bias_calibration" => LegalBestCandidate {
             kind: best_kind.to_string(),
-            candidate: serde_json::to_value(legal_mean_bias_calibration).unwrap_or(Value::Null),
+            candidate: serde_json::to_value(reports.mean_bias_calibration).unwrap_or(Value::Null),
             selection_reason:
                 "best calibration-selected mean-bias score calibration by out-of-fold calibration objective"
                     .to_string(),
-            calibration: legal_mean_bias_calibration.calibration.clone(),
-            holdout: legal_mean_bias_calibration.holdout.clone(),
-            blockers: legal_mean_bias_calibration.blockers.clone(),
+            calibration: reports.mean_bias_calibration.calibration.clone(),
+            holdout: reports.mean_bias_calibration.holdout.clone(),
+            blockers: reports.mean_bias_calibration.blockers.clone(),
+        },
+        "calibration_selected_cross_window_stability_calibration" => LegalBestCandidate {
+            kind: best_kind.to_string(),
+            candidate: serde_json::to_value(reports.cross_window_stability_calibration)
+                .unwrap_or(Value::Null),
+            selection_reason:
+                "best calibration-selected cross-window stable bias correction by calibration objective"
+                    .to_string(),
+            calibration: reports
+                .cross_window_stability_calibration
+                .calibration
+                .clone(),
+            holdout: reports.cross_window_stability_calibration.holdout.clone(),
+            blockers: reports
+                .cross_window_stability_calibration
+                .blockers
+                .clone(),
+        },
+        "calibration_selected_cause_residual_calibration" => LegalBestCandidate {
+            kind: best_kind.to_string(),
+            candidate: serde_json::to_value(reports.cause_residual_calibration)
+                .unwrap_or(Value::Null),
+            selection_reason:
+                "best calibration-selected cause-residual correction by leave-one-window-out calibration objective"
+                    .to_string(),
+            calibration: reports.cause_residual_calibration.calibration.clone(),
+            holdout: reports.cause_residual_calibration.holdout.clone(),
+            blockers: reports.cause_residual_calibration.blockers.clone(),
+        },
+        "calibration_selected_cause_bin_calibration" => LegalBestCandidate {
+            kind: best_kind.to_string(),
+            candidate: serde_json::to_value(reports.cause_bin_calibration).unwrap_or(Value::Null),
+            selection_reason:
+                "best calibration-selected cause-residual score-bin calibration by leave-one-window-out ECE objective"
+                    .to_string(),
+            calibration: reports.cause_bin_calibration.calibration.clone(),
+            holdout: reports.cause_bin_calibration.holdout.clone(),
+            blockers: reports.cause_bin_calibration.blockers.clone(),
+        },
+        "calibration_selected_score_sharpness_calibration" => LegalBestCandidate {
+            kind: best_kind.to_string(),
+            candidate: serde_json::to_value(reports.score_sharpness_calibration)
+                .unwrap_or(Value::Null),
+            selection_reason:
+                "best calibration-selected monotone tail-shaping repair on top of cause-bin scores"
+                    .to_string(),
+            calibration: reports.score_sharpness_calibration.calibration.clone(),
+            holdout: reports.score_sharpness_calibration.holdout.clone(),
+            blockers: reports.score_sharpness_calibration.blockers.clone(),
+        },
+        "calibration_selected_score_sharpness_logit_calibration" => LegalBestCandidate {
+            kind: best_kind.to_string(),
+            candidate: serde_json::to_value(reports.score_sharpness_logit_calibration)
+                .unwrap_or(Value::Null),
+            selection_reason:
+                "best calibration-selected Platt/logit repair on top of score-sharpness scores"
+                    .to_string(),
+            calibration: reports.score_sharpness_logit_calibration.calibration.clone(),
+            holdout: reports.score_sharpness_logit_calibration.holdout.clone(),
+            blockers: reports.score_sharpness_logit_calibration.blockers.clone(),
+        },
+        "calibration_selected_cause_band_calibration" => LegalBestCandidate {
+            kind: best_kind.to_string(),
+            candidate: serde_json::to_value(reports.cause_band_calibration).unwrap_or(Value::Null),
+            selection_reason:
+                "best calibration-selected compact cause-band calibration over temporal, file, label, and skill deltas"
+                    .to_string(),
+            calibration: reports.cause_band_calibration.calibration.clone(),
+            holdout: reports.cause_band_calibration.holdout.clone(),
+            blockers: reports.cause_band_calibration.blockers.clone(),
+        },
+        "calibration_selected_final_bin_calibration" => LegalBestCandidate {
+            kind: best_kind.to_string(),
+            candidate: serde_json::to_value(reports.final_bin_calibration).unwrap_or(Value::Null),
+            selection_reason:
+                "best calibration-selected final probability-bin calibration on top of cause-bin scores"
+                    .to_string(),
+            calibration: reports.final_bin_calibration.calibration.clone(),
+            holdout: reports.final_bin_calibration.holdout.clone(),
+            blockers: reports.final_bin_calibration.blockers.clone(),
         },
         "calibration_selected_support_shrink_calibration" => LegalBestCandidate {
             kind: best_kind.to_string(),
-            candidate: serde_json::to_value(legal_support_shrink_calibration)
+            candidate: serde_json::to_value(reports.support_shrink_calibration)
                 .unwrap_or(Value::Null),
             selection_reason:
                 "best calibration-selected support-aware prior shrinkage by out-of-fold calibration objective"
                     .to_string(),
-            calibration: legal_support_shrink_calibration.calibration.clone(),
-            holdout: legal_support_shrink_calibration.holdout.clone(),
-            blockers: legal_support_shrink_calibration.blockers.clone(),
+            calibration: reports.support_shrink_calibration.calibration.clone(),
+            holdout: reports.support_shrink_calibration.holdout.clone(),
+            blockers: reports.support_shrink_calibration.blockers.clone(),
+        },
+        "calibration_selected_evidence_consequence_calibration" => LegalBestCandidate {
+            kind: best_kind.to_string(),
+            candidate: serde_json::to_value(reports.evidence_consequence_calibration)
+                .unwrap_or(Value::Null),
+            selection_reason:
+                "best calibration-selected consequence baseline over explicit constellation evidence keys"
+                    .to_string(),
+            calibration: reports.evidence_consequence_calibration.calibration.clone(),
+            holdout: reports.evidence_consequence_calibration.holdout.clone(),
+            blockers: reports.evidence_consequence_calibration.blockers.clone(),
+        },
+        "calibration_selected_bin_consequence_calibration" => LegalBestCandidate {
+            kind: best_kind.to_string(),
+            candidate: serde_json::to_value(reports.bin_consequence_calibration)
+                .unwrap_or(Value::Null),
+            selection_reason:
+                "best calibration-selected bin-aware consequence baseline over explicit evidence keys"
+                    .to_string(),
+            calibration: reports.bin_consequence_calibration.calibration.clone(),
+            holdout: reports.bin_consequence_calibration.holdout.clone(),
+            blockers: reports.bin_consequence_calibration.blockers.clone(),
         },
         "calibration_selected_probability_calibration" => LegalBestCandidate {
             kind: best_kind.to_string(),
-            candidate: serde_json::to_value(legal_probability_calibration).unwrap_or(Value::Null),
+            candidate: serde_json::to_value(reports.probability_calibration).unwrap_or(Value::Null),
             selection_reason:
                 "best calibration-selected probability calibration map by calibration objective"
                     .to_string(),
-            calibration: legal_probability_calibration.calibration.clone(),
-            holdout: legal_probability_calibration.holdout.clone(),
-            blockers: legal_probability_calibration.blockers.clone(),
+            calibration: reports.probability_calibration.calibration.clone(),
+            holdout: reports.probability_calibration.holdout.clone(),
+            blockers: reports.probability_calibration.blockers.clone(),
         },
         _ => LegalBestCandidate {
             kind: best_kind.to_string(),
@@ -4297,6 +9629,469 @@ fn legal_best_candidate(
             blockers: best_global.blockers.clone(),
         },
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn legal_best_holdout_rows(
+    table: &FeatureTable,
+    legal_best: &LegalBestCandidate,
+    best_global: &RankedCandidate,
+    legal_threshold: &ThresholdRepairReport,
+    legal_affine_calibration: &AffineCalibrationReport,
+    legal_prediction_blend: &PredictionBlendReport,
+    score_traces: &ScoreTraceRows,
+    legal_logit_calibration: &LogitCalibrationReport,
+    legal_mean_bias_calibration: &MeanBiasCalibrationReport,
+    legal_cross_window_stability_calibration: &CrossWindowStabilityCalibrationReport,
+    legal_cause_residual_calibration: &CauseResidualCalibrationReport,
+    legal_cause_bin_calibration: &CauseBinCalibrationReport,
+    legal_score_sharpness_calibration: &ScoreSharpnessCalibrationReport,
+    legal_score_sharpness_logit_calibration: &ScoreSharpnessLogitCalibrationReport,
+    legal_cause_band_calibration: &CauseBandCalibrationReport,
+    legal_final_bin_calibration: &FinalBinCalibrationReport,
+    legal_support_shrink_calibration: &SupportShrinkCalibrationReport,
+    legal_evidence_consequence_calibration: &EvidenceConsequenceCalibrationReport,
+    legal_bin_consequence_calibration: &BinConsequenceCalibrationReport,
+    legal_probability_calibration: &ProbabilityCalibrationReport,
+) -> Result<Vec<PredictionRow>> {
+    match legal_best.kind.as_str() {
+        "calibration_selected_threshold_repair" => threshold_prediction_rows(
+            table,
+            "holdout",
+            legal_threshold.category.as_str(),
+            legal_threshold.base_candidate,
+            legal_threshold.probe_candidate,
+            legal_threshold.threshold,
+            legal_threshold.low,
+            legal_threshold.high,
+        ),
+        "calibration_selected_affine_calibration" => {
+            let rows = prediction_rows_for_candidate(
+                table,
+                "holdout",
+                legal_affine_calibration.model.base_candidate,
+            )?;
+            Ok(apply_affine_rows(&rows, &legal_affine_calibration.model))
+        }
+        "calibration_selected_prediction_blend" => {
+            let base_rows = prediction_rows_for_candidate(
+                table,
+                "holdout",
+                legal_prediction_blend.model.affine_model.base_candidate,
+            )?;
+            prediction_blend_rows(
+                &base_rows,
+                &score_traces.holdout_rank_lift,
+                &legal_prediction_blend.model,
+            )
+        }
+        "calibration_selected_logit_calibration" => {
+            let rows = prediction_rows_for_candidate(
+                table,
+                "holdout",
+                legal_logit_calibration.model.base_candidate,
+            )?;
+            logit_calibrated_rows(&rows, &legal_logit_calibration.model)
+        }
+        "calibration_selected_mean_bias_calibration" => {
+            let rows = prediction_rows_for_candidate(
+                table,
+                "holdout",
+                legal_mean_bias_calibration
+                    .model
+                    .affine_model
+                    .base_candidate,
+            )?;
+            mean_bias_calibrated_rows(&rows, &legal_mean_bias_calibration.model)
+        }
+        "calibration_selected_cross_window_stability_calibration" => {
+            let rows = prediction_rows_for_candidate(
+                table,
+                "holdout",
+                legal_cross_window_stability_calibration
+                    .model
+                    .affine_model
+                    .base_candidate,
+            )?;
+            cross_window_stability_calibrated_rows(
+                &rows,
+                &legal_cross_window_stability_calibration.model,
+            )
+        }
+        "calibration_selected_cause_residual_calibration" => cause_residual_calibrated_rows(
+            table,
+            &bucket_indices(table, "holdout"),
+            &legal_cause_residual_calibration.model,
+        ),
+        "calibration_selected_cause_bin_calibration" => cause_bin_calibrated_rows(
+            table,
+            &bucket_indices(table, "holdout"),
+            &legal_cause_bin_calibration.model,
+        ),
+        "calibration_selected_score_sharpness_calibration" => score_sharpness_calibrated_rows(
+            table,
+            &bucket_indices(table, "holdout"),
+            &legal_score_sharpness_calibration.model,
+        ),
+        "calibration_selected_score_sharpness_logit_calibration" => {
+            score_sharpness_logit_calibrated_rows(
+                table,
+                &bucket_indices(table, "holdout"),
+                &legal_score_sharpness_logit_calibration.model,
+            )
+        }
+        "calibration_selected_cause_band_calibration" => cause_band_calibrated_rows(
+            table,
+            &bucket_indices(table, "holdout"),
+            &legal_cause_band_calibration.model,
+        ),
+        "calibration_selected_final_bin_calibration" => final_bin_calibrated_rows(
+            table,
+            &bucket_indices(table, "holdout"),
+            &legal_final_bin_calibration.model,
+        ),
+        "calibration_selected_support_shrink_calibration" => {
+            let rows = prediction_rows_for_candidate(
+                table,
+                "holdout",
+                legal_support_shrink_calibration
+                    .model
+                    .base_model
+                    .affine_model
+                    .base_candidate,
+            )?;
+            support_shrink_calibrated_rows(&rows, &legal_support_shrink_calibration.model)
+        }
+        "calibration_selected_evidence_consequence_calibration" => {
+            evidence_consequence_calibrated_rows(
+                table,
+                &bucket_indices(table, "holdout"),
+                &legal_evidence_consequence_calibration.model,
+            )
+        }
+        "calibration_selected_bin_consequence_calibration" => bin_consequence_calibrated_rows(
+            table,
+            &bucket_indices(table, "holdout"),
+            &legal_bin_consequence_calibration.model,
+        ),
+        "calibration_selected_probability_calibration" => {
+            let rows = prediction_rows_for_candidate(
+                table,
+                "holdout",
+                legal_probability_calibration.model.base_candidate,
+            )?;
+            probability_calibrated_rows(&rows, &legal_probability_calibration.model)
+        }
+        "calibration_selected_global_candidate" => {
+            prediction_rows_for_candidate(table, "holdout", best_global.candidate)
+        }
+        other => Err(anyhow!("unknown legal best candidate kind {other}")),
+    }
+}
+
+fn threshold_prediction_rows(
+    table: &FeatureTable,
+    bucket: &str,
+    category: &str,
+    base_candidate: Candidate,
+    probe_candidate: Candidate,
+    threshold: f32,
+    low: f32,
+    high: f32,
+) -> Result<Vec<PredictionRow>> {
+    table
+        .rows
+        .iter()
+        .enumerate()
+        .filter(|(_idx, row)| row.bucket == bucket)
+        .map(|(idx, row)| {
+            let score = if row.category == category {
+                let probe = score_candidate(table, idx, probe_candidate)?;
+                if probe >= threshold {
+                    high
+                } else {
+                    low
+                }
+            } else {
+                score_candidate(table, idx, base_candidate)?
+            };
+            Ok(PredictionRow {
+                task_id: row.task_id.clone(),
+                category: row.category.clone(),
+                actual_oracle_pass: row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == row.actual_oracle_pass,
+            })
+        })
+        .collect()
+}
+
+fn apply_affine_rows(rows: &[PredictionRow], model: &AffineCalibrationModel) -> Vec<PredictionRow> {
+    rows.iter()
+        .map(|row| {
+            let score = apply_affine_calibration(row, model);
+            PredictionRow {
+                task_id: row.task_id.clone(),
+                category: row.category.clone(),
+                actual_oracle_pass: row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == row.actual_oracle_pass,
+            }
+        })
+        .collect()
+}
+
+fn prediction_blend_rows(
+    base_rows: &[PredictionRow],
+    rank_lift_rows: &[PredictionRow],
+    model: &PredictionBlendModel,
+) -> Result<Vec<PredictionRow>> {
+    ensure_prediction_rows_aligned(base_rows, rank_lift_rows, "selected legal prediction blend")?;
+    Ok(base_rows
+        .iter()
+        .zip(rank_lift_rows)
+        .map(|(base, rank_lift)| {
+            let affine_score = apply_affine_calibration(base, &model.affine_model);
+            let score = (model.affine_weight * affine_score
+                + model.rank_lift_weight * rank_lift.predicted_oracle_pass)
+                .clamp(0.001, 0.999);
+            PredictionRow {
+                task_id: base.task_id.clone(),
+                category: base.category.clone(),
+                actual_oracle_pass: base.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == base.actual_oracle_pass,
+            }
+        })
+        .collect())
+}
+
+fn logit_calibrated_rows(
+    rows: &[PredictionRow],
+    model: &LogitCalibrationModel,
+) -> Result<Vec<PredictionRow>> {
+    rows.iter()
+        .map(|row| {
+            let score = apply_logit_calibration(row, model);
+            Ok(PredictionRow {
+                task_id: row.task_id.clone(),
+                category: row.category.clone(),
+                actual_oracle_pass: row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == row.actual_oracle_pass,
+            })
+        })
+        .collect()
+}
+
+fn probability_calibrated_rows(
+    rows: &[PredictionRow],
+    model: &ProbabilityCalibrationModel,
+) -> Result<Vec<PredictionRow>> {
+    rows.iter()
+        .map(|row| {
+            let score = apply_probability_calibration(row, model)?;
+            Ok(PredictionRow {
+                task_id: row.task_id.clone(),
+                category: row.category.clone(),
+                actual_oracle_pass: row.actual_oracle_pass,
+                predicted_oracle_pass: score,
+                predicted_pass: score >= 0.5,
+                correct: (score >= 0.5) == row.actual_oracle_pass,
+            })
+        })
+        .collect()
+}
+
+fn legal_best_row_audit(
+    table: &FeatureTable,
+    legal_best: &LegalBestCandidate,
+    rows: &[PredictionRow],
+    reproduction: &ReproductionReport,
+) -> LegalBestRowAudit {
+    split_row_audit(table, "holdout", &legal_best.holdout, rows, reproduction)
+}
+
+fn legal_best_holdout_row_diagnostics(
+    table: &FeatureTable,
+    legal_best_rows: &[PredictionRow],
+    score_sharpness_model: &ScoreSharpnessCalibrationModel,
+) -> Result<Vec<LegalBestRowDiagnostic>> {
+    let holdout_indices = bucket_indices(table, "holdout");
+    ensure!(
+        holdout_indices.len() == legal_best_rows.len(),
+        "legal best diagnostics holdout index count mismatch"
+    );
+    let cause_bin_rows =
+        cause_bin_calibrated_rows(table, &holdout_indices, &score_sharpness_model.base_model)?;
+    let score_sharpness_rows =
+        score_sharpness_calibrated_rows(table, &holdout_indices, score_sharpness_model)?;
+    ensure_prediction_rows_aligned(legal_best_rows, &score_sharpness_rows, "row diagnostics")?;
+    ensure_prediction_rows_aligned(
+        &cause_bin_rows,
+        &score_sharpness_rows,
+        "row diagnostics cause",
+    )?;
+
+    holdout_indices
+        .iter()
+        .copied()
+        .zip(legal_best_rows.iter())
+        .zip(cause_bin_rows.iter())
+        .zip(score_sharpness_rows.iter())
+        .map(
+            |(((row_index, legal_best_row), cause_bin_row), score_sharpness_row)| {
+                let feature_row = table
+                    .rows
+                    .get(row_index)
+                    .ok_or_else(|| anyhow!("row diagnostic index out of range"))?;
+                ensure!(
+                    feature_row.task_id == legal_best_row.task_id
+                        && feature_row.category == legal_best_row.category
+                        && feature_row.actual_oracle_pass == legal_best_row.actual_oracle_pass,
+                    "row diagnostic identity mismatch for {}:{}",
+                    legal_best_row.task_id,
+                    legal_best_row.category
+                );
+                let target = if legal_best_row.actual_oracle_pass {
+                    1.0
+                } else {
+                    0.0
+                };
+                Ok(LegalBestRowDiagnostic {
+                    row_index,
+                    task_id: legal_best_row.task_id.clone(),
+                    category: legal_best_row.category.clone(),
+                    repo: feature_row.repo.clone(),
+                    patch_path: feature_row.patch_path.clone(),
+                    actual_oracle_pass: legal_best_row.actual_oracle_pass,
+                    predicted_oracle_pass: legal_best_row.predicted_oracle_pass,
+                    predicted_pass: legal_best_row.predicted_pass,
+                    correct: legal_best_row.correct,
+                    absolute_error: (legal_best_row.predicted_oracle_pass - target).abs(),
+                    ece_bin_index: ece_bin_index(legal_best_row.predicted_oracle_pass),
+                    current_rbf_score: score_candidate(table, row_index, CURRENT_RBF)?,
+                    selected_knn_score: score_candidate(
+                        table,
+                        row_index,
+                        Candidate::CategoryLocalKnn {
+                            k: 31,
+                            fail_boost: 1.5,
+                        },
+                    )?,
+                    cause_bin_score: cause_bin_row.predicted_oracle_pass,
+                    score_sharpness_score: score_sharpness_row.predicted_oracle_pass,
+                    evidence_key_count: feature_row.evidence_keys.len(),
+                    evidence_key_sample: feature_row
+                        .evidence_keys
+                        .iter()
+                        .take(16)
+                        .cloned()
+                        .collect(),
+                    cause_feature_nonzero_count: feature_row
+                        .cause_features
+                        .iter()
+                        .filter(|value| value.abs() > f32::EPSILON)
+                        .count(),
+                    cause_feature_large_magnitude_count: feature_row
+                        .cause_features
+                        .iter()
+                        .filter(|value| value.abs() >= 1.0)
+                        .count(),
+                })
+            },
+        )
+        .collect()
+}
+
+fn split_row_audit(
+    table: &FeatureTable,
+    bucket: &str,
+    split: &SplitReport,
+    rows: &[PredictionRow],
+    reproduction: &ReproductionReport,
+) -> LegalBestRowAudit {
+    let expected_sample_count = split.metrics.sample_count;
+    let actual_sample_count = rows.len();
+    let expected_row_identity_sha256 = feature_row_identity_hash(table, bucket);
+    let actual_row_identity_sha256 = prediction_row_identity_hash(rows);
+    let expected_per_category_counts = split
+        .per_category_metrics
+        .iter()
+        .map(|(category, metrics)| (category.clone(), metrics.sample_count))
+        .collect::<BTreeMap<_, _>>();
+    let actual_per_category_counts = prediction_row_counts_by_category(rows);
+    let tight_tolerance = 1.0e-6_f32;
+    let exact_metric_reproduction_passed = reproduction.brier_delta_abs <= tight_tolerance
+        && reproduction.ece_delta_abs <= tight_tolerance
+        && reproduction
+            .correlation_delta_abs
+            .map(|delta| delta <= tight_tolerance)
+            .unwrap_or(true);
+    let sample_count_matches = expected_sample_count == actual_sample_count;
+    let row_identity_matches = expected_row_identity_sha256 == actual_row_identity_sha256;
+    let per_category_counts_match = expected_per_category_counts == actual_per_category_counts;
+    LegalBestRowAudit {
+        all_passed: reproduction.passed
+            && sample_count_matches
+            && row_identity_matches
+            && per_category_counts_match
+            && exact_metric_reproduction_passed,
+        expected_sample_count,
+        actual_sample_count,
+        sample_count_matches,
+        expected_row_identity_sha256,
+        actual_row_identity_sha256,
+        row_identity_matches,
+        expected_per_category_counts,
+        actual_per_category_counts,
+        per_category_counts_match,
+        exact_metric_reproduction_passed,
+        tight_tolerance,
+    }
+}
+
+fn feature_row_identity_hash(table: &FeatureTable, bucket: &str) -> String {
+    let parts = table
+        .rows
+        .iter()
+        .filter(|row| row.bucket == bucket)
+        .map(|row| format!("{}:{}", row.task_id, row.category))
+        .collect::<Vec<_>>();
+    identity_hash(&parts)
+}
+
+fn prediction_row_identity_hash(rows: &[PredictionRow]) -> String {
+    let parts = rows
+        .iter()
+        .map(|row| format!("{}:{}", row.task_id, row.category))
+        .collect::<Vec<_>>();
+    identity_hash(&parts)
+}
+
+fn identity_hash(parts: &[String]) -> String {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update(part.as_bytes());
+        hasher.update(b"\n");
+    }
+    hex::encode(hasher.finalize())
+}
+
+fn prediction_row_counts_by_category(rows: &[PredictionRow]) -> BTreeMap<String, usize> {
+    REQUIRED_CATEGORIES
+        .iter()
+        .map(|category| {
+            (
+                (*category).to_string(),
+                rows.iter().filter(|row| row.category == *category).count(),
+            )
+        })
+        .collect()
 }
 
 struct ScoreTraceRows {
@@ -4737,11 +10532,18 @@ fn typed_blocker(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn edge_case_audit(
     table: &FeatureTable,
     forbidden_threshold: &ThresholdRepairReport,
     legal_affine_calibration: &AffineCalibrationReport,
     legal_support_shrink_calibration: &SupportShrinkCalibrationReport,
+    legal_evidence_consequence_calibration: &EvidenceConsequenceCalibrationReport,
+    legal_bin_consequence_calibration: &BinConsequenceCalibrationReport,
+    legal_cause_residual_calibration: &CauseResidualCalibrationReport,
+    legal_cause_bin_calibration: &CauseBinCalibrationReport,
+    legal_score_sharpness_calibration: &ScoreSharpnessCalibrationReport,
+    legal_cause_band_calibration: &CauseBandCalibrationReport,
 ) -> Result<EdgeCaseAudit> {
     let ordered_replay_passed = {
         let base = synthetic_code_state("edge-order", "base", "known_good", true);
@@ -4917,6 +10719,324 @@ fn edge_case_audit(
         let row = synthetic_prediction_row("support-clamp", "off_by_one", true, 0.75);
         (apply_support_shrink_calibration(&row, &model)? - 0.999).abs() < 1.0e-6
     };
+    let evidence_consequence_non_scoped_row_unchanged = {
+        let mut model = legal_evidence_consequence_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        model.base_model.scope = CalibrationScope::Global;
+        model.base_model.bias_by_key = BTreeMap::from([("__global__".to_string(), -0.25)]);
+        let row = synthetic_prediction_row("evidence-nonscoped", "known_good", true, 0.95);
+        let feature = synthetic_feature_row("evidence-nonscoped", "known_good", vec!["edge-key"]);
+        (apply_evidence_consequence_calibration(&row, &feature, &model)?
+            - row.predicted_oracle_pass)
+            .abs()
+            < 1.0e-6
+    };
+    let bin_consequence_missing_key_noops = {
+        let mut model = legal_bin_consequence_calibration.model.clone();
+        model.key_stats.clear();
+        let row = synthetic_prediction_row("bin-missing", "off_by_one", true, 0.25);
+        let feature = synthetic_feature_row("bin-missing", "off_by_one", vec!["missing-key"]);
+        (apply_bin_consequence_calibration(&row, &feature, &model)? - row.predicted_oracle_pass)
+            .abs()
+            < 1.0e-6
+    };
+    let bin_consequence_non_scoped_row_unchanged = {
+        let mut model = legal_bin_consequence_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        let row = synthetic_prediction_row("bin-nonscoped", "known_good", true, 0.95);
+        let feature = synthetic_feature_row("bin-nonscoped", "known_good", vec!["edge-key"]);
+        (apply_bin_consequence_calibration(&row, &feature, &model)? - row.predicted_oracle_pass)
+            .abs()
+            < 1.0e-6
+    };
+    let bin_consequence_clamp_passed = {
+        let mut model = legal_bin_consequence_calibration.model.clone();
+        model.scope = CalibrationScope::Global;
+        model.bin_count = ECE_BIN_COUNT;
+        model.min_support = 1;
+        model.smoothing = 0.0;
+        model.prior_weight = 1.0;
+        model.key_stats = BTreeMap::from([(
+            bin_consequence_key(ece_bin_index(0.75), "edge-key"),
+            BinConsequenceKeyStats {
+                support: 1,
+                positives: 1,
+                prior: 2.0,
+                score_mean: 0.75,
+            },
+        )]);
+        let row = synthetic_prediction_row("bin-clamp", "off_by_one", true, 0.75);
+        let feature = synthetic_feature_row("bin-clamp", "off_by_one", vec!["edge-key"]);
+        (apply_bin_consequence_calibration(&row, &feature, &model)? - 0.999).abs() < 1.0e-6
+    };
+    let cause_residual_non_scoped_row_unchanged = {
+        let mut model = legal_cause_residual_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        model.feature_count = 2;
+        model.feature_mean = vec![0.0, 0.0];
+        model.feature_std = vec![1.0, 1.0];
+        model.weights_by_key = BTreeMap::from([(
+            calibration_scope_key(model.scope, "off_by_one"),
+            vec![0.50, 0.0, 0.0],
+        )]);
+        let row = synthetic_prediction_row("cause-residual-nonscoped", "known_good", true, 0.95);
+        let mut feature = synthetic_feature_row("cause-residual-nonscoped", "known_good", vec![]);
+        feature.cause_features = vec![1.0, 1.0];
+        (apply_cause_residual_calibration(&row, &feature, &model)? - row.predicted_oracle_pass)
+            .abs()
+            < 1.0e-6
+    };
+    let cause_residual_missing_weight_noops = {
+        let mut model = legal_cause_residual_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        model.feature_count = 2;
+        model.feature_mean = vec![0.0, 0.0];
+        model.feature_std = vec![1.0, 1.0];
+        model.weights_by_key.clear();
+        let row = synthetic_prediction_row("cause-residual-missing", "off_by_one", true, 0.45);
+        let mut feature = synthetic_feature_row("cause-residual-missing", "off_by_one", vec![]);
+        feature.cause_features = vec![1.0, 1.0];
+        (apply_cause_residual_calibration(&row, &feature, &model)? - row.predicted_oracle_pass)
+            .abs()
+            < 1.0e-6
+    };
+    let cause_residual_feature_dimension_mismatch_fails_closed = {
+        let mut model = legal_cause_residual_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        model.feature_count = 2;
+        model.feature_mean = vec![0.0, 0.0];
+        model.feature_std = vec![1.0, 1.0];
+        model.weights_by_key = BTreeMap::from([(
+            calibration_scope_key(model.scope, "off_by_one"),
+            vec![0.0, 0.0, 0.0],
+        )]);
+        let row = synthetic_prediction_row("cause-residual-dim", "off_by_one", true, 0.45);
+        let mut feature = synthetic_feature_row("cause-residual-dim", "off_by_one", vec![]);
+        feature.cause_features = vec![1.0];
+        apply_cause_residual_calibration(&row, &feature, &model).is_err()
+    };
+    let cause_residual_clamp_passed = {
+        let mut model = legal_cause_residual_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        model.feature_count = 2;
+        model.feature_mean = vec![0.0, 0.0];
+        model.feature_std = vec![1.0, 1.0];
+        model.correction_scale = 1.0;
+        model.correction_cap = 0.50;
+        model.weights_by_key = BTreeMap::from([(
+            calibration_scope_key(model.scope, "off_by_one"),
+            vec![2.0, 0.0, 0.0],
+        )]);
+        let row = synthetic_prediction_row("cause-residual-clamp", "off_by_one", true, 0.75);
+        let mut feature = synthetic_feature_row("cause-residual-clamp", "off_by_one", vec![]);
+        feature.cause_features = vec![0.0, 0.0];
+        (apply_cause_residual_calibration(&row, &feature, &model)? - 0.999).abs() < 1.0e-6
+    };
+    let cause_bin_missing_key_noops = {
+        let mut model = legal_cause_bin_calibration.model.clone();
+        model.key_stats.clear();
+        let row = synthetic_prediction_row("cause-bin-missing", "off_by_one", true, 0.75);
+        (apply_cause_bin_calibration(&row, &model) - row.predicted_oracle_pass).abs() < 1.0e-6
+    };
+    let cause_bin_under_min_support_noops = {
+        let mut model = legal_cause_bin_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        model.bin_count = 10;
+        model.min_support = 4;
+        model.smoothing = 0.0;
+        model.prior_weight = 1.0;
+        let row = synthetic_prediction_row("cause-bin-under-support", "off_by_one", true, 0.75);
+        let scope_key = calibration_scope_key(model.scope, &row.category);
+        let bin_idx = probability_bin_index(row.predicted_oracle_pass, model.bin_count);
+        model.key_stats = BTreeMap::from([(
+            cause_bin_key(&scope_key, bin_idx),
+            CauseBinKeyStats {
+                support: 1,
+                positives: 0,
+                prior: 0.001,
+                score_mean: row.predicted_oracle_pass,
+            },
+        )]);
+        (apply_cause_bin_calibration(&row, &model) - row.predicted_oracle_pass).abs() < 1.0e-6
+    };
+    let cause_bin_non_scoped_row_unchanged = {
+        let mut model = legal_cause_bin_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        let row = synthetic_prediction_row("cause-bin-nonscoped", "known_good", true, 0.95);
+        (apply_cause_bin_calibration(&row, &model) - row.predicted_oracle_pass).abs() < 1.0e-6
+    };
+    let cause_bin_clamp_passed = {
+        let mut model = legal_cause_bin_calibration.model.clone();
+        model.scope = CalibrationScope::Global;
+        model.bin_count = 10;
+        model.min_support = 1;
+        model.smoothing = 0.0;
+        model.prior_weight = 1.0;
+        let row = synthetic_prediction_row("cause-bin-clamp", "off_by_one", true, 0.75);
+        let bin_idx = probability_bin_index(row.predicted_oracle_pass, model.bin_count);
+        model.key_stats = BTreeMap::from([(
+            cause_bin_key("__global__", bin_idx),
+            CauseBinKeyStats {
+                support: 1,
+                positives: 1,
+                prior: 2.0,
+                score_mean: row.predicted_oracle_pass,
+            },
+        )]);
+        (apply_cause_bin_calibration(&row, &model) - 0.999).abs() < 1.0e-6
+    };
+    let score_sharpness_non_scoped_row_unchanged = {
+        let mut model = legal_score_sharpness_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        let row = synthetic_prediction_row("sharpness-nonscoped", "known_good", true, 0.25);
+        (apply_score_sharpness_calibration(&row, &model) - row.predicted_oracle_pass).abs() < 1.0e-6
+    };
+    let score_sharpness_low_tail_continuous_sharpens = {
+        let mut model = legal_score_sharpness_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        model.low_cutoff = 0.30;
+        model.low_tail_scale = 2.0;
+        model.high_cutoff = 0.90;
+        model.high_tail_scale = 1.0;
+        let row = synthetic_prediction_row("sharpness-low", "off_by_one", false, 0.25);
+        (apply_score_sharpness_calibration(&row, &model) - 0.20).abs() < 1.0e-6
+    };
+    let score_sharpness_high_tail_continuous_compresses = {
+        let mut model = legal_score_sharpness_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        model.low_cutoff = 0.30;
+        model.low_tail_scale = 1.0;
+        model.high_cutoff = 0.90;
+        model.high_tail_scale = 0.50;
+        let row = synthetic_prediction_row("sharpness-high", "off_by_one", true, 0.95);
+        (apply_score_sharpness_calibration(&row, &model) - 0.925).abs() < 1.0e-6
+    };
+    let score_sharpness_clamp_passed = {
+        let mut model = legal_score_sharpness_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        model.low_cutoff = 0.40;
+        model.low_tail_scale = 3.0;
+        model.high_cutoff = 0.90;
+        model.high_tail_scale = 1.0;
+        let row = synthetic_prediction_row("sharpness-clamp", "off_by_one", false, 0.01);
+        (apply_score_sharpness_calibration(&row, &model) - 0.001).abs() < 1.0e-6
+    };
+    let cause_band_missing_key_noops = {
+        let mut model = legal_cause_band_calibration.model.clone();
+        model.key_stats.clear();
+        let row = synthetic_prediction_row("cause-band-missing", "off_by_one", true, 0.75);
+        let mut feature = synthetic_feature_row("cause-band-missing", "off_by_one", vec![]);
+        feature.cause_features = vec![0.0; 50];
+        (apply_cause_band_calibration(&row, &feature, &model)? - row.predicted_oracle_pass).abs()
+            < 1.0e-6
+    };
+    let cause_band_under_min_support_noops = {
+        let mut model = legal_cause_band_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        model.min_support = 4;
+        model.smoothing = 0.0;
+        model.prior_weight = 1.0;
+        let row = synthetic_prediction_row("cause-band-under-support", "off_by_one", true, 0.75);
+        let mut feature = synthetic_feature_row("cause-band-under-support", "off_by_one", vec![]);
+        feature.cause_features = vec![0.0; 50];
+        let scope_key = calibration_scope_key(model.scope, &row.category);
+        let key = cause_band_keys(&feature, &scope_key)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("synthetic cause-band key missing"))?;
+        model.key_stats = BTreeMap::from([(
+            key,
+            CauseBandKeyStats {
+                support: 1,
+                positives: 0,
+                prior: 0.001,
+                score_mean: row.predicted_oracle_pass,
+            },
+        )]);
+        (apply_cause_band_calibration(&row, &feature, &model)? - row.predicted_oracle_pass).abs()
+            < 1.0e-6
+    };
+    let cause_band_non_scoped_row_unchanged = {
+        let mut model = legal_cause_band_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        let row = synthetic_prediction_row("cause-band-nonscoped", "known_good", true, 0.95);
+        let mut feature = synthetic_feature_row("cause-band-nonscoped", "known_good", vec![]);
+        feature.cause_features = vec![0.0; 50];
+        (apply_cause_band_calibration(&row, &feature, &model)? - row.predicted_oracle_pass).abs()
+            < 1.0e-6
+    };
+    let cause_band_dimension_mismatch_fails_closed = {
+        let model = legal_cause_band_calibration.model.clone();
+        let row = synthetic_prediction_row("cause-band-dim", "off_by_one", true, 0.75);
+        let mut feature = synthetic_feature_row("cause-band-dim", "off_by_one", vec![]);
+        feature.cause_features = vec![0.0; 49];
+        apply_cause_band_calibration(&row, &feature, &model).is_err()
+    };
+    let cause_band_clamp_passed = {
+        let mut model = legal_cause_band_calibration.model.clone();
+        model.scope = CalibrationScope::TrueMixedPerCategory;
+        model.min_support = 1;
+        model.smoothing = 0.0;
+        model.prior_weight = 1.0;
+        let row = synthetic_prediction_row("cause-band-clamp", "off_by_one", true, 0.75);
+        let mut feature = synthetic_feature_row("cause-band-clamp", "off_by_one", vec![]);
+        feature.cause_features = vec![0.0; 50];
+        let scope_key = calibration_scope_key(model.scope, &row.category);
+        let key = cause_band_keys(&feature, &scope_key)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("synthetic cause-band key missing"))?;
+        model.key_stats = BTreeMap::from([(
+            key,
+            CauseBandKeyStats {
+                support: 1,
+                positives: 1,
+                prior: 2.0,
+                score_mean: row.predicted_oracle_pass,
+            },
+        )]);
+        (apply_cause_band_calibration(&row, &feature, &model)? - 0.999).abs() < 1.0e-6
+    };
+    let ece_empty_rows_zero = {
+        let breakdown = ece_breakdown_report(&[]);
+        breakdown.aggregate_ece == 0.0
+            && breakdown.ece_from_bins == 0.0
+            && breakdown.non_empty_bin_count == 0
+            && breakdown.worst_bins.is_empty()
+    };
+    let ece_boundary_bins_passed = {
+        let rows = vec![
+            synthetic_prediction_row("ece-low", "off_by_one", false, 0.001),
+            synthetic_prediction_row("ece-high", "off_by_one", true, 0.999),
+        ];
+        let breakdown = ece_breakdown_report(&rows);
+        breakdown
+            .worst_bins
+            .iter()
+            .any(|bin| bin.bin_index == 0 && bin.sample_count == 1)
+            && breakdown
+                .worst_bins
+                .iter()
+                .any(|bin| bin.bin_index == ECE_BIN_COUNT - 1 && bin.sample_count == 1)
+    };
+    let ece_per_category_empty_subset_passed = {
+        let rows = vec![synthetic_prediction_row(
+            "ece-known-good",
+            "known_good",
+            true,
+            0.95,
+        )];
+        let breakdown = ece_breakdown_report(&rows);
+        breakdown
+            .per_category
+            .get("off_by_one")
+            .map(|category| {
+                category.metrics.sample_count == 0
+                    && category.non_empty_bin_count == 0
+                    && category.bins.is_empty()
+            })
+            .unwrap_or(false)
+    };
     let all_passed = missing_code_state_row_fails_closed
         && missing_file_path_row_fails_closed
         && ordered_replay_passed
@@ -4931,7 +11051,31 @@ fn edge_case_audit(
         && missing_skill_summary_fails_closed
         && support_shrink_missing_key_fails_closed
         && support_shrink_non_scoped_row_unchanged
-        && support_shrink_clamp_passed;
+        && support_shrink_clamp_passed
+        && evidence_consequence_non_scoped_row_unchanged
+        && bin_consequence_missing_key_noops
+        && bin_consequence_non_scoped_row_unchanged
+        && bin_consequence_clamp_passed
+        && cause_residual_non_scoped_row_unchanged
+        && cause_residual_missing_weight_noops
+        && cause_residual_feature_dimension_mismatch_fails_closed
+        && cause_residual_clamp_passed
+        && cause_bin_missing_key_noops
+        && cause_bin_under_min_support_noops
+        && cause_bin_non_scoped_row_unchanged
+        && cause_bin_clamp_passed
+        && score_sharpness_non_scoped_row_unchanged
+        && score_sharpness_low_tail_continuous_sharpens
+        && score_sharpness_high_tail_continuous_compresses
+        && score_sharpness_clamp_passed
+        && cause_band_missing_key_noops
+        && cause_band_under_min_support_noops
+        && cause_band_non_scoped_row_unchanged
+        && cause_band_dimension_mismatch_fails_closed
+        && cause_band_clamp_passed
+        && ece_empty_rows_zero
+        && ece_boundary_bins_passed
+        && ece_per_category_empty_subset_passed;
     Ok(EdgeCaseAudit {
         all_passed,
         ordered_replay_passed,
@@ -4949,6 +11093,30 @@ fn edge_case_audit(
         support_shrink_missing_key_fails_closed,
         support_shrink_non_scoped_row_unchanged,
         support_shrink_clamp_passed,
+        evidence_consequence_non_scoped_row_unchanged,
+        bin_consequence_missing_key_noops,
+        bin_consequence_non_scoped_row_unchanged,
+        bin_consequence_clamp_passed,
+        cause_residual_non_scoped_row_unchanged,
+        cause_residual_missing_weight_noops,
+        cause_residual_feature_dimension_mismatch_fails_closed,
+        cause_residual_clamp_passed,
+        cause_bin_missing_key_noops,
+        cause_bin_under_min_support_noops,
+        cause_bin_non_scoped_row_unchanged,
+        cause_bin_clamp_passed,
+        score_sharpness_non_scoped_row_unchanged,
+        score_sharpness_low_tail_continuous_sharpens,
+        score_sharpness_high_tail_continuous_compresses,
+        score_sharpness_clamp_passed,
+        cause_band_missing_key_noops,
+        cause_band_under_min_support_noops,
+        cause_band_non_scoped_row_unchanged,
+        cause_band_dimension_mismatch_fails_closed,
+        cause_band_clamp_passed,
+        ece_empty_rows_zero,
+        ece_boundary_bins_passed,
+        ece_per_category_empty_subset_passed,
     })
 }
 
@@ -4965,6 +11133,20 @@ fn synthetic_prediction_row(
         predicted_oracle_pass,
         predicted_pass: predicted_oracle_pass >= 0.5,
         correct: (predicted_oracle_pass >= 0.5) == actual_oracle_pass,
+    }
+}
+
+fn synthetic_feature_row(task_id: &str, category: &str, evidence_keys: Vec<&str>) -> FeatureRow {
+    FeatureRow {
+        task_id: task_id.to_string(),
+        category: category.to_string(),
+        bucket: "synthetic-edge".to_string(),
+        actual_oracle_pass: true,
+        patch_path: "synthetic/edge.patch".to_string(),
+        repo: "synthetic/repo".to_string(),
+        evidence_keys: evidence_keys.into_iter().map(str::to_string).collect(),
+        cause_features: vec![0.0; 50],
+        standardized_features: Vec::new(),
     }
 }
 
@@ -5027,6 +11209,7 @@ fn metrics_for(rows: &[PredictionRow]) -> MetricBlock {
             actual_fail_count: 0,
             pass_recall: None,
             fail_recall: None,
+            actual_class_confidence_mean: 0.0,
             score_min: 0.0,
             score_max: 0.0,
             score_mean: 0.0,
@@ -5040,6 +11223,7 @@ fn metrics_for(rows: &[PredictionRow]) -> MetricBlock {
     let mut actual_pass_count = 0usize;
     let mut true_pass = 0usize;
     let mut true_fail = 0usize;
+    let mut actual_class_confidence = 0.0f32;
     for row in rows {
         let target = if row.actual_oracle_pass { 1.0 } else { 0.0 };
         predicted.push(row.predicted_oracle_pass);
@@ -5055,8 +11239,12 @@ fn metrics_for(rows: &[PredictionRow]) -> MetricBlock {
             if row.predicted_pass {
                 true_pass += 1;
             }
+            actual_class_confidence += row.predicted_oracle_pass;
         } else if !row.predicted_pass {
             true_fail += 1;
+            actual_class_confidence += 1.0 - row.predicted_oracle_pass;
+        } else {
+            actual_class_confidence += 1.0 - row.predicted_oracle_pass;
         }
         brier += (row.predicted_oracle_pass - target).powi(2);
     }
@@ -5078,6 +11266,7 @@ fn metrics_for(rows: &[PredictionRow]) -> MetricBlock {
         actual_fail_count,
         pass_recall: ratio_opt(true_pass, actual_pass_count),
         fail_recall: ratio_opt(true_fail, actual_fail_count),
+        actual_class_confidence_mean: actual_class_confidence / rows.len() as f32,
         score_min,
         score_max,
         score_mean,
@@ -5120,6 +11309,149 @@ fn expected_calibration_error(rows: &[PredictionRow]) -> f32 {
             weight * (avg_confidence - avg_target).abs()
         })
         .sum()
+}
+
+fn ece_breakdown_report(rows: &[PredictionRow]) -> EceBreakdownReport {
+    let bins = ece_bin_breakdown(rows);
+    let ece_from_bins = bins.iter().map(|bin| bin.weighted_ece).sum::<f32>();
+    let mut worst_bins = bins.clone();
+    worst_bins.sort_by(|left, right| {
+        right
+            .weighted_ece
+            .partial_cmp(&left.weighted_ece)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| right.sample_count.cmp(&left.sample_count))
+    });
+    worst_bins.truncate(12);
+
+    let per_category = REQUIRED_CATEGORIES
+        .iter()
+        .map(|category| {
+            let subset = rows
+                .iter()
+                .filter(|row| row.category == *category)
+                .cloned()
+                .collect::<Vec<_>>();
+            let bins = ece_bin_breakdown(&subset);
+            let worst_gap = bins.iter().map(|bin| bin.abs_gap).fold(0.0_f32, f32::max);
+            (
+                (*category).to_string(),
+                CategoryEceBreakdown {
+                    metrics: metrics_for(&subset),
+                    non_empty_bin_count: bins.len(),
+                    worst_gap,
+                    bins,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    EceBreakdownReport {
+        aggregate_ece: expected_calibration_error(rows),
+        ece_from_bins,
+        sample_count: rows.len(),
+        non_empty_bin_count: bins.len(),
+        worst_bins,
+        per_category,
+    }
+}
+
+fn ece_breakdown_audit(metrics: &MetricBlock, breakdown: &EceBreakdownReport) -> EceBreakdownAudit {
+    let tolerance = 1.0e-6_f32;
+    let sample_count_matches = metrics.sample_count == breakdown.sample_count;
+    let aggregate_matches_metric = (metrics.ece - breakdown.aggregate_ece).abs() <= tolerance;
+    let bins_sum_matches_aggregate =
+        (breakdown.aggregate_ece - breakdown.ece_from_bins).abs() <= tolerance;
+    let non_empty_bins_when_sampled =
+        breakdown.sample_count == 0 || breakdown.non_empty_bin_count > 0;
+    EceBreakdownAudit {
+        all_passed: sample_count_matches
+            && aggregate_matches_metric
+            && bins_sum_matches_aggregate
+            && non_empty_bins_when_sampled,
+        metric_ece: metrics.ece,
+        aggregate_ece: breakdown.aggregate_ece,
+        ece_from_bins: breakdown.ece_from_bins,
+        sample_count_matches,
+        aggregate_matches_metric,
+        bins_sum_matches_aggregate,
+        non_empty_bins_when_sampled,
+        tolerance,
+    }
+}
+
+fn ece_bin_breakdown(rows: &[PredictionRow]) -> Vec<EceBinBreakdown> {
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let mut bins = (0..ECE_BIN_COUNT)
+        .map(|idx| EceBinAccumulator {
+            bin_index: idx,
+            ..EceBinAccumulator::default()
+        })
+        .collect::<Vec<_>>();
+    for row in rows {
+        let index = ece_bin_index(row.predicted_oracle_pass);
+        let bin = &mut bins[index];
+        bin.sample_count += 1;
+        bin.confidence_sum += row.predicted_oracle_pass;
+        if row.actual_oracle_pass {
+            bin.actual_pass_count += 1;
+        }
+        if row.predicted_pass {
+            bin.predicted_pass_count += 1;
+        }
+        if bin.sample_task_ids.len() < 5 {
+            bin.sample_task_ids
+                .push(format!("{}:{}", row.task_id, row.category));
+        }
+    }
+    bins.into_iter()
+        .filter(|bin| bin.sample_count > 0)
+        .map(|bin| bin.into_breakdown(rows.len()))
+        .collect()
+}
+
+fn ece_bin_index(score: f32) -> usize {
+    (score.clamp(0.0, 0.999_999) * ECE_BIN_COUNT as f32).floor() as usize
+}
+
+#[derive(Debug, Clone, Default)]
+struct EceBinAccumulator {
+    bin_index: usize,
+    sample_count: usize,
+    actual_pass_count: usize,
+    predicted_pass_count: usize,
+    confidence_sum: f32,
+    sample_task_ids: Vec<String>,
+}
+
+impl EceBinAccumulator {
+    fn into_breakdown(self, total_count: usize) -> EceBinBreakdown {
+        let confidence_mean = self.confidence_sum / self.sample_count as f32;
+        let empirical_pass_rate = self.actual_pass_count as f32 / self.sample_count as f32;
+        let abs_gap = (confidence_mean - empirical_pass_rate).abs();
+        let weighted_ece = if total_count == 0 {
+            0.0
+        } else {
+            (self.sample_count as f32 / total_count as f32) * abs_gap
+        };
+        EceBinBreakdown {
+            bin_index: self.bin_index,
+            range_start: self.bin_index as f32 / ECE_BIN_COUNT as f32,
+            range_end: (self.bin_index + 1) as f32 / ECE_BIN_COUNT as f32,
+            sample_count: self.sample_count,
+            actual_pass_count: self.actual_pass_count,
+            actual_fail_count: self.sample_count - self.actual_pass_count,
+            predicted_pass_count: self.predicted_pass_count,
+            predicted_fail_count: self.sample_count - self.predicted_pass_count,
+            confidence_mean,
+            empirical_pass_rate,
+            abs_gap,
+            weighted_ece,
+            sample_task_ids: self.sample_task_ids,
+        }
+    }
 }
 
 fn pearson(xs: &[f32], ys: &[f32]) -> Option<f32> {
@@ -5252,16 +11584,27 @@ fn per_category_metrics_from_report(report: &Value) -> Result<BTreeMap<String, M
 }
 
 fn metric_block_from_json(value: &Value) -> Result<MetricBlock> {
+    let oracle_variance_class = match value["oracle_variance_class"].as_str().unwrap_or("empty") {
+        "all_fail" => OracleVarianceClass::AllFail,
+        "all_pass" => OracleVarianceClass::AllPass,
+        "mixed" => OracleVarianceClass::Mixed,
+        _ => OracleVarianceClass::Empty,
+    };
+    let score_mean = json_f32(&value["score_mean"])?;
+    let actual_class_confidence_mean = value
+        .get("actual_class_confidence_mean")
+        .and_then(Value::as_f64)
+        .map(|value| value as f32)
+        .unwrap_or(match oracle_variance_class {
+            OracleVarianceClass::AllPass => score_mean,
+            OracleVarianceClass::AllFail => 1.0 - score_mean,
+            _ => 0.0,
+        });
     Ok(MetricBlock {
         sample_count: value["sample_count"].as_u64().unwrap_or_default() as usize,
         accuracy: json_f32(&value["accuracy"])?,
         prediction_oracle_correlation: option_json_f32(&value["prediction_oracle_correlation"])?,
-        oracle_variance_class: match value["oracle_variance_class"].as_str().unwrap_or("empty") {
-            "all_fail" => OracleVarianceClass::AllFail,
-            "all_pass" => OracleVarianceClass::AllPass,
-            "mixed" => OracleVarianceClass::Mixed,
-            _ => OracleVarianceClass::Empty,
-        },
+        oracle_variance_class,
         brier: json_f32(&value["brier"])?,
         ece: json_f32(&value["ece"])?,
         predicted_pass_count: value["predicted_pass_count"].as_u64().unwrap_or_default() as usize,
@@ -5270,9 +11613,10 @@ fn metric_block_from_json(value: &Value) -> Result<MetricBlock> {
         actual_fail_count: value["actual_fail_count"].as_u64().unwrap_or_default() as usize,
         pass_recall: option_json_f32(&value["pass_recall"])?,
         fail_recall: option_json_f32(&value["fail_recall"])?,
+        actual_class_confidence_mean,
         score_min: json_f32(&value["score_min"])?,
         score_max: json_f32(&value["score_max"])?,
-        score_mean: json_f32(&value["score_mean"])?,
+        score_mean,
     })
 }
 
@@ -5368,6 +11712,29 @@ fn active_input_paths() -> Vec<String> {
         BASELINE_REPORT_PATH.to_string(),
         fsv_root(),
     ]
+}
+
+fn active_paths_include_mntd() -> bool {
+    active_input_paths()
+        .iter()
+        .any(|path| active_path_violates_aiwonder_policy(path))
+}
+
+fn active_path_violates_aiwonder_policy(path: &str) -> bool {
+    if path == "/mnt/d" || path.starts_with("/mnt/d/") || path.starts_with("/mnt/c/") {
+        return true;
+    }
+    let allowed_logical_root =
+        path.starts_with("/zfs/archive/contextgraph") || path.starts_with("/zfs/hot/contextgraph");
+    if !allowed_logical_root {
+        return true;
+    }
+    if let Ok(canonical) = fs::canonicalize(path) {
+        let display = canonical.to_string_lossy();
+        display == "/mnt/d" || display.starts_with("/mnt/d/") || display.starts_with("/mnt/c/")
+    } else {
+        false
+    }
 }
 
 fn hierarchy_db_path() -> String {

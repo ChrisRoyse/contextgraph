@@ -44,4 +44,3 @@ pub fn ability_resolver_cfs() -> Vec<String> {
         CF_MEJEPA_ONLINE_HEAD_STATE.to_string(),
     ]
 }
-

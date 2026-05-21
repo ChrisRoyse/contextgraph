@@ -39,6 +39,10 @@ const CHECKPOINT_MANIFEST_PATH: &str =
     "/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv/best.manifest.json";
 const CODE_STATE_CONSTELLATIONS_PATH: &str =
     "/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/code_state_constellations.jsonl";
+const TASK_PY_G_392_ABSTAIN_REPORT_PATH: &str =
+    "/zfs/archive/contextgraph/fsv/task-py-g-392-abstain-accounting-fsv/run-20260521T124733Z/task_py_g_392_temporal_trajectory_features_fsv.json";
+const TASK_PY_G_392_ABSTAIN_REPORT_SHA256: &str =
+    "496a6482781a622f3a0ab9f7a69a2cdc2570cfd73ee84f2cfd8cb6660b00c92e";
 const FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv";
 const REPORT_NAME: &str = "ship-gate-fsv.json";
 const READBACK_NAME: &str = "ship-gate-readback.json";
@@ -205,6 +209,7 @@ fn run() -> Result<()> {
         calibration_improvement(&rank_safe_final_metrics, &final_metrics);
     let rank_lift_repair_evidence =
         rank_lift_repair_evidence(&final_metrics, &final_per_category_metrics);
+    let active_abstain_ship_gate_diagnostic = active_abstain_ship_gate_diagnostic(&predictions)?;
     let final_blockers = ship_gate_blockers(&final_metrics, &final_per_category_metrics);
     let final_power_blockers =
         statistical_power_blockers(&final_metrics, &final_per_category_metrics);
@@ -255,7 +260,11 @@ fn run() -> Result<()> {
             .unwrap_or_default()
             > 1
         && panel_audit["real_patch_paths_read"].as_u64() == Some(REQUIRED_HOLDOUT_COUNT as u64)
-        && rank_lift_repair_evidence["acceptance_passed"].as_bool() == Some(true);
+        && rank_lift_repair_evidence["acceptance_passed"].as_bool() == Some(true)
+        && active_abstain_ship_gate_diagnostic.measurement_valid
+        && active_abstain_ship_gate_diagnostic
+            .edge_case_audit
+            .all_passed;
 
     let report = json!({
         "schema_version": 2,
@@ -343,6 +352,7 @@ fn run() -> Result<()> {
             "rank_lift_improvement_vs_raw": rank_lift_improvement_vs_raw,
             "rank_lift_improvement_vs_rank_safe": rank_lift_improvement_vs_rank_safe,
             "rank_lift_repair_evidence": rank_lift_repair_evidence,
+            "task_py_g_392_active_abstain_ship_gate_diagnostic": active_abstain_ship_gate_diagnostic,
             "final_metrics": final_metrics,
             "per_category_metrics": final_per_category_metrics,
             "rolling_windows": rolling_windows,
@@ -388,6 +398,7 @@ fn run() -> Result<()> {
         "readback_calibration_improvement": report_readback["execute_and_inspect"]["calibration_improvement"],
         "readback_rank_lift_improvement_vs_rank_safe": report_readback["execute_and_inspect"]["rank_lift_improvement_vs_rank_safe"],
         "readback_rank_lift_repair_evidence": report_readback["execute_and_inspect"]["rank_lift_repair_evidence"],
+        "readback_task_py_g_392_active_abstain": report_readback["execute_and_inspect"]["task_py_g_392_active_abstain_ship_gate_diagnostic"],
         "readback_holdout_prediction_count": report_readback["execute_and_inspect"]["holdout_prediction_count"],
     });
     write_json_0600(&readback_path, &readback)?;
@@ -439,6 +450,125 @@ struct PredictionRow {
     panel_t0_sha256: String,
     panel_t1_sha256: String,
     panel_t2_sha256: String,
+}
+
+#[derive(Debug, Clone)]
+struct ExternalActiveAbstainRow {
+    task_id: String,
+    category: String,
+    patch_path: String,
+    actual_oracle_pass: bool,
+    score: f32,
+}
+
+#[derive(Debug, Clone)]
+struct ActiveAbstainRows {
+    scored_rows: Vec<PredictionRow>,
+    active_rows: Vec<PredictionRow>,
+    abstained_rows: Vec<PredictionRow>,
+    alignment: ActiveAbstainRowAlignment,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ActiveAbstainShipGateDiagnostic {
+    schema_version: u32,
+    issue: u32,
+    source_report_path: String,
+    source_report_sha256: String,
+    source_report_all_passed: bool,
+    source_abstain_candidate_found: bool,
+    source_selection_forbidden: bool,
+    source_blockers: Vec<String>,
+    source_legal_best_kind: String,
+    model: ActiveAbstainModel,
+    row_alignment: ActiveAbstainRowAlignment,
+    total_row_count: usize,
+    active_row_count: usize,
+    abstained_row_count: usize,
+    active_coverage: f32,
+    abstained_actual_pass_count: usize,
+    abstained_actual_fail_count: usize,
+    active_metrics: MetricBlock,
+    active_per_category_metrics: BTreeMap<String, MetricBlock>,
+    per_category_application: BTreeMap<String, ActiveAbstainCategoryStats>,
+    coverage_blockers: Vec<String>,
+    active_metric_blockers: Vec<String>,
+    active_statistical_power_blockers: Vec<String>,
+    rolling_windows: Vec<ActiveAbstainWindowReport>,
+    rolling_window_blockers: Vec<String>,
+    rolling_window_statistical_power_blockers: Vec<String>,
+    active_metric_gate_passed: bool,
+    active_power_gate_passed: bool,
+    active_four_window_gate_passed: bool,
+    full_active_abstain_ship_gate_passed: bool,
+    measurement_valid: bool,
+    active_rows_sample: Vec<PredictionRow>,
+    abstained_rows_sample: Vec<PredictionRow>,
+    source_report_claimed_holdout_metrics: Value,
+    source_report_claimed_holdout_application: Value,
+    edge_case_audit: ActiveAbstainEdgeCaseAudit,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+struct ActiveAbstainModel {
+    abstain_low: f32,
+    abstain_high: f32,
+    min_active_coverage: f32,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+struct ActiveAbstainRowAlignment {
+    base_row_count: usize,
+    external_row_count: usize,
+    matched_row_count: usize,
+    missing_rows: Vec<String>,
+    extra_rows: Vec<String>,
+    actual_label_mismatches: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ActiveAbstainCategoryStats {
+    total_row_count: usize,
+    active_row_count: usize,
+    abstained_row_count: usize,
+    active_coverage: f32,
+    active_actual_pass_count: usize,
+    active_actual_fail_count: usize,
+    active_predicted_pass_count: usize,
+    active_predicted_fail_count: usize,
+    abstained_actual_pass_count: usize,
+    abstained_actual_fail_count: usize,
+    active_oracle_variance_class: OracleVarianceClass,
+    active_gate_contract: GateContract,
+    active_statistical_power: StatisticalPowerReport,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ActiveAbstainWindowReport {
+    window_index: usize,
+    total_row_count: usize,
+    active_row_count: usize,
+    abstained_row_count: usize,
+    active_coverage: f32,
+    active_metrics: MetricBlock,
+    active_per_category_metrics: BTreeMap<String, MetricBlock>,
+    active_metric_blockers: Vec<String>,
+    active_statistical_power_blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ActiveAbstainEdgeCaseAudit {
+    source_sha256_guard_passed: bool,
+    metric_reproduction_passed: bool,
+    application_reproduction_passed: bool,
+    application_reproduction_mismatches: Vec<String>,
+    missing_external_row_rejected: bool,
+    extra_external_row_rejected: bool,
+    mismatched_actual_label_rejected: bool,
+    invalid_band_rejected: bool,
+    low_coverage_rejected: bool,
+    out_of_range_score_rejected: bool,
+    all_passed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1527,6 +1657,817 @@ fn weak_cell_predictions(rows: &[PredictionRow]) -> Vec<PredictionRow> {
         .collect()
 }
 
+fn active_abstain_ship_gate_diagnostic(
+    baseline_rows: &[PredictionRow],
+) -> Result<ActiveAbstainShipGateDiagnostic> {
+    let source_report_sha256 = sha256_file(TASK_PY_G_392_ABSTAIN_REPORT_PATH)?;
+    ensure!(
+        source_report_sha256 == TASK_PY_G_392_ABSTAIN_REPORT_SHA256,
+        "TASK-PY-G-392 abstain report hash drifted: expected {TASK_PY_G_392_ABSTAIN_REPORT_SHA256}, got {source_report_sha256}"
+    );
+    let source_report = read_json(TASK_PY_G_392_ABSTAIN_REPORT_PATH)?;
+    ensure!(
+        source_report["all_passed"].as_bool() == Some(true),
+        "TASK-PY-G-392 abstain report must have all_passed=true"
+    );
+    ensure!(
+        source_report["abstain_candidate_found"].as_bool() == Some(true),
+        "TASK-PY-G-392 report did not expose an abstain candidate"
+    );
+    let source_selection_forbidden = source_report["legal_score_sharpness_abstain_band"]
+        ["selection_forbidden"]
+        .as_bool()
+        .unwrap_or(true);
+    let source_blockers = source_report["legal_score_sharpness_abstain_band"]["blockers"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|value| value.as_str().map(ToString::to_string))
+        .collect::<Vec<_>>();
+    let model = active_abstain_model_from_report(&source_report)?;
+    let external_rows = external_abstain_rows_from_report(&source_report)?;
+    let active_rows = build_active_abstain_rows(baseline_rows, &external_rows, model, true)?;
+    let active_metrics = metrics_for(&active_rows.active_rows);
+    let active_per_category_metrics = per_category_metrics(&active_rows.active_rows);
+    let per_category_application =
+        active_abstain_category_stats(&active_rows.scored_rows, &active_rows.active_rows);
+    let coverage_blockers = active_abstain_coverage_blockers(
+        active_rows.scored_rows.len(),
+        active_rows.active_rows.len(),
+        model,
+    );
+    let active_metric_blockers = ship_gate_blockers(&active_metrics, &active_per_category_metrics);
+    let active_statistical_power_blockers =
+        statistical_power_blockers(&active_metrics, &active_per_category_metrics);
+    let rolling_windows = active_abstain_rolling_window_reports(&active_rows.scored_rows, model);
+    let rolling_window_blockers = rolling_windows
+        .iter()
+        .flat_map(|window| {
+            window
+                .active_metric_blockers
+                .iter()
+                .map(move |blocker| format!("window_{}:{blocker}", window.window_index))
+        })
+        .collect::<Vec<_>>();
+    let rolling_window_statistical_power_blockers = rolling_windows
+        .iter()
+        .flat_map(|window| {
+            window
+                .active_statistical_power_blockers
+                .iter()
+                .map(move |blocker| format!("window_{}:{blocker}", window.window_index))
+        })
+        .collect::<Vec<_>>();
+    let active_metric_gate_passed =
+        coverage_blockers.is_empty() && active_metric_blockers.is_empty();
+    let active_power_gate_passed = active_statistical_power_blockers.is_empty();
+    let active_four_window_gate_passed =
+        rolling_window_blockers.is_empty() && rolling_window_statistical_power_blockers.is_empty();
+    let full_active_abstain_ship_gate_passed =
+        active_metric_gate_passed && active_power_gate_passed && active_four_window_gate_passed;
+    let edge_case_audit = active_abstain_edge_case_audit(
+        baseline_rows,
+        &external_rows,
+        model,
+        &active_rows,
+        &active_metrics,
+        &per_category_application,
+    )?;
+    let measurement_valid = active_rows.scored_rows.len() == REQUIRED_HOLDOUT_COUNT
+        && active_rows.active_rows.len() + active_rows.abstained_rows.len()
+            == REQUIRED_HOLDOUT_COUNT
+        && edge_case_audit.all_passed
+        && coverage_blockers.is_empty()
+        && !source_selection_forbidden
+        && source_blockers.is_empty();
+    Ok(ActiveAbstainShipGateDiagnostic {
+        schema_version: 1,
+        issue: 392,
+        source_report_path: TASK_PY_G_392_ABSTAIN_REPORT_PATH.to_string(),
+        source_report_sha256,
+        source_report_all_passed: source_report["all_passed"].as_bool().unwrap_or(false),
+        source_abstain_candidate_found: source_report["abstain_candidate_found"]
+            .as_bool()
+            .unwrap_or(false),
+        source_selection_forbidden,
+        source_blockers,
+        source_legal_best_kind: source_report["legal_best_candidate"]["kind"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string(),
+        model,
+        row_alignment: active_rows.alignment,
+        total_row_count: active_rows.scored_rows.len(),
+        active_row_count: active_rows.active_rows.len(),
+        abstained_row_count: active_rows.abstained_rows.len(),
+        active_coverage: coverage_ratio(
+            active_rows.active_rows.len(),
+            active_rows.scored_rows.len(),
+        ),
+        abstained_actual_pass_count: active_rows
+            .abstained_rows
+            .iter()
+            .filter(|row| row.actual_oracle_pass)
+            .count(),
+        abstained_actual_fail_count: active_rows
+            .abstained_rows
+            .iter()
+            .filter(|row| !row.actual_oracle_pass)
+            .count(),
+        active_metrics,
+        active_per_category_metrics,
+        per_category_application,
+        coverage_blockers,
+        active_metric_blockers,
+        active_statistical_power_blockers,
+        rolling_windows,
+        rolling_window_blockers,
+        rolling_window_statistical_power_blockers,
+        active_metric_gate_passed,
+        active_power_gate_passed,
+        active_four_window_gate_passed,
+        full_active_abstain_ship_gate_passed,
+        measurement_valid,
+        active_rows_sample: active_rows.active_rows.iter().take(12).cloned().collect(),
+        abstained_rows_sample: active_rows
+            .abstained_rows
+            .iter()
+            .take(12)
+            .cloned()
+            .collect(),
+        source_report_claimed_holdout_metrics: source_report["legal_score_sharpness_abstain_band"]
+            ["holdout"]["metrics"]
+            .clone(),
+        source_report_claimed_holdout_application: source_report
+            ["legal_score_sharpness_abstain_band"]["holdout_application"]
+            .clone(),
+        edge_case_audit,
+    })
+}
+
+fn active_abstain_model_from_report(report: &Value) -> Result<ActiveAbstainModel> {
+    let model = &report["legal_score_sharpness_abstain_band"]["model"];
+    let out = ActiveAbstainModel {
+        abstain_low: value_f32(&model["abstain_low"], "abstain_low")?,
+        abstain_high: value_f32(&model["abstain_high"], "abstain_high")?,
+        min_active_coverage: value_f32(&model["min_active_coverage"], "min_active_coverage")?,
+    };
+    validate_active_abstain_model(out)?;
+    Ok(out)
+}
+
+fn validate_active_abstain_model(model: ActiveAbstainModel) -> Result<()> {
+    ensure!(
+        model.abstain_low.is_finite()
+            && model.abstain_high.is_finite()
+            && model.min_active_coverage.is_finite(),
+        "active/abstain model contains non-finite values"
+    );
+    ensure!(
+        (0.0..=1.0).contains(&model.abstain_low)
+            && (0.0..=1.0).contains(&model.abstain_high)
+            && model.abstain_low < model.abstain_high,
+        "invalid active/abstain band [{}, {}]",
+        model.abstain_low,
+        model.abstain_high
+    );
+    ensure!(
+        (0.0..=1.0).contains(&model.min_active_coverage),
+        "invalid min_active_coverage {}",
+        model.min_active_coverage
+    );
+    Ok(())
+}
+
+fn external_abstain_rows_from_report(report: &Value) -> Result<Vec<ExternalActiveAbstainRow>> {
+    let rows = report["legal_best_holdout_row_diagnostics"]
+        .as_array()
+        .ok_or_else(|| {
+            anyhow!("TASK-PY-G-392 report missing legal_best_holdout_row_diagnostics")
+        })?;
+    ensure!(
+        rows.len() == REQUIRED_HOLDOUT_COUNT,
+        "TASK-PY-G-392 row diagnostics must contain {REQUIRED_HOLDOUT_COUNT} rows"
+    );
+    let mut out = Vec::with_capacity(rows.len());
+    let mut seen = BTreeSet::new();
+    for value in rows {
+        let row = ExternalActiveAbstainRow {
+            task_id: value_string(value, "task_id")?,
+            category: value_string(value, "category")?,
+            patch_path: value_string(value, "patch_path")?,
+            actual_oracle_pass: value["actual_oracle_pass"]
+                .as_bool()
+                .ok_or_else(|| anyhow!("TASK-PY-G-392 row missing actual_oracle_pass"))?,
+            score: value_f32(&value["score_sharpness_score"], "score_sharpness_score")?,
+        };
+        ensure!(
+            row.score.is_finite() && (0.0..=1.0).contains(&row.score),
+            "TASK-PY-G-392 score out of range for {}:{} = {}",
+            row.task_id,
+            row.category,
+            row.score
+        );
+        let key = active_abstain_key(&row.task_id, &row.category, &row.patch_path);
+        ensure!(
+            seen.insert(key.clone()),
+            "duplicate TASK-PY-G-392 row {key}"
+        );
+        out.push(row);
+    }
+    Ok(out)
+}
+
+fn build_active_abstain_rows(
+    baseline_rows: &[PredictionRow],
+    external_rows: &[ExternalActiveAbstainRow],
+    model: ActiveAbstainModel,
+    enforce_active_coverage: bool,
+) -> Result<ActiveAbstainRows> {
+    validate_active_abstain_model(model)?;
+    let mut external_by_key = BTreeMap::new();
+    for row in external_rows {
+        let key = active_abstain_key(&row.task_id, &row.category, &row.patch_path);
+        ensure!(
+            external_by_key.insert(key.clone(), row.clone()).is_none(),
+            "duplicate external active/abstain row {key}"
+        );
+    }
+    let mut alignment = ActiveAbstainRowAlignment {
+        base_row_count: baseline_rows.len(),
+        external_row_count: external_rows.len(),
+        ..ActiveAbstainRowAlignment::default()
+    };
+    let mut scored_rows = Vec::with_capacity(baseline_rows.len());
+    let mut active_rows = Vec::new();
+    let mut abstained_rows = Vec::new();
+    for base in baseline_rows {
+        let key = prediction_row_active_abstain_key(base);
+        let Some(external) = external_by_key.remove(&key) else {
+            alignment.missing_rows.push(key);
+            continue;
+        };
+        if external.actual_oracle_pass != base.actual_oracle_pass {
+            alignment.actual_label_mismatches.push(format!(
+                "{key}:base={} external={}",
+                base.actual_oracle_pass, external.actual_oracle_pass
+            ));
+            continue;
+        }
+        let scored = scored_prediction_row(base, external.score)?;
+        if score_in_abstain_band(scored.predicted_oracle_pass, model) {
+            abstained_rows.push(scored.clone());
+        } else {
+            active_rows.push(scored.clone());
+        }
+        scored_rows.push(scored);
+        alignment.matched_row_count += 1;
+    }
+    alignment.extra_rows = external_by_key.into_keys().collect();
+    ensure!(
+        alignment.missing_rows.is_empty()
+            && alignment.extra_rows.is_empty()
+            && alignment.actual_label_mismatches.is_empty(),
+        "active/abstain row alignment failed: missing={:?} extra={:?} mismatches={:?}",
+        alignment.missing_rows,
+        alignment.extra_rows,
+        alignment.actual_label_mismatches
+    );
+    ensure!(
+        scored_rows.len() == baseline_rows.len(),
+        "active/abstain scored row count mismatch"
+    );
+    if enforce_active_coverage {
+        let coverage_blockers =
+            active_abstain_coverage_blockers(scored_rows.len(), active_rows.len(), model);
+        ensure!(
+            coverage_blockers.is_empty(),
+            "active/abstain coverage failed: {:?}",
+            coverage_blockers
+        );
+    }
+    Ok(ActiveAbstainRows {
+        scored_rows,
+        active_rows,
+        abstained_rows,
+        alignment,
+    })
+}
+
+fn scored_prediction_row(base: &PredictionRow, score: f32) -> Result<PredictionRow> {
+    ensure!(
+        score.is_finite() && (0.0..=1.0).contains(&score),
+        "active/abstain score must be finite in [0,1], got {score}"
+    );
+    let mut out = base.clone();
+    out.predicted_oracle_pass = score;
+    out.predicted_pass = score >= 0.5;
+    out.correct = out.predicted_pass == out.actual_oracle_pass;
+    Ok(out)
+}
+
+fn score_in_abstain_band(score: f32, model: ActiveAbstainModel) -> bool {
+    score >= model.abstain_low && score <= model.abstain_high
+}
+
+fn active_abstain_coverage_blockers(
+    total_row_count: usize,
+    active_row_count: usize,
+    model: ActiveAbstainModel,
+) -> Vec<String> {
+    let mut blockers = Vec::new();
+    if total_row_count == 0 {
+        blockers.push("active_abstain_empty_row_set".to_string());
+        return blockers;
+    }
+    let coverage = coverage_ratio(active_row_count, total_row_count);
+    if active_row_count == 0 {
+        blockers.push("active_abstain_zero_active_rows".to_string());
+    }
+    if coverage + 1.0e-6 < model.min_active_coverage {
+        blockers.push(format!(
+            "active_coverage_below_floor: {coverage:.6} < {:.6}",
+            model.min_active_coverage
+        ));
+    }
+    blockers
+}
+
+fn active_abstain_category_stats(
+    scored_rows: &[PredictionRow],
+    active_rows: &[PredictionRow],
+) -> BTreeMap<String, ActiveAbstainCategoryStats> {
+    let active_keys = active_rows
+        .iter()
+        .map(prediction_row_active_abstain_key)
+        .collect::<BTreeSet<_>>();
+    REQUIRED_CATEGORIES
+        .iter()
+        .map(|category| {
+            let category_rows = scored_rows
+                .iter()
+                .filter(|row| row.category == *category)
+                .cloned()
+                .collect::<Vec<_>>();
+            let active_category_rows = category_rows
+                .iter()
+                .filter(|row| active_keys.contains(&prediction_row_active_abstain_key(row)))
+                .cloned()
+                .collect::<Vec<_>>();
+            let active_metrics = metrics_for(&active_category_rows);
+            let total_row_count = category_rows.len();
+            let active_row_count = active_category_rows.len();
+            let abstained_row_count = total_row_count.saturating_sub(active_row_count);
+            let abstained_actual_pass_count = category_rows
+                .iter()
+                .filter(|row| {
+                    row.actual_oracle_pass
+                        && !active_keys.contains(&prediction_row_active_abstain_key(row))
+                })
+                .count();
+            let abstained_actual_fail_count = category_rows
+                .iter()
+                .filter(|row| {
+                    !row.actual_oracle_pass
+                        && !active_keys.contains(&prediction_row_active_abstain_key(row))
+                })
+                .count();
+            (
+                (*category).to_string(),
+                ActiveAbstainCategoryStats {
+                    total_row_count,
+                    active_row_count,
+                    abstained_row_count,
+                    active_coverage: coverage_ratio(active_row_count, total_row_count),
+                    active_actual_pass_count: active_metrics.actual_pass_count,
+                    active_actual_fail_count: active_metrics.actual_fail_count,
+                    active_predicted_pass_count: active_metrics.predicted_pass_count,
+                    active_predicted_fail_count: active_metrics.predicted_fail_count,
+                    abstained_actual_pass_count,
+                    abstained_actual_fail_count,
+                    active_oracle_variance_class: active_metrics.oracle_variance_class,
+                    active_gate_contract: active_metrics.gate_contract,
+                    active_statistical_power: active_metrics.statistical_power,
+                },
+            )
+        })
+        .collect()
+}
+
+fn active_abstain_rolling_window_reports(
+    scored_rows: &[PredictionRow],
+    model: ActiveAbstainModel,
+) -> Vec<ActiveAbstainWindowReport> {
+    let mut by_category: BTreeMap<String, Vec<PredictionRow>> = BTreeMap::new();
+    for row in scored_rows {
+        by_category
+            .entry(row.category.clone())
+            .or_default()
+            .push(row.clone());
+    }
+    let mut reports = Vec::new();
+    for window_index in 0..4 {
+        let mut window_rows = Vec::new();
+        for category in REQUIRED_CATEGORIES {
+            let category_rows = by_category.get(category).cloned().unwrap_or_default();
+            let start = category_rows.len() * window_index / 4;
+            let end = category_rows.len() * (window_index + 1) / 4;
+            window_rows.extend_from_slice(&category_rows[start..end]);
+        }
+        let active_rows = window_rows
+            .iter()
+            .filter(|row| !score_in_abstain_band(row.predicted_oracle_pass, model))
+            .cloned()
+            .collect::<Vec<_>>();
+        let active_metrics = metrics_for(&active_rows);
+        let active_per_category_metrics = per_category_metrics(&active_rows);
+        let mut active_metric_blockers =
+            active_abstain_coverage_blockers(window_rows.len(), active_rows.len(), model);
+        active_metric_blockers.extend(ship_gate_blockers(
+            &active_metrics,
+            &active_per_category_metrics,
+        ));
+        let active_statistical_power_blockers =
+            statistical_power_blockers(&active_metrics, &active_per_category_metrics);
+        reports.push(ActiveAbstainWindowReport {
+            window_index,
+            total_row_count: window_rows.len(),
+            active_row_count: active_rows.len(),
+            abstained_row_count: window_rows.len().saturating_sub(active_rows.len()),
+            active_coverage: coverage_ratio(active_rows.len(), window_rows.len()),
+            active_metrics,
+            active_per_category_metrics,
+            active_metric_blockers,
+            active_statistical_power_blockers,
+        });
+    }
+    reports
+}
+
+fn active_abstain_edge_case_audit(
+    baseline_rows: &[PredictionRow],
+    external_rows: &[ExternalActiveAbstainRow],
+    model: ActiveAbstainModel,
+    active_rows: &ActiveAbstainRows,
+    observed_active_metrics: &MetricBlock,
+    per_category_application: &BTreeMap<String, ActiveAbstainCategoryStats>,
+) -> Result<ActiveAbstainEdgeCaseAudit> {
+    let source_sha256_guard_passed =
+        sha256_file(TASK_PY_G_392_ABSTAIN_REPORT_PATH)? == TASK_PY_G_392_ABSTAIN_REPORT_SHA256;
+    let source_report = read_json(TASK_PY_G_392_ABSTAIN_REPORT_PATH)?;
+    let claimed_metrics = metric_claim_from_json(
+        &source_report["legal_score_sharpness_abstain_band"]["holdout"]["metrics"],
+    )?;
+    let metric_reproduction_passed = metric_claim_close(observed_active_metrics, &claimed_metrics);
+    let application_reproduction_mismatches = application_claim_mismatches(
+        &source_report["legal_score_sharpness_abstain_band"]["holdout_application"],
+        active_rows,
+        per_category_application,
+    );
+    let application_reproduction_passed = application_reproduction_mismatches.is_empty();
+
+    let missing_external_row_rejected = {
+        let mut rows = external_rows.to_vec();
+        rows.pop();
+        build_active_abstain_rows(baseline_rows, &rows, model, true).is_err()
+    };
+    let extra_external_row_rejected = {
+        let mut rows = external_rows.to_vec();
+        if let Some(first) = rows.first().cloned() {
+            let mut extra = first;
+            extra.task_id = format!("{}__extra", extra.task_id);
+            rows.push(extra);
+        }
+        build_active_abstain_rows(baseline_rows, &rows, model, true).is_err()
+    };
+    let mismatched_actual_label_rejected = {
+        let mut rows = external_rows.to_vec();
+        if let Some(first) = rows.first_mut() {
+            first.actual_oracle_pass = !first.actual_oracle_pass;
+        }
+        build_active_abstain_rows(baseline_rows, &rows, model, true).is_err()
+    };
+    let invalid_band_rejected = build_active_abstain_rows(
+        baseline_rows,
+        external_rows,
+        ActiveAbstainModel {
+            abstain_low: 0.80,
+            abstain_high: 0.20,
+            min_active_coverage: model.min_active_coverage,
+        },
+        true,
+    )
+    .is_err();
+    let low_coverage_rejected = build_active_abstain_rows(
+        baseline_rows,
+        external_rows,
+        ActiveAbstainModel {
+            abstain_low: 0.0,
+            abstain_high: 1.0,
+            min_active_coverage: model.min_active_coverage,
+        },
+        true,
+    )
+    .is_err();
+    let out_of_range_score_rejected = {
+        let mut rows = external_rows.to_vec();
+        if let Some(first) = rows.first_mut() {
+            first.score = 1.5;
+        }
+        build_active_abstain_rows(baseline_rows, &rows, model, true).is_err()
+    };
+    let all_passed = source_sha256_guard_passed
+        && metric_reproduction_passed
+        && application_reproduction_passed
+        && missing_external_row_rejected
+        && extra_external_row_rejected
+        && mismatched_actual_label_rejected
+        && invalid_band_rejected
+        && low_coverage_rejected
+        && out_of_range_score_rejected;
+    Ok(ActiveAbstainEdgeCaseAudit {
+        source_sha256_guard_passed,
+        metric_reproduction_passed,
+        application_reproduction_passed,
+        application_reproduction_mismatches,
+        missing_external_row_rejected,
+        extra_external_row_rejected,
+        mismatched_actual_label_rejected,
+        invalid_band_rejected,
+        low_coverage_rejected,
+        out_of_range_score_rejected,
+        all_passed,
+    })
+}
+
+#[derive(Debug)]
+struct MetricClaim {
+    sample_count: usize,
+    prediction_oracle_correlation: Option<f32>,
+    brier: f32,
+    ece: f32,
+    active_coverage_score_mean: f32,
+}
+
+fn metric_claim_from_json(value: &Value) -> Result<MetricClaim> {
+    Ok(MetricClaim {
+        sample_count: value["sample_count"].as_u64().unwrap_or_default() as usize,
+        prediction_oracle_correlation: optional_value_f32(
+            &value["prediction_oracle_correlation"],
+            "prediction_oracle_correlation",
+        )?,
+        brier: value_f32(&value["brier"], "brier")?,
+        ece: value_f32(&value["ece"], "ece")?,
+        active_coverage_score_mean: value_f32(&value["score_mean"], "score_mean")?,
+    })
+}
+
+fn metric_claim_close(observed: &MetricBlock, claimed: &MetricClaim) -> bool {
+    observed.sample_count == claimed.sample_count
+        && option_close(
+            observed.prediction_oracle_correlation,
+            claimed.prediction_oracle_correlation,
+            1.0e-5,
+        )
+        && (observed.brier - claimed.brier).abs() <= 1.0e-5
+        && (observed.ece - claimed.ece).abs() <= 1.0e-5
+        && (observed.score_mean - claimed.active_coverage_score_mean).abs() <= 1.0e-5
+}
+
+fn application_claim_mismatches(
+    value: &Value,
+    rows: &ActiveAbstainRows,
+    per_category: &BTreeMap<String, ActiveAbstainCategoryStats>,
+) -> Vec<String> {
+    let mut mismatches = Vec::new();
+    push_usize_mismatch(
+        &mut mismatches,
+        "total_row_count",
+        &value["total_row_count"],
+        rows.scored_rows.len(),
+    );
+    push_usize_mismatch(
+        &mut mismatches,
+        "active_row_count",
+        &value["active_row_count"],
+        rows.active_rows.len(),
+    );
+    push_usize_mismatch(
+        &mut mismatches,
+        "abstained_row_count",
+        &value["abstained_row_count"],
+        rows.abstained_rows.len(),
+    );
+    push_f32_mismatch(
+        &mut mismatches,
+        "active_coverage",
+        &value["active_coverage"],
+        coverage_ratio(rows.active_rows.len(), rows.scored_rows.len()),
+        1.0e-5,
+    );
+    push_usize_mismatch(
+        &mut mismatches,
+        "abstained_actual_pass_count",
+        &value["abstained_actual_pass_count"],
+        rows.abstained_rows
+            .iter()
+            .filter(|row| row.actual_oracle_pass)
+            .count(),
+    );
+    push_usize_mismatch(
+        &mut mismatches,
+        "abstained_actual_fail_count",
+        &value["abstained_actual_fail_count"],
+        rows.abstained_rows
+            .iter()
+            .filter(|row| !row.actual_oracle_pass)
+            .count(),
+    );
+    let Some(claimed_categories) = value["per_category"].as_object() else {
+        mismatches.push("per_category missing or not object".to_string());
+        return mismatches;
+    };
+    for category in REQUIRED_CATEGORIES {
+        let Some(claimed) = claimed_categories.get(category) else {
+            mismatches.push(format!("{category}:missing claimed category"));
+            continue;
+        };
+        let Some(observed) = per_category.get(category) else {
+            mismatches.push(format!("{category}:missing observed category"));
+            continue;
+        };
+        let prefix = format!("{category}:");
+        push_usize_mismatch(
+            &mut mismatches,
+            &format!("{prefix}total_row_count"),
+            &claimed["total_row_count"],
+            observed.total_row_count,
+        );
+        push_usize_mismatch(
+            &mut mismatches,
+            &format!("{prefix}active_row_count"),
+            &claimed["active_row_count"],
+            observed.active_row_count,
+        );
+        push_usize_mismatch(
+            &mut mismatches,
+            &format!("{prefix}abstained_row_count"),
+            &claimed["abstained_row_count"],
+            observed.abstained_row_count,
+        );
+        push_f32_mismatch(
+            &mut mismatches,
+            &format!("{prefix}active_coverage"),
+            &claimed["active_coverage"],
+            observed.active_coverage,
+            1.0e-5,
+        );
+        push_usize_mismatch(
+            &mut mismatches,
+            &format!("{prefix}active_actual_pass_count"),
+            &claimed["active_actual_pass_count"],
+            observed.active_actual_pass_count,
+        );
+        push_usize_mismatch(
+            &mut mismatches,
+            &format!("{prefix}active_actual_fail_count"),
+            &claimed["active_actual_fail_count"],
+            observed.active_actual_fail_count,
+        );
+        push_usize_mismatch(
+            &mut mismatches,
+            &format!("{prefix}active_predicted_pass_count"),
+            &claimed["active_predicted_pass_count"],
+            observed.active_predicted_pass_count,
+        );
+        push_usize_mismatch(
+            &mut mismatches,
+            &format!("{prefix}active_predicted_fail_count"),
+            &claimed["active_predicted_fail_count"],
+            observed.active_predicted_fail_count,
+        );
+        push_usize_mismatch(
+            &mut mismatches,
+            &format!("{prefix}abstained_actual_pass_count"),
+            &claimed["abstained_actual_pass_count"],
+            observed.abstained_actual_pass_count,
+        );
+        push_usize_mismatch(
+            &mut mismatches,
+            &format!("{prefix}abstained_actual_fail_count"),
+            &claimed["abstained_actual_fail_count"],
+            observed.abstained_actual_fail_count,
+        );
+        let expected_variance = oracle_variance_class_name(observed.active_oracle_variance_class);
+        if claimed["active_oracle_variance_class"].as_str() != Some(expected_variance) {
+            mismatches.push(format!(
+                "{prefix}active_oracle_variance_class claimed={:?} observed={expected_variance}",
+                claimed["active_oracle_variance_class"].as_str()
+            ));
+        }
+    }
+    mismatches
+}
+
+fn push_usize_mismatch(mismatches: &mut Vec<String>, label: &str, value: &Value, expected: usize) {
+    if !json_usize_eq(value, expected) {
+        mismatches.push(format!(
+            "{label} claimed={:?} observed={expected}",
+            value.as_u64()
+        ));
+    }
+}
+
+fn push_f32_mismatch(
+    mismatches: &mut Vec<String>,
+    label: &str,
+    value: &Value,
+    expected: f32,
+    tolerance: f32,
+) {
+    if !json_f32_close(value, expected, tolerance) {
+        mismatches.push(format!(
+            "{label} claimed={:?} observed={expected:.9}",
+            value.as_f64()
+        ));
+    }
+}
+
+fn json_usize_eq(value: &Value, expected: usize) -> bool {
+    value.as_u64() == Some(expected as u64)
+}
+
+fn json_f32_close(value: &Value, expected: f32, tolerance: f32) -> bool {
+    value
+        .as_f64()
+        .map(|actual| (actual as f32 - expected).abs() <= tolerance)
+        .unwrap_or(false)
+}
+
+fn oracle_variance_class_name(value: OracleVarianceClass) -> &'static str {
+    match value {
+        OracleVarianceClass::Empty => "empty",
+        OracleVarianceClass::AllFail => "all_fail",
+        OracleVarianceClass::AllPass => "all_pass",
+        OracleVarianceClass::Mixed => "mixed",
+    }
+}
+
+fn option_close(left: Option<f32>, right: Option<f32>, tolerance: f32) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => (left - right).abs() <= tolerance,
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn prediction_row_active_abstain_key(row: &PredictionRow) -> String {
+    active_abstain_key(&row.task_id, &row.category, &row.patch_path)
+}
+
+fn active_abstain_key(task_id: &str, category: &str, patch_path: &str) -> String {
+    format!(
+        "{task_id}::{category}::{}",
+        normalized_active_abstain_patch_path(patch_path)
+    )
+}
+
+fn normalized_active_abstain_patch_path(path: &str) -> String {
+    let prefix = format!("{CORPUS_DIR}/");
+    path.strip_prefix(&prefix).unwrap_or(path).to_string()
+}
+
+fn coverage_ratio(active: usize, total: usize) -> f32 {
+    if total == 0 {
+        0.0
+    } else {
+        active as f32 / total as f32
+    }
+}
+
+fn value_string(value: &Value, key: &str) -> Result<String> {
+    value[key]
+        .as_str()
+        .map(ToString::to_string)
+        .ok_or_else(|| anyhow!("expected string field {key}"))
+}
+
+fn value_f32(value: &Value, name: &str) -> Result<f32> {
+    value
+        .as_f64()
+        .map(|value| value as f32)
+        .ok_or_else(|| anyhow!("expected numeric field {name}, got {value}"))
+}
+
+fn optional_value_f32(value: &Value, name: &str) -> Result<Option<f32>> {
+    if value.is_null() {
+        Ok(None)
+    } else {
+        value_f32(value, name).map(Some)
+    }
+}
+
 fn predict_oracle_pass(
     predictor: &MeJepaPredictor,
     device: &Device,
@@ -2398,6 +3339,7 @@ fn active_input_paths() -> Vec<&'static str> {
         VERIFY_PATH,
         CHECKPOINT_MANIFEST_PATH,
         CODE_STATE_CONSTELLATIONS_PATH,
+        TASK_PY_G_392_ABSTAIN_REPORT_PATH,
         FSV_ROOT,
     ]
 }

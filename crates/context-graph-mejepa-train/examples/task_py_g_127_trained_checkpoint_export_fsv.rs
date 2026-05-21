@@ -44,7 +44,7 @@ const MODEL_ROOT: &str =
     "/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv";
 const REPORT_NAME: &str = "trained_checkpoint_export_fsv.json";
 const CONSTELLATION_ARTIFACT_ROOT: &str =
-    "/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts";
+    "/zfs/archive/contextgraph/state/training-arrays/constellation-training-arrays-v1-realinput";
 const AST_CHUNKS_JSONL: &str =
     "/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl";
 const SWEBENCH_CORPUS_DIR: &str =

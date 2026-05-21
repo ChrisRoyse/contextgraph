@@ -2,7 +2,7 @@
 //!
 //! The retired version of this FSV evaluated lambda_inv with an echo predictor
 //! and a category-majority oracle. This replacement trains real checkpoint
-//! variants from the current #535 baseline checkpoint, evaluates them through
+//! variants from the current post-fix baseline checkpoint, evaluates them through
 //! real frozen-instrument panels, and writes a fail-closed aiwonder FSV.
 
 use anyhow::{anyhow, ensure, Context, Result};
@@ -38,8 +38,8 @@ const INDEX_PATH: &str =
 const BASELINE_CHECKPOINT_MANIFEST_PATH: &str =
     "/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv/best.manifest.json";
 const BASELINE_SHIP_GATE_REPORT_PATH: &str =
-    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T164924Z/ship-gate-fsv.json";
-const BASELINE_RANK_LIFT_CORRELATION: f32 = 0.793_727_1;
+    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T185945Z/ship-gate-fsv.json";
+const BASELINE_RANK_LIFT_CORRELATION: f32 = 0.794_219_017;
 const FSV_ROOT: &str =
     "/zfs/archive/contextgraph/fsv/task-ek-012-bidirectional-ablation-realinput-fsv";
 const MODEL_ROOT: &str =
@@ -107,7 +107,7 @@ fn run() -> Result<PathBuf> {
     let training_batch = build_training_batch(&split.train, &device)?;
 
     let baseline = evaluate_loaded_manifest(
-        "baseline_535_checkpoint",
+        "baseline_postfix_checkpoint",
         Path::new(BASELINE_CHECKPOINT_MANIFEST_PATH),
         &predictor_config,
         &device,
@@ -160,11 +160,11 @@ fn run() -> Result<PathBuf> {
                         baseline_rank_safe,
                         variant.rank_safe_metrics.prediction_oracle_correlation,
                     ),
-                    "raw_vs_535_rank_lift_baseline_of_record": scalar_delta(
+                    "raw_vs_536_rank_lift_baseline_of_record": scalar_delta(
                         BASELINE_RANK_LIFT_CORRELATION,
                         variant.raw_metrics.prediction_oracle_correlation,
                     ),
-                    "rank_safe_vs_535_rank_lift_baseline_of_record": scalar_delta(
+                    "rank_safe_vs_536_rank_lift_baseline_of_record": scalar_delta(
                         BASELINE_RANK_LIFT_CORRELATION,
                         variant.rank_safe_metrics.prediction_oracle_correlation,
                     ),
@@ -217,7 +217,7 @@ fn run() -> Result<PathBuf> {
         },
         "rank_lift_compatibility": {
             "baseline_of_record_rank_lift_correlation": baseline_ship_gate["execute_and_inspect"]["final_metrics"]["prediction_oracle_correlation"],
-            "policy": "rank-lift from #535 is an external code-state exemplar head that replaces predictor scores; applying it here would mask lambda_inv effects, so this FSV reports raw and rank-safe predictor-output metrics and carries the rank-lift baseline as a non-selector compatibility record.",
+            "policy": "rank-lift from #536 is an external code-state exemplar head that replaces predictor scores; applying it here would mask lambda_inv effects, so this FSV reports raw and rank-safe predictor-output metrics and carries the rank-lift baseline-of-record as a non-selector compatibility record.",
             "predictor_output_masked_by_rank_lift_if_applied": true,
             "expected_baseline_rank_lift_correlation": BASELINE_RANK_LIFT_CORRELATION,
             "observed_baseline_rank_lift_correlation": baseline_rank_lift_correlation,
@@ -295,7 +295,7 @@ fn run() -> Result<PathBuf> {
         },
         "execute_and_inspect": {
             "prediction_path": "real patch bytes -> PatchBundle -> materialize_inference_panels -> MeJepaPredictor::forward -> checkpoint-backed oracle head",
-            "training_path": "baseline #535 checkpoint -> real SWE-bench train panels -> supervised panel/oracle loss plus lambda_inv*inverse-map loss -> exported safetensors checkpoint",
+            "training_path": "baseline post-fix checkpoint -> real SWE-bench train panels -> supervised panel/oracle loss plus lambda_inv*inverse-map loss -> exported safetensors checkpoint",
             "lambda_variants": LAMBDAS,
             "variant_optimizer_steps": VARIANT_OPTIMIZER_STEPS,
             "oracle_loss_weight": ORACLE_LOSS_WEIGHT,
@@ -308,7 +308,7 @@ fn run() -> Result<PathBuf> {
                     baseline_rank_safe,
                     best_rank_safe.rank_safe_metrics.prediction_oracle_correlation,
                 ),
-                "delta_vs_535_rank_lift_baseline_of_record": scalar_delta(
+                "delta_vs_536_rank_lift_baseline_of_record": scalar_delta(
                     BASELINE_RANK_LIFT_CORRELATION,
                     best_rank_safe.rank_safe_metrics.prediction_oracle_correlation,
                 ),
@@ -573,13 +573,13 @@ fn read_baseline_ship_gate_report() -> Result<Value> {
     let report = read_json(BASELINE_SHIP_GATE_REPORT_PATH)?;
     ensure!(
         report["all_passed"] == true,
-        "baseline #535 ship-gate report must have all_passed=true"
+        "baseline #536 ship-gate report must have all_passed=true"
     );
     ensure!(
         report["execute_and_inspect"]["final_metrics"]["prediction_oracle_correlation"]
             .as_f64()
             .is_some(),
-        "baseline #535 ship-gate report missing final correlation"
+        "baseline #536 ship-gate report missing final correlation"
     );
     Ok(report)
 }
@@ -587,11 +587,11 @@ fn read_baseline_ship_gate_report() -> Result<Value> {
 fn baseline_rank_lift_correlation(report: &Value) -> Result<f32> {
     let value = report["execute_and_inspect"]["final_metrics"]["prediction_oracle_correlation"]
         .as_f64()
-        .ok_or_else(|| anyhow!("baseline #535 rank-lift correlation missing"))?
+        .ok_or_else(|| anyhow!("baseline #536 rank-lift correlation missing"))?
         as f32;
     ensure!(
         (value - BASELINE_RANK_LIFT_CORRELATION).abs() < 0.000001,
-        "baseline #535 rank-lift correlation drifted: expected {BASELINE_RANK_LIFT_CORRELATION:.10}, observed {value:.10}"
+        "baseline #536 rank-lift correlation drifted: expected {BASELINE_RANK_LIFT_CORRELATION:.10}, observed {value:.10}"
     );
     Ok(value)
 }
@@ -1941,9 +1941,9 @@ fn typed_finding(baseline_rank_lift_correlation: f32, variants: &[VariantEvaluat
         "classification": classification,
         "best_lambda_inv": best.lambda_inv,
         "best_rank_safe_prediction_oracle_correlation": best.rank_safe_metrics.prediction_oracle_correlation,
-        "rank_safe_delta_vs_535_rank_lift_baseline_of_record": delta,
+        "rank_safe_delta_vs_536_rank_lift_baseline_of_record": delta,
         "baseline_rank_lift_correlation_of_record": baseline_rank_lift_correlation,
-        "reason": "classification compares real predictor-output variants against the #535 rank-lift baseline of record; rank-lift itself is not re-applied to variants because it would replace predictor scores and mask lambda_inv changes"
+        "reason": "classification compares real predictor-output variants against the #536 rank-lift baseline of record; rank-lift itself is not re-applied to variants because it would replace predictor scores and mask lambda_inv changes"
     })
 }
 

@@ -4,7 +4,7 @@
 >
 > **Hard rules.** aiwonder is a **shared production server** for the Leapable platform. ContextGraph training **must coexist** with the resident leapable services without disrupting them. Every operation must follow the universal doctrine (`docs2/AICodingAgentSuperPrompt.md`) and the aiwonder rules (`leapablememory/docs2/aiwonder-system.md §8`).
 >
-> **Last verified against live host:** 2026-05-15. Verify before relying on any claim.
+> **Last verified against live host:** 2026-05-21 for ContextGraph env/tooling paths; storage-pool topology still blocked by #372. Verify before relying on any claim.
 >
 > **EVERYTHING FOR THIS SYSTEM IS RUNNING AND SHOULD ALL BE RUNNING ON AIWONDER DATACENTER PC. everything gets stored there, all fsv ran there, whole system runs and works over there. ensure that is where all the work is happening, is on the aiwonder datacenter pc.
 ---
@@ -60,8 +60,9 @@ The aiwonder migration completed on 2026-05-17 (#296). The 2026-05-18 storage co
 ### 3.1 Filesystem layout
 
 ```text
-/zfs/hot/contextgraph/                          (NVMe — fast random I/O)
-├── repo/                                       Git clone of github.com/ChrisRoyse/contextgraph
+/zfs/hot/contextgraph/                          (logical hot root; see #372 for physical ZFS mount blocker)
+├── repo-current -> repo-current-<TS>-<agent>/   Active aiwonder mirror used by contextgraph-shell
+├── repo/                                       Historical/alternate clone; do not assume active
 │   ├── crates/                                 Rust workspace
 │   ├── scripts/                                Python schedulers
 │   └── target/release/                         Compiled Rust binaries (after cargo build --release)
@@ -81,7 +82,7 @@ The aiwonder migration completed on 2026-05-17 (#296). The 2026-05-18 storage co
 │   └── task-py-data-016-<TS>-fsv/
 └── state/cgreality/                            Active runtime root pointer + shift logs
 
-/zfs/archive/contextgraph/                      (HDD mirror — bulk / cold)
+/zfs/archive/contextgraph/                      (logical durable root; see #372 for physical ZFS mount blocker)
 ├── corpus/                                     Generated cache, projected ~73 GB per run
 │   └── python-forward-cache-v1-task-py-data-016-<TS>/
 └── swe-bench/                                  Future: SWE-bench Lite Python Docker images (~1-2 TB)
@@ -120,7 +121,8 @@ Per `~/.config/aiwonder.env`:
 ```bash
 # Operator-side helper at /tmp/ssh-aiwonder/run-remote.sh runs a remote command
 # non-interactively using the password from the env file (never logged).
-/tmp/ssh-aiwonder/run-remote.sh 'cd /zfs/hot/contextgraph/repo && cargo build --release -p context-graph-mejepa-embedders'
+# Use contextgraph-shell so the aiwonder env contract and active repo mirror are applied.
+/tmp/ssh-aiwonder/run-remote.sh 'contextgraph-shell "cargo build --release -p context-graph-mejepa-embedders"'
 ```
 
 The Cisco VPN must be active on Windows; WSL2 inherits the routes. Allowed UFW source subnet on aiwonder is the Cisco-assigned one — if it changes on reconnect, escalate per `leapablememory/docs2/aiwonder-system.md §3`.
@@ -156,39 +158,37 @@ The exact numbers calibrate after the first 3-5 shards complete on aiwonder.
 
 ### 4.2 Scheduler invocation on aiwonder (verified 2026-05-15)
 
-**Required env vars (six total — `CG_MEJEPA_*` for the Python scheduler, `CONTEXTGRAPH_*` for the Rust runner):**
+**Required environment contract (current):** source `/zfs/hot/contextgraph/env/contextgraph-aiwonder.env`, or run through `/zfs/hot/contextgraph/bin/contextgraph-shell`. Do not hand-type path roots unless an issue explicitly overrides a specific artifact path. The env contract sets canonical aliases for active data, labels, tensors, models, FSV output, CUDA, Cargo, `rg`, and `gh`.
 
 ```bash
-# Durable bulk root (cache + fsv must be under this prefix)
-export CG_MEJEPA_DURABLE_ROOT=/zfs/archive/contextgraph
-# df targets the scheduler reports + asserts (ZFS dataset mount points)
-export CG_MEJEPA_DISK_TARGETS=/,/hotpool,/archive
-# Hot-stage scratch capacity check goes against /
-export CG_MEJEPA_HOT_DISK_TARGET=/
-# Durable-root capacity check goes against /archive (the ZFS archive pool)
-export CG_MEJEPA_DURABLE_DISK_TARGET=/archive
-# Rust runner: where to find the per-embedder paths
-export CONTEXTGRAPH_MEJEPA_MODELS_CONFIG=/zfs/hot/contextgraph/models/mejepa_models_config.toml
-# Rust runner: frozen-instrument-registry JSONL (84 KB, transferred separately)
-export CG_MEJEPA_PY_INSTRUMENT_REGISTRY_JSONL=/zfs/hot/contextgraph/corpus/python-frozen-instrument-registry-v1/python_frozen_instrument_records.jsonl
-# Optional — opt into MPS-overlapped parallel-isolated mode. Leave unset for
-# sequential mode, which remains the default and preserves byte-equivalence.
-# export CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS=6
-#
-# Internal Rust-runner flag auto-set by the scheduler when parallel mode is
-# active. Do not set manually for normal corpus runs.
-# CG_MEJEPA_PY_FORWARD_SKIP_EXISTING_PACKED_READ=1
+contextgraph-shell 'printf "repo=%s\nchunks=%s\nlabels=%s\nfsv=%s\n" \
+  "$CG_REPO" "$CG_AST_CHUNKS" "$CG_LABEL_ROOT" "$CG_FSV"'
 ```
+
+High-value aliases currently expected inside `contextgraph-shell`:
+
+| Alias | Meaning |
+|---|---|
+| `CG_REPO` | Active aiwonder source mirror, default `/zfs/hot/contextgraph/repo-current` |
+| `CG_AST_CHUNKS` / `CG_AST_CHUNKS_DURABLE` | 399,777-row Python AST chunk JSONL under `/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/` |
+| `CG_FORWARD_CACHE` | Completed 391-shard forward cache under `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z` |
+| `CG_LABEL_ROOT` | Current live-split deterministic label/constellation root |
+| `CG_TRAINING_ARRAY_ROOT` | #396 constellation training array artifacts |
+| `CG_SPLIT_STABLE_TENSOR_ROOT` | Split-stable tensor root for slot/pairwise distributions |
+| `CG_SHIP_GATE_FSV_ROOT` | Current ship-gate FSV root |
+| `CG_MODELS` / `CONTEXTGRAPH_MEJEPA_MODELS_CONFIG` | aiwonder model root/config for real embedder execution |
+
+`gh` and `rg` are installed in `/zfs/hot/contextgraph/bin` and visible through `contextgraph-shell`. `gh` authentication remains blocked by #562 until an operator-approved token path exists; do not move or print secrets to solve that.
 
 **Scheduler invocation:**
 
 ```bash
-/zfs/hot/contextgraph/venv/bin/python3 \
-  /zfs/hot/contextgraph/repo/scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
+contextgraph-shell '/zfs/hot/contextgraph/venv/bin/python3 \
+  "$CG_REPO/scripts/swebench_lite_ops/python_forward_shard_scheduler.py" \
   --task-id TASK-PY-DATA-016-AIWONDER \
-  --chunks-jsonl /zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl \
-  --cache-root /zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-<TS> \
-  --fsv-root /zfs/archive/contextgraph/fsv/python-forward-cache-v1-aiwonder-<TS>-fsv \
+  --chunks-jsonl "$CG_AST_CHUNKS" \
+  --cache-root "$CG_CORPUS/python-forward-cache-v1-aiwonder-<TS>" \
+  --fsv-root "$CG_FSV/python-forward-cache-v1-aiwonder-<TS>-fsv" \
   --hot-root /home/croyse/.cache/contextgraph/aiwonder-<TS> \
   --shard-size 1024 \
   --shard-count 391 \
@@ -203,7 +203,7 @@ export CG_MEJEPA_PY_INSTRUMENT_REGISTRY_JSONL=/zfs/hot/contextgraph/corpus/pytho
   --hot-stage-budget-bytes 51539607552 --fsv-edge-copy-budget-bytes 2147483648 \
   --resume-completed-shards --retry-failed-partial-shards \
   --isolate-embedder-processes --checkpoint-every-shards 1 \
-  --cargo-runner /zfs/hot/contextgraph/repo/target/release/examples/python_forward_cache_fsv
+  --cargo-runner "$CG_REPO/target/release/examples/python_forward_cache_fsv"'
 ```
 
 **Use a non-`TASK-PY-DATA-016` task ID** to bypass the smoke-gate preflight (which expects WSL2-only artifacts). E.g., `TASK-PY-DATA-016-AIWONDER-SMOKE`. The smoke gate only fires when `task_id == "TASK-PY-DATA-016"`.
@@ -257,6 +257,8 @@ Current corrective work after the #363 storage decision:
 - #366 reruns TASK-PY-G-056 on aiwonder.
 - #367 audits project-ingest/runtime locality.
 - #368 audits aiwonder capability utilization.
+- #372 remains the physical storage-topology blocker: the canonical `/zfs/archive/contextgraph` and `/zfs/hot/contextgraph` logical roots are on aiwonder, but live readback still shows they resolve to root ext4 rather than the intended archive/hotpool ZFS datasets.
+- #562 owns aiwonder-native GitHub/search tooling. `rg` and `gh` are installed in the aiwonder env; `gh auth` is blocked until an operator-approved credential path exists.
 
 ---
 
@@ -267,8 +269,10 @@ Current corrective work after the #363 storage decision:
 3. **Never disable MPS.** `nvidia-cuda-mps-control.service` is load-bearing for the leapable-tei warm contexts and our own parallel-isolated mode benefits from it.
 4. **Never write secrets into this repo.** Use Infisical CLI or env-var names; see `leapablememory/docs2/infisical-secrets-guide.md §0`.
 5. **`/zfs/hot/` has no redundancy** (single NVMe). The corpus run's checkpoint + cache should go to `/zfs/archive/` (HDD mirror) for durability; only the in-flight hot-stage scratch should live on `/zfs/hot/contextgraph/` or `/home/croyse/.cache/`.
-6. **Production SoT is aiwonder.** Durable production corpus, runtime, project, cache, export, and FSV outputs go under `/zfs/archive/contextgraph/...`; local 7. **Verify by SoT readback.** Per doctrine §4. Remote `systemctl is-active`, `du -sh`, `df -B1`, file hashes, RocksDB read-only reopen — not just SSH return codes.
-8. **Comment on the relevant GitHub Issue at every milestone.** Per doctrine §3.5.
+6. **Production SoT is aiwonder.** Durable production corpus, runtime, project, cache, export, and FSV outputs go under `/zfs/archive/contextgraph/...`; hot staging goes under `/zfs/hot/contextgraph/...` or explicitly budgeted aiwonder scratch. Local paths and mounted drives are control-plane or legacy provenance only.
+7. **Use `contextgraph-shell` for aiwonder commands.** It sources `/zfs/hot/contextgraph/env/contextgraph-aiwonder.env`, enters the active `repo-current` mirror, and prepends the aiwonder `rg`/`gh`/Cargo/CUDA paths.
+8. **Verify by SoT readback.** Per doctrine §4. Remote `systemctl is-active`, `du -sh`, `df -B1`, file hashes, RocksDB read-only reopen — not just SSH return codes.
+9. **Comment on the relevant GitHub Issue at every milestone.** Per doctrine §3.5.
 
 ---
 

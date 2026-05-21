@@ -14,13 +14,16 @@ from typing import Any
 
 import numpy as np
 
-from .python_constellation_tensor_builders import parse_embedder_set
-from .python_constellation_training_objective import (
+from .core import (
+    DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT,
+    SwebenchOpsError,
     accuracy_at_half,
     brier,
     calibration_ece,
     pearson_or_none,
+    validate_constellation_training_artifact_root,
 )
+from .python_constellation_tensor_builders import parse_embedder_set
 from .python_real_corpus_constellation_smoke import finite_float, sha256_text
 from .python_per_slot_calibration_ood_fsv import (
     build_fsv,
@@ -36,7 +39,7 @@ TASK_ID = "TASK-PY-G-089"
 ARTIFACT_KIND = "python_per_slot_calibration_ood"
 FORMULA_VERSION = "per_slot_calibration_ood_guard_v1"
 DEFAULT_TENSOR_ROOT = Path("/zfs/archive/contextgraph/corpus/constellation-tensors-v1")
-DEFAULT_ARTIFACT_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts")
+DEFAULT_ARTIFACT_ROOT = DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/state/calibration/per-slot-v1")
 DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-089-per-slot-calibration-ood-fsv")
 EXPECTED_ACTIVE_EMBEDDERS = ("e1", "e2", "e3", "e4", "e6", "e7", "e8", "e9", "e10", "e12", "e13", "e14")
@@ -143,6 +146,13 @@ def summarize_counts(rows: list[dict[str, Any]], required: tuple[str, ...]) -> d
 
 
 def load_sources(args: argparse.Namespace) -> dict[str, Any]:
+    try:
+        artifact_guard = validate_constellation_training_artifact_root(
+            args.artifact_root,
+            consumer="python_per_slot_calibration_ood",
+        )
+    except SwebenchOpsError as exc:
+        raise PerSlotCalibrationOodError(f"{exc.code}: {exc.message}") from exc
     slot_path = args.tensor_root / "slot_distribution_tensors.jsonl"
     pair_path = args.tensor_root / "pairwise_correlation_tensors.jsonl"
     report_path = args.tensor_root / "constellation_tensor_report.json"
@@ -152,14 +162,11 @@ def load_sources(args: argparse.Namespace) -> dict[str, Any]:
     slots_path = args.artifact_root / "constellation_slot_vectors.jsonl"
     require(report_path.exists(), "MEJEPA_PER_SLOT_CALIBRATION_TENSOR_REPORT_MISSING", str(report_path))
     require(manifest_path.exists(), "MEJEPA_PER_SLOT_CALIBRATION_TENSOR_MANIFEST_MISSING", str(manifest_path))
-    require(cert_path.exists(), "MEJEPA_PER_SLOT_CALIBRATION_OBJECTIVE_CERT_MISSING", str(cert_path))
     report = read_json(report_path)
     manifest = read_json(manifest_path)
-    certificate = read_json(cert_path)
+    certificate = artifact_guard["certificate"]
     require(report.get("passes") is True, "MEJEPA_PER_SLOT_CALIBRATION_TENSOR_REPORT_NOT_PASSING")
-    require(certificate.get("passes") is True, "MEJEPA_PER_SLOT_CALIBRATION_OBJECTIVE_CERT_NOT_PASSING")
     require(report.get("constellation_policy", {}).get("flat_vector_concat_used") is False, "MEJEPA_PER_SLOT_CALIBRATION_TENSOR_FLAT_FLAGGED")
-    require(certificate.get("objective_policy", {}).get("flat_vector_concat_used") is False, "MEJEPA_PER_SLOT_CALIBRATION_OBJECTIVE_FLAT_FLAGGED")
     freshness = report.get("freshness") or {}
     stale_after = parse_utc(str(freshness.get("stale_after_utc")))
     require(stale_after > datetime.now(timezone.utc), "MEJEPA_PER_SLOT_CALIBRATION_STALE_TENSOR_INPUT", str(stale_after))
@@ -170,6 +177,15 @@ def load_sources(args: argparse.Namespace) -> dict[str, Any]:
         "report": report,
         "manifest": manifest,
         "certificate": certificate,
+        "artifact_guard": {
+            "root": artifact_guard["root"],
+            "consumer": artifact_guard["consumer"],
+            "hashes": artifact_guard["hashes"],
+            "file_sizes": artifact_guard["file_sizes"],
+            "objective_policy": artifact_guard["objective_policy"],
+            "baseline_context": artifact_guard["baseline_context"],
+            "forbidden_baseline_hits": artifact_guard["forbidden_baseline_hits"],
+        },
         "paths": {
             "slot_tensors": str(slot_path),
             "pair_tensors": str(pair_path),
@@ -184,9 +200,9 @@ def load_sources(args: argparse.Namespace) -> dict[str, Any]:
             "pair_tensors": sha256_file(pair_path),
             "tensor_report": sha256_file(report_path),
             "tensor_manifest": sha256_file(manifest_path),
-            "training_rows": sha256_file(rows_path),
-            "objective_certificate": sha256_file(cert_path),
-            "slot_vectors": sha256_file(slots_path) if slots_path.exists() else None,
+            "training_rows": artifact_guard["hashes"]["constellation_training_rows.jsonl"],
+            "objective_certificate": artifact_guard["hashes"]["constellation_training_certificate.json"],
+            "slot_vectors": artifact_guard["hashes"]["constellation_slot_vectors.jsonl"],
         },
     }
 
@@ -448,6 +464,7 @@ def build_report(args: argparse.Namespace, sources: dict[str, Any], global_rows:
         "passes": passes,
         "source_of_truth": {"tensor_root": str(args.tensor_root), "artifact_root": str(args.artifact_root), "output_root": str(args.output_root), **sources["paths"]},
         "source_hashes": sources["hashes"],
+        "source_artifact_guard": sources["artifact_guard"],
         "dataset_summary": summarize_counts(sources["training_rows"], parse_embedder_set(args.expected_embedders)),
         "calibration_summary": {
             "global_slot_rows": len(global_rows),

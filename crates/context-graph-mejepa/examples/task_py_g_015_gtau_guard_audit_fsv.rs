@@ -13,9 +13,12 @@ use sha2::{Digest, Sha256};
 const DEFAULT_FSV_ROOT: &str = "/zfs/archive/contextgraph/fsv/task-py-g-015-gtau-guard-audit-fsv";
 const TENSOR_ROOT: &str = "/zfs/archive/contextgraph/corpus/constellation-tensors-v1";
 const CALIBRATION_ROOT: &str = "/zfs/archive/contextgraph/state/calibration/per-slot-v1";
+const DEFAULT_POST_FIX_SHIP_GATE_REPORT: &str =
+    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/ship-gate-fsv.json";
 const REPORT_NAME: &str = "gtau_guard_audit_fsv.json";
 const AUDIT_NAME: &str = "gtau_guard_audit_report.json";
 const READBACK_NAME: &str = "independent_readback.json";
+const INVALID_SYNTHETIC_BASELINE_CORRELATION: f64 = 0.866667;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -36,6 +39,7 @@ struct TaskPyG015FsvReport {
     fsv_root: PathBuf,
     run_root: PathBuf,
     source_of_truth: Value,
+    post_fix_rebaseline_reference: Value,
     audit_report: GtauGuardAuditReport,
     edge_cases: Vec<EdgeCase>,
     independent_readback: Value,
@@ -52,6 +56,8 @@ fn main() -> Result<()> {
     let paths =
         GtauGuardAuditPaths::new(PathBuf::from(TENSOR_ROOT), PathBuf::from(CALIBRATION_ROOT));
     let config = GtauGuardAuditConfig::default();
+    let post_fix_rebaseline_reference =
+        post_fix_rebaseline_reference().context("read #529 post-fix ship-gate baseline")?;
     let audit = run_gtau_guard_audit(&paths, &config).context("run Gtau guard audit")?;
     ensure!(audit.passes, "audit completeness gates must pass");
     ensure!(
@@ -120,6 +126,7 @@ fn main() -> Result<()> {
             "perCellSlotCalibration": format!("{CALIBRATION_ROOT}/per_cell_slot_calibration.jsonl"),
             "oodGuardPolicy": format!("{CALIBRATION_ROOT}/ood_guard_policy.json"),
         }),
+        post_fix_rebaseline_reference,
         audit_report: audit,
         edge_cases,
         independent_readback,
@@ -176,8 +183,20 @@ fn run_edge_cases(run_root: &Path, paths: &GtauGuardAuditPaths) -> Result<Vec<Ed
                 .all(|cell| !cell.remediation.is_empty()),
         observed_error_code: None,
         evidence: json!({
-            "missingCellCount": empty_report.summary.missing_cell_count,
-            "shipGateCountable": empty_report.summary.ship_gate_countable_after_audit
+            "before": {
+                "slotDistributionTensorBytes": 0,
+                "pairwiseCorrelationTensorBytes": 0,
+                "expectedCellCount": 8
+            },
+            "after": {
+                "missingCellCount": empty_report.summary.missing_cell_count,
+                "reportedCellCount": empty_report.summary.reported_cell_count,
+                "shipGateCountable": empty_report.summary.ship_gate_countable_after_audit,
+                "allCellsHaveRemediation": empty_report
+                    .cell_reports
+                    .iter()
+                    .all(|cell| !cell.remediation.is_empty())
+            }
         }),
     });
 
@@ -191,7 +210,17 @@ fn run_edge_cases(run_root: &Path, paths: &GtauGuardAuditPaths) -> Result<Vec<Ed
         name: "missing_tensor_input_fails_closed".to_string(),
         pass: missing_error.code() == "MEJEPA_TCT_IO",
         observed_error_code: Some(missing_error.code().to_string()),
-        evidence: json!({ "error": missing_error.to_string() }),
+        evidence: json!({
+            "before": {
+                "tensorRoot": missing_paths.tensor_root,
+                "tensorRootExists": false
+            },
+            "after": {
+                "errorCode": missing_error.code(),
+                "error": missing_error.to_string(),
+                "artifactWritten": false
+            }
+        }),
     });
 
     let invalid_tensor_root = run_root.join("edge-invalid-metadata");
@@ -213,7 +242,18 @@ fn run_edge_cases(run_root: &Path, paths: &GtauGuardAuditPaths) -> Result<Vec<Ed
         name: "invalid_non_python_metadata_fails_closed".to_string(),
         pass: invalid_error.code() == "MEJEPA_TCT_INVALID_INPUT",
         observed_error_code: Some(invalid_error.code().to_string()),
-        evidence: json!({ "error": invalid_error.to_string() }),
+        evidence: json!({
+            "before": {
+                "language": "rust",
+                "cellKey": "rust:known_good",
+                "mutationCategory": "known_good"
+            },
+            "after": {
+                "errorCode": invalid_error.code(),
+                "error": invalid_error.to_string(),
+                "artifactWritten": false
+            }
+        }),
     });
 
     let over_limit_error = run_gtau_guard_audit(
@@ -228,10 +268,113 @@ fn run_edge_cases(run_root: &Path, paths: &GtauGuardAuditPaths) -> Result<Vec<Ed
         name: "over_limit_slot_tensor_batch_fails_closed".to_string(),
         pass: over_limit_error.code() == "MEJEPA_TCT_INVALID_INPUT",
         observed_error_code: Some(over_limit_error.code().to_string()),
-        evidence: json!({ "error": over_limit_error.to_string() }),
+        evidence: json!({
+            "before": {
+                "maxSlotTensorRows": 1,
+                "sourceTensorRoot": paths.tensor_root,
+                "expectedRealTensorRows": "greater_than_1"
+            },
+            "after": {
+                "errorCode": over_limit_error.code(),
+                "error": over_limit_error.to_string(),
+                "artifactWritten": false
+            }
+        }),
     });
 
     Ok(out)
+}
+
+fn post_fix_rebaseline_reference() -> Result<Value> {
+    let path = PathBuf::from(
+        std::env::var("CG_TASK_PY_G_015_POST_FIX_SHIP_GATE_REPORT")
+            .unwrap_or_else(|_| DEFAULT_POST_FIX_SHIP_GATE_REPORT.to_string()),
+    );
+    let path_text = path.display().to_string();
+    ensure!(
+        path_text.starts_with("/zfs/archive/contextgraph/"),
+        "post-fix ship-gate report must be aiwonder durable evidence under /zfs/archive/contextgraph, got {}",
+        path_text
+    );
+    let bytes = fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+    let contains_forbidden_baseline = bytes
+        .windows(b"0.866667".len())
+        .any(|window| window == b"0.866667")
+        || bytes
+            .windows(b"0.8666666746139526".len())
+            .any(|window| window == b"0.8666666746139526");
+    ensure!(
+        !contains_forbidden_baseline,
+        "post-fix ship-gate report still contains the invalid synthetic-vector baseline"
+    );
+    let decoded: Value =
+        serde_json::from_slice(&bytes).context("decode post-fix ship-gate report")?;
+    ensure!(
+        decoded["all_passed"].as_bool() == Some(true),
+        "post-fix ship-gate report must have all_passed=true"
+    );
+    let execute = decoded
+        .get("execute_and_inspect")
+        .and_then(Value::as_object)
+        .context("post-fix ship-gate report missing execute_and_inspect")?;
+    let final_metrics = execute
+        .get("final_metrics")
+        .and_then(Value::as_object)
+        .context("post-fix ship-gate report missing final_metrics")?;
+    let rank_safe_metrics = execute
+        .get("rank_safe_final_metrics")
+        .and_then(Value::as_object)
+        .context("post-fix ship-gate report missing rank_safe_final_metrics")?;
+    let raw_metrics = execute
+        .get("raw_final_metrics")
+        .and_then(Value::as_object)
+        .context("post-fix ship-gate report missing raw_final_metrics")?;
+    let raw_corr = required_metric(raw_metrics, "prediction_oracle_correlation")?;
+    let rank_safe_corr = required_metric(rank_safe_metrics, "prediction_oracle_correlation")?;
+    let final_corr = required_metric(final_metrics, "prediction_oracle_correlation")?;
+    reject_invalid_synthetic_baseline("raw", raw_corr)?;
+    reject_invalid_synthetic_baseline("rank-safe", rank_safe_corr)?;
+    reject_invalid_synthetic_baseline("rank-lift", final_corr)?;
+
+    Ok(json!({
+        "artifactPath": path,
+        "artifactSha256": format!("sha256:{}", hex::encode(Sha256::digest(&bytes))),
+        "allPassed": true,
+        "containsForbiddenSyntheticBaseline": false,
+        "taskId": decoded["task_id"],
+        "rawPredictionOracleCorrelation": raw_corr,
+        "rankSafePredictionOracleCorrelation": rank_safe_corr,
+        "rankLiftPredictionOracleCorrelation": final_corr,
+        "rankLiftBrier": required_metric(final_metrics, "brier")?,
+        "rankLiftEce": required_metric(final_metrics, "ece")?,
+        "shipGatePassed": execute.get("ship_gate_passed").cloned().unwrap_or(Value::Null),
+        "shipGateBlockers": execute.get("ship_gate_blockers").cloned().unwrap_or(Value::Null),
+        "rollingWindowBlockerCount": execute
+            .get("rolling_window_blockers")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or(0),
+        "rollingWindowPowerBlockerCount": execute
+            .get("rolling_window_statistical_power_blockers")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or(0),
+    }))
+}
+
+fn required_metric(metrics: &serde_json::Map<String, Value>, key: &str) -> Result<f64> {
+    metrics
+        .get(key)
+        .and_then(Value::as_f64)
+        .with_context(|| format!("post-fix ship-gate metric {key} missing or non-numeric"))
+}
+
+fn reject_invalid_synthetic_baseline(metric_label: &str, value: f64) -> Result<()> {
+    ensure!(
+        (value - INVALID_SYNTHETIC_BASELINE_CORRELATION).abs() > 0.0001,
+        "post-fix {metric_label} correlation is indistinguishable from the invalid synthetic baseline"
+    );
+    Ok(())
 }
 
 fn invalid_metadata_row() -> String {

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .core import SwebenchOpsError
+from .core import DEFAULT_CORPUS_INDEX_JSON, SwebenchOpsError, load_oracle_index
 from .python_constellation_tensor_builders import (
     fail,
     finite_float,
@@ -21,11 +21,6 @@ from .python_constellation_tensor_builders import (
     require,
     slot_distribution_rows,
     surface_summary,
-)
-from .python_constellation_training_objective import (
-    DEFAULT_CORPUS_INDEX_JSON,
-    ConstellationTrainingObjectiveError,
-    load_oracle_index,
 )
 from .python_real_corpus_constellation_smoke import (
     DEFAULT_CHUNKS_JSONL,
@@ -173,7 +168,7 @@ def load_source_records(args: argparse.Namespace, required_embedders: tuple[str,
         oracle_index, oracle_summary = load_oracle_index(args.corpus_index_json)
         manifest_by_key, chunk_summary = load_chunk_manifest_window(args.chunks_jsonl, selected_shards)
         records, load_summary = load_sample_records(args.forward_root, selected_shards, manifest_by_key, required_embedders, args.sample_rows_per_embedder_per_shard)
-    except (RealCorpusConstellationSmokeError, ConstellationTrainingObjectiveError) as exc:
+    except (RealCorpusConstellationSmokeError, SwebenchOpsError) as exc:
         fail("MEJEPA_CONSTELLATION_TENSORS_SOURCE_READ_FAILED", str(exc), {"type": type(exc).__name__})
     return {
         "records": records,

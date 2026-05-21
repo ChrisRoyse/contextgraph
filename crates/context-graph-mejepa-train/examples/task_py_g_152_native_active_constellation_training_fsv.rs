@@ -18,7 +18,7 @@ const FSV_ROOT: &str =
 const MODEL_ROOT: &str =
     "/zfs/archive/contextgraph/models/task-py-g-152-native-active-constellation-training-fsv";
 const CONSTELLATION_ARTIFACT_ROOT: &str =
-    "/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts";
+    "/zfs/archive/contextgraph/state/training-arrays/constellation-training-arrays-v1-realinput";
 const REPORT_NAME: &str = "native_active_constellation_training_fsv.json";
 const CHECKPOINT_NAME: &str = "native_active_constellation_adapter.safetensors";
 const MANIFEST_NAME: &str = "native_active_constellation_adapter.manifest.json";

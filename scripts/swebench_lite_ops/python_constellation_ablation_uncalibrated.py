@@ -30,7 +30,7 @@ from .python_constellation_ablation_suite import (
     split_rows,
     validate_rows,
 )
-from .python_constellation_training_objective import HISTORICAL_BASELINE_CORRELATION
+from .core import DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT, HISTORICAL_BASELINE_CORRELATION
 from .python_real_corpus_constellation_smoke import finite_float, sha256_text, write_jsonl
 from .smoke_intelligence_matrices import dump_json, iter_jsonl, read_json, sha256_file, tree_state, utc_now
 
@@ -39,7 +39,7 @@ SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-G-093"
 ARTIFACT_KIND = "python_constellation_ablation_suite_uncalibrated_realinput"
 FORMULA_VERSION = "slot_preserving_uncalibrated_constellation_ablation_v2"
-DEFAULT_ARTIFACT_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts")
+DEFAULT_ARTIFACT_ROOT = DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT
 DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-093-constellation-ablation-suite-realinput-fsv")
 
 

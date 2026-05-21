@@ -24,8 +24,16 @@ from typing import Any, Callable
 
 import numpy as np
 
-from .python_constellation_training_objective import HISTORICAL_BASELINE_CORRELATION
-from .python_constellation_training_objective import accuracy_at_half, brier, calibration_ece, pearson_or_none
+from .core import (
+    DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT,
+    HISTORICAL_BASELINE_CORRELATION,
+    SwebenchOpsError,
+    accuracy_at_half,
+    brier,
+    calibration_ece,
+    pearson_or_none,
+    validate_constellation_training_artifact_root,
+)
 from .python_real_corpus_constellation_smoke import finite_float, sha256_text, write_jsonl
 from .smoke_intelligence_matrices import dump_json, iter_jsonl, read_json, sha256_file, tree_state, utc_now
 
@@ -34,7 +42,7 @@ SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-G-097"
 ARTIFACT_KIND = "python_constellation_ablation_with_calibration"
 FORMULA_VERSION = "slot_pair_calibrated_constellation_ablation_v1"
-DEFAULT_ARTIFACT_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-096-constellation-training-objective-fsv/artifacts")
+DEFAULT_ARTIFACT_ROOT = DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT
 DEFAULT_TENSOR_ROOT = Path("/zfs/archive/contextgraph/corpus/constellation-tensors-v1")
 DEFAULT_CALIBRATION_ROOT = Path("/zfs/archive/contextgraph/state/calibration/per-slot-v1")
 DEFAULT_CALIBRATION_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-g-089-per-slot-calibration-ood-fsv/python_per_slot_calibration_ood_fsv.json")
@@ -109,7 +117,13 @@ def load_required_jsonl(path: Path, code: str) -> list[dict[str, Any]]:
 
 
 def load_artifacts(root: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, str]]:
-    require(root.exists(), "MEJEPA_CONSTELLATION_ABLATION_ARTIFACT_ROOT_MISSING", str(root))
+    try:
+        artifact_guard = validate_constellation_training_artifact_root(
+            root,
+            consumer="python_constellation_ablation_suite",
+        )
+    except SwebenchOpsError as exc:
+        raise ConstellationAblationSuiteError(f"{exc.code}: {exc.message}") from exc
     rows_path = root / "constellation_training_rows.jsonl"
     slots_path = root / "constellation_slot_vectors.jsonl"
     pair_obs_path = root / "constellation_pairwise_observations.jsonl"
@@ -117,16 +131,13 @@ def load_artifacts(root: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any
     rows = load_required_jsonl(rows_path, "MEJEPA_CONSTELLATION_ABLATION_TRAINING_ROWS_MISSING")
     slots = load_required_jsonl(slots_path, "MEJEPA_CONSTELLATION_ABLATION_SLOT_VECTORS_MISSING")
     pair_observations = load_required_jsonl(pair_obs_path, "MEJEPA_CONSTELLATION_ABLATION_PAIR_OBSERVATIONS_MISSING")
-    require(certificate_path.exists(), "MEJEPA_CONSTELLATION_ABLATION_CERTIFICATE_MISSING", str(certificate_path))
-    certificate = read_json(certificate_path)
-    require(certificate.get("passes") is True, "MEJEPA_CONSTELLATION_ABLATION_UPSTREAM_CERTIFICATE_NOT_PASSING")
-    policy = certificate.get("objective_policy") or {}
-    require(policy.get("flat_vector_concat_used") is False, "MEJEPA_CONSTELLATION_ABLATION_UPSTREAM_FLAT_VECTOR_USED")
+    certificate = artifact_guard["certificate"]
     hashes = {
         "training_rows": sha256_file(rows_path),
         "slot_vectors": sha256_file(slots_path),
         "pairwise_observations": sha256_file(pair_obs_path),
-        "training_certificate": sha256_file(certificate_path),
+        "pairwise_relationships": artifact_guard["hashes"]["constellation_pairwise_relationships.jsonl"],
+        "training_certificate": artifact_guard["hashes"]["constellation_training_certificate.json"],
     }
     return rows, slots, pair_observations, certificate, hashes
 

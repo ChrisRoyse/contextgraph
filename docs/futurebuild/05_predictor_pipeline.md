@@ -27,7 +27,7 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, the **inference path** in `crates
 - `validate_aiwonder_checkpoint_path` rejects non-aiwonder roots
 - `trained_weight_sha256 != initial_weight_sha256` invariant on every manifest
 
-**P0 blocker for further gate work:** the real-input rebaseline exists and is below gate: raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe calibrated holdout `0.6916886568`, and real code-state-constellation rank-lift holdout `0.7937270999` from `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T164924Z/`. The previous `0.866667` ship-gate measurement remains invalidated. `compile_error` now uses first-class invalid-source panels instead of the carrier workaround; rank-reversing calibration transforms are blocked unless calibration support and raw Pearson justify them; rank-lift excludes target-side oracle/docker/test labels. Next gate work must close the remaining per-cell ranking failures on real slot-preserving signals, not repeat the synthetic-input path. See `01_overview.md §1.7` and `08_roadmap_and_open_work.md §0.5`.
+**P0 blocker for further gate work:** the real-input rebaseline exists and is below gate. Latest ship-gate FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/` preserves the binary rank-lift baseline: raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe calibrated holdout `0.6916886568`, and real code-state-constellation rank-lift holdout `0.7942190170` with Brier `0.0923729688` and ECE `0.0240316074`. The #392 active/abstain diagnostic is valid and promising (`205 / 240` active rows, corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978`), but it is not ship-gate-countable until per-cell active contracts, rolling windows, statistical power, and Panel B pass. The previous `0.866667` ship-gate measurement remains invalidated. `compile_error` now uses first-class invalid-source panels instead of the carrier workaround; rank-reversing calibration transforms are blocked unless calibration support and raw Pearson justify them; rank-lift excludes target-side oracle/docker/test labels. Next gate work must close the remaining per-cell ranking/power failures on real slot-preserving signals, not repeat the synthetic-input path. See `01_overview.md §1.7` and `08_roadmap_and_open_work.md §0.5`.
 
 ---
 
@@ -473,7 +473,7 @@ Performance gate: fresh ingest of 50-file Python project < 60 s on RTX 5090; re-
 
 `loss/inverse.rs` — `inverse_map_loss`, `compose_bidirectional_l_full`. Shared-trunk target-panel → input-panel + 16-d action latent.
 
-**Ablation result:** all `λ_inv ∈ {0, 0.25, 0.5, 1.0}` measured 0.8666666746139526; best Δ vs baseline 0.0; production stays `λ_inv = 0.0`.
+**Ablation result:** the original `λ_inv ∈ {0, 0.25, 0.5, 1.0}` fixed-point result (`0.8666666746139526` for every variant) is invalid synthetic-input evidence. The real-input rerun at `/zfs/archive/contextgraph/fsv/task-ek-012-bidirectional-ablation-realinput-fsv/run-20260520T172657Z/bidirectional_ablation_realinput_fsv.json` kept `lambda_inv=0.0` as best (`0.6704055071` rank-safe); positive lambdas regressed.
 
 ### 9.3 EWC++ + Continual Backprop
 

@@ -23,7 +23,7 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from .python_constellation_training_objective import normalize_category
+from .core import normalize_category
 from .python_real_corpus_constellation_smoke import (
     DEFAULT_CHUNKS_JSONL,
     DEFAULT_FORWARD_ROOT,
