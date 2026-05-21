@@ -26,7 +26,6 @@ type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 const NOW: i64 = 1_779_360_000_000;
 const PANEL_PAIR_ID: &str = "panel-a-panel-b-v1";
-const INJECTION_PAIR_ID: &str = "panel-a-panel-b-goodhart-injection";
 
 fn main() -> FsvResult<()> {
     if env::var("CG_CROSS_PANEL_SYNTHETIC_FIXTURE").as_deref() == Ok("1") {
