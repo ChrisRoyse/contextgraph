@@ -74,6 +74,8 @@ from .python_anti_compensation_fsv import add_arguments as add_python_anti_compe
 from .python_anti_compensation_fsv import command_python_anti_compensation_fsv
 from .python_auto_label_discovery import add_arguments as add_python_auto_label_discovery_arguments
 from .python_auto_label_discovery import command_python_auto_label_discovery
+from .panel_b_artifacts import add_arguments as add_panel_b_artifacts_arguments
+from .panel_b_artifacts import command_panel_b_artifacts
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -559,6 +561,16 @@ def build_parser() -> argparse.ArgumentParser:
     auto_label_discovery.set_defaults(
         func=command_python_auto_label_discovery,
         evidence_name="python-auto-label-discovery-command-evidence.json",
+    )
+
+    panel_b_artifacts = sub.add_parser(
+        "panel-b-artifacts",
+        help="TASK-PY-G-111D: materialize pinned model-backed Panel B artifacts on aiwonder.",
+    )
+    add_panel_b_artifacts_arguments(panel_b_artifacts)
+    panel_b_artifacts.set_defaults(
+        func=command_panel_b_artifacts,
+        evidence_name="panel-b-artifacts-command-evidence.json",
     )
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")

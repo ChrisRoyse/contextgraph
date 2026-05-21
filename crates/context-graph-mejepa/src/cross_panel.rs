@@ -200,6 +200,17 @@ pub struct CrossPanelScoreRow {
     pub failure_evidence_set_ids: Vec<String>,
 }
 
+impl CrossPanelScoreRow {
+    pub fn validate(&self) -> CrossPanelResult<()> {
+        validate_prediction_id_hex("prediction_id_hex", &self.prediction_id_hex)?;
+        validate_score("score_a", self.score_a)?;
+        validate_score("score_b", self.score_b)?;
+        validate_required_id_set("accepted_label_ids", &self.accepted_label_ids)?;
+        validate_required_id_set("failure_evidence_set_ids", &self.failure_evidence_set_ids)?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CrossPanelMetric {
@@ -297,6 +308,7 @@ pub fn build_cross_panel_window_report(
 ) -> CrossPanelResult<CrossPanelWindowReport> {
     let window_id = window_id.into();
     validate_id("window_id", &window_id)?;
+    validate_cross_panel_score_rows(rows)?;
     let metric = cross_panel_metric(rows)?;
     let label_family_metrics = grouped_metrics(rows, |row| {
         if row.accepted_label_ids.is_empty() {
@@ -322,6 +334,7 @@ pub fn build_cross_panel_window_report(
 }
 
 pub fn cross_panel_metric(rows: &[CrossPanelScoreRow]) -> CrossPanelResult<CrossPanelMetric> {
+    validate_cross_panel_score_rows(rows)?;
     require(
         rows.len() >= 2,
         "cross panel window requires at least two rows",
@@ -354,6 +367,25 @@ pub fn cross_panel_metric(rows: &[CrossPanelScoreRow]) -> CrossPanelResult<Cross
         abs_correlation_delta,
         flag,
     })
+}
+
+pub fn validate_cross_panel_score_rows(rows: &[CrossPanelScoreRow]) -> CrossPanelResult<()> {
+    require(
+        rows.len() >= 2,
+        "cross panel window requires at least two rows",
+    )?;
+    let mut prediction_ids = BTreeSet::new();
+    for row in rows {
+        row.validate()?;
+        require(
+            prediction_ids.insert(row.prediction_id_hex.clone()),
+            format!(
+                "duplicate prediction_id_hex {} in cross panel score rows",
+                row.prediction_id_hex
+            ),
+        )?;
+    }
+    Ok(())
 }
 
 pub fn encoder_non_overlap_audit(
@@ -489,6 +521,27 @@ fn validate_non_synthetic_id(field: &str, value: &str) -> CrossPanelResult<()> {
         require(
             !lower.contains(forbidden),
             format!("{field} must not contain {forbidden}"),
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_prediction_id_hex(field: &str, value: &str) -> CrossPanelResult<()> {
+    validate_id(field, value)?;
+    require(
+        value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        format!("{field} must be exactly 32 hexadecimal characters"),
+    )
+}
+
+fn validate_required_id_set(field: &str, values: &[String]) -> CrossPanelResult<()> {
+    require(!values.is_empty(), format!("{field} must not be empty"))?;
+    let mut seen = BTreeSet::new();
+    for value in values {
+        validate_id(field, value)?;
+        require(
+            seen.insert(value.clone()),
+            format!("{field} contains duplicate id {value}"),
         )?;
     }
     Ok(())

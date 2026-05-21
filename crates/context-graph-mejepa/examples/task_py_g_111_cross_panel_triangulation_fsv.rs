@@ -1,10 +1,10 @@
 use context_graph_mejepa::{
     agreement_goodhart_flag, build_cross_panel_window_report, encoder_non_overlap_audit,
-    read_cross_panel_agreements, read_panel_b_observations, write_cross_panel_agreement,
-    write_panel_b_observation, CrossPanelAgreementRecord, CrossPanelFlag, CrossPanelScoreRow,
-    PanelBObservationRecord, PanelBScoreSource, Verdict, CROSS_PANEL_GOODHART_DETECTED,
-    CROSS_PANEL_SCHEMA_VERSION, PANEL_A_GATE_THRESHOLD, PANEL_B_GATE_THRESHOLD,
-    PANEL_CORRELATION_DELTA_MAX,
+    read_cross_panel_agreements, read_panel_b_observations, validate_cross_panel_score_rows,
+    write_cross_panel_agreement, write_panel_b_observation, CrossPanelAgreementRecord,
+    CrossPanelFlag, CrossPanelScoreRow, PanelBObservationRecord, PanelBScoreSource, Verdict,
+    CROSS_PANEL_GOODHART_DETECTED, CROSS_PANEL_SCHEMA_VERSION, PANEL_A_GATE_THRESHOLD,
+    PANEL_B_GATE_THRESHOLD, PANEL_CORRELATION_DELTA_MAX,
 };
 use context_graph_mejepa_cf::{
     ALL_HYGIENE_REFERENCED_CFS, CF_MEJEPA_CROSS_PANEL_AGREEMENT, CF_MEJEPA_PANEL_B_OBSERVATIONS,
@@ -314,6 +314,7 @@ fn read_score_rows_jsonl(path: &Path) -> FsvResult<Vec<CrossPanelScoreRow>> {
     if rows.len() < 2 {
         return Err("Panel B score rows require at least two non-empty rows".into());
     }
+    validate_cross_panel_score_rows(&rows)?;
     Ok(rows)
 }
 

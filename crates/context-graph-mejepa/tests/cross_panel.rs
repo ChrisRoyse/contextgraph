@@ -1,8 +1,9 @@
 use context_graph_mejepa::{
     agreement_goodhart_flag, build_cross_panel_window_report, cross_panel_metric,
-    encoder_non_overlap_audit, write_cross_panel_agreement, write_panel_b_observation,
-    CrossPanelAgreementRecord, CrossPanelFlag, CrossPanelScoreRow, PanelBObservationRecord,
-    PanelBScoreSource, Verdict, CROSS_PANEL_GOODHART_DETECTED, CROSS_PANEL_SCHEMA_VERSION,
+    encoder_non_overlap_audit, validate_cross_panel_score_rows, write_cross_panel_agreement,
+    write_panel_b_observation, CrossPanelAgreementRecord, CrossPanelFlag, CrossPanelScoreRow,
+    PanelBObservationRecord, PanelBScoreSource, Verdict, CROSS_PANEL_GOODHART_DETECTED,
+    CROSS_PANEL_SCHEMA_VERSION,
 };
 use context_graph_mejepa_cf::{
     ALL_HYGIENE_REFERENCED_CFS, CF_MEJEPA_CROSS_PANEL_AGREEMENT, CF_MEJEPA_PANEL_B_OBSERVATIONS,
@@ -63,6 +64,41 @@ fn window_report_groups_by_label_and_failure_evidence() {
     assert!(report
         .failure_evidence_metrics
         .contains_key("failure:evidence"));
+}
+
+#[test]
+fn score_rows_reject_duplicate_predictions_before_metric() {
+    let mut rows = rows(true);
+    rows[1].prediction_id_hex = rows[0].prediction_id_hex.clone();
+    let err = validate_cross_panel_score_rows(&rows).unwrap_err();
+    assert!(err.to_string().contains("duplicate prediction_id_hex"));
+    assert!(cross_panel_metric(&rows).is_err());
+}
+
+#[test]
+fn score_rows_reject_invalid_scores_and_missing_labels() {
+    let mut invalid_score = rows(true);
+    invalid_score[0].score_b = f32::NAN;
+    let err = validate_cross_panel_score_rows(&invalid_score).unwrap_err();
+    assert!(err.to_string().contains("score_b"));
+
+    let mut missing_label = rows(true);
+    missing_label[0].accepted_label_ids.clear();
+    let err = validate_cross_panel_score_rows(&missing_label).unwrap_err();
+    assert!(err.to_string().contains("accepted_label_ids"));
+
+    let mut missing_evidence = rows(true);
+    missing_evidence[0].failure_evidence_set_ids.clear();
+    let err = validate_cross_panel_score_rows(&missing_evidence).unwrap_err();
+    assert!(err.to_string().contains("failure_evidence_set_ids"));
+}
+
+#[test]
+fn score_rows_reject_bad_prediction_id_shape() {
+    let mut rows = rows(true);
+    rows[0].prediction_id_hex = "abc123".to_string();
+    let err = validate_cross_panel_score_rows(&rows).unwrap_err();
+    assert!(err.to_string().contains("exactly 32 hexadecimal"));
 }
 
 #[test]
