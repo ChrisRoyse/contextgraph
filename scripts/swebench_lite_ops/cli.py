@@ -76,6 +76,8 @@ from .python_auto_label_discovery import add_arguments as add_python_auto_label_
 from .python_auto_label_discovery import command_python_auto_label_discovery
 from .panel_b_artifacts import add_arguments as add_panel_b_artifacts_arguments
 from .panel_b_artifacts import command_panel_b_artifacts
+from .panel_b_score_rows import add_arguments as add_panel_b_score_rows_arguments
+from .panel_b_score_rows import command_panel_b_score_rows
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -571,6 +573,16 @@ def build_parser() -> argparse.ArgumentParser:
     panel_b_artifacts.set_defaults(
         func=command_panel_b_artifacts,
         evidence_name="panel-b-artifacts-command-evidence.json",
+    )
+
+    panel_b_score_rows = sub.add_parser(
+        "panel-b-score-rows",
+        help="TASK-PY-G-111D: build strict CG_PANEL_B_SCORE_ROWS_JSONL from real Panel B scores.",
+    )
+    add_panel_b_score_rows_arguments(panel_b_score_rows)
+    panel_b_score_rows.set_defaults(
+        func=command_panel_b_score_rows,
+        evidence_name="panel-b-score-rows-command-evidence.json",
     )
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")
