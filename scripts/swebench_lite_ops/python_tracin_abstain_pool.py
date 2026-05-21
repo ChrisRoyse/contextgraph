@@ -166,7 +166,7 @@ def command_python_tracin_abstain_pool(args: Any) -> dict[str, Any]:
         "trainingArrayRoot": str(training_array_root),
         "trainingArray": training_array,
         "exactGradientRoot": str(exact_gradient_root),
-        "exactGradientArtifact": exact_gradient_artifact,
+        "exactGradientArtifact": exact_gradient_artifact_summary(exact_gradient_artifact),
         "method": {
             "name": influence_method,
             "exactTracInGradientsAvailable": exact_gradient_artifact["available"],
@@ -552,6 +552,14 @@ def load_exact_gradient_artifact(root: Path) -> dict[str, Any]:
         "splitCounts": dict(sorted(split_counts.items())),
         "categoryCounts": dict(sorted(category_counts.items())),
         "method": manifest.get("method"),
+    }
+
+
+def exact_gradient_artifact_summary(exact_artifact: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in exact_artifact.items()
+        if key != "diagnosticGradientsById"
     }
 
 
