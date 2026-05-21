@@ -9,10 +9,10 @@ use crate::chunk_skill_membership::{materialize_skill_memberships, SkillMaterial
 use crate::error::{TrainerError, TrainerErrorCode};
 use crate::label_bridge::{load_label_learning_bridge, LabelLearningBridge};
 use crate::skill_sequence_discovery::{
-    discover_skill_candidates, skill_candidate_kind_for_row, skill_id_from_parts, Level2SkillRow,
-    SkillCandidateKind, SkillDiscoveryConfig, SkillEpisodeRow, SkillOutcomeDistribution,
-    SkillOutcomeObservation, SkillOutcomeVerdict, SkillPromotionStatus, SkillStepEvidence,
-    SkillStepTemplate, SkillTransitionEdge,
+    discover_skill_candidates, skill_candidate_kind_for_row, skill_genericity_score_for_steps,
+    skill_id_from_parts, Level2SkillRow, SkillCandidateKind, SkillDiscoveryConfig, SkillEpisodeRow,
+    SkillOutcomeDistribution, SkillOutcomeObservation, SkillOutcomeVerdict, SkillPromotionStatus,
+    SkillStepEvidence, SkillStepTemplate, SkillTransitionEdge,
 };
 use crate::skill_validation;
 use serde::{Deserialize, Serialize};
@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 const SOURCE_FILE: &str =
     "file:crates/context-graph-mejepa-train/src/skill_corpus_materialization.rs";
 const REMEDIATION: &str =
-    "production skill materialization must stream aiwonder #413 labels and preserve live/target label boundaries";
+    "production skill materialization must stream aiwonder #413 labels, preserve live/target label boundaries, and avoid /mnt/d";
 const MAX_STEP_LABELS: usize = 8;
 const MAX_GROUP_IDS: usize = 4;
 
@@ -79,6 +79,8 @@ pub struct SkillCorpusMaterializationReport {
     pub usefulness_profile_count: usize,
     pub usefulness_profile_kind_counts: BTreeMap<String, usize>,
     pub selected_candidate_kind_counts: BTreeMap<String, usize>,
+    pub candidate_selection_policy: String,
+    pub candidate_selection_kind_targets: BTreeMap<String, usize>,
     pub materialized_skill_count: usize,
     pub materialized_membership_count: usize,
     pub materialized_reverse_index_count: usize,
@@ -90,6 +92,7 @@ pub struct SkillCorpusMaterializationReport {
     pub slot_identity_preserved: bool,
     pub flat_vector_concat_used: bool,
     pub target_labels_used_as_live_inputs: bool,
+    pub mnt_d_active_reads_or_writes: bool,
     pub sample_episodes: Vec<SkillEpisodeSummary>,
     pub sample_skill_ids: Vec<String>,
 }
@@ -203,12 +206,9 @@ pub fn build_skill_corpus_materialization(
             .iter()
             .map(|profile| profile.candidate_kind),
     );
-    let mut candidates = discovery.candidates;
-    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate_rank(candidate)));
-    let selected = candidates
-        .into_iter()
-        .take(config.max_materialized_skills)
-        .collect::<Vec<_>>();
+    let candidate_selection =
+        select_materialization_candidates(discovery.candidates, config.max_materialized_skills);
+    let selected = candidate_selection.selected;
     if selected.is_empty() {
         return Err(invalid(
             "skill_candidates",
@@ -260,6 +260,8 @@ pub fn build_skill_corpus_materialization(
         usefulness_profile_count,
         usefulness_profile_kind_counts,
         selected_candidate_kind_counts,
+        candidate_selection_policy: candidate_selection.policy,
+        candidate_selection_kind_targets: candidate_selection.kind_targets,
         materialized_skill_count: materialization.level2_skills.len(),
         materialized_membership_count: materialization.chunk_memberships.len(),
         materialized_reverse_index_count: materialization.reverse_indexes.len(),
@@ -271,6 +273,7 @@ pub fn build_skill_corpus_materialization(
         slot_identity_preserved: true,
         flat_vector_concat_used: false,
         target_labels_used_as_live_inputs: false,
+        mnt_d_active_reads_or_writes: false,
         sample_episodes,
         sample_skill_ids,
     };
@@ -680,12 +683,7 @@ fn select_live_skill_labels(
     for label in labels {
         validate_id("label", label)?;
         if target_or_corpus_only_label(label) {
-            return Err(invalid(
-                "live_predictor_labels",
-                format!(
-                    "{label} is target/corpus-only and cannot be selected as a live skill label"
-                ),
-            ));
+            continue;
         }
         if bridge.accepted_label(label).is_none() {
             continue;
@@ -791,6 +789,124 @@ fn candidate_rank(
         failure_priority,
         distribution.fail,
         skill.support,
+        (skill.lift_over_cell_baseline * 1_000_000.0) as i64,
+        (skill.confidence * 1_000_000.0) as i64,
+    )
+}
+
+#[derive(Debug, Clone)]
+struct CandidateSelection {
+    selected: Vec<Level2SkillRow>,
+    policy: String,
+    kind_targets: BTreeMap<String, usize>,
+}
+
+fn select_materialization_candidates(
+    candidates: Vec<Level2SkillRow>,
+    max_materialized_skills: usize,
+) -> CandidateSelection {
+    let mut failure = Vec::new();
+    let mut pass_stability = Vec::new();
+    let mut context_negative = Vec::new();
+    let mut neutral = Vec::new();
+    for candidate in candidates {
+        match skill_candidate_kind_for_row(&candidate) {
+            SkillCandidateKind::FailureSkill => failure.push(candidate),
+            SkillCandidateKind::PassStabilitySkill => pass_stability.push(candidate),
+            SkillCandidateKind::ContextNegativeEvidence => context_negative.push(candidate),
+            SkillCandidateKind::NeutralDiagnostic => neutral.push(candidate),
+            SkillCandidateKind::RejectOverbroadOrLeaky => {}
+        }
+    }
+    failure.sort_by_key(|candidate| std::cmp::Reverse(candidate_rank(candidate)));
+    pass_stability
+        .sort_by_key(|candidate| std::cmp::Reverse(pass_context_candidate_rank(candidate)));
+    context_negative
+        .sort_by_key(|candidate| std::cmp::Reverse(pass_context_candidate_rank(candidate)));
+    neutral.sort_by_key(|candidate| std::cmp::Reverse(candidate_rank(candidate)));
+
+    let failure_target = max_materialized_skills.min(128).min(failure.len());
+    let expansion_budget = max_materialized_skills.saturating_sub(failure_target);
+    let context_target = if expansion_budget >= 8 {
+        (expansion_budget / 10).max(1).min(context_negative.len())
+    } else {
+        0
+    };
+    let pass_target = expansion_budget
+        .saturating_sub(context_target)
+        .min(pass_stability.len());
+
+    let mut selected = Vec::new();
+    let mut selected_ids = BTreeSet::new();
+    take_candidates(&mut selected, &mut selected_ids, &failure, failure_target);
+    take_candidates(
+        &mut selected,
+        &mut selected_ids,
+        &pass_stability,
+        pass_target,
+    );
+    take_candidates(
+        &mut selected,
+        &mut selected_ids,
+        &context_negative,
+        context_target,
+    );
+    let remaining = max_materialized_skills.saturating_sub(selected.len());
+    take_candidates(&mut selected, &mut selected_ids, &pass_stability, remaining);
+    let remaining = max_materialized_skills.saturating_sub(selected.len());
+    take_candidates(
+        &mut selected,
+        &mut selected_ids,
+        &context_negative,
+        remaining,
+    );
+    let remaining = max_materialized_skills.saturating_sub(selected.len());
+    take_candidates(&mut selected, &mut selected_ids, &neutral, remaining);
+
+    let mut kind_targets = BTreeMap::new();
+    kind_targets.insert("failure_skill".to_string(), failure_target);
+    kind_targets.insert("pass_stability_skill".to_string(), pass_target);
+    kind_targets.insert("context_negative_evidence".to_string(), context_target);
+    CandidateSelection {
+        selected,
+        policy: "failure_baseline_plus_targeted_pass_context_expansion_v1".to_string(),
+        kind_targets,
+    }
+}
+
+fn take_candidates(
+    selected: &mut Vec<Level2SkillRow>,
+    selected_ids: &mut BTreeSet<String>,
+    candidates: &[Level2SkillRow],
+    count: usize,
+) {
+    let mut added = 0_usize;
+    for candidate in candidates {
+        if added >= count {
+            break;
+        }
+        if selected_ids.insert(candidate.skill_id.clone()) {
+            selected.push(candidate.clone());
+            added += 1;
+        }
+    }
+}
+
+fn pass_context_candidate_rank(skill: &Level2SkillRow) -> (u8, i64, i64, u64, i64, i64) {
+    let status = match skill.promotion_status {
+        SkillPromotionStatus::PromotionReady => 3,
+        SkillPromotionStatus::OperatorApproved => 2,
+        SkillPromotionStatus::ActiveLearning => 1,
+        SkillPromotionStatus::Demoted => 0,
+    };
+    let specificity = ((1.0 - skill_genericity_score_for_steps(&skill.ordered_steps))
+        .clamp(0.0, 1.0)
+        * 1_000_000.0) as i64;
+    (
+        status,
+        specificity,
+        (skill.stability * 1_000_000.0) as i64,
+        skill.support.min(2_048),
         (skill.lift_over_cell_baseline * 1_000_000.0) as i64,
         (skill.confidence * 1_000_000.0) as i64,
     )
@@ -1190,6 +1306,12 @@ fn validate_config(config: &SkillCorpusMaterializationConfig) -> Result<(), Trai
 
 fn validate_path(field: &str, path: &Path) -> Result<(), TrainerError> {
     let value = path.display().to_string();
+    if value.contains("/mnt/d") {
+        return Err(invalid(
+            field,
+            "active production paths must not use /mnt/d",
+        ));
+    }
     validate_id(field, &value)
 }
 

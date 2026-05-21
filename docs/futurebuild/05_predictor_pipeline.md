@@ -323,7 +323,7 @@ pub struct NamedFailureMode {
 }
 ```
 
-**Bidirectional skill linkage (#417 first slice, shipped 2026-05-19).** First read-only MCP slice: `mejepa_skill_to_code`, `mejepa_code_to_skill`, `mejepa_skill_set_query`, `mejepa_skill_coverage_audit`. Remaining (graph, blast-radius, cross-repo transfer, conflict graph, browse) is open in #417.
+**Bidirectional skill linkage (#417 shipped read surfaces, #557 audit surface).** Read-only MCP surfaces now include `mejepa_skill_to_code`, `mejepa_code_to_skill`, `mejepa_skill_set_query`, `mejepa_skill_coverage_audit`, `mejepa_chunk_as_star`, `mejepa_constellation_membership`, `mejepa_skill_impact`, `mejepa_skill_graph_inspect`, `mejepa_skill_conflict_graph`, and `mejepa_skill_browse`. #557 adds a usefulness audit surface over the same substrate: candidate kind, support/fail-pass distribution/lift, genericity, per-cell contribution count, live-safe labels vs target supervision labels, source-byte representative sequences, lifecycle history, uncovered code-state keys, unknown ordered constellations, and rejected/demoted patterns. Remaining #417 work is cross-repo transfer and pathway-leaf attachment.
 
 ---
 

@@ -135,9 +135,9 @@ This is the **Pearl Rung-3 counterfactual rollout** on binary leaves over the du
 
 ---
 
-### 1.5bis Bidirectional chunk↔skill linkage (#417, first slice shipped)
+### 1.5bis Bidirectional chunk↔skill linkage (#417, shipped read surfaces)
 
-The substrate chain — `AST chunks → constellations → accepted labels → skills` — is bidirectional at every step. First read-only MCP slice shipped 2026-05-19:
+The substrate chain — `AST chunks → constellations → accepted labels → skills` — is bidirectional at every step. Read-only MCP surfaces shipped 2026-05-19/21:
 
 | Tool | Purpose |
 |---|---|
@@ -145,8 +145,16 @@ The substrate chain — `AST chunks → constellations → accepted labels → s
 | `mejepa_code_to_skill(chunk_id)` | Reverse: skills this chunk participates in |
 | `mejepa_skill_set_query` | Boolean set query over memberships |
 | `mejepa_skill_coverage_audit` | Coverage gap audit |
+| `mejepa_chunk_as_star` | Chunk as slot-preserving constellation/star |
+| `mejepa_constellation_membership` | Constellation membership and neighboring labels |
+| `mejepa_skill_impact` | Consequence/blast-radius read surface for a skill |
+| `mejepa_skill_graph_inspect` | Ordered chunk/skill graph inspection |
+| `mejepa_skill_conflict_graph` | Skill conflict and disagreement graph |
+| `mejepa_skill_browse` | Browse named skills with support and lifecycle summaries |
 
-Remaining (open in #417): skill impact / blast-radius, skill graph, cross-repo transfer, pathway-leaf attachment, conflict graph, browse.
+#557 adds the usefulness audit view behind this surface: candidate kind, support/fail-pass distribution, lift, genericity, per-cell contribution, source-byte representative sequences, lifecycle history, uncovered code-state keys, unknown ordered constellations, and rejected/demoted patterns. It explicitly keeps stable background scaffolding as context/negative evidence rather than promoting it as a failure skill.
+
+Remaining (open in #417): cross-repo skill transfer and pathway-leaf attachment.
 
 The constraint: skills are deterministic groupings of accepted Level-0 labels. They do NOT introduce ambiguous heads. Skill linkage is a **navigation surface over the predictor's training substrate**, not a new prediction surface.
 

@@ -11,6 +11,8 @@ use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+#[path = "skill_linkage_audit.rs"]
+mod skill_linkage_audit;
 #[path = "skill_linkage_graph.rs"]
 mod skill_linkage_graph;
 #[path = "skill_linkage_source.rs"]
@@ -18,6 +20,11 @@ mod skill_linkage_source;
 #[path = "skill_linkage_storage.rs"]
 mod skill_linkage_storage;
 
+pub use skill_linkage_audit::{
+    skill_usefulness_audit, SkillAuditGapView, SkillAuditLifecycleSummary,
+    SkillAuditRejectedPattern, SkillAuditRepresentativeSequence, SkillAuditRow,
+    SkillAuditSkillBucketCounts, SkillUsefulnessAuditOptions, SkillUsefulnessAuditReport,
+};
 pub use skill_linkage_graph::{
     skill_browse, skill_conflict_graph, skill_graph_inspect, skill_impact, SkillBrowseReport,
     SkillBrowseRow, SkillConflictGraphReport, SkillConflictPair, SkillGraphEdge,

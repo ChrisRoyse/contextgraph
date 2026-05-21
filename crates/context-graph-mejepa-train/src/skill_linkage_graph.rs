@@ -3,9 +3,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
-use crate::chunk_skill_membership::{read_all_level2_skill_rows, ChunkSkillMembershipRow};
+use crate::chunk_skill_membership::{
+    read_all_level2_skill_rows, read_all_skill_lifecycle_audit_rows, ChunkSkillMembershipRow,
+    SkillLifecycleAuditRow, SkillLifecycleDecision,
+};
 use crate::error::TrainerError;
-use crate::skill_sequence_discovery::{SkillPromotionStatus, SKILL_SEQUENCE_SCHEMA_VERSION};
+use crate::skill_sequence_discovery::{
+    skill_candidate_kind_for_row, skill_genericity_score_for_steps, SkillCandidateKind,
+    SkillOutcomeDistribution, SkillPromotionStatus, SKILL_SEQUENCE_SCHEMA_VERSION,
+};
 
 use super::{invalid, scan_memberships, skill_linkage_cfs, validate_id, validate_limit};
 
@@ -86,15 +92,19 @@ pub struct SkillConflictGraphReport {
 pub struct SkillBrowseRow {
     pub skill_id: String,
     pub skill_name: String,
+    pub candidate_kind: SkillCandidateKind,
     pub parent_group_ids: Vec<String>,
     pub parent_skill_ids: Vec<String>,
     pub support: u64,
     pub confidence: f64,
     pub lift_over_cell_baseline: f64,
     pub stability: f64,
+    pub genericity_score: f64,
+    pub oracle_outcome_distribution: SkillOutcomeDistribution,
     pub promotion_status: SkillPromotionStatus,
     pub operator_approved: bool,
     pub live_input_allowed: bool,
+    pub lifecycle_decision_counts: BTreeMap<String, u64>,
     pub source_episode_count: u64,
     pub failure_evidence_set_count: u64,
     pub membership_count: u64,
@@ -319,6 +329,16 @@ pub fn skill_browse(
     let skills = read_all_level2_skill_rows(db)?;
     let total_catalog_skills = skills.len() as u64;
     let rows = scan_memberships(db)?;
+    let mut lifecycle_counts_by_skill = BTreeMap::<String, BTreeMap<String, u64>>::new();
+    for row in read_all_skill_lifecycle_audit_rows(db)? {
+        for skill_id in lifecycle_skill_ids(&row) {
+            *lifecycle_counts_by_skill
+                .entry(skill_id)
+                .or_default()
+                .entry(decision_label(row.decision).to_string())
+                .or_default() += 1;
+        }
+    }
     let mut membership_by_skill = BTreeMap::<String, Vec<ChunkSkillMembershipRow>>::new();
     for row in rows {
         membership_by_skill
@@ -354,23 +374,32 @@ pub fn skill_browse(
             .collect::<Vec<_>>();
         source_membership_keys_sample.sort();
         source_membership_keys_sample.truncate(limit.min(20));
+        let candidate_kind = skill_candidate_kind_for_row(&skill);
+        let genericity_score = skill_genericity_score_for_steps(&skill.ordered_steps);
+        let lifecycle_decision_counts = lifecycle_counts_by_skill
+            .remove(&skill.skill_id)
+            .unwrap_or_default();
         browse_rows.push(SkillBrowseRow {
-            skill_id: skill.skill_id,
-            skill_name: skill.skill_name,
-            parent_group_ids: skill.parent_group_ids,
-            parent_skill_ids: skill.parent_skill_ids,
+            skill_id: skill.skill_id.clone(),
+            skill_name: skill.skill_name.clone(),
+            candidate_kind,
+            parent_group_ids: skill.parent_group_ids.clone(),
+            parent_skill_ids: skill.parent_skill_ids.clone(),
             support: skill.support,
             confidence: skill.confidence,
             lift_over_cell_baseline: skill.lift_over_cell_baseline,
             stability: skill.stability,
+            genericity_score,
+            oracle_outcome_distribution: skill.oracle_outcome_distribution,
             promotion_status: skill.promotion_status,
             operator_approved: skill.operator_approved,
             live_input_allowed: skill.live_input_allowed,
+            lifecycle_decision_counts,
             source_episode_count: skill.source_episode_ids.len() as u64,
             failure_evidence_set_count: skill.failure_evidence_set_ids.len() as u64,
             membership_count: memberships.len() as u64,
             distinct_chunk_count: distinct_chunks.len() as u64,
-            code_state_keys: skill.code_state_keys,
+            code_state_keys: skill.code_state_keys.clone(),
             source_membership_keys_sample,
         });
     }
@@ -427,6 +456,28 @@ fn derive_skill_edges(
             derived_from: "chunk_skill_membership_cooccurrence".to_string(),
         })
         .collect())
+}
+
+fn lifecycle_skill_ids(row: &SkillLifecycleAuditRow) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
+    if let Some(skill_id) = &row.previous_skill_id {
+        ids.insert(skill_id.clone());
+    }
+    if let Some(skill_id) = &row.candidate_skill_id {
+        ids.insert(skill_id.clone());
+    }
+    ids.extend(row.evidence_skill_ids.iter().cloned());
+    ids
+}
+
+fn decision_label(decision: SkillLifecycleDecision) -> &'static str {
+    match decision {
+        SkillLifecycleDecision::UpdateExistingSkill => "update_existing_skill",
+        SkillLifecycleDecision::SplitMixedSkill => "split_mixed_skill",
+        SkillLifecycleDecision::CreateNewCandidateSkill => "create_new_candidate_skill",
+        SkillLifecycleDecision::DemoteUnstableSkill => "demote_unstable_skill",
+        SkillLifecycleDecision::NoChangeWithEvidence => "no_change_with_evidence",
+    }
 }
 
 fn ordered_pair(left: &str, right: &str) -> (String, String) {
