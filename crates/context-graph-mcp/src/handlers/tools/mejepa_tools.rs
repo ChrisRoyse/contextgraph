@@ -33,9 +33,10 @@ use context_graph_mejepa::{
     FingerprintReference, InstrumentProposalConfig, InstrumentProposalDecision, LabelMethod,
     LatentActionCandidate, LatentActionSearchConfig, LibraryId, MeJepaInferConfig, MincutOptions,
     OracleOutcome, PanelGraphSource, PanelId, PatchBundle, PredictionId, ProjectIngestRequest,
-    ProjectReportRequest, RealityPrediction, RocksDbEvalStore, RocksDbInferStore,
-    SlotAttributionEvidence, SlotAttributionPolarity, SlotAttributionSource, SurpriseEvent,
-    SurpriseSeverity, SystemCostCounters, TaskContext, TestId, VerifyVerdict, WitnessHash,
+    ProjectReportRequest, RealityPrediction, ReconciliationStatus, RocksDbEvalStore,
+    RocksDbInferStore, SlotAttributionEvidence, SlotAttributionPolarity, SlotAttributionSource,
+    SurpriseEvent, SurpriseSeverity, SystemCostCounters, TaskContext, TestId, Verdict,
+    VerifyVerdict, WitnessHash,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
@@ -43,9 +44,9 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_CHUNK_FOUNDATIONALITY, CF_MEJEPA_CROSS_LIBRARY_REFERENCES, CF_MEJEPA_DDA_SIGNALS,
     CF_MEJEPA_EMBEDDER_PROPOSALS, CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_INSTRUMENT_PROPOSALS,
     CF_MEJEPA_LIBRARY_FOUNDATIONALITY, CF_MEJEPA_LIBRARY_REGISTRY, CF_MEJEPA_LIVE_PREDICTIONS,
-    CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_OOD_ESCALATIONS,
-    CF_MEJEPA_OPERATOR_CONTRIBUTIONS, CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_REALITY_IMPACT,
-    CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_MISTAKE_LOG, CF_MEJEPA_MODEL_PROMOTIONS,
+    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_CONTRIBUTIONS, CF_MEJEPA_OPERATOR_OVERRIDES,
+    CF_MEJEPA_REALITY_IMPACT, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT, CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
@@ -77,6 +78,8 @@ const ENV_INFER_DB: &str = "CONTEXTGRAPH_MEJEPA_INFER_DB";
 const ENV_PAUSE_PATH: &str = "CONTEXTGRAPH_MEJEPA_PAUSE_PATH";
 const DEFAULT_PAUSE_STATE_PATH: &str =
     "/zfs/archive/contextgraph/state/cgreality/predictions_paused_until.json";
+const DIAGNOSTIC_CONSEQUENCE_SCHEMA_VERSION: u32 = 1;
+const DIAGNOSTIC_CONSEQUENCE_LIMIT: usize = 64;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -218,6 +221,37 @@ struct ExplainPredictionRequest {
 struct InspectPredictionRequest {
     prediction_id: String,
     db_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ConsequenceTraceRequest {
+    prediction_id: String,
+    #[serde(default)]
+    consequence_id: Option<String>,
+    db_path: Option<PathBuf>,
+    #[serde(default)]
+    chunk_source_jsonl: Option<PathBuf>,
+    #[serde(default)]
+    require_source_bytes: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EvidenceToConsequencesRequest {
+    #[serde(default)]
+    chunk_id: Option<String>,
+    #[serde(default)]
+    skill_id: Option<String>,
+    #[serde(default)]
+    constellation_id: Option<String>,
+    #[serde(default = "default_consequence_lookup_limit")]
+    limit: u32,
+    db_path: Option<PathBuf>,
+    #[serde(default)]
+    chunk_source_jsonl: Option<PathBuf>,
+    #[serde(default)]
+    require_source_bytes: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -383,6 +417,10 @@ fn current_unix_ms_i64() -> i64 {
 
 fn default_fingerprint_reference_limit() -> u32 {
     5
+}
+
+fn default_consequence_lookup_limit() -> u32 {
+    DIAGNOSTIC_CONSEQUENCE_LIMIT as u32
 }
 
 fn default_pause_reason() -> String {
@@ -1182,6 +1220,74 @@ impl Handlers {
                 id,
                 ToolErrorKind::Storage,
                 "MEJEPA_INSPECT_PREDICTION_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_consequence_trace(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: ConsequenceTraceRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_CONSEQUENCE_TRACE
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_consequence_trace(&db_path, request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Storage,
+                "MEJEPA_CONSEQUENCE_TRACE_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_evidence_to_consequences(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: EvidenceToConsequencesRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_EVIDENCE_TO_CONSEQUENCES
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_evidence_to_consequences(&db_path, request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Storage,
+                "MEJEPA_EVIDENCE_TO_CONSEQUENCES_FAILED",
                 &err.to_string(),
                 json!({"dbPath": db_path}),
             ),
@@ -2591,6 +2697,10 @@ fn run_explain_prediction(
         "unknownCandidateId": prediction.unknown_candidate_id.map(hex::encode),
         "fingerprintEvidenceReason": fingerprint_evidence_reason(db.as_ref(), &prediction)?,
         "fingerprintReferences": fingerprint_references,
+        "diagnosticConsequences": diagnostic_consequence_projection(
+            &prediction,
+            DIAGNOSTIC_CONSEQUENCE_LIMIT
+        ),
         "slotAttributionSummary": slot_attribution_summary(&prediction, 12),
         "slotAttributionsCompact": compact_slot_attributions(&prediction, 12),
         "confidenceInterval": prediction.confidence_interval,
@@ -2712,6 +2822,10 @@ fn run_inspect_prediction(
             "slotAttributionCount": row.prediction.slot_attributions.len(),
             "slotAttributionSummary": slot_attribution_summary(&row.prediction, 16)
         },
+        "diagnosticConsequences": diagnostic_consequence_projection(
+            &row.prediction,
+            DIAGNOSTIC_CONSEQUENCE_LIMIT
+        ),
         "contributingChunks": contributing_chunks,
         "slotAttributions": row.prediction.slot_attributions.clone(),
         "q4": q4,
@@ -2729,6 +2843,459 @@ fn run_inspect_prediction(
     }))
 }
 
+fn run_consequence_trace(db_path: &Path, request: ConsequenceTraceRequest) -> AnyhowResult<Value> {
+    let prediction_id = parse_prediction_id_hex(&request.prediction_id)?;
+    if let Some(consequence_id) = &request.consequence_id {
+        validate_consequence_id(consequence_id)?;
+    }
+    let chunk_source_index = load_optional_chunk_source_index(
+        request.chunk_source_jsonl.as_deref(),
+        request.require_source_bytes,
+    )?;
+    let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
+    let row = find_prediction_row_by_id(db.as_ref(), prediction_id)?;
+    let mistake_linkage = mistake_linkage_for_prediction(db.as_ref(), prediction_id)?;
+    let projection = diagnostic_consequence_projection(&row.prediction, usize::MAX);
+    let all_items = projection["items"]
+        .as_array()
+        .cloned()
+        .ok_or_else(|| anyhow!("diagnostic consequence projection did not return items array"))?;
+    let all_items = all_items
+        .into_iter()
+        .map(|item| {
+            enrich_consequence_sources(
+                attach_mistake_linkage(item, &mistake_linkage),
+                chunk_source_index.as_ref(),
+                request.require_source_bytes,
+            )
+        })
+        .collect::<AnyhowResult<Vec<_>>>()?;
+    let (items, filtered) = match request.consequence_id.as_deref() {
+        Some(target) => {
+            let matching = all_items
+                .iter()
+                .filter(|item| item["consequenceId"].as_str() == Some(target))
+                .cloned()
+                .collect::<Vec<_>>();
+            if matching.is_empty() {
+                bail!(
+                    "consequenceId={} was not found for predictionId={}",
+                    target,
+                    request.prediction_id
+                );
+            }
+            (matching, true)
+        }
+        None => (all_items, false),
+    };
+    Ok(json!({
+        "schemaVersion": DIAGNOSTIC_CONSEQUENCE_SCHEMA_VERSION,
+        "predictionId": request.prediction_id,
+        "requestedConsequenceId": request.consequence_id,
+        "filtered": filtered,
+        "consequenceCount": items.len(),
+        "items": items,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "cf": CF_MEJEPA_LIVE_PREDICTIONS,
+            "mistakeCf": CF_MEJEPA_MISTAKE_LOG,
+            "skillLifecycleAuditCf": CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
+            "livePredictionKeyHex": hex::encode(&row.key),
+            "livePredictionValueSha256": row.value_sha256_hex,
+            "livePredictionValueBytes": row.value_len,
+            "readbackVerified": true,
+            "traceMaterialization": "derived_from_persisted_reality_prediction",
+            "chunkSourceJsonl": request
+                .chunk_source_jsonl
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            "sourceByteRequirement": request.require_source_bytes,
+            "tool": tool_names::MEJEPA_CONSEQUENCE_TRACE,
+            "innerLlmInvoked": false
+        }
+    }))
+}
+
+fn run_evidence_to_consequences(
+    db_path: &Path,
+    request: EvidenceToConsequencesRequest,
+) -> AnyhowResult<Value> {
+    if request.limit == 0 || request.limit > 500 {
+        bail!("limit must be between 1 and 500");
+    }
+    let selector = EvidenceConsequenceSelector::from_request(&request)?;
+    let chunk_source_index = load_optional_chunk_source_index(
+        request.chunk_source_jsonl.as_deref(),
+        request.require_source_bytes,
+    )?;
+    let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
+    let rows = scan_prediction_rows(db.as_ref())?;
+    let mut matches = Vec::new();
+    let mut scanned_consequences = 0usize;
+    for row in &rows {
+        let mistake_linkage = mistake_linkage_for_prediction(
+            db.as_ref(),
+            PredictionId(row.prediction.prediction_id),
+        )?;
+        let projection = diagnostic_consequence_projection(&row.prediction, usize::MAX);
+        let items = projection["items"].as_array().ok_or_else(|| {
+            anyhow!("diagnostic consequence projection did not return items array")
+        })?;
+        for item in items {
+            scanned_consequences += 1;
+            let Some(match_scope) = consequence_matches_selector(item, &selector) else {
+                continue;
+            };
+            matches.push(json!({
+                "predictionId": hex::encode(row.prediction.prediction_id),
+                "consequenceId": item["consequenceId"].clone(),
+                "kind": item["kind"].clone(),
+                "target": item["target"].clone(),
+                "badOutcome": item["badOutcome"].clone(),
+                "score": item["score"].clone(),
+                "whyBad": item["whyBad"].clone(),
+                "evidenceStatus": item["evidenceStatus"].clone(),
+                "matchScope": match_scope,
+                "directEvidence": enrich_direct_evidence_sources(
+                    item["directEvidence"].clone(),
+                    chunk_source_index.as_ref(),
+                    request.require_source_bytes,
+                )?,
+                "predictionContext": item["predictionContext"].clone(),
+                "mistakeLinkage": mistake_linkage.clone(),
+                "sourceOfTruth": {
+                    "livePredictionKeyHex": hex::encode(&row.key),
+                    "livePredictionValueSha256": row.value_sha256_hex,
+                    "livePredictionValueBytes": row.value_len
+                }
+            }));
+            if matches.len() == request.limit as usize {
+                break;
+            }
+        }
+        if matches.len() == request.limit as usize {
+            break;
+        }
+    }
+    Ok(json!({
+        "schemaVersion": DIAGNOSTIC_CONSEQUENCE_SCHEMA_VERSION,
+        "selector": selector.to_json(),
+        "matchCount": matches.len(),
+        "limit": request.limit,
+        "scannedPredictionRows": rows.len(),
+        "scannedConsequences": scanned_consequences,
+        "matches": matches,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "cf": CF_MEJEPA_LIVE_PREDICTIONS,
+            "mistakeCf": CF_MEJEPA_MISTAKE_LOG,
+            "skillLifecycleAuditCf": CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
+            "readbackVerified": true,
+            "lookupMaterialization": "scan_derived_from_persisted_reality_predictions",
+            "chunkSourceJsonl": request
+                .chunk_source_jsonl
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            "sourceByteRequirement": request.require_source_bytes,
+            "tool": tool_names::MEJEPA_EVIDENCE_TO_CONSEQUENCES,
+            "innerLlmInvoked": false
+        }
+    }))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EvidenceConsequenceSelector {
+    Chunk(String),
+    Skill(String),
+    Constellation(String),
+}
+
+impl EvidenceConsequenceSelector {
+    fn from_request(request: &EvidenceToConsequencesRequest) -> AnyhowResult<Self> {
+        let mut selectors = Vec::new();
+        if let Some(chunk_id) = non_empty_selector("chunkId", request.chunk_id.as_deref())? {
+            selectors.push(Self::Chunk(chunk_id.to_string()));
+        }
+        if let Some(skill_id) = non_empty_selector("skillId", request.skill_id.as_deref())? {
+            selectors.push(Self::Skill(skill_id.to_string()));
+        }
+        if let Some(constellation_id) =
+            non_empty_selector("constellationId", request.constellation_id.as_deref())?
+        {
+            selectors.push(Self::Constellation(constellation_id.to_string()));
+        }
+        if selectors.len() != 1 {
+            bail!("exactly one of chunkId, skillId, or constellationId is required");
+        }
+        Ok(selectors.remove(0))
+    }
+
+    fn to_json(&self) -> Value {
+        match self {
+            Self::Chunk(value) => json!({"kind": "chunkId", "value": value}),
+            Self::Skill(value) => json!({"kind": "skillId", "value": value}),
+            Self::Constellation(value) => json!({"kind": "constellationId", "value": value}),
+        }
+    }
+}
+
+fn non_empty_selector<'a>(name: &str, value: Option<&'a str>) -> AnyhowResult<Option<&'a str>> {
+    match value {
+        Some(raw) if raw.trim().is_empty() => bail!("{name} must be non-empty when provided"),
+        Some(raw) => Ok(Some(raw)),
+        None => Ok(None),
+    }
+}
+
+fn validate_consequence_id(value: &str) -> AnyhowResult<()> {
+    let Some(hex_value) = value.strip_prefix("consequence:") else {
+        bail!("consequenceId must start with consequence:");
+    };
+    if hex_value.len() != 24 || !hex_value.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+        bail!("consequenceId must be consequence: followed by 24 hexadecimal characters");
+    }
+    Ok(())
+}
+
+fn consequence_matches_selector(
+    consequence: &Value,
+    selector: &EvidenceConsequenceSelector,
+) -> Option<&'static str> {
+    match selector {
+        EvidenceConsequenceSelector::Chunk(chunk_id) => {
+            if json_array_contains_str(&consequence["directEvidence"]["chunkIds"], chunk_id) {
+                return Some("direct_evidence.chunk_ids");
+            }
+            None
+        }
+        EvidenceConsequenceSelector::Skill(skill_id) => {
+            if json_array_contains_str(&consequence["directEvidence"]["activeSkillIds"], skill_id) {
+                return Some("direct_evidence.active_skill_ids");
+            }
+            if json_array_contains_str(
+                &consequence["directEvidence"]["activeHigherAbilityIds"],
+                skill_id,
+            ) {
+                return Some("direct_evidence.active_higher_ability_ids");
+            }
+            if json_array_contains_str(
+                &consequence["predictionContext"]["labelContext"]["activeSkillIds"],
+                skill_id,
+            ) {
+                return Some("prediction_context.active_skill_ids");
+            }
+            if json_array_contains_str(
+                &consequence["predictionContext"]["labelContext"]["activeHigherAbilityIds"],
+                skill_id,
+            ) {
+                return Some("prediction_context.active_higher_ability_ids");
+            }
+            None
+        }
+        EvidenceConsequenceSelector::Constellation(constellation_id) => {
+            if consequence["directEvidence"]["constellation"]["relationshipPatternId"].as_str()
+                == Some(constellation_id)
+            {
+                return Some("direct_evidence.constellation.relationship_pattern_id");
+            }
+            if consequence["predictionContext"]["constellation"]["relationshipPatternId"].as_str()
+                == Some(constellation_id)
+            {
+                return Some("prediction_context.constellation.relationship_pattern_id");
+            }
+            if consequence["predictionContext"]["constellation"]["version"].as_str()
+                == Some(constellation_id)
+            {
+                return Some("prediction_context.constellation.version");
+            }
+            None
+        }
+    }
+}
+
+fn json_array_contains_str(value: &Value, needle: &str) -> bool {
+    value
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(needle)))
+}
+
+fn attach_mistake_linkage(mut consequence: Value, mistake_linkage: &Value) -> Value {
+    if let Some(object) = consequence.as_object_mut() {
+        object.insert("mistakeLinkage".to_string(), mistake_linkage.clone());
+    }
+    consequence
+}
+
+fn load_optional_chunk_source_index(
+    path: Option<&Path>,
+    require_source_bytes: bool,
+) -> AnyhowResult<Option<context_graph_mejepa_train::ChunkSourceIndex>> {
+    match path {
+        Some(path) => context_graph_mejepa_train::load_chunk_source_index_jsonl(path)
+            .with_context(|| format!("load chunk source JSONL {}", path.display()))
+            .map(Some),
+        None if require_source_bytes => {
+            bail!("requireSourceBytes=true requires chunkSourceJsonl")
+        }
+        None => Ok(None),
+    }
+}
+
+fn enrich_consequence_sources(
+    mut consequence: Value,
+    source_index: Option<&context_graph_mejepa_train::ChunkSourceIndex>,
+    require_source_bytes: bool,
+) -> AnyhowResult<Value> {
+    let direct = consequence["directEvidence"].clone();
+    let enriched = enrich_direct_evidence_sources(direct, source_index, require_source_bytes)?;
+    if let Some(object) = consequence.as_object_mut() {
+        object.insert("directEvidence".to_string(), enriched);
+    }
+    Ok(consequence)
+}
+
+fn enrich_direct_evidence_sources(
+    mut direct_evidence: Value,
+    source_index: Option<&context_graph_mejepa_train::ChunkSourceIndex>,
+    require_source_bytes: bool,
+) -> AnyhowResult<Value> {
+    let chunk_ids = direct_evidence["chunkIds"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(ToOwned::to_owned))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let (source_status, source_rows, missing_chunks, missing_source_bytes) =
+        chunk_source_rows_for_trace(&chunk_ids, source_index);
+    if require_source_bytes
+        && !chunk_ids.is_empty()
+        && (!missing_chunks.is_empty()
+            || !missing_source_bytes.is_empty()
+            || source_index.is_none())
+    {
+        bail!(
+            "source byte provenance missing for direct evidence chunks: missingChunks={:?} missingSourceBytes={:?} sourceIndexProvided={}",
+            missing_chunks,
+            missing_source_bytes,
+            source_index.is_some()
+        );
+    }
+    if let Some(object) = direct_evidence.as_object_mut() {
+        object.insert("sourceStatus".to_string(), json!(source_status));
+        object.insert("sourceRows".to_string(), Value::Array(source_rows));
+        object.insert("missingSourceChunkIds".to_string(), json!(missing_chunks));
+        object.insert(
+            "missingSourceBytesChunkIds".to_string(),
+            json!(missing_source_bytes),
+        );
+    }
+    Ok(direct_evidence)
+}
+
+fn chunk_source_rows_for_trace(
+    chunk_ids: &[String],
+    source_index: Option<&context_graph_mejepa_train::ChunkSourceIndex>,
+) -> (&'static str, Vec<Value>, Vec<String>, Vec<String>) {
+    if chunk_ids.is_empty() {
+        return ("no_direct_chunks", Vec::new(), Vec::new(), Vec::new());
+    }
+    let Some(index) = source_index else {
+        return (
+            "source_index_not_provided",
+            Vec::new(),
+            chunk_ids.to_vec(),
+            Vec::new(),
+        );
+    };
+    let mut source_rows = Vec::new();
+    let mut missing_chunks = Vec::new();
+    let mut missing_source_bytes = Vec::new();
+    for chunk_id in chunk_ids {
+        let Some(rows) = index.rows_by_chunk_id.get(chunk_id) else {
+            missing_chunks.push(chunk_id.clone());
+            continue;
+        };
+        for row in rows {
+            if row.source_text.is_none() {
+                missing_source_bytes.push(row.chunk_id.clone());
+            }
+            source_rows.push(json!({
+                "chunkId": row.chunk_id.clone(),
+                "filePath": row.file_path.clone(),
+                "byteSpan": row.byte_span,
+                "sourceText": row.source_text.clone(),
+                "sourceTextSha256": row.source_text_sha256.clone(),
+                "sourceBytes": row.source_text.as_ref().map(|text| text.len()),
+                "sourceRowKey": row.source_row_key.clone()
+            }));
+        }
+    }
+    let status = if missing_chunks.is_empty() && missing_source_bytes.is_empty() {
+        "source_bytes_verified"
+    } else {
+        "source_bytes_incomplete"
+    };
+    (status, source_rows, missing_chunks, missing_source_bytes)
+}
+
+fn mistake_linkage_for_prediction(db: &DB, prediction_id: PredictionId) -> AnyhowResult<Value> {
+    let mistake_rows = context_graph_mejepa_train::read_all_mistake_log_rows(db)
+        .context("read CF_MEJEPA_MISTAKE_LOG for consequence trace linkage")?
+        .into_iter()
+        .filter(|row| row.prediction_id == prediction_id)
+        .collect::<Vec<_>>();
+    let lifecycle_rows = context_graph_mejepa_train::read_all_skill_lifecycle_audit_rows(db)
+        .context("read CF_MEJEPA_SKILL_LIFECYCLE_AUDIT for consequence trace linkage")?;
+    let mut linked = Vec::new();
+    for row in mistake_rows {
+        let audits = lifecycle_rows
+            .iter()
+            .filter(|audit| audit.mistake_id.as_deref() == Some(row.mistake_id.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        linked.push(json!({
+            "mistakeId": row.mistake_id,
+            "predictionId": hex::encode(row.prediction_id.0),
+            "predictedVerdict": row.predicted_verdict,
+            "groundTruthVerdict": row.ground_truth_verdict,
+            "truthSource": row.truth_source,
+            "codeStateKey": row.code_state_key,
+            "namedFailureMode": row.named_failure_mode,
+            "acceptedLabelIds": row.accepted_label_ids,
+            "activeSkillIds": row.active_skill_ids,
+            "activeHigherAbilityIds": row.active_higher_ability_ids,
+            "sourceMembershipKeys": row.source_membership_keys,
+            "labelSignatureHash": row.label_signature_hash,
+            "skillSignatureHash": row.skill_signature_hash,
+            "abilitySignatureHash": row.ability_signature_hash,
+            "membershipSignatureHash": row.membership_signature_hash,
+            "failureEvidenceSetIds": row.failure_evidence_set_ids,
+            "replayRowKey": row.replay_row_key,
+            "createdAtUnixMs": row.created_at_unix_ms,
+            "lifecycleAuditCount": audits.len(),
+            "lifecycleAudits": audits
+        }));
+    }
+    let status = if linked.is_empty() {
+        "no_observed_refutation_row"
+    } else {
+        "refuted_or_observed_mistake_rows_found"
+    };
+    Ok(json!({
+        "status": status,
+        "mistakeCount": linked.len(),
+        "mistakeIds": linked
+            .iter()
+            .filter_map(|row| row["mistakeId"].as_str().map(str::to_string))
+            .collect::<Vec<_>>(),
+        "rows": linked,
+        "sourceCfs": [CF_MEJEPA_MISTAKE_LOG, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT]
+    }))
+}
+
 fn q4_projection(
     prediction: &RealityPrediction,
     trust_gate: &context_graph_mejepa::Q4TrustGateReport,
@@ -2741,6 +3308,646 @@ fn q4_projection(
         "trustedConsequences": trusted,
         "policy": "raw Q4 observations are display-only historical data and never influence trust decisions under the Q4 doctrine freeze"
     })
+}
+
+fn diagnostic_consequence_projection(prediction: &RealityPrediction, limit: usize) -> Value {
+    let mut items = Vec::new();
+
+    if matches!(
+        prediction.verdict,
+        Verdict::Fail | Verdict::OutOfDistribution | Verdict::Abstain | Verdict::GuardRejected
+    ) {
+        let chunks = adverse_verdict_chunks(prediction);
+        let why_bad = adverse_verdict_reason(prediction);
+        let evidence_status = if chunks.is_empty() {
+            "insufficient_direct_evidence"
+        } else {
+            "direct_evidence"
+        };
+        push_diagnostic_consequence(
+            &mut items,
+            prediction,
+            DiagnosticConsequenceInput {
+                kind: "q2_verdict",
+                target: "oracle_verdict".to_string(),
+                bad_outcome: format!("{:?}", prediction.verdict),
+                why_bad,
+                chunks,
+                evidence_status,
+                score: prediction.calibrated_confidence,
+                source_payload: json!({
+                    "verdict": prediction.verdict,
+                    "predictedOraclePass": prediction.predicted_oracle_pass,
+                    "calibratedConfidence": prediction.calibrated_confidence,
+                    "oodScore": prediction.ood_score,
+                    "unknownCandidateId": prediction.unknown_candidate_id.map(hex::encode),
+                    "activeLearningBranch": if matches!(prediction.verdict, Verdict::OutOfDistribution) {
+                        if prediction.unknown_candidate_id.is_some() {
+                            "unknown_candidate_id_present"
+                        } else {
+                            "unknown_candidate_id_missing"
+                        }
+                    } else {
+                        "not_ood"
+                    }
+                }),
+            },
+        );
+    }
+
+    for failed in &prediction.predicted_failed_tests {
+        if !matches!(
+            failed.predicted_outcome,
+            context_graph_mejepa::TestOutcome::Fail | context_graph_mejepa::TestOutcome::Error
+        ) {
+            continue;
+        }
+        push_diagnostic_consequence(
+            &mut items,
+            prediction,
+            DiagnosticConsequenceInput {
+                kind: "q2_predicted_failed_test",
+                target: failed.test_id.0.clone(),
+                bad_outcome: format!("{:?}", failed.predicted_outcome),
+                why_bad: failed.why.explanation.clone(),
+                chunks: vec![failed.why.chunk.clone()],
+                evidence_status: "direct_evidence",
+                score: failed.confidence,
+                source_payload: json!({
+                "testId": failed.test_id.0,
+                "currentOutcome": failed.current_outcome,
+                "predictedOutcome": failed.predicted_outcome,
+                "deltaKind": failed.delta_kind,
+                "rootCauseClass": failed.why.root_cause_class,
+                "failureClass": failed.why.failure_class
+                }),
+            },
+        );
+    }
+
+    for mode in &prediction.predicted_failure_modes {
+        push_diagnostic_consequence(
+            &mut items,
+            prediction,
+            DiagnosticConsequenceInput {
+                kind: "q3_failure_mode",
+                target: mode.chunk.0.clone(),
+                bad_outcome: format!("{:?}", mode.failure_class),
+                why_bad: mode.explanation.clone(),
+                chunks: vec![mode.chunk.clone()],
+                evidence_status: "direct_evidence",
+                score: mode.confidence,
+                source_payload: json!({
+                "failureClass": mode.failure_class,
+                "rootCauseClass": mode.root_cause_class,
+                "severity": mode.severity,
+                "lineRange": mode.line_range,
+                "contributingEmbedders": mode.contributing_embedders
+                }),
+            },
+        );
+    }
+
+    for guard in &prediction.guard_violations {
+        push_diagnostic_consequence(
+            &mut items,
+            prediction,
+            DiagnosticConsequenceInput {
+                kind: "q2_guard_violation",
+                target: guard.chunk.0.clone(),
+                bad_outcome: guard.centroid_id.clone(),
+                why_bad: format!(
+                    "guard violation: embedder={} cosine={} threshold_tau_m={} deficit={}",
+                    guard.embedder.0, guard.cosine, guard.threshold_tau_m, guard.deficit
+                ),
+                chunks: vec![guard.chunk.clone()],
+                evidence_status: "direct_evidence",
+                score: guard.deficit.clamp(0.0, 1.0),
+                source_payload: json!({
+                "embedder": guard.embedder,
+                "centroidId": guard.centroid_id,
+                "cosine": guard.cosine,
+                "thresholdTauM": guard.threshold_tau_m,
+                "deficit": guard.deficit
+                }),
+            },
+        );
+    }
+
+    for uncovered in &prediction.predicted_uncovered_paths {
+        push_diagnostic_consequence(
+            &mut items,
+            prediction,
+            DiagnosticConsequenceInput {
+                kind: "q4_pass_with_uncovered_path_risk",
+                target: uncovered.chunk.0.clone(),
+                bad_outcome: "uncovered_path".to_string(),
+                why_bad: format!(
+                    "uncovered path risk: {} (defect_probability={} confidence={})",
+                    uncovered.path_description, uncovered.defect_probability, uncovered.confidence
+                ),
+                chunks: vec![uncovered.chunk.clone()],
+                evidence_status: "direct_risk_evidence",
+                score: uncovered.defect_probability.max(uncovered.confidence),
+                source_payload: json!({
+                    "pathDescription": uncovered.path_description.clone(),
+                    "lineRange": uncovered.line_range,
+                    "defectProbability": uncovered.defect_probability,
+                    "confidence": uncovered.confidence,
+                    "evidence": uncovered.evidence.clone(),
+                    "policy": "pass-with-risk consequence derived from persisted RealityPrediction; no Q4 trust promotion implied"
+                }),
+            },
+        );
+    }
+
+    for edge in &prediction.predicted_edge_cases {
+        if edge.covered_by_test && edge.confidence < 0.5 {
+            continue;
+        }
+        push_diagnostic_consequence(
+            &mut items,
+            prediction,
+            DiagnosticConsequenceInput {
+                kind: "q4_pass_with_edge_risk",
+                target: edge.chunk.0.clone(),
+                bad_outcome: format!("{:?}", edge.edge_class),
+                why_bad: format!(
+                    "edge-case risk: {:?} at {:?}; covered_by_test={} confidence={}",
+                    edge.edge_class, edge.line_range, edge.covered_by_test, edge.confidence
+                ),
+                chunks: vec![edge.chunk.clone()],
+                evidence_status: "direct_risk_evidence",
+                score: edge.confidence,
+                source_payload: json!({
+                    "edgeClass": edge.edge_class,
+                    "lineRange": edge.line_range,
+                    "triggeringInputDescription": edge.triggering_input_description.clone(),
+                    "coveredByTest": edge.covered_by_test,
+                    "confidence": edge.confidence,
+                    "policy": "pass-with-risk consequence derived from persisted RealityPrediction; no Q4 trust promotion implied"
+                }),
+            },
+        );
+    }
+
+    for bug in &prediction.predicted_latent_bugs {
+        push_diagnostic_consequence(
+            &mut items,
+            prediction,
+            DiagnosticConsequenceInput {
+                kind: "q4_pass_with_latent_bug_risk",
+                target: bug.chunk.0.clone(),
+                bad_outcome: format!("{:?}", bug.bug_class),
+                why_bad: bug.explanation.clone(),
+                chunks: vec![bug.chunk.clone()],
+                evidence_status: "direct_risk_evidence",
+                score: bug.confidence,
+                source_payload: json!({
+                    "bugClass": bug.bug_class,
+                    "lineRange": bug.line_range,
+                    "confidence": bug.confidence,
+                    "severity": bug.severity,
+                    "explanation": bug.explanation.clone(),
+                    "policy": "pass-with-risk consequence derived from persisted RealityPrediction; no Q4 trust promotion implied"
+                }),
+            },
+        );
+    }
+
+    for debt in &prediction.predicted_tech_debt_added {
+        push_diagnostic_consequence(
+            &mut items,
+            prediction,
+            DiagnosticConsequenceInput {
+                kind: "q4_pass_with_tech_debt_risk",
+                target: debt.chunk.0.clone(),
+                bad_outcome: format!("{:?}", debt.debt_class),
+                why_bad: debt.explanation.clone(),
+                chunks: vec![debt.chunk.clone()],
+                evidence_status: "direct_risk_evidence",
+                score: severity_score(debt.severity),
+                source_payload: json!({
+                    "debtClass": debt.debt_class,
+                    "lineRange": debt.line_range,
+                    "severity": debt.severity,
+                    "explanation": debt.explanation.clone(),
+                    "policy": "pass-with-risk consequence derived from persisted RealityPrediction; no Q4 trust promotion implied"
+                }),
+            },
+        );
+    }
+
+    for dead_code in &prediction.predicted_dead_code {
+        push_diagnostic_consequence(
+            &mut items,
+            prediction,
+            DiagnosticConsequenceInput {
+                kind: "q4_pass_with_dead_code_risk",
+                target: dead_code.chunk.0.clone(),
+                bad_outcome: format!("{:?}", dead_code.kind),
+                why_bad: dead_code.reason.clone(),
+                chunks: vec![dead_code.chunk.clone()],
+                evidence_status: "direct_risk_evidence",
+                score: 0.65,
+                source_payload: json!({
+                    "kind": dead_code.kind,
+                    "lineRange": dead_code.line_range,
+                    "reason": dead_code.reason.clone(),
+                    "policy": "pass-with-risk consequence derived from persisted RealityPrediction; no Q4 trust promotion implied"
+                }),
+            },
+        );
+    }
+
+    for redundancy in &prediction.predicted_redundant_code {
+        push_diagnostic_consequence(
+            &mut items,
+            prediction,
+            DiagnosticConsequenceInput {
+                kind: "q4_pass_with_redundancy_risk",
+                target: redundancy.chunk.0.clone(),
+                bad_outcome: format!("{:?}", redundancy.kind),
+                why_bad: redundancy.explanation.clone(),
+                chunks: std::iter::once(redundancy.chunk.clone())
+                    .chain(redundancy.also_at.iter().cloned())
+                    .collect(),
+                evidence_status: "direct_risk_evidence",
+                score: redundancy.similarity,
+                source_payload: json!({
+                    "kind": redundancy.kind,
+                    "alsoAt": redundancy.also_at.clone(),
+                    "similarity": redundancy.similarity,
+                    "explanation": redundancy.explanation.clone(),
+                    "policy": "pass-with-risk consequence derived from persisted RealityPrediction; no Q4 trust promotion implied"
+                }),
+            },
+        );
+    }
+
+    for (idx, reconciliation) in prediction.claim_reconciliation.iter().enumerate() {
+        if !reconciliation_status_is_bad(reconciliation.status) {
+            continue;
+        }
+        push_diagnostic_consequence(
+            &mut items,
+            prediction,
+            DiagnosticConsequenceInput {
+                kind: "q1_claim_reconciliation",
+                target: format!("claim:{idx}"),
+                bad_outcome: format!("{:?}", reconciliation.status),
+                why_bad: format!(
+                    "claim reconciliation status {:?} means the claimed durable bytes are not cleanly confirmed",
+                    reconciliation.status
+                ),
+                chunks: Vec::new(),
+                evidence_status: "direct_claim_evidence",
+                score: 1.0,
+                source_payload: json!({
+                "claim": reconciliation.claim,
+                "status": reconciliation.status,
+                "evidenceRows": reconciliation.evidence
+                }),
+            },
+        );
+    }
+
+    if let Some(impact) = &prediction.reality_impact {
+        if impact.prediction_correctness != context_graph_mejepa::PredictionCorrectness::Aligned {
+            push_diagnostic_consequence(
+                &mut items,
+                prediction,
+                DiagnosticConsequenceInput {
+                    kind: "q5_reality_impact",
+                    target: "shift_log_replay".to_string(),
+                    bad_outcome: format!("{:?}", impact.prediction_correctness),
+                    why_bad: format!(
+                        "Q5 replay classified prediction as {:?}; predicted files/tests and observed shift-log reality diverged",
+                        impact.prediction_correctness
+                    ),
+                    chunks: prediction.covered_chunks.clone(),
+                    evidence_status: if prediction.covered_chunks.is_empty() {
+                        "insufficient_direct_evidence"
+                    } else {
+                        "direct_shift_replay_evidence"
+                    },
+                    score: 1.0,
+                    source_payload: json!({
+                    "predictionCorrectness": impact.prediction_correctness,
+                    "predictedFilesChanged": impact.predicted_files_changed,
+                    "observedFilesChanged": impact.observed_files_changed,
+                    "unexpectedFilesChanged": impact.unexpected_files_changed,
+                    "predictedTestOutcomes": impact.predicted_test_outcomes,
+                    "observedTestOutcomes": impact.observed_test_outcomes
+                    }),
+                },
+            );
+        }
+    }
+
+    let truncated = items.len().saturating_sub(limit);
+    items.truncate(limit);
+    json!({
+        "schemaVersion": DIAGNOSTIC_CONSEQUENCE_SCHEMA_VERSION,
+        "predictionId": hex::encode(prediction.prediction_id),
+        "source": "derived_from_persisted_reality_prediction",
+        "sourceCf": CF_MEJEPA_LIVE_PREDICTIONS,
+        "diagnosticInvariant": "bad consequence predictions must include the evidence path that makes them bad",
+        "consequenceCount": items.len(),
+        "truncatedCount": truncated,
+        "items": items
+    })
+}
+
+struct DiagnosticConsequenceInput {
+    kind: &'static str,
+    target: String,
+    bad_outcome: String,
+    why_bad: String,
+    chunks: Vec<ChunkId>,
+    evidence_status: &'static str,
+    score: f32,
+    source_payload: Value,
+}
+
+fn push_diagnostic_consequence(
+    items: &mut Vec<Value>,
+    prediction: &RealityPrediction,
+    input: DiagnosticConsequenceInput,
+) {
+    let source_hash = diagnostic_source_payload_hash(&input.source_payload);
+    items.push(json!({
+        "consequenceId": diagnostic_consequence_id(
+            prediction,
+            input.kind,
+            &input.target,
+            &source_hash
+        ),
+        "kind": input.kind,
+        "target": input.target,
+        "badOutcome": input.bad_outcome,
+        "score": input.score.clamp(0.0, 1.0),
+        "whyBad": input.why_bad,
+        "evidenceStatus": input.evidence_status,
+        "directEvidence": diagnostic_direct_evidence(prediction, &input.chunks),
+        "predictionContext": diagnostic_prediction_context(prediction),
+        "sourcePayloadSha256": source_hash,
+        "sourcePayload": input.source_payload
+    }));
+}
+
+fn diagnostic_consequence_id(
+    prediction: &RealityPrediction,
+    kind: &str,
+    target: &str,
+    source_hash: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(prediction.prediction_id);
+    hasher.update(kind.as_bytes());
+    hasher.update(target.as_bytes());
+    hasher.update(source_hash.as_bytes());
+    format!("consequence:{}", &hex::encode(hasher.finalize())[..24])
+}
+
+fn diagnostic_source_payload_hash(source_payload: &Value) -> String {
+    let bytes = serde_json::to_vec(source_payload).unwrap_or_default();
+    hex::encode(Sha256::digest(&bytes))
+}
+
+fn severity_score(severity: context_graph_mejepa::Severity) -> f32 {
+    match severity {
+        context_graph_mejepa::Severity::Info => 0.20,
+        context_graph_mejepa::Severity::Low => 0.35,
+        context_graph_mejepa::Severity::Medium => 0.55,
+        context_graph_mejepa::Severity::High => 0.80,
+        context_graph_mejepa::Severity::Critical => 0.95,
+    }
+}
+
+fn diagnostic_direct_evidence(prediction: &RealityPrediction, chunks: &[ChunkId]) -> Value {
+    let chunk_ids = chunks
+        .iter()
+        .map(|chunk| chunk.0.clone())
+        .collect::<Vec<_>>();
+    let direct_skill_ids = direct_skill_ids_for_chunks(prediction, chunks);
+    let direct_ability_ids = direct_higher_ability_ids_for_chunks(prediction, chunks);
+    json!({
+        "chunkIds": chunk_ids,
+        "slotAttributions": diagnostic_slot_attributions(prediction, chunks, 12),
+        "activeSkillIds": direct_skill_ids,
+        "activeHigherAbilityIds": direct_ability_ids,
+        "constellation": {
+            "relationshipPatternId": prediction
+                .constellation_intelligence
+                .as_ref()
+                .and_then(|evidence| evidence.relationship_pattern_id.clone())
+        }
+    })
+}
+
+fn diagnostic_prediction_context(prediction: &RealityPrediction) -> Value {
+    json!({
+        "coveredChunkIds": prediction
+            .covered_chunks
+            .iter()
+            .map(|chunk| chunk.0.clone())
+            .collect::<Vec<_>>(),
+        "coveredChunkCount": prediction.covered_chunks.len(),
+        "labelContext": {
+            "acceptedLabelIds": prediction.label_context.accepted_label_ids,
+            "codeStateKey": prediction.label_context.code_state_key,
+            "failureEvidenceSetIds": prediction.label_context.failure_evidence_set_ids,
+            "activeSkillIds": prediction.label_context.active_skill_ids,
+            "activeHigherAbilityIds": prediction.label_context.active_higher_ability_ids,
+            "sourceMembershipKeys": prediction.label_context.source_membership_keys,
+            "labelSignatureHash": prediction.label_context.label_signature_hash,
+            "skillSignatureHash": prediction.label_context.skill_signature_hash,
+            "abilitySignatureHash": prediction.label_context.ability_signature_hash,
+            "membershipSignatureHash": prediction.label_context.membership_signature_hash
+        },
+        "calibration": {
+            "version": prediction.calibration_version,
+            "provenanceCalibrationVersion": prediction.provenance.calibration_version,
+            "bucket": prediction
+                .label_context
+                .code_state_key
+                .clone()
+                .unwrap_or_else(|| "unresolved_calibration_bucket".to_string()),
+            "predictedOraclePass": prediction.predicted_oracle_pass,
+            "calibratedConfidence": prediction.calibrated_confidence,
+            "oodScore": prediction.ood_score,
+            "baselineSignals": prediction.granger_attestations
+        },
+        "activeLearning": {
+            "unknownCandidateId": prediction.unknown_candidate_id.map(hex::encode),
+            "matchedFingerprint": prediction.matched_fingerprint.clone()
+        },
+        "constellation": {
+            "version": prediction.provenance.constellation_version,
+            "relationshipPatternId": prediction
+                .constellation_intelligence
+                .as_ref()
+                .and_then(|evidence| evidence.relationship_pattern_id.clone()),
+            "intelligence": prediction.constellation_intelligence
+        },
+        "closestExemplars": prediction.closest_exemplars.iter().take(5).collect::<Vec<_>>()
+    })
+}
+
+fn direct_skill_ids_for_chunks(prediction: &RealityPrediction, chunks: &[ChunkId]) -> Vec<String> {
+    if chunks.is_empty() || !has_chunk_linked_constellation_skill_attribution(prediction, chunks) {
+        return Vec::new();
+    }
+    prediction.label_context.active_skill_ids.clone()
+}
+
+fn direct_higher_ability_ids_for_chunks(
+    prediction: &RealityPrediction,
+    chunks: &[ChunkId],
+) -> Vec<String> {
+    if chunks.is_empty() || !has_chunk_linked_constellation_skill_attribution(prediction, chunks) {
+        return Vec::new();
+    }
+    prediction.label_context.active_higher_ability_ids.clone()
+}
+
+fn has_chunk_linked_constellation_skill_attribution(
+    prediction: &RealityPrediction,
+    chunks: &[ChunkId],
+) -> bool {
+    prediction.slot_attributions.iter().any(|attribution| {
+        attribution.source == SlotAttributionSource::ConstellationSkill
+            && attribution
+                .chunk
+                .as_ref()
+                .is_some_and(|chunk| chunks.iter().any(|target| target == chunk))
+    })
+}
+
+fn diagnostic_slot_attributions(
+    prediction: &RealityPrediction,
+    chunks: &[ChunkId],
+    limit: usize,
+) -> Vec<Value> {
+    let mut attributions = prediction
+        .slot_attributions
+        .iter()
+        .filter(|attribution| diagnostic_attribution_matches(attribution, chunks))
+        .collect::<Vec<_>>();
+    attributions.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.slot_id.cmp(&right.slot_id))
+            .then_with(|| slot_source_name(left.source).cmp(slot_source_name(right.source)))
+    });
+    attributions
+        .into_iter()
+        .take(limit)
+        .map(compact_slot_attribution)
+        .collect()
+}
+
+fn diagnostic_attribution_matches(
+    attribution: &SlotAttributionEvidence,
+    chunks: &[ChunkId],
+) -> bool {
+    let relevant_polarity = matches!(
+        attribution.polarity,
+        SlotAttributionPolarity::Violating
+            | SlotAttributionPolarity::Missing
+            | SlotAttributionPolarity::Stale
+            | SlotAttributionPolarity::Q5Impact
+    );
+    let relevant_source = matches!(
+        attribution.source,
+        SlotAttributionSource::FailureMode
+            | SlotAttributionSource::GuardViolation
+            | SlotAttributionSource::PerSlotOod
+            | SlotAttributionSource::FailureFingerprint
+            | SlotAttributionSource::Q5Replay
+            | SlotAttributionSource::ClaimReconciliation
+            | SlotAttributionSource::ConstellationSkill
+    );
+    if !(relevant_polarity || relevant_source) {
+        return false;
+    }
+    chunks.is_empty()
+        || attribution
+            .chunk
+            .as_ref()
+            .is_some_and(|chunk| chunks.iter().any(|target| target == chunk))
+}
+
+fn adverse_verdict_chunks(prediction: &RealityPrediction) -> Vec<ChunkId> {
+    let mut out = Vec::new();
+    for mode in &prediction.predicted_failure_modes {
+        push_unique_chunk(&mut out, &mode.chunk);
+    }
+    for failed in &prediction.predicted_failed_tests {
+        push_unique_chunk(&mut out, &failed.why.chunk);
+    }
+    for guard in &prediction.guard_violations {
+        push_unique_chunk(&mut out, &guard.chunk);
+    }
+    for reason in &prediction.per_slot_ood_reasons {
+        if let Some(chunk) = &reason.chunk {
+            push_unique_chunk(&mut out, chunk);
+        }
+    }
+    out
+}
+
+fn push_unique_chunk(out: &mut Vec<ChunkId>, chunk: &ChunkId) {
+    if !out.iter().any(|existing| existing == chunk) {
+        out.push(chunk.clone());
+    }
+}
+
+fn adverse_verdict_reason(prediction: &RealityPrediction) -> String {
+    if let Some(mode) = prediction.predicted_failure_modes.first() {
+        return mode.explanation.clone();
+    }
+    if let Some(failed) = prediction.predicted_failed_tests.first() {
+        return failed.why.explanation.clone();
+    }
+    if let Some(guard) = prediction.guard_violations.first() {
+        return format!(
+            "guard violation in {} from embedder {} with deficit {}",
+            guard.chunk.0, guard.embedder.0, guard.deficit
+        );
+    }
+    if let Some(reason) = prediction.per_slot_ood_reasons.first() {
+        return format!("per-slot OOD reason: {:?}", reason);
+    }
+    if prediction.predicted_failure_modes.is_empty()
+        && prediction.predicted_failed_tests.is_empty()
+        && prediction.guard_violations.is_empty()
+    {
+        return format!(
+            "verdict {:?} is bad, but no direct chunk/test/guard consequence evidence was persisted; trace is marked insufficient_direct_evidence",
+            prediction.verdict
+        );
+    }
+    format!(
+        "verdict {:?} requires operator attention",
+        prediction.verdict
+    )
+}
+
+fn reconciliation_status_is_bad(status: ReconciliationStatus) -> bool {
+    matches!(
+        status,
+        ReconciliationStatus::Missing
+            | ReconciliationStatus::UnexpectedSideEffect
+            | ReconciliationStatus::SuperficialMatch
+            | ReconciliationStatus::AmbiguousRef
+            | ReconciliationStatus::Unverifiable
+            | ReconciliationStatus::ModifiedUnexpectedly
+            | ReconciliationStatus::Ambiguous
+    )
 }
 
 fn q4_raw_observations(prediction: &RealityPrediction) -> Value {
@@ -3386,6 +4593,22 @@ fn find_prediction_row_by_id(db: &DB, prediction_id: PredictionId) -> AnyhowResu
         "predictionId={} was not found in CF_MEJEPA_LIVE_PREDICTIONS",
         hex::encode(prediction_id.0)
     )
+}
+
+fn scan_prediction_rows(db: &DB) -> AnyhowResult<Vec<PredictionRow>> {
+    let cf = cf_handle(db, CF_MEJEPA_LIVE_PREDICTIONS)?;
+    let mut rows = Vec::new();
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (key, value) = item?;
+        let prediction = decode_live_prediction_row(&key, &value)?;
+        rows.push(PredictionRow {
+            prediction,
+            key: key.to_vec(),
+            value_sha256_hex: hex::encode(Sha256::digest(&value)),
+            value_len: value.len(),
+        });
+    }
+    Ok(rows)
 }
 
 fn decode_live_prediction_row(key: &[u8], value: &[u8]) -> AnyhowResult<RealityPrediction> {
@@ -4639,6 +5862,399 @@ can_operator_override = {operator}
             label_context: Default::default(),
         })
         .unwrap()
+    }
+
+    #[test]
+    fn diagnostic_consequence_projection_explains_bad_prediction_with_evidence() {
+        let chunk = "src/lib.rs#fn#diagnostic";
+        let mut prediction = inspect_prediction_fixture([0x73; 16], chunk);
+        prediction.label_context.accepted_label_ids =
+            vec!["slot:e2:temporal_region:near_patch".to_string()];
+        prediction.label_context.active_skill_ids =
+            vec!["skill:wrong_file_test_oracle_import_chain".to_string()];
+        prediction.label_context.active_higher_ability_ids =
+            vec!["ability:claim_to_oracle_failure_chain".to_string()];
+        prediction.label_context.source_membership_keys =
+            vec!["membership:state-1:chunk-1".to_string()];
+        prediction.slot_attributions = vec![SlotAttributionEvidence {
+            schema_version: context_graph_mejepa::SLOT_ATTRIBUTION_SCHEMA_VERSION,
+            slot_id: "e7".to_string(),
+            embedder: Some(context_graph_mejepa::EmbedderId("E7".to_string())),
+            chunk: Some(ChunkId(chunk.to_string())),
+            polarity: SlotAttributionPolarity::Violating,
+            source: SlotAttributionSource::GuardViolation,
+            score: 0.91,
+            threshold: Some(0.85),
+            margin: Some(0.14),
+            reason: "guard violation explains bad consequence".to_string(),
+            relationship_slot_id: None,
+            related_fingerprint_id: None,
+            active_learning_candidate_id: None,
+            q_head: Some("q2_verdict".to_string()),
+            impact_kind: None,
+            evidence: "E7 crossed the calibrated tau for this chunk".to_string(),
+        }];
+
+        let projection = diagnostic_consequence_projection(&prediction, 64);
+        let items = projection["items"].as_array().expect("items array");
+        assert!(!items.is_empty());
+        let verdict = items
+            .iter()
+            .find(|item| item["kind"] == "q2_verdict")
+            .expect("q2 verdict consequence");
+        assert!(verdict["consequenceId"]
+            .as_str()
+            .unwrap()
+            .starts_with("consequence:"));
+        assert!(verdict["whyBad"]
+            .as_str()
+            .unwrap()
+            .contains("guard violation"));
+        assert_eq!(verdict["evidenceStatus"], "direct_evidence");
+        assert_eq!(verdict["directEvidence"]["chunkIds"][0], chunk);
+        assert_eq!(
+            verdict["predictionContext"]["labelContext"]["activeSkillIds"][0],
+            "skill:wrong_file_test_oracle_import_chain"
+        );
+        assert_eq!(
+            verdict["directEvidence"]["slotAttributions"][0]["source"],
+            "guard_violation"
+        );
+    }
+
+    #[test]
+    fn diagnostic_consequence_projection_marks_missing_direct_evidence() {
+        let mut prediction = inspect_prediction_fixture([0x74; 16], "src/lib.rs#fn#covered_only");
+        prediction.guard_violations.clear();
+        prediction.per_slot_ood_reasons.clear();
+        prediction.predicted_failure_modes.clear();
+        prediction.predicted_failed_tests.clear();
+        prediction.verdict = Verdict::Fail;
+
+        let projection = diagnostic_consequence_projection(&prediction, 64);
+        let items = projection["items"].as_array().expect("items array");
+        let verdict = items
+            .iter()
+            .find(|item| item["kind"] == "q2_verdict")
+            .expect("q2 verdict consequence");
+        assert_eq!(verdict["evidenceStatus"], "insufficient_direct_evidence");
+        assert!(verdict["directEvidence"]["chunkIds"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(verdict["whyBad"]
+            .as_str()
+            .unwrap()
+            .contains("no direct chunk/test/guard consequence evidence"));
+    }
+
+    #[test]
+    fn diagnostic_consequence_projection_includes_pass_with_risk() {
+        let chunk = "src/lib.rs#fn#edge_risk";
+        let mut prediction = inspect_prediction_fixture([0x77; 16], chunk);
+        prediction.verdict = Verdict::Pass;
+        prediction.guard_violations.clear();
+        prediction.per_slot_ood_reasons.clear();
+        prediction.predicted_edge_cases = vec![context_graph_mejepa::PredictedEdgeCase {
+            edge_class: context_graph_mejepa::EdgeCaseClass::BoundaryValue,
+            chunk: ChunkId(chunk.to_string()),
+            line_range: (11, 14),
+            triggering_input_description: "empty collection reaches uncovered branch".to_string(),
+            covered_by_test: false,
+            confidence: 0.88,
+        }];
+
+        let projection = diagnostic_consequence_projection(&prediction, 64);
+        let items = projection["items"].as_array().expect("items array");
+        let risk = items
+            .iter()
+            .find(|item| item["kind"] == "q4_pass_with_edge_risk")
+            .expect("pass-with-risk consequence");
+        assert_eq!(risk["evidenceStatus"], "direct_risk_evidence");
+        assert_eq!(risk["directEvidence"]["chunkIds"][0], chunk);
+        assert!(risk["whyBad"].as_str().unwrap().contains("edge-case risk"));
+    }
+
+    #[test]
+    fn consequence_trace_enriches_direct_chunks_with_source_bytes() {
+        let tmp = TempDir::new().unwrap();
+        let infer_db = tmp.path().join("infer-db");
+        let source_jsonl = tmp.path().join("chunk-source.jsonl");
+        let chunk = "src/lib.rs#fn#source";
+        let source_text = "def consequence_source(value):\n    return value + 1\n";
+        fs::write(
+            &source_jsonl,
+            format!(
+                "{{\"chunk_id\":\"{chunk}\",\"relative_path\":\"src/lib.rs\",\"byte_span\":[0,{}],\"source_text\":{}}}\n",
+                source_text.len(),
+                serde_json::to_string(source_text).unwrap()
+            ),
+        )
+        .unwrap();
+        let db = open_infer_rocksdb(&infer_db).unwrap();
+        let prediction = inspect_prediction_fixture([0x78; 16], chunk);
+        persist_prediction_and_dda(db.clone(), &prediction);
+        drop(db);
+
+        let trace = run_consequence_trace(
+            &infer_db,
+            ConsequenceTraceRequest {
+                prediction_id: hex::encode(prediction.prediction_id),
+                consequence_id: None,
+                db_path: None,
+                chunk_source_jsonl: Some(source_jsonl.clone()),
+                require_source_bytes: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            trace["items"][0]["directEvidence"]["sourceStatus"],
+            "source_bytes_verified"
+        );
+        assert_eq!(
+            trace["items"][0]["directEvidence"]["sourceRows"][0]["sourceText"],
+            source_text
+        );
+        assert_eq!(
+            trace["sourceOfTruth"]["chunkSourceJsonl"],
+            source_jsonl.display().to_string()
+        );
+
+        let missing = run_consequence_trace(
+            &infer_db,
+            ConsequenceTraceRequest {
+                prediction_id: hex::encode(prediction.prediction_id),
+                consequence_id: None,
+                db_path: None,
+                chunk_source_jsonl: None,
+                require_source_bytes: true,
+            },
+        )
+        .unwrap_err();
+        assert!(missing
+            .to_string()
+            .contains("requireSourceBytes=true requires chunkSourceJsonl"));
+    }
+
+    #[test]
+    fn consequence_trace_filters_by_stable_consequence_id() {
+        let tmp = TempDir::new().unwrap();
+        let infer_db = tmp.path().join("infer-db");
+        let chunk = "src/lib.rs#fn#trace";
+        let db = open_infer_rocksdb(&infer_db).unwrap();
+        let prediction = inspect_prediction_fixture([0x75; 16], chunk);
+        persist_prediction_and_dda(db.clone(), &prediction);
+        let label_ids = vec!["slot:e2:temporal_region:near_patch".to_string()];
+        let skill_ids = vec!["skill:wrong_file_test_oracle_import_chain".to_string()];
+        let ability_ids = vec!["ability:claim_to_oracle_failure_chain".to_string()];
+        let membership_keys = vec!["membership:state-1:chunk-1".to_string()];
+        let label_signature =
+            context_graph_mejepa_train::label_bridge::accepted_label_signature_hash(&label_ids)
+                .unwrap();
+        let skill_signature = Some(
+            context_graph_mejepa_train::label_bridge::skill_signature_hash(&skill_ids).unwrap(),
+        );
+        let ability_signature = Some(
+            context_graph_mejepa_train::label_bridge::ability_signature_hash(&ability_ids).unwrap(),
+        );
+        let membership_signature = Some(
+            context_graph_mejepa_train::label_bridge::membership_signature_hash(&membership_keys)
+                .unwrap(),
+        );
+        let prediction_id = PredictionId(prediction.prediction_id);
+        let mistake_id = context_graph_mejepa_train::mistake_id_from_evidence_parts(
+            prediction_id,
+            "code_state:trace_test",
+            &label_signature,
+            skill_signature.as_deref(),
+            ability_signature.as_deref(),
+            membership_signature.as_deref(),
+            Verdict::Pass,
+        )
+        .unwrap();
+        let mistake_row = context_graph_mejepa_train::MistakeLogRow {
+            schema_version: 1,
+            mistake_id: mistake_id.clone(),
+            prediction_id,
+            predicted_verdict: prediction.verdict,
+            ground_truth_verdict: Verdict::Pass,
+            truth_source: context_graph_mejepa_train::MistakeTruthSource::SwebenchDockerOracle,
+            code_state_key: "code_state:trace_test".to_string(),
+            named_failure_mode: Some("failure:guard_violation".to_string()),
+            accepted_label_ids: label_ids.clone(),
+            active_skill_ids: skill_ids.clone(),
+            label_signature_hash: label_signature,
+            skill_signature_hash: skill_signature,
+            failure_evidence_set_ids: vec!["failure_evidence:set1".to_string()],
+            replay_row_key: hex::encode(prediction.prediction_id),
+            accepted_registry_sha256: None,
+            usefulness_metrics_sha256: None,
+            learning_bridge_manifest_sha256: None,
+            created_at_unix_ms: prediction.created_at_unix_ms + 1,
+            active_higher_ability_ids: ability_ids.clone(),
+            source_membership_keys: membership_keys.clone(),
+            ability_signature_hash: ability_signature,
+            membership_signature_hash: membership_signature,
+        };
+        context_graph_mejepa_train::write_mistake_log_row_sync_readback(db.as_ref(), &mistake_row)
+            .unwrap();
+        let lifecycle_row = context_graph_mejepa_train::SkillLifecycleAuditRow {
+            schema_version: context_graph_mejepa_train::SKILL_SEQUENCE_SCHEMA_VERSION,
+            skill_audit_id: "skill_audit:trace_test".to_string(),
+            prediction_id: Some(hex::encode(prediction.prediction_id)),
+            mistake_id: Some(mistake_id.clone()),
+            previous_skill_id: Some(skill_ids[0].clone()),
+            decision: context_graph_mejepa_train::SkillLifecycleDecision::UpdateExistingSkill,
+            candidate_skill_id: None,
+            evidence_label_ids: label_ids,
+            evidence_chunk_ids: vec![chunk.to_string()],
+            reason: "consequence trace links refuted prediction to skill lifecycle".to_string(),
+            created_at_unix_ms: prediction.created_at_unix_ms + 2,
+            evidence_skill_ids: skill_ids,
+            evidence_higher_ability_ids: ability_ids,
+            source_membership_keys: membership_keys,
+        };
+        context_graph_mejepa_train::write_skill_lifecycle_audit_row_sync_readback(
+            db.as_ref(),
+            &lifecycle_row,
+        )
+        .unwrap();
+        drop(db);
+
+        let projection = diagnostic_consequence_projection(&prediction, 64);
+        let consequence_id = projection["items"][0]["consequenceId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let second_projection = diagnostic_consequence_projection(&prediction, 64);
+        assert_eq!(
+            consequence_id,
+            second_projection["items"][0]["consequenceId"]
+                .as_str()
+                .unwrap()
+        );
+
+        let trace = run_consequence_trace(
+            &infer_db,
+            ConsequenceTraceRequest {
+                prediction_id: hex::encode(prediction.prediction_id),
+                consequence_id: Some(consequence_id.clone()),
+                db_path: None,
+                chunk_source_jsonl: None,
+                require_source_bytes: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(trace["filtered"], true);
+        assert_eq!(trace["consequenceCount"], 1);
+        assert_eq!(trace["items"][0]["consequenceId"], consequence_id);
+        assert_eq!(
+            trace["sourceOfTruth"]["cf"],
+            json!(CF_MEJEPA_LIVE_PREDICTIONS)
+        );
+        assert_eq!(trace["sourceOfTruth"]["readbackVerified"], true);
+        assert_eq!(
+            trace["items"][0]["mistakeLinkage"]["status"],
+            "refuted_or_observed_mistake_rows_found"
+        );
+        assert_eq!(
+            trace["items"][0]["mistakeLinkage"]["mistakeIds"][0],
+            mistake_id
+        );
+        assert_eq!(
+            trace["items"][0]["mistakeLinkage"]["rows"][0]["lifecycleAudits"][0]["decision"],
+            "update_existing_skill"
+        );
+    }
+
+    #[test]
+    fn evidence_to_consequences_reverse_lookup_scans_live_predictions() {
+        let tmp = TempDir::new().unwrap();
+        let infer_db = tmp.path().join("infer-db");
+        let chunk = "src/lib.rs#fn#reverse";
+        let mut prediction = inspect_prediction_fixture([0x76; 16], chunk);
+        prediction.label_context.active_skill_ids =
+            vec!["skill:wrong_file_test_oracle_import_chain".to_string()];
+        prediction.label_context.active_higher_ability_ids =
+            vec!["ability:claim_to_oracle_failure_chain".to_string()];
+        prediction.provenance.constellation_version = "constellation:test-v1".to_string();
+        let db = open_infer_rocksdb(&infer_db).unwrap();
+        persist_prediction_and_dda(db.clone(), &prediction);
+        drop(db);
+
+        let chunk_lookup = run_evidence_to_consequences(
+            &infer_db,
+            EvidenceToConsequencesRequest {
+                chunk_id: Some(chunk.to_string()),
+                skill_id: None,
+                constellation_id: None,
+                limit: 16,
+                db_path: None,
+                chunk_source_jsonl: None,
+                require_source_bytes: false,
+            },
+        )
+        .unwrap();
+        assert!(chunk_lookup["matchCount"].as_u64().unwrap() >= 1);
+        assert_eq!(
+            chunk_lookup["matches"][0]["matchScope"],
+            "direct_evidence.chunk_ids"
+        );
+
+        let skill_lookup = run_evidence_to_consequences(
+            &infer_db,
+            EvidenceToConsequencesRequest {
+                chunk_id: None,
+                skill_id: Some("skill:wrong_file_test_oracle_import_chain".to_string()),
+                constellation_id: None,
+                limit: 16,
+                db_path: None,
+                chunk_source_jsonl: None,
+                require_source_bytes: false,
+            },
+        )
+        .unwrap();
+        assert!(skill_lookup["matchCount"].as_u64().unwrap() >= 1);
+        assert_eq!(
+            skill_lookup["matches"][0]["matchScope"],
+            "prediction_context.active_skill_ids"
+        );
+
+        let constellation_lookup = run_evidence_to_consequences(
+            &infer_db,
+            EvidenceToConsequencesRequest {
+                chunk_id: None,
+                skill_id: None,
+                constellation_id: Some("constellation:test-v1".to_string()),
+                limit: 16,
+                db_path: None,
+                chunk_source_jsonl: None,
+                require_source_bytes: false,
+            },
+        )
+        .unwrap();
+        assert!(constellation_lookup["matchCount"].as_u64().unwrap() >= 1);
+        assert_eq!(
+            constellation_lookup["matches"][0]["matchScope"],
+            "prediction_context.constellation.version"
+        );
+
+        let invalid = run_evidence_to_consequences(
+            &infer_db,
+            EvidenceToConsequencesRequest {
+                chunk_id: Some(chunk.to_string()),
+                skill_id: Some("skill:wrong_file_test_oracle_import_chain".to_string()),
+                constellation_id: None,
+                limit: 16,
+                db_path: None,
+                chunk_source_jsonl: None,
+                require_source_bytes: false,
+            },
+        )
+        .unwrap_err();
+        assert!(invalid
+            .to_string()
+            .contains("exactly one of chunkId, skillId, or constellationId"));
     }
 
     fn persist_prediction_and_dda(db: Arc<DB>, prediction: &RealityPrediction) {

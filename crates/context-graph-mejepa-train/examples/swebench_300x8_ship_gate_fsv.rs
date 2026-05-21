@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 //! Real SWE-bench Lite Python 300x8 ship-gate rebaseline FSV.
 //!
 //! This FSV intentionally does not train a model and does not use a synthetic
@@ -181,6 +183,10 @@ fn run() -> Result<()> {
     let calibration_predictions = evaluate_split(&predictor, &device, &calibration)?;
     let calibration_policy = fit_calibration_policy(&calibration_predictions)?;
     let rank_lift_model = fit_rank_lift_policy(&index.entries)?;
+    let calibration_rank_safe_predictions =
+        apply_calibration_policy(&calibration_predictions, &calibration_policy)?;
+    let calibration_rank_lift_predictions =
+        apply_rank_lift_policy(&calibration_predictions, &rank_lift_model)?;
     let raw_predictions = evaluate_split(&predictor, &device, &holdout)?;
     let rank_safe_predictions = apply_calibration_policy(&raw_predictions, &calibration_policy)?;
     let predictions = apply_rank_lift_policy(&raw_predictions, &rank_lift_model)?;
@@ -236,6 +242,8 @@ fn run() -> Result<()> {
     let all_passed = predictions.len() == REQUIRED_HOLDOUT_COUNT
         && raw_predictions.len() == REQUIRED_HOLDOUT_COUNT
         && rank_safe_predictions.len() == REQUIRED_HOLDOUT_COUNT
+        && calibration_rank_safe_predictions.len() == REQUIRED_HOLDOUT_COUNT
+        && calibration_rank_lift_predictions.len() == REQUIRED_HOLDOUT_COUNT
         && calibration_predictions.len() == REQUIRED_HOLDOUT_COUNT
         && !calibration_policy.holdout_rows_used_for_fitting
         && rank_lift_model.policy.holdout_rows == REQUIRED_HOLDOUT_COUNT
@@ -325,12 +333,17 @@ fn run() -> Result<()> {
             "rank_lift_policy": rank_lift_model.policy,
             "calibration_split_metrics": metrics_for(&calibration_predictions),
             "calibration_split_per_category_metrics": per_category_metrics(&calibration_predictions),
+            "calibration_rank_safe_predictions": calibration_rank_safe_predictions,
+            "calibration_rank_lift_predictions": calibration_rank_lift_predictions,
+            "calibration_predictions": calibration_predictions,
             "holdout_prediction_count": predictions.len(),
             "raw_final_metrics": raw_final_metrics,
             "raw_per_category_metrics": raw_per_category_metrics,
+            "holdout_raw_predictions": raw_predictions,
             "calibration_improvement": rank_safe_calibration_improvement,
             "rank_safe_final_metrics": rank_safe_final_metrics,
             "rank_safe_per_category_metrics": rank_safe_per_category_metrics,
+            "holdout_rank_safe_predictions": rank_safe_predictions,
             "rank_lift_improvement_vs_raw": rank_lift_improvement_vs_raw,
             "rank_lift_improvement_vs_rank_safe": rank_lift_improvement_vs_rank_safe,
             "rank_lift_repair_evidence": rank_lift_repair_evidence,

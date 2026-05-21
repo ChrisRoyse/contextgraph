@@ -107,10 +107,36 @@ pub struct Level2SkillRow {
     pub created_at_unix_ms: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum SkillCandidateKind {
+    FailureSkill,
+    PassStabilitySkill,
+    ContextNegativeEvidence,
+    NeutralDiagnostic,
+    RejectOverbroadOrLeaky,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SkillUsefulnessProfile {
+    pub pattern_hash: String,
+    pub candidate_kind: SkillCandidateKind,
+    pub support: u64,
+    pub confidence: f64,
+    pub lift_over_cell_baseline: f64,
+    pub stability: f64,
+    pub genericity_score: f64,
+    pub split_selection_weight: f64,
+    pub oracle_outcome_distribution: SkillOutcomeDistribution,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct SkillCandidateRejection {
     pub pattern_hash: String,
+    pub candidate_kind: SkillCandidateKind,
     pub reason: String,
     pub support: u64,
     pub lift_over_cell_baseline: f64,
@@ -123,4 +149,5 @@ pub struct SkillCandidateRejection {
 pub struct SkillDiscoveryReport {
     pub candidates: Vec<Level2SkillRow>,
     pub rejections: Vec<SkillCandidateRejection>,
+    pub usefulness_profiles: Vec<SkillUsefulnessProfile>,
 }

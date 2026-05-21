@@ -25,6 +25,7 @@ pub mod failure_mode_hierarchy;
 pub mod label_bridge;
 pub mod labels;
 pub mod learning_signal;
+pub mod live_skill_reverse_index;
 pub mod lora_wiring;
 pub mod loss;
 pub mod mistake_log;
@@ -61,6 +62,7 @@ pub use learning_signal::{
     DeltaPComponents, DeltaXiComponents, HeadSignalInput, LearningSignal, PerHeadLearningSignal,
     SkipReason, UtmlError, UtmlErrorCode,
 };
+pub use live_skill_reverse_index::*;
 pub use loss::entropy::{
     estimate_latent_entropy_nats, latent_entropy_loss, EntropyLambdaDecision,
     EntropyLambdaScheduler, LatentEntropyConfig, LatentEntropyEstimate, LatentEntropyLossReport,

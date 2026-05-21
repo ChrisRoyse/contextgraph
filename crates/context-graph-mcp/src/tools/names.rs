@@ -128,6 +128,10 @@ pub const MEJEPA_PROMOTE_INSTRUMENT_PROPOSAL: &str =
 pub const MEJEPA_EXPLAIN_PREDICTION: &str = "mcp__cgreality__mejepa_explain_prediction";
 /// Phase F per-prediction provenance inspection tool.
 pub const MEJEPA_INSPECT_PREDICTION: &str = "mcp__cgreality__mejepa_inspect_prediction";
+/// TASK-SKILL-007 consequence-to-evidence trace readback.
+pub const MEJEPA_CONSEQUENCE_TRACE: &str = "mcp__cgreality__mejepa_consequence_trace";
+/// TASK-SKILL-007 reverse lookup from evidence to consequence predictions.
+pub const MEJEPA_EVIDENCE_TO_CONSEQUENCES: &str = "mcp__cgreality__mejepa_evidence_to_consequences";
 /// Phase F byte-for-byte replay of persisted ME-JEPA predictions.
 pub const MEJEPA_REPLAY_PREDICTION: &str = "mcp__cgreality__mejepa_replay_prediction";
 /// TASK-PY-G-045 Q5 shift-log replay engine for predicted reality impact.

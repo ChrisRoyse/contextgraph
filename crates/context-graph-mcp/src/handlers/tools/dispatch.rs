@@ -228,6 +228,8 @@ impl Handlers {
             tool_names::MEJEPA_PROMOTE_INSTRUMENT_PROPOSAL => call_mejepa_promote_instrument_proposal(arguments),
             tool_names::MEJEPA_EXPLAIN_PREDICTION => call_mejepa_explain_prediction(arguments),
             tool_names::MEJEPA_INSPECT_PREDICTION => call_mejepa_inspect_prediction(arguments),
+            tool_names::MEJEPA_CONSEQUENCE_TRACE => call_mejepa_consequence_trace(arguments),
+            tool_names::MEJEPA_EVIDENCE_TO_CONSEQUENCES => call_mejepa_evidence_to_consequences(arguments),
             tool_names::MEJEPA_REPLAY_PREDICTION => call_mejepa_replay_prediction(arguments),
             tool_names::MEJEPA_REALITY_IMPACT => call_mejepa_reality_impact(arguments),
             tool_names::MEJEPA_RECORD_AGENT_FEEDBACK => call_mejepa_record_agent_feedback(arguments),

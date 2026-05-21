@@ -12,7 +12,8 @@ use serde_json::{json, Value};
 use context_graph_mejepa::{
     pathway_leaf_credit_assignment, persist_pathway_surface, read_operator_pathway_choices,
     read_pathway_tree, read_surfaced_pathway, surface_pathways, OperatorPathwayChoiceRecord,
-    PathwayLeafOutcome, PathwaySurfaceInput,
+    PathwayLeaf, PathwayLeafOutcome, PathwaySurfaceInput, PathwaySurfaceReport,
+    SurfacedPathwayRecord,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_OPERATOR_PATHWAY_CHOICES, CF_MEJEPA_PATHWAY_TREES, CF_MEJEPA_SURFACED_PATHWAYS,
@@ -130,6 +131,7 @@ fn run_pathway_surface(request: PathwaySurfaceRequest) -> AnyhowResult<Value> {
     Ok(json!({
         "tool": tool_names::MEJEPA_PATHWAY_SURFACE,
         "sourceOfTruth": source_of_truth(&db_path),
+        "consequenceTraceHints": consequence_trace_hints_for_report(&report),
         "report": report
     }))
 }
@@ -165,6 +167,7 @@ fn run_pathway_inspect(request: PathwayInspectRequest) -> AnyhowResult<Value> {
         "sourceOfTruth": source_of_truth(&db_path),
         "tree": tree,
         "pathway": pathway,
+        "consequenceTraceHints": consequence_trace_hints_for_optional_pathway(pathway.as_ref()),
         "creditAssignmentsIfRefuted": credit_assignments_if_refuted
     }))
 }
@@ -204,12 +207,59 @@ fn run_pathway_history(request: PathwayHistoryRequest) -> AnyhowResult<Value> {
             surfaced.push(pathway);
         }
     }
+    let consequence_trace_hints = surfaced
+        .iter()
+        .flat_map(consequence_trace_hints_for_pathway)
+        .collect::<Vec<_>>();
     Ok(json!({
         "tool": tool_names::MEJEPA_PATHWAY_HISTORY,
         "sourceOfTruth": source_of_truth(&db_path),
         "choices": choices,
+        "consequenceTraceHints": consequence_trace_hints,
         "surfacedPathways": surfaced
     }))
+}
+
+fn consequence_trace_hints_for_report(report: &PathwaySurfaceReport) -> Vec<Value> {
+    report
+        .surfaced_pathways
+        .iter()
+        .flat_map(consequence_trace_hints_for_pathway)
+        .collect()
+}
+
+fn consequence_trace_hints_for_optional_pathway(
+    pathway: Option<&SurfacedPathwayRecord>,
+) -> Vec<Value> {
+    pathway
+        .map(consequence_trace_hints_for_pathway)
+        .unwrap_or_default()
+}
+
+fn consequence_trace_hints_for_pathway(pathway: &SurfacedPathwayRecord) -> Vec<Value> {
+    pathway
+        .leaf_chain
+        .iter()
+        .map(|leaf| consequence_trace_hint_for_leaf(pathway, leaf))
+        .collect()
+}
+
+fn consequence_trace_hint_for_leaf(pathway: &SurfacedPathwayRecord, leaf: &PathwayLeaf) -> Value {
+    let missing_reason = if leaf.evidence.unknown_signature {
+        "UNKNOWN_PATHWAY_SIGNATURE"
+    } else {
+        "CONSEQUENCE_TRACE_NOT_LINKED_TO_PATHWAY_LEAF"
+    };
+    json!({
+        "pathwayId": pathway.pathway_id,
+        "predictionId": pathway.prediction_id_hex,
+        "leafId": leaf.leaf_id,
+        "leafKind": leaf.leaf_kind,
+        "predictedOutcome": leaf.predicted_outcome,
+        "consequenceTraceId": Value::Null,
+        "missingEvidenceReason": missing_reason,
+        "evidence": leaf.evidence
+    })
 }
 
 fn open_pathway_rocksdb(path: &Path, create_if_missing: bool) -> AnyhowResult<DB> {

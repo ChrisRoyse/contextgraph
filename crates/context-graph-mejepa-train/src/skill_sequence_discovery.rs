@@ -123,49 +123,35 @@ pub fn discover_skill_candidates(
 
     let mut candidates = Vec::new();
     let mut rejections = Vec::new();
+    let mut usefulness_profiles = Vec::new();
     for (pattern_hash, acc) in groups {
         let metrics = acc.metrics();
+        usefulness_profiles.push(acc.usefulness_profile(&pattern_hash, metrics));
         if acc.source_episode_ids.len() >= MAX_EPISODES_PER_SKILL
             && acc.support > MAX_EPISODES_PER_SKILL as u64
         {
             rejections.push(acc.rejection(
                 pattern_hash,
                 "too_broad_high_support_static_pattern",
-                metrics.lift_over_cell_baseline,
-                metrics.confidence,
+                metrics,
             ));
             continue;
         }
         if acc.support < config.min_support {
-            rejections.push(acc.rejection(
-                pattern_hash,
-                "low_support_overfit",
-                metrics.lift_over_cell_baseline,
-                metrics.confidence,
-            ));
+            rejections.push(acc.rejection(pattern_hash, "low_support_overfit", metrics));
             continue;
         }
         let promotion_status = if acc.outcome_distribution.supervised_total() == 0 {
             if config.allow_pending_outcome_candidates {
                 SkillPromotionStatus::ActiveLearning
             } else {
-                rejections.push(acc.rejection(
-                    pattern_hash,
-                    "missing_target_supervision",
-                    metrics.lift_over_cell_baseline,
-                    metrics.confidence,
-                ));
+                rejections.push(acc.rejection(pattern_hash, "missing_target_supervision", metrics));
                 continue;
             }
         } else if metrics.lift_over_cell_baseline < config.min_lift_over_cell_baseline
             || metrics.confidence < config.min_confidence
         {
-            rejections.push(acc.rejection(
-                pattern_hash,
-                "below_usefulness_threshold",
-                metrics.lift_over_cell_baseline,
-                metrics.confidence,
-            ));
+            rejections.push(acc.rejection(pattern_hash, "below_usefulness_threshold", metrics));
             continue;
         } else {
             SkillPromotionStatus::PromotionReady
@@ -177,6 +163,7 @@ pub fn discover_skill_candidates(
     Ok(SkillDiscoveryReport {
         candidates,
         rejections,
+        usefulness_profiles,
     })
 }
 
@@ -211,6 +198,36 @@ pub fn skill_id_from_parts(
         slugify(skill_name),
         &hex::encode(hasher.finalize())[..16]
     ))
+}
+
+pub fn skill_candidate_kind_for_row(row: &Level2SkillRow) -> SkillCandidateKind {
+    let supervised = row.oracle_outcome_distribution.supervised_total();
+    if supervised == 0 {
+        return SkillCandidateKind::NeutralDiagnostic;
+    }
+    let fail_rate = row.oracle_outcome_distribution.fail as f64 / supervised as f64;
+    let pass_rate = row.oracle_outcome_distribution.pass as f64 / supervised as f64;
+    let fail_lift = if fail_rate >= pass_rate {
+        row.lift_over_cell_baseline
+    } else {
+        0.0
+    };
+    let pass_lift = if pass_rate > fail_rate {
+        row.lift_over_cell_baseline
+    } else {
+        0.0
+    };
+    classify_candidate(
+        fail_rate,
+        pass_rate,
+        fail_lift,
+        pass_lift,
+        skill_genericity_score_for_steps(&row.ordered_steps),
+    )
+}
+
+pub fn skill_genericity_score_for_steps(steps: &[SkillStepTemplate]) -> f64 {
+    genericity_score(steps)
 }
 
 #[derive(Debug, Clone)]
@@ -275,11 +292,19 @@ impl Accumulator {
 
     fn metrics(&self) -> CandidateMetrics {
         let supervised = self.outcome_distribution.supervised_total();
+        let genericity_score = genericity_score(&self.ordered_steps);
         if supervised == 0 {
             return CandidateMetrics {
                 confidence: 0.0,
                 lift_over_cell_baseline: 0.0,
+                fail_rate: 0.0,
+                pass_rate: 0.0,
+                fail_lift: 0.0,
+                pass_lift: 0.0,
                 stability: stability_score(self.file_paths.len(), self.support),
+                genericity_score,
+                candidate_kind: SkillCandidateKind::NeutralDiagnostic,
+                split_selection_weight: 0.0,
             };
         }
         let fail_rate = self.outcome_distribution.fail as f64 / supervised as f64;
@@ -287,10 +312,47 @@ impl Accumulator {
         let baseline_fail_rate = self.baseline_fail_rate_sum / self.support as f64;
         let fail_lift = fail_rate - baseline_fail_rate;
         let pass_lift = pass_rate - (1.0 - baseline_fail_rate);
+        let lift_over_cell_baseline = fail_lift.max(pass_lift);
+        let confidence = fail_rate.max(pass_rate);
+        let candidate_kind =
+            classify_candidate(fail_rate, pass_rate, fail_lift, pass_lift, genericity_score);
+        let split_selection_weight = selection_weight(
+            candidate_kind,
+            lift_over_cell_baseline,
+            confidence,
+            stability_score(self.file_paths.len(), self.support),
+            genericity_score,
+        );
         CandidateMetrics {
-            confidence: fail_rate.max(pass_rate),
-            lift_over_cell_baseline: fail_lift.max(pass_lift),
+            confidence,
+            lift_over_cell_baseline,
+            fail_rate,
+            pass_rate,
+            fail_lift,
+            pass_lift,
             stability: stability_score(self.file_paths.len(), self.support),
+            genericity_score,
+            candidate_kind,
+            split_selection_weight,
+        }
+    }
+
+    fn usefulness_profile(
+        &self,
+        pattern_hash: &str,
+        metrics: CandidateMetrics,
+    ) -> SkillUsefulnessProfile {
+        SkillUsefulnessProfile {
+            pattern_hash: pattern_hash.to_string(),
+            candidate_kind: metrics.candidate_kind,
+            support: self.support,
+            confidence: metrics.confidence,
+            lift_over_cell_baseline: metrics.lift_over_cell_baseline,
+            stability: metrics.stability,
+            genericity_score: metrics.genericity_score,
+            split_selection_weight: metrics.split_selection_weight,
+            oracle_outcome_distribution: self.outcome_distribution,
+            reason: usefulness_reason(metrics),
         }
     }
 
@@ -298,15 +360,15 @@ impl Accumulator {
         &self,
         pattern_hash: String,
         reason: &str,
-        lift_over_cell_baseline: f64,
-        confidence: f64,
+        metrics: CandidateMetrics,
     ) -> SkillCandidateRejection {
         SkillCandidateRejection {
             pattern_hash,
+            candidate_kind: metrics.candidate_kind,
             reason: reason.to_string(),
             support: self.support,
-            lift_over_cell_baseline,
-            confidence,
+            lift_over_cell_baseline: metrics.lift_over_cell_baseline,
+            confidence: metrics.confidence,
             source_episode_ids: self.source_episode_ids.clone(),
         }
     }
@@ -357,7 +419,14 @@ impl Accumulator {
 struct CandidateMetrics {
     confidence: f64,
     lift_over_cell_baseline: f64,
+    fail_rate: f64,
+    pass_rate: f64,
+    fail_lift: f64,
+    pass_lift: f64,
     stability: f64,
+    genericity_score: f64,
+    candidate_kind: SkillCandidateKind,
+    split_selection_weight: f64,
 }
 
 fn validate_episode(row: &SkillEpisodeRow) -> Result<(), TrainerError> {
@@ -508,6 +577,118 @@ fn stability_score(file_count: usize, support: u64) -> f64 {
         return 0.0;
     }
     (file_count as f64 / support as f64).clamp(0.0, 1.0)
+}
+
+fn genericity_score(steps: &[SkillStepTemplate]) -> f64 {
+    let mut labels = Vec::new();
+    for step in steps {
+        labels.extend(step.accepted_label_ids.iter().map(String::as_str));
+        labels.extend(step.group_ids.iter().map(String::as_str));
+    }
+    if labels.is_empty() {
+        return 1.0;
+    }
+    let has_source_site = labels
+        .iter()
+        .any(|label| label.starts_with("source_site_relation:"));
+    let has_pair_or_cross = labels.iter().any(|label| {
+        label.starts_with("pair:")
+            || label.starts_with("pair_relation:")
+            || label.starts_with("group:cross_panel:")
+    });
+    let has_temporal = labels.iter().any(|label| {
+        label.starts_with("slot:e2:")
+            || label.starts_with("slot:e3:")
+            || label.starts_with("slot:e4:")
+            || label.contains("temporal")
+    });
+    let has_specific_ast = labels
+        .iter()
+        .any(|label| label.starts_with("ast_surface:") && !label.ends_with(":present"));
+    let mut score = 1.0_f64;
+    if has_source_site {
+        score -= 0.35;
+    }
+    if has_pair_or_cross {
+        score -= 0.25;
+    }
+    if has_temporal {
+        score -= 0.20;
+    }
+    if has_specific_ast {
+        score -= 0.10;
+    }
+    score.clamp(0.0, 1.0)
+}
+
+fn classify_candidate(
+    fail_rate: f64,
+    pass_rate: f64,
+    fail_lift: f64,
+    pass_lift: f64,
+    genericity_score: f64,
+) -> SkillCandidateKind {
+    if genericity_score >= 0.70 && pass_rate >= 0.80 && pass_lift > 0.0 {
+        return SkillCandidateKind::ContextNegativeEvidence;
+    }
+    if fail_rate >= pass_rate && fail_lift > 0.0 {
+        return SkillCandidateKind::FailureSkill;
+    }
+    if pass_rate > fail_rate && pass_lift > 0.0 {
+        return SkillCandidateKind::PassStabilitySkill;
+    }
+    if genericity_score >= 0.85 {
+        return SkillCandidateKind::RejectOverbroadOrLeaky;
+    }
+    SkillCandidateKind::NeutralDiagnostic
+}
+
+fn selection_weight(
+    kind: SkillCandidateKind,
+    lift_over_cell_baseline: f64,
+    confidence: f64,
+    stability: f64,
+    genericity_score: f64,
+) -> f64 {
+    let kind_weight = match kind {
+        SkillCandidateKind::FailureSkill => 1.0,
+        SkillCandidateKind::PassStabilitySkill => 0.80,
+        SkillCandidateKind::ContextNegativeEvidence => 0.55,
+        SkillCandidateKind::NeutralDiagnostic => 0.20,
+        SkillCandidateKind::RejectOverbroadOrLeaky => 0.0,
+    };
+    let genericity_penalty = if matches!(kind, SkillCandidateKind::ContextNegativeEvidence) {
+        0.85
+    } else {
+        1.0 - (genericity_score * 0.60)
+    };
+    (lift_over_cell_baseline.max(0.0) * confidence * stability * kind_weight * genericity_penalty)
+        .max(0.0)
+}
+
+fn usefulness_reason(metrics: CandidateMetrics) -> String {
+    match metrics.candidate_kind {
+        SkillCandidateKind::FailureSkill => format!(
+            "failure_skill: fail_rate={:.6}, fail_lift={:.6}, genericity={:.6}",
+            metrics.fail_rate, metrics.fail_lift, metrics.genericity_score
+        ),
+        SkillCandidateKind::PassStabilitySkill => format!(
+            "pass_stability_skill: pass_rate={:.6}, pass_lift={:.6}, genericity={:.6}",
+            metrics.pass_rate, metrics.pass_lift, metrics.genericity_score
+        ),
+        SkillCandidateKind::ContextNegativeEvidence => format!(
+            "context_negative_evidence: pass_rate={:.6}, pass_lift={:.6}, genericity={:.6}",
+            metrics.pass_rate, metrics.pass_lift, metrics.genericity_score
+        ),
+        SkillCandidateKind::NeutralDiagnostic => format!(
+            "neutral_diagnostic: confidence={:.6}, lift={:.6}, genericity={:.6}",
+            metrics.confidence, metrics.lift_over_cell_baseline, metrics.genericity_score
+        ),
+        SkillCandidateKind::RejectOverbroadOrLeaky => format!(
+            "reject_overbroad_or_leaky: confidence={:.6}, lift={:.6}, genericity={:.6}",
+            metrics.confidence, metrics.lift_over_cell_baseline, metrics.genericity_score
+        ),
+    }
 }
 
 fn derive_skill_name(parent_group_ids: &[String], ordered_steps: &[SkillStepTemplate]) -> String {

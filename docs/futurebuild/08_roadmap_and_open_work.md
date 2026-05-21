@@ -14,15 +14,15 @@ The prediction contract is **three binary surfaces against ground truth** (Q1 by
 
 Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-seeded synthetic vectors instead of calling real `E*Instrument` encoders. Six P0 fixes (#422 / #424 / #426 / #437 / #438 / #441 / #452, all closed 2026-05-19/20) replaced the broken pipeline. **The previous `0.866667` ship-gate measurement is INVALID** — it was the deterministic fixed-point output of a hash-derived predictor, not a real measurement of model quality on real code semantics. See `01_overview.md §1.7` and `07_results_and_benchmarks.md §0` for forensic detail.
 
-**Current real-input state (#536/#547):** aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T175714Z/` reports raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe calibrated holdout `0.6916886568`, and real code-state-constellation rank-lift holdout `0.7942190170`. Calibration/rank-lift are fitted only on the 240-row calibration split, constants are restricted to structurally degenerate cells, rank-reversing transforms require mixed-class support ≥ 8 per class plus raw Pearson ≤ -0.25, and rank-lift excludes target-side oracle/docker/test labels. #536 selected train-only hard-negative weighting (`tau=20.0`, `fail_boost=1.5`) and improved correlation/Brier/ECE over #535, but the lift is small. #547 then proved the #536 policy is split-disjoint and not holdout-selected. The next lift must come from deeper mixed-cell ranking repair and Panel B / anti-Goodhart validation, not another synthetic-input rebaseline.
+**Current real-input state (#536/#547/#548/#549/#392/#554/#558/#560):** aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T185945Z/` reports raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe calibrated holdout `0.6916886568`, and real code-state-constellation rank-lift holdout `0.7942190170`. Calibration/rank-lift are fitted only on the 240-row calibration split, constants are restricted to structurally degenerate cells, rank-reversing transforms require mixed-class support ≥ 8 per class plus raw Pearson ≤ -0.25, and rank-lift excludes target-side oracle/docker/test labels. #536 selected train-only hard-negative weighting (`tau=20.0`, `fail_boost=1.5`) and improved correlation/Brier/ECE over #535, but the lift is small. #547 proved the #536 policy is split-disjoint and not holdout-selected. #548 proved typed blocker `MIXED_CELL_CALIBRATION_UNDERPOWERED`: holdout-selected thresholds can improve the metric, but legal calibration-selected candidates leave true mixed cells saturated. #549 proved static repo/path metadata and calibration-selected raw/rank-safe/rank-lift score fusion are useful but insufficient. #392 aggregate trajectories first lifted to `0.8008320332`; file-path plus skill/ability trajectories lifted to `0.8422425985`; sparse out-of-fold probability bins regressed ECE. The hardened #392 support-aware slice at `/zfs/archive/contextgraph/fsv/task-py-g-392-temporal-trajectory-features-fsv/run-20260520T214049Z/` selected global mean-bias at correlation `0.8497869968`, Brier `0.0697008073`, ECE `0.0299093761`, and accuracy `0.9083333611`. #554 proved targeted usefulness-weighted ordered skills increase consequence signal but remain ECE-sensitive. #558 then rematerialized the full v2 label corpus (`399777` chunk rows, `398215` episodes, `157` skills, `9489` memberships) and reran #392 from the new DB. The current best legal trajectory candidate is now `usefulness_weighted_combined`: correlation `0.8679359555`, Brier `0.0620564893`, ECE `0.0396374688`, accuracy `0.9083333611`, pass recall `0.9166666865`, fail recall `0.9000000`. #560 added a split-legal ECE-focused calibration diagnostic and proved it selects the same model and stays ECE-blocked (`0.0396374688`; support-shrink best `0.0396139733`). This is a real lift, but it is still not promotable because ECE remains above the #536 baseline `0.0240316074`. The next lift must preserve the targeted skill trajectory signal while repairing ECE through per-cell/per-constellation consequence evidence and closing/using #551's uncovered skill-state gap, then pass Panel B / anti-Goodhart validation; do not spend more time on synthetic-input rebaselines, static score blends, aggregate-only trajectory, sparse bin calibration, affine/rank-lift blending, logit calibration, ECE-overweighted selection, support-only shrinkage, blanket skill expansion, or holdout threshold tunes.
 
 **Remaining revalidation queue:**
 
-1. Continue targeted mixed-cell ranking repair under #548 for `off_by_one`, `subtle_flip`, and `swap_variable`; #536 improved some weak-cell diagnostics but did not unsaturate threshold behavior enough for the gate.
+1. Continue #392 with robust split-legal ECE repair on top of the #558/#560 targeted skill trajectory surface; the consequence signal is real, but aggregate ECE still misses the baseline and needs per-cell/per-constellation consequence-to-cause evidence.
 2. Run Panel B / anti-Goodhart validation (#405/#521) when the model-backed Panel B blocker clears.
 3. Re-validate #129 OOD serving gate + #130 Gτ guard audit + #404 holdout coverage against real-input predictions.
 
-Tracked under #529; #536, #537, and #547 are closed evidence. **All issues listed in §3 below assume the real-input rebaseline, #536 rank-lift measurement, and #547 disjointness proof exist unless explicitly noted otherwise.**
+Tracked under #529; #536, #537, #547, #548, #549, #554, #558, and #560 are closed evidence; #392 is active with twelve non-promotable slices: aggregate trajectory, file/skill trajectory lift, out-of-fold probability calibration, affine file/skill calibration, affine/rank-lift blending, logit calibration, mean-bias calibration, ECE-overweighted selection, support-aware coverage hardening, usefulness-weighted skill policy ablation, full-corpus targeted skill rematerialization, and ECE-focused mean-bias repair. **All issues listed in §3 below assume the real-input rebaseline, #536 rank-lift measurement, #547 disjointness proof, #548 typed blocker, #549 static-signal blocker, #392 trajectory-ECE blocker, #554 skill-usefulness ECE blocker, #558 rematerialized-skill ECE blocker, and #560 ECE-repair blocker exist unless explicitly noted otherwise.**
 
 ---
 
@@ -39,7 +39,7 @@ prediction_oracle_correlation ≥ 0.95
   AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
 
-**Last holdout measurement:** `0.7942190170` rank-lift calibrated from real code-state constellation labels (`0.6916886568` rank-safe calibrated, `0.4843192995` raw) from `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T175714Z/`. Previous `0.866667` figure (from legacy pre-migration evidence) was measured against the synthetic-vector inference path and is invalidated.
+**Last holdout measurement:** `0.7942190170` rank-lift calibrated from real code-state constellation labels (`0.6916886568` rank-safe calibrated, `0.4843192995` raw) from `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260520T185945Z/`. Previous `0.866667` figure (from legacy pre-migration evidence) was measured against the synthetic-vector inference path and is invalidated.
 
 **Gap to ship:** `0.1557809830` against the rank-lift calibrated real-input Panel A measurement, plus four-window stability and Panel B cross-checks.
 
@@ -66,8 +66,8 @@ By priority:
 
 | Priority | Examples |
 |---|---|
-| `priority:p0` | #397 consequence-prediction contract, #405 Panel B (blocked), #383 evidence-weighted ordering, #372 aiwonder ZFS mount, #521 Panel B model-backed encoders (blocked), #528 no_mnt_d audit hardening |
-| `priority:p1` | #379 multi-file holdout, #416 pathway, #417 skill linkage remaining, #511 entropy loss, #392 temporal trajectory, #380 off-host backup, #433 ability resolver replay completeness |
+| `priority:p0` | #397 consequence-prediction contract, #392 temporal trajectory, #551 skill trajectory coverage gap, #405 Panel B (blocked), #383 evidence-weighted ordering, #372 aiwonder ZFS mount, #521 Panel B model-backed encoders (blocked), #528 no_mnt_d audit hardening |
+| `priority:p1` | #379 multi-file holdout, #416 pathway, #417 skill linkage remaining, #511 entropy loss, #380 off-host backup, #433 ability resolver replay completeness |
 | `priority:p2` | EK series tail, post-ship policies, #382 frozen-panel dimensionality ablation, #378 tool-usage telemetry |
 | `priority:p3` | Deferred (SWE-bench Verified subset, v2 stretch tasks, future Docker image plan) |
 
@@ -91,12 +91,13 @@ Per pinned context #383 (LOCKED): gate-active issue order is **evidence-weighted
 | 5 | **#418** runtime hierarchical ability resolver | ✅ closed 2026-05-19 | Pure resolver logic — REAL |
 | 6 | **#406 / #523** online mistake loop + MCP | ✅ closed 2026-05-20 | Machinery shipped; needs real predictor mistakes to validate `mistake_repeat_rate ≤ 0.05` convergence |
 | 7 | **#547** post-#536 calibration-disjointness revalidation | ✅ complete 2026-05-20 | Proves #536 selected `tau=20.0, fail_boost=1.5` on calibration only; train/calibration/holdout row and feature-member overlaps are zero; #413 label-lineage hashes stable; target-side labels excluded. |
-| 8 | **#548** post-#547 mixed-cell ranking repair | OPEN p0 | Directly targets `off_by_one`, `subtle_flip`, and `swap_variable` without split leakage or holdout-selected calibration. |
-| 9 | **#511** information-entropy auxiliary loss | OPEN p1 | Re-justify against the `0.7942190170` real baseline before training. |
-| 10 | **#405** cross-panel triangulation Panel B | OPEN p0, blocked | Even hitting 0.95 on Panel A is not ship-eligible without Panel B. Defends 0.95 against encoder-matched Goodhart. |
-| 11 | **#379** multi-file structural patch holdout | OPEN p1 | Compositional generalization |
-| 12 | **#392** temporal constellation trajectory features | OPEN p1 | Exact-state movement across windows |
-| 13 | **#409** paper revision | OPEN p2 | Aligns PAPER §1 with binary doctrine + adds synthetic-vector remediation section. Not gate-blocking. |
+| 8 | **#548** post-#547 mixed-cell ranking diagnostic | ✅ complete 2026-05-20 | Proved `MIXED_CELL_CALIBRATION_UNDERPOWERED`: current surface has signal but legal calibration cannot select the holdout-working threshold. |
+| 9 | **#549** calibration-stable mixed-cell signal fusion | ✅ complete 2026-05-20 | Static metadata and score fusion are useful but insufficient; typed blocker `MIXED_CELL_SIGNAL_FUSION_INSUFFICIENT`. |
+| 10 | **#392 / #551 / #554 / #558 / #560** temporal constellation trajectory features + skill coverage/usefulness repair | OPEN p0, #560 complete | Full-corpus targeted skills are now active in #392: correlation `0.8679359555`, Brier `0.0620564893`, ECE `0.0396374688`, accuracy `0.9083333611`; exact #536 row-trace reproduction passes and mixed cells are no longer threshold-degenerate. #560 ruled out aggregate ECE-focused mean-bias selection as the repair. Next: robust per-cell/per-constellation ECE repair that preserves the targeted skill lift without blanket expansion or holdout threshold tuning. |
+| 11 | **#511** information-entropy auxiliary loss | OPEN p1 | Only gate-moving if re-justified against `0.7942190170` and shown to improve the true mixed cells under split-stable selection. |
+| 12 | **#405** cross-panel triangulation Panel B | OPEN p0, blocked | Even hitting 0.95 on Panel A is not ship-eligible without Panel B. Defends 0.95 against encoder-matched Goodhart. |
+| 13 | **#379** multi-file structural patch holdout | OPEN p1 | Compositional generalization |
+| 14 | **#409** paper revision | OPEN p2 | Aligns PAPER §1 with binary doctrine + adds synthetic-vector remediation section. Not gate-blocking. |
 
 ### 3.1 Slot-preserving constellation architecture (#385 parent — substantially shipped)
 
@@ -255,7 +256,7 @@ Only candidates passing BOTH are promoted. Rejected candidates write a `CF_MEJEP
 
 **Activation rule:** these are *contingency plans* for if the current Phase G queue + creativity engine fail to close the remaining ship-gate gap. **They are NOT to be started until:**
 
-1. The current queue concludes (#529 rebaseline → #535 rank lift → #536 weak-cell repair → #547 calibration disjointness → #548 mixed-cell repair → #511 entropy loss → #405 Panel B → #379 multi-file holdout → #392 temporal features).
+1. The current queue concludes (#529 rebaseline → #535 rank lift → #536 weak-cell repair → #547 calibration disjointness → #548 typed blocker → #549 static-signal blocker → #392 temporal features → #511 entropy loss → #405 Panel B → #379 multi-file holdout).
 2. A post-queue gap analysis has been run and concludes the remaining gap is not closable with the current architecture + corpus + label substrate.
 3. The operator explicitly re-prioritizes any of these (or all) from `p3` based on what gap analysis identifies as needed.
 

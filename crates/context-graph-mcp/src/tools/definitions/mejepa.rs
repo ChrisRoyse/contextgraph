@@ -496,6 +496,82 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_CONSEQUENCE_TRACE,
+            "TASK-SKILL-007 readback surface for bad-consequence predictions: read a persisted RealityPrediction from CF_MEJEPA_LIVE_PREDICTIONS and return the derived consequence trace, including why the consequence is bad and the chunk/skill/constellation evidence path.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["predictionId"],
+                "properties": {
+                    "predictionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{32}$"
+                    },
+                    "consequenceId": {
+                        "type": "string",
+                        "pattern": "^consequence:[0-9a-f]{24}$",
+                        "description": "Optional deterministic consequence id returned by diagnosticConsequences. When omitted, all consequences for the prediction are returned."
+                    },
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional Phase 4 inference RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    },
+                    "chunkSourceJsonl": {
+                        "type": "string",
+                        "description": "Optional aiwonder JSONL source index with chunk_id, relative_path/file_path, byte_span, and source_text/source_text_sha256. Used to prove direct chunk evidence down to source bytes."
+                    },
+                    "requireSourceBytes": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "When true, every direct-evidence chunk must resolve to source bytes in chunkSourceJsonl or the tool fails closed."
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_EVIDENCE_TO_CONSEQUENCES,
+            "TASK-SKILL-007 reverse lookup from evidence to bad-consequence predictions: scan persisted CF_MEJEPA_LIVE_PREDICTIONS rows and return consequences associated with a chunk id, skill/ability id, or constellation id.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "chunkId": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "skillId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Matches activeSkillIds and activeHigherAbilityIds in the prediction label context."
+                    },
+                    "constellationId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Matches relationshipPatternId or constellation version in derived consequence evidence."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 500,
+                        "default": 64
+                    },
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional Phase 4 inference RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    },
+                    "chunkSourceJsonl": {
+                        "type": "string",
+                        "description": "Optional aiwonder JSONL source index used to enrich direct evidence with file path, byte span, and source bytes."
+                    },
+                    "requireSourceBytes": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "When true, matching direct-evidence chunks must resolve to source bytes in chunkSourceJsonl or the tool fails closed."
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_REPLAY_PREDICTION,
             "Replay a persisted System 2 ME-JEPA RealityPrediction byte-for-byte from CF_MEJEPA_LIVE_PREDICTIONS by validating the key/payload provenance and reserializing the decoded prediction.",
             json!({

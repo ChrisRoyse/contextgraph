@@ -9,9 +9,10 @@ use crate::chunk_skill_membership::{materialize_skill_memberships, SkillMaterial
 use crate::error::{TrainerError, TrainerErrorCode};
 use crate::label_bridge::{load_label_learning_bridge, LabelLearningBridge};
 use crate::skill_sequence_discovery::{
-    discover_skill_candidates, skill_id_from_parts, Level2SkillRow, SkillDiscoveryConfig,
-    SkillEpisodeRow, SkillOutcomeDistribution, SkillOutcomeObservation, SkillOutcomeVerdict,
-    SkillPromotionStatus, SkillStepEvidence, SkillStepTemplate, SkillTransitionEdge,
+    discover_skill_candidates, skill_candidate_kind_for_row, skill_id_from_parts, Level2SkillRow,
+    SkillCandidateKind, SkillDiscoveryConfig, SkillEpisodeRow, SkillOutcomeDistribution,
+    SkillOutcomeObservation, SkillOutcomeVerdict, SkillPromotionStatus, SkillStepEvidence,
+    SkillStepTemplate, SkillTransitionEdge,
 };
 use crate::skill_validation;
 use serde::{Deserialize, Serialize};
@@ -75,6 +76,9 @@ pub struct SkillCorpusMaterializationReport {
     pub chunk_window_episode_count: usize,
     pub candidate_count: usize,
     pub rejection_count: usize,
+    pub usefulness_profile_count: usize,
+    pub usefulness_profile_kind_counts: BTreeMap<String, usize>,
+    pub selected_candidate_kind_counts: BTreeMap<String, usize>,
     pub materialized_skill_count: usize,
     pub materialized_membership_count: usize,
     pub materialized_reverse_index_count: usize,
@@ -193,6 +197,13 @@ pub fn build_skill_corpus_materialization(
     let sample_episodes = summarize_episodes(&episodes);
 
     let discovery = discover_skill_candidates(&episodes, config.discovery, created_at_unix_ms)?;
+    let usefulness_profile_count = discovery.usefulness_profiles.len();
+    let usefulness_profile_kind_counts = kind_counts(
+        discovery
+            .usefulness_profiles
+            .iter()
+            .map(|profile| profile.candidate_kind),
+    );
     let mut candidates = discovery.candidates;
     candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate_rank(candidate)));
     let selected = candidates
@@ -205,6 +216,8 @@ pub fn build_skill_corpus_materialization(
             "no production skill candidates survived support/lift/leakage filters",
         ));
     }
+    let selected_candidate_kind_counts =
+        kind_counts(selected.iter().map(skill_candidate_kind_for_row));
 
     let mut materialization = SkillMaterialization {
         level2_skills: Vec::new(),
@@ -245,6 +258,9 @@ pub fn build_skill_corpus_materialization(
         chunk_window_episode_count: counts.chunk_window_episode_count,
         candidate_count: selected.len(),
         rejection_count: discovery.rejections.len(),
+        usefulness_profile_count,
+        usefulness_profile_kind_counts,
+        selected_candidate_kind_counts,
         materialized_skill_count: materialization.level2_skills.len(),
         materialized_membership_count: materialization.chunk_memberships.len(),
         materialized_reverse_index_count: materialization.reverse_indexes.len(),
@@ -747,12 +763,19 @@ fn verdict(oracle_all_passed: bool) -> SkillOutcomeVerdict {
 
 fn candidate_rank(
     skill: &crate::skill_sequence_discovery::Level2SkillRow,
-) -> (u8, u8, u64, u64, i64, i64) {
+) -> (u8, u8, u8, u64, u64, i64, i64) {
     let status = match skill.promotion_status {
         SkillPromotionStatus::PromotionReady => 3,
         SkillPromotionStatus::OperatorApproved => 2,
         SkillPromotionStatus::ActiveLearning => 1,
         SkillPromotionStatus::Demoted => 0,
+    };
+    let kind_priority = match skill_candidate_kind_for_row(skill) {
+        SkillCandidateKind::FailureSkill => 4,
+        SkillCandidateKind::PassStabilitySkill => 3,
+        SkillCandidateKind::ContextNegativeEvidence => 2,
+        SkillCandidateKind::NeutralDiagnostic => 1,
+        SkillCandidateKind::RejectOverbroadOrLeaky => 0,
     };
     let distribution = skill.oracle_outcome_distribution;
     let failure_priority = if distribution.fail > distribution.pass {
@@ -766,12 +789,34 @@ fn candidate_rank(
     };
     (
         status,
+        kind_priority,
         failure_priority,
         distribution.fail,
         skill.support,
         (skill.lift_over_cell_baseline * 1_000_000.0) as i64,
         (skill.confidence * 1_000_000.0) as i64,
     )
+}
+
+fn kind_counts<I>(kinds: I) -> BTreeMap<String, usize>
+where
+    I: IntoIterator<Item = SkillCandidateKind>,
+{
+    let mut out = BTreeMap::<String, usize>::new();
+    for kind in kinds {
+        *out.entry(kind_label(kind).to_string()).or_default() += 1;
+    }
+    out
+}
+
+fn kind_label(kind: SkillCandidateKind) -> &'static str {
+    match kind {
+        SkillCandidateKind::FailureSkill => "failure_skill",
+        SkillCandidateKind::PassStabilitySkill => "pass_stability_skill",
+        SkillCandidateKind::ContextNegativeEvidence => "context_negative_evidence",
+        SkillCandidateKind::NeutralDiagnostic => "neutral_diagnostic",
+        SkillCandidateKind::RejectOverbroadOrLeaky => "reject_overbroad_or_leaky",
+    }
 }
 
 fn code_state_key(

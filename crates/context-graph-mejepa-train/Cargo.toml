@@ -81,6 +81,18 @@ name = "post_536_calibration_disjointness_fsv"
 path = "examples/post_536_calibration_disjointness_fsv.rs"
 
 [[example]]
+name = "post_547_mixed_cell_ranking_repair_fsv"
+path = "examples/post_547_mixed_cell_ranking_repair_fsv.rs"
+
+[[example]]
+name = "task_py_g_549_mixed_cell_signal_fusion_fsv"
+path = "examples/task_py_g_549_mixed_cell_signal_fusion_fsv.rs"
+
+[[example]]
+name = "task_py_g_392_temporal_trajectory_features_fsv"
+path = "examples/task_py_g_392_temporal_trajectory_features_fsv.rs"
+
+[[example]]
 name = "operator_override_sampler_fsv"
 path = "examples/operator_override_sampler_fsv.rs"
 
@@ -155,6 +167,14 @@ path = "examples/task_py_g_118_skill_sequence_discovery_fsv.rs"
 [[example]]
 name = "task_py_g_118_aiwonder_skill_materialization_fsv"
 path = "examples/task_py_g_118_aiwonder_skill_materialization_fsv.rs"
+
+[[example]]
+name = "task_skill_001_targeted_skill_usefulness_fsv"
+path = "examples/task_skill_001_targeted_skill_usefulness_fsv.rs"
+
+[[example]]
+name = "task_skill_003_live_skill_reverse_index_fsv"
+path = "examples/task_skill_003_live_skill_reverse_index_fsv.rs"
 
 [[example]]
 name = "task_py_g_110_failure_mode_hierarchy_fsv"
