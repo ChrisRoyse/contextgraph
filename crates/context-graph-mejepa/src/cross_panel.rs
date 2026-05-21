@@ -29,6 +29,9 @@ pub struct PanelBObservationRecord {
     pub prediction_id_hex: String,
     pub panel_b_run_id: String,
     pub panel_id: String,
+    pub model_backed_panel_b: bool,
+    pub ship_gate_eligible: bool,
+    pub score_source: PanelBScoreSource,
     pub score_b: f32,
     pub verdict_b: Verdict,
     pub oracle_verdict: Verdict,
@@ -54,6 +57,19 @@ impl PanelBObservationRecord {
         validate_id("panel_b_run_id", &self.panel_b_run_id)?;
         validate_id("panel_id", &self.panel_id)?;
         validate_id("cell_key", &self.cell_key)?;
+        self.score_source.validate()?;
+        require(
+            self.model_backed_panel_b,
+            "panel_b_observation must come from model-backed Panel B scoring",
+        )?;
+        require(
+            self.ship_gate_eligible,
+            "panel_b_observation must be ship-gate eligible",
+        )?;
+        require(
+            self.score_source.row_count > 0,
+            "panel_b score source row_count must be positive",
+        )?;
         validate_score("score_b", self.score_b)?;
         require(
             !self.panel_b_resident_during_normal_inference,
@@ -83,6 +99,9 @@ pub struct CrossPanelAgreementRecord {
     pub schema_version: u32,
     pub prediction_id_hex: String,
     pub panel_pair_id: String,
+    pub model_backed_panel_b: bool,
+    pub ship_gate_eligible: bool,
+    pub score_source: PanelBScoreSource,
     pub verdict_a: Verdict,
     pub verdict_b: Verdict,
     pub score_a: f32,
@@ -120,6 +139,15 @@ impl CrossPanelAgreementRecord {
         validate_id("prediction_id_hex", &self.prediction_id_hex)?;
         validate_id("panel_pair_id", &self.panel_pair_id)?;
         validate_id("cell_key", &self.cell_key)?;
+        self.score_source.validate()?;
+        require(
+            self.model_backed_panel_b,
+            "cross_panel_agreement must come from model-backed Panel B scoring",
+        )?;
+        require(
+            self.ship_gate_eligible,
+            "cross_panel_agreement must be ship-gate eligible",
+        )?;
         validate_score("score_a", self.score_a)?;
         validate_score("score_b", self.score_b)?;
         if let Some(flag) = &self.goodhart_flag {
@@ -132,6 +160,32 @@ impl CrossPanelAgreementRecord {
             validate_id("failure_evidence_set_id", evidence)?;
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PanelBScoreSource {
+    pub source_id: String,
+    pub source_uri: String,
+    pub source_sha256: String,
+    pub artifact_manifest_sha256: String,
+    pub row_count: usize,
+}
+
+impl PanelBScoreSource {
+    pub fn validate(&self) -> CrossPanelResult<()> {
+        validate_non_synthetic_id("panel_b_score_source.source_id", &self.source_id)?;
+        validate_non_synthetic_id("panel_b_score_source.source_uri", &self.source_uri)?;
+        validate_sha("panel_b_score_source.source_sha256", &self.source_sha256)?;
+        validate_sha(
+            "panel_b_score_source.artifact_manifest_sha256",
+            &self.artifact_manifest_sha256,
+        )?;
+        require(
+            self.row_count > 0,
+            "panel_b_score_source.row_count must be positive",
+        )
     }
 }
 
@@ -419,6 +473,25 @@ fn validate_id(field: &str, value: &str) -> CrossPanelResult<()> {
         !value.contains('\n') && !value.contains('\r'),
         format!("{field} must be single-line"),
     )
+}
+
+fn validate_non_synthetic_id(field: &str, value: &str) -> CrossPanelResult<()> {
+    validate_id(field, value)?;
+    let lower = value.to_ascii_lowercase();
+    for forbidden in [
+        "fake",
+        "synthetic",
+        "placeholder",
+        "dummy",
+        "stub",
+        "hardcoded",
+    ] {
+        require(
+            !lower.contains(forbidden),
+            format!("{field} must not contain {forbidden}"),
+        )?;
+    }
+    Ok(())
 }
 
 fn validate_score(field: &str, value: f32) -> CrossPanelResult<()> {

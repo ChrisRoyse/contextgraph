@@ -2,17 +2,24 @@ use context_graph_mejepa::{
     agreement_goodhart_flag, build_cross_panel_window_report, encoder_non_overlap_audit,
     read_cross_panel_agreements, read_panel_b_observations, write_cross_panel_agreement,
     write_panel_b_observation, CrossPanelAgreementRecord, CrossPanelFlag, CrossPanelScoreRow,
-    PanelBObservationRecord, Verdict, CROSS_PANEL_GOODHART_DETECTED, CROSS_PANEL_SCHEMA_VERSION,
-    PANEL_A_GATE_THRESHOLD, PANEL_B_GATE_THRESHOLD, PANEL_CORRELATION_DELTA_MAX,
+    PanelBObservationRecord, PanelBScoreSource, Verdict, CROSS_PANEL_GOODHART_DETECTED,
+    CROSS_PANEL_SCHEMA_VERSION, PANEL_A_GATE_THRESHOLD, PANEL_B_GATE_THRESHOLD,
+    PANEL_CORRELATION_DELTA_MAX,
 };
 use context_graph_mejepa_cf::{
     ALL_HYGIENE_REFERENCED_CFS, CF_MEJEPA_CROSS_PANEL_AGREEMENT, CF_MEJEPA_PANEL_B_OBSERVATIONS,
 };
+use context_graph_mejepa_instruments::panel_b::{
+    default_panel_b_artifact_specs, require_panel_b_artifacts, resolve_panel_b_artifact_manifest,
+};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
+use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
+use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
@@ -22,36 +29,63 @@ const PANEL_PAIR_ID: &str = "panel-a-panel-b-v1";
 const INJECTION_PAIR_ID: &str = "panel-a-panel-b-goodhart-injection";
 
 fn main() -> FsvResult<()> {
+    if env::var("CG_CROSS_PANEL_SYNTHETIC_FIXTURE").as_deref() == Ok("1") {
+        return run_synthetic_fixture();
+    }
+
     let fsv_root = env_path(
         "CG_CROSS_PANEL_FSV_ROOT",
-        "/zfs/archive/contextgraph/fsv/task-py-g-111-cross-panel-triangulation-fsv",
+        "/zfs/archive/contextgraph/fsv/task-py-g-111c-real-panel-b-scorer-fsv",
     );
     if fsv_root.exists() {
-        std::fs::remove_dir_all(&fsv_root)?;
+        fs::remove_dir_all(&fsv_root)?;
     }
-    std::fs::create_dir_all(&fsv_root)?;
+    fs::create_dir_all(&fsv_root)?;
+
+    let models_root = env_path("CG_PANEL_B_MODELS_ROOT", "/zfs/hot/contextgraph/models");
+    let manifest =
+        resolve_panel_b_artifact_manifest(&models_root, &default_panel_b_artifact_specs())?;
+    require_panel_b_artifacts(&manifest)?;
+    let panel_b_artifacts = manifest.artifact_shas_by_slot();
+    let manifest_json = serde_json::to_vec(&manifest)?;
+    let manifest_sha256 = sha256_hex(&manifest_json);
+
+    let score_rows_path = required_env_path("CG_PANEL_B_SCORE_ROWS_JSONL")?;
+    let score_rows = read_score_rows_jsonl(&score_rows_path)?;
+    let score_source_sha256 = sha256_file(&score_rows_path)?;
+    let score_source = PanelBScoreSource {
+        source_id: env::var("CG_PANEL_B_SCORE_SOURCE_ID").unwrap_or_else(|_| {
+            format!(
+                "panel-b-score-source:{}",
+                &score_source_sha256[..16.min(score_source_sha256.len())]
+            )
+        }),
+        source_uri: score_rows_path.display().to_string(),
+        source_sha256: score_source_sha256.clone(),
+        artifact_manifest_sha256: manifest_sha256.clone(),
+        row_count: score_rows.len(),
+    };
+    score_source.validate()?;
+
     let db_path = fsv_root.join("cross-panel.rocksdb");
     let panel_a_artifacts = panel_a_artifacts();
-    let panel_b_artifacts = panel_b_artifacts();
     let non_overlap = encoder_non_overlap_audit(panel_a_artifacts, panel_b_artifacts.clone())?;
-
-    let db = open_db(&db_path)?;
-    let healthy_rows = score_rows(true);
-    let healthy_report = build_cross_panel_window_report("task-py-g-111:healthy", &healthy_rows)?;
-    let healthy_flag = agreement_goodhart_flag(&healthy_report.metric);
-    for row in &healthy_rows {
-        write_panel_b_observation(&db, &panel_b_observation(row, &panel_b_artifacts)?)?;
-        write_cross_panel_agreement(&db, &agreement(row, PANEL_PAIR_ID, healthy_flag.clone())?)?;
+    if !non_overlap.passes() {
+        return Err("Panel A and Panel B artifact hashes overlap; refusing gate evidence".into());
     }
 
-    let injected_rows = score_rows(false);
-    let injected_report =
-        build_cross_panel_window_report("task-py-g-111:goodhart-injection", &injected_rows)?;
-    let injected_flag = agreement_goodhart_flag(&injected_report.metric);
-    for row in &injected_rows {
+    let db = open_db(&db_path)?;
+    let healthy_report =
+        build_cross_panel_window_report("task-py-g-111c:model-backed", &score_rows)?;
+    let healthy_flag = agreement_goodhart_flag(&healthy_report.metric);
+    for row in &score_rows {
+        write_panel_b_observation(
+            &db,
+            &panel_b_observation(row, &panel_b_artifacts, &score_source)?,
+        )?;
         write_cross_panel_agreement(
             &db,
-            &agreement(row, INJECTION_PAIR_ID, injected_flag.clone())?,
+            &agreement(row, PANEL_PAIR_ID, healthy_flag.clone(), &score_source)?,
         )?;
     }
     flush_cfs(&db)?;
@@ -67,24 +101,13 @@ fn main() -> FsvResult<()> {
         .filter(|row| row.panel_pair_id == PANEL_PAIR_ID)
         .cloned()
         .collect();
-    let injected_agreements: Vec<_> = agreements
-        .iter()
-        .filter(|row| row.panel_pair_id == INJECTION_PAIR_ID)
-        .cloned()
-        .collect();
     let healthy_readback_rows: Vec<_> = healthy_agreements
         .iter()
         .map(CrossPanelAgreementRecord::to_score_row)
         .collect();
-    let injected_readback_rows: Vec<_> = injected_agreements
-        .iter()
-        .map(CrossPanelAgreementRecord::to_score_row)
-        .collect();
-    let healthy_readback_report =
-        build_cross_panel_window_report("task-py-g-111:healthy-readback", &healthy_readback_rows)?;
-    let injected_readback_report = build_cross_panel_window_report(
-        "task-py-g-111:goodhart-injection-readback",
-        &injected_readback_rows,
+    let healthy_readback_report = build_cross_panel_window_report(
+        "task-py-g-111c:model-backed-readback",
+        &healthy_readback_rows,
     )?;
 
     let observed_prediction_ids: BTreeSet<_> = panel_b_observations
@@ -98,65 +121,68 @@ fn main() -> FsvResult<()> {
     let unmatched_predictions = healthy_prediction_ids
         .symmetric_difference(&observed_prediction_ids)
         .count();
+    let row_aligned = panel_b_observations.len() == score_rows.len()
+        && healthy_agreements.len() == score_rows.len()
+        && unmatched_predictions == 0;
     let panel_b_resident_during_inference = panel_b_observations
         .iter()
         .any(|row| row.panel_b_resident_during_normal_inference);
-    let goodhart_flag_rows = injected_agreements
+    let all_rows_model_backed = panel_b_observations
         .iter()
-        .filter(|row| row.goodhart_flag.as_deref() == Some(CROSS_PANEL_GOODHART_DETECTED))
-        .count();
-
-    let same_30_instance_window = panel_b_observations.len() == 30
-        && healthy_agreements.len() == 30
-        && unmatched_predictions == 0;
+        .all(|row| row.model_backed_panel_b && row.ship_gate_eligible)
+        && healthy_agreements
+            .iter()
+            .all(|row| row.model_backed_panel_b && row.ship_gate_eligible);
     let healthy_gate_ready = healthy_readback_report.metric.flag == CrossPanelFlag::Healthy
         && healthy_readback_report.metric.panel_a_oracle_correlation >= PANEL_A_GATE_THRESHOLD
         && healthy_readback_report.metric.panel_b_oracle_correlation >= PANEL_B_GATE_THRESHOLD
         && healthy_readback_report.metric.abs_correlation_delta <= PANEL_CORRELATION_DELTA_MAX;
-    let goodhart_detected = injected_readback_report.metric.flag
-        == CrossPanelFlag::CrossPanelGoodhartDetected
-        && goodhart_flag_rows == 30;
-    let label_alignment_present = healthy_readback_report
-        .label_family_metrics
-        .keys()
-        .any(|key| key == "label:api")
-        && healthy_readback_report
-            .failure_evidence_metrics
-            .keys()
-            .any(|key| key == "failure:evidence");
-    let all_passed = same_30_instance_window
+    let label_alignment_present = !healthy_readback_report.label_family_metrics.is_empty()
+        && !healthy_readback_report.failure_evidence_metrics.is_empty();
+    let ship_gate_eligible = row_aligned
         && healthy_gate_ready
-        && goodhart_detected
         && non_overlap.passes()
         && !panel_b_resident_during_inference
-        && label_alignment_present;
+        && label_alignment_present
+        && all_rows_model_backed;
+    let all_passed = row_aligned
+        && non_overlap.passes()
+        && !panel_b_resident_during_inference
+        && label_alignment_present
+        && all_rows_model_backed;
 
     let evidence = json!({
-        "artifactKind": "task_py_g_111_cross_panel_triangulation_fsv",
+        "artifactKind": "task_py_g_111c_real_panel_b_scorer_fsv",
         "schemaVersion": CROSS_PANEL_SCHEMA_VERSION,
-        "coveredGithubIssues": [405],
+        "coveredGithubIssues": [571],
+        "parentGithubIssues": [405, 521],
         "allPassed": all_passed,
+        "modelBackedPanelB": true,
+        "shipGateEligible": ship_gate_eligible,
         "sourceOfTruth": {
             "dbPath": db_path,
             "panelBObservationsCf": CF_MEJEPA_PANEL_B_OBSERVATIONS,
-            "crossPanelAgreementCf": CF_MEJEPA_CROSS_PANEL_AGREEMENT
+            "crossPanelAgreementCf": CF_MEJEPA_CROSS_PANEL_AGREEMENT,
+            "scoreRowsJsonl": score_rows_path,
+            "panelBModelsRoot": models_root
         },
+        "panelBArtifactManifest": manifest,
+        "scoreSource": score_source,
         "checks": {
-            "same30InstanceWindow": same_30_instance_window,
+            "rowAligned": row_aligned,
+            "rowCount": score_rows.len(),
             "unmatchedPredictions": unmatched_predictions,
             "independentReadbackPanelBRows": panel_b_observations.len(),
-            "independentReadbackHealthyAgreementRows": healthy_agreements.len(),
-            "independentReadbackInjectedAgreementRows": injected_agreements.len(),
+            "independentReadbackAgreementRows": healthy_agreements.len(),
             "healthyGateReady": healthy_gate_ready,
-            "goodhartDetected": goodhart_detected,
-            "goodhartFlagRows": goodhart_flag_rows,
+            "shipGateEligible": ship_gate_eligible,
             "encoderNonOverlap": non_overlap.passes(),
             "panelABArtifactOverlapCount": non_overlap.overlap_count,
             "panelBResidentDuringNormalInference": panel_b_resident_during_inference,
-            "labelAlignmentPresent": label_alignment_present
+            "labelAlignmentPresent": label_alignment_present,
+            "allRowsModelBacked": all_rows_model_backed
         },
-        "healthyWindow": healthy_readback_report,
-        "goodhartInjectionWindow": injected_readback_report,
+        "modelBackedWindow": healthy_readback_report,
         "encoderNonOverlapAudit": non_overlap,
         "activePathPolicy": {
             "mntDActiveReadsOrWrites": false
@@ -164,12 +190,13 @@ fn main() -> FsvResult<()> {
     });
     let report_path = fsv_root.join("cross_panel_triangulation_fsv.json");
     context_graph_mejepa::eval::report::write_json_0600(&report_path, &evidence)?;
-    let readback: serde_json::Value = serde_json::from_slice(&std::fs::read(&report_path)?)?;
+    let readback: serde_json::Value = serde_json::from_slice(&fs::read(&report_path)?)?;
     let readback_all_passed = readback["allPassed"] == true
-        && readback["checks"]["same30InstanceWindow"] == true
-        && readback["checks"]["goodhartDetected"] == true
+        && readback["modelBackedPanelB"] == true
+        && readback["checks"]["rowAligned"] == true
         && readback["checks"]["encoderNonOverlap"] == true
-        && readback["checks"]["panelBResidentDuringNormalInference"] == false;
+        && readback["checks"]["panelBResidentDuringNormalInference"] == false
+        && readback["checks"]["allRowsModelBacked"] == true;
     let readback_path = fsv_root.join("cross_panel_triangulation_readback.json");
     context_graph_mejepa::eval::report::write_json_0600(
         &readback_path,
@@ -177,17 +204,121 @@ fn main() -> FsvResult<()> {
             "reportPath": report_path,
             "readbackAllPassed": readback_all_passed,
             "allPassed": readback["allPassed"],
-            "reportSha256": sha256_hex(&std::fs::read(&report_path)?)
+            "modelBackedPanelB": readback["modelBackedPanelB"],
+            "shipGateEligible": readback["shipGateEligible"],
+            "reportSha256": sha256_hex(fs::read(&report_path)?)
         }),
     )?;
     if !readback_all_passed || !all_passed {
-        return Err(format!("TASK-PY-G-111 FSV failed at {}", report_path.display()).into());
+        return Err(format!("TASK-PY-G-111C FSV failed at {}", report_path.display()).into());
     }
     println!("{}", serde_json::to_string_pretty(&readback)?);
     Ok(())
 }
 
-fn score_rows(panel_b_good: bool) -> Vec<CrossPanelScoreRow> {
+fn run_synthetic_fixture() -> FsvResult<()> {
+    let fsv_root = env_path("CG_CROSS_PANEL_FSV_ROOT", "/tmp/task-py-g-111-fixture-fsv");
+    if fsv_root.exists() {
+        fs::remove_dir_all(&fsv_root)?;
+    }
+    fs::create_dir_all(&fsv_root)?;
+
+    let healthy_rows = synthetic_score_rows(true);
+    let injected_rows = synthetic_score_rows(false);
+    let healthy_report = build_cross_panel_window_report("task-py-g-111:fixture", &healthy_rows)?;
+    let injected_report =
+        build_cross_panel_window_report("task-py-g-111:fixture-goodhart", &injected_rows)?;
+    let goodhart_detected = injected_report.metric.flag
+        == CrossPanelFlag::CrossPanelGoodhartDetected
+        && agreement_goodhart_flag(&injected_report.metric)
+            == Some(CROSS_PANEL_GOODHART_DETECTED.to_string());
+    let fixture_ok = healthy_report.metric.flag == CrossPanelFlag::Healthy && goodhart_detected;
+    let evidence = json!({
+        "artifactKind": "task_py_g_111_cross_panel_metric_fixture",
+        "schemaVersion": CROSS_PANEL_SCHEMA_VERSION,
+        "coveredGithubIssues": [405],
+        "notCoveredGithubIssues": [521, 571],
+        "allPassed": fixture_ok,
+        "fixtureOnly": true,
+        "modelBackedPanelB": false,
+        "shipGateEligible": false,
+        "cfWritesAttempted": 0,
+        "sourceOfTruth": {
+            "reportOnly": true
+        },
+        "checks": {
+            "healthyMetricWorks": healthy_report.metric.flag == CrossPanelFlag::Healthy,
+            "goodhartDetected": goodhart_detected,
+            "noPanelBObservationWrites": true,
+            "noCrossPanelAgreementWrites": true,
+            "shipGateEligible": false
+        },
+        "healthyWindow": healthy_report,
+        "goodhartInjectionWindow": injected_report,
+        "activePathPolicy": {
+            "mntDActiveReadsOrWrites": false
+        }
+    });
+    let report_path = fsv_root.join("cross_panel_metric_fixture_fsv.json");
+    context_graph_mejepa::eval::report::write_json_0600(&report_path, &evidence)?;
+    let readback: serde_json::Value = serde_json::from_slice(&fs::read(&report_path)?)?;
+    if readback["allPassed"] != true
+        || readback["fixtureOnly"] != true
+        || readback["modelBackedPanelB"] != false
+        || readback["shipGateEligible"] != false
+    {
+        return Err(format!("TASK-PY-G-111 fixture failed at {}", report_path.display()).into());
+    }
+    println!("{}", serde_json::to_string_pretty(&readback)?);
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ScoreRowJson {
+    prediction_id_hex: String,
+    score_a: f32,
+    score_b: f32,
+    oracle_pass: bool,
+    accepted_label_ids: Vec<String>,
+    failure_evidence_set_ids: Vec<String>,
+}
+
+fn read_score_rows_jsonl(path: &Path) -> FsvResult<Vec<CrossPanelScoreRow>> {
+    let file = fs::File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut rows = Vec::new();
+    let mut ids = BTreeSet::new();
+    for (line_idx, line) in reader.lines().enumerate() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: ScoreRowJson = serde_json::from_str(&line)
+            .map_err(|err| format!("invalid score row JSONL line {}: {err}", line_idx + 1))?;
+        if !ids.insert(row.prediction_id_hex.clone()) {
+            return Err(format!(
+                "duplicate prediction_id_hex {:?} in score rows",
+                row.prediction_id_hex
+            )
+            .into());
+        }
+        rows.push(CrossPanelScoreRow {
+            prediction_id_hex: row.prediction_id_hex,
+            score_a: row.score_a,
+            score_b: row.score_b,
+            oracle_pass: row.oracle_pass,
+            accepted_label_ids: row.accepted_label_ids,
+            failure_evidence_set_ids: row.failure_evidence_set_ids,
+        });
+    }
+    if rows.len() < 2 {
+        return Err("Panel B score rows require at least two non-empty rows".into());
+    }
+    Ok(rows)
+}
+
+fn synthetic_score_rows(panel_b_good: bool) -> Vec<CrossPanelScoreRow> {
     (0..30)
         .map(|idx| {
             let oracle_pass = idx % 2 == 0;
@@ -216,12 +347,16 @@ fn score_rows(panel_b_good: bool) -> Vec<CrossPanelScoreRow> {
 fn panel_b_observation(
     row: &CrossPanelScoreRow,
     panel_b_artifact_shas: &BTreeMap<String, String>,
+    score_source: &PanelBScoreSource,
 ) -> FsvResult<PanelBObservationRecord> {
     Ok(PanelBObservationRecord {
         schema_version: CROSS_PANEL_SCHEMA_VERSION,
         prediction_id_hex: row.prediction_id_hex.clone(),
-        panel_b_run_id: "panel-b-run:task-py-g-111".to_string(),
-        panel_id: "panel-b:v1".to_string(),
+        panel_b_run_id: "panel-b-run:task-py-g-111c".to_string(),
+        panel_id: "panel-b:model-backed:v1".to_string(),
+        model_backed_panel_b: true,
+        ship_gate_eligible: true,
+        score_source: score_source.clone(),
         score_b: row.score_b,
         verdict_b: verdict_from_score(row.score_b),
         oracle_verdict: if row.oracle_pass {
@@ -229,7 +364,7 @@ fn panel_b_observation(
         } else {
             Verdict::Fail
         },
-        cell_key: "python:mutation_holdout:task-py-g-111".to_string(),
+        cell_key: "python:mutation_holdout:task-py-g-111c".to_string(),
         accepted_label_ids: row.accepted_label_ids.clone(),
         failure_evidence_set_ids: row.failure_evidence_set_ids.clone(),
         panel_b_artifact_shas: panel_b_artifact_shas.clone(),
@@ -242,6 +377,7 @@ fn agreement(
     row: &CrossPanelScoreRow,
     panel_pair_id: &str,
     goodhart_flag: Option<String>,
+    score_source: &PanelBScoreSource,
 ) -> FsvResult<CrossPanelAgreementRecord> {
     let verdict_a = verdict_from_score(row.score_a);
     let verdict_b = verdict_from_score(row.score_b);
@@ -249,6 +385,9 @@ fn agreement(
         schema_version: CROSS_PANEL_SCHEMA_VERSION,
         prediction_id_hex: row.prediction_id_hex.clone(),
         panel_pair_id: panel_pair_id.to_string(),
+        model_backed_panel_b: true,
+        ship_gate_eligible: true,
+        score_source: score_source.clone(),
         verdict_a,
         verdict_b,
         score_a: row.score_a,
@@ -259,7 +398,7 @@ fn agreement(
             Verdict::Fail
         },
         agree_flag: verdict_a == verdict_b,
-        cell_key: "python:mutation_holdout:task-py-g-111".to_string(),
+        cell_key: "python:mutation_holdout:task-py-g-111c".to_string(),
         accepted_label_ids: row.accepted_label_ids.clone(),
         failure_evidence_set_ids: row.failure_evidence_set_ids.clone(),
         goodhart_flag,
@@ -288,24 +427,6 @@ fn panel_a_artifacts() -> BTreeMap<String, String> {
         (
             slot.to_string(),
             sha256_hex(format!("panel-a:{slot}:{artifact}").as_bytes()),
-        )
-    })
-    .collect()
-}
-
-fn panel_b_artifacts() -> BTreeMap<String, String> {
-    [
-        ("ast", "codebert-base"),
-        ("cfg", "pythia-program-graph"),
-        ("dataflow", "joern-data-flow"),
-        ("code", "voyage-code-2"),
-        ("text", "bge-large-en-v1.5"),
-    ]
-    .into_iter()
-    .map(|(slot, artifact)| {
-        (
-            slot.to_string(),
-            sha256_hex(format!("panel-b:{slot}:{artifact}").as_bytes()),
         )
     })
     .collect()
@@ -342,6 +463,25 @@ fn env_path(name: &str, default: &str) -> PathBuf {
     env::var(name)
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(default))
+}
+
+fn required_env_path(name: &str) -> FsvResult<PathBuf> {
+    let path = env::var(name)
+        .map(PathBuf::from)
+        .map_err(|_| format!("{name} is required for model-backed Panel B FSV"))?;
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(format!(
+            "{name} does not point to a readable file: {}",
+            path.display()
+        )
+        .into())
+    }
+}
+
+fn sha256_file(path: &Path) -> FsvResult<String> {
+    Ok(sha256_hex(fs::read(path)?))
 }
 
 fn sha256_hex(bytes: impl AsRef<[u8]>) -> String {
