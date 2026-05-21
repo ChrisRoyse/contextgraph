@@ -12,10 +12,10 @@ use context_graph_mejepa_train::chunk_skill_membership::{
     read_all_skill_reverse_index_rows, write_skill_materialization_sync_readback,
 };
 use context_graph_mejepa_train::failure_mode_hierarchy::{
-    evaluate_holdout_named_mode_coverage, materialize_failure_mode_hierarchy,
-    read_all_level1_failure_mode_group_rows, read_all_level3_constellation_rows,
-    read_all_named_prediction_rows, write_failure_mode_hierarchy_sync_readback,
-    CodeStateOutcomeRow,
+    evaluate_holdout_named_mode_coverage, evaluate_post_fix_predicted_fail_named_mode_coverage,
+    materialize_failure_mode_hierarchy, read_all_level1_failure_mode_group_rows,
+    read_all_level3_constellation_rows, read_all_named_prediction_rows,
+    write_failure_mode_hierarchy_sync_readback, CodeStateOutcomeRow, PostFixPredictionRow,
 };
 use context_graph_mejepa_train::label_bridge::load_label_learning_bridge;
 use context_graph_mejepa_train::skill_corpus_materialization::{
@@ -36,6 +36,9 @@ const DEFAULT_LABEL_ROOT: &str =
     "/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v2-live-split";
 const DEFAULT_FSV_ROOT: &str =
     "/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv";
+const DEFAULT_POST_FIX_SHIP_GATE_REPORT: &str =
+    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/ship-gate-fsv.json";
+const FORBIDDEN_SYNTHETIC_BASELINES: [&str; 2] = ["0.866667", "0.8666666746139526"];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse()?;
@@ -81,8 +84,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let all_membership_readback = read_all_chunk_skill_membership_rows(&readback_db)?;
     let reverse_readback = read_all_skill_reverse_index_rows(&readback_db)?;
     let code_state_outcomes = read_code_state_outcomes(&args.label_root)?;
+    let post_fix_ship_gate = read_post_fix_ship_gate_report(&args.post_fix_ship_gate_report)?;
     let holdout_eval = evaluate_holdout_named_mode_coverage(
         &code_state_outcomes,
+        &reverse_readback,
+        &all_membership_readback,
+        &named_readback,
+        0.85,
+    )?;
+    let post_fix_predicted_fail_eval = evaluate_post_fix_predicted_fail_named_mode_coverage(
+        &code_state_outcomes,
+        &post_fix_ship_gate.holdout_predictions,
         &reverse_readback,
         &all_membership_readback,
         &named_readback,
@@ -146,7 +158,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && build.report.slot_identity_preserved
         && !build.report.flat_vector_concat_used
         && !build.report.target_labels_used_as_live_inputs;
-    let holdout_pass = holdout_eval.passes;
+    let post_fix_revalidation_measured = post_fix_predicted_fail_eval.post_fix_predicted_fail_rows
+        > 0
+        && post_fix_predicted_fail_eval
+            .unmapped_prediction_examples
+            .is_empty()
+        && post_fix_predicted_fail_eval.true_fail_coverage_pass
+        && post_fix_predicted_fail_eval.closest_exemplar_oracle_agreement >= 0.85;
+    let mut post_fix_revalidation_blockers = Vec::new();
+    if !post_fix_predicted_fail_eval.coverage_pass {
+        post_fix_revalidation_blockers
+            .push("POST_FIX_AGGREGATE_PREDICTED_FAIL_NAMED_MODE_COVERAGE_FALSE");
+    }
+    if !post_fix_predicted_fail_eval.true_fail_coverage_pass {
+        post_fix_revalidation_blockers.push("POST_FIX_TRUE_FAIL_NAMED_MODE_COVERAGE_NOT_VALIDATED");
+    }
+    if post_fix_predicted_fail_eval.post_fix_predicted_false_positive_rows_without_any_named_mode
+        > 0
+    {
+        post_fix_revalidation_blockers.push("POST_FIX_UNEXPLAINED_FALSE_POSITIVE_FAIL_VERDICTS");
+    }
+    if post_fix_predicted_fail_eval.closest_exemplar_coverage_on_predicted_fail
+        < post_fix_predicted_fail_eval.min_closest_exemplar_coverage_on_predicted_fail
+    {
+        post_fix_revalidation_blockers.push("POST_FIX_CLOSEST_EXEMPLAR_COVERAGE_BELOW_THRESHOLD");
+    }
+    let holdout_pass = holdout_eval.passes && post_fix_revalidation_measured;
     let all_passed =
         readback_pass && hierarchy_pass && runtime_pass && substrate_pass && holdout_pass;
 
@@ -178,7 +215,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "expectedNamedPredictionCount": expected_named_count,
             "expectedMembershipCount": expected_membership_count
         },
+        "post_fix_rebaseline_reference": {
+            "report_path": args.post_fix_ship_gate_report,
+            "report_sha256": post_fix_ship_gate.report_sha256,
+            "raw_prediction_oracle_correlation": post_fix_ship_gate.raw_prediction_oracle_correlation,
+            "rank_safe_prediction_oracle_correlation": post_fix_ship_gate.rank_safe_prediction_oracle_correlation,
+            "rank_lift_prediction_oracle_correlation": post_fix_ship_gate.rank_lift_prediction_oracle_correlation,
+            "ship_gate_passed": post_fix_ship_gate.ship_gate_passed,
+            "holdout_prediction_rows": post_fix_ship_gate.holdout_predictions.len(),
+            "forbidden_synthetic_baseline_hits": 0
+        },
         "holdout_named_mode_evaluation": holdout_eval,
+        "post_fix_predicted_fail_named_mode_evaluation": post_fix_predicted_fail_eval,
+        "post_fix_revalidation_result": {
+            "measurement_valid": post_fix_revalidation_measured,
+            "coverage_validated": post_fix_predicted_fail_eval.passes,
+            "typed_blockers": post_fix_revalidation_blockers,
+            "interpretation": "The #404 substrate survives. Post-fix true-fail predictions all resolve to FailLikely named modes, but current active policy still emits some false-positive Fail verdicts with no named consequence explanation; repair belongs in predictor policy/feature selection, not blanket skill expansion."
+        },
         "runtime_resolver": {
             "sampleAbilityId": sample_level3_membership.skill_id,
             "sampleMembershipKey": sample_level3_membership.membership_key,
@@ -192,7 +246,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "hierarchy_rows_materialized": hierarchy_pass,
             "runtime_resolver_consumes_level3_membership": runtime_pass,
             "substrate_slot_identity_and_live_label_policy_preserved": substrate_pass,
-            "holdout_named_mode_coverage_and_exemplar_agreement": holdout_pass
+            "holdout_named_mode_coverage_and_exemplar_agreement": holdout_eval.passes,
+            "post_fix_predicted_fail_revalidation_measured": post_fix_revalidation_measured,
+            "post_fix_predicted_fail_named_mode_coverage_and_exemplar_agreement": post_fix_predicted_fail_eval.passes
         },
         "active_path_policy": {
             "aiwonder_label_root": true,
@@ -222,6 +278,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "cf_counts": final_report.pointer("/after/cf_counts"),
             "hierarchy_materialization": final_report.get("hierarchy_materialization"),
             "holdout_named_mode_evaluation": final_report.get("holdout_named_mode_evaluation"),
+            "post_fix_predicted_fail_named_mode_evaluation": final_report.get("post_fix_predicted_fail_named_mode_evaluation"),
             "runtime_resolver": {
                 "sampleAbilityId": final_report.pointer("/runtime_resolver/sampleAbilityId"),
                 "activeHigherAbilityIds": final_report.pointer("/runtime_resolver/activeHigherAbilityIds")
@@ -235,6 +292,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 struct Args {
     label_root: PathBuf,
     fsv_root: PathBuf,
+    post_fix_ship_gate_report: PathBuf,
     max_chunk_rows: Option<usize>,
     max_materialized_skills: usize,
     min_support: u64,
@@ -248,6 +306,7 @@ impl Args {
         let mut out = Self {
             label_root: PathBuf::from(DEFAULT_LABEL_ROOT),
             fsv_root: PathBuf::from(DEFAULT_FSV_ROOT),
+            post_fix_ship_gate_report: PathBuf::from(DEFAULT_POST_FIX_SHIP_GATE_REPORT),
             max_chunk_rows: None,
             max_materialized_skills: 128,
             min_support: 8,
@@ -261,6 +320,12 @@ impl Args {
                 }
                 "--fsv-root" => {
                     out.fsv_root = PathBuf::from(args.next().ok_or("missing --fsv-root value")?)
+                }
+                "--post-fix-ship-gate-report" => {
+                    out.post_fix_ship_gate_report = PathBuf::from(
+                        args.next()
+                            .ok_or("missing --post-fix-ship-gate-report value")?,
+                    )
                 }
                 "--max-chunk-rows" => {
                     out.max_chunk_rows = Some(
@@ -297,6 +362,7 @@ impl Args {
 #[derive(Debug, Deserialize)]
 struct CodeStateOutcomeJsonRow {
     group_key: String,
+    task_instance_id: String,
     mutation_category: String,
     docker_label: String,
     oracle_all_passed: bool,
@@ -314,6 +380,7 @@ fn read_code_state_outcomes(
     for row in read_jsonl::<CodeStateOutcomeJsonRow>(&code_state_path)? {
         rows.push(CodeStateOutcomeRow {
             code_state_key: row.group_key,
+            task_instance_id: row.task_instance_id,
             mutation_category: row.mutation_category,
             docker_label: row.docker_label,
             oracle_all_passed: row.oracle_all_passed,
@@ -329,6 +396,130 @@ fn read_code_state_outcomes(
         .into());
     }
     Ok(rows)
+}
+
+#[derive(Debug)]
+struct PostFixShipGateReport {
+    report_sha256: String,
+    raw_prediction_oracle_correlation: f64,
+    rank_safe_prediction_oracle_correlation: f64,
+    rank_lift_prediction_oracle_correlation: f64,
+    ship_gate_passed: bool,
+    holdout_predictions: Vec<PostFixPredictionRow>,
+}
+
+fn read_post_fix_ship_gate_report(
+    path: &Path,
+) -> Result<PostFixShipGateReport, Box<dyn std::error::Error>> {
+    let bytes = fs::read(path)?;
+    let text = String::from_utf8(bytes.clone())?;
+    for forbidden in FORBIDDEN_SYNTHETIC_BASELINES {
+        if text.contains(forbidden) {
+            return Err(format!(
+                "post-fix ship-gate report {} contains invalid synthetic baseline literal {forbidden}",
+                path.display()
+            )
+            .into());
+        }
+    }
+    let value: serde_json::Value = serde_json::from_str(&text)?;
+    let raw = metric_f64(
+        &value,
+        "/execute_and_inspect/raw_final_metrics/prediction_oracle_correlation",
+    )?;
+    let rank_safe = metric_f64(
+        &value,
+        "/execute_and_inspect/rank_safe_final_metrics/prediction_oracle_correlation",
+    )?;
+    let rank_lift = metric_f64(
+        &value,
+        "/execute_and_inspect/final_metrics/prediction_oracle_correlation",
+    )?;
+    for (name, metric) in [
+        ("raw", raw),
+        ("rank_safe", rank_safe),
+        ("rank_lift", rank_lift),
+    ] {
+        if (metric - 0.866667).abs() < 0.000001 || (metric - 0.8666666746139526).abs() < 0.000001 {
+            return Err(format!(
+                "post-fix ship-gate report {} has invalid {name} correlation {metric}",
+                path.display()
+            )
+            .into());
+        }
+    }
+    let ship_gate_passed = value
+        .pointer("/execute_and_inspect/ship_gate_passed")
+        .and_then(serde_json::Value::as_bool)
+        .ok_or("missing /execute_and_inspect/ship_gate_passed")?;
+    let prediction_values = value
+        .pointer("/execute_and_inspect/holdout_predictions")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("missing /execute_and_inspect/holdout_predictions")?;
+    let mut holdout_predictions = Vec::new();
+    for prediction in prediction_values {
+        let row = PostFixPredictionRow {
+            task_instance_id: value_string(prediction, "task_id")?,
+            mutation_category: value_string(prediction, "category")?,
+            actual_oracle_pass: value_bool(prediction, "actual_oracle_pass")?,
+            predicted_oracle_pass: value_f64(prediction, "predicted_oracle_pass")?,
+            predicted_pass: value_bool(prediction, "predicted_pass")?,
+            patch_path: value_string(prediction, "patch_path")?,
+            patch_sha256: value_string(prediction, "patch_sha256")?,
+        };
+        row.validate()?;
+        if !row.patch_path.starts_with("/zfs/archive/contextgraph/") {
+            return Err(format!(
+                "post-fix prediction path is not aiwonder archive: {}",
+                row.patch_path
+            )
+            .into());
+        }
+        holdout_predictions.push(row);
+    }
+    if holdout_predictions.is_empty() {
+        return Err("post-fix ship-gate report has no holdout predictions".into());
+    }
+    Ok(PostFixShipGateReport {
+        report_sha256: format!("sha256:{}", hex::encode(Sha256::digest(&bytes))),
+        raw_prediction_oracle_correlation: raw,
+        rank_safe_prediction_oracle_correlation: rank_safe,
+        rank_lift_prediction_oracle_correlation: rank_lift,
+        ship_gate_passed,
+        holdout_predictions,
+    })
+}
+
+fn metric_f64(value: &serde_json::Value, pointer: &str) -> Result<f64, Box<dyn std::error::Error>> {
+    value
+        .pointer(pointer)
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| format!("missing numeric metric {pointer}").into())
+}
+
+fn value_string(
+    value: &serde_json::Value,
+    field: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| format!("missing string field {field}").into())
+}
+
+fn value_bool(value: &serde_json::Value, field: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_bool)
+        .ok_or_else(|| format!("missing bool field {field}").into())
+}
+
+fn value_f64(value: &serde_json::Value, field: &str) -> Result<f64, Box<dyn std::error::Error>> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| format!("missing numeric field {field}").into())
 }
 
 fn resolve_label_path(root: &Path, path: &str) -> PathBuf {

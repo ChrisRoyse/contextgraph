@@ -408,6 +408,7 @@ fn independent_readback(path: &Path, report: &GtauGuardAuditReport) -> Result<Va
     let all_passed = decoded == *report
         && decoded.passes
         && decoded.summary.reported_cell_count == 8
+        && !decoded.summary.ship_gate_countable_after_audit
         && !decoded.summary.flat_vector_concat_used
         && decoded.summary.slot_identity_preserved;
     Ok(json!({

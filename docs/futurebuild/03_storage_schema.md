@@ -10,9 +10,9 @@
 | `CF_MEJEPA_LIVE_PREDICTIONS` rows before 2026-05-19 22:45 | **CONTAMINATED** | Output of synthetic-vector predictor + untrained predictor + stub checkpoint |
 | `CF_MEJEPA_CONSTELLATION_PATTERNS` (#388/#390 promoted) | REAL (substrate); pattern-promotion logic survives | Tensor substrate is from real forward cache |
 | `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` / `CF_MEJEPA_SKILL_REVERSE_INDEX` / `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` (#414) | REAL | Deterministic over #413 + real cache |
-| `CF_MEJEPA_FAILURE_MODE_LEVEL{1,2,3}_*` / `CF_MEJEPA_NAMED_PREDICTIONS` (#404) | REAL substrate; holdout coverage measurement needs re-validation | Hierarchy is deterministic; the "1.0 named-mode coverage" measurement was against pre-fix predictions |
+| `CF_MEJEPA_FAILURE_MODE_LEVEL{1,2,3}_*` / `CF_MEJEPA_NAMED_PREDICTIONS` (#404) | REAL substrate; post-fix revalidation complete | Actual Fail coverage remains 114/114 and post-fix predicted true-Fail coverage is 117/117; aggregate predicted-Fail coverage is 137/150 because 13 false-positive Fail verdicts have no named consequence explanation |
 | `CF_MEJEPA_MISTAKE_LOG` (#406) | Empty until the real `0.7942190170` Panel A predictor generates live mistakes | Machinery valid; needs real predictor disagreements to validate convergence |
-| `CF_MEJEPA_OOD_CALIBRATIONS` (#129) / `CF_MEJEPA_GUARD_DECISIONS` (#130) | Calibrator rows survive (built from real corpus); serving-gate AUC needs re-validation | Pre-fix predictions invalidated the AUC denominator |
+| `CF_MEJEPA_OOD_CALIBRATIONS` (#129) / `CF_MEJEPA_GUARD_DECISIONS` (#130) | Post-fix revalidated | #129 and #130 FSVs are anchored to `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`; invalid `0.866667` literals rejected |
 
 See `01_overview.md §1.7` for forensic. Current post-fix measurement and remaining gate blockers are tracked in `08_roadmap_and_open_work.md §0.5`.
 

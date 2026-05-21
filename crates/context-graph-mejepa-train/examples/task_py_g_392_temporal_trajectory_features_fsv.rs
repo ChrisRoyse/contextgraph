@@ -254,6 +254,11 @@ fn run() -> Result<()> {
         feature_table,
         &legal_score_sharpness_calibration,
     )?;
+    let legal_targeted_off_by_one_conflict_abstain =
+        select_targeted_off_by_one_conflict_abstain_repair(
+            feature_table,
+            &legal_score_sharpness_abstain_band,
+        )?;
     let abstain_candidate_found = !legal_score_sharpness_abstain_band.selection_forbidden
         && legal_score_sharpness_abstain_band.blockers.is_empty();
     let legal_cause_band_calibration =
@@ -409,6 +414,9 @@ fn run() -> Result<()> {
             .holdout_application
             .per_category
             .is_empty()
+        && legal_targeted_off_by_one_conflict_abstain
+            .safety_audit
+            .all_passed
         && legal_cause_band_calibration
             .calibration_application
             .applied_row_count
@@ -496,6 +504,7 @@ fn run() -> Result<()> {
         "legal_score_sharpness_calibration": legal_score_sharpness_calibration,
         "legal_score_sharpness_logit_calibration": legal_score_sharpness_logit_calibration,
         "legal_score_sharpness_abstain_band": legal_score_sharpness_abstain_band,
+        "legal_targeted_off_by_one_conflict_abstain": legal_targeted_off_by_one_conflict_abstain,
         "legal_cause_band_calibration": legal_cause_band_calibration,
         "legal_final_bin_calibration": legal_final_bin_calibration,
         "legal_support_shrink_calibration": legal_support_shrink_calibration,
@@ -1254,6 +1263,65 @@ struct ScoreSharpnessAbstainBandReport {
     calibration_application: AbstainBandApplicationStats,
     holdout_application: AbstainBandApplicationStats,
     blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TargetedAbstainRule {
+    rule_id: String,
+    category: String,
+    predicted_fail_only: bool,
+    required_score_relation: String,
+    required_evidence_fragments: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TargetedAbstainModel {
+    selected_on: String,
+    base_model: ScoreSharpnessAbstainBandModel,
+    rule: TargetedAbstainRule,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TargetedAbstainApplicationStats {
+    total_row_count: usize,
+    active_row_count: usize,
+    abstained_row_count: usize,
+    active_coverage: f32,
+    base_abstained_row_count: usize,
+    targeted_extra_abstained_row_count: usize,
+    targeted_extra_abstained_actual_pass_count: usize,
+    targeted_extra_abstained_actual_fail_count: usize,
+    per_category: BTreeMap<String, AbstainBandCategoryStats>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TargetedAbstainSafetyAudit {
+    all_passed: bool,
+    selected_on_calibration: bool,
+    rule_is_live_safe: bool,
+    target_category_is_off_by_one: bool,
+    target_only_active_fail_rows: bool,
+    required_fragments_non_empty: bool,
+    calibration_extra_abstain_observed: bool,
+    no_target_side_label_fragments: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TargetedAbstainReport {
+    selected_on: String,
+    selection_forbidden: bool,
+    forbidden_reason: Option<String>,
+    selection_objective: f32,
+    model: TargetedAbstainModel,
+    calibration: SplitReport,
+    holdout: SplitReport,
+    calibration_application: TargetedAbstainApplicationStats,
+    holdout_application: TargetedAbstainApplicationStats,
+    target_category_metrics: Option<MetricBlock>,
+    target_category_repair_passed: bool,
+    target_category_repair_blockers: Vec<String>,
+    blockers: Vec<String>,
+    safety_audit: TargetedAbstainSafetyAudit,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -6953,6 +7021,324 @@ fn abstain_band_complexity_penalty(
     let abstain_fraction = 1.0 - application.active_coverage;
     let floor_gap = (model.min_active_coverage - application.active_coverage).max(0.0);
     0.05 * abstain_fraction + 0.50 * floor_gap
+}
+
+fn select_targeted_off_by_one_conflict_abstain_repair(
+    table: &FeatureTable,
+    base_abstain: &ScoreSharpnessAbstainBandReport,
+) -> Result<TargetedAbstainReport> {
+    let calibration_indices = bucket_indices(table, "calibration");
+    let holdout_indices = bucket_indices(table, "holdout");
+    let model = TargetedAbstainModel {
+        selected_on: "calibration".to_string(),
+        base_model: base_abstain.model.clone(),
+        rule: TargetedAbstainRule {
+            rule_id: "off_by_one_pass_stability_function_contract_conflict".to_string(),
+            category: "off_by_one".to_string(),
+            predicted_fail_only: true,
+            required_score_relation: "score_below_abstain_low".to_string(),
+            required_evidence_fragments: vec![
+                "pass_stability_skill".to_string(),
+                "multi:up_2".to_string(),
+                "steps:up_gt10".to_string(),
+                "dominant_surface_function_contract_surface".to_string(),
+            ],
+        },
+    };
+    let (calibration, calibration_application) =
+        targeted_abstain_cross_window_report(table, &calibration_indices, &model)?;
+    let (holdout, holdout_application) =
+        targeted_abstain_split_report(table, &holdout_indices, &model)?;
+    let selection_objective =
+        selection_objective(&calibration.metrics) + targeted_abstain_complexity_penalty(&model);
+    let safety_audit = targeted_abstain_safety_audit(&model, &calibration_application);
+    let forbidden_reason = targeted_abstain_forbidden_reason(
+        selection_objective,
+        &calibration_application,
+        &model,
+        &safety_audit,
+    );
+    let mut blockers = abstain_band_repair_blockers(
+        &holdout,
+        &targeted_to_abstain_application(&holdout_application),
+        &model.base_model,
+    );
+    if !safety_audit.all_passed {
+        blockers.push("targeted_abstain_safety_audit_failed".to_string());
+    }
+    let target_category_metrics = holdout.per_category_metrics.get("off_by_one").cloned();
+    let target_category_repair_blockers =
+        target_category_repair_blockers("off_by_one", target_category_metrics.as_ref());
+    let target_category_repair_passed = target_category_repair_blockers.is_empty();
+    blockers.extend(target_category_repair_blockers.iter().cloned());
+    Ok(TargetedAbstainReport {
+        selected_on: "calibration_leave_one_window_out".to_string(),
+        selection_forbidden: forbidden_reason.is_some(),
+        forbidden_reason,
+        selection_objective,
+        model,
+        calibration,
+        holdout,
+        calibration_application,
+        holdout_application,
+        target_category_metrics,
+        target_category_repair_passed,
+        target_category_repair_blockers,
+        blockers,
+        safety_audit,
+    })
+}
+
+fn targeted_abstain_cross_window_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &TargetedAbstainModel,
+) -> Result<(SplitReport, TargetedAbstainApplicationStats)> {
+    let score_model = &model.base_model.base_model;
+    let rows = score_sharpness_cross_window_rows(
+        table,
+        indices,
+        &score_model.base_model,
+        score_model.scope,
+        score_model.low_cutoff,
+        score_model.low_tail_scale,
+        score_model.high_cutoff,
+        score_model.high_tail_scale,
+    )?;
+    targeted_abstain_report_from_rows(table, indices, &rows, model)
+}
+
+fn targeted_abstain_split_report(
+    table: &FeatureTable,
+    indices: &[usize],
+    model: &TargetedAbstainModel,
+) -> Result<(SplitReport, TargetedAbstainApplicationStats)> {
+    let rows = score_sharpness_calibrated_rows(table, indices, &model.base_model.base_model)?;
+    targeted_abstain_report_from_rows(table, indices, &rows, model)
+}
+
+fn targeted_abstain_report_from_rows(
+    table: &FeatureTable,
+    indices: &[usize],
+    rows: &[PredictionRow],
+    model: &TargetedAbstainModel,
+) -> Result<(SplitReport, TargetedAbstainApplicationStats)> {
+    ensure!(
+        indices.len() == rows.len(),
+        "targeted abstain row/index length mismatch"
+    );
+    let mut active_rows = Vec::new();
+    let mut base_abstained_row_count = 0_usize;
+    let mut targeted_extra_abstained_row_count = 0_usize;
+    let mut targeted_extra_abstained_actual_pass_count = 0_usize;
+    let mut targeted_extra_abstained_actual_fail_count = 0_usize;
+
+    for (idx, row) in indices.iter().copied().zip(rows) {
+        let feature_row = table
+            .rows
+            .get(idx)
+            .ok_or_else(|| anyhow!("targeted abstain feature row index out of range"))?;
+        ensure!(
+            feature_row.task_id == row.task_id
+                && feature_row.category == row.category
+                && feature_row.actual_oracle_pass == row.actual_oracle_pass,
+            "targeted abstain row identity mismatch for {}:{}",
+            row.task_id,
+            row.category
+        );
+        if score_in_abstain_band(
+            row.predicted_oracle_pass,
+            model.base_model.abstain_low,
+            model.base_model.abstain_high,
+        ) {
+            base_abstained_row_count += 1;
+            continue;
+        }
+        if targeted_abstain_rule_matches(feature_row, row, model) {
+            targeted_extra_abstained_row_count += 1;
+            if row.actual_oracle_pass {
+                targeted_extra_abstained_actual_pass_count += 1;
+            } else {
+                targeted_extra_abstained_actual_fail_count += 1;
+            }
+            continue;
+        }
+        active_rows.push(row.clone());
+    }
+
+    let per_category = abstain_band_category_stats(rows, &active_rows);
+    let stats = TargetedAbstainApplicationStats {
+        total_row_count: rows.len(),
+        active_row_count: active_rows.len(),
+        abstained_row_count: rows.len().saturating_sub(active_rows.len()),
+        active_coverage: if rows.is_empty() {
+            0.0
+        } else {
+            active_rows.len() as f32 / rows.len() as f32
+        },
+        base_abstained_row_count,
+        targeted_extra_abstained_row_count,
+        targeted_extra_abstained_actual_pass_count,
+        targeted_extra_abstained_actual_fail_count,
+        per_category,
+    };
+    Ok((
+        SplitReport {
+            metrics: metrics_for(&active_rows),
+            per_category_metrics: per_category_metrics(&active_rows),
+        },
+        stats,
+    ))
+}
+
+fn targeted_abstain_rule_matches(
+    feature_row: &FeatureRow,
+    row: &PredictionRow,
+    model: &TargetedAbstainModel,
+) -> bool {
+    if row.category != model.rule.category {
+        return false;
+    }
+    if model.rule.predicted_fail_only && row.predicted_pass {
+        return false;
+    }
+    if model.rule.required_score_relation == "score_below_abstain_low"
+        && row.predicted_oracle_pass >= model.base_model.abstain_low
+    {
+        return false;
+    }
+    model
+        .rule
+        .required_evidence_fragments
+        .iter()
+        .all(|fragment| {
+            feature_row
+                .evidence_keys
+                .iter()
+                .any(|key| key.contains(fragment))
+        })
+}
+
+fn targeted_to_abstain_application(
+    stats: &TargetedAbstainApplicationStats,
+) -> AbstainBandApplicationStats {
+    let abstained_actual_pass_count = stats
+        .per_category
+        .values()
+        .map(|category| category.abstained_actual_pass_count)
+        .sum();
+    let abstained_actual_fail_count = stats
+        .per_category
+        .values()
+        .map(|category| category.abstained_actual_fail_count)
+        .sum();
+    AbstainBandApplicationStats {
+        total_row_count: stats.total_row_count,
+        active_row_count: stats.active_row_count,
+        abstained_row_count: stats.abstained_row_count,
+        active_coverage: stats.active_coverage,
+        abstained_actual_pass_count,
+        abstained_actual_fail_count,
+        per_category: stats.per_category.clone(),
+    }
+}
+
+fn targeted_abstain_forbidden_reason(
+    selection_objective: f32,
+    application: &TargetedAbstainApplicationStats,
+    model: &TargetedAbstainModel,
+    safety_audit: &TargetedAbstainSafetyAudit,
+) -> Option<String> {
+    if !safety_audit.all_passed {
+        return Some("targeted_abstain_safety_audit_failed".to_string());
+    }
+    if application.active_coverage + 1.0e-6 < model.base_model.min_active_coverage {
+        return Some(format!(
+            "active_coverage_below_floor: {:.6} < {:.6}",
+            application.active_coverage, model.base_model.min_active_coverage
+        ));
+    }
+    if application.targeted_extra_abstained_row_count == 0 {
+        return Some("calibration_targeted_rule_had_zero_support".to_string());
+    }
+    if !selection_objective.is_finite() {
+        return Some("selection_objective_non_finite".to_string());
+    }
+    None
+}
+
+fn targeted_abstain_safety_audit(
+    model: &TargetedAbstainModel,
+    calibration_application: &TargetedAbstainApplicationStats,
+) -> TargetedAbstainSafetyAudit {
+    let selected_on_calibration = model.selected_on == "calibration"
+        && model.base_model.selected_on == "calibration"
+        && model.base_model.base_model.selected_on == "calibration";
+    let rule_is_live_safe = model
+        .rule
+        .required_evidence_fragments
+        .iter()
+        .all(|fragment| {
+            !TARGET_LABEL_PREFIXES
+                .iter()
+                .any(|prefix| fragment.starts_with(prefix))
+        });
+    let no_target_side_label_fragments = rule_is_live_safe;
+    let target_category_is_off_by_one = model.rule.category == "off_by_one";
+    let target_only_active_fail_rows = model.rule.predicted_fail_only
+        && model.rule.required_score_relation == "score_below_abstain_low";
+    let required_fragments_non_empty = !model.rule.required_evidence_fragments.is_empty();
+    let calibration_extra_abstain_observed =
+        calibration_application.targeted_extra_abstained_row_count > 0;
+    let all_passed = selected_on_calibration
+        && rule_is_live_safe
+        && target_category_is_off_by_one
+        && target_only_active_fail_rows
+        && required_fragments_non_empty
+        && no_target_side_label_fragments;
+    TargetedAbstainSafetyAudit {
+        all_passed,
+        selected_on_calibration,
+        rule_is_live_safe,
+        target_category_is_off_by_one,
+        target_only_active_fail_rows,
+        required_fragments_non_empty,
+        calibration_extra_abstain_observed,
+        no_target_side_label_fragments,
+    }
+}
+
+fn target_category_repair_blockers(category: &str, metrics: Option<&MetricBlock>) -> Vec<String> {
+    let mut blockers = Vec::new();
+    let Some(metrics) = metrics else {
+        blockers.push(format!("{category}:missing_target_category_metrics"));
+        return blockers;
+    };
+    if metrics.sample_count == 0 {
+        blockers.push(format!("{category}:active_row_count_zero"));
+    }
+    if metrics.predicted_pass_count == 0 || metrics.predicted_fail_count == 0 {
+        blockers.push(format!(
+            "{category}:threshold_degenerate_predicted_pass={} predicted_fail={}",
+            metrics.predicted_pass_count, metrics.predicted_fail_count
+        ));
+    }
+    if metrics
+        .prediction_oracle_correlation
+        .map(|value| value < 0.95)
+        .unwrap_or(true)
+    {
+        blockers.push(format!(
+            "{category}:prediction_oracle_correlation {:?} < 0.950000",
+            metrics.prediction_oracle_correlation
+        ));
+    }
+    blockers
+}
+
+fn targeted_abstain_complexity_penalty(model: &TargetedAbstainModel) -> f32 {
+    let fragment_penalty = model.rule.required_evidence_fragments.len() as f32 * 0.001;
+    0.006 + fragment_penalty
 }
 
 fn select_cause_band_calibration_repair(

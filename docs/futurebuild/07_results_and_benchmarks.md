@@ -85,9 +85,9 @@ FSV: `/zfs/archive/contextgraph/fsv/task-py-g-112b-mistake-loop-mcp-tools-fsv/ru
 
 ### 2.2 Failure-mode hierarchy (#404 / TASK-PY-G-110 — closed 2026-05-20)
 
-8 Level-1 groups, 157 Level-2 skills, 379 Level-3 constellations, 3,169 Level-3 memberships, 536 named predictions, 12,658 total chunk-skill membership rows. Holdout: 114/114 Fail rows have FailLikely named-mode coverage; closest-exemplar oracle agreement 1.0 over 113/114 comparable holdout Fail rows.
+8 Level-1 groups, 157 Level-2 skills, 379 Level-3 constellations, 3,169 Level-3 memberships, 536 named predictions, 12,658 total chunk-skill membership rows. Holdout: 114/114 actual Fail rows have FailLikely named-mode coverage; closest-exemplar oracle agreement 1.0 over 113/114 comparable holdout Fail rows. Post-fix active-prediction revalidation: 117/117 active predicted true-Fail rows have FailLikely named-mode coverage, while aggregate predicted-Fail coverage is 137/150 because 13 false-positive Fail verdicts have no named consequence explanation.
 
-FSV: `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv/run-1779273783982/`, sha256 `06b3e46a9a703cf0d1c52991784726f1b1f5577df7d7488360ebc651a698b863`.
+FSV: initial closure `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv/run-1779273783982/`, sha256 `06b3e46a9a703cf0d1c52991784726f1b1f5577df7d7488360ebc651a698b863`; post-fix revalidation `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv/run-1779376526126/task_py_g_110_failure_mode_hierarchy_fsv.json`, sha256 `77deb00b1d975bd1b83bf71a4bf48e2069eb1808202a6bf819da5e414f47d879`.
 
 ### 2.3 Online mistake-driven loop (#406 / TASK-PY-G-112 — closed 2026-05-20)
 
@@ -213,7 +213,7 @@ The architectural correction from flat-panel projection (#385) to slot-preservin
 
 ### 5.4 The labeling layer is the meaning surface (#404 / #413 / #414 / #418) — substrate stands
 
-Raw slot violations + cross-embedder correlations only become actionable when clustered into a 4-level hierarchy of named failure modes grounded by closest historical exemplars. The 491-row accepted Level-0 registry + 128 Level-2 skills + 379 Level-3 constellations + 36,773 chunk-skill memberships are all derived from the real forward cache and survive the synthetic-vector bug. The HOLDOUT measurements (114/114 named-mode coverage, 1.0 closest-exemplar agreement) were against pre-fix prediction rows and need re-validation on post-fix predictions.
+Raw slot violations + cross-embedder correlations only become actionable when clustered into a 4-level hierarchy of named failure modes grounded by closest historical exemplars. The 491-row accepted Level-0 registry + 128 Level-2 skills + 379 Level-3 constellations + 36,773 chunk-skill memberships are all derived from the real forward cache and survive the synthetic-vector bug. Post-fix revalidation proves the hierarchy still covers true failures (117/117 active predicted true-Fail rows) but also exposes 13 false-positive Fail verdicts with no named consequence explanation. That is evidence for predictor-policy repair, not blanket skill expansion.
 
 ### 5.5 The mistake loop replaces best-of-K (#406)
 

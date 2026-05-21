@@ -27,6 +27,9 @@ use std::sync::Arc;
 const REPORT_NAME: &str = "ood_gate_fsv.json";
 const READBACK_NAME: &str = "independent_rocksdb_readback.json";
 const FSV_SUBDIR: &str = "task-py-g-014-ood-gate-fsv";
+const DEFAULT_POST_FIX_SHIP_GATE_REPORT: &str =
+    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/ship-gate-fsv.json";
+const INVALID_SYNTHETIC_BASELINE_CORRELATION: f64 = 0.866667;
 
 fn main() -> Result<()> {
     let run_id = format!("run-{}", chrono::Utc::now().format("%Y%m%dT%H%M%SZ"));
@@ -72,6 +75,8 @@ fn main() -> Result<()> {
         (&corrupt_db_path, "corruptCalibrator"),
         (&cold_db_path, "coldCell"),
     ])?;
+    let post_fix_rebaseline = load_post_fix_rebaseline_reference()
+        .context("load post-fix #529 ship-gate baseline reference")?;
 
     let all_passed = happy["passed"].as_bool() == Some(true)
         && empty_harvest["passed"].as_bool() == Some(true)
@@ -79,7 +84,8 @@ fn main() -> Result<()> {
         && missing["passed"].as_bool() == Some(true)
         && corrupt["passed"].as_bool() == Some(true)
         && cold["passed"].as_bool() == Some(true)
-        && readback["allPassed"].as_bool() == Some(true);
+        && readback["allPassed"].as_bool() == Some(true)
+        && post_fix_rebaseline["allPassed"].as_bool() == Some(true);
 
     let report = json!({
         "task": "TASK-PY-G-014",
@@ -94,6 +100,7 @@ fn main() -> Result<()> {
             "canonicalForwardCache": "/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z/",
             "perSlotCalibrationState": "/zfs/archive/contextgraph/state/calibration/per-slot-v1/",
         },
+        "postFixRebaselineReference": post_fix_rebaseline,
         "cases": {
             "happyPathCalibratedServing": happy,
             "emptyHarvestSyntheticOnly": empty_harvest,
@@ -114,6 +121,10 @@ fn main() -> Result<()> {
         report_readback.get("allPassed").and_then(Value::as_bool) == Some(true),
         "TASK-PY-G-014 FSV report allPassed must be true"
     );
+    ensure!(
+        !bytes_contain_invalid_synthetic_baseline(&fs::read(&report_path)?),
+        "TASK-PY-G-014 FSV report must not propagate the invalid synthetic baseline"
+    );
     println!(
         "task-py-g-014 OOD gate FSV allPassed=true report={} report_sha256={} readback={} readback_sha256={}",
         report_path.display(),
@@ -130,7 +141,7 @@ fn run_happy_serving_case(db_path: &Path, repo_root: &Path, now: i64) -> Result<
         retention_active_ms: 90_000,
         queue_capacity: 128,
     };
-    let (normal, ood, report_json) = {
+    let (normal, post_fix_fixture, direct_ood, report_json) = {
         let db = open_infer_rocksdb(db_path).context("open happy OOD DB")?;
         seed_harvest_rows(
             db.as_ref(),
@@ -162,27 +173,41 @@ fn run_happy_serving_case(db_path: &Path, repo_root: &Path, now: i64) -> Result<
         let (normal_patch, normal_context) = fixture_patch_context(repo_root, "known_good")?;
         let normal = compiler.verify(&normal_patch, &normal_context)?;
 
-        let (ood_patch, ood_context) = fixture_patch_context(repo_root, "ood")?;
-        let ood = compiler.verify(&ood_patch, &ood_context)?;
-        (verdict_summary(&normal), verdict_summary(&ood), report_json)
+        let (post_fix_patch, post_fix_context) =
+            fixture_patch_context(repo_root, "post_fix_no_synthetic_ood")?;
+        let post_fix_fixture = compiler.verify(&post_fix_patch, &post_fix_context)?;
+        let direct_ood = apply_ood_gate_decision(Verdict::Pass, 0.99, Some(&report), None)?;
+        (
+            verdict_summary(&normal),
+            verdict_summary(&post_fix_fixture),
+            serde_json::to_value(&direct_ood)?,
+            report_json,
+        )
     };
 
     let monotonic = run_monotonic_harvest_check(db_path, &config, now + 10_000)?;
     let passed = normal["isOod"].as_bool() == Some(false)
-        && ood["failedGate"].as_str() == Some("OutOfDistribution")
-        && ood["reason"].as_str() == Some(OOD_SCORE_ABOVE_THRESHOLD)
+        && post_fix_fixture["isOod"].as_bool() == Some(false)
+        && direct_ood["verdict"].as_str() == Some("out_of_distribution")
+        && direct_ood["reason"].as_str() == Some(OOD_SCORE_ABOVE_THRESHOLD)
         && monotonic["passed"].as_bool() == Some(true);
     Ok(json!({
         "passed": passed,
         "report": report_json,
         "normalPythonRow": normal,
-        "freshSyntheticOodRow": ood,
+        "postFixFixtureNoSyntheticOodRow": post_fix_fixture,
+        "directHighScoreOodDecision": direct_ood,
         "monotonicHarvestAuc": monotonic,
     }))
 }
 
 fn run_empty_harvest_case(db_path: &Path, now: i64) -> Result<Value> {
     let db = open_infer_rocksdb(db_path).context("open empty-harvest DB")?;
+    let before = json!({
+        "oodHarvestRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_HARVEST)?,
+        "oodCalibrationRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_CALIBRATIONS)?,
+        "syntheticRowsProvided": 4,
+    });
     let report = compute_ood_calibration_report(
         db.as_ref(),
         &OodHarvestConfig::default(),
@@ -200,12 +225,18 @@ fn run_empty_harvest_case(db_path: &Path, now: i64) -> Result<Value> {
         && report.min_required_auc == 0.75
         && report.selected_for_serving
         && report.global_auc.unwrap_or_default() >= 0.75;
-    Ok(json!({
-        "passed": passed,
+    let after = json!({
+        "oodHarvestRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_HARVEST)?,
+        "oodCalibrationRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_CALIBRATIONS)?,
         "flags": report.flags,
         "selectedForServing": report.selected_for_serving,
         "globalAuc": report.global_auc,
         "minRequiredAuc": report.min_required_auc,
+    });
+    Ok(json!({
+        "passed": passed,
+        "before": before,
+        "after": after,
     }))
 }
 
@@ -234,6 +265,17 @@ fn run_cell_regression_case(db_path: &Path, now: i64) -> Result<Value> {
         OracleOutcome::OutOfDistribution,
         now + 101,
     )?;
+    let before = json!({
+        "oodHarvestRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_HARVEST)?,
+        "oodCalibrationRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_CALIBRATIONS)?,
+        "badCellSeed": {
+            "cellId": "language=python:mutation=boundary",
+            "idRows": 1,
+            "oodRows": 1,
+            "expectedAuc": 0.0,
+            "expectedServing": false,
+        },
+    });
     let report = compute_ood_calibration_report(
         db.as_ref(),
         &OodHarvestConfig::default(),
@@ -253,11 +295,18 @@ fn run_cell_regression_case(db_path: &Path, now: i64) -> Result<Value> {
             .flags
             .contains(&OOD_CELL_AUC_REGRESSION.to_string())
         && !report.selected_for_serving;
-    Ok(json!({
-        "passed": passed,
+    let after = json!({
+        "oodHarvestRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_HARVEST)?,
+        "oodCalibrationRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_CALIBRATIONS)?,
         "globalAuc": report.global_auc,
         "flags": report.flags,
+        "selectedForServing": report.selected_for_serving,
         "badCell": bad_cell,
+    });
+    Ok(json!({
+        "passed": passed,
+        "before": before,
+        "after": after,
     }))
 }
 
@@ -274,17 +323,32 @@ fn run_missing_calibrator_case(
         if corrupt {
             write_corrupt_ood_calibration_row(db.as_ref(), now)?;
         }
+        let before = json!({
+            "corruptRowInjected": corrupt,
+            "oodHarvestRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_HARVEST)?,
+            "oodCalibrationRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_CALIBRATIONS)?,
+            "livePredictionRows": count_cf(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS)?,
+        });
         let compiler = strict_compiler(db.clone(), repo_root, calibration, high_support_guard())?;
         let (patch, context) = fixture_patch_context(repo_root, "ood")?;
-        compiler.verify(&patch, &context)?
+        let verdict = compiler.verify(&patch, &context)?;
+        let after = json!({
+            "oodHarvestRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_HARVEST)?,
+            "oodCalibrationRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_CALIBRATIONS)?,
+            "livePredictionRows": count_cf(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS)?,
+        });
+        (verdict, before, after)
     };
-    let summary = verdict_summary(&outcome);
+    let summary = verdict_summary(&outcome.0);
     let passed = summary["failedGate"].as_str() == Some("OodGateRejected")
         && summary["reason"].as_str() == Some(OOD_CALIBRATOR_MISSING);
     Ok(json!({
         "passed": passed,
-        "corruptRowInjected": corrupt,
-        "verdict": summary,
+        "before": outcome.1,
+        "after": {
+            "state": outcome.2,
+            "verdict": summary,
+        },
     }))
 }
 
@@ -306,21 +370,38 @@ fn run_cold_cell_case(db_path: &Path, repo_root: &Path, now: i64) -> Result<Valu
             now + 1_000,
             &[],
         )?;
+        let before = json!({
+            "nSupporting": 10,
+            "coldCellThreshold": 50,
+            "oodHarvestRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_HARVEST)?,
+            "oodCalibrationRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_CALIBRATIONS)?,
+            "expectedPrecedence": "ColdCell before OutOfDistribution",
+        });
         let calibration = CalibrationStore::new(db.clone(), 30)?;
         seed_infer_calibration(db.as_ref(), &calibration)?;
         let compiler = strict_compiler(db.clone(), repo_root, calibration, low_support_guard())?;
         let (patch, context) = fixture_patch_context(repo_root, "ood")?;
-        compiler.verify(&patch, &context)?
+        let verdict = compiler.verify(&patch, &context)?;
+        let after = json!({
+            "oodHarvestRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_HARVEST)?,
+            "oodCalibrationRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_CALIBRATIONS)?,
+            "livePredictionRows": count_cf(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS)?,
+        });
+        (verdict, before, after)
     };
-    let summary = verdict_summary(&outcome);
+    let summary = verdict_summary(&outcome.0);
     let direct = apply_ood_gate_decision(Verdict::Pass, 0.99, None, Some((Some(10), 50)))?;
     let passed = summary["failedGate"].as_str() == Some("ColdCell")
         && direct.verdict == Verdict::Abstain
         && !direct.reason.is_empty();
     Ok(json!({
         "passed": passed,
-        "verifyVerdict": summary,
-        "directGateDecision": direct,
+        "before": outcome.1,
+        "after": {
+            "state": outcome.2,
+            "verifyVerdict": summary,
+            "directGateDecision": direct,
+        },
     }))
 }
 
@@ -581,31 +662,249 @@ fn independent_readback(paths: &[(&Path, &str)]) -> Result<Value> {
         let latest = read_latest_ood_calibration_report(db.as_ref())
             .ok()
             .flatten();
+        let ood_harvest_rows = count_cf(db.as_ref(), CF_MEJEPA_OOD_HARVEST)?;
+        let ood_calibration_rows = count_cf(db.as_ref(), CF_MEJEPA_OOD_CALIBRATIONS)?;
+        let live_prediction_rows = count_cf(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS)?;
+        let latest_selected = latest.as_ref().map(|report| report.selected_for_serving);
+        let latest_flags = latest.as_ref().map(|report| report.flags.clone());
+        let expected = expected_readback(label)?;
+        let row_passed = readback_matches(
+            label,
+            ood_harvest_rows,
+            ood_calibration_rows,
+            live_prediction_rows,
+            latest_selected,
+            latest_flags.as_deref(),
+        );
         let row = json!({
             "label": label,
             "path": path,
-            "oodHarvestRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_HARVEST)?,
-            "oodCalibrationRows": count_cf(db.as_ref(), CF_MEJEPA_OOD_CALIBRATIONS)?,
-            "livePredictionRows": count_cf(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS)?,
-            "latestSelectedForServing": latest.as_ref().map(|report| report.selected_for_serving),
-            "latestFlags": latest.as_ref().map(|report| report.flags.clone()),
+            "passed": row_passed,
+            "expected": expected,
+            "oodHarvestRows": ood_harvest_rows,
+            "oodCalibrationRows": ood_calibration_rows,
+            "livePredictionRows": live_prediction_rows,
+            "latestSelectedForServing": latest_selected,
+            "latestFlags": latest_flags,
         });
         rows.push(row);
     }
-    let all_passed = rows.iter().all(|row| {
-        row.get("oodCalibrationRows")
-            .and_then(Value::as_u64)
-            .unwrap_or_default()
-            >= if row.get("label").and_then(Value::as_str) == Some("missingCalibrator") {
-                0
-            } else {
-                1
-            }
-    });
+    let all_passed = rows
+        .iter()
+        .all(|row| row.get("passed").and_then(Value::as_bool) == Some(true));
     Ok(json!({
         "allPassed": all_passed,
         "databases": rows,
     }))
+}
+
+fn expected_readback(label: &str) -> Result<Value> {
+    match label {
+        "happy" => Ok(json!({
+            "oodHarvestRows": 101,
+            "oodCalibrationRows": 2,
+            "livePredictionRows": 2,
+            "latestSelectedForServing": true,
+            "latestFlags": [],
+        })),
+        "emptyHarvest" => Ok(json!({
+            "oodHarvestRows": 0,
+            "oodCalibrationRows": 1,
+            "livePredictionRows": 0,
+            "latestSelectedForServing": true,
+            "latestFlags": [OOD_HARVEST_EMPTY],
+        })),
+        "cellRegression" => Ok(json!({
+            "oodHarvestRows": 22,
+            "oodCalibrationRows": 1,
+            "livePredictionRows": 0,
+            "latestSelectedForServing": false,
+            "latestFlagsContains": [OOD_CELL_AUC_REGRESSION],
+        })),
+        "missingCalibrator" => Ok(json!({
+            "oodHarvestRows": 0,
+            "oodCalibrationRows": 0,
+            "livePredictionRows": 1,
+            "latestSelectedForServing": null,
+            "latestFlags": null,
+        })),
+        "corruptCalibrator" => Ok(json!({
+            "oodHarvestRows": 0,
+            "oodCalibrationRows": 1,
+            "livePredictionRows": 1,
+            "latestSelectedForServing": null,
+            "latestFlags": null,
+        })),
+        "coldCell" => Ok(json!({
+            "oodHarvestRows": 100,
+            "oodCalibrationRows": 1,
+            "livePredictionRows": 1,
+            "latestSelectedForServing": true,
+            "latestFlags": [],
+        })),
+        other => anyhow::bail!("unknown TASK-PY-G-014 readback label: {other}"),
+    }
+}
+
+fn readback_matches(
+    label: &str,
+    ood_harvest_rows: u64,
+    ood_calibration_rows: u64,
+    live_prediction_rows: u64,
+    latest_selected: Option<bool>,
+    latest_flags: Option<&[String]>,
+) -> bool {
+    match label {
+        "happy" => {
+            ood_harvest_rows == 101
+                && ood_calibration_rows == 2
+                && live_prediction_rows == 2
+                && latest_selected == Some(true)
+                && latest_flags.is_some_and(|flags| flags.is_empty())
+        }
+        "emptyHarvest" => {
+            ood_harvest_rows == 0
+                && ood_calibration_rows == 1
+                && live_prediction_rows == 0
+                && latest_selected == Some(true)
+                && latest_flags
+                    .is_some_and(|flags| flags.len() == 1 && flags[0] == OOD_HARVEST_EMPTY)
+        }
+        "cellRegression" => {
+            ood_harvest_rows == 22
+                && ood_calibration_rows == 1
+                && live_prediction_rows == 0
+                && latest_selected == Some(false)
+                && latest_flags
+                    .is_some_and(|flags| flags.iter().any(|flag| flag == OOD_CELL_AUC_REGRESSION))
+        }
+        "missingCalibrator" => {
+            ood_harvest_rows == 0
+                && ood_calibration_rows == 0
+                && live_prediction_rows == 1
+                && latest_selected.is_none()
+                && latest_flags.is_none()
+        }
+        "corruptCalibrator" => {
+            ood_harvest_rows == 0
+                && ood_calibration_rows == 1
+                && live_prediction_rows == 1
+                && latest_selected.is_none()
+                && latest_flags.is_none()
+        }
+        "coldCell" => {
+            ood_harvest_rows == 100
+                && ood_calibration_rows == 1
+                && live_prediction_rows == 1
+                && latest_selected == Some(true)
+                && latest_flags.is_some_and(|flags| flags.is_empty())
+        }
+        _ => false,
+    }
+}
+
+fn load_post_fix_rebaseline_reference() -> Result<Value> {
+    let path = post_fix_ship_gate_report_path();
+    ensure!(
+        path.starts_with("/zfs/archive/contextgraph/"),
+        "post-fix ship-gate report must be aiwonder durable evidence under /zfs/archive/contextgraph"
+    );
+    let bytes =
+        fs::read(&path).with_context(|| format!("read post-fix ship-gate {}", path.display()))?;
+    ensure!(
+        !bytes_contain_invalid_synthetic_baseline(&bytes),
+        "post-fix ship-gate report still contains invalid synthetic baseline bytes"
+    );
+    let payload: Value = serde_json::from_slice(&bytes)
+        .with_context(|| format!("parse post-fix ship-gate {}", path.display()))?;
+    ensure!(
+        payload.get("all_passed").and_then(Value::as_bool) == Some(true),
+        "post-fix ship-gate report all_passed must be true"
+    );
+    let execute = payload
+        .get("execute_and_inspect")
+        .context("post-fix ship-gate execute_and_inspect missing")?;
+    let raw = number_at(
+        execute,
+        &["raw_final_metrics", "prediction_oracle_correlation"],
+    )?;
+    let rank_safe = number_at(
+        execute,
+        &["rank_safe_final_metrics", "prediction_oracle_correlation"],
+    )?;
+    let rank_lift = number_at(execute, &["final_metrics", "prediction_oracle_correlation"])?;
+    for (name, value) in [
+        ("raw", raw),
+        ("rank_safe", rank_safe),
+        ("rank_lift", rank_lift),
+    ] {
+        ensure!(
+            (value - INVALID_SYNTHETIC_BASELINE_CORRELATION).abs() > 1.0e-9,
+            "post-fix {name} correlation must not equal invalid synthetic baseline"
+        );
+    }
+    Ok(json!({
+        "allPassed": true,
+        "artifactPath": path,
+        "artifactSha256": format!("sha256:{}", sha256_file(&path)?),
+        "rawPredictionOracleCorrelation": raw,
+        "rankSafePredictionOracleCorrelation": rank_safe,
+        "rankLiftPredictionOracleCorrelation": rank_lift,
+        "rankLiftBrier": number_at(execute, &["final_metrics", "brier"])?,
+        "rankLiftEce": number_at(execute, &["final_metrics", "ece"])?,
+        "shipGatePassed": execute.get("ship_gate_passed").and_then(Value::as_bool),
+        "rollingWindowBlockerCount": array_len_at(execute, &["rolling_window_blockers"])?,
+        "statisticalPowerBlockerCount": array_len_at(execute, &["statistical_power_blockers"])?,
+        "rollingWindowStatisticalPowerBlockerCount": optional_array_len_at(
+            execute,
+            &["rolling_window_statistical_power_blockers"],
+        ),
+        "activeAbstainDiagnostic": execute.get("task_py_g_392_active_abstain_ship_gate_diagnostic"),
+    }))
+}
+
+fn post_fix_ship_gate_report_path() -> PathBuf {
+    std::env::var("CG_TASK_PY_G_014_POST_FIX_SHIP_GATE_REPORT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(DEFAULT_POST_FIX_SHIP_GATE_REPORT))
+}
+
+fn number_at(value: &Value, path: &[&str]) -> Result<f64> {
+    let mut current = value;
+    for key in path {
+        current = current
+            .get(*key)
+            .with_context(|| format!("missing numeric path {}", path.join(".")))?;
+    }
+    current
+        .as_f64()
+        .with_context(|| format!("path {} is not numeric", path.join(".")))
+}
+
+fn array_len_at(value: &Value, path: &[&str]) -> Result<usize> {
+    let mut current = value;
+    for key in path {
+        current = current
+            .get(*key)
+            .with_context(|| format!("missing array path {}", path.join(".")))?;
+    }
+    current
+        .as_array()
+        .map(Vec::len)
+        .with_context(|| format!("path {} is not an array", path.join(".")))
+}
+
+fn optional_array_len_at(value: &Value, path: &[&str]) -> Option<usize> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    current.as_array().map(Vec::len)
+}
+
+fn bytes_contain_invalid_synthetic_baseline(bytes: &[u8]) -> bool {
+    std::str::from_utf8(bytes)
+        .is_ok_and(|text| text.contains("0.866667") || text.contains("0.8666666746139526"))
 }
 
 fn fsv_root() -> Result<PathBuf> {

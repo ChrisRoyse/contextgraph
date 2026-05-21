@@ -230,6 +230,7 @@ pub struct FailureModeHierarchyMaterialization {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct CodeStateOutcomeRow {
     pub code_state_key: String,
+    pub task_instance_id: String,
     pub mutation_category: String,
     pub docker_label: String,
     pub oracle_all_passed: bool,
@@ -240,6 +241,7 @@ pub struct CodeStateOutcomeRow {
 impl CodeStateOutcomeRow {
     pub fn validate(&self) -> Result<(), TrainerError> {
         validate_id("code_state_key", &self.code_state_key)?;
+        validate_id("task_instance_id", &self.task_instance_id)?;
         validate_id("mutation_category", &self.mutation_category)?;
         validate_id("docker_label", &self.docker_label)?;
         if !self.slot_identity_preserved || self.flat_vector_concat_used {
@@ -248,6 +250,37 @@ impl CodeStateOutcomeRow {
                 "code-state evaluation rows must preserve slot identity and reject flat-vector semantics",
             ));
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PostFixPredictionRow {
+    pub task_instance_id: String,
+    pub mutation_category: String,
+    pub actual_oracle_pass: bool,
+    pub predicted_oracle_pass: f64,
+    pub predicted_pass: bool,
+    pub patch_path: String,
+    pub patch_sha256: String,
+}
+
+impl PostFixPredictionRow {
+    pub fn validate(&self) -> Result<(), TrainerError> {
+        validate_id("task_instance_id", &self.task_instance_id)?;
+        validate_id("mutation_category", &self.mutation_category)?;
+        if !self.predicted_oracle_pass.is_finite()
+            || self.predicted_oracle_pass < 0.0
+            || self.predicted_oracle_pass > 1.0
+        {
+            return Err(invalid(
+                "predicted_oracle_pass",
+                "must be finite probability in [0,1]",
+            ));
+        }
+        validate_id("patch_path", &self.patch_path)?;
+        validate_id("patch_sha256", &self.patch_sha256)?;
         Ok(())
     }
 }
@@ -314,6 +347,39 @@ pub struct HoldoutNamedModeEvaluation {
     pub target_labels_used_as_live_inputs: bool,
     pub missing_named_mode_examples: Vec<MissingNamedModeExample>,
     pub closest_exemplar_examples: Vec<ClosestExemplarExample>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PostFixPredictedFailNamedModeEvaluation {
+    pub schema_version: u32,
+    pub holdout_prediction_rows: usize,
+    pub post_fix_predicted_fail_rows: usize,
+    pub post_fix_predicted_fail_true_fail_rows: usize,
+    pub post_fix_predicted_fail_false_positive_rows: usize,
+    pub post_fix_predicted_fail_rows_with_any_named_mode: usize,
+    pub post_fix_predicted_fail_rows_with_fail_likely_named_mode: usize,
+    pub post_fix_predicted_fail_named_mode_coverage: f64,
+    pub post_fix_predicted_true_fail_rows_with_fail_likely_named_mode: usize,
+    pub post_fix_predicted_true_fail_named_mode_coverage: f64,
+    pub post_fix_predicted_false_positive_rows_with_fail_likely_named_mode: usize,
+    pub post_fix_predicted_false_positive_rows_without_any_named_mode: usize,
+    pub closest_exemplar_count: usize,
+    pub closest_exemplar_coverage_on_predicted_fail: f64,
+    pub min_closest_exemplar_coverage_on_predicted_fail: f64,
+    pub closest_exemplar_oracle_agreement_count: usize,
+    pub closest_exemplar_oracle_agreement: f64,
+    pub min_closest_exemplar_oracle_agreement: f64,
+    pub coverage_pass: bool,
+    pub true_fail_coverage_pass: bool,
+    pub closest_exemplar_agreement_pass: bool,
+    pub passes: bool,
+    pub slot_identity_preserved: bool,
+    pub flat_vector_concat_used: bool,
+    pub target_labels_used_as_live_inputs: bool,
+    pub missing_named_mode_examples: Vec<MissingNamedModeExample>,
+    pub closest_exemplar_examples: Vec<ClosestExemplarExample>,
+    pub unmapped_prediction_examples: Vec<String>,
 }
 
 pub fn materialize_failure_mode_hierarchy(
@@ -394,6 +460,182 @@ pub fn materialize_failure_mode_hierarchy(
     })
 }
 
+pub fn evaluate_post_fix_predicted_fail_named_mode_coverage(
+    code_states: &[CodeStateOutcomeRow],
+    post_fix_predictions: &[PostFixPredictionRow],
+    reverse_indexes: &[SkillReverseIndexRow],
+    memberships: &[ChunkSkillMembershipRow],
+    named_predictions: &[NamedPredictionRow],
+    min_closest_exemplar_oracle_agreement: f64,
+) -> Result<PostFixPredictedFailNamedModeEvaluation, TrainerError> {
+    if post_fix_predictions.is_empty() {
+        return Err(invalid(
+            "post_fix_predictions",
+            "must contain active holdout prediction rows",
+        ));
+    }
+    validate_finite_unit(
+        "min_closest_exemplar_oracle_agreement",
+        min_closest_exemplar_oracle_agreement,
+    )?;
+    let states = build_eval_states(code_states, reverse_indexes, memberships, named_predictions)?;
+    let mut state_keys_by_task_category = BTreeMap::<(String, String), Vec<String>>::new();
+    for state in states.values() {
+        state_keys_by_task_category
+            .entry((
+                state.task_instance_id.clone(),
+                state.mutation_category.clone(),
+            ))
+            .or_default()
+            .push(state.code_state_key.clone());
+    }
+    for keys in state_keys_by_task_category.values_mut() {
+        keys.sort();
+    }
+
+    let exemplar_pool = states
+        .values()
+        .filter(|state| {
+            state.partition != HierarchyEvalPartition::Holdout
+                && !state.named_mode_sources.is_empty()
+        })
+        .collect::<Vec<_>>();
+
+    let mut post_fix_predicted_fail_rows = 0_usize;
+    let mut post_fix_predicted_fail_true_fail_rows = 0_usize;
+    let mut post_fix_predicted_fail_false_positive_rows = 0_usize;
+    let mut post_fix_predicted_fail_rows_with_any_named_mode = 0_usize;
+    let mut post_fix_predicted_fail_rows_with_fail_likely_named_mode = 0_usize;
+    let mut post_fix_predicted_true_fail_rows_with_fail_likely_named_mode = 0_usize;
+    let mut post_fix_predicted_false_positive_rows_with_fail_likely_named_mode = 0_usize;
+    let mut post_fix_predicted_false_positive_rows_without_any_named_mode = 0_usize;
+    let mut closest_exemplar_count = 0_usize;
+    let mut closest_exemplar_oracle_agreement_count = 0_usize;
+    let mut missing_named_mode_examples = Vec::new();
+    let mut closest_exemplar_examples = Vec::new();
+    let mut unmapped_prediction_examples = Vec::new();
+
+    for prediction in post_fix_predictions {
+        prediction.validate()?;
+        if prediction.predicted_pass {
+            continue;
+        }
+        post_fix_predicted_fail_rows += 1;
+        let predicted_fail_is_false_positive = prediction.actual_oracle_pass;
+        if predicted_fail_is_false_positive {
+            post_fix_predicted_fail_false_positive_rows += 1;
+        } else {
+            post_fix_predicted_fail_true_fail_rows += 1;
+        }
+        let state_key = match state_key_for_prediction(prediction, &state_keys_by_task_category) {
+            Ok(value) => value,
+            Err(err) => {
+                if unmapped_prediction_examples.len() < 12 {
+                    unmapped_prediction_examples.push(err.to_string());
+                }
+                continue;
+            }
+        };
+        let state = states
+            .get(&state_key)
+            .ok_or_else(|| invalid("post_fix_predictions", "mapped state missing"))?;
+        if state.oracle_all_passed != prediction.actual_oracle_pass {
+            return Err(invalid(
+                "post_fix_predictions",
+                format!(
+                    "oracle label mismatch for {}:{}",
+                    prediction.task_instance_id, prediction.mutation_category
+                ),
+            ));
+        }
+        if !state.named_prediction_ids.is_empty() {
+            post_fix_predicted_fail_rows_with_any_named_mode += 1;
+        } else if predicted_fail_is_false_positive {
+            post_fix_predicted_false_positive_rows_without_any_named_mode += 1;
+        }
+        if !state.fail_likely_named_prediction_ids.is_empty() {
+            post_fix_predicted_fail_rows_with_fail_likely_named_mode += 1;
+            if predicted_fail_is_false_positive {
+                post_fix_predicted_false_positive_rows_with_fail_likely_named_mode += 1;
+            } else {
+                post_fix_predicted_true_fail_rows_with_fail_likely_named_mode += 1;
+            }
+        } else if missing_named_mode_examples.len() < 12 {
+            missing_named_mode_examples.push(state.missing_example());
+        }
+        if state.named_mode_sources.is_empty() {
+            continue;
+        }
+        if let Some(best) = closest_exemplar(state, &exemplar_pool) {
+            closest_exemplar_count += 1;
+            if best.oracle_outcome_agrees {
+                closest_exemplar_oracle_agreement_count += 1;
+            }
+            if closest_exemplar_examples.len() < 12 {
+                closest_exemplar_examples.push(best);
+            }
+        }
+    }
+
+    let post_fix_predicted_fail_named_mode_coverage = ratio(
+        post_fix_predicted_fail_rows_with_fail_likely_named_mode,
+        post_fix_predicted_fail_rows,
+    );
+    let post_fix_predicted_true_fail_named_mode_coverage = ratio(
+        post_fix_predicted_true_fail_rows_with_fail_likely_named_mode,
+        post_fix_predicted_fail_true_fail_rows,
+    );
+    let closest_exemplar_coverage_on_predicted_fail =
+        ratio(closest_exemplar_count, post_fix_predicted_fail_rows);
+    let min_closest_exemplar_coverage_on_predicted_fail = 0.95;
+    let closest_exemplar_oracle_agreement = ratio(
+        closest_exemplar_oracle_agreement_count,
+        closest_exemplar_count,
+    );
+    let coverage_pass = post_fix_predicted_fail_rows > 0
+        && post_fix_predicted_fail_rows_with_fail_likely_named_mode == post_fix_predicted_fail_rows;
+    let true_fail_coverage_pass = post_fix_predicted_fail_true_fail_rows > 0
+        && post_fix_predicted_true_fail_rows_with_fail_likely_named_mode
+            == post_fix_predicted_fail_true_fail_rows;
+    let closest_exemplar_agreement_pass = post_fix_predicted_fail_rows > 0
+        && unmapped_prediction_examples.is_empty()
+        && closest_exemplar_coverage_on_predicted_fail
+            >= min_closest_exemplar_coverage_on_predicted_fail
+        && closest_exemplar_oracle_agreement >= min_closest_exemplar_oracle_agreement;
+    let passes = coverage_pass && closest_exemplar_agreement_pass;
+
+    Ok(PostFixPredictedFailNamedModeEvaluation {
+        schema_version: SKILL_SEQUENCE_SCHEMA_VERSION,
+        holdout_prediction_rows: post_fix_predictions.len(),
+        post_fix_predicted_fail_rows,
+        post_fix_predicted_fail_true_fail_rows,
+        post_fix_predicted_fail_false_positive_rows,
+        post_fix_predicted_fail_rows_with_any_named_mode,
+        post_fix_predicted_fail_rows_with_fail_likely_named_mode,
+        post_fix_predicted_fail_named_mode_coverage,
+        post_fix_predicted_true_fail_rows_with_fail_likely_named_mode,
+        post_fix_predicted_true_fail_named_mode_coverage,
+        post_fix_predicted_false_positive_rows_with_fail_likely_named_mode,
+        post_fix_predicted_false_positive_rows_without_any_named_mode,
+        closest_exemplar_count,
+        closest_exemplar_coverage_on_predicted_fail,
+        min_closest_exemplar_coverage_on_predicted_fail,
+        closest_exemplar_oracle_agreement_count,
+        closest_exemplar_oracle_agreement,
+        min_closest_exemplar_oracle_agreement,
+        coverage_pass,
+        true_fail_coverage_pass,
+        closest_exemplar_agreement_pass,
+        passes,
+        slot_identity_preserved: true,
+        flat_vector_concat_used: false,
+        target_labels_used_as_live_inputs: false,
+        missing_named_mode_examples,
+        closest_exemplar_examples,
+        unmapped_prediction_examples,
+    })
+}
+
 pub fn evaluate_holdout_named_mode_coverage(
     code_states: &[CodeStateOutcomeRow],
     reverse_indexes: &[SkillReverseIndexRow],
@@ -408,80 +650,7 @@ pub fn evaluate_holdout_named_mode_coverage(
         "min_closest_exemplar_oracle_agreement",
         min_closest_exemplar_oracle_agreement,
     )?;
-    let mut states = BTreeMap::<String, EvalState>::new();
-    let mut train_rows = 0_usize;
-    let mut calibration_rows = 0_usize;
-    let mut holdout_rows = 0_usize;
-    for row in code_states {
-        row.validate()?;
-        let partition = stable_hierarchy_eval_partition(&row.code_state_key)?;
-        match partition {
-            HierarchyEvalPartition::Train => train_rows += 1,
-            HierarchyEvalPartition::Calibration => calibration_rows += 1,
-            HierarchyEvalPartition::Holdout => holdout_rows += 1,
-        }
-        if states
-            .insert(row.code_state_key.clone(), EvalState::new(row, partition))
-            .is_some()
-        {
-            return Err(invalid("code_states", "duplicate code_state_key"));
-        }
-    }
-
-    let mut predictions_by_source = BTreeMap::<String, Vec<&NamedPredictionRow>>::new();
-    for row in named_predictions {
-        row.validate()?;
-        if row.target_labels_used_as_live_inputs {
-            return Err(invalid(
-                "named_predictions",
-                "target labels cannot be live named-mode inputs",
-            ));
-        }
-        predictions_by_source
-            .entry(row.source_hierarchy_id.clone())
-            .or_default()
-            .push(row);
-    }
-    if predictions_by_source.is_empty() {
-        return Err(invalid(
-            "named_predictions",
-            "must contain at least one named prediction",
-        ));
-    }
-
-    for row in reverse_indexes {
-        row.validate()?;
-        let state = states.get_mut(&row.code_state_key).ok_or_else(|| {
-            invalid(
-                "reverse_indexes",
-                format!(
-                    "reverse index references unknown code_state {}",
-                    row.code_state_key
-                ),
-            )
-        })?;
-        state.active_skill_ids.insert(row.skill_id.clone());
-    }
-    for row in memberships {
-        row.validate()?;
-        if row.hierarchy_level < 3 {
-            continue;
-        }
-        let state = states.get_mut(&row.code_state_key).ok_or_else(|| {
-            invalid(
-                "memberships",
-                format!(
-                    "membership references unknown code_state {}",
-                    row.code_state_key
-                ),
-            )
-        })?;
-        state.active_higher_ability_ids.insert(row.skill_id.clone());
-    }
-
-    for state in states.values_mut() {
-        state.attach_named_predictions(&predictions_by_source);
-    }
+    let states = build_eval_states(code_states, reverse_indexes, memberships, named_predictions)?;
 
     let mut holdout_fail_rows = 0_usize;
     let mut holdout_fail_rows_with_any_named_mode = 0_usize;
@@ -545,9 +714,18 @@ pub fn evaluate_holdout_named_mode_coverage(
     Ok(HoldoutNamedModeEvaluation {
         schema_version: SKILL_SEQUENCE_SCHEMA_VERSION,
         code_state_rows: states.len(),
-        train_rows,
-        calibration_rows,
-        holdout_rows,
+        train_rows: states
+            .values()
+            .filter(|state| state.partition == HierarchyEvalPartition::Train)
+            .count(),
+        calibration_rows: states
+            .values()
+            .filter(|state| state.partition == HierarchyEvalPartition::Calibration)
+            .count(),
+        holdout_rows: states
+            .values()
+            .filter(|state| state.partition == HierarchyEvalPartition::Holdout)
+            .count(),
         holdout_fail_rows,
         holdout_fail_rows_with_any_named_mode,
         holdout_fail_rows_with_fail_likely_named_mode,
@@ -569,6 +747,126 @@ pub fn evaluate_holdout_named_mode_coverage(
     })
 }
 
+fn build_eval_states(
+    code_states: &[CodeStateOutcomeRow],
+    reverse_indexes: &[SkillReverseIndexRow],
+    memberships: &[ChunkSkillMembershipRow],
+    named_predictions: &[NamedPredictionRow],
+) -> Result<BTreeMap<String, EvalState>, TrainerError> {
+    if code_states.is_empty() {
+        return Err(invalid("code_states", "must not be empty"));
+    }
+    let mut states = BTreeMap::<String, EvalState>::new();
+    for row in code_states {
+        row.validate()?;
+        let partition = stable_hierarchy_eval_partition(&row.code_state_key)?;
+        if states
+            .insert(row.code_state_key.clone(), EvalState::new(row, partition))
+            .is_some()
+        {
+            return Err(invalid("code_states", "duplicate code_state_key"));
+        }
+    }
+
+    let mut predictions_by_source = BTreeMap::<String, Vec<&NamedPredictionRow>>::new();
+    for row in named_predictions {
+        row.validate()?;
+        if row.target_labels_used_as_live_inputs {
+            return Err(invalid(
+                "named_predictions",
+                "target labels cannot be live named-mode inputs",
+            ));
+        }
+        predictions_by_source
+            .entry(row.source_hierarchy_id.clone())
+            .or_default()
+            .push(row);
+    }
+    if predictions_by_source.is_empty() {
+        return Err(invalid(
+            "named_predictions",
+            "must contain at least one named prediction",
+        ));
+    }
+
+    for row in reverse_indexes {
+        row.validate()?;
+        let state = states.get_mut(&row.code_state_key).ok_or_else(|| {
+            invalid(
+                "reverse_indexes",
+                format!(
+                    "reverse index references unknown code_state {}",
+                    row.code_state_key
+                ),
+            )
+        })?;
+        state.active_skill_ids.insert(row.skill_id.clone());
+    }
+    for row in memberships {
+        row.validate()?;
+        if row.hierarchy_level < 3 {
+            continue;
+        }
+        let state = states.get_mut(&row.code_state_key).ok_or_else(|| {
+            invalid(
+                "memberships",
+                format!(
+                    "membership references unknown code_state {}",
+                    row.code_state_key
+                ),
+            )
+        })?;
+        state.active_higher_ability_ids.insert(row.skill_id.clone());
+    }
+
+    for state in states.values_mut() {
+        state.attach_named_predictions(&predictions_by_source);
+    }
+
+    Ok(states)
+}
+
+fn state_key_for_prediction(
+    prediction: &PostFixPredictionRow,
+    states_by_task_category: &BTreeMap<(String, String), Vec<String>>,
+) -> Result<String, TrainerError> {
+    let key = (
+        prediction.task_instance_id.clone(),
+        prediction.mutation_category.clone(),
+    );
+    let Some(candidates) = states_by_task_category.get(&key) else {
+        return Err(invalid(
+            "post_fix_predictions",
+            format!(
+                "no code-state row for {}:{}",
+                prediction.task_instance_id, prediction.mutation_category
+            ),
+        ));
+    };
+    if candidates.len() == 1 {
+        return Ok(candidates[0].clone());
+    }
+    if prediction.mutation_category == "known_good" {
+        for suffix in ["|gold", "|base", "|test_patch"] {
+            if let Some(value) = candidates
+                .iter()
+                .find(|candidate| candidate.ends_with(suffix))
+            {
+                return Ok(value.clone());
+            }
+        }
+    }
+    Err(invalid(
+        "post_fix_predictions",
+        format!(
+            "ambiguous code-state rows for {}:{} ({})",
+            prediction.task_instance_id,
+            prediction.mutation_category,
+            candidates.len()
+        ),
+    ))
+}
+
 pub fn stable_hierarchy_eval_partition(
     row_key: &str,
 ) -> Result<HierarchyEvalPartition, TrainerError> {
@@ -585,6 +883,7 @@ pub fn stable_hierarchy_eval_partition(
 #[derive(Debug, Clone)]
 struct EvalState {
     code_state_key: String,
+    task_instance_id: String,
     mutation_category: String,
     docker_label: String,
     oracle_all_passed: bool,
@@ -602,6 +901,7 @@ impl EvalState {
     fn new(row: &CodeStateOutcomeRow, partition: HierarchyEvalPartition) -> Self {
         Self {
             code_state_key: row.code_state_key.clone(),
+            task_instance_id: row.task_instance_id.clone(),
             mutation_category: row.mutation_category.clone(),
             docker_label: row.docker_label.clone(),
             oracle_all_passed: row.oracle_all_passed,

@@ -294,7 +294,7 @@ The 4-level hierarchy turns raw numerical evidence into named rules. Level 0 (de
 | Skill substrate (#414) | `src/skill_sequence_discovery.rs`, `src/chunk_skill_membership.rs` | 128 Level-2 skills, 36,773 chunk memberships, 10,579 reverse-index rows |
 | Runtime resolver (#418) | `src/ability_resolver_*.rs` | `AbilityContext`, ordered higher-ability IDs into `PredictionLabelContext` |
 
-**Holdout proof (#404):** 114/114 Fail rows have FailLikely named-mode coverage; closest-exemplar oracle agreement 1.0 over 113/114 comparable holdout Fail rows.
+**Holdout proof (#404):** 114/114 actual Fail rows have FailLikely named-mode coverage; closest-exemplar oracle agreement is 1.0 over 113/114 comparable holdout Fail rows. Post-fix revalidation adds the active-prediction view: 117/117 active predicted true-Fail rows resolve to FailLikely named modes, but aggregate predicted-Fail coverage is 137/150 because 13 false-positive Fail verdicts have no named consequence explanation. That blocker belongs to predictor policy/feature selection.
 
 **Leakage policy.** Target-side labels (oracle/Docker/test outcomes) marked `leakage_policy:target_side_only`. They are supervision/reward inputs only — **never** live predictor inputs.
 

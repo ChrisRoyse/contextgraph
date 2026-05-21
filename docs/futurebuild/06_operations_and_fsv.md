@@ -364,11 +364,11 @@ The inference-path synthetic-vector contamination fix (#422 / #424 / #426 / #437
 5. **End-to-end ship-gate measurement.** Last run: `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/ship-gate-fsv.json`; independent readback sha256 `9cf352a775a38df87f17e6b1b0964d0ec93b93de9d5447b6bc762294c1b67ae2`.
 6. **`λ_inv` ablation re-run.** Complete: `/zfs/archive/contextgraph/fsv/task-ek-012-bidirectional-ablation-realinput-fsv/run-20260520T172657Z/bidirectional_ablation_realinput_fsv.json`, sha256 `bebb84c8b7800fd5567803a43025ee19a88182b32c77f8a4eeee4c9eb2dc2dd4`. Best real-input variant is `lambda_inv=0.0` at `0.6704055071`; positive lambdas regress.
 7. **#393 / #398 ablation re-run.** Complete: #393 uncalibrated `/zfs/archive/contextgraph/fsv/task-py-g-093-constellation-ablation-suite-realinput-fsv/run-20260520T181900Z/python_constellation_ablation_suite_uncalibrated_realinput_fsv.json`, sha256 `c1ed1efc4aaceef210619fc290dbd09a2fa0c2732a6f3f87969237f1a8460e26`; #398 calibrated `/zfs/archive/contextgraph/fsv/task-py-g-097-constellation-ablation-with-calibration-realinput-fsv/run-20260520T170156Z/python_constellation_ablation_with_calibration_fsv.json`, sha256 `03096e466278f60631328207b07fe0aba6c6ffca622d21a468fa167ad33d730a`. Both remain `no_promotion`.
-8. **#129 OOD serving gate re-validation.** Re-derive AUC against post-fix predictions; confirm `OOD_CELL_AUC_REGRESSION` does not fire spuriously.
-9. **#130 Gτ guard audit re-run.** Re-derive per-cell pass/fail counts; the prior "6 low-pass, 1 missing, 8 calibration fail-closed" finding is invalidated and must be re-measured.
-10. **#404 holdout coverage re-validation.** Re-derive `named_mode_coverage_on_fail` and `closest_exemplar_oracle_agreement` against post-fix Fail rows; prior `1.0` figures were against synthetic-input predictions.
+8. **#129 OOD serving gate re-validation.** Complete: `/zfs/archive/contextgraph/fsv/task-py-g-014-ood-gate-fsv/run-20260521T145048Z/ood_gate_fsv.json`, sha256 `d7f35e574f04a7a8dbbe5905b5b825037cfccef89239f141c4b4817b204f96ac`; independent readback sha256 `4e149f6a794b994bcfec59e203343a0c517898c05c9e23a0236df8cb4f7233e5`. Anchored to post-fix ship-gate report sha256 `8a018eaf63fab34eb7c3bf8d60a5b9f92d04a58d99a702b9fc462b21236ba499`; invalid `0.866667` literals absent.
+9. **#130 Gτ guard audit re-run.** Complete: `/zfs/archive/contextgraph/fsv/task-py-g-015-gtau-guard-audit-fsv/run-20260521T142921Z/gtau_guard_audit_fsv.json`, sha256 `169f6cc759394bbf166696fc84ad96e11258bb489b2842b49e3434ad21d8e262`; independent readback sha256 `78ee340385ce13f8949a08a64f0e560f35d7479e34e1ac35556fce88bfe91e17`. Current result remains fail-closed and not ship-gate-countable: 8 cells reported, 1 missing (`python:compile_error`), 6 low-pass, 8 fail-closed, `flatVectorConcatUsed=false`.
+10. **#404 holdout coverage re-validation.** Complete: `/zfs/archive/contextgraph/fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv/run-1779376526126/task_py_g_110_failure_mode_hierarchy_fsv.json`, sha256 `77deb00b1d975bd1b83bf71a4bf48e2069eb1808202a6bf819da5e414f47d879`. Actual oracle-fail holdout coverage remains 114/114; post-fix active predicted-Fail rows show true-fail coverage 117/117 but aggregate predicted-Fail coverage 137/150 because 13 false-positive Fail verdicts have no named consequence explanation. Typed blockers: `POST_FIX_AGGREGATE_PREDICTED_FAIL_NAMED_MODE_COVERAGE_FALSE`, `POST_FIX_UNEXPLAINED_FALSE_POSITIVE_FAIL_VERDICTS`, `POST_FIX_CLOSEST_EXEMPLAR_COVERAGE_BELOW_THRESHOLD`.
 
-Until all ten clear, the predictor is **not** ship-gate-countable, and any new claim of "we hit 0.95" requires #524-style audit that the predictor saw real inputs.
+All ten rebaseline checks now have post-fix evidence. The predictor is still **not** ship-gate-countable because active/abstain per-cell, rolling-window, power, and Panel B blockers remain.
 
 ---
 
@@ -396,6 +396,7 @@ Universal FSV-PROTOCOL §1.1–§1.5 applies. The additions below are protocol-s
 5. **Leakage policy:** `target_outcomes_used_for_calibration=true` while `target_labels_used_as_live_inputs=false`.
 6. **Holdout coverage:** 114/114 holdout Fail rows resolve to a FailLikely named mode.
 7. **Closest-exemplar agreement:** ≥0.85 threshold; 113/114 matched, agreement 1.0.
+8. **Post-fix active predicted-Fail revalidation:** true-failure rows resolve cleanly (117/117), but aggregate predicted-Fail coverage is 137/150 because 13 false-positive Fail verdicts have no named mode. Treat this as a predictor-policy/feature-selection blocker, not a hierarchy-substrate failure.
 
 ### 11.2 Cross-panel triangulation FSV (#405, planned)
 

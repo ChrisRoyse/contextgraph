@@ -74,7 +74,7 @@ Raw slot violations + cross-embedder correlations are clustered into a **4-level
 | Skill → chunk reverse (#414) | `CF_MEJEPA_SKILL_REVERSE_INDEX` | 10,579 |
 | Level-1/2/3 hierarchy + named predictions (#404) | `CF_MEJEPA_FAILURE_MODE_LEVEL{1,2,3}_*`, `CF_MEJEPA_NAMED_PREDICTIONS` | 8 groups / 157 skills / 379 constellations / 536 named predictions |
 
-Holdout proof (#404): 114/114 Fail rows have FailLikely named-mode coverage; closest-exemplar oracle agreement 1.0 over 113/114 comparable holdout Fail rows.
+Holdout proof (#404): 114/114 actual Fail rows have FailLikely named-mode coverage; closest-exemplar oracle agreement is 1.0 over 113/114 comparable holdout Fail rows. Post-fix revalidation against `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/` also shows 117/117 active predicted true-Fail rows resolve to FailLikely named modes, while aggregate predicted-Fail coverage is 137/150 because 13 false-positive Fail verdicts have no named consequence explanation. That is a predictor-policy/feature-selection blocker, not a #404 hierarchy-substrate failure.
 
 Live-input safety: target-side labels (oracle/Docker/test outcomes) are emitted with `leakage_policy:target_side_only`. They are supervision/reward inputs only — **never** live predictor inputs.
 
@@ -292,8 +292,8 @@ The result was deterministic for the same `(task_id, patch_sha)`. Every ablation
 | #398 calibrated constellation ablation rerun (Brier 0.7539) | Original measurement invalid; real-input rerun now exists and remains `no_promotion` |
 | "Slot-preserving architecture doesn't close the 0.083 gap" claim | Original claim invalid; real-input #393/#398/#546 reruns are negative evidence but do not validate the pre-fix 0.083 framing |
 | "Gap is a function of labels, not embedder count" claim | Invalid as a broad causal claim; real-input constellation/`λ_inv` ablations did not identify those surfaces as gate movers |
-| #129 OOD serving gate AUC measurements | Pre-fix calibrator; needs re-validation |
-| #130 Gτ guard audit pass/fail counts | Pre-fix training data |
+| #129 OOD serving gate AUC measurements | Revalidated post-fix in `/zfs/archive/contextgraph/fsv/task-py-g-014-ood-gate-fsv/run-20260521T145048Z/` |
+| #130 Gτ guard audit pass/fail counts | Revalidated post-fix in `/zfs/archive/contextgraph/fsv/task-py-g-015-gtau-guard-audit-fsv/run-20260521T142921Z/`; remains fail-closed/non-countable |
 
 **Rebaseline action plan (current P0 gate work).**
 
