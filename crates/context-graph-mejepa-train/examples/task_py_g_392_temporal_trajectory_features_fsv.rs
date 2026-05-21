@@ -254,6 +254,17 @@ fn run() -> Result<()> {
         feature_table,
         &legal_score_sharpness_calibration,
     )?;
+    let score_sharpness_abstain_calibration_row_diagnostics =
+        score_sharpness_abstain_row_diagnostics(
+            feature_table,
+            "calibration",
+            &legal_score_sharpness_abstain_band.model,
+        )?;
+    let score_sharpness_abstain_holdout_row_diagnostics = score_sharpness_abstain_row_diagnostics(
+        feature_table,
+        "holdout",
+        &legal_score_sharpness_abstain_band.model,
+    )?;
     let legal_targeted_off_by_one_conflict_abstain =
         select_targeted_off_by_one_conflict_abstain_repair(
             feature_table,
@@ -504,6 +515,8 @@ fn run() -> Result<()> {
         "legal_score_sharpness_calibration": legal_score_sharpness_calibration,
         "legal_score_sharpness_logit_calibration": legal_score_sharpness_logit_calibration,
         "legal_score_sharpness_abstain_band": legal_score_sharpness_abstain_band,
+        "score_sharpness_abstain_calibration_row_diagnostics": score_sharpness_abstain_calibration_row_diagnostics,
+        "score_sharpness_abstain_holdout_row_diagnostics": score_sharpness_abstain_holdout_row_diagnostics,
         "legal_targeted_off_by_one_conflict_abstain": legal_targeted_off_by_one_conflict_abstain,
         "legal_cause_band_calibration": legal_cause_band_calibration,
         "legal_final_bin_calibration": legal_final_bin_calibration,
@@ -558,6 +571,22 @@ fn run() -> Result<()> {
                 .unwrap_or_default() as usize,
         "legal best holdout row diagnostics must cover every holdout row"
     );
+    let abstain_calibration_rows = report_readback
+        ["score_sharpness_abstain_calibration_row_diagnostics"]
+        .as_array()
+        .ok_or_else(|| {
+            anyhow!("score-sharpness abstain calibration diagnostics missing or not an array")
+        })?;
+    let abstain_holdout_rows = report_readback["score_sharpness_abstain_holdout_row_diagnostics"]
+        .as_array()
+        .ok_or_else(|| {
+            anyhow!("score-sharpness abstain holdout diagnostics missing or not an array")
+        })?;
+    ensure!(
+        abstain_calibration_rows.len() == REQUIRED_EVAL_SPLIT_COUNT
+            && abstain_holdout_rows.len() == REQUIRED_EVAL_SPLIT_COUNT,
+        "score-sharpness abstain diagnostics must cover calibration and holdout rows"
+    );
     let readback = json!({
         "schema_version": 1,
         "report_path": report_path,
@@ -575,6 +604,8 @@ fn run() -> Result<()> {
         "readback_legal_best_ece_breakdown_audit": report_readback["legal_best_ece_breakdown_audit"],
         "readback_legal_best_worst_ece_bin": worst_ece_bin,
         "readback_legal_best_holdout_row_diagnostic_count": row_diagnostics.len(),
+        "readback_score_sharpness_abstain_calibration_row_diagnostic_count": abstain_calibration_rows.len(),
+        "readback_score_sharpness_abstain_holdout_row_diagnostic_count": abstain_holdout_rows.len(),
         "readback_bin_consequence_candidate_audit": report_readback["bin_consequence_candidate_audit"],
         "readback_directional_signal_passed": report_readback["directional_signal"]["passed"],
         "readback_legal_best_blockers": report_readback["legal_best_candidate"]["blockers"],
@@ -1622,6 +1653,29 @@ struct LegalBestRowDiagnostic {
     selected_knn_score: f32,
     cause_bin_score: f32,
     score_sharpness_score: f32,
+    evidence_key_count: usize,
+    evidence_key_sample: Vec<String>,
+    cause_feature_nonzero_count: usize,
+    cause_feature_large_magnitude_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ScoreSharpnessAbstainRowDiagnostic {
+    bucket: String,
+    row_index: usize,
+    task_id: String,
+    category: String,
+    repo: String,
+    patch_path: String,
+    actual_oracle_pass: bool,
+    predicted_oracle_pass: f32,
+    predicted_pass: bool,
+    correct_before_abstain: bool,
+    active_after_abstain: bool,
+    score_in_abstain_band: bool,
+    absolute_error: f32,
+    ece_bin_index: usize,
+    cause_bin_score: f32,
     evidence_key_count: usize,
     evidence_key_sample: Vec<String>,
     cause_feature_nonzero_count: usize,
@@ -10391,6 +10445,81 @@ fn legal_best_holdout_row_diagnostics(
                 })
             },
         )
+        .collect()
+}
+
+fn score_sharpness_abstain_row_diagnostics(
+    table: &FeatureTable,
+    bucket: &str,
+    model: &ScoreSharpnessAbstainBandModel,
+) -> Result<Vec<ScoreSharpnessAbstainRowDiagnostic>> {
+    let indices = bucket_indices(table, bucket);
+    let cause_bin_rows = cause_bin_calibrated_rows(table, &indices, &model.base_model.base_model)?;
+    let score_sharpness_rows = score_sharpness_calibrated_rows(table, &indices, &model.base_model)?;
+    ensure_prediction_rows_aligned(
+        &cause_bin_rows,
+        &score_sharpness_rows,
+        "score-sharpness abstain diagnostics cause",
+    )?;
+
+    indices
+        .iter()
+        .copied()
+        .zip(cause_bin_rows.iter())
+        .zip(score_sharpness_rows.iter())
+        .map(|((row_index, cause_bin_row), score_sharpness_row)| {
+            let feature_row = table
+                .rows
+                .get(row_index)
+                .ok_or_else(|| anyhow!("score-sharpness abstain diagnostic index out of range"))?;
+            ensure!(
+                feature_row.task_id == score_sharpness_row.task_id
+                    && feature_row.category == score_sharpness_row.category
+                    && feature_row.actual_oracle_pass == score_sharpness_row.actual_oracle_pass,
+                "score-sharpness abstain diagnostic identity mismatch for {}:{}",
+                score_sharpness_row.task_id,
+                score_sharpness_row.category
+            );
+            let target = if score_sharpness_row.actual_oracle_pass {
+                1.0
+            } else {
+                0.0
+            };
+            let score_in_abstain_band = score_in_abstain_band(
+                score_sharpness_row.predicted_oracle_pass,
+                model.abstain_low,
+                model.abstain_high,
+            );
+            Ok(ScoreSharpnessAbstainRowDiagnostic {
+                bucket: bucket.to_string(),
+                row_index,
+                task_id: score_sharpness_row.task_id.clone(),
+                category: score_sharpness_row.category.clone(),
+                repo: feature_row.repo.clone(),
+                patch_path: feature_row.patch_path.clone(),
+                actual_oracle_pass: score_sharpness_row.actual_oracle_pass,
+                predicted_oracle_pass: score_sharpness_row.predicted_oracle_pass,
+                predicted_pass: score_sharpness_row.predicted_pass,
+                correct_before_abstain: score_sharpness_row.correct,
+                active_after_abstain: !score_in_abstain_band,
+                score_in_abstain_band,
+                absolute_error: (score_sharpness_row.predicted_oracle_pass - target).abs(),
+                ece_bin_index: ece_bin_index(score_sharpness_row.predicted_oracle_pass),
+                cause_bin_score: cause_bin_row.predicted_oracle_pass,
+                evidence_key_count: feature_row.evidence_keys.len(),
+                evidence_key_sample: feature_row.evidence_keys.iter().take(16).cloned().collect(),
+                cause_feature_nonzero_count: feature_row
+                    .cause_features
+                    .iter()
+                    .filter(|value| value.abs() > f32::EPSILON)
+                    .count(),
+                cause_feature_large_magnitude_count: feature_row
+                    .cause_features
+                    .iter()
+                    .filter(|value| value.abs() >= 1.0)
+                    .count(),
+            })
+        })
         .collect()
 }
 
