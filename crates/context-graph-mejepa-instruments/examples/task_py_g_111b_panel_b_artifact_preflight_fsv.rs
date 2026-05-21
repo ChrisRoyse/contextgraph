@@ -32,6 +32,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let synthetic_rejected = PanelBArtifactSpec::new(
         PanelBSlot::Ast,
         "synthetic-codebert-placeholder",
+        "https://huggingface.co/microsoft/codebert-base",
+        "3b0952feddeffad0063f274080e3c23d75e7eb39",
+        "hf_transformers_feature_extraction",
         "panel-b/codebert-base",
         vec!["config.json"],
     )

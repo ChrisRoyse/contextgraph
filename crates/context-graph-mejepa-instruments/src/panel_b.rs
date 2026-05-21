@@ -37,6 +37,9 @@ impl PanelBSlot {
 pub struct PanelBArtifactSpec {
     pub slot: PanelBSlot,
     pub model_id: String,
+    pub source_uri: String,
+    pub source_revision: String,
+    pub scorer_kind: String,
     pub relative_dir: String,
     pub required_files: Vec<String>,
 }
@@ -45,12 +48,18 @@ impl PanelBArtifactSpec {
     pub fn new(
         slot: PanelBSlot,
         model_id: impl Into<String>,
+        source_uri: impl Into<String>,
+        source_revision: impl Into<String>,
+        scorer_kind: impl Into<String>,
         relative_dir: impl Into<String>,
         required_files: Vec<&'static str>,
     ) -> Self {
         Self {
             slot,
             model_id: model_id.into(),
+            source_uri: source_uri.into(),
+            source_revision: source_revision.into(),
+            scorer_kind: scorer_kind.into(),
             relative_dir: relative_dir.into(),
             required_files: required_files.into_iter().map(str::to_string).collect(),
         }
@@ -58,6 +67,9 @@ impl PanelBArtifactSpec {
 
     pub fn validate(&self) -> InstrumentResult<()> {
         validate_single_line("PanelBArtifactSpec.model_id", &self.model_id)?;
+        validate_single_line("PanelBArtifactSpec.source_uri", &self.source_uri)?;
+        validate_revision("PanelBArtifactSpec.source_revision", &self.source_revision)?;
+        validate_single_line("PanelBArtifactSpec.scorer_kind", &self.scorer_kind)?;
         validate_relative_path("PanelBArtifactSpec.relative_dir", &self.relative_dir)?;
         if self.required_files.is_empty() {
             return Err(InstrumentError::invalid(
@@ -69,13 +81,17 @@ impl PanelBArtifactSpec {
         for file in &self.required_files {
             validate_relative_path("PanelBArtifactSpec.required_files", file)?;
         }
-        let lower = self.model_id.to_ascii_lowercase();
+        let lower = format!(
+            "{}\n{}\n{}",
+            self.model_id, self.source_uri, self.scorer_kind
+        )
+        .to_ascii_lowercase();
         for forbidden in ["fake", "synthetic", "placeholder", "dummy", "stub"] {
             if lower.contains(forbidden) {
                 return Err(InstrumentError::invalid(
-                    "PanelBArtifactSpec.model_id",
-                    format!("Panel B model id {:?} contains {forbidden}", self.model_id),
-                    "use a real model/tool artifact id and hash its files from aiwonder storage",
+                    "PanelBArtifactSpec.source",
+                    format!("Panel B source {:?} contains {forbidden}", self.model_id),
+                    "use a real model/tool source and hash its files from aiwonder storage",
                 ));
             }
         }
@@ -88,6 +104,9 @@ impl PanelBArtifactSpec {
 pub struct PanelBArtifact {
     pub slot: PanelBSlot,
     pub model_id: String,
+    pub source_uri: String,
+    pub source_revision: String,
+    pub scorer_kind: String,
     pub root: String,
     pub artifact_sha256: String,
     pub file_sha256: BTreeMap<String, String>,
@@ -98,6 +117,9 @@ pub struct PanelBArtifact {
 pub struct MissingPanelBArtifact {
     pub slot: PanelBSlot,
     pub model_id: String,
+    pub source_uri: String,
+    pub source_revision: String,
+    pub scorer_kind: String,
     pub root: String,
     pub missing_files: Vec<String>,
 }
@@ -136,36 +158,46 @@ pub fn default_panel_b_artifact_specs() -> Vec<PanelBArtifactSpec> {
         PanelBArtifactSpec::new(
             PanelBSlot::Ast,
             "microsoft/codebert-base",
+            "https://huggingface.co/microsoft/codebert-base",
+            "3b0952feddeffad0063f274080e3c23d75e7eb39",
+            "hf_transformers_feature_extraction",
             "panel-b/codebert-base",
-            vec!["config.json", "tokenizer.json", "model.safetensors"],
+            vec!["config.json", "merges.txt", "rust_model.ot", "vocab.json"],
         ),
         PanelBArtifactSpec::new(
             PanelBSlot::Cfg,
-            "pythia-program-graph-encoder",
-            "panel-b/pythia-program-graph",
-            vec!["config.json", "tokenizer.json", "model.safetensors"],
-        ),
-        PanelBArtifactSpec::new(
-            PanelBSlot::DataFlow,
-            "joern-data-flow-encoder",
-            "panel-b/joern-dataflow",
-            vec!["manifest.json", "encoder.bin"],
-        ),
-        PanelBArtifactSpec::new(
-            PanelBSlot::TypeGraph,
-            "pytype-json-type-graph-v1",
-            "panel-b/pytype-json",
-            vec!["manifest.json", "encoder.bin"],
+            "microsoft/graphcodebert-base",
+            "https://huggingface.co/microsoft/graphcodebert-base",
+            "2b0488a7bb0eefc7041f1bb2cad1ab26b0da269d",
+            "hf_transformers_feature_extraction",
+            "panel-b/graphcodebert-base",
+            vec![
+                "config.json",
+                "merges.txt",
+                "pytorch_model.bin",
+                "vocab.json",
+            ],
         ),
         PanelBArtifactSpec::new(
             PanelBSlot::CodeSemantic,
-            "voyage-code-2",
-            "panel-b/voyage-code-2",
-            vec!["manifest.json", "encoder.bin"],
+            "microsoft/unixcoder-base",
+            "https://huggingface.co/microsoft/unixcoder-base",
+            "5604afdc964f6c53782a6813140ade5216b99006",
+            "hf_transformers_feature_extraction",
+            "panel-b/unixcoder-base",
+            vec![
+                "config.json",
+                "merges.txt",
+                "pytorch_model.bin",
+                "vocab.json",
+            ],
         ),
         PanelBArtifactSpec::new(
             PanelBSlot::Text,
             "BAAI/bge-large-en-v1.5",
+            "https://huggingface.co/BAAI/bge-large-en-v1.5",
+            "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+            "hf_transformers_feature_extraction",
             "panel-b/bge-large-en-v1.5",
             vec!["config.json", "tokenizer.json", "model.safetensors"],
         ),
@@ -203,14 +235,20 @@ pub fn resolve_panel_b_artifact_manifest(
             artifacts.push(PanelBArtifact {
                 slot: spec.slot.clone(),
                 model_id: spec.model_id.clone(),
+                source_uri: spec.source_uri.clone(),
+                source_revision: spec.source_revision.clone(),
+                scorer_kind: spec.scorer_kind.clone(),
                 root: root.display().to_string(),
-                artifact_sha256: artifact_sha256(&file_sha256),
+                artifact_sha256: artifact_sha256(spec, &file_sha256),
                 file_sha256,
             });
         } else {
             missing.push(MissingPanelBArtifact {
                 slot: spec.slot.clone(),
                 model_id: spec.model_id.clone(),
+                source_uri: spec.source_uri.clone(),
+                source_revision: spec.source_revision.clone(),
+                scorer_kind: spec.scorer_kind.clone(),
                 root: root.display().to_string(),
                 missing_files,
             });
@@ -284,8 +322,16 @@ fn sha256_file(path: &Path) -> InstrumentResult<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn artifact_sha256(file_sha256: &BTreeMap<String, String>) -> String {
+fn artifact_sha256(spec: &PanelBArtifactSpec, file_sha256: &BTreeMap<String, String>) -> String {
     let mut hasher = Sha256::new();
+    hasher.update(spec.model_id.as_bytes());
+    hasher.update([0]);
+    hasher.update(spec.source_uri.as_bytes());
+    hasher.update([0]);
+    hasher.update(spec.source_revision.as_bytes());
+    hasher.update([0]);
+    hasher.update(spec.scorer_kind.as_bytes());
+    hasher.update([0]);
     for (relative, sha) in file_sha256 {
         hasher.update(relative.as_bytes());
         hasher.update([0]);
@@ -301,6 +347,20 @@ fn validate_single_line(field: &'static str, value: &str) -> InstrumentResult<()
             field,
             format!("invalid single-line value {value:?}"),
             "write non-empty single-line identifiers",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_revision(field: &'static str, value: &str) -> InstrumentResult<()> {
+    validate_single_line(field, value)?;
+    let is_hex_revision =
+        (7..=64).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit());
+    if !is_hex_revision {
+        return Err(InstrumentError::invalid(
+            field,
+            format!("revision {value:?} is not an immutable hex commit/revision"),
+            "pin Panel B sources to immutable revisions before using them for gate evidence",
         ));
     }
     Ok(())
@@ -348,6 +408,26 @@ mod tests {
         let spec = PanelBArtifactSpec::new(
             PanelBSlot::Ast,
             "synthetic-codebert",
+            "https://huggingface.co/microsoft/codebert-base",
+            "3b0952feddeffad0063f274080e3c23d75e7eb39",
+            "hf_transformers_feature_extraction",
+            "panel-b/codebert-base",
+            vec!["config.json"],
+        );
+        assert_eq!(
+            spec.validate().unwrap_err().code(),
+            "MEJEPA_INSTRUMENTS_INVALID_INPUT"
+        );
+    }
+
+    #[test]
+    fn rejects_branch_revisions() {
+        let spec = PanelBArtifactSpec::new(
+            PanelBSlot::Ast,
+            "microsoft/codebert-base",
+            "https://huggingface.co/microsoft/codebert-base",
+            "main",
+            "hf_transformers_feature_extraction",
             "panel-b/codebert-base",
             vec!["config.json"],
         );
@@ -364,6 +444,9 @@ mod tests {
             &[PanelBArtifactSpec::new(
                 PanelBSlot::Text,
                 "BAAI/bge-large-en-v1.5",
+                "https://huggingface.co/BAAI/bge-large-en-v1.5",
+                "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+                "hf_transformers_feature_extraction",
                 "panel-b/not-installed",
                 vec!["config.json"],
             )],
@@ -373,8 +456,44 @@ mod tests {
         assert!(manifest.artifacts.is_empty());
         assert_eq!(manifest.missing.len(), 1);
         assert_eq!(
+            manifest.missing[0].source_revision,
+            "d4aa6901d3a41ba39fb536a557fa166f842b0e09"
+        );
+        assert_eq!(
+            manifest.missing[0].scorer_kind,
+            "hf_transformers_feature_extraction"
+        );
+        assert_eq!(
             require_panel_b_artifacts(&manifest).unwrap_err().code(),
             "MEJEPA_INSTRUMENTS_INVALID_INPUT"
+        );
+    }
+
+    #[test]
+    fn artifact_hash_changes_with_source_revision() {
+        let mut file_sha256 = BTreeMap::new();
+        file_sha256.insert("config.json".to_string(), "a".repeat(64));
+        let first = PanelBArtifactSpec::new(
+            PanelBSlot::Text,
+            "BAAI/bge-large-en-v1.5",
+            "https://huggingface.co/BAAI/bge-large-en-v1.5",
+            "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+            "hf_transformers_feature_extraction",
+            "panel-b/bge-large-en-v1.5",
+            vec!["config.json"],
+        );
+        let second = PanelBArtifactSpec::new(
+            PanelBSlot::Text,
+            "BAAI/bge-large-en-v1.5",
+            "https://huggingface.co/BAAI/bge-large-en-v1.5",
+            "eeeeeee1d3a41ba39fb536a557fa166f842b0e09",
+            "hf_transformers_feature_extraction",
+            "panel-b/bge-large-en-v1.5",
+            vec!["config.json"],
+        );
+        assert_ne!(
+            artifact_sha256(&first, &file_sha256),
+            artifact_sha256(&second, &file_sha256)
         );
     }
 }
