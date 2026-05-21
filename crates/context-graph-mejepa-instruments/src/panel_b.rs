@@ -162,7 +162,12 @@ pub fn default_panel_b_artifact_specs() -> Vec<PanelBArtifactSpec> {
             "3b0952feddeffad0063f274080e3c23d75e7eb39",
             "hf_transformers_feature_extraction",
             "panel-b/codebert-base",
-            vec!["config.json", "merges.txt", "rust_model.ot", "vocab.json"],
+            vec![
+                "config.json",
+                "merges.txt",
+                "pytorch_model.bin",
+                "vocab.json",
+            ],
         ),
         PanelBArtifactSpec::new(
             PanelBSlot::Cfg,

@@ -76,6 +76,8 @@ from .python_auto_label_discovery import add_arguments as add_python_auto_label_
 from .python_auto_label_discovery import command_python_auto_label_discovery
 from .panel_b_artifacts import add_arguments as add_panel_b_artifacts_arguments
 from .panel_b_artifacts import command_panel_b_artifacts
+from .panel_b_model_scores import add_arguments as add_panel_b_model_scores_arguments
+from .panel_b_model_scores import command_panel_b_model_scores
 from .panel_b_score_rows import add_arguments as add_panel_b_score_rows_arguments
 from .panel_b_score_rows import command_panel_b_score_rows
 
@@ -573,6 +575,16 @@ def build_parser() -> argparse.ArgumentParser:
     panel_b_artifacts.set_defaults(
         func=command_panel_b_artifacts,
         evidence_name="panel-b-artifacts-command-evidence.json",
+    )
+
+    panel_b_model_scores = sub.add_parser(
+        "panel-b-model-scores",
+        help="TASK-PY-G-111D: score current holdout rows with local-only model-backed Panel B artifacts.",
+    )
+    add_panel_b_model_scores_arguments(panel_b_model_scores)
+    panel_b_model_scores.set_defaults(
+        func=command_panel_b_model_scores,
+        evidence_name="panel-b-model-scores-command-evidence.json",
     )
 
     panel_b_score_rows = sub.add_parser(

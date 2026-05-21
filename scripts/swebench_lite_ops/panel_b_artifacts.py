@@ -44,7 +44,7 @@ PANEL_B_SOURCES: tuple[PanelBSource, ...] = (
         revision="3b0952feddeffad0063f274080e3c23d75e7eb39",
         relative_dir="panel-b/codebert-base",
         scorer_kind="codebert_ast_roberta",
-        files=("config.json", "merges.txt", "rust_model.ot", "vocab.json"),
+        files=("config.json", "merges.txt", "pytorch_model.bin", "vocab.json"),
     ),
     PanelBSource(
         slot="cfg",
