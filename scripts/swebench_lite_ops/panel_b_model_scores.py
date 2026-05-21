@@ -87,6 +87,19 @@ def add_arguments(parser: Any) -> None:
     parser.add_argument("--knn-k", type=int, default=15)
     parser.add_argument("--temperature", type=float, default=0.15)
     parser.add_argument(
+        "--fusion-policy",
+        default="mean",
+        choices=["mean", "calibration-category-signed-correlation"],
+        help="Panel B late-fusion policy. Non-mean policies are fit on calibration rows only.",
+    )
+    parser.add_argument(
+        "--fusion-minority-prior-threshold",
+        type=int,
+        default=5,
+        help="Use calibration prior when a category has fewer than this many rows in either class.",
+    )
+    parser.add_argument("--github-issue", type=int, default=572)
+    parser.add_argument(
         "--allow-network",
         action="store_true",
         help="Debug escape hatch only. By default, scoring forbids all network sockets.",
@@ -108,6 +121,7 @@ def command_panel_b_model_scores(args: Any) -> dict[str, Any]:
     validate_positive_int("batch_size", args.batch_size)
     validate_positive_int("max_length", args.max_length)
     validate_positive_int("knn_k", args.knn_k)
+    validate_positive_int("fusion_minority_prior_threshold", args.fusion_minority_prior_threshold)
     if not math.isfinite(float(args.temperature)) or args.temperature <= 0.0:
         raise SwebenchOpsError(
             "PANEL_B_MODEL_SCORES_TEMPERATURE_INVALID",
@@ -179,6 +193,29 @@ def command_panel_b_model_scores(args: Any) -> dict[str, Any]:
 
     calibration_labels = [1 if row.actual_oracle_pass else 0 for row in calibration_rows]
     calibration_categories = [row.category for row in calibration_rows]
+    calibration_model_scores = {
+        slot: [
+            score_one_calibration_row(
+                embeddings,
+                row_index,
+                calibration_labels,
+                calibration_categories,
+                row.category,
+                k=args.knn_k,
+                temperature=args.temperature,
+            )
+            for row_index, row in enumerate(calibration_rows)
+        ]
+        for slot, embeddings in calibration_by_model.items()
+    }
+    fusion_policy = build_fusion_policy(
+        args.fusion_policy,
+        sorted(calibration_by_model),
+        calibration_rows,
+        calibration_labels,
+        calibration_model_scores,
+        minority_prior_threshold=args.fusion_minority_prior_threshold,
+    )
     score_rows: list[dict[str, Any]] = []
     label_join_counts = {"exact": 0, "fallback": 0, "failure_exact": 0, "failure_fallback": 0}
     for row_index, holdout in enumerate(holdout_rows):
@@ -194,7 +231,11 @@ def command_panel_b_model_scores(args: Any) -> dict[str, Any]:
                 temperature=args.temperature,
             )
             model_scores[slot] = score
-        score_b = float(sum(model_scores.values()) / len(model_scores))
+        score_b, transformed_scores = fuse_model_scores(
+            model_scores,
+            holdout.category,
+            fusion_policy,
+        )
         labels = label_index.get((holdout.task_id, holdout.category))
         if labels is None:
             labels = fallback_label_bundle(holdout)
@@ -219,6 +260,11 @@ def command_panel_b_model_scores(args: Any) -> dict[str, Any]:
                 "failureEvidenceSetIds": list(labels.failure_evidence_set_ids),
                 "panelBArtifactSetSha256": artifact_set_sha256,
                 "panelBModelScores": model_scores,
+                "panelBModelTransformedScores": transformed_scores,
+                "panelBFusionPolicy": fusion_policy["categories"].get(
+                    holdout.category,
+                    fusion_policy["default"],
+                ),
                 "scoringPolicy": "per_model_cosine_knn_late_fusion_v1",
             }
         )
@@ -229,7 +275,7 @@ def command_panel_b_model_scores(args: Any) -> dict[str, Any]:
     return {
         "checked_at": utc_now(),
         "artifactKind": "task_py_g_111d_panel_b_model_scores",
-        "githubIssue": 572,
+        "githubIssue": args.github_issue,
         "ok": True,
         "shipGateReport": str(ship_gate_report),
         "shipGateReportSha256": sha256_file(ship_gate_report),
@@ -260,12 +306,22 @@ def command_panel_b_model_scores(args: Any) -> dict[str, Any]:
             "calibrationOnlyTraining": True,
             "holdoutOracleLabelsUsedForScore": False,
             "perModelEmbeddingsKeptSeparate": True,
-            "lateFusion": "mean of per-model category-local cosine KNN probabilities",
+            "lateFusion": args.fusion_policy,
             "knnK": args.knn_k,
             "temperature": args.temperature,
             "maxLength": args.max_length,
             "batchSize": args.batch_size,
+            "fusionPolicy": args.fusion_policy,
+            "fusionPolicyFitSplit": "calibration",
+            "fusionMinorityPriorThreshold": args.fusion_minority_prior_threshold,
         },
+        "fusionPolicy": fusion_policy,
+        "calibrationDiagnostics": calibration_diagnostics(
+            calibration_rows,
+            calibration_labels,
+            calibration_model_scores,
+            fusion_policy,
+        ),
         "modelRuntime": {
             "python": sys.version,
             "platform": platform.platform(),
@@ -416,6 +472,220 @@ def score_one_row(
     weights = softmax([float(value) / temperature for value in top_values.tolist()])
     labels = [calibration_labels[indices[int(pos)]] for pos in top_positions.tolist()]
     return clamp01(sum(weight * float(label) for weight, label in zip(weights, labels)))
+
+
+def score_one_calibration_row(
+    calibration_embeddings: Any,
+    row_index: int,
+    calibration_labels: list[int],
+    calibration_categories: list[str],
+    category: str,
+    *,
+    k: int,
+    temperature: float,
+) -> float:
+    indices = [
+        idx
+        for idx, value in enumerate(calibration_categories)
+        if value == category and idx != row_index
+    ]
+    if not indices:
+        indices = [idx for idx in range(len(calibration_labels)) if idx != row_index]
+    if not indices:
+        return clamp01(float(calibration_labels[row_index]))
+    sims = calibration_embeddings[indices].matmul(calibration_embeddings[row_index])
+    take = min(k, len(indices))
+    top_values, top_positions = sims.topk(take)
+    weights = softmax([float(value) / temperature for value in top_values.tolist()])
+    labels = [calibration_labels[indices[int(pos)]] for pos in top_positions.tolist()]
+    return clamp01(sum(weight * float(label) for weight, label in zip(weights, labels)))
+
+
+def build_fusion_policy(
+    policy_name: str,
+    slots: list[str],
+    calibration_rows: list[GateRow],
+    calibration_labels: list[int],
+    calibration_model_scores: dict[str, list[float]],
+    *,
+    minority_prior_threshold: int,
+) -> dict[str, Any]:
+    default = equal_weight_policy(slots, reason="default_equal_weight")
+    categories: dict[str, dict[str, Any]] = {}
+    by_category: dict[str, list[int]] = {}
+    for index, row in enumerate(calibration_rows):
+        by_category.setdefault(row.category, []).append(index)
+
+    for category, indices in sorted(by_category.items()):
+        labels = [calibration_labels[index] for index in indices]
+        if policy_name == "mean":
+            categories[category] = equal_weight_policy(slots, reason="mean_policy")
+            continue
+        if labels and all(label == labels[0] for label in labels):
+            categories[category] = {
+                "kind": policy_name,
+                "reason": "calibration_category_constant_oracle_prior",
+                "constantPrior": clamp01(float(labels[0])),
+                "slotWeights": {slot: 0.0 for slot in slots},
+                "slotSigns": {slot: 1.0 for slot in slots},
+                "calibrationRows": len(indices),
+                "calibrationOracleMean": clamp01(sum(labels) / len(labels)),
+                "slotCalibrationPearson": {slot: None for slot in slots},
+            }
+            continue
+        positive_count = sum(labels)
+        negative_count = len(labels) - positive_count
+        if min(positive_count, negative_count) < minority_prior_threshold:
+            categories[category] = {
+                "kind": policy_name,
+                "reason": "calibration_category_minority_under_threshold_prior",
+                "constantPrior": clamp01(sum(labels) / len(labels)),
+                "slotWeights": {slot: 0.0 for slot in slots},
+                "slotSigns": {slot: 1.0 for slot in slots},
+                "calibrationRows": len(indices),
+                "calibrationOracleMean": clamp01(sum(labels) / len(labels)),
+                "slotCalibrationPearson": {
+                    slot: pearson_or_none(
+                        labels,
+                        [calibration_model_scores[slot][index] for index in indices],
+                    )
+                    for slot in slots
+                },
+                "classCounts": {
+                    "pass": positive_count,
+                    "fail": negative_count,
+                    "minorityPriorThreshold": minority_prior_threshold,
+                },
+            }
+            continue
+        slot_stats: dict[str, float | None] = {}
+        strengths: dict[str, float] = {}
+        signs: dict[str, float] = {}
+        for slot in slots:
+            values = [calibration_model_scores[slot][index] for index in indices]
+            corr = pearson_or_none(labels, values)
+            slot_stats[slot] = corr
+            if corr is None:
+                strengths[slot] = 0.0
+                signs[slot] = 1.0
+            else:
+                strengths[slot] = abs(corr)
+                signs[slot] = -1.0 if corr < 0.0 else 1.0
+        total_strength = sum(strengths.values())
+        if total_strength <= 1.0e-12:
+            categories[category] = equal_weight_policy(
+                slots,
+                reason="zero_calibration_correlation_fallback",
+                policy_name=policy_name,
+                calibration_rows=len(indices),
+                calibration_oracle_mean=clamp01(sum(labels) / len(labels)),
+                slot_calibration_pearson=slot_stats,
+            )
+            continue
+        categories[category] = {
+            "kind": policy_name,
+            "reason": "signed_abs_calibration_pearson",
+            "constantPrior": None,
+            "slotWeights": {
+                slot: strengths[slot] / total_strength
+                for slot in slots
+            },
+            "slotSigns": signs,
+            "calibrationRows": len(indices),
+            "calibrationOracleMean": clamp01(sum(labels) / len(labels)),
+            "slotCalibrationPearson": slot_stats,
+        }
+    return {
+        "name": policy_name,
+        "fitSplit": "calibration",
+        "holdoutOracleLabelsUsedForPolicy": False,
+        "minorityPriorThreshold": minority_prior_threshold,
+        "default": default,
+        "categories": categories,
+    }
+
+
+def equal_weight_policy(
+    slots: list[str],
+    *,
+    reason: str,
+    policy_name: str = "mean",
+    calibration_rows: int | None = None,
+    calibration_oracle_mean: float | None = None,
+    slot_calibration_pearson: dict[str, float | None] | None = None,
+) -> dict[str, Any]:
+    weight = 1.0 / len(slots)
+    return {
+        "kind": policy_name,
+        "reason": reason,
+        "constantPrior": None,
+        "slotWeights": {slot: weight for slot in slots},
+        "slotSigns": {slot: 1.0 for slot in slots},
+        "calibrationRows": calibration_rows,
+        "calibrationOracleMean": calibration_oracle_mean,
+        "slotCalibrationPearson": slot_calibration_pearson or {slot: None for slot in slots},
+    }
+
+
+def fuse_model_scores(
+    model_scores: dict[str, float],
+    category: str,
+    fusion_policy: dict[str, Any],
+) -> tuple[float, dict[str, float]]:
+    policy = fusion_policy["categories"].get(category, fusion_policy["default"])
+    constant_prior = policy.get("constantPrior")
+    if constant_prior is not None:
+        return clamp01(float(constant_prior)), {
+            slot: clamp01(float(constant_prior))
+            for slot in sorted(model_scores)
+        }
+    weights = policy["slotWeights"]
+    signs = policy["slotSigns"]
+    transformed: dict[str, float] = {}
+    fused = 0.0
+    for slot in sorted(model_scores):
+        raw_score = float(model_scores[slot])
+        signed_score = raw_score if float(signs.get(slot, 1.0)) >= 0.0 else 1.0 - raw_score
+        signed_score = clamp01(signed_score)
+        transformed[slot] = signed_score
+        fused += float(weights.get(slot, 0.0)) * signed_score
+    return clamp01(fused), transformed
+
+
+def calibration_diagnostics(
+    calibration_rows: list[GateRow],
+    calibration_labels: list[int],
+    calibration_model_scores: dict[str, list[float]],
+    fusion_policy: dict[str, Any],
+) -> dict[str, Any]:
+    fused = [
+        fuse_model_scores(
+            {slot: calibration_model_scores[slot][index] for slot in calibration_model_scores},
+            row.category,
+            fusion_policy,
+        )[0]
+        for index, row in enumerate(calibration_rows)
+    ]
+    by_category: dict[str, dict[str, list[float] | list[int]]] = {}
+    for index, row in enumerate(calibration_rows):
+        bucket = by_category.setdefault(row.category, {"labels": [], "scores": []})
+        bucket["labels"].append(calibration_labels[index])  # type: ignore[union-attr]
+        bucket["scores"].append(fused[index])  # type: ignore[union-attr]
+    return {
+        "rows": len(calibration_rows),
+        "pearson": pearson_or_none(calibration_labels, fused),
+        "brier": brier(calibration_labels, fused),
+        "accuracyAtHalf": accuracy_at_half(calibration_labels, fused),
+        "categoryMetrics": {
+            category: {
+                "count": len(values["labels"]),
+                "pearson": pearson_or_none(values["labels"], values["scores"]),  # type: ignore[arg-type]
+                "brier": brier(values["labels"], values["scores"]),  # type: ignore[arg-type]
+                "accuracyAtHalf": accuracy_at_half(values["labels"], values["scores"]),  # type: ignore[arg-type]
+            }
+            for category, values in sorted(by_category.items())
+        },
+    }
 
 
 def softmax(values: list[float]) -> list[float]:
