@@ -311,18 +311,22 @@ pub fn build_cross_panel_window_report(
     validate_cross_panel_score_rows(rows)?;
     let metric = cross_panel_metric(rows)?;
     let label_family_metrics = grouped_metrics(rows, |row| {
+        let mut groups = vec!["label:all_rows".to_string()];
         if row.accepted_label_ids.is_empty() {
-            vec!["label:unlabeled".to_string()]
+            groups.push("label:unlabeled".to_string());
         } else {
-            row.accepted_label_ids.clone()
+            groups.extend(row.accepted_label_ids.clone());
         }
+        groups
     })?;
     let failure_evidence_metrics = grouped_metrics(rows, |row| {
+        let mut groups = vec!["failure_evidence:all_rows".to_string()];
         if row.failure_evidence_set_ids.is_empty() {
-            vec!["failure_evidence:none".to_string()]
+            groups.push("failure_evidence:none".to_string());
         } else {
-            row.failure_evidence_set_ids.clone()
+            groups.extend(row.failure_evidence_set_ids.clone());
         }
+        groups
     })?;
     Ok(CrossPanelWindowReport {
         schema_version: CROSS_PANEL_SCHEMA_VERSION,
@@ -438,11 +442,25 @@ where
     }
     let mut out = BTreeMap::new();
     for (group, group_rows) in grouped {
-        if group_rows.len() >= 2 {
+        if group_rows.len() >= 2 && has_correlation_variance(&group_rows) {
             out.insert(group, cross_panel_metric(&group_rows)?);
         }
     }
     Ok(out)
+}
+
+fn has_correlation_variance(rows: &[CrossPanelScoreRow]) -> bool {
+    let Some(first) = rows.first() else {
+        return false;
+    };
+    let has_panel_a_variance = rows
+        .iter()
+        .any(|row| (row.score_a - first.score_a).abs() > f32::EPSILON);
+    let has_panel_b_variance = rows
+        .iter()
+        .any(|row| (row.score_b - first.score_b).abs() > f32::EPSILON);
+    let has_oracle_variance = rows.iter().any(|row| row.oracle_pass != first.oracle_pass);
+    has_panel_a_variance && has_panel_b_variance && has_oracle_variance
 }
 
 fn pearson<S, O>(scores: S, oracle_pass: O) -> CrossPanelResult<f32>

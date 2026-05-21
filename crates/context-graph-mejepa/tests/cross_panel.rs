@@ -59,9 +59,35 @@ fn cross_panel_metric_detects_panel_a_only_goodhart() {
 fn window_report_groups_by_label_and_failure_evidence() {
     let report = build_cross_panel_window_report("window:test", &rows(true)).unwrap();
     assert_eq!(report.metric.n, 30);
+    assert!(report.label_family_metrics.contains_key("label:all_rows"));
     assert!(report.label_family_metrics.contains_key("label:api"));
     assert!(report.label_family_metrics.contains_key("label:logic"));
     assert!(report
+        .failure_evidence_metrics
+        .contains_key("failure_evidence:all_rows"));
+    assert!(report
+        .failure_evidence_metrics
+        .contains_key("failure:evidence"));
+}
+
+#[test]
+fn window_report_skips_single_class_subgroups_without_rejecting_window() {
+    let mut rows = rows(true);
+    for row in &mut rows {
+        row.failure_evidence_set_ids = vec![if row.oracle_pass {
+            "failure_evidence:none".to_string()
+        } else {
+            "failure:evidence".to_string()
+        }];
+    }
+    let report = build_cross_panel_window_report("window:single-class-subgroups", &rows).unwrap();
+    assert!(report
+        .failure_evidence_metrics
+        .contains_key("failure_evidence:all_rows"));
+    assert!(!report
+        .failure_evidence_metrics
+        .contains_key("failure_evidence:none"));
+    assert!(!report
         .failure_evidence_metrics
         .contains_key("failure:evidence"));
 }
