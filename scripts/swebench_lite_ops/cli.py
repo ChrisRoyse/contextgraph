@@ -74,6 +74,8 @@ from .python_per_cell_smooth_ece import add_arguments as add_python_per_cell_smo
 from .python_per_cell_smooth_ece import command_python_per_cell_smooth_ece
 from .python_calibration_active_gate import add_arguments as add_python_calibration_active_gate_arguments
 from .python_calibration_active_gate import command_python_calibration_active_gate
+from .python_tracin_abstain_pool import add_arguments as add_python_tracin_abstain_pool_arguments
+from .python_tracin_abstain_pool import command_python_tracin_abstain_pool
 from .python_anti_compensation_fsv import add_arguments as add_python_anti_compensation_fsv_arguments
 from .python_anti_compensation_fsv import command_python_anti_compensation_fsv
 from .python_auto_label_discovery import add_arguments as add_python_auto_label_discovery_arguments
@@ -569,6 +571,16 @@ def build_parser() -> argparse.ArgumentParser:
     calibration_active_gate.set_defaults(
         func=command_python_calibration_active_gate,
         evidence_name="python-calibration-active-gate-command-evidence.json",
+    )
+
+    tracin_abstain_pool = sub.add_parser(
+        "python-tracin-abstain-pool",
+        help="TASK-PY-G-123: retained projected-gradient influence audit for abstain and weak-cell rows.",
+    )
+    add_python_tracin_abstain_pool_arguments(tracin_abstain_pool)
+    tracin_abstain_pool.set_defaults(
+        func=command_python_tracin_abstain_pool,
+        evidence_name="python-tracin-abstain-pool-command-evidence.json",
     )
 
     anti_compensation = sub.add_parser(
