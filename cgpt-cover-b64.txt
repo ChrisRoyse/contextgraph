@@ -1,7 +1,0 @@
-{
-  "size": 2185225,
-  "b64length": 2913636,
-  "b64Prefix": "iVBORw0KGgoAAAANSUhEUgAABu4AAAN3CAIAAABS",
-  "w": 1774,
-  "h": 887
-}
