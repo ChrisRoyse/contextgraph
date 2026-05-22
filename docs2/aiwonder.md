@@ -219,13 +219,21 @@ High-value aliases currently expected inside `contextgraph-shell`:
 | Alias | Meaning |
 |---|---|
 | `CG_REPO` | Active aiwonder source mirror, default `/zfs/hot/contextgraph/repo-current` |
-| `CG_AST_CHUNKS` / `CG_AST_CHUNKS_DURABLE` | 399,777-row Python AST chunk JSONL under `/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/` |
+| `CG_AST_CHUNKS` / `CG_AST_CHUNKS_DURABLE` | 399,777-row Python AST chunk JSONL under `/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/`; active `absolute_path` / `dataschema` rows were canonicalized by #613 |
 | `CG_FORWARD_CACHE` | Completed 391-shard forward cache under `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z` |
 | `CG_LABEL_ROOT` | Current live-split deterministic label/constellation root |
 | `CG_TRAINING_ARRAY_ROOT` | #396 constellation training array artifacts |
 | `CG_SPLIT_STABLE_TENSOR_ROOT` | Split-stable tensor root for slot/pairwise distributions |
 | `CG_SHIP_GATE_FSV_ROOT` | Current ship-gate FSV root |
 | `CG_MODELS` / `CONTEXTGRAPH_MEJEPA_MODELS_CONFIG` | aiwonder model root/config for real embedder execution |
+
+As of #613, the canonical 300x8 AST source tree is:
+
+```text
+/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/source-files-300x8-20260515T013205Z/
+```
+
+Direct readback at #613 closeout: `4224` source files, `148346301` bytes. The active `python_ast_chunks.jsonl` has `399777` rows with `0` `/mnt/d` or `/mnt/c` hits in `absolute_path` and `dataschema`; mounted-drive strings survive only in explicit `legacy_provenance_path` / `legacy_dataschema_path` fields.
 
 `gh` and `rg` are installed in `/zfs/hot/contextgraph/bin` and visible through `contextgraph-shell`. `gh` authentication remains blocked by #562 until an operator-approved token path exists; do not move or print secrets to solve that.
 
@@ -306,7 +314,7 @@ Current corrective work after the #363 storage decision:
 - #366 reruns TASK-PY-G-056 on aiwonder.
 - #367 audits project-ingest/runtime locality.
 - #368 audits aiwonder capability utilization.
-- #372 remains the physical storage-topology blocker: the canonical `/zfs/archive/contextgraph` and `/zfs/hot/contextgraph` logical roots are on aiwonder, but live readback still shows they resolve to root ext4 rather than the intended `archive/contextgraph` and `hotpool/contextgraph` ZFS datasets. Use `scripts/setup/aiwonder_contextgraph_zfs_roots.sh` for audit/migration.
+- #372 is resolved: live readback shows `/zfs/archive/contextgraph` and `/zfs/hot/contextgraph` resolve to the intended `archive/contextgraph` and `hotpool/contextgraph` ZFS datasets. Use `scripts/setup/aiwonder_contextgraph_zfs_roots.sh audit` for future verification.
 - #562 owns aiwonder-native GitHub/search tooling. `rg` and `gh` are installed in the aiwonder env; `gh auth` is blocked until an operator-approved credential path exists.
 
 ---
