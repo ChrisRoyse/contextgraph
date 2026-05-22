@@ -77,6 +77,9 @@ const SCORE_TRACE_FIELDS: [&str; 6] = [
 ];
 const NAMED_PAIR_EVIDENCE_TOP_PAIR_COUNT: usize = 8;
 const NAMED_PAIR_CAUSE_FEATURES_PER_PAIR: usize = 5;
+const NAMED_PAIR_CAUSE_PAIR_IDS: [&str; 9] = [
+    "e1/e6", "e10/e13", "e13/e6", "e13/e7", "e14/e6", "e2/e6", "e3/e6", "e4/e6", "e6/e7",
+];
 const TARGET_LABEL_PREFIXES: [&str; 5] = [
     "oracle:",
     "docker:",
@@ -473,6 +476,7 @@ fn run() -> Result<()> {
             "named_pair_policy": "all active slot pairs are derived from slot-preserving scalar constellations; top named pair transitions enter the consequence evidence ladder, and fixed per-pair max-delta/shift/state/driver scalars enter the cause-residual repair path without flattening embedder identity",
             "named_pair_evidence_top_pair_count": NAMED_PAIR_EVIDENCE_TOP_PAIR_COUNT,
             "named_pair_cause_features_per_pair": NAMED_PAIR_CAUSE_FEATURES_PER_PAIR,
+            "named_pair_cause_pair_ids": NAMED_PAIR_CAUSE_PAIR_IDS,
             "active_slot_pair_count": active_slot_pair_count(),
             "active_skill_policy": skill_policy_ablation.selected_policy.clone(),
             "feature_dim": feature_table.feature_dim,
@@ -2054,7 +2058,8 @@ fn named_pair_evidence_audit(table: &FeatureTable) -> NamedPairEvidenceAudit {
         min_count = 0;
     }
     let active_pair_count = active_slot_pair_count();
-    let named_pair_cause_feature_count = active_pair_count * NAMED_PAIR_CAUSE_FEATURES_PER_PAIR;
+    let named_pair_cause_feature_count =
+        NAMED_PAIR_CAUSE_PAIR_IDS.len() * NAMED_PAIR_CAUSE_FEATURES_PER_PAIR;
     NamedPairEvidenceAudit {
         all_passed: !table.rows.is_empty()
             && rows_with_keys == table.rows.len()
@@ -2571,8 +2576,9 @@ fn cause_residual_feature_vector(
     let d10 = matrix_delta(&v1, &v0);
     let d21 = matrix_delta(&v2, &v1);
     let d20 = matrix_delta(&v2, &v0);
-    let mut features =
-        Vec::with_capacity(64 + active_slot_pair_count() * NAMED_PAIR_CAUSE_FEATURES_PER_PAIR);
+    let mut features = Vec::with_capacity(
+        64 + NAMED_PAIR_CAUSE_PAIR_IDS.len() * NAMED_PAIR_CAUSE_FEATURES_PER_PAIR,
+    );
     add_temporal_cause_features(&mut features, &d10, &d21, &d20);
     add_named_pair_cause_features(&mut features, base, target, test_patch)?;
     add_live_label_cause_features(&mut features, base, target, test_patch);
@@ -2657,29 +2663,25 @@ fn add_named_pair_cause_features(
     let base_pairs = pair_relationship_records(base)?;
     let target_pairs = pair_relationship_records(target)?;
     let test_pairs = pair_relationship_records(test_patch)?;
-    for left_idx in 0..SLOT_IDS.len() {
-        for right_idx in (left_idx + 1)..SLOT_IDS.len() {
-            let pair_id = format!("{}/{}", SLOT_IDS[left_idx], SLOT_IDS[right_idx]);
-            let base_pair = base_pairs
-                .get(&pair_id)
-                .ok_or_else(|| anyhow!("missing base named pair record for {pair_id}"))?;
-            let target_pair = target_pairs
-                .get(&pair_id)
-                .ok_or_else(|| anyhow!("missing target named pair record for {pair_id}"))?;
-            let test_pair = test_pairs
-                .get(&pair_id)
-                .ok_or_else(|| anyhow!("missing test named pair record for {pair_id}"))?;
-            features.push(target_pair.max_delta);
-            features.push(target_pair.max_delta - base_pair.max_delta);
-            features.push(test_pair.max_delta - target_pair.max_delta);
-            features
-                .push(pair_state_ordinal(target_pair.state) - pair_state_ordinal(base_pair.state));
-            features.push(if target_pair.driver == base_pair.driver {
-                0.0
-            } else {
-                1.0
-            });
-        }
+    for pair_id in NAMED_PAIR_CAUSE_PAIR_IDS {
+        let base_pair = base_pairs
+            .get(pair_id)
+            .ok_or_else(|| anyhow!("missing base named pair record for {pair_id}"))?;
+        let target_pair = target_pairs
+            .get(pair_id)
+            .ok_or_else(|| anyhow!("missing target named pair record for {pair_id}"))?;
+        let test_pair = test_pairs
+            .get(pair_id)
+            .ok_or_else(|| anyhow!("missing test named pair record for {pair_id}"))?;
+        features.push(target_pair.max_delta);
+        features.push(target_pair.max_delta - base_pair.max_delta);
+        features.push(test_pair.max_delta - target_pair.max_delta);
+        features.push(pair_state_ordinal(target_pair.state) - pair_state_ordinal(base_pair.state));
+        features.push(if target_pair.driver == base_pair.driver {
+            0.0
+        } else {
+            1.0
+        });
     }
     Ok(())
 }
