@@ -353,9 +353,18 @@ fn header_value(headers: &HeaderMap, name: axum::http::header::HeaderName) -> Op
 }
 
 fn header_contains(value: &str, needle: &str) -> bool {
-    value
-        .split(',')
-        .any(|part| part.trim().eq_ignore_ascii_case(needle) || part.trim().starts_with(needle))
+    // Media types are case-insensitive per RFC 9110 §5.6.2. Both arms must
+    // compare case-insensitively, otherwise a legal `Content-Type: Application/JSON`
+    // would be rejected because `starts_with` is byte-exact and the trimmed
+    // value `"Application/JSON; charset=utf-8"` does NOT start with the lower-
+    // case `"application/json"`.
+    value.split(',').any(|part| {
+        let trimmed = part.trim();
+        trimmed.eq_ignore_ascii_case(needle)
+            || trimmed
+                .get(..needle.len())
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(needle))
+    })
 }
 
 fn is_loopback_origin(value: &str) -> bool {
@@ -408,6 +417,27 @@ mod tests {
         ));
         assert!(header_contains(
             "application/json; charset=utf-8",
+            "application/json"
+        ));
+    }
+
+    #[test]
+    fn header_contains_is_case_insensitive_on_prefix_match_per_rfc_9110() {
+        // Media types are case-insensitive per RFC 9110 §5.6.2; the previous
+        // implementation used a byte-exact `starts_with` and silently rejected
+        // legal headers like `Content-Type: Application/JSON; charset=utf-8`.
+        assert!(header_contains(
+            "Application/JSON; charset=utf-8",
+            "application/json"
+        ));
+        assert!(header_contains("APPLICATION/JSON", "application/json"));
+        assert!(header_contains(
+            "TEXT/Event-Stream",
+            "text/event-stream"
+        ));
+        // Negative case: distinct subtype must still not match.
+        assert!(!header_contains(
+            "application/xml; charset=utf-8",
             "application/json"
         ));
     }

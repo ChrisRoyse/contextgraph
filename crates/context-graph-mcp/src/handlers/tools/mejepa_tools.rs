@@ -407,12 +407,16 @@ fn default_replay_window_ms() -> i64 {
     context_graph_mejepa::DEFAULT_REALITY_IMPACT_REPLAY_WINDOW_MS
 }
 
-fn current_unix_ms_i64() -> i64 {
+fn current_unix_ms_i64() -> Result<i64, String> {
+    // Fail closed on a corrupt clock: downstream consumers (e.g.
+    // learned_head_candidate.created_at_unix_ms) explicitly reject <= 0
+    // timestamps, so silently coercing pre-1970 to 0 would surface as a
+    // confusing validation error far from the cause. Return a structured
+    // error code instead.
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .min(i64::MAX as u128) as i64
+        .map_err(|err| format!("MEJEPA_SYSTEM_CLOCK_BEFORE_UNIX_EPOCH: {err}"))
+        .map(|dur| dur.as_millis().min(i64::MAX as u128) as i64)
 }
 
 fn default_fingerprint_reference_limit() -> u32 {
@@ -1398,7 +1402,18 @@ impl Handlers {
                 );
             }
         };
-        let created_at_unix_ms = current_unix_ms_i64();
+        let created_at_unix_ms = match current_unix_ms_i64() {
+            Ok(ts) => ts,
+            Err(err) => {
+                return self.tool_error_structured(
+                    id,
+                    ToolErrorKind::Execution,
+                    "MEJEPA_SYSTEM_CLOCK_BEFORE_UNIX_EPOCH",
+                    &err,
+                    json!({"dbPath": db_path}),
+                );
+            }
+        };
         let result = context_graph_mejepa::replay_and_persist_reality_impact(
             db.as_ref(),
             prediction_id.0,
