@@ -10,11 +10,13 @@ use serde::{Deserialize, Serialize};
 use crate::heal::drift::DriftSeverity;
 use crate::heal::errors::HealError;
 use crate::heal::ewc::{HessianTraceProbe, PredictorGradAccessor};
-use crate::heal::readback::{write_fsv_evidence_canonical, DriftDrillEvidence, FSV_FILES, FSV_ROOT};
 use crate::heal::integrity::{integrity_evidence_from_chain, verify, ChainIntegrityChecker};
 use crate::heal::lora_refresh::{refresh, LoraRefreshEvidence};
 use crate::heal::pipeline::{bootstrap_pipeline_for_path, force_lora_corpus_slice, ObserveOutput};
 use crate::heal::promote::{ModeWinner, TriggerReason};
+use crate::heal::readback::{
+    write_readback_evidence_canonical, DriftDrillEvidence, READBACK_FILES, READBACK_ROOT,
+};
 use crate::types::OracleOutcome;
 
 #[derive(ValueEnum, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -47,7 +49,7 @@ impl InjectDrift {
 #[serde(deny_unknown_fields)]
 pub struct HealDrillArgs {
     pub inject_drift: InjectDrift,
-    pub output_fsv: PathBuf,
+    pub output_readback: PathBuf,
     pub max_observations: u64,
     pub seed: u64,
     pub rtx_5090_budget_min: u64,
@@ -57,7 +59,7 @@ impl Default for HealDrillArgs {
     fn default() -> Self {
         Self {
             inject_drift: InjectDrift::Hard,
-            output_fsv: PathBuf::from(FSV_ROOT),
+            output_readback: PathBuf::from(READBACK_ROOT),
             max_observations: 5000,
             seed: 42,
             rtx_5090_budget_min: 60,
@@ -77,8 +79,8 @@ pub struct DrillStdoutSummary {
     pub integrity_violation_detected: bool,
     pub fisher_rank_after_10_boundaries: usize,
     pub fisher_full_rank: bool,
-    pub fsv_files_emitted: Vec<String>,
-    pub all_fsv_files_mode_0o600: bool,
+    pub readback_files_emitted: Vec<String>,
+    pub all_readback_files_mode_0o600: bool,
     pub exit_code: i32,
 }
 
@@ -89,9 +91,9 @@ pub fn run_heal_drill(args: HealDrillArgs) -> Result<DrillStdoutSummary, HealErr
             "max_observations must be >= 700",
         ));
     }
-    std::fs::create_dir_all(&args.output_fsv)
-        .map_err(|err| HealError::io("create_dir_all", &args.output_fsv, err))?;
-    let state_root = args.output_fsv.join("state");
+    std::fs::create_dir_all(&args.output_readback)
+        .map_err(|err| HealError::io("create_dir_all", &args.output_readback, err))?;
+    let state_root = args.output_readback.join("state");
     if state_root.exists() {
         std::fs::remove_dir_all(&state_root)
             .map_err(|err| HealError::io("remove_dir_all", &state_root, err))?;
@@ -147,10 +149,10 @@ pub fn run_heal_drill(args: HealDrillArgs) -> Result<DrillStdoutSummary, HealErr
         max_observations: args.max_observations,
         hit_max_without_detection,
     };
-    write_fsv_evidence_canonical(
+    write_readback_evidence_canonical(
         "drift-drill-evidence.json",
         &drift_evidence,
-        Some(&args.output_fsv),
+        Some(&args.output_readback),
     )?;
 
     let report = if args.inject_drift == InjectDrift::Soft {
@@ -160,12 +162,12 @@ pub fn run_heal_drill(args: HealDrillArgs) -> Result<DrillStdoutSummary, HealErr
     };
     let abc_evidence = pipeline
         .abc_promoter
-        .fsv_snapshot()
-        .ok_or_else(|| HealError::invalid("heal_drill.abc", "missing A/B/C FSV evidence"))?;
-    write_fsv_evidence_canonical(
+        .readback_snapshot()
+        .ok_or_else(|| HealError::invalid("heal_drill.abc", "missing A/B/C readback evidence"))?;
+    write_readback_evidence_canonical(
         "abc-promotion-evidence.json",
         &abc_evidence,
-        Some(&args.output_fsv),
+        Some(&args.output_readback),
     )?;
 
     let corpus = force_lora_corpus_slice(args.seed.wrapping_add(1), 64)?;
@@ -176,10 +178,10 @@ pub fn run_heal_drill(args: HealDrillArgs) -> Result<DrillStdoutSummary, HealErr
         pipeline.storage.clone(),
     )?;
     let lora_evidence = LoraRefreshEvidence::from(&lora_report);
-    write_fsv_evidence_canonical(
+    write_readback_evidence_canonical(
         "lora-refresh-evidence.json",
         &lora_evidence,
-        Some(&args.output_fsv),
+        Some(&args.output_readback),
     )?;
 
     pipeline.witness_chain.append_model_event(
@@ -205,10 +207,10 @@ pub fn run_heal_drill(args: HealDrillArgs) -> Result<DrillStdoutSummary, HealErr
         false,
         0,
     )?;
-    write_fsv_evidence_canonical(
+    write_readback_evidence_canonical(
         "witness-integrity-evidence.json",
         &integrity_evidence,
-        Some(&args.output_fsv),
+        Some(&args.output_readback),
     )?;
 
     let mut boundary_step_trajectory = Vec::new();
@@ -233,7 +235,7 @@ pub fn run_heal_drill(args: HealDrillArgs) -> Result<DrillStdoutSummary, HealErr
         fisher_rank_per_boundary.push(pipeline.ewc.fisher_rank());
     }
     let fisher_full_rank = pipeline.ewc.fisher_rank() == pipeline.ewc.predictor_dim;
-    let ewc_evidence = crate::heal::ewc::EwcFsvEvidence {
+    let ewc_evidence = crate::heal::ewc::EwcReadbackEvidence {
         boundary_step_trajectory,
         lambda_trajectory,
         fisher_rank_per_boundary,
@@ -241,18 +243,18 @@ pub fn run_heal_drill(args: HealDrillArgs) -> Result<DrillStdoutSummary, HealErr
         task_snapshots_count: pipeline.ewc.task_snapshots.len(),
         predictor_dim: pipeline.ewc.predictor_dim,
     };
-    write_fsv_evidence_canonical(
+    write_readback_evidence_canonical(
         "ewc-fisher-evidence.json",
         &ewc_evidence,
-        Some(&args.output_fsv),
+        Some(&args.output_readback),
     )?;
-    set_fsv_files_mode_0o600(&args.output_fsv)?;
+    set_readback_files_mode_0o600(&args.output_readback)?;
 
-    let fsv_files_emitted = FSV_FILES
+    let readback_files_emitted = READBACK_FILES
         .iter()
-        .map(|name| args.output_fsv.join(name).display().to_string())
+        .map(|name| args.output_readback.join(name).display().to_string())
         .collect::<Vec<_>>();
-    let all_modes = all_fsv_files_mode_0o600(&args.output_fsv)?;
+    let all_modes = all_readback_files_mode_0o600(&args.output_readback)?;
     let mut exit_code = 0;
     if args.inject_drift == InjectDrift::Hard && !(400..=1000).contains(&observations_to_detect) {
         exit_code = 1;
@@ -284,8 +286,8 @@ pub fn run_heal_drill(args: HealDrillArgs) -> Result<DrillStdoutSummary, HealErr
         integrity_violation_detected,
         fisher_rank_after_10_boundaries: pipeline.ewc.fisher_rank(),
         fisher_full_rank,
-        fsv_files_emitted,
-        all_fsv_files_mode_0o600: all_modes,
+        readback_files_emitted,
+        all_readback_files_mode_0o600: all_modes,
         exit_code,
     })
 }
@@ -348,8 +350,8 @@ fn matches_requested(severity: DriftSeverity, inject: InjectDrift) -> bool {
     )
 }
 
-fn set_fsv_files_mode_0o600(root: &Path) -> Result<(), HealError> {
-    for name in FSV_FILES {
+fn set_readback_files_mode_0o600(root: &Path) -> Result<(), HealError> {
+    for name in READBACK_FILES {
         let path = root.join(name);
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
             .map_err(|err| HealError::io("chmod", &path, err))?;
@@ -357,8 +359,8 @@ fn set_fsv_files_mode_0o600(root: &Path) -> Result<(), HealError> {
     Ok(())
 }
 
-fn all_fsv_files_mode_0o600(root: &Path) -> Result<bool, HealError> {
-    for name in FSV_FILES {
+fn all_readback_files_mode_0o600(root: &Path) -> Result<bool, HealError> {
+    for name in READBACK_FILES {
         let path = root.join(name);
         let mode = std::fs::metadata(&path)
             .map_err(|err| HealError::io("metadata", &path, err))?

@@ -528,7 +528,7 @@ mod tests {
                     1,
                     idx,
                     1_778_000_000_000 + idx as i64,
-                    "real-rocksdb-fsv",
+                    "real-rocksdb-readback",
                 )
                 .unwrap(),
             )
@@ -558,7 +558,7 @@ mod tests {
                     1,
                     idx,
                     1_778_000_001_000 + idx as i64,
-                    "real-rocksdb-fsv",
+                    "real-rocksdb-readback",
                 )
                 .unwrap(),
             )

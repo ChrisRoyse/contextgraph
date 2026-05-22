@@ -121,7 +121,7 @@ pub enum HealError {
         reason: String,
         repair_promotion_id: Option<String>,
     },
-    FsvIncomplete {
+    ReadbackIncomplete {
         missing: Vec<String>,
         wrong_mode: Vec<(String, u32)>,
         parse_failures: Vec<String>,
@@ -167,7 +167,7 @@ impl HealError {
             Self::CriticalBug { .. } => "MEJEPA_HEAL_CRITICAL_BUG",
             Self::RollbackTargetGone { .. } => "MEJEPA_HEAL_ROLLBACK_TARGET_GONE",
             Self::WitnessQuarantined { .. } => "MEJEPA_HEAL_WITNESS_QUARANTINED",
-            Self::FsvIncomplete { .. } => "MEJEPA_HEAL_FSV_INCOMPLETE",
+            Self::ReadbackIncomplete { .. } => "MEJEPA_HEAL_READBACK_INCOMPLETE",
             Self::FeatureDisabled => "MEJEPA_HEAL_FEATURE_DISABLED",
             Self::InvalidState { .. } => "MEJEPA_HEAL_INVALID_STATE",
             Self::Io { .. } => "MEJEPA_HEAL_IO",

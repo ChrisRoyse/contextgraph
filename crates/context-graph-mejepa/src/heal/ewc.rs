@@ -600,8 +600,8 @@ impl EwcPlusPlus {
         self.fisher_matrix.rank
     }
 
-    pub fn fsv_snapshot(&self) -> EwcFsvEvidence {
-        EwcFsvEvidence {
+    pub fn readback_snapshot(&self) -> EwcReadbackEvidence {
+        EwcReadbackEvidence {
             boundary_step_trajectory: self
                 .task_snapshots
                 .iter()
@@ -681,7 +681,7 @@ pub struct FisherUpdate {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct EwcFsvEvidence {
+pub struct EwcReadbackEvidence {
     pub boundary_step_trajectory: Vec<u64>,
     pub lambda_trajectory: Vec<f32>,
     pub fisher_rank_per_boundary: Vec<usize>,

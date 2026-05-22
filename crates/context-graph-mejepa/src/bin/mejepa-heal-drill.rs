@@ -2,15 +2,15 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
-use context_graph_mejepa::heal::{run_heal_drill, HealDrillArgs, InjectDrift, FSV_ROOT};
+use context_graph_mejepa::heal::{run_heal_drill, HealDrillArgs, InjectDrift, READBACK_ROOT};
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "mejepa-heal-drill", about = "Phase 5 DoD verification harness")]
 struct Cli {
     #[arg(long, value_enum)]
     inject_drift: InjectDrift,
-    #[arg(long, default_value = FSV_ROOT)]
-    output_fsv: PathBuf,
+    #[arg(long, default_value = READBACK_ROOT)]
+    output_readback: PathBuf,
     #[arg(long, default_value_t = 5000)]
     max_observations: u64,
     #[arg(long, default_value_t = 42)]
@@ -24,7 +24,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     match run_heal_drill(HealDrillArgs {
         inject_drift: cli.inject_drift,
-        output_fsv: cli.output_fsv,
+        output_readback: cli.output_readback,
         max_observations: cli.max_observations,
         seed: cli.seed,
         rtx_5090_budget_min: cli.rtx_5090_budget_min,

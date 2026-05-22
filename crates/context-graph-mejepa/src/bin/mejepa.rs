@@ -9,9 +9,9 @@ use std::time::{Instant, SystemTime};
 use candle_core::{DType, Device};
 use clap::{Parser, Subcommand};
 use context_graph_mejepa::eval::{build_patch_similarity_graph, synthetic_patch_embeddings};
-use context_graph_mejepa::readback_writer;
-use context_graph_mejepa::heal::{run_heal_drill, HealDrillArgs, InjectDrift, FSV_ROOT};
+use context_graph_mejepa::heal::{run_heal_drill, HealDrillArgs, InjectDrift, READBACK_ROOT};
 use context_graph_mejepa::panel_source::{self, PanelBatchView};
+use context_graph_mejepa::readback_writer;
 use context_graph_mejepa::{
     build_fixture_deterministic_compiler, open_infer_rocksdb, CalibrationStore,
     ForwardPassEvidence, FrozenTargetAdapter, InferTestArgs, LossOutputs, MeJepaPredictor,
@@ -67,8 +67,8 @@ struct TrainArgs {
 struct HealDrillCliArgs {
     #[arg(long, value_enum, default_value = "hard")]
     inject_drift: InjectDrift,
-    #[arg(long, default_value = FSV_ROOT)]
-    output_fsv: PathBuf,
+    #[arg(long, default_value = READBACK_ROOT)]
+    output_readback: PathBuf,
     #[arg(long, default_value_t = 5000)]
     max_observations: u64,
     #[arg(long, default_value_t = 42)]
@@ -275,7 +275,7 @@ fn main() -> ExitCode {
         },
         Command::HealDrill(args) => match run_heal_drill(HealDrillArgs {
             inject_drift: args.inject_drift,
-            output_fsv: args.output_fsv,
+            output_readback: args.output_readback,
             max_observations: args.max_observations,
             seed: args.seed,
             rtx_5090_budget_min: args.rtx_5090_budget_min,
@@ -696,8 +696,10 @@ fn run_dry_run(args: &TrainArgs) -> Result<DryRunReport, MejepaCliError> {
         dod_pass: loss.finite() && loss.formula_check && total_in_dod_band,
         outputs: loss.clone(),
     };
-    let forward_readback =
-        readback_writer::write_readback_assert(&output.join("forward-pass-evidence.json"), &forward)?;
+    let forward_readback = readback_writer::write_readback_assert(
+        &output.join("forward-pass-evidence.json"),
+        &forward,
+    )?;
     let loss_readback = readback_writer::write_readback_assert(
         &output.join("vicreg-loss-evidence.json"),
         &loss_evidence,

@@ -508,7 +508,7 @@ impl Default for PromotionLockState {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct AbcFsvEvidence {
+pub struct AbcReadbackEvidence {
     pub mode_a_score: HoldoutEval,
     pub mode_b_score: HoldoutEval,
     pub mode_c_score: HoldoutEval,
@@ -526,7 +526,7 @@ pub struct AbcFsvEvidence {
 pub struct AbcPromoter {
     pub grid_search_step: f32,
     pub gate: PromotionGate,
-    pub last_evidence: Option<AbcFsvEvidence>,
+    pub last_evidence: Option<AbcReadbackEvidence>,
     pub split_state: Option<PromotionSplitState>,
     pub rotation_policy: HoldoutRotationPolicy,
 }
@@ -724,7 +724,7 @@ impl AbcPromoter {
         storage.put_cf_readback(CF_MEJEPA_HEAL_REPORTS, &report_key, &encode_value(&report)?)?;
         let holdout_rotation =
             self.record_successful_promotion_and_rotate_if_due(storage.as_ref())?;
-        self.last_evidence = Some(AbcFsvEvidence {
+        self.last_evidence = Some(AbcReadbackEvidence {
             mode_a_score: mode_a,
             mode_b_score: mode_b,
             mode_c_score: mode_c,
@@ -978,7 +978,7 @@ impl AbcPromoter {
         })
     }
 
-    pub fn fsv_snapshot(&self) -> Option<AbcFsvEvidence> {
+    pub fn readback_snapshot(&self) -> Option<AbcReadbackEvidence> {
         self.last_evidence.clone()
     }
 }

@@ -609,18 +609,18 @@ mod tests {
     }
 
     #[test]
-    fn witness_quarantine_fsv_blocks_writes_until_approved_repair() {
-        let (_temp, fsv_root) = witness_quarantine_fsv_root();
-        fs::create_dir_all(&fsv_root).expect("fsv root");
+    fn witness_quarantine_readback_blocks_writes_until_approved_repair() {
+        let (_temp, readback_root) = witness_quarantine_readback_root();
+        fs::create_dir_all(&readback_root).expect("readback root");
         let run_id = format!(
             "{}-{}",
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
         );
-        let db_path = fsv_root.join(format!("rocks-{run_id}"));
-        let chain_path = fsv_root.join(format!("witness-chain-{run_id}.bin"));
-        let memory_root = fsv_root.join(format!("memory-{run_id}"));
-        let fsv_path = fsv_root.join("witness_quarantine_fsv.json");
+        let db_path = readback_root.join(format!("rocks-{run_id}"));
+        let chain_path = readback_root.join(format!("witness-chain-{run_id}.bin"));
+        let memory_root = readback_root.join(format!("memory-{run_id}"));
+        let readback_path = readback_root.join("witness_quarantine_readback.json");
 
         let storage = HealRocksStore::open(&db_path).expect("open heal store");
         let before_active = storage
@@ -685,7 +685,7 @@ mod tests {
             storage.as_ref(),
             PromotionApprovalRequest {
                 promotion_id: repair_promotion_id.clone(),
-                operator_id: "operator-fsv".to_string(),
+                operator_id: "operator-readback".to_string(),
                 action: PromotionApprovalAction::Approve,
                 reason: "witness chain manually repaired and verified".to_string(),
                 two_person_rule: false,
@@ -713,7 +713,7 @@ mod tests {
             Some(&b"allowed"[..])
         );
 
-        flush_fsv_cfs(storage.as_ref());
+        flush_readback_cfs(storage.as_ref());
         let after_active = storage
             .count_cf(CF_MEJEPA_ACTIVE_POINTERS)
             .expect("after active pointers");
@@ -740,8 +740,8 @@ mod tests {
             .iter()
             .map(|path| json!({"path": path, "bytes": fs::metadata(path).map(|m| m.len()).unwrap_or(0)}))
             .collect::<Vec<_>>();
-        let fsv = json!({
-            "fsv_root": fsv_root,
+        let report = json!({
+            "readback_root": readback_root,
             "task_id": "TASK-FLYWHEEL-011",
             "issue": 90,
             "started_at_unix_ms": chrono::Utc::now().timestamp_millis(),
@@ -764,7 +764,7 @@ mod tests {
                     "repair_promotion_id": repair_promotion_id,
                 },
                 "pass": true,
-                "evidence_path": fsv_path,
+                "evidence_path": readback_path,
             }],
             "boundary_cases": [
                 {
@@ -813,19 +813,21 @@ mod tests {
             "physical_artifacts": physical_artifacts,
             "witness_chain_sha256": sha256_file_hex(&chain_path),
         });
-        assert!(fsv["all_passed"].as_bool().unwrap_or(false));
-        fs::write(&fsv_path, serde_json::to_vec_pretty(&fsv).unwrap()).expect("write fsv");
+        assert!(report["all_passed"].as_bool().unwrap_or(false));
+        fs::write(&readback_path, serde_json::to_vec_pretty(&report).unwrap())
+            .expect("write readback report");
         let readback: serde_json::Value =
-            serde_json::from_slice(&fs::read(&fsv_path).expect("read fsv")).expect("parse fsv");
-        assert_eq!(readback, fsv);
+            serde_json::from_slice(&fs::read(&readback_path).expect("read readback report"))
+                .expect("parse readback report");
+        assert_eq!(readback, report);
     }
 
-    fn witness_quarantine_fsv_root() -> (Option<tempfile::TempDir>, PathBuf) {
-        if let Some(root) = std::env::var_os("CG_MEJEPA_WITNESS_QUARANTINE_FSV_ROOT") {
+    fn witness_quarantine_readback_root() -> (Option<tempfile::TempDir>, PathBuf) {
+        if let Some(root) = std::env::var_os("CG_MEJEPA_WITNESS_QUARANTINE_READBACK_ROOT") {
             return (None, PathBuf::from(root));
         }
-        let temp = tempfile::tempdir().expect("witness quarantine fsv tempdir");
-        let root = temp.path().join("phase-f-witness-quarantine-fsv");
+        let temp = tempfile::tempdir().expect("witness quarantine readback tempdir");
+        let root = temp.path().join("phase-f-witness-quarantine-readback");
         (Some(temp), root)
     }
 
@@ -849,7 +851,7 @@ mod tests {
         fs::write(path, bytes).expect("write clean witness chain");
     }
 
-    fn flush_fsv_cfs(storage: &HealRocksStore) {
+    fn flush_readback_cfs(storage: &HealRocksStore) {
         let db = storage.db();
         for cf_name in [
             CF_MEJEPA_ACTIVE_POINTERS,

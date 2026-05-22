@@ -2621,7 +2621,7 @@ mod tests {
             "outcome": "fail",
             "duration_ms": 12,
             "error_log": "AssertionError: expected 4",
-            "source": "synthetic-fsv",
+            "source": "synthetic-readback",
             "sequence": 0,
             "line_no": 1
         });
@@ -2749,7 +2749,7 @@ mod tests {
             "outcome": "pass",
             "duration_ms": 10,
             "error_log": "",
-            "source": "synthetic-fsv",
+            "source": "synthetic-readback",
             "sequence": 0,
             "line_no": 1
         });

@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use crate::heal::drift::DriftSeverity;
 use crate::heal::errors::HealError;
 
-pub const FSV_ROOT: &str = "/tmp/contextgraph-mejepa-self-healing-fsv";
-pub const FSV_FILES: &[&str] = &[
+pub const READBACK_ROOT: &str = "/tmp/contextgraph-mejepa-self-healing-readback";
+pub const READBACK_FILES: &[&str] = &[
     "drift-drill-evidence.json",
     "abc-promotion-evidence.json",
     "lora-refresh-evidence.json",
@@ -16,20 +16,20 @@ pub const FSV_FILES: &[&str] = &[
     "ewc-fisher-evidence.json",
 ];
 
-pub fn write_fsv_evidence_canonical<T: Serialize>(
+pub fn write_readback_evidence_canonical<T: Serialize>(
     file_name: &str,
     payload: &T,
     root: Option<&Path>,
 ) -> Result<PathBuf, HealError> {
-    if !FSV_FILES.contains(&file_name) && file_name != "_master_index.json" {
+    if !READBACK_FILES.contains(&file_name) && file_name != "_master_index.json" {
         return Err(HealError::invalid(
-            "fsv.file_name",
-            format!("unexpected FSV file {file_name}"),
+            "readback.file_name",
+            format!("unexpected readback file {file_name}"),
         ));
     }
     let root = root
         .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from(FSV_ROOT));
+        .unwrap_or_else(|| PathBuf::from(READBACK_ROOT));
     fs::create_dir_all(&root).map_err(|err| HealError::io("create_dir_all", &root, err))?;
     let path = root.join(file_name);
     let mut bytes = serde_json::to_vec_pretty(payload)?;
@@ -40,14 +40,14 @@ pub fn write_fsv_evidence_canonical<T: Serialize>(
     Ok(path)
 }
 
-pub fn assert_fsv_directory_complete(root: Option<&Path>) -> Result<(), HealError> {
+pub fn assert_readback_directory_complete(root: Option<&Path>) -> Result<(), HealError> {
     let root = root
         .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from(FSV_ROOT));
+        .unwrap_or_else(|| PathBuf::from(READBACK_ROOT));
     let mut missing = Vec::new();
     let mut wrong_mode = Vec::new();
     let mut parse_failures = Vec::new();
-    for file in FSV_FILES {
+    for file in READBACK_FILES {
         let path = root.join(file);
         if !path.exists() {
             missing.push((*file).to_string());
@@ -64,7 +64,7 @@ pub fn assert_fsv_directory_complete(root: Option<&Path>) -> Result<(), HealErro
         }
     }
     if !missing.is_empty() || !wrong_mode.is_empty() || !parse_failures.is_empty() {
-        return Err(HealError::FsvIncomplete {
+        return Err(HealError::ReadbackIncomplete {
             missing,
             wrong_mode,
             parse_failures,
@@ -73,16 +73,18 @@ pub fn assert_fsv_directory_complete(root: Option<&Path>) -> Result<(), HealErro
     Ok(())
 }
 
-pub fn fsv_directory_summary(root: Option<&Path>) -> Result<FsvDirectorySummary, HealError> {
+pub fn readback_directory_summary(
+    root: Option<&Path>,
+) -> Result<ReadbackDirectorySummary, HealError> {
     let root = root
         .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from(FSV_ROOT));
+        .unwrap_or_else(|| PathBuf::from(READBACK_ROOT));
     let root_absolute = root.canonicalize().unwrap_or(root.clone());
     let mut file_paths_present = Vec::new();
     let mut file_modes = Vec::new();
     let mut file_sizes_bytes = Vec::new();
     let mut total_bytes = 0u64;
-    for file in FSV_FILES {
+    for file in READBACK_FILES {
         let path = root.join(file);
         if path.exists() {
             let meta = fs::metadata(&path).map_err(|err| HealError::io("metadata", &path, err))?;
@@ -92,9 +94,9 @@ pub fn fsv_directory_summary(root: Option<&Path>) -> Result<FsvDirectorySummary,
             total_bytes += meta.len();
         }
     }
-    let all_complete =
-        file_paths_present.len() == FSV_FILES.len() && file_modes.iter().all(|mode| *mode == 0o600);
-    Ok(FsvDirectorySummary {
+    let all_complete = file_paths_present.len() == READBACK_FILES.len()
+        && file_modes.iter().all(|mode| *mode == 0o600);
+    Ok(ReadbackDirectorySummary {
         root_absolute,
         file_paths_present,
         file_modes,
@@ -104,11 +106,11 @@ pub fn fsv_directory_summary(root: Option<&Path>) -> Result<FsvDirectorySummary,
     })
 }
 
-pub fn append_fsv_master_index(root: Option<&Path>) -> Result<(), HealError> {
+pub fn append_readback_master_index(root: Option<&Path>) -> Result<(), HealError> {
     let root = root
         .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from(FSV_ROOT));
-    let summary = fsv_directory_summary(Some(&root))?;
+        .unwrap_or_else(|| PathBuf::from(READBACK_ROOT));
+    let summary = readback_directory_summary(Some(&root))?;
     let index = serde_json::json!({
         "phase": "phase5-self-healing",
         "commit_sha": option_env!("GIT_COMMIT").unwrap_or("unknown"),
@@ -116,13 +118,13 @@ pub fn append_fsv_master_index(root: Option<&Path>) -> Result<(), HealError> {
         "file_paths": summary.file_paths_present,
         "all_complete": summary.all_complete
     });
-    write_fsv_evidence_canonical("_master_index.json", &index, Some(&root))?;
+    write_readback_evidence_canonical("_master_index.json", &index, Some(&root))?;
     Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct FsvDirectorySummary {
+pub struct ReadbackDirectorySummary {
     pub root_absolute: PathBuf,
     pub file_paths_present: Vec<PathBuf>,
     pub file_modes: Vec<u32>,
@@ -144,9 +146,9 @@ pub struct DriftDrillEvidence {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct FsvHarnessReport {
+pub struct ReadbackHarnessReport {
     pub drill_summary: serde_json::Value,
-    pub fsv_directory_summary: FsvDirectorySummary,
+    pub readback_directory_summary: ReadbackDirectorySummary,
     pub ship_gate_pass: bool,
     pub all_5_files_present: bool,
     pub all_modes_0o600: bool,
@@ -159,9 +161,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn write_fsv_evidence_canonical_sets_mode_0o600() {
+    fn write_readback_evidence_canonical_sets_mode_0o600() {
         let temp = tempfile::tempdir().unwrap();
-        let path = write_fsv_evidence_canonical(
+        let path = write_readback_evidence_canonical(
             "drift-drill-evidence.json",
             &serde_json::json!({"ok": true}),
             Some(temp.path()),
@@ -174,8 +176,8 @@ mod tests {
     }
 
     #[test]
-    fn fsv_files_const_has_exactly_5_entries() {
-        assert_eq!(FSV_FILES.len(), 5);
-        assert!(FSV_ROOT.starts_with("/tmp/contextgraph"));
+    fn readback_files_const_has_exactly_5_entries() {
+        assert_eq!(READBACK_FILES.len(), 5);
+        assert!(READBACK_ROOT.starts_with("/tmp/contextgraph"));
     }
 }
