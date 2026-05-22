@@ -16,6 +16,7 @@ from .python_static_graph_core import (
     load_jsonl,
     make_record,
 )
+from .source_readback import read_full_source_bytes
 
 
 def count_jsonl(path: Path) -> int:
@@ -87,7 +88,14 @@ def synthetic_edge_records(schema_path: Path, hot_root: Path, now: str) -> tuple
     parse_records = [parse_record(task, state, root, rel) for rel in files]
     chunks = []
     for record in parse_records:
-        tree = ast.parse(Path(record["absolute_path"]).read_text(encoding="utf-8"))
+        path, raw = read_full_source_bytes(
+            record,
+            legacy_code="PY_STATIC_GRAPH_SYNTHETIC_LEGACY_SOURCE_PATH",
+            missing_code="PY_STATIC_GRAPH_SYNTHETIC_SOURCE_MISSING",
+            hash_mismatch_code="PY_STATIC_GRAPH_SYNTHETIC_SOURCE_HASH_MISMATCH",
+            remediation="Regenerate synthetic static-graph edge source files before building edge records.",
+        )
+        tree = ast.parse(raw.decode("utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 kind = "fixture" if any("fixture" in ast.unparse(dec) for dec in node.decorator_list) else "test_function" if node.name.startswith("test_") else "function"

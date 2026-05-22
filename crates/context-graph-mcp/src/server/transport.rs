@@ -102,17 +102,28 @@ pub async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
         }
     }
 
-    // Convert to UTF-8
+    // Convert to UTF-8. Fail closed: JSON-RPC 2.0 messages are JSON text per
+    // RFC 8259 §8.1, which mandates UTF-8. Lossy conversion would silently
+    // substitute U+FFFD inside string content; if the substitution happens to
+    // produce structurally valid JSON the server would process a request with
+    // silently corrupted strings (e.g. file paths or sha256 hashes). Better to
+    // reject the frame and surface a parse error to the client so the malformed
+    // input is observable.
     match String::from_utf8(raw) {
         Ok(s) => buf.push_str(&s),
         Err(e) => {
-            // INFRA-L4: Log when lossy conversion occurs so non-UTF-8 input is visible
-            // in diagnostics rather than silently mangled.
             warn!(
-                "Non-UTF-8 input detected, using lossy conversion: {} bytes affected",
-                e.as_bytes().len()
+                "Non-UTF-8 input rejected: {} bytes; offending UTF-8 error at byte {}",
+                e.as_bytes().len(),
+                e.utf8_error().valid_up_to()
             );
-            buf.push_str(&String::from_utf8_lossy(e.as_bytes()));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "Non-UTF-8 input rejected: JSON-RPC requires UTF-8 per RFC 8259 (utf8_error_at_byte={})",
+                    e.utf8_error().valid_up_to()
+                ),
+            ));
         }
     }
 
@@ -576,5 +587,44 @@ impl McpServer {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::BufReader;
+
+    #[tokio::test]
+    async fn read_line_bounded_fails_closed_on_non_utf8() {
+        // RFC 8259 §8.1: JSON text exchanged between systems MUST be UTF-8.
+        // The previous implementation silently substituted U+FFFD via
+        // `from_utf8_lossy`, which would corrupt string contents (file paths,
+        // sha256 hashes, etc.) without surfacing the malformed input to the
+        // client. The new behavior rejects the frame with a structured
+        // io::Error so the JSON-RPC layer can return a PARSE_ERROR response.
+        let bytes: &[u8] = &[b'{', 0xff, b'}', b'\n'];
+        let mut reader = BufReader::new(bytes);
+        let mut buf = String::new();
+        let result = read_line_bounded(&mut reader, &mut buf, MAX_LINE_BYTES).await;
+        let err = result.expect_err("non-UTF-8 input must be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Non-UTF-8 input rejected"),
+            "missing fail-closed marker: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_line_bounded_accepts_pure_utf8() {
+        let bytes: &[u8] = "{\"hello\":\"\u{00e9}\"}\n".as_bytes();
+        let mut reader = BufReader::new(bytes);
+        let mut buf = String::new();
+        let n = read_line_bounded(&mut reader, &mut buf, MAX_LINE_BYTES)
+            .await
+            .expect("valid utf-8 read");
+        assert_eq!(n, bytes.len());
+        assert_eq!(buf, "{\"hello\":\"\u{00e9}\"}\n");
     }
 }

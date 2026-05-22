@@ -14,6 +14,7 @@ from .oracle_events import (
 )
 from .python_ast_parse import detect_and_decode, line_byte_offset
 from .python_secret_redaction import SecretRedactionError, redact_text
+from .source_readback import read_full_source_bytes
 
 
 SCHEMA_VERSION = 2
@@ -77,6 +78,10 @@ def chunk_schema(schema_path: Path) -> dict[str, Any]:
         ],
         "additionalProperties": False,
     }
+    optional_props = {
+        "legacy_provenance_path": nullable_string,
+        "legacy_dataschema_path": nullable_string,
+    }
     props = {
         "schema_version": {"const": SCHEMA_VERSION},
         "chunk_id": sha,
@@ -116,6 +121,7 @@ def chunk_schema(schema_path: Path) -> dict[str, Any]:
         "redaction_events": {"type": "array", "items": redaction_event},
         "decorators": {"type": "array", "items": {"type": "string"}},
         "source_slice_verified": {"const": True},
+        **optional_props,
     }
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -123,7 +129,7 @@ def chunk_schema(schema_path: Path) -> dict[str, Any]:
         "title": "ContextGraph Python AST chunk v1",
         "type": "object",
         "properties": props,
-        "required": sorted(props),
+        "required": sorted(k for k in props if k not in optional_props),
         "additionalProperties": False,
     }
 
@@ -147,17 +153,13 @@ def load_jsonl(path: Path, code: str) -> list[dict[str, Any]]:
 
 
 def decode_source(record: dict[str, Any]) -> tuple[bytes, str, str]:
-    path = Path(record["absolute_path"])
-    ensure_file(path, "PY_AST_CHUNK_SOURCE_FILE_MISSING", "chunk source file")
-    raw = path.read_bytes()
-    actual_sha = "sha256:" + hashlib.sha256(raw).hexdigest()
-    if actual_sha != record["file_sha256"]:
-        raise AstChunkError(
-            "PY_AST_CHUNK_SOURCE_HASH_MISMATCH",
-            f"source file hash changed before chunking: {path}",
-            "Regenerate AST parse records from the current workspace bytes.",
-            {"expected": record["file_sha256"], "actual": actual_sha, "path": str(path)},
-        )
+    path, raw = read_full_source_bytes(
+        record,
+        legacy_code="PY_AST_CHUNK_LEGACY_SOURCE_PATH",
+        missing_code="PY_AST_CHUNK_SOURCE_FILE_MISSING",
+        hash_mismatch_code="PY_AST_CHUNK_SOURCE_HASH_MISMATCH",
+        remediation="Regenerate AST parse records from the current workspace bytes.",
+    )
     encoding, decoded, error = detect_and_decode(raw)
     if error is not None or decoded is None or encoding is None:
         raise AstChunkError(

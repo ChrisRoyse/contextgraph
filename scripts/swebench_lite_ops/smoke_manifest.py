@@ -16,6 +16,7 @@ from .oracle_events import (
     sha256_file,
     write_jsonl_checked,
 )
+from .source_readback import embedded_chunk_source_proof, is_legacy_mounted_path
 
 
 SCHEMA_VERSION = 1
@@ -314,6 +315,18 @@ def validate_candidate_source(row: dict[str, Any]) -> dict[str, Any]:
             },
         )
     path = Path(row["absolute_path"])
+    if is_legacy_mounted_path(row["absolute_path"]):
+        proof = embedded_chunk_source_proof(row)
+        proof.update(
+            {
+                "byte_span_width": byte_span_width,
+                "source_slice_verified_claim": True,
+                "live_workspace_present": False,
+                "live_workspace_verdict": "legacy_mounted_path_rejected",
+                "legacy_provenance_path": row["absolute_path"],
+            }
+        )
+        return proof
     if not path.is_file():
         return {
             "source_mode": "durable_ast_chunk_jsonl_embedded_source",

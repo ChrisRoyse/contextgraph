@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 import warnings
 from pathlib import Path
@@ -10,6 +9,7 @@ from typing import Any
 from .core import SwebenchOpsError, ensure_file
 from .oracle_events import canonical_json, sha256_prefixed_text
 from .python_ast_parse import detect_and_decode
+from .source_readback import read_full_source_bytes
 
 
 SCHEMA_VERSION = 1
@@ -354,10 +354,13 @@ def records_for_parse_record(record: dict[str, Any], schema_path: Path, now: str
     base = {**record, "module_name": module_name_for_path(record["relative_path"])}
     if record["parse_status"] != "parsed":
         return [make_record(schema_path=schema_path, now=now, base=base, record_kind="uncertainty", chunk=None, node=None, edge_kind="parse_unavailable", resolution_status="unresolved", uncertainty_reason=record["parse_status"])]
-    path = Path(record["absolute_path"])
-    raw = path.read_bytes()
-    if "sha256:" + hashlib.sha256(raw).hexdigest() != record["file_sha256"]:
-        raise StaticGraphError("PY_STATIC_GRAPH_SOURCE_HASH_MISMATCH", f"source file hash changed: {path}", "Regenerate AST parse records before graph extraction.", {"path": str(path)})
+    path, raw = read_full_source_bytes(
+        record,
+        legacy_code="PY_STATIC_GRAPH_LEGACY_SOURCE_PATH",
+        missing_code="PY_STATIC_GRAPH_SOURCE_FILE_MISSING",
+        hash_mismatch_code="PY_STATIC_GRAPH_SOURCE_HASH_MISMATCH",
+        remediation="Regenerate AST parse records before graph extraction.",
+    )
     encoding, decoded, error = detect_and_decode(raw)
     if error is not None or decoded is None:
         raise StaticGraphError("PY_STATIC_GRAPH_DECODE_FAILED", f"source file no longer decodes: {path}", "Regenerate AST parse records before graph extraction.", {"path": str(path), "error": error})
