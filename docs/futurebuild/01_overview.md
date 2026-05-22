@@ -461,7 +461,7 @@ config/                                 — governed paths, model pins
 | **Hot** | Active checkpoints, model weights, hot run state | `/zfs/hot/contextgraph/` on aiwonder | Yes (re-download / rebuild) |
 | **Ephemeral** | `/tmp/contextgraph-*` scratch | `/tmp/` | Yes |
 
-`/zfs/archive/contextgraph/` is **legacy provenance only** — not an active data root. 
+Legacy mounted-drive roots such as `/mnt/d/contextgraph/` are **provenance only** — not active data roots.
 ---
 
 ## 8. Exception Hierarchy (fail-closed structured errors)

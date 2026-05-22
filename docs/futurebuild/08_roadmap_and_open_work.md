@@ -68,7 +68,7 @@ By priority:
 
 | Priority | Examples |
 |---|---|
-| `priority:p0` | #397 consequence-prediction contract, #392 temporal trajectory, #405 Panel B (blocked), #383 evidence-weighted ordering, #372 aiwonder ZFS mount, #521 Panel B model-backed encoders (blocked) |
+| `priority:p0` | #397 consequence-prediction contract, #392 temporal trajectory, #405 Panel B (blocked), #383 evidence-weighted ordering, #521 Panel B model-backed encoders (blocked) |
 | `priority:p1` | #379 multi-file holdout, #416 pathway, #417 skill linkage remaining, #511 entropy loss, #380 off-host backup, #433 ability resolver replay completeness |
 | `priority:p2` | EK series tail, post-ship policies, #382 frozen-panel dimensionality ablation, #378 tool-usage telemetry |
 | `priority:p3` | Deferred (SWE-bench Verified subset, v2 stretch tasks, future Docker image plan) |
@@ -323,14 +323,14 @@ Neuroscience-inspired architectures have a mixed history in ML. Predictive codin
 | Issue | Task | Status |
 |---|---|---|
 | #310 | META Issue refactor | in-progress p0 |
-| #372 | ContextGraph roots must be mounted on aiwonder ZFS pools (paths-policy enforcement) | open p0 `status:blocked` |
+| #372 | ContextGraph roots must be mounted on aiwonder ZFS pools (paths-policy enforcement) | closed 2026-05-22; `/zfs/archive/contextgraph` -> `archive/contextgraph` ZFS and `/zfs/hot/contextgraph` -> `hotpool/contextgraph` ZFS |
 | #368 | Host capability utilization audit + scheduler profile | open p1 |
 | #380 | Off-host backup for `/zfs/archive` proof history | open p1 |
 | #384 | CUDA/candle rollback and reproducibility lane | open p2 |
 | #295 | PERF — resume launch scans full aiwonder FSV root | in-progress |
 | #299-#305 | AIWONDER-003..010 install / transfer / build / launch / calibration sub-tasks | in-progress p1 |
 | #306 | SWE-bench Lite Python Docker image plan (future / Q3) | p3 |
-| #312 | hot_root on ext4 throughput bottleneck — move to /hotpool ZFS | open `phase:f-followup` |
+| #312 | hot_root on ext4 throughput bottleneck — move to /hotpool ZFS | satisfied by #372 root migration; close after confirming no separate scheduler-profile work remains |
 | #442 | Track aiwonder librocksdb-sys cstdint native build requirement | open p1 |
 
 ---
