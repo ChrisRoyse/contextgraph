@@ -24,6 +24,7 @@ from typing import Any, Iterable
 import numpy as np
 
 from .core import normalize_category
+from .forward_cache_lineage import guard_packed_record_lineage
 from .python_real_corpus_constellation_smoke import (
     DEFAULT_CHUNKS_JSONL,
     DEFAULT_FORWARD_ROOT,
@@ -1165,6 +1166,8 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
     duplicate_slot_rows = 0
     source_readback_unverified_events = 0
     source_readback_unverified_rows = 0
+    raw_forward_cache_legacy_path_metadata_events = 0
+    raw_forward_cache_legacy_path_metadata_rows = 0
     missing_required_embedder_manifest_entry_count = 0
     missing_required_embedder_manifest_entry_samples: list[dict[str, str]] = []
     pair_label_count = 0
@@ -1186,6 +1189,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                     "slot_vector_hashes": {},
                     "slot_dims": {},
                     "source_readback_unverified": [],
+                    "raw_forward_cache_legacy_path_metadata": [],
                     "duplicate_slots": [],
                 }
 
@@ -1225,6 +1229,13 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                         work = row_work.get(row_key)
                         if work is None:
                             continue
+                        lineage = guard_packed_record_lineage(
+                            record,
+                            work["chunk"],
+                            context=f"{record_path}:{line_no}",
+                        )
+                        if lineage["raw_packed_path_metadata_legacy"]:
+                            work["raw_forward_cache_legacy_path_metadata"].append(embedder_id)
                         vector = np.asarray(output.get("vector"), dtype="<f4")
                         require(vector.ndim == 1 and vector.size > 0, "MEJEPA_AUTO_LABEL_VECTOR_MISSING", f"{record_path}:{line_no}")
                         features = vector_scalar_features(vector)
@@ -1265,6 +1276,9 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                 source_readback_unverified = sorted(set(work["source_readback_unverified"]))
                 source_readback_unverified_events += len(work["source_readback_unverified"])
                 source_readback_unverified_rows += 1 if source_readback_unverified else 0
+                raw_forward_cache_legacy_path_metadata = sorted(set(work["raw_forward_cache_legacy_path_metadata"]))
+                raw_forward_cache_legacy_path_metadata_events += len(work["raw_forward_cache_legacy_path_metadata"])
+                raw_forward_cache_legacy_path_metadata_rows += 1 if raw_forward_cache_legacy_path_metadata else 0
                 missing_labels = [f"slot:{embedder_id}:missing" for embedder_id in missing_slots]
                 slot_label_values = sorted(set(work["slot_labels"] + missing_labels))
                 available = sorted(work["slot_features"])
@@ -1394,6 +1408,9 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                         "duplicate_slots": duplicate_slots,
                         "source_readback_unverified": source_readback_unverified,
                         "source_readback_verified": not source_readback_unverified,
+                        "canonical_ast_lineage_used": True,
+                        "raw_forward_cache_path_metadata_legacy": bool(raw_forward_cache_legacy_path_metadata),
+                        "raw_forward_cache_path_metadata_legacy_slots": raw_forward_cache_legacy_path_metadata,
                         "slot_evidence_complete": not missing_slots and not duplicate_slots and not source_readback_unverified,
                         "slot_dims": dict(sorted(work["slot_dims"].items())),
                         "slot_vector_sha256": dict(sorted(work["slot_vector_hashes"].items())),
@@ -1613,6 +1630,9 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
         "duplicate_slot_rows": duplicate_slot_rows,
         "source_readback_unverified_events": source_readback_unverified_events,
         "source_readback_unverified_rows": source_readback_unverified_rows,
+        "raw_forward_cache_legacy_path_metadata_events": raw_forward_cache_legacy_path_metadata_events,
+        "raw_forward_cache_legacy_path_metadata_rows": raw_forward_cache_legacy_path_metadata_rows,
+        "forward_cache_lineage_policy": "packed record chunk.absolute_path/dataschema is legacy provenance only; active lineage comes from canonical AST rows",
         "missing_required_embedder_manifest_entry_count": missing_required_embedder_manifest_entry_count,
         "missing_required_embedder_manifest_entry_samples": missing_required_embedder_manifest_entry_samples,
         "slot_evidence_complete": slot_evidence_complete,

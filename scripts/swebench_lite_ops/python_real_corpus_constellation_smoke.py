@@ -22,6 +22,7 @@ from typing import Any
 
 import numpy as np
 
+from .forward_cache_lineage import ForwardCacheLineageError, guard_packed_record_lineage
 from .smoke_intelligence_matrices import (
     dump_json,
     iter_jsonl,
@@ -73,6 +74,8 @@ class SampleRecord:
     precision_class: str
     model_hash: str
     runtime_model_version: str
+    raw_forward_cache_path_metadata_legacy: bool
+    canonical_ast_lineage_used: bool
     scalar_features: dict[str, float]
 
 
@@ -343,6 +346,11 @@ def build_sample_record(
     meta = manifest_by_key.get(row_key)
     require(meta is not None, "MEJEPA_CONSTELLATION_SMOKE_RECORD_WITHOUT_CHUNK_META", row_key)
     assert meta is not None
+    lineage = guard_packed_record_lineage(
+        record_row,
+        meta,
+        context=f"{record_path}:{line_index + 1}",
+    )
     return SampleRecord(
         row_key=row_key,
         embedder_id=embedder_id,
@@ -365,6 +373,8 @@ def build_sample_record(
         precision_class=str(output.get("precision_class") or "unknown"),
         model_hash=str(key.get("model_hash") or "unknown"),
         runtime_model_version=str(output.get("runtime_model_version") or "unknown"),
+        raw_forward_cache_path_metadata_legacy=bool(lineage["raw_packed_path_metadata_legacy"]),
+        canonical_ast_lineage_used=bool(lineage["canonical_ast_lineage_used"]),
         scalar_features=vector_scalar_features(vector),
     )
 
@@ -384,6 +394,7 @@ def load_sample_records(
     index_hash_mismatches = 0
     sampled_record_count = 0
     source_readback_unverified = 0
+    raw_forward_cache_legacy_path_metadata = 0
     per_embedder_model_hashes: dict[str, set[str]] = defaultdict(set)
     per_embedder_instruments: dict[str, set[str]] = defaultdict(set)
 
@@ -427,6 +438,7 @@ def load_sample_records(
                 per_embedder_model_hashes[embedder_id].add(record.model_hash)
                 per_embedder_instruments[embedder_id].add(record.instrument_id)
                 source_readback_unverified += 0 if bool(record_rows[line_index].get("source_readback_verified")) else 1
+                raw_forward_cache_legacy_path_metadata += 1 if record.raw_forward_cache_path_metadata_legacy else 0
                 index_hash_mismatches += 0 if record.vector_sha256 == str(index_rows[line_index].get("vector_sha256") or "") else 1
                 sampled_record_count += 1
 
@@ -434,6 +446,8 @@ def load_sample_records(
     return by_embedder, {
         "sampled_record_count": sampled_record_count,
         "source_readback_unverified": source_readback_unverified,
+        "raw_forward_cache_legacy_path_metadata": raw_forward_cache_legacy_path_metadata,
+        "forward_cache_lineage_policy": "packed record chunk.absolute_path/dataschema is legacy provenance only; active lineage comes from canonical AST rows",
         "index_hash_mismatches": index_hash_mismatches,
         "row_count_readback": row_count_readback,
         "manifest_row_counts": manifest_row_counts,
@@ -824,6 +838,44 @@ def built_in_edge_cases() -> list[dict[str, Any]]:
             "result": {"pearson": corr, "reason": reason},
         }
     )
+    legacy_record = {
+        "key": {"chunk_id": "chunk-1", "source_sha256": "sha256:abc"},
+        "chunk": {
+            "task_instance_id": "task-1",
+            "workspace_state": "after",
+            "absolute_path": "/mnt/d/contextgraph/corpus/old.py",
+            "dataschema": "/mnt/d/contextgraph/corpus/old.schema.json",
+        },
+    }
+    canonical_chunk = {
+        "task_instance_id": "task-1",
+        "workspace_state": "after",
+        "chunk_id": "chunk-1",
+        "source_sha256": "sha256:abc",
+        "absolute_path": "/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/source-files-300x8-20260515T013205Z/task-1/after/old.py",
+        "dataschema": "/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.schema.json",
+    }
+    lineage = guard_packed_record_lineage(legacy_record, canonical_chunk, context="synthetic_legacy_payload")
+    cases.append(
+        {
+            "name": "legacy_packed_path_allowed_only_with_canonical_ast_lineage",
+            "passes": lineage["raw_packed_path_metadata_legacy"] is True and lineage["canonical_ast_lineage_used"] is True,
+            "result": lineage,
+        }
+    )
+    stale_canonical = dict(canonical_chunk)
+    stale_canonical["absolute_path"] = "/mnt/d/contextgraph/corpus/old.py"
+    try:
+        guard_packed_record_lineage(legacy_record, stale_canonical, context="synthetic_stale_canonical")
+        cases.append({"name": "legacy_canonical_ast_path_fails_closed", "passes": False, "error": None})
+    except ForwardCacheLineageError as exc:
+        cases.append(
+            {
+                "name": "legacy_canonical_ast_path_fails_closed",
+                "passes": exc.code == "MEJEPA_FORWARD_CACHE_CANONICAL_LINEAGE_LEGACY_MOUNTED_PATH",
+                "error": str(exc),
+            }
+        )
     return cases
 
 

@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 
+from .forward_cache_lineage import guard_packed_record_lineage
 from .smoke_intelligence_matrices import (
     SmokeMatrixError,
     dump_json,
@@ -75,6 +76,19 @@ class ChunkMeta:
     chunk_kind: str
     node_kind: str
     task_id: str
+    absolute_path: str
+    dataschema: str
+
+    def as_canonical_chunk_row(self) -> dict[str, Any]:
+        return {
+            "task_instance_id": self.task_instance_id,
+            "workspace_state": self.workspace_state,
+            "chunk_id": self.chunk_id,
+            "source_sha256": self.source_sha256,
+            "relative_path": self.relative_path,
+            "absolute_path": self.absolute_path,
+            "dataschema": self.dataschema,
+        }
 
 
 @dataclass(frozen=True)
@@ -230,6 +244,8 @@ def load_chunk_metadata(chunks_jsonl: Path) -> tuple[dict[str, ChunkMeta], dict[
             chunk_kind=str(row.get("chunk_kind") or ""),
             node_kind=str(row.get("node_kind") or ""),
             task_id=str(row.get("task_id") or row.get("task_instance_id") or ""),
+            absolute_path=str(row.get("absolute_path") or ""),
+            dataschema=str(row.get("dataschema") or ""),
         )
         by_chunk_id[chunk_id] = meta
         repos[repo] += 1
@@ -333,9 +349,10 @@ def materialize_catalog(args: argparse.Namespace) -> dict[str, Any]:
     rows_by_embedder: Counter[str] = Counter()
     rows_by_category: Counter[str] = Counter()
     rows_by_spec: Counter[str] = Counter()
+    raw_forward_cache_legacy_path_metadata = 0
 
     for path in paths:
-        for _, record in iter_jsonl(path):
+        for line_no, record in iter_jsonl(path):
             records_seen += 1
             if args.progress_every_records > 0 and records_seen % args.progress_every_records == 0:
                 print(
@@ -361,6 +378,12 @@ def materialize_catalog(args: argparse.Namespace) -> dict[str, Any]:
             if meta is None:
                 missing_metadata[chunk_id or "<empty>"] += 1
                 continue
+            lineage = guard_packed_record_lineage(
+                record,
+                meta.as_canonical_chunk_row(),
+                context=f"{path}:{line_no}",
+            )
+            raw_forward_cache_legacy_path_metadata += 1 if lineage["raw_packed_path_metadata_legacy"] else 0
             vector = vector_from_record(record)
             joined_records += 1
             rows_by_embedder[embedder_id] += 1
@@ -510,6 +533,8 @@ def materialize_catalog(args: argparse.Namespace) -> dict[str, Any]:
             "rows_by_embedder": dict(sorted(rows_by_embedder.items())),
             "rows_by_mutation_category": dict(sorted(rows_by_category.items())),
             "rows_by_spec": dict(sorted(rows_by_spec.items())),
+            "raw_forward_cache_legacy_path_metadata": raw_forward_cache_legacy_path_metadata,
+            "forward_cache_lineage_policy": "packed record chunk.absolute_path/dataschema is legacy provenance only; active lineage comes from canonical AST rows",
         },
     }
     dump_json(args.output_root / "fingerprint_materialization_report.json", report)

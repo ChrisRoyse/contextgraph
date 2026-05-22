@@ -17,6 +17,8 @@ from typing import Any
 
 import numpy as np
 
+from .forward_cache_lineage import guard_packed_record_lineage
+
 
 SCHEMA_VERSION = 1
 DEFAULT_FORWARD_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/forward-cache")
@@ -358,6 +360,7 @@ def load_records(
     quarantine_counts: Counter = Counter()
     verified_record_rows = 0
     index_rows_verified = 0
+    raw_forward_cache_legacy_path_metadata = 0
     vector_dims: dict[str, set[int]] = defaultdict(set)
     shard_ids: list[str] = []
     for shard in sorted(shard_entries, key=lambda s: str(s.get("shard_id"))):
@@ -399,6 +402,8 @@ def load_records(
                     stable_key = row_key_from_fields(task_instance_id, workspace_state, chunk_id, source_sha256)
                     manifest_row = manifest_by_key.get(stable_key)
                     require(manifest_row is not None, f"forward record has no smoke manifest row: {stable_key}")
+                    lineage = guard_packed_record_lineage(row, manifest_row, context=f"{record_path}:{raw_line_no}")
+                    raw_forward_cache_legacy_path_metadata += 1 if lineage["raw_packed_path_metadata_legacy"] else 0
                     vector = np.asarray(output.get("vector"), dtype=np.float32)
                     require(vector.ndim == 1 and vector.size > 0, f"vector missing or invalid at {record_path}:{raw_line_no}")
                     require(int(index_row["vector_len"]) == int(vector.size), f"vector_len mismatch at {record_path}:{raw_line_no}")
@@ -440,6 +445,8 @@ def load_records(
         "embedder_count": len(records),
         "index_rows_verified": index_rows_verified,
         "verified_record_rows": verified_record_rows,
+        "raw_forward_cache_legacy_path_metadata": raw_forward_cache_legacy_path_metadata,
+        "forward_cache_lineage_policy": "packed record chunk.absolute_path/dataschema is legacy provenance only; active lineage comes from canonical manifest rows",
         "telemetry_rows": telemetry_rows,
         "quarantine_counts": dict(sorted(quarantine_counts.items())),
         "vector_dims": {key: sorted(value) for key, value in sorted(vector_dims.items())},
