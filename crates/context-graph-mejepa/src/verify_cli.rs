@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant, SystemTime};
 
-use context_graph_mejepa_corpus::oracle::{OracleStore, CF_MEJEPA_MUTATION_CORPUS};
+use context_graph_mejepa_corpus::oracle::{OracleStore, CF_MEJEPA_CORPUS_MUTATION_OUTCOMES};
 use context_graph_mejepa_corpus::{
     MutationCategory, MutationOutcome, OracleVerdict, PerTestOutcome, TestOutcome,
 };
@@ -448,7 +448,7 @@ fn append_corpus_entry(
     patch_bytes: &[u8],
 ) -> anyhow::Result<(u64, u64)> {
     let store = OracleStore::open(corpus_root.join("oracle-store"))?;
-    let before = store.count_cf(CF_MEJEPA_MUTATION_CORPUS)? as u64;
+    let before = store.count_cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)? as u64;
     let row_task = if store
         .get_verdict(task, MutationCategory::KnownGood)?
         .is_some()
@@ -473,7 +473,7 @@ fn append_corpus_entry(
         evidence_unavailable: false,
     };
     store.put_corpus_row(&row_task, MutationCategory::KnownGood, &outcome, &verdict)?;
-    let after = store.count_cf(CF_MEJEPA_MUTATION_CORPUS)? as u64;
+    let after = store.count_cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)? as u64;
     if after != before + 1 {
         anyhow::bail!("MEJEPA_VERIFY_CORPUS_APPEND_READBACK: before={before} after={after}");
     }

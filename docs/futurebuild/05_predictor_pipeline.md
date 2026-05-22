@@ -516,7 +516,7 @@ if predicted_verdict != ground_truth_verdict:
 
 | Source | When | CF |
 |---|---|---|
-| SWE-bench Docker oracle | Corpus training + heldout eval | `CF_MEJEPA_ORACLE_VERDICTS` |
+| SWE-bench Docker oracle | Corpus training + heldout eval | corpus RocksDB `mejepa_oracle_verdicts` JSON source rows |
 | PostToolUse Bash capture | Live agent session | `CF_MEJEPA_PREDICTION_VERIFICATIONS` |
 | Shift-log replay (Q5) | After patch lives in a session | `CF_MEJEPA_REALITY_IMPACT` |
 | Operator override | Operator labels a row | `CF_MEJEPA_OPERATOR_OVERRIDES` |

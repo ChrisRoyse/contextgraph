@@ -25,6 +25,8 @@ pub const SYNTHETIC_STRESS_RESULTS_DB: &str =
 pub const SYNTHETIC_STRESS_CASES: usize = 30;
 pub const SYNTHETIC_STRESS_THRESHOLD: f32 = 0.85;
 pub const SYNTHETIC_STRESS_SCHEMA_VERSION: u32 = 1;
+pub const SYNTHETIC_STRESS_SOURCE: &str = "synthetic_stress_fixture";
+pub const SYNTHETIC_STRESS_GATE_PREDICATE: &str = "not_applicable";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -149,7 +151,10 @@ pub struct SyntheticStressEvalReport {
     pub cases_passed: usize,
     pub synthetic_stress_correctness: f32,
     pub threshold: f32,
-    pub ship_gate_passed: bool,
+    pub synthetic_stress_passed: bool,
+    pub ship_gate_countable: bool,
+    pub gate_predicate: String,
+    pub source: String,
     pub result_rows_before: usize,
     pub result_rows_after: usize,
     pub case_counts_by_kind: BTreeMap<String, usize>,
@@ -257,6 +262,8 @@ pub fn run_synthetic_stress_eval(
             .entry(result.kind.as_snake_case().to_string())
             .or_insert(0usize) += 1;
     }
+    let synthetic_stress_passed =
+        results.len() == SYNTHETIC_STRESS_CASES && correctness >= SYNTHETIC_STRESS_THRESHOLD;
 
     Ok(SyntheticStressEvalReport {
         schema_version: SYNTHETIC_STRESS_SCHEMA_VERSION,
@@ -270,8 +277,10 @@ pub fn run_synthetic_stress_eval(
         cases_passed,
         synthetic_stress_correctness: correctness,
         threshold: SYNTHETIC_STRESS_THRESHOLD,
-        ship_gate_passed: results.len() == SYNTHETIC_STRESS_CASES
-            && correctness >= SYNTHETIC_STRESS_THRESHOLD,
+        synthetic_stress_passed,
+        ship_gate_countable: false,
+        gate_predicate: SYNTHETIC_STRESS_GATE_PREDICATE.to_string(),
+        source: SYNTHETIC_STRESS_SOURCE.to_string(),
         result_rows_before,
         result_rows_after: count_synthetic_stress_results(db.as_ref())?,
         case_counts_by_kind: counts,
@@ -312,4 +321,44 @@ fn synthetic_stress_now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn synthetic_stress_report_is_explicitly_not_ship_gate_countable() {
+        let report = SyntheticStressEvalReport {
+            schema_version: SYNTHETIC_STRESS_SCHEMA_VERSION,
+            task_id: "TASK-PY-G-071".to_string(),
+            corpus_root: "/tmp/synthetic-corpus".to_string(),
+            results_db_path: "/tmp/synthetic-results.rocksdb".to_string(),
+            result_cf: CF_MEJEPA_SYNTHETIC_STRESS_RESULTS.to_string(),
+            live_prediction_cf: CF_MEJEPA_LIVE_PREDICTIONS.to_string(),
+            cases_expected: SYNTHETIC_STRESS_CASES,
+            cases_total: SYNTHETIC_STRESS_CASES,
+            cases_passed: SYNTHETIC_STRESS_CASES,
+            synthetic_stress_correctness: 1.0,
+            threshold: SYNTHETIC_STRESS_THRESHOLD,
+            synthetic_stress_passed: true,
+            ship_gate_countable: false,
+            gate_predicate: SYNTHETIC_STRESS_GATE_PREDICATE.to_string(),
+            source: SYNTHETIC_STRESS_SOURCE.to_string(),
+            result_rows_before: 0,
+            result_rows_after: SYNTHETIC_STRESS_CASES,
+            case_counts_by_kind: BTreeMap::new(),
+            results: Vec::new(),
+        };
+
+        let value = serde_json::to_value(&report).expect("serialize synthetic stress report");
+        assert_eq!(value["syntheticStressPassed"], true);
+        assert_eq!(value["shipGateCountable"], false);
+        assert_eq!(value["gatePredicate"], SYNTHETIC_STRESS_GATE_PREDICATE);
+        assert_eq!(value["source"], SYNTHETIC_STRESS_SOURCE);
+        let legacy_camel_key = ["ship", "Gate", "Passed"].join("");
+        let legacy_snake_key = ["ship", "gate", "passed"].join("_");
+        assert!(value.get(&legacy_camel_key).is_none());
+        assert!(value.get(&legacy_snake_key).is_none());
+    }
 }

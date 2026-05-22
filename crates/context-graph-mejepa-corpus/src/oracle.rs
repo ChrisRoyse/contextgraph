@@ -26,13 +26,13 @@ use crate::{CorpusProvenance, MutationCategory, MutationOutcome};
 
 pub type OracleResult<T> = Result<T, OracleError>;
 
-pub const CF_MEJEPA_MUTATION_CORPUS: &str = "mejepa_mutation_corpus";
-pub const CF_MEJEPA_ORACLE_VERDICTS: &str = "mejepa_oracle_verdicts";
-pub const CF_MEJEPA_CORPUS_PROVENANCE: &str = "mejepa_corpus_provenance";
+pub const CF_MEJEPA_CORPUS_MUTATION_OUTCOMES: &str = "mejepa_mutation_corpus";
+pub const CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON: &str = "mejepa_oracle_verdicts";
+pub const CF_MEJEPA_CORPUS_PROVENANCE_JSON: &str = "mejepa_corpus_provenance";
 pub const MEJEPA_ORACLE_CFS: &[&str] = &[
-    CF_MEJEPA_MUTATION_CORPUS,
-    CF_MEJEPA_ORACLE_VERDICTS,
-    CF_MEJEPA_CORPUS_PROVENANCE,
+    CF_MEJEPA_CORPUS_MUTATION_OUTCOMES,
+    CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON,
+    CF_MEJEPA_CORPUS_PROVENANCE_JSON,
 ];
 
 #[derive(Debug, Error)]
@@ -414,7 +414,7 @@ impl OracleStore {
         let mutation_bytes = serde_json::to_vec(outcome).map_err(|err| {
             OracleError::store(
                 "serialize",
-                CF_MEJEPA_MUTATION_CORPUS,
+                CF_MEJEPA_CORPUS_MUTATION_OUTCOMES,
                 err.to_string(),
                 "ensure MutationOutcome remains JSON-serializable",
             )
@@ -422,19 +422,19 @@ impl OracleStore {
         let verdict_bytes = serde_json::to_vec(verdict).map_err(|err| {
             OracleError::store(
                 "serialize",
-                CF_MEJEPA_ORACLE_VERDICTS,
+                CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON,
                 err.to_string(),
                 "ensure OracleVerdict remains JSON-serializable",
             )
         })?;
         let mut batch = WriteBatch::default();
         batch.put_cf(
-            self.cf(CF_MEJEPA_MUTATION_CORPUS)?,
+            self.cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?,
             key.as_bytes(),
             mutation_bytes,
         );
         batch.put_cf(
-            self.cf(CF_MEJEPA_ORACLE_VERDICTS)?,
+            self.cf(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?,
             key.as_bytes(),
             verdict_bytes,
         );
@@ -456,11 +456,11 @@ impl OracleStore {
         let key = corpus_key(task_id, category)?;
         let Some(bytes) = self
             .db
-            .get_cf(self.cf(CF_MEJEPA_MUTATION_CORPUS)?, key.as_bytes())
+            .get_cf(self.cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?, key.as_bytes())
             .map_err(|err| {
                 OracleError::store(
                     "get",
-                    CF_MEJEPA_MUTATION_CORPUS,
+                    CF_MEJEPA_CORPUS_MUTATION_OUTCOMES,
                     err.to_string(),
                     "inspect RocksDB read permissions and column-family health",
                 )
@@ -471,7 +471,7 @@ impl OracleStore {
         let outcome = serde_json::from_slice(&bytes).map_err(|err| {
             OracleError::store(
                 "deserialize",
-                CF_MEJEPA_MUTATION_CORPUS,
+                CF_MEJEPA_CORPUS_MUTATION_OUTCOMES,
                 err.to_string(),
                 "do not mutate persisted ME-JEPA mutation records outside this API",
             )
@@ -518,11 +518,14 @@ impl OracleStore {
         let key = corpus_key(task_id, category)?;
         let Some(bytes) = self
             .db
-            .get_cf(self.cf(CF_MEJEPA_ORACLE_VERDICTS)?, key.as_bytes())
+            .get_cf(
+                self.cf(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?,
+                key.as_bytes(),
+            )
             .map_err(|err| {
                 OracleError::store(
                     "get",
-                    CF_MEJEPA_ORACLE_VERDICTS,
+                    CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON,
                     err.to_string(),
                     "inspect RocksDB read permissions and column-family health",
                 )
@@ -533,7 +536,7 @@ impl OracleStore {
         let verdict = serde_json::from_slice(&bytes).map_err(|err| {
             OracleError::store(
                 "deserialize",
-                CF_MEJEPA_ORACLE_VERDICTS,
+                CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON,
                 err.to_string(),
                 "do not mutate persisted ME-JEPA oracle records outside this API",
             )
@@ -544,13 +547,13 @@ impl OracleStore {
     pub fn iter_corpus_rows(
         &self,
     ) -> OracleResult<Vec<(String, MutationCategory, MutationOutcome, OracleVerdict)>> {
-        let cf = self.cf(CF_MEJEPA_MUTATION_CORPUS)?;
+        let cf = self.cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?;
         let mut rows = Vec::new();
         for item in self.db.iterator_cf(cf, IteratorMode::Start) {
             let (key, mutation_bytes) = item.map_err(|err| {
                 OracleError::store(
                     "iterate",
-                    CF_MEJEPA_MUTATION_CORPUS,
+                    CF_MEJEPA_CORPUS_MUTATION_OUTCOMES,
                     err.to_string(),
                     "inspect RocksDB iterator state and column-family health",
                 )
@@ -558,7 +561,7 @@ impl OracleStore {
             let key_text = String::from_utf8(key.to_vec()).map_err(|err| {
                 OracleError::store(
                     "decode_key",
-                    CF_MEJEPA_MUTATION_CORPUS,
+                    CF_MEJEPA_CORPUS_MUTATION_OUTCOMES,
                     err.to_string(),
                     "only use UTF-8 ME-JEPA corpus keys",
                 )
@@ -567,7 +570,7 @@ impl OracleStore {
             let mutation = serde_json::from_slice(&mutation_bytes).map_err(|err| {
                 OracleError::store(
                     "deserialize",
-                    CF_MEJEPA_MUTATION_CORPUS,
+                    CF_MEJEPA_CORPUS_MUTATION_OUTCOMES,
                     err.to_string(),
                     "do not mutate persisted ME-JEPA mutation records outside this API",
                 )
@@ -592,7 +595,7 @@ impl OracleStore {
         provenance.validate().map_err(|err| {
             OracleError::store(
                 "validate",
-                CF_MEJEPA_CORPUS_PROVENANCE,
+                CF_MEJEPA_CORPUS_PROVENANCE_JSON,
                 format!("{err} ({})", err.code()),
                 "compute complete corpus provenance before writing it",
             )
@@ -603,7 +606,7 @@ impl OracleStore {
         {
             return Err(OracleError::store(
                 "put",
-                CF_MEJEPA_CORPUS_PROVENANCE,
+                CF_MEJEPA_CORPUS_PROVENANCE_JSON,
                 format!(
                     "provenance already exists for corpus_version={} embedder_version={}",
                     provenance.corpus_version, provenance.embedder_version
@@ -615,17 +618,21 @@ impl OracleStore {
         let bytes = serde_json::to_vec(provenance).map_err(|err| {
             OracleError::store(
                 "serialize",
-                CF_MEJEPA_CORPUS_PROVENANCE,
+                CF_MEJEPA_CORPUS_PROVENANCE_JSON,
                 err.to_string(),
                 "ensure CorpusProvenance remains JSON-serializable",
             )
         })?;
         self.db
-            .put_cf(self.cf(CF_MEJEPA_CORPUS_PROVENANCE)?, key.as_bytes(), bytes)
+            .put_cf(
+                self.cf(CF_MEJEPA_CORPUS_PROVENANCE_JSON)?,
+                key.as_bytes(),
+                bytes,
+            )
             .map_err(|err| {
                 OracleError::store(
                     "put",
-                    CF_MEJEPA_CORPUS_PROVENANCE,
+                    CF_MEJEPA_CORPUS_PROVENANCE_JSON,
                     err.to_string(),
                     "inspect RocksDB write permissions and disk capacity",
                 )
@@ -640,11 +647,11 @@ impl OracleStore {
         let key = provenance_key(corpus_version, embedder_version)?;
         let Some(bytes) = self
             .db
-            .get_cf(self.cf(CF_MEJEPA_CORPUS_PROVENANCE)?, key.as_bytes())
+            .get_cf(self.cf(CF_MEJEPA_CORPUS_PROVENANCE_JSON)?, key.as_bytes())
             .map_err(|err| {
                 OracleError::store(
                     "get",
-                    CF_MEJEPA_CORPUS_PROVENANCE,
+                    CF_MEJEPA_CORPUS_PROVENANCE_JSON,
                     err.to_string(),
                     "inspect RocksDB read permissions and column-family health",
                 )
@@ -655,7 +662,7 @@ impl OracleStore {
         let provenance = serde_json::from_slice(&bytes).map_err(|err| {
             OracleError::store(
                 "deserialize",
-                CF_MEJEPA_CORPUS_PROVENANCE,
+                CF_MEJEPA_CORPUS_PROVENANCE_JSON,
                 err.to_string(),
                 "do not mutate persisted ME-JEPA provenance records outside this API",
             )
@@ -1719,9 +1726,17 @@ mod tests {
         store.put_provenance(&provenance).unwrap();
         store.flush().unwrap();
 
-        assert_eq!(store.count_cf(CF_MEJEPA_MUTATION_CORPUS).unwrap(), 1);
-        assert_eq!(store.count_cf(CF_MEJEPA_ORACLE_VERDICTS).unwrap(), 1);
-        assert_eq!(store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE).unwrap(), 1);
+        assert_eq!(
+            store.count_cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES).unwrap(),
+            1
+        );
+        assert_eq!(
+            store
+                .count_cf(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)
+                .unwrap(),
+            1
+        );
+        assert_eq!(store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE_JSON).unwrap(), 1);
         assert_eq!(
             store
                 .get_mutation("synthetic-task-001", MutationCategory::KnownGood)

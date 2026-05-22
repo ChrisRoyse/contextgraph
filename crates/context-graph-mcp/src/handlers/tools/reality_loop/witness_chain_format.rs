@@ -3,7 +3,7 @@
 use super::errors::{CCRealityError, Result};
 use super::helpers::{file_sot, read_json, unix_secs, write_json_checked};
 use context_graph_witness::WITNESS_ENTRY_SIZE;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
 pub const CANONICAL_LAYOUT_ID: &str =
@@ -16,11 +16,17 @@ pub fn format_manifest_path(chain_path: &Path) -> PathBuf {
 pub fn read_format_manifest_status(chain_path: &Path) -> Result<Value> {
     let path = format_manifest_path(chain_path);
     if !path.exists() {
-        return Ok(json!({
-            "status": "absent",
-            "source_of_truth": file_sot(&path),
-            "expected_layout": CANONICAL_LAYOUT_ID,
-        }));
+        return Err(CCRealityError::new(
+            "CCREALITY_WITNESS_FORMAT_MANIFEST_ABSENT",
+            "witness-chain.format.json is absent; verification requires the canonical format manifest",
+            "witness_chain.format_manifest",
+            "append a witness entry to create the manifest, or repair/regenerate it before using the chain as verification evidence",
+            json!({
+                "expected_layout": CANONICAL_LAYOUT_ID,
+                "path": path.display().to_string(),
+            }),
+            Some(file_sot(&path)),
+        ));
     }
     let manifest = read_json(&path)?;
     validate_format_manifest(chain_path, &manifest)?;

@@ -506,9 +506,8 @@ mod tests {
     #[cfg(feature = "candle")]
     #[test]
     fn test_model_root_guard_rejects_non_aiwonder_root() {
-        let err =
-            cuda_impl::validate_model_root(PathBuf::from("/tmp/contextgraph/models"), "test")
-                .expect_err("non-aiwonder root must not be accepted as a model root");
+        let err = cuda_impl::validate_model_root(PathBuf::from("/tmp/contextgraph/models"), "test")
+            .expect_err("non-aiwonder root must not be accepted as a model root");
         assert!(err.to_string().contains("MEJEPA_MODEL_ROOT_NOT_AIWONDER"));
     }
 

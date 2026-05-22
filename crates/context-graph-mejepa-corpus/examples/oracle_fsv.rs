@@ -13,7 +13,8 @@
 
 use context_graph_mejepa_corpus::oracle::{
     parse_pytest_json_report, run_command_json_oracle, CommandOracleConfig, OracleStore,
-    CF_MEJEPA_CORPUS_PROVENANCE, CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
+    CF_MEJEPA_CORPUS_MUTATION_OUTCOMES, CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON,
+    CF_MEJEPA_CORPUS_PROVENANCE_JSON,
 };
 use context_graph_mejepa_corpus::{
     apply_mutation, compute_corpus_sha256, CorpusProvenance, CorpusProvenanceRow, Language,
@@ -217,23 +218,23 @@ fn store_and_reopen(
         "atomic corpus row must survive RocksDB reopen",
         corpus_row_readback == (mutation.clone(), verdict.clone()),
     )?;
-    let mutation_count = reopened.count_cf(CF_MEJEPA_MUTATION_CORPUS)?;
-    let verdict_count = reopened.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?;
-    let provenance_count = reopened.count_cf(CF_MEJEPA_CORPUS_PROVENANCE)?;
+    let mutation_count = reopened.count_cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?;
+    let verdict_count = reopened.count_cf(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?;
+    let provenance_count = reopened.count_cf(CF_MEJEPA_CORPUS_PROVENANCE_JSON)?;
     ensure("mutation CF count must be 1", mutation_count == 1)?;
     ensure("oracle verdict CF count must be 1", verdict_count == 1)?;
     ensure("provenance CF count must be 1", provenance_count == 1)?;
     Ok(json!({
         "rocksdb_path": db_path.display().to_string(),
         "counts_after_reopen": {
-            CF_MEJEPA_MUTATION_CORPUS: mutation_count,
-            CF_MEJEPA_ORACLE_VERDICTS: verdict_count,
-            CF_MEJEPA_CORPUS_PROVENANCE: provenance_count,
+            CF_MEJEPA_CORPUS_MUTATION_OUTCOMES: mutation_count,
+            CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON: verdict_count,
+            CF_MEJEPA_CORPUS_PROVENANCE_JSON: provenance_count,
         },
-        "mutation_rows": reopened.scan_cf_json(CF_MEJEPA_MUTATION_CORPUS)?,
-        "verdict_rows": reopened.scan_cf_json(CF_MEJEPA_ORACLE_VERDICTS)?,
+        "mutation_rows": reopened.scan_cf_json(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?,
+        "verdict_rows": reopened.scan_cf_json(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?,
         "provenance": provenance_readback,
-        "provenance_rows": reopened.scan_cf_json(CF_MEJEPA_CORPUS_PROVENANCE)?,
+        "provenance_rows": reopened.scan_cf_json(CF_MEJEPA_CORPUS_PROVENANCE_JSON)?,
         "passes": true,
     }))
 }

@@ -819,10 +819,8 @@ fn default_trace_root() -> PathBuf {
 }
 
 fn require_stress_trace_root(path: &Path) -> Result<PathBuf, ProjectStressError> {
-    let normalized = context_graph_paths::require_production_durable_root(
-        path,
-        "project_stress.trace_root",
-    )?;
+    let normalized =
+        context_graph_paths::require_production_durable_root(path, "project_stress.trace_root")?;
     let production_runtime = Path::new(context_graph_paths::AIWONDER_DURABLE_ROOT).join("runtime");
     if normalized.starts_with(&production_runtime) {
         Ok(normalized)

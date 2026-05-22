@@ -4,7 +4,8 @@ use context_graph_mejepa_corpus::multilang_fixture_corpus::{
     validate_toolchain, FixtureTask,
 };
 use context_graph_mejepa_corpus::oracle::{
-    OracleStore, CF_MEJEPA_CORPUS_PROVENANCE, CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
+    OracleStore, CF_MEJEPA_CORPUS_MUTATION_OUTCOMES, CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON,
+    CF_MEJEPA_CORPUS_PROVENANCE_JSON,
 };
 use context_graph_mejepa_corpus::patch_mutation::PatchMutationOutcome;
 use context_graph_mejepa_corpus::source_patch::{
@@ -790,9 +791,9 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
             None => failures.push(json!({"key": key, "error": "missing RocksDB corpus row"})),
         }
     }
-    let mutation_cf_count = store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?;
-    let verdict_cf_count = store.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?;
-    let provenance_cf_count = store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE)?;
+    let mutation_cf_count = store.count_cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?;
+    let verdict_cf_count = store.count_cf(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?;
+    let provenance_cf_count = store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE_JSON)?;
     let iterated_corpus_rows = store.iter_corpus_rows()?;
     let expected_full_entries = index.split_assignments.len() * MutationCategory::all().len();
     if mutation_cf_count != index.entries.len() {
@@ -909,7 +910,7 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
         "source_of_truth": {
             "index": args.corpus.join("index.json").display().to_string(),
             "store": store_path.display().to_string(),
-            "provenance_cf": CF_MEJEPA_CORPUS_PROVENANCE,
+            "provenance_cf": CF_MEJEPA_CORPUS_PROVENANCE_JSON,
         },
         "corpus_sha256": provenance.corpus_sha256,
         "entry_count": index.entries.len(),
@@ -1420,8 +1421,8 @@ fn normalize(mut args: NormalizeArgs) -> CliResult<()> {
         write_index(&args.output, &index)?;
     }
 
-    let mutation_cf_count = store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?;
-    let verdict_cf_count = store.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?;
+    let mutation_cf_count = store.count_cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?;
+    let verdict_cf_count = store.count_cf(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?;
     let iterated_corpus_rows = store.iter_corpus_rows()?;
     if mutation_cf_count != index.entries.len()
         || verdict_cf_count != index.entries.len()
@@ -1463,7 +1464,7 @@ fn normalize(mut args: NormalizeArgs) -> CliResult<()> {
             "input_store": source_store_path.display().to_string(),
             "output_index": args.output.join("index.json").display().to_string(),
             "output_store": store_path.display().to_string(),
-            "provenance_cf": CF_MEJEPA_CORPUS_PROVENANCE,
+            "provenance_cf": CF_MEJEPA_CORPUS_PROVENANCE_JSON,
         },
         "source_corpus_sha256": source_index.corpus_sha256,
         "normalized_corpus_sha256": provenance.corpus_sha256,
@@ -1472,7 +1473,7 @@ fn normalize(mut args: NormalizeArgs) -> CliResult<()> {
         "changed_examples": changed_examples,
         "mutation_cf_count": mutation_cf_count,
         "verdict_cf_count": verdict_cf_count,
-        "provenance_cf_count": store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE)?,
+        "provenance_cf_count": store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE_JSON)?,
         "passes": true,
     });
     write_json_checked(&args.output.join("normalize-evidence.json"), &evidence)?;
@@ -1653,8 +1654,8 @@ fn generate_fixtures(mut args: GenerateFixturesArgs) -> CliResult<()> {
     }
 
     let expected_entries = fixtures.len() * MutationCategory::all().len();
-    let mutation_cf_count = store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?;
-    let verdict_cf_count = store.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?;
+    let mutation_cf_count = store.count_cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?;
+    let verdict_cf_count = store.count_cf(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?;
     if index.entries.len() != expected_entries
         || mutation_cf_count != expected_entries
         || verdict_cf_count != expected_entries
@@ -1699,7 +1700,7 @@ fn generate_fixtures(mut args: GenerateFixturesArgs) -> CliResult<()> {
         "entry_count": index.entries.len(),
         "mutation_cf_count": mutation_cf_count,
         "verdict_cf_count": verdict_cf_count,
-        "provenance_cf_count": store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE)?,
+        "provenance_cf_count": store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE_JSON)?,
         "toolchain_report_count": toolchain_rows.len(),
         "corpus_sha256": provenance.corpus_sha256,
         "passes": true,
@@ -1870,16 +1871,16 @@ fn phase_c_verify(mut args: PhaseCVerifyArgs) -> CliResult<()> {
         },
         "python": {
             "entry_count": python_index.entries.len(),
-            "mutation_cf_count": python_store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?,
-            "verdict_cf_count": python_store.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?,
+            "mutation_cf_count": python_store.count_cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?,
+            "verdict_cf_count": python_store.count_cf(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?,
             "verify_passes": python_verify.get("passes").and_then(Value::as_bool),
             "stats": python_stats,
         },
         "non_python": {
             "entry_count": non_python_index.entries.len(),
             "toolchain_report_count": toolchain_report_count,
-            "mutation_cf_count": non_python_store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?,
-            "verdict_cf_count": non_python_store.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?,
+            "mutation_cf_count": non_python_store.count_cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?,
+            "verdict_cf_count": non_python_store.count_cf(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?,
             "verify_passes": non_python_verify.get("passes").and_then(Value::as_bool),
             "stats": non_python_stats,
         },
@@ -3369,9 +3370,9 @@ fn build_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
         "by_language_category": by_language_category,
         "by_bucket": by_bucket,
         "by_oracle": by_oracle,
-        "mutation_cf_count": store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?,
-        "verdict_cf_count": store.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?,
-        "provenance_cf_count": store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE)?,
+        "mutation_cf_count": store.count_cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?,
+        "verdict_cf_count": store.count_cf(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?,
+        "provenance_cf_count": store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE_JSON)?,
         "leakage_check": {
             "failures": leakage_failures,
             "passes": leakage_passes,

@@ -57,7 +57,7 @@ Single RocksDB instance per runtime root. CFs opened deterministically at daemon
 | `CF_MEJEPA_LIVE_PREDICTIONS` | `(session_id, prediction_id)` | JSON `RealityPrediction` row | Primary Q1-Q5 output |
 | `CF_MEJEPA_LIVE_SESSION_TRACES` | `(session_hex32, ts_ns)` | JSON shift trace | End-to-end session trace |
 | `CF_MEJEPA_HIERARCHICAL_PREDICTIONS` | `(prediction_id, level)` | JSON | File/function/AST/chunk hierarchy |
-| `CF_MEJEPA_ORACLE_VERDICTS` | `(task_id, category)` | JSON `OracleVerdict` | Persistent verdict cache |
+| `CF_MEJEPA_ORACLE_VERDICTS` | `(prediction/test binding key)` | bincode `CalibrationExample` | Runtime oracle-binding calibration examples consumed by live prediction/calibration |
 | `CF_MEJEPA_PREDICTION_VERIFICATIONS` | `(prediction_id, verifier_id)` | JSON | PostToolUse + Stop hook capture |
 | `CF_MEJEPA_REALITY_IMPACT` | `prediction_id` | bincode `RealityImpactRecord` | Q5 shift-log replay rows |
 | `CF_MEJEPA_Q5_CALIBRATIONS` | `(calibration_id, language, mutation_category, side_effect_kind)` | bincode `Q5CalibrationRecord` | Q5 replay calibration |
@@ -96,6 +96,13 @@ Single RocksDB instance per runtime root. CFs opened deterministically at daemon
 | `CF_MEJEPA_SIGNAL_DROP_LOG` | `(ts_ns, source)` | JSON | Fail-closed signal-drop events |
 | `CF_MEJEPA_OOD_HARVEST` | `(harvest_run_id, prediction_id)` | JSON | Live-session OOD harvest rows |
 | `CF_MEJEPA_OOD_CALIBRATIONS` | `(generated_at_unix_ms, calibration_id)` | bincode `OodCalibrationReport` | Serving calibrator state |
+
+**Corpus oracle store separation.** The 300×8 corpus generator uses a separate
+corpus RocksDB store with lowercase CFs `mejepa_mutation_corpus`,
+`mejepa_oracle_verdicts`, and `mejepa_corpus_provenance`. Those rows are JSON
+`MutationOutcome` / JSON `OracleVerdict` source rows and are not proof that the
+canonical runtime/gate CFs are complete. Inspectors must report corpus-store
+completeness separately from canonical gate-countable completeness.
 
 ### 2.3 Failure-mode labeling — `FAILURE_MODE_CFS` (shipped #404 / #414)
 

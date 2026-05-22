@@ -1,5 +1,5 @@
 use super::witness_chain::{
-    append_witness_entry_for_run, verify_witness_chain_for_run, WitnessOpType,
+    WitnessOpType, append_witness_entry_for_run, verify_witness_chain_for_run,
 };
 use context_graph_witness::WITNESS_ENTRY_SIZE;
 use std::fs;
@@ -24,6 +24,29 @@ fn witness_path(runtime_root: &Path, run_id: &str) -> PathBuf {
 
 fn content_hash(byte: u8) -> String {
     format!("sha256:{}", hex::encode([byte; 32]))
+}
+
+#[test]
+fn missing_chain_fails_closed() {
+    let (_tmp, runtime_root, run_id) = seed_runtime();
+    let err = verify_witness_chain_for_run(&runtime_root, &run_id).expect_err("must fail");
+    assert_eq!(err.error_code, "CCREALITY_WITNESS_CHAIN_ABSENT");
+}
+
+#[test]
+fn missing_format_manifest_fails_closed() {
+    let (_tmp, runtime_root, run_id) = seed_runtime();
+    append_witness_entry_for_run(
+        &runtime_root,
+        &run_id,
+        WitnessOpType::Decision,
+        &content_hash(1),
+    )
+    .expect("append");
+    let path = witness_path(&runtime_root, &run_id);
+    fs::remove_file(path.with_file_name("witness-chain.format.json")).expect("remove manifest");
+    let err = verify_witness_chain_for_run(&runtime_root, &run_id).expect_err("must fail");
+    assert_eq!(err.error_code, "CCREALITY_WITNESS_FORMAT_MANIFEST_ABSENT");
 }
 
 #[test]

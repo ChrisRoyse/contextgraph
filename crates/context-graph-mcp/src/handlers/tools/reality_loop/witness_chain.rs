@@ -10,10 +10,10 @@ use super::witness_chain_legacy::verify_legacy_chain_bytes_with_type_validator;
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use context_graph_witness::{
-    hex_hash as witness_hex_hash, verify_chain_bytes_with_type_validator, WitnessEntry, HASH_SIZE,
-    WITNESS_ENTRY_SIZE, ZERO_HASH,
+    HASH_SIZE, WITNESS_ENTRY_SIZE, WitnessEntry, ZERO_HASH, hex_hash as witness_hex_hash,
+    verify_chain_bytes_with_type_validator,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -118,7 +118,7 @@ pub(super) fn verify_witness_chain_for_run(runtime_root: &Path, run_id: &str) ->
         "last_op": verification.last_op,
         "format_manifest": read_format_manifest_status(&path)?,
         "source_of_truth": file_sot(&path),
-        "sha256": if path.is_file() { sha256_file(&path)? } else { "absent".to_string() },
+        "sha256": sha256_file(&path)?,
     }))
 }
 
@@ -135,7 +135,7 @@ pub async fn optimizer_witness_chain_verify(args: Value) -> Result<Value> {
         "last_op": verification.last_op,
         "format_manifest": read_format_manifest_status(&path)?,
         "source_of_truth": file_sot(&path),
-        "sha256": if path.is_file() { sha256_file(&path)? } else { "absent".to_string() },
+        "sha256": sha256_file(&path)?,
     }))
 }
 
@@ -189,7 +189,7 @@ fn append_entry_locked(
     op_type: WitnessOpType,
     content_sha256: [u8; HASH_SIZE],
 ) -> Result<Value> {
-    let before = verify_chain(path)?;
+    let before = verify_chain_for_append(path)?;
     let format_manifest = ensure_canonical_format_manifest(path)?;
     let offset = before.entries;
     let entry = WitnessEntry::new(
@@ -268,13 +268,20 @@ fn verify_chain(path: &Path) -> Result<Verification> {
     }
 }
 
-fn verify_chain_canonical(path: &Path) -> Result<Verification> {
+fn verify_chain_for_append(path: &Path) -> Result<Verification> {
     if !path.exists() {
         return Ok(Verification {
             entries: 0,
             last_chain_hash: ZERO_HASH,
             last_op: Value::Null,
         });
+    }
+    verify_chain(path)
+}
+
+fn verify_chain_canonical(path: &Path) -> Result<Verification> {
+    if !path.exists() {
+        return Err(missing_chain_error(path));
     }
     let bytes = read_chain_bytes(path)?;
     if bytes.len() % WITNESS_ENTRY_SIZE != 0 {
@@ -297,6 +304,17 @@ fn verify_chain_canonical(path: &Path) -> Result<Verification> {
         last_chain_hash: verification.last_chain_hash,
         last_op,
     })
+}
+
+fn missing_chain_error(path: &Path) -> CCRealityError {
+    CCRealityError::new(
+        "CCREALITY_WITNESS_CHAIN_ABSENT",
+        "witness-chain.bin is absent; verification requires durable witness evidence",
+        "witness_chain.source_of_truth",
+        "append a witness entry first or use an explicit initialization path that is not counted as verification evidence",
+        json!({"path": path.display().to_string()}),
+        Some(file_sot(path)),
+    )
 }
 
 fn detect_legacy_layout(
@@ -412,10 +430,7 @@ pub(super) fn witness_error(
                 Some(file_sot(path)),
             )
         }
-        context_graph_witness::WitnessError::ChainLengthInvalid {
-            len,
-            entry_size: _,
-        } => {
+        context_graph_witness::WitnessError::ChainLengthInvalid { len, entry_size: _ } => {
             invalid_chain_length(path, len)
         }
         context_graph_witness::WitnessError::PrevHashMismatch {

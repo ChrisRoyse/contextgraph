@@ -20,6 +20,9 @@ pub const CF_MEJEPA_LIVE_PREDICTIONS: &str = "CF_MEJEPA_LIVE_PREDICTIONS";
 pub const CF_MEJEPA_LIVE_SESSION_TRACES: &str = "CF_MEJEPA_LIVE_SESSION_TRACES";
 // TASK-FP-102 — durable file/function/AST/chunk prediction hierarchy rows.
 pub const CF_MEJEPA_HIERARCHICAL_PREDICTIONS: &str = "CF_MEJEPA_HIERARCHICAL_PREDICTIONS";
+// Historical name: live runtime code stores bincode CalibrationExample
+// oracle-binding rows here. Corpus-generation JSON OracleVerdict rows live
+// in the separate lowercase corpus store CF `mejepa_oracle_verdicts`.
 pub const CF_MEJEPA_ORACLE_VERDICTS: &str = "CF_MEJEPA_ORACLE_VERDICTS";
 // TASK-PY-G-069 — observed test outcomes bound back to live predictions.
 pub const CF_MEJEPA_PREDICTION_VERIFICATIONS: &str = "CF_MEJEPA_PREDICTION_VERIFICATIONS";
@@ -48,6 +51,8 @@ pub const CF_MEJEPA_OPERATOR_PATHWAY_CHOICES: &str = "CF_MEJEPA_OPERATOR_PATHWAY
 // TASK-PY-G-116 — SWE-bench Docker outcome ontology and test-phase vectors.
 pub const CF_MEJEPA_DOCKER_OUTCOME_LABELS: &str = "CF_MEJEPA_DOCKER_OUTCOME_LABELS";
 
+// Canonical runtime/hygiene mutation-corpus CF. The corpus-generation crate
+// also has a distinct lowercase JSON source CF `mejepa_mutation_corpus`.
 pub const CF_MEJEPA_MUTATION_CORPUS: &str = "CF_MEJEPA_MUTATION_CORPUS";
 pub const CF_MEJEPA_LIVE_ATTEMPT_CORPUS: &str = "CF_MEJEPA_LIVE_ATTEMPT_CORPUS";
 pub const CF_MEJEPA_PANEL_META: &str = "CF_MEJEPA_PANEL_META";

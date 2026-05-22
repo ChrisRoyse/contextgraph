@@ -1261,10 +1261,8 @@ fn canonicalize_existing_dir(path: &Path) -> Result<PathBuf, std::io::Error> {
 }
 
 fn require_project_cache_root(path: &Path) -> Result<PathBuf, ProjectCacheError> {
-    let normalized = context_graph_paths::require_production_durable_root(
-        path,
-        "project_cache.cache_dir",
-    )?;
+    let normalized =
+        context_graph_paths::require_production_durable_root(path, "project_cache.cache_dir")?;
     let production_projects =
         Path::new(context_graph_paths::AIWONDER_DURABLE_ROOT).join("projects");
     if normalized.starts_with(&production_projects) {

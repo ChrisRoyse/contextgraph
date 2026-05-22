@@ -12,11 +12,49 @@ ARTIFACT="$FSV_ROOT/no_inner_actor_models_fsv.json"
 HAPPY_JSON="$RUN_ROOT/happy_scan.json"
 SYNTHETIC_JSON="$RUN_ROOT/synthetic_scan.json"
 SYNTHETIC_ROOT="$RUN_ROOT/synthetic_retired_paths"
+UNWRITABLE_OUTPUT_PATH="$RUN_ROOT/unwritable-output-path"
 
 mkdir -p "$RUN_ROOT"
 cd "$REPO_ROOT"
 
 build_release_sha="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+
+write_json_checked() {
+  local output_path="$1"
+  local payload="$2"
+  local tmp_path="${output_path}.tmp.$$"
+  local expected_canonical readback_canonical
+
+  if [[ -d "$output_path" ]]; then
+    echo "PHASE_H_NO_INNER_ACTOR_OUTPUT_PATH_IS_DIRECTORY: $output_path" >&2
+    return 1
+  fi
+  expected_canonical="$(jq -S . <<<"$payload")"
+  if ! printf '%s\n' "$payload" >"$tmp_path"; then
+    echo "PHASE_H_NO_INNER_ACTOR_WRITE_FAILED: $tmp_path" >&2
+    rm -f "$tmp_path"
+    return 1
+  fi
+  if ! readback_canonical="$(jq -S . "$tmp_path")"; then
+    echo "PHASE_H_NO_INNER_ACTOR_READBACK_PARSE_FAILED: $tmp_path" >&2
+    rm -f "$tmp_path"
+    return 1
+  fi
+  if [[ "$readback_canonical" != "$expected_canonical" ]]; then
+    echo "PHASE_H_NO_INNER_ACTOR_READBACK_MISMATCH: $tmp_path" >&2
+    rm -f "$tmp_path"
+    return 1
+  fi
+  mv "$tmp_path" "$output_path"
+  if ! readback_canonical="$(jq -S . "$output_path")"; then
+    echo "PHASE_H_NO_INNER_ACTOR_FINAL_READBACK_PARSE_FAILED: $output_path" >&2
+    return 1
+  fi
+  if [[ "$readback_canonical" != "$expected_canonical" ]]; then
+    echo "PHASE_H_NO_INNER_ACTOR_FINAL_READBACK_MISMATCH: $output_path" >&2
+    return 1
+  fi
+}
 
 DEFAULT_MODEL_ROOT="${INNER_ACTOR_MODEL_ROOT:-/zfs/hot/contextgraph/models}"
 HAPPY_MODEL_ROOT="$DEFAULT_MODEL_ROOT"
@@ -51,6 +89,18 @@ synthetic_detected_hermes="$(jq --arg p "$SYNTHETIC_ROOT/models/Hermes-2-Pro-Mis
 synthetic_detected_ollama="$(jq --arg p "$SYNTHETIC_ROOT/.ollama" 'any(.matches[]; .path == $p and .rule_id == "ollama_directory")' "$SYNTHETIC_JSON")"
 synthetic_detected_llama="$(jq --arg p "$SYNTHETIC_ROOT/vendor/llama.cpp/llama-server" 'any(.matches[]; .path == $p and .rule_id == "llama_cpp_binary_or_vendor")' "$SYNTHETIC_JSON")"
 
+mkdir -p "$UNWRITABLE_OUTPUT_PATH"
+set +e
+INNER_ACTOR_MODEL_ROOT="$HAPPY_MODEL_ROOT" OUTPUT_JSON="$UNWRITABLE_OUTPUT_PATH" \
+  scripts/audit/no_inner_actor_models.sh >"$RUN_ROOT/unwritable_output.stdout" 2>"$RUN_ROOT/unwritable_output.stderr"
+unwritable_status=$?
+set -e
+unwritable_failed_closed=false
+if [[ "$unwritable_status" != "0" ]] \
+  && rg -q "NO_INNER_ACTOR_MODELS_OUTPUT_PATH_IS_DIRECTORY|NO_INNER_ACTOR_MODELS_WRITE_FAILED|Is a directory|Permission denied" "$RUN_ROOT/unwritable_output.stderr"; then
+  unwritable_failed_closed=true
+fi
+
 all_passed=false
 if [[ "$happy_status" == "0" \
   && "$happy_match_count" == "0" \
@@ -60,11 +110,13 @@ if [[ "$happy_status" == "0" \
   && "$synthetic_detected_qwen" == "true" \
   && "$synthetic_detected_hermes" == "true" \
   && "$synthetic_detected_ollama" == "true" \
-  && "$synthetic_detected_llama" == "true" ]]; then
+  && "$synthetic_detected_llama" == "true" \
+  && "$unwritable_failed_closed" == "true" ]]; then
   all_passed=true
 fi
 
-jq -n \
+artifact_readback_status=true
+artifact_payload="$(jq -n \
   --arg task_id "TASK-LOOP-005" \
   --arg build_release_sha "$build_release_sha" \
   --arg fsv_root "$FSV_ROOT" \
@@ -75,6 +127,7 @@ jq -n \
   --arg happy_json "$HAPPY_JSON" \
   --arg synthetic_json "$SYNTHETIC_JSON" \
   --arg synthetic_root "$SYNTHETIC_ROOT" \
+  --arg unwritable_output_path "$UNWRITABLE_OUTPUT_PATH" \
   --argjson happy_status "$happy_status" \
   --argjson happy_match_count "$happy_match_count" \
   --argjson happy_missing_root_count "$happy_missing_root_count" \
@@ -84,7 +137,10 @@ jq -n \
   --argjson synthetic_detected_hermes "$synthetic_detected_hermes" \
   --argjson synthetic_detected_ollama "$synthetic_detected_ollama" \
   --argjson synthetic_detected_llama "$synthetic_detected_llama" \
+  --argjson unwritable_status "$unwritable_status" \
+  --argjson unwritable_failed_closed "$unwritable_failed_closed" \
   --argjson all_passed "$all_passed" \
+  --argjson readback_status "$artifact_readback_status" \
   '{
     task_id: $task_id,
     build_release_sha: $build_release_sha,
@@ -96,7 +152,8 @@ jq -n \
       happy_model_root_mode: $happy_model_root_mode,
       happy_scan_json: $happy_json,
       synthetic_scan_json: $synthetic_json,
-      synthetic_root: $synthetic_root
+      synthetic_root: $synthetic_root,
+      unwritable_output_path: $unwritable_output_path
     },
     happy_path: [
       {
@@ -147,22 +204,39 @@ jq -n \
           llama_cpp_detected: $synthetic_detected_llama
         },
         pass: ($synthetic_status != 0 and $synthetic_detected_ollama and $synthetic_detected_llama)
+      },
+      {
+        case: "artifact_readback_write_failure_fails_closed",
+        trigger: "OUTPUT_JSON=<directory> scripts/audit/no_inner_actor_models.sh",
+        expected: "non-zero exit and write/readback failure surfaced",
+        actual: {
+          exit_status: $unwritable_status,
+          output_path: $unwritable_output_path,
+          failed_closed: $unwritable_failed_closed
+        },
+        pass: ($unwritable_status != 0 and $unwritable_failed_closed)
       }
     ],
     physical_artifacts: {
       happy_scan_stdout: ($run_root + "/happy_scan.stdout"),
       happy_scan_stderr: ($run_root + "/happy_scan.stderr"),
       synthetic_scan_stdout: ($run_root + "/synthetic_scan.stdout"),
-      synthetic_scan_stderr: ($run_root + "/synthetic_scan.stderr")
+      synthetic_scan_stderr: ($run_root + "/synthetic_scan.stderr"),
+      unwritable_output_stdout: ($run_root + "/unwritable_output.stdout"),
+      unwritable_output_stderr: ($run_root + "/unwritable_output.stderr")
     },
     all_passed: $all_passed,
-    readback_equal: true
-  }' >"$ARTIFACT.tmp"
-mv "$ARTIFACT.tmp" "$ARTIFACT"
+    readback_equal: $readback_status
+  }')"
+write_json_checked "$ARTIFACT" "$artifact_payload"
 
 artifact_sha256="$(sha256sum "$ARTIFACT" | awk '{print $1}')"
-jq -n --arg artifact_path "$ARTIFACT" --arg artifact_sha256 "$artifact_sha256" --argjson all_passed "$all_passed" \
-  '{artifact_path: $artifact_path, artifact_sha256: $artifact_sha256, all_passed: $all_passed, readback_equal: true}'
+final_readback_status=false
+if [[ "$(jq -S . "$ARTIFACT")" == "$(jq -S . <<<"$artifact_payload")" ]]; then
+  final_readback_status=true
+fi
+jq -n --arg artifact_path "$ARTIFACT" --arg artifact_sha256 "$artifact_sha256" --argjson all_passed "$all_passed" --argjson readback_equal "$final_readback_status" \
+  '{artifact_path: $artifact_path, artifact_sha256: $artifact_sha256, all_passed: $all_passed, readback_equal: $readback_equal}'
 
 if [[ "$all_passed" != "true" ]]; then
   echo "TASK_LOOP_005_FSV_FAILED: $ARTIFACT" >&2

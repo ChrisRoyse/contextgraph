@@ -17,7 +17,7 @@
 // `resolved=true`, `patch_successfully_applied=true`, every FAIL_TO_PASS
 // test in `success`, and zero P2P failures. The OracleVerdict produced
 // from that report has all-Pass per_test rows and `exception=None`.
-// The verdict is persisted to RocksDB CF_MEJEPA_ORACLE_VERDICTS and read
+// The verdict is persisted to RocksDB CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON and read
 // back; the evidence JSON records every relevant before/after value.
 //
 // Skip behaviour: this FSV is gated on three external preconditions
@@ -30,7 +30,8 @@
 // claims to satisfy the preconditions but does not.
 
 use context_graph_mejepa_corpus::oracle::{
-    OracleStore, CF_MEJEPA_CORPUS_PROVENANCE, CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
+    OracleStore, CF_MEJEPA_CORPUS_MUTATION_OUTCOMES, CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON,
+    CF_MEJEPA_CORPUS_PROVENANCE_JSON,
 };
 use context_graph_mejepa_corpus::swebench::{
     parse_swebench_instance_report, run_swebench_lite_oracle, swebench_report_to_verdict,
@@ -292,19 +293,19 @@ fn run_gold() -> FsvResult<Value> {
     drop(store);
 
     let store2 = OracleStore::open(&store_root)?;
-    let mutation_count = store2.count_cf(CF_MEJEPA_MUTATION_CORPUS)?;
-    let verdict_count = store2.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?;
-    let provenance_count = store2.count_cf(CF_MEJEPA_CORPUS_PROVENANCE)?;
+    let mutation_count = store2.count_cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?;
+    let verdict_count = store2.count_cf(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?;
+    let provenance_count = store2.count_cf(CF_MEJEPA_CORPUS_PROVENANCE_JSON)?;
     ensure(
-        "OracleStore CF_MEJEPA_ORACLE_VERDICTS count == 1",
+        "OracleStore CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON count == 1",
         verdict_count == 1,
     )?;
     ensure(
-        "OracleStore CF_MEJEPA_MUTATION_CORPUS count == 1",
+        "OracleStore CF_MEJEPA_CORPUS_MUTATION_OUTCOMES count == 1",
         mutation_count == 1,
     )?;
     ensure(
-        "OracleStore CF_MEJEPA_CORPUS_PROVENANCE count == 1",
+        "OracleStore CF_MEJEPA_CORPUS_PROVENANCE_JSON count == 1",
         provenance_count == 1,
     )?;
     let read_back: Option<OracleVerdict> =
@@ -361,9 +362,9 @@ fn run_gold() -> FsvResult<Value> {
         },
         "rocksdb_store_path": store_root,
         "rocksdb_counts": {
-            CF_MEJEPA_MUTATION_CORPUS: mutation_count,
-            CF_MEJEPA_ORACLE_VERDICTS: verdict_count,
-            CF_MEJEPA_CORPUS_PROVENANCE: provenance_count,
+            CF_MEJEPA_CORPUS_MUTATION_OUTCOMES: mutation_count,
+            CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON: verdict_count,
+            CF_MEJEPA_CORPUS_PROVENANCE_JSON: provenance_count,
         },
         "provenance": provenance_readback,
         "rocksdb_round_trip_verdict_matches": true,

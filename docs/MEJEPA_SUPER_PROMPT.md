@@ -3801,8 +3801,8 @@ CF_MEJEPA_PANELS                  # (attempt_id, time_step) -> tier-compressed p
 CF_MEJEPA_PANEL_META              # tier, access_count_30d, created_at, last_accessed
 CF_MEJEPA_WEIGHT_BLOBS            # theta_sha -> weight blob (deduplicated)
 CF_MEJEPA_TRAIN_CERTS             # step -> training cert header (Merkle root)
-CF_MEJEPA_ORACLE_VERDICTS         # (task_id, mutation_category) -> OracleVerdict
-CF_MEJEPA_MUTATION_CORPUS         # (task_id, mutation_category) -> mutated_source
+CF_MEJEPA_ORACLE_VERDICTS         # runtime oracle-binding CalibrationExample rows
+CF_MEJEPA_MUTATION_CORPUS         # canonical runtime/hygiene mutation corpus rows
 CF_MEJEPA_LIVE_PREDICTIONS        # session_id -> latest live verify() outputs
 CF_MEJEPA_SHIFT_WATERMARK         # last shift_id consumed by subscriber
 CF_MEJEPA_DDA_SIGNALS             # (panel_id, chunk_id) -> DDA features        [Phase A]
@@ -3879,9 +3879,10 @@ sourcing reward signals from every durable reality channel.
    chain + cargo check + git diff → `cgreality-shift-log/<sid>.jsonl`.
 2. **Test outcomes.** Bash post-hook parses pytest / cargo-test /
    jest output → `runtime/test-outcomes/<sid>.jsonl` → oracle binding
-   writes to `CF_MEJEPA_ORACLE_VERDICTS`.
+   writes runtime oracle-binding examples to `CF_MEJEPA_ORACLE_VERDICTS`.
 3. **Docker oracle.** SWE-bench Lite evaluator per-instance reports
-   → `OracleVerdict` per `swebench/harness/grading.py` semantics.
+   → JSON `OracleVerdict` rows in the separate corpus RocksDB CF
+   `mejepa_oracle_verdicts`.
 4. **Static analysis.** ruff / clippy / eslint / cargo-audit deltas
    → analyzer facts in `E_StaticAnalysis`.
 5. **Runtime / resource deltas.** cpu / mem / io deltas →
@@ -4490,5 +4491,4 @@ override default agent behavior. When this conflicts with anything
 else, the more specific rule wins; where it conflicts with
 `CLAUDE.md`, CLAUDE.md wins (this file mirrors CLAUDE.md and adds
 operational detail — it does not replace it).
-
 

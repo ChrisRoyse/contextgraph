@@ -2,7 +2,8 @@
 
 use context_graph_mejepa_corpus::oracle::{
     parse_pytest_json_report, run_docker_json_oracle, DockerMount, DockerOracleConfig, OracleStore,
-    CF_MEJEPA_CORPUS_PROVENANCE, CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
+    CF_MEJEPA_CORPUS_MUTATION_OUTCOMES, CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON,
+    CF_MEJEPA_CORPUS_PROVENANCE_JSON,
 };
 use context_graph_mejepa_corpus::{
     apply_mutation, compute_corpus_sha256, CorpusProvenance, CorpusProvenanceRow, Language,
@@ -86,16 +87,16 @@ fn main() -> FsvResult<()> {
     )?;
     require("provenance readback", provenance_readback == provenance)?;
     let after_counts = cf_counts(&store)?;
-    let mutation_rows = store.scan_cf_json(CF_MEJEPA_MUTATION_CORPUS)?;
-    let verdict_rows = store.scan_cf_json(CF_MEJEPA_ORACLE_VERDICTS)?;
-    let provenance_rows = store.scan_cf_json(CF_MEJEPA_CORPUS_PROVENANCE)?;
+    let mutation_rows = store.scan_cf_json(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?;
+    let verdict_rows = store.scan_cf_json(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?;
+    let provenance_rows = store.scan_cf_json(CF_MEJEPA_CORPUS_PROVENANCE_JSON)?;
 
     let evidence = json!({
         "source_of_truth": {
             "rocksdb_path": db_path.display().to_string(),
-            "mutation_cf": CF_MEJEPA_MUTATION_CORPUS,
-            "verdict_cf": CF_MEJEPA_ORACLE_VERDICTS,
-            "provenance_cf": CF_MEJEPA_CORPUS_PROVENANCE,
+            "mutation_cf": CF_MEJEPA_CORPUS_MUTATION_OUTCOMES,
+            "verdict_cf": CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON,
+            "provenance_cf": CF_MEJEPA_CORPUS_PROVENANCE_JSON,
         },
         "happy_path": {
             "before_state": before_counts,
@@ -202,9 +203,9 @@ fn edge_docker_missing_command(root: &std::path::Path) -> Value {
 fn cf_counts(store: &OracleStore) -> FsvResult<Value> {
     let mut out = serde_json::Map::new();
     for cf_name in [
-        CF_MEJEPA_MUTATION_CORPUS,
-        CF_MEJEPA_ORACLE_VERDICTS,
-        CF_MEJEPA_CORPUS_PROVENANCE,
+        CF_MEJEPA_CORPUS_MUTATION_OUTCOMES,
+        CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON,
+        CF_MEJEPA_CORPUS_PROVENANCE_JSON,
     ] {
         let count = store.count_cf(cf_name)?;
         out.insert(cf_name.to_string(), json!(count));

@@ -6,17 +6,17 @@ const LOWER_MUTATION_CF: &str = "mejepa_mutation_corpus";
 const LOWER_VERDICT_CF: &str = "mejepa_oracle_verdicts";
 const LOWER_PROVENANCE_CF: &str = "mejepa_corpus_provenance";
 
-const SHARED_MUTATION_CF: &str = "CF_MEJEPA_MUTATION_CORPUS";
-const SHARED_VERDICT_CF: &str = "CF_MEJEPA_ORACLE_VERDICTS";
-const SHARED_PROVENANCE_CF: &str = "CF_MEJEPA_CORPUS_PROVENANCE";
+const CANONICAL_MUTATION_CF: &str = "CF_MEJEPA_MUTATION_CORPUS";
+const CANONICAL_VERDICT_CF: &str = "CF_MEJEPA_ORACLE_VERDICTS";
+const CANONICAL_PROVENANCE_CF: &str = "CF_MEJEPA_CORPUS_PROVENANCE";
 
 const TARGET_CFS: &[&str] = &[
     LOWER_MUTATION_CF,
     LOWER_VERDICT_CF,
     LOWER_PROVENANCE_CF,
-    SHARED_MUTATION_CF,
-    SHARED_VERDICT_CF,
-    SHARED_PROVENANCE_CF,
+    CANONICAL_MUTATION_CF,
+    CANONICAL_VERDICT_CF,
+    CANONICAL_PROVENANCE_CF,
 ];
 
 type InspectResult<T> = Result<T, Box<dyn std::error::Error>>;
@@ -47,12 +47,13 @@ fn main() -> InspectResult<()> {
     let lower_mutation_count = count_cf(&db, LOWER_MUTATION_CF)?;
     let lower_verdict_count = count_cf(&db, LOWER_VERDICT_CF)?;
     let lower_provenance_count = count_cf(&db, LOWER_PROVENANCE_CF)?;
-    let shared_mutation_count = count_cf(&db, SHARED_MUTATION_CF)?;
-    let shared_verdict_count = count_cf(&db, SHARED_VERDICT_CF)?;
-    let shared_provenance_count = count_cf(&db, SHARED_PROVENANCE_CF)?;
+    let canonical_mutation_count = count_cf(&db, CANONICAL_MUTATION_CF)?;
+    let canonical_verdict_count = count_cf(&db, CANONICAL_VERDICT_CF)?;
+    let canonical_provenance_count = count_cf(&db, CANONICAL_PROVENANCE_CF)?;
 
     let lower_complete = lower_mutation_count == Some(2400) && lower_verdict_count == Some(2400);
-    let shared_complete = shared_mutation_count == Some(2400) && shared_verdict_count == Some(2400);
+    let canonical_complete =
+        canonical_mutation_count == Some(2400) && canonical_verdict_count == Some(2400);
 
     println!(
         "{}",
@@ -65,7 +66,7 @@ fn main() -> InspectResult<()> {
             },
             "target_column_families": target_scans,
             "complete_sets": {
-                "lowercase_oracle_store": {
+                "corpus_oracle_store_json": {
                     "mutation_cf": LOWER_MUTATION_CF,
                     "mutation_cf_count": lower_mutation_count,
                     "verdict_cf": LOWER_VERDICT_CF,
@@ -73,18 +74,25 @@ fn main() -> InspectResult<()> {
                     "provenance_cf": LOWER_PROVENANCE_CF,
                     "provenance_cf_count": lower_provenance_count,
                     "is_2400_complete": lower_complete,
+                    "gate_countable": false,
+                    "payload_contract": "JSON MutationOutcome + JSON OracleVerdict corpus rows only",
                 },
-                "shared_contextgraph_store": {
-                    "mutation_cf": SHARED_MUTATION_CF,
-                    "mutation_cf_count": shared_mutation_count,
-                    "verdict_cf": SHARED_VERDICT_CF,
-                    "verdict_cf_count": shared_verdict_count,
-                    "provenance_cf": SHARED_PROVENANCE_CF,
-                    "provenance_cf_count": shared_provenance_count,
-                    "is_2400_complete": shared_complete,
+                "canonical_contextgraph_store": {
+                    "mutation_cf": CANONICAL_MUTATION_CF,
+                    "mutation_cf_count": canonical_mutation_count,
+                    "verdict_cf": CANONICAL_VERDICT_CF,
+                    "verdict_cf_count": canonical_verdict_count,
+                    "provenance_cf": CANONICAL_PROVENANCE_CF,
+                    "provenance_cf_count": canonical_provenance_count,
+                    "is_2400_complete": canonical_complete,
+                    "gate_countable": true,
                 },
             },
-            "is_2400_complete": lower_complete || shared_complete,
+            "corpus_oracle_store_complete": lower_complete,
+            "canonical_contextgraph_store_complete": canonical_complete,
+            "lowercase_only_is_not_gate_complete": lower_complete && !canonical_complete,
+            "is_2400_complete": canonical_complete,
+            "gate_contract_note": "lowercase corpus oracle CFs are read-only corpus source rows; they do not prove canonical runtime/gate CF completeness",
         }))?
     );
     Ok(())

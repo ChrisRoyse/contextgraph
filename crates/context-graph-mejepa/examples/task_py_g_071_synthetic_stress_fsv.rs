@@ -45,7 +45,7 @@ fn main() -> Result<()> {
     let malformed = malformed_expectation_edge(&run_dir)?;
     let empty = empty_corpus_edge(&run_dir)?;
     let replay = replay_edge(&corpus_root, &results_db_path)?;
-    let all_passed = happy.ship_gate_passed
+    let all_passed = happy.synthetic_stress_passed
         && happy.cases_total == SYNTHETIC_STRESS_CASES
         && happy.cases_passed == SYNTHETIC_STRESS_CASES
         && result_readback["allRowsReadBack"] == true
@@ -70,7 +70,10 @@ fn main() -> Result<()> {
             "casesTotal": happy.cases_total,
             "casesPassed": happy.cases_passed,
             "syntheticStressCorrectness": happy.synthetic_stress_correctness,
-            "shipGatePassed": happy.ship_gate_passed,
+            "syntheticStressPassed": happy.synthetic_stress_passed,
+            "shipGateCountable": happy.ship_gate_countable,
+            "gatePredicate": happy.gate_predicate,
+            "source": happy.source,
             "caseCountsByKind": happy.case_counts_by_kind,
             "resultRowsBefore": happy.result_rows_before,
             "resultRowsAfter": happy.result_rows_after,
@@ -195,7 +198,7 @@ fn replay_edge(corpus_root: &Path, results_db_path: &Path) -> Result<Value> {
     });
     Ok(json!({
         "case": "duplicate_replay_overwrites_result_rows_without_growth",
-        "pass": before["resultRows"] == 30 && after["resultRows"] == 30 && replay.ship_gate_passed,
+        "pass": before["resultRows"] == 30 && after["resultRows"] == 30 && replay.synthetic_stress_passed,
         "before": before,
         "after": after,
     }))

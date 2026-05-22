@@ -31,6 +31,43 @@ record_match() {
     "$root_label" "$rule_id" "$rule_description" "$path_kind" "$path" >>"$MATCHES_TSV"
 }
 
+write_json_checked() {
+  local output_path="$1"
+  local payload="$2"
+  local tmp_path="${output_path}.tmp.$$"
+  local expected_canonical readback_canonical
+
+  if [[ -d "$output_path" ]]; then
+    echo "NO_INNER_ACTOR_MODELS_OUTPUT_PATH_IS_DIRECTORY: $output_path" >&2
+    return 1
+  fi
+  expected_canonical="$(jq -S . <<<"$payload")"
+  if ! printf '%s\n' "$payload" >"$tmp_path"; then
+    echo "NO_INNER_ACTOR_MODELS_WRITE_FAILED: $tmp_path" >&2
+    rm -f "$tmp_path"
+    return 1
+  fi
+  if ! readback_canonical="$(jq -S . "$tmp_path")"; then
+    echo "NO_INNER_ACTOR_MODELS_READBACK_PARSE_FAILED: $tmp_path" >&2
+    rm -f "$tmp_path"
+    return 1
+  fi
+  if [[ "$readback_canonical" != "$expected_canonical" ]]; then
+    echo "NO_INNER_ACTOR_MODELS_READBACK_MISMATCH: $tmp_path" >&2
+    rm -f "$tmp_path"
+    return 1
+  fi
+  mv "$tmp_path" "$output_path"
+  if ! readback_canonical="$(jq -S . "$output_path")"; then
+    echo "NO_INNER_ACTOR_MODELS_FINAL_READBACK_PARSE_FAILED: $output_path" >&2
+    return 1
+  fi
+  if [[ "$readback_canonical" != "$expected_canonical" ]]; then
+    echo "NO_INNER_ACTOR_MODELS_FINAL_READBACK_MISMATCH: $output_path" >&2
+    return 1
+  fi
+}
+
 scan_path() {
   local root_label="$1"
   local path="$2"
@@ -135,7 +172,8 @@ if [[ "$match_count" == "0" && "$missing_root_count" == "0" ]]; then
 fi
 
 artifact_tmp="$TMP_DIR/no_inner_actor_models.json"
-jq -n \
+artifact_readback_status=true
+artifact_payload="$(jq -n \
   --arg task_id "TASK-LOOP-005" \
   --arg scanned_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg build_release_sha "$build_release_sha" \
@@ -144,6 +182,7 @@ jq -n \
   --argjson match_count "$match_count" \
   --argjson missing_root_count "$missing_root_count" \
   --argjson all_passed "$all_passed" \
+  --argjson readback_status "$artifact_readback_status" \
   '{
     task_id: $task_id,
     scanned_at: $scanned_at,
@@ -165,12 +204,13 @@ jq -n \
     match_count: $match_count,
     matches: $matches,
     all_passed: $all_passed,
-    readback_equal: true
-  }' >"$artifact_tmp"
+    readback_equal: $readback_status
+  }')"
+write_json_checked "$artifact_tmp" "$artifact_payload"
 
 if [[ -n "$OUTPUT_JSON" ]]; then
   mkdir -p "$(dirname "$OUTPUT_JSON")"
-  cp "$artifact_tmp" "$OUTPUT_JSON"
+  write_json_checked "$OUTPUT_JSON" "$artifact_payload"
 fi
 
 cat "$artifact_tmp"
