@@ -84,6 +84,10 @@ from .python_pair_feature_audit import add_arguments as add_python_pair_feature_
 from .python_pair_feature_audit import command_python_pair_feature_audit
 from .python_pair_feature_gate_probe import add_arguments as add_python_pair_feature_gate_probe_arguments
 from .python_pair_feature_gate_probe import command_python_pair_feature_gate_probe
+from .python_foundationality_pressure_probe import (
+    add_arguments as add_python_foundationality_pressure_probe_arguments,
+)
+from .python_foundationality_pressure_probe import command_python_foundationality_pressure_probe
 from .python_anti_compensation_fsv import add_arguments as add_python_anti_compensation_fsv_arguments
 from .python_anti_compensation_fsv import command_python_anti_compensation_fsv
 from .python_auto_label_discovery import add_arguments as add_python_auto_label_discovery_arguments
@@ -623,6 +627,16 @@ def build_parser() -> argparse.ArgumentParser:
     pair_feature_gate_probe.set_defaults(
         func=command_python_pair_feature_gate_probe,
         evidence_name="python-pair-feature-gate-probe-command-evidence.json",
+    )
+
+    foundationality_pressure_probe = sub.add_parser(
+        "python-foundationality-pressure-probe",
+        help="TASK-PY-G-125: calibration-only probe for foundationality scalar pressure against #392 rows.",
+    )
+    add_python_foundationality_pressure_probe_arguments(foundationality_pressure_probe)
+    foundationality_pressure_probe.set_defaults(
+        func=command_python_foundationality_pressure_probe,
+        evidence_name="python-foundationality-pressure-probe-command-evidence.json",
     )
 
     anti_compensation = sub.add_parser(
