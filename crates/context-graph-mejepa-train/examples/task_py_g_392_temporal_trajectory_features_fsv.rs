@@ -75,6 +75,8 @@ const SCORE_TRACE_FIELDS: [&str; 6] = [
     "holdout_rank_safe_predictions",
     "holdout_predictions",
 ];
+const NAMED_PAIR_EVIDENCE_TOP_PAIR_COUNT: usize = 8;
+const NAMED_PAIR_CAUSE_FEATURES_PER_PAIR: usize = 5;
 const TARGET_LABEL_PREFIXES: [&str; 5] = [
     "oracle:",
     "docker:",
@@ -212,6 +214,7 @@ fn run() -> Result<()> {
         &context_skill_feature_table,
         &usefulness_feature_table,
     );
+    let named_pair_evidence_audit = named_pair_evidence_audit(feature_table);
     let train_counts = train_counts_by_category(&feature_table.rows);
     let class_support = class_support_by_category(&feature_table.rows);
 
@@ -440,6 +443,7 @@ fn run() -> Result<()> {
         && (promotable_candidate_found || typed_blocker.accepted)
         && score_fusion.edge_cases.all_passed
         && skill_policy_ablation.all_passed
+        && named_pair_evidence_audit.all_passed
         && edge_cases.all_passed
         && !active_paths_include_mntd();
     let report = json!({
@@ -466,6 +470,10 @@ fn run() -> Result<()> {
             "hierarchy_db_path": hierarchy_db_path(),
             "hierarchy_report_path": hierarchy_report_path(),
             "feature_policy": "ordered base -> candidate -> test_patch trajectory features over slot-preserving code-state, file-path, and selected skill/ability policy; per-slot deltas, named scalar cross-slot relationships, file movement, live label transitions, and usefulness-weighted membership transitions; target-side oracle/docker/test/leakage labels excluded; train split standardization only",
+            "named_pair_policy": "all active slot pairs are derived from slot-preserving scalar constellations; top named pair transitions enter the consequence evidence ladder, and fixed per-pair max-delta/shift/state/driver scalars enter the cause-residual repair path without flattening embedder identity",
+            "named_pair_evidence_top_pair_count": NAMED_PAIR_EVIDENCE_TOP_PAIR_COUNT,
+            "named_pair_cause_features_per_pair": NAMED_PAIR_CAUSE_FEATURES_PER_PAIR,
+            "active_slot_pair_count": active_slot_pair_count(),
             "active_skill_policy": skill_policy_ablation.selected_policy.clone(),
             "feature_dim": feature_table.feature_dim,
             "baseline_feature_dim_code_state_only": base_feature_table.feature_dim,
@@ -500,6 +508,7 @@ fn run() -> Result<()> {
         "legal_best_candidate": legal_best_candidate,
         "legal_best_row_reproduction": legal_best_row_reproduction,
         "legal_best_row_audit": legal_best_row_audit,
+        "named_pair_evidence_audit": named_pair_evidence_audit,
         "legal_best_holdout_row_diagnostics": legal_best_holdout_row_diagnostics,
         "legal_best_ece_breakdown": legal_best_ece_breakdown,
         "legal_best_ece_breakdown_audit": legal_best_ece_breakdown_audit,
@@ -553,6 +562,10 @@ fn run() -> Result<()> {
         report_readback["bin_consequence_candidate_audit"]["all_passed"].as_bool() == Some(true),
         "bin-consequence candidate audit failed closed"
     );
+    ensure!(
+        report_readback["named_pair_evidence_audit"]["all_passed"].as_bool() == Some(true),
+        "named-pair evidence audit failed closed"
+    );
     let worst_ece_bins = report_readback["legal_best_ece_breakdown"]["worst_bins"]
         .as_array()
         .ok_or_else(|| anyhow!("legal best ECE worst_bins missing or not an array"))?;
@@ -602,6 +615,7 @@ fn run() -> Result<()> {
         "readback_legal_best_ece_from_bins": report_readback["legal_best_ece_breakdown"]["ece_from_bins"],
         "readback_legal_best_ece_non_empty_bin_count": report_readback["legal_best_ece_breakdown"]["non_empty_bin_count"],
         "readback_legal_best_ece_breakdown_audit": report_readback["legal_best_ece_breakdown_audit"],
+        "readback_named_pair_evidence_audit": report_readback["named_pair_evidence_audit"],
         "readback_legal_best_worst_ece_bin": worst_ece_bin,
         "readback_legal_best_holdout_row_diagnostic_count": row_diagnostics.len(),
         "readback_score_sharpness_abstain_calibration_row_diagnostic_count": abstain_calibration_rows.len(),
@@ -741,6 +755,19 @@ struct FeatureTable {
     feature_dim: usize,
     train_indices_by_category: BTreeMap<String, Vec<usize>>,
     skill_coverage: Option<SkillCoverageReport>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct NamedPairEvidenceAudit {
+    all_passed: bool,
+    row_count: usize,
+    rows_with_named_pair_evidence: usize,
+    total_named_pair_evidence_keys: usize,
+    min_named_pair_evidence_keys_per_row: usize,
+    max_named_pair_evidence_keys_per_row: usize,
+    named_pair_cause_feature_count: usize,
+    active_slot_pair_count: usize,
+    sample_keys: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1655,6 +1682,8 @@ struct LegalBestRowDiagnostic {
     score_sharpness_score: f32,
     evidence_key_count: usize,
     evidence_key_sample: Vec<String>,
+    named_pair_evidence_key_count: usize,
+    named_pair_evidence_key_sample: Vec<String>,
     cause_feature_nonzero_count: usize,
     cause_feature_large_magnitude_count: usize,
 }
@@ -1678,6 +1707,8 @@ struct ScoreSharpnessAbstainRowDiagnostic {
     cause_bin_score: f32,
     evidence_key_count: usize,
     evidence_key_sample: Vec<String>,
+    named_pair_evidence_key_count: usize,
+    named_pair_evidence_key_sample: Vec<String>,
     cause_feature_nonzero_count: usize,
     cause_feature_large_magnitude_count: usize,
 }
@@ -1994,6 +2025,59 @@ fn load_feature_table(
     })
 }
 
+fn named_pair_evidence_audit(table: &FeatureTable) -> NamedPairEvidenceAudit {
+    let mut min_count = usize::MAX;
+    let mut max_count = 0_usize;
+    let mut total_keys = 0_usize;
+    let mut rows_with_keys = 0_usize;
+    let mut sample_keys = Vec::new();
+    for row in &table.rows {
+        let named_keys = row
+            .evidence_keys
+            .iter()
+            .filter(|key| is_named_pair_evidence_key(key))
+            .collect::<Vec<_>>();
+        let count = named_keys.len();
+        min_count = min_count.min(count);
+        max_count = max_count.max(count);
+        total_keys += count;
+        if count > 0 {
+            rows_with_keys += 1;
+        }
+        for key in named_keys {
+            if sample_keys.len() < 16 && !sample_keys.contains(key) {
+                sample_keys.push(key.clone());
+            }
+        }
+    }
+    if table.rows.is_empty() {
+        min_count = 0;
+    }
+    let active_pair_count = active_slot_pair_count();
+    let named_pair_cause_feature_count = active_pair_count * NAMED_PAIR_CAUSE_FEATURES_PER_PAIR;
+    NamedPairEvidenceAudit {
+        all_passed: !table.rows.is_empty()
+            && rows_with_keys == table.rows.len()
+            && total_keys > 0
+            && table.rows.iter().all(|row| {
+                row.cause_features.len() >= named_pair_cause_feature_count
+                    && row.cause_features.iter().all(|value| value.is_finite())
+            }),
+        row_count: table.rows.len(),
+        rows_with_named_pair_evidence: rows_with_keys,
+        total_named_pair_evidence_keys: total_keys,
+        min_named_pair_evidence_keys_per_row: min_count,
+        max_named_pair_evidence_keys_per_row: max_count,
+        named_pair_cause_feature_count,
+        active_slot_pair_count: active_pair_count,
+        sample_keys,
+    }
+}
+
+fn is_named_pair_evidence_key(key: &str) -> bool {
+    key.contains("|named_pair:")
+}
+
 fn consequence_evidence_keys(
     file_states: &BTreeMap<(String, String, String), FilePathConstellationRow>,
     skill_index: Option<&SkillFeatureIndex>,
@@ -2024,8 +2108,22 @@ fn consequence_evidence_keys(
     } else {
         ("none".to_string(), "none".to_string())
     };
+    let named_pair_sigs = named_pair_evidence_signatures(base, target)?;
 
     let mut keys = Vec::new();
+    for pair_sig in &named_pair_sigs {
+        push_evidence_key(
+            &mut keys,
+            format!(
+                "cat:{category}|skill_kind:{skill_kind_sig}|file:{file_sig}|named_pair:{pair_sig}"
+            ),
+        );
+        push_evidence_key(
+            &mut keys,
+            format!("cat:{category}|slot:{slot_sig}|named_pair:{pair_sig}"),
+        );
+        push_evidence_key(&mut keys, format!("cat:{category}|named_pair:{pair_sig}"));
+    }
     push_evidence_key(
         &mut keys,
         format!(
@@ -2082,6 +2180,166 @@ fn consequence_evidence_keys(
 fn push_evidence_key(keys: &mut Vec<String>, key: String) {
     if !keys.contains(&key) {
         keys.push(key);
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PairRelationshipRecord {
+    state: &'static str,
+    driver: &'static str,
+    max_delta: f32,
+    label: String,
+}
+
+fn named_pair_evidence_signatures(
+    base: &CodeStateConstellationRow,
+    target: &CodeStateConstellationRow,
+) -> Result<Vec<String>> {
+    let base_pairs = pair_relationship_records(base)?;
+    let target_pairs = pair_relationship_records(target)?;
+    let mut ranked_pairs = Vec::<(f32, String)>::new();
+    for (pair_id, target_record) in &target_pairs {
+        let mut score = target_record.max_delta;
+        if let Some(base_record) = base_pairs.get(pair_id) {
+            score = score.max((target_record.max_delta - base_record.max_delta).abs() * 2.0);
+            if target_record.driver != base_record.driver {
+                score = score.max(target_record.max_delta + 0.02);
+            }
+            if target_record.state != base_record.state {
+                score = score.max(target_record.max_delta + 0.01);
+            }
+        }
+        ranked_pairs.push((score, pair_id.clone()));
+    }
+    ranked_pairs.sort_by(|left, right| {
+        right
+            .0
+            .partial_cmp(&left.0)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| left.1.cmp(&right.1))
+    });
+
+    let mut keys = Vec::new();
+    for (_score, pair_id) in ranked_pairs
+        .into_iter()
+        .take(NAMED_PAIR_EVIDENCE_TOP_PAIR_COUNT)
+    {
+        let Some(target_record) = target_pairs.get(&pair_id) else {
+            continue;
+        };
+        push_evidence_key(&mut keys, format!("target::{}", target_record.label));
+        push_evidence_key(
+            &mut keys,
+            format!("target_state::{pair_id}:{}", target_record.state),
+        );
+        push_evidence_key(
+            &mut keys,
+            format!("target_driver::{pair_id}:{}", target_record.driver),
+        );
+        if let Some(base_record) = base_pairs.get(&pair_id) {
+            push_evidence_key(
+                &mut keys,
+                format!(
+                    "transition::{pair_id}:{}->{}",
+                    base_record.state, target_record.state
+                ),
+            );
+            push_evidence_key(
+                &mut keys,
+                format!(
+                    "magnitude_shift::{pair_id}:{}",
+                    pair_delta_shift_bucket(target_record.max_delta - base_record.max_delta)
+                ),
+            );
+            if base_record.driver != target_record.driver {
+                push_evidence_key(
+                    &mut keys,
+                    format!(
+                        "driver_transition::{pair_id}:{}->{}",
+                        base_record.driver, target_record.driver
+                    ),
+                );
+            }
+        }
+    }
+    Ok(keys)
+}
+
+fn pair_relationship_records(
+    row: &CodeStateConstellationRow,
+) -> Result<BTreeMap<String, PairRelationshipRecord>> {
+    let matrix = slot_matrix(row)?;
+    let mut records = BTreeMap::new();
+    for left_idx in 0..SLOT_IDS.len() {
+        for right_idx in (left_idx + 1)..SLOT_IDS.len() {
+            let pair_id = format!("{}/{}", SLOT_IDS[left_idx], SLOT_IDS[right_idx]);
+            let mut driver_idx = 0_usize;
+            let mut max_delta = 0.0_f32;
+            for scalar_idx in 0..SLOT_SCALAR_NAMES.len() {
+                let delta = (matrix[left_idx][scalar_idx] - matrix[right_idx][scalar_idx]).abs();
+                if delta > max_delta {
+                    max_delta = delta;
+                    driver_idx = scalar_idx;
+                }
+            }
+            let state = cross_slot_delta_state(max_delta);
+            let driver = SLOT_SCALAR_NAMES[driver_idx];
+            let label = format!("pair:{pair_id}:{state}:driver:{driver}");
+            ensure!(
+                records
+                    .insert(
+                        pair_id.clone(),
+                        PairRelationshipRecord {
+                            state,
+                            driver,
+                            max_delta,
+                            label,
+                        },
+                    )
+                    .is_none(),
+                "duplicate named pair relationship"
+            );
+        }
+    }
+    Ok(records)
+}
+
+fn cross_slot_delta_state(max_delta: f32) -> &'static str {
+    if max_delta < 0.005 {
+        "near_identity_cross_slot_delta"
+    } else if max_delta < 0.020 {
+        "low_cross_slot_delta"
+    } else if max_delta < 0.050 {
+        "moderate_cross_slot_delta"
+    } else if max_delta < 0.100 {
+        "high_cross_slot_delta"
+    } else {
+        "extreme_cross_slot_delta"
+    }
+}
+
+fn pair_delta_shift_bucket(value: f32) -> &'static str {
+    if value <= -0.05 {
+        "large_decrease"
+    } else if value <= -0.01 {
+        "small_decrease"
+    } else if value < 0.01 {
+        "stable"
+    } else if value < 0.05 {
+        "small_increase"
+    } else {
+        "large_increase"
+    }
+}
+
+fn pair_state_ordinal(state: &str) -> f32 {
+    match state {
+        "near_identity_cross_slot_delta" => 0.0,
+        "low_cross_slot_delta" => 1.0,
+        "moderate_cross_slot_delta" => 2.0,
+        "high_cross_slot_delta" => 3.0,
+        "extreme_cross_slot_delta" => 4.0,
+        _ => 0.0,
     }
 }
 
@@ -2313,8 +2571,10 @@ fn cause_residual_feature_vector(
     let d10 = matrix_delta(&v1, &v0);
     let d21 = matrix_delta(&v2, &v1);
     let d20 = matrix_delta(&v2, &v0);
-    let mut features = Vec::with_capacity(64);
+    let mut features =
+        Vec::with_capacity(64 + active_slot_pair_count() * NAMED_PAIR_CAUSE_FEATURES_PER_PAIR);
     add_temporal_cause_features(&mut features, &d10, &d21, &d20);
+    add_named_pair_cause_features(&mut features, base, target, test_patch)?;
     add_live_label_cause_features(&mut features, base, target, test_patch);
     if matches!(
         mode,
@@ -2386,6 +2646,46 @@ fn mean_slot_norm(matrix: &[Vec<f32>], temporal: bool) -> f32 {
     } else {
         sum / count as f32
     }
+}
+
+fn add_named_pair_cause_features(
+    features: &mut Vec<f32>,
+    base: &CodeStateConstellationRow,
+    target: &CodeStateConstellationRow,
+    test_patch: &CodeStateConstellationRow,
+) -> Result<()> {
+    let base_pairs = pair_relationship_records(base)?;
+    let target_pairs = pair_relationship_records(target)?;
+    let test_pairs = pair_relationship_records(test_patch)?;
+    for left_idx in 0..SLOT_IDS.len() {
+        for right_idx in (left_idx + 1)..SLOT_IDS.len() {
+            let pair_id = format!("{}/{}", SLOT_IDS[left_idx], SLOT_IDS[right_idx]);
+            let base_pair = base_pairs
+                .get(&pair_id)
+                .ok_or_else(|| anyhow!("missing base named pair record for {pair_id}"))?;
+            let target_pair = target_pairs
+                .get(&pair_id)
+                .ok_or_else(|| anyhow!("missing target named pair record for {pair_id}"))?;
+            let test_pair = test_pairs
+                .get(&pair_id)
+                .ok_or_else(|| anyhow!("missing test named pair record for {pair_id}"))?;
+            features.push(target_pair.max_delta);
+            features.push(target_pair.max_delta - base_pair.max_delta);
+            features.push(test_pair.max_delta - target_pair.max_delta);
+            features
+                .push(pair_state_ordinal(target_pair.state) - pair_state_ordinal(base_pair.state));
+            features.push(if target_pair.driver == base_pair.driver {
+                0.0
+            } else {
+                1.0
+            });
+        }
+    }
+    Ok(())
+}
+
+fn active_slot_pair_count() -> usize {
+    SLOT_IDS.len() * (SLOT_IDS.len() - 1) / 2
 }
 
 fn matrix_l2_norm(matrix: &[Vec<f32>]) -> f32 {
@@ -10432,6 +10732,18 @@ fn legal_best_holdout_row_diagnostics(
                         .take(16)
                         .cloned()
                         .collect(),
+                    named_pair_evidence_key_count: feature_row
+                        .evidence_keys
+                        .iter()
+                        .filter(|key| is_named_pair_evidence_key(key))
+                        .count(),
+                    named_pair_evidence_key_sample: feature_row
+                        .evidence_keys
+                        .iter()
+                        .filter(|key| is_named_pair_evidence_key(key))
+                        .take(8)
+                        .cloned()
+                        .collect(),
                     cause_feature_nonzero_count: feature_row
                         .cause_features
                         .iter()
@@ -10508,6 +10820,18 @@ fn score_sharpness_abstain_row_diagnostics(
                 cause_bin_score: cause_bin_row.predicted_oracle_pass,
                 evidence_key_count: feature_row.evidence_keys.len(),
                 evidence_key_sample: feature_row.evidence_keys.iter().take(16).cloned().collect(),
+                named_pair_evidence_key_count: feature_row
+                    .evidence_keys
+                    .iter()
+                    .filter(|key| is_named_pair_evidence_key(key))
+                    .count(),
+                named_pair_evidence_key_sample: feature_row
+                    .evidence_keys
+                    .iter()
+                    .filter(|key| is_named_pair_evidence_key(key))
+                    .take(8)
+                    .cloned()
+                    .collect(),
                 cause_feature_nonzero_count: feature_row
                     .cause_features
                     .iter()
