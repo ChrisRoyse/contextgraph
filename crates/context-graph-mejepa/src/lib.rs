@@ -36,7 +36,7 @@ pub mod evidence;
 pub mod failure_fingerprint;
 pub mod fixtures;
 pub mod frozen_target;
-pub mod fsv_writer;
+pub mod readback_writer;
 pub mod gates;
 pub mod grad_hook;
 pub mod head_projection;

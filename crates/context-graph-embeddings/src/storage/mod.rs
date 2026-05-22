@@ -22,7 +22,7 @@ pub mod multi_space;
 mod types;
 
 #[cfg(test)]
-mod full_state_verification;
+mod readback_regression_tests;
 
 pub use types::{
     EmbedderQueryResult,

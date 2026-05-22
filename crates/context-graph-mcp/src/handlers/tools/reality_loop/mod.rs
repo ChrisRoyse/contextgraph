@@ -24,13 +24,13 @@ mod witness_chain_legacy;
 pub mod witness_chain_repair;
 
 #[cfg(test)]
-mod optimizer_preflight_fsv;
+mod optimizer_preflight_regression;
 #[cfg(test)]
-mod recommendation_recall_fsv;
+mod recommendation_recall_regression;
 #[cfg(test)]
-mod witness_chain_fsv;
+mod witness_chain_regression;
 #[cfg(test)]
-mod witness_chain_repair_fsv;
+mod witness_chain_repair_regression;
 
 #[cfg(test)]
 pub(crate) static TEST_RUNTIME_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

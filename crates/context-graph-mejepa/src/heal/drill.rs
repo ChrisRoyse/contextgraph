@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::heal::drift::DriftSeverity;
 use crate::heal::errors::HealError;
 use crate::heal::ewc::{HessianTraceProbe, PredictorGradAccessor};
-use crate::heal::fsv::{write_fsv_evidence_canonical, DriftDrillEvidence, FSV_FILES, FSV_ROOT};
+use crate::heal::readback::{write_fsv_evidence_canonical, DriftDrillEvidence, FSV_FILES, FSV_ROOT};
 use crate::heal::integrity::{integrity_evidence_from_chain, verify, ChainIntegrityChecker};
 use crate::heal::lora_refresh::{refresh, LoraRefreshEvidence};
 use crate::heal::pipeline::{bootstrap_pipeline_for_path, force_lora_corpus_slice, ObserveOutput};

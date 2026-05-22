@@ -25,11 +25,3 @@ uuid = { workspace = true }
 [dev-dependencies]
 context-graph-core = { path = "../context-graph-core" }
 tempfile = "3.10"
-
-[[example]]
-name = "tct_fsv"
-path = "examples/tct_fsv.rs"
-
-[[example]]
-name = "tct_centroid_refresh_fsv"
-path = "examples/tct_centroid_refresh_fsv.rs"

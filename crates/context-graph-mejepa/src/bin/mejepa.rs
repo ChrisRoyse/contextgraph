@@ -9,7 +9,7 @@ use std::time::{Instant, SystemTime};
 use candle_core::{DType, Device};
 use clap::{Parser, Subcommand};
 use context_graph_mejepa::eval::{build_patch_similarity_graph, synthetic_patch_embeddings};
-use context_graph_mejepa::fsv_writer;
+use context_graph_mejepa::readback_writer;
 use context_graph_mejepa::heal::{run_heal_drill, HealDrillArgs, InjectDrift, FSV_ROOT};
 use context_graph_mejepa::panel_source::{self, PanelBatchView};
 use context_graph_mejepa::{
@@ -605,7 +605,7 @@ fn run_dry_run(args: &TrainArgs) -> Result<DryRunReport, MejepaCliError> {
     let output = args
         .output
         .clone()
-        .unwrap_or_else(|| PathBuf::from(fsv_writer::FSV_DIR));
+        .unwrap_or_else(|| PathBuf::from(readback_writer::FSV_DIR));
     clear_nominal_evidence_files(&output)?;
     let panel_path = args
         .corpus
@@ -697,8 +697,8 @@ fn run_dry_run(args: &TrainArgs) -> Result<DryRunReport, MejepaCliError> {
         outputs: loss.clone(),
     };
     let forward_readback =
-        fsv_writer::write_readback_assert(&output.join("forward-pass-evidence.json"), &forward)?;
-    let loss_readback = fsv_writer::write_readback_assert(
+        readback_writer::write_readback_assert(&output.join("forward-pass-evidence.json"), &forward)?;
+    let loss_readback = readback_writer::write_readback_assert(
         &output.join("vicreg-loss-evidence.json"),
         &loss_evidence,
     )?;

@@ -27,23 +27,3 @@ tracing = { workspace = true }
 [dev-dependencies]
 anyhow = { workspace = true }
 tempfile = "3.10"
-
-[[example]]
-name = "merkle_compression_fsv"
-path = "examples/merkle_compression_fsv.rs"
-
-[[example]]
-name = "quota_overflow_fsv"
-path = "examples/quota_overflow_fsv.rs"
-
-[[example]]
-name = "gc_stress_fsv"
-path = "examples/gc_stress_fsv.rs"
-
-[[example]]
-name = "phase_f_storage_exhaustion_fsv"
-path = "examples/phase_f_storage_exhaustion_fsv.rs"
-
-[[example]]
-name = "phase_f_feedback_override_retention_fsv"
-path = "examples/phase_f_feedback_override_retention_fsv.rs"

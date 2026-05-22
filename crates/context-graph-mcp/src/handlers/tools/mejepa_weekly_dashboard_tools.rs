@@ -90,5 +90,5 @@ fn validate_dashboard_request(request: &WeeklyEvalDashboardRequest) -> Result<()
 }
 
 #[cfg(test)]
-#[path = "mejepa_weekly_dashboard_fsv_tests.rs"]
+#[path = "mejepa_weekly_dashboard_regression_tests.rs"]
 mod fsv_tests;
