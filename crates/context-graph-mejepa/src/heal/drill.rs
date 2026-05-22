@@ -184,35 +184,6 @@ pub fn run_heal_drill(args: HealDrillArgs) -> Result<DrillStdoutSummary, HealErr
         Some(&args.output_readback),
     )?;
 
-    pipeline.witness_chain.append_model_event(
-        "ModelRollback",
-        report.weights_sha_winner,
-        report.evaluation_summary_sha,
-    )?;
-    let corruption_offset = context_graph_witness::WITNESS_ENTRY_SIZE;
-    write_garbage_at_offset(&pipeline.witness_chain.chain_path, corruption_offset, 1)?;
-    let mut checker = ChainIntegrityChecker::try_new(pipeline.witness_chain.chain_path.clone())?;
-    let integrity_result = verify(
-        &mut checker,
-        &pipeline.witness_chain,
-        pipeline.storage.as_ref(),
-        &pipeline.status,
-    );
-    let integrity_violation_detected =
-        matches!(integrity_result, Err(HealError::IntegrityViolation { .. }));
-    let integrity_evidence = integrity_evidence_from_chain(
-        &checker,
-        pipeline.status.lock().unwrap().status_change,
-        Some(1),
-        false,
-        0,
-    )?;
-    write_readback_evidence_canonical(
-        "witness-integrity-evidence.json",
-        &integrity_evidence,
-        Some(&args.output_readback),
-    )?;
-
     let mut boundary_step_trajectory = Vec::new();
     let mut lambda_trajectory = Vec::new();
     let mut fisher_rank_per_boundary = Vec::new();
@@ -246,6 +217,38 @@ pub fn run_heal_drill(args: HealDrillArgs) -> Result<DrillStdoutSummary, HealErr
     write_readback_evidence_canonical(
         "ewc-fisher-evidence.json",
         &ewc_evidence,
+        Some(&args.output_readback),
+    )?;
+
+    pipeline.witness_chain.append_model_event(
+        "ModelRollback",
+        report.weights_sha_winner,
+        report.evaluation_summary_sha,
+    )?;
+    let corruption_offset = context_graph_witness::WITNESS_ENTRY_SIZE;
+    write_garbage_at_offset(&pipeline.witness_chain.chain_path, corruption_offset, 1)?;
+    let mut checker = ChainIntegrityChecker::try_new(pipeline.witness_chain.chain_path.clone())?;
+    let integrity_result = verify(
+        &mut checker,
+        &pipeline.witness_chain,
+        pipeline.storage.as_ref(),
+        &pipeline.status,
+    );
+    let integrity_violation_detected = match integrity_result {
+        Ok(_) => false,
+        Err(HealError::IntegrityViolation { .. } | HealError::WitnessQuarantined { .. }) => true,
+        Err(err) => return Err(err),
+    };
+    let integrity_evidence = integrity_evidence_from_chain(
+        &checker,
+        pipeline.status.lock().unwrap().status_change,
+        Some(1),
+        false,
+        0,
+    )?;
+    write_readback_evidence_canonical(
+        "witness-integrity-evidence.json",
+        &integrity_evidence,
         Some(&args.output_readback),
     )?;
     set_readback_files_mode_0o600(&args.output_readback)?;

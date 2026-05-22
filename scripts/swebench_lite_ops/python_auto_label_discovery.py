@@ -23,7 +23,7 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from .core import normalize_category
+from .core import SwebenchOpsError, normalize_category
 from .forward_cache_lineage import guard_packed_record_lineage
 from .python_real_corpus_constellation_smoke import (
     DEFAULT_CHUNKS_JSONL,
@@ -95,8 +95,17 @@ GROUP_SLOT_SETS = {
 }
 
 
-class AutoLabelDiscoveryError(RuntimeError):
-    pass
+class AutoLabelDiscoveryError(SwebenchOpsError):
+    def __init__(
+        self,
+        code: str,
+        detail: str | None = None,
+        *,
+        remediation: str = "Inspect the generated readback/report artifacts, fix the listed source-of-truth blocker, and rerun the label compiler.",
+        details: dict[str, Any] | None = None,
+    ):
+        message = code if detail is None else f"{code}: {detail}"
+        super().__init__(code, message, remediation, details)
 
 
 @dataclass
@@ -215,7 +224,7 @@ class CodeStateFailureEvidence:
 
 def require(condition: bool, code: str, detail: str | None = None) -> None:
     if not condition:
-        raise AutoLabelDiscoveryError(code if detail is None else f"{code}: {detail}")
+        raise AutoLabelDiscoveryError(code, detail)
 
 
 def canonical_json(value: Any) -> str:
@@ -574,6 +583,69 @@ def slot_labels(embedder_id: str, vector: np.ndarray, features: dict[str, float]
     for feature in SCALAR_FEATURES:
         labels.append(f"slot:{embedder_id}:{scalar_bucket(feature, float(features[feature]))}")
     return labels
+
+
+def vector_space_health_from_hash_counts(
+    embedder_ids: Iterable[str],
+    row_counts: Counter[str],
+    vector_hash_counts: dict[str, Counter[str]],
+) -> list[dict[str, Any]]:
+    hash_sets = {
+        embedder_id: set(vector_hash_counts.get(embedder_id, Counter()).keys())
+        for embedder_id in embedder_ids
+    }
+    first_owner_by_hash_set: dict[frozenset[str], str] = {}
+    duplicate_of: dict[str, str] = {}
+    for embedder_id in sorted(hash_sets):
+        frozen = frozenset(hash_sets[embedder_id])
+        if not frozen:
+            continue
+        owner = first_owner_by_hash_set.setdefault(frozen, embedder_id)
+        if owner != embedder_id:
+            duplicate_of[embedder_id] = owner
+
+    rows: list[dict[str, Any]] = []
+    for embedder_id in sorted(hash_sets):
+        counts = vector_hash_counts.get(embedder_id, Counter())
+        unique_count = len(hash_sets[embedder_id])
+        row_count = int(row_counts.get(embedder_id, 0))
+        status = "usable"
+        blocker = None
+        if row_count == 0:
+            status = "missing"
+            blocker = "NO_VECTOR_ROWS"
+        elif unique_count <= 1:
+            status = "degenerate"
+            blocker = "DEGENERATE_VECTOR_SPACE_UNIQUE_VECTOR_SHA256_LE_ONE"
+        elif embedder_id in duplicate_of:
+            status = "duplicate"
+            blocker = "DUPLICATE_VECTOR_HASH_SPACE"
+        rows.append(
+            {
+                "artifact_kind": f"{ARTIFACT_KIND}_slot_vector_space_health",
+                "schema_version": SCHEMA_VERSION,
+                "formula_version": FORMULA_VERSION,
+                "embedder_id": embedder_id,
+                "row_count": row_count,
+                "unique_vector_sha256_count": unique_count,
+                "status": status,
+                "blocker": blocker,
+                "duplicate_of_embedder_id": duplicate_of.get(embedder_id),
+                "top_vector_sha256_counts": [
+                    {"vector_sha256": vector_sha, "count": count}
+                    for vector_sha, count in counts.most_common(5)
+                ],
+            }
+        )
+    return rows
+
+
+def vector_space_blockers(health_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in health_rows
+        if row.get("status") in {"missing", "degenerate", "duplicate"}
+    ]
 
 
 def pair_relationship(left_id: str, left: dict[str, float], right_id: str, right: dict[str, float]) -> str:
@@ -1146,6 +1218,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
     failure_sets_path = args.output_root / "failure_evidence_sets.jsonl"
     usefulness_path = args.output_root / "label_usefulness_metrics.jsonl"
     registry_path = args.output_root / "accepted_label_registry.jsonl"
+    slot_vector_space_health_path = args.output_root / "slot_vector_space_health.jsonl"
     manual_repro_path = args.output_root / "manual_review_reproduction.json"
     bridge_path = args.output_root / "learning_bridge_manifest.json"
     manifest_path = args.output_root / "auto_label_discovery_manifest.json"
@@ -1173,6 +1246,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
     pair_label_count = 0
     group_label_count = 0
     slot_record_counts = Counter()
+    slot_vector_hash_counts: dict[str, Counter[str]] = defaultdict(Counter)
 
     with chunk_labels_path.open("w", encoding="utf-8") as chunk_fh:
         for shard in shards:
@@ -1244,12 +1318,14 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                             work["duplicate_slots"].append(embedder_id)
                         work["slot_features"][embedder_id] = features
                         work["slot_labels"].extend(labels)
-                        work["slot_vector_hashes"][embedder_id] = str(output.get("vector_sha256") or sha256_bytes(vector.astype("<f4", copy=False).tobytes()))
+                        vector_sha = str(output.get("vector_sha256") or sha256_bytes(vector.astype("<f4", copy=False).tobytes()))
+                        work["slot_vector_hashes"][embedder_id] = vector_sha
                         work["slot_dims"][embedder_id] = int(vector.size)
                         if not bool(record.get("source_readback_verified", True)):
                             work["source_readback_unverified"].append(embedder_id)
                         slot_record_count += 1
                         slot_record_counts[embedder_id] += 1
+                        slot_vector_hash_counts[embedder_id][vector_sha] += 1
                 require(local_rows == manifest_rows, "MEJEPA_AUTO_LABEL_RECORD_ROW_COUNT_MISMATCH", f"{record_path}: manifest={manifest_rows} read={local_rows}")
 
             for row_key, work in sorted(row_work.items()):
@@ -1597,17 +1673,26 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
     expected_forward_count = args.expected_forward_record_count if selected_full else slot_record_count
     required_embedder_record_counts = {embedder_id: int(slot_record_counts.get(embedder_id, 0)) for embedder_id in required_embedders}
     required_embedder_record_counts_complete = all(count > 0 for count in required_embedder_record_counts.values())
+    slot_vector_space_health = vector_space_health_from_hash_counts(
+        required_embedders,
+        slot_record_counts,
+        slot_vector_hash_counts,
+    )
+    slot_vector_space_blockers = vector_space_blockers(slot_vector_space_health)
+    slot_vector_space_health_count = write_jsonl_iter(slot_vector_space_health_path, slot_vector_space_health)
+    partial_slot_evidence_allowed = bool(getattr(args, "allow_partial_slot_evidence", False))
     slot_evidence_complete = (
         missing_required_embedder_manifest_entry_count == 0
-        and missing_slot_events == 0
+        and (partial_slot_evidence_allowed or missing_slot_events == 0)
         and duplicate_slot_events == 0
         and source_readback_unverified_events == 0
         and required_embedder_record_counts_complete
+        and not slot_vector_space_blockers
     )
     validation_failures: list[str] = []
     if missing_required_embedder_manifest_entry_count:
         validation_failures.append("MEJEPA_AUTO_LABEL_REQUIRED_EMBEDDER_MISSING_FROM_PACKED_MANIFEST")
-    if missing_slot_events:
+    if missing_slot_events and not partial_slot_evidence_allowed:
         validation_failures.append("MEJEPA_AUTO_LABEL_MISSING_SLOT_EVIDENCE")
     if duplicate_slot_events:
         validation_failures.append("MEJEPA_AUTO_LABEL_DUPLICATE_SLOT_EVIDENCE")
@@ -1615,6 +1700,8 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
         validation_failures.append("MEJEPA_AUTO_LABEL_SOURCE_READBACK_UNVERIFIED")
     if not required_embedder_record_counts_complete:
         validation_failures.append("MEJEPA_AUTO_LABEL_REQUIRED_EMBEDDER_ZERO_RECORDS")
+    if slot_vector_space_blockers:
+        validation_failures.append("MEJEPA_AUTO_LABEL_VECTOR_SPACE_BLOCKERS")
     summary = {
         "chunk_label_rows": row_count,
         "slot_record_count": slot_record_count,
@@ -1635,7 +1722,20 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
         "forward_cache_lineage_policy": "packed record chunk.absolute_path/dataschema is legacy provenance only; active lineage comes from canonical AST rows",
         "missing_required_embedder_manifest_entry_count": missing_required_embedder_manifest_entry_count,
         "missing_required_embedder_manifest_entry_samples": missing_required_embedder_manifest_entry_samples,
+        "partial_slot_evidence_allowed": partial_slot_evidence_allowed,
         "slot_evidence_complete": slot_evidence_complete,
+        "slot_vector_space_health_rows": slot_vector_space_health_count,
+        "slot_vector_space_blocker_count": len(slot_vector_space_blockers),
+        "slot_vector_space_blockers": [
+            {
+                "embedder_id": row.get("embedder_id"),
+                "status": row.get("status"),
+                "blocker": row.get("blocker"),
+                "duplicate_of_embedder_id": row.get("duplicate_of_embedder_id"),
+                "unique_vector_sha256_count": row.get("unique_vector_sha256_count"),
+            }
+            for row in slot_vector_space_blockers
+        ],
         "validation_failures": validation_failures,
         "file_path_constellation_rows": file_row_count,
         "code_state_constellation_rows": code_state_row_count,
@@ -1682,6 +1782,8 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
             "target_labels_are_supervision_only": True,
             "corpus_only_mutation_labels_are_supervision_only": True,
             "live_predictor_labels_are_explicit": True,
+            "partial_slot_evidence_allowed": partial_slot_evidence_allowed,
+            "partial_slot_rows_emit_missing_slot_labels": True,
         },
         "summary": summary,
         "forward_summary": forward_summary,
@@ -1705,6 +1807,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
             "failure_evidence_sets": str(failure_sets_path),
             "label_usefulness_metrics": str(usefulness_path),
             "accepted_label_registry": str(registry_path),
+            "slot_vector_space_health": str(slot_vector_space_health_path),
             "manual_review_reproduction": str(manual_repro_path),
             "learning_bridge_manifest": str(bridge_path),
             "report": str(report_path),
@@ -1716,6 +1819,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
             "failure_evidence_sets": sum(1 for _line, _row in iter_jsonl(failure_sets_path)),
             "label_usefulness_metrics": sum(1 for _line, _row in iter_jsonl(usefulness_path)),
             "accepted_label_registry": sum(1 for _line, _row in iter_jsonl(registry_path)),
+            "slot_vector_space_health": sum(1 for _line, _row in iter_jsonl(slot_vector_space_health_path)),
         },
         "stable_hashes": {
             "chunk_constellation_labels": sha256_file(chunk_labels_path),
@@ -1724,6 +1828,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
             "failure_evidence_sets": sha256_file(failure_sets_path),
             "label_usefulness_metrics": sha256_file(usefulness_path),
             "accepted_label_registry": sha256_file(registry_path),
+            "slot_vector_space_health": sha256_file(slot_vector_space_health_path),
             "manual_review_reproduction": sha256_file(manual_repro_path),
             "learning_bridge_manifest": sha256_file(bridge_path),
             "report": sha256_file(report_path),
@@ -1777,4 +1882,9 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--min-support", type=int, default=DEFAULT_MIN_SUPPORT)
     parser.add_argument("--min-lift", type=float, default=DEFAULT_MIN_LIFT)
     parser.add_argument("--max-shards", type=int, default=None, help="Optional smoke limiter. Omit for full corpus.")
+    parser.add_argument(
+        "--allow-partial-slot-evidence",
+        action="store_true",
+        help="Allow rows with explicit slot:<embedder>:missing labels to pass readback when vector-space health is otherwise clean.",
+    )
     parser.add_argument("--clean-output", action="store_true")

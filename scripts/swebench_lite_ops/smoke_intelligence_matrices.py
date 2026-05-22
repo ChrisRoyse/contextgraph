@@ -17,10 +17,11 @@ from typing import Any
 
 import numpy as np
 
+from .core import SwebenchOpsError
 from .forward_cache_lineage import guard_packed_record_lineage
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_FORWARD_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/forward-cache")
 DEFAULT_SMOKE_MANIFEST = Path(
     "/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"
@@ -41,8 +42,16 @@ CCA_MAX_DIM_SUM = 900
 EPS = 1.0e-12
 
 
-class SmokeMatrixError(RuntimeError):
-    pass
+class SmokeMatrixError(SwebenchOpsError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "SMOKE_INTELLIGENCE_MATRICES_FAILED",
+        remediation: str = "Inspect the source-of-truth artifacts named in the readback and fix the listed blockers before continuing.",
+        details: dict[str, Any] | None = None,
+    ):
+        super().__init__(code, message, remediation, details)
 
 
 @dataclass(frozen=True)
@@ -92,6 +101,12 @@ def utc_now() -> str:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise SmokeMatrixError(message)
+
+
+def parse_embedder_list(raw: str | None) -> list[str]:
+    if raw is None:
+        return []
+    return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 def read_json(path: Path) -> Any:
@@ -470,8 +485,9 @@ def alignment_edge_cases(
             "before": {"left_rows": 0, "right_rows": 0, "min_overlap": min_overlap},
             "action": "pairwise metric precondition check",
             "after": {"pairwise_rows": empty_pairwise},
-            "expected": "valid=false with TOO_FEW_OVERLAP_ROWS",
-            "passes": bool(empty_pairwise) and all(row.get("valid") is False and row.get("invalid_reason") == "TOO_FEW_OVERLAP_ROWS" for row in empty_pairwise),
+            "expected": "valid=false with DEGENERATE_VECTOR_SPACE before any numeric metric can be emitted",
+            "passes": bool(empty_pairwise)
+            and all(row.get("valid") is False and row.get("invalid_reason") == "DEGENERATE_VECTOR_SPACE" for row in empty_pairwise),
         }
     )
     all_record_keys = {key for embedder_rows in records.values() for key in embedder_rows}
@@ -662,6 +678,8 @@ def cca_validity(n: int, dx: int, dy: int) -> tuple[bool, str]:
 def coverage_rows(records: dict[str, dict[str, VectorRecord]], manifest_summary: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
     manifest_rows = int(manifest_summary["rows"])
+    health = vector_space_health_rows(records)
+    health_by_embedder = {str(row["embedder_id"]): row for row in health}
     for embedder_id, embedder_rows in sorted(records.items()):
         dims = Counter(int(row.vector.size) for row in embedder_rows.values())
         precision = Counter(row.precision_class for row in embedder_rows.values())
@@ -681,9 +699,74 @@ def coverage_rows(records: dict[str, dict[str, VectorRecord]], manifest_summary:
                 "workspace_state_counts": dict(sorted(workspace_states.items())),
                 "unique_vector_sha256_count": len({row.vector_sha256 for row in embedder_rows.values()}),
                 "unique_chunk_count": len({row.chunk_id for row in embedder_rows.values()}),
+                "vector_space_status": str(health_by_embedder[embedder_id]["status"]),
+                "vector_space_blocker": health_by_embedder[embedder_id].get("blocker"),
             }
         )
     return rows
+
+
+def vector_hash_sets(records: dict[str, dict[str, VectorRecord]]) -> dict[str, set[str]]:
+    return {
+        embedder_id: {row.vector_sha256 for row in embedder_rows.values()}
+        for embedder_id, embedder_rows in records.items()
+    }
+
+
+def vector_space_health_rows(records: dict[str, dict[str, VectorRecord]]) -> list[dict[str, Any]]:
+    """Fail-closed health rows for treating embedder spaces as independent signal."""
+
+    hash_sets = vector_hash_sets(records)
+    first_owner_by_hash_set: dict[frozenset[str], str] = {}
+    duplicate_of: dict[str, str] = {}
+    for embedder_id in sorted(hash_sets):
+        frozen = frozenset(hash_sets[embedder_id])
+        if not frozen:
+            continue
+        owner = first_owner_by_hash_set.setdefault(frozen, embedder_id)
+        if owner != embedder_id:
+            duplicate_of[embedder_id] = owner
+
+    rows: list[dict[str, Any]] = []
+    for embedder_id, embedder_rows in sorted(records.items()):
+        hashes = hash_sets.get(embedder_id, set())
+        row_count = len(embedder_rows)
+        unique_count = len(hashes)
+        top_hashes = Counter(row.vector_sha256 for row in embedder_rows.values()).most_common(5)
+        blocker = None
+        status = "usable"
+        if row_count == 0:
+            status = "missing"
+            blocker = "NO_VECTOR_ROWS"
+        elif unique_count <= 1:
+            status = "degenerate"
+            blocker = "DEGENERATE_VECTOR_SPACE_UNIQUE_VECTOR_SHA256_LE_ONE"
+        elif embedder_id in duplicate_of:
+            status = "duplicate"
+            blocker = "DUPLICATE_VECTOR_HASH_SPACE"
+
+        rows.append(
+            {
+                "embedder_id": embedder_id,
+                "row_count": row_count,
+                "unique_vector_sha256_count": unique_count,
+                "top_vector_sha256_counts": [
+                    {"vector_sha256": vector_sha, "count": count} for vector_sha, count in top_hashes
+                ],
+                "status": status,
+                "blocker": blocker,
+                "duplicate_of_embedder_id": duplicate_of.get(embedder_id),
+            }
+        )
+    return rows
+
+
+def vector_space_blockers(health: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in health
+        if row.get("status") in {"missing", "degenerate", "duplicate"}
+    ]
 
 
 def stratified_coverage_rows(records: dict[str, dict[str, VectorRecord]], manifest_by_key: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -728,9 +811,31 @@ def stratified_coverage_rows(records: dict[str, dict[str, VectorRecord]], manife
     return rows
 
 
+def invalid_pair_metric_row(row: dict[str, Any], reason: str, **extra: Any) -> dict[str, Any]:
+    row.update(
+        {
+            "valid": False,
+            "invalid_reason": reason,
+            "linear_cka": None,
+            "linear_hsic": None,
+            "neighbor_overlap_at_k": None,
+            "mean_same_row_cosine": None,
+            "orthogonal_procrustes": None,
+            "norm_quantile_nmi": None,
+            "disagreement_score": None,
+            "redundancy_score": None,
+            "synergy_candidate_score": None,
+        }
+    )
+    row.update(extra)
+    return row
+
+
 def pairwise_rows(records: dict[str, dict[str, VectorRecord]], neighbor_k: int, min_overlap: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     embedder_ids = sorted(records)
     neighbors = {embedder_id: nearest_neighbors(rows, neighbor_k) for embedder_id, rows in records.items()}
+    hash_sets = vector_hash_sets(records)
+    unique_counts = {embedder_id: len(hashes) for embedder_id, hashes in hash_sets.items()}
     rows: list[dict[str, Any]] = []
     validity_rows: list[dict[str, Any]] = []
     for idx, left_id in enumerate(embedder_ids):
@@ -748,24 +853,30 @@ def pairwise_rows(records: dict[str, dict[str, VectorRecord]], neighbor_k: int, 
                 "missing_from_left": len(set(right_rows) - set(left_rows)),
                 "missing_from_right": len(set(left_rows) - set(right_rows)),
                 "metric_version": "smoke_intelligence_matrices_v1",
+                "left_unique_vector_sha256_count": unique_counts.get(left_id, 0),
+                "right_unique_vector_sha256_count": unique_counts.get(right_id, 0),
             }
-            if n < min_overlap:
-                row.update(
-                    {
-                        "valid": False,
-                        "invalid_reason": "TOO_FEW_OVERLAP_ROWS",
-                        "linear_cka": None,
-                        "linear_hsic": None,
-                        "neighbor_overlap_at_k": None,
-                        "mean_same_row_cosine": None,
-                        "orthogonal_procrustes": None,
-                        "norm_quantile_nmi": None,
-                        "disagreement_score": None,
-                        "redundancy_score": None,
-                        "synergy_candidate_score": None,
-                    }
+            if unique_counts.get(left_id, 0) <= 1 or unique_counts.get(right_id, 0) <= 1:
+                rows.append(
+                    invalid_pair_metric_row(
+                        row,
+                        "DEGENERATE_VECTOR_SPACE",
+                        left_vector_space_degenerate=unique_counts.get(left_id, 0) <= 1,
+                        right_vector_space_degenerate=unique_counts.get(right_id, 0) <= 1,
+                    )
                 )
-                rows.append(row)
+                continue
+            if hash_sets.get(left_id) and hash_sets.get(left_id) == hash_sets.get(right_id):
+                rows.append(
+                    invalid_pair_metric_row(
+                        row,
+                        "DUPLICATE_VECTOR_HASH_SPACE",
+                        duplicate_vector_hash_space=True,
+                    )
+                )
+                continue
+            if n < min_overlap:
+                rows.append(invalid_pair_metric_row(row, "TOO_FEW_OVERLAP_ROWS"))
                 continue
             x = matrix_for_keys(left_rows, keys)
             y = matrix_for_keys(right_rows, keys)
@@ -901,6 +1012,11 @@ def artifact_state(root: Path) -> dict[str, Any]:
 
 def command_smoke_intelligence(args: argparse.Namespace) -> int:
     started = utc_now()
+    args.readback_root = (
+        getattr(args, "readback_root", None)
+        or getattr(args, "fsv_root", None)
+        or DEFAULT_READBACK_ROOT
+    )
     before = {
         "output_root": tree_state(args.output_root),
         "readback_root": tree_state(args.readback_root),
@@ -935,9 +1051,27 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
             require(manifest_summary["rows"] == args.expected_chunk_count, f"expected {args.expected_chunk_count} selected chunk rows")
     else:
         raise SmokeMatrixError(f"unsupported input mode: {input_mode}")
-    require(len(records) == args.expected_embedder_count, f"expected {args.expected_embedder_count} embedders, found {len(records)}")
+    loaded_embedder_count = len(records)
+    included_embedders = parse_embedder_list(getattr(args, "included_embedders", None))
+    excluded_loaded_embedders: list[str] = []
+    if included_embedders:
+        included_set = set(included_embedders)
+        require(len(included_set) == len(included_embedders), f"included embedders contains duplicates: {included_embedders}")
+        loaded_set = set(records)
+        missing_included = sorted(included_set - loaded_set)
+        require(not missing_included, f"included embedders missing from loaded forward-cache records: {missing_included}")
+        excluded_loaded_embedders = sorted(loaded_set - included_set)
+        records = {embedder_id: records[embedder_id] for embedder_id in included_embedders}
+        require(
+            len(records) == args.expected_embedder_count,
+            f"expected {args.expected_embedder_count} included embedders, found {len(records)}",
+        )
+    else:
+        require(len(records) == args.expected_embedder_count, f"expected {args.expected_embedder_count} embedders, found {len(records)}")
 
     coverage = coverage_rows(records, manifest_summary)
+    vector_health = vector_space_health_rows(records)
+    vector_blockers = vector_space_blockers(vector_health)
     stratified = stratified_coverage_rows(records, manifest_by_key)
     pairwise, validity = pairwise_rows(records, args.neighbor_k, args.min_overlap)
     projections = per_embedder_projection_rows(records)
@@ -960,13 +1094,20 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
             "checkpoint": source_checkpoint_summary.get("checkpoint_path") if source_checkpoint_summary else None,
             "shard_plan": source_checkpoint_summary.get("shard_plan_path") if source_checkpoint_summary else None,
             "output_root": str(args.output_root),
+            "included_embedders": included_embedders,
+            "excluded_loaded_embedders": excluded_loaded_embedders,
         },
         "source_checkpoint": source_checkpoint_summary,
         "manifest": manifest_summary,
         "load_summary": load_summary,
         "matrix_summary": {
+            "loaded_embedder_count": loaded_embedder_count,
             "embedder_count": len(records),
+            "included_embedders": sorted(records),
+            "excluded_loaded_embedders": excluded_loaded_embedders,
             "coverage_rows": len(coverage),
+            "vector_space_health_rows": len(vector_health),
+            "vector_space_blockers": len(vector_blockers),
             "pairwise_rows": len(pairwise),
             "pairwise_valid_rows": sum(1 for row in pairwise if row.get("valid") is True),
             "estimator_validity_rows": len(validity),
@@ -981,7 +1122,9 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
             "orthogonal_procrustes": "computed only for equal-dimensional embedder pairs",
             "norm_quantile_nmi": "quantile-binned norm mutual-information proxy with validity flags",
             "cca_family": "not emitted as a numeric score in smoke v1 unless validity preconditions are met by dimensions/sample count",
+            "vector_space_health": "active embedder spaces with <=1 unique vector hash or duplicate vector-hash sets are blockers; pair metrics over those spaces are invalid",
         },
+        "vector_space_blockers": vector_blockers,
         "top_alignment": top_alignment,
         "top_disagreement": top_disagreement,
         "top_synergy_candidates": top_synergy,
@@ -992,8 +1135,18 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
     write_csv(
         args.output_root / "embedder_coverage.csv",
         coverage,
-        ["embedder_id", "row_count", "coverage_ratio", "missing_or_quarantined_count", "unique_vector_sha256_count", "unique_chunk_count"],
+        [
+            "embedder_id",
+            "row_count",
+            "coverage_ratio",
+            "missing_or_quarantined_count",
+            "unique_vector_sha256_count",
+            "unique_chunk_count",
+            "vector_space_status",
+            "vector_space_blocker",
+        ],
     )
+    write_jsonl(args.output_root / "embedder_vector_space_health.jsonl", vector_health)
     write_jsonl(args.output_root / "pairwise_metrics.jsonl", pairwise)
     write_csv(
         args.output_root / "pairwise_metrics.csv",
@@ -1001,9 +1154,13 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
         [
             "left_embedder_id",
             "right_embedder_id",
+            "valid",
+            "invalid_reason",
             "overlap_rows",
             "left_dim",
             "right_dim",
+            "left_unique_vector_sha256_count",
+            "right_unique_vector_sha256_count",
             "linear_cka",
             "linear_hsic",
             "neighbor_overlap_at_k",
@@ -1032,11 +1189,13 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
     readback_summary = read_json(args.output_root / "summary.json")
     readback_pairwise = sum(1 for _ in iter_jsonl(args.output_root / "pairwise_metrics.jsonl"))
     readback_coverage = sum(1 for _ in iter_jsonl(args.output_root / "embedder_coverage.jsonl"))
+    readback_vector_health = sum(1 for _ in iter_jsonl(args.output_root / "embedder_vector_space_health.jsonl"))
     readback_validity = sum(1 for _ in iter_jsonl(args.output_root / "estimator_validity.jsonl"))
     stable_hashes = {
         "summary": sha256_file(args.output_root / "summary.json"),
         "pairwise_metrics": sha256_file(args.output_root / "pairwise_metrics.jsonl"),
         "embedder_coverage": sha256_file(args.output_root / "embedder_coverage.jsonl"),
+        "embedder_vector_space_health": sha256_file(args.output_root / "embedder_vector_space_health.jsonl"),
         "estimator_validity": sha256_file(args.output_root / "estimator_validity.jsonl"),
         "stratified_coverage": sha256_file(args.output_root / "stratified_coverage.jsonl"),
     }
@@ -1046,7 +1205,9 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
         and readback_summary.get("matrix_summary", {}).get("pairwise_rows") == expected_pairwise_rows
         and readback_pairwise == expected_pairwise_rows
         and readback_coverage == args.expected_embedder_count
+        and readback_vector_health == args.expected_embedder_count
         and readback_validity >= expected_pairwise_rows
+        and not vector_blockers
         and all(row.get("coverage_ratio", 0.0) > 0 for row in coverage)
         and all(case.get("passes") is True for case in edge_cases)
     )
@@ -1065,9 +1226,12 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
             "checkpoint": source_checkpoint_summary.get("checkpoint_path") if source_checkpoint_summary else None,
             "shard_plan": source_checkpoint_summary.get("shard_plan_path") if source_checkpoint_summary else None,
             "output_root": str(args.output_root),
+            "included_embedders": included_embedders,
+            "excluded_loaded_embedders": excluded_loaded_embedders,
             "summary": str(args.output_root / "summary.json"),
             "pairwise_metrics": str(args.output_root / "pairwise_metrics.jsonl"),
             "embedder_coverage": str(args.output_root / "embedder_coverage.jsonl"),
+            "embedder_vector_space_health": str(args.output_root / "embedder_vector_space_health.jsonl"),
             "estimator_validity": str(args.output_root / "estimator_validity.jsonl"),
             "stratified_coverage": str(args.output_root / "stratified_coverage.jsonl"),
             "readback": str(args.readback_root / f"{artifact_kind}_readback.json"),
@@ -1080,6 +1244,8 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
             "summary_pairwise_rows": readback_summary.get("matrix_summary", {}).get("pairwise_rows"),
             "pairwise_rows": readback_pairwise,
             "coverage_rows": readback_coverage,
+            "vector_space_health_rows": readback_vector_health,
+            "vector_space_blockers": vector_blockers,
             "estimator_validity_rows": readback_validity,
             "coverage_min_ratio": min(row["coverage_ratio"] for row in coverage),
             "coverage_max_ratio": max(row["coverage_ratio"] for row in coverage),
@@ -1107,7 +1273,25 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
     readback_path = args.readback_root / f"{artifact_kind}_readback.json"
     dump_json(readback_path, readback)
     final_readback = read_json(readback_path)
-    require(final_readback.get("passes") is True, f"READBACK failed; see {readback_path}")
+    if final_readback.get("passes") is not True:
+        raise SmokeMatrixError(
+            f"READBACK failed; see {readback_path}",
+            code="SMOKE_INTELLIGENCE_READBACK_FAILED",
+            remediation="Inspect vector_space_blockers and regenerate or quarantine degenerate/duplicate embedder spaces before consuming pair metrics.",
+            details={
+                "readback_path": str(readback_path),
+                "vector_space_blocker_count": len(vector_blockers),
+                "vector_space_blockers": [
+                    {
+                        "embedder_id": row.get("embedder_id"),
+                        "status": row.get("status"),
+                        "blocker": row.get("blocker"),
+                        "duplicate_of_embedder_id": row.get("duplicate_of_embedder_id"),
+                    }
+                    for row in vector_blockers
+                ],
+            },
+        )
     print(json.dumps(final_readback, sort_keys=True, indent=2))
     return 0
 
@@ -1121,10 +1305,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--shard-plan", type=Path, default=None)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
+    parser.add_argument("--readback-root", "--fsv-root", dest="readback_root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--task-id", default=DEFAULT_TASK_ID)
     parser.add_argument("--expected-chunk-count", type=int, default=1000)
     parser.add_argument("--expected-embedder-count", type=int, default=12)
+    parser.add_argument(
+        "--included-embedders",
+        default="",
+        help="Comma-separated embedder ids to consume after loading source records; default consumes every loaded embedder.",
+    )
     parser.add_argument("--min-overlap", type=int, default=DEFAULT_MIN_OVERLAP)
     parser.add_argument("--neighbor-k", type=int, default=DEFAULT_NEIGHBOR_K)
     parser.add_argument("--min-completed-shards", type=int, default=1)

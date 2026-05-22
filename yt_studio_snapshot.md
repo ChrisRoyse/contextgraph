@@ -1,0 +1,323 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic [ref=e2]: Video details
+    - generic [ref=e4]:
+      - banner [ref=e6]:
+        - button "Collapse menu" [ref=e7] [cursor=pointer]:
+          - generic [ref=e10]:
+            - img
+        - link "YouTube Studio dashboard" [ref=e12] [cursor=pointer]:
+          - /url: /channel/UC1yBb0iQWF7ByG5NugAZhvg
+          - img "YouTube Studio dashboard" [ref=e13]
+        - button "Skip navigation" [ref=e16] [cursor=pointer]:
+          - generic [ref=e17]: Skip navigation
+        - generic [ref=e22]:
+          - generic [ref=e25]:
+            - img
+          - textbox "Search across your channel" [ref=e27]
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - button "Chat with Creator Support" [ref=e32] [cursor=pointer]:
+              - generic [ref=e35]:
+                - img
+            - button "Help" [ref=e37] [cursor=pointer]:
+              - generic [ref=e40]:
+                - img
+            - button "Ask Studio" [ref=e46] [cursor=pointer]:
+              - generic [ref=e49]:
+                - img
+            - button "Notifications" [ref=e51] [cursor=pointer]:
+              - generic [ref=e54]:
+                - img
+          - button "Create" [ref=e57] [cursor=pointer]:
+            - generic [ref=e61]:
+              - img
+            - generic [ref=e62]: Create
+          - generic "Account" [ref=e66]:
+            - button "Account" [ref=e67]
+      - generic [ref=e69]:
+        - navigation [ref=e71]:
+          - link "Channel content" [ref=e73] [cursor=pointer]:
+            - /url: /channel/UC1yBb0iQWF7ByG5NugAZhvg/videos/upload?filter=%5B%5D&sort=%7B%22columnType%22%3A%22date%22%2C%22sortOrder%22%3A%22DESCENDING%22%7D
+            - generic [ref=e74]:
+              - generic [ref=e78]:
+                - img
+              - generic [ref=e79]: Channel content
+          - generic [ref=e81]:
+            - generic [ref=e85]:
+              - 'img "Video thumbnail: 052220265thelementDDAexplain" [ref=e88]'
+              - generic [ref=e90]: 15:00
+            - generic [ref=e91]:
+              - generic [ref=e92]: Your video
+              - generic [ref=e93]: 052220265thelementDDAexplain
+          - menu [ref=e95]:
+            - menuitem "Details" [ref=e96] [cursor=pointer]:
+              - generic [ref=e97]:
+                - generic [ref=e101]:
+                  - img
+                - generic [ref=e102]: Details
+            - menuitem "Analytics" [ref=e103] [cursor=pointer]:
+              - generic [ref=e104]:
+                - generic [ref=e108]:
+                  - img
+                - generic [ref=e109]: Analytics
+            - menuitem "Editor" [ref=e110] [cursor=pointer]:
+              - generic [ref=e111]:
+                - generic [ref=e115]:
+                  - img
+                - generic [ref=e116]: Editor
+            - menuitem "Comments" [ref=e117] [cursor=pointer]:
+              - generic [ref=e118]:
+                - generic [ref=e122]:
+                  - img
+                - generic [ref=e123]: Comments
+            - menuitem "Languages" [ref=e124] [cursor=pointer]:
+              - generic [ref=e125]:
+                - generic [ref=e129]:
+                  - img
+                - generic [ref=e130]: Languages
+            - menuitem "Copyright" [ref=e131] [cursor=pointer]:
+              - generic [ref=e132]:
+                - generic [ref=e136]:
+                  - img
+                - generic [ref=e137]: Copyright
+            - menuitem "Clips" [ref=e138] [cursor=pointer]:
+              - generic [ref=e139]:
+                - generic [ref=e143]:
+                  - img
+                - generic [ref=e144]: Clips
+          - list [ref=e146]:
+            - listitem [ref=e147]:
+              - button "Settings" [ref=e148] [cursor=pointer]:
+                - generic [ref=e152]:
+                  - img
+                - generic [ref=e153]: Settings
+            - listitem [ref=e154]:
+              - button "Send feedback" [ref=e156] [cursor=pointer]:
+                - generic [ref=e160]:
+                  - img
+                - generic [ref=e161]: Send feedback
+        - main [ref=e162]:
+          - generic [ref=e165]:
+            - generic [ref=e168]:
+              - heading "Video details" [level=1] [ref=e170]
+              - generic [ref=e171]:
+                - button "Undo changes" [disabled] [ref=e174]:
+                  - generic [ref=e175]: Undo changes
+                - button "Save" [disabled] [ref=e178]:
+                  - generic [ref=e179]: Save
+                - generic [ref=e180]:
+                  - button "Options" [ref=e181] [cursor=pointer]:
+                    - generic [ref=e184]:
+                      - img
+                  - generic:
+                    - generic "Video sync state dialog"
+            - generic [ref=e185]:
+              - generic [ref=e186]:
+                - generic [ref=e187]:
+                  - generic [ref=e193]:
+                    - generic [ref=e194]:
+                      - text: Title (required)
+                      - generic "A catchy title can help you hook viewers. When you create video titles, it’s a good idea to include keywords your audience is likely to use when looking for videos like yours. Learn more" [ref=e196]:
+                        - generic [ref=e198]:
+                          - img
+                    - generic [ref=e200]:
+                      - textbox "Add a title that describes your video (type @ to mention a channel)" [ref=e202]
+                      - button "A/B Testing" [ref=e206] [cursor=pointer]:
+                        - generic [ref=e210]:
+                          - img
+                        - generic [ref=e211]: A/B Testing
+                  - generic [ref=e220]:
+                    - generic [ref=e221]:
+                      - text: Description
+                      - generic "Writing descriptions with keywords can help viewers find your videos more easily through search. You can give an overview of your video and place keywords in the beginning of the description. Learn more" [ref=e223]:
+                        - generic [ref=e225]:
+                          - img
+                    - generic [ref=e227]:
+                      - textbox "Tell viewers about your video (type @ to mention a channel)" [ref=e229]
+                      - generic "Products" [ref=e232]:
+                        - button "Products" [ref=e234] [cursor=pointer]:
+                          - generic [ref=e238]:
+                            - img
+                          - generic [ref=e239]: Products
+                  - generic [ref=e244]:
+                    - generic [ref=e245]: Thumbnail
+                    - generic [ref=e246]:
+                      - text: Set a thumbnail that stands out and draws viewers' attention.
+                      - link "Learn more about thumbnails" [ref=e247] [cursor=pointer]:
+                        - /url: https://support.google.com/youtube/answer/72431?hl=en
+                        - text: Learn more
+                    - generic [ref=e248]:
+                      - button "Upload file" [ref=e254] [cursor=pointer]:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - img
+                        - generic [ref=e255]: Upload file
+                      - button "Auto-generated thumbnail 2 Auto-generated" [ref=e259] [cursor=pointer]:
+                        - img "Auto-generated thumbnail 2" [ref=e263]
+                        - generic:
+                          - generic:
+                            - generic:
+                              - img
+                        - generic [ref=e264]: Auto-generated
+                      - button "A/B Testing" [ref=e268] [cursor=pointer]:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - img
+                        - generic [ref=e269]: A/B Testing
+                  - generic [ref=e270]:
+                    - generic [ref=e271]: Playlists
+                    - generic [ref=e272]:
+                      - text: Add your video to one or more playlists to organize your content for viewers.
+                      - link "Learn more about playlists" [ref=e273] [cursor=pointer]:
+                        - /url: https://support.google.com/youtube/answer/57792
+                        - text: Learn more
+                    - generic "Add to playlist" [ref=e276]:
+                      - button "Select playlists" [ref=e278]:
+                        - button "Select" [ref=e279] [cursor=pointer]:
+                          - generic [ref=e283]: Select
+                          - generic [ref=e287]:
+                            - img
+                  - generic [ref=e289]:
+                    - generic [ref=e290]: Audience
+                    - generic [ref=e291]:
+                      - generic [ref=e292]:
+                        - text: This video is set to not made for kids
+                        - generic [ref=e295]: Set by you
+                      - generic [ref=e296]:
+                        - text: Regardless of your location, you're legally required to comply with the Children's Online Privacy Protection Act (COPPA) and/or other laws. You're required to tell us whether your videos are made for kids.
+                        - link "What's content made for kids?" [ref=e297] [cursor=pointer]:
+                          - /url: https://support.google.com/youtube/answer/9528076?hl=en
+                      - generic [ref=e299]:
+                        - generic [ref=e302]:
+                          - img
+                        - generic [ref=e303]:
+                          - text: Features like personalized ads and notifications won’t be available on videos made for kids. Videos that are set as made for kids by you are more likely to be recommended alongside other kids’ videos.
+                          - link "Learn more about video's audience settings" [ref=e304] [cursor=pointer]:
+                            - /url: https://support.google.com/youtube/answer/9527654?hl=en
+                            - text: Learn more
+                      - radiogroup [ref=e306]:
+                        - radio "Yes, it's made for kids . Features like personalized ads and notifications won’t be available on videos made for kids. Videos that are set as made for kids by you are more likely to be recommended alongside other kids’ videos. Learn more" [ref=e307] [cursor=pointer]:
+                          - generic [ref=e310]:
+                            - text: Yes, it's made for kids
+                            - generic [ref=e311]: .
+                            - generic [ref=e312]:
+                              - text: Features like personalized ads and notifications won’t be available on videos made for kids. Videos that are set as made for kids by you are more likely to be recommended alongside other kids’ videos.
+                              - link "Learn more" [ref=e313]:
+                                - /url: https://support.google.com/youtube/answer/9527654?hl=en
+                        - radio "No, it's not made for kids" [checked] [ref=e314] [cursor=pointer]:
+                          - generic [ref=e318]: No, it's not made for kids
+                    - button "Age restriction (advanced)" [ref=e319]:
+                      - generic [ref=e322]:
+                        - img
+                      - heading "Age restriction (advanced)" [level=3] [ref=e323]
+                - generic [ref=e324]:
+                  - generic "Show advanced settings" [ref=e325]:
+                    - button "Show advanced settings" [ref=e327] [cursor=pointer]:
+                      - generic [ref=e328]: Show more
+                  - generic [ref=e332]: Paid promotion, collaboration, subtitles, and more
+              - generic [ref=e333]:
+                - generic [ref=e335]:
+                  - generic [ref=e338]:
+                    - status [ref=e340]
+                    - region "Video player" [ref=e348]:
+                      - img [ref=e357]
+                      - generic [ref=e360]:
+                        - button "Play" [ref=e361] [cursor=pointer]:
+                          - generic [ref=e364]:
+                            - img
+                        - generic [ref=e365]:
+                          - button "Mute" [ref=e366] [cursor=pointer]:
+                            - generic [ref=e369]:
+                              - img
+                          - slider "volume" [ref=e370]
+                        - generic [ref=e373]: 00:00 / 15:00
+                        - button "Settings" [ref=e376] [cursor=pointer]:
+                          - generic [ref=e379]:
+                            - img
+                        - button "Full screen" [ref=e380] [cursor=pointer]:
+                          - generic [ref=e383]:
+                            - img
+                      - generic [ref=e387]:
+                        - img
+                      - generic [ref=e391]:
+                        - img
+                      - generic [ref=e395]:
+                        - img
+                      - generic [ref=e399]:
+                        - img
+                  - generic [ref=e400]:
+                    - generic [ref=e401]:
+                      - generic [ref=e402]: Video link
+                      - link "https://youtu.be/lxHxR59JStY" [ref=e405] [cursor=pointer]:
+                        - /url: https://youtu.be/lxHxR59JStY
+                    - button "Copy video link" [ref=e407] [cursor=pointer]:
+                      - generic [ref=e410]:
+                        - img
+                  - generic [ref=e411]: Filename
+                  - generic [ref=e412]: 052220265thelementDDAexplain.mp4
+                  - generic [ref=e413]: Video quality
+                  - generic [ref=e414]:
+                    - generic "Standard Definition complete" [ref=e415]:
+                      - generic [ref=e417]:
+                        - img
+                    - img "High Definition complete" [ref=e418]:
+                      - generic [ref=e420]:
+                        - img
+                    - img "4K complete" [ref=e421]:
+                      - generic [ref=e423]:
+                        - img
+                - generic [ref=e426] [cursor=pointer]:
+                  - generic [ref=e427]:
+                    - generic [ref=e428]: Visibility
+                    - generic [ref=e430]:
+                      - generic [ref=e433]:
+                        - img
+                      - generic [ref=e434]: Unlisted
+                  - button "Edit video visibility status" [ref=e436]:
+                    - generic [ref=e439]:
+                      - img
+                - generic [ref=e441]:
+                  - generic [ref=e442]: Restrictions
+                  - generic [ref=e443]: None
+                - button "Subtitles" [ref=e444]:
+                  - button "Subtitles" [ref=e445]:
+                    - button "Subtitles" [ref=e446] [cursor=pointer]:
+                      - generic [ref=e451]:
+                        - img
+                      - generic [ref=e453]: Subtitles
+                      - generic [ref=e457]:
+                        - img
+                - button "End screen" [ref=e458]:
+                  - button "End screen" [ref=e459]:
+                    - button "End screen" [ref=e460] [cursor=pointer]:
+                      - generic [ref=e465]:
+                        - img
+                      - generic [ref=e467]: End screen
+                      - generic [ref=e471]:
+                        - img
+                - button "Cards" [ref=e472]:
+                  - button "Cards" [ref=e473]:
+                    - button "Cards" [ref=e474] [cursor=pointer]:
+                      - generic [ref=e479]:
+                        - img
+                      - generic [ref=e481]: Cards
+                      - generic [ref=e485]:
+                        - img
+                - button "Quizzes" [ref=e486]:
+                  - button "Quizzes" [ref=e487]:
+                    - button "Quizzes" [ref=e488] [cursor=pointer]:
+                      - generic [ref=e493]:
+                        - img
+                      - generic [ref=e495]: Quizzes
+                      - generic [ref=e499]:
+                        - img
+                - button "Files" [ref=e503]:
+                  - button "Files" [ref=e504] [cursor=pointer]:
+                    - generic [ref=e509]:
+                      - img
+                    - generic [ref=e511]: Files
+                    - generic [ref=e515]:
+                      - img

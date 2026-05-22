@@ -108,6 +108,8 @@ from .python_foundationality_pressure_probe import (
 from .python_foundationality_pressure_probe import command_python_foundationality_pressure_probe
 from .python_auto_label_discovery import add_arguments as add_python_auto_label_discovery_arguments
 from .python_auto_label_discovery import command_python_auto_label_discovery
+from .python_geometry_label_admissibility import add_arguments as add_python_geometry_label_admissibility_arguments
+from .python_geometry_label_admissibility import command_python_geometry_label_admissibility
 from .panel_b_artifacts import add_arguments as add_panel_b_artifacts_arguments
 from .panel_b_artifacts import command_panel_b_artifacts
 from .panel_b_model_scores import add_arguments as add_panel_b_model_scores_arguments
@@ -251,10 +253,21 @@ def build_parser() -> argparse.ArgumentParser:
     smoke_intelligence.add_argument("--checkpoint", type=Path, default=None)
     smoke_intelligence.add_argument("--shard-plan", type=Path, default=None)
     smoke_intelligence.add_argument("--output-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices"))
-    smoke_intelligence.add_argument("--readback-root", type=Path, default=Path("/zfs/archive/contextgraph/readback/task-py-data-062-post249-smoke-intelligence-readback"))
+    smoke_intelligence.add_argument(
+        "--readback-root",
+        "--fsv-root",
+        dest="readback_root",
+        type=Path,
+        default=Path("/zfs/archive/contextgraph/readback/task-py-data-062-post249-smoke-intelligence-readback"),
+    )
     smoke_intelligence.add_argument("--task-id", default="TASK-PY-DATA-062")
     smoke_intelligence.add_argument("--expected-chunk-count", type=int, default=1000)
     smoke_intelligence.add_argument("--expected-embedder-count", type=int, default=12)
+    smoke_intelligence.add_argument(
+        "--included-embedders",
+        default="",
+        help="Comma-separated embedder ids to consume after loading source records; default consumes every loaded embedder.",
+    )
     smoke_intelligence.add_argument("--min-overlap", type=int, default=20)
     smoke_intelligence.add_argument("--neighbor-k", type=int, default=10)
     smoke_intelligence.add_argument("--min-completed-shards", type=int, default=1)
@@ -733,6 +746,16 @@ def build_parser() -> argparse.ArgumentParser:
     auto_label_discovery.set_defaults(
         func=command_python_auto_label_discovery,
         evidence_name="python-auto-label-discovery-command-evidence.json",
+    )
+
+    geometry_label_admissibility = sub.add_parser(
+        "python-geometry-label-admissibility",
+        help="TASK-PY-G-143: scrub geometry labels through vector-space health and alias policy.",
+    )
+    add_python_geometry_label_admissibility_arguments(geometry_label_admissibility)
+    geometry_label_admissibility.set_defaults(
+        func=command_python_geometry_label_admissibility,
+        evidence_name="python-geometry-label-admissibility-command-evidence.json",
     )
 
     panel_b_artifacts = sub.add_parser(

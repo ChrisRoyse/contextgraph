@@ -561,7 +561,8 @@ impl SelfHealingPipeline {
                     format!("drift sample {idx} could not be decoded: {err}"),
                 )
             })?;
-            let calibration_nonconformity_score = if sample.covered() { 0.05 } else { 0.95 };
+            let calibration_nonconformity_score =
+                drift_window_nonconformity_score(&sample, idx, values.len())?;
             examples.push(HoldoutExample {
                 predicted: sample.predicted_set,
                 actual: sample.actual_oracle,
@@ -618,6 +619,33 @@ impl SelfHealingPipeline {
         }
         Ok(())
     }
+}
+
+fn drift_window_nonconformity_score(
+    sample: &DriftSample,
+    idx: usize,
+    total: usize,
+) -> Result<f32, HealError> {
+    if total == 0 {
+        return Err(HealError::invalid(
+            "drift_window.nonconformity.total",
+            "total must be non-zero",
+        ));
+    }
+    let denom = total.saturating_sub(1).max(1) as f32;
+    let rank = (idx.min(total.saturating_sub(1)) as f32 / denom).clamp(0.0, 1.0);
+    let score = if sample.covered() {
+        0.02 + 0.43 * rank
+    } else {
+        0.50 + 0.49 * rank
+    };
+    if !score.is_finite() || !(0.0..=1.0).contains(&score) {
+        return Err(HealError::invalid(
+            "drift_window.nonconformity.score",
+            "score must be finite in [0,1]",
+        ));
+    }
+    Ok(score)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -907,6 +935,25 @@ mod tests {
         let mut bytes = [0u8; 8];
         bytes.copy_from_slice(&row);
         assert_eq!(u64::from_be_bytes(bytes), 8);
+    }
+
+    #[test]
+    fn drift_window_nonconformity_spreads_covered_and_uncovered_scores() {
+        let covered =
+            DriftSample::try_new(vec![OracleOutcome::Pass], OracleOutcome::Pass, 0, 0.05, 0.9)
+                .unwrap();
+        let uncovered =
+            DriftSample::try_new(vec![OracleOutcome::Pass], OracleOutcome::Fail, 1, 0.05, 0.9)
+                .unwrap();
+
+        let covered_score = drift_window_nonconformity_score(&covered, 699, 700).unwrap();
+        let uncovered_low = drift_window_nonconformity_score(&uncovered, 0, 700).unwrap();
+        let uncovered_high = drift_window_nonconformity_score(&uncovered, 699, 700).unwrap();
+
+        assert!(covered_score < uncovered_low);
+        assert!(uncovered_low < uncovered_high);
+        assert!((0.0..=1.0).contains(&covered_score));
+        assert!((0.0..=1.0).contains(&uncovered_high));
     }
 
     #[test]
