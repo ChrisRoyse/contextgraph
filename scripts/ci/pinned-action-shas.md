@@ -14,5 +14,5 @@ Rotation procedure:
 
 1. Resolve the upstream ref with `git ls-remote`.
 2. Replace workflow pins with the new 40-character commit SHA.
-3. Run the Phase F workflow pin grep from the FSV evidence.
-4. Record the old and new SHAs in the task FSV artifact.
+3. Run direct `rg` readback over `.github/workflows/` for the pinned SHAs.
+4. Record the old and new SHAs in the issue comment and manual verification notes.

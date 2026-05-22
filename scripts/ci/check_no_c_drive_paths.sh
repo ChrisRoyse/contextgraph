@@ -36,7 +36,6 @@ allow_c_drive_guard_reference() {
     *'!paths.packed_root().starts_with("/mnt/c")'* ) return 0 ;;
     *'not Windows mounted /mnt/c'* ) return 0 ;;
     *'df -B1 --output=source,size,used,avail,pcent,target / /mnt/c /zfs/archive'* ) return 0 ;;
-    'crates/context-graph-mejepa-embedders/examples/python_forward_cache_fsv.rs:'*':            "/mnt/c",') return 0 ;;
     *) return 1 ;;
   esac
 }

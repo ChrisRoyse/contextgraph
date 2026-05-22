@@ -10,9 +10,9 @@ HOOK="${ROOT}/scripts/cc/hook_user_prompt_submit_inject_prediction.sh"
 TMPROOT="$(mktempdir)"
 trap 'rm -rf "${TMPROOT}"' EXIT
 
-FSV_ROOT="${CGREALITY_FSV_ROOT:-/tmp/contextgraph-task-py-g-055-prediction-injection-fsv}"
-RUN_ROOT="${FSV_ROOT}/hook-run-$(date -u +%s)-$$"
-ARTIFACT_PATH="${RUN_ROOT}/prediction_injection_hook_fsv.json"
+REPORT_ROOT="${CGREALITY_HOOK_REPORT_ROOT:-/tmp/contextgraph-task-py-g-055-prediction-injection-report}"
+RUN_ROOT="${REPORT_ROOT}/hook-run-$(date -u +%s)-$$"
+ARTIFACT_PATH="${RUN_ROOT}/prediction_injection_hook_report.json"
 DROOT="${RUN_ROOT}/droot"
 FAKEBIN="${TMPROOT}/bin"
 mkdir -p "${DROOT}" "${FAKEBIN}"

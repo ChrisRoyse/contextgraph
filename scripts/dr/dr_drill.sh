@@ -15,7 +15,7 @@ REPO_ROOT="${MEJEPA_DR_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." &&
 BACKUP_ROOT="${MEJEPA_BACKUP_ROOT:-/zfs/archive/contextgraph/backups/local}"
 SCRATCH_ROOT="${MEJEPA_DR_SCRATCH_ROOT:-/zfs/hot/contextgraph/dr-scratch}"
 CLI_BIN="${MEJEPA_CLI_BIN:-${REPO_ROOT}/target/release/context-graph-cli}"
-EVIDENCE_ROOT="${MEJEPA_DR_EVIDENCE_ROOT:-/zfs/archive/contextgraph/fsv/dr-drill-fsv}"
+EVIDENCE_ROOT="${MEJEPA_DR_EVIDENCE_ROOT:-/zfs/archive/contextgraph/runtime/dr-drill-reports}"
 RTO_BUDGET_SECONDS="${MEJEPA_DR_RTO_BUDGET_SECONDS:-1800}"
 
 if [[ ! -d "${BACKUP_ROOT}" ]]; then

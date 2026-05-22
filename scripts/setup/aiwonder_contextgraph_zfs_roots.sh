@@ -60,8 +60,6 @@ write_key_manifest() {
 
 key_artifacts() {
   cat <<EOF
-$ARCHIVE_ROOT/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/ship-gate-fsv.json
-$ARCHIVE_ROOT/fsv/task-py-g-392-temporal-trajectory-features-fsv/run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_fsv.json
 $ARCHIVE_ROOT/corpus/swebench-lite-python-300x8-v1-20260511/index.json
 $ARCHIVE_ROOT/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl
 $HOT_ROOT/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl

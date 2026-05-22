@@ -12,7 +12,7 @@
 #   2. target temp dirs and browser/session artifacts
 #   3. Python bytecode/cache files
 #   4. Backup files   (corrupted DBs, model backups, stale data)
-#   5. /tmp test DBs  (leftover RocksDB/CUDA FSV directories)
+#   5. /tmp test DBs  (leftover RocksDB/CUDA verification directories)
 #   6. Old /tmp runtime logs and heartbeat sidecars
 #   7. [aggressive] Release deps, HF model cache, pip cache
 #
@@ -120,7 +120,7 @@ echo ""
 
 echo "--- Debug Build Artifacts ---"
 if [ -d "$TARGET_DIR/debug" ]; then
-    clean_path "$TARGET_DIR/debug" "target/debug/ (incremental + deps + binaries)"
+clean_path "$TARGET_DIR/debug" "target/debug/ (incremental + deps + binaries)"
 else
     echo "  target/debug/ not present"
 fi
@@ -132,9 +132,8 @@ echo ""
 
 echo "--- Target Temp / Browser Session Artifacts ---"
 clean_path "$TARGET_DIR/tmp" "target/tmp/"
-clean_path "$TARGET_DIR/utl_fsv" "target/utl_fsv/"
 clean_path "$PROJECT_DIR/.playwright-mcp" ".playwright-mcp/ session artifacts"
-clean_path "$PROJECT_DIR/docs/shakespeareplan/runs" "docs/shakespeareplan/runs/ generated FSV runs"
+clean_path "$PROJECT_DIR/docs/shakespeareplan/runs" "docs/shakespeareplan/runs/ generated run artifacts"
 clean_path "$PROJECT_DIR/tmp" "tmp/ scratch artifacts"
 echo ""
 
@@ -231,7 +230,7 @@ echo ""
 echo "--- /tmp Test Remnants ---"
 tmp_count=0
 tmp_kb=0
-for tmp_dir in /tmp/db-* /tmp/ocr-processor-test-* /tmp/contextgraph-cuda13-fsv.* /tmp/contextgraph-cuda13-fsv.partial; do
+for tmp_dir in /tmp/db-* /tmp/ocr-processor-test-*; do
     if [ -e "$tmp_dir" ]; then
         kb=$(size_kb "$tmp_dir")
         tmp_kb=$(( tmp_kb + kb ))

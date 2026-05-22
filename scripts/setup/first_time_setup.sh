@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 DROOT="${CONTEXTGRAPH_DATA_ROOT:-/zfs/archive/contextgraph}"
 CONFIG_ROOT="${MEJEPA_CONFIG_ROOT:-${HOME}/.config/mejepa}"
-FSV_ROOT="${DROOT}/fsv/first-time-setup"
-EVIDENCE="${FSV_ROOT}/setup-readback.json"
+READBACK_ROOT="${DROOT}/runtime/setup-readback"
+EVIDENCE="${READBACK_ROOT}/setup-readback.json"
 
 require() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -28,9 +28,8 @@ mkdir -p \
   "${DROOT}/state/locks" \
   "${DROOT}/state/schedulers" \
   "${DROOT}/state/cgreality" \
-  "${DROOT}/fsv" \
   "${CONFIG_ROOT}" \
-  "${FSV_ROOT}"
+  "${READBACK_ROOT}"
 
 chmod 700 "${DROOT}" "${CONFIG_ROOT}"
 
