@@ -101,6 +101,10 @@ def command_python_pair_conditional_admission_probe(args: Any) -> dict[str, Any]
     chosen = policies[0]
     calibration_application = apply_policy(scored_calibration, chosen["policy"])
     holdout_application = apply_policy(scored_holdout, chosen["policy"])
+    baseline_calibration = split_report_with_cells(scored_calibration, "active_after_abstain")
+    baseline_holdout = split_report_with_cells(scored_holdout, "active_after_abstain")
+    calibration_delta = report_delta(baseline_calibration, calibration_application["report"])
+    holdout_delta = report_delta(baseline_holdout, holdout_application["report"])
 
     selected_path = output_root / "selected_pair_admission_features.jsonl"
     policies_path = output_root / "pair_admission_policy_grid.jsonl"
@@ -141,22 +145,16 @@ def command_python_pair_conditional_admission_probe(args: Any) -> dict[str, Any]
         },
         "chosenPolicy": chosen,
         "baseline": {
-            "calibration": split_report_with_cells(scored_calibration, "active_after_abstain"),
-            "holdout": split_report_with_cells(scored_holdout, "active_after_abstain"),
+            "calibration": baseline_calibration,
+            "holdout": baseline_holdout,
         },
         "afterPolicy": {
             "calibration": calibration_application["report"],
             "holdoutReportingOnly": holdout_application["report"],
         },
         "deltaVsBaseline": {
-            "calibration": report_delta(
-                split_report_with_cells(scored_calibration, "active_after_abstain"),
-                calibration_application["report"],
-            ),
-            "holdoutReportingOnly": report_delta(
-                split_report_with_cells(scored_holdout, "active_after_abstain"),
-                holdout_application["report"],
-            ),
+            "calibration": calibration_delta,
+            "holdoutReportingOnly": holdout_delta,
         },
         "pathPolicy": {"aiwonderOnly": True, "mntDActiveReadsOrWrites": False},
         "policy": {
@@ -175,7 +173,7 @@ def command_python_pair_conditional_admission_probe(args: Any) -> dict[str, Any]
             "pairAdmissionHoldoutRowsJsonl": str(holdout_rows_path),
             "pairAdmissionHoldoutRowsSha256": sha256_file(holdout_rows_path),
         },
-        "recommendation": recommendation(calibration_application["report"], holdout_application["report"]),
+        "recommendation": recommendation(calibration_delta, holdout_delta, holdout_application["report"]),
         "reportPath": str(report_path),
     }
     write_json_checked(report_path, report)
@@ -390,20 +388,29 @@ def row_projection(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def recommendation(calibration: dict[str, Any], holdout: dict[str, Any]) -> dict[str, Any]:
-    holdout_delta = report_delta(
-        {"activePolicy": holdout["full"], "rowCounts": holdout["rowCounts"], "perCellActive": {}},
-        holdout,
-    )
+def recommendation(
+    calibration_delta: dict[str, Any],
+    holdout_delta: dict[str, Any],
+    holdout: dict[str, Any],
+) -> dict[str, Any]:
     active_corr = holdout["activePolicy"].get("prediction_oracle_correlation")
     active_smooth = holdout["activePolicy"].get("smooth_ece")
-    if active_corr is not None and active_corr >= 0.95 and (active_smooth is None or active_smooth <= 0.024):
+    changed_rows = bool(
+        calibration_delta.get("activeRowDelta") != 0
+        or holdout_delta.get("activeRowDelta") != 0
+        or calibration_delta.get("abstainRowDelta") != 0
+        or holdout_delta.get("abstainRowDelta") != 0
+    )
+    if not changed_rows:
+        action = "retain_negative_no_pair_admission_policy_beat_baseline"
+    elif active_corr is not None and active_corr >= 0.95 and (active_smooth is None or active_smooth <= 0.024):
         action = "consider_named_pair_admission_wiring_under_392"
     else:
         action = "retain_as_diagnostic_or_refine_with_pair_interactions"
     return {
         "recommendedAction": action,
-        "calibrationActiveCorr": calibration["activePolicy"].get("prediction_oracle_correlation"),
+        "changedRows": changed_rows,
+        "calibrationDeltaSummary": calibration_delta,
         "holdoutActiveCorr": active_corr,
         "holdoutActiveSmoothEce": active_smooth,
         "holdoutActiveRowCount": holdout["rowCounts"]["activePolicy"],
