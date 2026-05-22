@@ -152,6 +152,11 @@ def command_python_pair_conditional_admission_probe(args: Any) -> dict[str, Any]
             "calibration": calibration_application["report"],
             "holdoutReportingOnly": holdout_application["report"],
         },
+        "changedPolicyTradeoffsReportingOnly": changed_policy_tradeoffs(
+            policies,
+            scored_holdout,
+            baseline_calibration["rowCounts"]["activePolicy"],
+        ),
         "deltaVsBaseline": {
             "calibration": calibration_delta,
             "holdoutReportingOnly": holdout_delta,
@@ -280,6 +285,43 @@ def evaluate_policy_grid(rows: list[dict[str, Any]], min_active_count: int) -> l
                 )
     policies.sort(key=lambda row: (-float(row["selectionObjective"]), json.dumps(row["policy"], sort_keys=True)))
     return policies[:40]
+
+
+def changed_policy_tradeoffs(
+    policies: list[dict[str, Any]],
+    holdout: list[dict[str, Any]],
+    baseline_calibration_active_count: int,
+) -> list[dict[str, Any]]:
+    rows = []
+    for policy_row in policies:
+        calibration_counts = policy_row["calibrationReport"]["rowCounts"]
+        if calibration_counts["activePolicy"] == baseline_calibration_active_count:
+            continue
+        holdout_report = apply_policy(holdout, policy_row["policy"])["report"]
+        rows.append(
+            {
+                "policy": policy_row["policy"],
+                "selectionObjective": policy_row["selectionObjective"],
+                "calibrationRowCounts": calibration_counts,
+                "holdoutRowCounts": holdout_report["rowCounts"],
+                "holdoutActive": holdout_report["activePolicy"],
+                "holdoutWeakCellActiveCorr": {
+                    cell: holdout_report["perCellActive"].get(cell, {}).get("prediction_oracle_correlation")
+                    for cell in WEAK_CELLS
+                },
+                "interpretation": "higher_active_corr_tradeoff_if_active_rows_shrink"
+                if holdout_report["rowCounts"]["activePolicy"] < len(holdout)
+                else "changed_policy_without_active_row_shrink",
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            -(row["holdoutActive"].get("prediction_oracle_correlation") or -1.0),
+            row["holdoutActive"].get("smooth_ece") or 1.0,
+            -row["holdoutRowCounts"]["activePolicy"],
+        )
+    )
+    return rows[:12]
 
 
 def apply_policy(rows: list[dict[str, Any]], policy: dict[str, float]) -> dict[str, Any]:
