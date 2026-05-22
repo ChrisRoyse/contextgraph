@@ -94,6 +94,8 @@ from .python_pair_interaction_mining import add_arguments as add_python_pair_int
 from .python_pair_interaction_mining import command_python_pair_interaction_mining
 from .python_mendeleev_pair_table import add_arguments as add_python_mendeleev_pair_table_arguments
 from .python_mendeleev_pair_table import command_python_mendeleev_pair_table
+from .python_axis_rotation_diagnostic import add_arguments as add_python_axis_rotation_diagnostic_arguments
+from .python_axis_rotation_diagnostic import command_python_axis_rotation_diagnostic
 from .python_foundationality_pressure_probe import (
     add_arguments as add_python_foundationality_pressure_probe_arguments,
 )
@@ -677,6 +679,16 @@ def build_parser() -> argparse.ArgumentParser:
     mendeleev_pair_table.set_defaults(
         func=command_python_mendeleev_pair_table,
         evidence_name="python-mendeleev-pair-table-command-evidence.json",
+    )
+
+    axis_rotation_diagnostic = sub.add_parser(
+        "python-axis-rotation-diagnostic",
+        help="TASK-PY-G-126: per-cell feature-axis rotation diagnostic for calibration mismatch.",
+    )
+    add_python_axis_rotation_diagnostic_arguments(axis_rotation_diagnostic)
+    axis_rotation_diagnostic.set_defaults(
+        func=command_python_axis_rotation_diagnostic,
+        evidence_name="python-axis-rotation-diagnostic-command-evidence.json",
     )
 
     foundationality_pressure_probe = sub.add_parser(
