@@ -110,6 +110,10 @@ from .python_auto_label_discovery import add_arguments as add_python_auto_label_
 from .python_auto_label_discovery import command_python_auto_label_discovery
 from .python_geometry_label_admissibility import add_arguments as add_python_geometry_label_admissibility_arguments
 from .python_geometry_label_admissibility import command_python_geometry_label_admissibility
+from .python_geometry_label_atlas_materializer import (
+    add_arguments as add_python_geometry_label_atlas_materializer_arguments,
+)
+from .python_geometry_label_atlas_materializer import command_python_geometry_label_atlas_materializer
 from .panel_b_artifacts import add_arguments as add_panel_b_artifacts_arguments
 from .panel_b_artifacts import command_panel_b_artifacts
 from .panel_b_model_scores import add_arguments as add_panel_b_model_scores_arguments
@@ -756,6 +760,16 @@ def build_parser() -> argparse.ArgumentParser:
     geometry_label_admissibility.set_defaults(
         func=command_python_geometry_label_admissibility,
         evidence_name="python-geometry-label-admissibility-command-evidence.json",
+    )
+
+    geometry_label_atlas_materializer = sub.add_parser(
+        "python-geometry-label-atlas-materializer",
+        help="TASK-PY-G-144: rebuild exact-vector geometry label atlas from packed forwards and #143 policy.",
+    )
+    add_python_geometry_label_atlas_materializer_arguments(geometry_label_atlas_materializer)
+    geometry_label_atlas_materializer.set_defaults(
+        func=command_python_geometry_label_atlas_materializer,
+        evidence_name="python-geometry-label-atlas-materializer-command-evidence.json",
     )
 
     panel_b_artifacts = sub.add_parser(
