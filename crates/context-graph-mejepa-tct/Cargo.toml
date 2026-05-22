@@ -12,6 +12,7 @@ chrono = { workspace = true }
 context-graph-mejepa-embedders = { path = "../context-graph-mejepa-embedders" }
 context-graph-mejepa-cf = { path = "../context-graph-mejepa-cf" }
 context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }
+context-graph-paths = { workspace = true }
 hex = "0.4"
 rocksdb = "0.22"
 serde = { workspace = true }

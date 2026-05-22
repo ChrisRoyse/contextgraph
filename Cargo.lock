@@ -1273,6 +1273,7 @@ dependencies = [
  "context-graph-mejepa-cf",
  "context-graph-mejepa-embedders",
  "context-graph-mejepa-instruments",
+ "context-graph-paths",
  "hex",
  "rocksdb",
  "serde",
