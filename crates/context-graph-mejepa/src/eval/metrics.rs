@@ -317,11 +317,12 @@ pub fn ship_gate_failures(inputs: ShipGateInputs<'_>) -> Vec<String> {
     if inputs.observations.is_empty() {
         failures.push("empty_holdout".to_string());
     }
+    let gate_correlation_min = inputs.config.convergence_target_correlation;
     match inputs.report_overall {
-        Some(value) if value >= inputs.config.correlation_min => {}
+        Some(value) if value >= gate_correlation_min => {}
         Some(value) => failures.push(format!(
             "overall_correlation {value:.6} < {:.6}",
-            inputs.config.correlation_min
+            gate_correlation_min
         )),
         None => failures.push("overall_correlation unavailable".to_string()),
     }
@@ -330,10 +331,10 @@ pub fn ship_gate_failures(inputs: ShipGateInputs<'_>) -> Vec<String> {
             continue;
         }
         match value {
-            Some(correlation) if *correlation >= inputs.config.correlation_min => {}
+            Some(correlation) if *correlation >= gate_correlation_min => {}
             Some(correlation) => failures.push(format!(
                 "per_cell_correlation {cell} {correlation:.6} < {:.6}",
-                inputs.config.correlation_min
+                gate_correlation_min
             )),
             None => failures.push(format!("per_cell_correlation {cell} unavailable")),
         }

@@ -136,7 +136,7 @@ pub fn run_public_ci_cross_validation(
             "ingest_writer": "context-graph-cli mejepa train",
             "panel_cf": context_graph_mejepa_cf::CF_MEJEPA_PANELS,
             "dda_cf": context_graph_mejepa_cf::CF_MEJEPA_DDA_SIGNALS,
-            "prediction_cf": context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
+            "live_prediction_write_policy": "disabled: corpus ingest writes target-side training evidence only",
             "oracle_cf": context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS,
             "train_cert_cf": context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS,
         }),

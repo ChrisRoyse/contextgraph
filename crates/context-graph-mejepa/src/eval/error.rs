@@ -13,6 +13,7 @@ pub enum EvalErrorCode {
     Store,
     ReadbackMismatch,
     Compiler,
+    FixtureEvalDisabled,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +42,7 @@ impl EvalError {
             EvalErrorCode::Store => "MEJEPA_EVAL_STORE",
             EvalErrorCode::ReadbackMismatch => "MEJEPA_EVAL_READBACK_MISMATCH",
             EvalErrorCode::Compiler => "MEJEPA_EVAL_COMPILER",
+            EvalErrorCode::FixtureEvalDisabled => "MEJEPA_EVAL_FIXTURE_PATH_DISABLED",
         }
     }
 

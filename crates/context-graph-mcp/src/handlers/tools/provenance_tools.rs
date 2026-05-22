@@ -245,11 +245,25 @@ impl Handlers {
                                 "created_at": meta.created_at.map(|t| t.to_rfc3339()),
                             }));
                         }
-                        _ => {
+                        Ok(None) => {
                             source_details.push(json!({
                                 "source_id": source_id.to_string(),
                                 "metadata": "not_found",
                             }));
+                        }
+                        Err(e) => {
+                            error!(
+                                error = %e,
+                                source_id = %source_id,
+                                "get_merge_history: Source metadata detail query failed"
+                            );
+                            return self.tool_error(
+                                id,
+                                &format!(
+                                    "Source metadata detail query failed for {}: {}",
+                                    source_id, e
+                                ),
+                            );
                         }
                     }
                 }
@@ -386,10 +400,7 @@ impl Handlers {
                         memory_id = %memory_uuid,
                         "get_provenance_chain: Audit trail query FAILED — storage error"
                     );
-                    Some(vec![json!({
-                        "error": format!("Audit trail query failed: {}", e),
-                        "note": "Audit trail data may exist but could not be retrieved"
-                    })])
+                    return self.tool_error(id, &format!("Audit trail query failed: {}", e));
                 }
             }
         } else {
@@ -416,10 +427,7 @@ impl Handlers {
                 })),
                 Err(e) => {
                     error!(error = %e, "get_provenance_chain: Embedding version query failed");
-                    Some(json!({
-                        "status": "error",
-                        "error": format!("{}", e),
-                    }))
+                    return self.tool_error(id, &format!("Embedding version query failed: {}", e));
                 }
             }
         } else {

@@ -27,7 +27,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::handlers::tools::helpers::ToolErrorKind;
+use crate::handlers::tools::helpers::{mejepa_db_source_of_truth, ToolErrorKind};
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use crate::tools::names as tool_names;
@@ -423,11 +423,10 @@ fn run_fingerprint_suggest_new(request: FingerprintSuggestNewRequest) -> AnyhowR
         "tool": tool_names::MEJEPA_FINGERPRINT_SUGGEST_NEW,
         "suggestionCount": suggestions.len(),
         "suggestions": suggestions,
-        "sourceOfTruth": {
-            "dbPath": db_path.display().to_string(),
+        "sourceOfTruth": mejepa_db_source_of_truth(&db_path, json!({
             "queueCf": CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
             "queueKeyHex": hex::encode(b"active")
-        }
+        }))
     }))
 }
 
@@ -808,12 +807,11 @@ fn run_fingerprint_catalog_stability(
         "fingerprintCount": entries.len(),
         "fingerprints": entries,
         "blockers": blockers,
-        "sourceOfTruth": {
-            "dbPath": db_path.display().to_string(),
+        "sourceOfTruth": mejepa_db_source_of_truth(&db_path, json!({
             "shipGateWindowsCf": CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS,
             "fisherCf": CF_MEJEPA_FINGERPRINT_FISHER,
             "dormancyCf": CF_MEJEPA_FINGERPRINT_DORMANCY
-        }
+        }))
     }))
 }
 
@@ -1147,22 +1145,26 @@ fn validate_probability_arg(field: &str, value: f32) -> AnyhowResult<()> {
 }
 
 fn fingerprint_sot(db_path: &Path) -> Value {
-    json!({
-        "dbPath": db_path.display().to_string(),
-        "catalogCf": CF_MEJEPA_FAILURE_FINGERPRINTS
-    })
+    mejepa_db_source_of_truth(
+        db_path,
+        json!({
+            "catalogCf": CF_MEJEPA_FAILURE_FINGERPRINTS
+        }),
+    )
 }
 
 fn fingerprint_write_sot(db_path: &Path) -> Value {
-    json!({
-        "dbPath": db_path.display().to_string(),
-        "catalogCf": CF_MEJEPA_FAILURE_FINGERPRINTS,
-        "referencesCf": CF_MEJEPA_FINGERPRINT_REFERENCES,
-        "reverseIndexCf": CF_MEJEPA_FINGERPRINT_REVERSE_INDEX,
-        "calibrationCf": CF_MEJEPA_FINGERPRINT_CALIBRATION,
-        "auditCf": CF_MEJEPA_FINGERPRINT_AUDIT,
-        "activeLearningLabelsCf": CF_MEJEPA_ACTIVE_LEARNING_LABELS
-    })
+    mejepa_db_source_of_truth(
+        db_path,
+        json!({
+            "catalogCf": CF_MEJEPA_FAILURE_FINGERPRINTS,
+            "referencesCf": CF_MEJEPA_FINGERPRINT_REFERENCES,
+            "reverseIndexCf": CF_MEJEPA_FINGERPRINT_REVERSE_INDEX,
+            "calibrationCf": CF_MEJEPA_FINGERPRINT_CALIBRATION,
+            "auditCf": CF_MEJEPA_FINGERPRINT_AUDIT,
+            "activeLearningLabelsCf": CF_MEJEPA_ACTIVE_LEARNING_LABELS
+        }),
+    )
 }
 
 fn default_list_limit() -> usize {

@@ -28,6 +28,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
+pub const DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE: &str =
+    "diagnostic_certificate_only_no_parameter_update";
+pub const DIAGNOSTIC_CERTIFICATE_ONLY_WARNING: &str =
+    "MEJEPA_TRAIN_CERTIFICATE_ONLY: Trainer emits UTML/certificate diagnostics only; no predictor parameters, optimizer step, holdout agreement, or checkpoint readback were produced";
+
 pub struct Trainer {
     pub config: TrainingConfig,
     pub aux_heads: AuxHeadEnsemble,
@@ -58,6 +63,12 @@ pub struct TrainingResult {
     pub total_steps: u64,
     pub total_certs: u64,
     pub best_safetensors_path: Option<PathBuf>,
+    pub training_semantics: String,
+    pub trained_predictor: bool,
+    pub predictor_parameter_update_count: u64,
+    pub checkpoint_readback_verified: bool,
+    pub ship_gate_countable_training: bool,
+    pub non_training_reason: String,
 }
 
 pub trait InverseMapForward {
@@ -244,6 +255,9 @@ impl Trainer {
                 ("variance".to_string(), 0.01),
                 ("covariance".to_string(), 0.01),
                 ("invariance".to_string(), 0.0),
+                ("predictor_parameter_update_count".to_string(), 0.0),
+                ("checkpoint_readback_verified".to_string(), 0.0),
+                ("ship_gate_countable_training".to_string(), 0.0),
             ]);
             let entropy_loss_report = batch_latent_entropy_loss(
                 dataset,
@@ -311,11 +325,7 @@ impl Trainer {
                 l_entropy_estimator: entropy_loss_report
                     .enabled
                     .then_some("knn-radius-v1-slot-preserving-latent".to_string()),
-                training_mode: if self.config.full_finetune {
-                    "full_finetune".to_string()
-                } else {
-                    "lora".to_string()
-                },
+                training_mode: DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE.to_string(),
                 distillation_cycle_id: None,
                 distillation_loss_mean: None,
                 distillation_skipped_count: None,
@@ -331,8 +341,8 @@ impl Trainer {
                 predictor_redundancy_pairwise_mi_source: "train_batch_panel_t01_pairwise_cosine"
                     .to_string(),
                 holdout_promotion: None,
-                generic_only_warning: None,
-                phase3_dod_passed: None,
+                generic_only_warning: Some(DIAGNOSTIC_CERTIFICATE_ONLY_WARNING.to_string()),
+                phase3_dod_passed: Some(false),
                 grad_norm_running_mean: self.grad_norm_running_mean,
                 parent_witness_hash: String::new(),
                 self_hash: String::new(),
@@ -402,6 +412,12 @@ impl Trainer {
             total_steps: self.step,
             total_certs: self.step,
             best_safetensors_path: None,
+            training_semantics: DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE.to_string(),
+            trained_predictor: false,
+            predictor_parameter_update_count: 0,
+            checkpoint_readback_verified: false,
+            ship_gate_countable_training: false,
+            non_training_reason: DIAGNOSTIC_CERTIFICATE_ONLY_WARNING.to_string(),
         })
     }
 
@@ -420,6 +436,12 @@ impl Trainer {
             total_steps: self.step,
             total_certs: self.step,
             best_safetensors_path: None,
+            training_semantics: DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE.to_string(),
+            trained_predictor: false,
+            predictor_parameter_update_count: 0,
+            checkpoint_readback_verified: false,
+            ship_gate_countable_training: false,
+            non_training_reason: DIAGNOSTIC_CERTIFICATE_ONLY_WARNING.to_string(),
         })
     }
 
@@ -765,4 +787,135 @@ fn default_embedder_versions() -> HashMap<String, String> {
     (1..=21)
         .map(|i| (format!("E{i}"), "phase1b-sha-pinned-registry".to_string()))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cert::{open_train_rocksdb, TrainingCertificate, CF_MEJEPA_TRAIN_CERTS};
+    use crate::eval::HoldoutExample;
+    use candle_core::Device;
+
+    #[test]
+    fn full_training_result_is_explicitly_certificate_only(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let temp = tempfile::tempdir()?;
+        let db = open_train_rocksdb(temp.path())?;
+        let cfg = TrainingConfig {
+            epochs: 1,
+            batch_size: 2,
+            full_finetune: true,
+            cross_task_transfer_probability: 0.0,
+            adversarial_mix_ratio: 0.0,
+            ..TrainingConfig::default()
+        };
+        let mut trainer = Trainer::new(cfg, db.clone(), Device::Cpu)?;
+        let result = trainer.run_full_training(&synthetic_dataset(4)?)?;
+
+        assert_eq!(
+            result.training_semantics,
+            DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE
+        );
+        assert!(!result.trained_predictor);
+        assert_eq!(result.predictor_parameter_update_count, 0);
+        assert!(!result.checkpoint_readback_verified);
+        assert!(!result.ship_gate_countable_training);
+        assert!(result.final_holdout_agreement.is_none());
+        assert!(result.best_safetensors_path.is_none());
+
+        let serialized = serde_json::to_value(&result)?;
+        assert_eq!(serialized["trained_predictor"], serde_json::json!(false));
+        assert_eq!(
+            serialized["ship_gate_countable_training"],
+            serde_json::json!(false)
+        );
+        assert_eq!(
+            serialized["training_semantics"],
+            serde_json::json!(DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn emitted_certificate_cannot_claim_lora_or_full_finetune_training(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let temp = tempfile::tempdir()?;
+        let db = open_train_rocksdb(temp.path())?;
+        let cfg = TrainingConfig {
+            epochs: 1,
+            batch_size: 2,
+            full_finetune: true,
+            cross_task_transfer_probability: 0.0,
+            adversarial_mix_ratio: 0.0,
+            ..TrainingConfig::default()
+        };
+        let mut trainer = Trainer::new(cfg, db.clone(), Device::Cpu)?;
+        trainer.train_one_epoch(&synthetic_dataset(4)?, 0)?;
+
+        let cert = read_cert(&db, 0)?;
+        assert_eq!(
+            cert.training_mode,
+            DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE
+        );
+        assert_ne!(cert.training_mode, "lora");
+        assert_ne!(cert.training_mode, "full_finetune");
+        assert_eq!(
+            cert.generic_only_warning.as_deref(),
+            Some(DIAGNOSTIC_CERTIFICATE_ONLY_WARNING)
+        );
+        assert_eq!(cert.phase3_dod_passed, Some(false));
+        assert_eq!(
+            cert.loss_components
+                .get("predictor_parameter_update_count")
+                .copied(),
+            Some(0.0)
+        );
+        assert_eq!(
+            cert.loss_components
+                .get("ship_gate_countable_training")
+                .copied(),
+            Some(0.0)
+        );
+        Ok(())
+    }
+
+    fn synthetic_dataset(n: usize) -> Result<TrainingDataset, Box<dyn std::error::Error>> {
+        let mut examples = Vec::with_capacity(n);
+        for i in 0..n {
+            let panel = Tensor::from_slice(&[i as f32, (i % 2) as f32], 2, &Device::Cpu)?;
+            examples.push(HoldoutExample {
+                task_id: format!("trainer-cert-only-{i:03}"),
+                category: MutationCategory::ALL[i % MutationCategory::ALL.len()],
+                language: Lang::Python,
+                panel_t01: panel.clone(),
+                panel_t2: panel,
+                inverse_action_target: None,
+                actual_oracle_pass: i % 2 == 0,
+                adversarial: false,
+                foundationality_score: 0.0,
+            });
+        }
+        Ok(TrainingDataset {
+            train: TrainSplit { examples },
+            calibration: CalibrationDataset {
+                examples: Vec::new(),
+            },
+            holdout: HoldoutDataset {
+                examples: Vec::new(),
+            },
+        })
+    }
+
+    fn read_cert(
+        db: &rocksdb::DB,
+        step: u64,
+    ) -> Result<TrainingCertificate, Box<dyn std::error::Error>> {
+        let cf = db
+            .cf_handle(CF_MEJEPA_TRAIN_CERTS)
+            .ok_or("missing CF_MEJEPA_TRAIN_CERTS")?;
+        let bytes = db
+            .get_cf(cf, step.to_be_bytes())?
+            .ok_or("missing training certificate")?;
+        Ok(serde_json::from_slice(&bytes)?)
+    }
 }

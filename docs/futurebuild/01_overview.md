@@ -397,7 +397,7 @@ Build profiles (`Cargo.toml:112-128`): `release` (thin LTO, 16 CGUs, strip), `re
 | `context-graph-mejepa-hygiene` | Tier transitions, quota, GC, witness compress |
 | `context-graph-mejepa-shift-subscriber` | JSONL shift-log tail → panel materialization |
 | `context-graph-dynamicjepa` | 5090jepa MCP surface (39 tools) |
-| `context-graph-test-utils` | Shared test fixtures (NO MOCK DATA) |
+| `context-graph-test-utils` | Deterministic-by-shape, pseudo-random-by-content helpers for storage/serialization/shape tests only; not ME-JEPA gate evidence |
 
 Full per-crate detail in `02_source_map.md`.
 

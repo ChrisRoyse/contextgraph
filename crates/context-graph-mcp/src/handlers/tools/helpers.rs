@@ -1,7 +1,15 @@
 //! MCP tool result and request-parsing helpers.
 
+use std::path::{Component, Path, PathBuf};
+
 use serde::de::DeserializeOwned;
-use serde_json::json;
+use serde_json::{json, Map, Value};
+use uuid::Uuid;
+
+use context_graph_core::types::audit::{AuditRecord, ImportanceChangeRecord};
+use context_graph_paths::{
+    AIWONDER_DURABLE_ROOT, AIWONDER_EXPLICIT_SCRATCH_ROOT, AIWONDER_HOT_ROOT,
+};
 
 use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
 
@@ -28,6 +36,110 @@ pub(crate) enum ToolErrorKind {
     NotFound,
     /// General execution failure (internal error, unexpected state)
     Execution,
+}
+
+pub(crate) fn mejepa_db_source_of_truth(db_path: &Path, extra: Value) -> Value {
+    let classification = classify_mejepa_db_path(db_path);
+    let mut object = match extra {
+        Value::Object(object) => object,
+        _ => Map::new(),
+    };
+    object.insert("dbPath".to_string(), json!(db_path.display().to_string()));
+    object.insert(
+        "resolvedDbPath".to_string(),
+        json!(classification.resolved.display().to_string()),
+    );
+    object.insert("sourceOfTruthKind".to_string(), json!(classification.kind));
+    object.insert(
+        "productionRootVerified".to_string(),
+        json!(classification.production_root_verified),
+    );
+    object.insert(
+        "fixtureOrLocal".to_string(),
+        json!(!classification.production_root_verified),
+    );
+    object.insert(
+        "shipGateCountable".to_string(),
+        json!(classification.ship_gate_countable),
+    );
+    object.insert(
+        "aiwonderRootPolicy".to_string(),
+        json!(
+            "durable gate evidence must live under /zfs/archive/contextgraph; hot production work may live under /zfs/hot/contextgraph; all other DB paths are fixture/local and not ship-gate-countable"
+        ),
+    );
+    if let Some(root) = classification.matched_root {
+        object.insert("matchedAiwonderRoot".to_string(), json!(root));
+    }
+    Value::Object(object)
+}
+
+struct MejepaDbPathClassification {
+    resolved: PathBuf,
+    kind: &'static str,
+    matched_root: Option<&'static str>,
+    production_root_verified: bool,
+    ship_gate_countable: bool,
+}
+
+fn classify_mejepa_db_path(db_path: &Path) -> MejepaDbPathClassification {
+    let resolved = normalize_absolute_lexical(db_path);
+    if resolved.starts_with(AIWONDER_DURABLE_ROOT) {
+        MejepaDbPathClassification {
+            resolved,
+            kind: "aiwonder_durable",
+            matched_root: Some(AIWONDER_DURABLE_ROOT),
+            production_root_verified: true,
+            ship_gate_countable: true,
+        }
+    } else if resolved.starts_with(AIWONDER_HOT_ROOT) {
+        MejepaDbPathClassification {
+            resolved,
+            kind: "aiwonder_hot",
+            matched_root: Some(AIWONDER_HOT_ROOT),
+            production_root_verified: true,
+            ship_gate_countable: false,
+        }
+    } else if resolved.starts_with(AIWONDER_EXPLICIT_SCRATCH_ROOT) {
+        MejepaDbPathClassification {
+            resolved,
+            kind: "aiwonder_explicit_scratch",
+            matched_root: Some(AIWONDER_EXPLICIT_SCRATCH_ROOT),
+            production_root_verified: false,
+            ship_gate_countable: false,
+        }
+    } else {
+        MejepaDbPathClassification {
+            resolved,
+            kind: "fixture_or_local",
+            matched_root: None,
+            production_root_verified: false,
+            ship_gate_countable: false,
+        }
+    }
+}
+
+fn normalize_absolute_lexical(path: &Path) -> PathBuf {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(Path::new("/")),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+    normalized
 }
 
 impl ToolErrorKind {
@@ -144,6 +256,121 @@ impl Handlers {
                 "isError": true
             }),
         )
+    }
+
+    pub(crate) async fn append_audit_record_with_readback(
+        &self,
+        record: &AuditRecord,
+        context: &str,
+    ) -> Result<(), String> {
+        self.teleological_store
+            .append_audit_record(record)
+            .await
+            .map_err(|e| format!("{context}: append_audit_record failed: {e}"))?;
+
+        let records = self
+            .teleological_store
+            .get_audit_by_target(record.target_id, 0)
+            .await
+            .map_err(|e| format!("{context}: audit readback failed: {e}"))?;
+        if records.iter().any(|entry| entry.id == record.id) {
+            Ok(())
+        } else {
+            Err(format!(
+                "{context}: audit readback missing record {} for target {}",
+                record.id, record.target_id
+            ))
+        }
+    }
+
+    pub(crate) async fn verify_deleted_fingerprint_readback(
+        &self,
+        fingerprint_id: Uuid,
+        context: &str,
+    ) -> Result<(), String> {
+        match self.teleological_store.retrieve(fingerprint_id).await {
+            Ok(None) => Ok(()),
+            Ok(Some(_)) => Err(format!(
+                "{context}: fingerprint {fingerprint_id} is still visible after delete"
+            )),
+            Err(e) => Err(format!(
+                "{context}: fingerprint {fingerprint_id} delete readback failed: {e}"
+            )),
+        }
+    }
+
+    pub(crate) async fn verify_file_index_cleared_readback(
+        &self,
+        file_path: &str,
+        context: &str,
+    ) -> Result<(), String> {
+        let ids = self
+            .teleological_store
+            .get_fingerprints_for_file(file_path)
+            .await
+            .map_err(|e| format!("{context}: file-index readback failed for {file_path}: {e}"))?;
+        if ids.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "{context}: file index for {file_path} still contains {} fingerprints",
+                ids.len()
+            ))
+        }
+    }
+
+    pub(crate) async fn verify_importance_readbacks(
+        &self,
+        record: &ImportanceChangeRecord,
+        context: &str,
+    ) -> Result<(), String> {
+        let Some(fingerprint) = self
+            .teleological_store
+            .retrieve(record.memory_id)
+            .await
+            .map_err(|e| {
+                format!(
+                    "{context}: fingerprint readback failed for {}: {e}",
+                    record.memory_id
+                )
+            })?
+        else {
+            return Err(format!(
+                "{context}: fingerprint {} missing after importance update",
+                record.memory_id
+            ));
+        };
+        if (fingerprint.importance - record.new_value).abs() > f32::EPSILON {
+            return Err(format!(
+                "{context}: fingerprint {} importance readback mismatch: expected {}, found {}",
+                record.memory_id, record.new_value, fingerprint.importance
+            ));
+        }
+
+        let history = self
+            .teleological_store
+            .get_importance_history(record.memory_id, 0)
+            .await
+            .map_err(|e| {
+                format!(
+                    "{context}: importance-history readback failed for {}: {e}",
+                    record.memory_id
+                )
+            })?;
+        if history.iter().any(|entry| {
+            entry.timestamp == record.timestamp
+                && (entry.old_value - record.old_value).abs() <= f32::EPSILON
+                && (entry.new_value - record.new_value).abs() <= f32::EPSILON
+                && (entry.delta - record.delta).abs() <= f32::EPSILON
+                && entry.operator_id == record.operator_id
+        }) {
+            Ok(())
+        } else {
+            Err(format!(
+                "{context}: importance-history readback missing row for {} at {}",
+                record.memory_id, record.timestamp
+            ))
+        }
     }
 
     /// Parse JSON args into a typed DTO and run `validate() -> Result<(), String>`.
@@ -323,4 +550,51 @@ pub fn importance_decay_factor(
     let days_since_access = (now - last_accessed_at).num_seconds().max(0) as f64 / 86400.0;
     let factor = (0.5f64).powf(days_since_access / HALF_LIFE_DAYS) as f32;
     factor.clamp(MIN_DECAY_FACTOR, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mejepa_db_source_of_truth_marks_fixture_paths_not_gate_countable() {
+        let source = mejepa_db_source_of_truth(
+            Path::new("/tmp/contextgraph-fixture/mistakes.rocksdb"),
+            json!({"cf": "CF_MEJEPA_MISTAKE_LOG"}),
+        );
+
+        assert_eq!(source["sourceOfTruthKind"], json!("fixture_or_local"));
+        assert_eq!(source["productionRootVerified"], json!(false));
+        assert_eq!(source["fixtureOrLocal"], json!(true));
+        assert_eq!(source["shipGateCountable"], json!(false));
+        assert_eq!(source["cf"], json!("CF_MEJEPA_MISTAKE_LOG"));
+    }
+
+    #[test]
+    fn mejepa_db_source_of_truth_marks_aiwonder_durable_gate_countable() {
+        let source = mejepa_db_source_of_truth(
+            Path::new("/zfs/archive/contextgraph/state/mejepa/infer.rocksdb"),
+            json!({}),
+        );
+
+        assert_eq!(source["sourceOfTruthKind"], json!("aiwonder_durable"));
+        assert_eq!(source["matchedAiwonderRoot"], json!(AIWONDER_DURABLE_ROOT));
+        assert_eq!(source["productionRootVerified"], json!(true));
+        assert_eq!(source["fixtureOrLocal"], json!(false));
+        assert_eq!(source["shipGateCountable"], json!(true));
+    }
+
+    #[test]
+    fn mejepa_db_source_of_truth_marks_aiwonder_hot_not_gate_countable() {
+        let source = mejepa_db_source_of_truth(
+            Path::new("/zfs/hot/contextgraph/runtime/infer.rocksdb"),
+            json!({}),
+        );
+
+        assert_eq!(source["sourceOfTruthKind"], json!("aiwonder_hot"));
+        assert_eq!(source["matchedAiwonderRoot"], json!(AIWONDER_HOT_ROOT));
+        assert_eq!(source["productionRootVerified"], json!(true));
+        assert_eq!(source["fixtureOrLocal"], json!(false));
+        assert_eq!(source["shipGateCountable"], json!(false));
+    }
 }

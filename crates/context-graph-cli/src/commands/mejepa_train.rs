@@ -2,8 +2,10 @@
 //!
 //! This command is intentionally a source-of-truth writer, not a thin wrapper
 //! around the older `mejepa-train` binary. The Phase G driver has to persist the
-//! panel, DDA, prediction, oracle, and train-certificate rows for every corpus
-//! item so FSV can verify the full chain.
+//! panel, DDA, oracle, and train-certificate rows for every corpus item so FSV
+//! can verify the target-side training chain. It deliberately does not emit
+//! live predictions or ship-gate eval reports; those require a real predictor
+//! forward pass, not corpus labels.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -12,14 +14,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, ensure, Context, Result};
 use clap::{Args, ValueEnum};
 use context_graph_mejepa::{
-    baseline_convergence_eta_for_cells, count_cf, empty_failure_mode_class_metrics,
-    materialize_inference_panels, open_infer_rocksdb, panel_sha, pearson_correlation,
-    ActiveLearningSummary, AgentClaimGraph, AstDiff, CalibrationExample, ChunkId,
-    ConformalHealthEntry, ConformalInterval, ConformalMethod, ConformalSet, DdaSignals, DiffHunk,
-    EvalConfig, EvalProvenance, EvalReport, Language, MejepaStore, MutationCategory, OracleOutcome,
-    PanelId, PatchBundle, PredictionProvenance, RealityPredictionBuilder, RocksDbEvalStore,
-    RocksDbInferStore, TaskContext, TaskEnvironment, TaskId, TestId, TrainCertSummary, Verdict,
-    WitnessHash, PANEL_DIM,
+    count_cf, materialize_inference_panels, open_infer_rocksdb, panel_sha, AstDiff,
+    CalibrationExample, ChunkId, DdaSignals, DiffHunk, Language, MutationCategory, PanelId,
+    PatchBundle, TaskContext, TaskEnvironment, TaskId, TestId, TrainCertSummary, PANEL_DIM,
 };
 use context_graph_mejepa_train::checkpoint::{
     AdamWStateBlob, CheckpointKind, CheckpointPayload, Checkpointer, TensorSnapshot,
@@ -308,7 +305,6 @@ pub fn run_mejepa_train(args: MejepaTrainArgs) -> Result<MejepaTrainOutput> {
             args.db_path.display()
         )
     })?;
-    let store = RocksDbInferStore::new(db.clone());
     let selection = load_selected_rows(&args)?;
     let mut rows = selection.rows;
     if let Some(max_tasks) = args.max_tasks {
@@ -328,7 +324,7 @@ pub fn run_mejepa_train(args: MejepaTrainArgs) -> Result<MejepaTrainOutput> {
     let mut train_cert_count = 0usize;
 
     for (idx, row) in rows.iter().enumerate() {
-        let processed = process_row(&db, &store, args.split, idx as u64 + 1, row)
+        let processed = process_row(&db, args.split, idx as u64 + 1, row)
             .with_context(|| format!("process corpus row {}", row.attempt_id))?;
         readback_equal &= processed.readback_equal;
         output_panel_count += processed.panel_rows;
@@ -348,8 +344,8 @@ pub fn run_mejepa_train(args: MejepaTrainArgs) -> Result<MejepaTrainOutput> {
         "DDA row count mismatch: {dda_signal_row_count} != {input_task_count}"
     );
     ensure!(
-        prediction_count == input_task_count,
-        "prediction count mismatch: {prediction_count} != {input_task_count}"
+        prediction_count == 0,
+        "MEJEPA_TRAIN_LIVE_PREDICTION_WRITE_FORBIDDEN: corpus training wrote {prediction_count} live prediction rows"
     );
     ensure!(
         oracle_verdict_count == input_task_count,
@@ -392,7 +388,7 @@ pub fn run_mejepa_train(args: MejepaTrainArgs) -> Result<MejepaTrainOutput> {
         source_of_truth: json!({
             "panel_cf": context_graph_mejepa_cf::CF_MEJEPA_PANELS,
             "dda_cf": context_graph_mejepa_cf::CF_MEJEPA_DDA_SIGNALS,
-            "prediction_cf": context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
+            "live_prediction_write_policy": "disabled: corpus/training labels are target-side supervision, not live predictor output",
             "oracle_cf": context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS,
             "train_cert_cf": context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS,
             "quarantine_config": selection.quarantine_config_path,
@@ -479,20 +475,6 @@ pub fn run_checkpointed_python_train(
         }
     }
 
-    let db = open_infer_rocksdb(&args.db_path).with_context(|| {
-        format!(
-            "open ME-JEPA inference RocksDB for eval report at {}",
-            args.db_path.display()
-        )
-    })?;
-    let eval_store =
-        RocksDbEvalStore::new(db.clone()).context("open RocksDbEvalStore for eval report write")?;
-    let eval_report = Some(persist_python_cycle_eval_report(
-        &args,
-        &index,
-        &eval_store,
-    )?);
-
     Ok(checkpointed_output(
         &args,
         &index,
@@ -500,7 +482,7 @@ pub fn run_checkpointed_python_train(
         completed_splits,
         split_outputs,
         checkpoints,
-        eval_report,
+        None,
     ))
 }
 
@@ -763,18 +745,15 @@ fn cycle_checkpoint_payload(
         .context("count CF_MEJEPA_PANELS for checkpoint")?;
     let dda_count = count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_DDA_SIGNALS)
         .context("count CF_MEJEPA_DDA_SIGNALS for checkpoint")?;
-    let prediction_count = count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS)
-        .context("count CF_MEJEPA_LIVE_PREDICTIONS for checkpoint")?;
     let oracle_count = count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)
         .context("count CF_MEJEPA_ORACLE_VERDICTS for checkpoint")?;
     let train_cert_count = count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS)
         .context("count CF_MEJEPA_TRAIN_CERTS for checkpoint")?;
     let state_tensor = TensorSnapshot {
-        shape: vec![5],
+        shape: vec![4],
         values_f32: vec![
             panel_count as f32,
             dda_count as f32,
-            prediction_count as f32,
             oracle_count as f32,
             train_cert_count as f32,
         ],
@@ -822,208 +801,6 @@ fn cycle_checkpoint_payload(
     })
 }
 
-fn persist_python_cycle_eval_report(
-    args: &MejepaCheckpointedTrainArgs,
-    index: &CheckpointedPythonIndex,
-    store: &RocksDbEvalStore,
-) -> Result<EvalReportReadback> {
-    let holdout_rows = selected_rows_for_split(args, TrainSplitArg::Holdout)?;
-    ensure!(
-        !holdout_rows.is_empty(),
-        "MEJEPA_PYTHON_TRAIN_CYCLE_EMPTY_HOLDOUT: no holdout rows remained after quarantine/max filter"
-    );
-    let eval_config = EvalConfig::default();
-    let stats = compute_python_eval_stats(&holdout_rows, &eval_config)?;
-    let report_date = chrono::Utc::now()
-        .format("%Y-%m-%d-python-cycle")
-        .to_string();
-    let mut report = EvalReport {
-        report_date: report_date.clone(),
-        generated_at_unix_ms: chrono::Utc::now().timestamp_millis(),
-        rolling_window_size: eval_config.rolling_window_size,
-        holdout_count: holdout_rows.len(),
-        overall_correlation: stats.overall_correlation,
-        per_category_correlation: stats.per_category_correlation.clone(),
-        per_language_correlation: BTreeMap::from([(Language::Python, stats.overall_correlation)]),
-        per_cell_correlation: stats.per_cell_correlation.clone(),
-        cell_exemptions: BTreeMap::new(),
-        bayesian_shrinkage: BTreeMap::new(),
-        conformal_coverage_health: BTreeMap::from([(
-            Language::Python,
-            ConformalHealthEntry {
-                expected_coverage: 0.90,
-                empirical_coverage: stats.q1_pass_rate,
-                sample_count: holdout_rows.len(),
-                within_band: (stats.q1_pass_rate - 0.90).abs() <= 0.10,
-            },
-        )]),
-        ood_calibration_health: BTreeMap::from([(Language::Python, Some(1.0))]),
-        gtau_pass_rate: BTreeMap::from([(Language::Python, 1.0)]),
-        per_prediction_class_calibration: BTreeMap::new(),
-        per_failure_mode_class: empty_failure_mode_class_metrics(holdout_rows.len(), &eval_config),
-        per_cell_convergence_eta: baseline_convergence_eta_for_cells(
-            &stats.per_cell_correlation,
-            eval_config.convergence_target_correlation,
-        ),
-        active_learning: ActiveLearningSummary {
-            queued_count: 0,
-            evicted_count: 0,
-            ood_escalation_count: 0,
-        },
-        state_transfer_diagnostic: None,
-        per_cell_state_transfer: BTreeMap::new(),
-        failing_cell_classifications: BTreeMap::new(),
-        aux_head_distillation: None,
-        regression_checks: Vec::new(),
-        open_research_questions: Vec::new(),
-        q1_pass_rate: stats.q1_pass_rate,
-        q2_report_correlation: stats.overall_correlation,
-        q3_side_effect_agreement: Some(1.0),
-        ship_gate_passed: stats.ship_gate_failures.is_empty(),
-        ship_gate_failures: stats.ship_gate_failures,
-        provenance: EvalProvenance {
-            corpus_sha: index.corpus_sha256.clone(),
-            eval_code_version: env!("CARGO_PKG_VERSION").to_string(),
-            calibration_version: "checkpointed-python-cycle-v1".to_string(),
-            generated_by: "context-graph-cli mejepa checkpointed-train".to_string(),
-        },
-        wall_clock_seconds: 0.0,
-    };
-    report.per_cell_convergence_eta = baseline_convergence_eta_for_cells(
-        &report.per_cell_correlation,
-        eval_config.convergence_target_correlation,
-    );
-    report.validate()?;
-    let before_count = count_cf(
-        store.db().as_ref(),
-        context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS,
-    )
-    .context("count CF_MEJEPA_EVAL_REPORTS before persist")?;
-    store
-        .persist_report(&report)
-        .context("persist checkpointed Python eval report")?;
-    let latest = store
-        .load_latest_report()
-        .context("load latest eval report after persist")?
-        .ok_or_else(|| anyhow!("MEJEPA_PYTHON_TRAIN_CYCLE_EVAL_READBACK_MISSING"))?;
-    let input_hash = report.determinism_hash()?;
-    let readback_hash = latest.determinism_hash()?;
-    ensure!(
-        input_hash == readback_hash,
-        "MEJEPA_PYTHON_TRAIN_CYCLE_EVAL_READBACK_MISMATCH: {} != {}",
-        input_hash,
-        readback_hash
-    );
-    let after_count = count_cf(
-        store.db().as_ref(),
-        context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS,
-    )
-    .context("count CF_MEJEPA_EVAL_REPORTS after persist")?;
-    ensure!(
-        after_count == before_count + 1,
-        "MEJEPA_PYTHON_TRAIN_CYCLE_EVAL_COUNT_MISMATCH: before={} after={}",
-        before_count,
-        after_count
-    );
-    fs::create_dir_all(&args.eval_export_dir)?;
-    let report_json_path = args
-        .eval_export_dir
-        .join(format!("{}-eval-report.json", report.report_date));
-    let report_json = serde_json::to_vec_pretty(&report)?;
-    fs::write(&report_json_path, &report_json)?;
-    let readback_json = fs::read(&report_json_path)?;
-    ensure!(
-        readback_json == report_json,
-        "MEJEPA_PYTHON_TRAIN_CYCLE_EVAL_EXPORT_READBACK_MISMATCH: {}",
-        report_json_path.display()
-    );
-    Ok(EvalReportReadback {
-        report_date,
-        report_json_path: report_json_path.display().to_string(),
-        report_json_sha256: hex::encode(Sha256::digest(&readback_json)),
-        cf_report_count_after: after_count,
-        latest_report_determinism_hash: readback_hash,
-        per_category_rows: latest.per_category_correlation,
-        per_cell_rows: latest.per_cell_correlation,
-        readback_equal: true,
-    })
-}
-
-#[derive(Debug)]
-struct PythonEvalStats {
-    overall_correlation: Option<f32>,
-    per_category_correlation: BTreeMap<MutationCategory, Option<f32>>,
-    per_cell_correlation: BTreeMap<String, Option<f32>>,
-    q1_pass_rate: f32,
-    ship_gate_failures: Vec<String>,
-}
-
-fn compute_python_eval_stats(
-    rows: &[SelectedRow],
-    eval_config: &EvalConfig,
-) -> Result<PythonEvalStats> {
-    let mut predicted = Vec::with_capacity(rows.len());
-    let mut actual = Vec::with_capacity(rows.len());
-    let mut by_category: BTreeMap<MutationCategory, (Vec<f32>, Vec<f32>)> = MutationCategory::all()
-        .into_iter()
-        .map(|category| (category, (Vec::new(), Vec::new())))
-        .collect();
-    let mut q1_hits = 0usize;
-    for row in rows {
-        let category = parse_eval_category(&row.entry.category)?;
-        let predicted_probability = predicted_probability(&row.entry);
-        let actual_probability = if row.entry.oracle_all_passed {
-            1.0
-        } else {
-            0.0
-        };
-        predicted.push(predicted_probability);
-        actual.push(actual_probability);
-        let bucket = by_category
-            .get_mut(&category)
-            .ok_or_else(|| anyhow!("missing category bucket"))?;
-        bucket.0.push(predicted_probability);
-        bucket.1.push(actual_probability);
-        if (predicted_probability >= 0.5) == row.entry.oracle_all_passed {
-            q1_hits += 1;
-        }
-    }
-    let overall_correlation = pearson_correlation(&predicted, &actual)?;
-    let mut per_category_correlation = BTreeMap::new();
-    let mut per_cell_correlation = BTreeMap::new();
-    let mut failures = Vec::new();
-    for category in MutationCategory::all() {
-        let (preds, actuals) = by_category
-            .get(&category)
-            .ok_or_else(|| anyhow!("missing category bucket"))?;
-        let corr = pearson_correlation(preds, actuals)?;
-        per_category_correlation.insert(category, corr);
-        let cell = context_graph_mejepa::cell_key(category, Language::Python);
-        per_cell_correlation.insert(cell.clone(), corr);
-        match corr {
-            Some(value) if value >= eval_config.convergence_target_correlation => {}
-            Some(value) => failures.push(format!(
-                "per_cell_correlation {cell} {value:.6} < {:.6}",
-                eval_config.convergence_target_correlation
-            )),
-            None => failures.push(format!("per_cell_correlation {cell} unavailable")),
-        }
-    }
-    if !matches!(
-        overall_correlation,
-        Some(value) if value >= eval_config.convergence_target_correlation
-    ) {
-        failures.push("overall_correlation below_or_unavailable_for_python_cycle".to_string());
-    }
-    Ok(PythonEvalStats {
-        overall_correlation,
-        per_category_correlation,
-        per_cell_correlation,
-        q1_pass_rate: q1_hits as f32 / rows.len() as f32,
-        ship_gate_failures: failures,
-    })
-}
-
 fn parse_eval_category(value: &str) -> Result<MutationCategory> {
     match value {
         "known_good" => Ok(MutationCategory::KnownGood),
@@ -1038,14 +815,6 @@ fn parse_eval_category(value: &str) -> Result<MutationCategory> {
     }
 }
 
-fn predicted_probability(entry: &CorpusEntry) -> f32 {
-    match entry.predicted_oracle_pass {
-        Some(predicted) => predicted,
-        None if entry.oracle_all_passed => 0.95,
-        None => 0.05,
-    }
-}
-
 fn checkpointed_config_sha256(args: &MejepaCheckpointedTrainArgs) -> String {
     let value = json!({
         "schema_version": PYTHON_TRAIN_CYCLE_SCHEMA_VERSION,
@@ -1056,24 +825,6 @@ fn checkpointed_config_sha256(args: &MejepaCheckpointedTrainArgs) -> String {
     });
     let bytes = serde_json::to_vec(&value).expect("checkpoint config JSON is serializable");
     hex::encode(Sha256::digest(&bytes))
-}
-
-fn selected_rows_for_split(
-    args: &MejepaCheckpointedTrainArgs,
-    split: TrainSplitArg,
-) -> Result<Vec<SelectedRow>> {
-    let selection = load_selected_rows(&MejepaTrainArgs {
-        corpus: vec![args.corpus.clone()],
-        split,
-        db_path: args.db_path.clone(),
-        max_tasks: args.max_tasks_per_split,
-        quarantine_config: args.quarantine_config.clone(),
-    })?;
-    let mut rows = selection.rows;
-    if let Some(max_tasks) = args.max_tasks_per_split {
-        rows.truncate(max_tasks);
-    }
-    Ok(rows)
 }
 
 fn checkpointed_output(
@@ -1115,7 +866,7 @@ fn checkpointed_output(
         readback_equal,
         source_of_truth: json!({
             "train_cert_cf": context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS,
-            "eval_report_cf": context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS,
+            "eval_report_write_policy": "disabled: checkpointed-train does not emit ship-gate/countable EvalReport rows",
             "checkpoint_dir": args.checkpoint_dir,
             "eval_export_dir": args.eval_export_dir,
             "corpus_index": index.index_path,
@@ -1270,7 +1021,6 @@ struct RowWriteCounts {
 
 fn process_row(
     db: &DB,
-    store: &RocksDbInferStore,
     split: TrainSplitArg,
     step: u64,
     row: &SelectedRow,
@@ -1285,12 +1035,10 @@ fn process_row(
     let patch_sha = parse_sha256(&row.entry.patch_sha256)?;
     let source_sha = sha256_bytes(patch_text.as_bytes());
     let language = parse_language(row.entry.language.as_deref().unwrap_or("python"))?;
-    let session_id = first_16(sha256_labeled("session", row.attempt_id.as_bytes()));
-    let prediction_id = first_16(sha256_labeled("prediction", row.attempt_id.as_bytes()));
     let chunk_id = ChunkId(format!("{}::chunk::0000", row.attempt_id));
     let task_context = TaskContext {
         task_id: TaskId(row.attempt_id.clone()),
-        session_id,
+        session_id: first_16(sha256_labeled("session", row.attempt_id.as_bytes())),
         language,
         problem_statement: problem_statement(row, split),
         tests: test_ids(row),
@@ -1319,7 +1067,7 @@ fn process_row(
                 after: patch_text,
             }],
         },
-        witness_segment(&row.attempt_id),
+        context_graph_mejepa::valid_witness_segment(),
         row.entry
             .mutation_note
             .clone()
@@ -1356,8 +1104,8 @@ fn process_row(
             ast_chunk_count: 1,
             active_embedder_forward_count: ACTIVE_CONTENT_EMBEDDER_FORWARDS,
             frozen_instrument_slot_count: 15,
-            predictor_forward_count: 1,
-            conformal_calibration_count: 1,
+            predictor_forward_count: 0,
+            conformal_calibration_count: 0,
             oracle_reconciliation_count: 1,
             training_step_count: 1,
         },
@@ -1397,69 +1145,16 @@ fn process_row(
         row.attempt_id
     );
 
-    let predicted_probability = predicted_probability(&row.entry);
     let actual_probability = if row.entry.oracle_all_passed {
         1.0
     } else {
         0.0
     };
     let test_count = row.entry.oracle_per_test_count.unwrap_or(1).max(1);
-    let outcome = if row.entry.oracle_all_passed {
-        OracleOutcome::Pass
-    } else {
-        OracleOutcome::Fail
-    };
-    let outcome_set = ConformalSet::try_new(vec![outcome], 0.10, 0.10)?;
-    let confidence_interval = ConformalInterval {
-        lower: (predicted_probability - 0.10_f32).clamp(0.0, 1.0),
-        upper: (predicted_probability + 0.10_f32).clamp(0.0, 1.0),
-        method: ConformalMethod::SplitConformal,
-        coverage_target: 0.90,
-        empirical_coverage: 0.90,
-    };
-    let prediction = RealityPredictionBuilder::from_parts(
-        TaskId(row.attempt_id.clone()),
-        session_id,
-        language,
-        outcome_set,
-    )
-    .prediction_id(prediction_id)
-    .witness_hash(WitnessHash(source_sha))
-    .covered_chunks(vec![chunk_id])
-    .verdict(if row.entry.oracle_all_passed {
-        Verdict::Pass
-    } else {
-        Verdict::Fail
-    })
-    .confidence_interval(confidence_interval)
-    .predicted_oracle_pass(predicted_probability)
-    .predicted_test_pass(vec![predicted_probability; test_count])
-    .predicted_runtime_trace(runtime_trace(&row.attempt_id))
-    .ood_score(0.05)
-    .calibrated_confidence(0.90)
-    .degraded_status(false)
-    .granger_attestations(granger_attestations())
-    .agent_claim_graph(AgentClaimGraph::default())
-    .provenance(PredictionProvenance {
-        predictor_version: "phase-g-corpus-driver-v1".to_string(),
-        constellation_version: "phase-g-tct-cell-v1".to_string(),
-        calibration_version: "phase-g-split-conformal-v1".to_string(),
-        active_pointer: hex::encode(prediction_id),
-    })
-    .source_panel_sha(panel_id)
-    .calibration_version("phase-g-split-conformal-v1")
-    .build()?;
-    store.write_live_prediction(&prediction)?;
-    let prediction_readback = store.read_live_predictions(session_id, 1)?;
-    ensure!(
-        prediction_readback.first() == Some(&prediction),
-        "prediction readback mismatch for {}",
-        row.attempt_id
-    );
 
     let calibration = CalibrationExample {
         language,
-        predicted_test_pass: vec![predicted_probability; test_count],
+        predicted_test_pass: vec![0.5; test_count],
         actual_test_pass: vec![actual_probability; test_count],
     };
     let oracle_key = row_key("oracle", &row.attempt_id, step);
@@ -1506,7 +1201,7 @@ fn process_row(
     Ok(RowWriteCounts {
         panel_rows: 1,
         dda_rows: 1,
-        prediction_rows: 1,
+        prediction_rows: 0,
         oracle_rows: 1,
         train_cert_rows: 1,
         readback_equal: true,
@@ -1598,35 +1293,6 @@ fn problem_statement(row: &SelectedRow, split: TrainSplitArg) -> String {
         row.entry.category,
         row.entry.oracle_exception.as_deref().unwrap_or("none")
     )
-}
-
-fn granger_attestations() -> BTreeMap<String, f32> {
-    BTreeMap::from([
-        ("ast_chunker".to_string(), 1.0),
-        ("active_embedder_forwards".to_string(), 1.0),
-        ("frozen_instrument_panel".to_string(), 1.0),
-        ("dda_signals".to_string(), 1.0),
-        ("tct_cell_membership".to_string(), 1.0),
-        ("oracle_reconciliation".to_string(), 1.0),
-    ])
-}
-
-fn runtime_trace(attempt_id: &str) -> [f32; 32] {
-    let seed = sha256_labeled("runtime", attempt_id.as_bytes());
-    let mut out = [0.0f32; 32];
-    for (idx, value) in out.iter_mut().enumerate() {
-        *value = unit_from_seed(&seed, idx) * 0.10;
-    }
-    out
-}
-
-fn witness_segment(attempt_id: &str) -> Vec<u8> {
-    let digest = sha256_labeled("witness", attempt_id.as_bytes());
-    let mut out = vec![0u8; 73];
-    for (idx, byte) in out.iter_mut().enumerate() {
-        *byte = digest[idx % digest.len()];
-    }
-    out
 }
 
 fn parse_language(value: &str) -> Result<Language> {
@@ -1743,7 +1409,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn checkpointed_train_stop_resume_persists_eval_report() -> Result<()> {
+    fn checkpointed_train_stop_resume_writes_only_training_artifacts() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let corpus = temp.path().join("python-corpus");
         write_checkpointed_test_corpus(&corpus)?;
@@ -1766,6 +1432,13 @@ mod tests {
         assert!(first.readback_equal);
         assert_eq!(first.completed_splits, vec![TrainSplitArg::Train]);
         assert!(first.eval_report.is_none());
+        assert_eq!(
+            first
+                .split_outputs
+                .get(&TrainSplitArg::Train)
+                .map(|output| output.prediction_count),
+            Some(0)
+        );
         let resume_manifest = first
             .next_resume_manifest
             .as_ref()
@@ -1778,7 +1451,7 @@ mod tests {
             corpus,
             db_path: db_path.clone(),
             checkpoint_dir,
-            eval_export_dir,
+            eval_export_dir: eval_export_dir.clone(),
             resume: Some(resume_manifest.clone()),
             stop_after: None,
             max_corpus_entries: 4,
@@ -1795,11 +1468,15 @@ mod tests {
             resumed.completed_splits,
             vec![TrainSplitArg::Calibration, TrainSplitArg::Holdout]
         );
-        let eval_report = resumed
-            .eval_report
-            .as_ref()
-            .ok_or_else(|| anyhow!("missing eval report after resume"))?;
-        assert!(PathBuf::from(&eval_report.report_json_path).exists());
+        assert!(resumed.eval_report.is_none());
+        assert!(resumed
+            .split_outputs
+            .values()
+            .all(|output| output.prediction_count == 0));
+        assert_eq!(
+            resumed.source_of_truth["eval_report_write_policy"],
+            "disabled: checkpointed-train does not emit ship-gate/countable EvalReport rows"
+        );
 
         let db = open_infer_rocksdb(&db_path)?;
         assert_eq!(
@@ -1808,23 +1485,33 @@ mod tests {
         );
         assert_eq!(
             count_cf(&db, context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS)?,
-            1
+            0
         );
-        let store = RocksDbEvalStore::new(db)?;
-        let latest = store
-            .load_latest_report()?
-            .ok_or_else(|| anyhow!("missing latest eval report"))?;
-        assert_eq!(latest.holdout_count, 2);
-        assert!(matches!(latest.overall_correlation, Some(value) if value > 0.99));
         assert_eq!(
-            latest.determinism_hash()?,
-            eval_report.latest_report_determinism_hash
+            count_cf(&db, context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS)?,
+            0
         );
-        let exported = fs::read(&eval_report.report_json_path)?;
-        assert_eq!(
-            hex::encode(Sha256::digest(&exported)),
-            eval_report.report_json_sha256
-        );
+        let oracle_cf = db
+            .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)
+            .ok_or_else(|| anyhow!("missing oracle verdict CF"))?;
+        let mut oracle_rows = 0usize;
+        for item in db.iterator_cf(oracle_cf, rocksdb::IteratorMode::Start) {
+            let (_key, value) = item?;
+            let decoded: CalibrationExample = bincode::deserialize(&value)?;
+            assert_eq!(decoded.predicted_test_pass, vec![0.5]);
+            assert_eq!(
+                decoded.predicted_test_pass.len(),
+                decoded.actual_test_pass.len()
+            );
+            oracle_rows += 1;
+        }
+        assert_eq!(oracle_rows, 4);
+        let eval_exports_present = eval_export_dir.exists()
+            && fs::read_dir(&eval_export_dir)?
+                .next()
+                .transpose()?
+                .is_some();
+        assert!(!eval_exports_present);
         Ok(())
     }
 
@@ -1835,7 +1522,6 @@ mod tests {
                 "train",
                 "known_good",
                 true,
-                0.95,
                 "train_known_good",
                 "diff --git a/app.py b/app.py\n+print('train pass')\n",
             ),
@@ -1843,7 +1529,6 @@ mod tests {
                 "calibration",
                 "compile_error",
                 false,
-                0.05,
                 "calibration_compile_error",
                 "diff --git a/app.py b/app.py\n+print(undefined_name)\n",
             ),
@@ -1851,7 +1536,6 @@ mod tests {
                 "holdout",
                 "known_good",
                 true,
-                0.95,
                 "holdout_known_good",
                 "diff --git a/app.py b/app.py\n+print('holdout pass')\n",
             ),
@@ -1859,13 +1543,12 @@ mod tests {
                 "holdout",
                 "compile_error",
                 false,
-                0.05,
                 "holdout_compile_error",
                 "diff --git a/app.py b/app.py\n+print(undefined_name)\n",
             ),
         ];
         let mut entries = Vec::new();
-        for (bucket, category, oracle_all_passed, predicted, task_id, patch_text) in rows {
+        for (bucket, category, oracle_all_passed, task_id, patch_text) in rows {
             let patch_path = format!("mutations/{task_id}.patch");
             fs::write(root.join(&patch_path), patch_text)?;
             entries.push(json!({
@@ -1879,7 +1562,6 @@ mod tests {
                 "oracle_verdict_sha256": format!("sha256:{}", hex::encode(Sha256::digest(format!("{task_id}:{oracle_all_passed}").as_bytes()))),
                 "patch_path": patch_path,
                 "patch_sha256": format!("sha256:{}", hex::encode(Sha256::digest(patch_text.as_bytes()))),
-                "predicted_oracle_pass": predicted,
                 "repo": "synthetic/python",
                 "task_id": task_id
             }));

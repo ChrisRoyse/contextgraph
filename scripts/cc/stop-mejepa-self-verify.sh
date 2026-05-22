@@ -215,7 +215,7 @@ stop_mejepa_db_state_blocked() {
 INPUT="$(cat)"
 if ! jq -e . >/dev/null 2>&1 <<<"${INPUT}"; then
   stop_mejepa_warn_unreachable "" "Stop hook received invalid JSON on stdin; cannot map current session." ""
-  exit 0
+  exit 2
 fi
 
 STOP_HOOK_ACTIVE="$(jq -r '.stop_hook_active // false' <<<"${INPUT}")"
@@ -245,7 +245,7 @@ if ! CLI_BIN="$(cgreality_context_graph_cli_bin)"; then
     "context-graph-cli executable was not found, so Stop verification could not run." \
     "Build context-graph-cli or set CGREALITY_CONTEXT_GRAPH_CLI to the correct executable, then rerun stop-self-verify." \
     "PATH=${PATH:-}"
-  exit 0
+  exit 2
 fi
 
 TMP_OUT="$(mktemp /tmp/mejepa-stop-self-verify-out-XXXXXX.json)"
@@ -253,7 +253,7 @@ TMP_ERR="$(mktemp /tmp/mejepa-stop-self-verify-err-XXXXXX.log)"
 trap 'rm -f "${TMP_OUT}" "${TMP_ERR}"' EXIT
 
 if stop_mejepa_db_state_blocked "${SESSION_ID}"; then
-  exit 0
+  exit 2
 fi
 
 set +e
@@ -279,7 +279,7 @@ if [ "${CLI_EXIT}" -eq 124 ]; then
       "${CLI_STDERR}" \
       true \
       "${TIMEOUT_COUNT}"
-    exit 0
+    exit 2
   fi
   stop_mejepa_write_blocked_artifact \
     "${SESSION_ID}" \
@@ -300,7 +300,7 @@ if [ "${CLI_EXIT}" -ne 0 ] || ! jq -e . >/dev/null 2>&1 <<<"${CLI_OUTPUT}"; then
     "Repair the daemon/CLI path, then rerun stop-self-verify before treating this Stop as verified." \
     "exit=${CLI_EXIT}" \
     "${CLI_STDERR}"
-  exit 0
+  exit 2
 fi
 stop_mejepa_reset_timeout_state "${SESSION_ID}"
 

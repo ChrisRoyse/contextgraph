@@ -1000,7 +1000,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_EVAL_RUN,
-            "Run the Phase 8 ME-JEPA holdout evaluation against a real RocksDB source of truth, persist CF_MEJEPA_EVAL_REPORTS, and read back the report hash before returning.",
+            "Disabled fail-closed: this legacy Phase 8 eval runner used fixture holdouts and must not persist promotion-facing CF_MEJEPA_EVAL_REPORTS. Use real aiwonder ship-gate FSV/status artifacts instead.",
             json!({
                 "type": "object",
                 "additionalProperties": false,

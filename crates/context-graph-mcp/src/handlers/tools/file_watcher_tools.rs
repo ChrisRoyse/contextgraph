@@ -18,11 +18,12 @@ use serde_json::json;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use context_graph_core::types::audit::{AuditOperation, AuditRecord};
+use context_graph_core::types::audit::{AuditOperation, AuditRecord, AuditResult};
 
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
 use super::super::Handlers;
+use super::helpers::ToolErrorKind;
 
 // ============================================================================
 // Request/Response DTOs
@@ -323,6 +324,17 @@ impl Handlers {
                 .await
             {
                 Ok(true) => {
+                    if let Err(e) = self
+                        .verify_deleted_fingerprint_readback(*fp_id, "delete_file_content")
+                        .await
+                    {
+                        error!(
+                            error = %e,
+                            fingerprint_id = %fp_id,
+                            "delete_file_content: Delete readback failed"
+                        );
+                        return self.tool_error(id, &format!("Storage error: {}", e));
+                    }
                     deleted_count += 1;
                     debug!(
                         fingerprint_id = %fp_id,
@@ -373,6 +385,18 @@ impl Handlers {
                     deleted_count, request.file_path, e
                 ),
             );
+        }
+        if let Err(e) = self
+            .verify_file_index_cleared_readback(&request.file_path, "delete_file_content")
+            .await
+        {
+            error!(
+                error = %e,
+                file_path = %request.file_path,
+                deleted_count = deleted_count,
+                "delete_file_content: File index clear readback failed"
+            );
+            return self.tool_error(id, &format!("Storage error: {}", e));
         }
 
         let message = if request.soft_delete {
@@ -426,11 +450,11 @@ impl Handlers {
         }));
 
         if let Err(e) = self
-            .teleological_store
-            .append_audit_record(&audit_record)
+            .append_audit_record_with_readback(&audit_record, "delete_file_content")
             .await
         {
-            error!(error = %e, "delete_file_content: Failed to write audit record (non-fatal)");
+            error!(error = %e, "delete_file_content: Audit append/readback failed");
+            return self.tool_error(id, &format!("Storage error: {}", e));
         }
 
         let response = DeleteFileContentResponse {
@@ -523,6 +547,21 @@ impl Handlers {
                         // Use soft delete per SEC-06
                         match self.teleological_store.delete(fp_id, true).await {
                             Ok(true) => {
+                                if let Err(e) = self
+                                    .verify_deleted_fingerprint_readback(fp_id, "reconcile_files")
+                                    .await
+                                {
+                                    error!(
+                                        error = %e,
+                                        fingerprint_id = %fp_id,
+                                        "reconcile_files: Delete readback failed"
+                                    );
+                                    failed_deletions.push(format!(
+                                        "{}:{}:readback_error:{}",
+                                        entry.file_path, fp_id, e
+                                    ));
+                                    continue;
+                                }
                                 fingerprints_deleted += 1;
                             }
                             Ok(false) => {
@@ -555,6 +594,21 @@ impl Handlers {
                             file_path = %entry.file_path,
                             "reconcile_files: Failed to clear file index for orphan"
                         );
+                        failed_deletions
+                            .push(format!("{}:clear_index_error:{}", entry.file_path, e));
+                    } else if let Err(e) = self
+                        .verify_file_index_cleared_readback(&entry.file_path, "reconcile_files")
+                        .await
+                    {
+                        error!(
+                            error = %e,
+                            file_path = %entry.file_path,
+                            "reconcile_files: File index clear readback failed"
+                        );
+                        failed_deletions.push(format!(
+                            "{}:clear_index_readback_error:{}",
+                            entry.file_path, e
+                        ));
                     }
 
                     info!(
@@ -574,8 +628,9 @@ impl Handlers {
             "reconcile_files: Operation complete"
         );
 
-        // Emit FileWatcherEvent audit record for reconcile (only if not dry run and we deleted)
-        if !request.dry_run && fingerprints_deleted > 0 {
+        // Emit FileWatcherEvent audit record for reconcile when the command mutated
+        // or detected partial mutation failure.
+        if !request.dry_run && (fingerprints_deleted > 0 || !failed_deletions.is_empty()) {
             let audit_record = AuditRecord::new(
                 AuditOperation::FileWatcherEvent {
                     event_type: "reconcile_delete".to_string(),
@@ -598,14 +653,22 @@ impl Handlers {
                 "dry_run": false,
                 "base_path": request.base_path,
                 "orphaned_files": &orphans,
-            }));
+                "failed_deletions": &failed_deletions,
+            }))
+            .with_result(if failed_deletions.is_empty() {
+                AuditResult::Success
+            } else {
+                AuditResult::Partial {
+                    warnings: failed_deletions.clone(),
+                }
+            });
 
             if let Err(e) = self
-                .teleological_store
-                .append_audit_record(&audit_record)
+                .append_audit_record_with_readback(&audit_record, "reconcile_files")
                 .await
             {
-                error!(error = %e, "reconcile_files: Failed to write audit record (non-fatal)");
+                error!(error = %e, "reconcile_files: Audit append/readback failed");
+                return self.tool_error(id, &format!("Storage error: {}", e));
             }
         }
 
@@ -617,6 +680,16 @@ impl Handlers {
             dry_run: request.dry_run,
             failed_deletions,
         };
+
+        if !response.failed_deletions.is_empty() {
+            return self.tool_error_structured(
+                id,
+                ToolErrorKind::Storage,
+                "MEMORY_RECONCILE_PARTIAL_FAILURE",
+                "reconcile_files completed with one or more delete/index/readback failures",
+                json!(response),
+            );
+        }
 
         match serde_json::to_value(response) {
             Ok(v) => self.tool_result(id, v),

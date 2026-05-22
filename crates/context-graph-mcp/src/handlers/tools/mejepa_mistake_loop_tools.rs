@@ -22,7 +22,7 @@ use context_graph_mejepa_train::{
     ReplayBufferRow,
 };
 
-use crate::handlers::tools::helpers::ToolErrorKind;
+use crate::handlers::tools::helpers::{mejepa_db_source_of_truth, ToolErrorKind};
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use crate::tools::names as tool_names;
@@ -376,16 +376,18 @@ fn resolve_mistake_loop_db_path(input: Option<PathBuf>) -> AnyhowResult<PathBuf>
 }
 
 fn source_of_truth(db_path: &Path) -> Value {
-    json!({
-        "dbPath": db_path.display().to_string(),
-        "cfs": context_graph_mejepa_train::ability_resolver_cfs(),
-        "writesMistakeLog": CF_MEJEPA_MISTAKE_LOG,
-        "writesReplayBuffer": CF_MEJEPA_REPLAY_BUFFER,
-        "readsOnlineHeadState": CF_MEJEPA_ONLINE_HEAD_STATE,
-        "readsSkillLifecycleAudit": CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
-        "noCachedJsonSummary": true,
-        "noNewPredictionHeadIntroduced": true
-    })
+    mejepa_db_source_of_truth(
+        db_path,
+        json!({
+            "cfs": context_graph_mejepa_train::ability_resolver_cfs(),
+            "writesMistakeLog": CF_MEJEPA_MISTAKE_LOG,
+            "writesReplayBuffer": CF_MEJEPA_REPLAY_BUFFER,
+            "readsOnlineHeadState": CF_MEJEPA_ONLINE_HEAD_STATE,
+            "readsSkillLifecycleAudit": CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
+            "noCachedJsonSummary": true,
+            "noNewPredictionHeadIntroduced": true
+        }),
+    )
 }
 
 fn prediction_id_from_hex(value: &str) -> AnyhowResult<PredictionId> {

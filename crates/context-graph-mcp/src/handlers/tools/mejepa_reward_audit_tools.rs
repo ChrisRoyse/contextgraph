@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::handlers::tools::helpers::ToolErrorKind;
+use crate::handlers::tools::helpers::{mejepa_db_source_of_truth, ToolErrorKind};
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use crate::tools::names as tool_names;
@@ -80,10 +80,9 @@ fn run_reward_signal_audit(request: RewardSignalAuditRequest) -> AnyhowResult<Va
         "acceptancePassed": report.acceptance_passed,
         "incompleteTiers": incomplete_tiers,
         "missingCfs": missing_cfs,
-        "sourceOfTruth": {
-            "dbPath": db_path.display().to_string(),
+        "sourceOfTruth": mejepa_db_source_of_truth(&db_path, json!({
             "signalDropCf": CF_MEJEPA_SIGNAL_DROP_LOG
-        },
+        })),
         "report": report
     }))
 }

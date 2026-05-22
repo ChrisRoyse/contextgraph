@@ -22,20 +22,22 @@
 //! use active embedders and optional lexical query expansion, but E5 vectors, E5 HNSW
 //! indexes, causal hints, and asymmetric E5 reranking are rejected fail-closed.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::time::Instant;
 use tracing::{debug, error, info, warn};
 
 use context_graph_core::causal::asymmetric::{
-    apply_causal_gate, causal_gate, compute_e5_asymmetric_fingerprint_similarity,
-    detect_causal_query_intent, CausalDirection,
+    CausalDirection, apply_causal_gate, causal_gate, compute_e5_asymmetric_fingerprint_similarity,
+    detect_causal_query_intent,
 };
 use context_graph_core::teleological::matrix_search::embedder_names;
-use context_graph_core::traits::{EmbeddingMetadata, SearchStrategy, TeleologicalSearchOptions};
+use context_graph_core::traits::{
+    EmbeddingHintProvenance, EmbeddingMetadata, SearchStrategy, TeleologicalSearchOptions,
+};
 use context_graph_core::types::audit::{AuditOperation, AuditRecord, EmbeddingVersionRecord};
 use context_graph_core::types::fingerprint::{
-    SemanticFingerprint, TeleologicalFingerprint, NUM_EMBEDDERS,
+    NUM_EMBEDDERS, SemanticFingerprint, TeleologicalFingerprint,
 };
 use context_graph_core::types::{SourceMetadata, SourceType};
 use context_graph_core::weights::{
@@ -44,14 +46,14 @@ use context_graph_core::weights::{
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use uuid::Uuid;
 
-use crate::weights::{apply_e11_disable, get_effective_weight_profile, E11_ENTITY_ENABLED};
+use crate::weights::{E11_ENTITY_ENABLED, apply_e11_disable, get_effective_weight_profile};
 
 use crate::protocol::JsonRpcId;
 use crate::protocol::JsonRpcResponse;
 
 use super::super::Handlers;
-use super::graph_link_dtos::{embedder_name_to_index, EMBEDDER_NAMES, RRF_K};
-use super::helpers::{compute_position_label, ToolErrorKind};
+use super::graph_link_dtos::{EMBEDDER_NAMES, RRF_K, embedder_name_to_index};
+use super::helpers::{ToolErrorKind, compute_position_label};
 
 // Validation constants for store_memory rationale (merged from inject_context)
 // When rationale is provided, validate: 1-1024 chars
@@ -123,6 +125,8 @@ struct BatchStoreRecord {
     cluster_array: [Vec<f32>; 14],
     model_ids: [String; NUM_EMBEDDERS],
     embedding_latency_ms: u64,
+    embedding_hint_provenance: Option<EmbeddingHintProvenance>,
+    audit_tool: &'static str,
 }
 
 fn validate_content_arg(content: &str) -> Result<(), String> {
@@ -289,7 +293,9 @@ impl Handlers {
                         Some(hint)
                     }
                     None => {
-                        debug!("store_memory: Causal hint provider returned None (timeout or low confidence)");
+                        debug!(
+                            "store_memory: Causal hint provider returned None (timeout or low confidence)"
+                        );
                         None
                     }
                 }
@@ -376,222 +382,75 @@ impl Handlers {
         .with_e6_sparse(e6_sparse);
         let fingerprint_id = fingerprint.id;
 
-        match self.teleological_store.store(fingerprint).await {
-            Ok(_) => {
-                // TASK-FIX-CLUSTERING: Insert into cluster_manager for topic detection
-                // This enables MultiSpaceClusterManager to track this memory for HDBSCAN/BIRCH clustering.
-                // Per PRD Section 5: Topics emerge from multi-space clustering with weighted_agreement >= 2.5.
-                {
-                    let mut cluster_mgr = self.cluster_manager.write();
-                    if let Err(e) = cluster_mgr.insert(fingerprint_id, &cluster_array) {
-                        // Non-fatal: fingerprint is stored, clustering can be retried via detect_topics
-                        warn!(
-                            fingerprint_id = %fingerprint_id,
-                            error = %e,
-                            "store_memory: Failed to insert into cluster_manager. \
-                             Topic detection may not include this memory until next recluster."
-                        );
-                    } else {
-                        debug!(
-                            fingerprint_id = %fingerprint_id,
-                            "store_memory: Inserted into cluster_manager for topic detection"
-                        );
-                    }
-                }
-
-                // TASK-GRAPHLINK-PHASE1: Enqueue fingerprint for background K-NN graph building
-                // The BackgroundGraphBuilder will process this in batch every 60s (configurable)
-                if let Some(builder) = self.graph_builder() {
-                    builder.enqueue(fingerprint_id).await;
-                    debug!(
-                        fingerprint_id = %fingerprint_id,
-                        "store_memory: Enqueued for K-NN graph building"
-                    );
-                }
-
-                // TASK-CONTENT-010: Store content text alongside fingerprint
-                // Content storage failure is non-fatal - fingerprint is primary data
-                if let Err(e) = self
-                    .teleological_store
-                    .store_content(fingerprint_id, &content)
-                    .await
-                {
-                    warn!(
-                        fingerprint_id = %fingerprint_id,
-                        error = %e,
-                        content_size = content.len(),
-                        "store_memory: Failed to store content text (fingerprint saved successfully). \
-                         Content retrieval will return None for this fingerprint."
-                    );
-                } else {
-                    debug!(
-                        fingerprint_id = %fingerprint_id,
-                        content_size = content.len(),
-                        "store_memory: Content text stored successfully"
-                    );
-                }
-
-                // ENTITY-LINK: Extract entities at store time for Jaccard overlap in search_by_entities.
-                // Without this, entity Jaccard is always 0.0 because entities aren't linked to stored memories.
-                let entity_names = {
-                    let entity_meta = super::entity_tools::extract_entity_mentions(&content);
-                    let ids: Vec<String> = entity_meta
-                        .canonical_ids()
-                        .into_iter()
-                        .map(String::from)
-                        .collect();
-                    if !ids.is_empty() {
-                        debug!(
-                            fingerprint_id = %fingerprint_id,
-                            entity_count = ids.len(),
-                            entities = ?ids,
-                            "store_memory: Extracted entities for Jaccard scoring"
-                        );
-                        Some(ids)
-                    } else {
-                        None
-                    }
-                };
-
-                // E4-FIX Phase 1: Persist session metadata for E4 sequence retrieval
-                // This enables proper before/after queries by storing session_sequence
-                // PHASE-1.2: Add operator attribution fields for provenance tracking
-                let source_metadata = SourceMetadata {
-                    source_type: SourceType::Manual,
-                    session_id: session_id.clone(),
-                    session_sequence: Some(session_sequence),
-                    causal_direction: Some(causal_direction.clone()),
-                    created_by: operator_id.clone(),
-                    created_at: Some(chrono::Utc::now()),
-                    embedding_hint_provenance: embedding_output.e5_hint_provenance.clone(),
-                    entity_names,
-                    ..SourceMetadata::default()
-                };
-
-                if let Err(e) = self
-                    .teleological_store
-                    .store_source_metadata(fingerprint_id, &source_metadata)
-                    .await
-                {
-                    warn!(
-                        fingerprint_id = %fingerprint_id,
-                        error = %e,
-                        session_sequence = session_sequence,
-                        causal_direction = %causal_direction,
-                        "store_memory: Failed to store source metadata (fingerprint saved successfully). \
-                         E4 sequence retrieval may fall back to timestamp-based ordering."
-                    );
-                } else {
-                    debug!(
-                        fingerprint_id = %fingerprint_id,
-                        session_sequence = session_sequence,
-                        causal_direction = %causal_direction,
-                        "store_memory: Source metadata stored for E4 sequence retrieval"
-                    );
-                }
-
-                // PHASE-1.2: Append audit record for memory creation
-                {
-                    use context_graph_core::types::audit::{AuditOperation, AuditRecord};
-                    let mut audit_record =
-                        AuditRecord::new(AuditOperation::MemoryCreated, fingerprint_id);
-                    if let Some(ref op_id) = operator_id {
-                        audit_record = audit_record.with_operator(op_id.clone());
-                    }
-                    if let Some(ref sess_id) = session_id {
-                        audit_record = audit_record.with_session(sess_id.clone());
-                    }
-                    if let Some(r) = rationale {
-                        audit_record = audit_record.with_rationale(r);
-                    }
-                    audit_record = audit_record.with_parameters(json!({
-                        "importance": importance,
-                        "content_size": content.len(),
-                        "causal_direction": causal_direction,
-                        "embedding_hint_provenance": embedding_output.e5_hint_provenance,
-                    }));
-
-                    if let Err(e) = self
-                        .teleological_store
-                        .append_audit_record(&audit_record)
-                        .await
-                    {
-                        // Non-fatal: audit is secondary to the main operation
-                        error!(
-                            fingerprint_id = %fingerprint_id,
-                            error = %e,
-                            "store_memory: Failed to append audit record (memory stored successfully)"
-                        );
-                    } else {
-                        debug!(
-                            fingerprint_id = %fingerprint_id,
-                            audit_id = %audit_record.id,
-                            "store_memory: Audit record appended successfully"
-                        );
-                    }
-                }
-
-                // Phase 5: Store embedding version record for provenance tracking
-                // M5 FIX: Use actual model_ids from embedding output, not static strings
-                {
-                    use context_graph_core::types::audit::EmbeddingVersionRecord;
-                    use std::collections::HashMap;
-
-                    let mut embedder_versions = HashMap::new();
-                    for (i, label) in EMBEDDER_NAMES.iter().enumerate() {
-                        embedder_versions
-                            .insert(label.to_string(), embedding_output.model_ids[i].clone());
-                    }
-
-                    let record = EmbeddingVersionRecord {
-                        fingerprint_id,
-                        computed_at: chrono::Utc::now(),
-                        embedder_versions,
-                        e7_model_version: Some(embedding_output.model_ids[6].clone()),
-                        computation_time_ms: Some(embedding_output.total_latency.as_millis() as u64),
-                    };
-
-                    if let Err(e) = self
-                        .teleological_store
-                        .store_embedding_version(&record)
-                        .await
-                    {
-                        warn!(
-                            fingerprint_id = %fingerprint_id,
-                            error = %e,
-                            "store_memory: Failed to store embedding version record (non-fatal)"
-                        );
-                    } else {
-                        debug!(
-                            fingerprint_id = %fingerprint_id,
-                            computation_ms = embedding_output.total_latency.as_millis(),
-                            "store_memory: Embedding version record stored"
-                        );
-                    }
-                }
-
-                // Build response, including rationale if provided
-                let mut response = json!({
-                    "fingerprintId": fingerprint_id.to_string(),
-                    "embedderCount": active_embedder_count(),
-                    "activeEmbedderCount": active_embedder_count(),
-                    "storageSlotCount": NUM_EMBEDDERS,
-                    "disabledEmbedders": disabled_embedder_names(),
-                    "embeddingLatencyMs": embedding_output.total_latency.as_millis()
-                });
-
-                // Include rationale in response when provided (merged from inject_context)
-                if let Some(r) = rationale {
-                    response["rationale"] = json!(r);
-                }
-
-                self.tool_result(id, response)
-            }
-            Err(e) => {
-                error!(error = %e, "store_memory: Storage FAILED");
-                self.tool_error(id, &format!("Storage failed: {}", e))
-            }
+        if let Err(e) = self.teleological_store.store(fingerprint).await {
+            error!(error = %e, "store_memory: Storage FAILED");
+            return self.tool_error(id, &format!("Storage failed: {}", e));
         }
+
+        let records = vec![BatchStoreRecord {
+            index: 0,
+            fingerprint_id,
+            content,
+            session_id,
+            session_sequence,
+            importance,
+            rationale: rationale.map(String::from),
+            operator_id,
+            causal_direction,
+            cluster_array,
+            model_ids: embedding_output.model_ids,
+            embedding_latency_ms: embedding_output.total_latency.as_millis() as u64,
+            embedding_hint_provenance: embedding_output.e5_hint_provenance,
+            audit_tool: "store_memory",
+        }];
+
+        if let Err(e) = self.write_batch_sidecars(&records).await {
+            self.rollback_stored_memories(&[fingerprint_id], "store_memory sidecar write failed")
+                .await;
+            error!(error = %e, "store_memory: sidecar writes FAILED and fingerprint was rolled back");
+            return self.tool_error_typed(id, ToolErrorKind::Storage, &e);
+        }
+
+        if let Err(e) = self.verify_batch_readback(&records).await {
+            self.rollback_stored_memories(
+                &[fingerprint_id],
+                "store_memory readback verification failed",
+            )
+            .await;
+            error!(error = %e, "store_memory: readback verification FAILED and fingerprint was rolled back");
+            return self.tool_error_typed(id, ToolErrorKind::Storage, &e);
+        }
+
+        if let Some(builder) = self.graph_builder() {
+            builder.enqueue(fingerprint_id).await;
+            debug!(
+                fingerprint_id = %fingerprint_id,
+                "store_memory: Enqueued for K-NN graph building"
+            );
+        }
+
+        let record = &records[0];
+        let mut response = json!({
+            "fingerprintId": record.fingerprint_id.to_string(),
+            "embedderCount": active_embedder_count(),
+            "activeEmbedderCount": active_embedder_count(),
+            "storageSlotCount": NUM_EMBEDDERS,
+            "disabledEmbedders": disabled_embedder_names(),
+            "embeddingLatencyMs": record.embedding_latency_ms,
+            "sourceOfTruth": {
+                "fingerprints": "CF_FINGERPRINTS",
+                "content": "CF_CONTENT",
+                "sourceMetadata": "CF_SOURCE_METADATA",
+                "embeddingVersions": "CF_EMBEDDING_REGISTRY",
+                "audit": "CF_AUDIT_LOG"
+            }
+        });
+
+        if let Some(r) = record.rationale.as_deref() {
+            response["rationale"] = json!(r);
+        }
+
+        self.tool_result(id, response)
     }
 
     /// store_memories tool implementation.
@@ -729,6 +588,8 @@ impl Handlers {
                 cluster_array,
                 model_ids: embedding_output.model_ids,
                 embedding_latency_ms: embedding_output.total_latency.as_millis() as u64,
+                embedding_hint_provenance: embedding_output.e5_hint_provenance,
+                audit_tool: "store_memories",
             });
             fingerprints.push(fingerprint);
         }
@@ -989,11 +850,7 @@ impl Handlers {
                     .into_iter()
                     .map(String::from)
                     .collect();
-                if ids.is_empty() {
-                    None
-                } else {
-                    Some(ids)
-                }
+                if ids.is_empty() { None } else { Some(ids) }
             };
 
             let source_metadata = SourceMetadata {
@@ -1003,6 +860,7 @@ impl Handlers {
                 causal_direction: Some(record.causal_direction.clone()),
                 created_by: record.operator_id.clone(),
                 created_at: Some(chrono::Utc::now()),
+                embedding_hint_provenance: record.embedding_hint_provenance.clone(),
                 entity_names,
                 ..SourceMetadata::default()
             };
@@ -1048,12 +906,17 @@ impl Handlers {
             if let Some(ref rationale) = record.rationale {
                 audit_record = audit_record.with_rationale(rationale);
             }
-            audit_record = audit_record.with_parameters(json!({
+            let mut audit_parameters = json!({
                 "importance": record.importance,
                 "content_size": record.content.len(),
                 "causal_direction": record.causal_direction,
-                "batch_tool": "store_memories",
-            }));
+                "tool": record.audit_tool,
+                "embedding_hint_provenance": record.embedding_hint_provenance.clone(),
+            });
+            if record.audit_tool == "store_memories" {
+                audit_parameters["batch_tool"] = json!("store_memories");
+            }
+            audit_record = audit_record.with_parameters(audit_parameters);
             self.teleological_store
                 .append_audit_record(&audit_record)
                 .await
@@ -1109,13 +972,13 @@ impl Handlers {
                     return Err(format!(
                         "content readback mismatch for {}",
                         record.fingerprint_id
-                    ))
+                    ));
                 }
                 None => {
                     return Err(format!(
                         "content readback missing for {}",
                         record.fingerprint_id
-                    ))
+                    ));
                 }
             }
         }
@@ -1193,17 +1056,17 @@ impl Handlers {
                         record.fingerprint_id, e
                     )
                 })?;
-            let has_batch_create = audit.iter().any(|entry| {
+            let has_expected_create = audit.iter().any(|entry| {
                 matches!(entry.operation, AuditOperation::MemoryCreated)
                     && entry.session_id == record.session_id
                     && entry.operator_id == record.operator_id
-                    && entry.parameters.get("batch_tool").and_then(Value::as_str)
-                        == Some("store_memories")
+                    && entry.parameters.get("tool").and_then(Value::as_str)
+                        == Some(record.audit_tool)
             });
-            if !has_batch_create {
+            if !has_expected_create {
                 return Err(format!(
-                    "memory-created batch audit readback missing for {}",
-                    record.fingerprint_id
+                    "memory-created {} audit readback missing for {}",
+                    record.audit_tool, record.fingerprint_id
                 ));
             }
         }
@@ -1741,7 +1604,7 @@ impl Handlers {
                     Ok(value) => value,
                     Err(e) => {
                         return self
-                            .tool_error(id, &format!("state-conditioned profile failed: {e}"))
+                            .tool_error(id, &format!("state-conditioned profile failed: {e}"));
                     }
                 };
             adaptive_policy = json!({
@@ -3056,9 +2919,8 @@ fn compute_navigation_hints(embedder_scores: &[f32; 14]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_causal_gate, build_embedder_scores_json, compute_blind_spots,
-        compute_navigation_hints, expand_causal_query, get_e5_causal_weight, CausalDirection,
-        COLBERT_WEIGHT,
+        COLBERT_WEIGHT, CausalDirection, apply_causal_gate, build_embedder_scores_json,
+        compute_blind_spots, compute_navigation_hints, expand_causal_query, get_e5_causal_weight,
     };
     use super::{MAX_RATIONALE_LEN, MAX_TOP_K, MIN_RATIONALE_LEN, MIN_TOP_K};
     use context_graph_core::causal::asymmetric::{causal_gate, direction_mod};

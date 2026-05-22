@@ -1160,6 +1160,13 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
     row_count = 0
     slot_record_count = 0
     missing_slot_events = 0
+    missing_slot_rows = 0
+    duplicate_slot_events = 0
+    duplicate_slot_rows = 0
+    source_readback_unverified_events = 0
+    source_readback_unverified_rows = 0
+    missing_required_embedder_manifest_entry_count = 0
+    missing_required_embedder_manifest_entry_samples: list[dict[str, str]] = []
     pair_label_count = 0
     group_label_count = 0
     slot_record_counts = Counter()
@@ -1179,6 +1186,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                     "slot_vector_hashes": {},
                     "slot_dims": {},
                     "source_readback_unverified": [],
+                    "duplicate_slots": [],
                 }
 
             shard_root = args.forward_root / "shards" / shard_id
@@ -1189,6 +1197,11 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
             for embedder_id in required_embedders:
                 entry = per_embedder.get(embedder_id)
                 if entry is None:
+                    missing_required_embedder_manifest_entry_count += 1
+                    if len(missing_required_embedder_manifest_entry_samples) < 32:
+                        missing_required_embedder_manifest_entry_samples.append(
+                            {"shard_id": shard_id, "embedder_id": embedder_id}
+                        )
                     continue
                 record_path = Path(str(entry.get("record_path") or ""))
                 require(record_path.exists(), "MEJEPA_AUTO_LABEL_RECORD_PATH_MISSING", str(record_path))
@@ -1216,6 +1229,8 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                         require(vector.ndim == 1 and vector.size > 0, "MEJEPA_AUTO_LABEL_VECTOR_MISSING", f"{record_path}:{line_no}")
                         features = vector_scalar_features(vector)
                         labels = slot_labels(embedder_id, vector, features)
+                        if embedder_id in work["slot_features"]:
+                            work["duplicate_slots"].append(embedder_id)
                         work["slot_features"][embedder_id] = features
                         work["slot_labels"].extend(labels)
                         work["slot_vector_hashes"][embedder_id] = str(output.get("vector_sha256") or sha256_bytes(vector.astype("<f4", copy=False).tobytes()))
@@ -1243,6 +1258,13 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                 target_labels = outcome_labels(docker_label, phase, oracle_entry) + ["leakage_policy:target_side_only"]
                 missing_slots = [embedder_id for embedder_id in required_embedders if embedder_id not in work["slot_features"]]
                 missing_slot_events += len(missing_slots)
+                missing_slot_rows += 1 if missing_slots else 0
+                duplicate_slots = sorted(set(work["duplicate_slots"]))
+                duplicate_slot_events += len(work["duplicate_slots"])
+                duplicate_slot_rows += 1 if duplicate_slots else 0
+                source_readback_unverified = sorted(set(work["source_readback_unverified"]))
+                source_readback_unverified_events += len(work["source_readback_unverified"])
+                source_readback_unverified_rows += 1 if source_readback_unverified else 0
                 missing_labels = [f"slot:{embedder_id}:missing" for embedder_id in missing_slots]
                 slot_label_values = sorted(set(work["slot_labels"] + missing_labels))
                 available = sorted(work["slot_features"])
@@ -1368,6 +1390,11 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
                         "target_supervision_labels": all_target_supervision_labels,
                         "source_site_relation_labels": relation_labels,
                         "slot_labels": slot_label_values,
+                        "missing_slots": missing_slots,
+                        "duplicate_slots": duplicate_slots,
+                        "source_readback_unverified": source_readback_unverified,
+                        "source_readback_verified": not source_readback_unverified,
+                        "slot_evidence_complete": not missing_slots and not duplicate_slots and not source_readback_unverified,
                         "slot_dims": dict(sorted(work["slot_dims"].items())),
                         "slot_vector_sha256": dict(sorted(work["slot_vector_hashes"].items())),
                         "slot_scalar_features": work["slot_features"],
@@ -1551,13 +1578,45 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
 
     expected_chunk_count = args.expected_chunk_count if selected_full else row_count
     expected_forward_count = args.expected_forward_record_count if selected_full else slot_record_count
+    required_embedder_record_counts = {embedder_id: int(slot_record_counts.get(embedder_id, 0)) for embedder_id in required_embedders}
+    required_embedder_record_counts_complete = all(count > 0 for count in required_embedder_record_counts.values())
+    slot_evidence_complete = (
+        missing_required_embedder_manifest_entry_count == 0
+        and missing_slot_events == 0
+        and duplicate_slot_events == 0
+        and source_readback_unverified_events == 0
+        and required_embedder_record_counts_complete
+    )
+    validation_failures: list[str] = []
+    if missing_required_embedder_manifest_entry_count:
+        validation_failures.append("MEJEPA_AUTO_LABEL_REQUIRED_EMBEDDER_MISSING_FROM_PACKED_MANIFEST")
+    if missing_slot_events:
+        validation_failures.append("MEJEPA_AUTO_LABEL_MISSING_SLOT_EVIDENCE")
+    if duplicate_slot_events:
+        validation_failures.append("MEJEPA_AUTO_LABEL_DUPLICATE_SLOT_EVIDENCE")
+    if source_readback_unverified_events:
+        validation_failures.append("MEJEPA_AUTO_LABEL_SOURCE_READBACK_UNVERIFIED")
+    if not required_embedder_record_counts_complete:
+        validation_failures.append("MEJEPA_AUTO_LABEL_REQUIRED_EMBEDDER_ZERO_RECORDS")
     summary = {
         "chunk_label_rows": row_count,
         "slot_record_count": slot_record_count,
         "slot_record_counts": dict(sorted(slot_record_counts.items())),
+        "required_embedders": list(required_embedders),
+        "required_embedder_record_counts": required_embedder_record_counts,
+        "required_embedder_record_counts_complete": required_embedder_record_counts_complete,
         "pair_label_count": pair_label_count,
         "group_label_count": group_label_count,
         "missing_slot_events": missing_slot_events,
+        "missing_slot_rows": missing_slot_rows,
+        "duplicate_slot_events": duplicate_slot_events,
+        "duplicate_slot_rows": duplicate_slot_rows,
+        "source_readback_unverified_events": source_readback_unverified_events,
+        "source_readback_unverified_rows": source_readback_unverified_rows,
+        "missing_required_embedder_manifest_entry_count": missing_required_embedder_manifest_entry_count,
+        "missing_required_embedder_manifest_entry_samples": missing_required_embedder_manifest_entry_samples,
+        "slot_evidence_complete": slot_evidence_complete,
+        "validation_failures": validation_failures,
         "file_path_constellation_rows": file_row_count,
         "code_state_constellation_rows": code_state_row_count,
         "failure_evidence_set_rows": failure_row_count,
@@ -1570,6 +1629,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
     passes = (
         row_count == expected_chunk_count
         and (not selected_full or slot_record_count == expected_forward_count)
+        and slot_evidence_complete
         and file_row_count > 0
         and code_state_row_count > 0
         and failure_row_count > 0

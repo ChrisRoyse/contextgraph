@@ -120,10 +120,14 @@ if [ -f "${FAKE_CALLS}" ]; then
 fi
 rm -f "${MEJEPA_DAEMON_CONFIG}"
 
+EC="$(run_hook 'not-json' "${TMPROOT}/invalid-json.out" "${TMPROOT}/invalid-json.err")"
+assert_exit 2 "${EC}" "stop_self_verify_invalid_json_exit"
+assert_jq "$(cat "${TMPROOT}/invalid-json.err")" '.error_code' "MEJEPA_STOP_HOOK_DAEMON_UNREACHABLE" "stop_self_verify_invalid_json_error"
+
 rm -rf "${CONTEXTGRAPH_MEJEPA_INFER_DB}"
 export FAKE_MODE=allowed
 EC="$(run_hook "${STOP_JSON}" "${TMPROOT}/db-missing.out" "${TMPROOT}/db-missing.err")"
-assert_exit 0 "${EC}" "stop_self_verify_db_missing_exit"
+assert_exit 2 "${EC}" "stop_self_verify_db_missing_exit"
 assert_jq "$(cat "${TMPROOT}/db-missing.err")" '.error_code' "MEJEPA_STOP_HOOK_DB_MISSING" "stop_self_verify_db_missing_error"
 assert_jq "$(cat "${TMPROOT}/db-missing.err")" '.operator_action.required' "true" "stop_self_verify_db_missing_operator_action"
 mkdir -p "${CONTEXTGRAPH_MEJEPA_INFER_DB}"
@@ -131,21 +135,21 @@ mkdir -p "${CONTEXTGRAPH_MEJEPA_INFER_DB}"
 touch -d '1970-01-01 UTC' "${CONTEXTGRAPH_MEJEPA_INFER_DB}"
 export CGREALITY_MEJEPA_STOP_VERIFY_STALE_DB_SECONDS=1
 EC="$(run_hook "${STOP_JSON}" "${TMPROOT}/db-stale.out" "${TMPROOT}/db-stale.err")"
-assert_exit 0 "${EC}" "stop_self_verify_db_stale_exit"
+assert_exit 2 "${EC}" "stop_self_verify_db_stale_exit"
 assert_jq "$(cat "${TMPROOT}/db-stale.err")" '.error_code' "MEJEPA_STOP_HOOK_DB_STALE" "stop_self_verify_db_stale_error"
 unset CGREALITY_MEJEPA_STOP_VERIFY_STALE_DB_SECONDS
 touch "${CONTEXTGRAPH_MEJEPA_INFER_DB}"
 
 export CGREALITY_CONTEXT_GRAPH_CLI="${TMPROOT}/missing-context-graph-cli"
 EC="$(run_hook "${STOP_JSON}" "${TMPROOT}/cli-missing.out" "${TMPROOT}/cli-missing.err")"
-assert_exit 0 "${EC}" "stop_self_verify_cli_missing_exit"
+assert_exit 2 "${EC}" "stop_self_verify_cli_missing_exit"
 assert_jq "$(cat "${TMPROOT}/cli-missing.err")" '.error_code' "MEJEPA_STOP_HOOK_CLI_MISSING" "stop_self_verify_cli_missing_error"
 assert_jq "$(cat "${TMPROOT}/cli-missing.err")" '.operator_action.required' "true" "stop_self_verify_cli_missing_operator_action"
 export CGREALITY_CONTEXT_GRAPH_CLI="${FAKE_CLI}"
 
 export FAKE_MODE=fail
 EC="$(run_hook "${STOP_JSON}" "${TMPROOT}/unreachable.out" "${TMPROOT}/unreachable.err")"
-assert_exit 0 "${EC}" "stop_self_verify_unreachable_exit"
+assert_exit 2 "${EC}" "stop_self_verify_unreachable_exit"
 assert_jq "$(cat "${TMPROOT}/unreachable.err")" '.error_code' "MEJEPA_STOP_HOOK_DAEMON_UNREACHABLE" "stop_self_verify_unreachable_error"
 assert_jq "$(cat "${TMPROOT}/unreachable.err")" '.operator_action.required' "true" "stop_self_verify_unreachable_operator_action"
 
@@ -155,7 +159,7 @@ assert_exit 2 "${EC}" "stop_self_verify_timeout_first_exit"
 assert_jq "$(cat "${TMPROOT}/timeout-1.err")" '.error_code' "MEJEPA_STOP_HOOK_VERIFY_TIMEOUT" "stop_self_verify_timeout_first_error"
 assert_jq "$(cat "${TMPROOT}/timeout-1.err")" '.breaker.timeout_count' "1" "stop_self_verify_timeout_first_count"
 EC="$(run_hook "${STOP_JSON}" "${TMPROOT}/timeout-2.out" "${TMPROOT}/timeout-2.err")"
-assert_exit 0 "${EC}" "stop_self_verify_timeout_breaker_exit"
+assert_exit 2 "${EC}" "stop_self_verify_timeout_breaker_exit"
 assert_jq "$(cat "${TMPROOT}/timeout-2.err")" '.error_code' "MEJEPA_STOP_HOOK_TIMEOUT_BREAKER_OPEN" "stop_self_verify_timeout_breaker_error"
 assert_jq "$(cat "${TMPROOT}/timeout-2.err")" '.breaker.open' "true" "stop_self_verify_timeout_breaker_open"
 assert_jq "$(cat "${TMPROOT}/timeout-2.err")" '.operator_action.required' "true" "stop_self_verify_timeout_breaker_operator_action"

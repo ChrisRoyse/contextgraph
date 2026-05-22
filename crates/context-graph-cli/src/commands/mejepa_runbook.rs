@@ -16,8 +16,11 @@ use clap::{Args, Subcommand};
 use context_graph_mejepa::eval::store::CF_MEJEPA_EVAL_REPORTS;
 use context_graph_mejepa::eval::types::EvalReport;
 use context_graph_mejepa::eval::{
-    language_slug, required_active_python_ship_gate_cells, validate_active_python_ship_gate_report,
-    ACTIVE_PYTHON_SHIP_GATE_GRID, ACTIVE_PYTHON_SHIP_GATE_NAME,
+    fingerprint_ship_gate_stability_status, language_slug, non_exempt_ship_gate_failures,
+    required_active_python_ship_gate_cells, ship_gate_stability_status,
+    validate_active_python_ship_gate_report, ACTIVE_PYTHON_SHIP_GATE_GRID,
+    ACTIVE_PYTHON_SHIP_GATE_NAME, FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER,
+    SHIP_GATE_STABILITY_BLOCKER, SHIP_GATE_STABILITY_CORRELATION_THRESHOLD,
 };
 use context_graph_mejepa::heal::{
     AbcPromoter, HealRocksStore, PromotionGate, PromotionLockState, RollbackEvidence,
@@ -1071,12 +1074,20 @@ pub fn run_report_weekly(args: ReportWeeklyArgs) -> Result<ReportWeeklyOutput> {
     let determinism_hash = report
         .determinism_hash()
         .map_err(|err| anyhow!("MEJEPA_RUNBOOK_REPORT_HASH_FAILED: {err}"))?;
+    let mut current_window_failures = current_window_failures(&report);
+    if let Err(err) = validate_active_python_ship_gate_report(&report) {
+        push_unique_failure(
+            &mut current_window_failures,
+            format!("MEJEPA_RUNBOOK_REPORT_WEEKLY_STALE_SHIP_GATE_GRID: {err}"),
+        );
+    }
+    let current_window_passed = current_window_failures.is_empty();
     Ok(ReportWeeklyOutput {
         date,
         generated_at_unix_ms: report.generated_at_unix_ms,
         overall_correlation: report.overall_correlation,
-        ship_gate_passed: report.ship_gate_passed,
-        ship_gate_failures: report.ship_gate_failures.clone(),
+        ship_gate_passed: current_window_passed,
+        ship_gate_failures: current_window_failures,
         holdout_count: report.holdout_count,
         per_language_correlation: serde_json::to_value(&report.per_language_correlation)
             .map_err(|err| anyhow!("MEJEPA_RUNBOOK_REPORT_SERIALIZE_FAILED: {err}"))?,
@@ -1087,6 +1098,9 @@ pub fn run_report_weekly(args: ReportWeeklyArgs) -> Result<ReportWeeklyOutput> {
             "db_path": args.db_path,
             "column_family": CF_MEJEPA_EVAL_REPORTS,
             "selector": format!("report_date == {}", args.date),
+            "ship_gate_threshold": SHIP_GATE_STABILITY_CORRELATION_THRESHOLD,
+            "raw_report_ship_gate_passed": report.ship_gate_passed,
+            "raw_report_ship_gate_passed_policy": "diagnostic_only_not_promotion_countable",
         }),
     })
 }
@@ -1144,21 +1158,57 @@ pub fn run_hygiene(args: HygieneArgs) -> Result<HygieneOutput> {
 }
 
 pub fn run_eval_ship_gate(args: EvalShipGateArgs) -> Result<EvalShipGateOutput> {
-    let report = load_latest_report(&args.db_path)?;
+    let store = open_eval_store(&args.db_path)?;
+    let report = store
+        .load_latest_report()
+        .map_err(|err| anyhow!("MEJEPA_RUNBOOK_LATEST_REPORT_READ_FAILED: {err}"))?
+        .ok_or_else(|| {
+            anyhow!("MEJEPA_RUNBOOK_LATEST_REPORT_MISSING: CF_MEJEPA_EVAL_REPORTS is empty")
+        })?;
     validate_active_python_ship_gate_report(&report)
         .map_err(|err| anyhow!("MEJEPA_RUNBOOK_STALE_SHIP_GATE_GRID: {err}"))?;
+    let stability = ship_gate_stability_status(&store)
+        .map_err(|err| anyhow!("MEJEPA_RUNBOOK_SHIP_GATE_STABILITY_READ_FAILED: {err}"))?;
+    let fingerprint_stability = fingerprint_ship_gate_stability_status(&store)
+        .map_err(|err| anyhow!("MEJEPA_RUNBOOK_FINGERPRINT_GATE_READ_FAILED: {err}"))?;
+    let mut ship_gate_failures = current_window_failures(&report);
+    if !stability.ready {
+        push_unique_failure(
+            &mut ship_gate_failures,
+            format!(
+                "{SHIP_GATE_STABILITY_BLOCKER}: consecutive_passing_windows={}/{}",
+                stability.consecutive_passing_windows, stability.required_consecutive_windows
+            ),
+        );
+    }
+    if !fingerprint_stability.ready {
+        push_unique_failure(
+            &mut ship_gate_failures,
+            format!(
+                "{FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER}: consecutive_passing_windows={}/{}",
+                fingerprint_stability.consecutive_passing_windows,
+                fingerprint_stability.required_consecutive_windows
+            ),
+        );
+    }
+    let current_ship_gate_passed =
+        ship_gate_failures.is_empty() && stability.ready && fingerprint_stability.ready;
     let per_cell_passing_count = report
         .per_cell_correlation
         .values()
-        .filter(|value| value.map(|x| x >= 0.95).unwrap_or(false))
+        .filter(|value| {
+            value
+                .map(|x| x >= SHIP_GATE_STABILITY_CORRELATION_THRESHOLD)
+                .unwrap_or(false)
+        })
         .count();
     let per_cell_failing_count = report.per_cell_correlation.len() - per_cell_passing_count;
     Ok(EvalShipGateOutput {
         latest_report_date: report.report_date.clone(),
         generated_at_unix_ms: report.generated_at_unix_ms,
         overall_correlation: report.overall_correlation,
-        ship_gate_passed: report.ship_gate_passed,
-        ship_gate_failures: report.ship_gate_failures.clone(),
+        ship_gate_passed: current_ship_gate_passed,
+        ship_gate_failures,
         holdout_count: report.holdout_count,
         per_cell_passing_count,
         per_cell_failing_count,
@@ -1166,11 +1216,49 @@ pub fn run_eval_ship_gate(args: EvalShipGateArgs) -> Result<EvalShipGateOutput> 
             "db_path": args.db_path,
             "column_family": CF_MEJEPA_EVAL_REPORTS,
             "selector": "load_latest_report()",
-            "ship_gate_threshold": 0.95,
+            "ship_gate_threshold": SHIP_GATE_STABILITY_CORRELATION_THRESHOLD,
+            "raw_report_ship_gate_passed": report.ship_gate_passed,
+            "raw_report_ship_gate_passed_policy": "diagnostic_only_not_promotion_countable",
+            "consecutive_passing_windows": stability.consecutive_passing_windows,
+            "required_consecutive_passing_windows": stability.required_consecutive_windows,
+            "fingerprint_consecutive_passing_windows": fingerprint_stability.consecutive_passing_windows,
+            "fingerprint_required_consecutive_passing_windows": fingerprint_stability.required_consecutive_windows,
             "active_gate": ACTIVE_PYTHON_SHIP_GATE_NAME,
             "required_grid": ACTIVE_PYTHON_SHIP_GATE_GRID,
         }),
     })
+}
+
+fn current_window_failures(report: &EvalReport) -> Vec<String> {
+    let mut failures = Vec::new();
+    match report.overall_correlation {
+        Some(value) if value >= SHIP_GATE_STABILITY_CORRELATION_THRESHOLD => {}
+        Some(value) => failures.push(format!(
+            "overall_correlation {value:.6} < {:.6}",
+            SHIP_GATE_STABILITY_CORRELATION_THRESHOLD
+        )),
+        None => failures.push("overall_correlation unavailable".to_string()),
+    }
+    for (cell, correlation) in &report.per_cell_correlation {
+        match correlation {
+            Some(value) if *value >= SHIP_GATE_STABILITY_CORRELATION_THRESHOLD => {}
+            Some(value) => failures.push(format!(
+                "per_cell_correlation {cell} {value:.6} < {:.6}",
+                SHIP_GATE_STABILITY_CORRELATION_THRESHOLD
+            )),
+            None => failures.push(format!("per_cell_correlation {cell} unavailable")),
+        }
+    }
+    for failure in non_exempt_ship_gate_failures(report, &std::collections::BTreeMap::new()) {
+        push_unique_failure(&mut failures, failure);
+    }
+    failures
+}
+
+fn push_unique_failure(failures: &mut Vec<String>, failure: String) {
+    if !failures.iter().any(|existing| existing == &failure) {
+        failures.push(failure);
+    }
 }
 
 pub fn run_cell_status(args: CellStatusArgs) -> Result<CellStatusOutput> {

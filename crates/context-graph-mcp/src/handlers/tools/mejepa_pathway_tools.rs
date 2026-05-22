@@ -19,7 +19,7 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_OPERATOR_PATHWAY_CHOICES, CF_MEJEPA_PATHWAY_TREES, CF_MEJEPA_SURFACED_PATHWAYS,
 };
 
-use crate::handlers::tools::helpers::ToolErrorKind;
+use crate::handlers::tools::helpers::{mejepa_db_source_of_truth, ToolErrorKind};
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use crate::tools::names as tool_names;
@@ -272,7 +272,9 @@ fn open_pathway_rocksdb(path: &Path, create_if_missing: bool) -> AnyhowResult<DB
         cf_names.insert(cf.to_string());
     }
     if path.exists() {
-        for cf in DB::list_cf(&opts, path).unwrap_or_default() {
+        for cf in DB::list_cf(&opts, path)
+            .with_context(|| format!("list pathway column families {}", path.display()))?
+        {
             cf_names.insert(cf);
         }
     }
@@ -316,12 +318,14 @@ fn resolve_pathway_db_path(input: Option<PathBuf>) -> AnyhowResult<PathBuf> {
 }
 
 fn source_of_truth(db_path: &Path) -> Value {
-    json!({
-        "dbPath": db_path.display().to_string(),
-        "cfs": pathway_cfs(),
-        "binaryLeafOnly": true,
-        "ambiguousLeafRejectCode": context_graph_mejepa::PATHWAY_AMBIGUOUS_LEAF_REJECTED
-    })
+    mejepa_db_source_of_truth(
+        db_path,
+        json!({
+            "cfs": pathway_cfs(),
+            "binaryLeafOnly": true,
+            "ambiguousLeafRejectCode": context_graph_mejepa::PATHWAY_AMBIGUOUS_LEAF_REJECTED
+        }),
+    )
 }
 
 fn credit_assignments_if_refuted(
@@ -371,4 +375,24 @@ fn pathway_error(
         &err.to_string(),
         json!({"toolFamily": "mejepa_pathway"}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn pathway_cf_discovery_error_fails_closed() {
+        let temp = TempDir::new().expect("tempdir");
+        let bad_db_path = temp.path().join("not-a-rocksdb");
+        std::fs::create_dir_all(&bad_db_path).expect("create bad db dir");
+        std::fs::write(bad_db_path.join("plain.txt"), b"not rocksdb").expect("write marker");
+
+        let err = open_pathway_rocksdb(&bad_db_path, false).expect_err("must fail closed");
+        assert!(
+            err.to_string().contains("list pathway column families"),
+            "unexpected error: {err:?}"
+        );
+    }
 }

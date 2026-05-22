@@ -4,14 +4,19 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use context_graph_mejepa::eval::{corpus_sha_from_holdout, RocksDbEvalStore};
+use context_graph_mejepa::eval::{
+    corpus_sha_from_holdout, fingerprint_ship_gate_stability_status, non_exempt_ship_gate_failures,
+    ship_gate_stability_status, validate_active_python_ship_gate_report, RocksDbEvalStore,
+    FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER, SHIP_GATE_STABILITY_BLOCKER,
+    SHIP_GATE_STABILITY_CORRELATION_THRESHOLD,
+};
 use context_graph_mejepa::{FeedbackKind, HoldoutPanel, SurpriseEvent};
 use rocksdb::{IteratorMode, DB};
 use serde_json::{json, Value};
 
 use crate::tools::names as tool_names;
 
-const WEEKLY_CELL_CORRELATION_MIN: f32 = 0.25;
+const WEEKLY_CELL_CORRELATION_MIN: f32 = SHIP_GATE_STABILITY_CORRELATION_THRESHOLD;
 const WEEKLY_STATE_TRANSFER_MIN: f32 = 0.80;
 
 pub(super) fn weekly_eval_dashboard(
@@ -52,6 +57,11 @@ pub(super) fn weekly_eval_dashboard(
         .get("status")
         .and_then(Value::as_str)
         .unwrap_or("unknown");
+    let current_ship_gate = current_ship_gate_status(&eval_store, &report)?;
+    let current_ship_gate_passed = current_ship_gate
+        .get("shipGatePassed")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let feedback = agent_feedback_summary(db.as_ref(), 5)?;
     let label_transfer = context_graph_mejepa::summarize_label_transfer_decisions(db.as_ref())
         .map_err(|err| {
@@ -63,7 +73,7 @@ pub(super) fn weekly_eval_dashboard(
     let overall_status = if weekly_files_status == "present"
         && holdout_feed_status == "ready"
         && q4_freeze_status == "frozen"
-        && report.ship_gate_passed
+        && current_ship_gate_passed
     {
         "healthy"
     } else if weekly_files_status == "present"
@@ -81,11 +91,13 @@ pub(super) fn weekly_eval_dashboard(
             "reportDate": report.report_date,
             "generatedAtUnixMs": report.generated_at_unix_ms,
             "holdoutCount": report.holdout_count,
-            "shipGatePassed": report.ship_gate_passed,
+            "rawShipGatePassed": report.ship_gate_passed,
+            "rawShipGatePassedPolicy": "diagnostic_only_not_promotion_countable",
             "shipGateFailures": report.ship_gate_failures,
             "reportHash": report_hash,
             "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS"
         },
+        "currentShipGate": current_ship_gate,
         "holdoutFeed": holdout_feed,
         "perCellShipGate": {
             "rows": per_cell_dashboard_rows(&report, max_cells),
@@ -195,6 +207,112 @@ fn per_cell_dashboard_rows(
             })
         })
         .collect()
+}
+
+fn current_ship_gate_status(
+    eval_store: &RocksDbEvalStore,
+    report: &context_graph_mejepa::EvalReport,
+) -> Result<Value, context_graph_mejepa::EvalError> {
+    let mut failures = Vec::new();
+    if let Err(err) = validate_active_python_ship_gate_report(report) {
+        push_unique_failure(&mut failures, err.to_string());
+    }
+    for failure in current_window_failures(report) {
+        push_unique_failure(&mut failures, failure);
+    }
+
+    let cell_stability = match ship_gate_stability_status(eval_store) {
+        Ok(status) => {
+            if !status.ready {
+                push_unique_failure(
+                    &mut failures,
+                    format!(
+                        "{SHIP_GATE_STABILITY_BLOCKER}: consecutive_passing_windows={}/{}",
+                        status.consecutive_passing_windows, status.required_consecutive_windows
+                    ),
+                );
+            }
+            json!(status)
+        }
+        Err(err) => {
+            push_unique_failure(&mut failures, err.to_string());
+            Value::Null
+        }
+    };
+    let cell_stability_ready = cell_stability
+        .get("ready")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    let fingerprint_stability = match fingerprint_ship_gate_stability_status(eval_store) {
+        Ok(status) => {
+            if !status.ready {
+                push_unique_failure(
+                    &mut failures,
+                    format!(
+                        "{FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER}: consecutive_passing_windows={}/{}",
+                        status.consecutive_passing_windows, status.required_consecutive_windows
+                    ),
+                );
+            }
+            json!(status)
+        }
+        Err(err) => {
+            push_unique_failure(&mut failures, err.to_string());
+            Value::Null
+        }
+    };
+    let fingerprint_stability_ready = fingerprint_stability
+        .get("ready")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let ship_gate_passed =
+        failures.is_empty() && cell_stability_ready && fingerprint_stability_ready;
+
+    Ok(json!({
+        "shipGatePassed": ship_gate_passed,
+        "status": if ship_gate_passed { "passed" } else { "blocked" },
+        "rawShipGatePassed": report.ship_gate_passed,
+        "rawShipGatePassedPolicy": "diagnostic_only_not_promotion_countable",
+        "latestWindowFailures": current_window_failures(report),
+        "shipGateFailures": failures,
+        "shipGateCorrelationThreshold": SHIP_GATE_STABILITY_CORRELATION_THRESHOLD,
+        "cellStability": cell_stability,
+        "fingerprintStability": fingerprint_stability,
+        "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS"
+    }))
+}
+
+fn current_window_failures(report: &context_graph_mejepa::EvalReport) -> Vec<String> {
+    let mut failures = Vec::new();
+    match report.overall_correlation {
+        Some(value) if value >= SHIP_GATE_STABILITY_CORRELATION_THRESHOLD => {}
+        Some(value) => failures.push(format!(
+            "overall_correlation {value:.6} < {:.6}",
+            SHIP_GATE_STABILITY_CORRELATION_THRESHOLD
+        )),
+        None => failures.push("overall_correlation unavailable".to_string()),
+    }
+    for (cell, correlation) in &report.per_cell_correlation {
+        match correlation {
+            Some(value) if *value >= SHIP_GATE_STABILITY_CORRELATION_THRESHOLD => {}
+            Some(value) => failures.push(format!(
+                "per_cell_correlation {cell} {value:.6} < {:.6}",
+                SHIP_GATE_STABILITY_CORRELATION_THRESHOLD
+            )),
+            None => failures.push(format!("per_cell_correlation {cell} unavailable")),
+        }
+    }
+    for failure in non_exempt_ship_gate_failures(report, &BTreeMap::new()) {
+        push_unique_failure(&mut failures, failure);
+    }
+    failures
+}
+
+fn push_unique_failure(failures: &mut Vec<String>, failure: String) {
+    if !failures.iter().any(|existing| existing == &failure) {
+        failures.push(failure);
+    }
 }
 
 fn operational_signal_counts(db: &DB) -> Result<Value, context_graph_mejepa::EvalError> {

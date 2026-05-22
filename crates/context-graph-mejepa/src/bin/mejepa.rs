@@ -8,10 +8,7 @@ use std::time::{Instant, SystemTime};
 
 use candle_core::{DType, Device};
 use clap::{Parser, Subcommand};
-use context_graph_mejepa::eval::{
-    build_eval_compiler, build_patch_similarity_graph, corpus_sha_from_holdout, synthetic_holdout,
-    synthetic_patch_embeddings, write_weekly_report, EvalConfig, EvalProvenance, EvalRunner,
-};
+use context_graph_mejepa::eval::{build_patch_similarity_graph, synthetic_patch_embeddings};
 use context_graph_mejepa::fsv_writer;
 use context_graph_mejepa::heal::{run_heal_drill, HealDrillArgs, InjectDrift, FSV_ROOT};
 use context_graph_mejepa::panel_source::{self, PanelBatchView};
@@ -41,6 +38,9 @@ enum Command {
     InferTest(InferTestArgs),
     Verify(VerifyArgs),
     Eval(EvalArgs),
+    #[command(
+        about = "Disabled fail-closed: legacy fixture holdout path, not Phase G ship-gate evidence"
+    )]
     EvalRun(EvalRunArgs),
     EvalBuildGraph(EvalBuildGraphArgs),
     Constellation(ConstellationArgs),
@@ -390,7 +390,7 @@ fn run_synthetic_stress_command(
             }
         })?
     );
-    Ok(if report.ship_gate_passed {
+    Ok(if report.synthetic_stress_passed {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(1)
@@ -513,37 +513,16 @@ fn write_json_0600<T: serde::Serialize>(
 }
 
 fn run_eval_run(args: EvalRunArgs) -> Result<ExitCode, context_graph_mejepa::EvalError> {
-    let (_db, compiler, eval_store, calibration) =
-        build_eval_compiler(&args.db_path, &args.repo_root)?;
-    let holdout = synthetic_holdout(&args.repo_root)?;
-    let provenance = EvalProvenance {
-        corpus_sha: corpus_sha_from_holdout(&holdout),
-        eval_code_version: env!("CARGO_PKG_VERSION").to_string(),
-        calibration_version: calibration.load_active()?.version.clone(),
-        generated_by: "mejepa eval-run".to_string(),
-    };
-    let runner = EvalRunner::new(compiler, eval_store.clone(), EvalConfig::default())?;
-    let report = runner.run_holdout_eval(&holdout, &[], args.report_date, provenance)?;
-    let report_path = args.output_fsv.join("weekly-eval-report.json");
-    write_weekly_report(&report_path, &report)?;
-    let latest = eval_store.load_latest_report()?.ok_or_else(|| {
-        context_graph_mejepa::EvalError::new(
-            context_graph_mejepa::EvalErrorCode::ReportPersistFail,
-            "latest eval report missing after eval-run",
-        )
-    })?;
-    if latest.determinism_hash()? != report.determinism_hash()? {
-        return Err(context_graph_mejepa::EvalError::new(
-            context_graph_mejepa::EvalErrorCode::ReadbackMismatch,
-            "latest eval report hash does not match current report",
-        ));
-    }
-    println!("{}", serde_json::to_string_pretty(&report)?);
-    Ok(if report.ship_gate_passed {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
-    })
+    let _ = (
+        &args.db_path,
+        &args.repo_root,
+        &args.output_fsv,
+        &args.report_date,
+    );
+    Err(context_graph_mejepa::EvalError::new(
+        context_graph_mejepa::EvalErrorCode::FixtureEvalDisabled,
+        "mejepa eval-run previously used build_eval_compiler/synthetic_holdout fixture evidence and cannot produce Phase G ship-gate evidence; use real aiwonder ship-gate FSV/status artifacts instead",
+    ))
 }
 
 fn run_eval_build_graph(

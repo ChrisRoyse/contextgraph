@@ -43,7 +43,7 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 | 19 | `context-graph-mejepa-hygiene` | Tier transitions, quota, GC, witness compress | `categories.rs`, `gc.rs`, `quota.rs`, `retention.rs`, `tier*.rs`, `witness_compress.rs` |
 | 20 | `context-graph-mejepa-shift-subscriber` | JSONL shift-log tail + watermark + cache → panels | `cache.rs`, `runner.rs`, `shift_transform.rs`, `subscriber.rs`, `tail.rs`, `watermark.rs` |
 | 21 | `context-graph-dynamicjepa` | 5090jepa MCP surface (39 tools) | (multiple modules) |
-| 22 | `context-graph-test-utils` | Shared test utilities — NO MOCK DATA | — |
+| 22 | `context-graph-test-utils` | Deterministic-by-shape, pseudo-random-by-content helpers for storage/serialization/shape tests only; not ME-JEPA gate evidence | — |
 
 ---
 

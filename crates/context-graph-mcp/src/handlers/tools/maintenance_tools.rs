@@ -59,11 +59,11 @@ impl Handlers {
                 }));
 
                 if let Err(e) = self
-                    .teleological_store
-                    .append_audit_record(&audit_record)
+                    .append_audit_record_with_readback(&audit_record, "repair_causal_relationships")
                     .await
                 {
-                    error!(error = %e, "repair_causal_relationships: Failed to write audit record (non-fatal)");
+                    error!(error = %e, "repair_causal_relationships: Audit append/readback failed");
+                    return self.tool_error(id, &format!("Storage error: {}", e));
                 }
 
                 self.tool_result(

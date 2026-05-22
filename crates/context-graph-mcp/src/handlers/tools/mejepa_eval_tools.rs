@@ -3,9 +3,8 @@
 use std::path::{Path, PathBuf};
 
 use context_graph_mejepa::eval::{
-    build_eval_compiler, build_patch_similarity_graph, corpus_sha_from_holdout, synthetic_holdout,
-    synthetic_patch_embeddings, validate_active_python_ship_gate_report, write_weekly_report,
-    EvalConfig, EvalProvenance, EvalRunner, RocksDbEvalStore, ACTIVE_PYTHON_SHIP_GATE_CELL_COUNT,
+    build_patch_similarity_graph, synthetic_patch_embeddings,
+    validate_active_python_ship_gate_report, RocksDbEvalStore, ACTIVE_PYTHON_SHIP_GATE_CELL_COUNT,
     ACTIVE_PYTHON_SHIP_GATE_GRID, ACTIVE_PYTHON_SHIP_GATE_NAME,
     FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER, NEGATIVE_ACTION_ABLATION_BLOCKER,
     SHIP_GATE_STABILITY_BLOCKER,
@@ -100,54 +99,17 @@ impl Handlers {
                 );
             }
         };
-        let result: Result<serde_json::Value, context_graph_mejepa::EvalError> = (|| {
-            let (_db, compiler, eval_store, calibration) =
-                build_eval_compiler(&request.db_path, &request.repo_root)?;
-            let holdout = synthetic_holdout(&request.repo_root)?;
-            let provenance = EvalProvenance {
-                corpus_sha: corpus_sha_from_holdout(&holdout),
-                eval_code_version: env!("CARGO_PKG_VERSION").to_string(),
-                calibration_version: calibration.load_active()?.version.clone(),
-                generated_by: tool_names::MEJEPA_EVAL_RUN.to_string(),
-            };
-            let runner = EvalRunner::new(compiler, eval_store.clone(), EvalConfig::default())?;
-            let report = runner.run_holdout_eval(&holdout, &[], request.report_date, provenance)?;
-            let report_path = request.output_fsv.join("mcp-weekly-eval-report.json");
-            write_weekly_report(&report_path, &report)?;
-            let latest = eval_store.load_latest_report()?.ok_or_else(|| {
-                context_graph_mejepa::EvalError::new(
-                    context_graph_mejepa::EvalErrorCode::ReportPersistFail,
-                    "latest eval report missing after MCP eval-run",
-                )
-            })?;
-            let persisted_hash = latest.determinism_hash()?;
-            let report_hash = report.determinism_hash()?;
-            if persisted_hash != report_hash {
-                return Err(context_graph_mejepa::EvalError::new(
-                    context_graph_mejepa::EvalErrorCode::ReadbackMismatch,
-                    "MCP eval-run persisted report hash mismatch",
-                ));
-            }
-            Ok(json!({
-                "shipGatePassed": report.ship_gate_passed,
-                "shipGateFailures": report.ship_gate_failures,
-                "reportHash": report_hash,
-                "reportPath": report_path,
-                "holdoutCount": report.holdout_count,
-                "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS"
-            }))
-        })();
-        match result {
-            Ok(value) => self.tool_result(id, value),
-            Err(err) => {
-                err.log_context(file!());
-                self.tool_error_typed(
-                    id,
-                    ToolErrorKind::Execution,
-                    &format!("{}: {err}", err.code()),
-                )
-            }
-        }
+        let _ = (
+            &request.db_path,
+            &request.repo_root,
+            &request.output_fsv,
+            &request.report_date,
+        );
+        self.tool_error_typed(
+            id,
+            ToolErrorKind::Execution,
+            "MEJEPA_EVAL_FIXTURE_PATH_DISABLED: mcp__cgreality__mejepa_eval_run previously used a deterministic fixture holdout via build_eval_compiler/synthetic_holdout. It is disabled until wired to real aiwonder holdout evidence; use the current ship-gate FSV artifacts/status readers instead.",
+        )
     }
 
     pub(crate) async fn call_mejepa_ship_gate_status(

@@ -297,7 +297,7 @@ cargo clippy -p <crate> --no-deps --tests --examples -- -D warnings
 
 ### 7.4 Key fixtures / utilities
 
-- `context-graph-test-utils` — shared deterministic helpers. **NO MOCK DATA** (forbidden for completion gates per FSV-PROTOCOL §3).
+- `context-graph-test-utils` — shared deterministic-by-shape, pseudo-random-by-content helpers for storage/serialization/shape tests only. They are not real embedder/corpus evidence and are forbidden for ME-JEPA completion gates.
 - `crates/context-graph-mejepa/src/fixtures.rs` — predictor test fixtures.
 - `crates/context-graph-mejepa-corpus/src/tests.rs` — 81+ corpus unit tests including real `apply_mutation` on real Python.
 - `crates/context-graph-mejepa-instruments/src/tests.rs` — 27+ instrument unit tests.

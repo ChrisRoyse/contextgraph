@@ -7,8 +7,8 @@ use context_graph_mejepa::eval::{
 };
 use context_graph_mejepa::{
     ActiveLearningSummary, AgentId, ConformalHealthEntry, EvalProvenance, EvalReport, FeedbackId,
-    FeedbackKind, Language, MutationCategory, PredictionId, RegressionCheck,
-    StateTransferDiagnostic, SurpriseEvent, SurpriseSeverity, WitnessHash,
+    FeedbackKind, Language, PredictionId, RegressionCheck, StateTransferDiagnostic, SurpriseEvent,
+    SurpriseSeverity, WitnessHash,
 };
 use rocksdb::{IteratorMode, WriteOptions, DB};
 use serde_json::json;
@@ -105,6 +105,30 @@ async fn weekly_eval_dashboard_writes_phase_f_fsv_artifact() {
         .await;
     let q4_growth_result = q4_growth_response.result.unwrap();
 
+    let raw_pass_low_cell = seed_dashboard_fixture_with_report(
+        &run_root.join("raw-pass-low-cell"),
+        true,
+        true,
+        synthetic_dashboard_report_with_cell_floor(
+            "2026-05-14-raw-pass-low-cell",
+            0.40,
+            true,
+            Vec::new(),
+        ),
+    );
+    let raw_pass_low_cell_response = handlers
+        .call_mejepa_weekly_eval_dashboard(
+            Some(JsonRpcId::Number(38006)),
+            json!({
+                "dbPath": raw_pass_low_cell.db_path,
+                "dRoot": raw_pass_low_cell.d_root,
+                "exportsRoot": raw_pass_low_cell.exports_root,
+                "maxCells": 10
+            }),
+        )
+        .await;
+    let raw_pass_low_cell_result = raw_pass_low_cell_response.result.unwrap();
+
     let unknown_arg_response = handlers
         .call_mejepa_weekly_eval_dashboard(
             Some(JsonRpcId::Number(38004)),
@@ -135,6 +159,20 @@ async fn weekly_eval_dashboard_writes_phase_f_fsv_artifact() {
             "pass": q4_growth_result["structuredContent"]["q4Freeze"]["status"]
                 == "growth_detected"
                 && q4_growth_result["structuredContent"]["q4Freeze"]["failClosed"] == true
+        }),
+        json!({
+            "case": "raw_ship_gate_passed_true_low_cell_blocks_dashboard",
+            "expected": "report.rawShipGatePassed=true but currentShipGate.status=blocked and overallStatus!=healthy",
+            "actual": raw_pass_low_cell_result,
+            "pass": raw_pass_low_cell_result["structuredContent"]["report"]["rawShipGatePassed"] == true
+                && raw_pass_low_cell_result["structuredContent"]["currentShipGate"]["status"] == "blocked"
+                && raw_pass_low_cell_result["structuredContent"]["currentShipGate"]["shipGatePassed"] == false
+                && raw_pass_low_cell_result["structuredContent"]["overallStatus"] != "healthy"
+                && raw_pass_low_cell_result["structuredContent"]["currentShipGate"]["latestWindowFailures"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|failure| failure.as_str().unwrap_or("").contains("0.400000 < 0.950000"))
         }),
         json!({
             "case": "unknown_argument_fails_schema",
@@ -196,15 +234,28 @@ fn seed_dashboard_fixture(
     write_holdout: bool,
     write_exports: bool,
 ) -> DashboardFixture {
+    seed_dashboard_fixture_with_report(
+        run_root,
+        write_holdout,
+        write_exports,
+        synthetic_dashboard_report("2026-05-13-phase-f-dashboard"),
+    )
+}
+
+fn seed_dashboard_fixture_with_report(
+    run_root: &Path,
+    write_holdout: bool,
+    write_exports: bool,
+    report: EvalReport,
+) -> DashboardFixture {
     std::fs::create_dir_all(run_root).unwrap();
     let db_path = run_root.join("storage-db");
     let d_root = run_root.join("d-root");
     let exports_root = d_root.join("exports/eval");
-    let report_date = "2026-05-13-phase-f-dashboard".to_string();
+    let report_date = report.report_date.clone();
     std::fs::create_dir_all(&d_root).unwrap();
     let db = context_graph_mejepa_hygiene::open_hygiene_rocksdb(&db_path).unwrap();
     let eval_store = RocksDbEvalStore::new(db.clone()).unwrap();
-    let report = synthetic_dashboard_report(&report_date);
     eval_store.persist_report(&report).unwrap();
     seed_surprise_feedback(db.as_ref());
     write_q4_freeze_baseline(&d_root, db.as_ref());
@@ -305,31 +356,56 @@ fn q4_calibration_count(db: &DB) -> usize {
 }
 
 fn synthetic_dashboard_report(report_date: &str) -> EvalReport {
-    let cell = context_graph_mejepa::cell_key(MutationCategory::KnownGood, Language::Python);
+    synthetic_dashboard_report_with_cell_floor(report_date, 0.96, true, Vec::new())
+}
+
+fn synthetic_dashboard_report_with_cell_floor(
+    report_date: &str,
+    first_cell_correlation: f32,
+    raw_ship_gate_passed: bool,
+    raw_ship_gate_failures: Vec<String>,
+) -> EvalReport {
     let mut per_cell_correlation = BTreeMap::new();
-    per_cell_correlation.insert(cell.clone(), Some(0.96));
+    let mut per_category_correlation = BTreeMap::new();
+    for (idx, (category, _language, cell)) in
+        context_graph_mejepa::eval::required_active_python_ship_gate_cells()
+            .into_iter()
+            .enumerate()
+    {
+        let value = if idx == 0 {
+            first_cell_correlation
+        } else {
+            0.96
+        };
+        per_cell_correlation.insert(cell.clone(), Some(value));
+        per_category_correlation.insert(category, Some(value));
+    }
     let per_cell_convergence_eta =
         context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell_correlation, 0.95);
     let mut per_cell_state_transfer = BTreeMap::new();
-    per_cell_state_transfer.insert(
-        cell.clone(),
-        Some(StateTransferDiagnostic {
-            wasserstein_1: 0.05,
-            transfer_score: 0.92,
-            performance_deploy: 0.91,
-        }),
-    );
+    let mut bayesian_shrinkage = BTreeMap::new();
+    for cell in per_cell_correlation.keys() {
+        per_cell_state_transfer.insert(
+            cell.clone(),
+            Some(StateTransferDiagnostic {
+                wasserstein_1: 0.05,
+                transfer_score: 0.92,
+                performance_deploy: 0.91,
+            }),
+        );
+        bayesian_shrinkage.insert(cell.clone(), 0.95);
+    }
     EvalReport {
         report_date: report_date.to_string(),
         generated_at_unix_ms: 1_778_640_000_000,
         rolling_window_size: 100,
         holdout_count: 4,
         overall_correlation: Some(0.96),
-        per_category_correlation: BTreeMap::from([(MutationCategory::KnownGood, Some(0.96))]),
+        per_category_correlation,
         per_language_correlation: BTreeMap::from([(Language::Python, Some(0.96))]),
         per_cell_correlation,
         cell_exemptions: BTreeMap::new(),
-        bayesian_shrinkage: BTreeMap::from([(cell.clone(), 0.95)]),
+        bayesian_shrinkage,
         conformal_coverage_health: BTreeMap::from([(
             Language::Python,
             ConformalHealthEntry {
@@ -385,8 +461,8 @@ fn synthetic_dashboard_report(report_date: &str) -> EvalReport {
         q1_pass_rate: 1.0,
         q2_report_correlation: Some(0.96),
         q3_side_effect_agreement: Some(1.0),
-        ship_gate_passed: true,
-        ship_gate_failures: Vec::new(),
+        ship_gate_passed: raw_ship_gate_passed,
+        ship_gate_failures: raw_ship_gate_failures,
         provenance: EvalProvenance {
             corpus_sha: "phase-f-dashboard-corpus".to_string(),
             eval_code_version: "phase-f-dashboard-test".to_string(),

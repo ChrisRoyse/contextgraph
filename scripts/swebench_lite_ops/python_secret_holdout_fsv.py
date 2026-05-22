@@ -225,13 +225,16 @@ def row_metric(row: dict[str, Any], stable_ids: set[str], target: float) -> dict
         corr, validity = pearson(xs, ys)
     threshold = finite_float(nested_get(row, "threshold", "ship_gate_target", "target_correlation")) or target
     explicit_pass = nested_get(row, "ship_gate_passed", "shipGatePassed", "passed", "passes", "passed_window")
-    passed = bool(explicit_pass) if isinstance(explicit_pass, bool) else bool(corr is not None and corr >= threshold)
+    explicit_pass_bool = explicit_pass if isinstance(explicit_pass, bool) else None
+    passed = bool(corr is not None and corr >= threshold)
     eligible = bool(row.get("ship_gate_eligible")) or any(key in row for key in ("ship_gate_passed", "shipGatePassed", "ship_gate_failures"))
     return {
         "correlation": corr,
         "correlation_validity": validity,
         "threshold": threshold,
         "passed": passed,
+        "explicit_pass_diagnostic": explicit_pass_bool,
+        "explicit_pass_policy": "diagnostic_only_recomputed_from_measured_correlation",
         "ship_gate_eligible": eligible,
         "stable_id_count": len(stable_ids),
     }
@@ -464,6 +467,28 @@ def edge_cases() -> list[dict[str, Any]]:
                 "conclusion": conclusion,
             }
         )
+    explicit_pass_row = {
+        "stable_ids": ["explicit-pass-below-threshold-row"],
+        "prediction_oracle_correlation": 0.90,
+        "threshold": TARGET_CORRELATION,
+        "ship_gate_passed": True,
+        "ship_gate_eligible": True,
+    }
+    stable_ids, stable_id_proof = extract_stable_ids(explicit_pass_row)
+    metric = row_metric(explicit_pass_row, stable_ids, TARGET_CORRELATION)
+    cases.append(
+        {
+            "name": "explicit_pass_bool_below_threshold_recomputed_red",
+            "expected_result": "passed_false_even_with_explicit_true",
+            "actual_result": f"passed_{str(metric['passed']).lower()}",
+            "passes": metric["passed"] is False
+            and metric["explicit_pass_diagnostic"] is True
+            and metric["correlation"] == 0.90
+            and metric["threshold"] == TARGET_CORRELATION,
+            "metric": metric,
+            "stable_id_proof": stable_id_proof,
+        }
+    )
     return cases
 
 
@@ -478,6 +503,13 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         records, inventory = load_window_records(args.window_inputs, args.target_correlation)
     train_gate, holdout_gate, disjointness, conclusion = evaluate_records(records, args.min_consecutive_windows)
     cases = edge_cases()
+    edge_cases_passed = all(case["passes"] for case in cases)
+    guard_passed = bool(
+        conclusion["secret_holdout_guard_passed"]
+        and conclusion["ship_gate_claim_allowed_by_this_guard"]
+        and not conclusion["blocks_165_closeout"]
+    )
+    passes = edge_cases_passed and guard_passed
     return {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
@@ -504,8 +536,10 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "window_stable_id_disjointness": disjointness,
         "conclusion": conclusion,
         "edge_cases": cases,
-        "passes": all(case["passes"] for case in cases),
-        "all_passed": all(case["passes"] for case in cases),
+        "edge_cases_passed": edge_cases_passed,
+        "guard_passed": guard_passed,
+        "passes": passes,
+        "all_passed": passes,
     }
 
 
@@ -554,7 +588,7 @@ def main() -> int:
             sort_keys=True,
         )
     )
-    return 0
+    return 0 if final["passes"] else 1
 
 if __name__ == "__main__":
     raise SystemExit(main())

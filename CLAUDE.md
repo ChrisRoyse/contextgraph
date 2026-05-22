@@ -123,7 +123,7 @@ Workspace manifest: `Cargo.toml:6-30`. `default-members` mirrors the 22 active w
 - **`context-graph-mincut`** — Clean-room Stoer-Wagner global min-cut.
 - **`context-graph-tier-compression`** — 8/7/5/3-bit groupwise scalar quantization with magic+version header.
 - **`context-graph-dynamicjepa`** — 5090jepa MCP surface (39 tools): adapter shipping, plan trace, surprise log.
-- **`context-graph-test-utils`** — Shared test utilities — NO MOCK DATA (per FSV-PROTOCOL §3).
+- **`context-graph-test-utils`** — Shared deterministic-by-shape, pseudo-random-by-content test helpers. Suitable for storage/serialization/shape tests only; not valid as real embedder/corpus evidence for ME-JEPA gates.
 
 **Legacy and retired:**
 
