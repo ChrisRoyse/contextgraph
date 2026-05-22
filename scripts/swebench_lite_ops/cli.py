@@ -82,6 +82,8 @@ from .python_exact_tracin_gradient_rows import (
 from .python_exact_tracin_gradient_rows import command_python_exact_tracin_gradient_rows
 from .python_pair_feature_audit import add_arguments as add_python_pair_feature_audit_arguments
 from .python_pair_feature_audit import command_python_pair_feature_audit
+from .python_pair_feature_gate_probe import add_arguments as add_python_pair_feature_gate_probe_arguments
+from .python_pair_feature_gate_probe import command_python_pair_feature_gate_probe
 from .python_anti_compensation_fsv import add_arguments as add_python_anti_compensation_fsv_arguments
 from .python_anti_compensation_fsv import command_python_anti_compensation_fsv
 from .python_auto_label_discovery import add_arguments as add_python_auto_label_discovery_arguments
@@ -607,6 +609,16 @@ def build_parser() -> argparse.ArgumentParser:
     pair_feature_audit.set_defaults(
         func=command_python_pair_feature_audit,
         evidence_name="python-pair-feature-audit-command-evidence.json",
+    )
+
+    pair_feature_gate_probe = sub.add_parser(
+        "python-pair-feature-gate-probe",
+        help="TASK-PY-G-124: calibration-only gate probe for selected cross-embedder pair features.",
+    )
+    add_python_pair_feature_gate_probe_arguments(pair_feature_gate_probe)
+    pair_feature_gate_probe.set_defaults(
+        func=command_python_pair_feature_gate_probe,
+        evidence_name="python-pair-feature-gate-probe-command-evidence.json",
     )
 
     anti_compensation = sub.add_parser(
