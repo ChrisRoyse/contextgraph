@@ -746,7 +746,7 @@ def build_fsv(args: argparse.Namespace) -> dict[str, Any]:
         },
         "disk_snapshot": {
             "wsl_ext4_root": disk_snapshot(Path("/")),
-            "windows_c_mount_forbidden": disk_snapshot(Path("/mnt/c")),
+            "windows_c_mount_forbidden": {"policy": "forbidden", "disk_probe": False},
             "aiwonder_archive": disk_snapshot(Path("/zfs/archive")),
         },
         "child_smoke_artifacts": child_artifacts,

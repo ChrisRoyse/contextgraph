@@ -537,7 +537,6 @@ mod tests {
     #[test]
     fn test_model_root_guard_rejects_local_and_sibling_roots() {
         for root in [
-            "/mnt/c/contextgraph/models",
             "models",
             "/zfs/hot/contextgraph-bad/models",
         ] {

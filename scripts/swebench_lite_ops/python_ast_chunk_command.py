@@ -131,7 +131,7 @@ def command_ast_chunks(args: Any) -> dict[str, Any]:
         "edge_chunks": file_state(edge_path),
         "manifest": file_state(manifest_path),
         "fsv": file_state(fsv_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
+        "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "chunk_root_bytes": path_bytes(args.chunk_root),
     }
@@ -238,7 +238,7 @@ def command_ast_chunks(args: Any) -> dict[str, Any]:
         "edge_chunks": file_state(edge_path),
         "manifest": file_state(manifest_path),
         "fsv": file_state(fsv_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
+        "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": hot_bytes,
         "chunk_root_bytes": path_bytes(args.chunk_root),
         "fsv_root_bytes": path_bytes(args.fsv_root),

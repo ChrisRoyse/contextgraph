@@ -34,6 +34,8 @@ allow_c_drive_guard_reference() {
     *'df_capacity("/mnt/c")?'*) return 0 ;;
     *'!hot_root.starts_with("/mnt/c")'* ) return 0 ;;
     *'!paths.packed_root().starts_with("/mnt/c")'* ) return 0 ;;
+    *'path == "/mnt/d" || path.starts_with("/mnt/d/") || path.starts_with("/mnt/c/")'* ) return 0 ;;
+    *'display == "/mnt/d" || display.starts_with("/mnt/d/") || display.starts_with("/mnt/c/")'* ) return 0 ;;
     *'not Windows mounted /mnt/c'* ) return 0 ;;
     *'df -B1 --output=source,size,used,avail,pcent,target / /mnt/c /zfs/archive'* ) return 0 ;;
     *) return 1 ;;

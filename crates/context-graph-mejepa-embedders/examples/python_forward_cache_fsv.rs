@@ -4854,12 +4854,11 @@ fn disk_snapshot() -> FsvResult<Value> {
             "-B1",
             "--output=source,size,used,avail,pcent,target",
             "/",
-            "/mnt/c",
             "/archive",
         ])
         .output()?;
     Ok(json!({
-        "command": "df -B1 --output=source,size,used,avail,pcent,target / /mnt/c /archive",
+        "command": "df -B1 --output=source,size,used,avail,pcent,target / /archive",
         "exit_code": output.status.code(),
         "stdout": String::from_utf8_lossy(&output.stdout).to_string(),
         "stderr": String::from_utf8_lossy(&output.stderr).to_string(),

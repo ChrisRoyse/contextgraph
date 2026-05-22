@@ -284,7 +284,7 @@ def command_python_reward_field_sample(args: argparse.Namespace) -> int:
     before = {
         "output_root": tree_state(args.output_root),
         "fsv_root": tree_state(args.fsv_root),
-        "disk": disk_state([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
+        "disk": disk_state([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
     }
 
     readiness = read_json(args.readiness_decision)
@@ -439,7 +439,7 @@ def command_python_reward_field_sample(args: argparse.Namespace) -> int:
     after = {
         "output_root": tree_state(args.output_root),
         "fsv_root": tree_state(args.fsv_root),
-        "disk": disk_state([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
+        "disk": disk_state([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
     }
     readback_bundle = read_json(args.output_root / "reward_field_sample_bundle.json")
     readback_sample_count = sum(1 for _ in iter_jsonl(args.output_root / "sample_rows.jsonl"))

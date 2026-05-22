@@ -1024,7 +1024,7 @@ def command_oracle_events(args: Any) -> dict[str, Any]:
         "event_schema": file_state(schema_path),
         "event_manifest": file_state(manifest_path),
         "event_fsv": file_state(fsv_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
+        "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "event_root_bytes": path_bytes(args.event_root),
     }
@@ -1103,7 +1103,7 @@ def command_oracle_events(args: Any) -> dict[str, Any]:
         "event_schema": file_state(schema_path),
         "event_manifest": file_state(manifest_path),
         "event_fsv": file_state(fsv_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
+        "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "event_root_bytes": path_bytes(args.event_root),
         "fsv_root_bytes": path_bytes(args.fsv_root),

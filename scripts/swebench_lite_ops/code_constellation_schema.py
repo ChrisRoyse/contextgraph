@@ -553,7 +553,7 @@ def command_code_constellation_schema(args: Any) -> dict[str, Any]:
         "edge_records": file_state(edge_records_path),
         "manifest": file_state(manifest_path),
         "fsv": file_state(fsv_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
+        "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "schema_root_bytes": path_bytes(args.schema_root),
     }
     record_schema = record_json_schema(record_schema_path)
@@ -664,7 +664,7 @@ def command_code_constellation_schema(args: Any) -> dict[str, Any]:
         "records": file_state(records_path),
         "edge_records": file_state(edge_records_path),
         "manifest": file_state(manifest_path),
-        "disk": capacity_snapshot([Path("/"), Path("/mnt/c"), Path("/zfs/archive")]),
+        "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "schema_root_bytes": path_bytes(args.schema_root),
         "record_count": count_jsonl(records_path),
         "edge_record_count": count_jsonl(edge_records_path),
