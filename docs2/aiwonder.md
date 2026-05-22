@@ -4,7 +4,7 @@
 >
 > **Hard rules.** aiwonder is a **shared production server** for the Leapable platform. ContextGraph training **must coexist** with the resident leapable services without disrupting them. Every operation must follow the universal doctrine (`docs2/AICodingAgentSuperPrompt.md`) and the aiwonder rules (`leapablememory/docs2/aiwonder-system.md §8`).
 >
-> **Last verified against live host:** 2026-05-21 for ContextGraph env/tooling paths; storage-pool topology still blocked by #372. Verify before relying on any claim.
+> **Last verified against live host:** 2026-05-22 for ContextGraph storage topology and env/tooling paths. Storage-pool topology is still blocked by #372 until the root-only ZFS dataset migration below is run and verified. Verify before relying on any claim.
 >
 > **EVERYTHING FOR THIS SYSTEM IS RUNNING AND SHOULD ALL BE RUNNING ON AIWONDER DATACENTER PC. everything gets stored there, all fsv ran there, whole system runs and works over there. ensure that is where all the work is happening, is on the aiwonder datacenter pc.
 ---
@@ -88,6 +88,32 @@ The aiwonder migration completed on 2026-05-17 (#296). The 2026-05-18 storage co
 └── swe-bench/                                  Future: SWE-bench Lite Python Docker images (~1-2 TB)
 
 /home/croyse/.cache/contextgraph/<run>/         Hot scratch on root NVMe (50 GB budget)
+```
+
+As of the 2026-05-22 #372 readback, `/archive` and `/hotpool` are real ZFS roots, but the ContextGraph logical roots still resolve through root ext4:
+
+```bash
+findmnt -T /zfs/archive/contextgraph -o TARGET,SOURCE,FSTYPE --noheadings
+findmnt -T /zfs/hot/contextgraph -o TARGET,SOURCE,FSTYPE --noheadings
+```
+
+The intended repair is not a path rewrite. Keep the canonical paths and create dedicated datasets mounted at those paths:
+
+```text
+archive/contextgraph  -> /zfs/archive/contextgraph
+hotpool/contextgraph  -> /zfs/hot/contextgraph
+```
+
+Use the fail-loud runbook script for this host operation:
+
+```bash
+# Read-only audit; exits 2 while #372 remains physically unresolved.
+scripts/setup/aiwonder_contextgraph_zfs_roots.sh audit
+
+# Root-only migration. Retains the ext4 source directories as backups and
+# verifies the post-copy tree with rsync --checksum plus key artifact hashes.
+I_UNDERSTAND_CONTEXTGRAPH_DOWNTIME=1 sudo -E \
+  scripts/setup/aiwonder_contextgraph_zfs_roots.sh migrate
 ```
 
 The hot-stage scratch (`/home/croyse/.cache/contextgraph/...`) replaces the WSL `~/.cache/contextgraph/` pattern. It must NOT exceed the documented hot-stage budget (`--hot-stage-budget-bytes 51539607552 ≈ 48 GB`).
@@ -257,7 +283,7 @@ Current corrective work after the #363 storage decision:
 - #366 reruns TASK-PY-G-056 on aiwonder.
 - #367 audits project-ingest/runtime locality.
 - #368 audits aiwonder capability utilization.
-- #372 remains the physical storage-topology blocker: the canonical `/zfs/archive/contextgraph` and `/zfs/hot/contextgraph` logical roots are on aiwonder, but live readback still shows they resolve to root ext4 rather than the intended archive/hotpool ZFS datasets.
+- #372 remains the physical storage-topology blocker: the canonical `/zfs/archive/contextgraph` and `/zfs/hot/contextgraph` logical roots are on aiwonder, but live readback still shows they resolve to root ext4 rather than the intended `archive/contextgraph` and `hotpool/contextgraph` ZFS datasets. Use `scripts/setup/aiwonder_contextgraph_zfs_roots.sh` for audit/migration.
 - #562 owns aiwonder-native GitHub/search tooling. `rg` and `gh` are installed in the aiwonder env; `gh auth` is blocked until an operator-approved credential path exists.
 
 ---
