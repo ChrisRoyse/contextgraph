@@ -408,7 +408,7 @@ Full per-crate detail in `02_source_map.md`.
 | Binary | Purpose |
 |---|---|
 | `context-graph-mcp` | MCP server. `--mode stdio` (default) or `--mode reality-loop` (lightweight subset). Multi-agent observability via `mejepa_daemon_status`. |
-| `context-graph-cli` / `context-graph` | Operator CLI. `mejepa observe`, `mejepa project-ingest`, `mejepa project-report`, `mejepa compression-progress`, `mejepa active-learning {list\|label\|dismiss}`, `mejepa stop-self-verify`. |
+| `context-graph-cli` / `context-graph` | Operator CLI. `mejepa observe`, `mejepa project-ingest`, `mejepa project-report`, `mejepa compression-progress`, `mejepa active-learning {list\|label\|dismiss}`. |
 | `mejepa` | Standalone predictor harness. |
 | `mejepa-heal-drill` | Heal scheduler drill. |
 | `mejepa-train` | Trainer entry. |

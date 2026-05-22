@@ -5,6 +5,7 @@ set -euo pipefail
 CGREALITY_CACHE="${CGREALITY_CACHE_DIR:-/tmp/contextgraph-hook-test-state/cgreality}"
 ACTIVE_ROOT_FILE="${CGREALITY_CACHE}/active_runtime_root"
 ACTIVE_TARGET_FILE="${CGREALITY_CACHE}/active_target_instance"
+export CGREALITY_CACHE_DIR="${CGREALITY_CACHE}"
 
 assert_exit() {
   local expected="$1"

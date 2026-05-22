@@ -139,7 +139,7 @@ Every worked issue ends with exactly one of **RESOLVED** / **PAUSE** / **BLOCKED
 | Stuck heal | `mejepa_heal_status` + `mejepa_daemon_status` | `CF_MEJEPA_HEAL_REPORTS`, `CF_MEJEPA_DRIFT_HISTORY` |
 | Witness chain bloat | `mejepa_witness_compress` | `CF_MEJEPA_WITNESS_CHAIN`, `CF_MEJEPA_WITNESS_SEGMENT_META` |
 | Mistake repeat rate climbing | `mejepa_mistake_history` filter by cell; investigate consolidation | `CF_MEJEPA_MISTAKE_LOG`, `CF_MEJEPA_ONLINE_HEAD_STATE` |
-| Stop hook blocking unnecessarily | `~/.config/mejepa/daemon.toml::stop_hook_enabled = false` OR set `stop_hook_active=true` in env | `scripts/cc/stop-mejepa-self-verify.sh` |
+| Stop turn lacks manual evidence | Add a GitHub issue comment with the direct SoT readback and any required manual recommendation artifact | `scripts/cc/hook_stop.sh` |
 
 ### 2.5 Build, test, lint
 
@@ -174,7 +174,7 @@ cargo fmt
 |---|---|---|---|
 | UserPromptSubmit | inject context | Inject latest `RealityPrediction` row into agent context | `CF_MEJEPA_LIVE_PREDICTIONS` |
 | PostToolUse (Bash matcher) | `posttooluse-mejepa-capture.sh` | Capture pytest/cargo-test/unittest/jest/vitest output, bind covered-chunk-overlap matches to current `prediction_id`, write `CF_MEJEPA_PREDICTION_VERIFICATIONS`, log capture JSONL, enqueue Refuted rows at 6× active-learning weight | `CF_MEJEPA_PREDICTION_VERIFICATIONS` |
-| Stop | `stop-mejepa-self-verify.sh` | Invoke `context-graph-cli mejepa stop-self-verify`. Block Stop with exit code 2 when non-Abstain predictions lack Confirmed/Refuted rows. Honors `stop_hook_active` and `~/.config/mejepa/daemon.toml::stop_hook_enabled`. Bounded BLOCKED/operator-action artifacts + timeout breaker for CLI-missing, DB-missing/stale, daemon-unreachable, verify-timeout, repeated-timeout paths. | `CF_MEJEPA_PREDICTION_VERIFICATIONS` + log + blocked artifact |
+| Stop | `hook_stop.sh` | Require a structured handoff/recommendation marker for the current turn. It does not perform automated ME-JEPA self-verification; closure evidence must be manual GitHub issue comments with direct SoT readback. | recommendation artifact + issue comment |
 | Observe ticker | `observe-ticker.sh` | Hard-label test outcomes; matched → `CF_MEJEPA_PREDICTION_VERIFICATIONS`; unmatched → `CF_MEJEPA_SIGNAL_DROP_LOG` (fail-closed, no daemon-health poisoning) | `CF_MEJEPA_PREDICTION_VERIFICATIONS` + `CF_MEJEPA_SIGNAL_DROP_LOG` |
 | Pre-edit / post-edit | (governed path gate removed; hooks emit pre/post SHA + transition logs) | Tracks edit lineage | hook log |
 

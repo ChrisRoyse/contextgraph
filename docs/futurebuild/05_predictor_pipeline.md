@@ -450,7 +450,7 @@ Performance gate: fresh ingest of 50-file Python project < 60 s on RTX 5090; re-
 
 ## 8. Live Session Trace
 
-`crates/context-graph-mejepa/src/live_session_trace.rs`. End-to-end Claude Code session integration. Writes `CF_MEJEPA_LIVE_SESSION_TRACES` keyed by `(session_hex32, ts_ns)`. Tooling: `mejepa observe`, `mejepa stop-self-verify`.
+`crates/context-graph-mejepa/src/live_session_trace.rs`. End-to-end Claude Code session integration. Writes `CF_MEJEPA_LIVE_SESSION_TRACES` keyed by `(session_hex32, ts_ns)`. Tooling: `mejepa observe`.
 
 ---
 

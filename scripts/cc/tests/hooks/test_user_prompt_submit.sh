@@ -18,7 +18,7 @@ OUT="$(printf '%s\n' '{"session_id":"sess-user-prompt","prompt":"inspect reality
 EC=$?
 assert_exit 0 "${EC}" "ups_exit"
 assert_jq "${OUT}" '.hookSpecificOutput.hookEventName' "UserPromptSubmit" "ups_event"
-assert_jq "${OUT}" '.hookSpecificOutput.additionalContext | contains("Reality signal compact")' "true" "ups_signal_context"
+assert_jq "${OUT}" '.hookSpecificOutput.additionalContext | contains("Attempt summary compact")' "true" "ups_attempt_context"
 assert_jq "${OUT}" '.hookSpecificOutput.additionalContext | contains("Source of truth")' "true" "ups_sot_context"
 
 HOOK_LOG="${TMPROOT}/cgreality-hook-events.jsonl"

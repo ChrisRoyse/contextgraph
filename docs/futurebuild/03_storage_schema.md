@@ -58,7 +58,7 @@ Single RocksDB instance per runtime root. CFs opened deterministically at daemon
 | `CF_MEJEPA_LIVE_SESSION_TRACES` | `(session_hex32, ts_ns)` | JSON shift trace | End-to-end session trace |
 | `CF_MEJEPA_HIERARCHICAL_PREDICTIONS` | `(prediction_id, level)` | JSON | File/function/AST/chunk hierarchy |
 | `CF_MEJEPA_ORACLE_VERDICTS` | `(prediction/test binding key)` | bincode `CalibrationExample` | Runtime oracle-binding calibration examples consumed by live prediction/calibration |
-| `CF_MEJEPA_PREDICTION_VERIFICATIONS` | `(prediction_id, verifier_id)` | JSON | PostToolUse + Stop hook capture |
+| `CF_MEJEPA_PREDICTION_VERIFICATIONS` | `(prediction_id, verifier_id)` | JSON | PostToolUse capture + manual verifier bindings |
 | `CF_MEJEPA_REALITY_IMPACT` | `prediction_id` | bincode `RealityImpactRecord` | Q5 shift-log replay rows |
 | `CF_MEJEPA_Q5_CALIBRATIONS` | `(calibration_id, language, mutation_category, side_effect_kind)` | bincode `Q5CalibrationRecord` | Q5 replay calibration |
 | `CF_MEJEPA_CLAIM_RECONCILIATION` | `(prediction_id, claim_id)` | JSON | Q1 claim graph |
@@ -269,7 +269,6 @@ Dimension constants: `E1_DIM`, `E1_MATRYOSHKA_DIM`, `E2_DIM`, …, `E13_SPLADE_V
 │   ├── shift-log.jsonl                      # JSONL shift log (tailed by shift-subscriber)
 │   ├── test-outcomes/<hash>.jsonl           # PostToolUse capture per session
 │   ├── posttooluse-mejepa-capture.jsonl
-│   ├── stop-mejepa-self-verify.jsonl
 │   ├── observe-ticker.jsonl
 │   ├── scheduler_events.jsonl
 │   └── agent-history/                       # Q1 follow-up: agent response bodies

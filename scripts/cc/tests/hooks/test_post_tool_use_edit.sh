@@ -4,8 +4,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/cc/tests/hooks/_common_helpers.sh
 source "${SCRIPT_DIR}/_common_helpers.sh"
 
-backup_active_state
 TMPROOT="$(mktempdir)"
+export CONTEXTGRAPH_DATA_ROOT="${TMPROOT}"
+export CGREALITY_CACHE_DIR="${TMPROOT}/state/cgreality"
+CGREALITY_CACHE="${CGREALITY_CACHE_DIR}"
+ACTIVE_ROOT_FILE="${CGREALITY_CACHE}/active_runtime_root"
+ACTIVE_TARGET_FILE="${CGREALITY_CACHE}/active_target_instance"
+backup_active_state
 TARGET_FILE="${SCRIPT_DIR}/fixtures/post_tool_use_target.txt"
 ORIGINAL_CONTENT="$(cat "${TARGET_FILE}")"
 restore_fixture() {
