@@ -84,6 +84,8 @@ from .python_pair_feature_audit import add_arguments as add_python_pair_feature_
 from .python_pair_feature_audit import command_python_pair_feature_audit
 from .python_pair_feature_gate_probe import add_arguments as add_python_pair_feature_gate_probe_arguments
 from .python_pair_feature_gate_probe import command_python_pair_feature_gate_probe
+from .python_pair_surface_mining import add_arguments as add_python_pair_surface_mining_arguments
+from .python_pair_surface_mining import command_python_pair_surface_mining
 from .python_foundationality_pressure_probe import (
     add_arguments as add_python_foundationality_pressure_probe_arguments,
 )
@@ -627,6 +629,16 @@ def build_parser() -> argparse.ArgumentParser:
     pair_feature_gate_probe.set_defaults(
         func=command_python_pair_feature_gate_probe,
         evidence_name="python-pair-feature-gate-probe-command-evidence.json",
+    )
+
+    pair_surface_mining = sub.add_parser(
+        "python-pair-surface-mining",
+        help="TASK-PY-G-124B: mine the declared cross-embedder pair surface for conditional consequence labels.",
+    )
+    add_python_pair_surface_mining_arguments(pair_surface_mining)
+    pair_surface_mining.set_defaults(
+        func=command_python_pair_surface_mining,
+        evidence_name="python-pair-surface-mining-command-evidence.json",
     )
 
     foundationality_pressure_probe = sub.add_parser(
