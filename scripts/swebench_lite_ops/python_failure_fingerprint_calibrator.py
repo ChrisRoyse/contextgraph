@@ -46,7 +46,7 @@ ARTIFACT_KIND = "python_failure_fingerprint_tau_calibration"
 FORMULA_VERSION = "same_session_band_cosine_nearest_rank_p10_v1"
 DEFAULT_SEED_ROOT = Path("/zfs/archive/contextgraph/corpus/python-failure-fingerprints-seed-v1")
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-failure-fingerprints-calibrated-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-fp-003-fingerprint-tau-calibration-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-fp-003-fingerprint-tau-calibration-readback")
 DEFAULT_SOURCE_CORPUS = "aiwonder-prod-20260515-191116Z"
 
 
@@ -207,8 +207,8 @@ def calibrate_catalog(args: argparse.Namespace) -> dict[str, Any]:
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    args.readback_root.mkdir(parents=True, exist_ok=True)
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
 
     fingerprints, references, seed_summary = load_seed_catalog(args.seed_root)
     validate_seed_fingerprints(
@@ -441,11 +441,11 @@ def calibrate_catalog(args: argparse.Namespace) -> dict[str, Any]:
         and all_tau_in_range
         and all_calibrated
     )
-    after = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
-    fsv = {
+    after = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "formula_version": FORMULA_VERSION,
         "started_at_utc": started,
         "created_at_utc": utc_now(),
@@ -455,7 +455,7 @@ def calibrate_catalog(args: argparse.Namespace) -> dict[str, Any]:
             "command": "python3 scripts/swebench_lite_ops.py python-failure-fingerprint-calibrate",
             "source_corpus": args.source_corpus,
         },
-        "source_of_truth": {**report["source_of_truth"], "fsv": str(args.fsv_root / "fingerprint_tau_calibration_fsv.json")},
+        "source_of_truth": {**report["source_of_truth"], "readback": str(args.readback_root / "fingerprint_tau_calibration_readback.json")},
         "before_state": before,
         "after_state": after,
         "expected": {
@@ -478,17 +478,17 @@ def calibrate_catalog(args: argparse.Namespace) -> dict[str, Any]:
             "first_calibrated_fingerprint": readback_fingerprints[0] if readback_fingerprints else None,
             "artifact_state": tree_state(args.output_root),
         },
-        "boundary_cases": edge_cases(args.fsv_root),
+        "boundary_cases": edge_cases(args.readback_root),
     }
-    fsv["passes"] = bool(fsv["passes"] and all(case["pass"] for case in fsv["boundary_cases"]))
-    fsv["all_passed"] = fsv["passes"]
-    dump_json(args.fsv_root / "fingerprint_tau_calibration_fsv.json", fsv)
-    final = json.loads((args.fsv_root / "fingerprint_tau_calibration_fsv.json").read_text(encoding="utf-8"))
-    require(final.get("all_passed") is True, "FINGERPRINT_CALIBRATION_FSV_FAILED", str(args.fsv_root / "fingerprint_tau_calibration_fsv.json"))
+    readback["passes"] = bool(readback["passes"] and all(case["pass"] for case in readback["boundary_cases"]))
+    readback["all_passed"] = readback["passes"]
+    dump_json(args.readback_root / "fingerprint_tau_calibration_readback.json", readback)
+    final = json.loads((args.readback_root / "fingerprint_tau_calibration_readback.json").read_text(encoding="utf-8"))
+    require(final.get("all_passed") is True, "FINGERPRINT_CALIBRATION_READBACK_FAILED", str(args.readback_root / "fingerprint_tau_calibration_readback.json"))
     return final
 
 
-def edge_cases(fsv_root: Path) -> list[dict[str, Any]]:
+def edge_cases(readback_root: Path) -> list[dict[str, Any]]:
     cases: list[dict[str, Any]] = []
     try:
         same_session_tau([], 0.10)
@@ -532,7 +532,7 @@ def edge_cases(fsv_root: Path) -> list[dict[str, Any]]:
             "pass": actual == "FINGERPRINT_CALIBRATION_ZERO_VECTOR",
         }
     )
-    missing = fsv_root / "missing-seed-root"
+    missing = readback_root / "missing-seed-root"
     if missing.exists():
         shutil.rmtree(missing)
     try:
@@ -554,15 +554,15 @@ def edge_cases(fsv_root: Path) -> list[dict[str, Any]]:
 
 def prepare_fixture(args: argparse.Namespace) -> None:
     embedders = tuple(item.strip() for item in args.expected_embedders.split(",") if item.strip())
-    fixture_root = args.fsv_root / "fixture-input"
+    fixture_root = args.readback_root / "fixture-input"
     chunks_path, forward_root = build_fixture(fixture_root, embedders)
-    seed_root = args.fsv_root / "fixture-seed-output"
-    seed_fsv_root = args.fsv_root / "fixture-seed-fsv"
+    seed_root = args.readback_root / "fixture-seed-output"
+    seed_readback_root = args.readback_root / "fixture-seed-readback"
     seed_args = argparse.Namespace(
         forward_root=forward_root,
         chunks_jsonl=chunks_path,
         output_root=seed_root,
-        fsv_root=seed_fsv_root,
+        readback_root=seed_readback_root,
         source_corpus="task-fp-003-fixture",
         expected_embedders=",".join(embedders),
         expected_fingerprints=5,
@@ -577,7 +577,7 @@ def prepare_fixture(args: argparse.Namespace) -> None:
     materialize_catalog(seed_args)
     args.seed_root = seed_root
     args.forward_root = forward_root
-    args.output_root = args.fsv_root / "fixture-calibrated-output"
+    args.output_root = args.readback_root / "fixture-calibrated-output"
     args.source_corpus = "task-fp-003-fixture"
     args.expected_fingerprints = 5
     args.expected_known_good = 3
@@ -601,7 +601,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--forward-root", type=Path, default=DEFAULT_FORWARD_ROOT)
     parser.add_argument("--seed-root", type=Path, default=DEFAULT_SEED_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--source-corpus", default=DEFAULT_SOURCE_CORPUS)
     parser.add_argument("--expected-embedders", default=",".join(EXPECTED_EMBEDDERS))
     parser.add_argument("--expected-fingerprints", type=int, default=97)

@@ -31,13 +31,13 @@ from .python_diff_chunk_map_core import (
 def command_diff_chunk_map(args: Any) -> dict[str, Any]:
     checked_at = utc_now()
     args.map_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
     args.hot_root.mkdir(parents=True, exist_ok=True)
     schema_path = args.map_root / "diff_chunk_map_schema.json"
     records_path = args.map_root / "diff_chunk_map_records.jsonl"
     edge_path = args.map_root / "edge_case_diff_chunk_map_records.jsonl"
     manifest_path = args.map_root / "diff_chunk_map_manifest.json"
-    fsv_path = args.fsv_root / "diff_chunk_map_fsv.json"
+    readback_path = args.readback_root / "diff_chunk_map_readback.json"
     before_state = {
         "checked_at": checked_at,
         "mapping_count": count_jsonl(records_path),
@@ -45,7 +45,7 @@ def command_diff_chunk_map(args: Any) -> dict[str, Any]:
         "records": file_state(records_path),
         "edge_records": file_state(edge_path),
         "manifest": file_state(manifest_path),
-        "fsv": file_state(fsv_path),
+        "readback": file_state(readback_path),
         "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "map_root_bytes": path_bytes(args.map_root),
@@ -77,7 +77,7 @@ def command_diff_chunk_map(args: Any) -> dict[str, Any]:
     edge_store = write_jsonl_checked(edge_path, edges)
     if not all(case["pass"] for case in edge_cases):
         raise DiffChunkMapError(
-            "PY_DIFF_CHUNK_EDGE_FSV_FAILED",
+            "PY_DIFF_CHUNK_EDGE_READBACK_FAILED",
             "diff-to-chunk edge-case mapping failed",
             "Fix edge behavior before closing TASK-PY-DATA-011.",
             {"edge_cases": edge_cases},
@@ -109,7 +109,7 @@ def command_diff_chunk_map(args: Any) -> dict[str, Any]:
             "records_jsonl": str(records_path),
             "edge_records_jsonl": str(edge_path),
             "manifest": str(manifest_path),
-            "fsv": str(fsv_path),
+            "readback": str(readback_path),
         },
         "inputs": {
             "workspace_manifest": str(args.workspace_manifest),
@@ -128,13 +128,13 @@ def command_diff_chunk_map(args: Any) -> dict[str, Any]:
         "records": file_state(records_path),
         "edge_records": file_state(edge_path),
         "manifest": file_state(manifest_path),
-        "fsv": file_state(fsv_path),
+        "readback": file_state(readback_path),
         "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "map_root_bytes": path_bytes(args.map_root),
-        "fsv_root_bytes": path_bytes(args.fsv_root),
+        "readback_root_bytes": path_bytes(args.readback_root),
     }
-    fsv = {
+    readback = {
         "schema_version": 1,
         "checked_at_utc": utc_now(),
         "task_id": TASK_ID,
@@ -152,19 +152,19 @@ def command_diff_chunk_map(args: Any) -> dict[str, Any]:
         "summary": summary,
         "passes": True,
     }
-    write_json_checked(fsv_path, fsv)
+    write_json_checked(readback_path, readback)
     return {
         "ok": True,
         "checked_at": utc_now(),
         "source_of_truth": manifest["source_of_truth"],
         "before_state": before_state,
-        "trigger": fsv["trigger"],
+        "trigger": readback["trigger"],
         "after_state": after_state,
         "happy_path": happy_path,
         "summary": summary,
         "record_store": record_store,
         "edge_store": edge_store,
         "manifest_sha256": sha256_file(manifest_path),
-        "fsv_sha256": sha256_file(fsv_path),
+        "readback_sha256": sha256_file(readback_path),
         "passes": True,
     }

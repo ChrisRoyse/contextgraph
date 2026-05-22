@@ -396,15 +396,15 @@ def embedder_records(args: Any, schema_path: Path, now: str) -> list[dict[str, A
     config = read_models_config(args.models_config)
     embedders = config["embedders"]
     models_config_artifact = source_artifact("models_config", args.models_config, "models_config")
-    embedders_fsv_artifact = source_artifact("embedder_digest_fsv", args.embedders_fsv, "fsv")
-    forward_fsv = read_json(args.forward_fsv, "PY_INSTRUMENT_REGISTRY_FORWARD_FSV_INVALID")
-    forward_ids, e7_python_seen = forward_verified_ids(forward_fsv)
+    embedders_readback_artifact = source_artifact("embedder_digest_readback", args.embedders_readback, "readback")
+    forward_readback = read_json(args.forward_readback, "PY_INSTRUMENT_REGISTRY_FORWARD_READBACK_INVALID")
+    forward_ids, e7_python_seen = forward_verified_ids(forward_readback)
     if not e7_python_seen:
         raise InstrumentRegistryError(
-            "PY_INSTRUMENT_REGISTRY_CODE_EMBEDDER_PYTHON_FSV_MISSING",
-            "E7 code embedder has no verified Python forward output in forward FSV",
-            "Run the embedder forward FSV before registering the Python code panel.",
-            {"forward_fsv": str(args.forward_fsv), "forward_ids": sorted(forward_ids)},
+            "PY_INSTRUMENT_REGISTRY_CODE_EMBEDDER_PYTHON_READBACK_MISSING",
+            "E7 code embedder has no verified Python forward output in forward READBACK",
+            "Run the embedder forward READBACK before registering the Python code panel.",
+            {"forward_readback": str(args.forward_readback), "forward_ids": sorted(forward_ids)},
         )
     records = []
     common_code = [
@@ -424,9 +424,9 @@ def embedder_records(args: Any, schema_path: Path, now: str) -> list[dict[str, A
             )
         if embedder_id not in forward_ids:
             raise InstrumentRegistryError(
-                "PY_INSTRUMENT_REGISTRY_ACTIVE_EMBEDDER_FORWARD_FSV_MISSING",
-                f"active content embedder has no forward FSV output: {embedder_id}",
-                "Run context-graph-mejepa-forward FSV before registering the panel.",
+                "PY_INSTRUMENT_REGISTRY_ACTIVE_EMBEDDER_FORWARD_READBACK_MISSING",
+                f"active content embedder has no forward READBACK output: {embedder_id}",
+                "Run context-graph-mejepa-forward READBACK before registering the panel.",
                 {"embedder_id": embedder_id, "forward_ids": sorted(forward_ids)},
             )
         code_paths = [code_artifact(path) for path in common_code]
@@ -457,8 +457,8 @@ def embedder_records(args: Any, schema_path: Path, now: str) -> list[dict[str, A
         }
         source_of_truth = [
             models_config_artifact,
-            embedders_fsv_artifact,
-            source_artifact("forward_wrapper_fsv", args.forward_fsv, "fsv"),
+            embedders_readback_artifact,
+            source_artifact("forward_wrapper_readback", args.forward_readback, "readback"),
         ]
         stable_hashes = {
             "code_group": hash_group(code_paths),
@@ -486,7 +486,7 @@ def embedder_records(args: Any, schema_path: Path, now: str) -> list[dict[str, A
                 code_paths=code_paths,
                 used_by_q_heads=["Q2_WORK", "Q3_WHY_FAIL", "Q4_WHAT_ELSE", "Q5_IMPACT"],
                 failure_modes=["missing_weight_hash", "digest_mismatch", "nonfinite_vector", "dimension_mismatch", "unsupported_language_route"],
-                edge_guards=["models_config_digest_fsv", "forward_output_fsv", "no_cpu_fallback_for_required_gpu_outputs"],
+                edge_guards=["models_config_digest_readback", "forward_output_readback", "no_cpu_fallback_for_required_gpu_outputs"],
             )
         )
     return records
@@ -506,7 +506,7 @@ def build_registry_records(args: Any, schema_path: Path, now: str) -> list[dict[
             output_feature_family="oracle_reality_event",
             q_heads=["Q2_WORK", "Q3_WHY_FAIL", "Q5_IMPACT"],
             failure_modes=["missing_oracle_log", "artifact_hash_mismatch", "workspace_tree_hash_mismatch"],
-            edge_guards=["malformed_outcome_rejected", "chain_head_sha256_required", "docker_oracle_fsv_required"],
+            edge_guards=["malformed_outcome_rejected", "chain_head_sha256_required", "docker_oracle_readback_required"],
         ),
         data_instrument(
             schema_path=schema_path,
@@ -731,19 +731,19 @@ def command_instrument_registry(args: Any) -> dict[str, Any]:
     checked_at = utc_now()
     assert_hot_root_allowed(args.hot_root)
     args.registry_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
     args.hot_root.mkdir(parents=True, exist_ok=True)
     schema_path = args.registry_root / "python_frozen_instrument_schema.json"
     records_path = args.registry_root / "python_frozen_instrument_records.jsonl"
     manifest_path = args.registry_root / "python_frozen_instrument_manifest.json"
-    fsv_path = args.fsv_root / "python_frozen_instrument_fsv.json"
+    readback_path = args.readback_root / "python_frozen_instrument_readback.json"
     before_state = {
         "checked_at": checked_at,
         "record_count": count_jsonl(records_path),
         "schema": file_state(schema_path),
         "records": file_state(records_path),
         "manifest": file_state(manifest_path),
-        "fsv": file_state(fsv_path),
+        "readback": file_state(readback_path),
         "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "hot_budget_bytes": args.hot_budget_bytes,
@@ -768,8 +768,8 @@ def command_instrument_registry(args: Any) -> dict[str, Any]:
     edge_audit = edge_cases(records, record_store["row_count"])
     if summary["proof_domain_active_count"] != 0 or not all(case["passes"] for case in edge_audit):
         raise InstrumentRegistryError(
-            "PY_INSTRUMENT_REGISTRY_FSV_FAILED",
-            "instrument registry FSV checks failed",
+            "PY_INSTRUMENT_REGISTRY_READBACK_FAILED",
+            "instrument registry READBACK checks failed",
             "Fix the registry before downstream DDA/TCT training tasks consume it.",
             {"summary": summary, "edge_cases": edge_audit},
         )
@@ -778,11 +778,11 @@ def command_instrument_registry(args: Any) -> dict[str, Any]:
         "created_at_utc": checked_at,
         "task_id": TASK_ID,
         "issue": 197,
-        "source_of_truth": {"schema": str(schema_path), "records_jsonl": str(records_path), "manifest": str(manifest_path), "fsv": str(fsv_path)},
+        "source_of_truth": {"schema": str(schema_path), "records_jsonl": str(records_path), "manifest": str(manifest_path), "readback": str(readback_path)},
         "inputs": {
             "models_config": str(args.models_config),
-            "embedders_fsv": str(args.embedders_fsv),
-            "forward_fsv": str(args.forward_fsv),
+            "embedders_readback": str(args.embedders_readback),
+            "forward_readback": str(args.forward_readback),
             "oracle_event_manifest": str(args.oracle_event_manifest),
             "ast_parse_manifest": str(args.ast_parse_manifest),
             "ast_chunk_manifest": str(args.ast_chunk_manifest),
@@ -814,7 +814,7 @@ def command_instrument_registry(args: Any) -> dict[str, Any]:
         "q1_to_q5_covered": all(summary["q_head_coverage"].get(head, 0) > 0 for head in ("Q1_EXIST", "Q2_WORK", "Q3_WHY_FAIL", "Q4_WHAT_ELSE", "Q5_IMPACT")),
         "no_active_gridworld_or_counter_world": summary["proof_domain_active_count"] == 0,
     }
-    fsv = {
+    readback = {
         "schema_version": 1,
         "checked_at_utc": utc_now(),
         "task_id": TASK_ID,
@@ -828,20 +828,20 @@ def command_instrument_registry(args: Any) -> dict[str, Any]:
         "summary": summary,
         "passes": all(happy_path.values()) and all(case["passes"] for case in edge_audit),
     }
-    write_json_checked(fsv_path, fsv)
+    write_json_checked(readback_path, readback)
     return {
         "ok": True,
         "checked_at": utc_now(),
         "source_of_truth": manifest["source_of_truth"],
         "before_state": before_state,
-        "trigger": fsv["trigger"],
+        "trigger": readback["trigger"],
         "after_state": after_state,
-        "post_write_readback": {"fsv": file_state(fsv_path), "records": file_state(records_path), "manifest": file_state(manifest_path), "fsv_root_bytes": path_bytes(args.fsv_root)},
+        "post_write_readback": {"readback": file_state(readback_path), "records": file_state(records_path), "manifest": file_state(manifest_path), "readback_root_bytes": path_bytes(args.readback_root)},
         "happy_path": happy_path,
         "edge_cases": edge_audit,
         "summary": summary,
         "record_store": record_store,
         "manifest_sha256": sha256_file(manifest_path),
-        "fsv_sha256": sha256_file(fsv_path),
-        "passes": fsv["passes"],
+        "readback_sha256": sha256_file(readback_path),
+        "passes": readback["passes"],
     }

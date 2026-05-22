@@ -16,11 +16,11 @@ DEFAULT_CODE_STATES_JSONL = Path(
     "task-py-g-117-auto-label-discovery-v2-live-split/code_state_constellations.jsonl"
 )
 DEFAULT_ROW_DIAGNOSTICS_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-392-temporal-trajectory-features-fsv/"
-    "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_fsv.json"
+    "/zfs/archive/contextgraph/readback/task-py-g-392-temporal-trajectory-features-readback/"
+    "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_readback.json"
 )
 DEFAULT_OUTPUT_ROOT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-124-cross-embedder-pair-features-fsv"
+    "/zfs/archive/contextgraph/readback/task-py-g-124-cross-embedder-pair-features-readback"
 )
 PAIR_LABEL_RE = re.compile(r"^pair:([^:]+):")
 HEAD_PAIR_RE = re.compile(r"pairwise\(([^,]+),\s*([^)]+)\)")
@@ -414,7 +414,7 @@ def read_json_object(path: Path, label: str) -> dict[str, Any]:
         raise SwebenchOpsError(
             "PY_G_124_INPUT_MISSING",
             f"{label} missing: {path}",
-            "Use retained aiwonder FSV artifacts only.",
+            "Use retained aiwonder READBACK artifacts only.",
             {"path": str(path)},
         )
     value = json.loads(path.read_text(encoding="utf-8"))

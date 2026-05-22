@@ -30,14 +30,14 @@ from .python_per_cell_smooth_ece import metric_block, power_blockers, reject_mou
 
 
 DEFAULT_MENDELEEV_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-124d-mendeleev-pair-table-fsv/"
+    "/zfs/archive/contextgraph/readback/task-py-g-124d-mendeleev-pair-table-readback/"
     "run-20260522T041330Z/mendeleev_pair_table_report.json"
 )
 DEFAULT_STRUCTURAL_HOLES_JSONL = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-124d-mendeleev-pair-table-fsv/"
+    "/zfs/archive/contextgraph/readback/task-py-g-124d-mendeleev-pair-table-readback/"
     "run-20260522T041330Z/structural_hole_rankings.jsonl"
 )
-DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-124e-per-cell-calibration-substrate-fsv")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-124e-per-cell-calibration-substrate-readback")
 REFERENCE_ACTIVE_CORRELATION = 0.9526350498
 REFERENCE_ACTIVE_BRIER = 0.0231730901
 REFERENCE_ACTIVE_SMOOTH_ECE = 0.0169885978

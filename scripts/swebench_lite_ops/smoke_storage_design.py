@@ -18,11 +18,11 @@ DEFAULT_SMOKE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-inte
 DEFAULT_FORWARD_ROOT = DEFAULT_SMOKE_ROOT / "forward-cache"
 DEFAULT_MATRIX_ROOT = DEFAULT_SMOKE_ROOT / "intelligence-matrices"
 DEFAULT_DESIGN_ROOT = DEFAULT_SMOKE_ROOT / "design"
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-063-post249-smoke-storage-design-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-063-post249-smoke-storage-design-readback")
 DEFAULT_FULL_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
-DEFAULT_FORWARD_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json")
-DEFAULT_MATRIX_FSV = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"
+DEFAULT_FORWARD_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-061-post249-smoke-forward-readback/python_forward_shard_scheduler_readback.json")
+DEFAULT_MATRIX_READBACK = Path(
+    "/zfs/archive/contextgraph/readback/task-py-data-062-post249-smoke-intelligence-readback/smoke_intelligence_matrices_readback.json"
 )
 DEFAULT_SMOKE_CHUNKS = 1000
 DEFAULT_MAX_DURABLE_FORWARD_BYTES = 500 * 1024 * 1024 * 1024
@@ -181,14 +181,14 @@ def ceil_int(value: float) -> int:
 
 
 def build_report(args: argparse.Namespace) -> dict[str, Any]:
-    forward_fsv = read_json(args.forward_fsv)
-    matrix_fsv = read_json(args.matrix_fsv)
+    forward_readback = read_json(args.forward_readback)
+    matrix_readback = read_json(args.matrix_readback)
     forward_manifest = read_json(args.forward_root / "python_forward_cache_corpus_manifest.json")
     matrix_summary = read_json(args.matrix_root / "summary.json")
     coverage_rows, smoke_raw_vector_bytes = load_coverage(args.matrix_root / "embedder_coverage.jsonl")
 
-    require(forward_fsv.get("passes") is True, "smoke forward FSV must pass before storage design")
-    require(matrix_fsv.get("passes") is True, "smoke intelligence FSV must pass before storage design")
+    require(forward_readback.get("passes") is True, "smoke forward READBACK must pass before storage design")
+    require(matrix_readback.get("passes") is True, "smoke intelligence READBACK must pass before storage design")
     require(forward_manifest.get("passes") is True, "smoke forward corpus manifest must pass")
     require(matrix_summary.get("task_id") == "TASK-PY-DATA-062", "matrix summary must be TASK-PY-DATA-062")
 
@@ -273,9 +273,9 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "hot_root_policy": "bounded WSL ext4 staging under /home/cabdru/.cache/contextgraph; never /mnt/c",
         "vector_store": "packed JSONL records plus packed index per shard, promoted to aiwonder durable archive after readback",
         "matrix_store": "bounded global/window summary artifacts, not raw chunk-pair matrices",
-        "hash_chain": "per-shard packed manifest hashes -> corpus manifest -> design FSV -> #255 relaunch artifact",
+        "hash_chain": "per-shard packed manifest hashes -> corpus manifest -> design READBACK -> #255 relaunch artifact",
         "resume_semantics": [
-            "checkpoint advances only after packed shard store and FSV readback pass",
+            "checkpoint advances only after packed shard store and READBACK readback pass",
             "interrupted hot stages are archived or rejected before relaunch",
             "smoke gate preflight must pass #249 and #251 through #255 before full-run mode starts shards",
         ],
@@ -343,8 +343,8 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "source_of_truth": {
             "forward_root": str(args.forward_root),
             "matrix_root": str(args.matrix_root),
-            "forward_fsv": str(args.forward_fsv),
-            "matrix_fsv": str(args.matrix_fsv),
+            "forward_readback": str(args.forward_readback),
+            "matrix_readback": str(args.matrix_readback),
             "full_chunks_jsonl": str(args.full_chunks_jsonl),
             "design_root": str(args.design_root),
         },
@@ -373,9 +373,9 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
             },
             "integrity_readback": {
                 "passes": True,
-                "expected": "readable #252/#253 FSVs and all design artifacts reread by hash",
-                "actual_forward_fsv": file_state(args.forward_fsv),
-                "actual_matrix_fsv": file_state(args.matrix_fsv),
+                "expected": "readable #252/#253 READBACKs and all design artifacts reread by hash",
+                "actual_forward_readback": file_state(args.forward_readback),
+                "actual_matrix_readback": file_state(args.matrix_readback),
             },
         },
         "disk_snapshot": {"aiwonder_archive": d_snapshot},
@@ -384,14 +384,14 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
 
 def command_smoke_storage_design(args: argparse.Namespace) -> int:
     started = utc_now()
-    before = {"design_root": tree_state(args.design_root), "fsv_root": tree_state(args.fsv_root)}
+    before = {"design_root": tree_state(args.design_root), "readback_root": tree_state(args.readback_root)}
     if args.clean_output:
         if args.design_root.exists():
             shutil.rmtree(args.design_root)
-        if args.fsv_root.exists():
-            shutil.rmtree(args.fsv_root)
+        if args.readback_root.exists():
+            shutil.rmtree(args.readback_root)
     args.design_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
 
     report = build_report(args)
     storage_policy = report["storage_policy"]
@@ -419,10 +419,10 @@ def command_smoke_storage_design(args: argparse.Namespace) -> int:
         and artifact_state["file_count"] == 4
     )
 
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": "smoke_storage_design_fsv",
+        "artifact_kind": "smoke_storage_design_readback",
         "started_at_utc": started,
         "created_at_utc": utc_now(),
         "passes": passes,
@@ -433,10 +433,10 @@ def command_smoke_storage_design(args: argparse.Namespace) -> int:
             "full_scale_estimates": str(args.design_root / "full_scale_storage_estimates.json"),
             "go_no_go": str(args.design_root / "go_no_go.json"),
             "full_chunks_jsonl": str(args.full_chunks_jsonl),
-            "fsv": str(args.fsv_root / "smoke_storage_design_fsv.json"),
+            "readback": str(args.readback_root / "smoke_storage_design_readback.json"),
         },
         "before_state": before,
-        "after_state": {"design_root": tree_state(args.design_root), "fsv_root": tree_state(args.fsv_root)},
+        "after_state": {"design_root": tree_state(args.design_root), "readback_root": tree_state(args.readback_root)},
         "readback": {
             "task_id": readback_report.get("task_id"),
             "storage_design_accepted": readback_go_no_go.get("storage_design_accepted"),
@@ -452,9 +452,9 @@ def command_smoke_storage_design(args: argparse.Namespace) -> int:
         "artifact_hashes": artifact_state,
         "edge_case_results": readback_report.get("edge_case_audit"),
     }
-    dump_json(args.fsv_root / "smoke_storage_design_fsv.json", fsv)
-    final_readback = read_json(args.fsv_root / "smoke_storage_design_fsv.json")
-    require(final_readback.get("passes") is True, f"FSV failed; see {args.fsv_root / 'smoke_storage_design_fsv.json'}")
+    dump_json(args.readback_root / "smoke_storage_design_readback.json", readback)
+    final_readback = read_json(args.readback_root / "smoke_storage_design_readback.json")
+    require(final_readback.get("passes") is True, f"READBACK failed; see {args.readback_root / 'smoke_storage_design_readback.json'}")
     print(json.dumps(final_readback, sort_keys=True, indent=2))
     return 0
 
@@ -464,9 +464,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--forward-root", type=Path, default=DEFAULT_FORWARD_ROOT)
     parser.add_argument("--matrix-root", type=Path, default=DEFAULT_MATRIX_ROOT)
     parser.add_argument("--design-root", type=Path, default=DEFAULT_DESIGN_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
-    parser.add_argument("--forward-fsv", type=Path, default=DEFAULT_FORWARD_FSV)
-    parser.add_argument("--matrix-fsv", type=Path, default=DEFAULT_MATRIX_FSV)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
+    parser.add_argument("--forward-readback", type=Path, default=DEFAULT_FORWARD_READBACK)
+    parser.add_argument("--matrix-readback", type=Path, default=DEFAULT_MATRIX_READBACK)
     parser.add_argument("--full-chunks-jsonl", type=Path, default=DEFAULT_FULL_CHUNKS_JSONL)
     parser.add_argument("--full-chunk-count", type=int, default=None)
     parser.add_argument("--smoke-chunk-count", type=int, default=DEFAULT_SMOKE_CHUNKS)

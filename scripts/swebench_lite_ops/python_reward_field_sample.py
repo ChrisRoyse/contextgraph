@@ -25,7 +25,7 @@ SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-028"
 ARTIFACT_KIND = "python_mejepa_reward_field_sample"
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-reward-field-sample-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-028-reward-field-sample-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-028-reward-field-sample-readback")
 
 
 class RewardFieldSampleError(SwebenchOpsError):
@@ -33,7 +33,7 @@ class RewardFieldSampleError(SwebenchOpsError):
         super().__init__(
             code,
             message,
-            "Read the reward-field sample FSV and fix the missing physical source-of-truth row before continuing.",
+            "Read the reward-field sample READBACK and fix the missing physical source-of-truth row before continuing.",
             details,
         )
 
@@ -276,14 +276,14 @@ def build_sample(
 def command_python_reward_field_sample(args: argparse.Namespace) -> int:
     started = utc_now()
     if args.clean_output:
-        for root in (args.output_root, args.fsv_root):
+        for root in (args.output_root, args.readback_root):
             if root.exists():
                 shutil.rmtree(root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
     before = {
         "output_root": tree_state(args.output_root),
-        "fsv_root": tree_state(args.fsv_root),
+        "readback_root": tree_state(args.readback_root),
         "disk": disk_state([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
     }
 
@@ -410,7 +410,7 @@ def command_python_reward_field_sample(args: argparse.Namespace) -> int:
         "created_at_utc": utc_now(),
         "source_of_truth": {
             "output_root": str(args.output_root),
-            "fsv_root": str(args.fsv_root),
+            "readback_root": str(args.readback_root),
             "sample_bundle": str(args.output_root / "reward_field_sample_bundle.json"),
             "sample_rows": str(args.output_root / "sample_rows.jsonl"),
             "edge_cases": str(args.output_root / "edge_case_sample_states.jsonl"),
@@ -438,7 +438,7 @@ def command_python_reward_field_sample(args: argparse.Namespace) -> int:
 
     after = {
         "output_root": tree_state(args.output_root),
-        "fsv_root": tree_state(args.fsv_root),
+        "readback_root": tree_state(args.readback_root),
         "disk": disk_state([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
     }
     readback_bundle = read_json(args.output_root / "reward_field_sample_bundle.json")
@@ -472,16 +472,16 @@ def command_python_reward_field_sample(args: argparse.Namespace) -> int:
         and len(readback_edge_rows) == 3
         and all(row["pass"] for row in readback_edge_rows)
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "started_at_utc": started,
         "created_at_utc": utc_now(),
         "passes": passes,
         "before_state": before,
         "after_state": after,
-        "source_of_truth": {**bundle["source_of_truth"], "fsv": str(args.fsv_root / "python_reward_field_sample_fsv.json")},
+        "source_of_truth": {**bundle["source_of_truth"], "readback": str(args.readback_root / "python_reward_field_sample_readback.json")},
         "trigger": {"command": "python3 scripts/swebench_lite_ops.py python-reward-field-sample"},
         "happy_path": happy_path,
         "edge_cases": readback_edge_rows,
@@ -495,9 +495,9 @@ def command_python_reward_field_sample(args: argparse.Namespace) -> int:
             "selected_cases": readback_bundle["summary"]["selected_cases"],
         },
     }
-    dump_json(args.fsv_root / "python_reward_field_sample_fsv.json", fsv)
-    final = read_json(args.fsv_root / "python_reward_field_sample_fsv.json")
-    require(final.get("passes") is True, "PY_REWARD_SAMPLE_FSV_FAILED", "reward-field sample FSV failed", {"path": str(args.fsv_root / "python_reward_field_sample_fsv.json")})
+    dump_json(args.readback_root / "python_reward_field_sample_readback.json", readback)
+    final = read_json(args.readback_root / "python_reward_field_sample_readback.json")
+    require(final.get("passes") is True, "PY_REWARD_SAMPLE_READBACK_FAILED", "reward-field sample READBACK failed", {"path": str(args.readback_root / "python_reward_field_sample_readback.json")})
     print(json.dumps(final, sort_keys=True, indent=2))
     return 0
 
@@ -512,7 +512,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--oracle-events", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-oracle-events-v1/oracle_events.jsonl"))
     parser.add_argument("--readiness-decision", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-data-readiness-gate-v1/data_readiness_decision.json"))
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--expected-embedder-count", type=int, default=12)
     parser.add_argument("--clean-output", action="store_true")
 

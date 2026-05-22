@@ -10,11 +10,11 @@ from .core import SwebenchOpsError, sha256_file, utc_now
 
 
 DEFAULT_SHIP_GATE_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/"
-    "run-20260521T132308Z/ship-gate-fsv.json"
+    "/zfs/archive/contextgraph/readback/swebench-300x8-ship-gate-readback/"
+    "run-20260521T132308Z/ship-gate-readback.json"
 )
 DEFAULT_OUTPUT_ROOT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-121-per-cell-smooth-ece-fsv"
+    "/zfs/archive/contextgraph/readback/task-py-g-121-per-cell-smooth-ece-readback"
 )
 COVERAGE_POINTS = (0.50, 0.60, 0.70, 0.80, 0.85, 0.90, 0.95, 1.00)
 ECE_BINS = 10
@@ -47,7 +47,7 @@ def command_python_per_cell_smooth_ece(args: Any) -> dict[str, Any]:
         raise SwebenchOpsError(
             "PY_G_121_HOLDOUT_COUNT_MISMATCH",
             "ship-gate holdout row count does not match expected count",
-            "Use the current aiwonder ship-gate FSV or pass the expected count explicitly.",
+            "Use the current aiwonder ship-gate READBACK or pass the expected count explicitly.",
             {"expected": args.expected_holdout_count, "actual": len(holdout_rows)},
         )
     rows = [prediction_row(row, index) for index, row in enumerate(holdout_rows)]
@@ -322,7 +322,7 @@ def read_json_object(path: Path) -> dict[str, Any]:
         raise SwebenchOpsError(
             "PY_G_121_REPORT_MISSING",
             f"required ship-gate report missing: {path}",
-            "Run or point at the current aiwonder ship-gate FSV report.",
+            "Run or point at the current aiwonder ship-gate READBACK report.",
             {"path": str(path)},
         )
     try:
@@ -331,7 +331,7 @@ def read_json_object(path: Path) -> dict[str, Any]:
         raise SwebenchOpsError(
             "PY_G_121_REPORT_BAD_JSON",
             f"ship-gate report is not valid JSON: {path}",
-            "Regenerate the FSV report before consuming it.",
+            "Regenerate the READBACK report before consuming it.",
             {"path": str(path), "error": str(exc)},
         ) from exc
     return require_object(value, str(path))
@@ -342,7 +342,7 @@ def require_object(value: Any, name: str) -> dict[str, Any]:
         raise SwebenchOpsError(
             "PY_G_121_OBJECT_REQUIRED",
             f"{name} must be a JSON object",
-            "Use a current ship-gate FSV report.",
+            "Use a current ship-gate READBACK report.",
             {"name": name, "type": type(value).__name__},
         )
     return value
@@ -353,7 +353,7 @@ def require_array(value: Any, name: str) -> list[Any]:
         raise SwebenchOpsError(
             "PY_G_121_ARRAY_REQUIRED",
             f"{name} must be a JSON array",
-            "Use a current ship-gate FSV report.",
+            "Use a current ship-gate READBACK report.",
             {"name": name, "type": type(value).__name__},
         )
     return value
@@ -365,7 +365,7 @@ def required_string(value: dict[str, Any], key: str) -> str:
         raise SwebenchOpsError(
             "PY_G_121_STRING_REQUIRED",
             f"required string missing: {key}",
-            "Use a current ship-gate FSV report.",
+            "Use a current ship-gate READBACK report.",
             {"key": key, "value": raw},
         )
     return raw.strip()
@@ -377,7 +377,7 @@ def required_bool(value: dict[str, Any], key: str) -> bool:
         raise SwebenchOpsError(
             "PY_G_121_BOOL_REQUIRED",
             f"required bool missing: {key}",
-            "Use a current ship-gate FSV report.",
+            "Use a current ship-gate READBACK report.",
             {"key": key, "value": raw},
         )
     return raw
@@ -389,7 +389,7 @@ def required_score(value: dict[str, Any], key: str) -> float:
         raise SwebenchOpsError(
             "PY_G_121_SCORE_REQUIRED",
             f"required numeric score missing: {key}",
-            "Use a current ship-gate FSV report.",
+            "Use a current ship-gate READBACK report.",
             {"key": key, "value": raw},
         )
     score = float(raw)

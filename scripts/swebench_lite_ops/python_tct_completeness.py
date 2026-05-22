@@ -25,11 +25,11 @@ DEFAULT_DDA_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/
 DEFAULT_TCT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-tct-cells-v1")
 DEFAULT_CONTRIBUTION_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-v1/contribution")
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-tct-completeness-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-039-tct-completeness-fsv")
-DEFAULT_REWARD_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-021-reward-tensors-fsv/python_reward_tensors_fsv.json")
-DEFAULT_DDA_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json")
-DEFAULT_TCT_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json")
-DEFAULT_CONTRIBUTION_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-055-embedder-contribution-fsv/python_embedder_contribution_fsv.json")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-039-tct-completeness-readback")
+DEFAULT_REWARD_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-021-reward-tensors-readback/python_reward_tensors_readback.json")
+DEFAULT_DDA_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-017-dda-signals-readback/python_dda_code_signals_readback.json")
+DEFAULT_TCT_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-020-tct-cells-readback/python_tct_cells_readback.json")
+DEFAULT_CONTRIBUTION_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-055-embedder-contribution-readback/python_embedder_contribution_readback.json")
 
 
 class TctCompletenessError(RuntimeError):
@@ -55,7 +55,7 @@ def ratio(numerator: int, denominator: int) -> float:
 
 def load_passing_json(path: Path, code: str) -> tuple[dict[str, Any], str]:
     doc = read_json(path)
-    require(doc.get("passes") is True, code, f"required FSV does not pass: {path}", {"path": str(path)})
+    require(doc.get("passes") is True, code, f"required READBACK does not pass: {path}", {"path": str(path)})
     return doc, sha256_file(path)
 
 
@@ -407,14 +407,14 @@ def command_python_tct_completeness(args: argparse.Namespace) -> int:
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    args.readback_root.mkdir(parents=True, exist_ok=True)
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
 
     expected_embedders = parse_embedders(args.expected_embedders)
-    _, reward_fsv_sha = load_passing_json(args.reward_fsv, "TCT_COMPLETENESS_REWARD_FSV_NOT_PASSING")
-    _, dda_fsv_sha = load_passing_json(args.dda_fsv, "TCT_COMPLETENESS_DDA_FSV_NOT_PASSING")
-    _, tct_fsv_sha = load_passing_json(args.tct_fsv, "TCT_COMPLETENESS_TCT_FSV_NOT_PASSING")
-    _, contribution_fsv_sha = load_passing_json(args.contribution_fsv, "TCT_COMPLETENESS_CONTRIBUTION_FSV_NOT_PASSING")
+    _, reward_readback_sha = load_passing_json(args.reward_readback, "TCT_COMPLETENESS_REWARD_READBACK_NOT_PASSING")
+    _, dda_readback_sha = load_passing_json(args.dda_readback, "TCT_COMPLETENESS_DDA_READBACK_NOT_PASSING")
+    _, tct_readback_sha = load_passing_json(args.tct_readback, "TCT_COMPLETENESS_TCT_READBACK_NOT_PASSING")
+    _, contribution_readback_sha = load_passing_json(args.contribution_readback, "TCT_COMPLETENESS_CONTRIBUTION_READBACK_NOT_PASSING")
 
     reward_rows = load_jsonl(args.reward_root / "chunk_reward_tensors.jsonl")
     membership_rows = load_jsonl(args.tct_root / "tct_chunk_memberships.jsonl")
@@ -460,10 +460,10 @@ def command_python_tct_completeness(args: argparse.Namespace) -> int:
             "contribution_root": str(args.contribution_root),
         },
         "source_hashes": {
-            "reward_fsv_sha256": reward_fsv_sha,
-            "dda_fsv_sha256": dda_fsv_sha,
-            "tct_fsv_sha256": tct_fsv_sha,
-            "contribution_fsv_sha256": contribution_fsv_sha,
+            "reward_readback_sha256": reward_readback_sha,
+            "dda_readback_sha256": dda_readback_sha,
+            "tct_readback_sha256": tct_readback_sha,
+            "contribution_readback_sha256": contribution_readback_sha,
             "chunk_reward_tensors_sha256": sha256_file(args.reward_root / "chunk_reward_tensors.jsonl"),
             "tct_chunk_memberships_sha256": sha256_file(args.tct_root / "tct_chunk_memberships.jsonl"),
             "tct_cell_support_sha256": sha256_file(args.tct_root / "tct_cell_support.jsonl"),
@@ -493,7 +493,7 @@ def command_python_tct_completeness(args: argparse.Namespace) -> int:
     write_jsonl(args.output_root / "edge_case_states.jsonl", edges)
     dump_json(args.output_root / "tct_completeness_report.json", report)
 
-    after = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    after = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     readback_counts = {
         "mutation_category_completeness": sum(1 for _ in iter_jsonl(args.output_root / "mutation_category_completeness.jsonl")),
         "cell_completeness": sum(1 for _ in iter_jsonl(args.output_root / "cell_completeness.jsonl")),
@@ -513,10 +513,10 @@ def command_python_tct_completeness(args: argparse.Namespace) -> int:
         and readback_report["summary"]["full_training_ready"] is False
         and all(case["pass"] for case in edges)
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "formula_version": FORMULA_VERSION,
         "started_at_utc": started,
         "created_at_utc": utc_now(),
@@ -526,7 +526,7 @@ def command_python_tct_completeness(args: argparse.Namespace) -> int:
         "source_of_truth": {
             **report["source_of_truth"],
             "report": str(args.output_root / "tct_completeness_report.json"),
-            "fsv": str(args.fsv_root / "python_tct_completeness_fsv.json"),
+            "readback": str(args.readback_root / "python_tct_completeness_readback.json"),
         },
         "trigger": {"command": "python3 scripts/swebench_lite_ops.py python-tct-completeness"},
         "readback": {
@@ -541,9 +541,9 @@ def command_python_tct_completeness(args: argparse.Namespace) -> int:
         },
         "edge_cases": edges,
     }
-    dump_json(args.fsv_root / "python_tct_completeness_fsv.json", fsv)
-    final = read_json(args.fsv_root / "python_tct_completeness_fsv.json")
-    require(final.get("passes") is True, "TCT_COMPLETENESS_FSV_FAILED", "TCT completeness FSV failed", {"path": str(args.fsv_root / "python_tct_completeness_fsv.json")})
+    dump_json(args.readback_root / "python_tct_completeness_readback.json", readback)
+    final = read_json(args.readback_root / "python_tct_completeness_readback.json")
+    require(final.get("passes") is True, "TCT_COMPLETENESS_READBACK_FAILED", "TCT completeness READBACK failed", {"path": str(args.readback_root / "python_tct_completeness_readback.json")})
     print(json.dumps(final, sort_keys=True, indent=2))
     return 0
 
@@ -554,11 +554,11 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--tct-root", type=Path, default=DEFAULT_TCT_ROOT)
     parser.add_argument("--contribution-root", type=Path, default=DEFAULT_CONTRIBUTION_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
-    parser.add_argument("--reward-fsv", type=Path, default=DEFAULT_REWARD_FSV)
-    parser.add_argument("--dda-fsv", type=Path, default=DEFAULT_DDA_FSV)
-    parser.add_argument("--tct-fsv", type=Path, default=DEFAULT_TCT_FSV)
-    parser.add_argument("--contribution-fsv", type=Path, default=DEFAULT_CONTRIBUTION_FSV)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
+    parser.add_argument("--reward-readback", type=Path, default=DEFAULT_REWARD_READBACK)
+    parser.add_argument("--dda-readback", type=Path, default=DEFAULT_DDA_READBACK)
+    parser.add_argument("--tct-readback", type=Path, default=DEFAULT_TCT_READBACK)
+    parser.add_argument("--contribution-readback", type=Path, default=DEFAULT_CONTRIBUTION_READBACK)
     parser.add_argument("--expected-embedders", default=DEFAULT_EXPECTED_EMBEDDERS)
     parser.add_argument("--expected-chunk-count", type=int, default=1000)
     parser.add_argument("--clean-output", action="store_true")

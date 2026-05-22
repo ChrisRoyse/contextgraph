@@ -1,11 +1,11 @@
 """Secret redaction primitive for ME-JEPA chunk pipeline (TASK-PY-G-059, PHASE 1).
 
-PHASE 1 ships the standalone redaction library + FSV harness. PHASE 2 wires the
+PHASE 1 ships the standalone redaction library + READBACK harness. PHASE 2 wires the
 output of ``redact_text`` into the chunker so each chunk emits a
 ``redacted_source_text`` + ``redaction_events`` pair alongside ``source_text``
 (the original is preserved for the slice-round-trip invariant). PHASE 3 persists
 ``RedactionEvent`` rows to ``CF_MEJEPA_REDACTION_LOG`` and teaches the Rust
-embedder runner (``python_forward_cache_fsv.rs``) to consume the redacted text.
+embedder runner (``python_forward_cache_readback.rs``) to consume the redacted text.
 
 Architectural reason redaction does NOT mutate ``source_text`` directly:
 ``python_ast_chunks.build_chunk`` writes ``source_sha256`` from raw bytes and
@@ -49,8 +49,8 @@ ARTIFACT_KIND = "python_secret_redaction"
 FORMULA_VERSION = "v1.0.0"
 PRODUCER = "contextgraph.swebench_lite_ops.python_secret_redaction"
 
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-059-secret-redaction-fsv")
-DEFAULT_OUTPUT_ROOT = DEFAULT_FSV_ROOT / "artifacts"
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-059-secret-redaction-readback")
+DEFAULT_OUTPUT_ROOT = DEFAULT_READBACK_ROOT / "artifacts"
 
 
 class SecretRedactionError(SwebenchOpsError):
@@ -334,7 +334,7 @@ def redact_text(text: str | bytes) -> RedactedText:
 
 
 # -----------------------------------------------------------------------------
-# FSV harness — runs synthetic fixtures end-to-end + writes evidence files.
+# READBACK harness — runs synthetic fixtures end-to-end + writes evidence files.
 # -----------------------------------------------------------------------------
 def _utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -594,7 +594,7 @@ def _bytes_input_round_trip() -> dict[str, Any]:
     }
 
 
-def _chunker_wiring_fsv(output_root: Path) -> dict[str, Any]:
+def _chunker_wiring_readback(output_root: Path) -> dict[str, Any]:
     """Prove PHASE 2 chunker wiring without relying on the large corpus."""
     from .oracle_events import load_jsonschema_validator, write_jsonl_checked
     from .python_ast_chunks import SCHEMA_VERSION as AST_CHUNK_SCHEMA_VERSION
@@ -685,7 +685,7 @@ def _chunker_wiring_fsv(output_root: Path) -> dict[str, Any]:
     report = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": "python_secret_redaction_chunker_wiring_fsv",
+        "artifact_kind": "python_secret_redaction_chunker_wiring_readback",
         "created_at_utc": _utc_now(),
         "source_of_truth": {
             "schema": str(schema_path),
@@ -704,7 +704,7 @@ def _chunker_wiring_fsv(output_root: Path) -> dict[str, Any]:
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--p99-budget-us", type=int, default=1000,
                         help="Performance budget; p99 must be below this (default: 1000 = 1 ms).")
 
@@ -729,11 +729,11 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def command_python_secret_redaction(args: argparse.Namespace) -> int:
-    """Run the FSV harness, write evidence, return 0 on pass / raise on fail."""
+    """Run the READBACK harness, write evidence, return 0 on pass / raise on fail."""
     output_root: Path = args.output_root
-    fsv_root: Path = args.fsv_root
+    readback_root: Path = args.readback_root
     output_root.mkdir(parents=True, exist_ok=True)
-    fsv_root.mkdir(parents=True, exist_ok=True)
+    readback_root.mkdir(parents=True, exist_ok=True)
 
     fixtures = _build_fixtures()
     fixture_rows = _run_fixtures(fixtures)
@@ -741,7 +741,7 @@ def command_python_secret_redaction(args: argparse.Namespace) -> int:
     nonutf8 = _nonutf8_edge_case()
     perf = _performance_benchmark(target_us=args.p99_budget_us)
     bytes_rt = _bytes_input_round_trip()
-    chunker_wiring = _chunker_wiring_fsv(output_root)
+    chunker_wiring = _chunker_wiring_readback(output_root)
 
     fixture_jsonl = output_root / "fixture_results.jsonl"
     invariance_path = output_root / "invariance_proof.json"
@@ -826,16 +826,16 @@ def command_python_secret_redaction(args: argparse.Namespace) -> int:
         "fixture_pass_count_readback": sum(1 for r in readback_fixtures if r["passes"]),
     }
 
-    before = {"output_root_existed": False, "fsv_root_existed": False}
+    before = {"output_root_existed": False, "readback_root_existed": False}
     after = {
         "output_root_files": sorted(p.name for p in output_root.iterdir() if p.is_file()),
-        "fsv_root_files": sorted(p.name for p in fsv_root.iterdir() if p.is_file()),
+        "readback_root_files": sorted(p.name for p in readback_root.iterdir() if p.is_file()),
     }
 
-    fsv_payload = {
+    readback_payload = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "formula_version": FORMULA_VERSION,
         "created_at_utc": _utc_now(),
         "passes": passes,
@@ -849,20 +849,20 @@ def command_python_secret_redaction(args: argparse.Namespace) -> int:
         "summary": summary,
         "edge_cases": edge_cases,
     }
-    fsv_path = fsv_root / "python_secret_redaction_fsv.json"
-    _write_json(fsv_path, fsv_payload)
+    readback_path = readback_root / "python_secret_redaction_readback.json"
+    _write_json(readback_path, readback_payload)
 
     if not passes:
         raise SecretRedactionError(
-            "PY_SECRET_REDACTION_FSV_FAILED",
-            "secret-redaction FSV failed (see fsv_path for details)",
+            "PY_SECRET_REDACTION_READBACK_FAILED",
+            "secret-redaction READBACK failed (see readback_path for details)",
             "Inspect failing fixtures/edge cases and tighten patterns or perf budget before re-running.",
-            {"fsv_path": str(fsv_path), "summary": summary},
+            {"readback_path": str(readback_path), "summary": summary},
         )
 
     print(json.dumps({
         "passes": True,
-        "fsv_path": str(fsv_path),
+        "readback_path": str(readback_path),
         "report_path": str(report_path),
         "summary": summary,
     }, indent=2, sort_keys=True))

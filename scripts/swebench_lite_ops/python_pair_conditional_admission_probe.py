@@ -23,7 +23,7 @@ from .python_pair_surface_mining import (
 from .python_per_cell_smooth_ece import metric_block, power_blockers, reject_mounted_drive
 
 
-DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-124b-conditional-pair-admission-fsv")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-124b-conditional-pair-admission-readback")
 WEAK_CELLS = ("delete_test_call::python", "off_by_one::python", "subtle_flip::python")
 
 

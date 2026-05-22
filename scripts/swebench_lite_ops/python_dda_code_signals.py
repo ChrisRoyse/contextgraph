@@ -40,7 +40,7 @@ TASK_ID = "TASK-PY-DATA-017"
 ARTIFACT_KIND = "python_first_order_dda_code_signals"
 FORMULA_VERSION = "python_dda_first_order_v1"
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/per-embedder")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-017-dda-signals-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-017-dda-signals-readback")
 DEFAULT_CONSTELLATION_SCHEMA = Path("/zfs/archive/contextgraph/corpus/python-code-constellation-schema-v1/code_constellation_schema.json")
 EXPECTED_EMBEDDERS = ("e1", "e6", "e7", "e8", "e10", "e12", "e13", "e14", "e2", "e3", "e4", "e9")
 EPS = 1.0e-12
@@ -303,8 +303,8 @@ def command_python_dda_code_signals(args: argparse.Namespace) -> int:
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    args.readback_root.mkdir(parents=True, exist_ok=True)
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     if args.input_mode == "smoke-manifest":
         manifest_by_key, manifest_summary = load_smoke_manifest(args.smoke_manifest)
         records, load_summary = load_records(args.forward_root, manifest_by_key)
@@ -387,7 +387,7 @@ def command_python_dda_code_signals(args: argparse.Namespace) -> int:
         },
     }
     dump_json(args.output_root / "dda_signal_summary.json", summary)
-    after = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    after = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     readback_summary = read_json(args.output_root / "dda_signal_summary.json")
     readback_counts = {
         "per_embedder_signals": sum(1 for _ in iter_jsonl(args.output_root / "per_embedder_signals.jsonl")),
@@ -407,16 +407,16 @@ def command_python_dda_code_signals(args: argparse.Namespace) -> int:
         and missing_present
         and all(case["pass"] for case in edges)
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "started_at_utc": started,
         "created_at_utc": utc_now(),
         "passes": passes,
         "before_state": before,
         "after_state": after,
-        "source_of_truth": {**summary["source_of_truth"], "summary": str(args.output_root / "dda_signal_summary.json"), "fsv": str(args.fsv_root / "python_dda_code_signals_fsv.json")},
+        "source_of_truth": {**summary["source_of_truth"], "summary": str(args.output_root / "dda_signal_summary.json"), "readback": str(args.readback_root / "python_dda_code_signals_readback.json")},
         "trigger": {"command": "python3 scripts/swebench_lite_ops.py python-dda-code-signals", "formula_version": FORMULA_VERSION},
         "readback": {
             **readback_counts,
@@ -433,9 +433,9 @@ def command_python_dda_code_signals(args: argparse.Namespace) -> int:
             *edges,
         ],
     }
-    dump_json(args.fsv_root / "python_dda_code_signals_fsv.json", fsv)
-    final = read_json(args.fsv_root / "python_dda_code_signals_fsv.json")
-    require(final.get("passes") is True, f"DDA signal FSV failed: {args.fsv_root / 'python_dda_code_signals_fsv.json'}")
+    dump_json(args.readback_root / "python_dda_code_signals_readback.json", readback)
+    final = read_json(args.readback_root / "python_dda_code_signals_readback.json")
+    require(final.get("passes") is True, f"DDA signal READBACK failed: {args.readback_root / 'python_dda_code_signals_readback.json'}")
     print(json.dumps(final, sort_keys=True, indent=2))
     return 0
 
@@ -449,7 +449,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--shard-plan", type=Path, default=None)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--constellation-schema", type=Path, default=DEFAULT_CONSTELLATION_SCHEMA)
     parser.add_argument("--expected-embedders", default=",".join(EXPECTED_EMBEDDERS))
     parser.add_argument("--min-completed-shards", type=int, default=1)

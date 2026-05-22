@@ -211,13 +211,13 @@ def command_test_intent(args: Any) -> dict[str, Any]:
     checked_at = utc_now()
     assert_hot_root_allowed(args.hot_root)
     args.intent_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
     args.hot_root.mkdir(parents=True, exist_ok=True)
     schema_path = args.intent_root / "python_test_intent_schema.json"
     records_path = args.intent_root / "python_test_intent_records.jsonl"
     edge_path = args.intent_root / "edge_case_test_intent_records.jsonl"
     manifest_path = args.intent_root / "python_test_intent_manifest.json"
-    fsv_path = args.fsv_root / "python_test_intent_fsv.json"
+    readback_path = args.readback_root / "python_test_intent_readback.json"
     before_state = {
         "checked_at": checked_at,
         "record_count": count_jsonl(records_path),
@@ -226,7 +226,7 @@ def command_test_intent(args: Any) -> dict[str, Any]:
         "records": file_state(records_path),
         "edge_records": file_state(edge_path),
         "manifest": file_state(manifest_path),
-        "fsv": file_state(fsv_path),
+        "readback": file_state(readback_path),
         "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "hot_budget_bytes": args.hot_budget_bytes,
@@ -251,13 +251,13 @@ def command_test_intent(args: Any) -> dict[str, Any]:
         "real_records_link_chunks": any(r["chunk_ids"] and r["production_chunk_ids"] for r in records),
     }
     if not all(happy_path.values()) or not all(case["pass"] for case in edge_cases):
-        raise TestIntentError("PY_TEST_INTENT_FSV_FAILED", "test-intent FSV checks failed", "Fix extractor before using test intent as reward data.", {"happy_path": happy_path, "edge_cases": edge_cases})
+        raise TestIntentError("PY_TEST_INTENT_READBACK_FAILED", "test-intent READBACK checks failed", "Fix extractor before using test intent as reward data.", {"happy_path": happy_path, "edge_cases": edge_cases})
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "created_at_utc": checked_at,
         "task_id": TASK_ID,
         "issue": 196,
-        "source_of_truth": {"schema": str(schema_path), "records_jsonl": str(records_path), "edge_records_jsonl": str(edge_path), "manifest": str(manifest_path), "fsv": str(fsv_path)},
+        "source_of_truth": {"schema": str(schema_path), "records_jsonl": str(records_path), "edge_records_jsonl": str(edge_path), "manifest": str(manifest_path), "readback": str(readback_path)},
         "inputs": {"cleaned_manifest": str(args.cleaned_manifest), "workspace_manifest": str(args.workspace_manifest), "chunks_jsonl": str(args.chunks_jsonl), "diff_map_records": str(args.diff_map_records)},
         "storage_policy_decision": 212,
         "source_audit": source_audit,
@@ -280,7 +280,7 @@ def command_test_intent(args: Any) -> dict[str, Any]:
         "hot_budget_bytes": args.hot_budget_bytes,
         "intent_root_bytes": path_bytes(args.intent_root),
     }
-    fsv = {
+    readback = {
         "schema_version": 1,
         "checked_at_utc": utc_now(),
         "task_id": TASK_ID,
@@ -295,21 +295,21 @@ def command_test_intent(args: Any) -> dict[str, Any]:
         "summary": summary,
         "passes": True,
     }
-    write_json_checked(fsv_path, fsv)
+    write_json_checked(readback_path, readback)
     return {
         "ok": True,
         "checked_at": utc_now(),
         "source_of_truth": manifest["source_of_truth"],
         "before_state": before_state,
-        "trigger": fsv["trigger"],
+        "trigger": readback["trigger"],
         "after_state": after_state,
-        "post_write_readback": {"fsv": file_state(fsv_path), "records": file_state(records_path), "manifest": file_state(manifest_path), "fsv_root_bytes": path_bytes(args.fsv_root)},
+        "post_write_readback": {"readback": file_state(readback_path), "records": file_state(records_path), "manifest": file_state(manifest_path), "readback_root_bytes": path_bytes(args.readback_root)},
         "happy_path": happy_path,
         "edge_cases": edge_cases,
         "summary": summary,
         "record_store": record_store,
         "edge_store": edge_store,
         "manifest_sha256": sha256_file(manifest_path),
-        "fsv_sha256": sha256_file(fsv_path),
+        "readback_sha256": sha256_file(readback_path),
         "passes": True,
     }

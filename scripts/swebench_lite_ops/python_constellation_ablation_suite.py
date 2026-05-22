@@ -45,8 +45,8 @@ FORMULA_VERSION = "slot_pair_calibrated_constellation_ablation_v1"
 DEFAULT_ARTIFACT_ROOT = DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT
 DEFAULT_TENSOR_ROOT = Path("/zfs/archive/contextgraph/corpus/constellation-tensors-v1")
 DEFAULT_CALIBRATION_ROOT = Path("/zfs/archive/contextgraph/state/calibration/per-slot-v1")
-DEFAULT_CALIBRATION_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-g-089-per-slot-calibration-ood-fsv/python_per_slot_calibration_ood_fsv.json")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-097-constellation-ablation-with-calibration-fsv")
+DEFAULT_CALIBRATION_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-g-089-per-slot-calibration-ood-readback/python_per_slot_calibration_ood_readback.json")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-097-constellation-ablation-with-calibration-readback")
 EPS = 1.0e-9
 
 
@@ -208,7 +208,7 @@ def load_tensor_context(root: Path) -> dict[str, Any]:
     }
 
 
-def load_calibration_state(root: Path, calibration_fsv: Path | None, tensor_context: dict[str, Any]) -> dict[str, Any]:
+def load_calibration_state(root: Path, calibration_readback: Path | None, tensor_context: dict[str, Any]) -> dict[str, Any]:
     require(root.exists(), "MEJEPA_CONSTELLATION_ABLATION_CALIBRATION_ROOT_MISSING", str(root))
     paths = {
         "per_slot_calibration": root / "per_slot_calibration.jsonl",
@@ -222,23 +222,23 @@ def load_calibration_state(root: Path, calibration_fsv: Path | None, tensor_cont
     per_pair = load_required_jsonl(paths["per_pair_calibration"], "MEJEPA_CONSTELLATION_ABLATION_PER_PAIR_CALIBRATION_MISSING")
     policy = read_json(paths["ood_guard_policy"])
     report = read_json(paths["per_slot_calibration_report"])
-    fsv = None
-    fsv_hash = None
-    if calibration_fsv is not None:
-        require(calibration_fsv.exists(), "MEJEPA_CONSTELLATION_ABLATION_CALIBRATION_FSV_MISSING", str(calibration_fsv))
-        fsv = read_json(calibration_fsv)
-        fsv_hash = sha256_file(calibration_fsv)
+    readback = None
+    readback_hash = None
+    if calibration_readback is not None:
+        require(calibration_readback.exists(), "MEJEPA_CONSTELLATION_ABLATION_CALIBRATION_READBACK_MISSING", str(calibration_readback))
+        readback = read_json(calibration_readback)
+        readback_hash = sha256_file(calibration_readback)
     state = {
         "root": str(root),
         "policy": policy,
         "report": report,
-        "fsv": fsv,
+        "readback": readback,
         "per_slot_rows": per_slot,
         "per_cell_rows": per_cell,
         "per_pair_rows": per_pair,
         "tensor_report": tensor_context["report"],
-        "paths": {key: str(path) for key, path in paths.items()} | ({"calibration_fsv": str(calibration_fsv)} if calibration_fsv is not None else {}),
-        "hashes": {key: sha256_file(path) for key, path in paths.items()} | ({"calibration_fsv": fsv_hash} if fsv_hash is not None else {}),
+        "paths": {key: str(path) for key, path in paths.items()} | ({"calibration_readback": str(calibration_readback)} if calibration_readback is not None else {}),
+        "hashes": {key: sha256_file(path) for key, path in paths.items()} | ({"calibration_readback": readback_hash} if readback_hash is not None else {}),
     }
     validate_calibration_state(state, datetime.now(timezone.utc))
     state["required_slots"] = tuple(str(slot) for slot in policy["required_slots"])
@@ -251,7 +251,7 @@ def validate_calibration_state(state: dict[str, Any], now: datetime) -> None:
     policy = state["policy"]
     report = state["report"]
     tensor_report = state["tensor_report"]
-    fsv = state.get("fsv")
+    readback = state.get("readback")
     require(policy.get("strict_conjunction") is True, "MEJEPA_CONSTELLATION_ABLATION_CALIBRATION_NOT_STRICT")
     require(policy.get("aggregate_score_never_overrides_slot_violation") is True, "MEJEPA_CONSTELLATION_ABLATION_CALIBRATION_ALLOWS_AGGREGATE_OVERRIDE")
     require(policy.get("reject_missing_or_stale_calibration") is True, "MEJEPA_CONSTELLATION_ABLATION_CALIBRATION_DOES_NOT_REJECT_STALE")
@@ -260,8 +260,8 @@ def validate_calibration_state(state: dict[str, Any], now: datetime) -> None:
     require(report.get("passes") is True, "MEJEPA_CONSTELLATION_ABLATION_CALIBRATION_REPORT_NOT_PASSING")
     require(report.get("flat_vector_concat_used") is False, "MEJEPA_CONSTELLATION_ABLATION_CALIBRATION_REPORT_FLAT_VECTOR_USED")
     require(report.get("slot_identity_preserved") is True, "MEJEPA_CONSTELLATION_ABLATION_CALIBRATION_SLOT_IDENTITY_NOT_PRESERVED")
-    if fsv is not None:
-        require(fsv.get("passes") is True, "MEJEPA_CONSTELLATION_ABLATION_CALIBRATION_FSV_NOT_PASSING")
+    if readback is not None:
+        require(readback.get("passes") is True, "MEJEPA_CONSTELLATION_ABLATION_CALIBRATION_READBACK_NOT_PASSING")
     tensor_policy = tensor_report.get("constellation_policy") or {}
     require(tensor_report.get("passes") is True, "MEJEPA_CONSTELLATION_ABLATION_TENSOR_REPORT_NOT_PASSING")
     require(tensor_policy.get("flat_vector_concat_used") is False, "MEJEPA_CONSTELLATION_ABLATION_TENSOR_REPORT_FLAT_VECTOR_USED")
@@ -899,23 +899,23 @@ def edge_case_one_bad_slot_rejects_even_when_aggregate_passes(state: dict[str, A
 
 def command_python_constellation_ablation_suite(args: argparse.Namespace) -> int:
     started = utc_now()
-    output_root = args.output_root or (args.fsv_root / "artifacts")
+    output_root = args.output_root or (args.readback_root / "artifacts")
     before = {
         "artifact_root": tree_state(args.artifact_root),
         "tensor_root": tree_state(args.tensor_root),
         "calibration_root": tree_state(args.calibration_root),
-        "calibration_fsv": tree_state(args.calibration_fsv) if args.calibration_fsv is not None else None,
+        "calibration_readback": tree_state(args.calibration_readback) if args.calibration_readback is not None else None,
         "output_root": tree_state(output_root),
-        "fsv_root": tree_state(args.fsv_root),
+        "readback_root": tree_state(args.readback_root),
     }
     if args.clean_output and output_root.exists():
         shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
 
     rows, slot_vectors, pair_observations, certificate, artifact_hashes = load_artifacts(args.artifact_root)
     tensor_context = load_tensor_context(args.tensor_root)
-    calibration_state = load_calibration_state(args.calibration_root, args.calibration_fsv, tensor_context)
+    calibration_state = load_calibration_state(args.calibration_root, args.calibration_readback, tensor_context)
     calibration_state["tensor_slot_support"] = tensor_context["slot_support"]
     attach_flat_baseline_features(rows, slot_vectors)
     attach_calibrated_features(rows, pair_observations, calibration_state, tensor_context)
@@ -953,11 +953,11 @@ def command_python_constellation_ablation_suite(args: argparse.Namespace) -> int
     report_path = output_root / "constellation_ablation_with_calibration_report.json"
     write_jsonl(metrics_path, baselines + ablations)
     dump_json(report_path, report)
-    fsv = build_fsv(args, before, output_root, report_path, metrics_path, report, len(baselines), len(ablations))
-    fsv_path = args.fsv_root / f"{ARTIFACT_KIND}_fsv.json"
-    dump_json(fsv_path, fsv)
-    final = read_json(fsv_path)
-    require(final.get("passes") is True, "MEJEPA_CONSTELLATION_ABLATION_FSV_FAILED", str(fsv_path))
+    readback = build_readback(args, before, output_root, report_path, metrics_path, report, len(baselines), len(ablations))
+    readback_path = args.readback_root / f"{ARTIFACT_KIND}_readback.json"
+    dump_json(readback_path, readback)
+    final = read_json(readback_path)
+    require(final.get("passes") is True, "MEJEPA_CONSTELLATION_ABLATION_READBACK_FAILED", str(readback_path))
     print(json.dumps(final, sort_keys=True, indent=2))
     return 0
 
@@ -990,7 +990,7 @@ def build_report(
             "artifact_root": str(args.artifact_root),
             "tensor_root": str(args.tensor_root),
             "calibration_root": str(args.calibration_root),
-            "calibration_fsv": str(args.calibration_fsv) if args.calibration_fsv is not None else None,
+            "calibration_readback": str(args.calibration_readback) if args.calibration_readback is not None else None,
             "upstream_certificate_sha256": artifact_hashes["training_certificate"],
             "tensor_paths": tensor_context["paths"],
             "calibration_paths": calibration_state["paths"],
@@ -1025,7 +1025,7 @@ def measurement_gaps_from_report_rows(artifact_root: Path) -> dict[str, Any]:
     return measurement_gaps(rows)
 
 
-def build_fsv(args: argparse.Namespace, before: dict[str, Any], output_root: Path, report_path: Path, metrics_path: Path, report: dict[str, Any], baseline_count: int, ablation_count: int) -> dict[str, Any]:
+def build_readback(args: argparse.Namespace, before: dict[str, Any], output_root: Path, report_path: Path, metrics_path: Path, report: dict[str, Any], baseline_count: int, ablation_count: int) -> dict[str, Any]:
     readback_report = read_json(report_path)
     metrics_count = sum(1 for _ in iter_jsonl(metrics_path))
     hashes = {"report": sha256_file(report_path), "metrics": sha256_file(metrics_path)}
@@ -1044,8 +1044,8 @@ def build_fsv(args: argparse.Namespace, before: dict[str, Any], output_root: Pat
         "stable_hashes": hashes,
     }
     external_edges = {"edge_cases": edge_cases, "all_edge_cases_pass": all(case.get("passes") is True for case in edge_cases)}
-    dump_json(args.fsv_root / "independent_readback.json", independent)
-    dump_json(args.fsv_root / "external_edge_case_readback.json", external_edges)
+    dump_json(args.readback_root / "independent_readback.json", independent)
+    dump_json(args.readback_root / "external_edge_case_readback.json", external_edges)
     anti_case = next((case for case in edge_cases if case.get("name") == "one_bad_slot_rejects_even_when_aggregate_passes"), {})
     passes = (
         readback_report.get("passes") is True
@@ -1063,7 +1063,7 @@ def build_fsv(args: argparse.Namespace, before: dict[str, Any], output_root: Pat
     return {
         "schema_version": SCHEMA_VERSION,
         "task_id": args.task_id,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "formula_version": FORMULA_VERSION,
         "created_at_utc": utc_now(),
         "passes": passes,
@@ -1071,15 +1071,15 @@ def build_fsv(args: argparse.Namespace, before: dict[str, Any], output_root: Pat
             "input_artifact_root": str(args.artifact_root),
             "tensor_root": str(args.tensor_root),
             "calibration_root": str(args.calibration_root),
-            "calibration_fsv": str(args.calibration_fsv) if args.calibration_fsv is not None else None,
+            "calibration_readback": str(args.calibration_readback) if args.calibration_readback is not None else None,
             "output_root": str(output_root),
             "report": str(report_path),
             "metrics": str(metrics_path),
-            "independent_readback": str(args.fsv_root / "independent_readback.json"),
-            "external_edge_case_readback": str(args.fsv_root / "external_edge_case_readback.json"),
+            "independent_readback": str(args.readback_root / "independent_readback.json"),
+            "external_edge_case_readback": str(args.readback_root / "external_edge_case_readback.json"),
         },
         "before_state": before,
-        "after_state": {"output_root": tree_state(output_root), "fsv_root": tree_state(args.fsv_root)},
+        "after_state": {"output_root": tree_state(output_root), "readback_root": tree_state(args.readback_root)},
         "readback": {
             "metrics_rows": metrics_count,
             "expected_metrics_rows": baseline_count + ablation_count,
@@ -1099,9 +1099,9 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--artifact-root", type=Path, default=DEFAULT_ARTIFACT_ROOT)
     parser.add_argument("--tensor-root", type=Path, default=DEFAULT_TENSOR_ROOT)
     parser.add_argument("--calibration-root", type=Path, default=DEFAULT_CALIBRATION_ROOT)
-    parser.add_argument("--calibration-fsv", type=Path, default=DEFAULT_CALIBRATION_FSV)
+    parser.add_argument("--calibration-readback", type=Path, default=DEFAULT_CALIBRATION_READBACK)
     parser.add_argument("--output-root", type=Path, default=None)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--task-id", default=TASK_ID)
     parser.add_argument("--historical-baseline-correlation", type=float, default=HISTORICAL_BASELINE_CORRELATION)
     parser.add_argument("--ece-bins", type=int, default=8)

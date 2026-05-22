@@ -26,11 +26,11 @@ from .python_per_cell_smooth_ece import (
 
 
 DEFAULT_SHIP_GATE_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/"
-    "run-20260521T132308Z/ship-gate-fsv.json"
+    "/zfs/archive/contextgraph/readback/swebench-300x8-ship-gate-readback/"
+    "run-20260521T132308Z/ship-gate-readback.json"
 )
 DEFAULT_OUTPUT_ROOT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-122-calibration-active-gate-fsv"
+    "/zfs/archive/contextgraph/readback/task-py-g-122-calibration-active-gate-readback"
 )
 ECE_BINS = 10
 COVERAGE_GRID = (1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.4, 0.3, 0.2)
@@ -218,7 +218,7 @@ def read_json_object(path: Path) -> dict[str, Any]:
         raise SwebenchOpsError(
             "PY_G_122_REPORT_MISSING",
             f"required ship-gate report missing: {path}",
-            "Run or point at the current aiwonder ship-gate FSV report.",
+            "Run or point at the current aiwonder ship-gate READBACK report.",
             {"path": str(path)},
         )
     try:
@@ -227,7 +227,7 @@ def read_json_object(path: Path) -> dict[str, Any]:
         raise SwebenchOpsError(
             "PY_G_122_REPORT_BAD_JSON",
             f"ship-gate report is not valid JSON: {path}",
-            "Regenerate the FSV report before consuming it.",
+            "Regenerate the READBACK report before consuming it.",
             {"path": str(path), "error": str(exc)},
         ) from exc
     return require_object(value, str(path))

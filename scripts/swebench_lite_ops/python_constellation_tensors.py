@@ -39,7 +39,7 @@ TASK_ID = "TASK-PY-G-088"
 ARTIFACT_KIND = "python_constellation_cross_embedder_tensors"
 FORMULA_VERSION = "slot_preserving_cross_embedder_tensor_v1"
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/constellation-tensors-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-088-cross-embedder-correlation-tensors-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-088-cross-embedder-correlation-tensors-readback")
 EXPECTED_ACTIVE_EMBEDDERS = ("e1", "e2", "e3", "e4", "e6", "e7", "e8", "e9", "e10", "e12", "e13", "e14")
 
 
@@ -192,11 +192,11 @@ def command_python_constellation_tensors(args: argparse.Namespace) -> int:
     preflight_sources(args)
     freshness = validate_freshness(args, created_at_utc)
 
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
 
     loaded = load_source_records(args, required_embedders)
     records = loaded["records"]
@@ -219,15 +219,15 @@ def command_python_constellation_tensors(args: argparse.Namespace) -> int:
     context = {**loaded, "created_at_utc": created_at_utc, "freshness": freshness, "group_summary": group_summary, "slot_summary": slot_summary, "pairwise_summary": pairwise_summary}
     report = build_report(args, args.output_root, context, pairwise_rows, edge_cases)
     dump_json(report_path, report)
-    fsv = write_manifest_and_fsv(args, started, before, slot_rows, pairwise_rows, slot_path, pairwise_path, report_path, manifest_path, edge_cases)
-    dump_json(args.fsv_root / f"{ARTIFACT_KIND}_fsv.json", fsv)
-    final_readback = read_json(args.fsv_root / f"{ARTIFACT_KIND}_fsv.json")
-    require(final_readback.get("passes") is True, "MEJEPA_CONSTELLATION_TENSORS_FSV_FAILED", str(args.fsv_root))
+    readback = write_manifest_and_readback(args, started, before, slot_rows, pairwise_rows, slot_path, pairwise_path, report_path, manifest_path, edge_cases)
+    dump_json(args.readback_root / f"{ARTIFACT_KIND}_readback.json", readback)
+    final_readback = read_json(args.readback_root / f"{ARTIFACT_KIND}_readback.json")
+    require(final_readback.get("passes") is True, "MEJEPA_CONSTELLATION_TENSORS_READBACK_FAILED", str(args.readback_root))
     print(json.dumps(final_readback, sort_keys=True, indent=2))
     return 0
 
 
-def write_manifest_and_fsv(
+def write_manifest_and_readback(
     args: argparse.Namespace,
     started: str,
     before: dict[str, Any],
@@ -262,7 +262,7 @@ def write_manifest_and_fsv(
     return {
         "schema_version": SCHEMA_VERSION,
         "task_id": args.task_id,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "formula_version": FORMULA_VERSION,
         "started_at_utc": started,
         "created_at_utc": utc_now(),
@@ -276,10 +276,10 @@ def write_manifest_and_fsv(
             "pairwise_correlation_tensors": str(pairwise_path),
             "constellation_tensor_report": str(report_path),
             "constellation_tensor_manifest": str(manifest_path),
-            "fsv": str(args.fsv_root / f"{ARTIFACT_KIND}_fsv.json"),
+            "readback": str(args.readback_root / f"{ARTIFACT_KIND}_readback.json"),
         },
         "before_state": before,
-        "after_state": {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)},
+        "after_state": {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)},
         "readback": {
             "slot_distribution_rows": readback_slots,
             "pairwise_tensor_rows": readback_pairwise,
@@ -300,7 +300,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--chunks-jsonl", type=Path, default=DEFAULT_CHUNKS_JSONL)
     parser.add_argument("--corpus-index-json", type=Path, default=DEFAULT_CORPUS_INDEX_JSON)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--task-id", default=TASK_ID)
     parser.add_argument("--corpus-id", default=None)
     parser.add_argument("--run-id", default=None)

@@ -13,8 +13,8 @@ from .core import SwebenchOpsError, utc_now
 
 
 DEFAULT_PANEL_B_MODELS_ROOT = Path("/zfs/hot/contextgraph/models")
-DEFAULT_PANEL_B_FSV_ROOT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-111d-panel-b-artifact-materialization-fsv"
+DEFAULT_PANEL_B_READBACK_ROOT = Path(
+    "/zfs/archive/contextgraph/readback/task-py-g-111d-panel-b-artifact-materialization-readback"
 )
 ALLOWED_MODEL_ROOTS = (
     Path("/zfs/hot/contextgraph"),
@@ -75,7 +75,7 @@ PANEL_B_SOURCES: tuple[PanelBSource, ...] = (
 
 def add_arguments(parser: Any) -> None:
     parser.add_argument("--models-root", type=Path, default=DEFAULT_PANEL_B_MODELS_ROOT)
-    parser.add_argument("--evidence-root", type=Path, default=DEFAULT_PANEL_B_FSV_ROOT)
+    parser.add_argument("--evidence-root", type=Path, default=DEFAULT_PANEL_B_READBACK_ROOT)
     parser.add_argument(
         "--download",
         action="store_true",
@@ -204,7 +204,7 @@ def command_panel_b_artifacts(args: Any) -> dict[str, Any]:
         "remoteFailures": remote_failures,
         "sources": source_reports,
         "contractOwner": "crates/context-graph-mejepa-instruments/src/panel_b.rs::default_panel_b_artifact_specs",
-        "nextVerification": "cargo run -p context-graph-mejepa-instruments --example task_py_g_111b_panel_b_artifact_preflight_fsv",
+        "nextVerification": "cargo run -p context-graph-mejepa-instruments --example task_py_g_111b_panel_b_artifact_preflight_readback",
         "activePathPolicy": {"mntDActiveReadsOrWrites": False},
     }
     if args.download and (not all_present or remote_failures):

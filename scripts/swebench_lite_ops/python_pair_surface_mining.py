@@ -25,14 +25,14 @@ DEFAULT_LABEL_MANIFEST = Path(
     "auto_label_discovery_manifest.json"
 )
 DEFAULT_ROW_DIAGNOSTICS_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-392-temporal-trajectory-features-fsv/"
-    "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_fsv.json"
+    "/zfs/archive/contextgraph/readback/task-py-g-392-temporal-trajectory-features-readback/"
+    "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_readback.json"
 )
 DEFAULT_PAIR_AUDIT_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-124-cross-embedder-pair-features-fsv/"
+    "/zfs/archive/contextgraph/readback/task-py-g-124-cross-embedder-pair-features-readback/"
     "run-20260522T010513Z/pair_feature_audit_report.json"
 )
-DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-124b-105-pair-mining-fsv")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-124b-105-pair-mining-readback")
 
 SCALAR_FEATURES = ("norm_l2", "std", "abs_mean", "entropy_proxy", "zero_fraction")
 EXPECTED_DOCUMENTED_SLOTS = tuple(f"e{idx}" for idx in range(1, 16))

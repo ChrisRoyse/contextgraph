@@ -15,23 +15,23 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-064"
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-064-post249-full-run-relaunch-gate-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-064-post249-full-run-relaunch-gate-readback")
 DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
 DEFAULT_CACHE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515")
-DEFAULT_RUN_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-016-full-c8117f15-20260515-fsv")
+DEFAULT_RUN_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-016-full-c8117f15-20260515-readback")
 DEFAULT_HOT_ROOT = Path("/home/cabdru/.cache/contextgraph/task-py-data-016-full-c8117f15-20260515")
 DEFAULT_STALE_CACHE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-20260514")
-DEFAULT_STALE_RUN_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-016-full-20260514-fsv")
+DEFAULT_STALE_RUN_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-016-full-20260514-readback")
 DEFAULT_STALE_HOT_ROOT = Path("/home/cabdru/.cache/contextgraph/task-py-data-016-full-20260514")
-DEFAULT_SMOKE_MANIFEST_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json")
-DEFAULT_SMOKE_FORWARD_FSV = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"
+DEFAULT_SMOKE_MANIFEST_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-060-post249-smoke-manifest-readback/smoke_manifest_readback.json")
+DEFAULT_SMOKE_FORWARD_READBACK = Path(
+    "/zfs/archive/contextgraph/readback/task-py-data-061-post249-smoke-forward-readback/python_forward_shard_scheduler_readback.json"
 )
-DEFAULT_SMOKE_INTELLIGENCE_FSV = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"
+DEFAULT_SMOKE_INTELLIGENCE_READBACK = Path(
+    "/zfs/archive/contextgraph/readback/task-py-data-062-post249-smoke-intelligence-readback/smoke_intelligence_matrices_readback.json"
 )
-DEFAULT_SMOKE_STORAGE_DESIGN_FSV = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-data-063-post249-smoke-storage-design-fsv/smoke_storage_design_fsv.json"
+DEFAULT_SMOKE_STORAGE_DESIGN_READBACK = Path(
+    "/zfs/archive/contextgraph/readback/task-py-data-063-post249-smoke-storage-design-readback/smoke_storage_design_readback.json"
 )
 DEFAULT_STORAGE_DESIGN_GO_NO_GO = Path(
     "/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/go_no_go.json"
@@ -40,8 +40,8 @@ DEFAULT_STORAGE_POLICY = Path("/zfs/archive/contextgraph/corpus/python-embedder-
 DEFAULT_STORAGE_ESTIMATES = Path(
     "/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/design/full_scale_storage_estimates.json"
 )
-DEFAULT_FULL_AST_CORPUS_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json")
-DEFAULT_CARGO_RUNNER = "target/release/examples/python_forward_cache_fsv"
+DEFAULT_FULL_AST_CORPUS_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-058-full-ast-corpus-readback/full_ast_corpus_readback.json")
+DEFAULT_CARGO_RUNNER = "target/release/examples/python_forward_cache_readback"
 
 
 class FullRunRelaunchGateError(RuntimeError):
@@ -248,8 +248,8 @@ def relaunch_command(args: argparse.Namespace, *, mode: str | None = None) -> li
         str(args.chunks_jsonl),
         "--cache-root",
         str(args.cache_root),
-        "--fsv-root",
-        str(args.run_fsv_root),
+        "--readback-root",
+        str(args.run_readback_root),
         "--hot-root",
         str(args.hot_root),
         "--shard-size",
@@ -280,8 +280,8 @@ def relaunch_command(args: argparse.Namespace, *, mode: str | None = None) -> li
         "--cargo-runner",
         args.cargo_runner,
         "--require-smoke-gate",
-        "--full-ast-corpus-fsv",
-        str(args.full_ast_corpus_fsv),
+        "--full-ast-corpus-readback",
+        str(args.full_ast_corpus_readback),
     ]
     if mode:
         command.extend(["--mode", mode])
@@ -291,7 +291,7 @@ def relaunch_command(args: argparse.Namespace, *, mode: str | None = None) -> li
 def validate_relaunch_policy(args: argparse.Namespace, command: list[str]) -> dict[str, Any]:
     hot_root = args.hot_root.resolve(strict=False)
     cache_root = args.cache_root.resolve(strict=False)
-    fsv_root = args.run_fsv_root.resolve(strict=False)
+    readback_root = args.run_readback_root.resolve(strict=False)
     command_set = set(command)
     checks = [
         {
@@ -310,9 +310,9 @@ def validate_relaunch_policy(args: argparse.Namespace, command: list[str]) -> di
             "actual": str(cache_root),
         },
         {
-            "name": "fsv_on_aiwonder_archive",
-            "passes": path_is_under(fsv_root, Path("/zfs/archive/contextgraph")),
-            "actual": str(fsv_root),
+            "name": "readback_on_aiwonder_archive",
+            "passes": path_is_under(readback_root, Path("/zfs/archive/contextgraph")),
+            "actual": str(readback_root),
         },
         {"name": "packed_store_required", "passes": "--require-packed-store" in command_set, "actual": command},
         {"name": "hot_stage_enabled", "passes": "--stage-packed-shards-on-hot" in command_set, "actual": command},
@@ -320,7 +320,7 @@ def validate_relaunch_policy(args: argparse.Namespace, command: list[str]) -> di
         {"name": "partial_retry_enabled", "passes": "--retry-failed-partial-shards" in command_set, "actual": command},
         {"name": "embedder_process_isolation_enabled", "passes": "--isolate-embedder-processes" in command_set, "actual": command},
         {"name": "smoke_gate_required", "passes": "--require-smoke-gate" in command_set, "actual": command},
-        {"name": "full_ast_corpus_gate_required", "passes": "--full-ast-corpus-fsv" in command_set, "actual": command},
+        {"name": "full_ast_corpus_gate_required", "passes": "--full-ast-corpus-readback" in command_set, "actual": command},
         {"name": "gpu_worker_policy", "passes": args.gpu_workers == 1, "actual": args.gpu_workers},
         {"name": "io_worker_policy", "passes": 1 <= args.io_workers <= 2, "actual": args.io_workers},
         {"name": "cpu_worker_policy", "passes": args.cpu_workers == 30, "actual": args.cpu_workers},
@@ -382,30 +382,30 @@ def expected_shard_id(shard_number: int, shard_size: int) -> str:
 
 def validate_run_state(args: argparse.Namespace, *, full_chunk_count: int) -> dict[str, Any]:
     cache_checkpoint = args.cache_root / "python_forward_cache_checkpoint.json"
-    fsv_checkpoint = args.run_fsv_root / "python_forward_cache_checkpoint.json"
+    readback_checkpoint = args.run_readback_root / "python_forward_cache_checkpoint.json"
     cache_state = file_state(cache_checkpoint)
-    fsv_state = file_state(fsv_checkpoint)
+    readback_state = file_state(readback_checkpoint)
     cache_tree = tree_state(args.cache_root, hash_files=True)
-    fsv_tree = tree_state(args.run_fsv_root, hash_files=True)
+    readback_tree = tree_state(args.run_readback_root, hash_files=True)
     expected_total_shards = expected_shard_count(full_chunk_count, args.shard_size)
     expected_planned_chunk_capacity = expected_total_shards * args.shard_size
 
-    if not cache_checkpoint.exists() and not fsv_checkpoint.exists():
+    if not cache_checkpoint.exists() and not readback_checkpoint.exists():
         actual_next_shard = expected_shard_id(0, args.shard_size)
         checks = [
             {"name": "fresh_cache_root_has_no_checkpoint", "passes": True, "actual": cache_state},
-            {"name": "fresh_fsv_root_has_no_checkpoint", "passes": True, "actual": fsv_state},
+            {"name": "fresh_readback_root_has_no_checkpoint", "passes": True, "actual": readback_state},
             {"name": "cache_root_not_stale_legacy_root", "passes": args.cache_root != args.stale_cache_root, "actual": str(args.cache_root)},
-            {"name": "fsv_root_not_stale_legacy_root", "passes": args.run_fsv_root != args.stale_run_fsv_root, "actual": str(args.run_fsv_root)},
+            {"name": "readback_root_not_stale_legacy_root", "passes": args.run_readback_root != args.stale_run_readback_root, "actual": str(args.run_readback_root)},
             {
                 "name": "cache_root_empty_or_absent_for_fresh_start",
                 "passes": cache_tree.get("file_count") == 0,
                 "actual": cache_tree,
             },
             {
-                "name": "fsv_root_empty_or_absent_for_fresh_start",
-                "passes": fsv_tree.get("file_count") == 0,
-                "actual": fsv_tree,
+                "name": "readback_root_empty_or_absent_for_fresh_start",
+                "passes": readback_tree.get("file_count") == 0,
+                "actual": readback_tree,
             },
             {
                 "name": "fresh_next_shard_expected",
@@ -436,9 +436,9 @@ def validate_run_state(args: argparse.Namespace, *, full_chunk_count: int) -> di
         return {
             "mode": "fresh_start",
             "cache_checkpoint": None,
-            "fsv_checkpoint": None,
+            "readback_checkpoint": None,
             "cache_tree": cache_tree,
-            "fsv_tree": fsv_tree,
+            "readback_tree": readback_tree,
             "expected_next_shard": actual_next_shard,
             "expected_total_shards": expected_total_shards,
             "expected_planned_chunk_capacity": expected_planned_chunk_capacity,
@@ -447,16 +447,16 @@ def validate_run_state(args: argparse.Namespace, *, full_chunk_count: int) -> di
         }
 
     cache_payload = read_json(cache_checkpoint)
-    fsv_payload = read_json(fsv_checkpoint)
+    readback_payload = read_json(readback_checkpoint)
     progress = cache_payload.get("progress") or {}
     completed_shards = int(progress.get("completed_shards") or 0)
     actual_next_shard = expected_shard_id(completed_shards, args.shard_size)
     checks = [
         {"name": "cache_checkpoint_present", "passes": cache_checkpoint.is_file(), "actual": cache_state},
-        {"name": "fsv_checkpoint_present", "passes": fsv_checkpoint.is_file(), "actual": fsv_state},
-        {"name": "checkpoint_hash_equal", "passes": cache_state.get("sha256") == fsv_state.get("sha256"), "actual": {"cache": cache_state, "fsv": fsv_state}},
+        {"name": "readback_checkpoint_present", "passes": readback_checkpoint.is_file(), "actual": readback_state},
+        {"name": "checkpoint_hash_equal", "passes": cache_state.get("sha256") == readback_state.get("sha256"), "actual": {"cache": cache_state, "readback": readback_state}},
         {"name": "cache_root_not_stale_legacy_root", "passes": args.cache_root != args.stale_cache_root, "actual": str(args.cache_root)},
-        {"name": "fsv_root_not_stale_legacy_root", "passes": args.run_fsv_root != args.stale_run_fsv_root, "actual": str(args.run_fsv_root)},
+        {"name": "readback_root_not_stale_legacy_root", "passes": args.run_readback_root != args.stale_run_readback_root, "actual": str(args.run_readback_root)},
         {"name": "checkpoint_task", "passes": cache_payload.get("task_id") == "TASK-PY-DATA-016", "actual": cache_payload.get("task_id")},
         {"name": "checkpoint_passes", "passes": cache_payload.get("passes") is True, "actual": cache_payload.get("passes")},
         {
@@ -494,14 +494,14 @@ def validate_run_state(args: argparse.Namespace, *, full_chunk_count: int) -> di
         },
         {
             "name": "checkpoint_mirror_equal",
-            "passes": cache_payload == fsv_payload,
-            "actual": {"cache_path": str(cache_checkpoint), "fsv_path": str(fsv_checkpoint)},
+            "passes": cache_payload == readback_payload,
+            "actual": {"cache_path": str(cache_checkpoint), "readback_path": str(readback_checkpoint)},
         },
     ]
     return {
         "mode": "resume_existing",
         "cache_checkpoint": cache_payload,
-        "fsv_checkpoint": fsv_payload,
+        "readback_checkpoint": readback_payload,
         "expected_next_shard": actual_next_shard,
         "expected_total_shards": expected_total_shards,
         "expected_planned_chunk_capacity": expected_planned_chunk_capacity,
@@ -513,17 +513,17 @@ def validate_run_state(args: argparse.Namespace, *, full_chunk_count: int) -> di
 def invalidate_stale_roots(args: argparse.Namespace, started_at: str) -> dict[str, Any]:
     stale = {
         "cache_root": tree_state(args.stale_cache_root, hash_files=True),
-        "run_fsv_root": tree_state(args.stale_run_fsv_root, hash_files=True),
+        "run_readback_root": tree_state(args.stale_run_readback_root, hash_files=True),
         "hot_root": tree_state(args.stale_hot_root, hash_files=True),
     }
     new_paths = {
         "cache_root": str(args.cache_root),
-        "run_fsv_root": str(args.run_fsv_root),
+        "run_readback_root": str(args.run_readback_root),
         "hot_root": str(args.hot_root),
     }
     old_paths = {
         "cache_root": str(args.stale_cache_root),
-        "run_fsv_root": str(args.stale_run_fsv_root),
+        "run_readback_root": str(args.stale_run_readback_root),
         "hot_root": str(args.stale_hot_root),
     }
     checks = [
@@ -533,9 +533,9 @@ def invalidate_stale_roots(args: argparse.Namespace, started_at: str) -> dict[st
             "actual": {"new": str(args.cache_root), "stale": str(args.stale_cache_root)},
         },
         {
-            "name": "new_fsv_root_differs_from_stale_root",
-            "passes": args.run_fsv_root != args.stale_run_fsv_root,
-            "actual": {"new": str(args.run_fsv_root), "stale": str(args.stale_run_fsv_root)},
+            "name": "new_readback_root_differs_from_stale_root",
+            "passes": args.run_readback_root != args.stale_run_readback_root,
+            "actual": {"new": str(args.run_readback_root), "stale": str(args.stale_run_readback_root)},
         },
         {
             "name": "new_hot_root_differs_from_stale_root",
@@ -561,7 +561,7 @@ def invalidate_stale_roots(args: argparse.Namespace, started_at: str) -> dict[st
         "checks": checks,
         "passes": all(check["passes"] is True for check in checks),
     }
-    path = args.fsv_root / "stale_partial_roots_invalidation_manifest.json"
+    path = args.readback_root / "stale_partial_roots_invalidation_manifest.json"
     dump_json(path, manifest)
     readback = read_json(path)
     require(
@@ -591,7 +591,7 @@ def cleanup_hot_stage(args: argparse.Namespace, started_at: str) -> dict[str, An
         "before_state": before,
         "action": "manifest_written_before_cleanup",
     }
-    pre_manifest_path = args.fsv_root / "hot_stage_pre_cleanup_manifest.json"
+    pre_manifest_path = args.readback_root / "hot_stage_pre_cleanup_manifest.json"
     dump_json(pre_manifest_path, pre_manifest)
     pre_manifest_readback = read_json(pre_manifest_path)
     require(
@@ -629,7 +629,7 @@ def cleanup_hot_stage(args: argparse.Namespace, started_at: str) -> dict[str, An
         "after_state": after,
         "passes": after.get("exists") is True and after.get("file_count") == 0 and after.get("children") == [],
     }
-    cleanup_path = args.fsv_root / "hot_stage_cleanup_manifest.json"
+    cleanup_path = args.readback_root / "hot_stage_cleanup_manifest.json"
     dump_json(cleanup_path, cleanup)
     cleanup_readback = read_json(cleanup_path)
     require(
@@ -649,7 +649,7 @@ def edge_case_audit(args: argparse.Namespace, cleanup_result: dict[str, Any]) ->
         "synthetic_missing_required_artifact",
         0,
         "TASK-PY-DATA-000",
-        args.fsv_root / "edge_inputs" / "missing_required_artifact.json",
+        args.readback_root / "edge_inputs" / "missing_required_artifact.json",
     )
     windows_mount_rejected = not path_is_under(Path("/mnt/c/contextgraph/hot").resolve(strict=False), Path("/home/cabdru/.cache/contextgraph"))
     hot_stage_after = tree_state(args.hot_root / "packed-shard-stage", hash_files=True)
@@ -688,18 +688,18 @@ def edge_case_audit(args: argparse.Namespace, cleanup_result: dict[str, Any]) ->
     ]
 
 
-def build_fsv(args: argparse.Namespace) -> dict[str, Any]:
+def build_readback(args: argparse.Namespace) -> dict[str, Any]:
     started = utc_now()
-    if args.clean_output and args.fsv_root.exists():
-        shutil.rmtree(args.fsv_root)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    if args.clean_output and args.readback_root.exists():
+        shutil.rmtree(args.readback_root)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
 
     child_artifacts = [
-        validate_required_artifact("smoke_manifest", 251, "TASK-PY-DATA-060", args.smoke_manifest_fsv, expected_chunks_jsonl=args.chunks_jsonl),
-        validate_required_artifact("smoke_forward_cache", 252, "TASK-PY-DATA-061", args.smoke_forward_fsv),
-        validate_required_artifact("smoke_intelligence_matrices", 253, "TASK-PY-DATA-062", args.smoke_intelligence_fsv),
-        validate_required_artifact("smoke_storage_design", 254, "TASK-PY-DATA-063", args.smoke_storage_design_fsv, expected_chunks_jsonl=args.chunks_jsonl),
-        validate_required_artifact("full_ast_corpus", 249, "TASK-PY-DATA-058", args.full_ast_corpus_fsv, expected_chunks_jsonl=args.chunks_jsonl),
+        validate_required_artifact("smoke_manifest", 251, "TASK-PY-DATA-060", args.smoke_manifest_readback, expected_chunks_jsonl=args.chunks_jsonl),
+        validate_required_artifact("smoke_forward_cache", 252, "TASK-PY-DATA-061", args.smoke_forward_readback),
+        validate_required_artifact("smoke_intelligence_matrices", 253, "TASK-PY-DATA-062", args.smoke_intelligence_readback),
+        validate_required_artifact("smoke_storage_design", 254, "TASK-PY-DATA-063", args.smoke_storage_design_readback, expected_chunks_jsonl=args.chunks_jsonl),
+        validate_required_artifact("full_ast_corpus", 249, "TASK-PY-DATA-058", args.full_ast_corpus_readback, expected_chunks_jsonl=args.chunks_jsonl),
     ]
     storage_design = validate_storage_design(args)
     storage_estimates = storage_design.get("storage_estimates") or {}
@@ -721,28 +721,28 @@ def build_fsv(args: argparse.Namespace) -> dict[str, Any]:
         and relaunch_policy.get("passes") is True
         and all(item.get("passes") is True for item in edge_cases)
     )
-    fsv_path = args.fsv_root / "full_run_relaunch_gate_fsv.json"
-    fsv = {
+    readback_path = args.readback_root / "full_run_relaunch_gate_readback.json"
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": "full_run_relaunch_gate_fsv",
+        "artifact_kind": "full_run_relaunch_gate_readback",
         "started_at_utc": started,
         "created_at_utc": utc_now(),
         "passes": passes,
         "ready_for_full_run_preflight": passes,
         "relaunch_started": False,
         "source_of_truth": {
-            "fsv": str(fsv_path),
-            "fsv_root": str(args.fsv_root),
+            "readback": str(readback_path),
+            "readback_root": str(args.readback_root),
             "hot_root": str(args.hot_root),
             "hot_stage_root": str(args.hot_root / "packed-shard-stage"),
             "cache_root": str(args.cache_root),
-            "run_fsv_root": str(args.run_fsv_root),
+            "run_readback_root": str(args.run_readback_root),
             "chunks_jsonl": str(args.chunks_jsonl),
-            "full_ast_corpus_fsv": str(args.full_ast_corpus_fsv),
-            "stale_partial_roots_invalidation_manifest": str(args.fsv_root / "stale_partial_roots_invalidation_manifest.json"),
-            "hot_stage_pre_cleanup_manifest": str(args.fsv_root / "hot_stage_pre_cleanup_manifest.json"),
-            "hot_stage_cleanup_manifest": str(args.fsv_root / "hot_stage_cleanup_manifest.json"),
+            "full_ast_corpus_readback": str(args.full_ast_corpus_readback),
+            "stale_partial_roots_invalidation_manifest": str(args.readback_root / "stale_partial_roots_invalidation_manifest.json"),
+            "hot_stage_pre_cleanup_manifest": str(args.readback_root / "hot_stage_pre_cleanup_manifest.json"),
+            "hot_stage_cleanup_manifest": str(args.readback_root / "hot_stage_cleanup_manifest.json"),
         },
         "disk_snapshot": {
             "wsl_ext4_root": disk_snapshot(Path("/")),
@@ -766,7 +766,7 @@ def build_fsv(args: argparse.Namespace) -> dict[str, Any]:
         },
         "stale_partial_roots_invalidation": stale_invalidation,
         "hot_stage_cleanup": cleanup,
-        "companion_artifacts_before_fsv_write": artifact_hashes(args.fsv_root),
+        "companion_artifacts_before_readback_write": artifact_hashes(args.readback_root),
         "relaunch_policy": relaunch_policy,
         "commands": {
             "preflight_resume": preflight_command,
@@ -774,40 +774,40 @@ def build_fsv(args: argparse.Namespace) -> dict[str, Any]:
         },
         "edge_case_results": edge_cases,
     }
-    dump_json(fsv_path, fsv)
-    readback = read_json(fsv_path)
-    require(readback.get("passes") is True, "FULL_RUN_RELAUNCH_FSV_FAILED", str(fsv_path))
+    dump_json(readback_path, readback)
+    readback = read_json(readback_path)
+    require(readback.get("passes") is True, "FULL_RUN_RELAUNCH_READBACK_FAILED", str(readback_path))
     return {
         **readback,
-        "artifact_hashes": artifact_hashes(args.fsv_root),
-        "fsv_sha256": sha256_file(fsv_path),
+        "artifact_hashes": artifact_hashes(args.readback_root),
+        "readback_sha256": sha256_file(readback_path),
     }
 
 
 def command_full_run_relaunch_gate(args: argparse.Namespace) -> int:
-    fsv = build_fsv(args)
-    print(json.dumps(fsv, sort_keys=True, indent=2))
+    readback = build_readback(args)
+    print(json.dumps(readback, sort_keys=True, indent=2))
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--chunks-jsonl", type=Path, default=DEFAULT_CHUNKS_JSONL)
     parser.add_argument("--cache-root", type=Path, default=DEFAULT_CACHE_ROOT)
-    parser.add_argument("--run-fsv-root", type=Path, default=DEFAULT_RUN_FSV_ROOT)
+    parser.add_argument("--run-readback-root", type=Path, default=DEFAULT_RUN_READBACK_ROOT)
     parser.add_argument("--hot-root", type=Path, default=DEFAULT_HOT_ROOT)
     parser.add_argument("--stale-cache-root", type=Path, default=DEFAULT_STALE_CACHE_ROOT)
-    parser.add_argument("--stale-run-fsv-root", type=Path, default=DEFAULT_STALE_RUN_FSV_ROOT)
+    parser.add_argument("--stale-run-readback-root", type=Path, default=DEFAULT_STALE_RUN_READBACK_ROOT)
     parser.add_argument("--stale-hot-root", type=Path, default=DEFAULT_STALE_HOT_ROOT)
-    parser.add_argument("--smoke-manifest-fsv", type=Path, default=DEFAULT_SMOKE_MANIFEST_FSV)
-    parser.add_argument("--smoke-forward-fsv", type=Path, default=DEFAULT_SMOKE_FORWARD_FSV)
-    parser.add_argument("--smoke-intelligence-fsv", type=Path, default=DEFAULT_SMOKE_INTELLIGENCE_FSV)
-    parser.add_argument("--smoke-storage-design-fsv", type=Path, default=DEFAULT_SMOKE_STORAGE_DESIGN_FSV)
+    parser.add_argument("--smoke-manifest-readback", type=Path, default=DEFAULT_SMOKE_MANIFEST_READBACK)
+    parser.add_argument("--smoke-forward-readback", type=Path, default=DEFAULT_SMOKE_FORWARD_READBACK)
+    parser.add_argument("--smoke-intelligence-readback", type=Path, default=DEFAULT_SMOKE_INTELLIGENCE_READBACK)
+    parser.add_argument("--smoke-storage-design-readback", type=Path, default=DEFAULT_SMOKE_STORAGE_DESIGN_READBACK)
     parser.add_argument("--storage-design-go-no-go", type=Path, default=DEFAULT_STORAGE_DESIGN_GO_NO_GO)
     parser.add_argument("--storage-policy", type=Path, default=DEFAULT_STORAGE_POLICY)
     parser.add_argument("--storage-estimates", type=Path, default=DEFAULT_STORAGE_ESTIMATES)
-    parser.add_argument("--full-ast-corpus-fsv", type=Path, default=DEFAULT_FULL_AST_CORPUS_FSV)
+    parser.add_argument("--full-ast-corpus-readback", type=Path, default=DEFAULT_FULL_AST_CORPUS_READBACK)
     parser.add_argument("--shard-size", type=int, default=128)
     parser.add_argument("--shard-count", type=int, default=3124)
     parser.add_argument("--active-embedder-count", type=int, default=12)

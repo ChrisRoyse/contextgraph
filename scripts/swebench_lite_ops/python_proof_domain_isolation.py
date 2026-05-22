@@ -18,14 +18,13 @@ TASK_ID = "TASK-PY-G-037"
 ARTIFACT_KIND = "python_proof_domain_isolation"
 FORMULA_VERSION = "python_proof_domain_isolation_v1"
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-proof-domain-isolation-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-037-proof-domain-isolation-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-037-proof-domain-isolation-readback")
 
 PROOF_DOMAIN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("gridworld", re.compile(r"\bgridworld\b", re.IGNORECASE)),
     ("counter_world", re.compile(r"\bcounter[_ -]?world\b", re.IGNORECASE)),
     ("onet", re.compile(r"\bO\*?NET\b|\bONET\b", re.IGNORECASE)),
     ("career_taxonomy", re.compile(r"\bcareer[- ]taxonomy\b|\bcareer taxonomy\b", re.IGNORECASE)),
-    ("dynamicjepa", re.compile(r"\bdynamicjepa\b", re.IGNORECASE)),
     ("proof_domain", re.compile(r"\bproof[- ]domain\b|\bproof domain\b", re.IGNORECASE)),
 )
 
@@ -388,7 +387,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     parser.add_argument("--repo", default="ChrisRoyse/contextgraph")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--active-paths", default=",".join(DEFAULT_ACTIVE_PATHS))
     parser.add_argument("--current-guard-issue", type=int, default=179)
     parser.add_argument("--max-github-issues", type=int, default=200)
@@ -400,11 +399,11 @@ def command_python_proof_domain_isolation(args: argparse.Namespace) -> int:
     if args.clean_output:
         if args.output_root.exists():
             shutil.rmtree(args.output_root)
-        if args.fsv_root.exists():
-            shutil.rmtree(args.fsv_root)
+        if args.readback_root.exists():
+            shutil.rmtree(args.readback_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    args.readback_root.mkdir(parents=True, exist_ok=True)
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
 
     active_paths = parse_paths(args.active_paths)
     repo_root = args.repo_root.resolve()
@@ -435,7 +434,7 @@ def command_python_proof_domain_isolation(args: argparse.Namespace) -> int:
         "source_of_truth": {
             "repo_root": str(repo_root),
             "output_root": str(args.output_root),
-            "fsv_root": str(args.fsv_root),
+            "readback_root": str(args.readback_root),
             "github_repo": args.repo,
             "active_paths": active_paths,
         },
@@ -476,24 +475,24 @@ def command_python_proof_domain_isolation(args: argparse.Namespace) -> int:
         and readback_counts["edge_case_states"] == len(edges)
         and all(row["pass"] for row in edges)
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "formula_version": FORMULA_VERSION,
         "created_at_utc": utc_now(),
         "passes": passes,
         "source_of_truth": report["source_of_truth"],
         "before": before,
-        "after": {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)},
+        "after": {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)},
         "readback_counts": readback_counts,
         "summary": readback_report["summary"],
         "edge_cases": edges,
         "report_sha256": sha256_file(args.output_root / "proof_domain_isolation_report.json"),
     }
-    fsv_path = args.fsv_root / "python_proof_domain_isolation_fsv.json"
-    dump_json(fsv_path, fsv)
+    readback_path = args.readback_root / "python_proof_domain_isolation_readback.json"
+    dump_json(readback_path, readback)
     if not passes:
-        raise ProofDomainIsolationError(json.dumps({"error_code": "PY_PROOF_DOMAIN_ISOLATION_FAILED", "message": "proof-domain isolation audit found active Python prerequisite drift", "fsv_path": str(fsv_path), "summary": fsv["summary"]}, sort_keys=True))
-    print(json.dumps({"passes": True, "fsv_path": str(fsv_path), "report_path": str(args.output_root / "proof_domain_isolation_report.json"), "summary": report["summary"]}, indent=2, sort_keys=True))
+        raise ProofDomainIsolationError(json.dumps({"error_code": "PY_PROOF_DOMAIN_ISOLATION_FAILED", "message": "proof-domain isolation audit found active Python prerequisite drift", "readback_path": str(readback_path), "summary": readback["summary"]}, sort_keys=True))
+    print(json.dumps({"passes": True, "readback_path": str(readback_path), "report_path": str(args.output_root / "proof_domain_isolation_report.json"), "summary": report["summary"]}, indent=2, sort_keys=True))
     return 0

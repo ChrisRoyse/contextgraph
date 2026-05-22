@@ -46,13 +46,13 @@ DEFAULT_DDA_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/
 DEFAULT_PAIRWISE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/pairwise")
 DEFAULT_MATRIX_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices")
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-tct-cells-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-020-tct-cells-fsv")
-DEFAULT_FULL_AST_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json")
-DEFAULT_SMOKE_MANIFEST_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json")
-DEFAULT_FORWARD_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json")
-DEFAULT_DDA_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json")
-DEFAULT_PAIRWISE_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-018-pairwise-dda-mi-fsv/python_pairwise_dda_mi_fsv.json")
-DEFAULT_MATRIX_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-020-tct-cells-readback")
+DEFAULT_FULL_AST_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-058-full-ast-corpus-readback/full_ast_corpus_readback.json")
+DEFAULT_SMOKE_MANIFEST_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-060-post249-smoke-manifest-readback/smoke_manifest_readback.json")
+DEFAULT_FORWARD_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-061-post249-smoke-forward-readback/python_forward_shard_scheduler_readback.json")
+DEFAULT_DDA_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-017-dda-signals-readback/python_dda_code_signals_readback.json")
+DEFAULT_PAIRWISE_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-018-pairwise-dda-mi-readback/python_pairwise_dda_mi_readback.json")
+DEFAULT_MATRIX_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-062-post249-smoke-intelligence-readback/smoke_intelligence_matrices_readback.json")
 EPS = 1.0e-12
 
 
@@ -88,7 +88,7 @@ def finite(value: float | int | None) -> float | None:
 
 def load_passing_json(path: Path, code: str) -> tuple[dict[str, Any], str]:
     doc = read_json(path)
-    require(doc.get("passes") is True, code, f"required FSV does not pass: {path}", {"path": str(path)})
+    require(doc.get("passes") is True, code, f"required READBACK does not pass: {path}", {"path": str(path)})
     return doc, sha256_file(path)
 
 
@@ -450,15 +450,15 @@ def command_python_tct_cells(args: argparse.Namespace) -> int:
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    args.readback_root.mkdir(parents=True, exist_ok=True)
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
 
-    full_ast_fsv, full_ast_fsv_sha = load_passing_json(args.full_ast_fsv, "TCT_FULL_AST_FSV_NOT_PASSING")
-    smoke_fsv, smoke_fsv_sha = load_passing_json(args.smoke_manifest_fsv, "TCT_SMOKE_MANIFEST_FSV_NOT_PASSING")
-    forward_fsv, forward_fsv_sha = load_passing_json(args.forward_fsv, "TCT_FORWARD_FSV_NOT_PASSING")
-    dda_fsv, dda_fsv_sha = load_passing_json(args.dda_fsv, "TCT_DDA_FSV_NOT_PASSING")
-    pairwise_fsv, pairwise_fsv_sha = load_passing_json(args.pairwise_fsv, "TCT_PAIRWISE_FSV_NOT_PASSING")
-    matrix_fsv, matrix_fsv_sha = load_passing_json(args.matrix_fsv, "TCT_MATRIX_FSV_NOT_PASSING")
+    full_ast_readback, full_ast_readback_sha = load_passing_json(args.full_ast_readback, "TCT_FULL_AST_READBACK_NOT_PASSING")
+    smoke_readback, smoke_readback_sha = load_passing_json(args.smoke_manifest_readback, "TCT_SMOKE_MANIFEST_READBACK_NOT_PASSING")
+    forward_readback, forward_readback_sha = load_passing_json(args.forward_readback, "TCT_FORWARD_READBACK_NOT_PASSING")
+    dda_readback, dda_readback_sha = load_passing_json(args.dda_readback, "TCT_DDA_READBACK_NOT_PASSING")
+    pairwise_readback, pairwise_readback_sha = load_passing_json(args.pairwise_readback, "TCT_PAIRWISE_READBACK_NOT_PASSING")
+    matrix_readback, matrix_readback_sha = load_passing_json(args.matrix_readback, "TCT_MATRIX_READBACK_NOT_PASSING")
     schema = read_json(args.constellation_schema)
     support = validate_schema(schema)
     schema_sha = sha256_file(args.constellation_schema)
@@ -472,12 +472,12 @@ def command_python_tct_cells(args: argparse.Namespace) -> int:
     require(len(signal_rows) + len(missing_by_pair) == len(manifest_by_key) * len(expected_embedders), "TCT_DDA_PAIR_ACCOUNTING_FAILED", "DDA present+missing pair accounting is incomplete", {"signal_rows": len(signal_rows), "missing_rows": len(missing_by_pair)})
     pairwise_rows, pairwise_summary = load_pairwise(args.pairwise_root / "pairwise_interactions.jsonl")
     source_hashes = {
-        "full_ast_fsv_sha256": full_ast_fsv_sha,
-        "smoke_manifest_fsv_sha256": smoke_fsv_sha,
-        "forward_fsv_sha256": forward_fsv_sha,
-        "dda_fsv_sha256": dda_fsv_sha,
-        "pairwise_fsv_sha256": pairwise_fsv_sha,
-        "matrix_fsv_sha256": matrix_fsv_sha,
+        "full_ast_readback_sha256": full_ast_readback_sha,
+        "smoke_manifest_readback_sha256": smoke_readback_sha,
+        "forward_readback_sha256": forward_readback_sha,
+        "dda_readback_sha256": dda_readback_sha,
+        "pairwise_readback_sha256": pairwise_readback_sha,
+        "matrix_readback_sha256": matrix_readback_sha,
         "smoke_manifest_sha256": sha256_file(args.smoke_manifest),
         "dda_summary_sha256": sha256_file(args.dda_root / "dda_signal_summary.json"),
         "matrix_summary_sha256": sha256_file(args.matrix_root / "summary.json"),
@@ -522,12 +522,12 @@ def command_python_tct_cells(args: argparse.Namespace) -> int:
             "category_counts": dict(sorted(Counter(row["axes"]["mutation_category"] for row in memberships).items())),
         },
         "matrix_context": {
-            "matrix_fsv_sha256": matrix_fsv_sha,
+            "matrix_readback_sha256": matrix_readback_sha,
             "matrix_summary_sha256": source_hashes["matrix_summary_sha256"],
         },
     }
     dump_json(args.output_root / "tct_cell_report.json", report)
-    after = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    after = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     readback_counts = {
         "chunk_memberships": sum(1 for _ in iter_jsonl(args.output_root / "tct_chunk_memberships.jsonl")),
         "cell_support": sum(1 for _ in iter_jsonl(args.output_root / "tct_cell_support.jsonl")),
@@ -543,23 +543,23 @@ def command_python_tct_cells(args: argparse.Namespace) -> int:
         and all(case["pass"] for case in edges)
         and report["summary"]["cell_count"] > 0
         and report["source_hashes"]["smoke_manifest_sha256"] == manifest_summary["sha256"]
-        and full_ast_fsv.get("passes") is True
-        and smoke_fsv.get("passes") is True
-        and forward_fsv.get("passes") is True
-        and dda_fsv.get("passes") is True
-        and pairwise_fsv.get("passes") is True
-        and matrix_fsv.get("passes") is True
+        and full_ast_readback.get("passes") is True
+        and smoke_readback.get("passes") is True
+        and forward_readback.get("passes") is True
+        and dda_readback.get("passes") is True
+        and pairwise_readback.get("passes") is True
+        and matrix_readback.get("passes") is True
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "started_at_utc": started,
         "created_at_utc": utc_now(),
         "passes": passes,
         "before_state": before,
         "after_state": after,
-        "source_of_truth": {**report["source_of_truth"], "report": str(args.output_root / "tct_cell_report.json"), "fsv": str(args.fsv_root / "python_tct_cells_fsv.json")},
+        "source_of_truth": {**report["source_of_truth"], "report": str(args.output_root / "tct_cell_report.json"), "readback": str(args.readback_root / "python_tct_cells_readback.json")},
         "trigger": {"command": "python3 scripts/swebench_lite_ops.py python-tct-cells", "input_mode": "post249_smoke_v2"},
         "readback": {
             **readback_counts,
@@ -574,9 +574,9 @@ def command_python_tct_cells(args: argparse.Namespace) -> int:
         },
         "edge_cases": edges,
     }
-    dump_json(args.fsv_root / "python_tct_cells_fsv.json", fsv)
-    final = read_json(args.fsv_root / "python_tct_cells_fsv.json")
-    require(final.get("passes") is True, "TCT_FSV_FAILED", "TCT cell FSV failed", {"path": str(args.fsv_root / "python_tct_cells_fsv.json")})
+    dump_json(args.readback_root / "python_tct_cells_readback.json", readback)
+    final = read_json(args.readback_root / "python_tct_cells_readback.json")
+    require(final.get("passes") is True, "TCT_READBACK_FAILED", "TCT cell READBACK failed", {"path": str(args.readback_root / "python_tct_cells_readback.json")})
     print(json.dumps(final, sort_keys=True, indent=2))
     return 0
 
@@ -590,13 +590,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pairwise-root", type=Path, default=DEFAULT_PAIRWISE_ROOT)
     parser.add_argument("--matrix-root", type=Path, default=DEFAULT_MATRIX_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
-    parser.add_argument("--full-ast-fsv", type=Path, default=DEFAULT_FULL_AST_FSV)
-    parser.add_argument("--smoke-manifest-fsv", type=Path, default=DEFAULT_SMOKE_MANIFEST_FSV)
-    parser.add_argument("--forward-fsv", type=Path, default=DEFAULT_FORWARD_FSV)
-    parser.add_argument("--dda-fsv", type=Path, default=DEFAULT_DDA_FSV)
-    parser.add_argument("--pairwise-fsv", type=Path, default=DEFAULT_PAIRWISE_FSV)
-    parser.add_argument("--matrix-fsv", type=Path, default=DEFAULT_MATRIX_FSV)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
+    parser.add_argument("--full-ast-readback", type=Path, default=DEFAULT_FULL_AST_READBACK)
+    parser.add_argument("--smoke-manifest-readback", type=Path, default=DEFAULT_SMOKE_MANIFEST_READBACK)
+    parser.add_argument("--forward-readback", type=Path, default=DEFAULT_FORWARD_READBACK)
+    parser.add_argument("--dda-readback", type=Path, default=DEFAULT_DDA_READBACK)
+    parser.add_argument("--pairwise-readback", type=Path, default=DEFAULT_PAIRWISE_READBACK)
+    parser.add_argument("--matrix-readback", type=Path, default=DEFAULT_MATRIX_READBACK)
     parser.add_argument("--expected-chunk-count", type=int, default=1000)
     parser.add_argument("--expected-embedders", default=",".join(EXPECTED_EMBEDDERS))
     parser.add_argument("--clean-output", action="store_true")

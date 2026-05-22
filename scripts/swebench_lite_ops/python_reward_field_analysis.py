@@ -23,11 +23,11 @@ DEFAULT_PAIRWISE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signal
 DEFAULT_TCT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-tct-cells-v1")
 DEFAULT_MATRIX_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices")
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-reward-field-analysis-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-022-reward-field-analysis-fsv")
-DEFAULT_REWARD_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-021-reward-tensors-fsv/python_reward_tensors_fsv.json")
-DEFAULT_DDA_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json")
-DEFAULT_TCT_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json")
-DEFAULT_MATRIX_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-022-reward-field-analysis-readback")
+DEFAULT_REWARD_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-021-reward-tensors-readback/python_reward_tensors_readback.json")
+DEFAULT_DDA_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-017-dda-signals-readback/python_dda_code_signals_readback.json")
+DEFAULT_TCT_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-020-tct-cells-readback/python_tct_cells_readback.json")
+DEFAULT_MATRIX_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-062-post249-smoke-intelligence-readback/smoke_intelligence_matrices_readback.json")
 
 
 class RewardFieldAnalysisError(RuntimeError):
@@ -46,7 +46,7 @@ def sha256_text(payload: Any) -> str:
 
 def load_passing_json(path: Path, code: str) -> tuple[dict[str, Any], str]:
     doc = read_json(path)
-    require(doc.get("passes") is True, code, f"required FSV does not pass: {path}", {"path": str(path)})
+    require(doc.get("passes") is True, code, f"required READBACK does not pass: {path}", {"path": str(path)})
     return doc, sha256_file(path)
 
 
@@ -225,12 +225,12 @@ def command_python_reward_field_analysis(args: argparse.Namespace) -> int:
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
-    _, reward_fsv_sha = load_passing_json(args.reward_fsv, "REWARD_ANALYSIS_REWARD_FSV_NOT_PASSING")
-    _, dda_fsv_sha = load_passing_json(args.dda_fsv, "REWARD_ANALYSIS_DDA_FSV_NOT_PASSING")
-    _, tct_fsv_sha = load_passing_json(args.tct_fsv, "REWARD_ANALYSIS_TCT_FSV_NOT_PASSING")
-    _, matrix_fsv_sha = load_passing_json(args.matrix_fsv, "REWARD_ANALYSIS_MATRIX_FSV_NOT_PASSING")
+    args.readback_root.mkdir(parents=True, exist_ok=True)
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
+    _, reward_readback_sha = load_passing_json(args.reward_readback, "REWARD_ANALYSIS_REWARD_READBACK_NOT_PASSING")
+    _, dda_readback_sha = load_passing_json(args.dda_readback, "REWARD_ANALYSIS_DDA_READBACK_NOT_PASSING")
+    _, tct_readback_sha = load_passing_json(args.tct_readback, "REWARD_ANALYSIS_TCT_READBACK_NOT_PASSING")
+    _, matrix_readback_sha = load_passing_json(args.matrix_readback, "REWARD_ANALYSIS_MATRIX_READBACK_NOT_PASSING")
 
     chunk_rows = load_jsonl(args.reward_root / "chunk_reward_tensors.jsonl")
     patch_rows = load_jsonl(args.reward_root / "patch_reward_tensors.jsonl")
@@ -311,10 +311,10 @@ def command_python_reward_field_analysis(args: argparse.Namespace) -> int:
             "matrix_root": str(args.matrix_root),
         },
         "source_hashes": {
-            "reward_fsv_sha256": reward_fsv_sha,
-            "dda_fsv_sha256": dda_fsv_sha,
-            "tct_fsv_sha256": tct_fsv_sha,
-            "matrix_fsv_sha256": matrix_fsv_sha,
+            "reward_readback_sha256": reward_readback_sha,
+            "dda_readback_sha256": dda_readback_sha,
+            "tct_readback_sha256": tct_readback_sha,
+            "matrix_readback_sha256": matrix_readback_sha,
             "reward_report_sha256": sha256_file(args.reward_root / "reward_tensor_report.json"),
             "tct_report_sha256": sha256_file(args.tct_root / "tct_cell_report.json"),
             "matrix_summary_sha256": sha256_file(args.matrix_root / "summary.json"),
@@ -346,7 +346,7 @@ def command_python_reward_field_analysis(args: argparse.Namespace) -> int:
     write_jsonl(args.output_root / "edge_case_states.jsonl", edges)
     dump_json(args.output_root / "reward_field_analysis_report.json", report)
 
-    after = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    after = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     readback_counts = {
         "density_by_task": sum(1 for _ in iter_jsonl(args.output_root / "density_by_task.jsonl")),
         "density_by_mutation_category": sum(1 for _ in iter_jsonl(args.output_root / "density_by_mutation_category.jsonl")),
@@ -367,10 +367,10 @@ def command_python_reward_field_analysis(args: argparse.Namespace) -> int:
         and report["training_readiness"]["full_training_may_proceed"] is False
         and all(case["pass"] for case in edges)
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "started_at_utc": started,
         "created_at_utc": utc_now(),
         "passes": passes,
@@ -379,7 +379,7 @@ def command_python_reward_field_analysis(args: argparse.Namespace) -> int:
         "source_of_truth": {
             **report["source_of_truth"],
             "report": str(args.output_root / "reward_field_analysis_report.json"),
-            "fsv": str(args.fsv_root / "python_reward_field_analysis_fsv.json"),
+            "readback": str(args.readback_root / "python_reward_field_analysis_readback.json"),
         },
         "trigger": {"command": "python3 scripts/swebench_lite_ops.py python-reward-field-analysis"},
         "readback": {
@@ -393,9 +393,9 @@ def command_python_reward_field_analysis(args: argparse.Namespace) -> int:
         },
         "edge_cases": edges,
     }
-    dump_json(args.fsv_root / "python_reward_field_analysis_fsv.json", fsv)
-    final = read_json(args.fsv_root / "python_reward_field_analysis_fsv.json")
-    require(final.get("passes") is True, "REWARD_FIELD_ANALYSIS_FSV_FAILED", "reward-field analysis FSV failed", {"path": str(args.fsv_root / "python_reward_field_analysis_fsv.json")})
+    dump_json(args.readback_root / "python_reward_field_analysis_readback.json", readback)
+    final = read_json(args.readback_root / "python_reward_field_analysis_readback.json")
+    require(final.get("passes") is True, "REWARD_FIELD_ANALYSIS_READBACK_FAILED", "reward-field analysis READBACK failed", {"path": str(args.readback_root / "python_reward_field_analysis_readback.json")})
     print(json.dumps(final, sort_keys=True, indent=2))
     return 0
 
@@ -408,11 +408,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tct-root", type=Path, default=DEFAULT_TCT_ROOT)
     parser.add_argument("--matrix-root", type=Path, default=DEFAULT_MATRIX_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
-    parser.add_argument("--reward-fsv", type=Path, default=DEFAULT_REWARD_FSV)
-    parser.add_argument("--dda-fsv", type=Path, default=DEFAULT_DDA_FSV)
-    parser.add_argument("--tct-fsv", type=Path, default=DEFAULT_TCT_FSV)
-    parser.add_argument("--matrix-fsv", type=Path, default=DEFAULT_MATRIX_FSV)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
+    parser.add_argument("--reward-readback", type=Path, default=DEFAULT_REWARD_READBACK)
+    parser.add_argument("--dda-readback", type=Path, default=DEFAULT_DDA_READBACK)
+    parser.add_argument("--tct-readback", type=Path, default=DEFAULT_TCT_READBACK)
+    parser.add_argument("--matrix-readback", type=Path, default=DEFAULT_MATRIX_READBACK)
     parser.add_argument("--expected-chunk-count", type=int, default=1000)
     parser.add_argument("--clean-output", action="store_true")
     return parser

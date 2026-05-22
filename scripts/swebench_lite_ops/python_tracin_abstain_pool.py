@@ -26,18 +26,18 @@ from .python_per_cell_smooth_ece import (
 
 
 DEFAULT_ROW_DIAGNOSTICS_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-392-temporal-trajectory-features-fsv/"
-    "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_fsv.json"
+    "/zfs/archive/contextgraph/readback/task-py-g-392-temporal-trajectory-features-readback/"
+    "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_readback.json"
 )
 DEFAULT_SHIP_GATE_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/"
-    "run-20260521T132308Z/ship-gate-fsv.json"
+    "/zfs/archive/contextgraph/readback/swebench-300x8-ship-gate-readback/"
+    "run-20260521T132308Z/ship-gate-readback.json"
 )
 DEFAULT_TRAINING_ARRAY_ROOT = Path(
     "/zfs/archive/contextgraph/state/training-arrays/constellation-training-arrays-v1-realinput"
 )
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/state/tracin/post-fix-real-input-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-123-tracin-abstain-pool-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-123-tracin-abstain-pool-readback")
 DEFAULT_EXACT_GRADIENT_ROOT = Path("/zfs/archive/contextgraph/state/tracin/post-fix-real-input-v2")
 WEAK_CELLS = {"delete_test_call", "off_by_one", "subtle_flip"}
 TARGET_CORRELATION = 0.95
@@ -78,7 +78,7 @@ def add_arguments(parser: Any) -> None:
     parser.add_argument("--training-array-root", type=Path, default=DEFAULT_TRAINING_ARRAY_ROOT)
     parser.add_argument("--exact-gradient-root", type=Path, default=DEFAULT_EXACT_GRADIENT_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--evidence-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--evidence-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--expected-calibration-count", type=int, default=240)
     parser.add_argument("--expected-holdout-count", type=int, default=240)
@@ -217,7 +217,7 @@ def read_json_object(path: Path, label: str) -> dict[str, Any]:
         raise SwebenchOpsError(
             "PY_G_123_INPUT_MISSING",
             f"{label} missing: {path}",
-            "Use retained aiwonder FSV artifacts only.",
+            "Use retained aiwonder READBACK artifacts only.",
             {"path": str(path), "label": label},
         )
     try:

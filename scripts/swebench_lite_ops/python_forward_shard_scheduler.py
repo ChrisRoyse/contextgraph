@@ -2,7 +2,7 @@
 """Shard scheduler for Python ME-JEPA-Code forward-cache generation.
 
 This script is intentionally small and fail-closed. It does not embed code
-itself; it schedules the Rust forward-cache FSV runner over explicit chunk
+itself; it schedules the Rust forward-cache READBACK runner over explicit chunk
 windows, then aggregates the physical shard manifests it reads back from disk.
 """
 
@@ -32,7 +32,7 @@ _JSONL_APPEND_LOCK = threading.Lock()
 
 # Serializes promote_hot_stage_shard across parallel-isolated worker threads.
 # Multiple subruns from the SAME shard all promote to the same durable
-# cache_root/fsv_root pair; without this lock they race on tree_state byte
+# cache_root/readback_root pair; without this lock they race on tree_state byte
 # counts and trip promote_tree_verified assertions. Forward (GPU) work still
 # happens in parallel; only the brief move/archive step is serialized. #302.
 _PROMOTE_HOT_STAGE_LOCK = threading.Lock()
@@ -44,27 +44,27 @@ AIWONDER_SCRATCH_ROOT = Path("/home/croyse/.cache/contextgraph")
 
 DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
 DEFAULT_CACHE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-029-sharded-cuda-scheduler-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-029-sharded-cuda-scheduler-readback")
 DEFAULT_HOT_ROOT = Path("/zfs/hot/contextgraph/runtime/python-forward-shard-scheduler")
-DEFAULT_SMOKE_GATE_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-057-smoke-gate-preflight-fsv")
-DEFAULT_SMOKE_MANIFEST_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json")
-DEFAULT_SMOKE_FORWARD_FSV = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"
+DEFAULT_SMOKE_GATE_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-057-smoke-gate-preflight-readback")
+DEFAULT_SMOKE_MANIFEST_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-060-post249-smoke-manifest-readback/smoke_manifest_readback.json")
+DEFAULT_SMOKE_FORWARD_READBACK = Path(
+    "/zfs/archive/contextgraph/readback/task-py-data-061-post249-smoke-forward-readback/python_forward_shard_scheduler_readback.json"
 )
-DEFAULT_SMOKE_INTELLIGENCE_FSV = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json"
+DEFAULT_SMOKE_INTELLIGENCE_READBACK = Path(
+    "/zfs/archive/contextgraph/readback/task-py-data-062-post249-smoke-intelligence-readback/smoke_intelligence_matrices_readback.json"
 )
-DEFAULT_SMOKE_STORAGE_DESIGN_FSV = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-data-063-post249-smoke-storage-design-fsv/smoke_storage_design_fsv.json"
+DEFAULT_SMOKE_STORAGE_DESIGN_READBACK = Path(
+    "/zfs/archive/contextgraph/readback/task-py-data-063-post249-smoke-storage-design-readback/smoke_storage_design_readback.json"
 )
-DEFAULT_FULL_RELAUNCH_GATE_FSV = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-data-064-post249-full-run-relaunch-gate-fsv/full_run_relaunch_gate_fsv.json"
+DEFAULT_FULL_RELAUNCH_GATE_READBACK = Path(
+    "/zfs/archive/contextgraph/readback/task-py-data-064-post249-full-run-relaunch-gate-readback/full_run_relaunch_gate_readback.json"
 )
-DEFAULT_FULL_AST_CORPUS_FSV = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json"
+DEFAULT_FULL_AST_CORPUS_READBACK = Path(
+    "/zfs/archive/contextgraph/readback/task-py-data-058-full-ast-corpus-readback/full_ast_corpus_readback.json"
 )
 DEFAULT_RUNNER_TIMEOUT_SECONDS = 3600
-DEFAULT_CARGO_RUNNER = "target/release/examples/python_forward_cache_fsv"
+DEFAULT_CARGO_RUNNER = "target/release/examples/python_forward_cache_readback"
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-029"
 SUPPORTED_TRUE_BATCH_SLUGS = {"e1", "e6", "e7", "e8", "e9", "e10", "e12", "e13", "e14"}
@@ -73,7 +73,7 @@ DEFAULT_ACTIVE_EMBEDDER_COUNT = 12
 DEFAULT_ESTIMATED_RECORD_BYTES = 16 * 1024
 DEFAULT_HOT_STAGE_BUDGET_BYTES = 48 * 1024 * 1024 * 1024
 DEFAULT_DURABLE_SLACK_BYTES = 2 * 1024 * 1024 * 1024
-DEFAULT_FSV_EDGE_COPY_BUDGET_BYTES = 2 * 1024 * 1024 * 1024
+DEFAULT_READBACK_EDGE_COPY_BUDGET_BYTES = 2 * 1024 * 1024 * 1024
 MAX_DURABLE_IO_WORKERS = 8
 MAX_GPU_WORKERS_PER_DEVICE = 1
 SHARD_RUN_LOG_NAME_PATTERN = re.compile(r"^shard-\d{6}-offset-\d{9}\.json$")
@@ -89,7 +89,7 @@ class ShardSpec:
     chunk_offset: int
     max_chunks: int
     cache_root: Path
-    fsv_root: Path
+    readback_root: Path
 
     def manifest_path(self) -> Path:
         return self.cache_root / "python_forward_cache_manifest.json"
@@ -100,8 +100,8 @@ class ShardSpec:
     def quarantine_path(self) -> Path:
         return self.cache_root / "python_forward_cache_quarantine.jsonl"
 
-    def fsv_path(self) -> Path:
-        return self.fsv_root / "python_forward_cache_fsv.json"
+    def readback_path(self) -> Path:
+        return self.readback_root / "python_forward_cache_readback.json"
 
 
 def parse_args() -> argparse.Namespace:
@@ -111,7 +111,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--chunks-jsonl", type=Path, default=DEFAULT_CHUNKS_JSONL)
     parser.add_argument("--cache-root", type=Path, default=DEFAULT_CACHE_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--hot-root", type=Path, default=DEFAULT_HOT_ROOT)
     parser.add_argument("--task-id", default=TASK_ID)
     parser.add_argument("--start-offset", type=int, default=0)
@@ -161,7 +161,7 @@ def parse_args() -> argparse.Namespace:
         "--stage-packed-shards-on-hot",
         action="store_true",
         help=(
-            "For packed layout, run shard cache/FSV assembly in a bounded aiwonder hot stage, "
+            "For packed layout, run shard cache/READBACK assembly in a bounded aiwonder hot stage, "
             "then promote verified artifacts to the durable aiwonder SoT."
         ),
     )
@@ -190,10 +190,10 @@ def parse_args() -> argparse.Namespace:
         help="Required free bytes on aiwonder hot storage before any writes.",
     )
     parser.add_argument(
-        "--fsv-edge-copy-budget-bytes",
+        "--readback-edge-copy-budget-bytes",
         type=int,
-        default=DEFAULT_FSV_EDGE_COPY_BUDGET_BYTES,
-        help="Required temporary durable bytes reserved for FSV edge/readback artifacts.",
+        default=DEFAULT_READBACK_EDGE_COPY_BUDGET_BYTES,
+        help="Required temporary durable bytes reserved for READBACK edge/readback artifacts.",
     )
     parser.add_argument(
         "--nvidia-smi-command",
@@ -234,22 +234,22 @@ def parse_args() -> argparse.Namespace:
         help="Require accepted 1000-chunk smoke artifacts before scheduler launch/resume.",
     )
     parser.add_argument(
-        "--smoke-gate-fsv-root",
+        "--smoke-gate-readback-root",
         type=Path,
-        default=DEFAULT_SMOKE_GATE_FSV_ROOT,
-        help="Where to write the fail-closed smoke-gate preflight FSV artifact.",
+        default=DEFAULT_SMOKE_GATE_READBACK_ROOT,
+        help="Where to write the fail-closed smoke-gate preflight READBACK artifact.",
     )
-    parser.add_argument("--smoke-manifest-fsv", type=Path, default=DEFAULT_SMOKE_MANIFEST_FSV)
-    parser.add_argument("--smoke-forward-fsv", type=Path, default=DEFAULT_SMOKE_FORWARD_FSV)
-    parser.add_argument("--smoke-intelligence-fsv", type=Path, default=DEFAULT_SMOKE_INTELLIGENCE_FSV)
-    parser.add_argument("--smoke-storage-design-fsv", type=Path, default=DEFAULT_SMOKE_STORAGE_DESIGN_FSV)
-    parser.add_argument("--full-relaunch-gate-fsv", type=Path, default=DEFAULT_FULL_RELAUNCH_GATE_FSV)
-    parser.add_argument("--full-ast-corpus-fsv", type=Path, default=DEFAULT_FULL_AST_CORPUS_FSV)
+    parser.add_argument("--smoke-manifest-readback", type=Path, default=DEFAULT_SMOKE_MANIFEST_READBACK)
+    parser.add_argument("--smoke-forward-readback", type=Path, default=DEFAULT_SMOKE_FORWARD_READBACK)
+    parser.add_argument("--smoke-intelligence-readback", type=Path, default=DEFAULT_SMOKE_INTELLIGENCE_READBACK)
+    parser.add_argument("--smoke-storage-design-readback", type=Path, default=DEFAULT_SMOKE_STORAGE_DESIGN_READBACK)
+    parser.add_argument("--full-relaunch-gate-readback", type=Path, default=DEFAULT_FULL_RELAUNCH_GATE_READBACK)
+    parser.add_argument("--full-ast-corpus-readback", type=Path, default=DEFAULT_FULL_AST_CORPUS_READBACK)
     parser.add_argument(
         "--resume-completed-shards",
         action="store_true",
         help=(
-            "In run mode, skip only shards whose manifest, FSV, telemetry, "
+            "In run mode, skip only shards whose manifest, READBACK, telemetry, "
             "index/quarantine, and prior run-log readback already pass. "
             "Resume fast-forward uses bounded manifest readback; the final "
             "aggregate still performs packed-store validation."
@@ -260,7 +260,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "When used with --resume-completed-shards, archive a failed or partial "
-            "shard cache/FSV/run-log under fsv_root/failed_partial_shards before "
+            "shard cache/READBACK/run-log under readback_root/failed_partial_shards before "
             "retrying that shard. Passed shard manifests are still the only skip condition."
         ),
     )
@@ -269,7 +269,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "Run each active embedder in a separate Rust runner process, then consolidate "
-            "the physical per-embedder row files into one full-shard manifest/FSV. This avoids "
+            "the physical per-embedder row files into one full-shard manifest/READBACK. This avoids "
             "cumulative CUDA model residency without a final all-embedder rerun."
         ),
     )
@@ -381,17 +381,17 @@ def validate_production_roots(args: argparse.Namespace) -> dict[str, Any]:
     checked = {
         "chunks_jsonl": str(require_aiwonder_input_path(args.chunks_jsonl, "chunks_jsonl")),
         "cache_root": str(require_production_durable_path(args.cache_root, "cache_root")),
-        "fsv_root": str(require_production_durable_path(args.fsv_root, "fsv_root")),
+        "readback_root": str(require_production_durable_path(args.readback_root, "readback_root")),
         "hot_root": str(require_aiwonder_hot_or_scratch_path(args.hot_root, "hot_root")),
     }
     for attr in (
-        "smoke_gate_fsv_root",
-        "smoke_manifest_fsv",
-        "smoke_forward_fsv",
-        "smoke_intelligence_fsv",
-        "smoke_storage_design_fsv",
-        "full_relaunch_gate_fsv",
-        "full_ast_corpus_fsv",
+        "smoke_gate_readback_root",
+        "smoke_manifest_readback",
+        "smoke_forward_readback",
+        "smoke_intelligence_readback",
+        "smoke_storage_design_readback",
+        "full_relaunch_gate_readback",
+        "full_ast_corpus_readback",
     ):
         checked[attr] = str(
             require_production_durable_path(getattr(args, attr), attr)
@@ -446,8 +446,8 @@ def validate_release_runner(args: argparse.Namespace) -> dict[str, Any]:
         raise SchedulerError(
             "MEJEPA_SCHEDULER_RELEASE_RUNNER_REQUIRED: corpus runs must use the "
             "release-built runner; run `cargo build --release -p "
-            "context-graph-mejepa-embedders --example python_forward_cache_fsv` "
-            "and pass --cargo-runner target/release/examples/python_forward_cache_fsv"
+            "context-graph-mejepa-embedders --example python_forward_cache_readback` "
+            "and pass --cargo-runner target/release/examples/python_forward_cache_readback"
         )
     runner_path = Path(first)
     if runner_path.is_absolute() or "/" in first:
@@ -459,7 +459,7 @@ def validate_release_runner(args: argparse.Namespace) -> dict[str, Any]:
         normalized = resolved.as_posix()
         require(
             "MEJEPA_SCHEDULER_RELEASE_RUNNER_PATH: runner path targets release example binary",
-            normalized.endswith("/target/release/examples/python_forward_cache_fsv"),
+            normalized.endswith("/target/release/examples/python_forward_cache_readback"),
         )
         return {
             "command": args.cargo_runner,
@@ -664,22 +664,22 @@ def scheduler_cache_root_state(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def scheduler_fsv_root_state(args: argparse.Namespace) -> dict[str, Any]:
+def scheduler_readback_root_state(args: argparse.Namespace) -> dict[str, Any]:
     return {
-        "path": str(args.fsv_root),
+        "path": str(args.readback_root),
         "scan_mode": "bounded_artifact_readback",
-        "root": directory_state(args.fsv_root),
-        "top_level_entries": top_level_entries_state(args.fsv_root),
+        "root": directory_state(args.readback_root),
+        "top_level_entries": top_level_entries_state(args.readback_root),
         "artifacts": {
-            "checkpoint": file_state(args.fsv_root / "python_forward_cache_checkpoint.json"),
-            "scheduler_fsv": file_state(args.fsv_root / "python_forward_shard_scheduler_fsv.json"),
-            "resume_preflight_fsv": file_state(args.fsv_root / "python_forward_resume_preflight_fsv.json"),
-            "resume_gate_fsv": file_state(args.fsv_root / "python_forward_resume_gate_fsv.json"),
-            "events": file_state(args.fsv_root / "scheduler_events.jsonl"),
-            "run_logs_dir": directory_state(args.fsv_root / "run_logs"),
-            "shards_dir": directory_state(args.fsv_root / "shards"),
-            "failed_partial_shards_dir": directory_state(args.fsv_root / "failed_partial_shards"),
-            "failed_hot_stages_dir": directory_state(args.fsv_root / "failed_hot_stages"),
+            "checkpoint": file_state(args.readback_root / "python_forward_cache_checkpoint.json"),
+            "scheduler_readback": file_state(args.readback_root / "python_forward_shard_scheduler_readback.json"),
+            "resume_preflight_readback": file_state(args.readback_root / "python_forward_resume_preflight_readback.json"),
+            "resume_gate_readback": file_state(args.readback_root / "python_forward_resume_gate_readback.json"),
+            "events": file_state(args.readback_root / "scheduler_events.jsonl"),
+            "run_logs_dir": directory_state(args.readback_root / "run_logs"),
+            "shards_dir": directory_state(args.readback_root / "shards"),
+            "failed_partial_shards_dir": directory_state(args.readback_root / "failed_partial_shards"),
+            "failed_hot_stages_dir": directory_state(args.readback_root / "failed_hot_stages"),
         },
     }
 
@@ -704,7 +704,7 @@ def scheduler_hot_root_state(args: argparse.Namespace) -> dict[str, Any]:
 def scheduler_root_state(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "cache_root": scheduler_cache_root_state(args),
-        "fsv_root": scheduler_fsv_root_state(args),
+        "readback_root": scheduler_readback_root_state(args),
         "hot_root": scheduler_hot_root_state(args),
     }
 
@@ -974,7 +974,7 @@ def projected_capacity(args: argparse.Namespace) -> dict[str, Any]:
     require("MEJEPA_SCHEDULER_ACTIVE_EMBEDDERS_INVALID: active embedder count is positive", args.active_embedder_count > 0)
     require("MEJEPA_SCHEDULER_RECORD_ESTIMATE_INVALID: estimated record bytes is positive", args.estimated_record_bytes > 0)
     require("MEJEPA_SCHEDULER_HOT_BUDGET_INVALID: hot-stage budget bytes is positive", args.hot_stage_budget_bytes > 0)
-    require("MEJEPA_SCHEDULER_FSV_BUDGET_INVALID: FSV edge-copy budget is non-negative", args.fsv_edge_copy_budget_bytes >= 0)
+    require("MEJEPA_SCHEDULER_READBACK_BUDGET_INVALID: READBACK edge-copy budget is non-negative", args.readback_edge_copy_budget_bytes >= 0)
     if args.projected_output_bytes is not None:
         require("MEJEPA_SCHEDULER_PROJECTED_BYTES_INVALID: projected output bytes is positive", args.projected_output_bytes > 0)
     planned_chunks = args.shard_size * args.shard_count
@@ -989,10 +989,10 @@ def projected_capacity(args: argparse.Namespace) -> dict[str, Any]:
         "estimated_record_bytes": args.estimated_record_bytes,
         "projected_output_bytes": projected_output_bytes,
         "hot_stage_budget_bytes": args.hot_stage_budget_bytes,
-        "fsv_edge_copy_budget_bytes": args.fsv_edge_copy_budget_bytes,
+        "readback_edge_copy_budget_bytes": args.readback_edge_copy_budget_bytes,
         "durable_slack_bytes": DEFAULT_DURABLE_SLACK_BYTES,
         "required_durable_available_bytes": projected_output_bytes
-        + args.fsv_edge_copy_budget_bytes
+        + args.readback_edge_copy_budget_bytes
         + DEFAULT_DURABLE_SLACK_BYTES,
     }
 
@@ -1007,40 +1007,40 @@ def smoke_gate_artifact_specs(args: argparse.Namespace) -> list[dict[str, Any]]:
             "name": "smoke_manifest",
             "issue": 251,
             "task_id": "TASK-PY-DATA-060",
-            "path": args.smoke_manifest_fsv,
+            "path": args.smoke_manifest_readback,
             "expected_chunks_jsonl": args.chunks_jsonl,
         },
         {
             "name": "smoke_forward_cache",
             "issue": 252,
             "task_id": "TASK-PY-DATA-061",
-            "path": args.smoke_forward_fsv,
+            "path": args.smoke_forward_readback,
         },
         {
             "name": "smoke_intelligence_matrices",
             "issue": 253,
             "task_id": "TASK-PY-DATA-062",
-            "path": args.smoke_intelligence_fsv,
+            "path": args.smoke_intelligence_readback,
         },
         {
             "name": "smoke_storage_design",
             "issue": 254,
             "task_id": "TASK-PY-DATA-063",
-            "path": args.smoke_storage_design_fsv,
+            "path": args.smoke_storage_design_readback,
             "expected_chunks_jsonl": args.chunks_jsonl,
         },
         {
             "name": "full_relaunch_gate",
             "issue": 255,
             "task_id": "TASK-PY-DATA-064",
-            "path": args.full_relaunch_gate_fsv,
+            "path": args.full_relaunch_gate_readback,
             "expected_chunks_jsonl": args.chunks_jsonl,
         },
         {
             "name": "full_ast_corpus",
             "issue": 249,
             "task_id": "TASK-PY-DATA-058",
-            "path": args.full_ast_corpus_fsv,
+            "path": args.full_ast_corpus_readback,
             "expected_chunks_jsonl": args.chunks_jsonl,
         },
     ]
@@ -1185,15 +1185,15 @@ def archive_hot_stage_blockers_for_preflight(
     return archives
 
 
-def write_smoke_gate_fsv(
+def write_smoke_gate_readback(
     args: argparse.Namespace,
     started_at: str,
     required: bool,
     artifact_results: list[dict[str, Any]],
     hot_stage_results: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    args.smoke_gate_fsv_root.mkdir(parents=True, exist_ok=True)
-    fsv_path = args.smoke_gate_fsv_root / "python_forward_smoke_gate_preflight_fsv.json"
+    args.smoke_gate_readback_root.mkdir(parents=True, exist_ok=True)
+    readback_path = args.smoke_gate_readback_root / "python_forward_smoke_gate_preflight_readback.json"
     failures = [
         result
         for result in artifact_results
@@ -1202,22 +1202,22 @@ def write_smoke_gate_fsv(
     value = {
         "schema_version": SCHEMA_VERSION,
         "task_id": "TASK-PY-DATA-057",
-        "artifact_kind": "python_forward_smoke_gate_preflight_fsv",
+        "artifact_kind": "python_forward_smoke_gate_preflight_readback",
         "started_at_utc": started_at,
         "created_at_utc": utc_now(),
         "required": required,
         "full_run_task_detected": args.task_id == "TASK-PY-DATA-016",
         "source_of_truth": {
-            "smoke_gate_fsv": str(fsv_path),
+            "smoke_gate_readback": str(readback_path),
             "cache_root": str(args.cache_root),
-            "fsv_root": str(args.fsv_root),
+            "readback_root": str(args.readback_root),
             "hot_root": str(args.hot_root),
-            "smoke_manifest_fsv": str(args.smoke_manifest_fsv),
-            "smoke_forward_fsv": str(args.smoke_forward_fsv),
-            "smoke_intelligence_fsv": str(args.smoke_intelligence_fsv),
-            "smoke_storage_design_fsv": str(args.smoke_storage_design_fsv),
-            "full_relaunch_gate_fsv": str(args.full_relaunch_gate_fsv),
-            "full_ast_corpus_fsv": str(args.full_ast_corpus_fsv),
+            "smoke_manifest_readback": str(args.smoke_manifest_readback),
+            "smoke_forward_readback": str(args.smoke_forward_readback),
+            "smoke_intelligence_readback": str(args.smoke_intelligence_readback),
+            "smoke_storage_design_readback": str(args.smoke_storage_design_readback),
+            "full_relaunch_gate_readback": str(args.full_relaunch_gate_readback),
+            "full_ast_corpus_readback": str(args.full_ast_corpus_readback),
         },
         "artifact_results": artifact_results,
         "hot_stage_results": hot_stage_results,
@@ -1225,13 +1225,13 @@ def write_smoke_gate_fsv(
         "failures": failures,
         "passes": required is False or not failures,
     }
-    json_dump_checked(fsv_path, value)
-    readback = read_json(fsv_path)
-    require("smoke gate preflight FSV readback has pass flag", readback.get("passes") in (True, False))
+    json_dump_checked(readback_path, value)
+    readback = read_json(readback_path)
+    require("smoke gate preflight READBACK readback has pass flag", readback.get("passes") in (True, False))
     return {
         **value,
-        "fsv_path": str(fsv_path),
-        "fsv_sha256": sha256_file(fsv_path),
+        "readback_path": str(readback_path),
+        "readback_sha256": sha256_file(readback_path),
     }
 
 
@@ -1253,7 +1253,7 @@ def smoke_gate_preflight(args: argparse.Namespace) -> dict[str, Any]:
         }
     artifact_results = [validate_smoke_gate_artifact(spec) for spec in smoke_gate_artifact_specs(args)]
     hot_stage_results = hot_stage_blockers(args)
-    gate = write_smoke_gate_fsv(args, started_at, required, artifact_results, hot_stage_results)
+    gate = write_smoke_gate_readback(args, started_at, required, artifact_results, hot_stage_results)
     if required and gate["passes"] is not True:
         failure_names = [
             str(item.get("name") or item.get("path"))
@@ -1261,7 +1261,7 @@ def smoke_gate_preflight(args: argparse.Namespace) -> dict[str, Any]:
         ]
         raise SchedulerError(
             "MEJEPA_SCHEDULER_SMOKE_GATE_BLOCKED: full corpus run is blocked "
-            f"until smoke gate artifacts pass; failures={failure_names}; fsv={gate['fsv_path']}"
+            f"until smoke gate artifacts pass; failures={failure_names}; readback={gate['readback_path']}"
         )
     return gate
 
@@ -1284,16 +1284,16 @@ def task061_smoke_manifest_gate(args: argparse.Namespace) -> dict[str, Any]:
         "artifact_kind": "task061_smoke_manifest_gate",
         "created_at_utc": utc_now(),
         "required": required,
-        "smoke_manifest_fsv": str(args.smoke_manifest_fsv),
+        "smoke_manifest_readback": str(args.smoke_manifest_readback),
         "requested_chunks_jsonl": str(args.chunks_jsonl),
     }
     if not required:
         return {**base, "passes": True}
 
-    require("TASK061_SMOKE_MANIFEST_FSV_EXISTS: #251 smoke manifest FSV exists", args.smoke_manifest_fsv.is_file())
-    payload = read_json(args.smoke_manifest_fsv)
-    require("TASK061_SMOKE_MANIFEST_TASK_ID: #251 FSV task_id matches", payload.get("task_id") == "TASK-PY-DATA-060")
-    require("TASK061_SMOKE_MANIFEST_PASSES: #251 FSV passes", payload.get("passes") is True)
+    require("TASK061_SMOKE_MANIFEST_READBACK_EXISTS: #251 smoke manifest READBACK exists", args.smoke_manifest_readback.is_file())
+    payload = read_json(args.smoke_manifest_readback)
+    require("TASK061_SMOKE_MANIFEST_TASK_ID: #251 READBACK task_id matches", payload.get("task_id") == "TASK-PY-DATA-060")
+    require("TASK061_SMOKE_MANIFEST_PASSES: #251 READBACK passes", payload.get("passes") is True)
     source_of_truth = payload.get("source_of_truth")
     after_state = payload.get("after_state")
     summary = payload.get("summary")
@@ -1312,7 +1312,7 @@ def task061_smoke_manifest_gate(args: argparse.Namespace) -> dict[str, Any]:
 
     chunk_state = file_state(smoke_chunks)
     manifest_state = file_state(smoke_manifest)
-    fsv_state = file_state(args.smoke_manifest_fsv)
+    readback_state = file_state(args.smoke_manifest_readback)
     expected_chunk_sha = (after_state.get("chunks_out") or {}).get("sha256") or summary.get("smoke_chunks_sha256")
     expected_manifest_sha = (after_state.get("manifest_out") or {}).get("sha256") or summary.get("smoke_manifest_sha256")
     require("TASK061_SMOKE_CHUNK_SHA_PRESENT: #251 chunk sha exists", isinstance(expected_chunk_sha, str) and expected_chunk_sha.startswith("sha256:"))
@@ -1320,11 +1320,11 @@ def task061_smoke_manifest_gate(args: argparse.Namespace) -> dict[str, Any]:
     require("TASK061_SMOKE_CHUNKS_FILE_EXISTS: #251 smoke chunks file exists", chunk_state.get("is_file") is True)
     require("TASK061_SMOKE_MANIFEST_FILE_EXISTS: #251 smoke manifest file exists", manifest_state.get("is_file") is True)
     require(
-        "TASK061_SMOKE_CHUNKS_HASH_MATCH: live smoke chunks hash matches #251 FSV",
+        "TASK061_SMOKE_CHUNKS_HASH_MATCH: live smoke chunks hash matches #251 READBACK",
         chunk_state.get("sha256") == expected_chunk_sha,
     )
     require(
-        "TASK061_SMOKE_MANIFEST_HASH_MATCH: live smoke manifest hash matches #251 FSV",
+        "TASK061_SMOKE_MANIFEST_HASH_MATCH: live smoke manifest hash matches #251 READBACK",
         manifest_state.get("sha256") == expected_manifest_sha,
     )
     chunk_count = count_jsonl_rows(smoke_chunks)
@@ -1342,11 +1342,11 @@ def task061_smoke_manifest_gate(args: argparse.Namespace) -> dict[str, Any]:
     return {
         **base,
         "source_of_truth": {
-            "smoke_manifest_fsv": str(args.smoke_manifest_fsv),
+            "smoke_manifest_readback": str(args.smoke_manifest_readback),
             "smoke_chunks_jsonl": str(smoke_chunks),
             "smoke_manifest_jsonl": str(smoke_manifest),
         },
-        "fsv_state": fsv_state,
+        "readback_state": readback_state,
         "chunk_state": chunk_state,
         "manifest_state": manifest_state,
         "chunk_count": chunk_count,
@@ -1364,12 +1364,12 @@ def task061_smoke_manifest_gate(args: argparse.Namespace) -> dict[str, Any]:
 def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
     hot_root = args.hot_root.expanduser().resolve(strict=False)
     cache_root = args.cache_root.expanduser().resolve(strict=False)
-    fsv_root = args.fsv_root.expanduser().resolve(strict=False)
+    readback_root = args.readback_root.expanduser().resolve(strict=False)
     runner = validate_release_runner(args)
     # Durable-root policy. Default production root is aiwonder
     # /zfs/archive/contextgraph; override via CG_MEJEPA_DURABLE_ROOT only for
     # explicitly issue-scoped smoke/revalidation work.
-    # The hot-root must NOT be under that durable root; cache_root and fsv_root
+    # The hot-root must NOT be under that durable root; cache_root and readback_root
     # MUST be under it. Windows /mnt/c path remains forbidden always.
     durable_root = Path(os.environ.get("CG_MEJEPA_DURABLE_ROOT", str(AIWONDER_DURABLE_ROOT))).expanduser().resolve(strict=False)
     require(
@@ -1385,8 +1385,8 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
         path_is_under(cache_root, durable_root),
     )
     require(
-        f"MEJEPA_SCHEDULER_FSV_ROOT_NOT_DURABLE_ROOT: FSV root must be under {durable_root}",
-        path_is_under(fsv_root, durable_root),
+        f"MEJEPA_SCHEDULER_READBACK_ROOT_NOT_DURABLE_ROOT: READBACK root must be under {durable_root}",
+        path_is_under(readback_root, durable_root),
     )
 
     disks_raw = disk_snapshot()
@@ -1440,12 +1440,12 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
         "paths": {
             "hot_root": str(hot_root),
             "cache_root": str(cache_root),
-            "fsv_root": str(fsv_root),
+            "readback_root": str(readback_root),
             "durable_root": str(durable_root),
             "hot_root_on_aiwonder_hot_or_scratch": path_is_under(hot_root, AIWONDER_HOT_ROOT)
             or path_is_under(hot_root, AIWONDER_SCRATCH_ROOT),
             "cache_root_on_durable_root": path_is_under(cache_root, durable_root),
-            "fsv_root_on_durable_root": path_is_under(fsv_root, durable_root),
+            "readback_root_on_durable_root": path_is_under(readback_root, durable_root),
         },
         "runner": runner,
         "capacity_policy": capacity,
@@ -1495,7 +1495,7 @@ def build_plan(args: argparse.Namespace) -> list[ShardSpec]:
                 chunk_offset=offset,
                 max_chunks=args.shard_size,
                 cache_root=args.cache_root / "shards" / shard_id,
-                fsv_root=args.fsv_root / "shards" / shard_id,
+                readback_root=args.readback_root / "shards" / shard_id,
             )
         )
     return shards
@@ -1546,7 +1546,7 @@ def run_shard(
     env.update(
         {
             "CG_MEJEPA_PY_FORWARD_CACHE_ROOT": str(runner_shard.cache_root),
-            "CG_MEJEPA_PY_FORWARD_CACHE_FSV_ROOT": str(runner_shard.fsv_root),
+            "CG_MEJEPA_PY_FORWARD_CACHE_READBACK_ROOT": str(runner_shard.readback_root),
             "CG_MEJEPA_PY_FORWARD_CACHE_HOT_ROOT": str(runner_hot_root),
             "CG_MEJEPA_PY_CHUNKS_JSONL": str(args.chunks_jsonl),
             "CG_MEJEPA_PY_FORWARD_CACHE_CHUNK_OFFSET": str(runner_shard.chunk_offset),
@@ -1580,9 +1580,9 @@ def run_shard(
             "chunk_offset": shard.chunk_offset,
             "max_chunks": shard.max_chunks,
             "cache_root": str(shard.cache_root),
-            "fsv_root": str(shard.fsv_root),
+            "readback_root": str(shard.readback_root),
             "runner_cache_root": str(runner_shard.cache_root),
-            "runner_fsv_root": str(runner_shard.fsv_root),
+            "runner_readback_root": str(runner_shard.readback_root),
             "runner_hot_root": str(runner_hot_root),
             "hot_stage": stage_setup,
             "resource": resource_before,
@@ -1611,7 +1611,7 @@ def run_shard(
         "stdout_tail": completed.stdout[-8000:],
         "stderr_tail": completed.stderr[-8000:],
     }
-    run_log_path = args.fsv_root / "run_logs" / (run_log_name or f"{shard.shard_id}.json")
+    run_log_path = args.readback_root / "run_logs" / (run_log_name or f"{shard.shard_id}.json")
     json_dump_checked(run_log_path, run_log)
     require(f"{shard.shard_id} runner exited zero", completed.returncode == 0)
     timing_ms = {"runner_subprocess_ms": round(elapsed * 1000.0, 3)}
@@ -1664,7 +1664,7 @@ def copy_file_with_readback(source: Path, destination: Path) -> dict[str, Any]:
 
 
 def isolated_subrun_snapshot_root(args: argparse.Namespace, shard: ShardSpec) -> Path:
-    return args.fsv_root / "isolated_subrun_rows" / shard.shard_id
+    return args.readback_root / "isolated_subrun_rows" / shard.shard_id
 
 
 def snapshot_isolated_subrun_rows(
@@ -1688,7 +1688,7 @@ def snapshot_isolated_subrun_rows(
     snapshot_root = isolated_subrun_snapshot_root(args, shard)
     files = {
         "manifest": copy_file_with_readback(shard.manifest_path(), snapshot_root / f"{slug}.manifest.json"),
-        "fsv": copy_file_with_readback(shard.fsv_path(), snapshot_root / f"{slug}.fsv.json"),
+        "readback": copy_file_with_readback(shard.readback_path(), snapshot_root / f"{slug}.readback.json"),
         "index": copy_file_with_readback(shard.index_path(), snapshot_root / f"{slug}.index.jsonl"),
         "quarantine": copy_file_with_readback(shard.quarantine_path(), snapshot_root / f"{slug}.quarantine.jsonl"),
         "batch_telemetry": copy_file_with_readback(batch_telemetry_path, snapshot_root / f"{slug}.batch_telemetry.jsonl"),
@@ -1711,11 +1711,11 @@ def snapshot_isolated_subrun_rows(
         "snapshot_root": str(snapshot_root),
         "files": files,
         "packed_records": packed_records,
-        "run_log": str(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
-        "run_log_sha256": sha256_file(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
+        "run_log": str(args.readback_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
+        "run_log_sha256": sha256_file(args.readback_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
         "manifest_summary": summary,
         "manifest_sha256": sha256_file(shard.manifest_path()),
-        "fsv_sha256": sha256_file(shard.fsv_path()),
+        "readback_sha256": sha256_file(shard.readback_path()),
         "index_row_count": index_rows,
         "quarantine_row_count": quarantine_rows,
         "batch_telemetry_row_count": batch_rows,
@@ -1863,7 +1863,7 @@ def aggregate_hot_stage_promotion(subruns: list[dict[str, Any]]) -> dict[str, An
     timing_keys = (
         "path_rewrite_ms",
         "cache_promotion_ms",
-        "fsv_promotion_ms",
+        "readback_promotion_ms",
         "durable_readback_ms",
         "stage_cleanup_ms",
         "total_ms",
@@ -2063,10 +2063,10 @@ def consolidate_isolated_subruns(
         },
     }
     json_dump_checked(shard.manifest_path(), final_manifest)
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": "python_forward_isolated_shard_consolidation_fsv",
+        "artifact_kind": "python_forward_isolated_shard_consolidation_readback",
         "created_at_utc": utc_now(),
         "shard_id": shard.shard_id,
         "source_of_truth": {
@@ -2084,7 +2084,7 @@ def consolidate_isolated_subruns(
         "packed_payload_hash_readback": payload_hash_readback,
         "passes": True,
     }
-    json_dump_checked(shard.fsv_path(), fsv)
+    json_dump_checked(shard.readback_path(), readback)
     durable_readback_started = time.monotonic()
     readback = shard_completion_readback(args, shard)
     require_full_scheduler_shard(args, shard, readback["summary"])
@@ -2180,7 +2180,7 @@ def run_shard_embedder_isolated(
         if snapshot_inner is None:
             snapshot_inner = snapshot_isolated_subrun_rows(args, shard, slug, subrun_inner)
         else:
-            snapshot_inner["run_log_sha256"] = sha256_file(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json")
+            snapshot_inner["run_log_sha256"] = sha256_file(args.readback_root / "run_logs" / f"{shard.shard_id}.{slug}.json")
         return slug, subrun_inner, snapshot_inner
 
     if parallel_workers == 1:
@@ -2194,10 +2194,10 @@ def run_shard_embedder_isolated(
             subruns.append(
                 {
                     "embedder_id": slug_done,
-                    "run_log": str(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug_done}.json"),
+                    "run_log": str(args.readback_root / "run_logs" / f"{shard.shard_id}.{slug_done}.json"),
                     "run_log_sha256": snapshot["run_log_sha256"],
                     "manifest_sha256": snapshot["manifest_sha256"],
-                    "fsv_sha256": snapshot["fsv_sha256"],
+                    "readback_sha256": snapshot["readback_sha256"],
                     "summary": subrun.get("summary"),
                     "snapshot": snapshot,
                     "timing_ms": subrun.get("timing_ms"),
@@ -2240,10 +2240,10 @@ def run_shard_embedder_isolated(
             subruns.append(
                 {
                     "embedder_id": slug,
-                    "run_log": str(args.fsv_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
+                    "run_log": str(args.readback_root / "run_logs" / f"{shard.shard_id}.{slug}.json"),
                     "run_log_sha256": snapshot["run_log_sha256"],
                     "manifest_sha256": snapshot["manifest_sha256"],
-                    "fsv_sha256": snapshot["fsv_sha256"],
+                    "readback_sha256": snapshot["readback_sha256"],
                     "summary": subrun.get("summary"),
                     "snapshot": snapshot,
                     "timing_ms": subrun.get("timing_ms"),
@@ -2291,8 +2291,8 @@ def run_shard_embedder_isolated(
     return final_run
 
 
-def load_existing_run_logs(fsv_root: Path) -> list[dict[str, Any]]:
-    run_log_root = fsv_root / "run_logs"
+def load_existing_run_logs(readback_root: Path) -> list[dict[str, Any]]:
+    run_log_root = readback_root / "run_logs"
     if not run_log_root.exists():
         return []
     logs = []
@@ -2305,12 +2305,12 @@ def load_existing_run_logs(fsv_root: Path) -> list[dict[str, Any]]:
     return logs
 
 
-def validate_shard_fsv(shard: ShardSpec) -> dict[str, Any]:
-    fsv = read_json(shard.fsv_path())
-    require(f"{shard.shard_id} shard FSV passes", fsv.get("passes") is True)
+def validate_shard_readback(shard: ShardSpec) -> dict[str, Any]:
+    readback = read_json(shard.readback_path())
+    require(f"{shard.shard_id} shard READBACK passes", readback.get("passes") is True)
     return {
-        "fsv_path": str(shard.fsv_path()),
-        "fsv_sha256": sha256_file(shard.fsv_path()),
+        "readback_path": str(shard.readback_path()),
+        "readback_sha256": sha256_file(shard.readback_path()),
     }
 
 
@@ -2325,11 +2325,11 @@ def shard_completion_readback(
         validate_packed_readback=require_packed_store is not False,
         expected_chunks_jsonl=args.chunks_jsonl,
     )
-    fsv_readback = validate_shard_fsv(shard)
+    readback_readback = validate_shard_readback(shard)
     return {
         "manifest_path": str(shard.manifest_path()),
         "manifest_sha256": sha256_file(shard.manifest_path()),
-        **fsv_readback,
+        **readback_readback,
         "summary": manifest.get("summary"),
         "packed_store_readback": manifest.get("packed_store_readback"),
     }
@@ -2372,7 +2372,7 @@ def completed_shard_readback(args: argparse.Namespace, shard: ShardSpec) -> dict
 
 
 def resume_skip_log_path(args: argparse.Namespace, shard: ShardSpec) -> Path:
-    return args.fsv_root / "resume_skipped_run_logs" / f"{shard.shard_id}.json"
+    return args.readback_root / "resume_skipped_run_logs" / f"{shard.shard_id}.json"
 
 
 def completed_shard_bounded_readback(args: argparse.Namespace, shard: ShardSpec) -> dict[str, Any]:
@@ -2422,7 +2422,7 @@ def completed_shard_bounded_readback(args: argparse.Namespace, shard: ShardSpec)
         "existing_run_log": existing_run_log_state,
         "bounded_artifacts": {
             "manifest": file_state(shard.manifest_path()),
-            "fsv": file_state(shard.fsv_path()),
+            "readback": file_state(shard.readback_path()),
             "index": file_state(shard.index_path()),
             "quarantine": file_state(shard.quarantine_path()),
             "packed": packed_artifacts,
@@ -2432,7 +2432,7 @@ def completed_shard_bounded_readback(args: argparse.Namespace, shard: ShardSpec)
 
 
 def shard_run_log_path(args: argparse.Namespace, shard: ShardSpec) -> Path:
-    return args.fsv_root / "run_logs" / f"{shard.shard_id}.json"
+    return args.readback_root / "run_logs" / f"{shard.shard_id}.json"
 
 
 def unique_archive_root(parent: Path, stem: str) -> Path:
@@ -2463,18 +2463,18 @@ def archive_failed_partial_shard(
     run_log_path = shard_run_log_path(args, shard)
     before = {
         "cache_root": tree_state(shard.cache_root),
-        "fsv_root": tree_state(shard.fsv_root),
+        "readback_root": tree_state(shard.readback_root),
         "run_log": file_state(run_log_path),
     }
     archive_root = unique_archive_root(
-        args.fsv_root / "failed_partial_shards",
+        args.readback_root / "failed_partial_shards",
         f"{utc_now().replace('-', '').replace(':', '')}-{shard.shard_id}",
     )
     archive_root.mkdir(parents=True, exist_ok=False)
     moved: dict[str, str] = {}
     for label, source in (
         ("cache_root", shard.cache_root),
-        ("fsv_root", shard.fsv_root),
+        ("readback_root", shard.readback_root),
     ):
         if source.exists():
             destination = archive_root / label
@@ -2503,7 +2503,7 @@ def archive_failed_partial_shard(
         "moved_artifacts": moved,
         "source_after_state": {
             "cache_root": tree_state(shard.cache_root),
-            "fsv_root": tree_state(shard.fsv_root),
+            "readback_root": tree_state(shard.readback_root),
             "run_log": file_state(run_log_path),
         },
         "passes": True,
@@ -2529,7 +2529,7 @@ def archive_interrupted_hot_stage(
         return None
     before = tree_state(stage_root)
     archive_root = unique_archive_root(
-        args.fsv_root / "failed_hot_stages",
+        args.readback_root / "failed_hot_stages",
         f"{utc_now().replace('-', '').replace(':', '')}-{shard.shard_id}-{stage_root.name}",
     )
     shutil.move(str(stage_root), str(archive_root))
@@ -2579,7 +2579,7 @@ def hot_stage_shard(args: argparse.Namespace, shard: ShardSpec, run_log_name: st
         chunk_offset=shard.chunk_offset,
         max_chunks=shard.max_chunks,
         cache_root=root / "cache",
-        fsv_root=root / "fsv",
+        readback_root=root / "readback",
     )
 
 
@@ -2603,28 +2603,28 @@ def prepare_hot_stage(
     )
     stage_root.mkdir(parents=True, exist_ok=False)
     cache_seeded = seed_from_durable and durable_shard.cache_root.exists()
-    fsv_seeded = seed_from_durable and durable_shard.fsv_root.exists()
+    readback_seeded = seed_from_durable and durable_shard.readback_root.exists()
     if cache_seeded:
         shutil.copytree(durable_shard.cache_root, stage_shard.cache_root)
     else:
         stage_shard.cache_root.mkdir(parents=True)
-    if fsv_seeded:
-        shutil.copytree(durable_shard.fsv_root, stage_shard.fsv_root)
+    if readback_seeded:
+        shutil.copytree(durable_shard.readback_root, stage_shard.readback_root)
     else:
-        stage_shard.fsv_root.mkdir(parents=True)
+        stage_shard.readback_root.mkdir(parents=True)
     stage_path_rewrites = (
         rewrite_json_paths_in_tree(
             stage_shard.cache_root,
             {
                 str(durable_shard.cache_root): str(stage_shard.cache_root),
-                str(durable_shard.fsv_root): str(stage_shard.fsv_root),
+                str(durable_shard.readback_root): str(stage_shard.readback_root),
             },
         )
         + rewrite_json_paths_in_tree(
-            stage_shard.fsv_root,
+            stage_shard.readback_root,
             {
                 str(durable_shard.cache_root): str(stage_shard.cache_root),
-                str(durable_shard.fsv_root): str(stage_shard.fsv_root),
+                str(durable_shard.readback_root): str(stage_shard.readback_root),
             },
         )
     )
@@ -2634,22 +2634,22 @@ def prepare_hot_stage(
     return {
         "stage_root": str(stage_root),
         "stage_cache_root": str(stage_shard.cache_root),
-        "stage_fsv_root": str(stage_shard.fsv_root),
+        "stage_readback_root": str(stage_shard.readback_root),
         "stage_runner_hot_root": str(stage_hot_root),
         "seed_from_durable": seed_from_durable,
         "durable_seed": {
             "cache_root": cache_seeded,
-            "fsv_root": fsv_seeded,
+            "readback_root": readback_seeded,
         },
         "interrupted_stage_archive": archive,
         "stage_path_rewrites": stage_path_rewrites,
         "before_state": {
             "durable_cache_root": tree_state(durable_shard.cache_root),
-            "durable_fsv_root": tree_state(durable_shard.fsv_root),
+            "durable_readback_root": tree_state(durable_shard.readback_root),
         },
         "stage_before_runner": {
             "stage_cache_root": tree_state(stage_shard.cache_root),
-            "stage_fsv_root": tree_state(stage_shard.fsv_root),
+            "stage_readback_root": tree_state(stage_shard.readback_root),
             "stage_runner_hot_root": tree_state(stage_hot_root),
         },
         "passes": True,
@@ -2807,19 +2807,19 @@ def promote_hot_stage_shard(
     total_started = time.monotonic()
     replacements = {
         str(stage_shard.cache_root): str(durable_shard.cache_root),
-        str(stage_shard.fsv_root): str(durable_shard.fsv_root),
+        str(stage_shard.readback_root): str(durable_shard.readback_root),
     }
     rewrite_started = time.monotonic()
     rewrites = (
         rewrite_json_paths_in_tree(stage_shard.cache_root, replacements)
-        + rewrite_json_paths_in_tree(stage_shard.fsv_root, replacements)
+        + rewrite_json_paths_in_tree(stage_shard.readback_root, replacements)
     )
     path_rewrite_ms = elapsed_ms(rewrite_started)
     after_rewrite = {
         "stage_cache_root": tree_state(stage_shard.cache_root),
-        "stage_fsv_root": tree_state(stage_shard.fsv_root),
+        "stage_readback_root": tree_state(stage_shard.readback_root),
     }
-    archive_parent = args.fsv_root / "hot_stage_promoted_overwrites" / durable_shard.shard_id
+    archive_parent = args.readback_root / "hot_stage_promoted_overwrites" / durable_shard.shard_id
     cache_promotion_started = time.monotonic()
     cache_promotion = promote_tree_verified(
         stage_shard.cache_root,
@@ -2828,14 +2828,14 @@ def promote_hot_stage_shard(
         "cache_root",
     )
     cache_promotion_ms = elapsed_ms(cache_promotion_started)
-    fsv_promotion_started = time.monotonic()
-    fsv_promotion = promote_tree_verified(
-        stage_shard.fsv_root,
-        durable_shard.fsv_root,
-        archive_parent / "fsv",
-        "fsv_root",
+    readback_promotion_started = time.monotonic()
+    readback_promotion = promote_tree_verified(
+        stage_shard.readback_root,
+        durable_shard.readback_root,
+        archive_parent / "readback",
+        "readback_root",
     )
-    fsv_promotion_ms = elapsed_ms(fsv_promotion_started)
+    readback_promotion_ms = elapsed_ms(readback_promotion_started)
     durable_readback_started = time.monotonic()
     durable_readback = shard_completion_readback(args, durable_shard)
     durable_readback_ms = elapsed_ms(durable_readback_started)
@@ -2854,13 +2854,13 @@ def promote_hot_stage_shard(
         "path_rewrites": rewrites,
         "after_rewrite": after_rewrite,
         "cache_promotion": cache_promotion,
-        "fsv_promotion": fsv_promotion,
+        "readback_promotion": readback_promotion,
         "durable_readback": durable_readback,
         "stage_after_state": tree_state(stage_root),
         "timing_ms": {
             "path_rewrite_ms": path_rewrite_ms,
             "cache_promotion_ms": cache_promotion_ms,
-            "fsv_promotion_ms": fsv_promotion_ms,
+            "readback_promotion_ms": readback_promotion_ms,
             "durable_readback_ms": durable_readback_ms,
             "stage_cleanup_ms": stage_cleanup_ms,
             "total_ms": elapsed_ms(total_started),
@@ -2946,10 +2946,10 @@ def write_checkpoint(
         "status": "running" if next_shard is not None else "ready_for_final_aggregate",
         "source_of_truth": {
             "checkpoint_cache_path": str(args.cache_root / "python_forward_cache_checkpoint.json"),
-            "checkpoint_fsv_path": str(args.fsv_root / "python_forward_cache_checkpoint.json"),
+            "checkpoint_readback_path": str(args.readback_root / "python_forward_cache_checkpoint.json"),
             "cache_root": str(args.cache_root),
-            "fsv_root": str(args.fsv_root),
-            "run_log_root": str(args.fsv_root / "run_logs"),
+            "readback_root": str(args.readback_root),
+            "run_log_root": str(args.readback_root / "run_logs"),
         },
         "runner_controls": runner_batch_controls(args),
         "host_preflight": preflight,
@@ -2966,7 +2966,7 @@ def write_checkpoint(
                 "chunk_offset": next_shard.chunk_offset,
                 "max_chunks": next_shard.max_chunks,
                 "cache_root": str(next_shard.cache_root),
-                "fsv_root": str(next_shard.fsv_root),
+                "readback_root": str(next_shard.readback_root),
             },
             "last_completed_shard": None
             if not completed_shards
@@ -2992,31 +2992,31 @@ def write_checkpoint(
         "passes": True,
     }
     cache_checkpoint_path = args.cache_root / "python_forward_cache_checkpoint.json"
-    fsv_checkpoint_path = args.fsv_root / "python_forward_cache_checkpoint.json"
+    readback_checkpoint_path = args.readback_root / "python_forward_cache_checkpoint.json"
     checkpoint["timing_ms"]["checkpoint_update_ms"] = elapsed_ms(checkpoint_started)
     json_dump_checked(cache_checkpoint_path, checkpoint)
-    json_dump_checked(fsv_checkpoint_path, checkpoint)
+    json_dump_checked(readback_checkpoint_path, checkpoint)
     cache_readback = read_json(cache_checkpoint_path)
-    fsv_readback = read_json(fsv_checkpoint_path)
-    require("checkpoint cache and FSV summaries match", cache_readback["summary"] == fsv_readback["summary"])
-    require("checkpoint readback passes", cache_readback["passes"] is True and fsv_readback["passes"] is True)
+    readback_readback = read_json(readback_checkpoint_path)
+    require("checkpoint cache and READBACK summaries match", cache_readback["summary"] == readback_readback["summary"])
+    require("checkpoint readback passes", cache_readback["passes"] is True and readback_readback["passes"] is True)
     return checkpoint
 
 
 def checkpoint_file_paths(args: argparse.Namespace) -> tuple[Path, Path]:
     return (
         args.cache_root / "python_forward_cache_checkpoint.json",
-        args.fsv_root / "python_forward_cache_checkpoint.json",
+        args.readback_root / "python_forward_cache_checkpoint.json",
     )
 
 
 def read_existing_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
-    cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
+    cache_checkpoint_path, readback_checkpoint_path = checkpoint_file_paths(args)
     require("resume checkpoint cache file exists", cache_checkpoint_path.is_file())
-    require("resume checkpoint FSV file exists", fsv_checkpoint_path.is_file())
+    require("resume checkpoint READBACK file exists", readback_checkpoint_path.is_file())
     cache_bytes = cache_checkpoint_path.read_bytes()
-    fsv_bytes = fsv_checkpoint_path.read_bytes()
-    require("resume checkpoint cache and FSV bytes match", cache_bytes == fsv_bytes)
+    readback_bytes = readback_checkpoint_path.read_bytes()
+    require("resume checkpoint cache and READBACK bytes match", cache_bytes == readback_bytes)
     checkpoint = json.loads(cache_bytes.decode("utf-8"))
     require("resume checkpoint passes", checkpoint.get("passes") is True)
     require(
@@ -3090,30 +3090,30 @@ def validate_resume_checkpoint_prefix(
         planned_last = shards[completed_count - 1]
         require("resume checkpoint last shard id matches prefix", last_info.get("shard_id") == planned_last.shard_id)
         last_manifest = file_state(planned_last.manifest_path())
-        last_fsv = file_state(planned_last.fsv_path())
+        last_readback = file_state(planned_last.readback_path())
         last_run_log = file_state(shard_run_log_path(args, planned_last))
         require("resume checkpoint last shard manifest exists", last_manifest.get("exists") is True)
-        require("resume checkpoint last shard FSV exists", last_fsv.get("exists") is True)
+        require("resume checkpoint last shard READBACK exists", last_readback.get("exists") is True)
         require("resume checkpoint last shard run log exists", last_run_log.get("exists") is True)
         manifest = read_json(planned_last.manifest_path())
         require("resume checkpoint last shard manifest passes", manifest.get("passes") is True)
         last_readback = {
             "shard_id": planned_last.shard_id,
             "manifest": last_manifest,
-            "fsv": last_fsv,
+            "readback": last_readback,
             "run_log": last_run_log,
             "manifest_summary": manifest.get("summary"),
         }
     else:
         require("resume empty checkpoint has no last completed shard", last_info is None)
 
-    cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
+    cache_checkpoint_path, readback_checkpoint_path = checkpoint_file_paths(args)
     return {
         "completed_shards": completed_count,
         "summary": summary,
         "progress": progress,
         "checkpoint_cache": file_state(cache_checkpoint_path),
-        "checkpoint_fsv": file_state(fsv_checkpoint_path),
+        "checkpoint_readback": file_state(readback_checkpoint_path),
         "last_completed_shard": last_readback,
         "scan_mode": "checkpoint_prefix_bounded_readback",
         "passes": True,
@@ -3125,7 +3125,7 @@ def write_resume_decision(
     shard: ShardSpec,
     decision: dict[str, Any],
 ) -> dict[str, Any]:
-    decision_root = args.fsv_root / "resume_decisions"
+    decision_root = args.readback_root / "resume_decisions"
     path = unique_json_path(
         decision_root,
         f"{utc_now().replace('-', '').replace(':', '')}-{shard.shard_id}",
@@ -3156,17 +3156,17 @@ def scan_checkpoint_next_shard_state(
     checkpoint: dict[str, Any],
 ) -> dict[str, Any]:
     shard = checkpoint_next_shard(checkpoint, shards)
-    cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
+    cache_checkpoint_path, readback_checkpoint_path = checkpoint_file_paths(args)
     before = {
         "checkpoint_cache": file_state(cache_checkpoint_path),
-        "checkpoint_fsv": file_state(fsv_checkpoint_path),
+        "checkpoint_readback": file_state(readback_checkpoint_path),
         "cache_root": tree_state(shard.cache_root),
-        "fsv_root": tree_state(shard.fsv_root),
+        "readback_root": tree_state(shard.readback_root),
         "run_log": file_state(shard_run_log_path(args, shard)),
     }
     has_existing_state = (
         shard.cache_root.exists()
-        or shard.fsv_root.exists()
+        or shard.readback_root.exists()
         or shard_run_log_path(args, shard).exists()
     )
     if not has_existing_state:
@@ -3175,13 +3175,13 @@ def scan_checkpoint_next_shard_state(
             shard,
             {
                 "decision": "no_partial_state",
-                "reason": "checkpoint next shard has no cache, FSV, or run-log state",
+                "reason": "checkpoint next shard has no cache, READBACK, or run-log state",
                 "before_state": before,
                 "after_state": {
                     "checkpoint_cache": file_state(cache_checkpoint_path),
-                    "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                    "checkpoint_readback": file_state(readback_checkpoint_path),
                     "cache_root": tree_state(shard.cache_root),
-                    "fsv_root": tree_state(shard.fsv_root),
+                    "readback_root": tree_state(shard.readback_root),
                     "run_log": file_state(shard_run_log_path(args, shard)),
                 },
                 "checkpoint_sha256_unchanged": before["checkpoint_cache"].get("sha256")
@@ -3202,9 +3202,9 @@ def scan_checkpoint_next_shard_state(
                     "before_state": before,
                     "after_state": {
                         "checkpoint_cache": file_state(cache_checkpoint_path),
-                        "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                        "checkpoint_readback": file_state(readback_checkpoint_path),
                         "cache_root": tree_state(shard.cache_root),
-                        "fsv_root": tree_state(shard.fsv_root),
+                        "readback_root": tree_state(shard.readback_root),
                         "run_log": file_state(shard_run_log_path(args, shard)),
                     },
                     "checkpoint_sha256_unchanged": before["checkpoint_cache"].get("sha256")
@@ -3230,9 +3230,9 @@ def scan_checkpoint_next_shard_state(
                 "archive": archive,
                 "after_state": {
                     "checkpoint_cache": file_state(cache_checkpoint_path),
-                    "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                    "checkpoint_readback": file_state(readback_checkpoint_path),
                     "cache_root": tree_state(shard.cache_root),
-                    "fsv_root": tree_state(shard.fsv_root),
+                    "readback_root": tree_state(shard.readback_root),
                     "run_log": file_state(shard_run_log_path(args, shard)),
                 },
                 "checkpoint_sha256_unchanged": before["checkpoint_cache"].get("sha256")
@@ -3250,9 +3250,9 @@ def scan_checkpoint_next_shard_state(
             "completed_readback": completed,
             "after_state": {
                 "checkpoint_cache": file_state(cache_checkpoint_path),
-                "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                "checkpoint_readback": file_state(readback_checkpoint_path),
                 "cache_root": tree_state(shard.cache_root),
-                "fsv_root": tree_state(shard.fsv_root),
+                "readback_root": tree_state(shard.readback_root),
                 "run_log": file_state(shard_run_log_path(args, shard)),
             },
             "checkpoint_sha256_unchanged": before["checkpoint_cache"].get("sha256")
@@ -3274,24 +3274,24 @@ def checkpoint_for_shard(shard: ShardSpec) -> dict[str, Any]:
                 "chunk_offset": shard.chunk_offset,
                 "max_chunks": shard.max_chunks,
                 "cache_root": str(shard.cache_root),
-                "fsv_root": str(shard.fsv_root),
+                "readback_root": str(shard.readback_root),
             }
         },
     }
 
 
 def write_checkpoint_pair(args: argparse.Namespace, checkpoint: dict[str, Any]) -> dict[str, Any]:
-    cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
+    cache_checkpoint_path, readback_checkpoint_path = checkpoint_file_paths(args)
     json_dump_checked(cache_checkpoint_path, checkpoint)
-    json_dump_checked(fsv_checkpoint_path, checkpoint)
+    json_dump_checked(readback_checkpoint_path, checkpoint)
     cache_readback = read_json(cache_checkpoint_path)
-    fsv_readback = read_json(fsv_checkpoint_path)
+    readback_readback = read_json(readback_checkpoint_path)
     require("checkpoint pair cache readback passes", cache_readback.get("passes") is True)
-    require("checkpoint pair FSV readback passes", fsv_readback.get("passes") is True)
-    require("checkpoint pair bytes match", cache_checkpoint_path.read_bytes() == fsv_checkpoint_path.read_bytes())
+    require("checkpoint pair READBACK readback passes", readback_readback.get("passes") is True)
+    require("checkpoint pair bytes match", cache_checkpoint_path.read_bytes() == readback_checkpoint_path.read_bytes())
     return {
         "cache_checkpoint": file_state(cache_checkpoint_path),
-        "fsv_checkpoint": file_state(fsv_checkpoint_path),
+        "readback_checkpoint": file_state(readback_checkpoint_path),
     }
 
 
@@ -3308,26 +3308,26 @@ def clone_resume_edge_args(
         shutil.rmtree(case_root)
     edge_args = argparse.Namespace(**vars(args))
     edge_args.cache_root = case_root / "cache"
-    edge_args.fsv_root = case_root / "fsv"
+    edge_args.readback_root = case_root / "readback"
     edge_args.hot_root = case_root / "hot"
     edge_args.retry_failed_partial_shards = retry_failed_partial_shards
     edge_args.require_packed_store = True
     if active_embedder_count is not None:
         edge_args.active_embedder_count = active_embedder_count
     edge_args.cache_root.mkdir(parents=True)
-    edge_args.fsv_root.mkdir(parents=True)
+    edge_args.readback_root.mkdir(parents=True)
     edge_args.hot_root.mkdir(parents=True)
     os.chmod(edge_args.hot_root, 0o700)
     return edge_args
 
 
 def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any]]:
-    edge_root = args.fsv_root / "edge_inputs" / "resume_preflight"
+    edge_root = args.readback_root / "edge_inputs" / "resume_preflight"
     edge_root.mkdir(parents=True, exist_ok=True)
     cases: list[dict[str, Any]] = []
 
     def append_case(case_name: str, edge_args: argparse.Namespace, shard: ShardSpec, decision: dict[str, Any]) -> None:
-        cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(edge_args)
+        cache_checkpoint_path, readback_checkpoint_path = checkpoint_file_paths(edge_args)
         cases.append(
             {
                 "case": case_name,
@@ -3336,10 +3336,10 @@ def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any
                 "decision_path": decision["decision_path"],
                 "decision_sha256": decision["decision_sha256"],
                 "checkpoint_cache": file_state(cache_checkpoint_path),
-                "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                "checkpoint_readback": file_state(readback_checkpoint_path),
                 "source_after_state": {
                     "cache_root": tree_state(shard.cache_root),
-                    "fsv_root": tree_state(shard.fsv_root),
+                    "readback_root": tree_state(shard.readback_root),
                     "run_log": file_state(shard_run_log_path(edge_args, shard)),
                 },
             }
@@ -3351,7 +3351,7 @@ def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any
         500_000_000,
         1,
         no_state_args.cache_root / "shards" / "edge-no-partial-state",
-        no_state_args.fsv_root / "shards" / "edge-no-partial-state",
+        no_state_args.readback_root / "shards" / "edge-no-partial-state",
     )
     write_checkpoint_pair(no_state_args, checkpoint_for_shard(no_state_shard))
     no_state_decision = scan_checkpoint_next_shard_state(no_state_args, [no_state_shard], read_existing_checkpoint(no_state_args))
@@ -3365,16 +3365,16 @@ def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any
         500_000_001,
         1,
         partial_args.cache_root / "shards" / "edge-partial-without-manifest",
-        partial_args.fsv_root / "shards" / "edge-partial-without-manifest",
+        partial_args.readback_root / "shards" / "edge-partial-without-manifest",
     )
     write_checkpoint_pair(partial_args, checkpoint_for_shard(partial_shard))
     partial_shard.cache_root.mkdir(parents=True)
-    partial_shard.fsv_root.mkdir(parents=True)
+    partial_shard.readback_root.mkdir(parents=True)
     (partial_shard.cache_root / "python_forward_cache_index.jsonl").write_text(
         json.dumps({"cache_key_sha256": f"sha256:{'6' * 64}"}) + "\n",
         encoding="utf-8",
     )
-    json_dump_checked(partial_shard.fsv_root / "partial_marker.json", {"passes": False})
+    json_dump_checked(partial_shard.readback_root / "partial_marker.json", {"passes": False})
     json_dump_checked(
         shard_run_log_path(partial_args, partial_shard),
         {"shard_id": partial_shard.shard_id, "exit_code": 1, "stderr_tail": "synthetic partial"},
@@ -3383,7 +3383,7 @@ def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any
     require("resume partial edge archives for retry", partial_decision["decision"] == "archived_for_retry")
     require("resume partial edge keeps checkpoint unchanged", partial_decision["checkpoint_sha256_unchanged"] is True)
     require("resume partial edge removes source cache root", not partial_shard.cache_root.exists())
-    require("resume partial edge removes source FSV root", not partial_shard.fsv_root.exists())
+    require("resume partial edge removes source READBACK root", not partial_shard.readback_root.exists())
     require("resume partial edge removes source run log", not shard_run_log_path(partial_args, partial_shard).exists())
     append_case("resume_partial_without_manifest_archived", partial_args, partial_shard, partial_decision)
 
@@ -3404,7 +3404,7 @@ def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any
     require("resume mismatch edge archives for retry", mismatch_decision["decision"] == "archived_for_retry")
     require("resume mismatch edge keeps checkpoint unchanged", mismatch_decision["checkpoint_sha256_unchanged"] is True)
     require("resume mismatch edge removes source cache root", not mismatch_shard.cache_root.exists())
-    require("resume mismatch edge removes source FSV root", not mismatch_shard.fsv_root.exists())
+    require("resume mismatch edge removes source READBACK root", not mismatch_shard.readback_root.exists())
     append_case("resume_mismatched_completed_proof_archived", mismatch_args, mismatch_shard, mismatch_decision)
 
     exact_args = clone_resume_edge_args(
@@ -3437,7 +3437,7 @@ def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any
     require("resume exact edge accepts completed proof", exact_decision["decision"] == "exact_resume_proof_accepted")
     require("resume exact edge keeps checkpoint unchanged", exact_decision["checkpoint_sha256_unchanged"] is True)
     require("resume exact edge preserves source cache root", exact_shard.cache_root.exists())
-    require("resume exact edge preserves source FSV root", exact_shard.fsv_root.exists())
+    require("resume exact edge preserves source READBACK root", exact_shard.readback_root.exists())
     append_case("resume_exact_completed_proof_accepted", exact_args, exact_shard, exact_decision)
 
     blocked_args = clone_resume_edge_args(
@@ -3452,16 +3452,16 @@ def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any
         500_000_004,
         1,
         blocked_args.cache_root / "shards" / "edge-blocked-without-retry",
-        blocked_args.fsv_root / "shards" / "edge-blocked-without-retry",
+        blocked_args.readback_root / "shards" / "edge-blocked-without-retry",
     )
     write_checkpoint_pair(blocked_args, checkpoint_for_shard(blocked_shard))
     blocked_shard.cache_root.mkdir(parents=True)
-    blocked_shard.fsv_root.mkdir(parents=True)
+    blocked_shard.readback_root.mkdir(parents=True)
     (blocked_shard.cache_root / "python_forward_cache_index.jsonl").write_text("", encoding="utf-8")
     try:
         scan_checkpoint_next_shard_state(blocked_args, [blocked_shard], read_existing_checkpoint(blocked_args))
     except SchedulerError as exc:
-        decision_files = sorted((blocked_args.fsv_root / "resume_decisions").glob("*.json"))
+        decision_files = sorted((blocked_args.readback_root / "resume_decisions").glob("*.json"))
         require("resume blocked edge wrote decision file", bool(decision_files))
         blocked_decision = read_json(decision_files[-1])
         require("resume blocked edge records blocked decision", blocked_decision.get("decision") == "blocked_partial_state")
@@ -3476,7 +3476,7 @@ def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any
                 "decision": blocked_decision.get("decision"),
                 "source_after_state": {
                     "cache_root": tree_state(blocked_shard.cache_root),
-                    "fsv_root": tree_state(blocked_shard.fsv_root),
+                    "readback_root": tree_state(blocked_shard.readback_root),
                     "run_log": file_state(shard_run_log_path(blocked_args, blocked_shard)),
                 },
             }
@@ -3487,7 +3487,7 @@ def resume_preflight_edge_checks(args: argparse.Namespace) -> list[dict[str, Any
     return cases
 
 
-def write_resume_preflight_fsv(
+def write_resume_preflight_readback(
     args: argparse.Namespace,
     started_at: str,
     before: dict[str, Any],
@@ -3497,19 +3497,19 @@ def write_resume_preflight_fsv(
 ) -> dict[str, Any]:
     require("resume preflight decision passes", decision.get("passes") is True)
     require("resume preflight edge cases pass", all(case.get("passes") is True for case in edge_cases))
-    cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
-    fsv = {
+    cache_checkpoint_path, readback_checkpoint_path = checkpoint_file_paths(args)
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": "python_forward_resume_preflight_fsv",
+        "artifact_kind": "python_forward_resume_preflight_readback",
         "started_at_utc": started_at,
         "created_at_utc": utc_now(),
         "source_of_truth": {
             "checkpoint_cache": str(cache_checkpoint_path),
-            "checkpoint_fsv": str(fsv_checkpoint_path),
+            "checkpoint_readback": str(readback_checkpoint_path),
             "decision_path": decision["decision_path"],
             "cache_root": str(args.cache_root),
-            "fsv_root": str(args.fsv_root),
+            "readback_root": str(args.readback_root),
             "hot_root": str(args.hot_root),
         },
         "before_state": before,
@@ -3520,25 +3520,25 @@ def write_resume_preflight_fsv(
         "after_state": {
             **scheduler_root_state(args),
             "checkpoint_cache": file_state(cache_checkpoint_path),
-            "checkpoint_fsv": file_state(fsv_checkpoint_path),
+            "checkpoint_readback": file_state(readback_checkpoint_path),
             "disk": disk_snapshot(),
             "resource": resource_snapshot(args, "resume_preflight_after"),
         },
         "passes": True,
     }
-    fsv_path = args.fsv_root / "python_forward_resume_preflight_fsv.json"
-    json_dump_checked(fsv_path, fsv)
-    readback = read_json(fsv_path)
-    require("resume preflight FSV readback passes", readback.get("passes") is True)
+    readback_path = args.readback_root / "python_forward_resume_preflight_readback.json"
+    json_dump_checked(readback_path, readback)
+    readback = read_json(readback_path)
+    require("resume preflight READBACK readback passes", readback.get("passes") is True)
     return {
-        **fsv,
-        "fsv_path": str(fsv_path),
-        "fsv_sha256": sha256_file(fsv_path),
+        **readback,
+        "readback_path": str(readback_path),
+        "readback_sha256": sha256_file(readback_path),
     }
 
 
 def hot_stage_promotion_edge_checks(args: argparse.Namespace) -> list[dict[str, Any]]:
-    edge_root = args.fsv_root / "edge_inputs" / "hot_stage_promotion"
+    edge_root = args.readback_root / "edge_inputs" / "hot_stage_promotion"
     edge_root.mkdir(parents=True, exist_ok=True)
     cases: list[dict[str, Any]] = []
 
@@ -3576,7 +3576,7 @@ def hot_stage_promotion_edge_checks(args: argparse.Namespace) -> list[dict[str, 
         600_000_000,
         1,
         edge_root / "durable-cache",
-        edge_root / "durable-fsv",
+        edge_root / "durable-readback",
     )
     stage_edge_shard = hot_stage_shard(args, durable_edge_shard)
     stage_root = hot_stage_root(args, durable_edge_shard)
@@ -3595,7 +3595,7 @@ def hot_stage_promotion_edge_checks(args: argparse.Namespace) -> list[dict[str, 
             "archive": archive,
             "fresh_stage_state": {
                 "stage_cache_root": tree_state(stage_edge_shard.cache_root),
-                "stage_fsv_root": tree_state(stage_edge_shard.fsv_root),
+                "stage_readback_root": tree_state(stage_edge_shard.readback_root),
             },
         }
     )
@@ -3631,7 +3631,7 @@ def hot_stage_promotion_edge_checks(args: argparse.Namespace) -> list[dict[str, 
     require(
         "parallel isolated hot-stage edge records disabled durable seed",
         parallel_stage_setup.get("seed_from_durable") is False
-        and parallel_stage_setup.get("durable_seed") == {"cache_root": False, "fsv_root": False},
+        and parallel_stage_setup.get("durable_seed") == {"cache_root": False, "readback_root": False},
     )
     cases.append(
         {
@@ -3641,7 +3641,7 @@ def hot_stage_promotion_edge_checks(args: argparse.Namespace) -> list[dict[str, 
             "stage_setup": parallel_stage_setup,
             "stage_after_prepare": {
                 "cache_root": tree_state(parallel_stage_shard.cache_root),
-                "fsv_root": tree_state(parallel_stage_shard.fsv_root),
+                "readback_root": tree_state(parallel_stage_shard.readback_root),
             },
         }
     )
@@ -3651,19 +3651,19 @@ def hot_stage_promotion_edge_checks(args: argparse.Namespace) -> list[dict[str, 
     preflight_args.mode = "preflight-resume"
     preflight_args.retry_failed_partial_shards = True
     preflight_args.hot_root = args.hot_root / "edge-hot-stage-preflight-root"
-    preflight_args.fsv_root = edge_root / "preflight-archive-fsv"
+    preflight_args.readback_root = edge_root / "preflight-archive-readback"
     preflight_shard = ShardSpec(
         "edge-hot-stage-preflight-archive",
         600_000_005,
         1,
         edge_root / "preflight-durable-cache",
-        edge_root / "preflight-durable-fsv",
+        edge_root / "preflight-durable-readback",
     )
     preflight_stage_root = preflight_args.hot_root / "packed-shard-stage" / preflight_shard.shard_id
     if preflight_args.hot_root.exists():
         shutil.rmtree(preflight_args.hot_root)
-    if preflight_args.fsv_root.exists():
-        shutil.rmtree(preflight_args.fsv_root)
+    if preflight_args.readback_root.exists():
+        shutil.rmtree(preflight_args.readback_root)
     preflight_stage_root.mkdir(parents=True)
     (preflight_stage_root / "stale-marker.txt").write_text("interrupted", encoding="utf-8")
     preflight_archives = archive_hot_stage_blockers_for_preflight(preflight_args, [preflight_shard])
@@ -3947,7 +3947,7 @@ def validate_run_log_resume_telemetry(args: argparse.Namespace, run_log: dict[st
         for key in (
             "path_rewrite_ms",
             "cache_promotion_ms",
-            "fsv_promotion_ms",
+            "readback_promotion_ms",
             "durable_readback_ms",
             "stage_cleanup_ms",
             "total_ms",
@@ -4055,7 +4055,7 @@ def resume_gate_edge_checks(args: argparse.Namespace, run_logs: list[dict[str, A
     return cases
 
 
-def write_resume_gate_fsv(
+def write_resume_gate_readback(
     args: argparse.Namespace,
     started_at: str,
     event_path: Path,
@@ -4090,22 +4090,22 @@ def write_resume_gate_fsv(
         for row in run_telemetry
     )
     total_elapsed = sum(float(row["elapsed_seconds"]) for row in run_telemetry)
-    fsv_path = args.fsv_root / "python_forward_resume_gate_fsv.json"
+    readback_path = args.readback_root / "python_forward_resume_gate_readback.json"
     value = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": "python_forward_resume_gate_fsv",
+        "artifact_kind": "python_forward_resume_gate_readback",
         "started_at_utc": started_at,
         "created_at_utc": utc_now(),
         "source_of_truth": {
-            "resume_gate_fsv": str(fsv_path),
+            "resume_gate_readback": str(readback_path),
             "events": str(event_path),
             "checkpoint_cache": str(args.cache_root / "python_forward_cache_checkpoint.json"),
-            "checkpoint_fsv": str(args.fsv_root / "python_forward_cache_checkpoint.json"),
+            "checkpoint_readback": str(args.readback_root / "python_forward_cache_checkpoint.json"),
             "aggregate_manifest": str(args.cache_root / "python_forward_cache_corpus_manifest.json"),
             "cache_root": str(args.cache_root),
-            "fsv_root": str(args.fsv_root),
-            "run_log_root": str(args.fsv_root / "run_logs"),
+            "readback_root": str(args.readback_root),
+            "run_log_root": str(args.readback_root / "run_logs"),
         },
         "baseline_checkpoint": baseline,
         "host_preflight": preflight,
@@ -4124,11 +4124,11 @@ def write_resume_gate_fsv(
         "edge_cases": edge_cases,
         "passes": True,
     }
-    json_dump_checked(fsv_path, value)
-    readback = read_json(fsv_path)
-    require("resume gate FSV readback passes", readback.get("passes") is True)
+    json_dump_checked(readback_path, value)
+    readback = read_json(readback_path)
+    require("resume gate READBACK readback passes", readback.get("passes") is True)
     require("resume gate edge cases pass", all(case.get("passes") is True for case in edge_cases))
-    value["resume_gate_sha256"] = sha256_file(fsv_path)
+    value["resume_gate_sha256"] = sha256_file(readback_path)
     return value
 
 
@@ -4268,7 +4268,7 @@ def validate_manifest(
         f"{shard.shard_id} quarantine row count matches manifest",
         quarantine_rows == summary.get("quarantine_row_count"),
     )
-    validate_shard_fsv(shard)
+    validate_shard_readback(shard)
     layout = manifest.get("inputs", {}).get("cache_store_layout", "legacy-files")
     if require_packed_store:
         require(
@@ -4288,14 +4288,14 @@ def write_minimal_packed_shard(
     chunks_jsonl: Path | None = None,
 ) -> ShardSpec:
     cache_root = root / shard_id
-    fsv_root = root / f"{shard_id}-fsv"
+    readback_root = root / f"{shard_id}-readback"
     if cache_root.exists():
         shutil.rmtree(cache_root)
-    if fsv_root.exists():
-        shutil.rmtree(fsv_root)
+    if readback_root.exists():
+        shutil.rmtree(readback_root)
     packed_root = cache_root / "packed_records"
     packed_root.mkdir(parents=True, exist_ok=True)
-    fsv_root.mkdir(parents=True, exist_ok=True)
+    readback_root.mkdir(parents=True, exist_ok=True)
     record_path = packed_root / "e1.jsonl"
     index_path = packed_root / "e1.index.jsonl"
     record = {
@@ -4377,8 +4377,8 @@ def write_minimal_packed_shard(
             },
         },
     )
-    json_dump_checked(fsv_root / "python_forward_cache_fsv.json", {"passes": True})
-    return ShardSpec(shard_id, chunk_offset, max_chunks, cache_root, fsv_root)
+    json_dump_checked(readback_root / "python_forward_cache_readback.json", {"passes": True})
+    return ShardSpec(shard_id, chunk_offset, max_chunks, cache_root, readback_root)
 
 
 def write_cumulative_isolated_packed_shard(
@@ -4480,8 +4480,8 @@ def aggregate(
                 "max_chunks": shard.max_chunks,
                 "manifest_path": str(shard.manifest_path()),
                 "manifest_sha256": sha256_file(shard.manifest_path()),
-                "fsv_path": str(shard.fsv_path()),
-                "fsv_sha256": sha256_file(shard.fsv_path()),
+                "readback_path": str(shard.readback_path()),
+                "readback_sha256": sha256_file(shard.readback_path()),
                 "index_rows": count_jsonl_rows(shard.index_path()),
                 "quarantine_rows": count_jsonl_rows(shard.quarantine_path()),
                 "batch_telemetry_rows": int(summary["batch_telemetry_row_count"]),
@@ -4561,11 +4561,11 @@ def preflight_edge_checks(args: argparse.Namespace, preflight: dict[str, Any]) -
     )
     expect_preflight_failure(
         "debug_cargo_run_rejected_before_writes",
-        cargo_runner="cargo run -p context-graph-mejepa-embedders --example python_forward_cache_fsv",
+        cargo_runner="cargo run -p context-graph-mejepa-embedders --example python_forward_cache_readback",
     )
     expect_preflight_failure(
         "missing_release_runner_rejected_before_writes",
-        cargo_runner="/definitely/missing/python_forward_cache_fsv",
+        cargo_runner="/definitely/missing/python_forward_cache_readback",
     )
     return cases
 
@@ -4573,9 +4573,9 @@ def preflight_edge_checks(args: argparse.Namespace, preflight: dict[str, Any]) -
 def task061_smoke_manifest_gate_edge_checks(args: argparse.Namespace) -> list[dict[str, Any]]:
     if not task061_smoke_manifest_gate_required(args):
         return []
-    edge_root = args.fsv_root / "edge_inputs" / "task061_smoke_manifest_gate"
+    edge_root = args.readback_root / "edge_inputs" / "task061_smoke_manifest_gate"
     edge_root.mkdir(parents=True, exist_ok=True)
-    real_payload = read_json(args.smoke_manifest_fsv)
+    real_payload = read_json(args.smoke_manifest_readback)
     source_of_truth = real_payload.get("source_of_truth")
     require("task061 edge source_of_truth object exists", isinstance(source_of_truth, dict))
     real_manifest = require_path_string(source_of_truth, "smoke_manifest_jsonl", "task061 edge source_of_truth")
@@ -4594,12 +4594,12 @@ def task061_smoke_manifest_gate_edge_checks(args: argparse.Namespace) -> list[di
     synthetic_payload["source_of_truth"]["smoke_manifest_jsonl"] = str(stale_manifest)
     synthetic_payload["after_state"]["chunks_out"]["path"] = str(stale_chunks)
     synthetic_payload["after_state"]["manifest_out"]["path"] = str(stale_manifest)
-    synthetic_fsv = edge_root / "synthetic_stale_smoke_manifest_fsv.json"
-    json_dump_checked(synthetic_fsv, synthetic_payload)
+    synthetic_readback = edge_root / "synthetic_stale_smoke_manifest_readback.json"
+    json_dump_checked(synthetic_readback, synthetic_payload)
 
     edge_args = argparse.Namespace(**vars(args))
     edge_args.chunks_jsonl = stale_chunks
-    edge_args.smoke_manifest_fsv = synthetic_fsv
+    edge_args.smoke_manifest_readback = synthetic_readback
     try:
         task061_smoke_manifest_gate(edge_args)
     except SchedulerError as exc:
@@ -4609,8 +4609,8 @@ def task061_smoke_manifest_gate_edge_checks(args: argparse.Namespace) -> list[di
             {
                 "case": "stale_task061_smoke_chunks_hash_rejected",
                 "passes": True,
-                "synthetic_fsv": str(synthetic_fsv),
-                "synthetic_fsv_sha256": sha256_file(synthetic_fsv),
+                "synthetic_readback": str(synthetic_readback),
+                "synthetic_readback_sha256": sha256_file(synthetic_readback),
                 "stale_chunks": file_state(stale_chunks),
                 "expected_source_chunks_sha256": (real_payload.get("summary") or {}).get("smoke_chunks_sha256"),
                 "error": error,
@@ -4624,7 +4624,7 @@ def edge_checks(
     shards: list[ShardSpec],
     preflight: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    edge_root = args.fsv_root / "edge_inputs"
+    edge_root = args.readback_root / "edge_inputs"
     edge_root.mkdir(parents=True, exist_ok=True)
     cases: list[dict[str, Any]] = preflight_edge_checks(args, preflight)
     cases.extend(task061_smoke_manifest_gate_edge_checks(args))
@@ -4692,23 +4692,23 @@ def edge_checks(
 
     bounded_args = argparse.Namespace(**vars(args))
     bounded_args.cache_root = edge_root / "bounded-root-cache"
-    bounded_args.fsv_root = edge_root / "bounded-root-fsv"
+    bounded_args.readback_root = edge_root / "bounded-root-readback"
     bounded_args.hot_root = edge_root / "bounded-root-hot"
-    for root in (bounded_args.cache_root, bounded_args.fsv_root, bounded_args.hot_root):
+    for root in (bounded_args.cache_root, bounded_args.readback_root, bounded_args.hot_root):
         root.mkdir(parents=True, exist_ok=True)
     json_dump_checked(
         bounded_args.cache_root / "python_forward_cache_checkpoint.json",
         {"passes": True, "root": "cache"},
     )
     json_dump_checked(
-        bounded_args.fsv_root / "python_forward_cache_checkpoint.json",
-        {"passes": True, "root": "fsv"},
+        bounded_args.readback_root / "python_forward_cache_checkpoint.json",
+        {"passes": True, "root": "readback"},
     )
     json_dump_checked(
         bounded_args.cache_root / "python_forward_cache_shard_plan.json",
         {"passes": True, "artifact": "plan"},
     )
-    unrelated = bounded_args.fsv_root / "unrelated-large-subtree"
+    unrelated = bounded_args.readback_root / "unrelated-large-subtree"
     unrelated.mkdir(parents=True, exist_ok=True)
     sentinel = unrelated / "sentinel.txt"
     sentinel.write_text("must not be recursively hashed by scheduler root readback\n", encoding="utf-8")
@@ -4718,31 +4718,31 @@ def edge_checks(
     require(
         "bounded scheduler root state records checkpoint artifacts",
         root_state["cache_root"]["artifacts"]["checkpoint"].get("exists") is True
-        and root_state["fsv_root"]["artifacts"]["checkpoint"].get("exists") is True,
+        and root_state["readback_root"]["artifacts"]["checkpoint"].get("exists") is True,
     )
     require(
-        "bounded scheduler root state does not hash unrelated FSV subtree",
+        "bounded scheduler root state does not hash unrelated READBACK subtree",
         sentinel_sha not in root_state_json,
     )
     require(
         "bounded scheduler root state declares bounded scan mode",
-        root_state["fsv_root"]["scan_mode"] == "bounded_artifact_readback",
+        root_state["readback_root"]["scan_mode"] == "bounded_artifact_readback",
     )
     cases.append(
         {
             "case": "bounded_scheduler_root_state_ignores_unrelated_subtree",
             "passes": True,
             "cache_checkpoint": root_state["cache_root"]["artifacts"]["checkpoint"],
-            "fsv_checkpoint": root_state["fsv_root"]["artifacts"]["checkpoint"],
+            "readback_checkpoint": root_state["readback_root"]["artifacts"]["checkpoint"],
             "unrelated_subtree": directory_state(unrelated),
             "sentinel_sha256_not_present": sentinel_sha,
-            "scan_mode": root_state["fsv_root"]["scan_mode"],
+            "scan_mode": root_state["readback_root"]["scan_mode"],
         }
     )
 
     prefix_args = argparse.Namespace(**vars(args))
     prefix_args.cache_root = edge_root / "resume-prefix-cache"
-    prefix_args.fsv_root = edge_root / "resume-prefix-fsv"
+    prefix_args.readback_root = edge_root / "resume-prefix-readback"
     prefix_args.hot_root = edge_root / "resume-prefix-hot"
     prefix_shards = [
         ShardSpec(
@@ -4750,14 +4750,14 @@ def edge_checks(
             chunk_offset=0,
             max_chunks=1,
             cache_root=prefix_args.cache_root / "shards" / "edge-prefix-000",
-            fsv_root=prefix_args.fsv_root / "shards" / "edge-prefix-000",
+            readback_root=prefix_args.readback_root / "shards" / "edge-prefix-000",
         ),
         ShardSpec(
             shard_id="edge-prefix-001",
             chunk_offset=1,
             max_chunks=1,
             cache_root=prefix_args.cache_root / "shards" / "edge-prefix-001",
-            fsv_root=prefix_args.fsv_root / "shards" / "edge-prefix-001",
+            readback_root=prefix_args.readback_root / "shards" / "edge-prefix-001",
         ),
     ]
     prefix_summary = {
@@ -4777,7 +4777,7 @@ def edge_checks(
         prefix_shards[0].manifest_path(),
         {"passes": True, "summary": prefix_summary},
     )
-    json_dump_checked(prefix_shards[0].fsv_path(), {"passes": True})
+    json_dump_checked(prefix_shards[0].readback_path(), {"passes": True})
     json_dump_checked(
         shard_run_log_path(prefix_args, prefix_shards[0]),
         {"shard_id": prefix_shards[0].shard_id, "exit_code": 0, "summary": prefix_summary},
@@ -4804,7 +4804,7 @@ def edge_checks(
         "summary": prefix_summary,
     }
     json_dump_checked(prefix_args.cache_root / "python_forward_cache_checkpoint.json", prefix_checkpoint)
-    json_dump_checked(prefix_args.fsv_root / "python_forward_cache_checkpoint.json", prefix_checkpoint)
+    json_dump_checked(prefix_args.readback_root / "python_forward_cache_checkpoint.json", prefix_checkpoint)
     prefix_readback = validate_resume_checkpoint_prefix(prefix_args, prefix_shards, prefix_checkpoint)
     require(
         "resume checkpoint prefix uses bounded readback",
@@ -4824,7 +4824,7 @@ def edge_checks(
     bounded_completed_args = argparse.Namespace(**vars(args))
     bounded_completed_args.active_embedder_count = 1
     bounded_completed_args.cache_root = edge_root / "bounded-completed-cache"
-    bounded_completed_args.fsv_root = edge_root / "bounded-completed-fsv"
+    bounded_completed_args.readback_root = edge_root / "bounded-completed-readback"
     bounded_completed = write_minimal_packed_shard(
         bounded_completed_args.cache_root / "shards",
         "edge-bounded-completed",
@@ -4881,7 +4881,7 @@ def edge_checks(
         chunk_offset=999_000_000,
         max_chunks=1,
         cache_root=edge_root / "missing",
-        fsv_root=edge_root / "missing-fsv",
+        readback_root=edge_root / "missing-readback",
     )
     try:
         aggregate([missing], edge_root / "missing-output.json", args.require_packed_store)
@@ -4895,7 +4895,7 @@ def edge_checks(
         chunk_offset=shards[0].chunk_offset,
         max_chunks=shards[0].max_chunks,
         cache_root=shards[0].cache_root,
-        fsv_root=shards[0].fsv_root,
+        readback_root=shards[0].readback_root,
     )
     try:
         aggregate([shards[0], overlap], edge_root / "overlap-output.json", args.require_packed_store)
@@ -4918,7 +4918,7 @@ def edge_checks(
             chunk_offset=shards[0].chunk_offset + 100_000_000,
             max_chunks=shards[0].max_chunks,
             cache_root=corrupt_root,
-            fsv_root=shards[0].fsv_root,
+            readback_root=shards[0].readback_root,
         )
     try:
         aggregate([corrupt], edge_root / "corrupt-output.json", args.require_packed_store)
@@ -4949,7 +4949,7 @@ def edge_checks(
             chunk_offset=incomplete_offset,
             max_chunks=shards[0].max_chunks,
             cache_root=incomplete_root,
-            fsv_root=shards[0].fsv_root,
+            readback_root=shards[0].readback_root,
         )
     try:
         aggregate([incomplete], edge_root / "incomplete-output.json", args.require_packed_store)
@@ -5010,7 +5010,7 @@ def edge_checks(
         else:
             raise SchedulerError("isolated partial manifest unexpectedly passed completed shard readback")
 
-        log_filter_root = edge_root / "run-log-filter-fsv"
+        log_filter_root = edge_root / "run-log-filter-readback"
         log_root = log_filter_root / "run_logs"
         if log_filter_root.exists():
             shutil.rmtree(log_filter_root)
@@ -5044,19 +5044,19 @@ def edge_checks(
         chunk_offset=400_000_000,
         max_chunks=1,
         cache_root=edge_root / "partial-cache",
-        fsv_root=edge_root / "partial-fsv",
+        readback_root=edge_root / "partial-readback",
     )
     if partial.cache_root.exists():
         shutil.rmtree(partial.cache_root)
-    if partial.fsv_root.exists():
-        shutil.rmtree(partial.fsv_root)
+    if partial.readback_root.exists():
+        shutil.rmtree(partial.readback_root)
     partial.cache_root.mkdir(parents=True)
-    partial.fsv_root.mkdir(parents=True)
+    partial.readback_root.mkdir(parents=True)
     (partial.cache_root / "python_forward_cache_index.jsonl").write_text(
         json.dumps({"cache_key_sha256": f"sha256:{'3' * 64}"}) + "\n",
         encoding="utf-8",
     )
-    json_dump_checked(partial.fsv_root / "partial_marker.json", {"passes": False})
+    json_dump_checked(partial.readback_root / "partial_marker.json", {"passes": False})
     json_dump_checked(
         shard_run_log_path(args, partial),
         {
@@ -5075,8 +5075,8 @@ def edge_checks(
         not partial.cache_root.exists(),
     )
     require(
-        "partial archive edge removed source FSV root",
-        not partial.fsv_root.exists(),
+        "partial archive edge removed source READBACK root",
+        not partial.readback_root.exists(),
     )
     require(
         "partial archive edge removed source run log",
@@ -5116,11 +5116,11 @@ def main() -> int:
     preflight["task061_smoke_manifest_gate"] = task061_gate
     preflight["smoke_gate"] = smoke_gate
     preflight["pre_smoke_hot_stage_archives"] = pre_smoke_hot_stage_archives
-    event_path = args.fsv_root / "scheduler_events.jsonl"
+    event_path = args.readback_root / "scheduler_events.jsonl"
     if args.mode == "run" and event_path.exists():
         event_path.unlink()
     args.cache_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
     args.hot_root.mkdir(parents=True, exist_ok=True)
     os.chmod(args.hot_root, 0o700)
 
@@ -5147,7 +5147,7 @@ def main() -> int:
         "checkpoint_every_shards": args.checkpoint_every_shards,
         "chunks_jsonl": str(args.chunks_jsonl),
         "cache_root": str(args.cache_root),
-        "fsv_root": str(args.fsv_root),
+        "readback_root": str(args.readback_root),
         "hot_root": str(args.hot_root),
         "runner_batch_controls": runner_batch_controls(args),
         "host_preflight": preflight,
@@ -5157,7 +5157,7 @@ def main() -> int:
                 "chunk_offset": shard.chunk_offset,
                 "max_chunks": shard.max_chunks,
                 "cache_root": str(shard.cache_root),
-                "fsv_root": str(shard.fsv_root),
+                "readback_root": str(shard.readback_root),
             }
             for shard in shards
         ],
@@ -5167,8 +5167,8 @@ def main() -> int:
     event(event_path, "plan_written", {"plan_path": str(plan_path), "plan_sha256": sha256_file(plan_path)})
 
     if args.mode == "preflight-resume":
-        cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
-        if cache_checkpoint_path.exists() or fsv_checkpoint_path.exists():
+        cache_checkpoint_path, readback_checkpoint_path = checkpoint_file_paths(args)
+        if cache_checkpoint_path.exists() or readback_checkpoint_path.exists():
             checkpoint = read_existing_checkpoint(args)
         else:
             checkpoint = write_checkpoint(args, shards, [], started_at, preflight, "fresh_preflight")
@@ -5177,7 +5177,7 @@ def main() -> int:
                 "fresh_preflight_checkpoint_written",
                 {
                     "checkpoint_cache": file_state(cache_checkpoint_path),
-                    "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                    "checkpoint_readback": file_state(readback_checkpoint_path),
                     "progress": checkpoint.get("progress"),
                     "summary": checkpoint.get("summary"),
                 },
@@ -5194,19 +5194,19 @@ def main() -> int:
             },
         )
         edge_cases = resume_preflight_edge_checks(args)
-        fsv = write_resume_preflight_fsv(args, started_at, before, checkpoint, decision, edge_cases)
-        print(json.dumps(fsv, indent=2, sort_keys=True))
+        readback = write_resume_preflight_readback(args, started_at, before, checkpoint, decision, edge_cases)
+        print(json.dumps(readback, indent=2, sort_keys=True))
         return 0
 
     run_logs = []
     resume_baseline = None
     resume_start_index = 0
-    cache_checkpoint_path, fsv_checkpoint_path = checkpoint_file_paths(args)
+    cache_checkpoint_path, readback_checkpoint_path = checkpoint_file_paths(args)
     if (
         args.mode == "run"
         and args.resume_completed_shards
         and cache_checkpoint_path.exists()
-        and fsv_checkpoint_path.exists()
+        and readback_checkpoint_path.exists()
     ):
         checkpoint = read_existing_checkpoint(args)
         resume_baseline = checkpoint
@@ -5217,7 +5217,7 @@ def main() -> int:
             "resume_checkpoint_observed",
             {
                 "checkpoint_cache": file_state(cache_checkpoint_path),
-                "checkpoint_fsv": file_state(fsv_checkpoint_path),
+                "checkpoint_readback": file_state(readback_checkpoint_path),
                 "progress": checkpoint.get("progress"),
                 "summary": checkpoint.get("summary"),
                 "resume_prefix": resume_prefix,
@@ -5239,7 +5239,7 @@ def main() -> int:
         for shard in shards[resume_start_index:]:
             if args.resume_completed_shards and (
                 shard.cache_root.exists()
-                or shard.fsv_root.exists()
+                or shard.readback_root.exists()
                 or shard_run_log_path(args, shard).exists()
             ):
                 if shard.manifest_path().is_file():
@@ -5315,7 +5315,7 @@ def main() -> int:
                     },
                 )
     else:
-        run_logs = load_existing_run_logs(args.fsv_root)
+        run_logs = load_existing_run_logs(args.readback_root)
         checkpoint = write_checkpoint(args, shards, run_logs, started_at, preflight, "aggregate_only")
         event(
             event_path,
@@ -5352,7 +5352,7 @@ def main() -> int:
     edge_cases = edge_checks(args, shards, preflight)
     resume_gate = None
     if args.write_resume_gate:
-        resume_gate = write_resume_gate_fsv(
+        resume_gate = write_resume_gate_readback(
             args,
             started_at,
             event_path,
@@ -5366,10 +5366,10 @@ def main() -> int:
         "disk": disk_snapshot(),
         "resource": resource_snapshot(args, "scheduler_after"),
     }
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": "python_forward_shard_scheduler_fsv",
+        "artifact_kind": "python_forward_shard_scheduler_readback",
         "started_at_utc": started_at,
         "created_at_utc": utc_now(),
         "source_of_truth": {
@@ -5377,9 +5377,9 @@ def main() -> int:
             "events": str(event_path),
             "aggregate_manifest": str(aggregate_path),
             "checkpoint_cache": str(args.cache_root / "python_forward_cache_checkpoint.json"),
-            "checkpoint_fsv": str(args.fsv_root / "python_forward_cache_checkpoint.json"),
+            "checkpoint_readback": str(args.readback_root / "python_forward_cache_checkpoint.json"),
             "cache_root": str(args.cache_root),
-            "fsv_root": str(args.fsv_root),
+            "readback_root": str(args.readback_root),
             "hot_root": str(args.hot_root),
         },
         "runner_controls": {
@@ -5396,11 +5396,11 @@ def main() -> int:
         "after_state": after,
         "passes": True,
     }
-    fsv_path = args.fsv_root / "python_forward_shard_scheduler_fsv.json"
-    json_dump_checked(fsv_path, fsv)
-    readback = read_json(fsv_path)
-    require("scheduler FSV readback passes", readback["passes"] is True)
-    print(json.dumps(fsv, indent=2, sort_keys=True))
+    readback_path = args.readback_root / "python_forward_shard_scheduler_readback.json"
+    json_dump_checked(readback_path, readback)
+    readback = read_json(readback_path)
+    require("scheduler READBACK readback passes", readback["passes"] is True)
+    print(json.dumps(readback, indent=2, sort_keys=True))
     return 0
 
 

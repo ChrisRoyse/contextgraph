@@ -32,7 +32,7 @@ from .python_per_cell_smooth_ece import (
 )
 
 
-DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-126-per-cell-axis-rotation-fsv")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-126-per-cell-axis-rotation-readback")
 WEAK_CELLS = ("delete_test_call::python", "off_by_one::python", "subtle_flip::python")
 REFERENCE_ACTIVE_CORRELATION = 0.9526350498
 REFERENCE_ACTIVE_BRIER = 0.0231730901

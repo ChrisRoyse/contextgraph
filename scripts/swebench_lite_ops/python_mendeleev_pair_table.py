@@ -31,7 +31,7 @@ from .python_per_cell_smooth_ece import metric_block, power_blockers, reject_mou
 
 
 DEFAULT_HEAD_PROJECTION_RS = Path("crates/context-graph-mejepa/src/head_projection.rs")
-DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-124d-mendeleev-pair-table-fsv")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-124d-mendeleev-pair-table-readback")
 PANEL_SLOT_ORDER = (
     "E_AST",
     "E_CFG",

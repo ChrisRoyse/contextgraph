@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SWEBENCH_ROOT = Path("/zfs/archive/contextgraph/cache/contextgraph-swebench/SWE-bench")
 DEFAULT_SWEBENCH_VENV = Path("/zfs/archive/contextgraph/cache/contextgraph-swebench/venv")
 DEFAULT_TASKS_DIR = REPO_ROOT / "tasks" / "swebench-lite"
-DEFAULT_EVIDENCE_ROOT = Path("/zfs/archive/contextgraph/swebench-artifacts/swebench-lite-fsv")
+DEFAULT_EVIDENCE_ROOT = Path("/zfs/archive/contextgraph/swebench-artifacts/swebench-lite-readback")
 DEFAULT_CORPUS_INDEX_JSON = Path("/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json")
 DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT = Path(
     "/zfs/archive/contextgraph/state/training-arrays/constellation-training-arrays-v1-realinput"

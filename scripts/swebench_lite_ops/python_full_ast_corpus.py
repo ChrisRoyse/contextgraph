@@ -31,7 +31,7 @@ from .python_diff_chunk_map_core import parse_unified_diff
 
 
 TASK_ID = "TASK-PY-DATA-058"
-ARTIFACT_KIND = "python_full_ast_corpus_fsv"
+ARTIFACT_KIND = "python_full_ast_corpus_readback"
 EXPECTED_CATEGORIES = (
     "compile_error",
     "delete_test_call",
@@ -701,7 +701,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
     started = utc_now()
     args.parse_root.mkdir(parents=True, exist_ok=True)
     args.chunk_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
     args.hot_root.mkdir(parents=True, exist_ok=True)
     args.task_checkpoint_root.mkdir(parents=True, exist_ok=True)
     snapshot_root = args.source_snapshot_root
@@ -728,8 +728,8 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
     chunks_path = args.chunk_root / "python_ast_chunks.jsonl"
     diagnostics_path = args.chunk_root / "python_ast_chunk_diagnostics.jsonl"
     parse_records_path = args.parse_root / "python_ast_parse_records.jsonl"
-    fsv_path = args.fsv_root / "full_ast_corpus_fsv.json"
-    progress_path = args.fsv_root / "full_ast_corpus_progress.jsonl"
+    readback_path = args.readback_root / "full_ast_corpus_readback.json"
+    progress_path = args.readback_root / "full_ast_corpus_progress.jsonl"
     if progress_path.is_file() and not args.resume_from_task_checkpoints:
         progress_path.unlink()
     before_state = {
@@ -878,7 +878,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
             "source_snapshot_root": str(snapshot_root),
             "progress_jsonl": str(progress_path),
             "manifest": str(full_manifest_path),
-            "fsv": str(fsv_path),
+            "readback": str(readback_path),
         },
         "coverage": observed_coverage,
         "expected_pair_count": len(expected_pairs),
@@ -905,7 +905,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
             "records_jsonl": str(parse_records_path),
             "edge_records_jsonl": str(args.parse_root / "edge_case_parse_records.jsonl"),
             "manifest": str(parse_manifest_path),
-            "fsv": str(fsv_path),
+            "readback": str(readback_path),
         },
         "inputs": {"cleaned_manifest": str(args.cleaned_manifest), "source_snapshot_root": str(snapshot_root)},
         "summary": parse_summary,
@@ -923,7 +923,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
             "chunks_jsonl": str(chunks_path),
             "edge_chunks_jsonl": str(args.chunk_root / "edge_case_chunks.jsonl"),
             "manifest": str(chunk_manifest_path),
-            "fsv": str(fsv_path),
+            "readback": str(readback_path),
         },
         "inputs": {"parse_records": str(parse_records_path), "full_ast_manifest": str(full_manifest_path)},
         "summary": chunk_summary,
@@ -941,7 +941,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
     hot_bytes = path_bytes(args.hot_root)
     require(hot_bytes <= args.hot_budget_bytes, "PY_FULL_AST_HOT_BUDGET_EXCEEDED", "hot staging exceeded explicit budget", {"actual_bytes": hot_bytes, "budget_bytes": args.hot_budget_bytes, "hot_root": str(args.hot_root)})
     edge_cases = edge_case_results(rows, chunks)
-    require(all(case["pass"] for case in edge_cases), "PY_FULL_AST_EDGE_FSV_FAILED", "full AST corpus edge checks failed", {"edge_cases": edge_cases})
+    require(all(case["pass"] for case in edge_cases), "PY_FULL_AST_EDGE_READBACK_FAILED", "full AST corpus edge checks failed", {"edge_cases": edge_cases})
     after_state = {
         "created_at_utc": utc_now(),
         "parse_records": file_state(parse_records_path),
@@ -950,10 +950,10 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
         "parse_manifest": file_state(parse_manifest_path),
         "chunk_manifest": file_state(chunk_manifest_path),
         "full_manifest": file_state(full_manifest_path),
-        "fsv": {
-            "path": str(fsv_path),
+        "readback": {
+            "path": str(readback_path),
             "exists": True,
-            "self_hash_note": "final full_ast_corpus_fsv.json hash is recorded by command return and external readback, not embedded self-referentially",
+            "self_hash_note": "final full_ast_corpus_readback.json hash is recorded by command return and external readback, not embedded self-referentially",
         },
         "progress": file_state(progress_path),
         "chunk_coverage": coverage_from_jsonl(chunks_path),
@@ -963,7 +963,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
     }
     shard_size = int(args.recommended_shard_size)
     recommended_shard_count = math.ceil(after_state["chunk_coverage"]["chunk_count"] / shard_size)
-    fsv = {
+    readback = {
         "schema_version": 1,
         "task_id": TASK_ID,
         "artifact_kind": ARTIFACT_KIND,
@@ -1009,11 +1009,11 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
         },
         "passes": True,
     }
-    write_json_checked(fsv_path, fsv)
-    readback = read_json(fsv_path, "PY_FULL_AST_FSV_READBACK_INVALID")
-    require(readback == fsv, "PY_FULL_AST_FSV_READBACK_MISMATCH", "full AST corpus FSV did not read back exactly", {"fsv": str(fsv_path)})
+    write_json_checked(readback_path, readback)
+    readback = read_json(readback_path, "PY_FULL_AST_READBACK_READBACK_INVALID")
+    require(readback == readback, "PY_FULL_AST_READBACK_READBACK_MISMATCH", "full AST corpus READBACK did not read back exactly", {"readback": str(readback_path)})
     return {
-        **fsv,
+        **readback,
         "manifest_sha256": sha256_file(full_manifest_path),
-        "fsv_sha256": sha256_file(fsv_path),
+        "readback_sha256": sha256_file(readback_path),
     }

@@ -20,11 +20,11 @@ from .python_per_cell_smooth_ece import metric_block, reject_mounted_drive
 
 
 DEFAULT_PAIR_CANDIDATES_JSONL = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-124-cross-embedder-pair-features-fsv/"
+    "/zfs/archive/contextgraph/readback/task-py-g-124-cross-embedder-pair-features-readback/"
     "run-20260522T010513Z/pair_feature_candidates.jsonl"
 )
 DEFAULT_OUTPUT_ROOT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-124-cross-embedder-pair-features-fsv"
+    "/zfs/archive/contextgraph/readback/task-py-g-124-cross-embedder-pair-features-readback"
 )
 
 

@@ -19,14 +19,14 @@ from .panel_b_score_rows import prediction_id_hex
 
 
 DEFAULT_SHIP_GATE_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/"
-    "run-20260521T132308Z/ship-gate-fsv.json"
+    "/zfs/archive/contextgraph/readback/swebench-300x8-ship-gate-readback/"
+    "run-20260521T132308Z/ship-gate-readback.json"
 )
 DEFAULT_LABEL_ROOT = Path(
     "/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v2-live-split"
 )
 DEFAULT_PANEL_B_MODEL_SCORES_ROOT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-111d-panel-b-model-scores-fsv"
+    "/zfs/archive/contextgraph/readback/task-py-g-111d-panel-b-model-scores-readback"
 )
 DEFAULT_PANEL_B_MODEL_SCORES_OUT = DEFAULT_PANEL_B_MODEL_SCORES_ROOT / "panel_b_model_scores.jsonl"
 DEFAULT_PANEL_B_CALIBRATION_MODEL_SCORES_OUT = (
@@ -799,7 +799,7 @@ def parse_gate_split(rows: list[Any], split: str, expected_count: int) -> list[G
         raise SwebenchOpsError(
             "PANEL_B_MODEL_SCORES_GATE_ROW_COUNT_MISMATCH",
             f"{split} row count does not match expected count",
-            "Use the current aiwonder ship-gate FSV report or pass the correct expected count.",
+            "Use the current aiwonder ship-gate READBACK report or pass the correct expected count.",
             {"split": split, "expected": expected_count, "actual": len(rows)},
         )
     out: list[GateRow] = []
@@ -1040,7 +1040,7 @@ def read_json_object(path: Path, code: str) -> dict[str, Any]:
         raise SwebenchOpsError(
             f"{code}_MISSING",
             f"required JSON file missing: {path}",
-            "Use the current aiwonder FSV artifact.",
+            "Use the current aiwonder READBACK artifact.",
             {"path": str(path)},
         )
     try:

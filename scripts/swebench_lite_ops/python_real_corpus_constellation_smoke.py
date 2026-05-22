@@ -42,7 +42,7 @@ ARTIFACT_KIND = "python_real_corpus_constellation_smoke"
 FORMULA_VERSION = "slot_preserving_constellation_smoke_v1"
 DEFAULT_FORWARD_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z")
 DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-095-real-corpus-constellation-smoke-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-095-real-corpus-constellation-smoke-readback")
 EXPECTED_EMBEDDERS = ("e1", "e6", "e7", "e8", "e10", "e12", "e13", "e14", "e2", "e3", "e4", "e9")
 EPS = 1.0e-12
 
@@ -885,15 +885,15 @@ def command_python_real_corpus_constellation_smoke(args: argparse.Namespace) -> 
     require(args.expected_embedder_count == len(required_embedders), "MEJEPA_CONSTELLATION_SMOKE_EXPECTED_COUNT_MISMATCH")
     require(args.sample_shards > 0, "MEJEPA_CONSTELLATION_SMOKE_INVALID_SAMPLE_SHARDS")
     require(args.sample_rows_per_embedder_per_shard > 0, "MEJEPA_CONSTELLATION_SMOKE_INVALID_SAMPLE_LIMIT")
-    output_root = args.output_root or (args.fsv_root / "artifacts")
+    output_root = args.output_root or (args.readback_root / "artifacts")
     before = {
         "output_root": tree_state(output_root),
-        "fsv_root": tree_state(args.fsv_root),
+        "readback_root": tree_state(args.readback_root),
     }
     if args.clean_output and output_root.exists():
         shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
 
     selected_shards, source_summary = select_completed_shards(args.forward_root, args.sample_shards)
     manifest_by_key, chunk_summary = load_chunk_manifest_window(args.chunks_jsonl, selected_shards)
@@ -992,10 +992,10 @@ def command_python_real_corpus_constellation_smoke(args: argparse.Namespace) -> 
         and load_summary["index_hash_mismatches"] == 0
         and load_summary["source_readback_unverified"] == 0
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": args.task_id,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "formula_version": FORMULA_VERSION,
         "started_at_utc": started,
         "created_at_utc": utc_now(),
@@ -1009,12 +1009,12 @@ def command_python_real_corpus_constellation_smoke(args: argparse.Namespace) -> 
             "pairwise_relationships": str(output_root / "pairwise_relationships.jsonl"),
             "candidate_failure_shape_fingerprints": str(output_root / "candidate_failure_shape_fingerprints.jsonl"),
             "tiny_training_inference_smoke": str(output_root / "tiny_training_inference_smoke.json"),
-            "fsv": str(args.fsv_root / f"{ARTIFACT_KIND}_fsv.json"),
+            "readback": str(args.readback_root / f"{ARTIFACT_KIND}_readback.json"),
         },
         "before_state": before,
         "after_state": {
             "output_root": tree_state(output_root),
-            "fsv_root": tree_state(args.fsv_root),
+            "readback_root": tree_state(args.readback_root),
         },
         "readback": {
             "report_task_id": readback_report.get("task_id"),
@@ -1033,10 +1033,10 @@ def command_python_real_corpus_constellation_smoke(args: argparse.Namespace) -> 
         "load_summary": load_summary,
         "edge_cases": edge_cases,
     }
-    fsv_path = args.fsv_root / f"{ARTIFACT_KIND}_fsv.json"
-    dump_json(fsv_path, fsv)
-    final_readback = read_json(fsv_path)
-    require(final_readback.get("passes") is True, f"MEJEPA_CONSTELLATION_SMOKE_FSV_FAILED: {fsv_path}")
+    readback_path = args.readback_root / f"{ARTIFACT_KIND}_readback.json"
+    dump_json(readback_path, readback)
+    final_readback = read_json(readback_path)
+    require(final_readback.get("passes") is True, f"MEJEPA_CONSTELLATION_SMOKE_READBACK_FAILED: {readback_path}")
     print(json.dumps(final_readback, sort_keys=True, indent=2))
     return 0
 
@@ -1045,7 +1045,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--forward-root", type=Path, default=DEFAULT_FORWARD_ROOT)
     parser.add_argument("--chunks-jsonl", type=Path, default=DEFAULT_CHUNKS_JSONL)
     parser.add_argument("--output-root", type=Path, default=None)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--task-id", default=TASK_ID)
     parser.add_argument("--expected-embedders", default=",".join(EXPECTED_EMBEDDERS))
     parser.add_argument("--expected-embedder-count", type=int, default=len(EXPECTED_EMBEDDERS))

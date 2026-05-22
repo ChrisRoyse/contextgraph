@@ -12,15 +12,15 @@ from .python_per_cell_smooth_ece import metric_block, reject_mounted_drive
 
 
 DEFAULT_ROW_DIAGNOSTICS_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-392-temporal-trajectory-features-fsv/"
-    "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_fsv.json"
+    "/zfs/archive/contextgraph/readback/task-py-g-392-temporal-trajectory-features-readback/"
+    "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_readback.json"
 )
 DEFAULT_TRACIN_REPORT = Path(
     "/zfs/archive/contextgraph/state/tracin/post-fix-real-input-v2-rerun2/"
     "tracin_abstain_pool_report.json"
 )
 DEFAULT_OUTPUT_ROOT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-125-foundationality-cp-entropy-fsv"
+    "/zfs/archive/contextgraph/readback/task-py-g-125-foundationality-cp-entropy-readback"
 )
 
 CALIBRATION_KEY = "score_sharpness_abstain_calibration_row_diagnostics"

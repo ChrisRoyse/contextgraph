@@ -28,13 +28,13 @@ DEFAULT_SMOKE_MANIFEST = Path(
 DEFAULT_OUTPUT_ROOT = Path(
     "/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices"
 )
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-062-post249-smoke-intelligence-readback")
 DEFAULT_TASK_ID = "TASK-PY-DATA-062"
 DEFAULT_FULL_TASK_ID = "TASK-PY-DATA-046"
 DEFAULT_FULL_FORWARD_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515")
 DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
 DEFAULT_FULL_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-v1/alignment")
-DEFAULT_FULL_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-046-alignment-fsv")
+DEFAULT_FULL_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-046-alignment-readback")
 DEFAULT_MIN_OVERLAP = 20
 DEFAULT_NEIGHBOR_K = 10
 CCA_MAX_DIM_SUM = 900
@@ -248,23 +248,23 @@ def completed_shard_entries(
         shard_id = str(entry.get("shard_id") or "")
         require(shard_id, "shard plan entry missing shard_id")
         require((forward_root / "shards" / shard_id / "python_forward_cache_packed_manifest.json").exists(), f"completed shard missing packed manifest: {shard_id}")
-    fsv_root_raw = plan_doc.get("fsv_root")
-    source_fsv_checkpoint = None
-    source_fsv_checkpoint_sha = None
+    readback_root_raw = plan_doc.get("readback_root")
+    source_readback_checkpoint = None
+    source_readback_checkpoint_sha = None
     checkpoint_sha = sha256_file(checkpoint)
     checkpoint_bytes_match = None
-    if fsv_root_raw:
-        candidate = Path(str(fsv_root_raw)) / "python_forward_cache_checkpoint.json"
+    if readback_root_raw:
+        candidate = Path(str(readback_root_raw)) / "python_forward_cache_checkpoint.json"
         if candidate.exists():
-            source_fsv_checkpoint = candidate
-            source_fsv_checkpoint_sha = sha256_file(candidate)
+            source_readback_checkpoint = candidate
+            source_readback_checkpoint_sha = sha256_file(candidate)
             checkpoint_bytes_match = checkpoint.read_bytes() == candidate.read_bytes()
-            require(checkpoint_bytes_match, "cache checkpoint and source FSV checkpoint differ")
+            require(checkpoint_bytes_match, "cache checkpoint and source READBACK checkpoint differ")
     summary = {
         "checkpoint_path": str(checkpoint),
         "checkpoint_sha256": checkpoint_sha,
-        "source_fsv_checkpoint_path": str(source_fsv_checkpoint) if source_fsv_checkpoint else None,
-        "source_fsv_checkpoint_sha256": source_fsv_checkpoint_sha,
+        "source_readback_checkpoint_path": str(source_readback_checkpoint) if source_readback_checkpoint else None,
+        "source_readback_checkpoint_sha256": source_readback_checkpoint_sha,
         "checkpoint_bytes_match": checkpoint_bytes_match,
         "shard_plan_path": str(plan_path),
         "shard_plan_sha256": sha256_file(plan_path),
@@ -903,13 +903,13 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
     started = utc_now()
     before = {
         "output_root": tree_state(args.output_root),
-        "fsv_root": tree_state(args.fsv_root),
+        "readback_root": tree_state(args.readback_root),
     }
     if args.clean_output:
         if args.output_root.exists():
             shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
 
     input_mode = getattr(args, "input_mode", "smoke-manifest")
     source_checkpoint_summary: dict[str, Any] | None = None
@@ -1027,7 +1027,7 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
     artifact_hashes = artifact_state(args.output_root)
     after = {
         "output_root": tree_state(args.output_root),
-        "fsv_root": tree_state(args.fsv_root),
+        "readback_root": tree_state(args.readback_root),
     }
     readback_summary = read_json(args.output_root / "summary.json")
     readback_pairwise = sum(1 for _ in iter_jsonl(args.output_root / "pairwise_metrics.jsonl"))
@@ -1050,10 +1050,10 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
         and all(row.get("coverage_ratio", 0.0) > 0 for row in coverage)
         and all(case.get("passes") is True for case in edge_cases)
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": task_id,
-        "artifact_kind": f"{artifact_kind}_fsv",
+        "artifact_kind": f"{artifact_kind}_readback",
         "started_at_utc": started,
         "created_at_utc": utc_now(),
         "passes": passes,
@@ -1070,7 +1070,7 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
             "embedder_coverage": str(args.output_root / "embedder_coverage.jsonl"),
             "estimator_validity": str(args.output_root / "estimator_validity.jsonl"),
             "stratified_coverage": str(args.output_root / "stratified_coverage.jsonl"),
-            "fsv": str(args.fsv_root / f"{artifact_kind}_fsv.json"),
+            "readback": str(args.readback_root / f"{artifact_kind}_readback.json"),
         },
         "source_checkpoint": source_checkpoint_summary,
         "before_state": before,
@@ -1104,10 +1104,10 @@ def command_smoke_intelligence(args: argparse.Namespace) -> int:
             },
         ],
     }
-    fsv_path = args.fsv_root / f"{artifact_kind}_fsv.json"
-    dump_json(fsv_path, fsv)
-    final_readback = read_json(fsv_path)
-    require(final_readback.get("passes") is True, f"FSV failed; see {fsv_path}")
+    readback_path = args.readback_root / f"{artifact_kind}_readback.json"
+    dump_json(readback_path, readback)
+    final_readback = read_json(readback_path)
+    require(final_readback.get("passes") is True, f"READBACK failed; see {readback_path}")
     print(json.dumps(final_readback, sort_keys=True, indent=2))
     return 0
 
@@ -1121,7 +1121,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--shard-plan", type=Path, default=None)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--task-id", default=DEFAULT_TASK_ID)
     parser.add_argument("--expected-chunk-count", type=int, default=1000)
     parser.add_argument("--expected-embedder-count", type=int, default=12)

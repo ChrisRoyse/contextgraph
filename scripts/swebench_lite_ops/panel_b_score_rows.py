@@ -12,11 +12,11 @@ from .core import SwebenchOpsError, sha256_file, utc_now
 
 
 DEFAULT_SHIP_GATE_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/"
-    "run-20260521T132308Z/ship-gate-fsv.json"
+    "/zfs/archive/contextgraph/readback/swebench-300x8-ship-gate-readback/"
+    "run-20260521T132308Z/ship-gate-readback.json"
 )
 DEFAULT_PANEL_B_SCORE_ROWS_ROOT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-111d-panel-b-score-rows-fsv"
+    "/zfs/archive/contextgraph/readback/task-py-g-111d-panel-b-score-rows-readback"
 )
 DEFAULT_PANEL_B_SCORE_ROWS_OUT = DEFAULT_PANEL_B_SCORE_ROWS_ROOT / "panel_b_score_rows.jsonl"
 REQUIRED_ROW_COUNT = 240
@@ -183,7 +183,7 @@ def load_ship_gate_rows(path: Path, expected_row_count: int) -> list[ShipGateRow
         raise SwebenchOpsError(
             "PANEL_B_SCORE_ROWS_SHIP_GATE_COUNT_MISMATCH",
             "ship-gate holdout row count does not match expected count",
-            "Use the current 240-row holdout ship-gate FSV report or pass the correct expected count.",
+            "Use the current 240-row holdout ship-gate READBACK report or pass the correct expected count.",
             {"expected": expected_row_count, "actual": len(rows), "path": str(path)},
         )
     out: list[ShipGateRow] = []
@@ -328,7 +328,7 @@ def read_json_object(path: Path, code: str) -> dict[str, Any]:
         raise SwebenchOpsError(
             f"{code}_MISSING",
             f"required JSON file missing: {path}",
-            "Use the current aiwonder FSV artifact or a local smoke fixture.",
+            "Use the current aiwonder READBACK artifact or a local smoke fixture.",
             {"path": str(path)},
         )
     try:
@@ -357,7 +357,7 @@ def pointer_array(value: dict[str, Any], keys: list[str], name: str) -> list[Any
             raise SwebenchOpsError(
                 "PANEL_B_SCORE_ROWS_REPORT_POINTER_MISSING",
                 f"missing {name}",
-                "Use a current ship-gate FSV report with holdout_predictions.",
+                "Use a current ship-gate READBACK report with holdout_predictions.",
                 {"path": "/" + "/".join(keys)},
             )
         current = current[key]
@@ -365,7 +365,7 @@ def pointer_array(value: dict[str, Any], keys: list[str], name: str) -> list[Any
         raise SwebenchOpsError(
             "PANEL_B_SCORE_ROWS_REPORT_POINTER_NOT_ARRAY",
             f"{name} is not an array",
-            "Use a current ship-gate FSV report with holdout_predictions.",
+            "Use a current ship-gate READBACK report with holdout_predictions.",
             {"path": "/" + "/".join(keys), "type": type(current).__name__},
         )
     return current

@@ -34,11 +34,11 @@ ARTIFACT_KIND = "python_q1_q5_reward_tensors"
 DEFAULT_DDA_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/per-embedder")
 DEFAULT_TCT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-tct-cells-v1")
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-reward-tensors-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-021-reward-tensors-fsv")
-DEFAULT_FULL_AST_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json")
-DEFAULT_SMOKE_MANIFEST_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json")
-DEFAULT_DDA_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json")
-DEFAULT_TCT_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-021-reward-tensors-readback")
+DEFAULT_FULL_AST_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-058-full-ast-corpus-readback/full_ast_corpus_readback.json")
+DEFAULT_SMOKE_MANIFEST_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-060-post249-smoke-manifest-readback/smoke_manifest_readback.json")
+DEFAULT_DDA_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-017-dda-signals-readback/python_dda_code_signals_readback.json")
+DEFAULT_TCT_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-020-tct-cells-readback/python_tct_cells_readback.json")
 DEFAULT_SCHEMA_PATH = Path("/zfs/archive/contextgraph/corpus/python-code-constellation-schema-v1/code_constellation_schema.json")
 
 
@@ -61,7 +61,7 @@ def sha256_text(payload: Any) -> str:
 
 def load_passing_json(path: Path, code: str) -> tuple[dict[str, Any], str]:
     doc = read_json(path)
-    require(doc.get("passes") is True, code, f"required FSV does not pass: {path}", {"path": str(path)})
+    require(doc.get("passes") is True, code, f"required READBACK does not pass: {path}", {"path": str(path)})
     return doc, sha256_file(path)
 
 
@@ -343,12 +343,12 @@ def command_python_reward_tensors(args: argparse.Namespace) -> int:
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
-    _, full_ast_sha = load_passing_json(args.full_ast_fsv, "REWARD_FULL_AST_FSV_NOT_PASSING")
-    _, smoke_sha = load_passing_json(args.smoke_manifest_fsv, "REWARD_SMOKE_MANIFEST_FSV_NOT_PASSING")
-    _, dda_fsv_sha = load_passing_json(args.dda_fsv, "REWARD_DDA_FSV_NOT_PASSING")
-    _, tct_fsv_sha = load_passing_json(args.tct_fsv, "REWARD_TCT_FSV_NOT_PASSING")
+    args.readback_root.mkdir(parents=True, exist_ok=True)
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
+    _, full_ast_sha = load_passing_json(args.full_ast_readback, "REWARD_FULL_AST_READBACK_NOT_PASSING")
+    _, smoke_sha = load_passing_json(args.smoke_manifest_readback, "REWARD_SMOKE_MANIFEST_READBACK_NOT_PASSING")
+    _, dda_readback_sha = load_passing_json(args.dda_readback, "REWARD_DDA_READBACK_NOT_PASSING")
+    _, tct_readback_sha = load_passing_json(args.tct_readback, "REWARD_TCT_READBACK_NOT_PASSING")
     manifest_by_key, manifest_summary = load_manifest(args.smoke_manifest)
     memberships = load_memberships(args.tct_root / "tct_chunk_memberships.jsonl")
     cell_support = load_cell_support(args.tct_root / "tct_cell_support.jsonl")
@@ -356,10 +356,10 @@ def command_python_reward_tensors(args: argparse.Namespace) -> int:
     require(len(manifest_by_key) == args.expected_chunk_count, "REWARD_MANIFEST_COUNT_MISMATCH", "manifest row count mismatch", {"summary": manifest_summary})
     require(set(manifest_by_key) == set(memberships), "REWARD_TCT_MEMBERSHIP_MISMATCH", "TCT memberships must cover every manifest row", {"manifest": len(manifest_by_key), "memberships": len(memberships)})
     source_hashes = {
-        "full_ast_fsv_sha256": full_ast_sha,
-        "smoke_manifest_fsv_sha256": smoke_sha,
-        "dda_fsv_sha256": dda_fsv_sha,
-        "tct_fsv_sha256": tct_fsv_sha,
+        "full_ast_readback_sha256": full_ast_sha,
+        "smoke_manifest_readback_sha256": smoke_sha,
+        "dda_readback_sha256": dda_readback_sha,
+        "tct_readback_sha256": tct_readback_sha,
         "schema_sha256": sha256_file(args.constellation_schema),
         "smoke_manifest_sha256": manifest_summary["sha256"],
         "tct_report_sha256": sha256_file(args.tct_root / "tct_cell_report.json"),
@@ -405,7 +405,7 @@ def command_python_reward_tensors(args: argparse.Namespace) -> int:
         "known_patch_with_all_heads": known_patch,
     }
     dump_json(args.output_root / "reward_tensor_report.json", report)
-    after = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    after = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     readback_counts = {
         "chunk_reward_tensors": sum(1 for _ in iter_jsonl(args.output_root / "chunk_reward_tensors.jsonl")),
         "patch_reward_tensors": sum(1 for _ in iter_jsonl(args.output_root / "patch_reward_tensors.jsonl")),
@@ -419,16 +419,16 @@ def command_python_reward_tensors(args: argparse.Namespace) -> int:
         and known_patch is not None
         and all(case["pass"] for case in edges)
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "started_at_utc": started,
         "created_at_utc": utc_now(),
         "passes": passes,
         "before_state": before,
         "after_state": after,
-        "source_of_truth": {**report["source_of_truth"], "report": str(args.output_root / "reward_tensor_report.json"), "fsv": str(args.fsv_root / "python_reward_tensors_fsv.json")},
+        "source_of_truth": {**report["source_of_truth"], "report": str(args.output_root / "reward_tensor_report.json"), "readback": str(args.readback_root / "python_reward_tensors_readback.json")},
         "trigger": {"command": "python3 scripts/swebench_lite_ops.py python-reward-tensors", "input_mode": "post249_smoke_v2"},
         "readback": {
             **readback_counts,
@@ -442,9 +442,9 @@ def command_python_reward_tensors(args: argparse.Namespace) -> int:
         },
         "edge_cases": edges,
     }
-    dump_json(args.fsv_root / "python_reward_tensors_fsv.json", fsv)
-    final = read_json(args.fsv_root / "python_reward_tensors_fsv.json")
-    require(final.get("passes") is True, "REWARD_TENSOR_FSV_FAILED", "reward tensor FSV failed", {"path": str(args.fsv_root / "python_reward_tensors_fsv.json")})
+    dump_json(args.readback_root / "python_reward_tensors_readback.json", readback)
+    final = read_json(args.readback_root / "python_reward_tensors_readback.json")
+    require(final.get("passes") is True, "REWARD_TENSOR_READBACK_FAILED", "reward tensor READBACK failed", {"path": str(args.readback_root / "python_reward_tensors_readback.json")})
     print(json.dumps(final, sort_keys=True, indent=2))
     return 0
 
@@ -455,12 +455,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dda-root", type=Path, default=DEFAULT_DDA_ROOT)
     parser.add_argument("--tct-root", type=Path, default=DEFAULT_TCT_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--constellation-schema", type=Path, default=DEFAULT_SCHEMA_PATH)
-    parser.add_argument("--full-ast-fsv", type=Path, default=DEFAULT_FULL_AST_FSV)
-    parser.add_argument("--smoke-manifest-fsv", type=Path, default=DEFAULT_SMOKE_MANIFEST_FSV)
-    parser.add_argument("--dda-fsv", type=Path, default=DEFAULT_DDA_FSV)
-    parser.add_argument("--tct-fsv", type=Path, default=DEFAULT_TCT_FSV)
+    parser.add_argument("--full-ast-readback", type=Path, default=DEFAULT_FULL_AST_READBACK)
+    parser.add_argument("--smoke-manifest-readback", type=Path, default=DEFAULT_SMOKE_MANIFEST_READBACK)
+    parser.add_argument("--dda-readback", type=Path, default=DEFAULT_DDA_READBACK)
+    parser.add_argument("--tct-readback", type=Path, default=DEFAULT_TCT_READBACK)
     parser.add_argument("--expected-chunk-count", type=int, default=1000)
     parser.add_argument("--clean-output", action="store_true")
     return parser

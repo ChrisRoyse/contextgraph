@@ -40,7 +40,7 @@ TASK_ID = "TASK-PY-G-093"
 ARTIFACT_KIND = "python_constellation_ablation_suite_uncalibrated_realinput"
 FORMULA_VERSION = "slot_preserving_uncalibrated_constellation_ablation_v2"
 DEFAULT_ARTIFACT_ROOT = DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-093-constellation-ablation-suite-realinput-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-093-constellation-ablation-suite-realinput-readback")
 
 
 @dataclass(frozen=True)
@@ -350,18 +350,18 @@ def edge_case_baseline_out_of_range() -> dict[str, Any]:
 def command_python_constellation_ablation_uncalibrated(args: argparse.Namespace) -> int:
     started = utc_now()
     validate_baseline(float(args.historical_baseline_correlation))
-    output_root = args.output_root or (args.fsv_root / "artifacts")
+    output_root = args.output_root or (args.readback_root / "artifacts")
     if args.require_aiwonder_paths:
-        validate_aiwonder_paths(args.artifact_root, args.fsv_root, output_root)
+        validate_aiwonder_paths(args.artifact_root, args.readback_root, output_root)
     before = {
         "artifact_root": tree_state(args.artifact_root),
         "output_root": tree_state(output_root),
-        "fsv_root": tree_state(args.fsv_root),
+        "readback_root": tree_state(args.readback_root),
     }
     if args.clean_output and output_root.exists():
         shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
 
     rows, slot_vectors, _pair_observations, certificate, artifact_hashes = load_artifacts(args.artifact_root)
     attach_flat_baseline_features(rows, slot_vectors)
@@ -386,11 +386,11 @@ def command_python_constellation_ablation_uncalibrated(args: argparse.Namespace)
     report_path = output_root / "constellation_ablation_uncalibrated_report.json"
     write_jsonl(metrics_path, baselines + ablations)
     dump_json(report_path, report)
-    fsv = build_fsv(args, before, output_root, report_path, metrics_path, len(baselines), len(ablations))
-    fsv_path = args.fsv_root / f"{ARTIFACT_KIND}_fsv.json"
-    dump_json(fsv_path, fsv)
-    final = read_json(fsv_path)
-    require(final.get("passes") is True, "MEJEPA_CONSTELLATION_ABLATION_FSV_FAILED", str(fsv_path))
+    readback = build_readback(args, before, output_root, report_path, metrics_path, len(baselines), len(ablations))
+    readback_path = args.readback_root / f"{ARTIFACT_KIND}_readback.json"
+    dump_json(readback_path, readback)
+    final = read_json(readback_path)
+    require(final.get("passes") is True, "MEJEPA_CONSTELLATION_ABLATION_READBACK_FAILED", str(readback_path))
     print(json.dumps(final, sort_keys=True, indent=2))
     return 0
 
@@ -442,7 +442,7 @@ def measurement_gaps_from_report_rows(artifact_root: Path) -> dict[str, Any]:
     return measurement_gaps(rows)
 
 
-def build_fsv(
+def build_readback(
     args: argparse.Namespace,
     before: dict[str, Any],
     output_root: Path,
@@ -468,8 +468,8 @@ def build_fsv(
         "stable_hashes": hashes,
     }
     external_edges = {"edge_cases": edge_cases, "all_edge_cases_pass": all(case.get("passes") is True for case in edge_cases)}
-    dump_json(args.fsv_root / "independent_readback.json", independent)
-    dump_json(args.fsv_root / "external_edge_case_readback.json", external_edges)
+    dump_json(args.readback_root / "independent_readback.json", independent)
+    dump_json(args.readback_root / "external_edge_case_readback.json", external_edges)
     passes = (
         readback_report.get("passes") is True
         and metrics_count == baseline_count + ablation_count
@@ -485,7 +485,7 @@ def build_fsv(
     return {
         "schema_version": SCHEMA_VERSION,
         "task_id": args.task_id,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "formula_version": FORMULA_VERSION,
         "created_at_utc": utc_now(),
         "passes": passes,
@@ -494,11 +494,11 @@ def build_fsv(
             "output_root": str(output_root),
             "report": str(report_path),
             "metrics": str(metrics_path),
-            "independent_readback": str(args.fsv_root / "independent_readback.json"),
-            "external_edge_case_readback": str(args.fsv_root / "external_edge_case_readback.json"),
+            "independent_readback": str(args.readback_root / "independent_readback.json"),
+            "external_edge_case_readback": str(args.readback_root / "external_edge_case_readback.json"),
         },
         "before_state": before,
-        "after_state": {"output_root": tree_state(output_root), "fsv_root": tree_state(args.fsv_root)},
+        "after_state": {"output_root": tree_state(output_root), "readback_root": tree_state(args.readback_root)},
         "readback": {
             "metrics_rows": metrics_count,
             "expected_metrics_rows": baseline_count + ablation_count,
@@ -517,7 +517,7 @@ def build_fsv(
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--artifact-root", type=Path, default=DEFAULT_ARTIFACT_ROOT)
     parser.add_argument("--output-root", type=Path, default=None)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--task-id", default=TASK_ID)
     parser.add_argument("--historical-baseline-correlation", type=float, default=HISTORICAL_BASELINE_CORRELATION)
     parser.add_argument("--ece-bins", type=int, default=8)

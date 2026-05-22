@@ -11,22 +11,22 @@ from .python_per_cell_smooth_ece import metric_block, reject_mounted_drive
 
 
 DEFAULT_ROW_DIAGNOSTICS_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-392-temporal-trajectory-features-fsv/"
-    "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_fsv.json"
+    "/zfs/archive/contextgraph/readback/task-py-g-392-temporal-trajectory-features-readback/"
+    "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_readback.json"
 )
 DEFAULT_FULL_PANEL_B_ROWS = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-111e-panel-b-quality-repair-fsv/"
+    "/zfs/archive/contextgraph/readback/task-py-g-111e-panel-b-quality-repair-readback/"
     "k30_t0p15_m512_panel_b_score_rows.jsonl"
 )
 DEFAULT_ACTIVE_PANEL_B_ROWS = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-111e-panel-b-quality-repair-fsv/"
+    "/zfs/archive/contextgraph/readback/task-py-g-111e-panel-b-quality-repair-readback/"
     "active-392-k30-20260521T2338Z/active_392_panel_b_score_rows.jsonl"
 )
 DEFAULT_MODEL_SCORE_ROWS = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-111e-panel-b-quality-repair-fsv/"
+    "/zfs/archive/contextgraph/readback/task-py-g-111e-panel-b-quality-repair-readback/"
     "mean-sweep-20260521T2332Z/k30_t0p15_m512_scores.jsonl"
 )
-DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-111f-panel-b-parity-scorer-fsv")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-111f-panel-b-parity-scorer-readback")
 
 
 def add_arguments(parser: Any) -> None:
@@ -304,7 +304,7 @@ def read_json_object(path: Path, label: str) -> dict[str, Any]:
         raise SwebenchOpsError(
             "PANEL_B_PARITY_INPUT_MISSING",
             f"{label} missing: {path}",
-            "Use retained aiwonder FSV artifacts only.",
+            "Use retained aiwonder READBACK artifacts only.",
             {"path": str(path)},
         )
     return require_object(json.loads(path.read_text(encoding="utf-8")), label)

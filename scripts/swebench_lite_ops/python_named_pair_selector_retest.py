@@ -32,10 +32,10 @@ from .python_per_cell_smooth_ece import metric_block, reject_mounted_drive
 
 
 DEFAULT_CALIBRATION_DECISIONS_JSONL = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-124e-per-cell-calibration-substrate-fsv/"
+    "/zfs/archive/contextgraph/readback/task-py-g-124e-per-cell-calibration-substrate-readback/"
     "run-20260522T040221Z/calibration_key_admission_decisions.jsonl"
 )
-DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-124c-named-pair-selector-fsv")
+DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-124c-named-pair-selector-readback")
 
 
 def add_arguments(parser: Any) -> None:

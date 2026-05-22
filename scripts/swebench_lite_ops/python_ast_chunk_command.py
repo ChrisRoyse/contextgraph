@@ -115,13 +115,13 @@ def summarize(chunks: list[dict[str, Any]]) -> dict[str, Any]:
 def command_ast_chunks(args: Any) -> dict[str, Any]:
     checked_at = utc_now()
     args.chunk_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
     args.hot_root.mkdir(parents=True, exist_ok=True)
     schema_path = args.chunk_root / "python_ast_chunk_schema.json"
     chunks_path = args.chunk_root / "python_ast_chunks.jsonl"
     edge_path = args.chunk_root / "edge_case_chunks.jsonl"
     manifest_path = args.chunk_root / "python_ast_chunk_manifest.json"
-    fsv_path = args.fsv_root / "python_ast_chunk_fsv.json"
+    readback_path = args.readback_root / "python_ast_chunk_readback.json"
     before_state = {
         "checked_at": checked_at,
         "chunk_count": count_jsonl(chunks_path),
@@ -130,7 +130,7 @@ def command_ast_chunks(args: Any) -> dict[str, Any]:
         "chunks": file_state(chunks_path),
         "edge_chunks": file_state(edge_path),
         "manifest": file_state(manifest_path),
-        "fsv": file_state(fsv_path),
+        "readback": file_state(readback_path),
         "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "chunk_root_bytes": path_bytes(args.chunk_root),
@@ -186,8 +186,8 @@ def command_ast_chunks(args: Any) -> dict[str, Any]:
     }
     if not happy_path["pass"] or not edge_audit["pass"]:
         raise AstChunkError(
-            "PY_AST_CHUNK_FSV_FAILED",
-            "AST chunk FSV checks failed",
+            "PY_AST_CHUNK_READBACK_FAILED",
+            "AST chunk READBACK checks failed",
             "Fix chunk emission before using chunks for reward data.",
             {"happy_path": happy_path, "edge_audit": edge_audit},
         )
@@ -201,7 +201,7 @@ def command_ast_chunks(args: Any) -> dict[str, Any]:
             "chunks_jsonl": str(chunks_path),
             "edge_chunks_jsonl": str(edge_path),
             "manifest": str(manifest_path),
-            "fsv": str(fsv_path),
+            "readback": str(readback_path),
         },
         "inputs": {"parse_records": str(args.parse_records)},
         "storage_policy": {
@@ -237,13 +237,13 @@ def command_ast_chunks(args: Any) -> dict[str, Any]:
         "chunks": file_state(chunks_path),
         "edge_chunks": file_state(edge_path),
         "manifest": file_state(manifest_path),
-        "fsv": file_state(fsv_path),
+        "readback": file_state(readback_path),
         "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": hot_bytes,
         "chunk_root_bytes": path_bytes(args.chunk_root),
-        "fsv_root_bytes": path_bytes(args.fsv_root),
+        "readback_root_bytes": path_bytes(args.readback_root),
     }
-    fsv = {
+    readback = {
         "schema_version": 1,
         "checked_at_utc": utc_now(),
         "task_id": TASK_ID,
@@ -267,28 +267,28 @@ def command_ast_chunks(args: Any) -> dict[str, Any]:
         "diagnostics": manifest["diagnostics"],
         "passes": True,
     }
-    if not all(case["pass"] for case in fsv["edge_cases"]):
+    if not all(case["pass"] for case in readback["edge_cases"]):
         raise AstChunkError(
-            "PY_AST_CHUNK_EDGE_FSV_FAILED",
+            "PY_AST_CHUNK_EDGE_READBACK_FAILED",
             "AST chunk edge-case readback failed",
             "Fix edge chunk behavior before closing TASK-PY-DATA-010.",
-            {"edge_cases": fsv["edge_cases"]},
+            {"edge_cases": readback["edge_cases"]},
         )
-    write_json_checked(fsv_path, fsv)
+    write_json_checked(readback_path, readback)
     return {
         "ok": True,
         "checked_at": utc_now(),
         "source_of_truth": manifest["source_of_truth"],
         "before_state": before_state,
-        "trigger": fsv["trigger"],
+        "trigger": readback["trigger"],
         "after_state": after_state,
         "happy_path": happy_path,
-        "edge_cases": fsv["edge_cases"],
+        "edge_cases": readback["edge_cases"],
         "summary": summary,
         "diagnostics": manifest["diagnostics"],
         "chunk_store": chunk_store,
         "edge_store": edge_store,
         "manifest_sha256": sha256_file(manifest_path),
-        "fsv_sha256": sha256_file(fsv_path),
+        "readback_sha256": sha256_file(readback_path),
         "passes": True,
     }

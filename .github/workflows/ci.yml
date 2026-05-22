@@ -37,6 +37,6 @@ jobs:
           python3 scripts/swebench_lite_ops.py python-proof-domain-isolation \
             --repo-root "$GITHUB_WORKSPACE" \
             --output-root /tmp/contextgraph-python-proof-domain-isolation \
-            --fsv-root /tmp/contextgraph-python-proof-domain-isolation-fsv \
+            --readback-root /tmp/contextgraph-python-proof-domain-isolation-readback \
             --skip-github \
             --clean-output

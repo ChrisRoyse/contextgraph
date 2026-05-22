@@ -34,7 +34,7 @@ FORMULA_VERSION = "failure_fingerprint_centroid_variance_v1"
 DEFAULT_FORWARD_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z")
 DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-failure-fingerprints-seed-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-fp-002-seed-fingerprint-materializer-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-fp-002-seed-fingerprint-materializer-readback")
 LOCAL_FALLBACK_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
 EXPECTED_EMBEDDERS = ("e1", "e6", "e7", "e8", "e10", "e12", "e13", "e14", "e2", "e3", "e4", "e9")
 EXPECTED_MUTATION_CATEGORIES = (
@@ -336,9 +336,9 @@ def materialize_catalog(args: argparse.Namespace) -> dict[str, Any]:
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
 
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     metadata, metadata_summary = load_chunk_metadata(args.chunks_jsonl)
     paths = iter_packed_record_paths(args.forward_root, expected_embedder_set, args.max_shards)
 
@@ -542,7 +542,7 @@ def materialize_catalog(args: argparse.Namespace) -> dict[str, Any]:
     readback_fingerprints = [row for _, row in iter_jsonl(args.output_root / "failure_fingerprints.jsonl")]
     readback_references = [row for _, row in iter_jsonl(args.output_root / "fingerprint_references.jsonl")]
     readback_report = json.loads((args.output_root / "fingerprint_materialization_report.json").read_text(encoding="utf-8"))
-    after = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    after = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     readback_passes = (
         len(readback_fingerprints) == len(fingerprint_rows)
         and len(readback_references) == len(reference_rows)
@@ -550,10 +550,10 @@ def materialize_catalog(args: argparse.Namespace) -> dict[str, Any]:
         and all(set(row["centroid_by_embedder"]) == expected_embedder_set for row in readback_fingerprints)
         and all(row["n_references"] == len(row["reference_chunks"]) for row in readback_fingerprints)
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "formula_version": FORMULA_VERSION,
         "started_at_utc": started,
         "created_at_utc": utc_now(),
@@ -563,7 +563,7 @@ def materialize_catalog(args: argparse.Namespace) -> dict[str, Any]:
             "command": "python3 scripts/swebench_lite_ops.py python-failure-fingerprint-materialize",
             "source_corpus": source_corpus,
         },
-        "source_of_truth": {**report["source_of_truth"], "fsv": str(args.fsv_root / "failure_fingerprint_materializer_fsv.json")},
+        "source_of_truth": {**report["source_of_truth"], "readback": str(args.readback_root / "failure_fingerprint_materializer_readback.json")},
         "before_state": before,
         "after_state": after,
         "expected": {
@@ -581,17 +581,17 @@ def materialize_catalog(args: argparse.Namespace) -> dict[str, Any]:
             "first_fingerprint": readback_fingerprints[0] if readback_fingerprints else None,
             "artifact_state": tree_state(args.output_root),
         },
-        "boundary_cases": edge_cases(args.fsv_root),
+        "boundary_cases": edge_cases(args.readback_root),
     }
-    fsv["passes"] = bool(fsv["passes"] and all(case["pass"] for case in fsv["boundary_cases"]))
-    fsv["all_passed"] = fsv["passes"]
-    dump_json(args.fsv_root / "failure_fingerprint_materializer_fsv.json", fsv)
-    final = json.loads((args.fsv_root / "failure_fingerprint_materializer_fsv.json").read_text(encoding="utf-8"))
-    require(final.get("all_passed") is True, "FINGERPRINT_MATERIALIZER_FSV_FAILED", str(args.fsv_root / "failure_fingerprint_materializer_fsv.json"))
+    readback["passes"] = bool(readback["passes"] and all(case["pass"] for case in readback["boundary_cases"]))
+    readback["all_passed"] = readback["passes"]
+    dump_json(args.readback_root / "failure_fingerprint_materializer_readback.json", readback)
+    final = json.loads((args.readback_root / "failure_fingerprint_materializer_readback.json").read_text(encoding="utf-8"))
+    require(final.get("all_passed") is True, "FINGERPRINT_MATERIALIZER_READBACK_FAILED", str(args.readback_root / "failure_fingerprint_materializer_readback.json"))
     return final
 
 
-def edge_cases(fsv_root: Path) -> list[dict[str, Any]]:
+def edge_cases(readback_root: Path) -> list[dict[str, Any]]:
     cases: list[dict[str, Any]] = []
     for name, vector, expected in [
         ("empty_vector", [], "FINGERPRINT_VECTOR_MISSING"),
@@ -630,7 +630,7 @@ def edge_cases(fsv_root: Path) -> list[dict[str, Any]]:
             "pass": actual == "FINGERPRINT_VECTOR_DIM_MISMATCH",
         }
     )
-    missing = fsv_root / "missing-fixture.jsonl"
+    missing = readback_root / "missing-fixture.jsonl"
     missing.parent.mkdir(parents=True, exist_ok=True)
     missing.write_text("", encoding="utf-8")
     try:
@@ -731,10 +731,10 @@ def build_fixture(root: Path, embedders: tuple[str, ...]) -> tuple[Path, Path]:
 def command_python_failure_fingerprint_materializer(args: argparse.Namespace) -> int:
     if args.fixture_mode:
         embedders = tuple(item.strip() for item in args.expected_embedders.split(",") if item.strip())
-        chunks_path, forward_root = build_fixture(args.fsv_root / "fixture-input", embedders)
+        chunks_path, forward_root = build_fixture(args.readback_root / "fixture-input", embedders)
         args.chunks_jsonl = chunks_path
         args.forward_root = forward_root
-        args.output_root = args.fsv_root / "fixture-output"
+        args.output_root = args.readback_root / "fixture-output"
         args.source_corpus = "task-fp-002-fixture"
         args.expected_fingerprints = 5
         args.expected_known_good = 3
@@ -753,7 +753,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--forward-root", type=Path, default=DEFAULT_FORWARD_ROOT)
     parser.add_argument("--chunks-jsonl", type=Path, default=DEFAULT_CHUNKS_JSONL)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--source-corpus", default="aiwonder-prod-20260515-191116Z")
     parser.add_argument("--expected-embedders", default=",".join(EXPECTED_EMBEDDERS))
     parser.add_argument("--expected-fingerprints", type=int, default=97)

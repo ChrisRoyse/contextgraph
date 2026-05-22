@@ -26,12 +26,12 @@ DEFAULT_DDA_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/
 DEFAULT_PAIRWISE_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/pairwise")
 DEFAULT_MATRIX_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/intelligence-matrices")
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-v1/contribution")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-055-embedder-contribution-fsv")
-DEFAULT_REWARD_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-021-reward-tensors-fsv/python_reward_tensors_fsv.json")
-DEFAULT_DDA_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json")
-DEFAULT_PAIRWISE_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-018-pairwise-dda-mi-fsv/python_pairwise_dda_mi_fsv.json")
-DEFAULT_TCT_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json")
-DEFAULT_MATRIX_FSV = Path("/zfs/archive/contextgraph/fsv/task-py-data-062-post249-smoke-intelligence-fsv/smoke_intelligence_matrices_fsv.json")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-055-embedder-contribution-readback")
+DEFAULT_REWARD_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-021-reward-tensors-readback/python_reward_tensors_readback.json")
+DEFAULT_DDA_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-017-dda-signals-readback/python_dda_code_signals_readback.json")
+DEFAULT_PAIRWISE_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-018-pairwise-dda-mi-readback/python_pairwise_dda_mi_readback.json")
+DEFAULT_TCT_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-020-tct-cells-readback/python_tct_cells_readback.json")
+DEFAULT_MATRIX_READBACK = Path("/zfs/archive/contextgraph/readback/task-py-data-062-post249-smoke-intelligence-readback/smoke_intelligence_matrices_readback.json")
 DEFAULT_EXPECTED_EMBEDDERS = "e1,e6,e7,e8,e10,e12,e13,e14,e2,e3,e4,e9"
 EPS = 1.0e-12
 
@@ -77,7 +77,7 @@ def ratio(numerator: int, denominator: int) -> float:
 
 def load_passing_json(path: Path, code: str) -> tuple[dict[str, Any], str]:
     doc = read_json(path)
-    require(doc.get("passes") is True, code, f"required FSV does not pass: {path}", {"path": str(path)})
+    require(doc.get("passes") is True, code, f"required READBACK does not pass: {path}", {"path": str(path)})
     return doc, sha256_file(path)
 
 
@@ -614,15 +614,15 @@ def command_python_embedder_contribution(args: argparse.Namespace) -> int:
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    args.readback_root.mkdir(parents=True, exist_ok=True)
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
 
     expected_embedders = parse_embedders(args.expected_embedders)
-    _, reward_fsv_sha = load_passing_json(args.reward_fsv, "EMBEDDER_CONTRIBUTION_REWARD_FSV_NOT_PASSING")
-    _, dda_fsv_sha = load_passing_json(args.dda_fsv, "EMBEDDER_CONTRIBUTION_DDA_FSV_NOT_PASSING")
-    _, pairwise_fsv_sha = load_passing_json(args.pairwise_fsv, "EMBEDDER_CONTRIBUTION_PAIRWISE_FSV_NOT_PASSING")
-    _, tct_fsv_sha = load_passing_json(args.tct_fsv, "EMBEDDER_CONTRIBUTION_TCT_FSV_NOT_PASSING")
-    _, matrix_fsv_sha = load_passing_json(args.matrix_fsv, "EMBEDDER_CONTRIBUTION_MATRIX_FSV_NOT_PASSING")
+    _, reward_readback_sha = load_passing_json(args.reward_readback, "EMBEDDER_CONTRIBUTION_REWARD_READBACK_NOT_PASSING")
+    _, dda_readback_sha = load_passing_json(args.dda_readback, "EMBEDDER_CONTRIBUTION_DDA_READBACK_NOT_PASSING")
+    _, pairwise_readback_sha = load_passing_json(args.pairwise_readback, "EMBEDDER_CONTRIBUTION_PAIRWISE_READBACK_NOT_PASSING")
+    _, tct_readback_sha = load_passing_json(args.tct_readback, "EMBEDDER_CONTRIBUTION_TCT_READBACK_NOT_PASSING")
+    _, matrix_readback_sha = load_passing_json(args.matrix_readback, "EMBEDDER_CONTRIBUTION_MATRIX_READBACK_NOT_PASSING")
 
     chunk_rows = load_jsonl(args.reward_root / "chunk_reward_tensors.jsonl")
     signal_by_embedder = load_present_signals(args.dda_root / "per_embedder_signals.jsonl")
@@ -663,11 +663,11 @@ def command_python_embedder_contribution(args: argparse.Namespace) -> int:
             "matrix_root": str(args.matrix_root),
         },
         "source_hashes": {
-            "reward_fsv_sha256": reward_fsv_sha,
-            "dda_fsv_sha256": dda_fsv_sha,
-            "pairwise_fsv_sha256": pairwise_fsv_sha,
-            "tct_fsv_sha256": tct_fsv_sha,
-            "matrix_fsv_sha256": matrix_fsv_sha,
+            "reward_readback_sha256": reward_readback_sha,
+            "dda_readback_sha256": dda_readback_sha,
+            "pairwise_readback_sha256": pairwise_readback_sha,
+            "tct_readback_sha256": tct_readback_sha,
+            "matrix_readback_sha256": matrix_readback_sha,
             "chunk_reward_tensors_sha256": sha256_file(args.reward_root / "chunk_reward_tensors.jsonl"),
             "per_embedder_signals_sha256": sha256_file(args.dda_root / "per_embedder_signals.jsonl"),
             "missing_signal_states_sha256": sha256_file(args.dda_root / "missing_signal_states.jsonl"),
@@ -694,7 +694,7 @@ def command_python_embedder_contribution(args: argparse.Namespace) -> int:
     write_jsonl(args.output_root / "edge_case_states.jsonl", edges)
     dump_json(args.output_root / "embedder_contribution_report.json", report)
 
-    after = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    after = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     readback_counts = {
         "per_head_embedder_contribution": sum(1 for _ in iter_jsonl(args.output_root / "per_head_embedder_contribution.jsonl")),
         "feature_contribution_metrics": sum(1 for _ in iter_jsonl(args.output_root / "feature_contribution_metrics.jsonl")),
@@ -716,10 +716,10 @@ def command_python_embedder_contribution(args: argparse.Namespace) -> int:
         and all(case["pass"] for case in edges)
         and all(row["pass"] for row in validity)
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "formula_version": FORMULA_VERSION,
         "started_at_utc": started,
         "created_at_utc": utc_now(),
@@ -729,7 +729,7 @@ def command_python_embedder_contribution(args: argparse.Namespace) -> int:
         "source_of_truth": {
             **report["source_of_truth"],
             "report": str(args.output_root / "embedder_contribution_report.json"),
-            "fsv": str(args.fsv_root / "python_embedder_contribution_fsv.json"),
+            "readback": str(args.readback_root / "python_embedder_contribution_readback.json"),
         },
         "trigger": {"command": "python3 scripts/swebench_lite_ops.py python-embedder-contribution"},
         "readback": {
@@ -744,9 +744,9 @@ def command_python_embedder_contribution(args: argparse.Namespace) -> int:
         "edge_cases": edges,
         "estimator_validity": validity,
     }
-    dump_json(args.fsv_root / "python_embedder_contribution_fsv.json", fsv)
-    final = read_json(args.fsv_root / "python_embedder_contribution_fsv.json")
-    require(final.get("passes") is True, "EMBEDDER_CONTRIBUTION_FSV_FAILED", "embedder contribution FSV failed", {"path": str(args.fsv_root / "python_embedder_contribution_fsv.json")})
+    dump_json(args.readback_root / "python_embedder_contribution_readback.json", readback)
+    final = read_json(args.readback_root / "python_embedder_contribution_readback.json")
+    require(final.get("passes") is True, "EMBEDDER_CONTRIBUTION_READBACK_FAILED", "embedder contribution READBACK failed", {"path": str(args.readback_root / "python_embedder_contribution_readback.json")})
     print(json.dumps(final, sort_keys=True, indent=2))
     return 0
 
@@ -757,12 +757,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--pairwise-root", type=Path, default=DEFAULT_PAIRWISE_ROOT)
     parser.add_argument("--matrix-root", type=Path, default=DEFAULT_MATRIX_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
-    parser.add_argument("--reward-fsv", type=Path, default=DEFAULT_REWARD_FSV)
-    parser.add_argument("--dda-fsv", type=Path, default=DEFAULT_DDA_FSV)
-    parser.add_argument("--pairwise-fsv", type=Path, default=DEFAULT_PAIRWISE_FSV)
-    parser.add_argument("--tct-fsv", type=Path, default=DEFAULT_TCT_FSV)
-    parser.add_argument("--matrix-fsv", type=Path, default=DEFAULT_MATRIX_FSV)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
+    parser.add_argument("--reward-readback", type=Path, default=DEFAULT_REWARD_READBACK)
+    parser.add_argument("--dda-readback", type=Path, default=DEFAULT_DDA_READBACK)
+    parser.add_argument("--pairwise-readback", type=Path, default=DEFAULT_PAIRWISE_READBACK)
+    parser.add_argument("--tct-readback", type=Path, default=DEFAULT_TCT_READBACK)
+    parser.add_argument("--matrix-readback", type=Path, default=DEFAULT_MATRIX_READBACK)
     parser.add_argument("--expected-embedders", default=DEFAULT_EXPECTED_EMBEDDERS)
     parser.add_argument("--expected-chunk-count", type=int, default=1000)
     parser.add_argument("--min-label-count", type=int, default=20)

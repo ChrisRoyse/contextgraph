@@ -32,8 +32,8 @@ from .python_tracin_abstain_pool import (
 
 
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/state/tracin/post-fix-real-input-v2")
-DEFAULT_FSV_ROOT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-126-exact-tracin-gradient-rows-fsv"
+DEFAULT_READBACK_ROOT = Path(
+    "/zfs/archive/contextgraph/readback/task-py-g-126-exact-tracin-gradient-rows-readback"
 )
 DEFAULT_PROJECTION_DIM = 128
 DEFAULT_PROJECTION_SEED = "task-py-g-126-exact-projected-gradient-v1"
@@ -63,7 +63,7 @@ def add_arguments(parser: Any) -> None:
     parser.add_argument("--row-diagnostics-report", type=Path, default=DEFAULT_ROW_DIAGNOSTICS_REPORT)
     parser.add_argument("--training-array-root", type=Path, default=DEFAULT_TRAINING_ARRAY_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--evidence-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--evidence-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--projection-dim", type=int, default=DEFAULT_PROJECTION_DIM)
     parser.add_argument("--projection-seed", default=DEFAULT_PROJECTION_SEED)
     parser.add_argument("--expected-calibration-count", type=int, default=240)
@@ -242,7 +242,7 @@ def read_json_object(path: Path, label: str) -> dict[str, Any]:
         raise SwebenchOpsError(
             "PY_G_126_INPUT_MISSING",
             f"{label} missing: {path}",
-            "Use retained aiwonder FSV artifacts only.",
+            "Use retained aiwonder READBACK artifacts only.",
             {"path": str(path), "label": label},
         )
     try:

@@ -111,56 +111,56 @@ def load_json_object(path: Path, code: str, description: str) -> dict[str, Any]:
     return payload
 
 
-def require_source_hash_match(expected_sha: str, actual_sha: str, chunks_jsonl: Path, full_ast_corpus_fsv: Path) -> None:
+def require_source_hash_match(expected_sha: str, actual_sha: str, chunks_jsonl: Path, full_ast_corpus_readback: Path) -> None:
     if expected_sha != actual_sha:
         raise SmokeManifestError(
             "SMOKE_MANIFEST_STALE_SOURCE_CHUNKS_HASH",
-            "smoke manifest source chunks hash does not match #249 FSV",
+            "smoke manifest source chunks hash does not match #249 READBACK",
             "Regenerate the smoke manifest from the accepted #249 chunk Source of Truth.",
             {
                 "expected": expected_sha,
                 "actual": actual_sha,
                 "chunks_jsonl": str(chunks_jsonl),
-                "full_ast_corpus_fsv": str(full_ast_corpus_fsv),
+                "full_ast_corpus_readback": str(full_ast_corpus_readback),
             },
         )
 
 
 def load_full_ast_corpus_gate(path: Path, chunks_jsonl: Path, expected_task_count: int) -> dict[str, Any]:
-    payload = load_json_object(path, "SMOKE_MANIFEST_FULL_AST_FSV_INVALID", "#249 full AST corpus FSV")
+    payload = load_json_object(path, "SMOKE_MANIFEST_FULL_AST_READBACK_INVALID", "#249 full AST corpus READBACK")
     if payload.get("passes") is not True:
         raise SmokeManifestError(
-            "SMOKE_MANIFEST_FULL_AST_FSV_NOT_PASSING",
-            "#249 full AST corpus FSV is not passing",
+            "SMOKE_MANIFEST_FULL_AST_READBACK_NOT_PASSING",
+            "#249 full AST corpus READBACK is not passing",
             "Resolve #249 before selecting the post-#249 smoke manifest.",
             {"path": str(path), "passes": payload.get("passes")},
         )
     after_state = payload.get("after_state")
     if not isinstance(after_state, dict):
         raise SmokeManifestError(
-            "SMOKE_MANIFEST_FULL_AST_FSV_AFTER_STATE_MISSING",
-            "#249 full AST corpus FSV has no after_state object",
-            "Regenerate #249 FSV before selecting the post-#249 smoke manifest.",
+            "SMOKE_MANIFEST_FULL_AST_READBACK_AFTER_STATE_MISSING",
+            "#249 full AST corpus READBACK has no after_state object",
+            "Regenerate #249 READBACK before selecting the post-#249 smoke manifest.",
             {"path": str(path)},
         )
     chunks_state = after_state.get("chunks")
     coverage = after_state.get("chunk_coverage")
     if not isinstance(chunks_state, dict) or not isinstance(coverage, dict):
         raise SmokeManifestError(
-            "SMOKE_MANIFEST_FULL_AST_FSV_SOURCE_MISSING",
-            "#249 full AST corpus FSV is missing chunk source or coverage state",
-            "Regenerate #249 FSV before selecting the post-#249 smoke manifest.",
+            "SMOKE_MANIFEST_FULL_AST_READBACK_SOURCE_MISSING",
+            "#249 full AST corpus READBACK is missing chunk source or coverage state",
+            "Regenerate #249 READBACK before selecting the post-#249 smoke manifest.",
             {"path": str(path), "after_state_keys": sorted(after_state.keys())},
         )
     required_sha = chunks_state.get("sha256")
     required_path = chunks_state.get("path")
-    require_sha(required_sha, "full_ast_corpus_fsv.after_state.chunks.sha256", {"chunk_id": required_sha, "subject": str(path)})
+    require_sha(required_sha, "full_ast_corpus_readback.after_state.chunks.sha256", {"chunk_id": required_sha, "subject": str(path)})
     if str(chunks_jsonl) != str(required_path):
         raise SmokeManifestError(
             "SMOKE_MANIFEST_SOURCE_CHUNKS_PATH_MISMATCH",
-            "smoke manifest source chunks path does not match #249 FSV",
+            "smoke manifest source chunks path does not match #249 READBACK",
             "Use the accepted #249 chunk Source of Truth path.",
-            {"expected": required_path, "actual": str(chunks_jsonl), "full_ast_corpus_fsv": str(path)},
+            {"expected": required_path, "actual": str(chunks_jsonl), "full_ast_corpus_readback": str(path)},
         )
     actual_sha = sha256_file(chunks_jsonl)
     require_source_hash_match(required_sha, actual_sha, chunks_jsonl, path)
@@ -169,12 +169,12 @@ def load_full_ast_corpus_gate(path: Path, chunks_jsonl: Path, expected_task_coun
     if task_count != expected_task_count or pair_count != expected_task_count * len(EXPECTED_MUTATION_CATEGORIES):
         raise SmokeManifestError(
             "SMOKE_MANIFEST_FULL_AST_COVERAGE_MISMATCH",
-            "#249 full AST corpus FSV does not prove the expected 300x8 coverage",
+            "#249 full AST corpus READBACK does not prove the expected 300x8 coverage",
             "Resolve #249 coverage before selecting the post-#249 smoke manifest.",
             {"expected_task_count": expected_task_count, "expected_pair_count": expected_task_count * len(EXPECTED_MUTATION_CATEGORIES), "task_count": task_count, "pair_count": pair_count},
         )
     return {
-        "full_ast_corpus_fsv": str(path),
+        "full_ast_corpus_readback": str(path),
         "source_chunks_jsonl": str(chunks_jsonl),
         "source_chunks_sha256": required_sha,
         "actual_source_chunks_sha256": actual_sha,
@@ -829,7 +829,7 @@ def edge_audits(
     stratification: dict[str, Any],
     source_gate: dict[str, Any],
     chunks_jsonl: Path,
-    full_ast_corpus_fsv: Path,
+    full_ast_corpus_readback: Path,
     seed: str,
 ) -> dict[str, Any]:
     duplicate_probe_rows = selected[:4] + [selected[0], selected[1]]
@@ -840,7 +840,7 @@ def edge_audits(
             "sha256:" + ("0" * 64),
             str(source_gate["actual_source_chunks_sha256"]),
             chunks_jsonl,
-            full_ast_corpus_fsv,
+            full_ast_corpus_readback,
         )
     except SmokeManifestError as exc:
         stale_source_hash_error = exc.to_json()
@@ -848,8 +848,8 @@ def edge_audits(
         raise SmokeManifestError(
             "SMOKE_MANIFEST_EDGE_AUDIT_FAILED",
             "stale-source-hash edge audit did not fail",
-            "Fix #249 source hash validation before trusting smoke manifest FSV.",
-            {"chunks_jsonl": str(chunks_jsonl), "full_ast_corpus_fsv": str(full_ast_corpus_fsv)},
+            "Fix #249 source hash validation before trusting smoke manifest READBACK.",
+            {"chunks_jsonl": str(chunks_jsonl), "full_ast_corpus_readback": str(full_ast_corpus_readback)},
         )
     bad_hash_error: dict[str, Any]
     bad = dict(selected[0])
@@ -862,7 +862,7 @@ def edge_audits(
         raise SmokeManifestError(
             "SMOKE_MANIFEST_EDGE_AUDIT_FAILED",
             "source-hash edge audit did not fail",
-            "Fix source validation before trusting smoke manifest FSV.",
+            "Fix source validation before trusting smoke manifest READBACK.",
             {"chunk_id": selected[0]["chunk_id"]},
         )
     unverified_source_error: dict[str, Any]
@@ -876,7 +876,7 @@ def edge_audits(
         raise SmokeManifestError(
             "SMOKE_MANIFEST_EDGE_AUDIT_FAILED",
             "unverified-source edge audit did not fail",
-            "Fix source validation before trusting smoke manifest FSV.",
+            "Fix source validation before trusting smoke manifest READBACK.",
             {"chunk_id": selected[0]["chunk_id"]},
         )
     missing_source_text_error: dict[str, Any]
@@ -890,7 +890,7 @@ def edge_audits(
         raise SmokeManifestError(
             "SMOKE_MANIFEST_EDGE_AUDIT_FAILED",
             "missing-source-text edge audit did not fail",
-            "Fix required field validation before trusting smoke manifest FSV.",
+            "Fix required field validation before trusting smoke manifest READBACK.",
             {"chunk_id": selected[0]["chunk_id"]},
         )
     empty_error: dict[str, Any]
@@ -902,7 +902,7 @@ def edge_audits(
         raise SmokeManifestError(
             "SMOKE_MANIFEST_EDGE_AUDIT_FAILED",
             "empty-pool edge audit did not fail",
-            "Fix candidate-pool validation before trusting smoke manifest FSV.",
+            "Fix candidate-pool validation before trusting smoke manifest READBACK.",
             {},
         )
     return {
@@ -920,7 +920,7 @@ def edge_audits(
         },
         "stale_full_ast_source_hash": {
             "before_state": {
-                "full_ast_corpus_fsv": str(full_ast_corpus_fsv),
+                "full_ast_corpus_readback": str(full_ast_corpus_readback),
                 "expected_source_chunks_sha256": "sha256:" + ("0" * 64),
                 "actual_source_chunks_sha256": source_gate["actual_source_chunks_sha256"],
             },
@@ -979,27 +979,27 @@ def assert_edge_pass(edge_results: dict[str, Any]) -> None:
 def command_smoke_manifest(args: Any) -> dict[str, Any]:
     checked_at = utc_now()
     args.manifest_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
     chunks_out = args.manifest_root / "smoke_chunks.jsonl"
     manifest_out = args.manifest_root / "smoke_manifest.jsonl"
     summary_out = args.manifest_root / "smoke_manifest_summary.json"
-    fsv_out = args.fsv_root / "smoke_manifest_fsv.json"
+    readback_out = args.readback_root / "smoke_manifest_readback.json"
     before_state = {
         "checked_at": checked_at,
         "source_chunks": file_state(args.chunks_jsonl),
-        "full_ast_corpus_fsv": file_state(args.full_ast_corpus_fsv),
+        "full_ast_corpus_readback": file_state(args.full_ast_corpus_readback),
         "cleaned_manifest": file_state(args.cleaned_manifest),
         "chunks_out": file_state(chunks_out),
         "manifest_out": file_state(manifest_out),
         "summary_out": file_state(summary_out),
-        "fsv_out": file_state(fsv_out),
+        "readback_out": file_state(readback_out),
         "manifest_root_bytes": path_bytes(args.manifest_root),
-        "fsv_root_bytes": path_bytes(args.fsv_root),
+        "readback_root_bytes": path_bytes(args.readback_root),
         "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
     }
 
     expected_categories = tuple(category.strip() for category in args.expected_mutation_categories.split(",") if category.strip())
-    source_gate = load_full_ast_corpus_gate(args.full_ast_corpus_fsv, args.chunks_jsonl, args.expected_task_count)
+    source_gate = load_full_ast_corpus_gate(args.full_ast_corpus_readback, args.chunks_jsonl, args.expected_task_count)
     chunk_rows = load_jsonl(args.chunks_jsonl, "SMOKE_MANIFEST_CHUNKS_JSONL_INVALID")
     cleaned_rows = load_cleaned_manifest(args.cleaned_manifest)
     selected, source_proofs, selection_summary = select_source_verified_smoke_rows(
@@ -1018,7 +1018,7 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
         expected_categories,
     )
     stratification = stratification_requirements(chunk_rows, selected, args.expected_task_count, expected_categories)
-    edge_results = edge_audits(selected, warnings, stratification, source_gate, args.chunks_jsonl, args.full_ast_corpus_fsv, args.seed)
+    edge_results = edge_audits(selected, warnings, stratification, source_gate, args.chunks_jsonl, args.full_ast_corpus_readback, args.seed)
     assert_edge_pass(edge_results)
 
     chunk_store = write_jsonl_checked(chunks_out, selected)
@@ -1028,7 +1028,7 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
     selected_hash = stable_hash(enriched)
     source_hashes = {
         "chunks_jsonl": sha256_file(args.chunks_jsonl),
-        "full_ast_corpus_fsv": sha256_file(args.full_ast_corpus_fsv),
+        "full_ast_corpus_readback": sha256_file(args.full_ast_corpus_readback),
         "required_source_chunks_sha256": source_gate["source_chunks_sha256"],
         "actual_source_chunks_sha256": source_gate["actual_source_chunks_sha256"],
         "cleaned_manifest": sha256_file(args.cleaned_manifest),
@@ -1041,14 +1041,14 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
         "seed": args.seed,
         "target_count": args.target_count,
         "source_of_truth": {
-            "source_policy": "accepted #249 full AST corpus FSV and chunk JSONL are the durable source of truth for smoke selection; embedded source_text is validated against source_sha256 and source_slice_verified",
-            "full_ast_corpus_fsv": str(args.full_ast_corpus_fsv),
+            "source_policy": "accepted #249 full AST corpus READBACK and chunk JSONL are the durable source of truth for smoke selection; embedded source_text is validated against source_sha256 and source_slice_verified",
+            "full_ast_corpus_readback": str(args.full_ast_corpus_readback),
             "source_chunks_jsonl": str(args.chunks_jsonl),
             "cleaned_manifest": str(args.cleaned_manifest),
             "smoke_chunks_jsonl": str(chunks_out),
             "smoke_manifest_jsonl": str(manifest_out),
             "summary": str(summary_out),
-            "fsv": str(fsv_out),
+            "readback": str(readback_out),
         },
         "source_hashes": source_hashes,
         "source_gate": source_gate,
@@ -1066,17 +1066,17 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
     after_state = {
         "checked_at": utc_now(),
         "source_chunks": file_state(args.chunks_jsonl),
-        "full_ast_corpus_fsv": file_state(args.full_ast_corpus_fsv),
+        "full_ast_corpus_readback": file_state(args.full_ast_corpus_readback),
         "cleaned_manifest": file_state(args.cleaned_manifest),
         "chunks_out": file_state(chunks_out),
         "manifest_out": file_state(manifest_out),
         "summary_out": file_state(summary_out),
-        "fsv_out_before_current_write": file_state(fsv_out),
-        "fsv_self_hash_note": "final smoke_manifest_fsv.json hash is recorded by the command evidence and external readback, not embedded self-referentially",
+        "readback_out_before_current_write": file_state(readback_out),
+        "readback_self_hash_note": "final smoke_manifest_readback.json hash is recorded by the command evidence and external readback, not embedded self-referentially",
         "smoke_chunks_count": count_jsonl(chunks_out),
         "smoke_manifest_count": count_jsonl(manifest_out),
         "manifest_root_bytes": path_bytes(args.manifest_root),
-        "fsv_root_bytes": path_bytes(args.fsv_root),
+        "readback_root_bytes": path_bytes(args.readback_root),
         "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
     }
     happy_path = {
@@ -1121,7 +1121,7 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
             "Inspect output files and selection logic before continuing to #252.",
             {"happy_path": happy_path},
         )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "checked_at_utc": utc_now(),
         "task_id": TASK_ID,
@@ -1140,14 +1140,14 @@ def command_smoke_manifest(args: Any) -> dict[str, Any]:
         "summary": summary,
         "passes": True,
     }
-    write_json_checked(fsv_out, fsv)
-    final_fsv_state = file_state(fsv_out)
+    write_json_checked(readback_out, readback)
+    final_readback_state = file_state(readback_out)
     return {
         "ok": True,
         "checked_at": utc_now(),
         "source_of_truth": summary["source_of_truth"],
         "before_state": before_state,
-        "after_state": {**after_state, "fsv_out": final_fsv_state},
+        "after_state": {**after_state, "readback_out": final_readback_state},
         "happy_path": happy_path,
         "edge_cases": edge_results,
         "summary": summary,

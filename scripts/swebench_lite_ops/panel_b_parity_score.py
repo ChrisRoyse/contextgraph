@@ -13,10 +13,10 @@ from .python_per_cell_smooth_ece import metric_block, reject_mounted_drive
 
 
 DEFAULT_ROW_DIAGNOSTICS_REPORT = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-392-temporal-trajectory-features-fsv/"
-    "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_fsv.json"
+    "/zfs/archive/contextgraph/readback/task-py-g-392-temporal-trajectory-features-readback/"
+    "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_readback.json"
 )
-DEFAULT_PANEL_B_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-111f-panel-b-parity-scorer-fsv")
+DEFAULT_PANEL_B_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-111f-panel-b-parity-scorer-readback")
 DEFAULT_CALIBRATION_PANEL_B_ROWS = DEFAULT_PANEL_B_ROOT / "panel_b_calibration_model_scores.jsonl"
 DEFAULT_HOLDOUT_PANEL_B_ROWS = DEFAULT_PANEL_B_ROOT / "panel_b_model_scores.jsonl"
 DEFAULT_OUTPUT_ROOT = DEFAULT_PANEL_B_ROOT
@@ -656,7 +656,7 @@ def promotion_recommendation(
         "blockers": blockers,
         "fullAbsCorrelationDeltaVsPanelA": full_delta,
         "active392AbsCorrelationDeltaVsPanelA": active_delta,
-        "nextAction": "run_cross_panel_triangulation_fsv" if not blockers else "inspect_parity_feature_gap_by_cell",
+        "nextAction": "run_cross_panel_triangulation_readback" if not blockers else "inspect_parity_feature_gap_by_cell",
     }
 
 
@@ -713,7 +713,7 @@ def read_json_object(path: Path, label: str) -> dict[str, Any]:
         raise SwebenchOpsError(
             "PANEL_B_PARITY_SCORE_INPUT_MISSING",
             f"{label} missing: {path}",
-            "Use retained aiwonder FSV artifacts only.",
+            "Use retained aiwonder READBACK artifacts only.",
             {"path": str(path)},
         )
     return require_object(json.loads(path.read_text(encoding="utf-8")), label)

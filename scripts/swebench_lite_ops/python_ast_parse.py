@@ -437,13 +437,13 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
 def command_ast_parse(args: Any) -> dict[str, Any]:
     checked_at = utc_now()
     args.parse_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
     args.hot_root.mkdir(parents=True, exist_ok=True)
     schema_path = args.parse_root / "python_ast_parse_schema.json"
     records_path = args.parse_root / "python_ast_parse_records.jsonl"
     edge_path = args.parse_root / "edge_case_parse_records.jsonl"
     manifest_path = args.parse_root / "python_ast_parse_manifest.json"
-    fsv_path = args.fsv_root / "python_ast_parse_fsv.json"
+    readback_path = args.readback_root / "python_ast_parse_readback.json"
 
     before_state = {
         "checked_at": checked_at,
@@ -453,7 +453,7 @@ def command_ast_parse(args: Any) -> dict[str, Any]:
         "records": file_state(records_path),
         "edge_records": file_state(edge_path),
         "manifest": file_state(manifest_path),
-        "fsv": file_state(fsv_path),
+        "readback": file_state(readback_path),
         "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "parse_root_bytes": path_bytes(args.parse_root),
@@ -512,8 +512,8 @@ def command_ast_parse(args: Any) -> dict[str, Any]:
     all_checks_pass = happy_path["pass"] and edge_audit["pass"]
     if not all_checks_pass:
         raise AstParseError(
-            "PY_AST_PARSE_FSV_FAILED",
-            "AST parse FSV checks failed",
+            "PY_AST_PARSE_READBACK_FAILED",
+            "AST parse READBACK checks failed",
             "Fix parser records before using them as reward data.",
             {"happy_path": happy_path, "edge_audit": edge_audit},
         )
@@ -528,7 +528,7 @@ def command_ast_parse(args: Any) -> dict[str, Any]:
             "records_jsonl": str(records_path),
             "edge_records_jsonl": str(edge_path),
             "manifest": str(manifest_path),
-            "fsv": str(fsv_path),
+            "readback": str(readback_path),
         },
         "inputs": {"workspace_manifest": str(args.workspace_manifest)},
         "parser": {"name": PARSER_NAME, "version": PARSER_VERSION, "python": sys.version},
@@ -562,13 +562,13 @@ def command_ast_parse(args: Any) -> dict[str, Any]:
         "records": file_state(records_path),
         "edge_records": file_state(edge_path),
         "manifest": file_state(manifest_path),
-        "fsv": file_state(fsv_path),
+        "readback": file_state(readback_path),
         "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": hot_bytes,
         "parse_root_bytes": path_bytes(args.parse_root),
-        "fsv_root_bytes": path_bytes(args.fsv_root),
+        "readback_root_bytes": path_bytes(args.readback_root),
     }
-    fsv = {
+    readback = {
         "schema_version": 1,
         "checked_at_utc": utc_now(),
         "task_id": TASK_ID,
@@ -606,28 +606,28 @@ def command_ast_parse(args: Any) -> dict[str, Any]:
         "summary": summary,
         "passes": True,
     }
-    if not all(case["pass"] for case in fsv["edge_cases"]):
+    if not all(case["pass"] for case in readback["edge_cases"]):
         raise AstParseError(
-            "PY_AST_EDGE_FSV_FAILED",
+            "PY_AST_EDGE_READBACK_FAILED",
             "AST parse edge-case readback failed",
             "Fix edge parser behavior before closing TASK-PY-DATA-009.",
-            {"edge_cases": fsv["edge_cases"]},
+            {"edge_cases": readback["edge_cases"]},
         )
-    write_json_checked(fsv_path, fsv)
+    write_json_checked(readback_path, readback)
 
     return {
         "ok": True,
         "checked_at": utc_now(),
         "source_of_truth": manifest["source_of_truth"],
         "before_state": before_state,
-        "trigger": fsv["trigger"],
+        "trigger": readback["trigger"],
         "after_state": after_state,
         "happy_path": happy_path,
-        "edge_cases": fsv["edge_cases"],
+        "edge_cases": readback["edge_cases"],
         "summary": summary,
         "record_store": record_store,
         "edge_store": edge_store,
         "manifest_sha256": sha256_file(manifest_path),
-        "fsv_sha256": sha256_file(fsv_path),
+        "readback_sha256": sha256_file(readback_path),
         "passes": True,
     }

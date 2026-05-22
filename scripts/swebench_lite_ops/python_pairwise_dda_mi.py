@@ -32,7 +32,7 @@ ARTIFACT_KIND = "python_pairwise_dda_mi_audit"
 FORMULA_VERSION = "python_pairwise_dda_mi_v1"
 DEFAULT_INPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/per-embedder")
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/pairwise")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-018-pairwise-dda-mi-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-018-pairwise-dda-mi-readback")
 EXPECTED_EMBEDDERS = ("e1", "e6", "e7", "e8", "e10", "e12", "e13", "e14", "e2", "e3", "e4", "e9")
 EPS = 1.0e-12
 SCALAR_FEATURES = (
@@ -378,8 +378,8 @@ def command_python_pairwise_dda_mi(args: argparse.Namespace) -> int:
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    args.readback_root.mkdir(parents=True, exist_ok=True)
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
 
     summary_path = args.input_root / "dda_signal_summary.json"
     signal_path = args.input_root / "per_embedder_signals.jsonl"
@@ -458,7 +458,7 @@ def command_python_pairwise_dda_mi(args: argparse.Namespace) -> int:
     dump_json(args.output_root / "top_redundant_pairs.json", top_redundant)
     dump_json(args.output_root / "top_unique_pairs.json", top_unique)
 
-    after = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    after = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     readback_pairwise = sum(1 for _ in iter_jsonl(args.output_root / "pairwise_interactions.jsonl"))
     readback_validity = sum(1 for _ in iter_jsonl(args.output_root / "estimator_validity.jsonl"))
     readback_excluded = sum(1 for _ in iter_jsonl(args.output_root / "excluded_pairs.jsonl"))
@@ -472,10 +472,10 @@ def command_python_pairwise_dda_mi(args: argparse.Namespace) -> int:
         and all(row["valid_feature_metric_count"] > 0 for row in pairwise_rows)
         and all(edge.get("pass") is True for edge in readback_edges)
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "started_at_utc": started,
         "created_at_utc": utc_now(),
         "passes": passes,
@@ -487,7 +487,7 @@ def command_python_pairwise_dda_mi(args: argparse.Namespace) -> int:
             "effective_signal_count_report": str(args.output_root / "effective_signal_count_report.json"),
             "excluded_pairs": str(args.output_root / "excluded_pairs.jsonl"),
             "edge_case_states": str(args.output_root / "edge_case_states.jsonl"),
-            "fsv": str(args.fsv_root / "python_pairwise_dda_mi_fsv.json"),
+            "readback": str(args.readback_root / "python_pairwise_dda_mi_readback.json"),
         },
         "trigger": {
             "command": "python3 scripts/swebench_lite_ops.py python-pairwise-dda-mi",
@@ -511,9 +511,9 @@ def command_python_pairwise_dda_mi(args: argparse.Namespace) -> int:
         },
         "edge_cases": readback_edges,
     }
-    dump_json(args.fsv_root / "python_pairwise_dda_mi_fsv.json", fsv)
-    final = read_json(args.fsv_root / "python_pairwise_dda_mi_fsv.json")
-    require(final.get("passes") is True, f"pairwise DDA MI FSV failed: {args.fsv_root / 'python_pairwise_dda_mi_fsv.json'}")
+    dump_json(args.readback_root / "python_pairwise_dda_mi_readback.json", readback)
+    final = read_json(args.readback_root / "python_pairwise_dda_mi_readback.json")
+    require(final.get("passes") is True, f"pairwise DDA MI READBACK failed: {args.readback_root / 'python_pairwise_dda_mi_readback.json'}")
     print(json.dumps(final, sort_keys=True, indent=2))
     return 0
 
@@ -522,7 +522,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-root", type=Path, default=DEFAULT_INPUT_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--expected-embedders", default=",".join(EXPECTED_EMBEDDERS))
     parser.add_argument("--min-overlap", type=int, default=20)
     parser.add_argument("--min-support", type=int, default=20)

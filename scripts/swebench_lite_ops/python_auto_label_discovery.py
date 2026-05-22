@@ -55,11 +55,11 @@ FORMULA_VERSION = "deterministic_slot_label_compiler_v1"
 DEFAULT_CORPUS_INDEX_JSON = Path("/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json")
 DEFAULT_SWEBENCH_ROOT = Path("/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511")
 DEFAULT_MANUAL_REVIEW = Path(
-    "/zfs/archive/contextgraph/fsv/task-py-g-110-manual-pattern-review/"
+    "/zfs/archive/contextgraph/readback/task-py-g-110-manual-pattern-review/"
     "run-20260519T141122Z/manual_pattern_review.json"
 )
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-117-auto-label-discovery-usefulness-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-117-auto-label-discovery-usefulness-readback")
 
 DEFAULT_EXPECTED_CHUNK_COUNT = 399_777
 DEFAULT_EXPECTED_FORWARD_RECORD_COUNT = 4_665_772
@@ -1127,11 +1127,11 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
     required_embedders = parse_embedder_list(args.expected_embedders)
     require(len(required_embedders) == args.expected_embedder_count, "MEJEPA_AUTO_LABEL_EXPECTED_EMBEDDER_COUNT_MISMATCH")
 
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
 
     shards, forward_summary = select_shards(args.forward_root, args.max_shards)
     max_chunk_window = max(int(shard.get("chunk_offset") or 0) + int(shard.get("max_chunks") or 0) for shard in shards)
@@ -1670,7 +1670,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
             "corpus_index_json": str(args.corpus_index_json),
             "swebench_root": str(args.swebench_root),
             "output_root": str(args.output_root),
-            "fsv_root": str(args.fsv_root),
+            "readback_root": str(args.readback_root),
         },
         "policy": {
             "slot_identity_preserved": True,
@@ -1731,8 +1731,8 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
         "passes": passes,
     }
     dump_json(manifest_path, manifest)
-    fsv = {
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+    readback = {
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
         "formula_version": FORMULA_VERSION,
@@ -1740,7 +1740,7 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
         "completed_at_utc": utc_now(),
         "passes": passes and read_json(manifest_path).get("passes") is True,
         "before": before,
-        "after": {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)},
+        "after": {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)},
         "report_path": str(report_path),
         "manifest_path": str(manifest_path),
         "report_sha256": sha256_file(report_path),
@@ -1754,10 +1754,10 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
             "stable_hashes": manifest["stable_hashes"],
         },
     }
-    fsv_path = args.fsv_root / f"{ARTIFACT_KIND}_fsv.json"
-    dump_json(fsv_path, fsv)
-    final = read_json(fsv_path)
-    require(final.get("passes") is True, "MEJEPA_AUTO_LABEL_FSV_FAILED", str(fsv_path))
+    readback_path = args.readback_root / f"{ARTIFACT_KIND}_readback.json"
+    dump_json(readback_path, readback)
+    final = read_json(readback_path)
+    require(final.get("passes") is True, "MEJEPA_AUTO_LABEL_READBACK_FAILED", str(readback_path))
     print(json.dumps(final, indent=2, sort_keys=True))
     return 0
 
@@ -1769,7 +1769,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--swebench-root", type=Path, default=DEFAULT_SWEBENCH_ROOT)
     parser.add_argument("--manual-review", type=Path, default=DEFAULT_MANUAL_REVIEW)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--expected-chunk-count", type=int, default=DEFAULT_EXPECTED_CHUNK_COUNT)
     parser.add_argument("--expected-forward-record-count", type=int, default=DEFAULT_EXPECTED_FORWARD_RECORD_COUNT)
     parser.add_argument("--expected-embedder-count", type=int, default=DEFAULT_EXPECTED_EMBEDDER_COUNT)

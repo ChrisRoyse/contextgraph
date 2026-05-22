@@ -1010,11 +1010,11 @@ def edge_audit(
 def command_oracle_events(args: Any) -> dict[str, Any]:
     checked_at = utc_now()
     args.event_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.readback_root.mkdir(parents=True, exist_ok=True)
     schema_path = args.event_root / "oracle_event_schema.json"
     event_path = args.event_root / "oracle_events.jsonl"
     manifest_path = args.event_root / "oracle_event_manifest.json"
-    fsv_path = args.fsv_root / "oracle_events_fsv.json"
+    readback_path = args.readback_root / "oracle_events_readback.json"
 
     before_state = {
         "checked_at": checked_at,
@@ -1023,7 +1023,7 @@ def command_oracle_events(args: Any) -> dict[str, Any]:
         "event_jsonl": file_state(event_path),
         "event_schema": file_state(schema_path),
         "event_manifest": file_state(manifest_path),
-        "event_fsv": file_state(fsv_path),
+        "event_readback": file_state(readback_path),
         "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "event_root_bytes": path_bytes(args.event_root),
@@ -1059,8 +1059,8 @@ def command_oracle_events(args: Any) -> dict[str, Any]:
     all_checks_pass = happy_known_good["pass"] and all(case["pass"] for case in edge_cases)
     if not all_checks_pass:
         raise OracleEventError(
-            "MEJEPA_ORACLE_EVENT_FSV_FAILED",
-            "oracle event FSV checks failed",
+            "MEJEPA_ORACLE_EVENT_READBACK_FAILED",
+            "oracle event READBACK checks failed",
             "Fix the typed event materializer before closing TASK-PY-DATA-008.",
             {"happy_known_good": happy_known_good, "edge_cases": edge_cases},
         )
@@ -1074,7 +1074,7 @@ def command_oracle_events(args: Any) -> dict[str, Any]:
             "event_schema": str(schema_path),
             "event_jsonl": str(event_path),
             "manifest": str(manifest_path),
-            "fsv": str(fsv_path),
+            "readback": str(readback_path),
         },
         "inputs": {
             "outcomes_jsonl": str(args.outcomes_jsonl),
@@ -1102,15 +1102,15 @@ def command_oracle_events(args: Any) -> dict[str, Any]:
         "event_jsonl": file_state(event_path),
         "event_schema": file_state(schema_path),
         "event_manifest": file_state(manifest_path),
-        "event_fsv": file_state(fsv_path),
+        "event_readback": file_state(readback_path),
         "disk": capacity_snapshot([Path("/"), Path("/zfs/hot"), Path("/zfs/archive")]),
         "hot_bytes": path_bytes(args.hot_root),
         "event_root_bytes": path_bytes(args.event_root),
-        "fsv_root_bytes": path_bytes(args.fsv_root),
+        "readback_root_bytes": path_bytes(args.readback_root),
         "event_store": event_store,
     }
 
-    fsv = {
+    readback = {
         "schema_version": 1,
         "checked_at_utc": utc_now(),
         "task_id": TASK_ID,
@@ -1134,19 +1134,19 @@ def command_oracle_events(args: Any) -> dict[str, Any]:
         "chain_head_sha256": events[-1]["chain_sha256"],
         "passes": True,
     }
-    write_json_checked(fsv_path, fsv)
+    write_json_checked(readback_path, readback)
 
     return {
         "ok": True,
         "checked_at": utc_now(),
         "source_of_truth": manifest["source_of_truth"],
         "before_state": before_state,
-        "trigger": fsv["trigger"],
+        "trigger": readback["trigger"],
         "after_state": after_state,
         "counts": counts,
-        "happy_path": fsv["happy_path"],
+        "happy_path": readback["happy_path"],
         "edge_cases": edge_cases,
         "manifest_sha256": sha256_file(manifest_path),
-        "fsv_sha256": sha256_file(fsv_path),
+        "readback_sha256": sha256_file(readback_path),
         "passes": True,
     }

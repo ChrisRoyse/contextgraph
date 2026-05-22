@@ -16,7 +16,7 @@ SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-023"
 ARTIFACT_KIND = "python_mejepa_data_readiness_gate"
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/corpus/python-data-readiness-gate-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-data-023-data-readiness-gate-fsv")
+DEFAULT_READBACK_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-data-023-data-readiness-gate-readback")
 EXPECTED_MUTATION_CATEGORIES = {
     "compile_error",
     "delete_test_call",
@@ -34,7 +34,7 @@ class DataReadinessGateError(SwebenchOpsError):
         super().__init__(
             code,
             message,
-            "Read the readiness FSV and fix the named prerequisite before launching ME-JEPA training.",
+            "Read the readiness READBACK and fix the named prerequisite before launching ME-JEPA training.",
             details,
         )
 
@@ -48,11 +48,11 @@ def count_jsonl(path: Path) -> int:
     return sum(1 for _ in iter_jsonl(path))
 
 
-def fsv_passes(doc: dict[str, Any]) -> bool:
+def readback_passes(doc: dict[str, Any]) -> bool:
     return doc.get("passes") is True or doc.get("all_passed") is True or doc.get("pass") is True
 
 
-def load_fsv(path: Path, stage: str) -> tuple[dict[str, Any], str]:
+def load_readback(path: Path, stage: str) -> tuple[dict[str, Any], str]:
     doc = read_json(path)
     return doc, sha256_file(path)
 
@@ -167,50 +167,50 @@ def edge_case_rows() -> list[dict[str, Any]]:
 
 
 def build_current_decision(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
-    cleaned_fsv, cleaned_fsv_sha = load_fsv(args.cleaned_manifest_fsv, "cleaned_manifest")
-    workspace_fsv, workspace_fsv_sha = load_fsv(args.workspace_fsv, "workspaces")
-    oracle_events_fsv, oracle_events_fsv_sha = load_fsv(args.oracle_events_fsv, "oracle_events")
-    full_ast_fsv, full_ast_fsv_sha = load_fsv(args.full_ast_fsv, "full_ast_corpus")
-    smoke_manifest_fsv, smoke_manifest_fsv_sha = load_fsv(args.smoke_manifest_fsv, "smoke_manifest")
-    forward_fsv, forward_fsv_sha = load_fsv(args.forward_fsv, "embeddings")
-    dda_fsv, dda_fsv_sha = load_fsv(args.dda_fsv, "dda_signals")
-    pairwise_fsv, pairwise_fsv_sha = load_fsv(args.pairwise_fsv, "pairwise_dda")
-    tct_fsv, tct_fsv_sha = load_fsv(args.tct_fsv, "tct_cells")
-    reward_fsv, reward_fsv_sha = load_fsv(args.reward_fsv, "reward_tensors")
-    analysis_fsv, analysis_fsv_sha = load_fsv(args.analysis_fsv, "quality_report")
+    cleaned_readback, cleaned_readback_sha = load_readback(args.cleaned_manifest_readback, "cleaned_manifest")
+    workspace_readback, workspace_readback_sha = load_readback(args.workspace_readback, "workspaces")
+    oracle_events_readback, oracle_events_readback_sha = load_readback(args.oracle_events_readback, "oracle_events")
+    full_ast_readback, full_ast_readback_sha = load_readback(args.full_ast_readback, "full_ast_corpus")
+    smoke_manifest_readback, smoke_manifest_readback_sha = load_readback(args.smoke_manifest_readback, "smoke_manifest")
+    forward_readback, forward_readback_sha = load_readback(args.forward_readback, "embeddings")
+    dda_readback, dda_readback_sha = load_readback(args.dda_readback, "dda_signals")
+    pairwise_readback, pairwise_readback_sha = load_readback(args.pairwise_readback, "pairwise_dda")
+    tct_readback, tct_readback_sha = load_readback(args.tct_readback, "tct_cells")
+    reward_readback, reward_readback_sha = load_readback(args.reward_readback, "reward_tensors")
+    analysis_readback, analysis_readback_sha = load_readback(args.analysis_readback, "quality_report")
 
     cleaned_manifest = read_json(args.cleaned_manifest)
     workspace_manifest = read_json(args.workspace_manifest)
     reward_report = read_json(args.reward_root / "reward_tensor_report.json")
     analysis_report = read_json(args.analysis_root / "reward_field_analysis_report.json")
     tct_report = read_json(args.tct_root / "tct_cell_report.json")
-    forward_summary = forward_fsv.get("aggregate_summary") or (forward_fsv.get("checkpoint") or {}).get("summary") or {}
-    full_ast_summary = full_ast_fsv.get("summaries") or {}
+    forward_summary = forward_readback.get("aggregate_summary") or (forward_readback.get("checkpoint") or {}).get("summary") or {}
+    full_ast_summary = full_ast_readback.get("summaries") or {}
     full_checkpoint = read_json(args.full_run_checkpoint) if args.full_run_checkpoint.exists() else {}
 
     cleaned_categories = category_set(cleaned_manifest.get("category_counts") or {})
     cleaned_stage_passes = (
-        fsv_passes(cleaned_fsv)
+        readback_passes(cleaned_readback)
         and int(cleaned_manifest.get("row_count") or 0) == args.expected_manifest_rows
         and cleaned_categories == EXPECTED_MUTATION_CATEGORIES
         and int(cleaned_manifest.get("quarantine_count") or 0) == 0
     )
-    workspace_stage_passes = fsv_passes(workspace_fsv) and int(workspace_manifest.get("workspace_count") or 0) > 0
+    workspace_stage_passes = readback_passes(workspace_readback) and int(workspace_manifest.get("workspace_count") or 0) > 0
     chunk_total = int(((full_ast_summary.get("chunks") or {}).get("total")) or 0)
     coverage = full_ast_summary.get("coverage") or {}
     ast_stage_passes = (
-        fsv_passes(full_ast_fsv)
+        readback_passes(full_ast_readback)
         and chunk_total >= args.expected_min_ast_chunks
         and int(coverage.get("task_count") or 0) == args.expected_task_count
         and category_set({c: True for c in (coverage.get("categories") or [])}) == EXPECTED_MUTATION_CATEGORIES
     )
     smoke_rows = count_jsonl(args.smoke_manifest)
     smoke_manifest_sha = sha256_file(args.smoke_manifest)
-    smoke_stage_passes = fsv_passes(smoke_manifest_fsv) and smoke_rows == args.expected_smoke_chunks
+    smoke_stage_passes = readback_passes(smoke_manifest_readback) and smoke_rows == args.expected_smoke_chunks
     forward_expected_pairs = int(forward_summary.get("expected_pairs") or 0)
     forward_accounted_pairs = int(forward_summary.get("accounted_pairs") or 0)
     forward_stage_passes = (
-        fsv_passes(forward_fsv)
+        readback_passes(forward_readback)
         and int(forward_summary.get("chunk_count") or 0) == args.expected_smoke_chunks
         and int(forward_summary.get("active_embedder_count") or 0) == args.expected_embedder_count
         and forward_accounted_pairs == args.expected_smoke_chunks * args.expected_embedder_count
@@ -219,15 +219,15 @@ def build_current_decision(args: argparse.Namespace) -> tuple[dict[str, Any], li
     dda_present_rows = count_jsonl(args.dda_root / "per_embedder_signals.jsonl")
     dda_missing_rows = count_jsonl(args.dda_root / "missing_signal_states.jsonl")
     dda_stage_passes = (
-        fsv_passes(dda_fsv)
+        readback_passes(dda_readback)
         and (dda_present_rows + dda_missing_rows) == args.expected_smoke_chunks * args.expected_embedder_count
         and int((analysis_report.get("summary") or {}).get("dda_present_rows") or 0) == dda_present_rows
         and int((analysis_report.get("summary") or {}).get("dda_missing_rows") or 0) == dda_missing_rows
     )
-    pairwise_stage_passes = fsv_passes(pairwise_fsv) and count_jsonl(args.pairwise_root / "pairwise_interactions.jsonl") >= 1
+    pairwise_stage_passes = readback_passes(pairwise_readback) and count_jsonl(args.pairwise_root / "pairwise_interactions.jsonl") >= 1
     tct_summary = tct_report.get("summary") or {}
     tct_stage_passes = (
-        fsv_passes(tct_fsv)
+        readback_passes(tct_readback)
         and int(tct_summary.get("chunk_membership_count") or 0) == args.expected_smoke_chunks
         and int(tct_summary.get("mutation_category_support_rows") or 0) == len(EXPECTED_MUTATION_CATEGORIES)
         and count_jsonl(args.tct_root / "tct_cell_support.jsonl") > 0
@@ -236,11 +236,11 @@ def build_current_decision(args: argparse.Namespace) -> tuple[dict[str, Any], li
     head_population = reward_summary.get("head_population") or {}
     reward_hash_checks = [
         compare_hash("smoke_manifest_sha256", (reward_report.get("source_hashes") or {}).get("smoke_manifest_sha256"), smoke_manifest_sha),
-        compare_hash("dda_fsv_sha256", (reward_report.get("source_hashes") or {}).get("dda_fsv_sha256"), dda_fsv_sha),
-        compare_hash("tct_fsv_sha256", (reward_report.get("source_hashes") or {}).get("tct_fsv_sha256"), tct_fsv_sha),
+        compare_hash("dda_readback_sha256", (reward_report.get("source_hashes") or {}).get("dda_readback_sha256"), dda_readback_sha),
+        compare_hash("tct_readback_sha256", (reward_report.get("source_hashes") or {}).get("tct_readback_sha256"), tct_readback_sha),
     ]
     reward_stage_passes = (
-        fsv_passes(reward_fsv)
+        readback_passes(reward_readback)
         and int(reward_summary.get("chunk_tensor_count") or 0) == args.expected_smoke_chunks
         and int(reward_summary.get("patch_tensor_count") or 0) > 0
         and all(int(head_population.get(head) or 0) == args.expected_smoke_chunks for head in ("q1", "q2", "q3", "q4", "q5"))
@@ -248,15 +248,15 @@ def build_current_decision(args: argparse.Namespace) -> tuple[dict[str, Any], li
         and all(check["passes"] for check in reward_hash_checks)
     )
     q2_label_rows = int(reward_summary.get("q2_pass_count") or 0) + int(reward_summary.get("q2_fail_count") or 0)
-    oracle_stage_passes = fsv_passes(oracle_events_fsv) and q2_label_rows == int(reward_summary.get("chunk_tensor_count") or 0)
+    oracle_stage_passes = readback_passes(oracle_events_readback) and q2_label_rows == int(reward_summary.get("chunk_tensor_count") or 0)
     quality_hash_checks = [
-        compare_hash("reward_fsv_sha256", (analysis_report.get("source_hashes") or {}).get("reward_fsv_sha256"), reward_fsv_sha),
-        compare_hash("dda_fsv_sha256", (analysis_report.get("source_hashes") or {}).get("dda_fsv_sha256"), dda_fsv_sha),
-        compare_hash("tct_fsv_sha256", (analysis_report.get("source_hashes") or {}).get("tct_fsv_sha256"), tct_fsv_sha),
+        compare_hash("reward_readback_sha256", (analysis_report.get("source_hashes") or {}).get("reward_readback_sha256"), reward_readback_sha),
+        compare_hash("dda_readback_sha256", (analysis_report.get("source_hashes") or {}).get("dda_readback_sha256"), dda_readback_sha),
+        compare_hash("tct_readback_sha256", (analysis_report.get("source_hashes") or {}).get("tct_readback_sha256"), tct_readback_sha),
     ]
     analysis_training = analysis_report.get("training_readiness") or {}
     quality_stage_passes = (
-        fsv_passes(analysis_fsv)
+        readback_passes(analysis_readback)
         and bool(analysis_training.get("smoke_analysis_usable_now")) is True
         and int((analysis_report.get("summary") or {}).get("chunk_tensor_rows") or 0) == args.expected_smoke_chunks
         and all(check["passes"] for check in quality_hash_checks)
@@ -283,17 +283,17 @@ def build_current_decision(args: argparse.Namespace) -> tuple[dict[str, Any], li
         )
 
     stages = [
-        make_stage("manifest", cleaned_stage_passes, {"fsv_sha256": cleaned_fsv_sha, "row_count": cleaned_manifest.get("row_count"), "category_count": len(cleaned_categories)}, ["cleaned manifest is not a verified 300x8 Python manifest"]),
-        make_stage("workspaces", workspace_stage_passes, {"fsv_sha256": workspace_fsv_sha, "workspace_count": workspace_manifest.get("workspace_count")}, ["workspace source-of-truth is missing or unverified"]),
-        make_stage("ast_chunks", ast_stage_passes, {"fsv_sha256": full_ast_fsv_sha, "chunk_total": chunk_total, "task_count": coverage.get("task_count"), "categories": coverage.get("categories")}, ["full AST chunk corpus is partial, stale, or under the minimum chunk floor"]),
-        make_stage("smoke_manifest", smoke_stage_passes, {"fsv_sha256": smoke_manifest_fsv_sha, "row_count": smoke_rows, "sha256": smoke_manifest_sha}, ["smoke manifest is missing, stale, or not exactly 1000 chunks"]),
-        make_stage("embeddings", forward_stage_passes, {"fsv_sha256": forward_fsv_sha, "summary": forward_summary}, ["embedding forward cache does not account for all smoke chunk x embedder pairs"]),
-        make_stage("dda_signals", dda_stage_passes, {"fsv_sha256": dda_fsv_sha, "present_rows": dda_present_rows, "missing_rows": dda_missing_rows}, ["DDA signal table is missing, stale, or not aligned to forward-cache expected pairs"]),
-        make_stage("pairwise_dda", pairwise_stage_passes, {"fsv_sha256": pairwise_fsv_sha, "pairwise_rows": count_jsonl(args.pairwise_root / "pairwise_interactions.jsonl")}, ["pairwise DDA interaction rows are missing or unverified"]),
-        make_stage("tct_cells", tct_stage_passes, {"fsv_sha256": tct_fsv_sha, "summary": tct_summary}, ["TCT cell memberships/support are missing or do not cover the smoke reward field"]),
-        make_stage("oracle_outcomes", oracle_stage_passes, {"fsv_sha256": oracle_events_fsv_sha, "q2_label_rows": q2_label_rows, "chunk_tensor_rows": reward_summary.get("chunk_tensor_count")}, ["not every reward tensor has a Q2 oracle outcome label"]),
-        make_stage("reward_tensors", reward_stage_passes, {"fsv_sha256": reward_fsv_sha, "summary": reward_summary, "hash_checks": reward_hash_checks}, ["reward tensors are incomplete or stale against manifest/DDA/TCT sources"]),
-        make_stage("quality_report", quality_stage_passes, {"fsv_sha256": analysis_fsv_sha, "summary": analysis_report.get("summary"), "hash_checks": quality_hash_checks}, ["reward-field quality report is missing or stale against tensor/source FSVs"]),
+        make_stage("manifest", cleaned_stage_passes, {"readback_sha256": cleaned_readback_sha, "row_count": cleaned_manifest.get("row_count"), "category_count": len(cleaned_categories)}, ["cleaned manifest is not a verified 300x8 Python manifest"]),
+        make_stage("workspaces", workspace_stage_passes, {"readback_sha256": workspace_readback_sha, "workspace_count": workspace_manifest.get("workspace_count")}, ["workspace source-of-truth is missing or unverified"]),
+        make_stage("ast_chunks", ast_stage_passes, {"readback_sha256": full_ast_readback_sha, "chunk_total": chunk_total, "task_count": coverage.get("task_count"), "categories": coverage.get("categories")}, ["full AST chunk corpus is partial, stale, or under the minimum chunk floor"]),
+        make_stage("smoke_manifest", smoke_stage_passes, {"readback_sha256": smoke_manifest_readback_sha, "row_count": smoke_rows, "sha256": smoke_manifest_sha}, ["smoke manifest is missing, stale, or not exactly 1000 chunks"]),
+        make_stage("embeddings", forward_stage_passes, {"readback_sha256": forward_readback_sha, "summary": forward_summary}, ["embedding forward cache does not account for all smoke chunk x embedder pairs"]),
+        make_stage("dda_signals", dda_stage_passes, {"readback_sha256": dda_readback_sha, "present_rows": dda_present_rows, "missing_rows": dda_missing_rows}, ["DDA signal table is missing, stale, or not aligned to forward-cache expected pairs"]),
+        make_stage("pairwise_dda", pairwise_stage_passes, {"readback_sha256": pairwise_readback_sha, "pairwise_rows": count_jsonl(args.pairwise_root / "pairwise_interactions.jsonl")}, ["pairwise DDA interaction rows are missing or unverified"]),
+        make_stage("tct_cells", tct_stage_passes, {"readback_sha256": tct_readback_sha, "summary": tct_summary}, ["TCT cell memberships/support are missing or do not cover the smoke reward field"]),
+        make_stage("oracle_outcomes", oracle_stage_passes, {"readback_sha256": oracle_events_readback_sha, "q2_label_rows": q2_label_rows, "chunk_tensor_rows": reward_summary.get("chunk_tensor_count")}, ["not every reward tensor has a Q2 oracle outcome label"]),
+        make_stage("reward_tensors", reward_stage_passes, {"readback_sha256": reward_readback_sha, "summary": reward_summary, "hash_checks": reward_hash_checks}, ["reward tensors are incomplete or stale against manifest/DDA/TCT sources"]),
+        make_stage("quality_report", quality_stage_passes, {"readback_sha256": analysis_readback_sha, "summary": analysis_report.get("summary"), "hash_checks": quality_hash_checks}, ["reward-field quality report is missing or stale against tensor/source READBACKs"]),
     ]
     decision = decision_from_stages(
         stages=stages,
@@ -302,18 +302,18 @@ def build_current_decision(args: argparse.Namespace) -> tuple[dict[str, Any], li
         training_scope=args.training_scope,
     )
     dependencies = {
-        "fsv_hashes": {
-            "cleaned_manifest_fsv": cleaned_fsv_sha,
-            "workspace_fsv": workspace_fsv_sha,
-            "oracle_events_fsv": oracle_events_fsv_sha,
-            "full_ast_fsv": full_ast_fsv_sha,
-            "smoke_manifest_fsv": smoke_manifest_fsv_sha,
-            "forward_fsv": forward_fsv_sha,
-            "dda_fsv": dda_fsv_sha,
-            "pairwise_fsv": pairwise_fsv_sha,
-            "tct_fsv": tct_fsv_sha,
-            "reward_fsv": reward_fsv_sha,
-            "analysis_fsv": analysis_fsv_sha,
+        "readback_hashes": {
+            "cleaned_manifest_readback": cleaned_readback_sha,
+            "workspace_readback": workspace_readback_sha,
+            "oracle_events_readback": oracle_events_readback_sha,
+            "full_ast_readback": full_ast_readback_sha,
+            "smoke_manifest_readback": smoke_manifest_readback_sha,
+            "forward_readback": forward_readback_sha,
+            "dda_readback": dda_readback_sha,
+            "pairwise_readback": pairwise_readback_sha,
+            "tct_readback": tct_readback_sha,
+            "reward_readback": reward_readback_sha,
+            "analysis_readback": analysis_readback_sha,
         },
         "artifact_hashes": {
             "cleaned_manifest": sha256_file(args.cleaned_manifest),
@@ -338,12 +338,12 @@ def build_current_decision(args: argparse.Namespace) -> tuple[dict[str, Any], li
 def command_python_data_readiness_gate(args: argparse.Namespace) -> int:
     started = utc_now()
     if args.clean_output:
-        for root in (args.output_root, args.fsv_root):
+        for root in (args.output_root, args.readback_root):
             if root.exists():
                 shutil.rmtree(root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    args.readback_root.mkdir(parents=True, exist_ok=True)
+    before = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
 
     decision, stages, dependencies = build_current_decision(args)
     preflight = {
@@ -368,7 +368,7 @@ def command_python_data_readiness_gate(args: argparse.Namespace) -> int:
         "created_at_utc": utc_now(),
         "source_of_truth": {
             "output_root": str(args.output_root),
-            "fsv_root": str(args.fsv_root),
+            "readback_root": str(args.readback_root),
             "data_readiness_decision": str(args.output_root / "data_readiness_decision.json"),
             "training_preflight_log": str(args.output_root / "training_preflight_log.json"),
         },
@@ -382,7 +382,7 @@ def command_python_data_readiness_gate(args: argparse.Namespace) -> int:
     dump_json(args.output_root / "training_preflight_log.json", preflight)
     write_jsonl(args.output_root / "edge_case_decisions.jsonl", edge_rows)
 
-    after = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
+    after = {"output_root": tree_state(args.output_root), "readback_root": tree_state(args.readback_root)}
     readback_decision = read_json(args.output_root / "data_readiness_decision.json")
     readback_preflight = read_json(args.output_root / "training_preflight_log.json")
     readback_edge_count = count_jsonl(args.output_root / "edge_case_decisions.jsonl")
@@ -431,10 +431,10 @@ def command_python_data_readiness_gate(args: argparse.Namespace) -> int:
         and all(row["pass"] for _, row in iter_jsonl(args.output_root / "edge_case_decisions.jsonl"))
         and readback_preflight["exit_code_if_enforced"] == expected_exit_code
     )
-    fsv = {
+    readback = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": f"{ARTIFACT_KIND}_fsv",
+        "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "started_at_utc": started,
         "created_at_utc": utc_now(),
         "passes": passes,
@@ -442,7 +442,7 @@ def command_python_data_readiness_gate(args: argparse.Namespace) -> int:
         "after_state": after,
         "source_of_truth": {
             **decision_artifact["source_of_truth"],
-            "fsv": str(args.fsv_root / "python_data_readiness_gate_fsv.json"),
+            "readback": str(args.readback_root / "python_data_readiness_gate_readback.json"),
         },
         "trigger": {
             "command": "python3 scripts/swebench_lite_ops.py python-data-readiness-gate",
@@ -461,9 +461,9 @@ def command_python_data_readiness_gate(args: argparse.Namespace) -> int:
         },
         "edge_cases": edge_rows,
     }
-    dump_json(args.fsv_root / "python_data_readiness_gate_fsv.json", fsv)
-    final = read_json(args.fsv_root / "python_data_readiness_gate_fsv.json")
-    require(final.get("passes") is True, "PYTHON_DATA_READINESS_GATE_FSV_FAILED", "data readiness gate FSV failed", {"path": str(args.fsv_root / "python_data_readiness_gate_fsv.json")})
+    dump_json(args.readback_root / "python_data_readiness_gate_readback.json", readback)
+    final = read_json(args.readback_root / "python_data_readiness_gate_readback.json")
+    require(final.get("passes") is True, "PYTHON_DATA_READINESS_GATE_READBACK_FAILED", "data readiness gate READBACK failed", {"path": str(args.readback_root / "python_data_readiness_gate_readback.json")})
     print(json.dumps(final, sort_keys=True, indent=2))
     if args.enforce and not final["readback"]["decision"]["permits_requested_training"]:
         return 2
@@ -478,27 +478,27 @@ def build_parser() -> argparse.ArgumentParser:
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--cleaned-manifest", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-cleaned-manifest-v1/cleaned_manifest.json"))
-    parser.add_argument("--cleaned-manifest-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-004-cleaned-manifest-fsv/cleaned_manifest_fsv.json"))
+    parser.add_argument("--cleaned-manifest-readback", type=Path, default=Path("/zfs/archive/contextgraph/readback/task-py-data-004-cleaned-manifest-readback/cleaned_manifest_readback.json"))
     parser.add_argument("--workspace-manifest", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-workspaces-v1/workspace_manifest.json"))
-    parser.add_argument("--workspace-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-006-workspaces-fsv/workspace_fsv.json"))
-    parser.add_argument("--oracle-events-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-008-oracle-events-fsv/oracle_events_fsv.json"))
-    parser.add_argument("--full-ast-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-058-full-ast-corpus-fsv/full_ast_corpus_fsv.json"))
+    parser.add_argument("--workspace-readback", type=Path, default=Path("/zfs/archive/contextgraph/readback/task-py-data-006-workspaces-readback/workspace_readback.json"))
+    parser.add_argument("--oracle-events-readback", type=Path, default=Path("/zfs/archive/contextgraph/readback/task-py-data-008-oracle-events-readback/oracle_events_readback.json"))
+    parser.add_argument("--full-ast-readback", type=Path, default=Path("/zfs/archive/contextgraph/readback/task-py-data-058-full-ast-corpus-readback/full_ast_corpus_readback.json"))
     parser.add_argument("--smoke-manifest", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-embedder-intelligence-smoke-1000-v2/manifest/smoke_manifest.jsonl"))
-    parser.add_argument("--smoke-manifest-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-060-post249-smoke-manifest-fsv/smoke_manifest_fsv.json"))
-    parser.add_argument("--forward-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-061-post249-smoke-forward-fsv/python_forward_shard_scheduler_fsv.json"))
+    parser.add_argument("--smoke-manifest-readback", type=Path, default=Path("/zfs/archive/contextgraph/readback/task-py-data-060-post249-smoke-manifest-readback/smoke_manifest_readback.json"))
+    parser.add_argument("--forward-readback", type=Path, default=Path("/zfs/archive/contextgraph/readback/task-py-data-061-post249-smoke-forward-readback/python_forward_shard_scheduler_readback.json"))
     parser.add_argument("--dda-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/per-embedder"))
-    parser.add_argument("--dda-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-017-dda-signals-fsv/python_dda_code_signals_fsv.json"))
+    parser.add_argument("--dda-readback", type=Path, default=Path("/zfs/archive/contextgraph/readback/task-py-data-017-dda-signals-readback/python_dda_code_signals_readback.json"))
     parser.add_argument("--pairwise-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-dda-signals-v1/pairwise"))
-    parser.add_argument("--pairwise-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-018-pairwise-dda-mi-fsv/python_pairwise_dda_mi_fsv.json"))
+    parser.add_argument("--pairwise-readback", type=Path, default=Path("/zfs/archive/contextgraph/readback/task-py-data-018-pairwise-dda-mi-readback/python_pairwise_dda_mi_readback.json"))
     parser.add_argument("--tct-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-tct-cells-v1"))
-    parser.add_argument("--tct-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-020-tct-cells-fsv/python_tct_cells_fsv.json"))
+    parser.add_argument("--tct-readback", type=Path, default=Path("/zfs/archive/contextgraph/readback/task-py-data-020-tct-cells-readback/python_tct_cells_readback.json"))
     parser.add_argument("--reward-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-reward-tensors-v1"))
-    parser.add_argument("--reward-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-021-reward-tensors-fsv/python_reward_tensors_fsv.json"))
+    parser.add_argument("--reward-readback", type=Path, default=Path("/zfs/archive/contextgraph/readback/task-py-data-021-reward-tensors-readback/python_reward_tensors_readback.json"))
     parser.add_argument("--analysis-root", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-reward-field-analysis-v1"))
-    parser.add_argument("--analysis-fsv", type=Path, default=Path("/zfs/archive/contextgraph/fsv/task-py-data-022-reward-field-analysis-fsv/python_reward_field_analysis_fsv.json"))
+    parser.add_argument("--analysis-readback", type=Path, default=Path("/zfs/archive/contextgraph/readback/task-py-data-022-reward-field-analysis-readback/python_reward_field_analysis_readback.json"))
     parser.add_argument("--full-run-checkpoint", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-task-py-data-016-full-c8117f15-20260515/python_forward_cache_checkpoint.json"))
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--readback-root", type=Path, default=DEFAULT_READBACK_ROOT)
     parser.add_argument("--training-scope", choices=["smoke-dry-run", "full-production"], default="smoke-dry-run")
     parser.add_argument("--expected-manifest-rows", type=int, default=2400)
     parser.add_argument("--expected-task-count", type=int, default=300)
