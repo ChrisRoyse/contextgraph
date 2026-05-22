@@ -100,6 +100,8 @@ from .python_per_cell_calibration_substrate import (
     add_arguments as add_python_per_cell_calibration_substrate_arguments,
 )
 from .python_per_cell_calibration_substrate import command_python_per_cell_calibration_substrate
+from .python_named_pair_selector_retest import add_arguments as add_python_named_pair_selector_retest_arguments
+from .python_named_pair_selector_retest import command_python_named_pair_selector_retest
 from .python_foundationality_pressure_probe import (
     add_arguments as add_python_foundationality_pressure_probe_arguments,
 )
@@ -703,6 +705,16 @@ def build_parser() -> argparse.ArgumentParser:
     per_cell_calibration_substrate.set_defaults(
         func=command_python_per_cell_calibration_substrate,
         evidence_name="python-per-cell-calibration-substrate-command-evidence.json",
+    )
+
+    named_pair_selector_retest = sub.add_parser(
+        "python-named-pair-selector-retest",
+        help="TASK-PY-G-124C: diagnostic retest for #586-eligible named-pair structural holes.",
+    )
+    add_python_named_pair_selector_retest_arguments(named_pair_selector_retest)
+    named_pair_selector_retest.set_defaults(
+        func=command_python_named_pair_selector_retest,
+        evidence_name="python-named-pair-selector-retest-command-evidence.json",
     )
 
     foundationality_pressure_probe = sub.add_parser(
