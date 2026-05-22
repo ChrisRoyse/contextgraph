@@ -290,7 +290,7 @@ fn require(label: &str, condition: bool) -> Result<(), Box<dyn std::error::Error
     if condition {
         Ok(())
     } else {
-        Err(io::Error::new(io::ErrorKind::Other, format!("{label} expected true")).into())
+        Err(io::Error::other(format!("{label} expected true")).into())
     }
 }
 
@@ -301,10 +301,6 @@ where
     if actual == expected {
         Ok(())
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("{label} expected {expected:?}, got {actual:?}"),
-        )
-        .into())
+        Err(io::Error::other(format!("{label} expected {expected:?}, got {actual:?}")).into())
     }
 }
