@@ -221,6 +221,7 @@ High-value aliases currently expected inside `contextgraph-shell`:
 | `CG_REPO` | Active aiwonder source mirror, default `/zfs/hot/contextgraph/repo-current` |
 | `CG_AST_CHUNKS` / `CG_AST_CHUNKS_DURABLE` | 399,777-row Python AST chunk JSONL under `/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/`; active `absolute_path` / `dataschema` rows were canonicalized by #613 |
 | `CG_FORWARD_CACHE` | Completed 391-shard forward cache under `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z` |
+| `CG_FORWARD_CACHE_COMPLETENESS_ROOT` | Optional override for #614 slot-completeness masks; default `/zfs/archive/contextgraph/state/forward-cache-completeness/task-py-g-135b-forward-cache-slot-completion-v1` |
 | `CG_LABEL_ROOT` | Current live-split deterministic label/constellation root |
 | `CG_TRAINING_ARRAY_ROOT` | #396 constellation training array artifacts |
 | `CG_SPLIT_STABLE_TENSOR_ROOT` | Split-stable tensor root for slot/pairwise distributions |
@@ -234,6 +235,14 @@ As of #613, the canonical 300x8 AST source tree is:
 ```
 
 Direct readback at #613 closeout: `4224` source files, `148346301` bytes. The active `python_ast_chunks.jsonl` has `399777` rows with `0` `/mnt/d` or `/mnt/c` hits in `absolute_path` and `dataschema`; mounted-drive strings survive only in explicit `legacy_provenance_path` / `legacy_dataschema_path` fields.
+
+As of #614, forward-cache slot completeness is explicit rather than assumed:
+
+```text
+/zfs/archive/contextgraph/state/forward-cache-completeness/task-py-g-135b-forward-cache-slot-completion-v1/forward_cache_slot_completeness_mask.jsonl
+```
+
+Direct readback at #614 closeout: `399777` mask rows, `378444` complete 12-slot rows, `20706` partial rows, `627` zero-slot rows, `131552` quarantined missing chunk/embedder pairs, and `0` unaccounted missing pairs. Downstream pair/constellation mining must join this mask before claiming complete all-pair coverage.
 
 `gh` and `rg` are installed in `/zfs/hot/contextgraph/bin` and visible through `contextgraph-shell`. `gh` authentication remains blocked by #562 until an operator-approved token path exists; do not move or print secrets to solve that.
 
