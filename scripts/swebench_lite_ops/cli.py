@@ -80,6 +80,8 @@ from .python_exact_tracin_gradient_rows import (
     add_arguments as add_python_exact_tracin_gradient_rows_arguments,
 )
 from .python_exact_tracin_gradient_rows import command_python_exact_tracin_gradient_rows
+from .python_pair_feature_audit import add_arguments as add_python_pair_feature_audit_arguments
+from .python_pair_feature_audit import command_python_pair_feature_audit
 from .python_anti_compensation_fsv import add_arguments as add_python_anti_compensation_fsv_arguments
 from .python_anti_compensation_fsv import command_python_anti_compensation_fsv
 from .python_auto_label_discovery import add_arguments as add_python_auto_label_discovery_arguments
@@ -595,6 +597,16 @@ def build_parser() -> argparse.ArgumentParser:
     exact_tracin_gradient_rows.set_defaults(
         func=command_python_exact_tracin_gradient_rows,
         evidence_name="python-exact-tracin-gradient-rows-command-evidence.json",
+    )
+
+    pair_feature_audit = sub.add_parser(
+        "python-pair-feature-audit",
+        help="TASK-PY-G-124: audit existing cross-embedder pair evidence and calibration-selected top-K candidates.",
+    )
+    add_python_pair_feature_audit_arguments(pair_feature_audit)
+    pair_feature_audit.set_defaults(
+        func=command_python_pair_feature_audit,
+        evidence_name="python-pair-feature-audit-command-evidence.json",
     )
 
     anti_compensation = sub.add_parser(
