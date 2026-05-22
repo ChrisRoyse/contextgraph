@@ -96,6 +96,10 @@ from .python_mendeleev_pair_table import add_arguments as add_python_mendeleev_p
 from .python_mendeleev_pair_table import command_python_mendeleev_pair_table
 from .python_axis_rotation_diagnostic import add_arguments as add_python_axis_rotation_diagnostic_arguments
 from .python_axis_rotation_diagnostic import command_python_axis_rotation_diagnostic
+from .python_per_cell_calibration_substrate import (
+    add_arguments as add_python_per_cell_calibration_substrate_arguments,
+)
+from .python_per_cell_calibration_substrate import command_python_per_cell_calibration_substrate
 from .python_foundationality_pressure_probe import (
     add_arguments as add_python_foundationality_pressure_probe_arguments,
 )
@@ -689,6 +693,16 @@ def build_parser() -> argparse.ArgumentParser:
     axis_rotation_diagnostic.set_defaults(
         func=command_python_axis_rotation_diagnostic,
         evidence_name="python-axis-rotation-diagnostic-command-evidence.json",
+    )
+
+    per_cell_calibration_substrate = sub.add_parser(
+        "python-per-cell-calibration-substrate",
+        help="TASK-PY-G-124E: per-cell calibration/shrinkage substrate for named-pair retests.",
+    )
+    add_python_per_cell_calibration_substrate_arguments(per_cell_calibration_substrate)
+    per_cell_calibration_substrate.set_defaults(
+        func=command_python_per_cell_calibration_substrate,
+        evidence_name="python-per-cell-calibration-substrate-command-evidence.json",
     )
 
     foundationality_pressure_probe = sub.add_parser(
