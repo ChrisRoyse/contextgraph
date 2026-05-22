@@ -4,6 +4,8 @@
 **Reading mode:** reference — grep the section, then act. Density beats brevity.
 **Status:** when this conflicts with any other instruction, this wins.
 
+# FULL STATE VERIFICATION MUST BE DONE MANUALLY BY THE AI AGENT THEMSELVES AND NOT THROUGH A SCRIPT OR ANY OTHER AUTOMATED MEANS
+
 ---
 
 ## §0 — THE CARDINAL RULE
