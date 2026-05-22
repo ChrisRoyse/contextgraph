@@ -96,6 +96,8 @@ from .panel_b_score_rows import add_arguments as add_panel_b_score_rows_argument
 from .panel_b_score_rows import command_panel_b_score_rows
 from .panel_b_parity_audit import add_arguments as add_panel_b_parity_audit_arguments
 from .panel_b_parity_audit import command_panel_b_parity_audit
+from .panel_b_parity_score import add_arguments as add_panel_b_parity_score_arguments
+from .panel_b_parity_score import command_panel_b_parity_score
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -681,6 +683,16 @@ def build_parser() -> argparse.ArgumentParser:
     panel_b_parity_audit.set_defaults(
         func=command_panel_b_parity_audit,
         evidence_name="panel-b-parity-audit-command-evidence.json",
+    )
+
+    panel_b_parity_score = sub.add_parser(
+        "panel-b-parity-score",
+        help="TASK-PY-G-111F: fit split-legal Panel B parity scorer over live-safe consequence features.",
+    )
+    add_panel_b_parity_score_arguments(panel_b_parity_score)
+    panel_b_parity_score.set_defaults(
+        func=command_panel_b_parity_score,
+        evidence_name="panel-b-parity-score-command-evidence.json",
     )
 
     registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")

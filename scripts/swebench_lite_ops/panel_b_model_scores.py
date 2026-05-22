@@ -29,6 +29,9 @@ DEFAULT_PANEL_B_MODEL_SCORES_ROOT = Path(
     "/zfs/archive/contextgraph/fsv/task-py-g-111d-panel-b-model-scores-fsv"
 )
 DEFAULT_PANEL_B_MODEL_SCORES_OUT = DEFAULT_PANEL_B_MODEL_SCORES_ROOT / "panel_b_model_scores.jsonl"
+DEFAULT_PANEL_B_CALIBRATION_MODEL_SCORES_OUT = (
+    DEFAULT_PANEL_B_MODEL_SCORES_ROOT / "panel_b_calibration_model_scores.jsonl"
+)
 REQUIRED_CALIBRATION_ROWS = 240
 REQUIRED_HOLDOUT_ROWS = 240
 TARGET_SIDE_ID_MARKERS = (
@@ -78,6 +81,7 @@ def add_arguments(parser: Any) -> None:
     parser.add_argument("--models-root", type=Path, default=DEFAULT_PANEL_B_MODELS_ROOT)
     parser.add_argument("--label-root", type=Path, default=DEFAULT_LABEL_ROOT)
     parser.add_argument("--out-jsonl", type=Path, default=DEFAULT_PANEL_B_MODEL_SCORES_OUT)
+    parser.add_argument("--calibration-out-jsonl", type=Path, default=DEFAULT_PANEL_B_CALIBRATION_MODEL_SCORES_OUT)
     parser.add_argument("--evidence-root", type=Path, default=DEFAULT_PANEL_B_MODEL_SCORES_ROOT)
     parser.add_argument("--expected-calibration-count", type=int, default=REQUIRED_CALIBRATION_ROWS)
     parser.add_argument("--expected-holdout-count", type=int, default=REQUIRED_HOLDOUT_ROWS)
@@ -111,10 +115,12 @@ def command_panel_b_model_scores(args: Any) -> dict[str, Any]:
     models_root = args.models_root.expanduser().resolve(strict=False)
     label_root = args.label_root.expanduser().resolve(strict=False)
     out_jsonl = args.out_jsonl.expanduser().resolve(strict=False)
+    calibration_out_jsonl = args.calibration_out_jsonl.expanduser().resolve(strict=False)
     validate_not_mounted_drive("ship_gate_report", ship_gate_report)
     validate_not_mounted_drive("models_root", models_root)
     validate_not_mounted_drive("label_root", label_root)
     validate_not_mounted_drive("out_jsonl", out_jsonl)
+    validate_not_mounted_drive("calibration_out_jsonl", calibration_out_jsonl)
     validate_models_root(models_root)
     validate_positive_int("expected_calibration_count", args.expected_calibration_count)
     validate_positive_int("expected_holdout_count", args.expected_holdout_count)
@@ -216,8 +222,50 @@ def command_panel_b_model_scores(args: Any) -> dict[str, Any]:
         calibration_model_scores,
         minority_prior_threshold=args.fusion_minority_prior_threshold,
     )
+    calibration_score_rows: list[dict[str, Any]] = []
     score_rows: list[dict[str, Any]] = []
-    label_join_counts = {"exact": 0, "fallback": 0, "failure_exact": 0, "failure_fallback": 0}
+    label_join_counts = {
+        "calibration_exact": 0,
+        "calibration_fallback": 0,
+        "calibration_failure_exact": 0,
+        "calibration_failure_fallback": 0,
+        "holdout_exact": 0,
+        "holdout_fallback": 0,
+        "holdout_failure_exact": 0,
+        "holdout_failure_fallback": 0,
+    }
+    for row_index, calibration in enumerate(calibration_rows):
+        model_scores = {
+            slot: float(calibration_model_scores[slot][row_index])
+            for slot in calibration_by_model
+        }
+        score_b, transformed_scores = fuse_model_scores(
+            model_scores,
+            calibration.category,
+            fusion_policy,
+        )
+        labels = label_index.get((calibration.task_id, calibration.category))
+        if labels is None:
+            labels = fallback_label_bundle(calibration)
+        if labels.accepted_source == "fallback":
+            label_join_counts["calibration_fallback"] += 1
+        else:
+            label_join_counts["calibration_exact"] += 1
+        if labels.failure_source == "fallback":
+            label_join_counts["calibration_failure_fallback"] += 1
+        else:
+            label_join_counts["calibration_failure_exact"] += 1
+        calibration_score_rows.append(
+            panel_b_model_score_row(
+                calibration,
+                score_b=score_b,
+                model_scores=model_scores,
+                transformed_scores=transformed_scores,
+                fusion_policy=fusion_policy,
+                labels=labels,
+                artifact_set_sha256=artifact_set_sha256,
+            )
+        )
     for row_index, holdout in enumerate(holdout_rows):
         model_scores: dict[str, float] = {}
         for slot in calibration_by_model:
@@ -240,35 +288,26 @@ def command_panel_b_model_scores(args: Any) -> dict[str, Any]:
         if labels is None:
             labels = fallback_label_bundle(holdout)
         if labels.accepted_source == "fallback":
-            label_join_counts["fallback"] += 1
+            label_join_counts["holdout_fallback"] += 1
         else:
-            label_join_counts["exact"] += 1
+            label_join_counts["holdout_exact"] += 1
         if labels.failure_source == "fallback":
-            label_join_counts["failure_fallback"] += 1
+            label_join_counts["holdout_failure_fallback"] += 1
         else:
-            label_join_counts["failure_exact"] += 1
+            label_join_counts["holdout_failure_exact"] += 1
         score_rows.append(
-            {
-                "taskId": holdout.task_id,
-                "category": holdout.category,
-                "patchPath": str(holdout.patch_path),
-                "patchSha256": holdout.patch_sha256,
-                "predictionIdHex": holdout.prediction_id_hex,
-                "scoreB": clamp01(score_b),
-                "modelBackedPanelB": True,
-                "acceptedLabelIds": list(labels.accepted_label_ids),
-                "failureEvidenceSetIds": list(labels.failure_evidence_set_ids),
-                "panelBArtifactSetSha256": artifact_set_sha256,
-                "panelBModelScores": model_scores,
-                "panelBModelTransformedScores": transformed_scores,
-                "panelBFusionPolicy": fusion_policy["categories"].get(
-                    holdout.category,
-                    fusion_policy["default"],
-                ),
-                "scoringPolicy": "per_model_cosine_knn_late_fusion_v1",
-            }
+            panel_b_model_score_row(
+                holdout,
+                score_b=score_b,
+                model_scores=model_scores,
+                transformed_scores=transformed_scores,
+                fusion_policy=fusion_policy,
+                labels=labels,
+                artifact_set_sha256=artifact_set_sha256,
+            )
         )
 
+    write_jsonl_checked(calibration_out_jsonl, calibration_score_rows)
     write_jsonl_checked(out_jsonl, score_rows)
     holdout_labels = [1 if row.actual_oracle_pass else 0 for row in holdout_rows]
     holdout_scores = [float(row["scoreB"]) for row in score_rows]
@@ -283,9 +322,12 @@ def command_panel_b_model_scores(args: Any) -> dict[str, Any]:
         "labelRoot": str(label_root),
         "outJsonl": str(out_jsonl),
         "outputSha256": sha256_file(out_jsonl),
+        "calibrationOutJsonl": str(calibration_out_jsonl),
+        "calibrationOutputSha256": sha256_file(calibration_out_jsonl),
         "panelBArtifactSetSha256": artifact_set_sha256,
         "calibrationRows": len(calibration_rows),
         "holdoutRows": len(holdout_rows),
+        "calibrationScoreRows": len(calibration_score_rows),
         "scoreRows": len(score_rows),
         "localFilesOnly": True,
         "networkForbidden": not args.allow_network,
@@ -343,6 +385,39 @@ def command_panel_b_model_scores(args: Any) -> dict[str, Any]:
             "noHuggingFaceRuntimeFetch": not args.allow_network,
             "oneTimeMaterializationCommand": "panel-b-artifacts --download",
         },
+    }
+
+
+def panel_b_model_score_row(
+    row: GateRow,
+    *,
+    score_b: float,
+    model_scores: dict[str, float],
+    transformed_scores: dict[str, float],
+    fusion_policy: dict[str, Any],
+    labels: LabelBundle,
+    artifact_set_sha256: str,
+) -> dict[str, Any]:
+    return {
+        "split": row.split,
+        "rowIndex": row.row_index,
+        "taskId": row.task_id,
+        "category": row.category,
+        "patchPath": str(row.patch_path),
+        "patchSha256": row.patch_sha256,
+        "predictionIdHex": row.prediction_id_hex,
+        "scoreB": clamp01(score_b),
+        "modelBackedPanelB": True,
+        "acceptedLabelIds": list(labels.accepted_label_ids),
+        "failureEvidenceSetIds": list(labels.failure_evidence_set_ids),
+        "panelBArtifactSetSha256": artifact_set_sha256,
+        "panelBModelScores": model_scores,
+        "panelBModelTransformedScores": transformed_scores,
+        "panelBFusionPolicy": fusion_policy["categories"].get(
+            row.category,
+            fusion_policy["default"],
+        ),
+        "scoringPolicy": "per_model_cosine_knn_late_fusion_v1",
     }
 
 
