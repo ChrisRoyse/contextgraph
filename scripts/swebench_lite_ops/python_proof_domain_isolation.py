@@ -59,8 +59,8 @@ ALLOW_CONTEXT_PATTERNS: tuple[re.Pattern[str], ...] = (
 FORBIDDEN_PREREQUISITE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\brequired before\b", re.IGNORECASE),
     re.compile(r"\bmust pass\b", re.IGNORECASE),
-    re.compile(r"\brun .*local_ci_gate", re.IGNORECASE),
-    re.compile(r"\blocal_ci_gate\.sh\b", re.IGNORECASE),
+    re.compile(r"\brun .*retired .*local ci gate", re.IGNORECASE),
+    re.compile(r"\bscript-based .*local ci gate\b", re.IGNORECASE),
 )
 
 DEFAULT_ACTIVE_PATHS = (
@@ -430,7 +430,7 @@ def command_python_proof_domain_isolation(args: argparse.Namespace) -> int:
         "policy": {
             "proof_domains": ["gridworld", "counter_world", "onet", "career_taxonomy", "dynamicjepa", "proof_domain"],
             "allowed_only_when": "archived_deferred_excluded_fail_closed_sibling_or_current_guard_issue",
-            "generic_ci_must_not_run": "scripts/5090jepa/local_ci_gate.sh",
+            "generic_ci_must_not_run": "retired script-based local CI gate",
         },
         "source_of_truth": {
             "repo_root": str(repo_root),

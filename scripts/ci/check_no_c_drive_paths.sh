@@ -11,7 +11,6 @@ scan_roots=(
   "crates"
   "scripts/cc"
   "scripts/ci"
-  "scripts/5090jepa/local_ci_gate.sh"
 )
 
 mnt_slash="mnt"

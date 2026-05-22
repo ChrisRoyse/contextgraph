@@ -209,7 +209,7 @@ If editing one of these is genuinely the right thing for an operator-directed ta
 ./crates/         — Rust workspace (22 active members)
 ./docs/           — futurebuild plan (8-doc live suite + _archived/) + PAPER.md + investigation reports
 ./docs2/          — AICodingAgentSuperPrompt.md (master doctrine) + hardeningprompt.md (14-axis deep-dive) + prdtospec.md + aiwonder.md + flagprompt.md (SUPERSEDED, kept as reference)
-./scripts/        — CC hook scripts (scripts/cc/), CI lint + Phase G/H FSV audit harnesses (scripts/ci/), setup, swebench_lite_ops/, label bootstrap (gh-labels-bootstrap.sh)
+./scripts/        — CC hook scripts (scripts/cc/), CI lint helpers (scripts/ci/), setup, swebench_lite_ops/, label bootstrap (gh-labels-bootstrap.sh)
 ./tasks/          — Workstream manifests (e.g., tasks/swebench-lite/*.json — 300 SWE-bench Lite Python instance manifests)
 ./tests/e2e/      — 13 root-level chaos/load/soak/multi-agent/restart-safety e2e tests (shim'd into crates/*/tests/)
 ./tests/fixtures/ — 30 adversarial diff fixtures (TASK-PY-G-060)
@@ -217,11 +217,11 @@ If editing one of these is genuinely the right thing for an operator-directed ta
 ./configs/        — dynamicjepa/ (domain_packs/, verification/) — note plural; tracked for collapse in tech-debt
 ./systemd/        — contextgraph-mcp-http.service (aiwonder paths)
 ./.claude/        — settings.json, agents/, loop.md, skills/, hooks/
-./.github/        — workflows/ (ci, ci_smoke_a/b/c, chaos, e2e, load, soak) + labels.yml
+./.github/        — workflows/ (ci, chaos, e2e, load, soak) + labels.yml
 ./backupdocs/memory.archive/ — read-only legacy SAMP/SMAP narrative (no new entries)
 ./samplecode/     — Multi-language scratch corpus referenced by ast_embedder_smoke_fsv (source files only; build caches gitignored)
 ./shakespear/     — complete_works.txt (LibraryId::ShakespeareCanon training data)
-./reference/      — DynamicJEPA reference release JSONs (for ci_smoke_a regression)
+./reference/      — DynamicJEPA reference release JSONs (archived regression fixtures)
 
 # aiwonder production state (post-migration durable bulk state)
 /zfs/archive/contextgraph/
