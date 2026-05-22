@@ -1477,6 +1477,9 @@ struct EvidenceConsequenceKeyStats {
     positives: usize,
     prior: f32,
     score_mean: f32,
+    base_brier_mean: f32,
+    calibrated_brier_mean: f32,
+    mean_brier_improvement: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1509,6 +1512,9 @@ struct BinConsequenceKeyStats {
     positives: usize,
     prior: f32,
     score_mean: f32,
+    base_brier_mean: f32,
+    calibrated_brier_mean: f32,
+    mean_brier_improvement: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -8904,7 +8910,7 @@ fn fit_evidence_consequence_calibration_model(
         !stats.is_empty(),
         "evidence-consequence calibration produced no scoped evidence stats"
     );
-    let key_stats = stats
+    let mut key_stats = stats
         .into_iter()
         .map(|(key, (support, positives, score_sum))| {
             let prior =
@@ -8917,10 +8923,43 @@ fn fit_evidence_consequence_calibration_model(
                     positives,
                     prior: prior.clamp(0.001, 0.999),
                     score_mean,
+                    base_brier_mean: 0.0,
+                    calibrated_brier_mean: 0.0,
+                    mean_brier_improvement: 0.0,
                 },
             )
         })
         .collect::<BTreeMap<_, _>>();
+    let mut brier_stats = BTreeMap::<String, (f32, f32, usize)>::new();
+    for (idx, base_row) in indices.iter().zip(&base_rows) {
+        let feature_row = &table.rows[*idx];
+        if !calibration_scope_applies(scope, &feature_row.category) {
+            continue;
+        }
+        for key in &feature_row.evidence_keys {
+            let Some(stats) = key_stats.get(key) else {
+                continue;
+            };
+            let score = evidence_consequence_calibrated_score(
+                base_row.predicted_oracle_pass,
+                stats,
+                smoothing,
+                prior_weight,
+            );
+            let entry = brier_stats.entry(key.clone()).or_insert((0.0, 0.0, 0));
+            entry.0 += brier_for(base_row.predicted_oracle_pass, base_row.actual_oracle_pass);
+            entry.1 += brier_for(score, base_row.actual_oracle_pass);
+            entry.2 += 1;
+        }
+    }
+    for (key, (base_brier_sum, calibrated_brier_sum, count)) in brier_stats {
+        if let Some(stats) = key_stats.get_mut(&key) {
+            let denom = count.max(1) as f32;
+            stats.base_brier_mean = base_brier_sum / denom;
+            stats.calibrated_brier_mean = calibrated_brier_sum / denom;
+            stats.mean_brier_improvement = stats.base_brier_mean - stats.calibrated_brier_mean;
+        }
+    }
     Ok(EvidenceConsequenceCalibrationModel {
         selected_on: "calibration".to_string(),
         base_model,
@@ -8981,20 +9020,38 @@ fn apply_evidence_consequence_calibration(
         .evidence_keys
         .iter()
         .filter_map(|key| model.key_stats.get(key).map(|stats| (key, stats)))
-        .find(|(_key, stats)| stats.support >= model.min_support)
+        .find(|(_key, stats)| {
+            stats.support >= model.min_support && stats.mean_brier_improvement > 0.0
+        })
     else {
         return Ok(base_score);
     };
-    let support_weight = if model.smoothing <= f32::EPSILON {
+    Ok(evidence_consequence_calibrated_score(
+        base_score,
+        stats,
+        model.smoothing,
+        model.prior_weight,
+    ))
+}
+
+fn evidence_consequence_calibrated_score(
+    base_score: f32,
+    stats: &EvidenceConsequenceKeyStats,
+    smoothing: f32,
+    prior_weight: f32,
+) -> f32 {
+    let support_weight = if smoothing <= f32::EPSILON {
         1.0
     } else {
-        stats.support as f32 / (stats.support as f32 + model.smoothing)
+        stats.support as f32 / (stats.support as f32 + smoothing)
     };
-    let effective_weight = (model.prior_weight * support_weight).clamp(0.0, 1.0);
-    Ok(
-        ((1.0 - effective_weight) * base_score + effective_weight * stats.prior)
-            .clamp(0.001, 0.999),
-    )
+    let effective_weight = (prior_weight * support_weight).clamp(0.0, 1.0);
+    ((1.0 - effective_weight) * base_score + effective_weight * stats.prior).clamp(0.001, 0.999)
+}
+
+fn brier_for(score: f32, actual_oracle_pass: bool) -> f32 {
+    let target = if actual_oracle_pass { 1.0 } else { 0.0 };
+    (score - target).powi(2)
 }
 
 fn select_bin_consequence_calibration_repair(
@@ -9269,7 +9326,7 @@ fn fit_bin_consequence_calibration_model(
         !stats.is_empty(),
         "bin-consequence calibration produced no scoped evidence stats"
     );
-    let key_stats = stats
+    let mut key_stats = stats
         .into_iter()
         .map(|(key, (support, positives, score_sum))| {
             let prior =
@@ -9281,10 +9338,45 @@ fn fit_bin_consequence_calibration_model(
                     positives,
                     prior: prior.clamp(0.001, 0.999),
                     score_mean: score_sum / support as f32,
+                    base_brier_mean: 0.0,
+                    calibrated_brier_mean: 0.0,
+                    mean_brier_improvement: 0.0,
                 },
             )
         })
         .collect::<BTreeMap<_, _>>();
+    let mut brier_stats = BTreeMap::<String, (f32, f32, usize)>::new();
+    for (idx, base_row) in indices.iter().zip(&base_rows) {
+        let feature_row = &table.rows[*idx];
+        if !calibration_scope_applies(scope, &feature_row.category) {
+            continue;
+        }
+        let bin_idx = probability_bin_index(base_row.predicted_oracle_pass, bin_count);
+        for key in &feature_row.evidence_keys {
+            let bin_key = bin_consequence_key(bin_idx, key);
+            let Some(stats) = key_stats.get(&bin_key) else {
+                continue;
+            };
+            let score = bin_consequence_calibrated_score(
+                base_row.predicted_oracle_pass,
+                stats,
+                smoothing,
+                prior_weight,
+            );
+            let entry = brier_stats.entry(bin_key).or_insert((0.0, 0.0, 0));
+            entry.0 += brier_for(base_row.predicted_oracle_pass, base_row.actual_oracle_pass);
+            entry.1 += brier_for(score, base_row.actual_oracle_pass);
+            entry.2 += 1;
+        }
+    }
+    for (key, (base_brier_sum, calibrated_brier_sum, count)) in brier_stats {
+        if let Some(stats) = key_stats.get_mut(&key) {
+            let denom = count.max(1) as f32;
+            stats.base_brier_mean = base_brier_sum / denom;
+            stats.calibrated_brier_mean = calibrated_brier_sum / denom;
+            stats.mean_brier_improvement = stats.base_brier_mean - stats.calibrated_brier_mean;
+        }
+    }
     Ok(BinConsequenceCalibrationModel {
         selected_on: "calibration".to_string(),
         base_model,
@@ -9344,16 +9436,27 @@ fn apply_bin_consequence_calibration(
     let Some(stats) = bin_consequence_matching_stats(base_score, feature_row, model) else {
         return Ok(base_score);
     };
-    let support_weight = if model.smoothing <= f32::EPSILON {
+    Ok(bin_consequence_calibrated_score(
+        base_score,
+        stats,
+        model.smoothing,
+        model.prior_weight,
+    ))
+}
+
+fn bin_consequence_calibrated_score(
+    base_score: f32,
+    stats: &BinConsequenceKeyStats,
+    smoothing: f32,
+    prior_weight: f32,
+) -> f32 {
+    let support_weight = if smoothing <= f32::EPSILON {
         1.0
     } else {
-        stats.support as f32 / (stats.support as f32 + model.smoothing)
+        stats.support as f32 / (stats.support as f32 + smoothing)
     };
-    let effective_weight = (model.prior_weight * support_weight).clamp(0.0, 1.0);
-    Ok(
-        ((1.0 - effective_weight) * base_score + effective_weight * stats.prior)
-            .clamp(0.001, 0.999),
-    )
+    let effective_weight = (prior_weight * support_weight).clamp(0.0, 1.0);
+    ((1.0 - effective_weight) * base_score + effective_weight * stats.prior).clamp(0.001, 0.999)
 }
 
 fn bin_consequence_matching_stats<'a>(
@@ -9366,7 +9469,7 @@ fn bin_consequence_matching_stats<'a>(
         .evidence_keys
         .iter()
         .filter_map(|key| model.key_stats.get(&bin_consequence_key(bin_idx, key)))
-        .find(|stats| stats.support >= model.min_support)
+        .find(|stats| stats.support >= model.min_support && stats.mean_brier_improvement > 0.0)
 }
 
 fn bin_consequence_key(bin_idx: usize, key: &str) -> String {
@@ -11604,6 +11707,9 @@ fn edge_case_audit(
                 positives: 1,
                 prior: 2.0,
                 score_mean: 0.75,
+                base_brier_mean: 0.0,
+                calibrated_brier_mean: 0.0,
+                mean_brier_improvement: 1.0,
             },
         )]);
         let row = synthetic_prediction_row("bin-clamp", "off_by_one", true, 0.75);
