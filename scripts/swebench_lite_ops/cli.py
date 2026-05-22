@@ -106,8 +106,6 @@ from .python_foundationality_pressure_probe import (
     add_arguments as add_python_foundationality_pressure_probe_arguments,
 )
 from .python_foundationality_pressure_probe import command_python_foundationality_pressure_probe
-from .python_anti_compensation_fsv import add_arguments as add_python_anti_compensation_fsv_arguments
-from .python_anti_compensation_fsv import command_python_anti_compensation_fsv
 from .python_auto_label_discovery import add_arguments as add_python_auto_label_discovery_arguments
 from .python_auto_label_discovery import command_python_auto_label_discovery
 from .panel_b_artifacts import add_arguments as add_panel_b_artifacts_arguments
@@ -725,16 +723,6 @@ def build_parser() -> argparse.ArgumentParser:
     foundationality_pressure_probe.set_defaults(
         func=command_python_foundationality_pressure_probe,
         evidence_name="python-foundationality-pressure-probe-command-evidence.json",
-    )
-
-    anti_compensation = sub.add_parser(
-        "python-anti-compensation-fsv",
-        help="TASK-PY-G-094: prove slot/pair/temporal failures cannot be offset by aggregate flat-vector evidence.",
-    )
-    add_python_anti_compensation_fsv_arguments(anti_compensation)
-    anti_compensation.set_defaults(
-        func=command_python_anti_compensation_fsv,
-        evidence_name="python-anti-compensation-fsv-command-evidence.json",
     )
 
     auto_label_discovery = sub.add_parser(

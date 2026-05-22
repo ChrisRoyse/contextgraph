@@ -10,7 +10,7 @@ import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -24,14 +24,8 @@ from .core import (
     validate_constellation_training_artifact_root,
 )
 from .python_constellation_tensor_builders import parse_embedder_set
-from .python_real_corpus_constellation_smoke import finite_float, sha256_text
-from .python_per_slot_calibration_ood_fsv import (
-    build_fsv,
-    build_policy,
-    edge_cases,
-    write_outputs,
-)
-from .smoke_intelligence_matrices import dump_json, iter_jsonl, read_json, sha256_file, tree_state, utc_now
+from .python_real_corpus_constellation_smoke import finite_float, sha256_text, write_jsonl
+from .smoke_intelligence_matrices import dump_json, iter_jsonl, read_json, sha256_file, utc_now
 
 
 SCHEMA_VERSION = 1
@@ -41,7 +35,6 @@ FORMULA_VERSION = "per_slot_calibration_ood_guard_v1"
 DEFAULT_TENSOR_ROOT = Path("/zfs/archive/contextgraph/corpus/constellation-tensors-v1")
 DEFAULT_ARTIFACT_ROOT = DEFAULT_CONSTELLATION_TRAINING_ARRAY_ROOT
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/state/calibration/per-slot-v1")
-DEFAULT_FSV_ROOT = Path("/zfs/archive/contextgraph/fsv/task-py-g-089-per-slot-calibration-ood-fsv")
 EXPECTED_ACTIVE_EMBEDDERS = ("e1", "e2", "e3", "e4", "e6", "e7", "e8", "e9", "e10", "e12", "e13", "e14")
 EPS = 1.0e-9
 
@@ -406,17 +399,120 @@ def finite_values(rows: list[dict[str, Any]], key: str) -> list[float]:
             values.append(finite_float(float(value)))
     return values
 
+
+def evaluate_guard(observation: dict[str, float], calibrations: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
+    by_slot = {str(row["embedder_id"]): row for row in calibrations}
+    violations = []
+    normalized = []
+    for embedder, row in sorted(by_slot.items()):
+        if row.get("valid") is not True:
+            violations.append({"slot_id": embedder, "reason": "CALIBRATION_INVALID"})
+            continue
+        if parse_utc(str(row["stale_after_utc"])) <= now:
+            violations.append({"slot_id": embedder, "reason": "CALIBRATION_STALE"})
+            continue
+        if embedder not in observation:
+            violations.append({"slot_id": embedder, "reason": "MISSING_SLOT_OBSERVATION"})
+            continue
+        score = float(observation[embedder])
+        if not math.isfinite(score):
+            violations.append({"slot_id": embedder, "reason": "NONFINITE_SLOT_SCORE"})
+            continue
+        tau = float(row["thresholds"]["ood_tau"])
+        normalized.append(score / max(EPS, tau))
+        if score > tau:
+            violations.append({"slot_id": embedder, "reason": "SLOT_OOD_TAU_EXCEEDED", "score": finite_float(score), "tau": finite_float(tau)})
+    aggregate_mean = finite_float(float(np.mean(normalized))) if normalized else 1.0
+    return {
+        "approved": not violations,
+        "verdict": "Pass" if not violations else "GuardRejected",
+        "violations": violations,
+        "aggregate_mean_normalized_score": aggregate_mean,
+        "aggregate_mean_would_pass": aggregate_mean <= 1.0,
+    }
+
+
+def edge_cases(global_rows: list[dict[str, Any]], *, require: Callable[[bool, str, str | None], None]) -> list[dict[str, Any]]:
+    valid = [row for row in global_rows if row.get("valid") is True]
+    require(len(valid) == len(global_rows), "MEJEPA_PER_SLOT_CALIBRATION_GLOBAL_SLOT_INVALID", None)
+    now = datetime.now(timezone.utc)
+    nominal = {row["embedder_id"]: float(row["reference_good_score"]) for row in valid}
+    cases = []
+    accepted = evaluate_guard(nominal, valid, now)
+    cases.append({"name": "nominal_all_slots_passes", "passes": accepted["approved"] is True, "guard_decision": accepted})
+    missing = dict(nominal)
+    missing.pop(valid[0]["embedder_id"])
+    rejected = evaluate_guard(missing, valid, now)
+    cases.append({"name": "missing_required_slot_rejects", "passes": rejected["approved"] is False and rejected["violations"][0]["reason"] == "MISSING_SLOT_OBSERVATION", "guard_decision": rejected})
+    stale_rows = [dict(row, stale_after_utc="2000-01-01T00:00:00+00:00") for row in valid]
+    stale = evaluate_guard(nominal, stale_rows, now)
+    cases.append({"name": "stale_calibration_rejects", "passes": stale["approved"] is False and stale["violations"][0]["reason"] == "CALIBRATION_STALE", "guard_decision": stale})
+    bad = dict(nominal)
+    bad_slot = valid[0]["embedder_id"]
+    bad[bad_slot] = float(valid[0]["thresholds"]["ood_tau"]) * 1.25
+    bad_result = evaluate_guard(bad, valid, now)
+    cases.append({"name": "one_bad_slot_rejects_even_when_aggregate_passes", "passes": bad_result["approved"] is False and bad_result["aggregate_mean_would_pass"] is True, "bad_slot": bad_slot, "guard_decision": bad_result})
+    nonfinite = dict(nominal)
+    nonfinite[bad_slot] = float("nan")
+    nonfinite_result = evaluate_guard(nonfinite, valid, now)
+    cases.append({"name": "nonfinite_slot_score_rejects", "passes": nonfinite_result["approved"] is False and nonfinite_result["violations"][0]["reason"] == "NONFINITE_SLOT_SCORE", "guard_decision": nonfinite_result})
+    return cases
+
+
+def build_policy(
+    required: tuple[str, ...],
+    global_rows: list[dict[str, Any]],
+    pair_rows: list[dict[str, Any]],
+    created_at: str,
+    stale_after: str,
+    cases: list[dict[str, Any]],
+    *,
+    schema_version: int,
+    task_id: str,
+    formula_version: str,
+) -> dict[str, Any]:
+    valid_slots = [row for row in global_rows if row.get("valid") is True]
+    return {
+        "schema_version": schema_version,
+        "task_id": task_id,
+        "artifact_kind": "python_per_slot_ood_guard_policy",
+        "formula_version": formula_version,
+        "created_at_utc": created_at,
+        "stale_after_utc": stale_after,
+        "required_slots": list(required),
+        "strict_conjunction": True,
+        "aggregate_score_never_overrides_slot_violation": True,
+        "reject_missing_or_stale_calibration": True,
+        "global_slot_calibration_ready": len(valid_slots) == len(required),
+        "pair_calibration_rows": len(pair_rows),
+        "ship_gate_countable": False,
+        "ship_gate_blockers_before_counting": ["rerun #127 under per-slot guard", "rerun #129 under per-slot guard", "rerun #130 under per-slot guard"],
+        "reality_prediction_extension": {
+            "field": "per_slot_ood_reasons",
+            "status": "artifact_schema_materialized_for_next_live_Rust_surface",
+            "reason_shape": {"slot_id": "e1", "reason": "SLOT_OOD_TAU_EXCEEDED", "score": 0.0, "tau": 0.0},
+        },
+        "edge_case_summary": {case["name"]: case["passes"] for case in cases},
+    }
+
+
+def write_outputs(args: argparse.Namespace, global_rows: list[dict[str, Any]], cell_rows: list[dict[str, Any]], pair_rows: list[dict[str, Any]], policy: dict[str, Any], report: dict[str, Any]) -> None:
+    write_jsonl(args.output_root / "per_slot_calibration.jsonl", global_rows)
+    write_jsonl(args.output_root / "per_cell_slot_calibration.jsonl", cell_rows)
+    write_jsonl(args.output_root / "per_pair_calibration.jsonl", pair_rows)
+    dump_json(args.output_root / "ood_guard_policy.json", policy)
+    dump_json(args.output_root / "per_slot_calibration_report.json", report)
+
+
 def command_python_per_slot_calibration_ood(args: argparse.Namespace) -> int:
     started = utc_now()
     created_at = utc_now()
     stale_after = (datetime.now(timezone.utc) + timedelta(days=args.calibration_ttl_days)).isoformat(timespec="seconds")
     required = parse_embedder_set(args.expected_embedders)
     require(tuple(sorted(required)) == tuple(sorted(EXPECTED_ACTIVE_EMBEDDERS)), "MEJEPA_PER_SLOT_CALIBRATION_UNEXPECTED_EMBEDDER_SET", str(required))
-    before = {"output_root": tree_state(args.output_root), "fsv_root": tree_state(args.fsv_root)}
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)
     args.output_root.mkdir(parents=True, exist_ok=True)
-    args.fsv_root.mkdir(parents=True, exist_ok=True)
     sources = load_sources(args)
     global_rows, cell_rows = build_calibrations(args, sources, required, created_at, stale_after)
     pair_rows = build_pair_calibrations(sources["pair_tensors"], created_at, stale_after)
@@ -434,20 +530,13 @@ def command_python_per_slot_calibration_ood(args: argparse.Namespace) -> int:
     )
     report = build_report(args, sources, global_rows, cell_rows, pair_rows, policy, cases, started)
     write_outputs(args, global_rows, cell_rows, pair_rows, policy, report)
-    fsv = build_fsv(
-        args,
-        before,
-        cases,
-        expected_active_embedders=EXPECTED_ACTIVE_EMBEDDERS,
-        schema_version=SCHEMA_VERSION,
-        artifact_kind=ARTIFACT_KIND,
-        formula_version=FORMULA_VERSION,
-    )
-    fsv_path = args.fsv_root / f"{ARTIFACT_KIND}_fsv.json"
-    dump_json(fsv_path, fsv)
-    final = read_json(fsv_path)
-    require(final.get("passes") is True, "MEJEPA_PER_SLOT_CALIBRATION_FSV_FAILED", str(fsv_path))
-    print(json.dumps(final, sort_keys=True, indent=2))
+    report_path = args.output_root / "per_slot_calibration_report.json"
+    policy_path = args.output_root / "ood_guard_policy.json"
+    final_report = read_json(report_path)
+    final_policy = read_json(policy_path)
+    require(final_report.get("passes") is True, "MEJEPA_PER_SLOT_CALIBRATION_REPORT_FAILED", str(report_path))
+    require(final_policy.get("aggregate_score_never_overrides_slot_violation") is True, "MEJEPA_PER_SLOT_CALIBRATION_POLICY_WEAK", str(policy_path))
+    print(json.dumps(final_report, sort_keys=True, indent=2))
     return 0
 
 
@@ -485,7 +574,6 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--tensor-root", type=Path, default=DEFAULT_TENSOR_ROOT)
     parser.add_argument("--artifact-root", type=Path, default=DEFAULT_ARTIFACT_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
     parser.add_argument("--task-id", default=TASK_ID)
     parser.add_argument("--expected-embedders", default=",".join(EXPECTED_ACTIVE_EMBEDDERS))
     parser.add_argument("--min-train-rows-per-slot", type=int, default=20)
