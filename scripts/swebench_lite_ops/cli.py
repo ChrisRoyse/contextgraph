@@ -92,6 +92,8 @@ from .python_pair_conditional_admission_probe import (
 from .python_pair_conditional_admission_probe import command_python_pair_conditional_admission_probe
 from .python_pair_interaction_mining import add_arguments as add_python_pair_interaction_mining_arguments
 from .python_pair_interaction_mining import command_python_pair_interaction_mining
+from .python_mendeleev_pair_table import add_arguments as add_python_mendeleev_pair_table_arguments
+from .python_mendeleev_pair_table import command_python_mendeleev_pair_table
 from .python_foundationality_pressure_probe import (
     add_arguments as add_python_foundationality_pressure_probe_arguments,
 )
@@ -665,6 +667,16 @@ def build_parser() -> argparse.ArgumentParser:
     pair_interaction_mining.set_defaults(
         func=command_python_pair_interaction_mining,
         evidence_name="python-pair-interaction-mining-command-evidence.json",
+    )
+
+    mendeleev_pair_table = sub.add_parser(
+        "python-mendeleev-pair-table",
+        help="TASK-PY-G-124D: build the head x pair structural-hole consumption table before pair wiring.",
+    )
+    add_python_mendeleev_pair_table_arguments(mendeleev_pair_table)
+    mendeleev_pair_table.set_defaults(
+        func=command_python_mendeleev_pair_table,
+        evidence_name="python-mendeleev-pair-table-command-evidence.json",
     )
 
     foundationality_pressure_probe = sub.add_parser(
