@@ -86,6 +86,10 @@ from .python_pair_feature_gate_probe import add_arguments as add_python_pair_fea
 from .python_pair_feature_gate_probe import command_python_pair_feature_gate_probe
 from .python_pair_surface_mining import add_arguments as add_python_pair_surface_mining_arguments
 from .python_pair_surface_mining import command_python_pair_surface_mining
+from .python_pair_conditional_admission_probe import (
+    add_arguments as add_python_pair_conditional_admission_probe_arguments,
+)
+from .python_pair_conditional_admission_probe import command_python_pair_conditional_admission_probe
 from .python_foundationality_pressure_probe import (
     add_arguments as add_python_foundationality_pressure_probe_arguments,
 )
@@ -639,6 +643,16 @@ def build_parser() -> argparse.ArgumentParser:
     pair_surface_mining.set_defaults(
         func=command_python_pair_surface_mining,
         evidence_name="python-pair-surface-mining-command-evidence.json",
+    )
+
+    pair_conditional_admission_probe = sub.add_parser(
+        "python-pair-conditional-admission-probe",
+        help="TASK-PY-G-124B: calibration-only active/abstain routing probe for selected pair motifs.",
+    )
+    add_python_pair_conditional_admission_probe_arguments(pair_conditional_admission_probe)
+    pair_conditional_admission_probe.set_defaults(
+        func=command_python_pair_conditional_admission_probe,
+        evidence_name="python-pair-conditional-admission-probe-command-evidence.json",
     )
 
     foundationality_pressure_probe = sub.add_parser(
