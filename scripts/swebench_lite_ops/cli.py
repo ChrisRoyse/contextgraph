@@ -90,6 +90,8 @@ from .python_pair_conditional_admission_probe import (
     add_arguments as add_python_pair_conditional_admission_probe_arguments,
 )
 from .python_pair_conditional_admission_probe import command_python_pair_conditional_admission_probe
+from .python_pair_interaction_mining import add_arguments as add_python_pair_interaction_mining_arguments
+from .python_pair_interaction_mining import command_python_pair_interaction_mining
 from .python_foundationality_pressure_probe import (
     add_arguments as add_python_foundationality_pressure_probe_arguments,
 )
@@ -653,6 +655,16 @@ def build_parser() -> argparse.ArgumentParser:
     pair_conditional_admission_probe.set_defaults(
         func=command_python_pair_conditional_admission_probe,
         evidence_name="python-pair-conditional-admission-probe-command-evidence.json",
+    )
+
+    pair_interaction_mining = sub.add_parser(
+        "python-pair-interaction-mining",
+        help="TASK-PY-G-124B: mine pair-pair interaction motifs without widening the predictor.",
+    )
+    add_python_pair_interaction_mining_arguments(pair_interaction_mining)
+    pair_interaction_mining.set_defaults(
+        func=command_python_pair_interaction_mining,
+        evidence_name="python-pair-interaction-mining-command-evidence.json",
     )
 
     foundationality_pressure_probe = sub.add_parser(
