@@ -41,7 +41,7 @@ Once met → human review of AI-generated Python patches is statistically unjust
 | Layer | Defect | Issue |
 |---|---|---|
 | Predictor head | Public Rust `Trainer` hard-coded `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE`; latest aiwonder FSV loaded an out-of-band task-py-g-127 checkpoint (`optimizer_steps=64`, `weight_delta_observed=true`), but that path is not unified with the trainer contract and normal compiler construction must fail closed unless `trained_checkpoint_manifest_path` is explicit | #683 |
-| Substrate | `e2/e3/e4` collapsed (1 unique vector each; `chunk.time` wall-clock injection identical for 399,777 chunks); `e8 ≡ e1` byte-identical (graph projection bug fixed `ff4d4c03`, prod corpus 7d older) | #704, #670 |
+| Substrate | Legacy v1 cache had `e2/e3/e4` collapsed and `e8 ≡ e1`; #704/#714 retire `e2/e3/e4` for static AST, and #709/#715 own distinctness-gated v2 9-slot rebuild with post-`ff4d4c03` `e8` | #704, #714, #709, #715 |
 | Gate metric | Rank-lift = category-local RBF exemplar similarity over calibration split; lifts raw `0.4843 → 0.7942` without Brier/ECE improvement; measures exemplars, not predictor | #695 |
 
 Honest raw-Pearson gap = `0.95 − 0.4843 = 0.4657`. Latest FSV: `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`; checkpoint readback: `/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv/best.manifest.json`, `optimizer_steps=64`, `weight_delta_observed=true`. The `0.866667` (pre-2026-05-19) was synthetic-vector evidence and remains invalid. #392 active/abstain (`0.9526350498` on `205/240`) is selection bias, not hidden gate pass. Panel B unmeasured (#405/#521).
@@ -92,13 +92,13 @@ Active pinned `type:context`:
 | Rank | Issue | Action | Expected impact |
 |---|---|---|---|
 | 1 | **#683** | Unify real training path with trainer contract and require production `trained_checkpoint_manifest_path` fail-closed | Largest; current checkpoint evidence is out-of-band from the public trainer |
-| 2 | **#670 + #704** | Regenerate `e2/e3/e4/e8`: fix `chunk.time` injection; `ff4d4c03` already fixed graph projection; rerun prod forward cache | Recovers 4/12 panel signal-bearing dims |
+| 2 | **#709 + #715** | Add/promote inter-embedder distinctness gate, then rebuild v2 static AST cache with 9 active slots; `e2/e3/e4` remain retired for static AST by #704/#714 | Produces clean static-cache substrate and proves post-fix `e8` is not `e1` |
 | 3 | **#615** | Run delete_test_call Docker oracle batch over 1,131 candidates → rebuild AST → #614 mask → labels | Closes weak-cell ceiling (`0.69 → ≥0.85`) |
 | 4 | **#618 + #619** | Per-slot OOD aggregation; slot-preserving panel projections | Removes anti-compensation cheat path |
-| 5 | **#691** | Hook scripts exit non-zero on capture failure | Restores Q5 binary-prediction honesty |
-| 6 | **#695** | Stop using rank-lift as gate metric; use raw Pearson + isotonic/Platt | Reveals honest gap |
-| 7 | **#685/#687/#688/#690/#707** | Eliminate hardcoded passing telemetry (`forward_logits` zeros; `detach_loras` no-op; `EpochSummary` hardcoded best/worst; `retrain_triggered:true` literal; OOD strict fail-open) | Prevents Goodhart on future mistake-loop wiring |
-| 8 | #392 / #511 / #405 / #379 | Trajectory ECE / entropy aux loss / Panel B / multi-file holdout | **Blocked behind 1-7** |
+| 5 | **#695** | Stop using rank-lift as gate metric; use raw Pearson + isotonic/Platt | Reveals honest gap |
+| 6 | **#685/#687/#688/#690/#684/#689/#699** | Eliminate hardcoded passing telemetry and pseudo-cert confidence surfaces | Prevents Goodhart on future mistake-loop wiring |
+| Done | **#704/#714/#670/#691/#707** | Static temporal retirement, invalid-space policy, hook fail-visible behavior, strict OOD fail-closed behavior | Closed evidence; retained as prerequisites |
+| 7 | #392 / #511 / #405 / #379 | Trajectory ECE / entropy aux loss / Panel B / multi-file holdout | **Blocked behind active ranks 1-6 plus #633** |
 
 Closed prior critical-path items remain valid substrate: #408 Q4 freeze, #404 failure-mode hierarchy, #413 auto-label discovery, #414 skill substrate, #418 runtime ability resolver, #406+#523 mistake-loop MCP. The structural work survived the audit; only the **measurement** and **predictor head** were broken.
 

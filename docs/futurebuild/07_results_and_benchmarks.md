@@ -13,27 +13,28 @@ The `0.7942190170` rank-lift number is a composite Goodhart-magnifier, not a pre
 | Layer | Defect | Issue |
 |---|---|---|
 | Predictor head | Public `Trainer::run_full_training` hard-coded `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE` at `mejepa-train/src/trainer/mod.rs:31-34, 409-422`; latest aiwonder FSV loaded an out-of-band task-py-g-127 checkpoint (`optimizer_steps=64`, `weight_delta_observed=true`) but that path is not countable through `trained_predictor` / `ship_gate_countable_training`, and compiler construction must fail closed without an explicit manifest | #683 |
-| Substrate (`e2/e3/e4`) | `chunk.time` wall-clock injection at `python_forward_cache_fsv.rs:2308` identical for all 399,777 chunks → constant sinusoidal-PE output (1 unique vector per slot) | #704, #708 |
-| Substrate (`e8`) | `GraphModel::embed_batch()` missing `project_source_vector` before commit `ff4d4c03` (2026-05-22); prod corpus generated 7d earlier → byte-identical to `e1` | #704, #670 |
+| Substrate (`e2/e3/e4`) | Legacy v1 cache collapsed because `chunk.time` wall-clock injection was identical for all 399,777 chunks. #704/#714 closed by retiring these temporal embedders for static AST runs. | #704, #714, #708 |
+| Substrate (`e8`) | Legacy v1 cache had `GraphModel::embed_batch()` missing `project_source_vector` before commit `ff4d4c03` (2026-05-22); prod corpus generated 7d earlier → byte-identical to `e1`. #715 owns the v2 static-cache rebuild; #709 must gate distinctness before promotion. | #709, #715 |
 | Gate metric | Rank-lift = category-local RBF exemplar similarity fitted on calibration split; lifts raw `0.4843 → 0.7942` without improving Brier/ECE; measures exemplar similarity, not predictor | #695 |
 | Active-subset diagnostic | `python_calibration_active_gate.py:322-378` selects per-cell `coverage` + `margin_threshold` to maximize gate pass; "active" = high `\|score-0.5\|` = easy rows; `0.953` corr is selection bias | #692 |
 
 **Honest gap:** `0.95 − 0.4843 = 0.4657` against raw Pearson.
 
-**29 new issues filed (#683-#711).** Critical-path ordering replaced by #712 (pinned context). Every #392 / #511 / #549 / #554 / #558 / #560 / #393 / #398 / #536 measurement in §1-§2 is a perturbation of (checkpoint-loaded but trainer-orphaned predictor) ∘ (4/12 dead slots) ∘ (rank-lift Goodhart). Five #392 trajectory repairs hit ECE walls because of these defects, not proven calibration limits.
+**29 new issues filed (#683-#711), followed by #714/#715 after the static-AST temporal decision.** Critical-path ordering replaced by #712 (pinned context). Every #392 / #511 / #549 / #554 / #558 / #560 / #393 / #398 / #536 measurement in §1-§2 is a perturbation of (checkpoint-loaded but trainer-orphaned predictor) composed with the legacy invalid v1 forward cache and rank-lift Goodhart. Five #392 trajectory repairs hit ECE walls because of these defects, not proven calibration limits.
 
 ## 0b. ⚠ 2026-05-22 hardening pivot — still active
 
 5-Sherlock parallel forensic audit (#629 closeout) + **#633 manual full-system FSV + hardening gate** opening. Manual SoT contract (`06 §1.9`) is binding for closure evidence; per #655, auto-FSV `*_fsv.rs` harnesses are being retired.
 
-P0 audit-uncovered defects (carried into 2026-05-23 critical path):
+P0 audit-uncovered defects (carried into 2026-05-23 critical path; post-#704/#714 updates included):
 
 | Issue | Defect |
 |---|---|
 | #618 | Aggregate OOD over flat 5,120-byte buffer (doctrine §1.5ter) |
 | #619 | `forward_inverse_inner` flat `Linear(PANEL_DIM, hidden)` projections (doctrine §1.5ter) |
 | #621 | Hardcoded `gtau_pass_rate: 1.0` to weekly dashboard |
-| #670 | Invalid forward-cache spaces `e2/e3/e4/e8` |
+| #704/#714 | `e2/e3/e4` retired for static AST; closed evidence, not active blocker |
+| #709/#715 | Active static-cache rebuild must prove inter-embedder distinctness and post-fix `e8` independence |
 
 ---
 
@@ -54,10 +55,10 @@ The corpus survives. The pre-fix measurement does not. Post-fix real-input rebas
 
 | Metric | Target | Latest measurement | Status |
 |---|---|---|---|
-| `prediction_oracle_correlation` (raw Pearson) | ≥ 0.95 stable × 4 rolling windows × all Python mutation cells | **`0.4843192995`** | **Honest model-output baseline. Gap = `0.4657`.** Training/checkpoint lineage not countable through public trainer (#683); 4/12 embedder slots dead (#670, #704); rank-lift composite metric not gate-eligible (#695). |
+| `prediction_oracle_correlation` (raw Pearson) | ≥ 0.95 stable × 4 rolling windows × all Python mutation cells | **`0.4843192995`** | **Honest model-output baseline. Gap = `0.4657`.** Training/checkpoint lineage not countable through public trainer (#683); legacy v1 cache invalid for four declared spaces, with static temporal slots now retired and v2 9-slot rebuild pending (#704/#714/#709/#715); rank-lift composite metric not gate-eligible (#695). |
 | `prediction_oracle_correlation` (rank-safe) | (diagnostic only) | `0.6916886568` | Monotonic recalibration. |
 | `prediction_oracle_correlation` (rank-lift) | (NOT gate-eligible per #695) | `0.7942190170` | Category-local RBF exemplar similarity over calibration split. Lifts raw `+0.31` without improving Brier/ECE. Measures exemplar similarity, not predictor. #535/#536 lift came from this transform, not from the model. |
-| Cross-panel oracle correlation (Panel B) | ≥ 0.95 with `\|corr_a − corr_b\| ≤ 0.05` | Panel B active-surface parity on #392 205-row subset: `corr_A=0.9526342154`, `corr_B=0.9902423024`, `\|Δ\|=0.0376080871` | Comparable #405/#521 only on active subset (selection bias #692). Full Panel B blocked behind #683 + #670. |
+| Cross-panel oracle correlation (Panel B) | ≥ 0.95 with `\|corr_a − corr_b\| ≤ 0.05` | Panel B active-surface parity on #392 205-row subset: `corr_A=0.9526342154`, `corr_B=0.9902423024`, `\|Δ\|=0.0376080871` | Comparable #405/#521 only on active subset (selection bias #692). Full Panel B blocked behind #683 + clean v2 static cache (#709/#715). |
 | `mistake_repeat_rate` | ≤ 0.05 (rolling 100-mistake window) | byte-readable via `mejepa_mistake_loop_status` | Mistake-loop LUT inert because `protection_mode=ExactPanelKeyIsolation` keyed on exact panel-signature hash (#689). Production panels almost never collide. |
 
 **Honest gap to ship:** `0.4657` against raw Pearson. The previously-claimed `0.1558` gap was against rank-lift, which is not the predictor. Pre-fix `0.866667` (synthetic-vector evidence) remains invalid.
@@ -194,7 +195,7 @@ All under `fsv/task-py-g-392-temporal-trajectory-features-fsv/` unless noted. Al
 | #631 | Canonicalize or guard forward-cache packed-record lineage metadata |
 | #632 | Forward-cache checkpoint/shard-plan retain legacy `/mnt/d` smoke-manifest metadata |
 | #641 | Active embedder outputs, packed cache, quarantine semantics |
-| #666 | P0 forward-cache embedder vector-space collapse before label discovery (closed; **led to #670: regenerate `e2/e3/e4/e8`**) |
+| #666 | P0 forward-cache embedder vector-space collapse before label discovery (closed; led to #670/#704/#714 decisions and #709/#715 v2-cache follow-up) |
 | #667 | Scrub geometry label root live-input policy for duplicate/degenerate spaces |
 | #668 | P0 check in reproducible geometry-label atlas materializer |
 | #669 | `swebench_lite_ops` CLI module invocation exited 0 without running |
@@ -320,7 +321,8 @@ Active Python ship-gate data:
 | 300×8 SWE-bench Lite Python corpus + oracle labels | `/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-<TS>/index.json` | 2,400 entries; `oracle_all_passed` is label source |
 | AST chunk store | `/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl` | Chunk metadata, stable row keys; active source paths canonicalized by #613 |
 | AST chunk source files | `/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/source-files-300x8-20260515T013205Z/` | aiwonder-native source bytes; 4,224 files / 148,346,301 bytes |
-| Full packed embedder forward cache | `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-<TS>/` | 391 completed shards; per-shard packed manifests; 12 active embedders |
+| Historical v1 packed embedder forward cache | `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-<TS>/` | 391 completed shards; per-shard packed manifests; retained as evidence only because `e2/e3/e4` collapsed and legacy `e8` aliased to `e1` |
+| Planned v2 static AST packed forward cache | `/zfs/archive/contextgraph/corpus/python-forward-cache-v2-static-ast-<TS>/` | #715 output; 9 active static slots `e1,e6,e7,e8,e9,e10,e12,e13,e14`; promotion requires #709 distinctness proof |
 | Forward-cache slot-completeness mask | `/zfs/archive/contextgraph/state/forward-cache-completeness/task-py-g-135b-forward-cache-slot-completion-v1/forward_cache_slot_completeness_mask.jsonl` | #614 output; 399,777 rows; prevents incomplete rows from being treated as complete all-pair constellations |
 | Delete-test-call regeneration candidates | `/zfs/archive/contextgraph/state/regeneration-plans/task-py-g-135c-delete-test-call-regeneration-v1/delete_test_call_regeneration_candidates.jsonl` | #615 output; 1,131 deterministic candidates awaiting Docker oracle |
 | Cross-embedder constellation tensor store | `/zfs/archive/contextgraph/corpus/constellation-tensors-v1/` | #388: slot/pairwise tensors |
@@ -374,9 +376,9 @@ Best-of-K papers over an under-trained predictor by spending compute at inferenc
 
 Most important audit finding: **return values lie**. Across 15 distinct surfaces (memory mutation, MCP eval-run, store_memory, optimizer witness verify, stop self-verify, oracle verdict CFs, etc. — see §2.0), code paths returned `success`/`passed=true`/exit-0 without performing work or after partial write failures. Universal counter-evidence for FSV doctrine: *"a return value is a claim, the source of truth is the verdict."* Fixes shipped; operational implication (#655): auto-FSV harnesses also tend toward silent-success and must be retired in favour of manual SoT readback.
 
-### 5.7 Forward-cache embedder collapse (#666 → #670)
+### 5.7 Forward-cache embedder collapse (#666 → #670/#704/#714 → #709/#715)
 
-Sherlock substrate-side finding: **forward cache contains invalid vector spaces in `e2`, `e3`, `e4`, `e8`**. #666 closed acknowledging collapse; #670 is follow-up to regenerate-or-retire. Until #670 closes, any predictor evidence riding those embedders is suspect. #657 per-embedder geometry-label bakeoff is the response: discover what each embedder's vector space actually contains *before* claiming it provides predictor signal.
+Sherlock substrate-side finding: **legacy v1 forward cache contains invalid vector spaces in `e2`, `e3`, `e4`, `e8`**. #670/#704/#714 closed the policy decision: `e2/e3/e4` are retired for static AST corpora rather than regenerated from non-semantic timestamps. Remaining active work is #709/#715: add/promote an inter-embedder distinctness gate and rebuild a clean v2 9-slot static AST cache proving post-`ff4d4c03` `e8` is not an `e1` alias. #657 per-embedder geometry-label bakeoff stays dependent on the admissibility/distinctness policy before any labels become predictor features.
 
 ### 5.8 Connectome topology features are diagnostic-only (#513 / #527)
 

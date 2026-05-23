@@ -1,6 +1,6 @@
 # 01 — System Overview
 
-**Status:** Phase G in flight. **Critical path replaced 2026-05-23** by 3-Sherlock audit (#712 pinned). Public trainer/checkpoint lineage not countable (#683); 4/12 embedder slots dead (#670/#704); rank-lift not gate-eligible (#695). Honest gap against raw Pearson = `0.4657`. **#633 hardening gate still active** (children #634-#651); #392/#511/#405/#379 blocked behind new chain. Phases A-F + H code/FSV-shipped. #372 aiwonder ZFS root migration CLOSED 2026-05-22.
+**Status:** Phase G in flight. **Critical path replaced 2026-05-23** by 3-Sherlock audit (#712 pinned). Public trainer/checkpoint lineage not countable (#683); the legacy forward cache contained invalid slots, with `e2/e3/e4` now retired for static AST by #704/#714 and v2 9-slot rebuild tracked by #709/#715; rank-lift not gate-eligible (#695). Honest gap against raw Pearson = `0.4657`. **#633 hardening gate still active** (children #634-#651); #392/#511/#405/#379 blocked behind new chain. Phases A-F + H code/FSV-shipped. #372 aiwonder ZFS root migration CLOSED 2026-05-22.
 
 See `README.md ⚠ 2026-05-23 Sherlock audit` (new critical path), `08 §3.−1` (replaces §3.0), `07 §2.0` (5-Sherlock closure index), `07 §2.0a` (3-Sherlock 2026-05-23 audit), `06 §1.9` (manual-SoT contract).
 
@@ -67,7 +67,7 @@ Latest ship-gate FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv
 | Layer | Defect | Issue |
 |---|---|---|
 | Predictor head | Public `Trainer::run_full_training` is hard-coded `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE`; latest aiwonder FSV loaded `/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv/best.manifest.json` (`optimizer_steps=64`, `weight_delta_observed=true`), but that training/export path is out-of-band from the trainer contract and compiler construction must fail closed without an explicit manifest | #683 |
-| Substrate | `e2/e3/e4` collapsed to 1 unique vector each (root cause: `chunk.time` wall-clock injection at `python_forward_cache_fsv.rs:2308` identical for all 399,777 chunks → constant sinusoidal-PE output); `e8` byte-identical to `e1` (graph projection bug fixed in commit `ff4d4c03`; prod corpus generated 7d before fix) | #704, #670 |
+| Substrate | Legacy v1 forward cache had `e2/e3/e4` collapsed to 1 unique vector each and `e8` byte-identical to `e1`. #704/#714 retire `e2/e3/e4` for static AST; #709/#715 must prove active-slot distinctness and rebuild a v2 9-slot static cache with post-`ff4d4c03` `e8`. | #704, #714, #709, #715 |
 | Gate metric | Rank-lift exemplar similarity displaces real predictor output as the gate measurement; the +0.31 lift does nothing for Brier/ECE because exemplar similarity is not a predictor | #695 |
 
 **Substrate-side carries also:** #618 flat-buffer OOD path + #619 flat panel projections (both doctrine §1.5ter violations).
@@ -330,12 +330,13 @@ Q4 heads remain in schema + CFs (`CF_MEJEPA_Q4_*`) as **frozen historical displa
 
 ### 1.6bis 2026-05-23 3-Sherlock audit — measurement decomposed, critical path replaced
 
-3-Sherlock parallel forensic audit dispatched 2026-05-23 (reports `docs/SHERLOCK_{PREDICTOR,SUBSTRATE,INFRA}_FINDINGS_2026-05-22.md`) filed 29 new issues (#683-#711). Headline: `0.7942190170` rank-lift decomposes into untrained predictor + 4/12 dead embedder slots + Goodhart-magnifier metric. New pinned context **#712** carries the new ordered critical path:
+3-Sherlock parallel forensic audit dispatched 2026-05-23 (reports `docs/SHERLOCK_{PREDICTOR,SUBSTRATE,INFRA}_FINDINGS_2026-05-22.md`) filed 29 new issues (#683-#711), followed by #714/#715 after the static-AST temporal decision. Headline: `0.7942190170` rank-lift decomposes into trainer/checkpoint lineage gap + invalid legacy forward-cache slots + Goodhart-magnifier metric. New pinned context **#712** carries the new ordered critical path:
 
 ```
-#683 (trainer) → #670+#704 (embedders) → #615 (delete_test_call) →
-#618+#619 (doctrine) → #691 (hook fail-closed) → #695 (drop rank-lift) →
-#685/#687/#688/#690/#707 (kill hardcoded telemetry) → resume #392/#511/#405/#379
+#683 (trainer) → #709+#715 (v2 9-slot cache) → #615 (delete_test_call) →
+#618+#619 (doctrine) → #695 (drop rank-lift) →
+#685/#687/#688/#690/#684/#689/#699 (kill hardcoded/no-op telemetry) →
+resume #392/#511/#405/#379
 ```
 
 Each rank with file:line evidence + expected impact in #712 body. Boundary preserved: binary contract, slot identity, Q4 freeze, ambiguity boundary, reality-boundary deny-list all intact.
@@ -346,7 +347,7 @@ Each rank with file:line evidence + expected impact in #712 body. Boundary prese
 
 Per **#655** (retire Rust FSV examples → manual SoT guidance, in-progress p0), auto-FSV `*_fsv.rs` harnesses are being retired. Any ship-gate-relevant evidence must come from manual operator-driven SoT readback per `06 §1.9`.
 
-**P0 doctrine-violation defects (open, gate-blocking):** #618, #619, #621, #670 (see README ⚠).
+**P0 doctrine/substrate defects (open, gate-blocking):** #618, #619, #621, #709, #715 (see README ⚠). #670/#704/#714 are closed prerequisite evidence.
 
 **Substrate audit chain (data-substrate completion, 2026-05-22):** #612 → #613 (active source-lineage canonicalized; `0` `/mnt/d` hits) → #614 (forward-cache slot-completeness mask: 378,444 full 12-slot rows + 20,706 partial + 627 zero-slot) → #615 (delete-test-call regeneration: 1,131 deterministic candidates, in-progress) → #616 (weak-cell oracle reruns, open) → #631/#632/#641/#666/#667/#668 (closed).
 

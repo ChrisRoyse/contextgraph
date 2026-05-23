@@ -8,7 +8,7 @@ Privileged credentials are managed outside this repo (Infisical/operator env). N
 >
 > **Last verified against live host:** 2026-05-22 for ContextGraph storage topology and env/tooling paths. #372 is resolved: the canonical ContextGraph roots now mount from dedicated aiwonder ZFS datasets (`archive/contextgraph` and `hotpool/contextgraph`). Verify before relying on any claim.
 >
-> **⚠ 2026-05-23 Sherlock audit caveat.** The forward cache at `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z` (referenced throughout §4) is **partially broken**: `e2/e3/e4` slots are collapsed to 1 unique vector each (root cause: `chunk.time` wall-clock injection at `python_forward_cache_fsv.rs:2308` identical for all 399,777 chunks → constant sinusoidal-PE output) and `e8` is byte-identical to `e1` (graph projection bug fixed in commit `ff4d4c03` on 2026-05-22; this corpus was generated 7 days earlier). Tracked as #704 + #670. Regeneration is rank 2 of the #712 critical path. **Do not derive new gate-relevant labels or panels from `e2/e3/e4/e8` columns of this cache.** See `docs/futurebuild/05_predictor_pipeline.md §0b` for the full embedder-substrate defect table.
+> **⚠ 2026-05-23 Sherlock audit caveat.** The forward cache at `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z` (referenced throughout §4) is **partially broken**: `e2/e3/e4` slots are collapsed to 1 unique vector each (root cause: `chunk.time` wall-clock injection at `python_forward_cache_fsv.rs:2308` identical for all 399,777 chunks → constant sinusoidal-PE output) and `e8` is byte-identical to `e1` (graph projection bug fixed in commit `ff4d4c03` on 2026-05-22; this corpus was generated 7 days earlier). #704/#714 closed the static-AST policy by retiring `e2/e3/e4` for static chunks. Rank 2 of the #712 critical path is now #709/#715: add/promote an inter-embedder distinctness gate and rebuild a v2 static AST cache with 9 active slots. **Do not derive new gate-relevant labels or panels from `e2/e3/e4/e8` columns of the legacy v1 cache.** See `docs/futurebuild/05_predictor_pipeline.md §0b` for the full embedder-substrate defect table.
 >
 > **EVERYTHING FOR THIS SYSTEM IS RUNNING AND SHOULD ALL BE RUNNING ON AIWONDER DATACENTER PC. everything gets stored there, all fsv ran there, whole system runs and works over there. ensure that is where all the work is happening, is on the aiwonder datacenter pc.
 ---
@@ -154,7 +154,7 @@ The hot-stage scratch (`/home/croyse/.cache/contextgraph/...`) replaces the WSL 
 | `leapable-tei-reranker` (gte-reranker) | ~1 GB |
 | MPS context + driver overhead | ~0.2 GB |
 | **Resident leapable VRAM ceiling** | **~3.5 GB** |
-| ContextGraph all 12 active embedders loaded (E1/E6/E7/E8/E9/E10/E12/E13/E14 + E2/E3/E4 algorithmic + GPU buffers) | **~6.5 GB** if everything in-process |
+| ContextGraph static AST active embedders loaded (E1/E6/E7/E8/E9/E10/E12/E13/E14 + GPU buffers; legacy E2/E3/E4 temporal slots retired for static AST by #704/#714) | **~6.5 GB upper-bound** if everything in-process |
 | Per-isolated-subprocess peak (single embedder + CUDA ctx + activations) | ~3.5 GB |
 
 **Budget:** with leapable holding ~3.5 GB and ContextGraph running parallel-isolated at 6 concurrent embedder subprocesses (`CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS=6` × 3.5 GB = ~21 GB), total ~24.5 GB of 32 GB used. **~8 GB headroom** for buffers and any transient spikes. Safe.
@@ -327,33 +327,29 @@ Issue `#308` fixed the parallel-isolated packed-record consolidation path and ve
 
 Do **not** relaunch the production corpus run into parallel mode after a single smoke. The `#308` handoff requires parallel=6 to pass end-to-end at least three times on different shards before prod cutover.
 
-### 4.4 Forward-cache regeneration required (#704 / #670, rank 2 of #712)
+### 4.4 Forward-cache v2 rebuild required (#709 / #715, rank 2 of #712)
 
 The 2026-05-15 prod forward cache has two defects discovered by the 2026-05-23 Sherlock substrate audit:
 
-| Slot | Defect | Root cause | Fix |
+| Slot | Defect | Root cause | Current policy / fix |
 |---|---|---|---|
-| `e2` / `e3` / `e4` | Collapsed to 1 unique vector each across all 399,777 chunks | `python_forward_cache_fsv.rs:2308` injects `format!("timestamp:{}\n{}", chunk.time, chunk.source_text)` where `chunk.time` is the AST-chunker's wall-clock run time (identical for every chunk in a run) → constant sinusoidal-PE output | Replace `chunk.time` injection with a semantic time field per #708; OR drop the timestamp prefix entirely if the temporal embedders should use position only |
-| `e8` | Byte-identical to `e1` | `GraphModel::embed_batch()` in `crates/context-graph-embeddings/src/models/pretrained/graph/model.rs` missing `project_source_vector` call | Fixed in commit `ff4d4c03` (2026-05-22); just needs the corpus regenerated against current `HEAD` |
+| `e2` / `e3` / `e4` | Collapsed to 1 unique vector each across all 399,777 chunks | `python_forward_cache_fsv.rs:2308` injected `format!("timestamp:{}\n{}", chunk.time, chunk.source_text)` where `chunk.time` is the AST-chunker's wall-clock run time (identical for every chunk in a run) → constant sinusoidal-PE output | #704/#714 retire temporal embedders for `static_ast_python`; they remain available only in a future live-temporal profile with real semantic time |
+| `e8` | Byte-identical to `e1` in v1 | `GraphModel::embed_batch()` in `crates/context-graph-embeddings/src/models/pretrained/graph/model.rs` missing `project_source_vector` call | Fixed in commit `ff4d4c03` (2026-05-22); #715 rebuild must prove post-fix `e8` is distinct from `e1` before promotion |
 
-**Before regeneration, write the chunker fix per #708 + #704 then re-verify with a single-shard FSV that asserts inter-embedder distinctness (per #709 gate)** — this gate is what would have caught `e8 ≡ e1` and the `e2/e3/e4` rank-1 collapse before they shipped 391 shards.
+**Before promotion, #709 must assert inter-embedder distinctness for the active static slots** — this gate is what would have caught `e8 ≡ e1` and the `e2/e3/e4` rank-1 collapse before they shipped 391 shards.
 
-Regeneration command (placeholder pending #708 fix landing):
+V2 static-cache smoke command (placeholder pending #709 implementation):
 
 ```bash
-# Verify the fix landed
-contextgraph-shell 'rg -n "chunk.time" crates/context-graph-mejepa-embedders/examples/python_forward_cache_fsv.rs'
-# Should return zero or only legacy_provenance_* references
-
-# Single-shard smoke with inter-embedder distinctness gate (#709)
+# Single-shard smoke with inter-embedder distinctness gate (#709) and 9 active static slots (#715)
 contextgraph-shell '/zfs/hot/contextgraph/venv/bin/python3 \
   "$CG_REPO/scripts/swebench_lite_ops/python_forward_shard_scheduler.py" \
-  --task-id TASK-PY-G-704-REGEN-SMOKE \
+  --task-id TASK-PY-G-715-V2-STATIC-SMOKE \
   --shard-count 1 ... \
   --cargo-runner "$CG_REPO/target/release/examples/python_forward_cache_fsv"'
 ```
 
-Until #683 wires a real trainer (rank 1 of #712), regeneration only buys substrate honesty — predictor improvement requires both. After #683 + #704/#670 + #615 close, this corpus directory is replaced and the older path becomes legacy.
+Until #683 wires countable trainer/checkpoint lineage (rank 1 of #712), the v2 cache only buys substrate honesty — predictor improvement requires both. After #683 + #709/#715 + #615 close, the v2 corpus directory becomes the static AST production substrate and the older v1 path remains legacy evidence.
 
 ### 4.5 First-shard speedup data (2026-05-15)
 
@@ -398,11 +394,12 @@ Current corrective work after the #363 storage decision:
 | Issue | Action | aiwonder impact |
 |---|---|---|
 | #683 | Wire real trainer + production `trained_checkpoint_manifest_path` | Trained checkpoints land at `/zfs/archive/contextgraph/state/predictor-checkpoints/...` (paths TBD per #683 design) |
-| #704 + #670 | Fix `chunk.time` injection at `python_forward_cache_fsv.rs:2308`; regenerate `e2/e3/e4/e8` against `HEAD` (post `ff4d4c03`) | New forward cache root replaces `python-forward-cache-v1-aiwonder-prod-20260515-191116Z`; old root becomes legacy |
-| #708 | Replace non-semantic `chunk.time` with semantic time | Substrate-side fix; same chunker rerun as #704 |
-| #709 | Inter-embedder distinctness FSV gate | Single-shard FSV must assert `vector_sha256(e_i) ≠ vector_sha256(e_j)` for all `i ≠ j`; would have caught `e8 ≡ e1` |
+| #704/#714 | Retire `e2/e3/e4` for static AST corpora | Closed policy/evidence; temporal embedders require a future live-temporal profile with semantic time |
+| #709 | Inter-embedder distinctness FSV gate | Single-shard FSV must assert active slots have non-degenerate vector sets and no alias-level pairwise Jaccard |
+| #715 | Rebuild v2 static AST forward cache | New root under `/zfs/archive/contextgraph/corpus/python-forward-cache-v2-static-ast-<timestamp>/`; old v1 root remains legacy evidence |
+| #708 | Replace non-semantic `chunk.time` with semantic time | P2 live-temporal prerequisite; not part of the static AST v2 rebuild |
 | #615 | Docker oracle batch over 1,131 deterministic `delete_test_call` candidates | Aiwonder Docker pool runs the batch; outputs at `/zfs/archive/contextgraph/state/regeneration-plans/task-py-g-135c-...` |
-| #691 | Hook scripts exit non-zero on capture failure | `scripts/cc/hook_*.sh` writes to `/zfs/archive/contextgraph/runtime/shift-log.jsonl`; current exit-0-on-failure silently degrades Q5 |
+| #691 | Hook scripts exit non-zero on capture failure | Closed; `scripts/cc/hook_*.sh` writes to `/zfs/archive/contextgraph/runtime/shift-log.jsonl` and capture failures are now visible |
 
 ---
 

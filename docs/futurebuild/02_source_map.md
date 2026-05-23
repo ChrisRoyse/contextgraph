@@ -15,7 +15,7 @@
 | #626 | `config/retention_policy.toml` + `crates/context-graph-mejepa-hygiene/` | Default policy missing ~90 CFs |
 | #627 | `crates/context-graph-mejepa-shift-subscriber/src/runner.rs` | `run_until_idle_consumes_jsonl` test fails on main (missing TCT centroid scaffold) |
 | #628 | `crates/context-graph-mejepa-tct/src/gtau.rs` vs docs | Error string drift: docs `MEJEPA_TCT_DIM_MISMATCH` vs emitted `MEJEPA_INFER_DIM_MISMATCH` |
-| #670 | `crates/context-graph-mejepa-embedders/` `e2/e3/e4/e8` adapters | Forward-cache embedder vector-space collapse — regenerate or retire |
+| #670/#704/#714 | `crates/context-graph-mejepa-embedders/` static AST profiles | Legacy v1 cache invalidated by collapsed `e2/e3/e4` and `e8 ≡ e1`; static AST policy now retires temporal `e2/e3/e4` and requires v2 rebuild via #709/#715 |
 
 **Operational change (#655, in-progress p0):** the `crates/*/examples/*_fsv.rs` ecosystem is being retired in favour of manual operator-driven SoT readback (per `06 §1.9`). The 210 example FSVs in §9 remain for forensic reference.
 
@@ -30,9 +30,9 @@
 | `crates/context-graph-mejepa/src/compiler.rs::vectors_for` | SHA256-seeded synthetic vectors | Replaced by `build_inference_panel_inputs` calling real `E*Instrument` encoders (commit `e2c51669`) |
 | `crates/context-graph-mejepa/src/project_cache.rs` | Wrote `deterministic_vector_blob` as embeddings | Fails closed (commit `5330629e`) |
 | `crates/context-graph-mejepa/src/predictor_checkpoint.rs` | Accepted `MEJEPA_BEST_STUB_V1` text-stubs | Rejects at load + export (`:147-158, 239-250`) |
-| `crates/context-graph-mejepa-train` | No real predictor weight optimization | Now owns real `MeJepaPredictor` weights; exports manifest-verified checkpoints (commit `db83923a`) |
+| `crates/context-graph-mejepa-train` | No real predictor weight optimization | #441 claim is superseded by #683: latest aiwonder FSV loaded an out-of-band trained checkpoint, but the public Rust trainer remains certificate-only until #683 closes |
 
-**`crates/context-graph-mejepa-embedders/` forward-cache pipeline was unaffected** — fail-closed guards in `src/forward.rs:122,207,349,422` ("no deterministic vector fallback is permitted") prevented contamination.
+**`crates/context-graph-mejepa-embedders/` forward-cache pipeline was unaffected by synthetic-vector fallback** — fail-closed guards in `src/forward.rs:122,207,349,422` ("no deterministic vector fallback is permitted") prevented that contamination. Separate 2026-05-23 substrate forensics still invalidated the v1 cache because specific declared spaces collapsed or aliased.
 
 See `01 §1.7` for forensic and `08 §0.5` for rebaseline blocker.
 

@@ -6,7 +6,7 @@
 
 ## 0b. ⚠ 2026-05-23 3-Sherlock audit — pipeline reality
 
-The pipeline downstream of the embedders currently rests on a split training story: the in-repo Rust `Trainer` is certificate-only, while the latest aiwonder ship-gate FSV loaded an out-of-band task-py-g-127 checkpoint (`optimizer_steps=64`, `weight_delta_observed=true`). That checkpoint is not produced by the public `Trainer` API and is not countable under the trainer's own `trained_predictor` / `ship_gate_countable_training` contract. Combined with 4/12 dead embedder slots, the `0.7942190170` rank-lift measurement is gate-metric Goodhart, not a clean predictor evaluation. See #712 (pinned context) and `docs/SHERLOCK_{PREDICTOR,SUBSTRATE,INFRA}_FINDINGS_2026-05-22.md`.
+The pipeline downstream of the embedders currently rests on a split training story: the in-repo Rust `Trainer` is certificate-only, while the latest aiwonder ship-gate FSV loaded an out-of-band task-py-g-127 checkpoint (`optimizer_steps=64`, `weight_delta_observed=true`). That checkpoint is not produced by the public `Trainer` API and is not countable under the trainer's own `trained_predictor` / `ship_gate_countable_training` contract. Combined with an invalid legacy v1 forward cache (`e2/e3/e4` collapsed; `e8` aliased to `e1` before `ff4d4c03`), the `0.7942190170` rank-lift measurement is gate-metric Goodhart, not a clean predictor evaluation. See #712 (pinned context) and `docs/SHERLOCK_{PREDICTOR,SUBSTRATE,INFRA}_FINDINGS_2026-05-22.md`.
 
 **Predictor-head defects:**
 
@@ -19,17 +19,17 @@ The pipeline downstream of the embedders currently rests on a split training sto
 | **#689** | mistake loop | `online_head_state.rs` | LUT keyed on exact panel-signature hash; `protection_mode=ExactPanelKeyIsolation`; production panels almost never collide → LUT inert |
 | **#699** | confidence | `compiler.rs` | `calibrated_confidence_multiplier` derived from pseudo-certificates rather than real learning signal |
 
-**Embedder-substrate defects (4 of 12 active slots dead):**
+**Embedder-substrate defects (legacy v1 cache invalid; static policy now 9 active slots):**
 
 | Issue | Slot | Root cause | Symptom |
 |---|---|---|---|
-| **#704** | `e2`, `e3`, `e4` | `chunk.time` wall-clock injection at `python_forward_cache_fsv.rs:2308` identical for all 399,777 chunks | Constant sinusoidal-PE output; 1 unique vector per slot |
-| **#704** | `e8` | `GraphModel::embed_batch()` missing `project_source_vector` call before commit `ff4d4c03` (2026-05-22); prod corpus generated 7 days earlier | Byte-identical to `e1`; full 1024-float equality; identical `vector_sha256` |
+| **#704/#714** | `e2`, `e3`, `e4` | `chunk.time` wall-clock injection at `python_forward_cache_fsv.rs:2308` was identical for all 399,777 chunks | Closed by retiring temporal embedders for static AST corpora; live-temporal profile remains separate |
+| **#709/#715** | `e8` | Legacy v1 cache predates `ff4d4c03` graph batch projection fix | v2 static cache must prove `e8` vector-hash set is distinct from `e1` before promotion |
 | **#705** | distill / heal | cross-embedder InfoNCE without slot-identity preservation | Doctrine §1.5ter violation in distillation path |
 | **#706** | latent search | cross-embedder delta computation | Compares across non-comparable coordinate systems |
 | **#709** | FSV gate | absence of inter-embedder distinctness check | Allowed `e8 ≡ e1` collapse to ship undetected |
 | **#710** | `PanelBuilder` | accepts degenerate slot vectors | Should fail-closed on rank-1 / variance-0 slot input |
-| **#670** | overall | regenerate/retire `e2/e3/e4/e8` before any geometry-label promotion | Substrate-level rebuild |
+| **#715** | overall | rebuild a clean v2 static AST cache with 9 active static slots after #709 distinctness gating | Substrate-level rebuild |
 
 **Gate-metric defect:**
 
@@ -49,9 +49,9 @@ The pipeline downstream of the embedders currently rests on a split training sto
 | #623 | `cold_start_conformal_policy` | Emits `alpha=0.0` (dead public API + landmine) |
 | #625 | `lib.rs` public re-exports | `DeterministicPredictor` publicly re-exported (synthetic-vector landmine post-#422) |
 
-**Pipeline implication.** Every #392 / #511 / #393 / #398 / #536 / #549 / #554 / #558 / #560 measurement to date measured (checkpoint-loaded but trainer-orphaned predictor) composed with (4/12 dead slots) and (exemplar-similarity Goodhart magnifier). Five #392 trajectory repairs hit ECE walls because they perturbed this composite, not because of proven calibration limits.
+**Pipeline implication.** Every #392 / #511 / #393 / #398 / #536 / #549 / #554 / #558 / #560 measurement to date measured (checkpoint-loaded but trainer-orphaned predictor) composed with the invalid legacy v1 cache and exemplar-similarity Goodhart magnifier. Five #392 trajectory repairs hit ECE walls because they perturbed this composite, not because of proven calibration limits.
 
-**Geometry-label epic (#657, blocked behind #670).** Per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Cannot ship until #670 resolves degenerate spaces.
+**Geometry-label epic (#657, blocked behind #709/#715).** Per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Cannot ship on the static AST corpus until the v2 9-slot cache proves inter-embedder distinctness and post-fix `e8` behavior.
 
 **Auto-FSV retirement (#655).** Predictor-pipeline FSV harnesses in §6/§7 retired. Manual operator-driven SoT readback (`06 §1.9`) is binding closeout.
 
@@ -83,7 +83,7 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, **inference path** in `crates/con
 - `trained_weight_sha256 != initial_weight_sha256` invariant on every manifest
 - ⚠ The invariant proves a loaded checkpoint changed weights; it does not prove the public Rust `Trainer` produced countable ship-gate training.
 
-**P0 blocker for further gate work:** training lineage/checkpoint loading is not unified or fail-closed (#683) and 4/12 embedder slots are dead (#670/#704). Real-input rebaseline exists but rides Goodhart-magnifier metric (#695). Latest ship-gate FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`: raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe `0.6916886568`, rank-lift `0.7942190170`, Brier `0.0923729688`, ECE `0.0240316074`.
+**P0 blocker for further gate work:** training lineage/checkpoint loading is not unified or fail-closed (#683), and the static AST substrate must be rebuilt from a distinctness-gated 9-slot policy (#709/#715) after #704/#714 retired temporal slots for static chunks. Real-input rebaseline exists but rides Goodhart-magnifier metric (#695). Latest ship-gate FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`: raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe `0.6916886568`, rank-lift `0.7942190170`, Brier `0.0923729688`, ECE `0.0240316074`.
 
 **#392 active/abstain diagnostic** is valid and promising: `205/240` active rows, corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978`. Not ship-gate-countable until per-cell active contracts, rolling windows, statistical power, Panel B pass. Previous `0.866667` ship-gate measurement remains invalidated. `compile_error` now uses first-class invalid-source panels instead of carrier workaround; rank-reversing calibration transforms blocked unless calibration support + raw Pearson justify them; rank-lift excludes target-side oracle/docker/test labels. See `01 §1.7` and `08 §0.5`.
 
