@@ -4,7 +4,8 @@
 //! them to floating-point embeddings for fusion.
 
 use super::encoding::{
-    char_hypervector, encode_text, position_hypervector, project_to_float, random_hypervector,
+    apply_text_identity_residual, char_hypervector, encode_text, position_hypervector,
+    project_to_float, random_hypervector,
 };
 use super::operations::{bind, bundle, hamming_distance, permute, similarity};
 use super::types::{Hypervector, DEFAULT_NGRAM_SIZE, DEFAULT_SEED, HDC_PROJECTED_DIMENSION};
@@ -207,7 +208,8 @@ impl EmbeddingModel for HdcModel {
         }
 
         let hypervector = self.encode_text(&text);
-        let vector = self.project_to_float(&hypervector);
+        let mut vector = self.project_to_float(&hypervector);
+        apply_text_identity_residual(&mut vector, self.seed, &text);
         self.validate_embedding(&vector)?;
 
         let latency_us = start.elapsed().as_micros() as u64;

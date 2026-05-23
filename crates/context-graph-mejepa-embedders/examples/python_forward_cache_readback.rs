@@ -161,8 +161,7 @@ async fn run() -> RunnerResult<()> {
     let mut all_quarantine_rows = Vec::new();
     let mut all_telemetry_rows = Vec::new();
     let mut per_embedder_coverage = BTreeMap::new();
-    let mut vector_hash_counts_by_embedder = BTreeMap::new();
-    let mut input_hash_counts_by_embedder = BTreeMap::new();
+    let mut distinctness_inputs_by_embedder = BTreeMap::new();
     let mut pending_embedder_records = Vec::new();
     let mut packed_per_embedder = BTreeMap::new();
     let mut first_pass_writes = 0usize;
@@ -198,13 +197,9 @@ async fn run() -> RunnerResult<()> {
                 all_quarantine_rows.push(quarantine.row);
             }
         }
-        vector_hash_counts_by_embedder.insert(
+        distinctness_inputs_by_embedder.insert(
             embedder.slug().to_string(),
-            vector_hash_counts_for_records(embedder, &embedder_records)?,
-        );
-        input_hash_counts_by_embedder.insert(
-            embedder.slug().to_string(),
-            input_hash_counts_for_records(embedder, &embedder_records)?,
+            distinctness_inputs_for_records(embedder, &embedder_records)?,
         );
         first_pass_writes += output_count;
         per_embedder_coverage.insert(
@@ -228,11 +223,8 @@ async fn run() -> RunnerResult<()> {
         .iter()
         .map(|embedder| embedder.slug().to_string())
         .collect();
-    let distinctness_report = evaluate_embedder_distinctness(
-        &active_embedder_ids,
-        &vector_hash_counts_by_embedder,
-        &input_hash_counts_by_embedder,
-    );
+    let distinctness_report =
+        evaluate_embedder_distinctness(&active_embedder_ids, &distinctness_inputs_by_embedder);
     merge_distinctness_metrics(&mut per_embedder_coverage, &distinctness_report);
     if !distinctness_report.passes() {
         write_distinctness_failure_artifacts(
@@ -1057,11 +1049,19 @@ fn write_packed_embedder_records(
     Ok((packed, top_index_rewrites))
 }
 
-fn vector_hash_counts_for_records(
+#[derive(Clone, Debug, Default)]
+struct EmbedderDistinctnessInputs {
+    vector_counts: BTreeMap<String, usize>,
+    input_counts: BTreeMap<String, usize>,
+    input_to_vectors: BTreeMap<String, BTreeSet<String>>,
+    vector_to_inputs: BTreeMap<String, BTreeSet<String>>,
+}
+
+fn distinctness_inputs_for_records(
     embedder: EmbedderId,
     records: &[ForwardRecord],
-) -> RunnerResult<BTreeMap<String, usize>> {
-    let mut counts = BTreeMap::new();
+) -> RunnerResult<EmbedderDistinctnessInputs> {
+    let mut inputs = EmbedderDistinctnessInputs::default();
     for record in records {
         let vector_sha = record
             .index_row
@@ -1074,17 +1074,6 @@ fn vector_hash_counts_for_records(
                     format!("{} forward record missing vector_sha256", embedder.slug()),
                 )
             })?;
-        *counts.entry(vector_sha.to_string()).or_insert(0) += 1;
-    }
-    Ok(counts)
-}
-
-fn input_hash_counts_for_records(
-    embedder: EmbedderId,
-    records: &[ForwardRecord],
-) -> RunnerResult<BTreeMap<String, usize>> {
-    let mut counts = BTreeMap::new();
-    for record in records {
         let input_sha = record
             .index_row
             .get("source_sha256")
@@ -1096,32 +1085,60 @@ fn input_hash_counts_for_records(
                     format!("{} forward record missing source_sha256", embedder.slug()),
                 )
             })?;
-        *counts.entry(input_sha.to_string()).or_insert(0) += 1;
+        *inputs
+            .vector_counts
+            .entry(vector_sha.to_string())
+            .or_insert(0) += 1;
+        *inputs
+            .input_counts
+            .entry(input_sha.to_string())
+            .or_insert(0) += 1;
+        inputs
+            .input_to_vectors
+            .entry(input_sha.to_string())
+            .or_default()
+            .insert(vector_sha.to_string());
+        inputs
+            .vector_to_inputs
+            .entry(vector_sha.to_string())
+            .or_default()
+            .insert(input_sha.to_string());
     }
-    Ok(counts)
+    Ok(inputs)
 }
 
 fn evaluate_embedder_distinctness(
     active_embedder_ids: &[String],
-    vector_hash_counts_by_embedder: &BTreeMap<String, BTreeMap<String, usize>>,
-    input_hash_counts_by_embedder: &BTreeMap<String, BTreeMap<String, usize>>,
+    inputs_by_embedder: &BTreeMap<String, EmbedderDistinctnessInputs>,
 ) -> DistinctnessReport {
     let mut per_embedder_metrics = BTreeMap::new();
     let mut collapse_failures = Vec::new();
     let mut vector_hash_sets = BTreeMap::new();
 
     for embedder_id in active_embedder_ids {
-        let counts = vector_hash_counts_by_embedder
+        let inputs = inputs_by_embedder
             .get(embedder_id)
             .cloned()
             .unwrap_or_default();
-        let input_counts = input_hash_counts_by_embedder
-            .get(embedder_id)
-            .cloned()
-            .unwrap_or_default();
+        let counts = &inputs.vector_counts;
+        let input_counts = &inputs.input_counts;
         let row_count: usize = counts.values().sum();
         let unique_count = counts.len();
         let unique_input_count = input_counts.len();
+        let input_with_multiple_vectors_count = inputs
+            .input_to_vectors
+            .values()
+            .filter(|vectors| vectors.len() > 1)
+            .count();
+        let vector_collision_group_count = inputs
+            .vector_to_inputs
+            .values()
+            .filter(|source_inputs| source_inputs.len() > 1)
+            .count();
+        let vector_collision_unique_inputs = vector_collision_unique_inputs(&inputs);
+        let vector_collision_unique_input_count = vector_collision_unique_inputs.len();
+        let non_colliding_unique_input_count =
+            unique_input_count.saturating_sub(vector_collision_unique_input_count);
         let distinctness_fraction = if row_count == 0 {
             0.0
         } else {
@@ -1137,10 +1154,15 @@ fn evaluate_embedder_distinctness(
         } else {
             unique_count.min(unique_input_count) as f64 / unique_input_count as f64
         };
+        let non_colliding_unique_input_fraction = if unique_input_count == 0 {
+            0.0
+        } else {
+            non_colliding_unique_input_count as f64 / unique_input_count as f64
+        };
         let duplicate_bounded_usable = unique_input_count
             >= MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
-            && unique_vector_per_unique_input_fraction
-                >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION;
+            && input_with_multiple_vectors_count == 0
+            && non_colliding_unique_input_fraction >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION;
         let status = if distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION {
             "usable"
         } else if duplicate_bounded_usable {
@@ -1156,9 +1178,15 @@ fn evaluate_embedder_distinctness(
             "unique_input_sha256_count": unique_input_count,
             "input_distinctness_fraction": input_distinctness_fraction,
             "unique_vector_per_unique_input_fraction": unique_vector_per_unique_input_fraction,
+            "input_with_multiple_vectors_count": input_with_multiple_vectors_count,
+            "vector_collision_group_count": vector_collision_group_count,
+            "vector_collision_unique_input_count": vector_collision_unique_input_count,
+            "non_colliding_unique_input_count": non_colliding_unique_input_count,
+            "non_colliding_unique_input_fraction": non_colliding_unique_input_fraction,
             "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
-            "top_vector_sha256_counts": top_vector_sha256_counts(&counts),
+            "top_vector_sha256_counts": top_vector_sha256_counts(counts),
+            "top_vector_collision_groups": top_vector_collision_groups(&inputs),
         });
         if status == "collapse" {
             collapse_failures.push(json!({
@@ -1171,8 +1199,14 @@ fn evaluate_embedder_distinctness(
                 "unique_input_sha256_count": unique_input_count,
                 "input_distinctness_fraction": input_distinctness_fraction,
                 "unique_vector_per_unique_input_fraction": unique_vector_per_unique_input_fraction,
+                "input_with_multiple_vectors_count": input_with_multiple_vectors_count,
+                "vector_collision_group_count": vector_collision_group_count,
+                "vector_collision_unique_input_count": vector_collision_unique_input_count,
+                "non_colliding_unique_input_count": non_colliding_unique_input_count,
+                "non_colliding_unique_input_fraction": non_colliding_unique_input_fraction,
                 "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
                 "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
+                "top_vector_collision_groups": top_vector_collision_groups(&inputs),
             }));
         }
         vector_hash_sets.insert(
@@ -1284,6 +1318,57 @@ fn write_distinctness_failure_artifacts(
     write_json(&cache_failure_path, &payload)?;
     write_json(&readback_failure_path, &payload)?;
     Ok(())
+}
+
+fn vector_collision_unique_inputs(inputs: &EmbedderDistinctnessInputs) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for source_inputs in inputs
+        .vector_to_inputs
+        .values()
+        .filter(|source_inputs| source_inputs.len() > 1)
+    {
+        for input_sha in source_inputs {
+            out.insert(input_sha.clone());
+        }
+    }
+    out
+}
+
+fn top_vector_collision_groups(inputs: &EmbedderDistinctnessInputs) -> Vec<Value> {
+    let mut rows: Vec<(&String, &BTreeSet<String>)> = inputs
+        .vector_to_inputs
+        .iter()
+        .filter(|(_, source_inputs)| source_inputs.len() > 1)
+        .collect();
+    rows.sort_by(|(left_vector, left_inputs), (right_vector, right_inputs)| {
+        right_inputs
+            .len()
+            .cmp(&left_inputs.len())
+            .then_with(|| {
+                inputs
+                    .vector_counts
+                    .get(*right_vector)
+                    .unwrap_or(&0)
+                    .cmp(inputs.vector_counts.get(*left_vector).unwrap_or(&0))
+            })
+            .then_with(|| left_vector.cmp(right_vector))
+    });
+    rows.into_iter()
+        .take(5)
+        .map(|(vector_sha256, source_inputs)| {
+            let row_count = inputs
+                .vector_counts
+                .get(vector_sha256)
+                .copied()
+                .unwrap_or_default();
+            json!({
+                "vector_sha256": vector_sha256,
+                "row_count": row_count,
+                "unique_input_sha256_count": source_inputs.len(),
+                "source_sha256_samples": source_inputs.iter().take(5).cloned().collect::<Vec<_>>(),
+            })
+        })
+        .collect()
 }
 
 fn top_vector_sha256_counts(counts: &BTreeMap<String, usize>) -> Vec<Value> {
@@ -1513,12 +1598,26 @@ mod tests {
         assert!(retired_embedders(&config).is_empty());
     }
 
-    fn counts(values: &[&str]) -> BTreeMap<String, usize> {
-        let mut out = BTreeMap::new();
-        for value in values {
-            *out.entry((*value).to_string()).or_insert(0) += 1;
+    fn distinctness_inputs_from_pairs(pairs: &[(&str, &str)]) -> EmbedderDistinctnessInputs {
+        let mut inputs = EmbedderDistinctnessInputs::default();
+        for (vector, input) in pairs {
+            *inputs
+                .vector_counts
+                .entry((*vector).to_string())
+                .or_insert(0) += 1;
+            *inputs.input_counts.entry((*input).to_string()).or_insert(0) += 1;
+            inputs
+                .input_to_vectors
+                .entry((*input).to_string())
+                .or_default()
+                .insert((*vector).to_string());
+            inputs
+                .vector_to_inputs
+                .entry((*vector).to_string())
+                .or_default()
+                .insert((*input).to_string());
         }
-        out
+        inputs
     }
 
     fn report_for_hashes(rows: &[(&str, Vec<&str>)]) -> DistinctnessReport {
@@ -1526,19 +1625,26 @@ mod tests {
             .iter()
             .map(|(embedder_id, _)| (*embedder_id).to_string())
             .collect::<Vec<_>>();
-        let mut by_embedder = BTreeMap::new();
-        let mut input_by_embedder = BTreeMap::new();
+        let mut inputs_by_embedder = BTreeMap::new();
         for (embedder_id, hashes) in rows {
-            by_embedder.insert((*embedder_id).to_string(), counts(hashes));
-            let input_hashes = hashes
+            let pairs = hashes
                 .iter()
                 .enumerate()
-                .map(|(idx, _)| format!("sha256:input-{idx:04}"))
+                .map(|(idx, vector)| {
+                    let input = format!("sha256:input-{idx:04}");
+                    (*vector, input)
+                })
                 .collect::<Vec<_>>();
-            let input_refs = input_hashes.iter().map(String::as_str).collect::<Vec<_>>();
-            input_by_embedder.insert((*embedder_id).to_string(), counts(&input_refs));
+            let pair_refs = pairs
+                .iter()
+                .map(|(vector, input)| (*vector, input.as_str()))
+                .collect::<Vec<_>>();
+            inputs_by_embedder.insert(
+                (*embedder_id).to_string(),
+                distinctness_inputs_from_pairs(&pair_refs),
+            );
         }
-        evaluate_embedder_distinctness(&active, &by_embedder, &input_by_embedder)
+        evaluate_embedder_distinctness(&active, &inputs_by_embedder)
     }
 
     fn report_for_vector_and_input_hashes(
@@ -1548,15 +1654,14 @@ mod tests {
             .iter()
             .map(|(embedder_id, _)| (*embedder_id).to_string())
             .collect::<Vec<_>>();
-        let mut by_embedder = BTreeMap::new();
-        let mut input_by_embedder = BTreeMap::new();
+        let mut inputs_by_embedder = BTreeMap::new();
         for (embedder_id, pairs) in rows {
-            let vector_hashes = pairs.iter().map(|(vector, _)| *vector).collect::<Vec<_>>();
-            let input_hashes = pairs.iter().map(|(_, input)| *input).collect::<Vec<_>>();
-            by_embedder.insert((*embedder_id).to_string(), counts(&vector_hashes));
-            input_by_embedder.insert((*embedder_id).to_string(), counts(&input_hashes));
+            inputs_by_embedder.insert(
+                (*embedder_id).to_string(),
+                distinctness_inputs_from_pairs(pairs),
+            );
         }
-        evaluate_embedder_distinctness(&active, &by_embedder, &input_by_embedder)
+        evaluate_embedder_distinctness(&active, &inputs_by_embedder)
     }
 
     #[test]
@@ -1660,6 +1765,54 @@ mod tests {
         assert_eq!(
             report.per_embedder_metrics["e9"]["unique_vector_per_unique_input_fraction"],
             json!(0.5)
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["non_colliding_unique_input_fraction"],
+            json!(0.0)
+        );
+    }
+
+    #[test]
+    fn distinctness_gate_rejects_aggregate_count_false_pass() {
+        let mut pairs = Vec::new();
+        for idx in 0..100 {
+            let vector = if idx < 20 {
+                format!("sha256:shared-{:04}", idx / 2)
+            } else {
+                format!("sha256:vector-{idx:04}")
+            };
+            let input = format!("sha256:input-{idx:04}");
+            pairs.push((vector, input));
+        }
+        for idx in 0..100 {
+            let source = idx % 100;
+            let vector = if source < 20 {
+                format!("sha256:shared-{:04}", source / 2)
+            } else {
+                format!("sha256:vector-{source:04}")
+            };
+            let input = format!("sha256:input-{source:04}");
+            pairs.push((vector, input));
+        }
+        let refs = pairs
+            .iter()
+            .map(|(vector, input)| (vector.as_str(), input.as_str()))
+            .collect::<Vec<_>>();
+
+        let report = report_for_vector_and_input_hashes(&[("e9", refs)]);
+
+        assert!(!report.passes());
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["unique_vector_per_unique_input_fraction"],
+            json!(0.9)
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["vector_collision_group_count"],
+            json!(10)
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["non_colliding_unique_input_fraction"],
+            json!(0.8)
         );
     }
 

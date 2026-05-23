@@ -51,7 +51,7 @@ pub const SUPPORTED_FORWARD_EMBEDDERS: &[EmbedderId] = &[
 
 const E9_HDC_NGRAM_SIZE: usize = 3;
 const E9_HDC_SEED: u64 = 42;
-const E9_HDC_CUDA_PRECISION_CLASS: &str = "algorithmic_cuda_hdc_true_batch_forward";
+const E9_HDC_CUDA_PRECISION_CLASS: &str = "algorithmic_cuda_hdc_text_residual_true_batch_forward";
 
 #[async_trait]
 pub trait EmbedderForward: Send + Sync {
@@ -502,6 +502,7 @@ fn algorithmic_model_version(embedder: EmbedderId, model_id: ModelId) -> String 
     );
     match embedder {
         EmbedderId::E4 => format!("{base}:temporal-positional-sha256-session-v2"),
+        EmbedderId::E9 => format!("{base}:hdc-ngram3-text-identity-residual-v2"),
         _ => base,
     }
 }

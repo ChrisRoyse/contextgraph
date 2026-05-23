@@ -1,6 +1,8 @@
 //! E9 typo tolerance verification test
 
 use context_graph_embeddings::models::custom::HdcModel;
+use context_graph_embeddings::traits::EmbeddingModel;
+use context_graph_embeddings::types::ModelInput;
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
@@ -81,6 +83,27 @@ fn test_e9_typo_tolerance_full_query() {
     assert!(
         cosine_sim > 0.4,
         "Cosine similarity {} should be > 0.4",
+        cosine_sim
+    );
+}
+
+#[tokio::test]
+async fn test_e9_embedding_residual_preserves_typo_tolerance() {
+    let model = HdcModel::default_model();
+
+    let correct = model
+        .embed(&ModelInput::text("authentication").unwrap())
+        .await
+        .unwrap();
+    let typo = model
+        .embed(&ModelInput::text("authetication").unwrap())
+        .await
+        .unwrap();
+
+    let cosine_sim = cosine_similarity(&correct.vector, &typo.vector);
+    assert!(
+        cosine_sim > 0.5,
+        "residual embedding cosine similarity {} should remain > 0.5",
         cosine_sim
     );
 }

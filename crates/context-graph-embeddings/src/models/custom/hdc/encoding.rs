@@ -21,6 +21,11 @@ use super::types::{Hypervector, HDC_DIMENSION, HDC_PROJECTED_DIMENSION};
 use bitvec::prelude::*;
 use tracing::{debug, instrument, trace, warn};
 
+const TEXT_IDENTITY_RESIDUAL_WEIGHT: f32 = 1.0 / 16.0;
+const TEXT_IDENTITY_RESIDUAL_DOMAIN: u64 = 0xD6E8_FD9A_4F1C_2B73;
+const FNV_OFFSET_BASIS: u64 = 14_695_981_039_346_656_037;
+const FNV_PRIME: u64 = 1_099_511_628_211;
+
 /// Generates a random hypervector with approximately 50% bits set.
 ///
 /// Uses a deterministic PRNG seeded with the combined seed and input hash.
@@ -180,13 +185,56 @@ pub fn project_to_float(hv: &Hypervector) -> Vec<f32> {
         result.push(value);
     }
 
-    // L2 normalize
-    let norm: f32 = result.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm > f32::EPSILON {
-        for v in &mut result {
-            *v /= norm;
-        }
-    }
+    normalize_projected_vector(&mut result);
 
     result
+}
+
+/// Adds a small deterministic full-text residual to split HDC projection ties.
+///
+/// The base HDC signal remains dominant; the residual only prevents distinct
+/// texts that share the same projected bag-of-ngrams vector from becoming the
+/// same durable cache vector.
+pub fn apply_text_identity_residual(vector: &mut [f32], seed: u64, text: &str) {
+    if vector.is_empty() {
+        return;
+    }
+    let identity = text_identity_hash(seed, text);
+    let inv_sqrt_dim = 1.0 / (vector.len() as f32).sqrt();
+    for (idx, value) in vector.iter_mut().enumerate() {
+        let bit = splitmix64(identity ^ (idx as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let residual = if bit & 1 == 0 {
+            -inv_sqrt_dim
+        } else {
+            inv_sqrt_dim
+        };
+        *value += TEXT_IDENTITY_RESIDUAL_WEIGHT * residual;
+    }
+    normalize_projected_vector(vector);
+}
+
+fn normalize_projected_vector(vector: &mut [f32]) {
+    let norm: f32 = vector.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm > f32::EPSILON {
+        for value in vector.iter_mut() {
+            *value /= norm;
+        }
+    }
+}
+
+fn text_identity_hash(seed: u64, text: &str) -> u64 {
+    let mut hash =
+        FNV_OFFSET_BASIS ^ seed.wrapping_mul(TEXT_IDENTITY_RESIDUAL_DOMAIN) ^ (text.len() as u64);
+    for byte in text.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
+fn splitmix64(mut value: u64) -> u64 {
+    value = value.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    value ^ (value >> 31)
 }

@@ -1,10 +1,9 @@
 //! FFI bindings for GPU HDC projection.
 //!
-//! The E9 HDC embedder hashes output vectors into durable cache rows. This
-//! module therefore keeps the on-device work exact: Unicode text is decoded to
-//! scalar values on the host, CUDA computes the raw HDC projection with integer
-//! bit operations, and Rust performs the same f32 L2 normalization as the CPU
-//! implementation before returning vectors.
+//! The E9 HDC embedder hashes output vectors into durable cache rows. Unicode
+//! text is decoded to scalar values on the host, CUDA computes the base HDC
+//! projection with integer bit operations, and Rust applies the same f32
+//! normalization plus bounded text-identity residual as the CPU implementation.
 
 use std::ffi::c_void;
 
@@ -17,6 +16,10 @@ include!(concat!(env!("OUT_DIR"), "/hdc_image.rs"));
 const BLOCK_SIZE: u32 = 256;
 pub const HDC_DIMENSION: usize = 10_000;
 pub const HDC_PROJECTED_DIMENSION: usize = 1024;
+const TEXT_IDENTITY_RESIDUAL_WEIGHT: f32 = 1.0 / 16.0;
+const TEXT_IDENTITY_RESIDUAL_DOMAIN: u64 = 0xD6E8_FD9A_4F1C_2B73;
+const FNV_OFFSET_BASIS: u64 = 14_695_981_039_346_656_037;
+const FNV_PRIME: u64 = 1_099_511_628_211;
 
 #[link(name = "cuda")]
 extern "C" {
@@ -183,17 +186,57 @@ pub fn compute_hdc_embeddings_gpu(
         unsafe { std::slice::from_raw_parts_mut(flat.as_mut_ptr() as *mut u8, output_size) };
     d_output.copy_to_host(output_bytes)?;
 
-    for row in flat.chunks_mut(HDC_PROJECTED_DIMENSION) {
-        let norm: f32 = row.iter().map(|value| value * value).sum::<f32>().sqrt();
-        if norm > f32::EPSILON {
-            for value in row {
-                *value /= norm;
-            }
-        }
+    for (row, text) in flat.chunks_mut(HDC_PROJECTED_DIMENSION).zip(texts.iter()) {
+        normalize_projected_vector(row);
+        apply_text_identity_residual(row, seed, text);
     }
 
     Ok(flat
         .chunks(HDC_PROJECTED_DIMENSION)
         .map(|row| row.to_vec())
         .collect())
+}
+
+fn apply_text_identity_residual(vector: &mut [f32], seed: u64, text: &str) {
+    if vector.is_empty() {
+        return;
+    }
+    let identity = text_identity_hash(seed, text);
+    let inv_sqrt_dim = 1.0 / (vector.len() as f32).sqrt();
+    for (idx, value) in vector.iter_mut().enumerate() {
+        let bit = splitmix64(identity ^ (idx as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let residual = if bit & 1 == 0 {
+            -inv_sqrt_dim
+        } else {
+            inv_sqrt_dim
+        };
+        *value += TEXT_IDENTITY_RESIDUAL_WEIGHT * residual;
+    }
+    normalize_projected_vector(vector);
+}
+
+fn normalize_projected_vector(vector: &mut [f32]) {
+    let norm: f32 = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+    if norm > f32::EPSILON {
+        for value in vector.iter_mut() {
+            *value /= norm;
+        }
+    }
+}
+
+fn text_identity_hash(seed: u64, text: &str) -> u64 {
+    let mut hash =
+        FNV_OFFSET_BASIS ^ seed.wrapping_mul(TEXT_IDENTITY_RESIDUAL_DOMAIN) ^ (text.len() as u64);
+    for byte in text.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
+fn splitmix64(mut value: u64) -> u64 {
+    value = value.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    value ^ (value >> 31)
 }

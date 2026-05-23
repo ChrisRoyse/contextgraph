@@ -597,6 +597,41 @@ def top_vector_sha256_counts(counts: dict[str, int]) -> list[dict[str, Any]]:
     ]
 
 
+def vector_collision_unique_inputs(vector_to_inputs: dict[str, set[str]]) -> set[str]:
+    out: set[str] = set()
+    for source_inputs in vector_to_inputs.values():
+        if len(source_inputs) > 1:
+            out.update(source_inputs)
+    return out
+
+
+def top_vector_collision_groups(
+    vector_counts: dict[str, int],
+    vector_to_inputs: dict[str, set[str]],
+) -> list[dict[str, Any]]:
+    rows = [
+        (vector_sha256, source_inputs)
+        for vector_sha256, source_inputs in vector_to_inputs.items()
+        if len(source_inputs) > 1
+    ]
+    rows.sort(
+        key=lambda item: (
+            -len(item[1]),
+            -vector_counts.get(item[0], 0),
+            item[0],
+        )
+    )
+    return [
+        {
+            "vector_sha256": vector_sha256,
+            "row_count": vector_counts.get(vector_sha256, 0),
+            "unique_input_sha256_count": len(source_inputs),
+            "source_sha256_samples": sorted(source_inputs)[:5],
+        }
+        for vector_sha256, source_inputs in rows[:5]
+    ]
+
+
 def vector_hash_jaccard(left: set[str], right: set[str]) -> float:
     union_count = len(left | right)
     if union_count == 0:
@@ -608,41 +643,60 @@ def evaluate_embedder_distinctness(
     active_embedder_ids: list[str],
     index_rows: list[Any],
 ) -> dict[str, Any]:
-    counts_by_embedder: dict[str, dict[str, int]] = {
-        embedder_id: {} for embedder_id in active_embedder_ids
-    }
-    input_counts_by_embedder: dict[str, dict[str, int]] = {
-        embedder_id: {} for embedder_id in active_embedder_ids
-    }
+    stats_by_embedder: dict[str, dict[str, Any]] = {}
+    for embedder_id in active_embedder_ids:
+        stats_by_embedder[embedder_id] = {
+            "vector_counts": {},
+            "input_counts": {},
+            "input_to_vectors": {},
+            "vector_to_inputs": {},
+        }
     for row in index_rows:
         require("distinctness index row is object", isinstance(row, dict))
         embedder_id = row.get("embedder_id")
-        if embedder_id not in counts_by_embedder:
+        if embedder_id not in stats_by_embedder:
             continue
         vector_sha256 = row.get("vector_sha256")
         require(
             f"{embedder_id} distinctness row has vector_sha256",
             isinstance(vector_sha256, str) and bool(vector_sha256.strip()),
         )
-        counts = counts_by_embedder[embedder_id]
-        counts[vector_sha256] = counts.get(vector_sha256, 0) + 1
         input_sha256 = row.get("source_sha256")
         require(
             f"{embedder_id} distinctness row has source_sha256",
             isinstance(input_sha256, str) and bool(input_sha256.strip()),
         )
-        input_counts = input_counts_by_embedder[embedder_id]
+        stats = stats_by_embedder[embedder_id]
+        counts = stats["vector_counts"]
+        counts[vector_sha256] = counts.get(vector_sha256, 0) + 1
+        input_counts = stats["input_counts"]
         input_counts[input_sha256] = input_counts.get(input_sha256, 0) + 1
+        stats["input_to_vectors"].setdefault(input_sha256, set()).add(vector_sha256)
+        stats["vector_to_inputs"].setdefault(vector_sha256, set()).add(input_sha256)
 
     per_embedder_metrics: dict[str, Any] = {}
     collapse_failures: list[dict[str, Any]] = []
     vector_hash_sets: dict[str, set[str]] = {}
     for embedder_id in active_embedder_ids:
-        counts = counts_by_embedder[embedder_id]
-        input_counts = input_counts_by_embedder[embedder_id]
+        stats = stats_by_embedder[embedder_id]
+        counts = stats["vector_counts"]
+        input_counts = stats["input_counts"]
+        input_to_vectors = stats["input_to_vectors"]
+        vector_to_inputs = stats["vector_to_inputs"]
         row_count = sum(counts.values())
         unique_count = len(counts)
         unique_input_count = len(input_counts)
+        input_with_multiple_vectors_count = sum(
+            1 for vectors in input_to_vectors.values() if len(vectors) > 1
+        )
+        vector_collision_group_count = sum(
+            1 for source_inputs in vector_to_inputs.values() if len(source_inputs) > 1
+        )
+        colliding_inputs = vector_collision_unique_inputs(vector_to_inputs)
+        vector_collision_unique_input_count = len(colliding_inputs)
+        non_colliding_unique_input_count = max(
+            0, unique_input_count - vector_collision_unique_input_count
+        )
         distinctness_fraction = 0.0 if row_count == 0 else unique_count / row_count
         input_distinctness_fraction = 0.0 if row_count == 0 else unique_input_count / row_count
         unique_vector_per_unique_input_fraction = (
@@ -650,9 +704,15 @@ def evaluate_embedder_distinctness(
             if unique_input_count == 0
             else min(unique_count, unique_input_count) / unique_input_count
         )
+        non_colliding_unique_input_fraction = (
+            0.0
+            if unique_input_count == 0
+            else non_colliding_unique_input_count / unique_input_count
+        )
         duplicate_bounded_usable = (
             unique_input_count >= MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
-            and unique_vector_per_unique_input_fraction >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION
+            and input_with_multiple_vectors_count == 0
+            and non_colliding_unique_input_fraction >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION
         )
         if distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION:
             status = "usable"
@@ -668,9 +728,15 @@ def evaluate_embedder_distinctness(
             "unique_input_sha256_count": unique_input_count,
             "input_distinctness_fraction": input_distinctness_fraction,
             "unique_vector_per_unique_input_fraction": unique_vector_per_unique_input_fraction,
+            "input_with_multiple_vectors_count": input_with_multiple_vectors_count,
+            "vector_collision_group_count": vector_collision_group_count,
+            "vector_collision_unique_input_count": vector_collision_unique_input_count,
+            "non_colliding_unique_input_count": non_colliding_unique_input_count,
+            "non_colliding_unique_input_fraction": non_colliding_unique_input_fraction,
             "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
             "top_vector_sha256_counts": top_vector_sha256_counts(counts),
+            "top_vector_collision_groups": top_vector_collision_groups(counts, vector_to_inputs),
         }
         if status == "collapse":
             collapse_failures.append(
@@ -684,8 +750,14 @@ def evaluate_embedder_distinctness(
                     "unique_input_sha256_count": unique_input_count,
                     "input_distinctness_fraction": input_distinctness_fraction,
                     "unique_vector_per_unique_input_fraction": unique_vector_per_unique_input_fraction,
+                    "input_with_multiple_vectors_count": input_with_multiple_vectors_count,
+                    "vector_collision_group_count": vector_collision_group_count,
+                    "vector_collision_unique_input_count": vector_collision_unique_input_count,
+                    "non_colliding_unique_input_count": non_colliding_unique_input_count,
+                    "non_colliding_unique_input_fraction": non_colliding_unique_input_fraction,
                     "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
                     "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
+                    "top_vector_collision_groups": top_vector_collision_groups(counts, vector_to_inputs),
                 }
             )
         vector_hash_sets[embedder_id] = set(counts)
@@ -4709,6 +4781,7 @@ def aggregate(
     distinctness_gate_present = "embedder_distinctness_gate" in manifests[0]
     pairwise_max_jaccard_matrix: dict[str, dict[str, float]] = {}
     per_embedder_min_distinctness_fraction: dict[str, float] = {}
+    per_embedder_min_non_colliding_unique_input_fraction: dict[str, float] = {}
     totals = {
         "chunk_count": 0,
         "cache_record_count": 0,
@@ -4772,6 +4845,17 @@ def aggregate(
                         per_embedder_min_distinctness_fraction[embedder_id],
                         fraction,
                     )
+                if "non_colliding_unique_input_fraction" in row:
+                    non_colliding_fraction = float(row["non_colliding_unique_input_fraction"])
+                    if embedder_id not in per_embedder_min_non_colliding_unique_input_fraction:
+                        per_embedder_min_non_colliding_unique_input_fraction[embedder_id] = (
+                            non_colliding_fraction
+                        )
+                    else:
+                        per_embedder_min_non_colliding_unique_input_fraction[embedder_id] = min(
+                            per_embedder_min_non_colliding_unique_input_fraction[embedder_id],
+                            non_colliding_fraction,
+                        )
         else:
             require(
                 f"{shard.shard_id} distinctness gate consistently absent",
@@ -4833,6 +4917,9 @@ def aggregate(
             "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
             "shard_count": len(shards),
             "per_embedder_min_distinctness_fraction": per_embedder_min_distinctness_fraction,
+            "per_embedder_min_non_colliding_unique_input_fraction": (
+                per_embedder_min_non_colliding_unique_input_fraction
+            ),
             "pairwise_max_jaccard_matrix": pairwise_max_jaccard_matrix,
             "collapse_failures": [],
             "alias_failures": [],
