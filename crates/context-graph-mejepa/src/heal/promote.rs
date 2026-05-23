@@ -1539,7 +1539,7 @@ mod tests {
                         OracleOutcome::Fail
                     },
                     ood_score: 0.05,
-                    calibration_nonconformity_score: if idx < 72 { 0.05 } else { 0.95 },
+                    calibration_nonconformity_score: if idx < 91 { 0.05 } else { 0.95 },
                     cell_key: GLOBAL_HOLDOUT_CELL_KEY.to_string(),
                 })
                 .collect(),
