@@ -122,6 +122,10 @@ from .python_delete_test_call_oracle_executor import (
     add_arguments as add_python_delete_test_call_oracle_executor_arguments,
 )
 from .python_delete_test_call_oracle_executor import command_python_delete_test_call_oracle_executor
+from .python_delete_test_call_candidate_corpus import (
+    add_arguments as add_python_delete_test_call_candidate_corpus_arguments,
+)
+from .python_delete_test_call_candidate_corpus import command_python_delete_test_call_candidate_corpus
 from .panel_b_artifacts import add_arguments as add_panel_b_artifacts_arguments
 from .panel_b_artifacts import command_panel_b_artifacts
 from .panel_b_model_scores import add_arguments as add_panel_b_model_scores_arguments
@@ -798,6 +802,16 @@ def build_parser() -> argparse.ArgumentParser:
     delete_test_call_oracle_executor.set_defaults(
         func=command_python_delete_test_call_oracle_executor,
         evidence_name="python-delete-test-call-oracle-executor-command-evidence.json",
+    )
+
+    delete_test_call_candidate_corpus = sub.add_parser(
+        "python-delete-test-call-candidate-corpus",
+        help="TASK-PY-G-135C: materialize candidate-keyed corpus/AST rows from #615 oracle outcomes.",
+    )
+    add_python_delete_test_call_candidate_corpus_arguments(delete_test_call_candidate_corpus)
+    delete_test_call_candidate_corpus.set_defaults(
+        func=command_python_delete_test_call_candidate_corpus,
+        evidence_name="python-delete-test-call-candidate-corpus-command-evidence.json",
     )
 
     panel_b_artifacts = sub.add_parser(

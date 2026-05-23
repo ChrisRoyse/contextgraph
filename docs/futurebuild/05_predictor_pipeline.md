@@ -4,6 +4,28 @@ Source files: `crates/context-graph-mejepa-embedders/src/lib.rs` + modules, `cra
 
 ---
 
+## 0b. ⚠ 2026-05-22 hardening pivot — pipeline-level audit findings
+
+The 5-Sherlock parallel forensic audit (#629 closeout) surfaced doctrine-violation and silent-success defects across the pipeline. All open until #633 hardening gate closes:
+
+| Issue | Pipeline surface | Defect |
+|---|---|---|
+| **#618** | `compiler.rs` aggregate OOD score | Reads flat 5,120-byte packed panel buffer instead of per-slot OOD evidence (doctrine §1.5ter violation) |
+| **#619** | `mejepa-train/src/loss/inverse.rs::forward_inverse_inner` | Uses `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter violation; same class as the pre-#387 violation that the slot-preserving refactor was supposed to eliminate) |
+| **#620** | `mejepa-train/` training loop | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook from `frozen_hook.rs` is **never invoked** during training — the documented zero-grad guard exists but is unwired |
+| **#621** | `mejepa-train/` HoldoutReport publisher | Hardcoded `gtau_pass_rate: 1.0` published to MCP `mejepa_weekly_eval_dashboard` (operator status lies) |
+| **#623** | `compiler.rs::cold_start_conformal_policy` | Emits `alpha=0.0`, invalid input to `calibrate_tau` (dead public API + landmine) |
+| **#625** | `lib.rs` public re-exports | `DeterministicPredictor` publicly re-exported (synthetic-vector landmine post-#422) |
+| **#670** | `mejepa-embedders/` `e2/e3/e4/e8` forward providers | Forward-cache embedder vector-space collapse uncovered by #666 closure; must be regenerated or retired before geometry-label promotion |
+
+**Pipeline implication:** the `0.7942190170` post-fix rank-lift measurement rides on a substrate that includes the flat-buffer OOD path (#618), the flat inverse-projection path (#619), the never-invoked gradient-leak guard (#620), and the invalid `e2/e3/e4/e8` embedder spaces (#670). Re-validation under manual SoT (`06 §1.9`) is required before any new claim of correlation-class improvement.
+
+**Geometry-label epic (#657, in-progress, successor to #413):** per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Replaces the flat-vector "labels are derived from the constellation" framing with "each embedder gets its own deterministic geometry-label map, then a cross-embedder consensus layer (#661) decides what to promote (#662) into routing (#664) and prediction heads (#665)."
+
+**Auto-FSV retirement (#655):** the predictor-pipeline FSV harnesses listed in §6/§7 are being retired. Manual operator-driven SoT readback (per `06 §1.9`) is the binding closeout form going forward.
+
+---
+
 ## 0a. ⚠ Synthetic-vector remediation (2026-05-19/20) — real-input baseline active
 
 Between Phase G ramp and 2026-05-19 22:45 UTC, the **inference path** in `crates/context-graph-mejepa/src/compiler.rs::vectors_for` filled instrument-panel slots with SHA256-seeded synthetic vectors via `deterministic_vector(slot, &digest)` instead of calling the real frozen `E*Instrument` encoders. The forward cache pipeline (`crates/context-graph-mejepa-embedders/examples/python_forward_cache_fsv.rs`, ~24h GPU run, `precision_class: "candle_real_forward"`) was unaffected — it always used real Candle CUDA forward with SHA-pinned safetensors.

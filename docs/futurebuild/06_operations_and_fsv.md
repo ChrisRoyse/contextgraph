@@ -4,9 +4,23 @@ Source files: `docs/futurebuild/specs/FSV-PROTOCOL.md`, `AGENTS.md`, `CLAUDE.md`
 
 ---
 
+## 0. ⚠ 2026-05-22 hardening pivot — manual SoT supersedes auto-FSV
+
+**Status (2026-05-22):** the operator opened **#633 / [P0] Manual full-system FSV and hardening gate before new work** and **#655 retire Rust FSV examples → manual SoT verification guidance** (in-progress p0). Per the 5-Sherlock audit (#629) the auto-FSV harness ecosystem (`crates/*/examples/*_fsv.rs`) tended toward silent-success: ~15 distinct closed P0 bugs (§07 §2.0) involved code returning `success`/`passed=true`/exit-0 without performing the work. The operational response:
+
+1. **Rust `*_fsv.rs` examples are being retired** (#655). New gate evidence is captured as GitHub issue comments containing direct operator-driven SoT readback, not auto-generated FSV JSON.
+2. **Every #633 child issue (#634-#651) requires manual operator readback** — read the actual bytes/rows/files/services BEFORE and AFTER the trigger, paste both into the issue comment, exercise happy path + ≥3 edge classes. Return codes, green scripts, prior FSV JSON are supporting evidence only.
+3. **Existing auto-FSV evidence remains historical** — the artifacts catalogued in `07 §6` keep their forensic value, but cannot be the sole basis for a new RESOLVED claim.
+
+See `§1.9` for the binding manual-FSV contract. The remainder of `§1` describes the legacy auto-FSV protocol that #655 is retiring; treat it as historical until #655 closes.
+
+---
+
 ## 1. FSV Protocol (the verification contract)
 
 `docs/futurebuild/specs/FSV-PROTOCOL.md` is the binding contract for every task. Universal protocol in `docs2/AICodingAgentSuperPrompt.md`; project-level specifics here.
+
+**⚠ 2026-05-22 retirement (#655):** the auto-FSV harness ecosystem is being retired. The protocol below describes its semantic intent; the operational replacement is the manual SoT contract in `§1.9`.
 
 ### 1.1 Source-of-truth first
 
@@ -89,6 +103,24 @@ Green tests are insufficient if any of these:
 ### 1.8 Issue closeout
 
 Every worked issue ends with exactly one of **RESOLVED** / **PAUSE** / **BLOCKED**. Comment must include files changed, commands run, FSV artifact path + hash, SoT readback summary, failures encountered, residual risk, follow-up issues.
+
+### 1.9 Manual SoT contract (binding for #633 / #655 era)
+
+**Active from 2026-05-22.** Every issue tied to the #633 hardening gate MUST follow this contract; auto-FSV JSON alone is not admissible evidence.
+
+1. **Define the Source of Truth.** Exact file path on aiwonder ZFS, RocksDB CF/key, systemd unit name, Docker container/image, ZFS dataset, model cache path, metric/log path, or external oracle artifact. No vague references.
+2. **Capture BEFORE.** Manually read the SoT (via `ssh croyse@aiwonder.mst.com`, `contextgraph-shell`, `ldb`, `cat`, `gh`, `find -printf`, `sha256sum`, etc.) and paste the observed state directly into the issue comment.
+3. **Execute the trigger.** Concrete command with synthetic-known input where possible.
+4. **Capture AFTER.** Independently re-read the SoT (preferably from a new shell to avoid stale state) and paste the observed delta.
+5. **Exercise happy path + ≥3 edge classes.** Edge classes: empty/missing input, malformed input, oversize input, concurrent access, durability across restart, partial failure, idempotent re-run.
+6. **On mismatch:** stop, root-cause, fix or file a linked blocker issue, repeat manual FSV after the fix. Do not paper-over with a re-run.
+7. **No child closes from a return code or generated JSON alone.** The issue comment must show the direct readback.
+8. **No mounted-drive evidence.** Aiwonder ZFS only (`/zfs/archive/contextgraph/...`, `/zfs/hot/contextgraph/...`). `/mnt/d` / `/mnt/c` references are blockers, not evidence.
+9. **`run-remote` wrapper hangs (#674) are a known blocker.** If the local SSH wrapper does not exit after the remote command finishes, perform a separate remote-process readback (`ps -ef | grep …`) and paste evidence BEFORE killing the local wrapper.
+
+**Why the change.** The 5-Sherlock audit found ~15 P0 silent-success defects (`07 §2.0`) where Rust code returned `success`/`passed=true`/exit-0 without actually performing the work. The auto-FSV pattern made these defects invisible because the harness itself was vulnerable to the same class of bug. Manual SoT readback by a human-or-agent that did not author the harness is the bias-defeating verification primitive.
+
+**Application boundary.** Pre-#633 issues (RESOLVED via auto-FSV) retain forensic value but are NOT gate-eligible for new ship-gate claims; the #634-#651 sub-tasks must re-verify the surfaces those auto-FSVs covered. Once #633 closes, the manual-SoT contract becomes the default closeout form for all future Phase G issues until a successor protocol is decided.
 
 ---
 
@@ -348,6 +380,34 @@ Universal protocol → doctrine §14.2. Project-specific:
 ## 10. API Stability
 
 ME-JEPA-Code is pre-production (no SLA, no backwards compatibility per CLAUDE.md §6.6). Schema changes → wipe and rebuild. Future: TBD post-ship-gate.
+
+---
+
+## 10.6 ⚠ Manual full-system FSV gate (#633, active 2026-05-22)
+
+The #633 manual full-system FSV + hardening gate is the active P0 work. Each of the 17 child sub-tasks below requires its own manual SoT readback per `§1.9`:
+
+| # | Domain (Source of Truth) |
+|---|---|
+| #634 | aiwonder host, ZFS roots, GPU, Docker, MPS, env: `ssh croyse@aiwonder.mst.com`, `nvidia-smi`, `docker ps`, `zfs list`, `mount`, env files |
+| #635 | aiwonder model cache + no-download embedder readiness: `/zfs/hot/contextgraph/models/`, `~/.cache/huggingface/hub/`, SHA-256 manifest pins |
+| #636 | 300×8 corpus + AST chunks + forward cache + labels + skills: `/zfs/archive/contextgraph/corpus/`, `state/labels/`, jsonl line counts + sha256 |
+| #637 | SWE-bench Docker oracle + weak-cell outcome truth: `swebench.harness.run_evaluation` end-to-end on real instance, per-instance `report.json` |
+| #638 | ME-JEPA `RealityPrediction` Q1/Q2/Q3/Q5 product path: `CF_MEJEPA_LIVE_PREDICTIONS` rows, `CF_MEJEPA_CLAIM_RECONCILIATION`, `CF_MEJEPA_REALITY_IMPACT` |
+| #639 | MCP product tools + retired surfaces + JSON-RPC state: `cargo run -p context-graph-mcp -- --mode stdio`, all 214 `mejepa_*` tools |
+| #640 | Slot-preserving panels + frozen-instrument execution: `Panel` round-trip, instrument zero-gradient guard, `MEJEPA_INSTRUMENT_GRADIENT_LEAK` |
+| #642 | RocksDB CF registry + data integrity + retention + restore: `ALL_HYGIENE_REFERENCED_CFS` canonical opener, `canonical_hygiene_cfs_match_group_union` |
+| #643 | Trainer + mistake loop + replay + checkpoints + Fisher/EWC: `mejepa-train` end-to-end, `CF_MEJEPA_MISTAKE_LOG`, `CF_MEJEPA_ONLINE_HEAD_STATE` |
+| #644 | CLI + hooks + shift log + path discipline + no mounted-drive: `context-graph-cli`, `scripts/cc/*.sh`, `runtime/shift-log.jsonl`, `check_no_c_drive_paths.sh` |
+| #645 | Build + tests + clippy + CI + secrets + SBOM/provenance: `cargo build --release`, `cargo test`, `cargo clippy -- -D warnings`, `.github/workflows/` |
+| #646 | Observability + evidence retention + backup + DR: `tracing`, `mejepa_daemon_status`, ZFS snapshots, off-host backup gap (#380) |
+| #647 | Performance + scalability + capacity + cost: RTX 5090 wall-clock + VRAM + GPU util, per-shard timing, RocksDB write throughput |
+| #648 | Security hardening for code + aiwonder ops: secret redaction, ed25519 witness chain, no HTTP from action paths, `feature = "llm"` compile_error |
+| #649 | Documentation + GitHub issue ledger truth: `docs/futurebuild/*`, `CLAUDE.md`, `AGENTS.md`, every closed issue's RESOLVED comment vs current source |
+| #650 | Benchmark + gate-metric honesty audit: `swebench_300x8_ship_gate_fsv` re-verified manually, #532 degenerate-cell contract, `0.7942190170` claim |
+| #651 | Operational practice + RCA discipline: doctrine §3 file rule, §3.5 milestone comments, §5 RCA five-whys, §11 forensic discipline |
+
+Each child closes by RESOLVED-with-manual-readback or BLOCKED-with-named-blocker.
 
 ---
 

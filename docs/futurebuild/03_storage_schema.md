@@ -1,5 +1,23 @@
 # 03 — Storage Schema and Policy
 
+⚠ **2026-05-22 substrate hardening — additions and audit-uncovered defects:**
+
+| Item | Status | Notes |
+|---|---|---|
+| Aiwonder ZFS root migration (#372) | ✅ CLOSED 2026-05-22 | `/zfs/archive/contextgraph` → `archive/contextgraph` ZFS; `/zfs/hot/contextgraph` → `hotpool/contextgraph` ZFS |
+| Forward-cache slot-completeness mask (#614) | ✅ shipped | `/zfs/archive/contextgraph/state/forward-cache-completeness/task-py-g-135b-forward-cache-slot-completion-v1/forward_cache_slot_completeness_mask.jsonl` — 399,777 rows: 378,444 full 12-slot + 20,706 partial + 627 zero-slot; downstream consumers must join this mask before claiming 105-pair coverage |
+| Delete-test-call regeneration plan (#615) | in-progress | `/zfs/archive/contextgraph/state/regeneration-plans/task-py-g-135c-delete-test-call-regeneration-v1/delete_test_call_regeneration_candidates.jsonl` — 1,131 deterministic candidates awaiting Docker oracle execution |
+| Source-files canonicalization (#613) | ✅ shipped | `/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/source-files-300x8-20260515T013205Z/` — 4,224 files, 148,346,301 bytes; AST chunks now carry `legacy_provenance_path` for archived `/mnt/d` paths |
+| Geometry-label root (#657, in-progress) | planned | `/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v1/` — successor to #413 with per-embedder geometry-label maps |
+| Forward-cache embedder collapse (#666 closed → #670 open) | regenerate | `e2/e3/e4/e8` embedder spaces invalid; spaces must be regenerated or retired before label-discovery promotion |
+| Oracle verdict CF contract split (#609 closed) | ✅ fixed | Corpus-store rows under lowercase `mejepa_oracle_verdicts` (JSON `OracleVerdict`) and canonical calibration rows under `CF_MEJEPA_ORACLE_VERDICTS` (bincode `CalibrationExample`) are now operationally distinguished; inspectors report each separately |
+| Hygiene retention policy gap (#626 open) | bug | `config/retention_policy.toml` missing default policy for ~90 CFs |
+| TCT freshness audit log (closed by #629 commit `28375702`) | fixed | Was writing to retired `./memory/journal/`; now writes to aiwonder durable root |
+
+**Manual SoT enforcement:** per `06 §1.9`, every CF claim in a new RESOLVED comment requires direct `ldb` / `cat` / `find -printf` readback of the actual on-disk byte/row state; auto-FSV `_fsv.rs` harnesses are being retired (#655).
+
+---
+
 ⚠ **Synthetic-vector remediation (2026-05-19/20) — CF-substrate validity index:**
 
 | Substrate | Status | Why |

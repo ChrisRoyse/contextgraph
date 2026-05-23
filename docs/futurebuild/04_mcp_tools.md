@@ -1,10 +1,32 @@
 # 04 — MCP Tools Reference
 
+⚠ **2026-05-22 silent-success defect closeouts (5-Sherlock audit #629).** Multiple MCP tools were closing requests with `success`/`passed=true` while skipping work or hiding partial failures. All closed 2026-05-22 (see `07 §2.0` for the full list):
+
+| Issue | Tool / Surface | Defect |
+|---|---|---|
+| #599 | `store_memory` | Returned success after provenance/sidecar write failures |
+| #603 | `get_audit_trail` / `get_merge_history` / `get_provenance_chain` | Returned success with partial storage read failures |
+| #604 | `mejepa_eval_run` secret-holdout guard | Reported `passes=true` while actual guard was blocked |
+| #605 | Memory mutation tools (`merge_concepts`, `boost_importance`, `forget_concept`) | Reported success without complete readback/provenance |
+| #607 | `no_inner_actor_models` FSV | Reported `readback_equal=true` without artifact readback |
+| #608 | `optimizer_witness_chain_verify` | Returned valid success for absent `witness-chain.bin` |
+| #594 | `mejepa_eval_run` | Persisted fixture EvalReports through indirect deterministic-compiler path |
+| #595 | `mejepa_ship_gate_status` / operator status surfaces | Trusted raw `EvalReport.ship_gate_passed` instead of current gate predicate |
+| #601 | `mejepa_*` `dbPath` overrides | Could report fixture/local RocksDBs as source of truth |
+| #606 | `synthetic_stress` eval | Used `ship_gate_passed`/exit-0 semantics for non-gate fixture success |
+| #669 | `swebench_lite_ops` CLI | Module invocation exited 0 without running |
+
+**Tool-count correction (5-Sherlock):** auto-FSV listings drifted from the test-enforced count. Corrected counts: **216 total tools** (was 214); **69 `mejepa_*` tools** (was 67). Test gate at `definitions/mod.rs:150` enforces these. The tables below have been updated to match.
+
+**Operational change (#655, in-progress p0):** auto-FSV examples in `crates/*/examples/*_fsv.rs` are being retired. MCP tool side effects must be verified by **manual operator-driven SoT readback** per `06_operations_and_fsv.md §1.9`, not by trusting tool return JSON.
+
+---
+
 ⚠ **Synthetic-vector remediation (2026-05-19/20):** every MCP tool whose handler routes through the inference path (`mejepa_verify`, `mejepa_predict_latest`, `mejepa_predict_what_if`, `mejepa_search_latent_actions`, `mejepa_rank_candidates`, `mejepa_explain_prediction`, `mejepa_inspect_prediction`, `mejepa_replay_prediction`, `mejepa_reality_impact`, `mejepa_project_ingest`, `mejepa_project_report`, `mejepa_pathway_*`, `mejepa_record_mistake`, etc.) returned synthetic-input outputs before 2026-05-19 22:45 UTC. The Rust code path is now real (per `01_overview.md §1.7`); any persisted prediction rows produced before the fix are contaminated. Tools that read pure-substrate CFs (`mejepa_skill_to_code`, `mejepa_code_to_skill`, `mejepa_skill_set_query`, `mejepa_skill_coverage_audit`, `mejepa_chunk_as_star`, `mejepa_constellation_membership`, `mejepa_list_accepted_labels`, fingerprint surface, hygiene surface, daemon/heal status) are unaffected.
 
 Source files: `crates/context-graph-mcp/src/tools/definitions/mod.rs`, `crates/context-graph-mcp/src/tools/names.rs`, `crates/context-graph-mcp/src/tools/definitions/mejepa.rs`, all sibling `definitions/*.rs`, `crates/context-graph-mcp/src/deprecation.rs`.
 
-**Total tools registered** in `get_tool_definitions()`: **214** (test-enforced at `definitions/mod.rs:150`).
+**Total tools registered** in `get_tool_definitions()`: **216** (test-enforced at `definitions/mod.rs:150`; corrected by 5-Sherlock #629 commit `f1b37c57`).
 
 ---
 
@@ -33,7 +55,7 @@ Tests enforce: exact total count + no duplicate names, exact per-submodule count
 | `graph` | 2 | Deterministic graph read/query |
 | `entity` | 6 | E11 KEPLER/TransE: `extract_entities`, `infer_relationship`, `validate_knowledge`, etc. |
 | `embedder` | 10 + 2 standalone | Per-embedder search + `search_by_tokens` (E12) + standalone E13 |
-| **`mejepa`** | **67** | Predictor + heal + observe + ship-gate + chunk-skill linkage + mistake loop — see §3 |
+| **`mejepa`** | **69** | Predictor + heal + observe + ship-gate + chunk-skill linkage + mistake loop — see §3 (count corrected by 5-Sherlock #629) |
 | `temporal` | 2 | `search_recent` (E2), `search_periodic` (E3) |
 | `graph_link` | 4 | K-NN navigation + typed edges |
 | `maintenance` | 1 | `repair_causal_relationships` |
@@ -51,7 +73,7 @@ Tests enforce: exact total count + no duplicate names, exact per-submodule count
 
 ---
 
-## 3. The 67 `mejepa_*` Tools (the product surface)
+## 3. The 69 `mejepa_*` Tools (the product surface)
 
 Names live in `crates/context-graph-mcp/src/tools/names.rs`. Most are namespaced `mcp__cgreality__mejepa_*`; a small set use bare `mejepa_*`.
 

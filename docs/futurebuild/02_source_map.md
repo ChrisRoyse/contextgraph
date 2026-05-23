@@ -1,5 +1,28 @@
 # 02 — Source Code Map
 
+⚠ **2026-05-22 hardening pivot — module-level index of audit-uncovered defects (all open P0/P1):**
+
+| Issue | File / Module | Defect |
+|---|---|---|
+| #618 | `crates/context-graph-mejepa/src/compiler.rs` aggregate OOD path | Reads flat 5,120-byte panel buffer (doctrine §1.5ter violation) |
+| #619 | `crates/context-graph-mejepa-train/src/loss/inverse.rs::forward_inverse_inner` | Uses `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter violation) |
+| #620 | `crates/context-graph-mejepa-train/` (trainer) | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook never invoked from training |
+| #621 | `crates/context-graph-mejepa-train/` HoldoutReport publisher | Hardcoded `gtau_pass_rate: 1.0` published to MCP weekly dashboard |
+| #622 | `crates/context-graph-mejepa-train/src/{distill,lora_wiring,aux}.rs` | Trainer dead-code batch |
+| #623 | `crates/context-graph-mejepa/src/conformal.rs::cold_start_conformal_policy` | Emits `alpha=0.0` (invalid input to `calibrate_tau`) — dead public API |
+| #624 | `crates/context-graph-mejepa/src/verdict_assembly.rs` | Inline `CONTRADICTION_CALIBRATION_INVALID` not a declared constant |
+| #625 | `crates/context-graph-mejepa/src/lib.rs` | `DeterministicPredictor` publicly re-exported (synthetic-vector landmine post-#422) |
+| #626 | `config/retention_policy.toml` + `crates/context-graph-mejepa-hygiene/` | Default policy missing ~90 CFs |
+| #627 | `crates/context-graph-mejepa-shift-subscriber/src/runner.rs` | `run_until_idle_consumes_jsonl` test fails on main (missing TCT centroid scaffold) |
+| #628 | `crates/context-graph-mejepa-tct/src/gtau.rs` vs docs | Error string drift: docs `MEJEPA_TCT_DIM_MISMATCH` vs emitted `MEJEPA_INFER_DIM_MISMATCH` |
+| #670 | `crates/context-graph-mejepa-embedders/` `e2/e3/e4/e8` adapters | Forward-cache embedder vector-space collapse — regenerate or retire |
+
+**Operational change (#655, in-progress p0):** the `crates/*/examples/*_fsv.rs` ecosystem is being **retired**. Per the 5-Sherlock audit, auto-FSV harnesses tended toward silent-success. New gate evidence is manual operator-driven SoT readback (see `06_operations_and_fsv.md §1.9`). The 210 example FSV files listed in `§9` below remain for historical/forensic reference but are not the closure form for new Phase G work.
+
+**Geometry-label epic modules (in-progress, #657 / TASK-PY-G-136):** per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Planned module addition: `crates/context-graph-mejepa-train/src/geometry_label_discovery/` + `crates/context-graph-mejepa/src/predictor/geometry_label_router.rs` (#664) + `crates/context-graph-mejepa/src/predictor/geometry_label_heads.rs` (#665). Outputs land at `/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v1/`.
+
+---
+
 ⚠ **Synthetic-vector remediation (2026-05-19/20) — fixed-module index:** `crates/context-graph-mejepa/src/compiler.rs::vectors_for` was producing SHA256-seeded synthetic vectors; replaced by `build_inference_panel_inputs` calling real `E*Instrument` encoders (commit `e2c51669`). `crates/context-graph-mejepa/src/project_cache.rs` was writing `deterministic_vector_blob` hashes as embeddings; now fails closed (commit `5330629e`). `crates/context-graph-mejepa/src/predictor_checkpoint.rs` now rejects `MEJEPA_BEST_STUB_V1` text-stub checkpoints at load and export (`:147-158, 239-250`). `crates/context-graph-mejepa-train` trainer now owns real `MeJepaPredictor` weights and exports manifest-verified checkpoints (commit `db83923a`). See `01_overview.md §1.7` for forensic and `08 §0.5` for rebaseline blocker. **`crates/context-graph-mejepa-embedders/` forward-cache pipeline was unaffected** — fail-closed guards in `src/forward.rs:122,207,349,422` ("no deterministic vector fallback is permitted") prevented contamination there.
 
 Source files: `Cargo.toml`, every `crates/*/Cargo.toml`, every `crates/*/src/lib.rs`, every `crates/*/src/main.rs`, every `[[bin]]` and `[[example]]` declaration.

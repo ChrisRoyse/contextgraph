@@ -10,7 +10,70 @@ The prediction contract is **three binary surfaces against ground truth** (Q1 by
 
 ---
 
-## 0.5. P0 BLOCKER: Ship-gate measurement requires deeper ranking repair after first weak-cell lift
+## 0.4. P0 GATE: 2026-05-22 manual full-system FSV + hardening (#633)
+
+**Status (2026-05-22):** A 5-Sherlock parallel forensic audit (#629 closeout) over all 22 active workspace crates surfaced silent-success/fake-FSV/doctrine-violation defects across the entire product surface. Operator opened **#633 / [P0] Manual full-system FSV and hardening gate before new work** to stop all feature/gate-moving work until every product surface has been **manually** verified at the real source-of-truth bytes/rows/files/services on aiwonder. Return values, green scripts, and previously-passing FSV JSON are supporting evidence only — they are not the verdict.
+
+**Binding contract** (must be followed for every child issue):
+
+1. Define the Source of Truth — exact file path, RocksDB CF/key, systemd unit, Docker container, ZFS dataset, model cache path, metric/log path, or external oracle artifact.
+2. Capture BEFORE — manually read the SoT and paste the observed state into the issue comment.
+3. Execute a concrete trigger with synthetic known input where possible.
+4. Capture AFTER — independently re-read the SoT and paste the observed delta.
+5. Exercise happy path **plus at least 3 edge classes**.
+6. On mismatch: stop, root-cause, fix or file a linked blocker, repeat manual FSV after fix.
+7. No child closes from a return code or generated JSON alone.
+
+**17 child sub-tasks (all `priority:p0`, `status:needs-triage`):**
+
+| Issue | Domain |
+|---|---|
+| #634 | aiwonder host, ZFS roots, GPU, Docker, MPS, env |
+| #635 | aiwonder model cache + no-download embedder readiness |
+| #636 | 300×8 corpus, AST chunks, forward cache, labels, skills |
+| #637 | SWE-bench Docker oracle + weak-cell outcome truth |
+| #638 | ME-JEPA `RealityPrediction` Q1/Q2/Q3/Q5 product path |
+| #639 | MCP product tools, retired surfaces, JSON-RPC state |
+| #640 | slot-preserving panels + frozen-instrument execution |
+| #642 | RocksDB CF registry, data integrity, retention, restore |
+| #643 | trainer, mistake loop, replay, checkpoints, Fisher/EWC |
+| #644 | CLI, hooks, shift log, path discipline, no mounted-drive |
+| #645 | build, tests, clippy, CI, secrets, SBOM/provenance |
+| #646 | observability, evidence retention, backup, DR |
+| #647 | performance, scalability, capacity, cost |
+| #648 | security hardening for code + aiwonder ops |
+| #649 | documentation + GitHub issue ledger truth |
+| #650 | benchmark + gate-metric honesty audit |
+| #651 | operational practice + RCA discipline hardening |
+
+**Done When:** all linked P0 children have either a RESOLVED comment with manual SoT before/after + happy + 3 edge cases, or a BLOCKED comment with a specific blocker issue and no hidden assumption. Only then does normal #615/#616 gate movement resume.
+
+**Operational implication (#655, in-progress p0):** Rust `*_fsv.rs` examples and tests in the `crates/*/examples/` tree are being **retired** in favour of manual operator-driven SoT verification. New gate evidence is captured as issue comments with direct bytes-on-disk readback, not as auto-generated FSV JSON. See `06_operations_and_fsv.md §1.9` for the binding manual-FSV contract that replaces auto-FSV harnesses.
+
+**Doctrine-violation P0s the audit surfaced (all open, all gate-blocking):**
+
+| Issue | Title | Source |
+|---|---|---|
+| #618 / TASK-PY-G-136 | Aggregate OOD score uses flat 5,120-byte panel buffer (doctrine §1.5ter violation) | mejepa |
+| #619 / TASK-PY-G-137 | `forward_inverse_inner` uses `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter violation) | mejepa + mejepa-train |
+| #620 | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook never invoked from training (doc drift) | mejepa + mejepa-train |
+| #621 / TASK-PY-G-138 | Hardcoded `gtau_pass_rate: 1.0` in HoldoutReport published to MCP weekly dashboard | mejepa-train + mcp |
+| #622 | Trainer dead-code cleanup: distill + lora_wiring + aux | mejepa-train |
+| #623 | `cold_start_conformal_policy` emits `alpha=0.0` (invalid input dead public API) | mejepa |
+| #624 | `verdict_assembly` inline `CONTRADICTION_CALIBRATION_INVALID` not a declared constant | mejepa |
+| #625 | `DeterministicPredictor` publicly re-exported (synthetic-vector landmine post-#422) | mejepa |
+| #626 / TASK-PY-G-139 | Hygiene retention default policy missing ~90 CFs | mejepa-hygiene |
+| #627 | shift-subscriber runner integration test fails on main (missing TCT centroid scaffold) | mejepa-shift-subscriber |
+| #628 | Doc/code error-string drift: `MEJEPA_TCT_DIM_MISMATCH` (docs) vs `MEJEPA_INFER_DIM_MISMATCH` (emitted) | docs |
+| #670 | Regenerate or retire invalid forward-cache spaces `e2/e3/e4/e8` (forward-cache embedder collapse) | mejepa-embedders |
+| #671 | Stale SWE-bench harness defaults point at missing aiwonder archive venv | scripts |
+| #672 | Geometry scalar feature lineage + leakage gate for `head_projection` promotion | mejepa + mejepa-train |
+| #673 | Label-quality audit ranks embedder signal vs noise | mejepa-train |
+| #674 | `run-remote` wrapper can hang after remote command completes | scripts |
+
+---
+
+## 0.5. Historical P0 BLOCKER (superseded by #633): #392 trajectory ECE repair
 
 Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-seeded synthetic vectors instead of calling real `E*Instrument` encoders. Six P0 fixes (#422 / #424 / #426 / #437 / #438 / #441 / #452, all closed 2026-05-19/20) replaced the broken pipeline. **The previous `0.866667` ship-gate measurement is INVALID** — it was the deterministic fixed-point output of a hash-derived predictor, not a real measurement of model quality on real code semantics. See `01_overview.md §1.7` and `07_results_and_benchmarks.md §0` for forensic detail.
 
@@ -59,23 +122,25 @@ Once met → human review of AI-generated Python patches is statistically unjust
 
 ## 2. Open Issue Snapshot (live tracker is authoritative)
 
+As of 2026-05-22: **137 open** issues across the workspace. Use the queries in §12 for current state.
+
 By phase:
 
 | Label | Open count |
 |---|---|
-| `phase:g` | ~70 (this is the critical path) |
-| `phase:migration` | 4 |
+| `phase:g` | ~120 (critical path) |
+| `phase:migration` | ~5 (#372 closed; tail items remain) |
 | `phase:f-followup` | 1 |
 | `phase:f` / `phase:h` | 0 (closed) |
 
-By priority:
+By priority (excerpt):
 
-| Priority | Examples |
+| Priority | Open epic examples |
 |---|---|
-| `priority:p0` | #615 delete-test-call regeneration, #616 oracle exception reruns, #612 parent data-substrate audit, #397 consequence-prediction contract, #383 evidence-weighted ordering, #167 burn-in (blocked by #610), #165 confidence gate (blocked by #167) |
-| `priority:p1` | #630 long-source/OOM forward-cache quarantine recovery, #379 multi-file holdout, #416 pathway, #417 skill linkage remaining, #511 entropy loss, #380 off-host backup, #433 ability resolver replay completeness |
-| `priority:p2` | EK series tail, post-ship policies, #382 frozen-panel dimensionality ablation, #378 tool-usage telemetry |
-| `priority:p3` | Deferred (SWE-bench Verified subset, v2 stretch tasks, future Docker image plan) |
+| `priority:p0` | **#633** manual full-system FSV gate (parent), #634-#651 sub-tasks, **#655** retire Rust FSV (in-progress), **#656** mejepa-heal-drill conformal-overcoverage (in-progress), **#657** TASK-PY-G-136 geometry-label bakeoff (in-progress), **#615** delete-test-call regeneration (in-progress), #616 weak-cell oracle reruns, #618/#619/#621 doctrine-violation P0s, #661/#662 geometry-label promotion (blocked behind #657), #670/#671/#672/#673/#674 audit P0s, **#397** consequence-prediction contract (context pin), **#383** evidence-weighted ordering (context pin), #167 burn-in (blocked by #633), #165 confidence gate (blocked by #167), #310 META context |
+| `priority:p1` | #630 long-source/OOM forward-cache quarantine recovery, #626 hygiene retention 90 CFs missing, #664 geometry region dictionary (blocked behind #657), #380 off-host backup, #379 multi-file holdout, #416 pathway, #417 skill linkage remaining, #511 entropy loss, #433 ability resolver replay completeness, #442 librocksdb-sys native build |
+| `priority:p2` | EK series tail, post-ship policies, #382 frozen-panel dimensionality ablation, #378 tool-usage telemetry, #622 trainer dead-code cleanup, #623/#624 minor doctrine string drift, #665 new prediction heads over geometry labels |
+| `priority:p3` | Deferred (SWE-bench Verified subset, v2 stretch tasks, future Docker image plan), 8× neuroscience-reserve issues (#538-#545) |
 
 ---
 
@@ -83,7 +148,27 @@ By priority:
 
 Per pinned context #383 (LOCKED): gate-active issue order is **evidence-weighted, not vision-weighted**.
 
-### 3.0 The road to 0.95 (post-rebaseline ordering)
+### 3.−1 Active gate (supersedes the previous "road to 0.95")
+
+The #633 manual full-system FSV gate is the only admissible work right now. Until it closes, no #392 / #511 / #405 / #379 work is in scope. Order:
+
+| Rank | Epic | Status |
+|---|---|---|
+| 1 | **#633** manual full-system FSV + hardening gate (parent) | in-progress p0 |
+| 1.1-1.17 | **#634-#651** 17 sub-tasks (see §0.4) | all needs-triage p0 |
+| 2 | **#655** retire Rust FSV examples → manual SoT guidance | in-progress p0 |
+| 3 | **#656** mejepa-heal-drill conformal-overcoverage repair | in-progress p0 |
+| 4 | **#657** TASK-PY-G-136 per-embedder geometry-label bakeoff (the #413 successor — adds upstream geometry-label layer over each embedder's own vector space) | in-progress p0 |
+| 5 | **#661** TASK-PY-G-140 cross-embedder label consensus + disagreement map | blocked behind #657 |
+| 6 | **#662** TASK-PY-G-141 gate-safe promotion of geometry labels into predictor features | blocked behind #661 |
+| 7 | **#664** geometry region dictionary + per-embedder search router | blocked behind #657 |
+| 8 | **#665** new prediction heads over per-embedder geometry labels | blocked behind #664 |
+| 9 | Doctrine-violation repairs (**#618 / #619 / #620 / #621 / #670**) | needs-triage p0/p1 |
+| 10 | Data-substrate completion: **#615 (in-progress) → #616 → #671 / #672 / #673 / #674** | mixed |
+
+Once #633 + its children close, gate-active queue resumes at:
+
+### 3.0 The road to 0.95 (suspended until #633 closes — historical critical path)
 
 | Rank | Epic | Status | Why it moves the gate |
 |---|---|---|---|
@@ -99,11 +184,13 @@ Per pinned context #383 (LOCKED): gate-active issue order is **evidence-weighted
 | 7 | **#547** post-#536 calibration-disjointness revalidation | ✅ complete 2026-05-20 | Proves #536 selected `tau=20.0, fail_boost=1.5` on calibration only; train/calibration/holdout row and feature-member overlaps are zero; #413 label-lineage hashes stable; target-side labels excluded. |
 | 8 | **#548** post-#547 mixed-cell ranking diagnostic | ✅ complete 2026-05-20 | Proved `MIXED_CELL_CALIBRATION_UNDERPOWERED`: current surface has signal but legal calibration cannot select the holdout-working threshold. |
 | 9 | **#549** calibration-stable mixed-cell signal fusion | ✅ complete 2026-05-20 | Static metadata and score fusion are useful but insufficient; typed blocker `MIXED_CELL_SIGNAL_FUSION_INSUFFICIENT`. |
-| 10 | **#392 / #554 / #557 / #558 / #560 / #551** temporal constellation trajectory features + skill usefulness repair | OPEN p0, #551/#557/#560 complete | #551 proved the uncovered skill-state set is pass/context-only and not missing failure coverage; blanket pass/context expansion regresses. Latest #392 evidence-semantics hardening selects cause-bin calibration at correlation `0.8939641118`, Brier `0.0504463837`, ECE `0.0402133949`, accuracy `0.9375`, with cause-bin applied to nonzero calibration/holdout scoped rows. Final-bin calibration was tested and rejected because ECE worsened. Next: lower ECE below the #536 baseline without coverage expansion, wider evidence-key ladders, aggregate bins, or holdout tuning. |
-| 11 | **#511** information-entropy auxiliary loss | OPEN p1 | Only gate-moving if re-justified against `0.7942190170` and shown to improve the true mixed cells under split-stable selection. |
-| 12 | **#405** cross-panel triangulation Panel B | OPEN p0, blocked | Even hitting 0.95 on Panel A is not ship-eligible without Panel B. Defends 0.95 against encoder-matched Goodhart. |
-| 13 | **#379** multi-file structural patch holdout | OPEN p1 | Compositional generalization |
-| 14 | **#409** paper revision | OPEN p2 | Aligns PAPER §1 with binary doctrine + adds synthetic-vector remediation section. Not gate-blocking. |
+| 10 | **#615** delete_test_call assertion-duty regeneration | in-progress p0 | Aiwonder Docker oracle batch over 1,131 deterministic candidates to land split-stable failure-bearing rows. Blocks #392 active-cell repair on `delete_test_call`. |
+| 11 | **#616** weak-cell oracle timeout/error reruns | open p0 | Classify `off_by_one` / `subtle_flip` timeouts/errors so they enter calibration/holdout cleanly. |
+| 12 | **#392 / #554 / #557 / #558 / #560 / #551** temporal constellation trajectory features + skill usefulness repair | OPEN p3 (blocked), prior diagnostics complete | Latest #392 evidence-semantics hardening selects cause-bin calibration at correlation `0.8939641118`, Brier `0.0504463837`, ECE `0.0402133949`, accuracy `0.9375`. Final-bin calibration was tested and rejected because ECE worsened. Next: lower ECE below the #536 baseline without coverage expansion. Blocked behind #633/#615/#616/#618/#619/#670. |
+| 13 | **#511** information-entropy auxiliary loss | open p3 (blocked) | Only gate-moving if re-justified against `0.7942190170` and shown to improve the true mixed cells under split-stable selection. |
+| 14 | **#405** cross-panel triangulation Panel B | open p3 (blocked) | Even hitting 0.95 on Panel A is not ship-eligible without Panel B. Defends 0.95 against encoder-matched Goodhart. |
+| 15 | **#379** multi-file structural patch holdout | open p3 (blocked) | Compositional generalization |
+| 16 | **#409** paper revision | open p3 (blocked) | Aligns PAPER §1 with binary doctrine + adds synthetic-vector remediation + #633 hardening pivot. Not gate-blocking. |
 
 ### 3.1 Slot-preserving constellation architecture (#385 parent — substantially shipped)
 
@@ -157,23 +244,24 @@ All calibration items below are qualified by #385: their evidence must be per-sl
 
 ### 3.5 Adversarial defense + ship-gate closure (after calibration green)
 
+All blocked behind #633 hardening gate. Status reflects 2026-05-22 state.
+
 | Issue | Task | Status |
 |---|---|---|
-| #178 | Refined cell taxonomy (Active/Exempt/Uncovered tri-state) | open |
-| #120 | Catastrophic Python cell quarantine | open |
-| #148 | Python leakage detector | open |
-| #153 | Python oracle pass/fail audit | open |
-| #612 | Split-stable weak-cell evidence expansion for active point metrics | open p0 |
-| #150 | Python sample-efficiency / row-window power support | closed (#150 support_policy=blocked) |
-| #165 | Python 0.95 confidence gate | open (blocked by #167) |
-| #167 | Four-window Python burn-in | open (blocked by #612/#610) |
-| #172 | Python acceptance bundle | open |
-| #180 | MCP RealityPrediction FSV | open |
-| #171 | Fail-closed release switch | open |
-| #379 | Multi-file structural patch holdout | open p1 |
-| #382 | Frozen-panel dimensionality ablation | open p2 |
-| #375 | Consume witness provenance in `RealityPrediction.confidence` | open p2 |
-| #378 | MCP tool-usage telemetry + dead-surface audit | open p2 |
+| #120 | Catastrophic Python cell quarantine | blocked p3 |
+| #148 | Python leakage detector | blocked p3 |
+| #153 | Python oracle pass/fail audit | blocked p3 |
+| #612 | Split-stable weak-cell evidence expansion | closed (data-substrate audit chain) |
+| #150 | Python sample-efficiency / row-window power | closed (support_policy=blocked) |
+| #165 | Python 0.95 confidence gate | blocked behind #167 |
+| #167 | Four-window Python burn-in | blocked behind #633 + #610 → reopens if #610 returns `burn_in_start_allowed=true` |
+| #172 | Python acceptance bundle | blocked p3 |
+| #180 | MCP `RealityPrediction` FSV | blocked p3 |
+| #171 | Fail-closed release switch | blocked p3 |
+| #379 | Multi-file structural patch holdout | blocked p3 |
+| #382 | Frozen-panel dimensionality ablation | blocked p3 |
+| #375 | Consume witness provenance in `RealityPrediction.confidence` | blocked p3 |
+| #378 | MCP tool-usage telemetry + dead-surface audit | blocked p3 |
 
 ### 3.6 Post-ship operation (engages after `≥ 0.95 × 4 windows`)
 
@@ -326,18 +414,23 @@ Neuroscience-inspired architectures have a mixed history in ML. Predictive codin
 
 ## 8. Aiwonder Migration (open tail)
 
+**Major milestone (2026-05-22):** **#372 CLOSED** — ContextGraph roots are now mounted on aiwonder ZFS pools (`/zfs/archive/contextgraph` → `archive/contextgraph` ZFS, `/zfs/hot/contextgraph` → `hotpool/contextgraph` ZFS). Aiwonder root-readiness blocker is satisfied. Legacy mounted-drive paths (`/mnt/d`, `/mnt/c`) are forbidden in active code and FSV; CI lint `scripts/ci/check_no_c_drive_paths.sh` plus the #612 → #613 → #614 → #615 → #631 → #632 → #641 → #666 audit chain enforce this behaviorally.
+
 | Issue | Task | Status |
 |---|---|---|
 | #310 | META Issue refactor | in-progress p0 |
-| #372 | ContextGraph roots must be mounted on aiwonder ZFS pools (paths-policy enforcement) | closed 2026-05-22; `/zfs/archive/contextgraph` -> `archive/contextgraph` ZFS and `/zfs/hot/contextgraph` -> `hotpool/contextgraph` ZFS |
-| #368 | Host capability utilization audit + scheduler profile | open p1 |
-| #380 | Off-host backup for `/zfs/archive` proof history | open p1 |
-| #384 | CUDA/candle rollback and reproducibility lane | open p2 |
+| #372 | ContextGraph roots must be mounted on aiwonder ZFS pools | ✅ closed 2026-05-22 |
+| #299-#305 | AIWONDER-003..010 install / transfer / build / launch / calibration sub-tasks | all closed with #372 |
 | #295 | PERF — resume launch scans full aiwonder FSV root | in-progress |
-| #299-#305 | AIWONDER-003..010 install / transfer / build / launch / calibration sub-tasks | in-progress p1 |
-| #306 | SWE-bench Lite Python Docker image plan (future / Q3) | p3 |
-| #312 | hot_root on ext4 throughput bottleneck — move to /hotpool ZFS | satisfied by #372 root migration; close after confirming no separate scheduler-profile work remains |
-| #442 | Track aiwonder librocksdb-sys cstdint native build requirement | open p1 |
+| #368 | Host capability utilization audit + scheduler profile | blocked p3 (behind #633/#634) |
+| #380 | Off-host backup for `/zfs/archive` proof history | blocked p3 |
+| #384 | CUDA/candle rollback and reproducibility lane | blocked p3 |
+| #306 | SWE-bench Lite Python Docker image plan (future / Q3) | blocked p3 |
+| #312 | hot_root on ext4 throughput bottleneck — superseded by #372 | satisfied; close after #634 sub-task confirms no separate scheduler-profile work remains |
+| #442 | Track aiwonder librocksdb-sys cstdint native build requirement | blocked p1 |
+| #617 | WSL `/mnt/c` capacity snapshots remain in aiwonder FSV scripts | needs-triage p2 |
+| #671 | Stale SWE-bench harness defaults point at missing aiwonder archive venv | needs-triage p0 |
+| #674 | `run-remote` wrapper can hang after remote command completes | needs-triage p0 |
 
 ---
 
@@ -345,25 +438,53 @@ Neuroscience-inspired architectures have a mixed history in ML. Predictive codin
 
 | # | Title | Why pinned |
 |---|---|---|
+| #633 | [P0] Manual full-system FSV and hardening gate before new work | **The active gate (2026-05-22).** Every other ship-gate-relevant epic is blocked behind this and its 17 children (#634-#651). |
 | #310 | META Issue refactor | Tracks Phase G execution-order map; the live source of "what to do NOW" |
 | #227 | Python ME-JEPA data explosion runtime policy | Defines runtime constraints during forward cache jobs |
 | #296 | aiwonder migration EPIC (closed but still load-bearing context) | Establishes the migration plan |
 | #383 / TASK-PY-G-084 | Gate-active issue order must be evidence-weighted, not vision-weighted (p0) | When choosing next task, weight by measured impact on the current post-fix gate gap and active/abstain blockers, not the invalid pre-fix `0.083` gap |
 | #397 / [PY-G] CONTEXT | ME-JEPA consequence-prediction truth-system contract (p0) | "Predicting reality" = predicting consequences of code being live; MCP presents calibrated consequence evidence; hidden human intent is not a prediction target |
+| #629 | 5-Sherlock parallel forensic audit closeout (`type:discovery`) | Indexes the 2026-05-22 audit findings + fixes shipped + new issues filed |
 
 ---
 
-## 10. Bugs (open, non-blocking)
+## 10. Bugs (open)
+
+### 10.1 P0 bugs (must repair before #392/#511/#405 resume)
+
+| # | Title | Source |
+|---|---|---|
+| #618 | Aggregate OOD score uses flat 5,120-byte panel buffer (doctrine §1.5ter violation) | 5-Sherlock |
+| #619 | `forward_inverse_inner` uses `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter violation) | 5-Sherlock |
+| #621 | Hardcoded `gtau_pass_rate: 1.0` published to MCP weekly dashboard | 5-Sherlock |
+| #670 | Regenerate or retire invalid forward-cache spaces `e2/e3/e4/e8` | post-#666 |
+| #671 | Stale SWE-bench harness defaults point at missing aiwonder archive venv | post-#372 |
+| #672 | Geometry scalar feature lineage + leakage gate for `head_projection` promotion | post-#657 |
+| #673 | Label-quality audit ranks embedder signal vs noise | post-#657 |
+| #674 | `run-remote` wrapper can hang after remote command completes | post-#615 |
+| #656 | mejepa-heal-drill fails before complete readback on conformal overcoverage | in-progress |
+| #616 | Rerun and classify weak-cell oracle timeout/error rows | open |
+
+### 10.2 P1/P2 bugs
 
 | # | Title | Status |
 |---|---|---|
-| #295 | Resume launch scans full aiwonder FSV root (perf) | in-progress |
+| #620 | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook never invoked from training | needs-triage p2 |
+| #622 | Trainer dead-code cleanup batch (distill + lora_wiring + aux) | needs-triage p2 |
+| #623 | `cold_start_conformal_policy` invalid `alpha=0.0` dead public API | needs-triage p3 |
+| #624 | `verdict_assembly` inline `CONTRADICTION_CALIBRATION_INVALID` not a declared constant | needs-triage p3 |
+| #625 | `DeterministicPredictor` publicly re-exported (synthetic-vector landmine post-#422) | needs-triage p2 |
+| #626 | Hygiene retention default policy missing ~90 CFs (config/retention_policy.toml stale) | needs-triage p1 |
+| #627 | shift-subscriber runner integration test fails on main (missing TCT centroid scaffold) | needs-triage p2 |
+| #628 | Doc/code error-string drift: `MEJEPA_TCT_DIM_MISMATCH` vs `MEJEPA_INFER_DIM_MISMATCH` | needs-triage p3 |
+| #630 | Recover long-source/OOM forward-cache quarantines after legal mask | needs-triage p1 |
+| #663 | Resolve duplicate TASK-PY-G keys after geometry-label issue creation | needs-triage p2 |
 | #307 | promote_tree_verified asserts on second-subrun shard promotion | in-progress |
 | #320 | phase_g_project_merkle_cache_fsv clippy — `ProjectMerkleCache` Debug missing | needs-triage p1 |
-| #338 | Capture agent response bodies in runtime/agent-history for Q1 claim FSV | needs-triage p2 |
-| #429 | DynamicJEPA Phase 8 FSV intermittently aborts in native record-surprise path | needs-triage p2 |
-| #433 | P1 ability resolver evidence integrity and replay key completeness | needs-triage p1 |
-| #436 | context-graph-mejepa example clippy gate has pre-existing warnings | needs-triage p2 |
+| #338 | Capture agent response bodies in runtime/agent-history for Q1 claim FSV | blocked p3 |
+| #429 | DynamicJEPA Phase 8 FSV intermittently aborts in native record-surprise path | blocked p3 |
+| #433 | P1 ability resolver evidence integrity and replay key completeness | blocked p3 |
+| #436 | context-graph-mejepa example clippy gate has pre-existing warnings | blocked p3 |
 | #453 | Residual Sherlock/investigation findings after first cleanup pass | needs-triage p1 |
 | #522 | verification_state test: predicted SubtleFlip failure no longer escalates | needs-triage p1 |
 

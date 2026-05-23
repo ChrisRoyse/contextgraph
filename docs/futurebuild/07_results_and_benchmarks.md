@@ -6,6 +6,23 @@ Source: aiwonder `/zfs/archive/contextgraph/fsv/` for production evidence; git l
 
 ---
 
+## 0a. ⚠ 2026-05-22 hardening pivot — measurement validity requires re-affirmation
+
+The 2026-05-22 5-Sherlock parallel forensic audit (#629 closeout) plus the **#633 manual full-system FSV + hardening gate** opening means **every measurement in this doc is now provisional** until manually re-verified under the manual SoT contract (`06_operations_and_fsv.md §1.9`). Gate-moving conclusions ("the predictor is at 0.7942 rank-lift", "117/117 active true-Fail rows have FailLikely coverage", "#615 candidate plan is valid") were recorded against auto-FSV harnesses; per #655, those harnesses are being retired in favour of operator-driven SoT readback as part of `crates/*/examples/*_fsv.rs` retirement.
+
+The numbers below remain the best available evidence; they are not gate-eligible until #633 sub-tasks (#634-#651) RESOLVED/BLOCKED with manual SoT before/after captures.
+
+**P0 audit-uncovered defects (`§2.0` below) gate any further claim of correlation-class improvement:**
+
+- **#618** aggregate OOD over flat 5,120-byte packed buffer (doctrine §1.5ter violation)
+- **#619** `forward_inverse_inner` flat `Linear(PANEL_DIM, hidden)` projections (doctrine §1.5ter violation)
+- **#621** hardcoded `gtau_pass_rate: 1.0` in HoldoutReport published to weekly dashboard
+- **#670** invalid forward-cache spaces `e2/e3/e4/e8` (forward-cache embedder collapse uncovered by #666)
+
+These three doctrine violations + the embedder-collapse finding mean the `0.7942190170` rank-lift number itself rests on a substrate that contains known-broken paths. Re-validate under manual FSV before re-claiming.
+
+---
+
 ## 0. ⚠ CRITICAL: pre-fix evidence partially invalidated
 
 Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-seeded synthetic vectors (`crates/context-graph-mejepa/src/compiler.rs::vectors_for` calling `deterministic_vector(slot, &digest)`) instead of real `E*Instrument` encoders. **The 0.866667 ship-gate measurement and every ablation that compared against it are INVALID** — they measured a synthetic-input pipeline, not the real predictor. See `01_overview.md §1.7` for the full forensic.
@@ -15,7 +32,7 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-se
 | **REAL (no rebaseline)** | AST chunks, 391-shard forward cache, #388 tensors, #389 calibration, #413 labels, #414 skills, #404 hierarchy, anti-compensation invariants |
 | **INVALID (must rebaseline)** | Ship-gate 0.866667; `λ_inv` ablation; #393 / #398 ablations; "labels are the bottleneck" claim; "slot-preserving doesn't close gap" claim |
 
-The corpus survives. The pre-fix measurement does not. The post-fix real-input rebaseline now exists, and Phase G is working from that number.
+The corpus survives. The pre-fix measurement does not. The post-fix real-input rebaseline now exists, but is itself **provisional** (see §0a) until manually re-verified.
 
 ---
 
@@ -86,6 +103,100 @@ The corpus survives. The pre-fix measurement does not. The post-fix real-input r
 ---
 
 ## 2. Recent Closures (recent → older)
+
+### 2.0 5-Sherlock parallel forensic audit + 2026-05-22 P0 closure wave (#629)
+
+On 2026-05-22 a 5-Sherlock parallel forensic audit shipped ~40 P0 closures across all 22 active workspace crates, plus ~15 new findings. Closeout summary: `#629 (type:discovery)`.
+
+**Sherlock scope partition:**
+
+| Sherlock | Crates audited |
+|---|---|
+| #1 | `context-graph-mejepa` (predictor trunk, 155 src files) |
+| #2 | `context-graph-mejepa-train` (UTML trainer, mistake loop, EWC/CBP, replay buffer) |
+| #3 | `context-graph-mcp` + `context-graph-cli` + `context-graph-dynamicjepa` (216 MCP + 39 DynamicJEPA tools) |
+| #4 | `mejepa-embedders` + `instruments` + `storage` + `corpus` + `tier-compression` + `mejepa-cf` + `core` + `embeddings` + `cuda` (data substrate) |
+| #5 | `mejepa-tct` + `hygiene` + `shift-subscriber` + `witness` + `solver` + `mincut` + `paths` (verification primitives) |
+
+**Fixes shipped in the audit (per `#629`):**
+
+| Commit | Fix | Sherlock |
+|---|---|---|
+| `f1b37c57` | Tool-count drift (216 vs 214; 69 vs 67 mejepa tools) | #3 |
+| `f1b37c57` | RFC 9110 §5.6.2 case-insensitivity in HTTP media-type parsing | #3 |
+| `f1b37c57` | Clock corruption silently coerced to 0 in `current_unix_ms_i64()` | #3 |
+| `5999b0f0` | UTF-8 lossy substitution in JSON-RPC stdio framing → fail-closed per RFC 8259 §8.1 | #3 |
+| `5999b0f0` | Aiwonder source-lineage canonicalization in `swebench_lite_ops` | #4 |
+| `28375702` | TCT freshness audit log writing to retired `./memory/journal/` → aiwonder durable root | #5 |
+| `c02ba854` | `io::Error::other` clippy fix in `context-graph-witness/examples/cert_fsv.rs` | #5 |
+
+**Silent-success / fake-FSV / leak bugs closed 2026-05-22:**
+
+| Issue | Defect |
+|---|---|
+| #594 | MCP/CLI eval-run still persisted fixture EvalReports via indirect deterministic-compiler path |
+| #595 | Operator status surfaces trusted raw `EvalReport.ship_gate_passed` instead of current gate predicate |
+| #596 | Rust Trainer emitted pseudo-loss without training a predictor |
+| #597 | Checkpointed-train echoed oracle labels into live predictions + EvalReports |
+| #598 | Stop self-verify exited 0 when ME-JEPA RocksDB/CLI verification was unavailable |
+| #599 | `store_memory` returned success after provenance/sidecar write failures |
+| #600 | Auto-label materialization passed with missing or unverified slot evidence |
+| #601 | ME-JEPA `dbPath` overrides could report fixture/local RocksDBs as source of truth |
+| #603 | Provenance tools returned success with partial storage read failures |
+| #604 | Secret-holdout guard reported `passes=true` while actual guard was blocked |
+| #605 | Memory mutation tools reported success without complete readback/provenance |
+| #606 | Synthetic stress eval used `ship_gate_passed`/exit-0 semantics for non-gate fixture success |
+| #607 | `no_inner_actor_models` reported `readback_equal=true` without artifact readback |
+| #608 | `optimizer_witness_chain_verify` returned valid success for absent `witness-chain.bin` |
+| #609 | Oracle verdict CF contract split between lowercase corpus rows and canonical calibration rows |
+
+**Data-substrate closure chain (2026-05-22):**
+
+| Issue | Title |
+|---|---|
+| #150 | Python sample-efficiency / row-window power support (closed `support_policy=blocked`) |
+| #372 | ContextGraph roots must be mounted on aiwonder ZFS pools (closed; `/zfs/archive` → `archive/contextgraph` ZFS, `/zfs/hot` → `hotpool/contextgraph` ZFS) |
+| #496 | `soak.rs` doesn't actually soak (`soak.rs:541`) |
+| #498 | `chaos.yml` looks in wrong crate for `storage_exhaustion` shim |
+| #510 | CI gap — 17+ workspace crates have zero CI test coverage |
+| #610 | Burn-in admissibility policy after Panel B and aiwonder root readiness (closed; `burn_in_start_allowed=false`) |
+| #611 | Active point-metric repair for burn-in weak cells (closed; `repair_promoted=false`; `TASK_PY_G_134_NO_EXISTING_LEGAL_WEAK_CELL_REPAIR`) |
+| #612 | Split-stable weak-cell evidence expansion for active point metrics |
+| #613 | Canonicalize aiwonder AST source lineage + path-readback consumers |
+| #614 | Complete-or-mask missing per-embedder forward-cache slots before 105-pair mining |
+| #631 | Canonicalize or guard forward-cache packed-record lineage metadata |
+| #632 | Forward-cache checkpoint/shard-plan retain legacy `/mnt/d` smoke-manifest metadata |
+| #641 | Active embedder outputs, packed cache, quarantine semantics |
+| #666 | P0 forward-cache embedder vector-space collapse before label discovery (closed; **led to #670 follow-up: regenerate `e2/e3/e4/e8`**) |
+| #667 | Scrub geometry label root live-input policy for duplicate/degenerate spaces |
+| #668 | P0 check in reproducible geometry-label atlas materializer |
+| #669 | `swebench_lite_ops` CLI module invocation exited 0 without running |
+
+**Per-cell calibrator diagnostics closed (TASK-PY-G-124..129):**
+
+| Issue | Title |
+|---|---|
+| #584 | TASK-PY-G-124C per-cell named-pair selector before scorer wiring |
+| #586 | TASK-PY-G-124E per-cell calibration substrate for named-pair retest |
+| #587 | TASK-PY-G-126 per-cell axis-rotation calibrator diagnostic |
+| #588 | TASK-PY-G-128 logit-space ECE diagnostic for abstain-tail calibration |
+| #589 | TASK-PY-G-129 active-vs-abstain self-similarity audit |
+| #590 | TASK-PY-G-127 entanglement-distance cluster conformal kernel |
+
+**Geometry-label epic opened 2026-05-22 (successor to #413, in-progress):**
+
+| Issue | Title | Status |
+|---|---|---|
+| #657 | TASK-PY-G-136 per-embedder vector-space label discovery bakeoff | in-progress p0 |
+| #658 | TASK-PY-G-137 embedder-specific clustering contracts and metric audit | ✅ closed |
+| #659 | TASK-PY-G-138 per-embedder cluster candidate materialization | ✅ closed |
+| #660 | TASK-PY-G-139 cluster label naming and exemplar descriptors | ✅ closed |
+| #661 | TASK-PY-G-140 cross-embedder label consensus and disagreement map | blocked behind #657 |
+| #662 | TASK-PY-G-141 gate-safe promotion of geometry labels into predictor features | blocked behind #661 |
+| #664 | Geometry region dictionary and per-embedder search router | blocked p1 |
+| #665 | New prediction heads over per-embedder geometry labels | blocked p2 |
+
+**Active P0 hardening sub-tasks (the #633 child queue, all `needs-triage`):** see `08_roadmap_and_open_work.md §0.4` for the 17 sub-tasks #634-#651.
 
 ### 2.1 Mistake-loop MCP tools (#523 / TASK-PY-G-112B — closed 2026-05-20)
 
@@ -232,7 +343,15 @@ Raw slot violations + cross-embedder correlations only become actionable when cl
 
 Best-of-K papers over an under-trained predictor by spending compute at inference time. The online mistake loop pays the cost at *learning* time and converges to a predictor that is right on the first try. Current shipped primitive: key-local exact-panel online-head state with `protection_mode=exactPanelKeyIsolation`. Convergence target: `mistake_repeat_rate ≤ 0.05`. The machinery is shipped; needs real predictor mistakes from a real trained checkpoint to validate convergence.
 
-### 5.5 Connectome topology features are diagnostic-only (#513 / #527)
+### 5.6 Silent-success bugs were everywhere (2026-05-22 5-Sherlock audit)
+
+The 5-Sherlock audit's most important finding: **return values lie**. Across 15 distinct surfaces (memory mutation, MCP eval-run, store_memory, optimizer witness verify, stop self-verify, oracle verdict CFs, etc. — see §2.0), code paths returned `success`/`passed=true`/exit-0 without actually performing the work or after partial write failures. This is the universal counter-evidence for the FSV doctrine: *"a return value is a claim, the source of truth is the verdict."* The fixes shipped; the operational implication (#655) is that auto-FSV harnesses also tend toward silent-success and must be retired in favour of manual SoT readback as the ship-gate evidence form.
+
+### 5.7 Forward-cache embedder collapse (#666 → #670)
+
+The Sherlock audit's substrate-side finding: **the forward cache contains invalid vector spaces in `e2`, `e3`, `e4`, `e8`**. #666 closed by acknowledging the collapse; #670 is the follow-up to regenerate-or-retire those spaces. Until #670 closes, any predictor evidence riding those embedders is suspect. The #657 per-embedder geometry-label bakeoff is the response: discover what each embedder's vector space actually contains *before* claiming it provides predictor signal.
+
+### 5.8 Connectome topology features are diagnostic-only (#513 / #527)
 
 FlyWire-style rich-club analysis tested but demoted: split-stable evidence improved (`cellsSplitReproducibleAt0_8=7/8`) but the stable feature is not gate-moving (modularity above null `1/8`, full finite-edge coverage `0`, diagnostic correlation regressed by `-0.583`). Topology harness kept diagnostic-only; not promoted as constellation surface.
 

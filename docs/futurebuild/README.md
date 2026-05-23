@@ -7,7 +7,32 @@ Authority hierarchy: **universal doctrine** (`docs2/AICodingAgentSuperPrompt.md`
 
 ---
 
-## ⚠ Synthetic-vector remediation (2026-05-19 / 20) — read first
+## ⚠ 2026-05-22 hardening pivot — read first
+
+On 2026-05-22 the operator opened **#633 / [P0] Manual full-system FSV and hardening gate before new work** and a 5-Sherlock parallel forensic audit (closeout #629) shipped ~40 P0 closures plus ~15 new P0 findings. **Gate-moving work on #392 / #511 / #405 is suspended** until the #633 child queue resolves. The critical path now stops at the hardening gate:
+
+```
+#633 manual full-system FSV (children #634-#651, 17 sub-tasks)
+ → #655 retire Rust FSV examples in favour of manual SoT (in-progress p0)
+ → #656 mejepa-heal-drill conformal-overcoverage repair (in-progress p0)
+ → #657 TASK-PY-G-136 per-embedder geometry-label bakeoff (in-progress p0)
+ → resume #615/#616 data-substrate work, then #392 trajectory ECE
+```
+
+Operational change. Per #655, **Rust `*_fsv.rs` examples are being retired**. Closure evidence is now manual operator SoT readback only — read the actual bytes/rows/files/services before AND after each trigger, paste both into the issue comment, exercise happy path + ≥3 edge classes. Return values, green scripts, and previous FSV JSON are supporting evidence only, not the verdict. See `06_operations_and_fsv.md §1.9` for the binding contract.
+
+**Doctrine-violation P0s opened by the 5-Sherlock audit (open, must close before gate work resumes):**
+
+- **#618 / TASK-PY-G-136** — aggregate OOD score uses flat 5,120-byte packed panel buffer (doctrine §1.5ter violation)
+- **#619 / TASK-PY-G-137** — `forward_inverse_inner` uses `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter violation)
+- **#621 / TASK-PY-G-138** — hardcoded `gtau_pass_rate: 1.0` published to MCP weekly dashboard
+- **#670** — regenerate or retire invalid forward-cache spaces `e2/e3/e4/e8` (forward-cache embedder collapse uncovered by #666 closure)
+
+**#372 aiwonder ZFS root migration CLOSED 2026-05-22** — `/zfs/archive/contextgraph` now backs the `archive/contextgraph` ZFS dataset; `/zfs/hot/contextgraph` backs `hotpool/contextgraph` ZFS. The aiwonder root readiness blocker is satisfied; legacy mounted-drive paths (`/mnt/d/contextgraph/`, `/mnt/c/`) are forbidden in active code and FSV. `scripts/ci/check_no_c_drive_paths.sh` plus the per-data-substrate audit chain (#612 → #613 → #614 → #615 → #631 → #632 → #641 → #666) enforce this behaviorally.
+
+---
+
+## ⚠ Synthetic-vector remediation (2026-05-19 / 20) — historical context
 
 Between Phase G ramp and 2026-05-19 22:45 UTC, the **inference path** in `crates/context-graph-mejepa/src/compiler.rs::vectors_for` filled instrument-panel slots with SHA256-seeded synthetic vectors via `deterministic_vector(slot, &digest)` instead of calling the real frozen `E*Instrument` encoders. Six P0 issues (#422 / #424 / #426 / #437 / #438 / #441 / #452, all closed 2026-05-19/20) document and fix this contamination across the inference panel, project cache, FSV deterministic harness, project ingest, trained-checkpoint pipeline, trainer weight update, and native active-embedder adapter.
 
@@ -57,15 +82,60 @@ Plus:
 
 Human review of AI patches becomes statistically unjustified once `prediction_oracle_correlation ≥ 0.95` × 4 rolling windows on the 300×8 SWE-bench Lite Python corpus **AND** Panel B (non-overlapping encoder triangulation, #405) confirms within 0.05.
 
-**Current ship-gate status:** binary rank-lift remains `0.7942190170` from real code-state constellation labels (`0.6916886568` rank-safe, `0.4843192995` raw) in aiwonder run `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`. #392 active/abstain is diagnostic-only for now: aggregate active rows clear 0.95, but cell/window/power gates still fail. The previous 0.866667 figure was measured against a synthetic-input inference pipeline (see warning box above) and is invalid.
+**Current ship-gate status:** binary rank-lift remains `0.7942190170` from real code-state constellation labels (`0.6916886568` rank-safe, `0.4843192995` raw) in aiwonder run `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`. #392 active/abstain is diagnostic-only for now: aggregate active rows clear 0.95, but cell/window/power gates still fail. **The shipped 0.7942 figure was measured before the 5-Sherlock audit; the manual FSV gate (#633) must revalidate it under manual operator SoT before any new gate-moving work resumes.** The previous 0.866667 figure was measured against a synthetic-input inference pipeline (see synthetic-vector warning below) and is invalid.
 
 ---
 
 ## Critical-path one-liner (read `08` for detail)
 
-**P0 blocker:** repair the #392 active/abstain gate blockers without losing the trajectory lift. #551 proved the uncovered skill-state set is pass/context-only and not missing failure coverage; #392 then proved generalized skill-kind/evidence-consequence and bin-consequence calibration are worse once double-calibration is fixed; active/abstain now clears aggregate active correlation/ECE but fails full gate on `delete_test_call`, `off_by_one`, `subtle_flip`, rolling windows, and statistical power. Do not spend more work on support-cap expansion, blanket pass/context skill materialization, wider evidence-key ladders, sparse bins, final aggregate bins, score blending, logit calibration, ECE-overweighted selection, support-only shrinkage, or holdout-selected thresholds. The next repair should target per-cell/per-constellation consequence-to-cause evidence, cross-window validation, or true-mixed active features that lower blockers while preserving the active trajectory lift.
+**P0 blocker:** the **2026-05-22 hardening gate (#633)**. Until its child queue (#634-#651) is RESOLVED or BLOCKED with manual SoT evidence, no further feature/gate work is admissible. Per #383, gate-active issue order is evidence-weighted, and the current evidence is "manual SoT verification is missing across host/runtime/storage/GPU/Docker/MPS, the predictor product path, MCP tools, slot-preserving panels, RocksDB CFs, trainer + mistake loop, CLI + hooks + shift log, build + tests + CI, observability, performance, security, documentation, benchmark honesty, and operational practice."
 
-Critical path: `#404 hierarchy` ✅ → `#413 labels` ✅ → `#414 skills` ✅ → `#418 resolver` ✅ → `#406/#523 mistake loop + MCP` ✅ → `#535 mixed-cell rank lift on real labels` ✅ → `#537 rebaseline #393/#398/λ_inv ablations` ✅ → `#536 weak-cell repair` ✅ → `#547 post-#536 calibration disjointness` ✅ → `#548 mixed-cell diagnostic blocker` ✅ → `#549 static signal fusion blocker` ✅ → **`#392 temporal constellation trajectory features`** → `#511 entropy loss` (p1, only if it improves mixed cells) → **`#405 Panel B`** (blocked p0) → 0.95 ship gate.
+Critical path (current → ship):
+
+```
+#633 manual full-system FSV + hardening gate (in-progress)
+  ├── #634 aiwonder host/ZFS/GPU/Docker/MPS/env
+  ├── #635 aiwonder model cache + no-download embedder readiness
+  ├── #636 300x8 corpus + AST chunks + forward cache + labels + skills
+  ├── #637 SWE-bench Docker oracle + weak-cell truth
+  ├── #638 ME-JEPA RealityPrediction Q1/Q2/Q3/Q5 product path
+  ├── #639 MCP product tools + retired surfaces + JSON-RPC state
+  ├── #640 slot-preserving panels + frozen-instrument execution
+  ├── #642 RocksDB CF registry + data integrity + retention + restore
+  ├── #643 trainer + mistake loop + replay + checkpoints + Fisher/EWC
+  ├── #644 CLI + hooks + shift log + path discipline + no mounted-drive
+  ├── #645 build + tests + clippy + CI + secrets + SBOM/provenance
+  ├── #646 observability + evidence retention + backup + DR
+  ├── #647 performance + scalability + capacity + cost
+  ├── #648 security hardening for code + aiwonder ops
+  ├── #649 documentation + GitHub issue ledger truth
+  ├── #650 benchmark + gate-metric honesty
+  └── #651 operational practice + RCA discipline
+  ↓
+#655 retire Rust FSV examples → manual SoT guidance (in-progress p0)
+#656 mejepa-heal-drill conformal-overcoverage repair (in-progress p0)
+#657 TASK-PY-G-136 per-embedder geometry-label bakeoff (in-progress p0)
+  → #661 cross-embedder label consensus map
+  → #662 gate-safe geometry-label promotion
+  → #664 geometry region dictionary + per-embedder search router
+  → #665 new prediction heads over per-embedder geometry labels
+  ↓
+Doctrine repairs (must close before gate resumes):
+  #618 aggregate OOD over flat 5,120 buffer (doctrine §1.5ter violation)
+  #619 forward_inverse_inner flat Linear projections (doctrine §1.5ter violation)
+  #621 hardcoded gtau_pass_rate=1.0 in HoldoutReport
+  #670 invalid forward-cache spaces e2/e3/e4/e8
+  ↓
+Data-substrate completion:
+  #615 delete_test_call assertion-duty regeneration (in-progress p0)
+  #616 weak-cell oracle timeout/error reruns
+  #671 stale SWE-bench harness defaults
+  #672 geometry scalar feature lineage gate
+  #673 label-quality vs noise audit
+  #674 run-remote wrapper hang
+  ↓
+Resume #392 trajectory ECE repair → #405 Panel B → 0.95 ship gate
+```
 
 Post-0.95 roadmap stays archived/deferred. The active roadmap stops at the 0.95 × 4-window ship gate plus Panel B cross-check; pathway exploration, remaining skill-linkage expansions, info-physics formalization, and creativity-engine work do not take priority until that gate is met.
 
