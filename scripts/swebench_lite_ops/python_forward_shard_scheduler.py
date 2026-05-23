@@ -40,6 +40,7 @@ _PROMOTE_HOT_STAGE_LOCK = threading.Lock()
 
 AIWONDER_DURABLE_ROOT = Path("/zfs/archive/contextgraph")
 AIWONDER_HOT_ROOT = Path("/zfs/hot/contextgraph")
+DEFAULT_DISK_SNAPSHOT_TARGETS = (Path("/"), AIWONDER_HOT_ROOT, AIWONDER_DURABLE_ROOT)
 AIWONDER_SCRATCH_ROOT = Path("/home/croyse/.cache/contextgraph")
 
 DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
@@ -949,8 +950,11 @@ def require_probe_success(label: str, result: dict[str, Any]) -> None:
 
 def _disk_snapshot_targets() -> list[str]:
     """Targets df should report for aiwonder durable + hot filesystems."""
-    raw = os.environ.get("CG_MEJEPA_DISK_TARGETS", "/,/zfs/hot,/zfs/archive")
-    targets = [t.strip() for t in raw.split(",") if t.strip()]
+    raw = os.environ.get("CG_MEJEPA_DISK_TARGETS")
+    if raw is None:
+        targets = [str(target) for target in DEFAULT_DISK_SNAPSHOT_TARGETS]
+    else:
+        targets = [t.strip() for t in raw.split(",") if t.strip()]
     require("MEJEPA_SCHEDULER_DISK_TARGETS_EMPTY: at least one df target required", bool(targets))
     return targets
 
@@ -1619,14 +1623,14 @@ def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
         "MEJEPA_SCHEDULER_GPU_WORKERS_EXCEED_DEVICES: GPU workers fit detected CUDA devices",
         args.gpu_workers <= gpu["gpu_count"] * MAX_GPU_WORKERS_PER_DEVICE,
     )
-    # Hot stage check uses root by default; override with CG_MEJEPA_HOT_DISK_TARGET
-    # if the operator's hot root is on a non-root mount (e.g., /home on aiwonder).
-    hot_disk = os.environ.get("CG_MEJEPA_HOT_DISK_TARGET", "/")
+    # Defaults match the dedicated aiwonder ContextGraph datasets; override only
+    # for issue-scoped non-production smoke/revalidation work.
+    hot_disk = os.environ.get("CG_MEJEPA_HOT_DISK_TARGET", str(AIWONDER_HOT_ROOT))
     require(
         f"MEJEPA_SCHEDULER_HOT_CAPACITY: hot root disk target {hot_disk} has planned free bytes",
         capacity["hot_stage_budget_bytes"] <= disks[hot_disk]["available_bytes"],
     )
-    durable_disk = os.environ.get("CG_MEJEPA_DURABLE_DISK_TARGET", "/zfs/archive")
+    durable_disk = os.environ.get("CG_MEJEPA_DURABLE_DISK_TARGET", str(AIWONDER_DURABLE_ROOT))
     require(
         f"MEJEPA_SCHEDULER_DURABLE_CAPACITY: durable root disk target {durable_disk} has planned free bytes",
         capacity["required_durable_available_bytes"] <= disks[durable_disk]["available_bytes"],
@@ -4861,7 +4865,7 @@ def preflight_edge_checks(args: argparse.Namespace, preflight: dict[str, Any]) -
         "hot_stage_projected_capacity_overflow_rejected_before_writes",
         hot_stage_budget_bytes=preflight["host"]["filesystems"]["/"]["size_bytes"] + 1,
     )
-    durable_disk_for_edge = os.environ.get("CG_MEJEPA_DURABLE_DISK_TARGET", "/zfs/archive")
+    durable_disk_for_edge = os.environ.get("CG_MEJEPA_DURABLE_DISK_TARGET", str(AIWONDER_DURABLE_ROOT))
     expect_preflight_failure(
         "durable_root_projected_capacity_overflow_rejected_before_writes",
         projected_output_bytes=preflight["host"]["filesystems"][durable_disk_for_edge]["size_bytes"] + 1,
