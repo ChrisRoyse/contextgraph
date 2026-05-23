@@ -12,7 +12,7 @@ The `0.7942190170` rank-lift number is a composite Goodhart-magnifier, not a pre
 
 | Layer | Defect | Issue |
 |---|---|---|
-| Predictor head | `Trainer::run_full_training` hard-coded `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE` at `mejepa-train/src/trainer/mod.rs:31-34, 409-422`; `predictor_parameter_update_count=0`; production never sets `trained_checkpoint_manifest_path`; `MeJepaPredictor` runs random `VarMap` every boot | #683 |
+| Predictor head | Public `Trainer::run_full_training` hard-coded `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE` at `mejepa-train/src/trainer/mod.rs:31-34, 409-422`; latest aiwonder FSV loaded an out-of-band task-py-g-127 checkpoint (`optimizer_steps=64`, `weight_delta_observed=true`) but that path is not countable through `trained_predictor` / `ship_gate_countable_training`, and compiler construction must fail closed without an explicit manifest | #683 |
 | Substrate (`e2/e3/e4`) | `chunk.time` wall-clock injection at `python_forward_cache_fsv.rs:2308` identical for all 399,777 chunks → constant sinusoidal-PE output (1 unique vector per slot) | #704, #708 |
 | Substrate (`e8`) | `GraphModel::embed_batch()` missing `project_source_vector` before commit `ff4d4c03` (2026-05-22); prod corpus generated 7d earlier → byte-identical to `e1` | #704, #670 |
 | Gate metric | Rank-lift = category-local RBF exemplar similarity fitted on calibration split; lifts raw `0.4843 → 0.7942` without improving Brier/ECE; measures exemplar similarity, not predictor | #695 |
@@ -20,7 +20,7 @@ The `0.7942190170` rank-lift number is a composite Goodhart-magnifier, not a pre
 
 **Honest gap:** `0.95 − 0.4843 = 0.4657` against raw Pearson.
 
-**29 new issues filed (#683-#711).** Critical-path ordering replaced by #712 (pinned context). Every #392 / #511 / #549 / #554 / #558 / #560 / #393 / #398 / #536 measurement in §1-§2 is a perturbation of (random-weights predictor) ∘ (4/12 dead slots) ∘ (rank-lift Goodhart). Five #392 trajectory repairs hit ECE walls because of these defects, not calibration limits.
+**29 new issues filed (#683-#711).** Critical-path ordering replaced by #712 (pinned context). Every #392 / #511 / #549 / #554 / #558 / #560 / #393 / #398 / #536 measurement in §1-§2 is a perturbation of (checkpoint-loaded but trainer-orphaned predictor) ∘ (4/12 dead slots) ∘ (rank-lift Goodhart). Five #392 trajectory repairs hit ECE walls because of these defects, not proven calibration limits.
 
 ## 0b. ⚠ 2026-05-22 hardening pivot — still active
 
@@ -54,7 +54,7 @@ The corpus survives. The pre-fix measurement does not. Post-fix real-input rebas
 
 | Metric | Target | Latest measurement | Status |
 |---|---|---|---|
-| `prediction_oracle_correlation` (raw Pearson) | ≥ 0.95 stable × 4 rolling windows × all Python mutation cells | **`0.4843192995`** | **Honest predictor output. Gap = `0.4657`.** Predictor head untrained (#683); 4/12 embedder slots dead (#670, #704); rank-lift composite metric not gate-eligible (#695). |
+| `prediction_oracle_correlation` (raw Pearson) | ≥ 0.95 stable × 4 rolling windows × all Python mutation cells | **`0.4843192995`** | **Honest model-output baseline. Gap = `0.4657`.** Training/checkpoint lineage not countable through public trainer (#683); 4/12 embedder slots dead (#670, #704); rank-lift composite metric not gate-eligible (#695). |
 | `prediction_oracle_correlation` (rank-safe) | (diagnostic only) | `0.6916886568` | Monotonic recalibration. |
 | `prediction_oracle_correlation` (rank-lift) | (NOT gate-eligible per #695) | `0.7942190170` | Category-local RBF exemplar similarity over calibration split. Lifts raw `+0.31` without improving Brier/ECE. Measures exemplar similarity, not predictor. #535/#536 lift came from this transform, not from the model. |
 | Cross-panel oracle correlation (Panel B) | ≥ 0.95 with `\|corr_a − corr_b\| ≤ 0.05` | Panel B active-surface parity on #392 205-row subset: `corr_A=0.9526342154`, `corr_B=0.9902423024`, `\|Δ\|=0.0376080871` | Comparable #405/#521 only on active subset (selection bias #692). Full Panel B blocked behind #683 + #670. |
