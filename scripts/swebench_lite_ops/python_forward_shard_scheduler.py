@@ -72,6 +72,10 @@ STATIC_AST_RETIRED_TEMPORAL_FORWARD_SLUGS = ("e2", "e3", "e4")
 ISOLATED_FORWARD_SLUGS = ("e1", "e10", "e12", "e13", "e14", "e6", "e7", "e8", "e9")
 DEFAULT_ACTIVE_EMBEDDER_COUNT = len(ISOLATED_FORWARD_SLUGS)
 DEFAULT_CORPUS_PROFILE = "static_ast_python"
+MIN_UNIQUE_VECTOR_FRACTION = 0.5
+MAX_PAIRWISE_VECTOR_HASH_JACCARD = 0.5
+ERR_EMBEDDER_COLLAPSE = "MEJEPA_FORWARD_CACHE_EMBEDDER_COLLAPSE"
+ERR_EMBEDDER_ALIAS = "MEJEPA_FORWARD_CACHE_EMBEDDER_ALIAS"
 DEFAULT_ESTIMATED_RECORD_BYTES = 16 * 1024
 DEFAULT_HOT_STAGE_BUDGET_BYTES = 48 * 1024 * 1024 * 1024
 DEFAULT_DURABLE_SLACK_BYTES = 2 * 1024 * 1024 * 1024
@@ -578,6 +582,168 @@ def read_jsonl_rows(path: Path) -> list[Any]:
             except Exception as exc:  # noqa: BLE001 - include line number.
                 raise SchedulerError(f"invalid JSONL row in {path}:{line_no}: {exc}") from exc
     return rows
+
+
+def top_vector_sha256_counts(counts: dict[str, int]) -> list[dict[str, Any]]:
+    return [
+        {"vector_sha256": vector_sha256, "count": count}
+        for vector_sha256, count in sorted(
+            counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )[:5]
+    ]
+
+
+def vector_hash_jaccard(left: set[str], right: set[str]) -> float:
+    union_count = len(left | right)
+    if union_count == 0:
+        return 0.0
+    return len(left & right) / union_count
+
+
+def evaluate_embedder_distinctness(
+    active_embedder_ids: list[str],
+    index_rows: list[Any],
+) -> dict[str, Any]:
+    counts_by_embedder: dict[str, dict[str, int]] = {
+        embedder_id: {} for embedder_id in active_embedder_ids
+    }
+    for row in index_rows:
+        require("distinctness index row is object", isinstance(row, dict))
+        embedder_id = row.get("embedder_id")
+        if embedder_id not in counts_by_embedder:
+            continue
+        vector_sha256 = row.get("vector_sha256")
+        require(
+            f"{embedder_id} distinctness row has vector_sha256",
+            isinstance(vector_sha256, str) and bool(vector_sha256.strip()),
+        )
+        counts = counts_by_embedder[embedder_id]
+        counts[vector_sha256] = counts.get(vector_sha256, 0) + 1
+
+    per_embedder_metrics: dict[str, Any] = {}
+    collapse_failures: list[dict[str, Any]] = []
+    vector_hash_sets: dict[str, set[str]] = {}
+    for embedder_id in active_embedder_ids:
+        counts = counts_by_embedder[embedder_id]
+        row_count = sum(counts.values())
+        unique_count = len(counts)
+        distinctness_fraction = 0.0 if row_count == 0 else unique_count / row_count
+        status = "collapse" if distinctness_fraction < MIN_UNIQUE_VECTOR_FRACTION else "usable"
+        per_embedder_metrics[embedder_id] = {
+            "unique_vector_sha256_count": unique_count,
+            "distinctness_fraction": distinctness_fraction,
+            "distinctness_gate_status": status,
+            "distinctness_min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "top_vector_sha256_counts": top_vector_sha256_counts(counts),
+        }
+        if status != "usable":
+            collapse_failures.append(
+                {
+                    "error_code": ERR_EMBEDDER_COLLAPSE,
+                    "embedder_id": embedder_id,
+                    "row_count": row_count,
+                    "unique_vector_sha256_count": unique_count,
+                    "distinctness_fraction": distinctness_fraction,
+                    "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+                }
+            )
+        vector_hash_sets[embedder_id] = set(counts)
+
+    pairwise_jaccard_matrix: dict[str, dict[str, float]] = {}
+    alias_failures: list[dict[str, Any]] = []
+    for left in active_embedder_ids:
+        pairwise_jaccard_matrix[left] = {}
+        for right in active_embedder_ids:
+            jaccard = vector_hash_jaccard(vector_hash_sets[left], vector_hash_sets[right])
+            pairwise_jaccard_matrix[left][right] = jaccard
+            if left < right and jaccard > MAX_PAIRWISE_VECTOR_HASH_JACCARD:
+                alias_failures.append(
+                    {
+                        "error_code": ERR_EMBEDDER_ALIAS,
+                        "left_embedder_id": left,
+                        "right_embedder_id": right,
+                        "jaccard": jaccard,
+                        "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
+                        "left_unique_vector_sha256_count": len(vector_hash_sets[left]),
+                        "right_unique_vector_sha256_count": len(vector_hash_sets[right]),
+                    }
+                )
+
+    passes = not collapse_failures and not alias_failures
+    return {
+        "passes": passes,
+        "error_code": ERR_EMBEDDER_COLLAPSE if collapse_failures else ERR_EMBEDDER_ALIAS,
+        "per_embedder_metrics": per_embedder_metrics,
+        "pairwise_jaccard_matrix": pairwise_jaccard_matrix,
+        "collapse_failures": collapse_failures,
+        "alias_failures": alias_failures,
+    }
+
+
+def merge_distinctness_metrics(
+    per_embedder_coverage: dict[str, Any],
+    distinctness_report: dict[str, Any],
+) -> None:
+    metrics = distinctness_report.get("per_embedder_metrics") or {}
+    for embedder_id, row in metrics.items():
+        if isinstance(per_embedder_coverage.get(embedder_id), dict):
+            per_embedder_coverage[embedder_id].update(row)
+
+
+def write_isolated_distinctness_failure(
+    args: argparse.Namespace,
+    shard: ShardSpec,
+    chunk_count: int,
+    per_embedder_coverage: dict[str, Any],
+    distinctness_report: dict[str, Any],
+) -> None:
+    manifest_path = shard.manifest_path()
+    packed_manifest_path = shard.cache_root / "python_forward_cache_packed_manifest.json"
+    for stale_path in (manifest_path, packed_manifest_path):
+        try:
+            stale_path.unlink()
+        except FileNotFoundError:
+            pass
+    cache_failure_path = shard.cache_root / "python_forward_cache_distinctness_failure.json"
+    readback_failure_path = shard.readback_root / "python_forward_cache_distinctness_failure.json"
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_cache_isolated_embedder_distinctness_failure",
+        "created_at_utc": utc_now(),
+        "shard_id": shard.shard_id,
+        "status": "quarantined",
+        "passes": False,
+        "error_code": distinctness_report["error_code"],
+        "source_of_truth": {
+            "cache_failure": str(cache_failure_path),
+            "readback_failure": str(readback_failure_path),
+            "manifest": str(manifest_path),
+            "packed_manifest": str(packed_manifest_path),
+            "promoted_manifest_written": False,
+        },
+        "summary": {
+            "chunk_count": chunk_count,
+            "active_embedder_count": args.active_embedder_count,
+            "active_embedder_ids": list(ISOLATED_FORWARD_SLUGS),
+            "retired_embedder_count": len(STATIC_AST_RETIRED_TEMPORAL_FORWARD_SLUGS),
+            "retired_embedder_ids": list(STATIC_AST_RETIRED_TEMPORAL_FORWARD_SLUGS),
+            "collapse_failure_count": len(distinctness_report["collapse_failures"]),
+            "alias_failure_count": len(distinctness_report["alias_failures"]),
+        },
+        "per_embedder_coverage": per_embedder_coverage,
+        "embedder_distinctness_gate": {
+            "status": "failed",
+            "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
+            "collapse_failures": distinctness_report["collapse_failures"],
+            "alias_failures": distinctness_report["alias_failures"],
+        },
+        "pairwise_jaccard_matrix": distinctness_report["pairwise_jaccard_matrix"],
+    }
+    json_dump_checked(cache_failure_path, payload)
+    json_dump_checked(readback_failure_path, payload)
 
 
 def elapsed_ms(started: float) -> float:
@@ -1989,6 +2155,22 @@ def consolidate_isolated_subruns(
     expected_pairs = int(chunk_count) * args.active_embedder_count
     accounted_pairs = summary_totals["cache_record_count"] + summary_totals["quarantine_row_count"]
     require(f"{shard.shard_id} isolated consolidation accounts all pairs", accounted_pairs == expected_pairs)
+    distinctness_report = evaluate_embedder_distinctness(list(ISOLATED_FORWARD_SLUGS), index_rows)
+    merge_distinctness_metrics(per_embedder_coverage, distinctness_report)
+    if distinctness_report["passes"] is not True:
+        write_isolated_distinctness_failure(
+            args,
+            shard,
+            int(chunk_count),
+            per_embedder_coverage,
+            distinctness_report,
+        )
+        raise SchedulerError(
+            f"{distinctness_report['error_code']}: {shard.shard_id} isolated forward-cache "
+            "embedder distinctness gate failed: "
+            f"collapse_failures={len(distinctness_report['collapse_failures'])} "
+            f"alias_failures={len(distinctness_report['alias_failures'])}"
+        )
 
     jsonl_write_checked(shard.index_path(), index_rows)
     jsonl_write_checked(shard.quarantine_path(), quarantine_rows)
@@ -2028,6 +2210,9 @@ def consolidate_isolated_subruns(
         **summary_totals,
         "chunk_count": int(chunk_count),
         "active_embedder_count": args.active_embedder_count,
+        "active_embedder_ids": list(ISOLATED_FORWARD_SLUGS),
+        "retired_embedder_count": len(STATIC_AST_RETIRED_TEMPORAL_FORWARD_SLUGS),
+        "retired_embedder_ids": list(STATIC_AST_RETIRED_TEMPORAL_FORWARD_SLUGS),
         "expected_pairs": expected_pairs,
         "accounted_pairs": accounted_pairs,
         "global_cache_record_count_at_manifest_write": packed_index_rows,
@@ -2051,6 +2236,14 @@ def consolidate_isolated_subruns(
         "source_of_truth": source_of_truth,
         "summary": final_summary,
         "per_embedder_coverage": per_embedder_coverage,
+        "embedder_distinctness_gate": {
+            "status": "passed",
+            "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
+            "collapse_failures": distinctness_report["collapse_failures"],
+            "alias_failures": distinctness_report["alias_failures"],
+        },
+        "pairwise_jaccard_matrix": distinctness_report["pairwise_jaccard_matrix"],
         "isolated_consolidation": {
             "embedder_order": list(ISOLATED_FORWARD_SLUGS),
             "subrun_snapshot_root": str(isolated_subrun_snapshot_root(args, shard)),
@@ -2082,6 +2275,8 @@ def consolidate_isolated_subruns(
             "subrun_snapshot_root": str(isolated_subrun_snapshot_root(args, shard)),
         },
         "summary": final_summary,
+        "embedder_distinctness_gate": final_manifest["embedder_distinctness_gate"],
+        "pairwise_jaccard_matrix": final_manifest["pairwise_jaccard_matrix"],
         "subrun_snapshots": snapshots,
         "packed_merge": packed_merge,
         "packed_payload_hash_readback": payload_hash_readback,
@@ -2153,9 +2348,10 @@ def run_shard_embedder_isolated(
         )
 
     def _run_one_isolated_subrun(slug: str) -> tuple[str, dict[str, Any], dict[str, Any]]:
-        extra_env = {"CG_MEJEPA_PY_FORWARD_ONLY_EMBEDDER": slug}
-        if parallel_workers > 1:
-            extra_env["CG_MEJEPA_PY_FORWARD_SKIP_EXISTING_PACKED_READ"] = "1"
+        extra_env = {
+            "CG_MEJEPA_PY_FORWARD_ONLY_EMBEDDER": slug,
+            "CG_MEJEPA_PY_FORWARD_SKIP_EXISTING_PACKED_READ": "1",
+        }
         snapshot_holder: dict[str, Any] = {}
 
         def _snapshot_after_promotion(subrun_log: dict[str, Any]) -> dict[str, Any]:
@@ -2178,7 +2374,7 @@ def run_shard_embedder_isolated(
             event_phase="shard_embedder_subrun_complete",
             require_packed_store=False,
             post_promotion_snapshot=_snapshot_after_promotion if use_hot_stage_for_shard(args) else None,
-            seed_hot_stage_from_durable=parallel_workers == 1,
+            seed_hot_stage_from_durable=False,
         )
         snapshot_inner = snapshot_holder.get("snapshot")
         if snapshot_inner is None:
@@ -4459,6 +4655,13 @@ def aggregate(
         manifests.append(validate_manifest(shard, require_packed_store, expected_chunks_jsonl=expected_chunks_jsonl))
 
     active_embedder_count = manifests[0]["summary"]["active_embedder_count"]
+    active_embedder_ids = manifests[0]["summary"].get("active_embedder_ids")
+    retired_embedder_count = manifests[0]["summary"].get("retired_embedder_count")
+    retired_embedder_ids = manifests[0]["summary"].get("retired_embedder_ids")
+    retired_embedder_policy = manifests[0].get("retired_embedder_policy")
+    distinctness_gate_present = "embedder_distinctness_gate" in manifests[0]
+    pairwise_max_jaccard_matrix: dict[str, dict[str, float]] = {}
+    per_embedder_min_distinctness_fraction: dict[str, float] = {}
     totals = {
         "chunk_count": 0,
         "cache_record_count": 0,
@@ -4475,6 +4678,58 @@ def aggregate(
             f"{shard.shard_id} active embedder count stable",
             summary["active_embedder_count"] == active_embedder_count,
         )
+        if active_embedder_ids is not None:
+            require(
+                f"{shard.shard_id} active embedder ids stable",
+                summary.get("active_embedder_ids") == active_embedder_ids,
+            )
+        if retired_embedder_ids is not None:
+            require(
+                f"{shard.shard_id} retired embedder ids stable",
+                summary.get("retired_embedder_ids") == retired_embedder_ids,
+            )
+            require(
+                f"{shard.shard_id} retired embedder count stable",
+                summary.get("retired_embedder_count") == retired_embedder_count,
+            )
+        if distinctness_gate_present:
+            gate = manifest.get("embedder_distinctness_gate")
+            require(f"{shard.shard_id} distinctness gate exists", isinstance(gate, dict))
+            require(f"{shard.shard_id} distinctness gate passed", gate.get("status") == "passed")
+            require(
+                f"{shard.shard_id} distinctness gate has no collapse failures",
+                len(gate.get("collapse_failures") or []) == 0,
+            )
+            require(
+                f"{shard.shard_id} distinctness gate has no alias failures",
+                len(gate.get("alias_failures") or []) == 0,
+            )
+            matrix = manifest.get("pairwise_jaccard_matrix") or {}
+            require(f"{shard.shard_id} pairwise jaccard matrix exists", isinstance(matrix, dict))
+            for left, row in matrix.items():
+                require(f"{shard.shard_id} pairwise row {left} is object", isinstance(row, dict))
+                max_row = pairwise_max_jaccard_matrix.setdefault(left, {})
+                for right, value in row.items():
+                    jaccard = float(value)
+                    max_row[right] = max(jaccard, float(max_row.get(right, 0.0)))
+            coverage = manifest.get("per_embedder_coverage") or {}
+            require(f"{shard.shard_id} per-embedder coverage exists", isinstance(coverage, dict))
+            for embedder_id, row in coverage.items():
+                if not isinstance(row, dict) or "distinctness_fraction" not in row:
+                    continue
+                fraction = float(row["distinctness_fraction"])
+                if embedder_id not in per_embedder_min_distinctness_fraction:
+                    per_embedder_min_distinctness_fraction[embedder_id] = fraction
+                else:
+                    per_embedder_min_distinctness_fraction[embedder_id] = min(
+                        per_embedder_min_distinctness_fraction[embedder_id],
+                        fraction,
+                    )
+        else:
+            require(
+                f"{shard.shard_id} distinctness gate consistently absent",
+                "embedder_distinctness_gate" not in manifest,
+            )
         for key in totals:
             totals[key] += int(summary[key])
         shard_rows.append(
@@ -4498,6 +4753,18 @@ def aggregate(
     accounted_pairs = totals["cache_record_count"] + totals["quarantine_row_count"]
     require("aggregate accounted pairs match expected pairs", accounted_pairs == expected_pairs)
     require("aggregate second pass covers cache records", totals["second_pass_hits"] == totals["cache_record_count"])
+    summary = {
+        **totals,
+        "active_embedder_count": active_embedder_count,
+        "expected_pairs": expected_pairs,
+        "accounted_pairs": accounted_pairs,
+        "shard_count": len(shards),
+    }
+    if active_embedder_ids is not None:
+        summary["active_embedder_ids"] = active_embedder_ids
+    if retired_embedder_ids is not None:
+        summary["retired_embedder_count"] = retired_embedder_count
+        summary["retired_embedder_ids"] = retired_embedder_ids
     corpus_manifest = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
@@ -4505,15 +4772,22 @@ def aggregate(
         "created_at_utc": utc_now(),
         "status": "passed",
         "passes": True,
-        "summary": {
-            **totals,
-            "active_embedder_count": active_embedder_count,
-            "expected_pairs": expected_pairs,
-            "accounted_pairs": accounted_pairs,
-            "shard_count": len(shards),
-        },
+        "summary": summary,
         "shards": shard_rows,
     }
+    if retired_embedder_policy is not None:
+        corpus_manifest["retired_embedder_policy"] = retired_embedder_policy
+    if distinctness_gate_present:
+        corpus_manifest["embedder_distinctness_gate"] = {
+            "status": "passed",
+            "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
+            "shard_count": len(shards),
+            "per_embedder_min_distinctness_fraction": per_embedder_min_distinctness_fraction,
+            "pairwise_max_jaccard_matrix": pairwise_max_jaccard_matrix,
+            "collapse_failures": [],
+            "alias_failures": [],
+        }
     json_dump_checked(output_path, corpus_manifest)
     readback = read_json(output_path)
     require("aggregate manifest readback equals written summary", readback["summary"] == corpus_manifest["summary"])
