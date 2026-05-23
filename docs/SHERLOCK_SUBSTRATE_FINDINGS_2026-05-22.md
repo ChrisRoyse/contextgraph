@@ -4,6 +4,12 @@ Investigator: Sherlock Holmes (Opus 4.7)
 Scope: data-substrate / corpus / embedders / instruments / Q4-freeze enforcement
 Ship-gate context: `prediction_oracle_correlation = 0.7942190170` (raw 0.4843, rank-safe 0.6917). Goal ≥ 0.95 stable × 4 windows. Panel B unmeasured.
 
+## Post-audit correction — 2026-05-23
+
+The substrate findings remain valid for the legacy v1 forward cache: `e2/e3/e4` collapsed from non-semantic `chunk.time` injection, and legacy `e8` aliases `e1` before commit `ff4d4c03`. The trainer finding is also valid for the public Rust `Trainer`: it is certificate-only and not ship-gate-countable.
+
+The open question about whether the `0.7942` run used a random-init checkpoint has since been narrowed by direct aiwonder readback. The latest ship-gate FSV loaded an out-of-band trained checkpoint with `optimizer_steps=64` and `weight_delta_observed=true`; #683 remains P0 because that path is not unified with the public `Trainer` contract and does not expose ship-gate countability fields in the training certificate lineage. Use #712/#683 as the current interpretation.
+
 ## Summary
 
 - **e2/e3/e4 collapse mechanism identified and is structural, not a regeneration-fixable bug.** Old prod runner `python_forward_cache_fsv.rs` line 2308 (commit 2865672d, in effect 2026-05-15) injects `format!("timestamp:{}\n{}", chunk.time, chunk.source_text)` into the embedder input. `chunk.time` is the AST-chunker run-timestamp, NOT a per-chunk semantic time. Every one of 399,777 chunks carries the SAME `chunk.time` → sinusoidal-PE → SAME output vector. The fail-closed gate at `forward.rs:682` is bypassed by this constant-prefix injection.

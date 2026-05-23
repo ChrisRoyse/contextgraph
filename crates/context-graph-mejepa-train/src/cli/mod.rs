@@ -8,7 +8,7 @@ use crate::eval::{Lang, MutationCategory};
 use crate::trainer::{Trainer, TrainingDataset};
 use candle_core::{Device, Tensor};
 use clap::Args;
-use context_graph_mejepa::PANEL_DIM;
+use context_graph_mejepa::{FrozenTargetAdapter, MeJepaPredictor, PredictorConfig, PANEL_DIM};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -64,6 +64,18 @@ pub struct TrainArgs {
     pub random_seed: u64,
     #[arg(long)]
     pub resume: Option<PathBuf>,
+    #[arg(long, name = "countable-predictor-training")]
+    pub countable_predictor_training: bool,
+    #[arg(long, name = "checkpoint-dir")]
+    pub checkpoint_dir: Option<PathBuf>,
+    #[arg(long, name = "predictor-num-tests", default_value_t = 1)]
+    pub predictor_num_tests: usize,
+    #[arg(long, name = "predictor-num-layers")]
+    pub predictor_num_layers: Option<u8>,
+    #[arg(long, name = "predictor-hidden-dim")]
+    pub predictor_hidden_dim: Option<u32>,
+    #[arg(long, name = "predictor-num-heads")]
+    pub predictor_num_heads: Option<u8>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -141,6 +153,17 @@ pub fn run_eval_holdout(args: EvalHoldoutArgs) -> ExitCode {
 }
 
 fn run_train_inner(args: TrainArgs) -> Result<serde_json::Value, TrainerError> {
+    let checkpoint_dir = validate_countable_training_args(&args)?;
+    let predictor_config = if args.countable_predictor_training {
+        Some(predictor_config_from_args(&args)?)
+    } else {
+        None
+    };
+    let countable_device = if args.countable_predictor_training {
+        Some(Device::new_cuda(0)?)
+    } else {
+        None
+    };
     let mut config = match &args.config {
         Some(path) => TrainingConfig::load_from_toml(path)?,
         None => TrainingConfig::default(),
@@ -150,9 +173,104 @@ fn run_train_inner(args: TrainArgs) -> Result<serde_json::Value, TrainerError> {
     config.validate()?;
     let dataset = load_corpus_index_dataset(&args.corpus)?;
     let db = open_train_rocksdb(&args.output)?;
-    let mut trainer = Trainer::new(config, db, Device::Cpu)?;
-    let result = trainer.run_full_training(&dataset)?;
+    let result = if args.countable_predictor_training {
+        let checkpoint_dir = checkpoint_dir.expect("validated countable checkpoint directory");
+        let device = countable_device.expect("validated countable CUDA device");
+        let predictor_config = predictor_config.expect("validated countable predictor config");
+        let predictor = MeJepaPredictor::new(
+            predictor_config,
+            FrozenTargetAdapter::empty_for_test(),
+            device.clone(),
+            args.predictor_num_tests,
+        )
+        .map_err(predictor_error)?;
+        let mut trainer = Trainer::new(config, db, device)?;
+        trainer.run_full_training_with_trained_predictor(&dataset, predictor, checkpoint_dir)?
+    } else {
+        let mut trainer = Trainer::new(config, db, Device::Cpu)?;
+        trainer.run_full_training(&dataset)?
+    };
     Ok(serde_json::to_value(result)?)
+}
+
+fn validate_countable_training_args(args: &TrainArgs) -> Result<Option<PathBuf>, TrainerError> {
+    if !args.countable_predictor_training {
+        if args.checkpoint_dir.is_some() {
+            return Err(TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                "--checkpoint-dir is only valid with --countable-predictor-training",
+            ));
+        }
+        if args.predictor_num_layers.is_some()
+            || args.predictor_hidden_dim.is_some()
+            || args.predictor_num_heads.is_some()
+        {
+            return Err(TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                "--predictor-* overrides are only valid with --countable-predictor-training",
+            ));
+        }
+        return Ok(None);
+    }
+
+    if args.predictor_num_tests == 0 {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "--predictor-num-tests must be > 0 for countable predictor training",
+        ));
+    }
+    let checkpoint_dir = args.checkpoint_dir.clone().ok_or_else(|| {
+        TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "--countable-predictor-training requires --checkpoint-dir",
+        )
+        .with_context(json!({
+            "remediation": "use an aiwonder /zfs/archive/contextgraph/... checkpoint directory"
+        }))
+    })?;
+    let display = checkpoint_dir.to_string_lossy();
+    if display.is_empty()
+        || (!display.starts_with("/zfs/archive/contextgraph/")
+            && !display.starts_with("/zfs/hot/contextgraph/"))
+    {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "--checkpoint-dir must live under aiwonder /zfs/archive/contextgraph or /zfs/hot/contextgraph for countable predictor training",
+        )
+        .with_context(json!({
+            "checkpoint_dir": checkpoint_dir,
+            "remediation": "choose a retained aiwonder model directory under /zfs/archive/contextgraph/models"
+        })));
+    }
+    Ok(Some(checkpoint_dir))
+}
+
+fn predictor_config_from_args(args: &TrainArgs) -> Result<PredictorConfig, TrainerError> {
+    let config = PredictorConfig {
+        num_layers: args
+            .predictor_num_layers
+            .unwrap_or(PredictorConfig::default().num_layers),
+        hidden_dim: args
+            .predictor_hidden_dim
+            .unwrap_or(PredictorConfig::default().hidden_dim),
+        num_heads: args
+            .predictor_num_heads
+            .unwrap_or(PredictorConfig::default().num_heads),
+        ..PredictorConfig::default()
+    };
+    config.validate().map_err(predictor_error)?;
+    Ok(config)
+}
+
+fn predictor_error(err: context_graph_mejepa::PredictorError) -> TrainerError {
+    TrainerError::new(
+        TrainerErrorCode::MejepaTrainConfigInvalid,
+        format!("predictor construction failed: {err}"),
+    )
+    .with_context(json!({
+        "predictor_error_code": err.code(),
+        "remediation": "verify CUDA device 0 and predictor shape/config before running countable training"
+    }))
 }
 
 fn apply_overrides(config: &mut TrainingConfig, args: &TrainArgs) {

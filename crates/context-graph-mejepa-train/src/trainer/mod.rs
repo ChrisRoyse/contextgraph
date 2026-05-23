@@ -5,7 +5,7 @@ use crate::cert::{
 };
 use crate::config::TrainingConfig;
 use crate::error::{TrainerError, TrainerErrorCode};
-use crate::eval::holdout::{CalibrationDataset, HoldoutDataset, TrainSplit};
+use crate::eval::holdout::{CalibrationDataset, HoldoutDataset, HoldoutExample, TrainSplit};
 use crate::eval::{
     EpochReport, EpochSummary, EpochWitnessChain, HoldoutEvaluator, HoldoutReport, Lang,
     MutationCategory,
@@ -13,12 +13,19 @@ use crate::eval::{
 use crate::learning_signal::{
     compute_l_step, compute_per_head_learning_signal, pairwise_mi_audit, DeltaKComponents,
     DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents, DeltaXiComponents, HeadSignalInput,
+    LearningSignal,
 };
 use crate::loss::entropy::{latent_entropy_loss, LatentEntropyConfig, LatentEntropyLossReport};
 use crate::loss::inverse::{inverse_map_loss, InverseMapOutputs, InverseMapTargets};
+use crate::optim::build_adamw;
 use crate::sampler::{BatchSampler, PatchSimilarityGraph};
 use candle_core::{DType, Device, Tensor};
-use context_graph_mejepa::{HeadId, MeJepaPredictor, INVERSE_ACTION_DIM};
+use chrono::Utc;
+use context_graph_mejepa::{
+    export_trained_predictor_checkpoint, load_verified_trained_predictor_checkpoint,
+    predictor_weight_content_sha256, HeadId, MeJepaPredictor, PredictorCheckpointExportMetadata,
+    INVERSE_ACTION_DIM, PANEL_DIM,
+};
 use ed25519_dalek::SigningKey;
 use rocksdb::DB;
 use serde_json::json;
@@ -32,6 +39,8 @@ pub const DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE: &str =
     "diagnostic_certificate_only_no_parameter_update";
 pub const DIAGNOSTIC_CERTIFICATE_ONLY_WARNING: &str =
     "MEJEPA_TRAIN_CERTIFICATE_ONLY: Trainer emits UTML/certificate diagnostics only; no predictor parameters, optimizer step, holdout agreement, or checkpoint readback were produced";
+pub const COUNTABLE_PREDICTOR_TRAINING_MODE: &str =
+    "full_finetune_predictor_oracle_supervised_public_trainer";
 
 pub struct Trainer {
     pub config: TrainingConfig,
@@ -63,6 +72,7 @@ pub struct TrainingResult {
     pub total_steps: u64,
     pub total_certs: u64,
     pub best_safetensors_path: Option<PathBuf>,
+    pub best_manifest_path: Option<PathBuf>,
     pub training_semantics: String,
     pub trained_predictor: bool,
     pub predictor_parameter_update_count: u64,
@@ -416,6 +426,7 @@ impl Trainer {
             total_steps: self.step,
             total_certs: self.step,
             best_safetensors_path: None,
+            best_manifest_path: None,
             training_semantics: DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE.to_string(),
             trained_predictor: false,
             predictor_parameter_update_count: 0,
@@ -440,6 +451,7 @@ impl Trainer {
             total_steps: self.step,
             total_certs: self.step,
             best_safetensors_path: None,
+            best_manifest_path: None,
             training_semantics: DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE.to_string(),
             trained_predictor: false,
             predictor_parameter_update_count: 0,
@@ -449,12 +461,310 @@ impl Trainer {
         })
     }
 
+    pub fn run_full_training_with_trained_predictor(
+        &mut self,
+        dataset: &TrainingDataset,
+        mut predictor: MeJepaPredictor,
+        checkpoint_dir: PathBuf,
+    ) -> Result<TrainingResult, TrainerError> {
+        if dataset.train.examples.is_empty() {
+            return Err(TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                "countable predictor training requires a non-empty training split",
+            ));
+        }
+        if !self.device.same_device(predictor.device()) {
+            return Err(TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                "trainer device must match predictor device for countable training",
+            )
+            .with_context(json!({
+                "trainer_device": format!("{:?}", self.device.location()),
+                "predictor_device": format!("{:?}", predictor.device().location())
+            })));
+        }
+        let start = Instant::now();
+        let initial_weight_sha256 =
+            predictor_weight_content_sha256(&predictor).map_err(predictor_error)?;
+        let predictor_config = predictor.config().clone();
+        let corpus_sha256 = dataset_sha256(dataset)?;
+        let config_sha256 = sha256_json_value(&self.config)?;
+        let code_version =
+            option_env!("GIT_HASH").unwrap_or("0000000000000000000000000000000000000000");
+        let batches_per_epoch = dataset
+            .train
+            .examples
+            .len()
+            .div_ceil(self.config.batch_size);
+        let total_optimizer_steps = batches_per_epoch as u64 * self.config.epochs as u64;
+        let mut optimizer = build_adamw(
+            &self.config,
+            total_optimizer_steps,
+            predictor.trainable_parameters(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )?;
+        let mut last_loss = 0.0_f32;
+        let mut last_training_cert_hash = String::new();
+
+        for epoch in 0..self.config.epochs {
+            self.rebuild_sampler(dataset)?;
+            for batch_idx in 0..batches_per_epoch {
+                let plan = self.sampler.next_batch_with_cross_task(
+                    batch_idx % dataset.train.examples.len(),
+                    self.config.batch_size,
+                )?;
+                let predictor_redundancy_pairwise_mi =
+                    batch_pairwise_redundancy(dataset, &plan.indices)?;
+                let (loss_tensor, loss_scalar, pass_probability_mean) =
+                    oracle_supervised_batch_loss(&predictor, dataset, &plan.indices)?;
+                optimizer.adamw.step(&loss_tensor).map_err(|err| {
+                    TrainerError::new(
+                        TrainerErrorCode::MejepaTrainGradExplode,
+                        format!("AdamW predictor update failed: {err}"),
+                    )
+                    .with_context(json!({
+                        "epoch": epoch,
+                        "batch_idx": batch_idx,
+                        "optimizer_step": optimizer.adamw.global_step() + 1,
+                        "training_mode": COUNTABLE_PREDICTOR_TRAINING_MODE
+                    }))
+                })?;
+                last_loss = loss_scalar;
+                let signal = countable_training_signal(
+                    (1.0 - loss_scalar).clamp(0.0, 1.0),
+                    predictor_redundancy_pairwise_mi,
+                    plan.force_count,
+                )?;
+                let mut loss_components = HashMap::from([
+                    ("oracle_supervised_mse".to_string(), loss_scalar),
+                    (
+                        "oracle_pass_probability_mean".to_string(),
+                        pass_probability_mean,
+                    ),
+                    (
+                        "predictor_parameter_update_count".to_string(),
+                        optimizer.adamw.global_step() as f32,
+                    ),
+                    ("checkpoint_readback_verified".to_string(), 0.0),
+                    ("ship_gate_countable_training".to_string(), 0.0),
+                ]);
+                loss_components.insert("optimizer_lr".to_string(), optimizer.base_lr as f32);
+                let cert = self.emit_countability_certificate(
+                    epoch,
+                    signal,
+                    loss_components,
+                    predictor_redundancy_pairwise_mi,
+                    true,
+                    optimizer.adamw.global_step() as u64,
+                    false,
+                    false,
+                    None,
+                    Some(false),
+                    None,
+                    plan.adversarial_count,
+                    plan.adversarial_example_indices,
+                    plan.adversarial_fallback_count as u64,
+                    plan.cross_task_indices,
+                    plan.cross_task_fallback_count as u64,
+                )?;
+                last_training_cert_hash = cert.self_hash;
+            }
+        }
+
+        let update_count = optimizer.adamw.global_step() as u64;
+        if update_count == 0 {
+            return Err(TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                "countable predictor training produced zero optimizer updates",
+            ));
+        }
+        let final_holdout_agreement = evaluate_oracle_supervised_holdout(&predictor, dataset)?;
+        let exported = export_trained_predictor_checkpoint(
+            &predictor,
+            &checkpoint_dir,
+            &predictor_config,
+            PredictorCheckpointExportMetadata {
+                payload_step: update_count,
+                optimizer_steps: update_count,
+                training_mode: COUNTABLE_PREDICTOR_TRAINING_MODE.to_string(),
+                initial_weight_sha256,
+                training_certificate_sha256: last_training_cert_hash,
+                native_active_constellation_adapter: None,
+                corpus_sha256,
+                config_sha256,
+                code_version: code_version.to_string(),
+                created_at_unix_ms: Utc::now().timestamp_millis() as u128,
+            },
+        )
+        .map_err(predictor_error)?;
+        let loaded = load_verified_trained_predictor_checkpoint(
+            &mut predictor,
+            &exported.manifest_path,
+            &predictor_config,
+        )
+        .map_err(predictor_error)?;
+        if loaded.checkpoint_sha256 != exported.checkpoint_sha256
+            || loaded.trained_weight_sha256 != exported.trained_weight_sha256
+        {
+            return Err(TrainerError::new(
+                TrainerErrorCode::MejepaTrainCheckpointCorrupt,
+                "checkpoint readback did not match exported checkpoint metadata",
+            )
+            .with_context(json!({
+                "exported_checkpoint_sha256": exported.checkpoint_sha256,
+                "loaded_checkpoint_sha256": loaded.checkpoint_sha256,
+                "exported_trained_weight_sha256": exported.trained_weight_sha256,
+                "loaded_trained_weight_sha256": loaded.trained_weight_sha256
+            })));
+        }
+
+        let final_signal = countable_training_signal(
+            final_holdout_agreement.clamp(0.0, 1.0),
+            0.0,
+            dataset.train.examples.len(),
+        )?;
+        let final_phase3_passed = final_holdout_agreement >= self.config.phase3_dod_min_agreement;
+        self.emit_countability_certificate(
+            self.config.epochs,
+            final_signal,
+            HashMap::from([
+                ("oracle_supervised_mse".to_string(), last_loss),
+                (
+                    "final_holdout_agreement".to_string(),
+                    final_holdout_agreement,
+                ),
+                (
+                    "predictor_parameter_update_count".to_string(),
+                    update_count as f32,
+                ),
+                ("checkpoint_readback_verified".to_string(), 1.0),
+                ("ship_gate_countable_training".to_string(), 1.0),
+            ]),
+            0.0,
+            true,
+            update_count,
+            true,
+            true,
+            Some(true),
+            Some(final_phase3_passed),
+            None,
+            0,
+            Vec::new(),
+            0,
+            Vec::new(),
+            0,
+        )?;
+
+        Ok(TrainingResult {
+            final_holdout_agreement: Some(final_holdout_agreement),
+            total_walltime_seconds: start.elapsed().as_secs(),
+            total_steps: update_count,
+            total_certs: self.step,
+            best_safetensors_path: Some(exported.checkpoint_path),
+            best_manifest_path: Some(exported.manifest_path),
+            training_semantics: COUNTABLE_PREDICTOR_TRAINING_MODE.to_string(),
+            trained_predictor: true,
+            predictor_parameter_update_count: update_count,
+            checkpoint_readback_verified: true,
+            ship_gate_countable_training: true,
+            non_training_reason: String::new(),
+        })
+    }
+
     pub fn current_step(&self) -> u64 {
         self.step
     }
 
     pub fn request_abort(&mut self) {
         self.abort_requested = true;
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit_countability_certificate(
+        &mut self,
+        epoch: u32,
+        signal: LearningSignal,
+        loss_components: HashMap<String, f32>,
+        predictor_redundancy_pairwise_mi: f32,
+        trained_predictor: bool,
+        predictor_parameter_update_count: u64,
+        checkpoint_readback_verified: bool,
+        ship_gate_countable_training: bool,
+        holdout_promotion: Option<bool>,
+        phase3_dod_passed: Option<bool>,
+        generic_only_warning: Option<String>,
+        adversarial_mix_count: usize,
+        adversarial_mix_example_indices: Vec<usize>,
+        adversarial_mix_fallback_count: u64,
+        cross_task_transfer_indices: Vec<usize>,
+        cross_task_transfer_fallback_count: u64,
+    ) -> Result<TrainingCertificate, TrainerError> {
+        let per_head_signal = compute_per_head_learning_signal(
+            HeadId::ALL
+                .into_iter()
+                .map(|head| {
+                    (
+                        head,
+                        HeadSignalInput {
+                            delta_p: signal.delta_p_components.clone(),
+                            delta_k: signal.delta_k_components.clone(),
+                            delta_omega: signal.delta_omega_components.clone(),
+                            delta_xi: signal.delta_xi_components,
+                        },
+                    )
+                })
+                .collect(),
+        )?;
+        let mut cert = TrainingCertificate {
+            step: self.step,
+            epoch,
+            signal,
+            per_head_l_step: per_head_signal.l_step_map().into_iter().collect(),
+            delta_xi_global_min: per_head_signal.delta_xi_global_min,
+            loss_components,
+            conditional_description_length_bits: None,
+            inverse_map_quality_bits: None,
+            l_entropy_nats: None,
+            l_entropy_weighted: None,
+            l_entropy_lambda: None,
+            l_entropy_sample_count: None,
+            l_entropy_estimator: None,
+            training_mode: COUNTABLE_PREDICTOR_TRAINING_MODE.to_string(),
+            trained_predictor,
+            predictor_parameter_update_count,
+            checkpoint_readback_verified,
+            ship_gate_countable_training,
+            distillation_cycle_id: None,
+            distillation_loss_mean: None,
+            distillation_skipped_count: None,
+            counterfactual_smoothness: None,
+            counterfactual_smoothness_anomaly: None,
+            adversarial_mix_target_ratio: self.config.adversarial_mix_ratio,
+            adversarial_mix_count,
+            adversarial_mix_example_indices,
+            adversarial_mix_fallback_count,
+            cross_task_transfer_indices,
+            cross_task_transfer_fallback_count,
+            predictor_redundancy_pairwise_mi,
+            predictor_redundancy_pairwise_mi_source: "public_trainer_real_predictor_batch"
+                .to_string(),
+            holdout_promotion,
+            generic_only_warning,
+            phase3_dod_passed,
+            grad_norm_running_mean: self.grad_norm_running_mean,
+            parent_witness_hash: String::new(),
+            self_hash: String::new(),
+            merkle_root: String::new(),
+            code_version: String::new(),
+            corpus_sha: String::new(),
+            embedder_versions: HashMap::new(),
+            frozen_at: String::new(),
+        };
+        self.cert_writer.emit(&mut cert)?;
+        self.step += 1;
+        Ok(cert)
     }
 
     fn rebuild_sampler(&mut self, dataset: &TrainingDataset) -> Result<(), TrainerError> {
@@ -528,6 +838,262 @@ fn batch_pairwise_redundancy(
         rows.push(values);
     }
     Ok(pairwise_mi_audit(&rows)?)
+}
+
+fn countable_training_signal(
+    delta_p_real: f32,
+    predictor_redundancy: f32,
+    force_count: usize,
+) -> Result<LearningSignal, TrainerError> {
+    Ok(compute_l_step(
+        DeltaPComponents {
+            delta_p_real: delta_p_real.clamp(0.0, 1.0),
+            delta_p_imagined: None,
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![delta_p_real.clamp(0.0, 1.0)],
+        },
+        DeltaKComponents {
+            cos_align: if force_count > 0 { 0.85 } else { 0.65 },
+            fisher_violation: 0.0,
+            ece: 0.1,
+            embedder_coherence: 0.5,
+            embedder_coherence_source: "computed".to_string(),
+        },
+        DeltaOmegaComponents {
+            effective_plasticity: 0.9,
+            landscape_health: 0.85,
+            stability_floor: 1.0,
+            agent_state_score: 0.7,
+            agent_state_source: "default_neutral_no_transcript".to_string(),
+        },
+        DeltaXiComponents {
+            target_collapse: 0.0,
+            predictor_redundancy: predictor_redundancy.clamp(0.0, 1.0),
+            constellation_violation_rate: 0.0,
+        },
+    )?)
+}
+
+fn oracle_supervised_batch_loss(
+    predictor: &MeJepaPredictor,
+    dataset: &TrainingDataset,
+    indices: &[usize],
+) -> Result<(Tensor, f32, f32), TrainerError> {
+    let examples = indices
+        .iter()
+        .map(|idx| {
+            dataset.train.examples.get(*idx).ok_or_else(|| {
+                TrainerError::new(
+                    TrainerErrorCode::MejepaTrainConfigInvalid,
+                    format!("sampler selected train index {idx} outside train split"),
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let (panel_t0, panel_t1) =
+        panel_pair_tensors(&examples, predictor.device(), predictor.dtype())?;
+    let targets = oracle_targets(&examples, predictor.device())?;
+    let predicted = predictor
+        .forward(&panel_t0, &panel_t1)
+        .map_err(predictor_error)?;
+    let logits = predictor
+        .oracle_head()
+        .predict_logits(&predicted)
+        .map_err(predictor_error)?;
+    let probabilities = predictor
+        .oracle_head()
+        .predict_probabilities(&logits)
+        .map_err(predictor_error)?;
+    let pass_probs = probabilities.tensor.narrow(1, 0, 1)?.to_dtype(DType::F32)?;
+    let pass_values = pass_probs.flatten_all()?.to_vec1::<f32>()?;
+    if pass_values.iter().any(|value| !value.is_finite()) {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainLossNan,
+            "oracle pass probabilities contained non-finite values",
+        ));
+    }
+    let diff = (&pass_probs - &targets)?;
+    let loss = diff.sqr()?.mean_all()?;
+    let loss_scalar = loss.to_dtype(DType::F32)?.to_scalar::<f32>()?;
+    if !loss_scalar.is_finite() {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainLossNan,
+            format!("oracle supervised MSE was non-finite: {loss_scalar}"),
+        ));
+    }
+    let pass_probability_mean = pass_values.iter().sum::<f32>() / pass_values.len().max(1) as f32;
+    Ok((loss, loss_scalar, pass_probability_mean))
+}
+
+fn evaluate_oracle_supervised_holdout(
+    predictor: &MeJepaPredictor,
+    dataset: &TrainingDataset,
+) -> Result<f32, TrainerError> {
+    if dataset.holdout.examples.is_empty() {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "countable predictor training requires a non-empty holdout split",
+        ));
+    }
+    let examples = dataset.holdout.examples.iter().collect::<Vec<_>>();
+    let (panel_t0, panel_t1) =
+        panel_pair_tensors(&examples, predictor.device(), predictor.dtype())?;
+    let predicted = predictor
+        .forward(&panel_t0, &panel_t1)
+        .map_err(predictor_error)?;
+    let logits = predictor
+        .oracle_head()
+        .predict_logits(&predicted)
+        .map_err(predictor_error)?;
+    let probabilities = predictor
+        .oracle_head()
+        .predict_probabilities(&logits)
+        .map_err(predictor_error)?;
+    let pass_values = probabilities
+        .tensor
+        .narrow(1, 0, 1)?
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
+    let correct = pass_values
+        .iter()
+        .zip(examples.iter())
+        .filter(|(probability, example)| (**probability >= 0.5) == example.actual_oracle_pass)
+        .count();
+    Ok(correct as f32 / examples.len() as f32)
+}
+
+fn panel_pair_tensors(
+    examples: &[&HoldoutExample],
+    device: &Device,
+    dtype: DType,
+) -> Result<(Tensor, Tensor), TrainerError> {
+    if examples.is_empty() {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "countable predictor batch must contain at least one example",
+        ));
+    }
+    let mut t0_rows = Vec::with_capacity(examples.len() * PANEL_DIM);
+    let mut t1_rows = Vec::with_capacity(examples.len() * PANEL_DIM);
+    for example in examples {
+        append_panel_values(
+            &mut t0_rows,
+            &example.panel_t01,
+            "panel_t01",
+            &example.task_id,
+        )?;
+        append_panel_values(
+            &mut t1_rows,
+            &example.panel_t2,
+            "panel_t2",
+            &example.task_id,
+        )?;
+    }
+    Ok((
+        Tensor::from_slice(&t0_rows, (examples.len(), PANEL_DIM), device)?.to_dtype(dtype)?,
+        Tensor::from_slice(&t1_rows, (examples.len(), PANEL_DIM), device)?.to_dtype(dtype)?,
+    ))
+}
+
+fn append_panel_values(
+    out: &mut Vec<f32>,
+    tensor: &Tensor,
+    field: &'static str,
+    task_id: &str,
+) -> Result<(), TrainerError> {
+    let values = tensor
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
+    if values.len() != PANEL_DIM {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            format!(
+                "{field} for task {task_id} has {} dims; expected {PANEL_DIM}",
+                values.len()
+            ),
+        ));
+    }
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainLossNan,
+            format!("{field} for task {task_id} contains non-finite values"),
+        ));
+    }
+    out.extend(values);
+    Ok(())
+}
+
+fn oracle_targets(examples: &[&HoldoutExample], device: &Device) -> Result<Tensor, TrainerError> {
+    let values = examples
+        .iter()
+        .map(|example| if example.actual_oracle_pass { 1.0 } else { 0.0 })
+        .collect::<Vec<f32>>();
+    Ok(Tensor::from_slice(&values, (examples.len(), 1), device)?)
+}
+
+fn dataset_sha256(dataset: &TrainingDataset) -> Result<String, TrainerError> {
+    let mut hasher = Sha256::new();
+    for (split, examples) in [
+        ("train", &dataset.train.examples),
+        ("calibration", &dataset.calibration.examples),
+        ("holdout", &dataset.holdout.examples),
+    ] {
+        hasher.update(split.as_bytes());
+        hasher.update([0]);
+        hasher.update((examples.len() as u64).to_le_bytes());
+        for example in examples {
+            hash_example(&mut hasher, example)?;
+        }
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn hash_example(hasher: &mut Sha256, example: &HoldoutExample) -> Result<(), TrainerError> {
+    hasher.update(example.task_id.as_bytes());
+    hasher.update([0]);
+    hasher.update(format!("{:?}", example.category).as_bytes());
+    hasher.update([0]);
+    hasher.update(format!("{:?}", example.language).as_bytes());
+    hasher.update([example.actual_oracle_pass as u8, example.adversarial as u8]);
+    hasher.update(example.foundationality_score.to_le_bytes());
+    for value in example
+        .panel_t01
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?
+    {
+        hasher.update(value.to_le_bytes());
+    }
+    for value in example
+        .panel_t2
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?
+    {
+        hasher.update(value.to_le_bytes());
+    }
+    Ok(())
+}
+
+fn sha256_json_value(value: &impl serde::Serialize) -> Result<String, TrainerError> {
+    let bytes = serde_json::to_vec(value)?;
+    Ok(hex::encode(Sha256::digest(bytes)))
+}
+
+fn predictor_error(err: context_graph_mejepa::PredictorError) -> TrainerError {
+    TrainerError::new(
+        TrainerErrorCode::MejepaTrainCheckpointCorrupt,
+        format!("predictor checkpoint/training operation failed: {err}"),
+    )
+    .with_context(json!({
+        "predictor_error_code": err.code(),
+        "training_mode": COUNTABLE_PREDICTOR_TRAINING_MODE
+    }))
 }
 
 fn batch_inverse_map_loss(

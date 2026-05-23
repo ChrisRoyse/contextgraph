@@ -4,6 +4,14 @@ Investigator: Sherlock (Claude Opus 4.7) under FDD/LSU/Cold-Read discipline.
 Scope: predictor pipeline + calibration chain in `context-graph-mejepa`, `context-graph-mejepa-train`, `context-graph-mejepa-tct`.
 Cardinal rule applied: **guilty until proven innocent** — return values are claims, not verdicts.
 
+## Post-audit correction — 2026-05-23
+
+This report correctly identified that the public Rust `Trainer` is certificate-only and not ship-gate-countable. It overreached where it inferred that the latest aiwonder ship-gate run necessarily used fresh random `VarMap` weights.
+
+Direct aiwonder readback later showed that `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/ship-gate-fsv.json` loaded `/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv/best.manifest.json` with `optimizer_steps=64` and `weight_delta_observed=true`. The defect remains P0 under #683 because that checkpoint/export path is out-of-band from the public `Trainer` contract and lacks countability fields (`trained_predictor`, `predictor_parameter_update_count`, `checkpoint_readback_verified`, `ship_gate_countable_training`) in the certificate lineage.
+
+Read the original findings below as evidence for #683/#695, but use #712 and #683 for the corrected current interpretation.
+
 ## Summary
 
 - **The predictor is not a trained predictor.** `Trainer::run_full_training` is permanently in `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE`: `trained_predictor: false`, `predictor_parameter_update_count: 0`, `ship_gate_countable_training: false` — hard-coded. The only "training" output is UTML certificates. No production caller of `build_slot_preserving_cuda_compiler` sets `trained_checkpoint_manifest_path`, so the `MeJepaPredictor` runs on freshly-initialized `VarMap` weights every time. Source: `crates/context-graph-mejepa-train/src/trainer/mod.rs:31-34, 409-422`; `crates/context-graph-mejepa/src/cli.rs:307-314`.
