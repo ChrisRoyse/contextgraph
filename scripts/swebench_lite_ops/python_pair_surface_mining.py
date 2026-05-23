@@ -32,6 +32,10 @@ DEFAULT_PAIR_AUDIT_REPORT = Path(
     "/zfs/archive/contextgraph/readback/task-py-g-124-cross-embedder-pair-features-readback/"
     "run-20260522T010513Z/pair_feature_audit_report.json"
 )
+DEFAULT_GEOMETRY_LABEL_SPACE_POLICY = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-143-geometry-label-admissibility-v1/"
+    "geometry_label_space_policy.json"
+)
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-124b-105-pair-mining-readback")
 
 SCALAR_FEATURES = ("norm_l2", "std", "abs_mean", "entropy_proxy", "zero_fraction")
@@ -256,6 +260,7 @@ def classify_pair_universe(
     states: dict[tuple[str, str], dict[str, Any]],
     audit: dict[str, Any],
     expected_pair_count: int,
+    space_policy: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     active_slots = sorted(
         {
@@ -267,6 +272,29 @@ def classify_pair_universe(
     documented_slots = sorted(EXPECTED_DOCUMENTED_SLOTS)
     documented_pairs = [pair_id(left, right) for left, right in combinations(documented_slots, 2)]
     active_pairs = {pair_id(left, right) for left, right in combinations(active_slots, 2)}
+    valid_independent_slots: list[str] = []
+    valid_independent_pairs: set[str] = set()
+    degenerate_slots: set[str] = set()
+    duplicate_alias_map: dict[str, str] = {}
+    if space_policy is not None:
+        valid_independent_slots = sorted(space_policy["eligible_independent_embedder_ids"])
+        degenerate_slots = set(space_policy["degenerate_embedder_ids"])
+        duplicate_alias_map = dict(space_policy["duplicate_alias_map"])
+        valid_independent_pairs = {
+            pair_id(left, right) for left, right in combinations(valid_independent_slots, 2)
+        }
+        expected_valid_pair_count = int(space_policy["valid_independent_pair_denominator"])
+        if len(valid_independent_pairs) != expected_valid_pair_count:
+            raise SwebenchOpsError(
+                "PY_G_124B_VALID_PAIR_DENOMINATOR_MISMATCH",
+                "valid-space policy denominator does not match eligible independent embedders",
+                "Regenerate or repair the geometry label space policy before pair mining.",
+                {
+                    "expected": expected_valid_pair_count,
+                    "actual": len(valid_independent_pairs),
+                    "eligible_independent_embedder_ids": valid_independent_slots,
+                },
+            )
     top_pair_counts = Counter()
     for row in states.values():
         for label, count in pair_label_counts(row).items():
@@ -274,6 +302,7 @@ def classify_pair_universe(
     audit_consumed = audit.get("currentConsumption", {}).get("headProjection", {})
     rows = []
     for pair in documented_pairs:
+        left, right = pair.split("/", 1)
         status = []
         if pair in active_pairs:
             status.append("derivable_from_slot_feature_means")
@@ -283,15 +312,37 @@ def classify_pair_universe(
             status.append("materialized_in_code_state_top_pair_counts")
         elif pair in active_pairs:
             status.append("dark_not_in_top_pair_counts")
+        valid_policy_status = "valid_space_policy_not_supplied"
+        valid_independent = False
+        alias_slots = sorted(slot for slot in (left, right) if slot in duplicate_alias_map)
+        degenerate_pair_slots = sorted(slot for slot in (left, right) if slot in degenerate_slots)
+        if space_policy is not None:
+            if pair in valid_independent_pairs:
+                valid_policy_status = "valid_independent_forward_cache_geometry_pair"
+                valid_independent = True
+                status.append(valid_policy_status)
+            elif degenerate_pair_slots:
+                valid_policy_status = "invalid_degenerate_embedder_space"
+                status.append(valid_policy_status)
+            elif alias_slots:
+                valid_policy_status = "invalid_duplicate_alias_embedder_space"
+                status.append(valid_policy_status)
+            else:
+                valid_policy_status = "not_in_valid_independent_forward_cache_policy"
+                status.append(valid_policy_status)
         rows.append(
             {
                 "pairId": pair,
-                "leftSlot": pair.split("/")[0],
-                "rightSlot": pair.split("/")[1],
+                "leftSlot": left,
+                "rightSlot": right,
                 "status": status,
                 "codeStateTopCount": int(top_pair_counts.get(pair, 0)),
-                "slotFamilyLeft": slot_family(pair.split("/")[0]),
-                "slotFamilyRight": slot_family(pair.split("/")[1]),
+                "slotFamilyLeft": slot_family(left),
+                "slotFamilyRight": slot_family(right),
+                "validIndependentForwardCacheGeometry": valid_independent,
+                "validSpacePolicyStatus": valid_policy_status,
+                "degenerateSlotsInPair": degenerate_pair_slots,
+                "aliasSlotsInPair": alias_slots,
             }
         )
     status_counts = Counter(status for row in rows for status in row["status"])
@@ -308,6 +359,22 @@ def classify_pair_universe(
         "activeSlotCountInLabelRoot": len(active_slots),
         "activeSlotsInLabelRoot": active_slots,
         "activeDerivablePairCount": len(active_pairs),
+        "validSpacePolicySupplied": space_policy is not None,
+        "validIndependentSlotCount": len(valid_independent_slots) if space_policy is not None else None,
+        "validIndependentSlots": valid_independent_slots if space_policy is not None else None,
+        "validIndependentPairDenominator": len(valid_independent_pairs) if space_policy is not None else None,
+        "degenerateEmbedderIds": sorted(degenerate_slots) if space_policy is not None else None,
+        "duplicateAliasMap": duplicate_alias_map if space_policy is not None else None,
+        "invalidDegeneratePairCount": sum(
+            1 for row in rows if row["validSpacePolicyStatus"] == "invalid_degenerate_embedder_space"
+        )
+        if space_policy is not None
+        else None,
+        "invalidAliasPairCount": sum(
+            1 for row in rows if row["validSpacePolicyStatus"] == "invalid_duplicate_alias_embedder_space"
+        )
+        if space_policy is not None
+        else None,
         "materializedTopPairIdCount": len(top_pair_counts),
         "darkDerivablePairCount": sum(1 for row in rows if "dark_not_in_top_pair_counts" in row["status"]),
         "inactiveMissingPairCount": sum(1 for row in rows if "inactive_missing_current_label_root" in row["status"]),
@@ -320,6 +387,64 @@ def classify_pair_universe(
         "hardCodedHeadProjectionPairSpecCount": audit_consumed.get("consumedPairSpecCount"),
         "hardCodedHeadProjectionPairSpecs": audit_consumed.get("consumedPairSpecs"),
     }
+
+
+def load_geometry_label_space_policy(path: Path) -> dict[str, Any]:
+    payload = read_json_object(path, "geometry_label_space_policy")
+    eligible = payload.get("eligible_independent_embedder_ids")
+    degenerate = payload.get("degenerate_embedder_ids")
+    aliases = payload.get("duplicate_alias_map")
+    denominator = payload.get("valid_independent_pair_denominator")
+    if not isinstance(eligible, list) or not all(isinstance(item, str) and item for item in eligible):
+        raise SwebenchOpsError(
+            "PY_G_124B_INVALID_GEOMETRY_SPACE_POLICY",
+            "eligible independent embedder ids are missing or invalid",
+            "Use the #143 geometry label space policy.",
+            {"path": str(path), "eligible_independent_embedder_ids": eligible},
+        )
+    if not isinstance(degenerate, list) or not all(isinstance(item, str) and item for item in degenerate):
+        raise SwebenchOpsError(
+            "PY_G_124B_INVALID_GEOMETRY_SPACE_POLICY",
+            "degenerate embedder ids are missing or invalid",
+            "Use the #143 geometry label space policy.",
+            {"path": str(path), "degenerate_embedder_ids": degenerate},
+        )
+    if not isinstance(aliases, dict) or not all(
+        isinstance(key, str) and key and isinstance(value, str) and value for key, value in aliases.items()
+    ):
+        raise SwebenchOpsError(
+            "PY_G_124B_INVALID_GEOMETRY_SPACE_POLICY",
+            "duplicate alias map is missing or invalid",
+            "Use the #143 geometry label space policy.",
+            {"path": str(path), "duplicate_alias_map": aliases},
+        )
+    if isinstance(denominator, bool) or not isinstance(denominator, int) or denominator < 0:
+        raise SwebenchOpsError(
+            "PY_G_124B_INVALID_GEOMETRY_SPACE_POLICY",
+            "valid independent pair denominator is missing or invalid",
+            "Use the #143 geometry label space policy.",
+            {"path": str(path), "valid_independent_pair_denominator": denominator},
+        )
+    normalized = {
+        "path": str(path),
+        "artifact_kind": payload.get("artifact_kind"),
+        "formula_version": payload.get("formula_version"),
+        "eligible_independent_embedder_ids": sorted(set(eligible)),
+        "degenerate_embedder_ids": sorted(set(degenerate)),
+        "duplicate_alias_map": {str(key): str(value) for key, value in sorted(aliases.items())},
+        "valid_independent_pair_denominator": int(denominator),
+    }
+    expected = len(normalized["eligible_independent_embedder_ids"]) * (
+        len(normalized["eligible_independent_embedder_ids"]) - 1
+    ) // 2
+    if expected != normalized["valid_independent_pair_denominator"]:
+        raise SwebenchOpsError(
+            "PY_G_124B_VALID_PAIR_DENOMINATOR_MISMATCH",
+            "valid-space policy denominator does not match eligible independent embedders",
+            "Regenerate or repair the geometry label space policy before pair mining.",
+            {"expected": expected, "actual": normalized["valid_independent_pair_denominator"]},
+        )
+    return normalized
 
 
 def attach_pair_features(rows: list[dict[str, Any]], states: dict[tuple[str, str], dict[str, Any]]) -> list[dict[str, Any]]:

@@ -14,6 +14,7 @@ from .python_pair_surface_mining import (
     CALIBRATION_KEY,
     DEFAULT_CODE_STATES_JSONL,
     DEFAULT_LABEL_MANIFEST,
+    DEFAULT_GEOMETRY_LABEL_SPACE_POLICY,
     DEFAULT_PAIR_AUDIT_REPORT,
     DEFAULT_ROW_DIAGNOSTICS_REPORT,
     EXPECTED_DOCUMENTED_SLOTS,
@@ -22,6 +23,7 @@ from .python_pair_surface_mining import (
     derived_pair_records,
     load_code_states,
     load_diagnostic_rows,
+    load_geometry_label_space_policy,
     pair_id,
     require_state,
     slot_family,
@@ -102,6 +104,7 @@ def add_arguments(parser: Any) -> None:
     parser.add_argument("--label-manifest", type=Path, default=DEFAULT_LABEL_MANIFEST)
     parser.add_argument("--row-diagnostics-report", type=Path, default=DEFAULT_ROW_DIAGNOSTICS_REPORT)
     parser.add_argument("--pair-audit-report", type=Path, default=DEFAULT_PAIR_AUDIT_REPORT)
+    parser.add_argument("--geometry-label-space-policy", type=Path, default=DEFAULT_GEOMETRY_LABEL_SPACE_POLICY)
     parser.add_argument("--head-projection-rs", type=Path, default=DEFAULT_HEAD_PROJECTION_RS)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--evidence-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
@@ -117,6 +120,7 @@ def command_python_mendeleev_pair_table(args: Any) -> dict[str, Any]:
     label_manifest = args.label_manifest.expanduser().resolve(strict=False)
     row_diagnostics_report = args.row_diagnostics_report.expanduser().resolve(strict=False)
     pair_audit_report = args.pair_audit_report.expanduser().resolve(strict=False)
+    geometry_label_space_policy = args.geometry_label_space_policy.expanduser().resolve(strict=False)
     head_projection_rs = args.head_projection_rs.expanduser().resolve(strict=False)
     output_root = args.output_root.expanduser().resolve(strict=False)
     for name, path in (
@@ -124,6 +128,7 @@ def command_python_mendeleev_pair_table(args: Any) -> dict[str, Any]:
         ("label_manifest", label_manifest),
         ("row_diagnostics_report", row_diagnostics_report),
         ("pair_audit_report", pair_audit_report),
+        ("geometry_label_space_policy", geometry_label_space_policy),
         ("head_projection_rs", head_projection_rs),
         ("output_root", output_root),
     ):
@@ -139,6 +144,7 @@ def command_python_mendeleev_pair_table(args: Any) -> dict[str, Any]:
     output_root.mkdir(parents=True, exist_ok=True)
     label_manifest_payload = read_json_object(label_manifest, "label_manifest")
     pair_audit_payload = read_json_object(pair_audit_report, "pair_audit_report")
+    space_policy = load_geometry_label_space_policy(geometry_label_space_policy)
     states = load_code_states(code_states_jsonl, expected=int(args.expected_code_state_count))
     diagnostics = read_json_object(row_diagnostics_report, "row_diagnostics_report")
     calibration = load_diagnostic_rows(
@@ -155,6 +161,7 @@ def command_python_mendeleev_pair_table(args: Any) -> dict[str, Any]:
         states,
         pair_audit_payload,
         int(args.expected_pair_count),
+        space_policy=space_policy,
     )
     universe_by_pair = {row["pairId"]: row for row in universe_rows}
     head_projection = parse_head_projection_specs(head_projection_rs)
@@ -194,6 +201,8 @@ def command_python_mendeleev_pair_table(args: Any) -> dict[str, Any]:
             "rowDiagnosticsReportSha256": sha256_file(row_diagnostics_report),
             "pairAuditReport": str(pair_audit_report),
             "pairAuditReportSha256": sha256_file(pair_audit_report),
+            "geometryLabelSpacePolicy": str(geometry_label_space_policy),
+            "geometryLabelSpacePolicySha256": sha256_file(geometry_label_space_policy),
             "headProjectionRs": str(head_projection_rs),
             "headProjectionRsSha256": sha256_file(head_projection_rs),
         },
@@ -206,8 +215,8 @@ def command_python_mendeleev_pair_table(args: Any) -> dict[str, Any]:
         },
         "namespaceFinding": {
             "panelSlotTable": "head_projection.rs uses E_* panel/projection names",
-            "activePairTable": "current #117/#392 pair mining uses active e* corpus slot ids",
-            "status": "both namespaces are reported separately; no synthetic mapping is inferred",
+            "activePairTable": "current #117/#392 pair mining uses active e* corpus slot ids filtered by #143 valid-space policy",
+            "status": "panel 15-slot/105-pair universe is metadata; forward-cache geometry ranking uses 8 independent spaces / 28 pairs",
         },
         "baseline": {
             "calibration": split_report(calibration),
@@ -231,6 +240,8 @@ def command_python_mendeleev_pair_table(args: Any) -> dict[str, Any]:
             "noFlatVectorShortcut": True,
             "preservesSlotIdentity": True,
             "noPredictorWiring": True,
+            "validSpacePolicy": space_policy,
+            "invalidSpacesRejectedAsIndependentSignal": True,
         },
         "pathPolicy": {"aiwonderOnly": True, "mntDActiveReadsOrWrites": False},
         "outputArtifacts": {
@@ -326,7 +337,8 @@ def active_pair_structural_table(
                 consumed_by_392 = pair in TARGETED_392_CAUSE_PAIRS
                 dark_derivable = "dark_not_in_top_pair_counts" in universe["status"]
                 inactive = "inactive_missing_current_label_root" in universe["status"]
-                rejection = rejection_reasons(stats, active_derivable, inactive)
+                valid_independent = bool(universe.get("validIndependentForwardCacheGeometry"))
+                rejection = rejection_reasons(stats, active_derivable, inactive, valid_independent)
                 score = 0.0 if rejection else stats["expectedLiftScore"]
                 row = {
                     "namespace": "active_code_state_pairs",
@@ -339,6 +351,10 @@ def active_pair_structural_table(
                     "cell": cell,
                     "documentedUniverse": True,
                     "activeDerivable": active_derivable,
+                    "validIndependentForwardCacheGeometry": valid_independent,
+                    "validSpacePolicyStatus": universe.get("validSpacePolicyStatus"),
+                    "degenerateSlotsInPair": universe.get("degenerateSlotsInPair", []),
+                    "aliasSlotsInPair": universe.get("aliasSlotsInPair", []),
                     "inactiveMissing": inactive,
                     "materializedInLabelTopCounts": universe.get("codeStateTopCount", 0) > 0,
                     "darkDerivable": dark_derivable,
@@ -349,7 +365,9 @@ def active_pair_structural_table(
                     **stats,
                     "expectedLiftScore": finite_float(score),
                     "rejectionReasons": rejection,
-                    "structuralHole": active_derivable and not consumed_by_392 and not rejection and score > 0.0,
+                    "structuralHole": (
+                        active_derivable and valid_independent and not consumed_by_392 and not rejection and score > 0.0
+                    ),
                 }
                 rows.append(row)
                 if row["structuralHole"]:
@@ -479,10 +497,17 @@ def best_dependence(dcor_by_feature: dict[str, dict[str, float | None]], head: s
     return best
 
 
-def rejection_reasons(stats: dict[str, Any], active_derivable: bool, inactive: bool) -> list[str]:
+def rejection_reasons(
+    stats: dict[str, Any],
+    active_derivable: bool,
+    inactive: bool,
+    valid_independent: bool,
+) -> list[str]:
     reasons = []
     if inactive or not active_derivable:
         reasons.append("PAIR_NOT_DERIVABLE_FROM_CURRENT_ACTIVE_LABEL_ROOT")
+    if not valid_independent:
+        reasons.append("PAIR_REJECTED_BY_143_VALID_SPACE_POLICY")
     if stats["calibrationSupport"] < 5:
         reasons.append("LOW_SUPPORT_LT_5")
     if stats["bestDependence"] <= 0.0:
