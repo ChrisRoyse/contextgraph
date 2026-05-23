@@ -155,6 +155,8 @@ pub enum MejepaInferError {
         threshold: f32,
         reason: String,
     },
+    #[error("MEJEPA_INFER_OOD_CALIBRATOR_MISSING: {detail}")]
+    OodCalibratorMissing { detail: String },
     #[error("MEJEPA_INFER_DIM_MISMATCH: expected={expected} actual={actual} context={context}")]
     DimMismatch {
         expected: usize,
@@ -256,6 +258,7 @@ impl MejepaInferError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::OodRefuse { .. } => "MEJEPA_INFER_OOD_REFUSE",
+            Self::OodCalibratorMissing { .. } => "MEJEPA_INFER_OOD_CALIBRATOR_MISSING",
             Self::DimMismatch { .. } => "MEJEPA_INFER_DIM_MISMATCH",
             Self::InstrumentMissing { .. } => "MEJEPA_INFER_INSTRUMENT_MISSING",
             Self::NanDetected { .. } => "MEJEPA_INFER_NAN_DETECTED",

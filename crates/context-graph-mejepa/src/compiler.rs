@@ -728,14 +728,11 @@ impl MeJepaCompiler {
     }
 
     fn ood_threshold_for_compilation(&self) -> Result<f32, MejepaInferError> {
-        let Some(report) = self.load_selected_ood_calibration_report()? else {
-            return Ok(if self.config.require_ood_calibrator {
-                1.0
-            } else {
-                self.config.ood_refuse_threshold
-            });
-        };
-        Ok(report.threshold)
+        ood_threshold_from_selected_report(
+            self.load_selected_ood_calibration_report()?.as_ref(),
+            self.config.require_ood_calibrator,
+            self.config.ood_refuse_threshold,
+        )
     }
 
     fn ood_gate_decision(
@@ -2161,6 +2158,23 @@ fn eval_to_infer_error(err: crate::eval::EvalError) -> MejepaInferError {
     }
 }
 
+fn ood_threshold_from_selected_report(
+    report: Option<&OodCalibrationReport>,
+    require_ood_calibrator: bool,
+    fallback_threshold: f32,
+) -> Result<f32, MejepaInferError> {
+    let Some(report) = report else {
+        if require_ood_calibrator {
+            return Err(MejepaInferError::OodCalibratorMissing {
+                detail: "strict mode requires a selected OOD calibrator before compilation"
+                    .to_string(),
+            });
+        }
+        return Ok(fallback_threshold);
+    };
+    Ok(report.threshold)
+}
+
 fn abstain_for_cold_cell(
     prediction: &RealityPrediction,
     support: &ConstellationCellSupport,
@@ -2788,6 +2802,67 @@ mod tests {
         };
 
         assert!(ood_gate_failed(&decision));
+    }
+
+    fn selected_ood_report(threshold: f32) -> OodCalibrationReport {
+        OodCalibrationReport {
+            schema_version: crate::ood_harvest::OOD_CALIBRATION_SCHEMA_VERSION,
+            report_id: "test-selected-ood-report".to_string(),
+            generated_at_unix_ms: 1_774_000_000_000,
+            window_start_unix_ms: 1_773_999_000_000,
+            window_end_unix_ms: 1_774_000_000_000,
+            threshold,
+            harvested_rows: 8,
+            synthetic_ood_rows: 4,
+            id_rows: 4,
+            ood_rows: 4,
+            true_positive: 4,
+            false_positive: 0,
+            true_negative: 4,
+            false_negative: 0,
+            global_auc: Some(1.0),
+            ood_recall: 1.0,
+            false_positive_rate: 0.0,
+            min_required_auc: 0.80,
+            selected_for_serving: true,
+            flags: Vec::new(),
+            cell_reports: Vec::new(),
+            source_harvest_cf: context_graph_mejepa_cf::CF_MEJEPA_OOD_HARVEST.to_string(),
+            source_synthetic_cf: context_graph_mejepa_cf::CF_MEJEPA_SYNTHETIC_STRESS_RESULTS
+                .to_string(),
+        }
+    }
+
+    #[test]
+    fn strict_missing_ood_calibrator_fails_closed_before_compilation() {
+        println!("FSV before: report=None require_ood_calibrator=true fallback_threshold=0.42");
+        let err = ood_threshold_from_selected_report(None, true, 0.42).unwrap_err();
+        println!("FSV after: outcome=Err code={} message={}", err.code(), err);
+        assert!(matches!(err, MejepaInferError::OodCalibratorMissing { .. }));
+        assert_eq!(err.code(), "MEJEPA_INFER_OOD_CALIBRATOR_MISSING");
+        assert!(err.to_string().contains("strict mode requires"));
+    }
+
+    #[test]
+    fn non_strict_missing_ood_calibrator_uses_configured_static_threshold() {
+        println!("FSV before: report=None require_ood_calibrator=false fallback_threshold=0.42");
+        let threshold = ood_threshold_from_selected_report(None, false, 0.42).unwrap();
+        println!("FSV after: outcome=Ok threshold={threshold}");
+        assert_eq!(threshold, 0.42);
+    }
+
+    #[test]
+    fn strict_selected_ood_calibrator_uses_promoted_threshold() {
+        let report = selected_ood_report(0.67);
+        report.validate().unwrap();
+        println!(
+            "FSV before: report=Some(selected_for_serving={}) require_ood_calibrator=true fallback_threshold=0.42 report_threshold={}",
+            report.selected_for_serving, report.threshold
+        );
+
+        let threshold = ood_threshold_from_selected_report(Some(&report), true, 0.42).unwrap();
+        println!("FSV after: outcome=Ok threshold={threshold}");
+        assert_eq!(threshold, 0.67);
     }
 
     #[test]
