@@ -32,7 +32,9 @@ P0 audit-uncovered defects (carried into 2026-05-23 critical path; post-#704/#71
 |---|---|
 | #618 | Aggregate OOD over flat 5,120-byte buffer (doctrine §1.5ter) |
 | #619 | `forward_inverse_inner` flat `Linear(PANEL_DIM, hidden)` projections (doctrine §1.5ter) |
+| #620 | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook not invoked from training |
 | #621 | Hardcoded `gtau_pass_rate: 1.0` to weekly dashboard |
+| #695 | Rank-lift Goodhart metric is diagnostic only, not ship-gate eligible |
 | #704/#714 | `e2/e3/e4` retired for static AST; closed evidence, not active blocker |
 | #709/#715 | Active static-cache rebuild must prove inter-embedder distinctness and post-fix `e8` independence |
 
@@ -44,7 +46,7 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, inference path used SHA256-seeded
 
 | Status | Evidence |
 |---|---|
-| **REAL (no rebaseline)** | AST chunks, 391-shard forward cache, #388 tensors, #389 calibration, #413 labels, #414 skills, #404 hierarchy, anti-compensation invariants |
+| **REAL / retained evidence (clean ship substrate still pending)** | AST chunks, legacy 391-shard forward cache, #388 tensors, #389 calibration, #413 labels, #414 skills, #404 hierarchy, anti-compensation invariants. Legacy cache was real Candle output but not clean ship substrate after #704/#714 because static AST slots `e2/e3/e4` collapsed and legacy `e8` aliased to `e1`; #709/#715 own v2 rebuild. |
 | **INVALID (must rebaseline)** | Ship-gate 0.866667; `λ_inv` ablation; #393 / #398 ablations; "labels are the bottleneck" claim; "slot-preserving doesn't close gap" claim |
 
 The corpus survives. The pre-fix measurement does not. Post-fix real-input rebaseline now exists, but is itself **provisional** (see §0a) until manually re-verified.
@@ -283,7 +285,7 @@ Architectural correction from flat-panel projection to slot-preserving array ope
 Key results:
 - **#387 slot-preserving late-fusion predictor:** live predictor uses per-slot encoders + late fusion + per-slot decoders instead of `linear(CONCAT_INPUT_DIM, hidden_dim)`. No-compensation trace proves one bad slot cannot be hidden by aggregate distance.
 - **#388 cross-embedder correlation tensors:** 516 per-cell/window/slot distribution tensors, 2,838 per-cell/window upper-triangle pair tensors, 1,400 valid pair rows, 8 full cell/windows with all 66 active pair rows.
-- **#389 per-slot calibration + OOD:** 12 global slot calibrations, 84 fail-closed per-cell slot rows, 66 pair calibrations, strict-conjunction OOD policy. `RealityPrediction.per_slot_ood_reasons` persists through `CF_MEJEPA_LIVE_PREDICTIONS`.
+- **#389 per-slot calibration + OOD:** 12 global slot calibrations, 84 fail-closed per-cell slot rows, 66 pair calibrations, strict-conjunction OOD policy. `RealityPrediction.per_slot_ood_reasons` persists through `CF_MEJEPA_LIVE_PREDICTIONS`, but #684 tracks that current reasons are derived from guard violations and must not be treated as independent OOD evidence until repaired.
 - **#390 constellation intelligence:** real e7/e9 `zero_fraction` pair AUC `0.5882968` vs own-slot baseline `0.40438873` over 109 rows, lift `+0.18390805`.
 - **#393 / #398 ablations:** both real-input reruns measured against #535 Panel A baseline (`0.7937270999`), remain `no_promotion`. #536 moved measurement of record to `0.7942190170`. Best #393 uncalibrated family `per_slot_pairwise_temporal` at `0.2876047260`; #398 calibrated full constellation non-promotable. EK-012 `lambda_inv` remeasured by #546; best rank-safe `lambda_inv=0.0` at `0.6704055071`.
 - **#394 anti-compensation FSV:** corrupted/missing/stale/dimension-shifted slots, contradictory pair relationships, temporal jumps remain non-ship-gate-eligible even when aggregate normalized scores would pass.
@@ -366,11 +368,11 @@ Architectural correction from flat-panel projection (#385) to slot-preserving ar
 
 ### 5.4 The labeling layer is the meaning surface (#404 / #413 / #414 / #418) — substrate stands
 
-Raw slot violations + cross-embedder correlations only become actionable when clustered into 4-level hierarchy of named failure modes grounded by closest historical exemplars. The 491-row accepted Level-0 registry + 128 Level-2 skills + 379 Level-3 constellations + 36,773 chunk-skill memberships are all derived from real forward cache and survive the synthetic-vector bug. Post-fix revalidation proves the hierarchy still covers true failures (117/117 active predicted true-Fail rows) but also exposes 13 false-positive Fail verdicts with no named consequence explanation. Predictor-policy repair, not blanket skill expansion.
+Raw slot violations + cross-embedder correlations only become actionable when clustered into 4-level hierarchy of named failure modes grounded by closest historical exemplars. The 491-row accepted Level-0 registry + 128 Level-2 skills + 379 Level-3 constellations + 36,773 chunk-skill memberships are derived from real v1 forward-cache bytes and survive the synthetic-vector bug as lineage evidence, but gate-countable labels must be recomputed on the #709/#715 clean 9-slot cache. Post-fix revalidation proves the hierarchy still covers true failures (117/117 active predicted true-Fail rows) but also exposes 13 false-positive Fail verdicts with no named consequence explanation. Predictor-policy repair, not blanket skill expansion.
 
-### 5.5 The mistake loop replaces best-of-K (#406)
+### 5.5 The mistake loop target replaces best-of-K (#406)
 
-Best-of-K papers over an under-trained predictor by spending compute at inference time. Online mistake loop pays cost at *learning* time and converges to predictor right on first try. Current shipped primitive: key-local exact-panel online-head state with `protection_mode=exactPanelKeyIsolation`. Convergence target: `mistake_repeat_rate ≤ 0.05`. Machinery shipped; needs real predictor mistakes from real trained checkpoint to validate convergence.
+Best-of-K papers over an under-trained predictor by spending compute at inference time. The intended online mistake loop pays cost at *learning* time and converges to predictor right on first try. Current shipped primitive is narrower: key-local exact-panel online-head state with `protection_mode=exactPanelKeyIsolation`. Convergence target: `mistake_repeat_rate ≤ 0.05`. General mistake-loop convergence is blocked behind #683/#689/#593/#699/#643 plus real predictor mistakes from a countable trained checkpoint.
 
 ### 5.6 Silent-success bugs were everywhere (2026-05-22 5-Sherlock audit)
 

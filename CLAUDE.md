@@ -20,7 +20,7 @@ You are working in the **ContextGraph** repository, building **ME-JEPA-Code**: t
 | **Q4** | ~~What else could go wrong?~~ | **REMOVED 2026-05-19 (#408 closed)** | Q4 ambiguous surfaces have no free binary form against reality. CFs remain readable for forensic continuity; producer track is closed. Display-only. |
 | **Q5** | How is it **IMPACTING REALITY**? | binary prediction | Predicted shift events checked against the live `runtime/shift-log/*.jsonl` tail → `RealityImpact` with `matched`/`missed`/`surprises`/`not_yet_observed` |
 
-The product surface is the **MCP server**. AI agents call it via JSON-RPC stdio. Underneath, a continuous self-optimization daemon consumes every Edit shift, every test outcome, and every agent-feedback event to retrain itself online — driven by the **online mistake-driven loop** (#406) under EWC++ Fisher protection.
+The product surface is the **MCP server**. AI agents call it via JSON-RPC stdio. Underneath, the intended loop consumes Edit shifts, test outcomes, and agent-feedback events as training evidence. Today the shipped mistake-loop surface is storage/MCP plus exact-panel online-head replay (#406/#523); general online retraining under EWC++ Fisher protection is not gate-countable until #683/#689/#593/#699/#643 repair the trainer, telemetry, and contract surfaces.
 
 **Ship-gate predicate (tightened 2026-05-19):**
 
@@ -63,7 +63,7 @@ Beyond the binary primitive ME-JEPA exposes two derived operator-facing surfaces
 
 **Post-migration storage:** Production durable state lives on aiwonder under `/zfs/archive/contextgraph/...`; hot work under `/zfs/hot/contextgraph/...` (per #363 / #412).
 
-**2026-05-23 3-Sherlock parallel forensic audit.** Reports: `docs/SHERLOCK_PREDICTOR_FINDINGS_2026-05-22.md`, `docs/SHERLOCK_SUBSTRATE_FINDINGS_2026-05-22.md`, `docs/SHERLOCK_INFRA_FINDINGS_2026-05-22.md`. Filed 29 new issues (#683-#711). Decomposed the `0.7942` rank-lift measurement into three structural defects (table above). New critical path replaces `08 §3.0` ordering. See #712.
+**2026-05-23 3-Sherlock parallel forensic audit.** Reports: `docs/SHERLOCK_PREDICTOR_FINDINGS_2026-05-22.md`, `docs/SHERLOCK_SUBSTRATE_FINDINGS_2026-05-22.md`, `docs/SHERLOCK_INFRA_FINDINGS_2026-05-22.md`. Filed 29 new issues (#683-#711), with post-decision static-cache follow-ups #714/#715. Decomposed the `0.7942` rank-lift measurement into three structural defects (table above). New critical path replaces `08 §3.0` ordering. See #712.
 
 **2026-05-19 cleanup pass.** Investigation reports at `./docs/INVESTIGATION_{1,2,3}_*.md` drove ~314,000 LOC removed across 4 commits, including:
 
@@ -96,9 +96,10 @@ Active pinned `type:context`:
 | 3 | **#615** | Run delete_test_call Docker oracle batch over 1,131 candidates → rebuild AST → #614 mask → labels | Closes weak-cell ceiling (`0.69 → ≥0.85`) |
 | 4 | **#618 + #619** | Per-slot OOD aggregation; slot-preserving panel projections | Removes anti-compensation cheat path |
 | 5 | **#695** | Stop using rank-lift as gate metric; use raw Pearson + isotonic/Platt | Reveals honest gap |
-| 6 | **#685/#687/#688/#690/#684/#689/#699** | Eliminate hardcoded passing telemetry and pseudo-cert confidence surfaces | Prevents Goodhart on future mistake-loop wiring |
+| 6 | **#620/#621/#622/#684/#685/#686/#687/#688/#689/#690/#692/#696/#699/#705/#706** | Eliminate hardcoded passing telemetry, pseudo-cert confidence, dead public training APIs, and non-countable Q5/OOD claims | Prevents Goodhart on future mistake-loop/trainer wiring |
 | Done | **#704/#714/#670/#691/#707** | Static temporal retirement, invalid-space policy, hook fail-visible behavior, strict OOD fail-closed behavior | Closed evidence; retained as prerequisites |
-| 7 | #392 / #511 / #405 / #379 | Trajectory ECE / entropy aux loss / Panel B / multi-file holdout | **Blocked behind active ranks 1-6 plus #633** |
+| 7 | **#633 + #655 + #656 + #657 and children** | Manual full-system FSV/hardening gate, auto-FSV retirement, heal-drill truthfulness, geometry-label bakeoff | Evidence integrity and substrate prerequisites |
+| 8 | #392 / #511 / #405 / #379 | Trajectory ECE / entropy aux loss / Panel B / multi-file holdout | **Blocked behind active ranks 1-7** |
 
 Closed prior critical-path items remain valid substrate: #408 Q4 freeze, #404 failure-mode hierarchy, #413 auto-label discovery, #414 skill substrate, #418 runtime ability resolver, #406+#523 mistake-loop MCP. The structural work survived the audit; only the **measurement** and **predictor head** were broken.
 
@@ -199,7 +200,7 @@ These are non-negotiable and project-specific. Doctrine universal rules still ap
 10. **No HTTP from action paths.** MCP server is the only network surface. `WebSearch` / `WebFetch` / `mcp__exa__*` are read-only research tools. No `curl` / `wget` / `fetch` in action code paths.
 11. **No destructive git.** Forbidden: `push --force`, `--force-with-lease`, `reset --hard`, `checkout --`, `clean -f`, `rebase`. Plain `git push` (fast-forward) is allowed.
 12. **Frozen embedder weights.** E1, E6, E7, E8, E10, E12, E13, E14 are frozen by design. Do not retrain in the live loop.
-13. **Mistake-loop is the only online weight update path.** Trainer-side `mejepa-train/src/mistake_consumer.rs` (#406) consumes `CF_MEJEPA_MISTAKE_LOG` under EWC++ Fisher protection. No other path may update predictor weights at serving time.
+13. **Mistake-loop is the only permitted online weight-update path, but it is not fully countable yet.** Current shipped behavior is storage/MCP plus exact-panel online-head replay. General trainer-side consumption of `CF_MEJEPA_MISTAKE_LOG` under EWC++ Fisher protection is the intended path and remains blocked behind #683/#689/#593/#699/#643. No other path may update predictor weights at serving time.
 14. **No cost caps.** System runs locally; no per-turn or per-day spend caps. `blocked` is for real obstacles, not budget.
 
 ---

@@ -1,6 +1,6 @@
 # 01 — System Overview
 
-**Status:** Phase G in flight. **Critical path replaced 2026-05-23** by 3-Sherlock audit (#712 pinned). Public trainer/checkpoint lineage not countable (#683); the legacy forward cache contained invalid slots, with `e2/e3/e4` now retired for static AST by #704/#714 and v2 9-slot rebuild tracked by #709/#715; rank-lift not gate-eligible (#695). Honest gap against raw Pearson = `0.4657`. **#633 hardening gate still active** (children #634-#651); #392/#511/#405/#379 blocked behind new chain. Phases A-F + H code/FSV-shipped. #372 aiwonder ZFS root migration CLOSED 2026-05-22.
+**Status:** Phase G in flight. **Critical path replaced 2026-05-23** by 3-Sherlock audit (#712 pinned). Public trainer/checkpoint lineage not countable (#683); the legacy forward cache contained invalid slots, with `e2/e3/e4` now retired for static AST by #704/#714 and v2 9-slot rebuild tracked by #709/#715; rank-lift not gate-eligible (#695). Honest gap against raw Pearson = `0.4657`. **#633 hardening gate still active** (children #634-#651). Phases A-F complete; Phase H compile-error guard is real, but the historically claimed 9 absence-check scripts are tracked by #693. #392/#511/#405/#379 are blocked behind the new #712 chain. #372 aiwonder ZFS root migration CLOSED 2026-05-22.
 
 See `README.md ⚠ 2026-05-23 Sherlock audit` (new critical path), `08 §3.−1` (replaces §3.0), `07 §2.0` (5-Sherlock closure index), `07 §2.0a` (3-Sherlock 2026-05-23 audit), `06 §1.9` (manual-SoT contract).
 
@@ -103,13 +103,13 @@ Non-promotable: ECE above #536 baseline `0.0240316074`; typed blockers `TEMPORAL
 
 Cause-bin remains selected (final-bin improved corr/Brier but worsened ECE).
 
-Latest ship-gate FSV folds #392 active/abstain as first-class diagnostic: `205/240` active rows, active corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978`. Not a full gate pass: per-cell active metric + rolling-window + statistical-power blockers remain. #392 active.
+Latest ship-gate FSV folds #392 active/abstain as an easy-row diagnostic: `205/240` active rows, active corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978`. This is not a hidden gate pass: per-cell active metric + rolling-window + statistical-power blockers remain, and #392 is blocked behind the #712 clean-substrate/trainer chain before renewed gate movement.
 
 **Product boundary.** LLM agents are untrusted edit generators. Hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`.
 
 **Consequence-prediction contract (#397).** Model observes explicit task text, agent claims, edits, AST deltas, frozen instruments, oracle outcomes, verification feedback. Does NOT infer hidden human intent. Predicted consequences + evidence presented to operator/agent to decide proceed/repair/reroute.
 
-**Live skill/ability surface.** Project files → Python AST chunks → slot-preserving TCT constellations → deterministic live-observable labels → many-to-many chunk-skill memberships → `PredictionLabelContext.active_skill_ids` → consequence prediction. Chunks participate in multiple Level-1/2/3 groups. Memberships are prediction evidence, not intent inference. On refutation, mistake loop updates/splits/creates/demotes involved skill/ability.
+**Live skill/ability surface.** Project files → Python AST chunks → slot-preserving TCT constellations → deterministic live-observable labels → many-to-many chunk-skill memberships → `PredictionLabelContext.active_skill_ids` → consequence prediction. Chunks participate in multiple Level-1/2/3 groups. Memberships are prediction evidence, not intent inference. Future refutation-driven label updates must be verified through the clean #709/#715 substrate and #633 manual SoT gate before being treated as ship evidence.
 
 ---
 
@@ -386,17 +386,17 @@ Deterministic for same `(task_id, patch_sha)`. Every ablation moved compute, nev
 | `d068d2ed` | Trainer consumes native active-embedder ragged constellations (#452) |
 | `f982f29d` | Runtime fail-closed if cannot load verified trained checkpoint |
 
-**Survived (real, no rebaseline needed):**
+**Survived structurally (retained evidence; clean ship substrate still requires #709/#715):**
 
 | Artifact | Why real |
 |---|---|
 | 399,777 AST chunks (`python_ast_chunks.jsonl`) | Deterministic AST chunker over real SWE-bench Lite Python source |
-| 391-shard packed forward cache | `python_forward_cache_fsv` — real Candle CUDA forward, `precision_class: "candle_real_forward"`, ~24h GPU, SHA-pinned safetensors, fail-closed guards at `crates/context-graph-mejepa-embedders/src/forward.rs:122,207,349,422` |
+| 391-shard packed forward cache | Real Candle CUDA forward over real chunks, `precision_class: "candle_real_forward"`, ~24h GPU, SHA-pinned safetensors, fail-closed guards at `crates/context-graph-mejepa-embedders/src/forward.rs:122,207,349,422`; retained as historical evidence only until #709/#715 rebuilds v2 because legacy static AST slots `e2/e3/e4` collapsed and legacy `e8` aliased to `e1` |
 | #388 cross-embedder correlation tensors | Deterministic derivation from real forward cache |
 | #389 per-slot calibration + OOD policy | Built from #388 + real training rows |
-| #413 Level-0 label compiler (491 accepted, 399,777 chunk labels) | Deterministic compiler over real chunks + cache |
-| #414 skill substrate (128 / 36,773 / 10,579) | Derived from #413 |
-| #404 hierarchy (8 / 157 / 379 / 536 named predictions) | Derived from #413 + #414 |
+| #413 Level-0 label compiler (491 accepted, 399,777 chunk labels) | Deterministic compiler over real chunks + v1 cache; retained for lineage, recompute on #709/#715 v2 cache before gate claims |
+| #414 skill substrate (128 / 36,773 / 10,579) | Derived from #413; retained for lineage, recompute/validate after v2 labels |
+| #404 hierarchy (8 / 157 / 379 / 536 named predictions) | Derived from #413 + #414; retained for lineage, not a clean-v2 label proof |
 | Anti-compensation FSV (#394) | Invariant; doesn't depend on input quality |
 | Runtime ability resolver (#418) | Pure resolver logic |
 | Mistake-loop machinery (#406 / #523) | Storage + MCP wrappers; needs real predictor mistakes to validate convergence |
@@ -415,14 +415,14 @@ Deterministic for same `(task_id, patch_sha)`. Every ablation moved compute, nev
 
 **Rebaseline action plan (current P0):**
 
-1. ✅ `swebench_300x8_ship_gate_fsv` end-to-end on aiwonder with real-instruments + trained checkpoint. Current: `fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`.
+1. ✅ `swebench_300x8_ship_gate_fsv` end-to-end on aiwonder with real instruments and an out-of-band trained checkpoint. Current: `fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`; not public-Trainer-countable until #683 closes.
 2. ✅ `λ_inv` bidirectional ablation real inputs. Current: `fsv/task-ek-012-bidirectional-ablation-realinput-fsv/run-20260520T172657Z/`.
 3. ✅ #393 / #398 against real-input. Current: `fsv/task-py-g-093-constellation-ablation-suite-realinput-fsv/run-20260520T181900Z/` + `fsv/task-py-g-097-constellation-ablation-with-calibration-realinput-fsv/run-20260520T170156Z/`.
-4. ✅ Trained-weight manifest: `trained_weight_sha256 != initial_weight_sha256`.
+4. ✅ Out-of-band trained-weight manifest: `trained_weight_sha256 != initial_weight_sha256`; public Trainer countability remains #683.
 5. ✅ Repair first weak-cell slice from #535/#536. #548/#549 proved remaining static mixed-cell signal calibration-underpowered; #392/#558/#560 file/skill trajectories stronger but ECE-blocked. Next: per-cell/per-constellation ECE repair, `swap_variable` skill specialization, consequence-to-cause traces, Panel B validation.
 6. ✅ Revalidate post-#536 calibration disjointness (#547): `tau=20.0, fail_boost=1.5` calibration-selected, row/feature-member overlaps zero, #413 label-lineage hashes match, target-side labels excluded.
 
-Tracked under #529; gate-active critical path in `08 §3.0` puts #392 trajectory calibration before #511 / #405.
+Tracked under #529; gate-active critical path is now `08 §3.−1`, with #392/#511/#405/#379 blocked behind #683, #709/#715, #615, #618/#619, #695, no-op telemetry cleanup, and #633/#655/#656/#657 evidence gates.
 
 ---
 
@@ -585,7 +585,7 @@ Every crate has `Error` enum with `SCREAMING_SNAKE_CASE` code via `.code()`:
 
 **Corpus generator (`context-graph-mejepa-corpus`).** 8 mutation × 11 languages = 88 generic operators (Python first-class via parser-backed; other 10 deferred). Categories: `KnownGood`/`SubtleFlip`/`OffByOne`/`SwapVariable`/`DeleteTestCall`/`WrongFile`/`OverEngineer`/`CompileError`. SWE-bench Lite bridge wraps `python -m swebench.harness.run_evaluation` per-instance. Split modes: `InstanceAtomic` (default, 240/30/30) + `RepoAtomic`.
 
-**Trainer (`context-graph-mejepa-train`).** UTML v1.0. `compute_l_step` evaluates `L_step = ΔP × ΔK × ΔΩ × ΔΞ`. EWC++ Fisher, continual backprop (Dohare 2024), prioritized replay over `CF_MEJEPA_REPLAY_BUFFER`. **Mistake loop consumer (#406, shipped):** consumes `CF_MEJEPA_MISTAKE_LOG`, applies exact-panel online-head updates with measured unrelated-control isolation, writes byte-readable `mistake_repeat_rate`. Skill-sequence discovery (#414) + failure-mode hierarchy (#404) feed labeling layer.
+**Trainer (`context-graph-mejepa-train`).** UTML v1.0. `compute_l_step` evaluates `L_step = ΔP × ΔK × ΔΩ × ΔΞ`, but public `Trainer::run_full_training` is not countable ship training until #683 unifies it with the real checkpoint/export path. EWC++ Fisher, continual backprop (Dohare 2024), and prioritized replay remain intended trainer architecture, not gate-countable evidence until #683/#689/#593/#699/#643 close. **Mistake loop consumer (#406/#523):** shipped storage/MCP plus exact-panel online-head replay; general mistake-driven learning and durable Fisher/EWC protection are not claimed until the Trainer contract and telemetry surfaces are repaired.
 
 **TCT (`context-graph-mejepa-tct`).** Teleological constellations + Gτ guard. Cell key = `(mutation_category, language, additional_dims)`. Per-cell calibration, freshness audit, refresh scheduler. Gτ rejects predictions with insufficient cell support.
 

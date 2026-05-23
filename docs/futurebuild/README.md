@@ -17,7 +17,7 @@ Source-grounded WHAT-IS reference for AI agents. 8 docs.
 | Substrate | Legacy v1 cache had `e2/e3/e4` collapsed and `e8 ≡ e1`. #704/#714 now retire `e2/e3/e4` for static AST corpora; #715 owns the v2 9-slot static cache rebuild, gated by #709 distinctness proof so post-`ff4d4c03` `e8` is not an `e1` alias. | #704, #714, #709, #715 |
 | Gate metric | Rank-lift = category-local RBF exemplar similarity over calibration split; lifts raw `0.4843 → 0.7942` (+0.31) without Brier/ECE improvement | #695 |
 
-Honest gap = `0.95 − 0.4843 = 0.4657`, not `0.1558`. 29 new issues filed (#683-#711). New pinned context: **#712**.
+Honest gap = `0.95 − 0.4843 = 0.4657`, not `0.1558`. The 2026-05-23 audit filed 29 issues (#683-#711), with post-decision static-cache follow-ups #714/#715. New pinned context: **#712**.
 
 **New critical path (supersedes prior `08 §3.0`):**
 
@@ -28,9 +28,10 @@ Honest gap = `0.95 − 0.4843 = 0.4657`, not `0.1558`. 29 new issues filed (#683
 | 3 | #615 | delete_test_call Docker oracle batch over 1,131 candidates |
 | 4 | #618 + #619 | Per-slot OOD; slot-preserving panel projections |
 | 5 | #695 | Replace rank-lift with raw Pearson + isotonic/Platt |
-| 6 | #685/#687/#688/#690/#684/#689/#699 | Eliminate hardcoded/no-op telemetry and pseudo-cert confidence |
+| 6 | #620/#621/#622/#684/#685/#686/#687/#688/#689/#690/#692/#696/#699/#705/#706 | Eliminate hardcoded/no-op telemetry, pseudo-cert confidence, dead public training surfaces, and non-countable Q5/OOD claims |
 | Done | #704/#714/#670/#691/#707 | Static temporal retirement, invalid-space policy, hook fail-visible behavior, strict OOD fail-closed behavior |
-| 7 | #392 / #511 / #405 / #379 | **Blocked behind active ranks 1-6 plus #633** |
+| 7 | #633 + #655 + #656 + #657 and children | Manual full-system FSV/hardening gate, auto-FSV retirement, heal-drill truthfulness, and geometry-label bakeoff under clean 9-slot policy |
+| 8 | #392 / #511 / #405 / #379 | **Blocked behind active ranks 1-7** |
 
 ## ⚠ 2026-05-22 hardening pivot — still active
 
@@ -42,7 +43,9 @@ Open gate-blocking hardening items (active ranks 2 and 4 of new critical path pl
 |---|---|
 | #618 | Aggregate OOD over flat 5,120-byte buffer (doctrine §1.5ter) |
 | #619 | `forward_inverse_inner` flat `Linear(PANEL_DIM, hidden)` projections (doctrine §1.5ter) |
+| #620 | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook not invoked from training |
 | #621 | Hardcoded `gtau_pass_rate: 1.0` published to weekly dashboard |
+| #695 | Rank-lift Goodhart metric must be removed from the ship gate |
 | #709 + #715 | Promote inter-embedder distinctness proof and rebuild the static AST forward cache after #704/#714; #670/#704 are closed decisions/evidence |
 
 **#372 aiwonder ZFS root migration CLOSED 2026-05-22.** `/zfs/archive/contextgraph` → `archive/contextgraph` ZFS dataset; `/zfs/hot/contextgraph` → `hotpool/contextgraph` ZFS. Legacy mounted-drive paths (`/mnt/d`, `/mnt/c`) forbidden in active code/FSV. Enforced behaviorally by `scripts/ci/check_no_c_drive_paths.sh` + the #612 → #613 → #614 → #615 → #631 → #632 → #641 → #666 audit chain.
@@ -55,7 +58,7 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, **inference path** in `crates/con
 
 **Survived, with post-Sherlock caveat:**
 - 399,777 AST chunks + 391-shard packed forward cache with real Candle CUDA forward and fail-closed `"no deterministic vector fallback is permitted"` guards. The historical v1 cache is retained as evidence, but is not a clean ship substrate: `e2/e3/e4` collapsed, and legacy `e8` aliased to `e1`. Current static AST cache policy is 9 active slots (`e1,e6,e7,e8,e9,e10,e12,e13,e14`) after #704/#714, with the v2 rebuild tracked by #709/#715.
-- Anything deterministically derived from real cache: #388 cross-embedder tensors, #389 per-slot calibration, #413 Level-0 labels + 491-row accepted registry, #414 skill substrate (128 / 36,773 / 10,579), #404 hierarchy (8 / 157 / 379)
+- Anything deterministically derived from the real v1 cache: #388 cross-embedder tensors, #389 per-slot calibration, #413 Level-0 labels + 491-row accepted registry, #414 skill substrate (128 / 36,773 / 10,579), #404 hierarchy (8 / 157 / 379). These are retained for lineage and diagnosis; gate-countable label/calibration artifacts must be recomputed after #709/#715 v2 cache.
 - All structural/invariant work: slot-preserving doctrine, anti-compensation, ambiguity boundary, mistake-loop machinery, runtime ability resolver
 
 **Invalidated:**
@@ -121,7 +124,9 @@ prediction_oracle_correlation ≥ 0.95 × 4 rolling windows
   ↓
 #695 replace rank-lift with raw-Pearson + isotonic
   ↓
-#685/#687/#688/#690/#684/#689/#699 strip hardcoded/no-op telemetry
+#620/#621/#622/#684/#685/#686/#687/#688/#689/#690/#692/#696/#699/#705/#706 strip hardcoded/no-op telemetry and dead public surfaces
+  ↓
+#633/#655/#656/#657 manual hardening and clean-label evidence gate
   ↓
 Resume #392 / #511 / #405 / #379 → 0.95 × 4-window gate + Panel B
 ```

@@ -50,7 +50,7 @@ Prediction contract is **three binary surfaces against ground truth** (Q1 bytes/
 
 **Operational implication (#655, in-progress p0):** Rust `*_fsv.rs` examples and tests are being **retired** in favour of manual operator-driven SoT verification. New gate evidence is captured as issue comments with direct bytes-on-disk readback. See `06 §1.9`.
 
-**Doctrine-violation P0s the audit surfaced (all open, all gate-blocking):**
+**Doctrine-violation P0s the audit surfaced (open unless marked closed; gate-blocking when open):**
 
 | Issue | Title | Source |
 |---|---|---|
@@ -67,10 +67,10 @@ Prediction contract is **three binary surfaces against ground truth** (Q1 bytes/
 | #628 | Doc/code drift: `MEJEPA_TCT_DIM_MISMATCH` (docs) vs `MEJEPA_INFER_DIM_MISMATCH` (emitted) | docs |
 | #704/#714 | Retire `e2/e3/e4` for static AST forward-cache runs (closed evidence) | mejepa-embedders |
 | #709/#715 | Add inter-embedder distinctness gate and rebuild v2 9-slot static AST forward cache | mejepa-embedders |
-| #671 | Stale SWE-bench harness defaults point at missing aiwonder archive venv | scripts |
-| #672 | Geometry scalar feature lineage + leakage gate for `head_projection` promotion | mejepa + mejepa-train |
-| #673 | Label-quality audit ranks embedder signal vs noise | mejepa-train |
-| #674 | `run-remote` wrapper can hang after remote command completes | scripts |
+| #671 | Stale SWE-bench harness defaults point at missing aiwonder archive venv | closed prerequisite |
+| #672 | Geometry scalar feature lineage + leakage gate for `head_projection` promotion | closed prerequisite |
+| #673 + #679 + #680 | Label-quality audit, out-of-fold lift/ECE gate, and decision that label quality is the embedder signal/noise verdict | closed prerequisite |
+| #674 | `run-remote` wrapper can hang after remote command completes | closed prerequisite |
 
 ---
 
@@ -146,7 +146,7 @@ prediction_oracle_correlation ≥ 0.95
   AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
 
-**Last holdout measurement:** binary rank-lift `0.7942190170` from real code-state constellation labels (`0.6916886568` rank-safe, `0.4843192995` raw) in `fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`. Same FSV carries #392 active/abstain diagnostics: active corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978` on `205/240` rows — full active/abstain gate remains false. Previous `0.866667` (legacy pre-migration evidence) measured against synthetic-vector inference path and is invalidated.
+**Last holdout measurement:** raw Pearson `0.4843192995` from real code-state constellation labels in `fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`. Same FSV also reports rank-safe `0.6916886568` and rank-lift `0.7942190170`, but rank-lift is diagnostic-only per #695 because it is a category-local exemplar-similarity composite rather than the predictor's score. The FSV carries #392 active/abstain diagnostics: active corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978` on `205/240` rows — full active/abstain gate remains false. Previous `0.866667` (legacy pre-migration evidence) measured against synthetic-vector inference path and is invalidated.
 
 **Honest gap to ship:** `0.4657` against raw Pearson. The old `0.1557809830` gap was against rank-lift, now diagnostic-only per #695, plus four-window stability + Panel B cross-checks.
 
@@ -160,13 +160,13 @@ Once met → human review of AI-generated Python patches is statistically unjust
 
 ## 2. Open Issue Snapshot (live tracker is authoritative)
 
-As of 2026-05-22: **137 open** issues across workspace. Use queries in §12 for current state.
+As of 2026-05-23 live tracker readback: **158 open** issues across workspace. Use queries in §12 for current state.
 
 By phase:
 
 | Label | Open count |
 |---|---|
-| `phase:g` | ~120 (critical path) |
+| `phase:g` | 138 (critical path and blocked tail) |
 | `phase:migration` | ~5 (#372 closed; tail items remain) |
 | `phase:f-followup` | 1 |
 | `phase:f` / `phase:h` | 0 (closed) |
@@ -175,9 +175,9 @@ By priority (excerpt):
 
 | Priority | Open epic examples |
 |---|---|
-| `priority:p0` | **#712** Sherlock critical-path context, **#683** trainer/checkpoint lineage (in-progress), **#633** manual full-system FSV gate (parent), #634-#651 sub-tasks, **#655** retire Rust FSV (in-progress), **#656** mejepa-heal-drill conformal-overcoverage (in-progress), **#657** TASK-PY-G-136 geometry-label bakeoff (in-progress), **#615** delete-test-call regeneration (in-progress), #616 weak-cell oracle reruns, #618/#619/#621 doctrine-violation P0s, #661/#662 geometry-label promotion (blocked behind #657), **#709/#715** v2 static-cache distinctness/rebuild, #671/#672/#673/#674 audit P0s, **#397** consequence-prediction contract (context pin), **#383** evidence-weighted ordering (context pin), #167 burn-in (blocked by #633), #165 confidence gate (blocked by #167), #310 META context |
-| `priority:p1` | #630 long-source/OOM forward-cache quarantine recovery, #626 hygiene retention 90 CFs missing, #664 geometry region dictionary (blocked behind #657), #380 off-host backup, #379 multi-file holdout, #416 pathway, #417 skill linkage remaining, #511 entropy loss, #433 ability resolver replay completeness, #442 librocksdb-sys native build |
-| `priority:p2` | EK series tail, post-ship policies, #382 frozen-panel dimensionality ablation, #378 tool-usage telemetry, #622 trainer dead-code cleanup, #623/#624 minor doctrine string drift, #665 new prediction heads over geometry labels |
+| `priority:p0` | **#712** Sherlock critical-path context, **#683** trainer/checkpoint lineage (in-progress), **#633** manual full-system FSV gate (parent), #634-#651 sub-tasks, **#655** retire Rust FSV (in-progress), **#656** mejepa-heal-drill conformal-overcoverage (in-progress), **#657** TASK-PY-G-136 geometry-label bakeoff (in-progress), **#615** delete-test-call regeneration (in-progress), #616 weak-cell oracle reruns, #618/#619/#620/#621/#622 doctrine/trainer-surface P0s, **#685/#687/#688/#690/#699** hardcoded/no-op telemetry P0s, **#695** rank-lift Goodhart metric removal, #661/#662 geometry-label promotion (blocked behind #657), **#709/#715** v2 static-cache distinctness/rebuild, **#397** consequence-prediction contract (context pin), **#383** evidence-weighted ordering (context pin), #167 burn-in (blocked by #633), #165 confidence gate (blocked by #167), #310 META context. Closed P0 prerequisites now include #671-#680, including #673/#679/#680 label-quality verdicts. |
+| `priority:p1` | #593 explicit train/serve contract, #684/#686/#692/#696/#705/#706 non-countable OOD/Q5/trainer-adjacent telemetry repairs, #630 long-source/OOM forward-cache quarantine recovery, #626 hygiene retention 90 CFs missing, #664 geometry region dictionary (blocked behind #657), #380 off-host backup, #379 multi-file holdout, #416 pathway, #417 skill linkage remaining, #511 entropy loss, #433 ability resolver replay completeness, #442 librocksdb-sys native build, #693 Phase H absence-check script/doc drift |
+| `priority:p2` | EK series tail, post-ship policies, #382 frozen-panel dimensionality ablation, #378 tool-usage telemetry, #623/#624 minor doctrine string drift, #665 new prediction heads over geometry labels |
 | `priority:p3` | Deferred (SWE-bench Verified subset, v2 stretch, future Docker image plan), 8× neuroscience-reserve issues (#538-#545) |
 
 ---
@@ -196,8 +196,8 @@ Per pinned context #383 (LOCKED) + #712 (2026-05-23): gate-active issue order is
 | 2 | **#709 + #715** | Add/promote inter-embedder distinctness gate, then rebuild a v2 static AST cache with active slots `e1,e6,e7,e8,e9,e10,e12,e13,e14`; `e2/e3/e4` remain retired for static AST by #704/#714 | Replaces invalid v1 cache with a clean 9-slot substrate; proves post-`ff4d4c03` `e8` is not an `e1` alias | open p0 |
 | 3 | **#615** | delete_test_call Docker oracle batch over 1,131 deterministic candidates → rebuild AST → #614 mask → labels → #392 → #611 | Closes `0.69 → ≥0.85` weak-cell ceiling | in-progress p0 |
 | 4 | **#618 + #619** | Per-slot OOD aggregation at `compiler.rs:502`; slot-preserving panel projections at `predictor/mod.rs:136-147` | Doctrine §1.5ter repair; removes anti-compensation cheat path | open p0 |
-| 5 | **#695** | Stop using rank-lift as gate metric; use raw Pearson + isotonic/Platt | Reveals honest gap; ECE-safe | open p1 |
-| 6 | **#685/#687/#688/#690/#684/#689/#699** | Eliminate hardcoded passing telemetry and pseudo-cert confidence: `forward_logits` zeros; `detach_loras` no-op; hardcoded `EpochSummary`; `retrain_triggered:true`; `per_slot_ood_reasons` copied from guard violations; `ExactPanelKeyIsolation` LUT inert; `calibrated_confidence_multiplier` from pseudo-certs | Prevents Goodhart on future mistake-loop wiring | open p1 |
+| 5 | **#695** | Stop using rank-lift as gate metric; use raw Pearson + isotonic/Platt | Reveals honest gap; ECE-safe | open p0 |
+| 6 | **#620/#621/#622/#684/#685/#686/#687/#688/#689/#690/#692/#696/#699/#705/#706** | Eliminate hardcoded passing telemetry, pseudo-cert confidence, no-op trainer APIs, non-countable Q5/OOD claims, and exact-panel-only mistake-loop surfaces before future wiring can trust them | Prevents Goodhart on future mistake-loop/trainer wiring | mixed p0/p1 |
 | 7 | **#633 + #655 + #656 + #657 and children** | Manual full-system FSV/hardening gate, auto-FSV retirement, heal-drill truthfulness, geometry-label bakeoff | Evidence integrity and substrate prerequisites | mixed |
 | Done | **#704/#714/#670/#691/#707** | Static temporal retirement, invalid-space policy, hook fail-visible behavior, strict OOD fail-closed behavior | Closed evidence; retained as prerequisites, not active blockers | closed |
 | 8 | **#392 / #511 / #405 / #379** | Trajectory ECE / entropy aux loss / Panel B / multi-file holdout | **Blocked behind active ranks 1-7** | blocked |
@@ -206,7 +206,7 @@ Per pinned context #383 (LOCKED) + #712 (2026-05-23): gate-active issue order is
 
 ### 3.0 Pre-2026-05-23 critical path (historical — superseded)
 
-The ordering below was the working critical path through 2026-05-22, prior to the 3-Sherlock audit that exposed the trainer-not-training defect. Retained for proof-of-work continuity. Items 0 through 9 below describe the substrate work that **survives the audit** and remains valid; items 10 onward (#615/#616/#392/#511/#405/#379) are now rank 3-9 in §3.−1 above.
+The ordering below was the working critical path through 2026-05-22, prior to the 3-Sherlock audit that exposed the trainer-not-training defect. Retained for proof-of-work continuity. Items 0 through 9 below describe the substrate work that **survives the audit** and remains valid; items 10 onward (#615/#616/#392/#511/#405/#379) are now rank 3-8 in §3.−1 above.
 
 | Rank | Epic | Status | Note |
 |---|---|---|---|
@@ -333,7 +333,7 @@ Four issues filed against `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.
 
 | Issue | Status | Source principle |
 |---|---|---|
-| #511 / TASK-IP-001 — Information-entropy auxiliary loss | OPEN p1; **on the road to 0.95** | Vopson 2nd law of infodynamics (AIP Advances 12, 075310, 2022) |
+| #511 / TASK-IP-001 — Information-entropy auxiliary loss | OPEN p1; blocked candidate after clean raw-Pearson rerun | Vopson 2nd law of infodynamics (AIP Advances 12, 075310, 2022) |
 | #512 / TASK-IP-002 — Self-dual ECC over 15-slot panel | OPEN p1; hygiene | Gates' self-dual ECC in supersymmetry (Doran et al. 2008) |
 | #513 / TASK-IP-003 — Connectome rich-club analysis | ✅ CLOSED 2026-05-20 as **demoted negative finding** | FlyWire connectome (Nature 634, 2024-10-02) |
 | #514 / TASK-IP-005 — Eon-style cold-load behavioural FSV | OPEN p1; safety net | Eon Systems fly demonstration (March 2026) |
@@ -379,7 +379,7 @@ Only candidates passing BOTH promoted. Rejected candidates write `CF_MEJEPA_EMBE
 
 **Activation rule:** *contingency plans* for if current Phase G queue + creativity engine fail to close remaining ship-gate gap. **NOT to be started until:**
 
-1. Current #712 queue concludes (#683 -> #709/#715 -> #615 -> #618/#619 -> #695 -> hardcoded/no-op telemetry removal -> #633 hardening children -> #392/#511/#405/#379 rerun).
+1. Current #712 queue concludes (#683 -> #709/#715 -> #615 -> #618/#619 -> #695 -> hardcoded/no-op telemetry and dead-public-surface removal -> #633/#655/#656/#657 hardening/label-evidence children -> #392/#511/#405/#379 rerun).
 2. Post-queue gap analysis on a clean raw-Pearson, clean-substrate measurement concludes remaining gap is not closable with the current architecture + corpus + label substrate.
 3. Operator explicitly re-prioritizes any (or all) from `p3` based on what gap analysis identifies.
 
@@ -454,8 +454,8 @@ Neuroscience-inspired architectures have mixed history in ML. Predictive coding 
 | #312 | hot_root on ext4 throughput bottleneck — superseded by #372 | satisfied; close after #634 confirms no separate scheduler-profile work remains |
 | #442 | Track aiwonder librocksdb-sys cstdint native build requirement | blocked p1 |
 | #617 | WSL `/mnt/c` capacity snapshots remain in aiwonder FSV scripts | needs-triage p2 |
-| #671 | Stale SWE-bench harness defaults point at missing aiwonder archive venv | needs-triage p0 |
-| #674 | `run-remote` wrapper can hang after remote command completes | needs-triage p0 |
+| #671 | Stale SWE-bench harness defaults point at missing aiwonder archive venv | ✅ closed 2026-05-23 |
+| #674 | `run-remote` wrapper can hang after remote command completes | ✅ closed 2026-05-23 |
 
 ---
 
@@ -464,7 +464,7 @@ Neuroscience-inspired architectures have mixed history in ML. Predictive coding 
 | # | Title | Why pinned |
 |---|---|---|
 | **#712** | **Sherlock-validated critical path (2026-05-23)** | **Authoritative ordering.** Decomposes `0.7942` into trainer/checkpoint lineage gap + invalid legacy forward-cache slots + Goodhart metric. New ranks supersede prior §3.0; post-#704/#714 active substrate work is #709/#715. |
-| #633 | [P0] Manual full-system FSV and hardening gate | Active in parallel (rank 8 of #712); children #634-#651 still required |
+| #633 | [P0] Manual full-system FSV and hardening gate | Active in parallel (rank 7 of #712); children #634-#651 still required |
 | #310 | META Issue refactor | Phase G execution-order map; now subordinate to #712 |
 | #383 | Gate-active issue order must be evidence-weighted (p0) | Evidence per #712 |
 | #397 | ME-JEPA consequence-prediction truth-system contract (p0) | Binary contract intact post-Sherlock |
@@ -485,19 +485,19 @@ Neuroscience-inspired architectures have mixed history in ML. Predictive coding 
 | #621 | Hardcoded `gtau_pass_rate: 1.0` published to MCP weekly dashboard | 5-Sherlock |
 | #709 | Add inter-embedder distinctness gate before cache promotion | post-#704/#714 |
 | #715 | Rebuild static AST forward cache with 9-slot policy and post-fix E8 | post-#704/#714 |
-| #671 | Stale SWE-bench harness defaults point at missing aiwonder archive venv | post-#372 |
-| #672 | Geometry scalar feature lineage + leakage gate for `head_projection` promotion | post-#657 |
-| #673 | Label-quality audit ranks embedder signal vs noise | post-#657 |
-| #674 | `run-remote` wrapper can hang after remote command completes | post-#615 |
+| #671 | Stale SWE-bench harness defaults point at missing aiwonder archive venv | ✅ closed 2026-05-23 |
+| #672 | Geometry scalar feature lineage + leakage gate for `head_projection` promotion | ✅ closed 2026-05-23 |
+| #673/#679/#680 | Label-quality audit, out-of-fold lift/ECE, and label-quality decision | ✅ closed 2026-05-23 |
+| #674 | `run-remote` wrapper can hang after remote command completes | ✅ closed 2026-05-23 |
 | #656 | mejepa-heal-drill fails before complete readback on conformal overcoverage | in-progress |
 | #616 | Rerun and classify weak-cell oracle timeout/error rows | open |
 
-### 10.2 P1/P2 bugs
+### 10.2 Additional bug queue
 
 | # | Title | Status |
 |---|---|---|
-| #620 | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook never invoked from training | needs-triage p2 |
-| #622 | Trainer dead-code cleanup batch (distill + lora_wiring + aux) | needs-triage p2 |
+| #620 | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook never invoked from training | needs-triage p0 |
+| #622 | Trainer dead-code cleanup batch (distill + lora_wiring + aux) | needs-triage p0 |
 | #623 | `cold_start_conformal_policy` invalid `alpha=0.0` dead public API | needs-triage p3 |
 | #624 | `verdict_assembly` inline `CONTRADICTION_CALIBRATION_INVALID` not declared constant | needs-triage p3 |
 | #625 | `DeterministicPredictor` publicly re-exported (synthetic-vector landmine post-#422) | needs-triage p2 |
