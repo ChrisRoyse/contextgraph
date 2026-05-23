@@ -16,6 +16,8 @@ const DEFAULT_MODELS_CONFIG: &str = "/zfs/hot/contextgraph/models/mejepa_models_
 const STATIC_AST_CORPUS_PROFILE: &str = "static_ast_python";
 const LIVE_TEMPORAL_CORPUS_PROFILE: &str = "live_temporal";
 const MIN_UNIQUE_VECTOR_FRACTION: f64 = 0.5;
+const MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION: f64 = 0.9;
+const MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE: usize = 64;
 const MAX_PAIRWISE_VECTOR_HASH_JACCARD: f64 = 0.5;
 const ERR_EMBEDDER_COLLAPSE: &str = "MEJEPA_FORWARD_CACHE_EMBEDDER_COLLAPSE";
 const ERR_EMBEDDER_ALIAS: &str = "MEJEPA_FORWARD_CACHE_EMBEDDER_ALIAS";
@@ -160,6 +162,7 @@ async fn run() -> RunnerResult<()> {
     let mut all_telemetry_rows = Vec::new();
     let mut per_embedder_coverage = BTreeMap::new();
     let mut vector_hash_counts_by_embedder = BTreeMap::new();
+    let mut input_hash_counts_by_embedder = BTreeMap::new();
     let mut pending_embedder_records = Vec::new();
     let mut packed_per_embedder = BTreeMap::new();
     let mut first_pass_writes = 0usize;
@@ -199,6 +202,10 @@ async fn run() -> RunnerResult<()> {
             embedder.slug().to_string(),
             vector_hash_counts_for_records(embedder, &embedder_records)?,
         );
+        input_hash_counts_by_embedder.insert(
+            embedder.slug().to_string(),
+            input_hash_counts_for_records(embedder, &embedder_records)?,
+        );
         first_pass_writes += output_count;
         per_embedder_coverage.insert(
             embedder.slug().to_string(),
@@ -221,8 +228,11 @@ async fn run() -> RunnerResult<()> {
         .iter()
         .map(|embedder| embedder.slug().to_string())
         .collect();
-    let distinctness_report =
-        evaluate_embedder_distinctness(&active_embedder_ids, &vector_hash_counts_by_embedder);
+    let distinctness_report = evaluate_embedder_distinctness(
+        &active_embedder_ids,
+        &vector_hash_counts_by_embedder,
+        &input_hash_counts_by_embedder,
+    );
     merge_distinctness_metrics(&mut per_embedder_coverage, &distinctness_report);
     if !distinctness_report.passes() {
         write_distinctness_failure_artifacts(
@@ -333,6 +343,8 @@ async fn run() -> RunnerResult<()> {
         "embedder_distinctness_gate": {
             "status": "passed",
             "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
+            "min_unique_input_count_for_duplicate_bounded_gate": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
             "collapse_failures": distinctness_report.collapse_failures.clone(),
             "alias_failures": distinctness_report.alias_failures.clone(),
@@ -1067,9 +1079,32 @@ fn vector_hash_counts_for_records(
     Ok(counts)
 }
 
+fn input_hash_counts_for_records(
+    embedder: EmbedderId,
+    records: &[ForwardRecord],
+) -> RunnerResult<BTreeMap<String, usize>> {
+    let mut counts = BTreeMap::new();
+    for record in records {
+        let input_sha = record
+            .index_row
+            .get("source_sha256")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                RunnerError::new(
+                    "MEJEPA_PY_FORWARD_INPUT_SHA256_MISSING",
+                    format!("{} forward record missing source_sha256", embedder.slug()),
+                )
+            })?;
+        *counts.entry(input_sha.to_string()).or_insert(0) += 1;
+    }
+    Ok(counts)
+}
+
 fn evaluate_embedder_distinctness(
     active_embedder_ids: &[String],
     vector_hash_counts_by_embedder: &BTreeMap<String, BTreeMap<String, usize>>,
+    input_hash_counts_by_embedder: &BTreeMap<String, BTreeMap<String, usize>>,
 ) -> DistinctnessReport {
     let mut per_embedder_metrics = BTreeMap::new();
     let mut collapse_failures = Vec::new();
@@ -1080,26 +1115,52 @@ fn evaluate_embedder_distinctness(
             .get(embedder_id)
             .cloned()
             .unwrap_or_default();
+        let input_counts = input_hash_counts_by_embedder
+            .get(embedder_id)
+            .cloned()
+            .unwrap_or_default();
         let row_count: usize = counts.values().sum();
         let unique_count = counts.len();
+        let unique_input_count = input_counts.len();
         let distinctness_fraction = if row_count == 0 {
             0.0
         } else {
             unique_count as f64 / row_count as f64
         };
-        let status = if distinctness_fraction < MIN_UNIQUE_VECTOR_FRACTION {
-            "collapse"
+        let input_distinctness_fraction = if row_count == 0 {
+            0.0
         } else {
+            unique_input_count as f64 / row_count as f64
+        };
+        let unique_vector_per_unique_input_fraction = if unique_input_count == 0 {
+            0.0
+        } else {
+            unique_count.min(unique_input_count) as f64 / unique_input_count as f64
+        };
+        let duplicate_bounded_usable = unique_input_count
+            >= MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
+            && unique_vector_per_unique_input_fraction
+                >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION;
+        let status = if distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION {
             "usable"
+        } else if duplicate_bounded_usable {
+            "usable_duplicate_bounded"
+        } else {
+            "collapse"
         };
         let metric = json!({
             "unique_vector_sha256_count": unique_count,
             "distinctness_fraction": distinctness_fraction,
             "distinctness_gate_status": status,
             "distinctness_min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "unique_input_sha256_count": unique_input_count,
+            "input_distinctness_fraction": input_distinctness_fraction,
+            "unique_vector_per_unique_input_fraction": unique_vector_per_unique_input_fraction,
+            "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
+            "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
             "top_vector_sha256_counts": top_vector_sha256_counts(&counts),
         });
-        if status != "usable" {
+        if status == "collapse" {
             collapse_failures.push(json!({
                 "error_code": ERR_EMBEDDER_COLLAPSE,
                 "embedder_id": embedder_id,
@@ -1107,6 +1168,11 @@ fn evaluate_embedder_distinctness(
                 "unique_vector_sha256_count": unique_count,
                 "distinctness_fraction": distinctness_fraction,
                 "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+                "unique_input_sha256_count": unique_input_count,
+                "input_distinctness_fraction": input_distinctness_fraction,
+                "unique_vector_per_unique_input_fraction": unique_vector_per_unique_input_fraction,
+                "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
+                "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
             }));
         }
         vector_hash_sets.insert(
@@ -1207,6 +1273,8 @@ fn write_distinctness_failure_artifacts(
         "embedder_distinctness_gate": {
             "status": "failed",
             "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
+            "min_unique_input_count_for_duplicate_bounded_gate": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
             "collapse_failures": distinctness_report.collapse_failures.clone(),
             "alias_failures": distinctness_report.alias_failures.clone(),
@@ -1459,10 +1527,36 @@ mod tests {
             .map(|(embedder_id, _)| (*embedder_id).to_string())
             .collect::<Vec<_>>();
         let mut by_embedder = BTreeMap::new();
+        let mut input_by_embedder = BTreeMap::new();
         for (embedder_id, hashes) in rows {
             by_embedder.insert((*embedder_id).to_string(), counts(hashes));
+            let input_hashes = hashes
+                .iter()
+                .enumerate()
+                .map(|(idx, _)| format!("sha256:input-{idx:04}"))
+                .collect::<Vec<_>>();
+            let input_refs = input_hashes.iter().map(String::as_str).collect::<Vec<_>>();
+            input_by_embedder.insert((*embedder_id).to_string(), counts(&input_refs));
         }
-        evaluate_embedder_distinctness(&active, &by_embedder)
+        evaluate_embedder_distinctness(&active, &by_embedder, &input_by_embedder)
+    }
+
+    fn report_for_vector_and_input_hashes(
+        rows: &[(&str, Vec<(&str, &str)>)],
+    ) -> DistinctnessReport {
+        let active = rows
+            .iter()
+            .map(|(embedder_id, _)| (*embedder_id).to_string())
+            .collect::<Vec<_>>();
+        let mut by_embedder = BTreeMap::new();
+        let mut input_by_embedder = BTreeMap::new();
+        for (embedder_id, pairs) in rows {
+            let vector_hashes = pairs.iter().map(|(vector, _)| *vector).collect::<Vec<_>>();
+            let input_hashes = pairs.iter().map(|(_, input)| *input).collect::<Vec<_>>();
+            by_embedder.insert((*embedder_id).to_string(), counts(&vector_hashes));
+            input_by_embedder.insert((*embedder_id).to_string(), counts(&input_hashes));
+        }
+        evaluate_embedder_distinctness(&active, &by_embedder, &input_by_embedder)
     }
 
     #[test]
@@ -1506,6 +1600,67 @@ mod tests {
         assert_eq!(report.collapse_failures.len(), 0);
         assert_eq!(report.alias_failures.len(), 0);
         assert_eq!(report.pairwise_jaccard_matrix["e1"]["e8"], json!(0.0));
+    }
+
+    #[test]
+    fn distinctness_gate_accepts_duplicate_heavy_input_when_vectors_cover_inputs() {
+        let mut pairs = Vec::new();
+        for idx in 0..80 {
+            let vector = format!("sha256:vector-{idx:04}");
+            let input = format!("sha256:input-{idx:04}");
+            pairs.push((vector, input));
+        }
+        for idx in 0..120 {
+            let source = idx % 80;
+            let vector = format!("sha256:vector-{source:04}");
+            let input = format!("sha256:input-{source:04}");
+            pairs.push((vector, input));
+        }
+        let refs = pairs
+            .iter()
+            .map(|(vector, input)| (vector.as_str(), input.as_str()))
+            .collect::<Vec<_>>();
+
+        let report = report_for_vector_and_input_hashes(&[("e9", refs)]);
+
+        assert!(report.passes());
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["distinctness_gate_status"],
+            json!("usable_duplicate_bounded")
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["unique_input_sha256_count"],
+            json!(80)
+        );
+    }
+
+    #[test]
+    fn distinctness_gate_rejects_duplicate_heavy_input_with_vector_collisions() {
+        let mut pairs = Vec::new();
+        for idx in 0..80 {
+            let vector = format!("sha256:vector-{:04}", idx % 40);
+            let input = format!("sha256:input-{idx:04}");
+            pairs.push((vector, input));
+        }
+        for idx in 0..120 {
+            let source = idx % 80;
+            let vector = format!("sha256:vector-{:04}", source % 40);
+            let input = format!("sha256:input-{source:04}");
+            pairs.push((vector, input));
+        }
+        let refs = pairs
+            .iter()
+            .map(|(vector, input)| (vector.as_str(), input.as_str()))
+            .collect::<Vec<_>>();
+
+        let report = report_for_vector_and_input_hashes(&[("e9", refs)]);
+
+        assert!(!report.passes());
+        assert_eq!(report.error_code(), ERR_EMBEDDER_COLLAPSE);
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["unique_vector_per_unique_input_fraction"],
+            json!(0.5)
+        );
     }
 
     #[test]

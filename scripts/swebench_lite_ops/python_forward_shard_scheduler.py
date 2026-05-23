@@ -73,6 +73,8 @@ ISOLATED_FORWARD_SLUGS = ("e1", "e10", "e12", "e13", "e14", "e6", "e7", "e8", "e
 DEFAULT_ACTIVE_EMBEDDER_COUNT = len(ISOLATED_FORWARD_SLUGS)
 DEFAULT_CORPUS_PROFILE = "static_ast_python"
 MIN_UNIQUE_VECTOR_FRACTION = 0.5
+MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION = 0.9
+MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE = 64
 MAX_PAIRWISE_VECTOR_HASH_JACCARD = 0.5
 ERR_EMBEDDER_COLLAPSE = "MEJEPA_FORWARD_CACHE_EMBEDDER_COLLAPSE"
 ERR_EMBEDDER_ALIAS = "MEJEPA_FORWARD_CACHE_EMBEDDER_ALIAS"
@@ -608,6 +610,9 @@ def evaluate_embedder_distinctness(
     counts_by_embedder: dict[str, dict[str, int]] = {
         embedder_id: {} for embedder_id in active_embedder_ids
     }
+    input_counts_by_embedder: dict[str, dict[str, int]] = {
+        embedder_id: {} for embedder_id in active_embedder_ids
+    }
     for row in index_rows:
         require("distinctness index row is object", isinstance(row, dict))
         embedder_id = row.get("embedder_id")
@@ -620,24 +625,53 @@ def evaluate_embedder_distinctness(
         )
         counts = counts_by_embedder[embedder_id]
         counts[vector_sha256] = counts.get(vector_sha256, 0) + 1
+        input_sha256 = row.get("source_sha256")
+        require(
+            f"{embedder_id} distinctness row has source_sha256",
+            isinstance(input_sha256, str) and bool(input_sha256.strip()),
+        )
+        input_counts = input_counts_by_embedder[embedder_id]
+        input_counts[input_sha256] = input_counts.get(input_sha256, 0) + 1
 
     per_embedder_metrics: dict[str, Any] = {}
     collapse_failures: list[dict[str, Any]] = []
     vector_hash_sets: dict[str, set[str]] = {}
     for embedder_id in active_embedder_ids:
         counts = counts_by_embedder[embedder_id]
+        input_counts = input_counts_by_embedder[embedder_id]
         row_count = sum(counts.values())
         unique_count = len(counts)
+        unique_input_count = len(input_counts)
         distinctness_fraction = 0.0 if row_count == 0 else unique_count / row_count
-        status = "collapse" if distinctness_fraction < MIN_UNIQUE_VECTOR_FRACTION else "usable"
+        input_distinctness_fraction = 0.0 if row_count == 0 else unique_input_count / row_count
+        unique_vector_per_unique_input_fraction = (
+            0.0
+            if unique_input_count == 0
+            else min(unique_count, unique_input_count) / unique_input_count
+        )
+        duplicate_bounded_usable = (
+            unique_input_count >= MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
+            and unique_vector_per_unique_input_fraction >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION
+        )
+        if distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION:
+            status = "usable"
+        elif duplicate_bounded_usable:
+            status = "usable_duplicate_bounded"
+        else:
+            status = "collapse"
         per_embedder_metrics[embedder_id] = {
             "unique_vector_sha256_count": unique_count,
             "distinctness_fraction": distinctness_fraction,
             "distinctness_gate_status": status,
             "distinctness_min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "unique_input_sha256_count": unique_input_count,
+            "input_distinctness_fraction": input_distinctness_fraction,
+            "unique_vector_per_unique_input_fraction": unique_vector_per_unique_input_fraction,
+            "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
+            "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
             "top_vector_sha256_counts": top_vector_sha256_counts(counts),
         }
-        if status != "usable":
+        if status == "collapse":
             collapse_failures.append(
                 {
                     "error_code": ERR_EMBEDDER_COLLAPSE,
@@ -646,6 +680,11 @@ def evaluate_embedder_distinctness(
                     "unique_vector_sha256_count": unique_count,
                     "distinctness_fraction": distinctness_fraction,
                     "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+                    "unique_input_sha256_count": unique_input_count,
+                    "input_distinctness_fraction": input_distinctness_fraction,
+                    "unique_vector_per_unique_input_fraction": unique_vector_per_unique_input_fraction,
+                    "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
+                    "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
                 }
             )
         vector_hash_sets[embedder_id] = set(counts)
@@ -736,6 +775,8 @@ def write_isolated_distinctness_failure(
         "embedder_distinctness_gate": {
             "status": "failed",
             "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
+            "min_unique_input_count_for_duplicate_bounded_gate": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
             "collapse_failures": distinctness_report["collapse_failures"],
             "alias_failures": distinctness_report["alias_failures"],
@@ -2239,6 +2280,8 @@ def consolidate_isolated_subruns(
         "embedder_distinctness_gate": {
             "status": "passed",
             "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
+            "min_unique_input_count_for_duplicate_bounded_gate": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
             "collapse_failures": distinctness_report["collapse_failures"],
             "alias_failures": distinctness_report["alias_failures"],
@@ -4781,6 +4824,8 @@ def aggregate(
         corpus_manifest["embedder_distinctness_gate"] = {
             "status": "passed",
             "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
+            "min_unique_input_count_for_duplicate_bounded_gate": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
             "shard_count": len(shards),
             "per_embedder_min_distinctness_fraction": per_embedder_min_distinctness_fraction,
