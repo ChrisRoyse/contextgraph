@@ -264,6 +264,8 @@ def command_python_geometry_label_admissibility(args: argparse.Namespace) -> dic
         "eligible_independent_embedder_ids": sorted(eligible),
         "duplicate_alias_map": dict(sorted(aliases.items())),
         "degenerate_embedder_ids": sorted(degenerate),
+        "retired_for_static_ast_embedder_ids": sorted(degenerate),
+        "static_ast_retirement_reason": "E2/E3/E4 require semantic temporal instructions; AST chunker run timestamps are non-semantic and collapse temporal spaces",
         "valid_independent_embedder_count": len(eligible),
         "valid_independent_pair_denominator": len(eligible) * (len(eligible) - 1) // 2,
         "source_policy": "duplicate and degenerate spaces cannot count as independent live geometry labels",

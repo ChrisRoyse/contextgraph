@@ -68,8 +68,10 @@ DEFAULT_CARGO_RUNNER = "target/release/examples/python_forward_cache_readback"
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-029"
 SUPPORTED_TRUE_BATCH_SLUGS = {"e1", "e6", "e7", "e8", "e9", "e10", "e12", "e13", "e14"}
-ISOLATED_FORWARD_SLUGS = ("e1", "e10", "e12", "e13", "e14", "e2", "e3", "e4", "e6", "e7", "e8", "e9")
-DEFAULT_ACTIVE_EMBEDDER_COUNT = 12
+STATIC_AST_RETIRED_TEMPORAL_FORWARD_SLUGS = ("e2", "e3", "e4")
+ISOLATED_FORWARD_SLUGS = ("e1", "e10", "e12", "e13", "e14", "e6", "e7", "e8", "e9")
+DEFAULT_ACTIVE_EMBEDDER_COUNT = len(ISOLATED_FORWARD_SLUGS)
+DEFAULT_CORPUS_PROFILE = "static_ast_python"
 DEFAULT_ESTIMATED_RECORD_BYTES = 16 * 1024
 DEFAULT_HOT_STAGE_BUDGET_BYTES = 48 * 1024 * 1024 * 1024
 DEFAULT_DURABLE_SLACK_BYTES = 2 * 1024 * 1024 * 1024
@@ -1559,6 +1561,7 @@ def run_shard(
             "CG_MEJEPA_PY_FORWARD_GPU_WORKERS": str(args.gpu_workers),
             "CG_MEJEPA_PY_FORWARD_JSONL_SYNC_EVERY_ROWS": str(args.jsonl_sync_every_rows),
             "CG_MEJEPA_PY_FORWARD_CACHE_STORE_LAYOUT": args.cache_store_layout,
+            "CG_MEJEPA_PY_FORWARD_CORPUS_PROFILE": DEFAULT_CORPUS_PROFILE,
         }
     )
     if args.true_batch_max_padded_source_bytes is not None:
@@ -2133,7 +2136,8 @@ def run_shard_embedder_isolated(
     # Parallel-isolated mode: launch N concurrent isolated embedder subprocesses
     # on the same GPU. CUDA MPS (Multi-Process Service) should be enabled for
     # actual kernel overlap; otherwise CUDA time-slices but we still amortise
-    # the subprocess spawn cost across N waves instead of 12 sequential calls.
+    # the subprocess spawn cost across N waves instead of one process per
+    # active static-AST embedder.
     # Configurable via CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS env var; default
     # 1 preserves the legacy sequential path. Recommended: 4-6 for RTX 5090
     # (32 GB VRAM, peak ~3.5 GB per embedder process incl. CUDA context).
@@ -4673,8 +4677,8 @@ def edge_checks(
             raise SchedulerError(f"{case_name} edge unexpectedly passed")
 
     require(
-        "isolated process list includes serial algorithmic embedders",
-        {"e2", "e3", "e4"}.issubset(ISOLATED_FORWARD_SLUGS),
+        "static AST isolated process list retires temporal embedders",
+        not set(STATIC_AST_RETIRED_TEMPORAL_FORWARD_SLUGS).intersection(ISOLATED_FORWARD_SLUGS),
     )
     require(
         "isolated process list includes CUDA HDC embedder",
@@ -4688,6 +4692,7 @@ def edge_checks(
         "case": "isolated_process_list_covers_all_required_embedders",
         "passes": True,
         "isolated_forward_slugs": list(ISOLATED_FORWARD_SLUGS),
+        "retired_temporal_forward_slugs": list(STATIC_AST_RETIRED_TEMPORAL_FORWARD_SLUGS),
     })
 
     bounded_args = argparse.Namespace(**vars(args))
@@ -4762,15 +4767,15 @@ def edge_checks(
     ]
     prefix_summary = {
         "chunk_count": 1,
-        "cache_record_count": 12,
+        "cache_record_count": DEFAULT_ACTIVE_EMBEDDER_COUNT,
         "first_pass_hits": 0,
-        "first_pass_writes": 12,
-        "second_pass_hits": 12,
+        "first_pass_writes": DEFAULT_ACTIVE_EMBEDDER_COUNT,
+        "second_pass_hits": DEFAULT_ACTIVE_EMBEDDER_COUNT,
         "quarantine_row_count": 0,
-        "batch_telemetry_row_count": 12,
-        "active_embedder_count": 12,
-        "expected_pairs": 12,
-        "accounted_pairs": 12,
+        "batch_telemetry_row_count": DEFAULT_ACTIVE_EMBEDDER_COUNT,
+        "active_embedder_count": DEFAULT_ACTIVE_EMBEDDER_COUNT,
+        "expected_pairs": DEFAULT_ACTIVE_EMBEDDER_COUNT,
+        "accounted_pairs": DEFAULT_ACTIVE_EMBEDDER_COUNT,
         "shard_count": 1,
     }
     json_dump_checked(

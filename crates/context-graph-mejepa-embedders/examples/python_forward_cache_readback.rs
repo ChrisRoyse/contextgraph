@@ -2,7 +2,7 @@ use context_graph_mejepa_embedders::{
     AlgorithmicEmbedderForward, EmbedError, EmbedderForward, EmbedderId, EmbedderInput,
     ModelsConfig, PretrainedEmbedderForward, SUPPORTED_FORWARD_EMBEDDERS,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::env;
@@ -13,6 +13,8 @@ use std::time::Instant;
 
 const SCHEMA_VERSION: u64 = 1;
 const DEFAULT_MODELS_CONFIG: &str = "/zfs/hot/contextgraph/models/mejepa_models_config.toml";
+const STATIC_AST_CORPUS_PROFILE: &str = "static_ast_python";
+const LIVE_TEMPORAL_CORPUS_PROFILE: &str = "live_temporal";
 
 type RunnerResult<T> = Result<T, RunnerError>;
 
@@ -50,6 +52,7 @@ struct EnvConfig {
     true_batch_size: usize,
     cache_store_layout: String,
     only_embedder: Option<EmbedderId>,
+    corpus_profile: String,
     models_config: PathBuf,
     gpu_vram_guard_bytes: u64,
 }
@@ -116,8 +119,10 @@ async fn run() -> RunnerResult<()> {
         ));
     }
 
+    let embedders = active_embedders(&config)?;
+    let retired_embedders = retired_embedders(&config);
+    let active_embedder_count = embedders.len();
     prepare_output_roots(&config)?;
-    let embedders = active_embedders(&config);
     let mut all_index_rows = Vec::new();
     let mut all_quarantine_rows = Vec::new();
     let mut all_telemetry_rows = Vec::new();
@@ -137,7 +142,7 @@ async fn run() -> RunnerResult<()> {
         None
     };
 
-    for embedder in embedders {
+    for embedder in embedders.iter().copied() {
         let started = Instant::now();
         let forwarder = load_forwarder(embedder, models_config.as_ref()).await?;
         let results =
@@ -199,6 +204,9 @@ async fn run() -> RunnerResult<()> {
         "artifact_kind": "python_forward_cache_packed_manifest",
         "created_at_utc": utc_now(),
         "layout": "packed-jsonl",
+        "corpus_profile": config.corpus_profile.as_str(),
+        "active_embedder_ids": embedder_slugs(&embedders),
+        "retired_embedder_policy": retired_embedder_policy(&config, &retired_embedders),
         "packed_record_root": config.cache_root.join("packed_records"),
         "row_count": all_index_rows.len(),
         "per_embedder": packed_per_embedder,
@@ -207,7 +215,6 @@ async fn run() -> RunnerResult<()> {
     write_json(&packed_manifest_path, &packed_manifest)?;
 
     let manifest_path = config.cache_root.join("python_forward_cache_manifest.json");
-    let active_embedder_count = active_embedders(&config).len();
     let manifest = json!({
         "schema_version": SCHEMA_VERSION,
         "status": "passed",
@@ -223,6 +230,7 @@ async fn run() -> RunnerResult<()> {
             "models_config": config.models_config,
             "cache_store_layout": "packed-jsonl",
             "only_embedder": config.only_embedder.map(|id| id.slug().to_string()),
+            "corpus_profile": config.corpus_profile.as_str(),
         },
         "source_of_truth": {
             "manifest": manifest_path,
@@ -236,6 +244,9 @@ async fn run() -> RunnerResult<()> {
         "summary": {
             "chunk_count": chunks.len(),
             "active_embedder_count": active_embedder_count,
+            "active_embedder_ids": embedder_slugs(&embedders),
+            "retired_embedder_count": retired_embedders.len(),
+            "retired_embedder_ids": embedder_slugs(&retired_embedders),
             "cache_record_count": all_index_rows.len(),
             "first_pass_hits": 0,
             "first_pass_writes": first_pass_writes,
@@ -246,6 +257,7 @@ async fn run() -> RunnerResult<()> {
             "expected_pairs": chunks.len() * active_embedder_count,
             "accounted_pairs": all_index_rows.len() + all_quarantine_rows.len(),
         },
+        "retired_embedder_policy": retired_embedder_policy(&config, &retired_embedders),
         "per_embedder_coverage": per_embedder_coverage,
     });
     write_json(&manifest_path, &manifest)?;
@@ -267,6 +279,7 @@ async fn run() -> RunnerResult<()> {
             "packed_record_root": config.cache_root.join("packed_records"),
         },
         "summary": manifest["summary"].clone(),
+        "retired_embedder_policy": manifest["retired_embedder_policy"].clone(),
     });
     write_json(&readback_path, &readback)?;
     Ok(())
@@ -294,6 +307,9 @@ impl EnvConfig {
             Ok(value) if !value.trim().is_empty() => Some(parse_embedder(&value)?),
             _ => None,
         };
+        let corpus_profile = env::var("CG_MEJEPA_PY_FORWARD_CORPUS_PROFILE")
+            .unwrap_or_else(|_| STATIC_AST_CORPUS_PROFILE.to_string());
+        validate_corpus_profile(&corpus_profile)?;
         let models_config = env::var("CG_MEJEPA_MODELS_CONFIG")
             .or_else(|_| env::var("CONTEXTGRAPH_MEJEPA_MODELS_CONFIG"))
             .map(PathBuf::from)
@@ -309,6 +325,7 @@ impl EnvConfig {
             true_batch_size,
             cache_store_layout,
             only_embedder,
+            corpus_profile,
             models_config,
             gpu_vram_guard_bytes,
         })
@@ -368,11 +385,79 @@ fn parse_embedder(value: &str) -> RunnerResult<EmbedderId> {
     })
 }
 
-fn active_embedders(config: &EnvConfig) -> Vec<EmbedderId> {
-    match config.only_embedder {
-        Some(embedder) => vec![embedder],
-        None => SUPPORTED_FORWARD_EMBEDDERS.to_vec(),
+fn validate_corpus_profile(value: &str) -> RunnerResult<()> {
+    if value == STATIC_AST_CORPUS_PROFILE || value == LIVE_TEMPORAL_CORPUS_PROFILE {
+        return Ok(());
     }
+    Err(RunnerError::new(
+        "MEJEPA_PY_FORWARD_BAD_CORPUS_PROFILE",
+        format!(
+            "CG_MEJEPA_PY_FORWARD_CORPUS_PROFILE must be {STATIC_AST_CORPUS_PROFILE:?} or {LIVE_TEMPORAL_CORPUS_PROFILE:?}, got {value:?}"
+        ),
+    ))
+}
+
+fn temporal_static_ast_retired(embedder: EmbedderId) -> bool {
+    matches!(embedder, EmbedderId::E2 | EmbedderId::E3 | EmbedderId::E4)
+}
+
+fn retired_embedders(config: &EnvConfig) -> Vec<EmbedderId> {
+    if config.corpus_profile == STATIC_AST_CORPUS_PROFILE {
+        SUPPORTED_FORWARD_EMBEDDERS
+            .iter()
+            .copied()
+            .filter(|embedder| temporal_static_ast_retired(*embedder))
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+fn active_embedders(config: &EnvConfig) -> RunnerResult<Vec<EmbedderId>> {
+    match config.only_embedder {
+        Some(embedder)
+            if config.corpus_profile == STATIC_AST_CORPUS_PROFILE
+                && temporal_static_ast_retired(embedder) =>
+        {
+            Err(RunnerError::new(
+                "MEJEPA_PY_FORWARD_TEMPORAL_RETIRED_FOR_STATIC_AST",
+                format!(
+                    "{} is retired for static AST corpus forwards; use corpus_profile={LIVE_TEMPORAL_CORPUS_PROFILE} only with explicit per-row temporal instructions",
+                    embedder.slug()
+                ),
+            ))
+        }
+        Some(embedder) => Ok(vec![embedder]),
+        None => Ok(SUPPORTED_FORWARD_EMBEDDERS
+            .iter()
+            .copied()
+            .filter(|embedder| {
+                config.corpus_profile != STATIC_AST_CORPUS_PROFILE
+                    || !temporal_static_ast_retired(*embedder)
+            })
+            .collect()),
+    }
+}
+
+fn embedder_slugs(embedders: &[EmbedderId]) -> Vec<&'static str> {
+    embedders.iter().map(|embedder| embedder.slug()).collect()
+}
+
+fn retired_embedder_policy(config: &EnvConfig, retired_embedders: &[EmbedderId]) -> Value {
+    json!({
+        "corpus_profile": config.corpus_profile.as_str(),
+        "policy": if retired_embedders.is_empty() {
+            "no_static_retirements"
+        } else {
+            "temporal_slots_retired_for_static_ast_code"
+        },
+        "retired_embedder_ids": embedder_slugs(retired_embedders),
+        "retirement_reason": if retired_embedders.is_empty() {
+            Value::Null
+        } else {
+            Value::String("E2/E3/E4 require semantic temporal instructions; AST chunker run timestamps are non-semantic and collapse these spaces".to_string())
+        },
+    })
 }
 
 fn is_pretrained(embedder: EmbedderId) -> bool {
@@ -1018,4 +1103,65 @@ fn elapsed_ms(started: Instant) -> f64 {
 
 fn utc_now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(corpus_profile: &str, only_embedder: Option<EmbedderId>) -> EnvConfig {
+        EnvConfig {
+            chunks_jsonl: PathBuf::from("/tmp/chunks.jsonl"),
+            cache_root: PathBuf::from("/tmp/cache"),
+            readback_root: PathBuf::from("/tmp/readback"),
+            chunk_offset: 0,
+            max_chunks: 1,
+            max_source_bytes: 1024,
+            true_batch_size: 1,
+            cache_store_layout: "packed".to_string(),
+            only_embedder,
+            corpus_profile: corpus_profile.to_string(),
+            models_config: PathBuf::from("/tmp/models.toml"),
+            gpu_vram_guard_bytes: 0,
+        }
+    }
+
+    #[test]
+    fn static_ast_profile_retires_temporal_embedders_by_default() {
+        let config = config(STATIC_AST_CORPUS_PROFILE, None);
+
+        let active = active_embedders(&config).unwrap();
+        let retired = retired_embedders(&config);
+
+        assert_eq!(active.len(), 9);
+        assert!(!active.contains(&EmbedderId::E2));
+        assert!(!active.contains(&EmbedderId::E3));
+        assert!(!active.contains(&EmbedderId::E4));
+        assert_eq!(
+            retired,
+            vec![EmbedderId::E2, EmbedderId::E3, EmbedderId::E4]
+        );
+    }
+
+    #[test]
+    fn static_ast_profile_rejects_explicit_temporal_embedder() {
+        let config = config(STATIC_AST_CORPUS_PROFILE, Some(EmbedderId::E2));
+
+        let err = active_embedders(&config).unwrap_err();
+
+        assert_eq!(
+            err.code,
+            "MEJEPA_PY_FORWARD_TEMPORAL_RETIRED_FOR_STATIC_AST"
+        );
+    }
+
+    #[test]
+    fn live_temporal_profile_keeps_all_supported_forward_embedders() {
+        let config = config(LIVE_TEMPORAL_CORPUS_PROFILE, None);
+
+        let active = active_embedders(&config).unwrap();
+
+        assert_eq!(active, SUPPORTED_FORWARD_EMBEDDERS.to_vec());
+        assert!(retired_embedders(&config).is_empty());
+    }
 }
