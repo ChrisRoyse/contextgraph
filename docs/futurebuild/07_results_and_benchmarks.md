@@ -342,7 +342,7 @@ Open work targeting 0.95 ship gate. See `08`.
 
 ### 4.3 Phase H: complete — inner-actor LLM retirement
 
-`feature = "llm"` triggers `compile_error!` at `crates/context-graph-mcp/src/lib.rs:13`. Phase H absence-checks at `scripts/ci/phase_h_*.sh` assert deletion of Qwen / Hermes / Ollama / llama.cpp generative inference.
+`feature = "llm"` triggers `compile_error!` at `crates/context-graph-mcp/src/lib.rs:13`. The previously documented Phase H `scripts/ci/phase_h_*.sh` absence-checks are missing on disk; #693 tracks the doc/control gap for Qwen / Hermes / Ollama / llama.cpp absence checks.
 
 ---
 

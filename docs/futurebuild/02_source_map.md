@@ -306,7 +306,7 @@ Full FSV evidence index → `07_results_and_benchmarks.md`.
 - `.github/workflows/` — GitHub Free plan budget: `runs-on: ubuntu-latest` only, `timeout-minutes: ≤30` default / `≤60` cap, Actions pinned to SHA, cron weekly for SAST / daily for stale.
 - `.github/labels.yml` + `scripts/gh-labels-bootstrap.sh` — label set (memory = Issues).
 - `scripts/ci/check_no_c_drive_paths.sh` — blocks C-drive paths in code/FSV files.
-- `scripts/ci/phase_g_*.sh`, `scripts/ci/phase_h_*.sh` — operator-invoked Phase G/H audit harnesses.
+- `scripts/ci/phase_g_*.sh` — operator-invoked Phase G audit harnesses. Phase H's previously documented `phase_h_*.sh` absence-check suite is missing; #693 tracks whether to create it or remove the historical claim.
 
 ---
 
