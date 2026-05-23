@@ -385,13 +385,15 @@ impl EnvConfig {
         }
         let max_source_bytes =
             env_usize_default("CG_MEJEPA_PY_FORWARD_MAX_SOURCE_BYTES", 32 * 1024)?;
-        let true_batch_size = env_usize_default("CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE", 8)?.max(1);
         let cache_store_layout =
             env::var("CG_MEJEPA_PY_FORWARD_CACHE_STORE_LAYOUT").unwrap_or_else(|_| "packed".into());
         let only_embedder = match env::var("CG_MEJEPA_PY_FORWARD_ONLY_EMBEDDER") {
             Ok(value) if !value.trim().is_empty() => Some(parse_embedder(&value)?),
             _ => None,
         };
+        let default_true_batch_size = env_usize_default("CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE", 8)?;
+        let true_batch_size =
+            effective_true_batch_size(only_embedder, default_true_batch_size)?.max(1);
         let corpus_profile = env::var("CG_MEJEPA_PY_FORWARD_CORPUS_PROFILE")
             .unwrap_or_else(|_| STATIC_AST_CORPUS_PROFILE.to_string());
         validate_corpus_profile(&corpus_profile)?;
@@ -426,7 +428,7 @@ fn required_path(name: &'static str) -> RunnerResult<PathBuf> {
     Ok(PathBuf::from(value))
 }
 
-fn env_usize(name: &'static str) -> RunnerResult<usize> {
+fn env_usize(name: &str) -> RunnerResult<usize> {
     let value =
         env::var(name).map_err(|_| RunnerError::new("MEJEPA_PY_FORWARD_ENV_MISSING", name))?;
     value.parse::<usize>().map_err(|err| {
@@ -437,7 +439,7 @@ fn env_usize(name: &'static str) -> RunnerResult<usize> {
     })
 }
 
-fn env_usize_default(name: &'static str, default: usize) -> RunnerResult<usize> {
+fn env_usize_default(name: &str, default: usize) -> RunnerResult<usize> {
     match env::var(name) {
         Ok(value) => value.parse::<usize>().map_err(|err| {
             RunnerError::new(
@@ -449,7 +451,7 @@ fn env_usize_default(name: &'static str, default: usize) -> RunnerResult<usize> 
     }
 }
 
-fn env_u64_default(name: &'static str, default: u64) -> RunnerResult<u64> {
+fn env_u64_default(name: &str, default: u64) -> RunnerResult<u64> {
     match env::var(name) {
         Ok(value) => value.parse::<u64>().map_err(|err| {
             RunnerError::new(
@@ -459,6 +461,20 @@ fn env_u64_default(name: &'static str, default: u64) -> RunnerResult<u64> {
         }),
         Err(_) => Ok(default),
     }
+}
+
+fn effective_true_batch_size(
+    only_embedder: Option<EmbedderId>,
+    default_true_batch_size: usize,
+) -> RunnerResult<usize> {
+    let Some(embedder) = only_embedder else {
+        return Ok(default_true_batch_size);
+    };
+    let override_name = format!(
+        "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE_{}",
+        embedder.slug().to_ascii_uppercase()
+    );
+    env_usize_default(&override_name, default_true_batch_size)
 }
 
 fn parse_embedder(value: &str) -> RunnerResult<EmbedderId> {
@@ -1596,6 +1612,28 @@ mod tests {
 
         assert_eq!(active, SUPPORTED_FORWARD_EMBEDDERS.to_vec());
         assert!(retired_embedders(&config).is_empty());
+    }
+
+    #[test]
+    fn per_embedder_true_batch_env_override_requires_isolated_embedder() {
+        let key = "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE_E14";
+        let previous = env::var_os(key);
+        env::set_var(key, "1");
+
+        assert_eq!(
+            effective_true_batch_size(Some(EmbedderId::E14), 8).unwrap(),
+            1
+        );
+        assert_eq!(
+            effective_true_batch_size(Some(EmbedderId::E1), 8).unwrap(),
+            8
+        );
+        assert_eq!(effective_true_batch_size(None, 8).unwrap(), 8);
+
+        match previous {
+            Some(value) => env::set_var(key, value),
+            None => env::remove_var(key),
+        }
     }
 
     fn distinctness_inputs_from_pairs(pairs: &[(&str, &str)]) -> EmbedderDistinctnessInputs {

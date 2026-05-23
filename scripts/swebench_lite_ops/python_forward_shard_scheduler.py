@@ -503,6 +503,20 @@ def runner_batch_controls(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def isolated_embedder_extra_env(args: argparse.Namespace, slug: str) -> dict[str, str]:
+    extra_env = {
+        "CG_MEJEPA_PY_FORWARD_ONLY_EMBEDDER": slug,
+        "CG_MEJEPA_PY_FORWARD_SKIP_EXISTING_PACKED_READ": "1",
+    }
+    if slug in args.embedder_batch_size_map:
+        extra_env["CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE"] = str(args.embedder_batch_size_map[slug])
+    if slug in args.embedder_max_padded_source_byte_map:
+        extra_env["CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_PADDED_SOURCE_BYTES"] = str(
+            args.embedder_max_padded_source_byte_map[slug]
+        )
+    return extra_env
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -2467,10 +2481,7 @@ def run_shard_embedder_isolated(
         )
 
     def _run_one_isolated_subrun(slug: str) -> tuple[str, dict[str, Any], dict[str, Any]]:
-        extra_env = {
-            "CG_MEJEPA_PY_FORWARD_ONLY_EMBEDDER": slug,
-            "CG_MEJEPA_PY_FORWARD_SKIP_EXISTING_PACKED_READ": "1",
-        }
+        extra_env = isolated_embedder_extra_env(args, slug)
         snapshot_holder: dict[str, Any] = {}
 
         def _snapshot_after_promotion(subrun_log: dict[str, Any]) -> dict[str, Any]:
@@ -5085,6 +5096,32 @@ def edge_checks(
             cases.append({"case": case_name, "passes": True, "error": str(exc)})
         else:
             raise SchedulerError(f"{case_name} edge unexpectedly passed")
+
+    isolated_env_args = argparse.Namespace(**vars(args))
+    isolated_env_args.true_batch_size = 8
+    isolated_env_args.embedder_batch_size_map = {"e14": 1}
+    isolated_env_args.true_batch_max_padded_source_bytes = None
+    isolated_env_args.embedder_max_padded_source_byte_map = {"e14": 262144}
+    isolated_e14_env = isolated_embedder_extra_env(isolated_env_args, "e14")
+    require(
+        "isolated E14 subrun overrides runner global true batch size",
+        isolated_e14_env.get("CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE") == "1",
+    )
+    require(
+        "isolated E14 subrun overrides runner global padded byte budget",
+        isolated_e14_env.get("CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_PADDED_SOURCE_BYTES") == "262144",
+    )
+    isolated_e1_env = isolated_embedder_extra_env(isolated_env_args, "e1")
+    require(
+        "isolated E1 subrun without explicit cap keeps scheduler global true batch size",
+        "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE" not in isolated_e1_env,
+    )
+    cases.append({
+        "case": "isolated_embedder_extra_env_applies_per_embedder_runner_caps",
+        "passes": True,
+        "e14_extra_env": isolated_e14_env,
+        "e1_extra_env": isolated_e1_env,
+    })
 
     require(
         "static AST isolated process list retires temporal embedders",
