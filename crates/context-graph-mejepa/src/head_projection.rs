@@ -11,6 +11,22 @@ use crate::types::{ChunkId, DdaSignals, EmbedderId, HeadId, PanelId};
 
 pub const HEAD_PROJECTION_SCHEMA_VERSION: u32 = 1;
 pub const HEAD_PROJECTION_SCHEMA: &str = "head-dda-projection-v1";
+pub const HEAD_PROJECTION_GEOMETRY_SCALAR_SCHEMA_VERSION: u32 = 1;
+pub const HEAD_PROJECTION_GEOMETRY_SCALAR_SCHEMA: &str =
+    "head-projection-geometry-scalar-contract-v1";
+pub const HEAD_PROJECTION_GEOMETRY_SCALAR_PREFIX: &str = "geometry:";
+pub const HEAD_PROJECTION_ALLOWED_GEOMETRY_SCALARS: &[&str] = &[
+    "geometry:label_quality_signal_minus_noise",
+    "geometry:label_quality_mean_signal",
+    "geometry:label_quality_mean_noise",
+    "geometry:label_quality_live_label_ratio",
+    "geometry:label_quality_noise_label_ratio",
+    "geometry:downstream_weak_cell_regression_flag",
+    "geometry:prediction_promotion_allowed",
+    "geometry:missingness_or_quarantine_flag",
+    "geometry:boundary_or_ood_score",
+    "geometry:valid_space_consensus_score",
+];
 
 pub const E_ORACLE: &str = "E_Oracle";
 pub const E_TEST: &str = "E_Test";
@@ -72,6 +88,9 @@ impl HeadProjectionSpec {
                     field: format!("head_projection.features[{idx}].name"),
                     detail: "feature name must be non-empty".to_string(),
                 });
+            }
+            if let HeadProjectionFeatureSource::Scalar { name } = &feature.source {
+                validate_head_projection_scalar_feature_name(name)?;
             }
         }
         Ok(())
@@ -533,12 +552,7 @@ fn validate_input_shape(
         embedder.validate(&format!("head_projection_input.embedder_order[{idx}]"))?;
     }
     for (name, value) in input.scalar_features {
-        if name.trim().is_empty() {
-            return Err(MejepaInferError::InvalidInput {
-                field: "head_projection_input.scalar_features".to_string(),
-                detail: "scalar feature names must be non-empty".to_string(),
-            });
-        }
+        validate_head_projection_scalar_feature_name(name)?;
         if !value.is_finite() {
             return Err(MejepaInferError::NanDetected {
                 nan_source: format!("head_projection_input.scalar_features.{name}"),
@@ -547,6 +561,77 @@ fn validate_input_shape(
         }
     }
     Ok(())
+}
+
+pub fn validate_head_projection_scalar_feature_name(name: &str) -> Result<(), MejepaInferError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(MejepaInferError::InvalidInput {
+            field: "head_projection_input.scalar_features".to_string(),
+            detail: "scalar feature names must be non-empty".to_string(),
+        });
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with(HEAD_PROJECTION_GEOMETRY_SCALAR_PREFIX) {
+        if HEAD_PROJECTION_ALLOWED_GEOMETRY_SCALARS.contains(&trimmed) {
+            return Ok(());
+        }
+        return Err(MejepaInferError::InvalidInput {
+            field: "head_projection_input.scalar_features.geometry_scalar_contract".to_string(),
+            detail: format!(
+                "undeclared geometry scalar '{trimmed}' is not in {HEAD_PROJECTION_GEOMETRY_SCALAR_SCHEMA}"
+            ),
+        });
+    }
+    if is_raw_geometry_identifier_name(&lower) {
+        return Err(MejepaInferError::InvalidInput {
+            field: "head_projection_input.scalar_features.geometry_scalar_contract".to_string(),
+            detail: format!(
+                "raw high-cardinality geometry identifier '{trimmed}' is not a scalar feature"
+            ),
+        });
+    }
+    if is_label_target_leak_name(&lower) {
+        return Err(MejepaInferError::InvalidInput {
+            field: "head_projection_input.scalar_features.geometry_scalar_contract".to_string(),
+            detail: format!("target-side or partition-leaky label scalar '{trimmed}' is forbidden"),
+        });
+    }
+    Ok(())
+}
+
+fn is_raw_geometry_identifier_name(lower: &str) -> bool {
+    [
+        "cluster_id",
+        "region_id",
+        "label_id",
+        "geo_label:",
+        "microcell_id",
+        "singleton_label_id",
+        "raw_cluster",
+        "raw_region",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
+
+fn is_label_target_leak_name(lower: &str) -> bool {
+    let looks_label_derived = lower.contains("geometry")
+        || lower.contains("label")
+        || lower.contains("cluster")
+        || lower.contains("region");
+    looks_label_derived
+        && [
+            "oracle",
+            "docker",
+            "test_outcome",
+            "holdout",
+            "target_side",
+            "ground_truth",
+            "partition",
+        ]
+        .iter()
+        .any(|needle| lower.contains(needle))
 }
 
 fn embedder_index(
@@ -667,5 +752,69 @@ mod tests {
         )
         .expect_err("missing E_Reasoning must fail closed");
         assert_eq!(err.code(), "HEAD_PROJECTION_MISSING_SLICE");
+    }
+
+    #[test]
+    fn declared_geometry_scalar_names_are_accepted() {
+        for name in HEAD_PROJECTION_ALLOWED_GEOMETRY_SCALARS {
+            validate_head_projection_scalar_feature_name(name).expect("declared scalar");
+        }
+    }
+
+    #[test]
+    fn raw_geometry_scalar_identifiers_fail_closed() {
+        let err = validate_head_projection_scalar_feature_name("geometry:cluster_id:e7:42")
+            .expect_err("raw cluster id must not be scalarized");
+        assert_eq!(err.code(), "MEJEPA_INFER_INVALID_INPUT");
+
+        let err = validate_head_projection_scalar_feature_name("region_id")
+            .expect_err("raw region id must not be scalarized");
+        assert_eq!(err.code(), "MEJEPA_INFER_INVALID_INPUT");
+    }
+
+    #[test]
+    fn target_leaky_label_scalar_names_fail_closed() {
+        let err = validate_head_projection_scalar_feature_name("label_quality_oracle_agreement")
+            .expect_err("oracle-derived label scalar must fail closed");
+        assert_eq!(err.code(), "MEJEPA_INFER_INVALID_INPUT");
+
+        let err = validate_head_projection_scalar_feature_name("geometry:holdout_selected_density")
+            .expect_err("holdout-selected geometry scalar must fail closed");
+        assert_eq!(err.code(), "MEJEPA_INFER_INVALID_INPUT");
+    }
+
+    #[test]
+    fn declared_geometry_scalar_extras_do_not_break_legacy_heads() {
+        let panel_id = PanelId([3u8; 32]);
+        let chunk_id = ChunkId("chunk-geometry-scalar-contract".to_string());
+        let embedder_order = vec![EmbedderId(E_AST.to_string())];
+        let signals = DdaSignals {
+            per_embedder_cosine: vec![0.5],
+            pairwise_cosine_upper: vec![],
+            pairwise_mi_upper: vec![],
+            blind_spot_z_scores: vec![],
+        };
+        let mut scalars = BTreeMap::new();
+        scalars.insert("complexity_delta".to_string(), 1.0);
+        scalars.insert("length_delta".to_string(), 2.0);
+        scalars.insert("nesting_delta".to_string(), 3.0);
+        scalars.insert(
+            "geometry:label_quality_signal_minus_noise".to_string(),
+            0.25,
+        );
+
+        let projection = project_head(
+            HeadId::TechDebt,
+            HeadProjectionInput {
+                panel_id,
+                chunk_id: &chunk_id,
+                signals: &signals,
+                embedder_order: &embedder_order,
+                scalar_features: &scalars,
+                schema: HEAD_PROJECTION_SCHEMA,
+            },
+        )
+        .expect("declared geometry scalar extras should validate");
+        assert_eq!(projection.features.len(), 4);
     }
 }

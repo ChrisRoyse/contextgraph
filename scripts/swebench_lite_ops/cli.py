@@ -172,6 +172,8 @@ from .python_label_quality_downstream_lift import (
     add_arguments as add_python_label_quality_downstream_lift_arguments,
 )
 from .python_label_quality_downstream_lift import command_python_label_quality_downstream_lift
+from .python_geometry_scalar_contract import add_arguments as add_python_geometry_scalar_contract_arguments
+from .python_geometry_scalar_contract import command_python_geometry_scalar_contract
 from .python_runtime_preflight import add_arguments as add_python_runtime_preflight_arguments
 from .python_runtime_preflight import command_python_runtime_preflight
 from .python_delete_test_call_regeneration import (
@@ -872,6 +874,16 @@ def build_parser() -> argparse.ArgumentParser:
     label_quality_downstream_lift.set_defaults(
         func=command_python_label_quality_downstream_lift,
         evidence_name="python-label-quality-downstream-lift-command-evidence.json",
+    )
+
+    geometry_scalar_contract = sub.add_parser(
+        "python-geometry-scalar-contract",
+        help="TASK-PY-G-672: materialize geometry scalar lineage/leakage contract for head_projection.",
+    )
+    add_python_geometry_scalar_contract_arguments(geometry_scalar_contract)
+    geometry_scalar_contract.set_defaults(
+        func=command_python_geometry_scalar_contract,
+        evidence_name="python-geometry-scalar-contract-command-evidence.json",
     )
 
     delete_test_call_regeneration = sub.add_parser(
