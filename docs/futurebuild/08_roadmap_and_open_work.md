@@ -147,7 +147,7 @@ prediction_oracle_correlation ≥ 0.95
 
 **Last holdout measurement:** binary rank-lift `0.7942190170` from real code-state constellation labels (`0.6916886568` rank-safe, `0.4843192995` raw) in `fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`. Same FSV carries #392 active/abstain diagnostics: active corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978` on `205/240` rows — full active/abstain gate remains false. Previous `0.866667` (legacy pre-migration evidence) measured against synthetic-vector inference path and is invalidated.
 
-**Gap to ship:** `0.1557809830` against rank-lift Panel A measurement, plus four-window stability + Panel B cross-checks.
+**Honest gap to ship:** `0.4657` against raw Pearson. The old `0.1557809830` gap was against rank-lift, now diagnostic-only per #695, plus four-window stability + Panel B cross-checks.
 
 **Degenerate-cell rule (#532).** `compile_error::python`, `wrong_file::python`, any future single-class cell cannot honestly use Pearson. FSV must emit cell's variance class, replacement gate metric (`all_fail_recall_confidence_brier_ece` or `all_pass_recall_confidence_brier_ece`), statistical-power diagnostics instead of bare `correlation unavailable` blocker.
 
@@ -187,11 +187,11 @@ Per pinned context #383 (LOCKED) + #712 (2026-05-23): gate-active issue order is
 
 ### 3.−1 Active critical path (2026-05-23 Sherlock-validated, supersedes prior §3.0)
 
-3-Sherlock parallel audit decomposed the `0.7942190170` measurement into three structural defects (untrained predictor #683 + 4/12 dead embedder slots #670/#704 + Goodhart-magnifier metric #695). Honest gap against raw Pearson = `0.4657`. New ordering:
+3-Sherlock parallel audit decomposed the `0.7942190170` measurement into three structural defects (trainer/checkpoint lineage gap #683 + 4/12 dead embedder slots #670/#704 + Goodhart-magnifier metric #695). Honest gap against raw Pearson = `0.4657`. Direct aiwonder readback shows the latest FSV loaded `/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv/best.manifest.json` with `optimizer_steps=64` and `weight_delta_observed=true`; #683 remains rank 1 because that path is out-of-band from the public `Trainer` contract and compiler construction must fail closed without an explicit manifest. New ordering:
 
 | Rank | Issue | Action | Expected impact | Status |
 |---|---|---|---|---|
-| 1 | **#683** | Wire real trainer: optimizer + backward pass + production `trained_checkpoint_manifest_path` at `mejepa/src/cli.rs:307-314` | Largest; predictor has never trained | open p0 |
+| 1 | **#683** | Unify real training/checkpoint export with public trainer contract; require production `trained_checkpoint_manifest_path` at `mejepa/src/cli.rs:307-314` fail-closed | Largest; current checkpoint evidence is out-of-band from the public trainer | open p0 |
 | 2 | **#670 + #704** | Regenerate `e2/e3/e4/e8`: fix `chunk.time` injection at `python_forward_cache_fsv.rs:2308`; `ff4d4c03` already fixed graph projection; rerun prod forward cache | Recovers 4/12 panel signal-bearing dims | open p0 |
 | 3 | **#615** | delete_test_call Docker oracle batch over 1,131 deterministic candidates → rebuild AST → #614 mask → labels → #392 → #611 | Closes `0.69 → ≥0.85` weak-cell ceiling | in-progress p0 |
 | 4 | **#618 + #619** | Per-slot OOD aggregation at `compiler.rs:502`; slot-preserving panel projections at `predictor/mod.rs:136-147` | Doctrine §1.5ter repair; removes anti-compensation cheat path | open p0 |
@@ -462,7 +462,7 @@ Neuroscience-inspired architectures have mixed history in ML. Predictive coding 
 
 | # | Title | Why pinned |
 |---|---|---|
-| **#712** | **Sherlock-validated critical path (2026-05-23)** | **Authoritative ordering.** Decomposes `0.7942` into untrained predictor + dead slots + Goodhart metric. New ranks 1-9 supersede prior §3.0. |
+| **#712** | **Sherlock-validated critical path (2026-05-23)** | **Authoritative ordering.** Decomposes `0.7942` into trainer/checkpoint lineage gap + dead slots + Goodhart metric. New ranks 1-9 supersede prior §3.0. |
 | #633 | [P0] Manual full-system FSV and hardening gate | Active in parallel (rank 8 of #712); children #634-#651 still required |
 | #310 | META Issue refactor | Phase G execution-order map; now subordinate to #712 |
 | #383 | Gate-active issue order must be evidence-weighted (p0) | Evidence per #712 |
