@@ -175,7 +175,7 @@ By priority (excerpt):
 
 | Priority | Open epic examples |
 |---|---|
-| `priority:p0` | **#633** manual full-system FSV gate (parent), #634-#651 sub-tasks, **#655** retire Rust FSV (in-progress), **#656** mejepa-heal-drill conformal-overcoverage (in-progress), **#657** TASK-PY-G-136 geometry-label bakeoff (in-progress), **#615** delete-test-call regeneration (in-progress), #616 weak-cell oracle reruns, #618/#619/#621 doctrine-violation P0s, #661/#662 geometry-label promotion (blocked behind #657), **#709/#715** v2 static-cache distinctness/rebuild, #671/#672/#673/#674 audit P0s, **#397** consequence-prediction contract (context pin), **#383** evidence-weighted ordering (context pin), #167 burn-in (blocked by #633), #165 confidence gate (blocked by #167), #310 META context |
+| `priority:p0` | **#712** Sherlock critical-path context, **#683** trainer/checkpoint lineage (in-progress), **#633** manual full-system FSV gate (parent), #634-#651 sub-tasks, **#655** retire Rust FSV (in-progress), **#656** mejepa-heal-drill conformal-overcoverage (in-progress), **#657** TASK-PY-G-136 geometry-label bakeoff (in-progress), **#615** delete-test-call regeneration (in-progress), #616 weak-cell oracle reruns, #618/#619/#621 doctrine-violation P0s, #661/#662 geometry-label promotion (blocked behind #657), **#709/#715** v2 static-cache distinctness/rebuild, #671/#672/#673/#674 audit P0s, **#397** consequence-prediction contract (context pin), **#383** evidence-weighted ordering (context pin), #167 burn-in (blocked by #633), #165 confidence gate (blocked by #167), #310 META context |
 | `priority:p1` | #630 long-source/OOM forward-cache quarantine recovery, #626 hygiene retention 90 CFs missing, #664 geometry region dictionary (blocked behind #657), #380 off-host backup, #379 multi-file holdout, #416 pathway, #417 skill linkage remaining, #511 entropy loss, #433 ability resolver replay completeness, #442 librocksdb-sys native build |
 | `priority:p2` | EK series tail, post-ship policies, #382 frozen-panel dimensionality ablation, #378 tool-usage telemetry, #622 trainer dead-code cleanup, #623/#624 minor doctrine string drift, #665 new prediction heads over geometry labels |
 | `priority:p3` | Deferred (SWE-bench Verified subset, v2 stretch, future Docker image plan), 8× neuroscience-reserve issues (#538-#545) |
@@ -367,7 +367,7 @@ Only candidates passing BOTH promoted. Rejected candidates write `CF_MEJEPA_EMBE
 
 **Composition.** Together with v2-stretch creativity tasks (#329 AlphaEvolve outer loop, #335 reverse-prediction, #354-357 EK v2 series), forms **self-resolving observer**: system grows panel until corpus resolved, prunes dominated embedders, specializes per domain, compresses settled clusters. Bounded by reality, not ambition. Storage bounded; search precision maximal.
 
-**Why none are gate-movers for 0.95.** Current `0.7942190170 → 0.95` gap is function of remaining cell-specific ranking weakness and unproven cross-panel generalization, not embedder count or storage architecture. Targeted cell repair + real-input ablation reruns + cross-panel + calibration + entropy loss + mistake loop closes gap. Creativity engine takes over after 0.95.
+**Why none are active gate-movers for 0.95.** After the 2026-05-23 Sherlock audit, the active gap is not an embedder-count or creativity-engine problem; it is trainer/checkpoint lineage (#683), clean 9-slot static-cache substrate (#709/#715), weak-cell corpus repair (#615), doctrine repairs (#618/#619), and metric honesty (#695). Creativity-engine work stays post-0.95 or contingency-only until #712 ranks 1-7 are resolved and a clean raw-Pearson rerun proves the remaining gap is architectural.
 
 **NOT in scope.** No new ambiguous-head prediction surfaces. No consciousness / sentience / phenomenology framing. No simulation-hacking / reality-bending claims. Bounded creativity within falsifiable substrate.
 
@@ -379,8 +379,8 @@ Only candidates passing BOTH promoted. Rejected candidates write `CF_MEJEPA_EMBE
 
 **Activation rule:** *contingency plans* for if current Phase G queue + creativity engine fail to close remaining ship-gate gap. **NOT to be started until:**
 
-1. Current queue concludes (#529 rebaseline → #535 rank lift → #536 weak-cell repair → #547 calibration disjointness → #548 typed blocker → #549 static-signal blocker → #392 temporal features → #511 entropy loss → #405 Panel B → #379 multi-file holdout).
-2. Post-queue gap analysis concludes remaining gap not closable with current architecture + corpus + label substrate.
+1. Current #712 queue concludes (#683 -> #709/#715 -> #615 -> #618/#619 -> #695 -> hardcoded/no-op telemetry removal -> #633 hardening children -> #392/#511/#405/#379 rerun).
+2. Post-queue gap analysis on a clean raw-Pearson, clean-substrate measurement concludes remaining gap is not closable with the current architecture + corpus + label substrate.
 3. Operator explicitly re-prioritizes any (or all) from `p3` based on what gap analysis identifies.
 
 If gate closes via current queue, these issues stay in `p3` reserve indefinitely. If gate does not close, become candidate lever set for next architectural sweep.

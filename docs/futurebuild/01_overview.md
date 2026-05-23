@@ -347,11 +347,11 @@ Each rank with file:line evidence + expected impact in #712 body. Boundary prese
 
 Per **#655** (retire Rust FSV examples → manual SoT guidance, in-progress p0), auto-FSV `*_fsv.rs` harnesses are being retired. Any ship-gate-relevant evidence must come from manual operator-driven SoT readback per `06 §1.9`.
 
-**P0 doctrine/substrate defects (open, gate-blocking):** #618, #619, #621, #709, #715 (see README ⚠). #670/#704/#714 are closed prerequisite evidence.
+**P0 doctrine/substrate defects (open, gate-blocking):** #683, #618, #619, #621, #709, #715 (see README warning). #670/#704/#714 are closed prerequisite evidence.
 
 **Substrate audit chain (data-substrate completion, 2026-05-22):** #612 → #613 (active source-lineage canonicalized; `0` `/mnt/d` hits) → #614 (forward-cache slot-completeness mask: 378,444 full 12-slot rows + 20,706 partial + 627 zero-slot) → #615 (delete-test-call regeneration: 1,131 deterministic candidates, in-progress) → #616 (weak-cell oracle reruns, open) → #631/#632/#641/#666/#667/#668 (closed).
 
-**New geometry-label epic (#413 successor, in-progress):** #657 TASK-PY-G-136 per-embedder vector-space label discovery bakeoff. Each active embedder (`e1,e2,e3,e4,e6,e7,e8,e9,e10,e12,e13,e14`) gets its own deterministic geometry-label map via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Downstream: #661 cross-embedder consensus → #662 gate-safe promotion → #664 router → #665 prediction heads.
+**New geometry-label epic (#413 successor, in-progress):** #657 TASK-PY-G-136 per-embedder vector-space label discovery bakeoff. Static AST label discovery is now scoped to the clean 9-slot policy (`e1,e6,e7,e8,e9,e10,e12,e13,e14`) after #704/#714; `e2/e3/e4` are temporal/live-data candidates only unless a future issue provides semantic time evidence. Each eligible embedder gets its own deterministic geometry-label map via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Downstream: #661 cross-embedder consensus -> #662 gate-safe promotion -> #664 router -> #665 prediction heads.
 
 ---
 

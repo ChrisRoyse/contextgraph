@@ -360,9 +360,9 @@ Six P0 issues (#422 / #424 / #426 / #437 / #438 / #441 / #452) document + fix th
 
 Architectural correction from flat-panel projection (#385) to slot-preserving array operations (#386-#398) IS doctrinally correct: cross-embedder dim compares structurally forbidden, anti-compensation enforced, per-slot calibration + OOD reasons persist. **But the "slot-preserving doesn't close the 0.083 gap by itself" claim is INVALID** — drawn from #398's calibrated ablation rerun against synthetic-input panels. Real-input #393, #398, #546 reruns are now negative evidence — queue ordering should move to targeted weak-cell repair rather than another constellation-wide promotion attempt.
 
-### 5.3 Evidence-weighted ordering (#383, pinned context) — recheck required
+### 5.3 Evidence-weighted ordering (#383 + #712 pinned context) — replaced 2026-05-23
 
-#383 says gate-active issue order must be evidence-weighted, not vision-weighted. **Evidence that drove recent reordering was from synthetic-input ablations and is itself invalidated.** Re-rank from `0.7942190170` real Panel A measurement; with #393/#398/#546 remeasured + not promoted, #536 only a small hard-negative weighting lift, #547 passing disjointness, the top of queue is #548 deeper mixed-cell ranking repair + Panel B / anti-Goodhart validation.
+#383 says gate-active issue order must be evidence-weighted, not vision-weighted. The 2026-05-23 3-Sherlock audit replaced the post-synthetic-vector ordering again: the active top of queue is no longer #548/#392-first. #712 is now authoritative: #683 trainer/checkpoint lineage, then #709/#715 clean 9-slot static cache, then #615 delete_test_call regeneration, then #618/#619 doctrine repairs, then #695 metric honesty, then hardcoded/no-op telemetry removal, then #633 hardening children, before #392/#511/#405/#379 resume.
 
 ### 5.4 The labeling layer is the meaning surface (#404 / #413 / #414 / #418) — substrate stands
 
