@@ -4,37 +4,21 @@
 
 ---
 
-## 0. ⚠ 2026-05-22 hardening pivot — manual SoT supersedes auto-FSV
-
-Operator opened **#633 / [P0] Manual full-system FSV + hardening gate before new work** + **#655 retire Rust FSV examples → manual SoT verification guidance** (in-progress p0). Per 5-Sherlock audit (#629), auto-FSV harness ecosystem (`crates/*/examples/*_fsv.rs`) tended toward silent-success: ~15 distinct closed P0 bugs (`07 §2.0`) involved code returning `success`/`passed=true`/exit-0 without performing work.
-
-**Operational response:**
-
-1. **Rust `*_fsv.rs` examples being retired** (#655). New gate evidence is captured as GitHub issue comments containing direct operator-driven SoT readback, not auto-generated FSV JSON.
-2. **Every #633 child issue (#634-#651) requires manual operator readback** — read actual bytes/rows/files/services BEFORE and AFTER trigger, paste both into issue comment, exercise happy path + ≥3 edge classes. Return codes, green scripts, prior FSV JSON are supporting evidence only.
-3. **Existing auto-FSV evidence remains historical** — artifacts catalogued in `07 §6` keep forensic value, but cannot be sole basis for new RESOLVED claim.
-
-See `§1.9` for binding manual-FSV contract. Remainder of `§1` describes legacy auto-FSV protocol that #655 is retiring; treat as historical until #655 closes.
-
----
-
-## 1. FSV Protocol (the verification contract)
+## 1. FSV protocol — the manual SoT contract
 
 `docs/futurebuild/specs/FSV-PROTOCOL.md` is binding contract for every task. Universal protocol in `docs2/AICodingAgentSuperPrompt.md`.
-
-**⚠ 2026-05-22 retirement (#655):** auto-FSV harness ecosystem is being retired. Protocol below describes semantic intent; operational replacement is manual SoT contract in `§1.9`.
 
 ### 1.1 Source-of-truth first
 
 > *A return value is a claim. The Source of Truth is the verdict.*
 
-Before declaring task complete, answer all four:
+Before declaring a task complete, answer all four:
 1. **What state changed?** File, CF row, metric, queue item, report, external record.
 2. **Where does that state live?** Exact path, CF name + key, metric name, external identifier.
 3. **How is it read back independently?** Separate DB open, file read, checksum, source command.
 4. **What exact value is expected?** Literal value, schema, count delta, hash, bounded range.
 
-If any answer unknown → not done.
+If any answer is unknown → not done.
 
 ### 1.2 Trigger → Process → Outcome
 
@@ -45,14 +29,14 @@ Every FSV-able feature has this shape. Document before implementation: trigger (
 1. **No mocks** for completion gates.
 2. **No fallbacks** that hide required-output failure.
 3. No verifier weakening, ignored tests, silent bypasses.
-4. **Tests must fail when feature is broken.**
+4. **Tests must fail when the feature is broken.**
 5. Missing CFs / files / models / env vars / malformed inputs → fail closed with `SCREAMING_SNAKE_CASE` codes.
-6. **Assume task is wrong** until live files / symbols / CF names prove it current.
-7. Prefer smallest implementation satisfying issue + matching local patterns.
+6. **Assume the task is wrong** until live files / symbols / CF names prove it current.
+7. Prefer smallest implementation satisfying the issue + matching local patterns.
 
 ### 1.4 Synthetic data + boundary cases
 
-Synthetic input allowed when **deterministic, distinguishable, representative, boundary-rich, privacy-safe, cleanup-tagged**. Mocked subsystems NOT acceptable completion evidence. ≥3 boundary classes per code path.
+Synthetic input is allowed when **deterministic, distinguishable, representative, boundary-rich, privacy-safe, cleanup-tagged**. Mocked subsystems are NOT acceptable completion evidence. ≥3 boundary classes per code path.
 
 ### 1.5 Required evidence
 
@@ -61,22 +45,9 @@ Synthetic input allowed when **deterministic, distinguishable, representative, b
 | Build | `cargo build --release -p <crate>` |
 | Test | `cargo test -p <crate>` |
 | Clippy | `cargo clippy -p <crate> --no-deps --tests --examples -- -D warnings` |
-| **SoT readback artifact** | Production: `/zfs/archive/contextgraph/fsv/<task>-fsv/<artifact>.json` with `allPassed: true` |
+| **SoT readback artifact** | Production: `/zfs/archive/contextgraph/fsv/<task>-fsv/<artifact>.json` (when applicable) |
 | **Independent RocksDB verification** | Flush/drop/reopen through production opener, decode same row back |
 | **GitHub issue closeout** | CLAIM before code; RESOLVED / PAUSE / BLOCKED after with command evidence, FSV path, hashes, residual risk |
-
-Minimum SoT shape:
-```json
-{
-  "task": "TASK-EXAMPLE-NNN",
-  "sourceOfTruth": "<CF/key or absolute file path>",
-  "trigger": "<exact command or action>",
-  "expected": "<expected value>",
-  "actual": "<actual value read independently>",
-  "cases": [],
-  "allPassed": true
-}
-```
 
 ### 1.6 Audit-the-task checklist — before starting
 
@@ -88,7 +59,7 @@ test -f docs/futurebuild/specs/FSV-PROTOCOL.md
 git log --oneline -5 -- <path>
 ```
 
-If audit contradicts task → update issue or escalate before writing code.
+If the audit contradicts the task → update the issue or escalate before writing code.
 
 ### 1.7 Failure modes that mean NOT done
 
@@ -96,37 +67,34 @@ Green tests are insufficient if any of these:
 - Test checks a constant instead of exercising implementation.
 - Tested branch is inactive.
 - CF row written but never flushed or reopened.
-- Test uses different opener or serializer than production.
+- Test uses a different opener or serializer than production.
 - Missing values hidden with defaults.
 - Async producer tasks spawned but not joined before readback.
 - Evidence proves existence only, not field-level correctness.
-- **Self-referential static-source tests** — tests that grep their own file for forbidden literals always self-match (use separate tool/script).
+- **Self-referential static-source tests** — tests that grep their own file for forbidden literals always self-match (use a separate tool/script).
 
 ### 1.8 Issue closeout
 
-Every worked issue ends with exactly one of **RESOLVED** / **PAUSE** / **BLOCKED**. Comment must include files changed, commands run, FSV artifact path + hash, SoT readback summary, failures encountered, residual risk, follow-up issues.
+Every worked issue ends with exactly one of **RESOLVED** / **PAUSE** / **BLOCKED**. The comment must include files changed, commands run, FSV artifact path + hash (when applicable), SoT readback summary, failures encountered, residual risk, and follow-up issues.
 
-### 1.9 Manual SoT contract (binding for #633 / #655 era)
+### 1.9 Manual SoT contract (binding under #633 / #655)
 
-**Active from 2026-05-22.** Every issue tied to #633 hardening gate MUST follow this contract; auto-FSV JSON alone is not admissible evidence.
+Every issue tied to the #633 hardening gate MUST follow this contract; auto-FSV JSON alone is not admissible evidence. Auto-FSV harness ecosystem (`crates/*/examples/*_fsv.rs`) is being retired per #655.
 
 1. **Define the Source of Truth.** Exact file path on aiwonder ZFS, RocksDB CF/key, systemd unit name, Docker container/image, ZFS dataset, model cache path, metric/log path, or external oracle artifact. No vague references.
 2. **Capture BEFORE.** Manually read the SoT (via `ssh croyse@aiwonder.mst.com`, `contextgraph-shell`, `ldb`, `cat`, `gh`, `find -printf`, `sha256sum`, etc.) and paste the observed state directly into the issue comment.
 3. **Execute the trigger.** Concrete command with synthetic-known input where possible.
-4. **Capture AFTER.** Independently re-read the SoT (preferably from new shell to avoid stale state) and paste the observed delta.
+4. **Capture AFTER.** Independently re-read the SoT (preferably from a new shell to avoid stale state) and paste the observed delta.
 5. **Exercise happy path + ≥3 edge classes.** Edge classes: empty/missing input, malformed input, oversize input, concurrent access, durability across restart, partial failure, idempotent re-run.
 6. **On mismatch:** stop, root-cause, fix or file a linked blocker issue, repeat manual FSV after fix. Do not paper-over with a re-run.
 7. **No child closes from a return code or generated JSON alone.** The issue comment must show direct readback.
 8. **No mounted-drive evidence.** Aiwonder ZFS only (`/zfs/archive/contextgraph/...`, `/zfs/hot/contextgraph/...`). `/mnt/d` / `/mnt/c` references are blockers, not evidence.
-9. **`run-remote` wrapper hangs (#674) are known blocker.** If local SSH wrapper does not exit after remote command finishes, perform separate remote-process readback (`ps -ef | grep …`) and paste evidence BEFORE killing local wrapper.
 
-**Why the change.** 5-Sherlock audit found ~15 P0 silent-success defects (`07 §2.0`) where Rust code returned `success`/`passed=true`/exit-0 without actually performing the work. Auto-FSV pattern made these defects invisible because the harness itself was vulnerable to same class of bug. Manual SoT readback by human-or-agent that did not author the harness is the bias-defeating verification primitive.
-
-**Application boundary.** Pre-#633 issues (RESOLVED via auto-FSV) retain forensic value but are NOT gate-eligible for new ship-gate claims; #634-#651 sub-tasks must re-verify those surfaces. Once #633 closes, manual-SoT contract becomes default closeout form for future Phase G issues.
+**Why this contract.** Return values lie. Direct bytes/rows readback by a human-or-agent that did not author the harness is the bias-defeating verification primitive.
 
 ---
 
-## 2. Operator Runbook
+## 2. Operator runbook
 
 ### 2.1 Daily
 
@@ -214,7 +182,7 @@ cargo fmt
 
 ---
 
-## 4. Disaster Recovery + Backup
+## 4. Disaster recovery + backup
 
 ### 4.1 What is sacred
 
@@ -223,7 +191,7 @@ cargo fmt
 | RocksDB CFs (production) | `/zfs/archive/contextgraph/` | Restore from ZFS snapshot |
 | FSV evidence (historical proof) | `/zfs/archive/contextgraph/fsv/` | Per-task issue tracking + JSON hashes; some evidence is single-event |
 | Operator `.env` / `.env.*` / `*.pem` / `*.key` / `credentials.json` | various | Operator-managed; backed up externally |
-| Production corpus (forward cache) | `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-<TS>/shards/` | Regenerable from SWE-bench Lite + embedders (very expensive: 391 shards) |
+| Production corpus (forward cache) | `/zfs/archive/contextgraph/corpus/python-forward-cache-*/` | Regenerable from SWE-bench Lite + embedders (~24h GPU) |
 | Shift log JSONL | `/zfs/archive/contextgraph/runtime/shift-log.jsonl` | Append-only — replayable; subscriber rebuilds panels |
 
 ### 4.2 What is regenerable
@@ -295,16 +263,14 @@ Telemetry emitted via `tracing`. JSON output via `tracing-subscriber` `json` fea
 | `tier.rs` + `tier_frozen.rs` + `tier_ops.rs` | Hot → warm → frozen transitions | — |
 | `witness_compress.rs` | Witness-chain Merkle compression | `mejepa_witness_compress` |
 
-FSV examples: `merkle_compression_fsv`, `quota_overflow_fsv`, `gc_stress_fsv`, `phase_f_storage_exhaustion_fsv`, `phase_f_feedback_override_retention_fsv`.
-
 ---
 
-## 7. Test Suite Inventory
+## 7. Test suite inventory
 
 ### 7.1 Counts
 
 - **Source `.rs` files**: 1,600 under `crates/*/src/`
-- **Example files**: 210 under `crates/*/examples/` (mostly `*_fsv.rs` FSV harnesses)
+- **Example files**: 210 under `crates/*/examples/` (mostly `*_fsv.rs` FSV harnesses; being retired per #655)
 - **Test files**: 258 under `crates/*/tests/`
 
 Current counts shift weekly; SoT is `cargo test --release`.
@@ -315,7 +281,7 @@ Current counts shift weekly; SoT is `cargo test --release`.
 |---|---|---|
 | **Unit tests** | inline `#[cfg(test)] mod tests` + `tests.rs` modules | most coverage |
 | **Integration tests** | `crates/*/tests/*.rs` | 258 files |
-| **FSV harnesses** | `crates/*/examples/*_fsv.rs` | 210 files. Each = one task. Output: JSON SoT readback under `/zfs/archive/contextgraph/fsv/<task>-fsv/` |
+| **FSV harnesses** | `crates/*/examples/*_fsv.rs` | 210 files; being retired (#655). Manual SoT readback is the replacement. |
 | **Adversarial** | `phase_f_adversarial_corpus_fsv.rs`, `adversarial_corpus.rs` (30 cases) | TASK-PY-G-060 / TASK-FP-009 |
 | **Synthetic stress** | `synthetic_stress.rs` (30 known-answer) | TASK-PY-G-071 |
 | **End-to-end stress** | `project_stress.rs` | TASK-PY-G-072 |
@@ -348,7 +314,7 @@ Per CLAUDE.md §13 / doctrine §16:
 
 ---
 
-## 8. Security / Adversarial Robustness
+## 8. Security / adversarial robustness
 
 Universal protocol → doctrine §14.2. Project-specific:
 
@@ -367,7 +333,7 @@ Universal protocol → doctrine §14.2. Project-specific:
 
 ---
 
-## 9. Multi-Agent Isolation
+## 9. Multi-agent isolation
 
 | Mechanism | Source |
 |---|---|
@@ -379,15 +345,15 @@ Universal protocol → doctrine §14.2. Project-specific:
 
 ---
 
-## 10. API Stability
+## 10. API stability
 
 ME-JEPA-Code is pre-production (no SLA, no backwards compatibility per CLAUDE.md §6.6). Schema changes → wipe and rebuild. Future: TBD post-ship-gate.
 
 ---
 
-## 10.6 ⚠ Manual full-system FSV gate (#633, active 2026-05-22)
+## 11. Manual full-system FSV gate (#633)
 
-#633 manual full-system FSV + hardening gate is the active P0 work. Each of 17 child sub-tasks below requires its own manual SoT readback per `§1.9`:
+#633 manual full-system FSV + hardening gate is active P0 work. Each of the 17 child sub-tasks requires its own manual SoT readback per §1.9:
 
 | # | Domain (Source of Truth) |
 |---|---|
@@ -406,61 +372,37 @@ ME-JEPA-Code is pre-production (no SLA, no backwards compatibility per CLAUDE.md
 | #647 | Performance + scalability + capacity + cost: RTX 5090 wall-clock + VRAM + GPU util, per-shard timing, RocksDB write throughput |
 | #648 | Security hardening for code + aiwonder ops: secret redaction, ed25519 witness chain, no HTTP from action paths, `feature = "llm"` compile_error |
 | #649 | Documentation + GitHub issue ledger truth: `docs/futurebuild/*`, `CLAUDE.md`, `AGENTS.md`, every closed issue's RESOLVED comment vs current source |
-| #650 | Benchmark + gate-metric honesty audit: `swebench_300x8_ship_gate_fsv` re-verified manually, #532 degenerate-cell contract, `0.7942190170` claim |
+| #650 | Benchmark + gate-metric honesty audit: `swebench_300x8_ship_gate_fsv` re-verified manually, #532 degenerate-cell contract |
 | #651 | Operational practice + RCA discipline: doctrine §3 file rule, §3.5 milestone comments, §5 RCA five-whys, §11 forensic discipline |
 
 Each child closes by RESOLVED-with-manual-readback or BLOCKED-with-named-blocker.
 
 ---
 
-## 10.5 ⚠ Synthetic-vector rebaseline FSV protocol (P0)
-
-Inference-path synthetic-vector contamination fix (#422 / #424 / #426 / #437 / #438 / #441 / #452 — all closed 2026-05-19/20) re-validated end-to-end on aiwonder. Current ship-gate measurement of record remains `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`, but #712/#695 require it to be read as raw Pearson `0.4843192995` plus diagnostic rank-safe `0.6916886568` and diagnostic rank-lift `0.7942190170`; Brier `0.0923729688`, ECE `0.0240316074`, report sha256 `8a018eaf63fab34eb7c3bf8d60a5b9f92d04a58d99a702b9fc462b21236ba499`, readback sha256 `9cf352a775a38df87f17e6b1b0964d0ec93b93de9d5447b6bc762294c1b67ae2`. Also carries #392 active/abstain diagnostics (`205/240` active rows, active corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978`) — not full gate pass yet due per-cell active metric, rolling-window, statistical-power blockers. Every closeout comparing to pre-fix `0.866667` is invalid.
-
-**Rebaseline FSV harness assertions (required before ship-gate `0.95 × 4 windows` claim can resume):**
-
-1. **`vectors_for` no longer exists in production semantics.** `grep -rn "deterministic_vector\(" crates/context-graph-mejepa/src/ | grep -v "test\|fsv\|fixture"` returns zero hits in non-test code paths. Current code uses `build_inference_panel_inputs` → real `E*Instrument` encoders at `crates/context-graph-mejepa/src/compiler.rs:1410-1418`.
-2. **Checkpoint anti-stub guard live.** `crates/context-graph-mejepa/src/predictor_checkpoint.rs::PREDICTOR_CHECKPOINT_STUB_MAGIC` rejected at both export (`:147-158`) and load (`:239-250`).
-3. **Trained-weight invariant.** `LoadedPredictorCheckpoint.trained_weight_sha256 != initial_weight_sha256` (proves trainer optimized weights, not stub-copy).
-4. **Forward-cache substrate revalidated.** Confirm `precision_class: "candle_real_forward"` (pretrained slots) or `"algorithmic_real_forward"` (E2/E3/E4/E9) on packed records from `/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-<TS>/`.
-5. **End-to-end ship-gate measurement.** Last run: `fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/ship-gate-fsv.json`; independent readback sha256 `9cf352a775a38df87f17e6b1b0964d0ec93b93de9d5447b6bc762294c1b67ae2`.
-6. **`λ_inv` ablation re-run.** Complete: `fsv/task-ek-012-bidirectional-ablation-realinput-fsv/run-20260520T172657Z/bidirectional_ablation_realinput_fsv.json`, sha256 `bebb84c8b7800fd5567803a43025ee19a88182b32c77f8a4eeee4c9eb2dc2dd4`. Best real-input variant `lambda_inv=0.0` at `0.6704055071`; positive lambdas regress.
-7. **#393 / #398 ablation re-run.** Complete: #393 uncalibrated `fsv/task-py-g-093-constellation-ablation-suite-realinput-fsv/run-20260520T181900Z/`, sha256 `c1ed1efc4aaceef210619fc290dbd09a2fa0c2732a6f3f87969237f1a8460e26`; #398 calibrated `fsv/task-py-g-097-constellation-ablation-with-calibration-realinput-fsv/run-20260520T170156Z/`, sha256 `03096e466278f60631328207b07fe0aba6c6ffca622d21a468fa167ad33d730a`. Both remain `no_promotion`.
-8. **#129 OOD serving gate re-validation.** Complete: `fsv/task-py-g-014-ood-gate-fsv/run-20260521T145048Z/`, sha256 `d7f35e574f04a7a8dbbe5905b5b825037cfccef89239f141c4b4817b204f96ac`; readback sha256 `4e149f6a794b994bcfec59e203343a0c517898c05c9e23a0236df8cb4f7233e5`. Anchored to post-fix ship-gate report sha256 `8a018eaf…`; invalid `0.866667` literals absent.
-9. **#130 Gτ guard audit re-run.** Complete: `fsv/task-py-g-015-gtau-guard-audit-fsv/run-20260521T142921Z/`, sha256 `169f6cc759394bbf166696fc84ad96e11258bb489b2842b49e3434ad21d8e262`; readback sha256 `78ee340385ce13f8949a08a64f0e560f35d7479e34e1ac35556fce88bfe91e17`. Result remains fail-closed and not ship-gate-countable: 8 cells reported, 1 missing (`python:compile_error`), 6 low-pass, 8 fail-closed, `flatVectorConcatUsed=false`.
-10. **#404 holdout coverage re-validation.** Complete: `fsv/task-py-g-110-failure-mode-hierarchy-v2-fsv/run-1779376526126/`, sha256 `77deb00b1d975bd1b83bf71a4bf48e2069eb1808202a6bf819da5e414f47d879`. Actual oracle-fail holdout coverage remains 114/114; post-fix active predicted-Fail rows show true-fail coverage 117/117 but aggregate predicted-Fail coverage 137/150 — 13 false-positive Fail verdicts have no named consequence explanation. Typed blockers: `POST_FIX_AGGREGATE_PREDICTED_FAIL_NAMED_MODE_COVERAGE_FALSE`, `POST_FIX_UNEXPLAINED_FALSE_POSITIVE_FAIL_VERDICTS`, `POST_FIX_CLOSEST_EXEMPLAR_COVERAGE_BELOW_THRESHOLD`.
-
-All ten rebaseline checks have post-fix evidence. Predictor still **not** ship-gate-countable because active/abstain per-cell, rolling-window, power, Panel B blockers remain.
-
----
-
-## 11. FSV Protocols for the Binary Doctrine
+## 12. FSV protocols for the binary doctrine
 
 Universal FSV-PROTOCOL §1.1–§1.5 applies. Additions below are protocol-specific assertions every FSV harness must enforce.
 
-### 11.1 Failure-mode labeling FSV (#404, #413 — shipped)
+### 12.1 Failure-mode labeling FSV (#404, #413, #414 — shipped)
 
-**Level 0 reference assertions (shipped):**
-
+**Level 0 (shipped):**
 1. `slot_identity_preserved=true` and `flat_vector_concat_used=false` recorded in FSV manifest.
-2. Manual review reproduction: 12/12 deterministic conclusions reproduced.
+2. Manual review reproduction.
 3. **Coverage:** every chunk in 399,777-row corpus emits ≥1 Level-0 label.
 4. **Leakage policy:** outcome labels marked `leakage_policy:target_side_only`; live predictor inputs do NOT include them.
-5. **Usefulness gate:** 491 entered accepted registry; rejected labels carry typed reasons.
+5. **Usefulness gate:** 491 entered the accepted registry; rejected labels carry typed reasons.
 6. **Independent readback:** every JSONL byte-replayed after clean re-read; sha256 recorded.
 
-**Level 1/2/3 hierarchy assertions (shipped):**
+**Level 1/2/3 hierarchy (shipped):**
+1. Hierarchy rows materialized: 8 Level-1, 157 Level-2, 379 Level-3, 3,169 Level-3 memberships, 536 named predictions.
+2. Independent readback: writes all hierarchy rows, flushes, drops, reopens, decodes every target CF, asserts count equality.
+3. Runtime resolver consumption: persisted Level-3 membership resolves through `AbilityContext`.
+4. No collapsed panel: `flat_vector_concat_used=false` and `slot_identity_preserved=true`.
+5. Leakage policy: `target_outcomes_used_for_calibration=true` while `target_labels_used_as_live_inputs=false`.
+6. Holdout coverage: 114/114 holdout Fail rows resolve to a FailLikely named mode.
+7. Closest-exemplar agreement ≥ 0.85 threshold.
 
-1. **Hierarchy rows materialized:** 8 Level-1, 157 Level-2, 379 Level-3, 3,169 Level-3 memberships, 536 named predictions.
-2. **Independent readback:** writes all hierarchy rows, flushes, drops, reopens, decodes every target CF, asserts count equality.
-3. **Runtime resolver consumption:** persisted Level-3 membership resolves through `AbilityContext`.
-4. **No collapsed panel:** `flat_vector_concat_used=false` and `slot_identity_preserved=true`.
-5. **Leakage policy:** `target_outcomes_used_for_calibration=true` while `target_labels_used_as_live_inputs=false`.
-6. **Holdout coverage:** 114/114 holdout Fail rows resolve to FailLikely named mode.
-7. **Closest-exemplar agreement:** ≥0.85 threshold; 113/114 matched, agreement 1.0.
-8. **Post-fix active predicted-Fail revalidation:** true-failure rows resolve cleanly (117/117), but aggregate predicted-Fail coverage is 137/150 because 13 false-positive Fail verdicts have no named mode. Predictor-policy/feature-selection blocker, not hierarchy-substrate failure.
-
-### 11.2 Cross-panel triangulation FSV (#405, planned)
+### 12.2 Cross-panel triangulation FSV (#405, planned)
 
 1. **Both panels on same instances.** Every gate-relevant prediction has rows in `CF_MEJEPA_LIVE_PREDICTIONS` AND `CF_MEJEPA_PANEL_B_OBSERVATIONS` AND `CF_MEJEPA_CROSS_PANEL_AGREEMENT`. Required: `unmatched_predictions == 0`.
 2. **Independent Panel-B readback.** Flush, drop, reopen via production opener. Byte-equality with pre-flush row.
@@ -468,36 +410,34 @@ Universal FSV-PROTOCOL §1.1–§1.5 applies. Additions below are protocol-speci
 4. **Encoder non-overlap audit.** Panel A and B encoders use distinct model artifacts; SHA-256 manifest pins differ on every learned-encoder slot pair.
 5. **VRAM budget audit.** Panel B encoders never resident during normal inference; only loaded during evaluation worker's pass.
 
-### 11.3 Mistake-loop convergence FSV (#406 — shipped)
+### 12.3 Mistake-loop convergence FSV (#406 — shipped)
 
 1. **Mistake landing.** Inject deliberate wrong prediction. `CF_MEJEPA_MISTAKE_LOG` contains new row with correct fields. Independent readback after flush/drop/reopen.
 2. **Replay-buffer boost.** `CF_MEJEPA_MISTAKE_REPLAY_PRIORITY[mistake_id].boost_factor == 8.0` AND corresponding priority-boosted entry in `CF_MEJEPA_REPLAY_BUFFER`.
 3. **Convergence on second presentation.** Present same `panel_signature_hash` after one trainer step → `Verdict` matches ground truth. Byte-replayable.
 4. **Exact-panel unrelated-control isolation.** Unrelated control `panel_signature_hash` predicted before/after update; verdict unchanged; `unrelated_cell_accuracy_delta` within ±0.02.
 5. **`mistake_repeat_rate` measurement.** Rolling rate across 100-mistake window. Required for ship: `≤ 0.05`. Byte-readable.
-6. **#524 guard.** Reject reports claiming `claims_fisher_ewc_protection=true` without durable Fisher/EWC row key.
+6. **#524 guard.** Reject reports claiming `claims_fisher_ewc_protection=true` without a durable Fisher/EWC row key.
 
-### 11.4 Q4 freeze audit FSV (shipped one-time)
+### 12.4 Q4 freeze audit FSV (shipped one-time)
 
 1. **No new Q4 producer writes after freeze.** Read `CF_MEJEPA_Q4_*` row counts at landing; persist as `q4_freeze_baseline.json`. Required: `q4_row_count_delta == 0` weekly.
 2. **No Q4 contribution to predictor loss.** `Q4_LOSS_COEFFICIENT_MAX == 0.0`.
 3. **No Q4 in ship-gate metric.** `q4_inputs_to_ship_gate == 0`.
 4. **Read-only Q4 surface still works.** Pre-freeze predictions return historical Q4 fields; post-freeze predictions return empty Q4 fields.
 
-Bundled in `examples/q4_doctrine_freeze_fsv.rs`. FSV: `fsv/q4-doctrine-freeze-fsv/` (`allPassed=true`, `q4RowCountDelta=0`, `q4LossCoefficientMax=0.0`, `q4InputsToShipGate=0`).
+### 12.5 Disjoint calibration partition (10th-percentile floor)
 
-### 11.5 Disjoint calibration partition (10th-percentile floor)
-
-Per `01 §1.1`: every τ in `CF_MEJEPA_FAILURE_FINGERPRINTS`, `CF_MEJEPA_OOD_CALIBRATIONS`, `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` confidence cutoffs MUST be computed from calibration partition disjoint from train and eval. Audit `examples/threshold_calibration_provenance_fsv.rs` walks every τ and asserts:
+Every τ in `CF_MEJEPA_FAILURE_FINGERPRINTS`, `CF_MEJEPA_OOD_CALIBRATIONS`, `CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS` confidence cutoffs MUST be computed from a calibration partition disjoint from train and eval. Audit asserts:
 
 - Recorded `calibration_partition_id` field.
 - Instance-ID list does NOT overlap with train (`overlap_with_train == 0`).
 - Instance-ID list does NOT overlap with eval (`overlap_with_eval == 0`).
 - τ value matches 10th-percentile floor of authentic-sample cosines on calibration partition (tolerance ±1e-4).
 
-Any failure → `THRESHOLD_CALIBRATION_NONDISJOINT` and ship eligibility blocked for that cell. Reusable auditor shipped in #407; post-#536 real-input rank-lift path revalidated in #547. Latest: `fsv/post-536-calibration-disjointness-fsv/run-20260520T181254Z/`, report sha256 `d90152ebd41b5e626ca8b9882dbba185d711f13aa69048e7e627fa854d4b27e8`, readback sha256 `2d58c9e3dd0c70d08202656f85596058287c77eb9a48aa1bb15010d89d19f0c7`. Proves zero train/calibration/holdout overlaps by row key and feature-member key, label-lineage hashes match #413, selected #536 candidate `tau=20.0, fail_boost=1.5` was calibration-selected, target-side label prefixes not included in live rank-lift features.
+Any failure → `THRESHOLD_CALIBRATION_NONDISJOINT` and ship eligibility blocked for that cell.
 
-### 11.6 Information-physics FSV protocols (planned)
+### 12.6 Information-physics FSV protocols (planned)
 
 **#511 / TASK-IP-001 — entropy auxiliary loss:**
 1. λ=0 → `L_step` byte-equal to baseline reference.
@@ -518,7 +458,7 @@ Any failure → `THRESHOLD_CALIBRATION_NONDISJOINT` and ship eligibility blocked
 4. Three independent cold-load runs all pass.
 5. ECC syndrome consistency (after #512) — `syndrome_drift_per_panel == 0`.
 
-### 11.7 Creativity-engine FSV protocols (post-0.95)
+### 12.7 Creativity-engine FSV protocols (post-0.95)
 
 **#516 / TASK-CR-001 — Novelty + Utility oracle:**
 1. E1-rotation candidate → REJECTED with `NOVELTY_BELOW_TAU`.
@@ -552,11 +492,9 @@ Any failure → `THRESHOLD_CALIBRATION_NONDISJOINT` and ship eligibility blocked
 4. Predicted storage savings match measured within 5%.
 5. Witness chain integrity: `before_witness_hash` + `after_witness_hash` readable; provenance verifiable.
 
----
+### 12.8 Neuroscience-inspired reserve FSV protocols (DO NOT START until current queue concludes)
 
-## 11.8 Neuroscience-Inspired Reserve FSV Protocols (DO NOT START until current queue concludes)
-
-8 reserve issues (#538-#545) at `priority:p3` with `⚠ DO NOT START` markers. If activated, each requires:
+8 reserve issues (#538-#545). If activated:
 
 **#538 Predictive-coding head FSV:**
 1. Top-down per-slot prediction matches `InstrumentSlot::dim()` per slot.
@@ -568,7 +506,7 @@ Any failure → `THRESHOLD_CALIBRATION_NONDISJOINT` and ship eligibility blocked
 **#539 Schema-prioritized replay FSV:**
 1. ≥80% of each batch shares same Level-2 skill ID.
 2. Reverse replay: N-leaf pathway produces N reverse-temporal update rows.
-3. `synthetic=true` flag set on all `CF_MEJEPA_GENERATIVE_REPLAY_AUDIT` rows; fail if any row leaks into `CF_MEJEPA_LIVE_PREDICTIONS` (anti-#529 guard).
+3. `synthetic=true` flag set on all `CF_MEJEPA_GENERATIVE_REPLAY_AUDIT` rows; fail if any row leaks into `CF_MEJEPA_LIVE_PREDICTIONS`.
 4. `mistake_repeat_rate` across schema clusters drops relative to baseline replay.
 
 **#540 Hierarchical predictive coding FSV:**
@@ -583,5 +521,3 @@ Any failure → `THRESHOLD_CALIBRATION_NONDISJOINT` and ship eligibility blocked
 4. Ablation: mixed-selectivity vs linear pairwise statistics (#390); persist deltas.
 
 **#542 / #543 / #544 / #545:** design-influence on host-epic FSVs (#416 / #519 / #392 / #517 respectively); no separate top-level FSV harness.
-
-All 8 verified doctrine-compatible (slot identity, anti-compensation, binary contract, ambiguity boundary, no inner LLM, no synthetic shortcuts) before filing. See `08 §6.9`.

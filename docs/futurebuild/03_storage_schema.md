@@ -1,46 +1,12 @@
 # 03 — Storage Schema and Policy
 
-## ⚠ 2026-05-22 substrate hardening — additions and audit-uncovered defects
-
-| Item | Status | Notes |
-|---|---|---|
-| Aiwonder ZFS root migration (#372) | ✅ CLOSED 2026-05-22 | `/zfs/archive/contextgraph` → `archive/contextgraph` ZFS; `/zfs/hot/contextgraph` → `hotpool/contextgraph` ZFS |
-| Forward-cache slot-completeness mask (#614) | ✅ shipped | `/zfs/archive/contextgraph/state/forward-cache-completeness/task-py-g-135b-forward-cache-slot-completion-v1/forward_cache_slot_completeness_mask.jsonl` — 399,777 rows: 378,444 full 12-slot + 20,706 partial + 627 zero-slot |
-| Delete-test-call regeneration plan (#615) | in-progress | `/zfs/archive/contextgraph/state/regeneration-plans/task-py-g-135c-delete-test-call-regeneration-v1/delete_test_call_regeneration_candidates.jsonl` — 1,131 deterministic candidates awaiting Docker oracle execution |
-| Source-files canonicalization (#613) | ✅ shipped | `/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/source-files-300x8-20260515T013205Z/` — 4,224 files, 148,346,301 bytes; AST chunks carry `legacy_provenance_path` for archived `/mnt/d` paths |
-| Geometry-label root (#657, in-progress) | planned | `/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v1/` — successor to #413 with per-embedder geometry-label maps |
-| Forward-cache embedder collapse (#666 closed → #670 open) | regenerate | `e2/e3/e4/e8` embedder spaces invalid; must be regenerated or retired before label-discovery promotion |
-| Oracle verdict CF contract split (#609 closed) | ✅ fixed | Corpus-store rows under lowercase `mejepa_oracle_verdicts` (JSON `OracleVerdict`) vs canonical calibration rows under `CF_MEJEPA_ORACLE_VERDICTS` (bincode `CalibrationExample`); inspectors report each separately |
-| Hygiene retention policy gap (#626 open) | bug | `config/retention_policy.toml` missing default policy for ~90 CFs |
-| TCT freshness audit log (closed by #629 commit `28375702`) | fixed | Was writing to retired `./memory/journal/`; now writes to aiwonder durable root |
-
-**Manual SoT enforcement:** per `06 §1.9`, every CF claim in a new RESOLVED comment requires direct `ldb` / `cat` / `find -printf` readback of the actual on-disk byte/row state; auto-FSV `_fsv.rs` harnesses are being retired (#655).
-
----
-
-## ⚠ Synthetic-vector remediation (2026-05-19/20) — CF-substrate validity index
-
-| Substrate | Status | Why |
-|---|---|---|
-| 391-shard packed forward cache (`/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-<TS>/`) | **REAL** | `python_forward_cache_fsv` with `precision_class: "candle_real_forward"`; ~24h GPU; SHA-pinned safetensors; fail-closed guards prevented synthetic fallback |
-| `CF_MEJEPA_PANELS` rows written from real forward cache | REAL | Pipeline ingestion path |
-| `CF_MEJEPA_PANELS` rows written via inference path before 2026-05-19 22:45 | **CONTAMINATED** | Inference path was filling slots with `deterministic_vector(slot, &digest)` |
-| `CF_MEJEPA_LIVE_PREDICTIONS` rows before 2026-05-19 22:45 | **CONTAMINATED** | Output of synthetic-vector predictor + untrained predictor + stub checkpoint |
-| `CF_MEJEPA_CONSTELLATION_PATTERNS` (#388/#390) | REAL (substrate); pattern-promotion logic survives | Tensor substrate from real forward cache |
-| `CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP` / `CF_MEJEPA_SKILL_REVERSE_INDEX` / `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` (#414) | REAL | Deterministic over #413 + real cache |
-| `CF_MEJEPA_FAILURE_MODE_LEVEL{1,2,3}_*` / `CF_MEJEPA_NAMED_PREDICTIONS` (#404) | REAL substrate; post-fix revalidation complete | Actual Fail coverage 114/114; post-fix predicted true-Fail 117/117; aggregate predicted-Fail 137/150 (13 false-positives have no named consequence explanation) |
-| `CF_MEJEPA_MISTAKE_LOG` (#406) | Empty until the real `0.7942190170` Panel A predictor generates live mistakes | Machinery valid; needs real predictor disagreements |
-| `CF_MEJEPA_OOD_CALIBRATIONS` (#129) / `CF_MEJEPA_GUARD_DECISIONS` (#130) | Post-fix revalidated | #129/#130 FSVs anchored to `fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`; invalid `0.866667` literals rejected |
-
-See `01 §1.7` for forensic. Current post-fix measurement and remaining gate blockers in `08 §0.5`.
-
 **Source files:** `crates/context-graph-mejepa-cf/src/lib.rs` (canonical ME-JEPA CF registry), `crates/context-graph-storage/src/lib.rs`, `crates/context-graph-storage/src/teleological/`, `crates/context-graph-mejepa-instruments/src/panel_store.rs`, `CLAUDE.md §8`.
 
 ---
 
-## 1. Storage Backend
+## 1. Storage backend
 
-Single RocksDB instance per runtime root. CFs opened deterministically at daemon startup. Schema change = wipe-and-rebuild (no migrations, per `CLAUDE.md §6.6`). Durable rows content-addressed by SHA256 where appropriate; provenance metadata is JSON.
+Single RocksDB instance per runtime root. CFs are opened deterministically at daemon startup. Schema change = wipe-and-rebuild (no migrations, per `CLAUDE.md §6.6`). Durable rows are content-addressed by SHA256 where appropriate; provenance metadata is JSON.
 
 - Opener: `crates/context-graph-storage/src/lib.rs`. Daemon opens every CF in `ALL_HYGIENE_REFERENCED_CFS` (`mejepa-cf/lib.rs:471`).
 - Compaction: per-CF `Options` (`column_families.rs::*_options`).
@@ -48,11 +14,11 @@ Single RocksDB instance per runtime root. CFs opened deterministically at daemon
 
 ---
 
-## 2. ME-JEPA Column Families (canonical registry)
+## 2. ME-JEPA column families (canonical registry)
 
 **SoT:** `crates/context-graph-mejepa-cf/src/lib.rs`. Every constant ident equals its on-disk string (enforced by `flywheel_cf_names_match_const_idents`, `fingerprint_cf_names_match_const_idents`).
 
-### 2.1 Self-Healing — `SELF_HEALING_CFS` + extensions
+### 2.1 Self-healing — `SELF_HEALING_CFS` + extensions
 
 | CF | Purpose |
 |---|---|
@@ -68,7 +34,7 @@ Single RocksDB instance per runtime root. CFs opened deterministically at daemon
 | `CF_MEJEPA_SHIFT_WATERMARK` | Shift-log durability gate |
 | `CF_MEJEPA_TRAIN_CERTS` | Training certificates (incl. CPΦ `conditional_description_length_bits`) |
 
-### 2.2 Inference / Live Predictions — `INFER_CFS`
+### 2.2 Inference / live predictions — `INFER_CFS`
 
 | CF | Key | Value | Purpose |
 |---|---|---|---|
@@ -115,7 +81,7 @@ Single RocksDB instance per runtime root. CFs opened deterministically at daemon
 | `CF_MEJEPA_OOD_HARVEST` | `(harvest_run_id, prediction_id)` | JSON | Live-session OOD harvest rows |
 | `CF_MEJEPA_OOD_CALIBRATIONS` | `(generated_at_unix_ms, calibration_id)` | bincode `OodCalibrationReport` | Serving calibrator state |
 
-**Corpus oracle store separation.** The 300×8 corpus generator uses separate corpus RocksDB store with lowercase CFs `mejepa_mutation_corpus`, `mejepa_oracle_verdicts`, `mejepa_corpus_provenance`. Rows are JSON `MutationOutcome` / `OracleVerdict` source rows and NOT proof that canonical runtime/gate CFs are complete. Inspectors must report corpus-store completeness separately from canonical gate-countable completeness.
+**Corpus oracle store separation.** The 300×8 corpus generator uses a separate corpus RocksDB store with lowercase CFs `mejepa_mutation_corpus`, `mejepa_oracle_verdicts`, `mejepa_corpus_provenance`. Rows are JSON `MutationOutcome` / `OracleVerdict` source rows and are NOT proof that canonical runtime/gate CFs are complete. Inspectors must report corpus-store completeness separately from canonical gate-countable completeness.
 
 ### 2.3 Failure-mode labeling — `FAILURE_MODE_CFS` (shipped #404 / #414)
 
@@ -130,7 +96,7 @@ Single RocksDB instance per runtime root. CFs opened deterministically at daemon
 | `CF_MEJEPA_SKILL_LIFECYCLE_AUDIT` | `skill_audit_id` | bincode | Append-only audit of update/split/create/demote/no-change (128) |
 | `CF_MEJEPA_NAMED_PREDICTIONS` | `prediction_id` | bincode `NamedFailureMode` | Per-prediction named-failure-mode attachment (536) |
 
-Level 0 deterministic labels are JSONL files (not CFs) under `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/`:
+Level-0 deterministic labels are JSONL files (not CFs) under `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/`:
 
 | Artifact | Rows |
 |---|---|
@@ -142,7 +108,7 @@ Level 0 deterministic labels are JSONL files (not CFs) under `/zfs/archive/conte
 | `accepted_label_registry.jsonl` | 491 |
 | `learning_bridge_manifest.json` | 1 |
 
-### 2.4 Mistake-driven online learning — shipped #406 / #523
+### 2.4 Mistake-driven online learning (shipped #406 / #523)
 
 | CF | Key | Value | Purpose |
 |---|---|---|---|
@@ -151,7 +117,7 @@ Level 0 deterministic labels are JSONL files (not CFs) under `/zfs/archive/conte
 | `CF_MEJEPA_ONLINE_HEAD_STATE` | `online_head:<panel_signature_hash>` | bincode `OnlineHeadStateRow` | Key-local exact-panel online-head state |
 | `CF_MEJEPA_ONLINE_HEAD_STATE` | `mistake_repeat:<cell+label+skill+ability+membership hash>` | bincode `OnlineHeadRepeatMetricRow` | Byte-readable mistake-repeat metric |
 
-Current protection mode: `exactPanelKeyIsolation`. `claims_fisher_ewc_protection=false`. #524 guards future Fisher/EWC claims require durable Fisher/EWC rows.
+Current protection mode: `exactPanelKeyIsolation`. `claims_fisher_ewc_protection=false`. #524 guards future Fisher/EWC claims (require durable Fisher/EWC rows).
 
 ### 2.5 Constellation / TCT — `TCT_CFS`
 
@@ -173,7 +139,7 @@ Current protection mode: `exactPanelKeyIsolation`. `claims_fisher_ewc_protection
 | `CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS` | 4-window per-fingerprint ship-gate |
 | `CF_MEJEPA_FINGERPRINT_FISHER` / `CF_MEJEPA_FINGERPRINT_DORMANCY` | Per-fingerprint EWC + CBP |
 
-### 2.7 Adversarial + Explanatory Knowledge
+### 2.7 Adversarial + explanatory knowledge
 
 | CF | Purpose |
 |---|---|
@@ -188,7 +154,7 @@ Current protection mode: `exactPanelKeyIsolation`. `claims_fisher_ewc_protection
 | `CF_MEJEPA_LIBRARY_REGISTRY` / `CF_MEJEPA_LIBRARY_FOUNDATIONALITY` / `CF_MEJEPA_CROSS_LIBRARY_REFERENCES` | PageRank library |
 | `CF_MEJEPA_EMBEDDER_DEPENDENCY_GRAPH` / `CF_MEJEPA_EMBEDDER_FOUNDATIONALITY` | PageRank embedder |
 
-### 2.8 Hygiene + OOD Harvest
+### 2.8 Hygiene + OOD harvest
 
 | CF | Purpose |
 |---|---|
@@ -200,7 +166,7 @@ Current protection mode: `exactPanelKeyIsolation`. `claims_fisher_ewc_protection
 
 ### 2.9 Q4 frozen CFs (deprecated-readable; not deleted)
 
-Q4 prediction track closed under ambiguity boundary. CFs remain readable for forensic continuity:
+Q4 prediction track closed under the ambiguity boundary (#408). CFs remain readable for forensic continuity:
 
 | Frozen CF | Final state |
 |---|---|
@@ -216,11 +182,11 @@ Q4 prediction track closed under ambiguity boundary. CFs remain readable for for
 
 ### 2.10 Canonical opener slice
 
-`ALL_HYGIENE_REFERENCED_CFS` (`mejepa-cf/lib.rs:471-569`) is the single canonical opener list. Drift between this list and the grouped union rejected by `canonical_hygiene_cfs_match_group_union` test.
+`ALL_HYGIENE_REFERENCED_CFS` (`mejepa-cf/lib.rs:471-569`) is the single canonical opener list. Drift between this list and the grouped union is rejected by the `canonical_hygiene_cfs_match_group_union` test.
 
 ---
 
-## 3. Teleological Column Families (19)
+## 3. Teleological column families (19)
 
 `crates/context-graph-storage/src/teleological/`. `TELEOLOGICAL_CF_COUNT = 19`.
 
@@ -242,7 +208,7 @@ Q4 prediction track closed under ambiguity boundary. CFs remain readable for for
 
 ---
 
-## 4. Other Storage CF Groups
+## 4. Other storage CF groups
 
 | Group | CFs |
 |---|---|
@@ -256,7 +222,7 @@ Dimension constants: `E1_DIM`, `E1_MATRYOSHKA_DIM`, `E2_DIM`, …, `E13_SPLADE_V
 
 ---
 
-## 5. Storage Policy
+## 5. Storage policy
 
 | Tier | Path | Purpose | Retention |
 |---|---|---|---|
@@ -270,50 +236,55 @@ Dimension constants: `E1_DIM`, `E1_MATRYOSHKA_DIM`, `E2_DIM`, …, `E13_SPLADE_V
 ```
 /zfs/archive/contextgraph/
 ├── corpus/
-│   ├── python-forward-cache-v1-aiwonder-prod-<TS>/
-│   │   ├── shards/                          # SoT for shard progress (391 shards)
-│   │   └── packed_records/
+│   ├── python-ast-chunks-v1/
+│   │   ├── python_ast_chunks.jsonl              # 399,777 chunks
+│   │   └── source-files-300x8-20260515T013205Z/ # 4,224 files / 148,346,301 bytes (canonical AST source)
+│   ├── python-forward-cache-v1-aiwonder-prod-<TS>/  # legacy v1 cache (retained as evidence; not clean ship substrate)
+│   ├── python-forward-cache-v2-static-ast-<TS>/     # #715 v2 9-slot static cache (rebuild pending)
 │   ├── frozen-instrument-registry/
-│   ├── constellation-tensors-v1/            # #388 cross-embedder tensors
-│   ├── python-q4-*-labels-v1/               # frozen Q4 producer raw outputs
+│   ├── constellation-tensors-v1/                # #388 cross-embedder tensors
+│   ├── python-q4-*-labels-v1/                   # frozen Q4 producer raw outputs
 │   └── swebench-lite-python-300x8-v1-<TS>/index.json
-├── fsv/                                     # production FSV target
+├── fsv/                                         # production FSV target
 ├── runtime/
-│   ├── shift-log.jsonl                      # JSONL shift log (tailed by shift-subscriber)
-│   ├── test-outcomes/<hash>.jsonl           # PostToolUse capture per session
+│   ├── shift-log.jsonl                          # JSONL shift log (tailed by shift-subscriber)
+│   ├── test-outcomes/<hash>.jsonl               # PostToolUse capture per session
 │   ├── posttooluse-mejepa-capture.jsonl
 │   ├── observe-ticker.jsonl
 │   ├── scheduler_events.jsonl
-│   └── agent-history/                       # Q1 follow-up: agent response bodies
+│   └── agent-history/                           # Q1 follow-up: agent response bodies
 ├── projects/<project_id>/
 │   ├── manifest.json
 │   ├── cache/
 │   ├── predictions/
 │   └── report/{report.json, report.md}
-├── state/                                   # durable runtime state surviving restarts
-│   ├── calibration/per-slot-v1/             # #389 per-slot calibration + OOD policy
+├── state/                                       # durable runtime state surviving restarts
+│   ├── calibration/per-slot-v1/                 # #389 per-slot calibration + OOD policy
 │   ├── labels/task-py-g-117-auto-label-discovery-v1/   # #413 Level-0 label artifacts
-│   ├── mejepa-heads/reasoning-head-v1/      # frozen reasoning checkpoint
-│   ├── q4-trust-gate/evidence-catalog.json  # Q4 freeze baseline
+│   ├── labels/task-py-g-136-per-embedder-geometry-labels-v1/  # #657 geometry labels (planned)
+│   ├── forward-cache-completeness/task-py-g-135b-forward-cache-slot-completion-v1/  # #614 mask
+│   ├── regeneration-plans/task-py-g-135c-delete-test-call-regeneration-v1/  # #615 plan
+│   ├── mejepa-heads/reasoning-head-v1/          # frozen reasoning checkpoint
+│   ├── q4-trust-gate/evidence-catalog.json      # Q4 freeze baseline
 │   └── q4-freeze/q4_frozen_cf_counts.json
 └── exports/
-    └── weekly/<YYYY-MM-DD>/                 # weekly.md, ablation_report.md, compression_progress.md
+    └── weekly/<YYYY-MM-DD>/                     # weekly.md, ablation_report.md, compression_progress.md
 ```
 
 ### 5.2 Aiwonder hot layout
 
 ```
 /zfs/hot/contextgraph/
-├── repo/                                    # aiwonder git checkout + release binaries
-├── models/                                  # Embedder model artifacts
+├── repo/                                        # aiwonder git checkout + release binaries
+├── models/                                      # Embedder model artifacts
 │   └── .cache/huggingface/hub/datasets--princeton-nlp--SWE-bench_Lite/
-├── corpus/                                  # Hot inputs (chunks.jsonl, stable substrate)
-└── runtime/                                 # Active scheduler logs / hot run state
+├── corpus/                                      # Hot inputs (chunks.jsonl, stable substrate)
+└── runtime/                                     # Active scheduler logs / hot run state
 ```
 
 ### 5.3 Path discipline (behavioral)
 
-`CLAUDE.md §7` — must not be edited (no MCP-server-side gate; honor behaviorally):
+`CLAUDE.md §7` — these paths must not be edited (no MCP-server-side gate; honor behaviorally):
 
 - `.env` and `.env.*` anywhere
 - `swebench/**` (upstream evaluator)
@@ -322,7 +293,7 @@ Dimension constants: `E1_DIM`, `E1_MATRYOSHKA_DIM`, `E2_DIM`, …, `E13_SPLADE_V
 - `crates/*/src/verifiers/**`
 - `*.pem`, `*.key`, `**/credentials.json`
 
-CI lint blocks C-drive paths (`scripts/ci/check_no_c_drive_paths.sh`).
+CI lint blocks C-drive paths (`scripts/ci/check_no_c_drive_paths.sh`). Mounted-drive roots (`/mnt/d`, `/mnt/c`) forbidden in active code/FSV.
 
 ### 5.4 Fail-closed on non-aiwonder production roots
 
@@ -330,7 +301,7 @@ CI lint blocks C-drive paths (`scripts/ci/check_no_c_drive_paths.sh`).
 
 ---
 
-## 6. Serialization Format Rules
+## 6. Serialization format rules
 
 | Format | When | Where |
 |---|---|---|
@@ -344,7 +315,7 @@ CI lint blocks C-drive paths (`scripts/ci/check_no_c_drive_paths.sh`).
 
 ---
 
-## 7. Provenance Invariants
+## 7. Provenance invariants
 
 1. **Constant name == on-disk CF name.** Renaming a CF constant must change the on-disk string. Deletion = explicit schema version bump.
 2. **No schema migrations.** Wipe DB on schema change (`CLAUDE.md §6.6`).
@@ -353,7 +324,7 @@ CI lint blocks C-drive paths (`scripts/ci/check_no_c_drive_paths.sh`).
 
 ---
 
-## 8. Planned New Column Families
+## 8. Planned new column families
 
 ### 8.1 Cross-panel triangulation (#405)
 
@@ -384,15 +355,13 @@ All three are **`leakage_policy:target_side_only`** (chosen pathway is downstrea
 | `CF_MEJEPA_SKILL_CONFLICT_GRAPH` | Mutually exclusive / contradictory outcome |
 | `CF_MEJEPA_PATHWAY_SKILL_ATTACHMENTS` | Join #416 binary pathway leaves to concrete chunk/skill evidence |
 
-### 8.4 Information-physics planned CFs (#511 / #512 / #514)
+### 8.4 Information-physics (#511 / #512 / #514)
 
 | CF | Issue | Purpose |
 |---|---|---|
 | `CF_MEJEPA_TRAIN_CERT_ENTROPY` | #511 | Per-window entropy auxiliary loss component (λ auto-calibration) |
 | `CF_MEJEPA_PANEL_ECC_SYNDROME` | #512 | Per-panel syndrome record for self-dual doubly-even ECC over 15-slot occupancy; `PANEL_ECC_UNCORRECTABLE` typed reason |
 | `CF_MEJEPA_COLD_LOAD_SNAPSHOTS` | #514 | Promotion-time baseline snapshot for cold-load behavioural FSV |
-
-#513 / `CF_MEJEPA_CONNECTOME_TOPOLOGY_FEATURES` is **diagnostic-only**; harness lives in code but topology features must NOT feed predictor inputs (#527 demoted).
 
 ### 8.5 Creativity-engine CFs (post-0.95: #516 / #517 / #518 / #519 / #520)
 
@@ -404,33 +373,25 @@ All three are **`leakage_policy:target_side_only`** (chosen pathway is downstrea
 | `CF_MEJEPA_DOMAIN_REGISTRY` / `CF_MEJEPA_CHUNK_DOMAIN_ASSIGNMENT` / `CF_MEJEPA_EMBEDDER_DOMAIN_MEMBERSHIP` | #519 | Domain-routed sparse panel; **schema change** (variable-K filled_mask) |
 | `CF_MEJEPA_CHUNK_CONSOLIDATED` / `CF_MEJEPA_CONSOLIDATION_AUDIT` | #520 | Episodic-to-semantic consolidation: settled chunks → `(cluster_id, residual)` |
 
-### 8.6 Canonical opener slice update
-
-When CFs land, they're added to `ALL_HYGIENE_REFERENCED_CFS`. The `canonical_hygiene_cfs_match_group_union` test enforces grouped contract matches canonical list. Adding a CF is a schema change → deliberate DB wipe + rebuild (no migrations).
-
----
-
-## 8.7 Neuroscience-Inspired Reserve — Planned CFs (DO NOT START until current queue concludes)
-
-8 contingency issues (#538-#545) at `priority:p3` with `⚠ DO NOT START` markers. See `08 §6.9`.
-
-CFs that would land **if** activated:
+### 8.6 Neuroscience-inspired reserve (#538 – #545, p3 — DO NOT START until current queue concludes)
 
 | CF Constant (planned) | Issue | Key | Value | Purpose |
 |---|---|---|---|---|
 | `CF_MEJEPA_PER_SLOT_PREDICTIONS` | #538 | `(prediction_id, slot)` | bincode `{predicted_vector, observed_vector, residual_norm, slot_identity_preserved: true}` | Top-down prediction + observation pair per slot |
 | `CF_MEJEPA_PREDICTION_ERRORS` | #538 | `(prediction_id, slot)` | bincode `{residual_l2, residual_cosine_to_predicted, error_class}` | Aggregated prediction error per slot per prediction |
 | `CF_MEJEPA_REPLAY_SCHEDULE` | #539 | `(replay_batch_id)` | bincode `{schema_skill_ids, reverse_order, expected_utility_score}` | Schema-grouped batch schedule audit |
-| `CF_MEJEPA_GENERATIVE_REPLAY_AUDIT` | #539 | `(idle_run_id, rehearsal_id)` | bincode `{schema_id, synthetic_panel_sha, forgetting_drift_observed}` | Idle-time rehearsal accountability; explicit `synthetic=true` (anti-#529 guard) |
+| `CF_MEJEPA_GENERATIVE_REPLAY_AUDIT` | #539 | `(idle_run_id, rehearsal_id)` | bincode `{schema_id, synthetic_panel_sha, forgetting_drift_observed}` | Idle-time rehearsal accountability; explicit `synthetic=true` |
 | `CF_MEJEPA_BINDING_BASIS_REGISTRY` | #541 | `(basis_function_id)` | bincode `{slot_pair, summary_statistics, learned_params_sha, validation_correlation_lift}` | Per-basis-function registry with empirical contribution audit |
 
-**No new CFs from** #540 (consumes shipped #404 / #413 / #414 via backward prediction), #542 / #544 / #545 (design-influence), #543 (rides existing `CF_EMB_0..CF_EMB_12`).
+No new CFs from #540 (consumes shipped #404 / #413 / #414 via backward prediction), #542 / #544 / #545 (design-influence), or #543 (rides existing `CF_EMB_0..CF_EMB_12`).
 
-All planned CFs preserve doctrine: slot identity, anti-compensation (#394), binary contract, ambiguity boundary, no synthetic-input shortcuts. Adding any is a schema change → deliberate DB wipe + rebuild.
+### 8.7 Canonical opener slice update
+
+When CFs land, they're added to `ALL_HYGIENE_REFERENCED_CFS`. The `canonical_hygiene_cfs_match_group_union` test enforces that the grouped contract matches the canonical list. Adding a CF is a schema change → deliberate DB wipe + rebuild (no migrations).
 
 ---
 
-## 9. What This Doc Does NOT Cover
+## 9. What this doc does NOT cover
 
 - Per-CF RocksDB tuning (block cache, bloom filters, write buffer size) — see per-crate `column_families.rs::*_options` functions.
 - Exact byte-level key encoding of every CF — see each CF's writer call site (`put_cf` across the workspace).

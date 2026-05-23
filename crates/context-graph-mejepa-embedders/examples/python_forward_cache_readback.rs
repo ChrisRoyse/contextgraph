@@ -1,3 +1,4 @@
+use context_graph_core::memory::ast::Language as AstLanguage;
 use context_graph_mejepa_embedders::{
     AlgorithmicEmbedderForward, EmbedError, EmbedderForward, EmbedderId, EmbedderInput,
     EmbedderOutput, ModelsConfig, PretrainedEmbedderForward, SUPPORTED_FORWARD_EMBEDDERS,
@@ -976,10 +977,16 @@ fn source_id_for_embedder(embedder: EmbedderId, chunk: &ChunkRow) -> String {
 
 fn forward_input_identity_policy(embedder: EmbedderId) -> &'static str {
     if embedder == EmbedderId::E7 {
-        "e7_source_path_and_source_text_sha256_v1"
+        "e7_language_and_source_text_sha256_v1"
     } else {
         "source_text_sha256_v1"
     }
+}
+
+fn e7_forward_language_identity(chunk: &ChunkRow) -> String {
+    AstLanguage::from_path(&chunk.relative_path)
+        .map(|language| language.slug().to_string())
+        .unwrap_or_else(|_| format!("unsupported_source_id:{}", chunk.relative_path))
 }
 
 fn forward_input_identity(embedder: EmbedderId, chunk: &ChunkRow) -> ForwardInputIdentity {
@@ -989,7 +996,7 @@ fn forward_input_identity(embedder: EmbedderId, chunk: &ChunkRow) -> ForwardInpu
             "schema_version": SCHEMA_VERSION,
             "policy": policy,
             "embedder_id": embedder.slug(),
-            "source_id": source_id_for_embedder(embedder, chunk),
+            "language": e7_forward_language_identity(chunk),
             "source_sha256": chunk.source_sha256,
         }))
     } else {
@@ -1943,18 +1950,18 @@ mod tests {
     }
 
     #[test]
-    fn forward_input_identity_uses_e7_source_path_context() {
+    fn forward_input_identity_uses_e7_language_context() {
         let left = chunk("chunk-left", "print(1)\n", "sha256:source-a", "pkg/a.py");
         let right = chunk("chunk-right", "print(1)\n", "sha256:source-a", "pkg/b.py");
-        let same_path = chunk("chunk-same", "print(1)\n", "sha256:source-a", "pkg/a.py");
+        let different_language = chunk("chunk-rs", "print(1)\n", "sha256:source-a", "pkg/a.rs");
 
         let left_e7 = forward_input_identity(EmbedderId::E7, &left);
         let right_e7 = forward_input_identity(EmbedderId::E7, &right);
-        let same_path_e7 = forward_input_identity(EmbedderId::E7, &same_path);
+        let different_language_e7 = forward_input_identity(EmbedderId::E7, &different_language);
 
-        assert_eq!(left_e7.policy, "e7_source_path_and_source_text_sha256_v1");
-        assert_ne!(left_e7.input_sha256, right_e7.input_sha256);
-        assert_eq!(left_e7.input_sha256, same_path_e7.input_sha256);
+        assert_eq!(left_e7.policy, "e7_language_and_source_text_sha256_v1");
+        assert_eq!(left_e7.input_sha256, right_e7.input_sha256);
+        assert_ne!(left_e7.input_sha256, different_language_e7.input_sha256);
 
         let left_e1 = forward_input_identity(EmbedderId::E1, &left);
         let right_e1 = forward_input_identity(EmbedderId::E1, &right);
@@ -1964,14 +1971,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_embedder_batches_reuses_duplicate_forward_inputs() {
+    async fn run_embedder_batches_reuses_duplicate_e7_model_inputs_across_paths() {
         let mut config = config(STATIC_AST_CORPUS_PROFILE, Some(EmbedderId::E7));
         config.true_batch_size = 8;
         let calls = Arc::new(Mutex::new(0usize));
         let forwarder = CountingForwarder::new(EmbedderId::E7, Arc::clone(&calls), true);
         let rows = vec![
             chunk("chunk-a", "print(1)\n", "sha256:source-a", "pkg/a.py"),
-            chunk("chunk-b", "print(1)\n", "sha256:source-a", "pkg/a.py"),
+            chunk("chunk-b", "print(1)\n", "sha256:source-a", "pkg/b.py"),
         ];
         let mut batch_counter = 0usize;
 

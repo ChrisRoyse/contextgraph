@@ -1,48 +1,12 @@
 # 02 — Source Code Map
 
-## ⚠ 2026-05-22 hardening pivot — audit-uncovered defects (all open P0/P1)
-
-| Issue | File / Module | Defect |
-|---|---|---|
-| #618 | `crates/context-graph-mejepa/src/compiler.rs` aggregate OOD path | Reads flat 5,120-byte panel buffer (doctrine §1.5ter violation) |
-| #619 | `crates/context-graph-mejepa-train/src/loss/inverse.rs::forward_inverse_inner` | `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter violation) |
-| #620 | `crates/context-graph-mejepa-train/` | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook never invoked from training |
-| #621 | `crates/context-graph-mejepa-train/` HoldoutReport publisher | Hardcoded `gtau_pass_rate: 1.0` published to MCP weekly dashboard |
-| #622 | `crates/context-graph-mejepa-train/src/{distill,lora_wiring,aux}.rs` | Trainer dead-code batch |
-| #623 | `crates/context-graph-mejepa/src/conformal.rs::cold_start_conformal_policy` | Emits `alpha=0.0` (invalid input to `calibrate_tau`) — dead public API |
-| #624 | `crates/context-graph-mejepa/src/verdict_assembly.rs` | Inline `CONTRADICTION_CALIBRATION_INVALID` not a declared constant |
-| #625 | `crates/context-graph-mejepa/src/lib.rs` | `DeterministicPredictor` publicly re-exported (synthetic-vector landmine post-#422) |
-| #626 | `config/retention_policy.toml` + `crates/context-graph-mejepa-hygiene/` | Default policy missing ~90 CFs |
-| #627 | `crates/context-graph-mejepa-shift-subscriber/src/runner.rs` | `run_until_idle_consumes_jsonl` test fails on main (missing TCT centroid scaffold) |
-| #628 | `crates/context-graph-mejepa-tct/src/gtau.rs` vs docs | Error string drift: docs `MEJEPA_TCT_DIM_MISMATCH` vs emitted `MEJEPA_INFER_DIM_MISMATCH` |
-| #670/#704/#714 | `crates/context-graph-mejepa-embedders/` static AST profiles | Legacy v1 cache invalidated by collapsed `e2/e3/e4` and `e8 ≡ e1`; static AST policy now retires temporal `e2/e3/e4` and requires v2 rebuild via #709/#715 |
-
-**Operational change (#655, in-progress p0):** the `crates/*/examples/*_fsv.rs` ecosystem is being retired in favour of manual operator-driven SoT readback (per `06 §1.9`). The 210 example FSVs in §9 remain for forensic reference.
-
-**Geometry-label epic (#657 / TASK-PY-G-136, in-progress):** per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Planned modules: `crates/context-graph-mejepa-train/src/geometry_label_discovery/` + `crates/context-graph-mejepa/src/predictor/geometry_label_router.rs` (#664) + `crates/context-graph-mejepa/src/predictor/geometry_label_heads.rs` (#665). Output: `/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v1/`.
-
----
-
-## ⚠ Synthetic-vector remediation (2026-05-19/20) — fixed-module index
-
-| Module | Pre-fix | Fix |
-|---|---|---|
-| `crates/context-graph-mejepa/src/compiler.rs::vectors_for` | SHA256-seeded synthetic vectors | Replaced by `build_inference_panel_inputs` calling real `E*Instrument` encoders (commit `e2c51669`) |
-| `crates/context-graph-mejepa/src/project_cache.rs` | Wrote `deterministic_vector_blob` as embeddings | Fails closed (commit `5330629e`) |
-| `crates/context-graph-mejepa/src/predictor_checkpoint.rs` | Accepted `MEJEPA_BEST_STUB_V1` text-stubs | Rejects at load + export (`:147-158, 239-250`) |
-| `crates/context-graph-mejepa-train` | No real predictor weight optimization | #441 claim is superseded by #683: latest aiwonder FSV loaded an out-of-band trained checkpoint, but the public Rust trainer remains certificate-only until #683 closes |
-
-**`crates/context-graph-mejepa-embedders/` forward-cache pipeline was unaffected by synthetic-vector fallback** — fail-closed guards in `src/forward.rs:122,207,349,422` ("no deterministic vector fallback is permitted") prevented that contamination. Separate 2026-05-23 substrate forensics still invalidated the v1 cache because specific declared spaces collapsed or aliased.
-
-See `01 §1.7` for forensic and `08 §0.5` for rebaseline blocker.
-
 **Source files:** `Cargo.toml`, every `crates/*/Cargo.toml`, every `crates/*/src/lib.rs`, every `crates/*/src/main.rs`, every `[[bin]]` and `[[example]]` declaration.
 
 **Totals:** 1,600 src/lib `.rs` files · 210 examples · 258 test files.
 
 ---
 
-## 1. Workspace Manifest
+## 1. Workspace manifest
 
 `Cargo.toml:6-30` lists 22 active workspace members. Workspace package: `version = "0.1.0"`, `edition = "2021"`, `rust-version = "1.95"`, `license = "PolyForm-Noncommercial-1.0.0"`.
 
@@ -52,7 +16,7 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 
 ---
 
-## 2. Per-Crate Inventory
+## 2. Per-crate inventory
 
 | # | Crate | Purpose | Key submodules |
 |---|---|---|---|
@@ -65,7 +29,7 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 | 7 | `context-graph-mincut` | Clean-room Stoer-Wagner global min-cut | (single-file lib) |
 | 8 | `context-graph-paths` | Fail-closed durable path resolver; rejects non-aiwonder prod targets | (single-file lib) |
 | 9 | `context-graph-tier-compression` | 8/7/5/3-bit groupwise scalar quantization | (single-file lib) |
-| 10 | `context-graph-embeddings` | E1-E14 pipeline, model loaders | `train-causal` bin |
+| 10 | `context-graph-embeddings` | E1–E14 pipeline, model loaders | `train-causal` bin |
 | 11 | `context-graph-cuda` | CUDA helper kernels | — |
 | 12 | **`context-graph-mejepa`** | **Predictor trunk** (73 modules) | see §3 |
 | 13 | `context-graph-mejepa-cf` | Canonical CF name registry (~120 ME-JEPA CFs; zero internal deps) | (single-file lib) |
@@ -77,11 +41,11 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 | 19 | `context-graph-mejepa-hygiene` | Tier transitions, quota, GC, witness compress | `categories.rs`, `gc.rs`, `quota.rs`, `retention.rs`, `tier*.rs`, `witness_compress.rs` |
 | 20 | `context-graph-mejepa-shift-subscriber` | JSONL shift-log tail + watermark + cache → panels | `cache.rs`, `runner.rs`, `shift_transform.rs`, `subscriber.rs`, `tail.rs`, `watermark.rs` |
 | 21 | `context-graph-dynamicjepa` | 5090jepa MCP surface (39 tools) | (multiple modules) |
-| 22 | `context-graph-test-utils` | Deterministic-by-shape, pseudo-random-by-content helpers for storage/serialization/shape tests only; not ME-JEPA gate evidence | — |
+| 22 | `context-graph-test-utils` | Deterministic-by-shape helpers for storage/serialization/shape tests only; not ME-JEPA gate evidence | — |
 
 ---
 
-## 3. `context-graph-mejepa` Modules (73 files; predictor trunk)
+## 3. `context-graph-mejepa` modules (73 files; predictor trunk)
 
 | Module | Purpose |
 |---|---|
@@ -128,14 +92,16 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 | `types.rs` (114K, largest) | `RealityPrediction`, `Verdict`, `RealityImpact`, `OracleScores`, all DTOs |
 | `store.rs` | `MejepaStore` — RocksDB handle |
 
-**Planned:**
+**Planned modules:**
+
 - `pathway/{tree,beam_search,leaf_predictor,exemplar_attach,skill_attach,store}.rs` (#416) — binary-leaf butterfly-effect pathway tree
 - `cross_panel.rs` + `panel_b/` submodule (#405) — Panel B Goodhart guard
 - `embedder_growth.rs` (#516) + `embedder_retirement.rs` (#518) — post-0.95 creativity engine
+- `predictor/geometry_label_router.rs` (#664) + `predictor/geometry_label_heads.rs` (#665) — geometry-label routing/heads after #657 bakeoff
 
 ---
 
-## 4. `context-graph-mejepa-corpus` Modules
+## 4. `context-graph-mejepa-corpus` modules
 
 | Module | Purpose |
 |---|---|
@@ -163,9 +129,9 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 
 ---
 
-## 5. `context-graph-mejepa-instruments` Modules
+## 5. `context-graph-mejepa-instruments` modules
 
-`Panel` is array of 15 per-embedder vectors. 5,120 f32 contiguous buffer is byte layout only. Cross-embedder dim-wise compare forbidden.
+`Panel` is an array of 15 per-embedder vectors. 5,120 f32 contiguous buffer is byte layout only. Cross-embedder dim-wise compare forbidden.
 
 | Module | Slot served | Dim | Notes |
 |---|---|---|---|
@@ -185,14 +151,12 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 | `tests.rs` | — | — | 27+ unit tests |
 
 **Planned:**
-- `ecc.rs` (#512) — self-dual doubly-even ECC over 15-slot occupancy bitmap. Gates-style formal anti-compensation; `PARITY_CHECK_MATRIX`, `Syndrome`, `RecoveryRadius`.
+- `ecc.rs` (#512) — self-dual doubly-even ECC over 15-slot occupancy bitmap. `PARITY_CHECK_MATRIX`, `Syndrome`, `RecoveryRadius`.
 - `domain_routing.rs` (#519) — domain detector + per-domain panel manifest + sparse fill routing (post-0.95).
-
-Q4 producer modules and unconsumed TASK-RWD signals retired; only frozen display-only label readers remain.
 
 ---
 
-## 6. `context-graph-mejepa-train` Modules
+## 6. `context-graph-mejepa-train` modules
 
 | Module | Purpose |
 |---|---|
@@ -222,12 +186,11 @@ Q4 producer modules and unconsumed TASK-RWD signals retired; only frozen display
 **Planned:**
 - `loss/entropy.rs` (#511) — Kraskov-style differential entropy estimator on late-fused latent; Vopson 2nd-law minimization
 - `embedder_demand.rs` (#517) — mistake-loop residual-signature emission when no slot can explain disagreement (post-0.95)
-
-**FSV examples:** `train_smoke_fsv`, `train_cert_chain_fsv`, `train_holdout_eval_fsv`, `train_full_fsv`, `train_edge_cases_fsv`, `utml_l_step_fsv`, `swebench_300x8_ship_gate_fsv`, `operator_override_sampler_fsv`, `task_py_g_053_online_observe_fsv`, `task_ek_015_credibility_override_fsv`, `label_transfer_consumer_fsv`, `phase_g_adversarial_retrain_fsv`, `task_fp_101_sigreg_fsv`, `task_rwd_210_replay_buffer_fsv`, `task_ek_012_bidirectional_corpus_fsv`, `task_ek_012_bidirectional_ablation_fsv`, `task_py_g_007_pairwise_mi_fsv`, `task_py_g_110_failure_mode_hierarchy_fsv`, `task_py_g_112_mistake_loop_convergence_fsv`, `task_py_g_118_skill_sequence_discovery_fsv`, `task_py_g_118_aiwonder_skill_materialization_fsv`.
+- `geometry_label_discovery/` (#657) — per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff
 
 ---
 
-## 7. Workspace Dependency Graph (internal only)
+## 7. Workspace dependency graph (internal only)
 
 ```
 context-graph-mcp ─┬─> context-graph-mejepa
@@ -268,11 +231,11 @@ context-graph-mejepa-cf, context-graph-paths, context-graph-mincut, context-grap
 context-graph-tier-compression, context-graph-witness, context-graph-test-utils
 ```
 
-**Acyclic check.** No internal cycles; `mejepa-cf` is intentionally dependency-free so MCP / hygiene / train / runtime crates can share CF name constants.
+No internal cycles; `mejepa-cf` is intentionally dependency-free so MCP / hygiene / train / runtime crates can share CF name constants.
 
 ---
 
-## 8. Binary Targets
+## 8. Binary targets
 
 | Binary | Crate | Entry | Purpose |
 |---|---|---|---|
@@ -288,7 +251,7 @@ context-graph-tier-compression, context-graph-witness, context-graph-test-utils
 
 ## 9. Examples (210 example files — mostly FSV harnesses)
 
-Per-crate `[[example]]` declarations include:
+Per-crate `[[example]]` declarations span every crate. Notable representatives:
 
 - `context-graph-mcp` — `phase_f_gpu_wsl_fsv`, `task_py_g_063_project_ingest_fsv`, `task_py_g_064_project_report_fsv`, `task_py_g_112b_mistake_loop_mcp_tools_fsv`
 - `context-graph-mejepa` — `inference_fsv`, `phase5_self_healing_fsv`, `phase8_eval_fsv`, `phase_f_*_fsv` (~15 harnesses), `task_py_g_015_gtau_guard_audit_fsv`, `task_py_g_044_multi_head_contradiction_fsv`, `task_py_g_056_live_session_fsv`, `task_py_g_086_constellation_observation_schema_fsv`, `task_py_g_087_slot_preserving_late_fusion_predictor_fsv`, `task_py_g_088_cross_embedder_correlation_tensors_fsv`, `task_py_g_089_per_slot_calibration_ood_fsv`, `task_py_g_090_consensus_contradiction_heads_fsv`, `task_py_g_091_slot_attribution_explanation_fsv`, `task_py_g_094_anti_compensation_fsv`, `task_py_g_117_auto_label_discovery_fsv`, `task_py_g_121_runtime_ability_resolver_fsv`, `q4_doctrine_freeze_fsv`
@@ -297,98 +260,90 @@ Per-crate `[[example]]` declarations include:
 - `context-graph-mejepa-shift-subscriber` — `shift_subscriber_fsv`
 - `context-graph-witness` — `ed25519_fsv`
 
-Full FSV evidence index → `07_results_and_benchmarks.md`.
+Per #655 (in-progress P0), the auto-FSV ecosystem (`crates/*/examples/*_fsv.rs`) is being retired in favour of manual operator-driven SoT readback per `06 §1`. The 210 example files remain compiled for forensic reference; new gate evidence is captured as GitHub issue comments with direct bytes-on-disk readback.
+
+FSV evidence index → `07_results_and_benchmarks.md`.
 
 ---
 
-## 10. CI Configuration
+## 10. CI configuration
 
 - `.github/workflows/` — GitHub Free plan budget: `runs-on: ubuntu-latest` only, `timeout-minutes: ≤30` default / `≤60` cap, Actions pinned to SHA, cron weekly for SAST / daily for stale.
 - `.github/labels.yml` + `scripts/gh-labels-bootstrap.sh` — label set (memory = Issues).
 - `scripts/ci/check_no_c_drive_paths.sh` — blocks C-drive paths in code/FSV files.
-- `scripts/ci/phase_g_*.sh` — operator-invoked Phase G audit harnesses. Phase H's previously documented `phase_h_*.sh` absence-check suite is missing; #693 tracks whether to create it or remove the historical claim.
+- `scripts/ci/phase_g_*.sh` — operator-invoked Phase G audit harnesses.
 
 ---
 
-## 10.5 Neuroscience-Inspired Reserve — Planned Modules (DO NOT START until current queue concludes)
-
-8 contingency issues (#538-#545) at `priority:p3` with `⚠ DO NOT START` markers. See `08 §6.9`.
-
-**Tier 1 planned modules:**
-
-| Issue | Planned crate / module path | Tied existing crate |
-|---|---|---|
-| #538 Predictive-coding head | `crates/context-graph-mejepa/src/predictor/top_down_prediction.rs` + `crates/context-graph-mejepa-train/src/loss/predictive_coding.rs` | `context-graph-mejepa`, `context-graph-mejepa-train` |
-| #539 Schema-prioritized replay | `crates/context-graph-mejepa-train/src/replay_scheduler.rs` + `reverse_replay.rs` + `generative_replay.rs` | `context-graph-mejepa-train` (extends `replay_buffer.rs`) |
-| #540 Hierarchical predictive coding | `crates/context-graph-mejepa/src/hierarchical_prediction.rs` + `crates/context-graph-mejepa-train/src/loss/hierarchical_predictive.rs` | consumes shipped #404 / #414 substrate |
-| #541 Mixed-selectivity binding | `crates/context-graph-mejepa/src/predictor/mixed_selectivity_binding.rs` + `binding_basis_audit.rs` | extends `predictor/` and #390 surface |
-
-**Tier 2 design influence (no separate modules):**
-- #542 → #416 `pathway/` design (manifold trajectories option)
-- #543 → #519 sparse-panel design + per-instrument top-k gates
-- #544 → #392 temporal-feature design + #390 synchrony scoring
-- #545 → background tokio task composing with #416 / #517 / #406 / #520
-
-All 8 verified doctrine-compatible (slot identity, anti-compensation, binary contract, ambiguity boundary, no inner LLM, no synthetic shortcuts) before filing.
-
----
-
-## 11. What Is NOT Included
+## 11. What is NOT included
 
 - No vendored upstream code. Clean-room only (`CLAUDE.md §6.7`). Never vendor / path-dep / npm-depend on `ruvnet/agentdb` or `ruvnet/ruvector`.
 - No backwards-compatibility migrations. Pre-production tree; wipe DB on schema change; fail fast with structured errors.
 - No inner-LLM code. `feature = "llm"` triggers `compile_error!`.
 - No HTTP from action paths. `WebSearch`/`WebFetch`/`mcp__exa__*` are read-only research tools only.
 - No `.env` / `.env.*` files committed.
+- No new Q4 producer modules — closed by #408 (ambiguity boundary).
 
 ---
 
-## 12. New CFs for Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop
+## 12. Planned module additions (roadmap)
 
-All shipped artifacts are additive to existing crates — no new top-level crate.
+Additive to existing crates — no new top-level crate.
 
-### 12.1 Failure-mode labeling (#404, #413, #414, shipped)
-
-| Layer | Module | Status |
-|---|---|---|
-| Level 0 deterministic label compiler | `scripts/swebench_lite_ops/python_auto_label_discovery.py` (1,641 lines, deterministic Python, no inner LLM); CLI `python-auto-label-discovery` | ✅ SHIPPED (#413) |
-| Level 1/2/3 hierarchy + named predictions | `src/failure_mode_hierarchy.rs`, `src/skill_corpus_materialization.rs` in `mejepa-train` | ✅ SHIPPED (#404) |
-| Skill substrate (memberships + reverse + lifecycle) | `src/skill_sequence_discovery.rs`, `src/chunk_skill_membership.rs` in `mejepa-train` | ✅ SHIPPED (#414) |
-| Runtime hierarchical ability resolver | `src/ability_resolver_*.rs` in `mejepa-train` | ✅ SHIPPED (#418) |
-
-### 12.2 Cross-panel triangulation (#405, planned, blocked p0)
+### 12.1 Cross-panel triangulation (#405)
 
 | Planned module | Crate | Role |
 |---|---|---|
 | `src/cross_panel.rs` | `context-graph-mejepa` | Schedules Panel B evaluation, writes `CF_MEJEPA_CROSS_PANEL_AGREEMENT`, raises `CROSS_PANEL_GOODHART_DETECTED` |
 | `src/panel_b/` submodule | `context-graph-mejepa-instruments` | Panel B variants: `e_ast_codebert.rs`, `e_cfg_pythia.rs`, `e_dataflow_joern.rs`, `e_code_voyage.rs`, `e_text_bge.rs` |
-| `examples/task_py_g_111_cross_panel_triangulation_fsv.rs` | `context-graph-mejepa` | FSV harness |
 
-### 12.3 Online mistake-driven learning (#406 / #523, shipped)
+### 12.2 Pathway exploration (#416)
 
-| Module | Crate | Role |
+| Planned module | Crate | Role |
 |---|---|---|
-| `src/mistake_log.rs` | `mejepa-train` | `MistakeLogRow`, writer, validation, byte-replay readback for `CF_MEJEPA_MISTAKE_LOG` |
-| `src/online_head_state*.rs` (3 files) | `mejepa-train` | Key-local exact-panel online-head state; `protection_mode=exactPanelKeyIsolation` |
-| `src/ability_resolver_refutation*.rs` | `mejepa-train` | Live consumer bridge |
-| `src/handlers/tools/mejepa_mistake_loop_tools.rs` | `mejepa-mcp` | MCP wrappers: `mejepa_record_mistake`, `mejepa_mistake_history`, `mejepa_mistake_loop_status` |
+| `src/pathway/tree.rs` | `context-graph-mejepa` | `PathwayNode` with binary-leaf-only invariant |
+| `src/pathway/beam_search.rs` | `context-graph-mejepa` | UCB1-style selection; top-K retention by cumulative path probability |
+| `src/pathway/leaf_predictor.rs` | `context-graph-mejepa` | Routes each candidate leaf to Q1/Q2/Q5 head; non-binary → `PATHWAY_AMBIGUOUS_LEAF_REJECTED` |
+| `src/pathway/exemplar_attach.rs` | `context-graph-mejepa` | Closest historical pathway from #413 registry |
+| `src/pathway/skill_attach.rs` | `context-graph-mejepa` | Active skill IDs + source chunk memberships from #414/#417 |
+| `src/pathway/store.rs` | `context-graph-mejepa` | RocksDB writers for `CF_MEJEPA_PATHWAY_TREES` + `CF_MEJEPA_SURFACED_PATHWAYS` |
 
-### 12.4 Q4 freeze (deprecation, no new module)
+### 12.3 Geometry-label epic (#657 / in-progress)
 
-Q4 removed from prediction contract. No new Q4 modules planned. Existing `q4_*_labels.rs` modules remain compiled and CFs remain readable for forensic continuity; frozen — no new producer writes.
+| Planned module | Crate | Role |
+|---|---|---|
+| `src/geometry_label_discovery/` | `context-graph-mejepa-train` | Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic per-embedder bakeoff |
+| `src/predictor/geometry_label_router.rs` (#664) | `context-graph-mejepa` | Per-embedder geometry-label routing |
+| `src/predictor/geometry_label_heads.rs` (#665) | `context-graph-mejepa` | Prediction heads over per-embedder geometry labels |
 
-### 12.5 Dependency graph addendum
+Output root: `/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v1/`.
 
-```
-context-graph-mejepa (predictor trunk)
-  + failure_mode_hierarchy.rs ─> writes CF_MEJEPA_FAILURE_MODE_LEVEL{1,2,3}_* + CF_MEJEPA_NAMED_PREDICTIONS
-  + cross_panel.rs (planned)   ─> writes CF_MEJEPA_CROSS_PANEL_AGREEMENT, CF_MEJEPA_PANEL_B_OBSERVATIONS
-  + mistake_log.rs             ─> writes CF_MEJEPA_MISTAKE_LOG, CF_MEJEPA_MISTAKE_REPLAY_PRIORITY
-  + online_head_state.rs       ─> writes CF_MEJEPA_ONLINE_HEAD_STATE
-  + ability_resolver_refutation -> live refutation consumer writes lifecycle + mistake + replay + online-head rows
+### 12.4 Information-physics (#511 / #512 / #514)
 
-context-graph-mejepa-instruments
-  + panel_b/ (planned)         ─> 5 new Panel B encoders
-```
+| Planned module | Crate | Role |
+|---|---|---|
+| `src/loss/entropy.rs` | `context-graph-mejepa-train` | #511 Kraskov-style differential entropy on late-fused latent |
+| `src/ecc.rs` | `context-graph-mejepa-instruments` | #512 self-dual doubly-even ECC over 15-slot occupancy |
+| (cold-load FSV harness) | `context-graph-mejepa` | #514 Eon-style cold-load behavioural FSV |
 
-No new internal dependency cycles; planned modules attach to existing crates and read/write only via `context-graph-mejepa-cf` constants and `context-graph-storage` openers.
+### 12.5 Post-0.95 creativity engine (#516 – #520)
+
+| Planned module | Crate | Role |
+|---|---|---|
+| `src/embedder_demand.rs` (#517) | `context-graph-mejepa-train` | Mistake-loop residual-signature emission |
+| `src/embedder_growth.rs` (#516) | `context-graph-mejepa` | Novelty + Utility oracle |
+| `src/embedder_retirement.rs` (#518) | `context-graph-mejepa` | Embedder retirement audit + Pareto frontier |
+| `src/predictor/domain_routing.rs` (#519) | `context-graph-mejepa-instruments` | Domain detector + per-domain panel manifest |
+| `src/predictor/consolidation.rs` (#520) | `context-graph-mejepa` | Episodic-to-semantic consolidation |
+
+### 12.6 Neuroscience-inspired reserve (#538 – #545, p3 — DO NOT START until current queue concludes)
+
+| Issue | Planned crate / module |
+|---|---|
+| #538 Predictive-coding head | `crates/context-graph-mejepa/src/predictor/top_down_prediction.rs` + `crates/context-graph-mejepa-train/src/loss/predictive_coding.rs` |
+| #539 Schema-prioritized replay | `crates/context-graph-mejepa-train/src/replay_scheduler.rs` + `reverse_replay.rs` + `generative_replay.rs` |
+| #540 Hierarchical predictive coding | `crates/context-graph-mejepa/src/hierarchical_prediction.rs` + `crates/context-graph-mejepa-train/src/loss/hierarchical_predictive.rs` |
+| #541 Mixed-selectivity binding | `crates/context-graph-mejepa/src/predictor/mixed_selectivity_binding.rs` |
+| #542 / #543 / #544 / #545 | Design-influence on #416 / #519 / #392 / #517 — no separate modules |
+
+All 8 verified doctrine-compatible (slot identity, anti-compensation, binary contract, ambiguity boundary, no inner LLM, no synthetic shortcuts) before filing. See `08 §6` for activation rule.

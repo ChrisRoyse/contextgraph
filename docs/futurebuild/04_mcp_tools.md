@@ -1,42 +1,12 @@
 # 04 — MCP Tools Reference
 
-## ⚠ 2026-05-22 silent-success defect closeouts (5-Sherlock audit #629)
-
-Multiple MCP tools were closing requests with `success`/`passed=true` while skipping work or hiding partial failures. All closed 2026-05-22 (see `07 §2.0`):
-
-| Issue | Tool / Surface | Defect |
-|---|---|---|
-| #599 | `store_memory` | Returned success after provenance/sidecar write failures |
-| #603 | `get_audit_trail` / `get_merge_history` / `get_provenance_chain` | Returned success with partial storage read failures |
-| #604 | `mejepa_eval_run` secret-holdout guard | Reported `passes=true` while actual guard was blocked |
-| #605 | Memory mutation (`merge_concepts`, `boost_importance`, `forget_concept`) | Reported success without complete readback/provenance |
-| #607 | `no_inner_actor_models` FSV | Reported `readback_equal=true` without artifact readback |
-| #608 | `optimizer_witness_chain_verify` | Returned valid success for absent `witness-chain.bin` |
-| #594 | `mejepa_eval_run` | Persisted fixture EvalReports through indirect deterministic-compiler path |
-| #595 | `mejepa_ship_gate_status` / operator status surfaces | Trusted raw `EvalReport.ship_gate_passed` instead of current gate predicate |
-| #601 | `mejepa_*` `dbPath` overrides | Could report fixture/local RocksDBs as source of truth |
-| #606 | `synthetic_stress` eval | Used `ship_gate_passed`/exit-0 semantics for non-gate fixture success |
-| #669 | `swebench_lite_ops` CLI | Module invocation exited 0 without running |
-
-**Tool-count correction (5-Sherlock):** auto-FSV listings drifted from test-enforced count. Corrected: **216 total tools** (was 214); **69 `mejepa_*` tools** (was 67). Test gate at `definitions/mod.rs:150`.
-
-**Operational change (#655, in-progress p0):** auto-FSV examples in `crates/*/examples/*_fsv.rs` are being retired. MCP tool side effects must be verified by **manual operator-driven SoT readback** per `06 §1.9`, not by trusting tool return JSON.
-
----
-
-## ⚠ Synthetic-vector remediation (2026-05-19/20)
-
-Every MCP tool whose handler routes through the inference path (`mejepa_verify`, `mejepa_predict_latest`, `mejepa_predict_what_if`, `mejepa_search_latent_actions`, `mejepa_rank_candidates`, `mejepa_explain_prediction`, `mejepa_inspect_prediction`, `mejepa_replay_prediction`, `mejepa_reality_impact`, `mejepa_project_ingest`, `mejepa_project_report`, `mejepa_pathway_*`, `mejepa_record_mistake`, etc.) returned synthetic-input outputs before 2026-05-19 22:45 UTC. Rust code path is now real (per `01 §1.7`); persisted prediction rows produced before fix are contaminated.
-
-Tools reading pure-substrate CFs unaffected: `mejepa_skill_to_code`, `mejepa_code_to_skill`, `mejepa_skill_set_query`, `mejepa_skill_coverage_audit`, `mejepa_chunk_as_star`, `mejepa_constellation_membership`, `mejepa_list_accepted_labels`, fingerprint surface, hygiene surface, daemon/heal status.
-
 **Source files:** `crates/context-graph-mcp/src/tools/definitions/mod.rs`, `crates/context-graph-mcp/src/tools/names.rs`, `crates/context-graph-mcp/src/tools/definitions/mejepa.rs`, all sibling `definitions/*.rs`, `crates/context-graph-mcp/src/deprecation.rs`.
 
-**Total tools registered** in `get_tool_definitions()`: **216** (test-enforced at `definitions/mod.rs:150`; corrected by 5-Sherlock #629 commit `f1b37c57`).
+**Total tools registered** in `get_tool_definitions()`: **216** (test-enforced at `definitions/mod.rs:150`; 69 `mejepa_*`).
 
 ---
 
-## 1. Registry Structure
+## 1. Registry structure
 
 | Function | Returns | Notes |
 |---|---|---|
@@ -47,7 +17,7 @@ Tests enforce: exact total count + no duplicate names, exact per-submodule count
 
 ---
 
-## 2. Tool Count by Submodule
+## 2. Tool count by submodule
 
 | Submodule | Count | Covers |
 |---|---|---|
@@ -79,11 +49,11 @@ Tests enforce: exact total count + no duplicate names, exact per-submodule count
 
 ---
 
-## 3. The 69 `mejepa_*` Tools (the product surface)
+## 3. The 69 `mejepa_*` tools (the product surface)
 
-Names live in `crates/context-graph-mcp/src/tools/names.rs`. Most are namespaced `mcp__cgreality__mejepa_*`; small set use bare `mejepa_*`.
+Names live in `crates/context-graph-mcp/src/tools/names.rs`. Most are namespaced `mcp__cgreality__mejepa_*`; a small set use bare `mejepa_*`.
 
-### 3.1 Predictor / Inference (Q1-Q5 RealityPrediction)
+### 3.1 Predictor / inference (Q1-Q5 RealityPrediction)
 
 | Tool | Purpose | Side effects |
 |---|---|---|
@@ -97,9 +67,7 @@ Names live in `crates/context-graph-mcp/src/tools/names.rs`. Most are namespaced
 | `mejepa_replay_prediction` | Replay past prediction against current model + calibration | Read-only |
 | `mejepa_reality_impact` | Q5 replay: compare predicted consequences to durable session shift log; returns confirmed/missed/not-yet-observed/surprise rows | Writes `CF_MEJEPA_REALITY_IMPACT` with sync + readback |
 
-### 3.2 Mistake-driven loop (#406 / #523, shipped 2026-05-20)
-
-FSV: `/zfs/archive/contextgraph/fsv/task-py-g-112b-mistake-loop-mcp-tools-fsv/run-20260520T113125Z/`, sha256 `9a9e50b6…`.
+### 3.2 Mistake-driven loop (#406 / #523, shipped)
 
 | Tool | Purpose | Side effects |
 |---|---|---|
@@ -107,7 +75,7 @@ FSV: `/zfs/archive/contextgraph/fsv/task-py-g-112b-mistake-loop-mcp-tools-fsv/ru
 | `mejepa_mistake_history` | List mistake rows; optionally joined with replay rows + skill lifecycle audit | Read-only |
 | `mejepa_mistake_loop_status` | Aggregate: exact panel online-head state, repeat metrics, latest mistake, SoT CF counts. Target: `mistake_repeat_rate ≤ 0.05`. | Read-only |
 
-### 3.3 Skill↔code linkage (#417 read surface, shipped 2026-05-19/20)
+### 3.3 Skill ↔ code linkage (#417 read surface, shipped)
 
 Read-only navigation over training substrate; no new prediction surface. Binary-leaf constraint preserved at prediction boundaries.
 
@@ -124,7 +92,7 @@ Read-only navigation over training substrate; no new prediction surface. Binary-
 | `mejepa_skill_conflict_graph` | Zero-cooccurrence mutually-exclusive candidate pairs over persisted memberships |
 | `mejepa_skill_browse` | Operator browse over Level-2 skill catalog with membership counts + source key samples |
 
-### 3.4 Reality Compiler (per-project ingest)
+### 3.4 Reality compiler (per-project ingest)
 
 | Tool | Purpose | Side effects |
 |---|---|---|
@@ -160,14 +128,14 @@ Read-only navigation over training substrate; no new prediction surface. Binary-
 | `mejepa_quota_status` | Per-CF quota state |
 | `mejepa_witness_compress` | Witness-chain Merkle compression batch |
 
-### 3.8 Evaluation / Ship-gate dashboard
+### 3.8 Evaluation / ship-gate dashboard
 
 | Tool | Purpose |
 |---|---|
 | `mejepa_eval_run` | Run holdout eval; writes `CF_MEJEPA_EVAL_REPORTS` |
 | `mejepa_eval_build_graph` | Build per-cell precision/recall + failure-mode-class graph |
 | `mejepa_ship_gate_status` | 4-window stability; per-cell green/yellow/red |
-| `mejepa_weekly_eval_dashboard` | Phase F weekly dashboard from `CF_MEJEPA_EVAL_REPORTS` + `exports/weekly/<date>/` |
+| `mejepa_weekly_eval_dashboard` | Weekly dashboard from `CF_MEJEPA_EVAL_REPORTS` + `exports/weekly/<date>/` |
 | `mejepa_compression_progress` | CPΦ readback from `CF_MEJEPA_TRAIN_CERTS` |
 | `mejepa_bootstrap_status` | Cold-start + baseline checkpoint status |
 
@@ -201,7 +169,7 @@ Read-only navigation over training substrate; no new prediction surface. Binary-
 | `mejepa_check_bedrock_consistency` | Bedrock-consistency verifier |
 | `mejepa_library_foundationality` | Library-level foundationality |
 
-### 3.12 Lightweight helpers (`mejepa_*` without `mcp__cgreality__` prefix)
+### 3.12 Lightweight helpers (bare `mejepa_*`)
 
 | Tool | Purpose |
 |---|---|
@@ -211,7 +179,7 @@ Read-only navigation over training substrate; no new prediction surface. Binary-
 
 ---
 
-## 4. Other Tool Domains (summary)
+## 4. Other tool domains (summary)
 
 | Domain | Count | Key tools |
 |---|---|---|
@@ -226,7 +194,7 @@ Read-only navigation over training substrate; no new prediction surface. Binary-
 
 ---
 
-## 5. Tool Definition Schema
+## 5. Tool definition schema
 
 `ToolDefinition` (`crates/context-graph-mcp/src/tools/types.rs`):
 
@@ -240,11 +208,11 @@ pub struct ToolDefinition {
 
 Every schema sets `additionalProperties: false`. Numeric params use `"type": "integer"` with explicit min/max. Strings use `pattern` for IDs (e.g. `^[A-Za-z0-9_.-]+$` for `projectId`).
 
-Response format: tools return JSON. Errors carry `code: SCREAMING_SNAKE_CASE` matching originating Rust `Error::code()`.
+Response format: tools return JSON. Errors carry `code: SCREAMING_SNAKE_CASE` matching the originating Rust `Error::code()`.
 
 ---
 
-## 6. Server Modes
+## 6. Server modes
 
 | Mode | Tools advertised | Transport | Purpose |
 |---|---|---|---|
@@ -256,19 +224,22 @@ Reality-loop subset contains at least `reality_attempt_summary`, `dynamicjepa_re
 
 ---
 
-## 7. Side Effects Summary
+## 7. Side effects summary
 
 Tools either:
+
 1. **Read-only** — most predict/inspect/status/list tools.
 2. **Write durable CF row** — observe, record_feedback, record_mistake, project_ingest, project_report, eval_run, gc_run, witness_compress, operator_override, fingerprint_label, fingerprint_promote, propose_instrument.
-3. **Spawn external process** — `mejepa_eval_run` may invoke `swebench.harness.run_evaluation` (Docker); `project_ingest` runs AST chunker.
+3. **Spawn external process** — `mejepa_eval_run` may invoke `swebench.harness.run_evaluation` (Docker); `project_ingest` runs the AST chunker.
 4. **Heal scheduler trigger** — `mejepa_rollback_to`, `mejepa_promote_approval`.
 
 No tool sends HTTP from action paths. No tool writes outside `/zfs/archive/contextgraph/` for production durable state.
 
+**Manual SoT verification (#655).** Per the manual-SoT contract (`06 §1`), tool side effects must be verified by direct operator-driven bytes/rows readback — not by trusting the tool's return JSON. Auto-FSV harness ecosystem is being retired.
+
 ---
 
-## 8. Q4 Tool Deprecation
+## 8. Q4 tool deprecation
 
 Per `05 §16`, the following remain registered but are **read-only-historical** (no writes):
 
@@ -283,7 +254,7 @@ No tool deletion (would break stored agent prompts); behaviour change only.
 
 ---
 
-## 9. Planned MCP Tools
+## 9. Planned MCP tools
 
 ### 9.1 Failure-mode labeling MCP wrappers (#417 remaining)
 
@@ -328,7 +299,7 @@ Strict binary-leaf rule: any non-Q1/Q2/Q5 leaf → `PATHWAY_AMBIGUOUS_LEAF_REJEC
 | `mejepa_panel_ecc_inspect` | #512 — panel ECC syndrome, recovered slots, uncorrectable detection |
 | `mejepa_cold_load_status` | #514 — last cold-load drift; promotion-time baseline snapshot |
 
-### 9.6 Post-0.95 creativity-engine inspection (#516-#520)
+### 9.6 Post-0.95 creativity-engine inspection (#516 – #520)
 
 | Tool (planned) | Purpose |
 |---|---|
@@ -344,30 +315,26 @@ CLI mutation:
 |---|---|
 | `context-graph-cli mejepa retire-embedder <id>` | Manual operator override (#518); writes audit row with operator attribution |
 
-When these land, tool count moves accordingly. Q4 tool deprecation does not change count.
+When these land, the tool count moves accordingly. Q4 tool deprecation does not change the count.
 
----
+### 9.7 Neuroscience-inspired reserve (#538 – #545, p3 — DO NOT START until current queue concludes)
 
-## 9.95 Neuroscience-Inspired Reserve (DO NOT START until current queue concludes)
-
-8 neuroscience-reserve issues (#538-#545) at `priority:p3` with `⚠ DO NOT START` markers. If activated, no new public MCP tools are pre-planned — changes are predominantly internal pipeline/training/replay-scheduler architecture.
-
-Closest candidate inspection tools (only if operator opts in post-activation):
+If activated, no new public MCP tools are pre-planned — changes are predominantly internal pipeline/training/replay-scheduler architecture. Closest candidate inspection tools (read-only):
 
 | Tool (would-be planned) | Issue | Purpose |
 |---|---|---|
-| `mcp__cgreality__mejepa_inspect_per_slot_prediction` | #538 | Read `CF_MEJEPA_PER_SLOT_PREDICTIONS`; per-slot predicted vs observed residual diagnostic (composes with `mejepa_explain_prediction`) |
+| `mcp__cgreality__mejepa_inspect_per_slot_prediction` | #538 | Read `CF_MEJEPA_PER_SLOT_PREDICTIONS`; per-slot predicted vs observed residual diagnostic |
 | `mcp__cgreality__mejepa_replay_schedule_audit` | #539 | Read `CF_MEJEPA_REPLAY_SCHEDULE` rows; schema-grouped batch evidence |
-| `mcp__cgreality__mejepa_binding_basis_inspect` | #541 | Read `CF_MEJEPA_BINDING_BASIS_REGISTRY`; per-basis-function attribution joining #391 slot attribution |
+| `mcp__cgreality__mejepa_binding_basis_inspect` | #541 | Read `CF_MEJEPA_BINDING_BASIS_REGISTRY`; per-basis-function attribution |
 | `mcp__cgreality__mejepa_hierarchical_prediction_inspect` | #540 | Per-level prediction error attribution joining #404 / #414 substrate |
 
-All would be **read-only**. See `08 §6.9` for activation rule and `03 §8.7` for planned CFs.
+See `08 §6` for activation rule and `03 §8.6` for planned CFs.
 
 ---
 
-## 10. What This Doc Does NOT Cover
+## 10. What this doc does NOT cover
 
-- Full JSON schema for every parameter — read `definitions/*.rs::definitions()`; each has literal `json!({...})` schema.
+- Full JSON schema for every parameter — read `definitions/*.rs::definitions()`; each has a literal `json!({...})` schema.
 - Per-tool handler implementations — see `crates/context-graph-mcp/src/handlers/`.
 - Response body shapes — derive from source plus `RealityPrediction` / `ProjectReport` / etc. types in `crates/context-graph-mejepa/src/types.rs`.
 - HTTP transport configuration — see `crates/context-graph-mcp/src/server/http_transport.rs`.
