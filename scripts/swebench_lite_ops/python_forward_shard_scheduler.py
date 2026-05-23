@@ -640,6 +640,7 @@ def top_vector_collision_groups(
             "vector_sha256": vector_sha256,
             "row_count": vector_counts.get(vector_sha256, 0),
             "unique_input_sha256_count": len(source_inputs),
+            "input_sha256_samples": sorted(source_inputs)[:5],
             "source_sha256_samples": sorted(source_inputs)[:5],
         }
         for vector_sha256, source_inputs in rows[:5]
@@ -675,9 +676,9 @@ def evaluate_embedder_distinctness(
             f"{embedder_id} distinctness row has vector_sha256",
             isinstance(vector_sha256, str) and bool(vector_sha256.strip()),
         )
-        input_sha256 = row.get("source_sha256")
+        input_sha256 = row.get("input_sha256") or row.get("source_sha256")
         require(
-            f"{embedder_id} distinctness row has source_sha256",
+            f"{embedder_id} distinctness row has input_sha256/source_sha256",
             isinstance(input_sha256, str) and bool(input_sha256.strip()),
         )
         stats = stats_by_embedder[embedder_id]

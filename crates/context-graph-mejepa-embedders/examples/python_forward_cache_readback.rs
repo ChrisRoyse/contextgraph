@@ -1,6 +1,6 @@
 use context_graph_mejepa_embedders::{
     AlgorithmicEmbedderForward, EmbedError, EmbedderForward, EmbedderId, EmbedderInput,
-    ModelsConfig, PretrainedEmbedderForward, SUPPORTED_FORWARD_EMBEDDERS,
+    EmbedderOutput, ModelsConfig, PretrainedEmbedderForward, SUPPORTED_FORWARD_EMBEDDERS,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -102,6 +102,60 @@ struct BatchResult {
     telemetry: Value,
     records: Vec<ForwardRecord>,
     quarantines: Vec<QuarantineRecord>,
+    duplicate_forward_cache_hits: usize,
+    unique_forward_input_count: usize,
+}
+
+#[derive(Debug, Clone)]
+struct ForwardInputIdentity {
+    input_sha256: String,
+    policy: &'static str,
+}
+
+struct PendingForward {
+    input: EmbedderInput,
+    identity: ForwardInputIdentity,
+}
+
+#[derive(Debug, Clone)]
+struct ForwardFailure {
+    code: &'static str,
+    message: String,
+}
+
+impl ForwardFailure {
+    fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+
+    fn from_embed(err: &EmbedError) -> Self {
+        Self::new(err.code(), err.to_string())
+    }
+}
+
+struct BatchTelemetryCounts {
+    batch_size: usize,
+    output_count: usize,
+    quarantine_count: usize,
+    unique_forward_input_count: usize,
+    duplicate_forward_cache_hits: usize,
+    latency_ms: f64,
+}
+
+enum BatchRecordPlan<'a> {
+    Cached {
+        chunk: &'a ChunkRow,
+        identity: ForwardInputIdentity,
+        output: EmbedderOutput,
+    },
+    Pending {
+        chunk: &'a ChunkRow,
+        identity: ForwardInputIdentity,
+        pending_idx: usize,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -186,9 +240,13 @@ async fn run() -> RunnerResult<()> {
         let mut embedder_records = Vec::new();
         let mut output_count = 0usize;
         let mut quarantine_count = 0usize;
+        let mut duplicate_forward_cache_hits = 0usize;
+        let mut unique_forward_input_count = 0usize;
         for result in results {
             output_count += result.records.len();
             quarantine_count += result.quarantines.len();
+            duplicate_forward_cache_hits += result.duplicate_forward_cache_hits;
+            unique_forward_input_count += result.unique_forward_input_count;
             all_telemetry_rows.push(result.telemetry);
             for record in result.records {
                 embedder_records.push(record);
@@ -209,6 +267,9 @@ async fn run() -> RunnerResult<()> {
                 "chunk_count": chunks.len(),
                 "cache_record_count": output_count,
                 "quarantine_row_count": quarantine_count,
+                "unique_forward_input_count": unique_forward_input_count,
+                "duplicate_forward_cache_hit_count": duplicate_forward_cache_hits,
+                "forward_input_identity_policy": forward_input_identity_policy(embedder),
                 "elapsed_ms": elapsed_ms(started),
                 "passes": output_count + quarantine_count == chunks.len(),
             }),
@@ -720,14 +781,17 @@ async fn run_embedder_batches(
     batch_counter: &mut usize,
 ) -> Vec<BatchResult> {
     let mut results = Vec::new();
+    let mut output_cache: BTreeMap<String, EmbedderOutput> = BTreeMap::new();
     for batch in chunks.chunks(config.true_batch_size.max(1)) {
         let batch_id = format!("{}-batch-{batch_counter:06}", forwarder.embedder().slug());
         *batch_counter += 1;
         let started = Instant::now();
         let mut records = Vec::new();
         let mut quarantines = Vec::new();
-        let mut forwarded = Vec::new();
-        let mut forwarded_chunks = Vec::new();
+        let mut pending = Vec::<PendingForward>::new();
+        let mut pending_by_input = BTreeMap::<String, usize>::new();
+        let mut plans = Vec::<BatchRecordPlan<'_>>::new();
+        let mut duplicate_forward_cache_hits = 0usize;
         for chunk in batch {
             if chunk.source_text.len() > config.max_source_bytes {
                 quarantines.push(QuarantineRecord {
@@ -741,52 +805,138 @@ async fn run_embedder_batches(
                 });
                 continue;
             }
-            forwarded.push(EmbedderInput {
+            let identity = forward_input_identity(forwarder.embedder(), chunk);
+            if let Some(output) = output_cache.get(&identity.input_sha256) {
+                duplicate_forward_cache_hits += 1;
+                plans.push(BatchRecordPlan::Cached {
+                    chunk,
+                    identity,
+                    output: output.clone(),
+                });
+                continue;
+            }
+            if let Some(&pending_idx) = pending_by_input.get(&identity.input_sha256) {
+                duplicate_forward_cache_hits += 1;
+                plans.push(BatchRecordPlan::Pending {
+                    chunk,
+                    identity,
+                    pending_idx,
+                });
+                continue;
+            }
+            let input = EmbedderInput {
                 embedder: forwarder.embedder(),
                 text: chunk.source_text.clone(),
                 source_id: source_id_for_embedder(forwarder.embedder(), chunk),
+            };
+            let pending_idx = pending.len();
+            pending_by_input.insert(identity.input_sha256.clone(), pending_idx);
+            plans.push(BatchRecordPlan::Pending {
+                chunk,
+                identity: identity.clone(),
+                pending_idx,
             });
-            forwarded_chunks.push(chunk);
+            pending.push(PendingForward { input, identity });
         }
-        if !forwarded.is_empty() {
+        let mut pending_results = Vec::<Result<EmbedderOutput, ForwardFailure>>::new();
+        if !pending.is_empty() {
             if forwarder.supports_true_batch() {
+                let forwarded = pending
+                    .iter()
+                    .map(|pending| pending.input.clone())
+                    .collect::<Vec<_>>();
                 match forwarder.forward_true_batch(&forwarded).await {
                     Ok(outputs) => {
-                        for (chunk, output) in forwarded_chunks.iter().zip(outputs) {
-                            records.push(forward_record(forwarder.embedder(), chunk, output));
+                        if outputs.len() == pending.len() {
+                            pending_results.extend(outputs.into_iter().map(Ok));
+                        } else {
+                            let err = ForwardFailure::new(
+                                "MEJEPA_PY_FORWARD_TRUE_BATCH_ROW_COUNT_MISMATCH",
+                                format!(
+                                    "{} true-batch output count {}, expected {}",
+                                    forwarder.embedder().slug(),
+                                    outputs.len(),
+                                    pending.len()
+                                ),
+                            );
+                            pending_results.extend(
+                                std::iter::repeat_with(|| Err(err.clone())).take(pending.len()),
+                            );
                         }
                     }
                     Err(err) => {
-                        for chunk in forwarded_chunks {
-                            quarantines.push(QuarantineRecord {
-                                row: quarantine_row(
-                                    forwarder.embedder(),
-                                    chunk,
-                                    err.code(),
-                                    err.to_string(),
-                                    None,
-                                ),
-                            });
-                        }
+                        let err = ForwardFailure::from_embed(&err);
+                        pending_results.extend(
+                            std::iter::repeat_with(|| Err(err.clone())).take(pending.len()),
+                        );
                     }
                 }
             } else {
-                for (chunk, input) in forwarded_chunks.iter().zip(forwarded) {
-                    match forwarder.forward(&input).await {
-                        Ok(output) => {
-                            records.push(forward_record(forwarder.embedder(), chunk, output))
-                        }
-                        Err(err) => quarantines.push(QuarantineRecord {
-                            row: quarantine_row(
-                                forwarder.embedder(),
-                                chunk,
-                                err.code(),
-                                err.to_string(),
-                                None,
-                            ),
-                        }),
-                    }
+                for pending_forward in &pending {
+                    pending_results.push(
+                        forwarder
+                            .forward(&pending_forward.input)
+                            .await
+                            .map_err(|err| ForwardFailure::from_embed(&err)),
+                    );
                 }
+            }
+        }
+        if pending_results.len() != pending.len() {
+            let err = ForwardFailure::new(
+                "MEJEPA_PY_FORWARD_PENDING_RESULT_COUNT_MISMATCH",
+                format!(
+                    "{} pending result count {}, expected {}",
+                    forwarder.embedder().slug(),
+                    pending_results.len(),
+                    pending.len()
+                ),
+            );
+            pending_results = std::iter::repeat_with(|| Err(err.clone()))
+                .take(pending.len())
+                .collect();
+        }
+        for (pending_forward, result) in pending.iter().zip(&pending_results) {
+            if let Ok(output) = result {
+                output_cache.insert(
+                    pending_forward.identity.input_sha256.clone(),
+                    output.clone(),
+                );
+            }
+        }
+        for plan in plans {
+            match plan {
+                BatchRecordPlan::Cached {
+                    chunk,
+                    identity,
+                    output,
+                } => records.push(forward_record(
+                    forwarder.embedder(),
+                    chunk,
+                    &identity,
+                    output,
+                )),
+                BatchRecordPlan::Pending {
+                    chunk,
+                    identity,
+                    pending_idx,
+                } => match &pending_results[pending_idx] {
+                    Ok(output) => records.push(forward_record(
+                        forwarder.embedder(),
+                        chunk,
+                        &identity,
+                        output.clone(),
+                    )),
+                    Err(err) => quarantines.push(QuarantineRecord {
+                        row: quarantine_row(
+                            forwarder.embedder(),
+                            chunk,
+                            err.code,
+                            err.message.clone(),
+                            None,
+                        ),
+                    }),
+                },
             }
         }
         let latency_ms = elapsed_ms(started);
@@ -794,15 +944,21 @@ async fn run_embedder_batches(
             config,
             forwarder,
             &batch_id,
-            batch.len(),
-            records.len(),
-            quarantines.len(),
-            latency_ms,
+            BatchTelemetryCounts {
+                batch_size: batch.len(),
+                output_count: records.len(),
+                quarantine_count: quarantines.len(),
+                unique_forward_input_count: pending.len(),
+                duplicate_forward_cache_hits,
+                latency_ms,
+            },
         );
         results.push(BatchResult {
             telemetry,
             records,
             quarantines,
+            duplicate_forward_cache_hits,
+            unique_forward_input_count: pending.len(),
         });
     }
     results
@@ -818,10 +974,38 @@ fn source_id_for_embedder(embedder: EmbedderId, chunk: &ChunkRow) -> String {
     )
 }
 
+fn forward_input_identity_policy(embedder: EmbedderId) -> &'static str {
+    if embedder == EmbedderId::E7 {
+        "e7_source_path_and_source_text_sha256_v1"
+    } else {
+        "source_text_sha256_v1"
+    }
+}
+
+fn forward_input_identity(embedder: EmbedderId, chunk: &ChunkRow) -> ForwardInputIdentity {
+    let policy = forward_input_identity_policy(embedder);
+    let input_sha256 = if embedder == EmbedderId::E7 {
+        sha256_value(&json!({
+            "schema_version": SCHEMA_VERSION,
+            "policy": policy,
+            "embedder_id": embedder.slug(),
+            "source_id": source_id_for_embedder(embedder, chunk),
+            "source_sha256": chunk.source_sha256,
+        }))
+    } else {
+        chunk.source_sha256.clone()
+    };
+    ForwardInputIdentity {
+        input_sha256,
+        policy,
+    }
+}
+
 fn forward_record(
     embedder: EmbedderId,
     chunk: &ChunkRow,
-    output: context_graph_mejepa_embedders::EmbedderOutput,
+    input_identity: &ForwardInputIdentity,
+    output: EmbedderOutput,
 ) -> ForwardRecord {
     let vector_sha256 = vector_sha256(&output.vector);
     let instrument_id = instrument_id(embedder);
@@ -838,7 +1022,9 @@ fn forward_record(
         "instrument_record_id": sha256_prefixed(instrument_id.as_bytes()),
         "preprocessing_hash": preprocessing_hash,
         "model_hash": model_hash,
-        "input_sha256": chunk.source_sha256,
+        "input_sha256": input_identity.input_sha256,
+        "source_text_sha256": chunk.source_sha256,
+        "forward_input_identity_policy": input_identity.policy,
         "output_feature_family": "dda_tct_embedder_vector",
     });
     let cache_key_sha256 = sha256_value(&key);
@@ -877,12 +1063,15 @@ fn forward_record(
         "candidate_row_id": chunk.candidate_row_id,
         "chunk_id": chunk.chunk_id,
         "source_sha256": chunk.source_sha256,
+        "source_text_sha256": chunk.source_sha256,
         "file_sha256": chunk.file_sha256,
         "absolute_path": chunk.absolute_path,
         "relative_path": chunk.relative_path,
         "embedder_id": embedder.slug(),
         "instrument_id": instrument_id,
         "cache_key_sha256": cache_key_sha256,
+        "input_sha256": input_identity.input_sha256,
+        "forward_input_identity_policy": input_identity.policy,
         "record_store_layout": "packed-jsonl",
         "record_sha256": "",
         "record_path": "",
@@ -935,10 +1124,7 @@ fn telemetry_row(
     config: &EnvConfig,
     forwarder: &dyn EmbedderForward,
     batch_id: &str,
-    batch_size: usize,
-    output_count: usize,
-    quarantine_count: usize,
-    latency_ms: f64,
+    counts: BatchTelemetryCounts,
 ) -> Value {
     if forwarder.supports_true_batch() {
         json!({
@@ -946,10 +1132,13 @@ fn telemetry_row(
             "artifact_kind": "python_forward_true_batch_telemetry",
             "embedder_id": forwarder.embedder().slug(),
             "batch_id": batch_id,
-            "batch_size": batch_size,
-            "output_count": output_count,
-            "quarantine_count": quarantine_count,
-            "latency_ms": latency_ms,
+            "batch_size": counts.batch_size,
+            "output_count": counts.output_count,
+            "quarantine_count": counts.quarantine_count,
+            "unique_forward_input_count": counts.unique_forward_input_count,
+            "duplicate_forward_cache_hit_count": counts.duplicate_forward_cache_hits,
+            "forward_input_identity_policy": forward_input_identity_policy(forwarder.embedder()),
+            "latency_ms": counts.latency_ms,
             "true_batch": true,
             "precision_classes": ["real_forward_or_typed_quarantine"],
             "vram_plan": {
@@ -964,10 +1153,13 @@ fn telemetry_row(
             "artifact_kind": "python_forward_algorithmic_serial_telemetry",
             "embedder_id": forwarder.embedder().slug(),
             "batch_id": batch_id,
-            "row_count": batch_size,
-            "processed_non_quarantine_count": output_count,
-            "quarantine_count": quarantine_count,
-            "latency_ms": latency_ms,
+            "row_count": counts.batch_size,
+            "processed_non_quarantine_count": counts.output_count,
+            "quarantine_count": counts.quarantine_count,
+            "unique_forward_input_count": counts.unique_forward_input_count,
+            "duplicate_forward_cache_hit_count": counts.duplicate_forward_cache_hits,
+            "forward_input_identity_policy": forward_input_identity_policy(forwarder.embedder()),
+            "latency_ms": counts.latency_ms,
             "cuda_applicable": false,
             "reason_code": "algorithmic_serial_or_typed_quarantine",
         })
@@ -1092,13 +1284,17 @@ fn distinctness_inputs_for_records(
             })?;
         let input_sha = record
             .index_row
-            .get("source_sha256")
+            .get("input_sha256")
+            .or_else(|| record.index_row.get("source_sha256"))
             .and_then(Value::as_str)
             .filter(|value| !value.trim().is_empty())
             .ok_or_else(|| {
                 RunnerError::new(
                     "MEJEPA_PY_FORWARD_INPUT_SHA256_MISSING",
-                    format!("{} forward record missing source_sha256", embedder.slug()),
+                    format!(
+                        "{} forward record missing input_sha256/source_sha256",
+                        embedder.slug()
+                    ),
                 )
             })?;
         *inputs
@@ -1381,6 +1577,7 @@ fn top_vector_collision_groups(inputs: &EmbedderDistinctnessInputs) -> Vec<Value
                 "vector_sha256": vector_sha256,
                 "row_count": row_count,
                 "unique_input_sha256_count": source_inputs.len(),
+                "input_sha256_samples": source_inputs.iter().take(5).cloned().collect::<Vec<_>>(),
                 "source_sha256_samples": source_inputs.iter().take(5).cloned().collect::<Vec<_>>(),
             })
         })
@@ -1557,6 +1754,9 @@ fn utc_now() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex};
 
     fn config(corpus_profile: &str, only_embedder: Option<EmbedderId>) -> EnvConfig {
         EnvConfig {
@@ -1572,6 +1772,112 @@ mod tests {
             corpus_profile: corpus_profile.to_string(),
             models_config: PathBuf::from("/tmp/models.toml"),
             gpu_vram_guard_bytes: 0,
+        }
+    }
+
+    fn chunk(
+        chunk_id: &str,
+        source_text: &str,
+        source_sha256: &str,
+        relative_path: &str,
+    ) -> ChunkRow {
+        ChunkRow {
+            line_number: 1,
+            chunk_id: chunk_id.to_string(),
+            source_text: source_text.to_string(),
+            source_sha256: source_sha256.to_string(),
+            file_sha256: "sha256:file".to_string(),
+            task_id: "TASK".to_string(),
+            task_instance_id: "instance".to_string(),
+            repo: "owner/repo".to_string(),
+            workspace_state: "mutated".to_string(),
+            absolute_path: format!("/tmp/repo/{relative_path}"),
+            relative_path: relative_path.to_string(),
+            mutation_category: Some("known_good".to_string()),
+            candidate_row_id: Some("sha256:candidate".to_string()),
+        }
+    }
+
+    struct CountingForwarder {
+        embedder: EmbedderId,
+        artifact_root: PathBuf,
+        calls: Arc<Mutex<usize>>,
+        true_batch: bool,
+    }
+
+    impl CountingForwarder {
+        fn new(embedder: EmbedderId, calls: Arc<Mutex<usize>>, true_batch: bool) -> Self {
+            Self {
+                embedder,
+                artifact_root: PathBuf::from("/tmp/fake-forwarder"),
+                calls,
+                true_batch,
+            }
+        }
+
+        fn output(
+            &self,
+            input: &EmbedderInput,
+            ordinal: usize,
+            precision_class: &str,
+        ) -> EmbedderOutput {
+            let mut vector = vec![0.0; self.embedder.dimension()];
+            vector[0] = ordinal as f32;
+            EmbedderOutput {
+                embedder: self.embedder,
+                source_id: input.source_id.clone(),
+                vector,
+                model_version: "fake-forwarder-v1".to_string(),
+                precision_class: precision_class.to_string(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl EmbedderForward for CountingForwarder {
+        fn embedder(&self) -> EmbedderId {
+            self.embedder
+        }
+
+        fn model_version(&self) -> &str {
+            "fake-forwarder-v1"
+        }
+
+        fn artifact_root(&self) -> &Path {
+            &self.artifact_root
+        }
+
+        async fn forward(
+            &self,
+            input: &EmbedderInput,
+        ) -> context_graph_mejepa_embedders::EmbedResult<EmbedderOutput> {
+            let ordinal = {
+                let mut calls = self.calls.lock().expect("calls mutex poisoned");
+                *calls += 1;
+                *calls
+            };
+            Ok(self.output(input, ordinal, "fake_serial_forward"))
+        }
+
+        fn supports_true_batch(&self) -> bool {
+            self.true_batch
+        }
+
+        async fn forward_true_batch(
+            &self,
+            inputs: &[EmbedderInput],
+        ) -> context_graph_mejepa_embedders::EmbedResult<Vec<EmbedderOutput>> {
+            let start = {
+                let mut calls = self.calls.lock().expect("calls mutex poisoned");
+                let start = *calls;
+                *calls += inputs.len();
+                start
+            };
+            Ok(inputs
+                .iter()
+                .enumerate()
+                .map(|(idx, input)| self.output(input, start + idx + 1, "fake_true_batch_forward"))
+                .collect())
         }
     }
 
@@ -1634,6 +1940,93 @@ mod tests {
             Some(value) => env::set_var(key, value),
             None => env::remove_var(key),
         }
+    }
+
+    #[test]
+    fn forward_input_identity_uses_e7_source_path_context() {
+        let left = chunk("chunk-left", "print(1)\n", "sha256:source-a", "pkg/a.py");
+        let right = chunk("chunk-right", "print(1)\n", "sha256:source-a", "pkg/b.py");
+        let same_path = chunk("chunk-same", "print(1)\n", "sha256:source-a", "pkg/a.py");
+
+        let left_e7 = forward_input_identity(EmbedderId::E7, &left);
+        let right_e7 = forward_input_identity(EmbedderId::E7, &right);
+        let same_path_e7 = forward_input_identity(EmbedderId::E7, &same_path);
+
+        assert_eq!(left_e7.policy, "e7_source_path_and_source_text_sha256_v1");
+        assert_ne!(left_e7.input_sha256, right_e7.input_sha256);
+        assert_eq!(left_e7.input_sha256, same_path_e7.input_sha256);
+
+        let left_e1 = forward_input_identity(EmbedderId::E1, &left);
+        let right_e1 = forward_input_identity(EmbedderId::E1, &right);
+        assert_eq!(left_e1.policy, "source_text_sha256_v1");
+        assert_eq!(left_e1.input_sha256, "sha256:source-a");
+        assert_eq!(left_e1.input_sha256, right_e1.input_sha256);
+    }
+
+    #[tokio::test]
+    async fn run_embedder_batches_reuses_duplicate_forward_inputs() {
+        let mut config = config(STATIC_AST_CORPUS_PROFILE, Some(EmbedderId::E7));
+        config.true_batch_size = 8;
+        let calls = Arc::new(Mutex::new(0usize));
+        let forwarder = CountingForwarder::new(EmbedderId::E7, Arc::clone(&calls), true);
+        let rows = vec![
+            chunk("chunk-a", "print(1)\n", "sha256:source-a", "pkg/a.py"),
+            chunk("chunk-b", "print(1)\n", "sha256:source-a", "pkg/a.py"),
+        ];
+        let mut batch_counter = 0usize;
+
+        let results = run_embedder_batches(&config, &rows, &forwarder, &mut batch_counter).await;
+
+        assert_eq!(batch_counter, 1);
+        assert_eq!(*calls.lock().expect("calls mutex poisoned"), 1);
+        assert_eq!(results.len(), 1);
+        let result = &results[0];
+        assert_eq!(result.records.len(), 2);
+        assert_eq!(result.quarantines.len(), 0);
+        assert_eq!(result.unique_forward_input_count, 1);
+        assert_eq!(result.duplicate_forward_cache_hits, 1);
+        assert_eq!(result.telemetry["unique_forward_input_count"], json!(1));
+        assert_eq!(
+            result.telemetry["duplicate_forward_cache_hit_count"],
+            json!(1)
+        );
+        assert_eq!(
+            result.records[0].index_row["input_sha256"],
+            result.records[1].index_row["input_sha256"]
+        );
+        assert_eq!(
+            result.records[0].index_row["vector_sha256"],
+            result.records[1].index_row["vector_sha256"]
+        );
+    }
+
+    #[test]
+    fn distinctness_inputs_prefers_explicit_input_sha256() {
+        let records = vec![
+            ForwardRecord {
+                index_row: json!({
+                    "input_sha256": "sha256:input-a",
+                    "source_sha256": "sha256:source-a",
+                    "vector_sha256": "sha256:vector-a",
+                }),
+                packed_record: json!({}),
+            },
+            ForwardRecord {
+                index_row: json!({
+                    "input_sha256": "sha256:input-b",
+                    "source_sha256": "sha256:source-a",
+                    "vector_sha256": "sha256:vector-b",
+                }),
+                packed_record: json!({}),
+            },
+        ];
+
+        let inputs = distinctness_inputs_for_records(EmbedderId::E7, &records).unwrap();
+
+        assert_eq!(inputs.input_counts.len(), 2);
+        assert_eq!(inputs.input_to_vectors["sha256:input-a"].len(), 1);
+        assert_eq!(inputs.input_to_vectors["sha256:input-b"].len(), 1);
+        assert!(!inputs.input_to_vectors.contains_key("sha256:source-a"));
     }
 
     fn distinctness_inputs_from_pairs(pairs: &[(&str, &str)]) -> EmbedderDistinctnessInputs {
