@@ -48,7 +48,7 @@ use crate::failure_fingerprint::{
 use crate::gates::{check_source_sha_drift, replay_witness_segment};
 use crate::hierarchical::build_hierarchical_prediction;
 use crate::objective_safety::{evaluate_mejepa_objective, MejepaObjective, ObjectiveSafetyReport};
-use crate::ood::{compute_ood_score, squared_l2};
+use crate::ood::{per_slot_residual_scores, SlotResidualScore};
 use crate::ood_harvest::{
     apply_ood_gate_decision, OodCalibrationReport, OodGateDecision, OOD_CALIBRATOR_MISSING,
 };
@@ -498,9 +498,20 @@ impl MeJepaCompiler {
             constellation_intelligence = Some(intelligence);
         }
         oracle.validate()?;
-        let ood_score =
-            compute_ood_score(predicted.data(), target.data(), calibration.sigma_squared)?;
         let ood_threshold = self.ood_threshold_for_compilation()?;
+        let slot_ood_scores =
+            per_slot_residual_scores(&predicted, &target, calibration.sigma_squared)?;
+        let ood_score = slot_ood_scores
+            .iter()
+            .map(|score| score.score)
+            .fold(0.0_f32, f32::max);
+        let per_slot_ood_assessment = per_slot_ood_assessment_from_residual_scores(
+            &slot_ood_scores,
+            ood_threshold,
+            &calibration.version,
+        )?;
+        let mut per_slot_ood_reasons = per_slot_ood_assessment.reasons;
+        let slot_specific_ood_guard_count = per_slot_ood_assessment.slot_specific_guard_count;
         let train_certs = self
             .store
             .read_recent_train_certs(self.config.train_cert_window_steps)?;
@@ -561,7 +572,8 @@ impl MeJepaCompiler {
             predicted_failed_test_count: phase_b_surfaces.predicted_failed_tests.len(),
             predicted_works: &phase_b_surfaces.predicted_works,
             security_concern_count: phase_b_surfaces.predicted_security_concerns.len(),
-            guard_violation_count: phase_b_surfaces.guard_violations.len(),
+            guard_violation_count: phase_b_surfaces.guard_violations.len()
+                + slot_specific_ood_guard_count,
             ood_score,
             confidence_interval: &confidence_interval,
             pass_threshold: self.config.p_test_threshold,
@@ -595,10 +607,10 @@ impl MeJepaCompiler {
             &mut oracle.granger_attestations,
             &verdict_output.contradiction,
         )?;
-        let per_slot_ood_reasons = per_slot_ood_reasons_from_guard_violations(
+        per_slot_ood_reasons.extend(per_slot_ood_reasons_from_guard_violations(
             &phase_b_surfaces.guard_violations,
             &calibration.version,
-        )?;
+        )?);
         let fingerprint_evidence =
             self.live_fingerprint_evidence_for_panel(&predicted, verdict, context, prediction_id)?;
         // F-005 fix: chain-of-custody requires a reproducible constellation version_id.
@@ -2309,6 +2321,82 @@ fn per_slot_ood_reasons_from_guard_violations(
         .collect()
 }
 
+struct PerSlotOodAssessment {
+    reasons: Vec<PerSlotOodReason>,
+    slot_specific_guard_count: usize,
+}
+
+fn per_slot_ood_assessment_from_residual_scores(
+    scores: &[SlotResidualScore],
+    threshold: f32,
+    calibration_version: &str,
+) -> Result<PerSlotOodAssessment, MejepaInferError> {
+    let triggered = scores
+        .iter()
+        .filter(|score| score.score >= threshold)
+        .collect::<Vec<_>>();
+    if triggered.is_empty() {
+        return Ok(PerSlotOodAssessment {
+            reasons: Vec::new(),
+            slot_specific_guard_count: 0,
+        });
+    }
+    if let [score] = triggered.as_slice() {
+        let reason = PerSlotOodReason {
+            embedder: EmbedderId(score.slot.slug().to_string()),
+            chunk: None,
+            reason: PerSlotOodReasonKind::SlotThresholdExceeded,
+            observed_score: score.score,
+            threshold,
+            margin: (score.score - threshold).max(0.0),
+            calibration_version: calibration_version.to_string(),
+            evidence: format!(
+                "slot-preserving OOD residual: slot={} norm_sq={} score={} threshold={}",
+                score.slot.slug(),
+                score.norm_sq,
+                score.score,
+                threshold
+            ),
+        };
+        reason.validate()?;
+        return Ok(PerSlotOodAssessment {
+            reasons: vec![reason],
+            slot_specific_guard_count: 1,
+        });
+    }
+    let max_score = triggered
+        .iter()
+        .max_by(|left, right| left.score.total_cmp(&right.score))
+        .expect("triggered is non-empty");
+    let triggered_slots = triggered
+        .iter()
+        .map(|score| score.slot.slug())
+        .collect::<Vec<_>>()
+        .join(",");
+    let reason = PerSlotOodReason {
+        embedder: EmbedderId("diffuse".to_string()),
+        chunk: None,
+        reason: PerSlotOodReasonKind::DiffuseSlotThresholdExceeded,
+        observed_score: max_score.score,
+        threshold,
+        margin: (max_score.score - threshold).max(0.0),
+        calibration_version: calibration_version.to_string(),
+        evidence: format!(
+            "slot-preserving OOD residual: slot_attribution=diffuse triggered_slots={} max_slot={} max_norm_sq={} max_score={} threshold={}",
+            triggered_slots,
+            max_score.slot.slug(),
+            max_score.norm_sq,
+            max_score.score,
+            threshold
+        ),
+    };
+    reason.validate()?;
+    Ok(PerSlotOodAssessment {
+        reasons: vec![reason],
+        slot_specific_guard_count: 0,
+    })
+}
+
 fn objective_report_for_prediction(
     patch: &PatchBundle,
     prediction: &RealityPrediction,
@@ -2642,10 +2730,6 @@ impl ConstellationGuard for TctConstellationGuard {
     }
 }
 
-pub fn residual_norm_sq(predicted: &Panel, target: &Panel) -> Result<f32, MejepaInferError> {
-    squared_l2(predicted.data(), target.data())
-}
-
 fn synthetic_panel_for_scenario(scenario: u8, force_ood: bool) -> Result<Panel, MejepaInferError> {
     let base = if force_ood {
         2.0
@@ -2697,7 +2781,32 @@ fn tct_cell_id(
 mod tests {
     use super::*;
     use crate::gates::{sha256_bytes, valid_witness_segment};
-    use crate::types::{AstDiff, DiffHunk, Language, TaskEnvironment, TaskId, TestId};
+    use crate::store::RocksDbInferStore;
+    use crate::types::{AstDiff, DiffHunk, Language, TaskEnvironment, TaskId, TestId, Verdict};
+    use context_graph_mejepa_instruments::PANEL_DIM;
+    use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+
+    #[derive(Clone)]
+    struct FixedPanelPredictor {
+        panel: Panel,
+    }
+
+    impl Predictor for FixedPanelPredictor {
+        fn predict(&self, _panel_t0: &Panel, _panel_t1: &Panel) -> Result<Panel, MejepaInferError> {
+            Ok(self.panel.clone())
+        }
+    }
+
+    #[derive(Clone)]
+    struct FixedPanelTarget {
+        panel: Panel,
+    }
+
+    impl FrozenTarget for FixedPanelTarget {
+        fn target(&self, _panel_t2: &Panel) -> Result<Panel, MejepaInferError> {
+            Ok(self.panel.clone())
+        }
+    }
 
     fn sample_patch_context(commit_message: &str) -> (PatchBundle, TaskContext) {
         let before = "def answer(value: int) -> int:\n    return value + 1\n";
@@ -2732,6 +2841,66 @@ mod tests {
             skill_citations: vec![],
         };
         (patch, context)
+    }
+
+    fn panel_with_slot_delta(slot: InstrumentSlot, delta: f32) -> Panel {
+        let mut data = vec![0.0_f32; PANEL_DIM];
+        data[slot.offset()] = delta;
+        Panel::try_new(data, (1u16 << InstrumentSlot::all().len()) - 1).unwrap()
+    }
+
+    fn panel_with_all_slot_deltas(delta: f32) -> Panel {
+        let mut data = vec![0.0_f32; PANEL_DIM];
+        for slot in InstrumentSlot::all() {
+            data[slot.offset()] = delta;
+        }
+        Panel::try_new(data, (1u16 << InstrumentSlot::all().len()) - 1).unwrap()
+    }
+
+    fn seed_calibration(calibration: &CalibrationStore) {
+        let examples = (0..40)
+            .map(|idx| CalibrationExample {
+                language: Language::Python,
+                predicted_test_pass: vec![if idx % 10 == 0 { 0.2 } else { 0.95 }],
+                actual_test_pass: vec![if idx % 10 == 0 { 0.0 } else { 1.0 }],
+            })
+            .collect::<Vec<_>>();
+        calibration
+            .calibrate(
+                &examples,
+                &[0.01; 40],
+                0.10,
+                30,
+                0.30,
+                [7; 32],
+                BTreeMap::new(),
+            )
+            .unwrap();
+    }
+
+    fn compiler_with_fixed_panels(
+        db: Arc<rocksdb::DB>,
+        predicted: Panel,
+        target: Panel,
+    ) -> MeJepaCompiler {
+        let calibration = CalibrationStore::new(db.clone(), 30).unwrap();
+        seed_calibration(&calibration);
+        let config = MeJepaInferConfig {
+            pause_state_path: None,
+            ..MeJepaInferConfig::default()
+        };
+        MeJepaCompiler::new(
+            config,
+            Arc::new(FixedPanelPredictor { panel: predicted }),
+            Arc::new(FixedPanelTarget { panel: target }),
+            Arc::new(DeterministicOracleHead),
+            Arc::new(DeterministicConstellationGuard::default()),
+            Arc::new(PatchWitnessReader),
+            Arc::new(RocksDbInferStore::new(db)),
+            calibration,
+            PathBuf::from("/zfs/archive/contextgraph/test-repo"),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -2863,6 +3032,55 @@ mod tests {
         let threshold = ood_threshold_from_selected_report(Some(&report), true, 0.42).unwrap();
         println!("FSV after: outcome=Ok threshold={threshold}");
         assert_eq!(threshold, 0.67);
+    }
+
+    #[test]
+    fn compile_with_panel_reports_single_slot_ood_as_guard_rejected() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = crate::calibration::open_infer_rocksdb(temp.path()).unwrap();
+        let compiler = compiler_with_fixed_panels(
+            db,
+            panel_with_slot_delta(InstrumentSlot::EReasoning, 3.0),
+            panel_with_slot_delta(InstrumentSlot::EReasoning, 0.0),
+        );
+        let (patch, context) = sample_patch_context("slot isolated reasoning residual");
+
+        let (prediction, _) = compiler.compile_with_panel(&patch, &context).unwrap();
+
+        assert_eq!(prediction.verdict, Verdict::GuardRejected);
+        assert_eq!(prediction.per_slot_ood_reasons.len(), 1);
+        let reason = &prediction.per_slot_ood_reasons[0];
+        assert_eq!(reason.embedder.0, InstrumentSlot::EReasoning.slug());
+        assert_eq!(reason.reason, PerSlotOodReasonKind::SlotThresholdExceeded);
+        assert!(reason.evidence.contains("slot=e_reasoning"));
+        assert!(reason.evidence.contains("norm_sq=9"));
+        assert!(prediction.ood_score >= compiler.config.ood_refuse_threshold);
+    }
+
+    #[test]
+    fn compile_with_panel_reports_multi_slot_ood_as_diffuse_generic_ood() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = crate::calibration::open_infer_rocksdb(temp.path()).unwrap();
+        let compiler = compiler_with_fixed_panels(
+            db,
+            panel_with_all_slot_deltas(3.0),
+            panel_with_all_slot_deltas(0.0),
+        );
+        let (patch, context) = sample_patch_context("diffuse residual across all slots");
+
+        let (prediction, _) = compiler.compile_with_panel(&patch, &context).unwrap();
+
+        assert_eq!(prediction.verdict, Verdict::OutOfDistribution);
+        assert_eq!(prediction.per_slot_ood_reasons.len(), 1);
+        let reason = &prediction.per_slot_ood_reasons[0];
+        assert_eq!(reason.embedder.0, "diffuse");
+        assert_eq!(
+            reason.reason,
+            PerSlotOodReasonKind::DiffuseSlotThresholdExceeded
+        );
+        assert!(reason.evidence.contains("slot_attribution=diffuse"));
+        assert!(reason.evidence.contains("triggered_slots=e_ast"));
+        assert!(prediction.ood_score >= compiler.config.ood_refuse_threshold);
     }
 
     #[test]

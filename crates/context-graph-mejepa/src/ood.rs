@@ -1,32 +1,42 @@
+use context_graph_mejepa_instruments::{InstrumentSlot, Panel};
+
 use crate::error::MejepaInferError;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SlotResidualScore {
+    pub slot: InstrumentSlot,
+    pub norm_sq: f32,
+    pub score: f32,
+}
+
 pub fn compute_ood_score(
-    predicted: &[f32],
-    target: &[f32],
+    predicted: &Panel,
+    target: &Panel,
     sigma_squared: f32,
 ) -> Result<f32, MejepaInferError> {
-    if predicted.len() != target.len() {
-        return Err(MejepaInferError::DimMismatch {
-            expected: target.len(),
-            actual: predicted.len(),
-            context: "compute_ood_score predicted/target len mismatch".to_string(),
+    let scores = per_slot_residual_scores(predicted, target, sigma_squared)?;
+    Ok(scores
+        .iter()
+        .map(|score| score.score)
+        .fold(0.0_f32, f32::max))
+}
+
+pub fn per_slot_residual_scores(
+    predicted: &Panel,
+    target: &Panel,
+    sigma_squared: f32,
+) -> Result<Vec<SlotResidualScore>, MejepaInferError> {
+    validate_sigma_squared(sigma_squared)?;
+    let mut scores = Vec::with_capacity(InstrumentSlot::all().len());
+    for slot in InstrumentSlot::all() {
+        let norm_sq = squared_l2(predicted.slot(slot), target.slot(slot))?;
+        scores.push(SlotResidualScore {
+            slot,
+            norm_sq,
+            score: ood_score_from_norm_sq(norm_sq, sigma_squared),
         });
     }
-    if predicted.is_empty() {
-        return Err(MejepaInferError::DimMismatch {
-            expected: 1,
-            actual: 0,
-            context: "compute_ood_score requires non-empty vectors".to_string(),
-        });
-    }
-    if !sigma_squared.is_finite() || sigma_squared <= 0.0 {
-        return Err(MejepaInferError::InvalidInput {
-            field: "sigma_squared".to_string(),
-            detail: format!("sigma_squared must be finite and > 0; got {sigma_squared}"),
-        });
-    }
-    let norm_sq = squared_l2(predicted, target)?;
-    Ok(ood_score_from_norm_sq(norm_sq, sigma_squared))
+    Ok(scores)
 }
 
 pub fn ood_score_from_norm_sq(norm_sq: f32, sigma_squared: f32) -> f32 {
@@ -138,6 +148,16 @@ pub fn squared_l2(left: &[f32], right: &[f32]) -> Result<f32, MejepaInferError> 
     Ok(total)
 }
 
+fn validate_sigma_squared(sigma_squared: f32) -> Result<(), MejepaInferError> {
+    if !sigma_squared.is_finite() || sigma_squared <= 0.0 {
+        return Err(MejepaInferError::InvalidInput {
+            field: "sigma_squared".to_string(),
+            detail: format!("sigma_squared must be finite and > 0; got {sigma_squared}"),
+        });
+    }
+    Ok(())
+}
+
 fn mean_score(norm_sq: &[f32], sigma_squared: f32) -> f32 {
     norm_sq
         .iter()
@@ -159,12 +179,48 @@ fn validate_score(name: &str, idx: usize, value: f32) -> Result<(), MejepaInferE
 #[cfg(test)]
 mod tests {
     use super::*;
+    use context_graph_mejepa_instruments::{InstrumentSlot, PANEL_DIM};
+
+    fn panel_with_slot_delta(slot: InstrumentSlot, delta: f32) -> Panel {
+        let mut data = vec![0.0_f32; PANEL_DIM];
+        data[slot.offset()] = delta;
+        Panel::try_new(data, (1u16 << InstrumentSlot::all().len()) - 1).unwrap()
+    }
 
     #[test]
     fn ood_score_uses_expected_formula() {
-        let score = compute_ood_score(&[1.0, 1.0], &[0.0, 1.0], 2.0).unwrap();
+        let predicted = panel_with_slot_delta(InstrumentSlot::EAst, 1.0);
+        let target = panel_with_slot_delta(InstrumentSlot::EAst, 0.0);
+        let score = compute_ood_score(&predicted, &target, 2.0).unwrap();
         let expected = 1.0 - (-0.5f32).exp();
         assert!((score - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ood_score_keeps_slot_residual_identity() {
+        let predicted = panel_with_slot_delta(InstrumentSlot::EReasoning, 3.0);
+        let target = panel_with_slot_delta(InstrumentSlot::EReasoning, 0.0);
+        let scores = per_slot_residual_scores(&predicted, &target, 2.0).unwrap();
+        let max_slot = scores
+            .iter()
+            .max_by(|left, right| left.score.total_cmp(&right.score))
+            .unwrap();
+
+        assert_eq!(max_slot.slot, InstrumentSlot::EReasoning);
+        assert_eq!(max_slot.norm_sq, 9.0);
+        assert_eq!(
+            compute_ood_score(&predicted, &target, 2.0).unwrap(),
+            max_slot.score
+        );
+    }
+
+    #[test]
+    fn ood_score_rejects_invalid_sigma_before_scoring() {
+        let predicted = panel_with_slot_delta(InstrumentSlot::EAst, 1.0);
+        let target = panel_with_slot_delta(InstrumentSlot::EAst, 0.0);
+        let err = compute_ood_score(&predicted, &target, 0.0).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_INVALID_INPUT");
+        assert!(err.to_string().contains("sigma_squared"));
     }
 
     #[test]

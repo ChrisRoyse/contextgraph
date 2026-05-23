@@ -72,17 +72,17 @@ pub fn assemble_verdict_with_evidence(input: VerdictAssemblyInput<'_>) -> Verdic
             contradiction,
         };
     }
+    if input.guard_violation_count > 0 {
+        return VerdictAssemblyOutput {
+            verdict: Verdict::GuardRejected,
+            contradiction,
+        };
+    }
     if input.ood_score >= input.ood_threshold
         || input.confidence_interval.width() > input.interval_width_threshold
     {
         return VerdictAssemblyOutput {
             verdict: Verdict::OutOfDistribution,
-            contradiction,
-        };
-    }
-    if input.guard_violation_count > 0 {
-        return VerdictAssemblyOutput {
-            verdict: Verdict::GuardRejected,
             contradiction,
         };
     }
@@ -225,6 +225,30 @@ mod tests {
             ood_threshold: 0.9,
             interval_width_threshold: 0.5,
             safety_constraint_violation_count: 1,
+            objective_total_cost: 0.01,
+            objective_cost_ceiling: 0.65,
+            constellation_verdict_pressure: 0.0,
+        });
+        assert_eq!(verdict, Verdict::GuardRejected);
+    }
+
+    #[test]
+    fn guard_violation_takes_precedence_over_generic_ood() {
+        let verdict = assemble_verdict(VerdictAssemblyInput {
+            contradiction_cell_id: None,
+            contradiction_thresholds: None,
+            oracle_pass_confidence: 0.99,
+            failure_modes: &[],
+            predicted_failed_test_count: 0,
+            predicted_works: &[],
+            security_concern_count: 0,
+            guard_violation_count: 1,
+            ood_score: 0.99,
+            confidence_interval: &interval(0.95, 0.99),
+            pass_threshold: 0.8,
+            ood_threshold: 0.5,
+            interval_width_threshold: 0.5,
+            safety_constraint_violation_count: 0,
             objective_total_cost: 0.01,
             objective_cost_ceiling: 0.65,
             constellation_verdict_pressure: 0.0,

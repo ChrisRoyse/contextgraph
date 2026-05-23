@@ -100,10 +100,10 @@ pub use chunk_foundationality::*;
 pub use claim_graph::*;
 pub use cli::*;
 pub use compiler::{
-    materialize_inference_panels, panel_sha, residual_norm_sq, ColdCellMetric,
-    ConstellationCellSupport, ConstellationDecision, ConstellationGuard,
-    DeterministicConstellationGuard, DeterministicOracleHead, DeterministicPredictor, FrozenTarget,
-    IdentityFrozenTarget, MeJepaCompiler, MejepaStore, OracleScores, PatchWitnessReader, Predictor,
+    materialize_inference_panels, panel_sha, ColdCellMetric, ConstellationCellSupport,
+    ConstellationDecision, ConstellationGuard, DeterministicConstellationGuard,
+    DeterministicOracleHead, DeterministicPredictor, FrozenTarget, IdentityFrozenTarget,
+    MeJepaCompiler, MejepaStore, OracleScores, PatchWitnessReader, Predictor,
     TctConstellationGuard, TrainCertSummary, WitnessChainReader,
 };
 pub use config::{

@@ -1788,6 +1788,7 @@ impl PredictionLabelContextLegacyV1 {
 #[serde(rename_all = "snake_case")]
 pub enum PerSlotOodReasonKind {
     SlotThresholdExceeded,
+    DiffuseSlotThresholdExceeded,
     MissingSlotObservation,
     StaleCalibration,
     InvalidCalibration,
