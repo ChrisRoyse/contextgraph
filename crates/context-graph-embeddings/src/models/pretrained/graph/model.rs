@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
-use candle_core::Tensor;
+use candle_core::{Device, Tensor};
 
 use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::gpu::{init_gpu, GpuModelLoader};
@@ -218,14 +218,16 @@ impl GraphModel {
                 message: format!("GraphModel failed to acquire read lock: {}", e),
             })?;
 
-        let (weights, tokenizer) = match &*state {
+        let (weights, tokenizer, projection) = match &*state {
             ModelState::Loaded {
-                weights, tokenizer, ..
-            } => (weights, tokenizer),
+                weights,
+                tokenizer,
+                projection,
+            } => (weights, tokenizer, projection),
             _ => {
                 return Err(EmbeddingError::NotInitialized {
                     model_id: ModelId::Graph,
-                })
+                });
             }
         };
 
@@ -243,11 +245,15 @@ impl GraphModel {
             },
         )?;
 
+        let device = init_gpu().map_err(|e| EmbeddingError::GpuError {
+            message: format!("GraphModel GPU init for batch projection failed: {}", e),
+        })?;
         let latency_us = ((start.elapsed().as_micros() as u64) / inputs.len() as u64).max(1);
         vectors
             .into_iter()
             .map(|vector| {
-                let embedding = ModelEmbedding::new(ModelId::Graph, vector, latency_us);
+                let projected = project_source_vector(projection, &vector, device)?;
+                let embedding = ModelEmbedding::new(ModelId::Graph, projected, latency_us);
                 embedding.validate()?;
                 Ok(embedding)
             })
@@ -345,25 +351,11 @@ impl GraphModel {
                 // Step 1: Get base embedding via standard forward pass
                 let base_embedding = gpu_forward(&prefixed, weights, tokenizer)?;
 
-                // Step 2: Convert to tensor for projection
                 let device = init_gpu().map_err(|e| EmbeddingError::GpuError {
                     message: format!("GraphModel GPU init for projection failed: {}", e),
                 })?;
-
-                let base_tensor = Tensor::from_slice(&base_embedding, (1, GRAPH_DIMENSION), device)
-                    .map_err(|e| EmbeddingError::GpuError {
-                        message: format!("Failed to create base embedding tensor: {}", e),
-                    })?;
-
-                // Step 3: Apply source projection
-                let source_tensor = projection.project_source(&base_tensor)?;
-                let source_normalized = l2_normalize_tensor(&source_tensor)?;
-                let source_vec = tensor_to_vec(&source_normalized)?;
-
-                // Step 4: Apply target projection
-                let target_tensor = projection.project_target(&base_tensor)?;
-                let target_normalized = l2_normalize_tensor(&target_tensor)?;
-                let target_vec = tensor_to_vec(&target_normalized)?;
+                let source_vec = project_source_vector(projection, &base_embedding, device)?;
+                let target_vec = project_target_vector(projection, &base_embedding, device)?;
 
                 // Step 5: Validate dimensions (fail fast on implementation error)
                 if source_vec.len() != GRAPH_DIMENSION || target_vec.len() != GRAPH_DIMENSION {
@@ -415,6 +407,41 @@ fn l2_normalize_tensor(tensor: &Tensor) -> EmbeddingResult<Tensor> {
         })
 }
 
+fn vector_to_tensor(vector: &[f32], device: &Device) -> EmbeddingResult<Tensor> {
+    if vector.len() != GRAPH_DIMENSION {
+        return Err(EmbeddingError::InvalidDimension {
+            expected: GRAPH_DIMENSION,
+            actual: vector.len(),
+        });
+    }
+
+    Tensor::from_slice(vector, (1, GRAPH_DIMENSION), device).map_err(|e| EmbeddingError::GpuError {
+        message: format!("Failed to create graph base embedding tensor: {}", e),
+    })
+}
+
+fn project_source_vector(
+    projection: &GraphProjectionWeights,
+    base_embedding: &[f32],
+    device: &Device,
+) -> EmbeddingResult<Vec<f32>> {
+    let base_tensor = vector_to_tensor(base_embedding, device)?;
+    let source_tensor = projection.project_source(&base_tensor)?;
+    let source_normalized = l2_normalize_tensor(&source_tensor)?;
+    tensor_to_vec(&source_normalized)
+}
+
+fn project_target_vector(
+    projection: &GraphProjectionWeights,
+    base_embedding: &[f32],
+    device: &Device,
+) -> EmbeddingResult<Vec<f32>> {
+    let base_tensor = vector_to_tensor(base_embedding, device)?;
+    let target_tensor = projection.project_target(&base_tensor)?;
+    let target_normalized = l2_normalize_tensor(&target_tensor)?;
+    tensor_to_vec(&target_normalized)
+}
+
 /// Convert tensor to Vec<f32>.
 fn tensor_to_vec(tensor: &Tensor) -> EmbeddingResult<Vec<f32>> {
     let flattened = tensor.flatten_all().map_err(|e| EmbeddingError::GpuError {
@@ -464,22 +491,30 @@ impl EmbeddingModel for GraphModel {
                 message: format!("GraphModel failed to acquire read lock: {}", e),
             })?;
 
-        let (weights, tokenizer) = match &*state {
+        let (weights, tokenizer, projection) = match &*state {
             ModelState::Loaded {
-                weights, tokenizer, ..
-            } => (weights, tokenizer),
+                weights,
+                tokenizer,
+                projection,
+            } => (weights, tokenizer, projection),
             _ => {
                 return Err(EmbeddingError::NotInitialized {
                     model_id: ModelId::Graph,
-                })
+                });
             }
         };
 
         // H1 FIX: e5-large-v2 requires "passage: " prefix for documents.
         let prefixed = format!("passage: {}", content);
-        let vector = gpu_forward(&prefixed, weights, tokenizer)?;
+        let base_vector = gpu_forward(&prefixed, weights, tokenizer)?;
+        let device = init_gpu().map_err(|e| EmbeddingError::GpuError {
+            message: format!("GraphModel GPU init for source projection failed: {}", e),
+        })?;
+        let vector = project_source_vector(projection, &base_vector, device)?;
         let latency_us = start.elapsed().as_micros() as u64;
-        Ok(ModelEmbedding::new(ModelId::Graph, vector, latency_us))
+        let embedding = ModelEmbedding::new(ModelId::Graph, vector, latency_us);
+        embedding.validate()?;
+        Ok(embedding)
     }
 
     fn supports_true_batch(&self) -> bool {
