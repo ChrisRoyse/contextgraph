@@ -16,6 +16,7 @@ struct Cli {
 enum Command {
     Train(Box<cli::TrainArgs>),
     VerifyChain(cli::VerifyChainArgs),
+    VerifyCheckpoint(cli::VerifyCheckpointArgs),
     EvalHoldout(cli::EvalHoldoutArgs),
 }
 
@@ -24,6 +25,7 @@ fn main() -> std::process::ExitCode {
     match cli.command {
         Command::Train(args) => cli::run_train(*args),
         Command::VerifyChain(args) => cli::run_verify_chain(args),
+        Command::VerifyCheckpoint(args) => cli::run_verify_checkpoint(args),
         Command::EvalHoldout(args) => cli::run_eval_holdout(args),
     }
 }

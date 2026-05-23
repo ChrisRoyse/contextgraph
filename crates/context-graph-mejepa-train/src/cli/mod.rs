@@ -8,7 +8,10 @@ use crate::eval::{Lang, MutationCategory};
 use crate::trainer::{Trainer, TrainingDataset};
 use candle_core::{Device, Tensor};
 use clap::Args;
-use context_graph_mejepa::{FrozenTargetAdapter, MeJepaPredictor, PredictorConfig, PANEL_DIM};
+use context_graph_mejepa::{
+    load_verified_trained_predictor_checkpoint, predictor_weight_content_sha256,
+    FrozenTargetAdapter, MeJepaPredictor, PredictorConfig, PANEL_DIM,
+};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -89,6 +92,20 @@ pub struct VerifyChainArgs {
 }
 
 #[derive(Args, Debug, Clone)]
+pub struct VerifyCheckpointArgs {
+    #[arg(long)]
+    pub manifest: PathBuf,
+    #[arg(long, name = "predictor-num-tests", default_value_t = 1)]
+    pub predictor_num_tests: usize,
+    #[arg(long, name = "predictor-num-layers")]
+    pub predictor_num_layers: Option<u8>,
+    #[arg(long, name = "predictor-hidden-dim")]
+    pub predictor_hidden_dim: Option<u32>,
+    #[arg(long, name = "predictor-num-heads")]
+    pub predictor_num_heads: Option<u8>,
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct EvalHoldoutArgs {
     #[arg(long)]
     pub weights: PathBuf,
@@ -98,6 +115,19 @@ pub struct EvalHoldoutArgs {
     pub constellation: Option<PathBuf>,
     #[arg(long, default_value_t = 0.10)]
     pub alpha: f32,
+}
+
+pub fn run_verify_checkpoint(args: VerifyCheckpointArgs) -> ExitCode {
+    match run_verify_checkpoint_inner(args) {
+        Ok(value) => {
+            println!(
+                "{}",
+                serde_json::to_string(&value).expect("serialize checkpoint verification")
+            );
+            ExitCode::from(0)
+        }
+        Err(err) => exit_for_error(err),
+    }
 }
 
 pub fn run_train(args: TrainArgs) -> ExitCode {
@@ -150,6 +180,63 @@ pub fn run_eval_holdout(args: EvalHoldoutArgs) -> ExitCode {
         json!({"status":"validated_inputs","weights":args.weights,"holdout":args.holdout,"alpha":args.alpha})
     );
     ExitCode::from(0)
+}
+
+fn run_verify_checkpoint_inner(
+    args: VerifyCheckpointArgs,
+) -> Result<serde_json::Value, TrainerError> {
+    if args.predictor_num_tests == 0 {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "--predictor-num-tests must be > 0 for checkpoint verification",
+        ));
+    }
+    let predictor_config = predictor_config_from_parts(
+        args.predictor_num_layers,
+        args.predictor_hidden_dim,
+        args.predictor_num_heads,
+    )?;
+    let device = Device::new_cuda(0)?;
+    let mut predictor = MeJepaPredictor::new(
+        predictor_config.clone(),
+        FrozenTargetAdapter::empty_for_test(),
+        device,
+        args.predictor_num_tests,
+    )
+    .map_err(predictor_error)?;
+    let loaded = load_verified_trained_predictor_checkpoint(
+        &mut predictor,
+        &args.manifest,
+        &predictor_config,
+    )
+    .map_err(predictor_error)?;
+    let observed_loaded_weight_sha256 =
+        predictor_weight_content_sha256(&predictor).map_err(predictor_error)?;
+    if observed_loaded_weight_sha256 != loaded.trained_weight_sha256 {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainCheckpointCorrupt,
+            "loaded predictor weight hash did not match trained checkpoint manifest",
+        )
+        .with_context(json!({
+            "manifest_trained_weight_sha256": loaded.trained_weight_sha256,
+            "observed_loaded_weight_sha256": observed_loaded_weight_sha256,
+            "manifest_path": loaded.manifest_path
+        })));
+    }
+    Ok(json!({
+        "status": "loaded_verified_trained_predictor_checkpoint",
+        "manifest_path": loaded.manifest_path,
+        "checkpoint_path": loaded.checkpoint_path,
+        "manifest_sha256": loaded.manifest_sha256,
+        "checkpoint_sha256": loaded.checkpoint_sha256,
+        "checkpoint_bytes": loaded.checkpoint_bytes,
+        "payload_step": loaded.payload_step,
+        "optimizer_steps": loaded.optimizer_steps,
+        "training_mode": loaded.training_mode,
+        "trained_weight_sha256": loaded.trained_weight_sha256,
+        "observed_loaded_weight_sha256": observed_loaded_weight_sha256,
+        "weights_match_manifest": true
+    }))
 }
 
 fn run_train_inner(args: TrainArgs) -> Result<serde_json::Value, TrainerError> {
@@ -246,16 +333,22 @@ fn validate_countable_training_args(args: &TrainArgs) -> Result<Option<PathBuf>,
 }
 
 fn predictor_config_from_args(args: &TrainArgs) -> Result<PredictorConfig, TrainerError> {
+    predictor_config_from_parts(
+        args.predictor_num_layers,
+        args.predictor_hidden_dim,
+        args.predictor_num_heads,
+    )
+}
+
+fn predictor_config_from_parts(
+    predictor_num_layers: Option<u8>,
+    predictor_hidden_dim: Option<u32>,
+    predictor_num_heads: Option<u8>,
+) -> Result<PredictorConfig, TrainerError> {
     let config = PredictorConfig {
-        num_layers: args
-            .predictor_num_layers
-            .unwrap_or(PredictorConfig::default().num_layers),
-        hidden_dim: args
-            .predictor_hidden_dim
-            .unwrap_or(PredictorConfig::default().hidden_dim),
-        num_heads: args
-            .predictor_num_heads
-            .unwrap_or(PredictorConfig::default().num_heads),
+        num_layers: predictor_num_layers.unwrap_or(PredictorConfig::default().num_layers),
+        hidden_dim: predictor_hidden_dim.unwrap_or(PredictorConfig::default().hidden_dim),
+        num_heads: predictor_num_heads.unwrap_or(PredictorConfig::default().num_heads),
         ..PredictorConfig::default()
     };
     config.validate().map_err(predictor_error)?;
@@ -265,7 +358,7 @@ fn predictor_config_from_args(args: &TrainArgs) -> Result<PredictorConfig, Train
 fn predictor_error(err: context_graph_mejepa::PredictorError) -> TrainerError {
     TrainerError::new(
         TrainerErrorCode::MejepaTrainConfigInvalid,
-        format!("predictor construction failed: {err}"),
+        format!("predictor checkpoint/config operation failed: {err}"),
     )
     .with_context(json!({
         "predictor_error_code": err.code(),
