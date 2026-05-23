@@ -114,6 +114,14 @@ from .python_geometry_label_atlas_materializer import (
     add_arguments as add_python_geometry_label_atlas_materializer_arguments,
 )
 from .python_geometry_label_atlas_materializer import command_python_geometry_label_atlas_materializer
+from .python_delete_test_call_regeneration import (
+    add_arguments as add_python_delete_test_call_regeneration_arguments,
+)
+from .python_delete_test_call_regeneration import command_python_delete_test_call_regeneration
+from .python_delete_test_call_oracle_executor import (
+    add_arguments as add_python_delete_test_call_oracle_executor_arguments,
+)
+from .python_delete_test_call_oracle_executor import command_python_delete_test_call_oracle_executor
 from .panel_b_artifacts import add_arguments as add_panel_b_artifacts_arguments
 from .panel_b_artifacts import command_panel_b_artifacts
 from .panel_b_model_scores import add_arguments as add_panel_b_model_scores_arguments
@@ -772,6 +780,26 @@ def build_parser() -> argparse.ArgumentParser:
         evidence_name="python-geometry-label-atlas-materializer-command-evidence.json",
     )
 
+    delete_test_call_regeneration = sub.add_parser(
+        "python-delete-test-call-regeneration",
+        help="TASK-PY-G-135C: materialize source-backed delete_test_call candidate patches and oracle batches.",
+    )
+    add_python_delete_test_call_regeneration_arguments(delete_test_call_regeneration)
+    delete_test_call_regeneration.set_defaults(
+        func=command_python_delete_test_call_regeneration,
+        evidence_name="python-delete-test-call-regeneration-command-evidence.json",
+    )
+
+    delete_test_call_oracle_executor = sub.add_parser(
+        "python-delete-test-call-oracle-executor",
+        help="TASK-PY-G-135C: run SWE-bench Docker oracle on candidate-keyed delete_test_call patches.",
+    )
+    add_python_delete_test_call_oracle_executor_arguments(delete_test_call_oracle_executor)
+    delete_test_call_oracle_executor.set_defaults(
+        func=command_python_delete_test_call_oracle_executor,
+        evidence_name="python-delete-test-call-oracle-executor-command-evidence.json",
+    )
+
     panel_b_artifacts = sub.add_parser(
         "panel-b-artifacts",
         help="TASK-PY-G-111D: materialize pinned model-backed Panel B artifacts on aiwonder.",
@@ -859,8 +887,9 @@ def main() -> int:
         evidence_path = evidence_root / evidence_name
         payload["evidence_path"] = str(evidence_path)
         write_json_checked(evidence_path, payload)
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
+        failed_payload = payload.get("ok") is False or payload.get("all_passed") is False
+        print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr if failed_payload else sys.stdout)
+        return 1 if failed_payload else 0
     except SwebenchOpsError as exc:
         if evidence_root is None or evidence_name is None:
             print(json.dumps({"checked_at": utc_now(), "command": args.command, **exc.to_json()}, indent=2, sort_keys=True), file=sys.stderr)
@@ -891,3 +920,7 @@ def main() -> int:
             write_json_checked(evidence_path, payload)
         print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
         return 3
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

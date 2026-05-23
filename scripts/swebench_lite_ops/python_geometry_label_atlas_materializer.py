@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .core import SwebenchOpsError, sha256_file, utc_now, write_json_checked
+from .forward_cache_lineage import guard_packed_record_lineage
 
 
 SCHEMA_VERSION = 1
@@ -30,6 +31,7 @@ CLUSTER_ALGORITHM = "exact_vector_sha_microcells"
 CLUSTER_ALGORITHM_FAMILY = "occupied_vector_equivalence_classes"
 CLUSTER_STATUS = "exact_occupied_vector_microcell_source_layer_not_final_semantic_labels"
 LABEL_ALGORITHM = "deterministic_exact_microcell_ast_descriptor_v2"
+DERIVED_LABEL_ALGORITHM = "deterministic_multi_resolution_region_labels_v1"
 MASK_POLICY = "slot_identity_preserved_missingness_mask_v1"
 DEFAULT_FORWARD_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z")
 DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
@@ -341,6 +343,37 @@ def load_window_jsonl(path: Path, ranges: list[tuple[int, int]]) -> tuple[dict[s
     }
 
 
+def load_jsonl_by_keys(path: Path, required_keys: set[str]) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    by_key: dict[str, dict[str, Any]] = {}
+    digest = hashlib.sha256()
+    scanned = 0
+    for _, row in iter_jsonl(path):
+        scanned += 1
+        key = canonical_row_key(row)
+        if key not in required_keys:
+            continue
+        require(key not in by_key, "GEOMETRY_LABEL_ATLAS_DUPLICATE_ROW_KEY", key)
+        by_key[key] = row
+        digest.update(json.dumps(row, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        digest.update(b"\n")
+        if len(by_key) == len(required_keys):
+            break
+    missing = sorted(required_keys - set(by_key))
+    require(
+        not missing,
+        "GEOMETRY_LABEL_ATLAS_REQUIRED_MASK_KEYS_MISSING",
+        f"{path}: missing {len(missing)} selected row keys",
+        {"missing_sample": missing[:20]},
+    )
+    return by_key, {
+        "path": str(path),
+        "bytes": path.stat().st_size,
+        "scanned_rows": scanned,
+        "selected_rows": len(by_key),
+        "selected_keyset_sha256": "sha256:" + digest.hexdigest(),
+    }
+
+
 def source_kind(embedder_id: str, eligible: set[str], aliases: dict[str, str], degenerate: set[str]) -> tuple[str, str | None]:
     if embedder_id in eligible:
         return "independent", None
@@ -388,6 +421,125 @@ def slug_terms(terms: list[dict[str, Any]], fallback: str) -> str:
     if not selected:
         selected = [fallback]
     return "_".join(re.sub(r"[^a-z0-9_]+", "_", term.lower()).strip("_")[:32] for term in selected if term)
+
+
+def slug_value(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9_]+", "_", value.lower()).strip("_")
+    return slug[:80] or "unknown"
+
+
+def support_band(support_count: int) -> str:
+    if support_count <= 1:
+        return "singleton"
+    if support_count <= 3:
+        return "tiny_2_3"
+    if support_count <= 9:
+        return "small_4_9"
+    if support_count <= 19:
+        return "meso_10_19"
+    if support_count <= 99:
+        return "repeated_20_99"
+    if support_count <= 499:
+        return "large_100_499"
+    return "massive_500_plus"
+
+
+def top_counter_value(counter: Counter[str]) -> tuple[str, int] | None:
+    filtered = [(str(key), int(value)) for key, value in counter.items() if str(key) and str(key) != "unknown"]
+    if not filtered:
+        return None
+    return sorted(filtered, key=lambda item: (-item[1], item[0]))[0]
+
+
+def descriptor_terms_for_cluster(cluster: ClusterAgg, limit: int) -> list[dict[str, Any]]:
+    exemplar = cluster.exemplar or {}
+    return compact_terms(
+        [
+            str(exemplar.get("source_text") or ""),
+            str(exemplar.get("relative_path") or ""),
+            str(exemplar.get("name") or ""),
+            str(exemplar.get("qualname") or ""),
+            str(exemplar.get("node_kind") or ""),
+            str(exemplar.get("chunk_kind") or ""),
+        ],
+        limit=limit,
+    )
+
+
+def derived_region_label_rows(
+    cluster: ClusterAgg,
+    *,
+    base_label_id: str,
+    base_label_name: str,
+    label_param_hash: str,
+    max_descriptor_terms: int,
+) -> list[dict[str, Any]]:
+    if not cluster.independent_live_input_allowed:
+        return []
+
+    values: list[tuple[str, str, str, int | None]] = [
+        ("support_band", support_band(cluster.support_count), "exact_vector_support_count", cluster.support_count),
+        ("metric_contract", slug_value(cluster.metric_contract), "embedder_metric_contract", None),
+        ("admissibility", cluster.space_admissibility, "vector_space_policy", None),
+    ]
+    chunk_kind = top_counter_value(cluster.chunk_kind_counts)
+    if chunk_kind is not None:
+        values.append(("dominant_chunk_kind", chunk_kind[0], "canonical_ast_chunk_kind_counts", chunk_kind[1]))
+    node_kind = top_counter_value(cluster.node_kind_counts)
+    if node_kind is not None:
+        values.append(("dominant_node_kind", node_kind[0], "canonical_ast_node_kind_counts", node_kind[1]))
+    repo = top_counter_value(cluster.repo_counts)
+    if repo is not None:
+        values.append(("dominant_repo", repo[0], "canonical_ast_repo_counts", repo[1]))
+    for term in descriptor_terms_for_cluster(cluster, max_descriptor_terms):
+        values.append(("descriptor_term", str(term["term"]), "ast_source_descriptor_terms", int(term["count"])))
+
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for family, value, evidence_source, evidence_count in values:
+        value = slug_value(str(value))
+        key = (family, value)
+        if key in seen:
+            continue
+        seen.add(key)
+        label_seed = (
+            f"{DERIVED_LABEL_ALGORITHM}|{label_param_hash}|{cluster.embedder_id}|"
+            f"{cluster.cluster_id}|{family}|{value}"
+        )
+        label_id = "geo_region_label:" + hashlib.sha256(label_seed.encode("utf-8")).hexdigest()[:32]
+        rows.append(
+            {
+                "artifact_kind": "embedder_geometry_derived_region_label",
+                "schema_version": SCHEMA_VERSION,
+                "algorithm": DERIVED_LABEL_ALGORITHM,
+                "source_algorithm": LABEL_ALGORITHM,
+                "parameter_hash": label_param_hash,
+                "source_cluster_parameter_hash": cluster.exemplar.get("cluster_parameter_hash") if cluster.exemplar else None,
+                "embedder_id": cluster.embedder_id,
+                "cluster_id": cluster.cluster_id,
+                "vector_sha256": cluster.vector_sha256,
+                "source_label_id": base_label_id,
+                "source_label_name": base_label_name,
+                "label_id": label_id,
+                "label_name": f"{cluster.embedder_id}_{family}_{value}_{short_hash(label_id, 8)}"[:160],
+                "label_family": family,
+                "label_value": value,
+                "evidence_source": evidence_source,
+                "evidence_count": evidence_count,
+                "support_count": cluster.support_count,
+                "support_band": support_band(cluster.support_count),
+                "space_admissibility": cluster.space_admissibility,
+                "alias_of_embedder_id": cluster.alias_of_embedder_id,
+                "duplicate_space_alias_of": cluster.duplicate_space_alias_of,
+                "live_input_allowed": True,
+                "independent_live_input_allowed": True,
+                "leakage_policy": (
+                    "derived label uses only vector identity, canonical AST/source descriptors, "
+                    "embedder metric policy, and unsupervised support; excludes partition, mutation, oracle, and outcome fields"
+                ),
+            }
+        )
+    return rows
 
 
 def make_descriptor(cluster: ClusterAgg, label_id: str, label_name: str, label_param_hash: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -441,6 +593,10 @@ def make_descriptor(cluster: ClusterAgg, label_id: str, label_name: str, label_p
         "space_admissibility": cluster.space_admissibility,
         "alias_of_embedder_id": cluster.alias_of_embedder_id,
         "duplicate_space_alias_of": cluster.duplicate_space_alias_of,
+        "canonical_ast_lineage_used": exemplar.get("canonical_ast_lineage_used"),
+        "raw_packed_path_metadata_legacy": exemplar.get("raw_packed_path_metadata_legacy"),
+        "raw_packed_legacy_fields": exemplar.get("raw_packed_legacy_fields") or [],
+        "source_lineage_policy": exemplar.get("source_lineage_policy"),
         "live_input_allowed": cluster.live_input_safe,
         "independent_live_input_allowed": cluster.independent_live_input_allowed,
         "leakage_policy": "live_descriptor_excludes_partition_and_mutation_category; audit_fields_not_live_input",
@@ -462,6 +618,7 @@ def make_descriptor(cluster: ClusterAgg, label_id: str, label_name: str, label_p
         "exemplar_chunk_id": exemplar.get("chunk_id"),
         "exemplar_source_sha256": exemplar.get("source_sha256"),
         "exemplar_record_ref": exemplar.get("record_ref"),
+        "exemplar_record_index_ref": exemplar.get("record_index_ref"),
         "relative_path": exemplar.get("relative_path"),
         "line_start": exemplar.get("line_start"),
         "line_end": exemplar.get("line_end"),
@@ -473,6 +630,10 @@ def make_descriptor(cluster: ClusterAgg, label_id: str, label_name: str, label_p
         "space_admissibility": cluster.space_admissibility,
         "alias_of_embedder_id": cluster.alias_of_embedder_id,
         "duplicate_space_alias_of": cluster.duplicate_space_alias_of,
+        "canonical_ast_lineage_used": exemplar.get("canonical_ast_lineage_used"),
+        "raw_packed_path_metadata_legacy": exemplar.get("raw_packed_path_metadata_legacy"),
+        "raw_packed_legacy_fields": exemplar.get("raw_packed_legacy_fields") or [],
+        "source_lineage_policy": exemplar.get("source_lineage_policy"),
         "live_input_allowed": cluster.live_input_safe,
         "independent_live_input_allowed": cluster.independent_live_input_allowed,
     }
@@ -514,7 +675,16 @@ def cluster_label(cluster: ClusterAgg, label_param_hash: str) -> tuple[str, str]
     return label_id, label_name[:160]
 
 
-def exemplar_from(row: dict[str, Any], chunk: dict[str, Any], record_path: Path, record_sha: str, vector_sha: str, cluster_param_hash: str) -> dict[str, Any]:
+def exemplar_from(
+    row: dict[str, Any],
+    chunk: dict[str, Any],
+    lineage: dict[str, Any],
+    record_path: Path,
+    index_path: Path,
+    record_sha: str,
+    vector_sha: str,
+    cluster_param_hash: str,
+) -> dict[str, Any]:
     key = row.get("key") or {}
     output = row.get("output") or {}
     text = str(chunk.get("source_text") or "")
@@ -543,7 +713,12 @@ def exemplar_from(row: dict[str, Any], chunk: dict[str, Any], record_path: Path,
         "source_text_snippet": text[:512],
         "source_text_truncated": truncated,
         "record_ref": f"{record_path}#{record_sha}",
+        "record_index_ref": f"{index_path}#{record_sha}",
         "record_line_sha256": record_sha,
+        "canonical_ast_lineage_used": bool(lineage.get("canonical_ast_lineage_used")),
+        "raw_packed_path_metadata_legacy": bool(lineage.get("raw_packed_path_metadata_legacy")),
+        "raw_packed_legacy_fields": list(lineage.get("raw_packed_legacy_fields") or []),
+        "source_lineage_policy": "packed record chunk.absolute_path/dataschema is legacy provenance only; active source lineage comes from canonical AST rows",
         "runtime_model_version": str(output.get("runtime_model_version") or key.get("model_hash") or "unknown"),
         "precision_class": str(output.get("precision_class") or "unknown"),
         "vector_sha256": vector_sha,
@@ -558,6 +733,7 @@ def membership_row(
     mask: dict[str, Any],
     embedder_id: str,
     vector_sha: str,
+    lineage: dict[str, Any],
     cluster_id: str,
     record_path: Path,
     record_sha: str,
@@ -592,6 +768,10 @@ def membership_row(
         "source_text_bytes": chunk.get("source_text_bytes"),
         "record_ref": f"{record_path}#{record_sha}",
         "record_line_sha256": record_sha,
+        "canonical_ast_lineage_used": bool(lineage.get("canonical_ast_lineage_used")),
+        "raw_packed_path_metadata_legacy": bool(lineage.get("raw_packed_path_metadata_legacy")),
+        "raw_packed_legacy_fields": list(lineage.get("raw_packed_legacy_fields") or []),
+        "source_lineage_policy": "packed record chunk.absolute_path/dataschema is legacy provenance only; active source lineage comes from canonical AST rows",
         "resolution": "exact_vector_sha256",
         "metric_contract": metric_contract(embedder_id),
         "space_admissibility": kind,
@@ -617,11 +797,16 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     unknown = sorted(set(included) - set(policy_embedders))
     require(not unknown, "GEOMETRY_LABEL_ATLAS_INCLUDED_EMBEDDER_NOT_IN_POLICY", str(unknown))
     require(args.max_candidate_rows is None or args.max_candidate_rows > 0, "GEOMETRY_LABEL_ATLAS_BAD_MAX_CANDIDATE_ROWS", str(args.max_candidate_rows))
+    require(
+        args.max_derived_descriptor_terms >= 0,
+        "GEOMETRY_LABEL_ATLAS_BAD_MAX_DERIVED_DESCRIPTOR_TERMS",
+        str(args.max_derived_descriptor_terms),
+    )
 
     shards, shard_summary = completed_shard_entries(args)
     ranges = selected_ranges(shards)
     chunk_by_key, chunk_summary = load_window_jsonl(args.chunks_jsonl, ranges)
-    mask_by_key, mask_summary = load_window_jsonl(args.completeness_mask_jsonl, ranges)
+    mask_by_key, mask_summary = load_jsonl_by_keys(args.completeness_mask_jsonl, set(chunk_by_key))
     require(set(chunk_by_key) == set(mask_by_key), "GEOMETRY_LABEL_ATLAS_CHUNK_MASK_KEY_MISMATCH", "selected windows differ")
 
     before = {"output_root": tree_state(args.output_root)}
@@ -703,6 +888,12 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                     mask_row = mask_by_key.get(row_key)
                     require(chunk_row is not None, "GEOMETRY_LABEL_ATLAS_RECORD_CHUNK_JOIN_MISSING", f"{record_path}:{line_no}:{row_key}")
                     require(mask_row is not None, "GEOMETRY_LABEL_ATLAS_RECORD_MASK_JOIN_MISSING", f"{record_path}:{line_no}:{row_key}")
+                    lineage = guard_packed_record_lineage(record, chunk_row, context=f"{record_path}:{line_no}")
+                    stats["canonical_ast_lineage_guarded_records"] += 1
+                    if lineage["raw_packed_path_metadata_legacy"]:
+                        stats["raw_packed_path_metadata_legacy_records"] += 1
+                        for legacy_field in lineage["raw_packed_legacy_fields"]:
+                            stats[f"raw_packed_path_metadata_legacy_field:{legacy_field}"] += 1
                     present_slots = set(mask_row.get("present_slots") or [])
                     require(embedder_id in present_slots, "GEOMETRY_LABEL_ATLAS_RECORD_NOT_PRESENT_IN_MASK", f"{record_path}:{line_no}:{embedder_id}")
                     vector_sha = str(index_row.get("vector_sha256") or "")
@@ -726,7 +917,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                             live_input_safe=live,
                             independent_live_input_allowed=kind == "independent",
                             metric_contract=metric_contract(embedder_id),
-                            exemplar=exemplar_from(record, chunk_row, record_path, record_sha, vector_sha, cluster_param_hash),
+                            exemplar=exemplar_from(record, chunk_row, lineage, record_path, index_path, record_sha, vector_sha, cluster_param_hash),
                         )
                         clusters[agg_key] = agg
                     agg.support_count += 1
@@ -744,6 +935,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                             mask=mask_row,
                             embedder_id=embedder_id,
                             vector_sha=vector_sha,
+                            lineage=lineage,
                             cluster_id=cluster_id,
                             record_path=record_path,
                             record_sha=record_sha,
@@ -794,11 +986,14 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     registry_path = work_root / "embedder_geometry_label_registry.jsonl"
     descriptor_path = work_root / "embedder_geometry_label_descriptors.jsonl"
     exemplar_path = work_root / "embedder_geometry_label_exemplars.jsonl"
+    derived_region_label_path = work_root / "embedder_geometry_derived_region_labels.jsonl"
     rejection_path = work_root / "embedder_geometry_label_rejections.jsonl"
     sample_chains: list[dict[str, Any]] = []
     with JsonlSink(candidate_path) as candidate_sink, JsonlSink(registry_path) as registry_sink, JsonlSink(
         descriptor_path
-    ) as descriptor_sink, JsonlSink(exemplar_path) as exemplar_sink, JsonlSink(rejection_path) as rejection_sink:
+    ) as descriptor_sink, JsonlSink(exemplar_path) as exemplar_sink, JsonlSink(
+        derived_region_label_path
+    ) as derived_region_label_sink, JsonlSink(rejection_path) as rejection_sink:
         sorted_clusters = sorted(clusters.values(), key=lambda item: (item.embedder_id, item.vector_sha256))
         for cluster in sorted_clusters:
             if args.max_candidate_rows is not None and candidate_sink.count >= args.max_candidate_rows:
@@ -882,6 +1077,16 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                 registry["descriptor_hash"] = descriptor["descriptor_hash"]
                 descriptor_sink.write(descriptor)
                 exemplar_sink.write(exemplar)
+                derived_rows = derived_region_label_rows(
+                    cluster,
+                    base_label_id=label_id,
+                    base_label_name=label_name,
+                    label_param_hash=label_param_hash,
+                    max_descriptor_terms=args.max_derived_descriptor_terms,
+                )
+                for derived_row in derived_rows:
+                    derived_region_label_sink.write(derived_row)
+                    stats[f"derived_label_family:{derived_row['label_family']}"] += 1
                 if len(sample_chains) < 12:
                     sample_chains.append(
                         {
@@ -891,6 +1096,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                             "descriptor_hash": descriptor["descriptor_hash"],
                             "exemplar_row_key": exemplar["exemplar_row_key"],
                             "exemplar_record_ref": exemplar["exemplar_record_ref"],
+                            "exemplar_record_index_ref": exemplar["exemplar_record_index_ref"],
                             "space_admissibility": cluster.space_admissibility,
                             "independent_live_input_allowed": cluster.independent_live_input_allowed,
                         }
@@ -904,10 +1110,12 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
             "geometry_label_registry": registry_sink.artifact(),
             "geometry_label_descriptors": descriptor_sink.artifact(),
             "geometry_label_exemplars": exemplar_sink.artifact(),
+            "geometry_derived_region_labels": derived_region_label_sink.artifact(),
             "geometry_label_rejections": rejection_sink.artifact(),
         }
 
     candidate_counts = Counter(cluster.space_admissibility for cluster in clusters.values())
+    expected_noise_rows = sum(value for key, value in stats.items() if key.startswith("noise_rows:"))
     edge_checks = [
         {
             "name": "independent_spaces_emit_live_labels",
@@ -929,9 +1137,29 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         },
         {
             "name": "missing_or_quarantined_slots_are_noise_not_memberships",
-            "expected": "missing mask events are emitted to embedder_cluster_noise_ood.jsonl",
-            "actual": {"noise_rows": artifacts["cluster_noise_ood"]["rows"]},
-            "passes": artifacts["cluster_noise_ood"]["rows"] >= 0,
+            "expected": "missing mask events are emitted to embedder_cluster_noise_ood.jsonl exactly once per missing included slot",
+            "actual": {"noise_rows": artifacts["cluster_noise_ood"]["rows"], "expected_noise_rows": expected_noise_rows},
+            "passes": artifacts["cluster_noise_ood"]["rows"] == expected_noise_rows,
+        },
+        {
+            "name": "independent_microcells_have_derived_region_labels",
+            "expected": "every independent candidate receives at least one derived support/AST/descriptor label",
+            "actual": {
+                "independent_candidates": candidate_counts.get("independent", 0),
+                "derived_region_label_rows": artifacts["geometry_derived_region_labels"]["rows"],
+            },
+            "passes": candidate_counts.get("independent", 0) == 0
+            or artifacts["geometry_derived_region_labels"]["rows"] >= candidate_counts.get("independent", 0),
+        },
+        {
+            "name": "packed_records_join_canonical_ast_lineage_before_labeling",
+            "expected": "every emitted membership row passed the forward-cache lineage guard and treats raw packed paths as provenance only",
+            "actual": {
+                "membership_rows": artifacts["cluster_memberships"]["rows"],
+                "canonical_ast_lineage_guarded_records": stats.get("canonical_ast_lineage_guarded_records", 0),
+                "raw_packed_path_metadata_legacy_records": stats.get("raw_packed_path_metadata_legacy_records", 0),
+            },
+            "passes": stats.get("canonical_ast_lineage_guarded_records", 0) == artifacts["cluster_memberships"]["rows"],
         },
     ]
     all_passed = all(item["passes"] for item in edge_checks)
@@ -953,6 +1181,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
             "duplicate_alias_map": aliases,
             "degenerate_embedder_ids": sorted(degenerate),
             "included_embedders": list(included),
+            "forward_cache_lineage_policy": "packed record chunk.absolute_path/dataschema is historical/audit provenance only; active source lineage must be joined from canonical AST rows before label materialization",
         },
         "counts": {
             "selected_chunk_rows": len(chunk_by_key),
@@ -963,6 +1192,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
             "registry_rows": artifacts["geometry_label_registry"]["rows"],
             "descriptor_rows": artifacts["geometry_label_descriptors"]["rows"],
             "exemplar_rows": artifacts["geometry_label_exemplars"]["rows"],
+            "derived_region_label_rows": artifacts["geometry_derived_region_labels"]["rows"],
             "rejection_rows": artifacts["geometry_label_rejections"]["rows"],
             "candidate_space_admissibility": dict(sorted(candidate_counts.items())),
             "record_stats": dict(sorted(stats.items())),
@@ -1029,4 +1259,5 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--all-completed-shards", action="store_true")
     parser.add_argument("--shards", default=None, help="Comma-separated shard IDs, e.g. shard-000000-offset-000000000")
     parser.add_argument("--max-candidate-rows", type=int, default=None)
+    parser.add_argument("--max-derived-descriptor-terms", type=int, default=4)
     parser.add_argument("--clean-output", action="store_true")

@@ -246,6 +246,11 @@ Direct readback at #614 closeout: `399777` mask rows, `378444` complete 12-slot 
 
 `gh` and `rg` are installed in `/zfs/hot/contextgraph/bin` and visible through `contextgraph-shell`. `gh` authentication remains blocked by #562 until an operator-approved token path exists; do not move or print secrets to solve that.
 
+Python operational commands must use the aiwonder virtualenv interpreter:
+`/zfs/hot/contextgraph/venv/bin/python3`. Do not use `/usr/bin/python3` for
+`scripts.swebench_lite_ops` commands; the system interpreter is not the
+controlled runtime and may lack required packages such as `numpy`.
+
 **Scheduler invocation:**
 
 ```bash
