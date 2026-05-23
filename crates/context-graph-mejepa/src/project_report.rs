@@ -3,10 +3,16 @@ use crate::cli::write_json_0600;
 use crate::error::MejepaInferError;
 use crate::project_ingest::{
     is_valid_project_id, project_prediction_created_at_unix_ms, project_prediction_live_key,
-    ProjectIngestManifest,
+    ProjectIngestManifest, ProjectPredictionManifestRow,
 };
-use crate::types::{decode_reality_prediction, RealityPrediction, Severity, Verdict};
-use context_graph_mejepa_cf::{CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_PROJECT_REPORTS};
+use crate::types::{
+    decode_reality_prediction, ChunkId, ConformalInterval, ConformalMethod, ConformalSet, Language,
+    OracleOutcome, PredictionProvenance, RealityPrediction, RealityPredictionBuilder, Severity,
+    TaskId, Verdict, WitnessHash,
+};
+use context_graph_mejepa_cf::{
+    CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_OOD_CALIBRATIONS, CF_MEJEPA_PROJECT_REPORTS,
+};
 use rocksdb::{IteratorMode, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -25,6 +31,7 @@ const COVERAGE_LIMIT: usize = 100;
 const COLD_LIMIT: usize = 50;
 const DEPENDENCY_LIMIT: usize = 20;
 const PREDICTION_PAGE_LIMIT: usize = 100;
+pub const TRUST_REASON_PASS_WITHOUT_OOD_CALIBRATOR: &str = "MEJEPA_PASS_WITHOUT_OOD_CALIBRATOR";
 
 #[derive(Debug, Error)]
 pub enum ProjectReportError {
@@ -125,10 +132,18 @@ pub struct ProjectRealityReport {
     pub source_manifest_path: String,
     pub source_predictions_db_path: String,
     pub source_live_prediction_cf: String,
+    #[serde(default)]
+    pub source_ood_calibration_cf: String,
+    #[serde(default)]
+    pub source_ood_calibration_count: usize,
     pub source_report_cf: String,
     pub source_prediction_count: usize,
     pub warning: Option<String>,
     pub verdict_summary: VerdictSummary,
+    #[serde(default)]
+    pub trust_summary: PredictionTrustSummary,
+    #[serde(default)]
+    pub untrusted_predictions: Vec<UntrustedPredictionRow>,
     pub top_likely_broken_areas: Vec<BrokenAreaRow>,
     pub top_edge_cases_not_exercised: Vec<EdgeCaseGapRow>,
     pub top_vulnerability_slices: Vec<VulnerabilitySliceRow>,
@@ -144,12 +159,90 @@ pub struct ProjectRealityReport {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VerdictSummary {
     pub pass: usize,
+    #[serde(default)]
+    pub trusted_pass: usize,
+    #[serde(default)]
+    pub untrusted_pass: usize,
     pub fail: usize,
     pub abstain: usize,
     pub out_of_distribution: usize,
     pub guard_rejected: usize,
     pub total: usize,
     pub per_file: BTreeMap<String, Verdict>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PredictionTrustStatus {
+    #[default]
+    Trusted,
+    Untrusted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PredictionTrustAssessment {
+    pub status: PredictionTrustStatus,
+    pub reason_code: Option<String>,
+    pub reason: Option<String>,
+    pub quarantine_required: bool,
+}
+
+impl Default for PredictionTrustAssessment {
+    fn default() -> Self {
+        Self {
+            status: PredictionTrustStatus::Trusted,
+            reason_code: None,
+            reason: None,
+            quarantine_required: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PredictionTrustSummary {
+    pub trusted: usize,
+    pub untrusted: usize,
+    pub quarantine_required: usize,
+    pub contaminated_pass_without_ood_calibrator: usize,
+    pub ood_calibration_rows: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UntrustedPredictionRow {
+    pub rank: usize,
+    pub file_path: String,
+    pub verdict: Verdict,
+    pub ood_score: f32,
+    pub prediction_id: String,
+    pub live_prediction_key_hex: String,
+    pub reason_code: String,
+    pub reason: String,
+    pub quarantine_required: bool,
+}
+
+pub fn assess_prediction_trust(
+    prediction: &RealityPrediction,
+    ood_calibration_rows: usize,
+) -> PredictionTrustAssessment {
+    if prediction.verdict == Verdict::Pass
+        && prediction.ood_score < 1.0
+        && ood_calibration_rows == 0
+    {
+        return PredictionTrustAssessment {
+            status: PredictionTrustStatus::Untrusted,
+            reason_code: Some(TRUST_REASON_PASS_WITHOUT_OOD_CALIBRATOR.to_string()),
+            reason: Some(format!(
+                "Pass verdict has ood_score {:.6} but the prediction DB contains zero {CF_MEJEPA_OOD_CALIBRATIONS} rows; this row predates strict OOD calibrator enforcement and must not be treated as OOD-verified Pass evidence",
+                prediction.ood_score
+            )),
+            quarantine_required: true,
+        };
+    }
+
+    PredictionTrustAssessment::default()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,6 +254,12 @@ pub struct EvidenceLink {
     pub file_path: String,
     pub chunk_id: Option<String>,
     pub line_range: Option<(u32, u32)>,
+    #[serde(default)]
+    pub prediction_trust_status: PredictionTrustStatus,
+    #[serde(default)]
+    pub prediction_trust_reason_code: Option<String>,
+    #[serde(default)]
+    pub prediction_trust_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -298,6 +397,15 @@ pub struct ProjectPredictionPageRow {
     pub index: usize,
     pub file_path: String,
     pub verdict: Verdict,
+    #[serde(default)]
+    pub trust_status: PredictionTrustStatus,
+    #[serde(default)]
+    pub trust_reason_code: Option<String>,
+    #[serde(default)]
+    pub trust_reason: Option<String>,
+    #[serde(default)]
+    pub quarantine_required: bool,
+    pub ood_score: f32,
     pub prediction_id: String,
     pub live_prediction_key_hex: String,
     pub task_id: String,
@@ -309,6 +417,7 @@ struct LoadedPrediction {
     file_path: String,
     live_key_hex: String,
     prediction: RealityPrediction,
+    trust: PredictionTrustAssessment,
 }
 
 pub fn run_project_report(
@@ -333,7 +442,8 @@ pub fn run_project_report(
     }
     let db_path = validate_manifest_paths(&project_id, &manifest)?;
     let db = open_infer_rocksdb(&db_path)?;
-    let predictions = load_project_predictions(db.as_ref(), &manifest)?;
+    let ood_calibration_rows = count_prediction_ood_calibration_rows(db.as_ref())?;
+    let predictions = load_project_predictions(db.as_ref(), &manifest, ood_calibration_rows)?;
     let prediction_rows_page = build_prediction_page(&project_id, &request, &predictions);
     let generated_at_unix_ms = now_ms();
     let report_version = report_version(&manifest, generated_at_unix_ms);
@@ -344,6 +454,7 @@ pub fn run_project_report(
         &report_version,
         generated_at_unix_ms,
         &predictions,
+        ood_calibration_rows,
     );
     let report_dir = project_root.join("report");
     fs::create_dir_all(&report_dir).map_err(|source| ProjectReportError::Io {
@@ -387,6 +498,16 @@ pub fn count_project_reports(db: &DB, project_id: &str) -> Result<usize, Project
     Ok(count)
 }
 
+pub fn count_prediction_ood_calibration_rows(db: &DB) -> Result<usize, ProjectReportError> {
+    let cf = ood_calibration_cf(db)?;
+    let mut count = 0usize;
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (_key, _value) = item?;
+        count += 1;
+    }
+    Ok(count)
+}
+
 pub fn read_project_report_cf(
     db: &DB,
     project_id: &str,
@@ -413,8 +534,14 @@ fn build_report(
     report_version: &str,
     generated_at_unix_ms: i64,
     predictions: &[LoadedPrediction],
+    ood_calibration_rows: usize,
 ) -> ProjectRealityReport {
     let mut summary = VerdictSummary::default();
+    let mut trust_summary = PredictionTrustSummary {
+        ood_calibration_rows,
+        ..PredictionTrustSummary::default()
+    };
+    let mut untrusted_predictions = Vec::new();
     let mut broken = Vec::new();
     let mut edge_cases = Vec::new();
     let mut vulnerabilities = Vec::new();
@@ -424,6 +551,8 @@ fn build_report(
     let files_by_chunk = chunk_file_index(predictions);
 
     for loaded in predictions {
+        update_trust_summary(&mut trust_summary, loaded);
+        collect_untrusted_predictions(&mut untrusted_predictions, loaded);
         update_summary(&mut summary, loaded);
         collect_broken_areas(&mut broken, loaded, &files_by_chunk);
         collect_edge_gaps(&mut edge_cases, loaded, &files_by_chunk);
@@ -439,6 +568,7 @@ fn build_report(
     let predicted_works_total_before_cap = predicted_works.len();
     let coverage_total_before_cap = coverage.len();
     let cold_cells_total_before_cap = cold.len();
+    sort_untrusted_predictions(&mut untrusted_predictions);
 
     sort_and_rank(&mut broken, |row| row.confidence, BROKEN_LIMIT);
     sort_and_rank(&mut edge_cases, |row| row.confidence, EDGE_LIMIT);
@@ -465,6 +595,11 @@ fn build_report(
 
     let warning = if predictions.is_empty() {
         Some("No project predictions exist yet; run mejepa_project_ingest on source files before relying on this report.".to_string())
+    } else if trust_summary.contaminated_pass_without_ood_calibrator > 0 {
+        Some(format!(
+            "{} prediction row(s) are untrusted because they are Pass verdicts with ood_score < 1.0 and zero {CF_MEJEPA_OOD_CALIBRATIONS} rows; do not treat them as OOD-verified Pass evidence.",
+            trust_summary.contaminated_pass_without_ood_calibrator
+        ))
     } else {
         None
     };
@@ -476,10 +611,14 @@ fn build_report(
         source_manifest_path: manifest_path.display().to_string(),
         source_predictions_db_path: db_path.display().to_string(),
         source_live_prediction_cf: CF_MEJEPA_LIVE_PREDICTIONS.to_string(),
+        source_ood_calibration_cf: CF_MEJEPA_OOD_CALIBRATIONS.to_string(),
+        source_ood_calibration_count: ood_calibration_rows,
         source_report_cf: CF_MEJEPA_PROJECT_REPORTS.to_string(),
         source_prediction_count: predictions.len(),
         warning,
         verdict_summary: summary,
+        trust_summary,
+        untrusted_predictions,
         pagination: ProjectReportPagination {
             prediction_rows_total: predictions.len(),
             has_more_prediction_rows: predictions.len() > PREDICTION_PAGE_LIMIT,
@@ -535,6 +674,11 @@ fn build_prediction_page(
             index: offset + idx,
             file_path: loaded.file_path.clone(),
             verdict: loaded.prediction.verdict,
+            trust_status: loaded.trust.status,
+            trust_reason_code: loaded.trust.reason_code.clone(),
+            trust_reason: loaded.trust.reason.clone(),
+            quarantine_required: loaded.trust.quarantine_required,
+            ood_score: loaded.prediction.ood_score,
             prediction_id: hex::encode(loaded.prediction.prediction_id),
             live_prediction_key_hex: loaded.live_key_hex.clone(),
             task_id: loaded.prediction.task_id.0.clone(),
@@ -564,6 +708,7 @@ fn build_prediction_page(
 fn load_project_predictions(
     db: &DB,
     manifest: &ProjectIngestManifest,
+    ood_calibration_rows: usize,
 ) -> Result<Vec<LoadedPrediction>, ProjectReportError> {
     let cf = live_prediction_cf(db)?;
     let mut out = Vec::with_capacity(manifest.predictions.len());
@@ -585,7 +730,8 @@ fn load_project_predictions(
                     file_path: row.file_path.clone(),
                     key_hex: key_hex.clone(),
                 })?;
-        let prediction = decode_reality_prediction(&bytes)?;
+        let prediction =
+            decode_project_report_prediction(&bytes, manifest, row, ood_calibration_rows)?;
         if hex::encode(prediction.prediction_id) != row.prediction_id_hex
             || prediction.task_id.0 != row.task_id
             || prediction.created_at_unix_ms
@@ -607,15 +753,306 @@ fn load_project_predictions(
         out.push(LoadedPrediction {
             file_path: row.file_path.clone(),
             live_key_hex: key_hex,
+            trust: assess_prediction_trust(&prediction, ood_calibration_rows),
             prediction,
         });
     }
     Ok(out)
 }
 
+fn decode_project_report_prediction(
+    bytes: &[u8],
+    manifest: &ProjectIngestManifest,
+    row: &ProjectPredictionManifestRow,
+    ood_calibration_rows: usize,
+) -> Result<RealityPrediction, ProjectReportError> {
+    let decode_error = match decode_reality_prediction(bytes) {
+        Ok(prediction) => return Ok(prediction),
+        Err(err) => err,
+    };
+
+    legacy_untrusted_pass_prediction(bytes, manifest, row, ood_calibration_rows)
+        .unwrap_or(None)
+        .ok_or_else(|| ProjectReportError::Infer(decode_error))
+}
+
+fn legacy_untrusted_pass_prediction(
+    bytes: &[u8],
+    manifest: &ProjectIngestManifest,
+    row: &ProjectPredictionManifestRow,
+    ood_calibration_rows: usize,
+) -> Result<Option<RealityPrediction>, String> {
+    if ood_calibration_rows != 0 {
+        return Ok(None);
+    }
+    let head = decode_legacy_prediction_head(bytes)?;
+    if head.verdict != Verdict::Pass || head.ood_score >= 1.0 {
+        return Ok(None);
+    }
+    if hex::encode(head.prediction_id) != row.prediction_id_hex || head.task_id != row.task_id {
+        return Ok(None);
+    }
+    let created_at_unix_ms = project_prediction_created_at_unix_ms(
+        &manifest.project_id,
+        &row.file_path,
+        &row.file_blake3,
+    );
+    let outcome_set = ConformalSet::try_new(vec![OracleOutcome::Pass], 0.1, 0.0)
+        .map_err(|err| format!("legacy quarantine outcome set was invalid: {}", err))?;
+    let predicted_test_pass = if head.predicted_test_pass.is_empty() {
+        vec![head.predicted_oracle_pass]
+    } else {
+        head.predicted_test_pass
+    };
+    let prediction = RealityPredictionBuilder::from_parts(
+        TaskId(head.task_id),
+        head.session_id,
+        head.language,
+        outcome_set,
+    )
+    .prediction_id(head.prediction_id)
+    .witness_hash(WitnessHash(head.witness_hash))
+    .covered_chunks(head.covered_chunks.into_iter().map(ChunkId).collect())
+    .verdict(head.verdict)
+    .confidence_interval(head.confidence_interval)
+    .predicted_oracle_pass(head.predicted_oracle_pass)
+    .predicted_test_pass(predicted_test_pass)
+    .predicted_runtime_trace(head.predicted_runtime_trace)
+    .ood_score(head.ood_score)
+    .calibrated_confidence(head.predicted_oracle_pass)
+    .provenance(PredictionProvenance {
+        predictor_version: "legacy-project-report-quarantine".to_string(),
+        constellation_version: "legacy-project-report-quarantine".to_string(),
+        calibration_version: "legacy-project-report-quarantine".to_string(),
+        active_pointer: "legacy-project-report-quarantine".to_string(),
+    })
+    .source_panel_sha([0u8; 32])
+    .calibration_version("legacy-project-report-quarantine")
+    .created_at_unix_ms(created_at_unix_ms)
+    .build()
+    .map_err(|err| format!("legacy quarantine prediction was invalid: {}", err))?;
+    Ok(Some(prediction))
+}
+
+#[derive(Debug)]
+struct LegacyPredictionHead {
+    prediction_id: [u8; 16],
+    witness_hash: [u8; 32],
+    task_id: String,
+    session_id: [u8; 16],
+    language: Language,
+    covered_chunks: Vec<String>,
+    verdict: Verdict,
+    confidence_interval: ConformalInterval,
+    predicted_oracle_pass: f32,
+    predicted_test_pass: Vec<f32>,
+    predicted_runtime_trace: [f32; 32],
+    ood_score: f32,
+}
+
+fn decode_legacy_prediction_head(bytes: &[u8]) -> Result<LegacyPredictionHead, String> {
+    let mut cursor = 0usize;
+    let prediction_id = take_array::<16>(bytes, &mut cursor, "prediction_id")?;
+    let witness_hash = take_array::<32>(bytes, &mut cursor, "witness_hash")?;
+    let task_id = take_string(bytes, &mut cursor, "task_id")?;
+    let session_id = take_array::<16>(bytes, &mut cursor, "session_id")?;
+    let language = legacy_language(take_u32(bytes, &mut cursor, "language")?)?;
+    let covered_chunks = take_string_vec(bytes, &mut cursor, "covered_chunks", 512)?;
+    let verdict = legacy_verdict(take_u32(bytes, &mut cursor, "verdict")?)?;
+    let confidence_interval = ConformalInterval {
+        lower: take_probability(bytes, &mut cursor, "confidence_interval.lower")?,
+        upper: take_probability(bytes, &mut cursor, "confidence_interval.upper")?,
+        method: legacy_conformal_method(take_u32(
+            bytes,
+            &mut cursor,
+            "confidence_interval.method",
+        )?)?,
+        coverage_target: take_probability(
+            bytes,
+            &mut cursor,
+            "confidence_interval.coverage_target",
+        )?,
+        empirical_coverage: take_probability(
+            bytes,
+            &mut cursor,
+            "confidence_interval.empirical_coverage",
+        )?,
+    };
+    let predicted_oracle_pass = take_probability(bytes, &mut cursor, "predicted_oracle_pass")?;
+    let predicted_test_pass = take_probability_vec(bytes, &mut cursor, "predicted_test_pass", 512)?;
+    let predicted_runtime_trace =
+        take_f32_array::<32>(bytes, &mut cursor, "predicted_runtime_trace")?;
+    let ood_score = take_probability(bytes, &mut cursor, "ood_score")?;
+    Ok(LegacyPredictionHead {
+        prediction_id,
+        witness_hash,
+        task_id,
+        session_id,
+        language,
+        covered_chunks,
+        verdict,
+        confidence_interval,
+        predicted_oracle_pass,
+        predicted_test_pass,
+        predicted_runtime_trace,
+        ood_score,
+    })
+}
+
+fn take_array<const N: usize>(
+    bytes: &[u8],
+    cursor: &mut usize,
+    field: &'static str,
+) -> Result<[u8; N], String> {
+    let end = cursor
+        .checked_add(N)
+        .ok_or_else(|| format!("{field} offset overflow"))?;
+    let slice = bytes
+        .get(*cursor..end)
+        .ok_or_else(|| format!("{field} truncated"))?;
+    *cursor = end;
+    let mut out = [0u8; N];
+    out.copy_from_slice(slice);
+    Ok(out)
+}
+
+fn take_u32(bytes: &[u8], cursor: &mut usize, field: &'static str) -> Result<u32, String> {
+    Ok(u32::from_le_bytes(take_array::<4>(bytes, cursor, field)?))
+}
+
+fn take_u64(bytes: &[u8], cursor: &mut usize, field: &'static str) -> Result<u64, String> {
+    Ok(u64::from_le_bytes(take_array::<8>(bytes, cursor, field)?))
+}
+
+fn take_f32(bytes: &[u8], cursor: &mut usize, field: &'static str) -> Result<f32, String> {
+    let value = f32::from_le_bytes(take_array::<4>(bytes, cursor, field)?);
+    if !value.is_finite() {
+        return Err(format!("{field} is not finite"));
+    }
+    Ok(value)
+}
+
+fn take_probability(bytes: &[u8], cursor: &mut usize, field: &'static str) -> Result<f32, String> {
+    let value = take_f32(bytes, cursor, field)?;
+    if !(0.0..=1.0).contains(&value) {
+        return Err(format!("{field} is outside [0, 1]: {value}"));
+    }
+    Ok(value)
+}
+
+fn take_string(bytes: &[u8], cursor: &mut usize, field: &'static str) -> Result<String, String> {
+    let len = take_u64(bytes, cursor, field)?;
+    let len = usize::try_from(len).map_err(|_| format!("{field} length does not fit usize"))?;
+    if len > 1_000_000 {
+        return Err(format!(
+            "{field} length {len} exceeds legacy quarantine cap"
+        ));
+    }
+    let end = cursor
+        .checked_add(len)
+        .ok_or_else(|| format!("{field} offset overflow"))?;
+    let slice = bytes
+        .get(*cursor..end)
+        .ok_or_else(|| format!("{field} truncated"))?;
+    *cursor = end;
+    String::from_utf8(slice.to_vec()).map_err(|_| format!("{field} is not utf8"))
+}
+
+fn take_string_vec(
+    bytes: &[u8],
+    cursor: &mut usize,
+    field: &'static str,
+    cap: usize,
+) -> Result<Vec<String>, String> {
+    let len = take_u64(bytes, cursor, field)?;
+    let len = usize::try_from(len).map_err(|_| format!("{field} length does not fit usize"))?;
+    if len > cap {
+        return Err(format!("{field} length {len} exceeds cap {cap}"));
+    }
+    let mut out = Vec::with_capacity(len);
+    for _ in 0..len {
+        out.push(take_string(bytes, cursor, field)?);
+    }
+    Ok(out)
+}
+
+fn take_probability_vec(
+    bytes: &[u8],
+    cursor: &mut usize,
+    field: &'static str,
+    cap: usize,
+) -> Result<Vec<f32>, String> {
+    let len = take_u64(bytes, cursor, field)?;
+    let len = usize::try_from(len).map_err(|_| format!("{field} length does not fit usize"))?;
+    if len > cap {
+        return Err(format!("{field} length {len} exceeds cap {cap}"));
+    }
+    let mut out = Vec::with_capacity(len);
+    for _ in 0..len {
+        out.push(take_probability(bytes, cursor, field)?);
+    }
+    Ok(out)
+}
+
+fn take_f32_array<const N: usize>(
+    bytes: &[u8],
+    cursor: &mut usize,
+    field: &'static str,
+) -> Result<[f32; N], String> {
+    let mut out = [0.0f32; N];
+    for value in &mut out {
+        *value = take_f32(bytes, cursor, field)?;
+    }
+    Ok(out)
+}
+
+fn legacy_language(tag: u32) -> Result<Language, String> {
+    match tag {
+        0 => Ok(Language::Rust),
+        1 => Ok(Language::Python),
+        2 => Ok(Language::Javascript),
+        3 => Ok(Language::Typescript),
+        4 => Ok(Language::Go),
+        5 => Ok(Language::Java),
+        6 => Ok(Language::C),
+        7 => Ok(Language::Cpp),
+        8 => Ok(Language::CSharp),
+        9 => Ok(Language::Ruby),
+        10 => Ok(Language::Php),
+        _ => Err(format!("unknown language tag {tag}")),
+    }
+}
+
+fn legacy_verdict(tag: u32) -> Result<Verdict, String> {
+    match tag {
+        0 => Ok(Verdict::Pass),
+        1 => Ok(Verdict::Fail),
+        2 => Ok(Verdict::OutOfDistribution),
+        3 => Ok(Verdict::Abstain),
+        4 => Ok(Verdict::GuardRejected),
+        _ => Err(format!("unknown verdict tag {tag}")),
+    }
+}
+
+fn legacy_conformal_method(tag: u32) -> Result<ConformalMethod, String> {
+    match tag {
+        0 => Ok(ConformalMethod::SplitConformal),
+        1 => Ok(ConformalMethod::Mondrian),
+        2 => Ok(ConformalMethod::Group),
+        _ => Err(format!("unknown conformal method tag {tag}")),
+    }
+}
+
 fn update_summary(summary: &mut VerdictSummary, loaded: &LoadedPrediction) {
     match loaded.prediction.verdict {
-        Verdict::Pass => summary.pass += 1,
+        Verdict::Pass => {
+            summary.pass += 1;
+            if loaded.trust.status == PredictionTrustStatus::Trusted {
+                summary.trusted_pass += 1;
+            } else {
+                summary.untrusted_pass += 1;
+            }
+        }
         Verdict::Fail => summary.fail += 1,
         Verdict::Abstain => summary.abstain += 1,
         Verdict::OutOfDistribution => summary.out_of_distribution += 1,
@@ -625,6 +1062,57 @@ fn update_summary(summary: &mut VerdictSummary, loaded: &LoadedPrediction) {
     summary
         .per_file
         .insert(loaded.file_path.clone(), loaded.prediction.verdict);
+}
+
+fn update_trust_summary(summary: &mut PredictionTrustSummary, loaded: &LoadedPrediction) {
+    match loaded.trust.status {
+        PredictionTrustStatus::Trusted => summary.trusted += 1,
+        PredictionTrustStatus::Untrusted => summary.untrusted += 1,
+    }
+    if loaded.trust.quarantine_required {
+        summary.quarantine_required += 1;
+    }
+    if loaded.trust.reason_code.as_deref() == Some(TRUST_REASON_PASS_WITHOUT_OOD_CALIBRATOR) {
+        summary.contaminated_pass_without_ood_calibrator += 1;
+    }
+}
+
+fn collect_untrusted_predictions(
+    rows: &mut Vec<UntrustedPredictionRow>,
+    loaded: &LoadedPrediction,
+) {
+    if loaded.trust.status == PredictionTrustStatus::Trusted {
+        return;
+    }
+    rows.push(UntrustedPredictionRow {
+        rank: 0,
+        file_path: loaded.file_path.clone(),
+        verdict: loaded.prediction.verdict,
+        ood_score: loaded.prediction.ood_score,
+        prediction_id: hex::encode(loaded.prediction.prediction_id),
+        live_prediction_key_hex: loaded.live_key_hex.clone(),
+        reason_code: loaded
+            .trust
+            .reason_code
+            .clone()
+            .unwrap_or_else(|| "MEJEPA_PREDICTION_UNTRUSTED".to_string()),
+        reason: loaded.trust.reason.clone().unwrap_or_else(|| {
+            "prediction is not trusted for operator-facing evidence".to_string()
+        }),
+        quarantine_required: loaded.trust.quarantine_required,
+    });
+}
+
+fn sort_untrusted_predictions(rows: &mut [UntrustedPredictionRow]) {
+    rows.sort_by(|left, right| {
+        left.file_path.cmp(&right.file_path).then_with(|| {
+            left.live_prediction_key_hex
+                .cmp(&right.live_prediction_key_hex)
+        })
+    });
+    for (idx, row) in rows.iter_mut().enumerate() {
+        row.rank = idx + 1;
+    }
 }
 
 fn collect_broken_areas(
@@ -849,6 +1337,9 @@ fn evidence_link(
         file_path: loaded.file_path.clone(),
         chunk_id,
         line_range,
+        prediction_trust_status: loaded.trust.status,
+        prediction_trust_reason_code: loaded.trust.reason_code.clone(),
+        prediction_trust_reason: loaded.trust.reason.clone(),
     }
 }
 
@@ -912,12 +1403,15 @@ fn render_markdown(report: &ProjectRealityReport) -> String {
     if let Some(warning) = &report.warning {
         push_line(&mut out, format!("\n> {warning}"));
     }
+    render_trust_summary(&mut out, report);
     push_line(&mut out, "\n## Verdict summary");
     push_line(
         &mut out,
         format!(
-            "| Pass | Fail | Abstain | OOD | GuardRejected | Total |\n|---:|---:|---:|---:|---:|---:|\n| {} | {} | {} | {} | {} | {} |",
+            "| Pass | Trusted Pass | Untrusted Pass | Fail | Abstain | OOD | GuardRejected | Total |\n|---:|---:|---:|---:|---:|---:|---:|---:|\n| {} | {} | {} | {} | {} | {} | {} | {} |",
             report.verdict_summary.pass,
+            report.verdict_summary.trusted_pass,
+            report.verdict_summary.untrusted_pass,
             report.verdict_summary.fail,
             report.verdict_summary.abstain,
             report.verdict_summary.out_of_distribution,
@@ -933,6 +1427,45 @@ fn render_markdown(report: &ProjectRealityReport) -> String {
     render_coverage(&mut out, &report.coverage_prediction_map);
     render_cold(&mut out, &report.cold_cells);
     out
+}
+
+fn render_trust_summary(out: &mut String, report: &ProjectRealityReport) {
+    push_line(out, "\n## Prediction trust");
+    push_line(
+        out,
+        "| Trusted | Untrusted | Quarantine required | OOD calibration rows |",
+    );
+    push_line(out, "|---:|---:|---:|---:|");
+    push_line(
+        out,
+        format!(
+            "| {} | {} | {} | {} |",
+            report.trust_summary.trusted,
+            report.trust_summary.untrusted,
+            report.trust_summary.quarantine_required,
+            report.trust_summary.ood_calibration_rows
+        ),
+    );
+    if report.untrusted_predictions.is_empty() {
+        return;
+    }
+    push_line(out, "\n### Untrusted predictions");
+    push_line(out, "| Rank | File | Verdict | OOD | Reason | Evidence |");
+    push_line(out, "|---:|---|---|---:|---|---|");
+    for row in &report.untrusted_predictions {
+        push_line(
+            out,
+            format!(
+                "| {} | `{}` | `{:?}` | {:.3} | `{}` | `{}` |",
+                row.rank,
+                row.file_path,
+                row.verdict,
+                row.ood_score,
+                row.reason_code,
+                row.prediction_id
+            ),
+        );
+    }
 }
 
 fn render_broken(out: &mut String, rows: &[BrokenAreaRow]) {
@@ -1199,6 +1732,15 @@ fn report_cf(db: &DB) -> Result<&rocksdb::ColumnFamily, ProjectReportError> {
         .map_err(ProjectReportError::Infer)
 }
 
+fn ood_calibration_cf(db: &DB) -> Result<&rocksdb::ColumnFamily, ProjectReportError> {
+    db.cf_handle(CF_MEJEPA_OOD_CALIBRATIONS)
+        .ok_or_else(|| MejepaInferError::InvalidInput {
+            field: "rocksdb.column_family".to_string(),
+            detail: format!("missing column family {CF_MEJEPA_OOD_CALIBRATIONS}"),
+        })
+        .map_err(ProjectReportError::Infer)
+}
+
 fn validate_project_id(value: &str) -> Result<String, ProjectReportError> {
     if !is_valid_project_id(value) {
         return Err(ProjectReportError::InvalidProjectId {
@@ -1284,4 +1826,235 @@ fn _assert_report_rows_are_unique(report: &ProjectRealityReport) -> bool {
         .top_likely_broken_areas
         .iter()
         .all(|row| seen.insert((row.file_path.clone(), row.chunk_id.clone(), row.line_range)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::project_ingest::{ProjectIngestMode, ProjectIngestScope};
+    use crate::types::{
+        AgentClaimGraph, ChunkId, ConformalInterval, ConformalMethod, ConformalSet, EmbedderId,
+        Language, OracleOutcome, PredictedWorks, PredictionLabelContext, PredictionProvenance,
+        ReasoningClass, TaskId, WitnessHash,
+    };
+
+    fn manifest(project_id: &str) -> ProjectIngestManifest {
+        ProjectIngestManifest {
+            schema_version: 1,
+            project_id: project_id.to_string(),
+            repo_path: "/zfs/archive/contextgraph/projects/test/repo".to_string(),
+            project_root: format!("/zfs/archive/contextgraph/projects/{project_id}"),
+            mode: ProjectIngestMode::Full,
+            scope: ProjectIngestScope::SourceOnly,
+            last_ingest_unix_ms: 1_778_700_000_000,
+            merkle_root: "a".repeat(64),
+            file_count: 1,
+            source_file_count: 1,
+            test_file_count: 0,
+            doc_file_count: 0,
+            config_file_count: 0,
+            prediction_count: 1,
+            cache_db_path: format!("/zfs/archive/contextgraph/projects/{project_id}/cache.rocksdb"),
+            predictions_db_path: format!(
+                "/zfs/archive/contextgraph/projects/{project_id}/predictions/live-predictions.rocksdb"
+            ),
+            predictions: Vec::new(),
+            changed_files: Vec::new(),
+            deleted_files: Vec::new(),
+            new_embeddings_written: 0,
+        }
+    }
+
+    fn prediction(verdict: Verdict, ood_score: f32) -> RealityPrediction {
+        RealityPrediction::try_new(RealityPrediction {
+            prediction_id: [0x71; 16],
+            witness_hash: WitnessHash([0x22; 32]),
+            task_id: TaskId("trust-test-task".to_string()),
+            session_id: [0x33; 16],
+            language: Language::Python,
+            covered_chunks: vec![ChunkId("src/app.py#fn#main".to_string())],
+            verdict,
+            confidence_interval: ConformalInterval {
+                lower: 0.81,
+                upper: 0.97,
+                method: ConformalMethod::SplitConformal,
+                coverage_target: 0.90,
+                empirical_coverage: 0.89,
+            },
+            predicted_oracle_pass: 0.93,
+            predicted_test_pass: vec![0.91],
+            predicted_runtime_trace: [0.0; 32],
+            ood_score,
+            outcome_set: ConformalSet::try_new(vec![OracleOutcome::Pass], 0.1, 0.1).unwrap(),
+            calibrated_confidence: 0.92,
+            degraded_status: false,
+            granger_attestations: BTreeMap::new(),
+            predicted_failure_modes: Vec::new(),
+            predicted_failed_tests: Vec::new(),
+            predicted_works: vec![PredictedWorks {
+                chunk: ChunkId("src/app.py#fn#main".to_string()),
+                line_range: (1, 4),
+                claim: "synthetic function should work".to_string(),
+                confidence: 0.91,
+                supporting_embedders: vec![EmbedderId("E_AST".to_string())],
+                similar_known_good_exemplars: Vec::new(),
+                evidence_strength: 0.82,
+            }],
+            predicted_uncovered_paths: Vec::new(),
+            predicted_flaky_tests: Vec::new(),
+            guard_violations: Vec::new(),
+            per_slot_ood_reasons: Vec::new(),
+            closest_exemplars: Vec::new(),
+            predicted_edge_cases: Vec::new(),
+            predicted_latent_bugs: Vec::new(),
+            predicted_tech_debt_added: Vec::new(),
+            predicted_dead_code: Vec::new(),
+            predicted_redundant_code: Vec::new(),
+            predicted_perf_regressions: Vec::new(),
+            predicted_security_concerns: Vec::new(),
+            predicted_accuracy_degradations: Vec::new(),
+            predicted_cost_regressions: Vec::new(),
+            predicted_reasoning_class: ReasoningClass::MostlyCorrect,
+            agent_claim_graph: AgentClaimGraph::default(),
+            claim_reconciliation: Vec::new(),
+            reality_impact: None,
+            provenance: PredictionProvenance {
+                predictor_version: "trust-test-predictor".to_string(),
+                constellation_version: "trust-test-constellation".to_string(),
+                calibration_version: "trust-test-calibration".to_string(),
+                active_pointer: "trust-test-active".to_string(),
+            },
+            source_panel_sha: [0x44; 32],
+            calibration_version: "trust-test-calibration".to_string(),
+            created_at_unix_ms: 1_778_700_000_001,
+            matched_fingerprint: None,
+            unknown_candidate_id: None,
+            constellation_intelligence: None,
+            slot_attributions: Vec::new(),
+            label_context: PredictionLabelContext::default(),
+        })
+        .unwrap()
+    }
+
+    fn loaded(prediction: RealityPrediction, ood_calibration_rows: usize) -> LoadedPrediction {
+        LoadedPrediction {
+            file_path: "src/app.py".to_string(),
+            live_key_hex: "abcdef".to_string(),
+            trust: assess_prediction_trust(&prediction, ood_calibration_rows),
+            prediction,
+        }
+    }
+
+    #[test]
+    fn pass_without_ood_calibrator_is_reported_as_untrusted() {
+        let ood_calibration_rows = 0;
+        let prediction = prediction(Verdict::Pass, 0.22);
+        let loaded = vec![loaded(prediction, ood_calibration_rows)];
+
+        println!("FSV before: verdict=Pass ood_score=0.22 {CF_MEJEPA_OOD_CALIBRATIONS}=0");
+        let report = build_report(
+            &manifest("trust-test"),
+            Path::new("/zfs/archive/contextgraph/projects/trust-test/manifest.json"),
+            Path::new(
+                "/zfs/archive/contextgraph/projects/trust-test/predictions/live-predictions.rocksdb",
+            ),
+            "trust-test-report",
+            1_778_700_000_002,
+            &loaded,
+            ood_calibration_rows,
+        );
+        println!(
+            "FSV after: trusted={} untrusted={} quarantine_required={} trusted_pass={} untrusted_pass={} warning={:?}",
+            report.trust_summary.trusted,
+            report.trust_summary.untrusted,
+            report.trust_summary.quarantine_required,
+            report.verdict_summary.trusted_pass,
+            report.verdict_summary.untrusted_pass,
+            report.warning
+        );
+
+        assert_eq!(report.verdict_summary.pass, 1);
+        assert_eq!(report.verdict_summary.trusted_pass, 0);
+        assert_eq!(report.verdict_summary.untrusted_pass, 1);
+        assert_eq!(report.trust_summary.untrusted, 1);
+        assert_eq!(report.trust_summary.quarantine_required, 1);
+        assert_eq!(
+            report
+                .trust_summary
+                .contaminated_pass_without_ood_calibrator,
+            1
+        );
+        assert_eq!(report.untrusted_predictions.len(), 1);
+        assert_eq!(
+            report.untrusted_predictions[0].reason_code,
+            TRUST_REASON_PASS_WITHOUT_OOD_CALIBRATOR
+        );
+        assert!(render_markdown(&report).contains("Untrusted predictions"));
+    }
+
+    #[test]
+    fn pass_with_ood_calibrator_remains_trusted() {
+        let ood_calibration_rows = 1;
+        let prediction = prediction(Verdict::Pass, 0.22);
+        let loaded = vec![loaded(prediction, ood_calibration_rows)];
+
+        println!("FSV before: verdict=Pass ood_score=0.22 {CF_MEJEPA_OOD_CALIBRATIONS}=1");
+        let report = build_report(
+            &manifest("trust-test"),
+            Path::new("/zfs/archive/contextgraph/projects/trust-test/manifest.json"),
+            Path::new(
+                "/zfs/archive/contextgraph/projects/trust-test/predictions/live-predictions.rocksdb",
+            ),
+            "trust-test-report",
+            1_778_700_000_002,
+            &loaded,
+            ood_calibration_rows,
+        );
+        println!(
+            "FSV after: trusted={} untrusted={} quarantine_required={} trusted_pass={} untrusted_pass={}",
+            report.trust_summary.trusted,
+            report.trust_summary.untrusted,
+            report.trust_summary.quarantine_required,
+            report.verdict_summary.trusted_pass,
+            report.verdict_summary.untrusted_pass
+        );
+
+        assert_eq!(report.verdict_summary.pass, 1);
+        assert_eq!(report.verdict_summary.trusted_pass, 1);
+        assert_eq!(report.verdict_summary.untrusted_pass, 0);
+        assert_eq!(report.trust_summary.trusted, 1);
+        assert!(report.untrusted_predictions.is_empty());
+    }
+
+    #[test]
+    fn non_pass_without_ood_calibrator_is_not_quarantined_by_pass_rule() {
+        let ood_calibration_rows = 0;
+        let prediction = prediction(Verdict::GuardRejected, 0.22);
+        let loaded = vec![loaded(prediction, ood_calibration_rows)];
+
+        println!("FSV before: verdict=GuardRejected ood_score=0.22 {CF_MEJEPA_OOD_CALIBRATIONS}=0");
+        let report = build_report(
+            &manifest("trust-test"),
+            Path::new("/zfs/archive/contextgraph/projects/trust-test/manifest.json"),
+            Path::new(
+                "/zfs/archive/contextgraph/projects/trust-test/predictions/live-predictions.rocksdb",
+            ),
+            "trust-test-report",
+            1_778_700_000_002,
+            &loaded,
+            ood_calibration_rows,
+        );
+        println!(
+            "FSV after: trusted={} untrusted={} quarantine_required={} guard_rejected={}",
+            report.trust_summary.trusted,
+            report.trust_summary.untrusted,
+            report.trust_summary.quarantine_required,
+            report.verdict_summary.guard_rejected
+        );
+
+        assert_eq!(report.verdict_summary.guard_rejected, 1);
+        assert_eq!(report.trust_summary.trusted, 1);
+        assert_eq!(report.trust_summary.untrusted, 0);
+        assert!(report.untrusted_predictions.is_empty());
+    }
 }

@@ -45,8 +45,9 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_EMBEDDER_PROPOSALS, CF_MEJEPA_FINGERPRINT_REFERENCES, CF_MEJEPA_INSTRUMENT_PROPOSALS,
     CF_MEJEPA_LIBRARY_FOUNDATIONALITY, CF_MEJEPA_LIBRARY_REGISTRY, CF_MEJEPA_LIVE_PREDICTIONS,
     CF_MEJEPA_MINCUT_REPORTS, CF_MEJEPA_MISTAKE_LOG, CF_MEJEPA_MODEL_PROMOTIONS,
-    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_CONTRIBUTIONS, CF_MEJEPA_OPERATOR_OVERRIDES,
-    CF_MEJEPA_REALITY_IMPACT, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT, CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_OOD_CALIBRATIONS, CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_OPERATOR_CONTRIBUTIONS,
+    CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_REALITY_IMPACT, CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
+    CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
@@ -2761,6 +2762,11 @@ fn run_inspect_prediction(
     let prediction_id = parse_prediction_id_hex(&request.prediction_id)?;
     let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
     let row = find_prediction_row_by_id(db.as_ref(), prediction_id)?;
+    let ood_calibration_rows =
+        context_graph_mejepa::count_prediction_ood_calibration_rows(db.as_ref())
+            .context("count CF_MEJEPA_OOD_CALIBRATIONS rows")?;
+    let trust =
+        context_graph_mejepa::assess_prediction_trust(&row.prediction, ood_calibration_rows);
     let saliency = saliency_by_chunk(&row.prediction)?;
     let contributing_chunks = inspect_contributing_chunks(db.as_ref(), &row.prediction, &saliency)?;
     let granger_mean = mean_prediction_attestation(&row.prediction.granger_attestations);
@@ -2847,11 +2853,14 @@ fn run_inspect_prediction(
         "q4TrustGate": &q4_trust_gate,
         "trustedQ4Consequences": &trusted_q4,
         "prediction": row.prediction,
+        "predictionTrust": trust,
         "sourceOfTruth": {
             "dbPath": db_path.display().to_string(),
             "livePredictionCf": CF_MEJEPA_LIVE_PREDICTIONS,
             "livePredictionKeyHex": hex::encode(&row.key),
             "livePredictionValueSha256": row.value_sha256_hex,
+            "oodCalibrationCf": CF_MEJEPA_OOD_CALIBRATIONS,
+            "oodCalibrationRows": ood_calibration_rows,
             "ddaSignalsCf": CF_MEJEPA_DDA_SIGNALS,
             "readbackVerified": true
         }
@@ -6298,6 +6307,54 @@ can_operator_override = {operator}
             assert_eq!(decoded, signals);
         }
         db.flush_cf(cf).unwrap();
+    }
+
+    #[test]
+    fn inspect_prediction_marks_pass_without_ood_calibrator_untrusted() {
+        let tmp = TempDir::new().unwrap();
+        let infer_db = tmp.path().join("infer-db");
+        let chunk = "src/lib.rs#fn#untrusted-pass";
+        let db = open_infer_rocksdb(&infer_db).unwrap();
+        let mut prediction = inspect_prediction_fixture([0x7a; 16], chunk);
+        prediction.verdict = Verdict::Pass;
+        prediction.guard_violations.clear();
+        prediction.per_slot_ood_reasons.clear();
+        prediction.ood_score = 0.22;
+        persist_prediction_and_dda(db.clone(), &prediction);
+        let before_ood_rows =
+            context_graph_mejepa::count_prediction_ood_calibration_rows(db.as_ref()).unwrap();
+        println!(
+            "FSV before: live_prediction_rows=1 {CF_MEJEPA_OOD_CALIBRATIONS}={before_ood_rows} verdict=Pass ood_score={}",
+            prediction.ood_score
+        );
+        drop(db);
+
+        let inspected = run_inspect_prediction(
+            &infer_db,
+            InspectPredictionRequest {
+                prediction_id: hex::encode(prediction.prediction_id),
+                db_path: None,
+            },
+        )
+        .unwrap();
+        println!(
+            "FSV after: trust_status={} quarantine_required={} ood_calibration_rows={}",
+            inspected["predictionTrust"]["status"],
+            inspected["predictionTrust"]["quarantineRequired"],
+            inspected["sourceOfTruth"]["oodCalibrationRows"]
+        );
+
+        assert_eq!(inspected["predictionTrust"]["status"], "untrusted");
+        assert_eq!(
+            inspected["predictionTrust"]["reasonCode"],
+            context_graph_mejepa::TRUST_REASON_PASS_WITHOUT_OOD_CALIBRATOR
+        );
+        assert_eq!(inspected["predictionTrust"]["quarantineRequired"], true);
+        assert_eq!(inspected["sourceOfTruth"]["oodCalibrationRows"], 0);
+        assert_eq!(
+            inspected["sourceOfTruth"]["oodCalibrationCf"],
+            CF_MEJEPA_OOD_CALIBRATIONS
+        );
     }
 
     fn write_fsv_json(path: &Path, value: &Value) {
