@@ -4,7 +4,7 @@ use context_graph_mejepa_embedders::{
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
@@ -15,6 +15,10 @@ const SCHEMA_VERSION: u64 = 1;
 const DEFAULT_MODELS_CONFIG: &str = "/zfs/hot/contextgraph/models/mejepa_models_config.toml";
 const STATIC_AST_CORPUS_PROFILE: &str = "static_ast_python";
 const LIVE_TEMPORAL_CORPUS_PROFILE: &str = "live_temporal";
+const MIN_UNIQUE_VECTOR_FRACTION: f64 = 0.5;
+const MAX_PAIRWISE_VECTOR_HASH_JACCARD: f64 = 0.5;
+const ERR_EMBEDDER_COLLAPSE: &str = "MEJEPA_FORWARD_CACHE_EMBEDDER_COLLAPSE";
+const ERR_EMBEDDER_ALIAS: &str = "MEJEPA_FORWARD_CACHE_EMBEDDER_ALIAS";
 
 type RunnerResult<T> = Result<T, RunnerError>;
 
@@ -80,6 +84,12 @@ struct ForwardRecord {
     packed_record: Value,
 }
 
+#[derive(Debug)]
+struct PendingEmbedderRecords {
+    embedder: EmbedderId,
+    records: Vec<ForwardRecord>,
+}
+
 #[derive(Debug, Clone)]
 struct QuarantineRecord {
     row: Value,
@@ -90,6 +100,28 @@ struct BatchResult {
     telemetry: Value,
     records: Vec<ForwardRecord>,
     quarantines: Vec<QuarantineRecord>,
+}
+
+#[derive(Debug, Clone)]
+struct DistinctnessReport {
+    per_embedder_metrics: BTreeMap<String, Value>,
+    pairwise_jaccard_matrix: Value,
+    collapse_failures: Vec<Value>,
+    alias_failures: Vec<Value>,
+}
+
+impl DistinctnessReport {
+    fn passes(&self) -> bool {
+        self.collapse_failures.is_empty() && self.alias_failures.is_empty()
+    }
+
+    fn error_code(&self) -> &'static str {
+        if self.collapse_failures.is_empty() {
+            ERR_EMBEDDER_ALIAS
+        } else {
+            ERR_EMBEDDER_COLLAPSE
+        }
+    }
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -127,6 +159,8 @@ async fn run() -> RunnerResult<()> {
     let mut all_quarantine_rows = Vec::new();
     let mut all_telemetry_rows = Vec::new();
     let mut per_embedder_coverage = BTreeMap::new();
+    let mut vector_hash_counts_by_embedder = BTreeMap::new();
+    let mut pending_embedder_records = Vec::new();
     let mut packed_per_embedder = BTreeMap::new();
     let mut first_pass_writes = 0usize;
     let mut batch_counter = 0usize;
@@ -161,10 +195,10 @@ async fn run() -> RunnerResult<()> {
                 all_quarantine_rows.push(quarantine.row);
             }
         }
-        let (packed, top_index_rows) =
-            write_packed_embedder_records(&config, embedder, &embedder_records)?;
-        all_index_rows.extend(top_index_rows);
-        packed_per_embedder.insert(embedder.slug().to_string(), packed);
+        vector_hash_counts_by_embedder.insert(
+            embedder.slug().to_string(),
+            vector_hash_counts_for_records(embedder, &embedder_records)?,
+        );
         first_pass_writes += output_count;
         per_embedder_coverage.insert(
             embedder.slug().to_string(),
@@ -177,6 +211,43 @@ async fn run() -> RunnerResult<()> {
                 "passes": output_count + quarantine_count == chunks.len(),
             }),
         );
+        pending_embedder_records.push(PendingEmbedderRecords {
+            embedder,
+            records: embedder_records,
+        });
+    }
+
+    let active_embedder_ids: Vec<String> = embedders
+        .iter()
+        .map(|embedder| embedder.slug().to_string())
+        .collect();
+    let distinctness_report =
+        evaluate_embedder_distinctness(&active_embedder_ids, &vector_hash_counts_by_embedder);
+    merge_distinctness_metrics(&mut per_embedder_coverage, &distinctness_report);
+    if !distinctness_report.passes() {
+        write_distinctness_failure_artifacts(
+            &config,
+            &chunks,
+            &embedders,
+            &retired_embedders,
+            &per_embedder_coverage,
+            &distinctness_report,
+        )?;
+        return Err(RunnerError::new(
+            distinctness_report.error_code(),
+            format!(
+                "forward-cache embedder distinctness gate failed: collapse_failures={} alias_failures={}",
+                distinctness_report.collapse_failures.len(),
+                distinctness_report.alias_failures.len()
+            ),
+        ));
+    }
+
+    for pending in pending_embedder_records {
+        let (packed, top_index_rows) =
+            write_packed_embedder_records(&config, pending.embedder, &pending.records)?;
+        all_index_rows.extend(top_index_rows);
+        packed_per_embedder.insert(pending.embedder.slug().to_string(), packed);
     }
 
     write_jsonl(
@@ -259,6 +330,14 @@ async fn run() -> RunnerResult<()> {
         },
         "retired_embedder_policy": retired_embedder_policy(&config, &retired_embedders),
         "per_embedder_coverage": per_embedder_coverage,
+        "embedder_distinctness_gate": {
+            "status": "passed",
+            "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
+            "collapse_failures": distinctness_report.collapse_failures.clone(),
+            "alias_failures": distinctness_report.alias_failures.clone(),
+        },
+        "pairwise_jaccard_matrix": distinctness_report.pairwise_jaccard_matrix.clone(),
     });
     write_json(&manifest_path, &manifest)?;
 
@@ -280,6 +359,8 @@ async fn run() -> RunnerResult<()> {
         },
         "summary": manifest["summary"].clone(),
         "retired_embedder_policy": manifest["retired_embedder_policy"].clone(),
+        "embedder_distinctness_gate": manifest["embedder_distinctness_gate"].clone(),
+        "pairwise_jaccard_matrix": manifest["pairwise_jaccard_matrix"].clone(),
     });
     write_json(&readback_path, &readback)?;
     Ok(())
@@ -964,6 +1045,205 @@ fn write_packed_embedder_records(
     Ok((packed, top_index_rewrites))
 }
 
+fn vector_hash_counts_for_records(
+    embedder: EmbedderId,
+    records: &[ForwardRecord],
+) -> RunnerResult<BTreeMap<String, usize>> {
+    let mut counts = BTreeMap::new();
+    for record in records {
+        let vector_sha = record
+            .index_row
+            .get("vector_sha256")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                RunnerError::new(
+                    "MEJEPA_PY_FORWARD_VECTOR_SHA256_MISSING",
+                    format!("{} forward record missing vector_sha256", embedder.slug()),
+                )
+            })?;
+        *counts.entry(vector_sha.to_string()).or_insert(0) += 1;
+    }
+    Ok(counts)
+}
+
+fn evaluate_embedder_distinctness(
+    active_embedder_ids: &[String],
+    vector_hash_counts_by_embedder: &BTreeMap<String, BTreeMap<String, usize>>,
+) -> DistinctnessReport {
+    let mut per_embedder_metrics = BTreeMap::new();
+    let mut collapse_failures = Vec::new();
+    let mut vector_hash_sets = BTreeMap::new();
+
+    for embedder_id in active_embedder_ids {
+        let counts = vector_hash_counts_by_embedder
+            .get(embedder_id)
+            .cloned()
+            .unwrap_or_default();
+        let row_count: usize = counts.values().sum();
+        let unique_count = counts.len();
+        let distinctness_fraction = if row_count == 0 {
+            0.0
+        } else {
+            unique_count as f64 / row_count as f64
+        };
+        let status = if distinctness_fraction < MIN_UNIQUE_VECTOR_FRACTION {
+            "collapse"
+        } else {
+            "usable"
+        };
+        let metric = json!({
+            "unique_vector_sha256_count": unique_count,
+            "distinctness_fraction": distinctness_fraction,
+            "distinctness_gate_status": status,
+            "distinctness_min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "top_vector_sha256_counts": top_vector_sha256_counts(&counts),
+        });
+        if status != "usable" {
+            collapse_failures.push(json!({
+                "error_code": ERR_EMBEDDER_COLLAPSE,
+                "embedder_id": embedder_id,
+                "row_count": row_count,
+                "unique_vector_sha256_count": unique_count,
+                "distinctness_fraction": distinctness_fraction,
+                "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            }));
+        }
+        vector_hash_sets.insert(
+            embedder_id.clone(),
+            counts.keys().cloned().collect::<BTreeSet<_>>(),
+        );
+        per_embedder_metrics.insert(embedder_id.clone(), metric);
+    }
+
+    let mut matrix = serde_json::Map::new();
+    let mut alias_failures = Vec::new();
+    for left in active_embedder_ids {
+        let mut row = serde_json::Map::new();
+        for right in active_embedder_ids {
+            let left_set = vector_hash_sets.get(left).cloned().unwrap_or_default();
+            let right_set = vector_hash_sets.get(right).cloned().unwrap_or_default();
+            let jaccard = vector_hash_jaccard(&left_set, &right_set);
+            row.insert(right.clone(), json!(jaccard));
+            if left < right && jaccard > MAX_PAIRWISE_VECTOR_HASH_JACCARD {
+                alias_failures.push(json!({
+                    "error_code": ERR_EMBEDDER_ALIAS,
+                    "left_embedder_id": left,
+                    "right_embedder_id": right,
+                    "jaccard": jaccard,
+                    "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
+                    "left_unique_vector_sha256_count": left_set.len(),
+                    "right_unique_vector_sha256_count": right_set.len(),
+                }));
+            }
+        }
+        matrix.insert(left.clone(), Value::Object(row));
+    }
+
+    DistinctnessReport {
+        per_embedder_metrics,
+        pairwise_jaccard_matrix: Value::Object(matrix),
+        collapse_failures,
+        alias_failures,
+    }
+}
+
+fn merge_distinctness_metrics(
+    per_embedder_coverage: &mut BTreeMap<String, Value>,
+    distinctness_report: &DistinctnessReport,
+) {
+    for (embedder_id, metrics) in &distinctness_report.per_embedder_metrics {
+        let Some(Value::Object(coverage)) = per_embedder_coverage.get_mut(embedder_id) else {
+            continue;
+        };
+        let Some(metric_fields) = metrics.as_object() else {
+            continue;
+        };
+        for (key, value) in metric_fields {
+            coverage.insert(key.clone(), value.clone());
+        }
+    }
+}
+
+fn write_distinctness_failure_artifacts(
+    config: &EnvConfig,
+    chunks: &[ChunkRow],
+    embedders: &[EmbedderId],
+    retired_embedders: &[EmbedderId],
+    per_embedder_coverage: &BTreeMap<String, Value>,
+    distinctness_report: &DistinctnessReport,
+) -> RunnerResult<()> {
+    let cache_failure_path = config
+        .cache_root
+        .join("python_forward_cache_distinctness_failure.json");
+    let readback_failure_path = config
+        .readback_root
+        .join("python_forward_cache_distinctness_failure.json");
+    let payload = json!({
+        "schema_version": SCHEMA_VERSION,
+        "artifact_kind": "python_forward_cache_embedder_distinctness_failure",
+        "created_at_utc": utc_now(),
+        "status": "quarantined",
+        "passes": false,
+        "error_code": distinctness_report.error_code(),
+        "source_of_truth": {
+            "cache_failure": cache_failure_path,
+            "readback_failure": readback_failure_path,
+            "manifest": config.cache_root.join("python_forward_cache_manifest.json"),
+            "packed_manifest": config.cache_root.join("python_forward_cache_packed_manifest.json"),
+            "promoted_manifest_written": false,
+        },
+        "summary": {
+            "chunk_count": chunks.len(),
+            "active_embedder_count": embedders.len(),
+            "active_embedder_ids": embedder_slugs(embedders),
+            "retired_embedder_count": retired_embedders.len(),
+            "retired_embedder_ids": embedder_slugs(retired_embedders),
+            "collapse_failure_count": distinctness_report.collapse_failures.len(),
+            "alias_failure_count": distinctness_report.alias_failures.len(),
+        },
+        "retired_embedder_policy": retired_embedder_policy(config, retired_embedders),
+        "per_embedder_coverage": per_embedder_coverage,
+        "embedder_distinctness_gate": {
+            "status": "failed",
+            "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+            "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
+            "collapse_failures": distinctness_report.collapse_failures.clone(),
+            "alias_failures": distinctness_report.alias_failures.clone(),
+        },
+        "pairwise_jaccard_matrix": distinctness_report.pairwise_jaccard_matrix.clone(),
+    });
+    write_json(&cache_failure_path, &payload)?;
+    write_json(&readback_failure_path, &payload)?;
+    Ok(())
+}
+
+fn top_vector_sha256_counts(counts: &BTreeMap<String, usize>) -> Vec<Value> {
+    let mut rows: Vec<(&String, &usize)> = counts.iter().collect();
+    rows.sort_by(|(left_sha, left_count), (right_sha, right_count)| {
+        right_count
+            .cmp(left_count)
+            .then_with(|| left_sha.cmp(right_sha))
+    });
+    rows.into_iter()
+        .take(5)
+        .map(|(vector_sha256, count)| {
+            json!({
+                "vector_sha256": vector_sha256,
+                "count": count,
+            })
+        })
+        .collect()
+}
+
+fn vector_hash_jaccard(left: &BTreeSet<String>, right: &BTreeSet<String>) -> f64 {
+    let union_count = left.union(right).count();
+    if union_count == 0 {
+        return 0.0;
+    }
+    left.intersection(right).count() as f64 / union_count as f64
+}
+
 fn prepare_output_roots(config: &EnvConfig) -> RunnerResult<()> {
     fs::create_dir_all(&config.cache_root).map_err(|err| {
         RunnerError::new(
@@ -1163,5 +1443,79 @@ mod tests {
 
         assert_eq!(active, SUPPORTED_FORWARD_EMBEDDERS.to_vec());
         assert!(retired_embedders(&config).is_empty());
+    }
+
+    fn counts(values: &[&str]) -> BTreeMap<String, usize> {
+        let mut out = BTreeMap::new();
+        for value in values {
+            *out.entry((*value).to_string()).or_insert(0) += 1;
+        }
+        out
+    }
+
+    fn report_for_hashes(rows: &[(&str, Vec<&str>)]) -> DistinctnessReport {
+        let active = rows
+            .iter()
+            .map(|(embedder_id, _)| (*embedder_id).to_string())
+            .collect::<Vec<_>>();
+        let mut by_embedder = BTreeMap::new();
+        for (embedder_id, hashes) in rows {
+            by_embedder.insert((*embedder_id).to_string(), counts(hashes));
+        }
+        evaluate_embedder_distinctness(&active, &by_embedder)
+    }
+
+    #[test]
+    fn distinctness_gate_rejects_degenerate_embedder_hash_space() {
+        let repeated = vec!["sha256:a"; 100];
+        let report = report_for_hashes(&[("e1", repeated)]);
+
+        assert!(!report.passes());
+        assert_eq!(report.error_code(), ERR_EMBEDDER_COLLAPSE);
+        assert_eq!(report.collapse_failures.len(), 1);
+        assert_eq!(report.alias_failures.len(), 0);
+        assert_eq!(
+            report.per_embedder_metrics["e1"]["unique_vector_sha256_count"],
+            json!(1)
+        );
+    }
+
+    #[test]
+    fn distinctness_gate_rejects_aliased_embedder_hash_sets() {
+        let report = report_for_hashes(&[
+            ("e1", vec!["sha256:a", "sha256:b", "sha256:c"]),
+            ("e8", vec!["sha256:a", "sha256:b", "sha256:c"]),
+        ]);
+
+        assert!(!report.passes());
+        assert_eq!(report.error_code(), ERR_EMBEDDER_ALIAS);
+        assert_eq!(report.collapse_failures.len(), 0);
+        assert_eq!(report.alias_failures.len(), 1);
+        assert_eq!(report.pairwise_jaccard_matrix["e1"]["e8"], json!(1.0));
+    }
+
+    #[test]
+    fn distinctness_gate_passes_distinct_healthy_hash_spaces() {
+        let report = report_for_hashes(&[
+            ("e1", vec!["sha256:a", "sha256:b", "sha256:c"]),
+            ("e8", vec!["sha256:d", "sha256:e", "sha256:f"]),
+            ("e9", vec!["sha256:g", "sha256:h", "sha256:i"]),
+        ]);
+
+        assert!(report.passes());
+        assert_eq!(report.collapse_failures.len(), 0);
+        assert_eq!(report.alias_failures.len(), 0);
+        assert_eq!(report.pairwise_jaccard_matrix["e1"]["e8"], json!(0.0));
+    }
+
+    #[test]
+    fn distinctness_gate_allows_jaccard_at_threshold() {
+        let report = report_for_hashes(&[
+            ("e1", vec!["sha256:a", "sha256:b", "sha256:c"]),
+            ("e8", vec!["sha256:a", "sha256:b", "sha256:d"]),
+        ]);
+
+        assert!(report.passes());
+        assert_eq!(report.pairwise_jaccard_matrix["e1"]["e8"], json!(0.5));
     }
 }
