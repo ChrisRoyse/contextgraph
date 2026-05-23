@@ -34,7 +34,17 @@ prediction_oracle_correlation ≥ 0.95
   AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
 
-Once met → human review of AI-generated Python patches is statistically unjustified. Current valid Panel A binary baseline: rank-lift `prediction_oracle_correlation = 0.7942190170` (raw `0.4843192995`, rank-safe `0.6916886568`) from aiwonder real-input FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`; the older `0.866667` measurement is invalid synthetic-vector evidence. The #392 active/abstain diagnostic clears aggregate active correlation (`0.9526350498`) but is not a ship-gate pass because per-cell and rolling-window/power gates still fail. Panel B has no measurement yet (#405/#521).
+Once met → human review of AI-generated Python patches is statistically unjustified.
+
+**2026-05-23 measurement decomposition (3-Sherlock audit, see #712).** The `0.7942190170` rank-lift number is not the predictor's score:
+
+| Layer | Defect | Issue |
+|---|---|---|
+| Predictor head | Public Rust `Trainer` hard-coded `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE`; latest aiwonder FSV loaded an out-of-band task-py-g-127 checkpoint (`optimizer_steps=64`, `weight_delta_observed=true`), but that path is not unified with the trainer contract and normal compiler construction must fail closed unless `trained_checkpoint_manifest_path` is explicit | #683 |
+| Substrate | `e2/e3/e4` collapsed (1 unique vector each; `chunk.time` wall-clock injection identical for 399,777 chunks); `e8 ≡ e1` byte-identical (graph projection bug fixed `ff4d4c03`, prod corpus 7d older) | #704, #670 |
+| Gate metric | Rank-lift = category-local RBF exemplar similarity over calibration split; lifts raw `0.4843 → 0.7942` without Brier/ECE improvement; measures exemplars, not predictor | #695 |
+
+Honest raw-Pearson gap = `0.95 − 0.4843 = 0.4657`. Latest FSV: `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`; checkpoint readback: `/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv/best.manifest.json`, `optimizer_steps=64`, `weight_delta_observed=true`. The `0.866667` (pre-2026-05-19) was synthetic-vector evidence and remains invalid. #392 active/abstain (`0.9526350498` on `205/240`) is selection bias, not hidden gate pass. Panel B unmeasured (#405/#521).
 
 **Product boundary.** ME-JEPA is the product. LLM agents are untrusted edit generators. Hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, and docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`. A feature belongs in the architecture only if it captures durable reality, densifies frozen target panels, improves predictor calibration/coverage/OOD, converts prediction mistakes into replay weight, or proves to the operator (by SoT readback) that the system functions as claimed.
 
@@ -49,11 +59,13 @@ Beyond the binary primitive ME-JEPA exposes two derived operator-facing surfaces
 
 **Phases A–H complete.** 35/35 Phase A–D items audit-verified 2026-05-12. Phase H (inner-actor LLM retirement) FSV-verified 2026-05-13 — `feature = "llm"` triggers `compile_error!` at `crates/context-graph-mcp/src/lib.rs:13`; deletion of `Qwen3.6-27B`, `Hermes-2-Pro`, `Ollama`, `llama.cpp` generative inference enforced by 9 `scripts/ci/phase_h_*.sh` absence-checks.
 
-**The only outstanding gate is Phase G model-quality convergence:** valid real-input Panel A binary baseline is `prediction_oracle_correlation = 0.7942190170 < 0.95`; latest ship-gate FSV is `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`. The #392 active/abstain diagnostic has aggregate active correlation `0.9526350498`, Brier `0.0231730901`, and ECE `0.0169885978` on `205 / 240` holdout rows, but full ship-gate remains false due per-cell and rolling-window/power blockers. Panel B (#405/#521) still has no model-backed measurement.
+**The only outstanding gate is Phase G model-quality convergence:** valid real-input Panel A raw baseline is `prediction_oracle_correlation = 0.4843192995 < 0.95`; the `0.7942190170` rank-lift value is diagnostic only until #695 is resolved. Latest ship-gate FSV is `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`. The #392 active/abstain diagnostic has aggregate active correlation `0.9526350498`, Brier `0.0231730901`, and ECE `0.0169885978` on `205 / 240` holdout rows, but full ship-gate remains false due per-cell and rolling-window/power blockers. Panel B (#405/#521) still has no model-backed measurement.
 
 **Post-migration storage:** Production durable state lives on aiwonder under `/zfs/archive/contextgraph/...`; hot work under `/zfs/hot/contextgraph/...` (per #363 / #412).
 
-**2026-05-19 cleanup pass (this session).** Investigation reports at `./docs/INVESTIGATION_{1,2,3}_*.md` drove ~314,000 LOC removed across 4 commits, including:
+**2026-05-23 3-Sherlock parallel forensic audit.** Reports: `docs/SHERLOCK_PREDICTOR_FINDINGS_2026-05-22.md`, `docs/SHERLOCK_SUBSTRATE_FINDINGS_2026-05-22.md`, `docs/SHERLOCK_INFRA_FINDINGS_2026-05-22.md`. Filed 29 new issues (#683-#711). Decomposed the `0.7942` rank-lift measurement into three structural defects (table above). New critical path replaces `08 §3.0` ordering. See #712.
+
+**2026-05-19 cleanup pass.** Investigation reports at `./docs/INVESTIGATION_{1,2,3}_*.md` drove ~314,000 LOC removed across 4 commits, including:
 
 - Retired crates **`context-graph-causal-agent`**, **`context-graph-graph-agent`**, and **`context-graph-benchmark`** (had no ship-gate role after the 2026-05-09 LLM cutover and ME-JEPA pivot). Workspace: 25 → 22 active members.
 - Retired **BlackBoxFix** subsystem from `context-graph-cli` (~52K LOC + 26 tests + `axum`/`reqwest`/`rusqlite` deps).
@@ -64,27 +76,31 @@ Beyond the binary primitive ME-JEPA exposes two derived operator-facing surfaces
 - Retired obsolete WSL/Shakespeare/EXP-2 script trees and re-pointed remaining active runtime defaults to aiwonder.
 - Re-branded 7 storage-test `validator_version: "hermes-2-pro-mistral-7b-q5-km@2026-04"` strings → `"deterministic-validator-v1@2026-05"`.
 
-**Current work source.** GitHub Issues are the live source of truth. Read pinned `type:context` issues first, then `docs/futurebuild/README.md` for the 8-doc map and `docs/futurebuild/08_roadmap_and_open_work.md` for the latest roadmap.
+**Current work source.** GitHub Issues are the live source of truth. Read pinned `type:context` issues first, then `docs/futurebuild/README.md` and `docs/futurebuild/08_roadmap_and_open_work.md`.
 
-- **#310** — active meta/context issue for Phase G queue ordering.
-- **#227** — active runtime-policy context issue for Python ME-JEPA data work.
-- **#383** — locked rule (pinned `type:context`): gate-active issue ordering is **evidence-weighted, not vision-weighted**.
+Active pinned `type:context`:
 
-**Current critical path (binary doctrine ordering, per `08 §3.−1`):**
+- **#712** — Sherlock-validated critical path (2026-05-23). **Authoritative ordering.**
+- **#633** — Manual full-system FSV + hardening gate (P0 children #634-#651).
+- **#310** — META Phase G queue ordering (now subordinate to #712).
+- **#383** — Locked rule: gate-active issue ordering is evidence-weighted.
+- **#227** — Python ME-JEPA data runtime policy.
+- **#397** — Consequence-prediction truth-system contract.
 
-| Rank | Epic | Status |
-|---|---|---|
-| 1 | **#408 / TASK-PY-G-114** — Q4 doctrine freeze + producer-track closeout | ✅ CLOSED 2026-05-19 |
-| 2 | **#404 / TASK-PY-G-110** — Failure-mode labeling hierarchy (4-level named-mode meaning layer) | CLOSED 2026-05-20; hierarchy + holdout/exemplar FSV passed |
-| 3 | **#413 / TASK-PY-G-117** — Auto-label discovery baseline | ✅ CLOSED 2026-05-19; 399,777 chunk labels, 491 accepted label registry rows on aiwonder |
-| 4 | **#414 / TASK-PY-G-118** — Skill-sequence discovery + chunk-skill reverse membership | ✅ CLOSED 2026-05-19 (synthetic + aiwonder FSV passed) |
-| 5 | **#407 / TASK-PY-G-113** — Threshold-calibration disjointness audit | OPEN p1 |
-| 6 | **#405 / TASK-PY-G-111** — Cross-panel triangulation Panel B (defends 0.95 against Goodhart) | OPEN p0; adds a hard new ship-gate requirement |
-| 7 | **#406 / #523 / TASK-PY-G-112(B)** — Online mistake-driven loop (`mistake_repeat_rate ≤ 0.05`) | CLOSED 2026-05-20; core trainer path + MCP record/history/status wrappers shipped |
-| 7.5 | **#416 / TASK-PY-G-119** — Pathway exploration surface (binary-leaf butterfly-effect tree) | OPEN p1 |
-| 7.6 | **#417 / TASK-PY-G-120** — Bidirectional chunk↔skill linkage MCP surface | OPEN p1; first read-only slice shipped 2026-05-19 |
-| 7.7 | **#418 / TASK-PY-G-121** — Runtime hierarchical ability resolver | CLOSED 2026-05-19; aiwonder FSV passed |
-| 8 | **#409 / TASK-DOC-001** — Paper revision for binary doctrine | OPEN p2 |
+**Current critical path (Sherlock-validated 2026-05-23, supersedes prior ordering):**
+
+| Rank | Issue | Action | Expected impact |
+|---|---|---|---|
+| 1 | **#683** | Unify real training path with trainer contract and require production `trained_checkpoint_manifest_path` fail-closed | Largest; current checkpoint evidence is out-of-band from the public trainer |
+| 2 | **#670 + #704** | Regenerate `e2/e3/e4/e8`: fix `chunk.time` injection; `ff4d4c03` already fixed graph projection; rerun prod forward cache | Recovers 4/12 panel signal-bearing dims |
+| 3 | **#615** | Run delete_test_call Docker oracle batch over 1,131 candidates → rebuild AST → #614 mask → labels | Closes weak-cell ceiling (`0.69 → ≥0.85`) |
+| 4 | **#618 + #619** | Per-slot OOD aggregation; slot-preserving panel projections | Removes anti-compensation cheat path |
+| 5 | **#691** | Hook scripts exit non-zero on capture failure | Restores Q5 binary-prediction honesty |
+| 6 | **#695** | Stop using rank-lift as gate metric; use raw Pearson + isotonic/Platt | Reveals honest gap |
+| 7 | **#685/#687/#688/#690/#707** | Eliminate hardcoded passing telemetry (`forward_logits` zeros; `detach_loras` no-op; `EpochSummary` hardcoded best/worst; `retrain_triggered:true` literal; OOD strict fail-open) | Prevents Goodhart on future mistake-loop wiring |
+| 8 | #392 / #511 / #405 / #379 | Trajectory ECE / entropy aux loss / Panel B / multi-file holdout | **Blocked behind 1-7** |
+
+Closed prior critical-path items remain valid substrate: #408 Q4 freeze, #404 failure-mode hierarchy, #413 auto-label discovery, #414 skill substrate, #418 runtime ability resolver, #406+#523 mistake-loop MCP. The structural work survived the audit; only the **measurement** and **predictor head** were broken.
 
 Historical 2026-05-12 audit trail lived at `./memory/discoveries/2026-05-12--phase-a-d-independent-audit-zero-gaps.md`. That namespace is archived under `backupdocs/memory.archive/`. Any audit-trail entries going forward become `type:discovery` GitHub issues per doctrine §3.
 

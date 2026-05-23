@@ -4,25 +4,56 @@
 
 ---
 
-## 0b. ⚠ 2026-05-22 hardening pivot — pipeline-level audit findings
+## 0b. ⚠ 2026-05-23 3-Sherlock audit — pipeline reality
 
-5-Sherlock parallel forensic audit (#629 closeout) surfaced doctrine-violation + silent-success defects across the pipeline. All open until #633 hardening gate closes:
+The pipeline downstream of the embedders currently rests on a split training story: the in-repo Rust `Trainer` is certificate-only, while the latest aiwonder ship-gate FSV loaded an out-of-band task-py-g-127 checkpoint (`optimizer_steps=64`, `weight_delta_observed=true`). That checkpoint is not produced by the public `Trainer` API and is not countable under the trainer's own `trained_predictor` / `ship_gate_countable_training` contract. Combined with 4/12 dead embedder slots, the `0.7942190170` rank-lift measurement is gate-metric Goodhart, not a clean predictor evaluation. See #712 (pinned context) and `docs/SHERLOCK_{PREDICTOR,SUBSTRATE,INFRA}_FINDINGS_2026-05-22.md`.
 
-| Issue | Pipeline surface | Defect |
+**Predictor-head defects:**
+
+| Issue | Surface | File:line | Defect |
+|---|---|---|---|
+| **#683** | trainer | `mejepa-train/src/trainer/mod.rs:31-34, 409-422` | Hard-coded `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE`; no optimizer, no backward pass, no predictor field; `predictor_parameter_update_count=0`; `ship_gate_countable_training=false` |
+| **#683** | production CLI | `mejepa/src/cli.rs:307-314` | Checkpoint loading depends on `trained_checkpoint_manifest_path`; if absent, the compiler can construct a fresh `VarMap` predictor. The latest aiwonder FSV did load `/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv/best.manifest.json`, so #683 is a fail-closed/countability defect, not proof that that specific FSV used random weights |
+| **#684** | OOD reporting | `compiler.rs:2267-2296` | `per_slot_ood_reasons` is built 1:1 from `guard_violations` — same data, different name; live serving never computes per-slot residuals |
+| **#686** | OOD policy | conformal policy | `interval_width_threshold=0.8` hardcoded; forces cold-start OOD on under-1000-outcome cells |
+| **#689** | mistake loop | `online_head_state.rs` | LUT keyed on exact panel-signature hash; `protection_mode=ExactPanelKeyIsolation`; production panels almost never collide → LUT inert |
+| **#699** | confidence | `compiler.rs` | `calibrated_confidence_multiplier` derived from pseudo-certificates rather than real learning signal |
+
+**Embedder-substrate defects (4 of 12 active slots dead):**
+
+| Issue | Slot | Root cause | Symptom |
+|---|---|---|---|
+| **#704** | `e2`, `e3`, `e4` | `chunk.time` wall-clock injection at `python_forward_cache_fsv.rs:2308` identical for all 399,777 chunks | Constant sinusoidal-PE output; 1 unique vector per slot |
+| **#704** | `e8` | `GraphModel::embed_batch()` missing `project_source_vector` call before commit `ff4d4c03` (2026-05-22); prod corpus generated 7 days earlier | Byte-identical to `e1`; full 1024-float equality; identical `vector_sha256` |
+| **#705** | distill / heal | cross-embedder InfoNCE without slot-identity preservation | Doctrine §1.5ter violation in distillation path |
+| **#706** | latent search | cross-embedder delta computation | Compares across non-comparable coordinate systems |
+| **#709** | FSV gate | absence of inter-embedder distinctness check | Allowed `e8 ≡ e1` collapse to ship undetected |
+| **#710** | `PanelBuilder` | accepts degenerate slot vectors | Should fail-closed on rank-1 / variance-0 slot input |
+| **#670** | overall | regenerate/retire `e2/e3/e4/e8` before any geometry-label promotion | Substrate-level rebuild |
+
+**Gate-metric defect:**
+
+| Issue | Surface | Defect |
 |---|---|---|
-| **#618** | `compiler.rs` aggregate OOD score | Reads flat 5,120-byte packed panel buffer instead of per-slot OOD evidence (doctrine §1.5ter) |
-| **#619** | `mejepa-train/src/loss/inverse.rs::forward_inverse_inner` | `Linear(PANEL_DIM, hidden)` flat projections (same class as pre-#387 violation that slot-preserving refactor was supposed to eliminate) |
-| **#620** | `mejepa-train/` training loop | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook from `frozen_hook.rs` **never invoked** during training |
-| **#621** | `mejepa-train/` HoldoutReport publisher | Hardcoded `gtau_pass_rate: 1.0` published to MCP `mejepa_weekly_eval_dashboard` (operator status lies) |
-| **#623** | `compiler.rs::cold_start_conformal_policy` | Emits `alpha=0.0`, invalid input to `calibrate_tau` (dead public API + landmine) |
-| **#625** | `lib.rs` public re-exports | `DeterministicPredictor` publicly re-exported (synthetic-vector landmine post-#422) |
-| **#670** | `mejepa-embedders/` `e2/e3/e4/e8` forward providers | Forward-cache embedder vector-space collapse uncovered by #666; regenerate or retire before geometry-label promotion |
+| **#695** | ship-gate measurement | Rank-lift = category-local RBF exemplar similarity model fitted on calibration split; lifts raw `0.4843 → 0.7942` without improving Brier/ECE; **measures exemplar similarity, not predictor**. Honest gap = `0.4657`, not `0.1558` |
+| **#692** | abstain policy | `python_calibration_active_gate.py:322-378` selects `coverage` + `margin_threshold` per cell to maximize gate pass on calibration split; active rows = high `\|score-0.5\|` = easy rows by construction; the `0.953` "diagnostic" is selection bias |
 
-**Pipeline implication:** the `0.7942190170` post-fix rank-lift measurement rides on substrate that includes the flat-buffer OOD path (#618), flat inverse-projection path (#619), never-invoked gradient-leak guard (#620), and invalid `e2/e3/e4/e8` embedder spaces (#670). Re-validation under manual SoT (`06 §1.9`) required before any new claim of correlation-class improvement.
+**Carryover from 2026-05-22 5-Sherlock audit:**
 
-**Geometry-label epic (#657, in-progress, #413 successor):** per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Replaces "labels are derived from the constellation" with "each embedder gets its own deterministic geometry-label map, then a cross-embedder consensus layer (#661) decides what to promote (#662) into routing (#664) and prediction heads (#665)."
+| Issue | Surface | Defect |
+|---|---|---|
+| #618 | `compiler.rs:502` aggregate OOD | Flat 5,120-byte buffer (doctrine §1.5ter) |
+| #619 | `mejepa-train/src/loss/inverse.rs::forward_inverse_inner` | Flat `Linear(PANEL_DIM, hidden)` projections (doctrine §1.5ter) |
+| #620 | training loop | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook from `frozen_hook.rs` never invoked |
+| #621 | HoldoutReport publisher | Hardcoded `gtau_pass_rate: 1.0` to `mejepa_weekly_eval_dashboard` |
+| #623 | `cold_start_conformal_policy` | Emits `alpha=0.0` (dead public API + landmine) |
+| #625 | `lib.rs` public re-exports | `DeterministicPredictor` publicly re-exported (synthetic-vector landmine post-#422) |
 
-**Auto-FSV retirement (#655):** predictor-pipeline FSV harnesses listed in §6/§7 are being retired. Manual operator-driven SoT readback (per `06 §1.9`) is the binding closeout form.
+**Pipeline implication.** Every #392 / #511 / #393 / #398 / #536 / #549 / #554 / #558 / #560 measurement to date measured (checkpoint-loaded but trainer-orphaned predictor) composed with (4/12 dead slots) and (exemplar-similarity Goodhart magnifier). Five #392 trajectory repairs hit ECE walls because they perturbed this composite, not because of proven calibration limits.
+
+**Geometry-label epic (#657, blocked behind #670).** Per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Cannot ship until #670 resolves degenerate spaces.
+
+**Auto-FSV retirement (#655).** Predictor-pipeline FSV harnesses in §6/§7 retired. Manual operator-driven SoT readback (`06 §1.9`) is binding closeout.
 
 ---
 
@@ -42,14 +73,17 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, **inference path** in `crates/con
 | #441 | Training loop owns and optimizes real `MeJepaPredictor` weights; exports via manifest-verified pipeline (commit `db83923a`) |
 | #452 | Native active-embedder constellation adapter preserves per-embedder ragged spaces (commit `d068d2ed`) |
 
+**⚠ 2026-05-23 Sherlock correction.** The #441 closure asserted "training loop owns and optimizes real `MeJepaPredictor` weights" — verification at `mejepa-train/src/trainer/mod.rs:31-34, 253-261, 409-422` shows the public trainer path is permanently in `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE` and emits `predictor_parameter_update_count=0` in every trainer certificate. Direct aiwonder readback shows the latest ship-gate FSV loaded an out-of-band checkpoint at `/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv/best.manifest.json` with `training_mode=full_finetune_predictor_oracle_supervised`, `optimizer_steps=64`, and `weight_delta_observed=true`; the accompanying `training_certificate.json` lacks the trainer contract fields `trained_predictor`, `predictor_parameter_update_count`, `checkpoint_readback_verified`, and `ship_gate_countable_training`. Tracked as **#683**.
+
 **Code guards in production** (`crates/context-graph-mejepa/src/predictor_checkpoint.rs`):
 
 - Lines 147-158: reject any checkpoint containing `PREDICTOR_CHECKPOINT_STUB_MAGIC = b"MEJEPA_BEST_STUB_V1"` at export
 - Lines 239-250: reject at load
 - `validate_aiwonder_checkpoint_path` rejects non-aiwonder roots
 - `trained_weight_sha256 != initial_weight_sha256` invariant on every manifest
+- ⚠ The invariant proves a loaded checkpoint changed weights; it does not prove the public Rust `Trainer` produced countable ship-gate training.
 
-**P0 blocker for further gate work:** real-input rebaseline exists and is below gate. Latest ship-gate FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`: raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe `0.6916886568`, rank-lift `0.7942190170`, Brier `0.0923729688`, ECE `0.0240316074`.
+**P0 blocker for further gate work:** training lineage/checkpoint loading is not unified or fail-closed (#683) and 4/12 embedder slots are dead (#670/#704). Real-input rebaseline exists but rides Goodhart-magnifier metric (#695). Latest ship-gate FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`: raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe `0.6916886568`, rank-lift `0.7942190170`, Brier `0.0923729688`, ECE `0.0240316074`.
 
 **#392 active/abstain diagnostic** is valid and promising: `205/240` active rows, corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978`. Not ship-gate-countable until per-cell active contracts, rolling windows, statistical power, Panel B pass. Previous `0.866667` ship-gate measurement remains invalidated. `compile_error` now uses first-class invalid-source panels instead of carrier workaround; rank-reversing calibration transforms blocked unless calibration support + raw Pearson justify them; rank-lift excludes target-side oracle/docker/test labels. See `01 §1.7` and `08 §0.5`.
 

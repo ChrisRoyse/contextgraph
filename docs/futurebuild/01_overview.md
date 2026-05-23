@@ -1,8 +1,8 @@
 # 01 — System Overview
 
-**Status:** Phase G in flight; **gate-moving work suspended 2026-05-22** behind #633 [P0] Manual full-system FSV + hardening gate (parent of #634-#651). No #392/#511/#405/#379 work admissible until children RESOLVED/BLOCKED with manual SoT readback. #372 aiwonder ZFS root migration CLOSED 2026-05-22 (`/zfs/archive/contextgraph` → `archive/contextgraph` ZFS, `/zfs/hot/contextgraph` → `hotpool/contextgraph` ZFS). Phases A-F + H code/FSV-shipped. Post-fix `0.7942190170` rank-lift measurement and every claim built on it is provisional pending manual revalidation.
+**Status:** Phase G in flight. **Critical path replaced 2026-05-23** by 3-Sherlock audit (#712 pinned). Public trainer/checkpoint lineage not countable (#683); 4/12 embedder slots dead (#670/#704); rank-lift not gate-eligible (#695). Honest gap against raw Pearson = `0.4657`. **#633 hardening gate still active** (children #634-#651); #392/#511/#405/#379 blocked behind new chain. Phases A-F + H code/FSV-shipped. #372 aiwonder ZFS root migration CLOSED 2026-05-22.
 
-See `README.md ⚠ 2026-05-22 hardening pivot`, `08 §0.4` for the active gate, `06 §1.9` for the manual-SoT contract, `07 §2.0` for the 5-Sherlock closure index.
+See `README.md ⚠ 2026-05-23 Sherlock audit` (new critical path), `08 §3.−1` (replaces §3.0), `07 §2.0` (5-Sherlock closure index), `07 §2.0a` (3-Sherlock 2026-05-23 audit), `06 §1.9` (manual-SoT contract).
 
 **Source files:** `Cargo.toml`, `CLAUDE.md`, `AGENTS.md`, `crates/context-graph-mcp/src/lib.rs`, `crates/context-graph-mejepa/src/lib.rs`, `crates/context-graph-mejepa-cf/src/lib.rs`, `crates/context-graph-mejepa-instruments/src/lib.rs`, `crates/context-graph-mejepa-corpus/src/lib.rs`, `crates/context-graph-storage/src/lib.rs`, `crates/context-graph-mcp/src/tools/definitions/mod.rs`.
 
@@ -49,20 +49,30 @@ prediction_oracle_correlation ≥ 0.95
 
 **Degenerate-cell metric contract (#532).** Pearson used only when oracle target has both Pass and Fail rows. Single-class cells (`compile_error::python`, `wrong_file::python`) have zero oracle variance → FSV uses target-class recall ≥ 0.95, actual-class confidence ≥ 0.95, Brier ≤ 0.05, ECE ≤ 0.05 + power diagnostics (Fisher-z CI mixed cells; Wilson lower bound degenerate recall). Never emit bare "correlation unavailable" blocker without replacement metric.
 
-### 1.1 Current measurement (provisional, requires #633 re-verification)
+### 1.1 Current measurement (2026-05-23 Sherlock decomposition)
 
 Latest ship-gate FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`:
 
-| Metric | Value |
-|---|---|
-| Raw holdout `prediction_oracle_correlation` | `0.4843192995` |
-| Rank-safe calibrated holdout | `0.6916886568` |
-| Real code-state-constellation rank-lift holdout | `0.7942190170` |
-| Brier | `0.0923729688` |
-| ECE | `0.0240316074` |
-| Report sha256 | `8a018eaf63fab34eb7c3bf8d60a5b9f92d04a58d99a702b9fc462b21236ba499` |
+| Metric | Value | Semantic |
+|---|---|---|
+| Raw holdout `prediction_oracle_correlation` | `0.4843192995` | **Honest predictor output** |
+| Rank-safe calibrated holdout | `0.6916886568` | Monotonic recalibration of raw |
+| Rank-lift holdout | `0.7942190170` | **Not gate-eligible**: category-local RBF exemplar similarity model fitted on calibration split; lifts raw `+0.31` without improving Brier/ECE; measures exemplar similarity, not predictor (#695) |
+| Brier | `0.0923729688` | Calibration quality (rank-lift transform does not reduce) |
+| ECE | `0.0240316074` | Expected calibration error |
+| Report sha256 | `8a018eaf63fab34eb7c3bf8d60a5b9f92d04a58d99a702b9fc462b21236ba499` | — |
 
-**Substrate caveats:** rides #618 flat-buffer OOD path + #619 flat panel projections + #670 invalid `e2/e3/e4/e8` spaces, produced by auto-FSV harnesses being retired (#655). Best available evidence, not gate-eligible until manually re-verified under #650.
+**Three structural defects under the measurement (3-Sherlock audit 2026-05-23, see #712):**
+
+| Layer | Defect | Issue |
+|---|---|---|
+| Predictor head | Public `Trainer::run_full_training` is hard-coded `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE`; latest aiwonder FSV loaded `/zfs/archive/contextgraph/models/task-py-g-127-trained-checkpoint-export-fsv/best.manifest.json` (`optimizer_steps=64`, `weight_delta_observed=true`), but that training/export path is out-of-band from the trainer contract and compiler construction must fail closed without an explicit manifest | #683 |
+| Substrate | `e2/e3/e4` collapsed to 1 unique vector each (root cause: `chunk.time` wall-clock injection at `python_forward_cache_fsv.rs:2308` identical for all 399,777 chunks → constant sinusoidal-PE output); `e8` byte-identical to `e1` (graph projection bug fixed in commit `ff4d4c03`; prod corpus generated 7d before fix) | #704, #670 |
+| Gate metric | Rank-lift exemplar similarity displaces real predictor output as the gate measurement; the +0.31 lift does nothing for Brier/ECE because exemplar similarity is not a predictor | #695 |
+
+**Substrate-side carries also:** #618 flat-buffer OOD path + #619 flat panel projections (both doctrine §1.5ter violations).
+
+**Honest gap:** `0.95 − 0.4843 = 0.4657` against raw Pearson. The `0.1558` gap against rank-lift is the gap against a composite metric that doesn't measure the predictor.
 
 Earlier row-trace `run-20260520T185945Z` preserves #536 metrics + raw/rank-safe/rank-lift row traces for #549/#392. Calibration uses only the 240-row calibration split; constants limited to structurally degenerate cells; rank-reversing transforms blocked unless calibration has mixed-class support ≥ 8 per class + raw Pearson ≤ -0.25; rank-lift excludes target-side oracle/docker/test labels.
 
@@ -318,7 +328,19 @@ Q4 heads remain in schema + CFs (`CF_MEJEPA_Q4_*`) as **frozen historical displa
 
 ---
 
-### 1.6bis 2026-05-22 hardening pivot — measurement caveat
+### 1.6bis 2026-05-23 3-Sherlock audit — measurement decomposed, critical path replaced
+
+3-Sherlock parallel forensic audit dispatched 2026-05-23 (reports `docs/SHERLOCK_{PREDICTOR,SUBSTRATE,INFRA}_FINDINGS_2026-05-22.md`) filed 29 new issues (#683-#711). Headline: `0.7942190170` rank-lift decomposes into untrained predictor + 4/12 dead embedder slots + Goodhart-magnifier metric. New pinned context **#712** carries the new ordered critical path:
+
+```
+#683 (trainer) → #670+#704 (embedders) → #615 (delete_test_call) →
+#618+#619 (doctrine) → #691 (hook fail-closed) → #695 (drop rank-lift) →
+#685/#687/#688/#690/#707 (kill hardcoded telemetry) → resume #392/#511/#405/#379
+```
+
+Each rank with file:line evidence + expected impact in #712 body. Boundary preserved: binary contract, slot identity, Q4 freeze, ambiguity boundary, reality-boundary deny-list all intact.
+
+### 1.6ter 2026-05-22 hardening pivot — still active
 
 #629 5-Sherlock audit surfaced ~15 P0 silent-success defects (`07 §2.0`): code returning `success`/`passed=true`/exit-0 without performing work. Examples: `optimizer_witness_chain_verify` returning success for absent `witness-chain.bin` (#608); `store_memory` returning success after sidecar write failure (#599); Rust Trainer emitting pseudo-loss without training a predictor (#596); checkpointed-train echoing oracle labels into live predictions (#597); MCP/CLI eval-run persisting fixture EvalReports via deterministic compiler (#594).
 

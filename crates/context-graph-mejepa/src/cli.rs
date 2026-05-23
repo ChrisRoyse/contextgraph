@@ -16,7 +16,10 @@ use crate::compiler::{
     IdentityFrozenTarget, MeJepaCompiler, OracleHead, OracleScores, PatchWitnessReader, Predictor,
     TctConstellationGuard,
 };
-use crate::config::{MeJepaInferConfig, PredictorConfig, PANEL_DIM};
+use crate::config::{
+    resolve_required_trained_checkpoint_manifest_path, MeJepaInferConfig, PredictorConfig,
+    PANEL_DIM,
+};
 use crate::conformal::{non_conformity_score, CalibrationExample};
 use crate::data_models::{PredictedPanel, TargetProvenance};
 use crate::error::MejepaInferError;
@@ -304,14 +307,15 @@ pub fn build_slot_preserving_cuda_compiler(
     let device = Device::new_cuda(0).map_err(crate::error::PredictorError::from)?;
     let predictor_config = PredictorConfig::default();
     let mut predictor = MeJepaPredictor::new(predictor_config.clone(), frozen_target, device, 1)?;
-    let loaded_checkpoint = match config.trained_checkpoint_manifest_path.as_ref() {
-        Some(path) => Some(load_verified_trained_predictor_checkpoint(
-            &mut predictor,
-            path,
-            &predictor_config,
-        )?),
-        None => None,
-    };
+    let manifest_path = resolve_required_trained_checkpoint_manifest_path(
+        config.trained_checkpoint_manifest_path.as_ref(),
+    )?;
+    config.trained_checkpoint_manifest_path = Some(manifest_path.clone());
+    let loaded_checkpoint = Some(load_verified_trained_predictor_checkpoint(
+        &mut predictor,
+        &manifest_path,
+        &predictor_config,
+    )?);
     let loaded_checkpoint = Arc::new(loaded_checkpoint);
     let shared = Arc::new(Mutex::new(predictor));
     MeJepaCompiler::new_with_system_cost_counters(

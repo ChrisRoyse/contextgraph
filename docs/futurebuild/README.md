@@ -7,28 +7,43 @@ Source-grounded WHAT-IS reference for AI agents. 8 docs.
 
 ---
 
-## ⚠ 2026-05-22 hardening pivot — gate-active
+## ⚠ 2026-05-23 Sherlock audit — measurement decomposed; critical path replaced
 
-Operator opened **#633 [P0] Manual full-system FSV + hardening gate before new work** after 5-Sherlock parallel forensic audit (`#629` closeout) shipped ~40 P0 closures + ~15 new P0 findings. **#392 / #511 / #405 work suspended** until #633 child queue resolves.
+3-Sherlock parallel forensic audit (reports `docs/SHERLOCK_{PREDICTOR,SUBSTRATE,INFRA}_FINDINGS_2026-05-22.md`) decomposed the `0.7942190170` rank-lift measurement into three structural defects:
 
-```
-#633 manual full-system FSV (children #634-#651, 17 sub-tasks)
- → #655 retire Rust FSV examples → manual SoT (in-progress p0)
- → #656 mejepa-heal-drill conformal-overcoverage repair (in-progress p0)
- → #657 TASK-PY-G-136 per-embedder geometry-label bakeoff (in-progress p0)
- → resume #615/#616 data-substrate work, then #392 trajectory ECE
-```
+| Layer | Defect | Issue |
+|---|---|---|
+| Predictor head | Public Rust `Trainer` hard-coded `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE`; latest aiwonder FSV loaded an out-of-band task-py-g-127 checkpoint (`optimizer_steps=64`, `weight_delta_observed=true`), but that path is not countable through the trainer contract and compiler construction must fail closed without an explicit `trained_checkpoint_manifest_path` | #683 |
+| Substrate | `e2/e3/e4` collapsed (`chunk.time` wall-clock injection identical for 399,777 chunks → constant sinusoidal-PE); `e8 ≡ e1` byte-identical (graph projection bug fixed `ff4d4c03`, prod corpus generated 7d before) | #704, #670 |
+| Gate metric | Rank-lift = category-local RBF exemplar similarity over calibration split; lifts raw `0.4843 → 0.7942` (+0.31) without Brier/ECE improvement | #695 |
 
-Per #655, Rust `*_fsv.rs` examples are being retired. Closure evidence is now manual operator SoT readback only — read actual bytes/rows/files/services BEFORE and AFTER each trigger, paste both into issue comment, exercise happy path + ≥3 edge classes. Return values, green scripts, prior FSV JSON are supporting evidence only, not the verdict. See `06 §1.9` for the binding contract.
+Honest gap = `0.95 − 0.4843 = 0.4657`, not `0.1558`. 29 new issues filed (#683-#711). New pinned context: **#712**.
 
-**Doctrine-violation P0s opened by the audit (open, gate-blocking):**
+**New critical path (supersedes prior `08 §3.0`):**
+
+| Rank | Issue | Action |
+|---|---|---|
+| 1 | #683 | Unify real training/checkpoint export with the trainer contract; require production `trained_checkpoint_manifest_path` fail-closed |
+| 2 | #670 + #704 | Regenerate `e2/e3/e4/e8` (fix `chunk.time` injection, rerun prod forward cache) |
+| 3 | #615 | delete_test_call Docker oracle batch over 1,131 candidates |
+| 4 | #618 + #619 | Per-slot OOD; slot-preserving panel projections |
+| 5 | #691 | Hook scripts exit non-zero on capture failure |
+| 6 | #695 | Replace rank-lift with raw Pearson + isotonic/Platt |
+| 7 | #685/#687/#688/#690/#707 | Eliminate hardcoded passing telemetry |
+| 8 | #392 / #511 / #405 / #379 | **Blocked behind 1-7** |
+
+## ⚠ 2026-05-22 hardening pivot — still active
+
+Operator opened **#633 [P0] Manual full-system FSV + hardening gate** after 5-Sherlock audit (#629). Children #634-#651 (17 sub-tasks). Per **#655**, Rust `*_fsv.rs` examples are being retired; closure evidence is manual operator SoT readback (read bytes BEFORE + trigger + read bytes AFTER + ≥3 edge classes; see `06 §1.9`).
+
+Open doctrine-violation P0s (gate-blocking, in rank 4 of new critical path):
 
 | Issue | Defect |
 |---|---|
-| #618 / TASK-PY-G-136 | Aggregate OOD score uses flat 5,120-byte packed panel buffer (doctrine §1.5ter violation) |
-| #619 / TASK-PY-G-137 | `forward_inverse_inner` uses `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter violation) |
-| #621 / TASK-PY-G-138 | Hardcoded `gtau_pass_rate: 1.0` published to MCP weekly dashboard |
-| #670 | Regenerate or retire invalid forward-cache spaces `e2/e3/e4/e8` |
+| #618 | Aggregate OOD over flat 5,120-byte buffer (doctrine §1.5ter) |
+| #619 | `forward_inverse_inner` flat `Linear(PANEL_DIM, hidden)` projections (doctrine §1.5ter) |
+| #621 | Hardcoded `gtau_pass_rate: 1.0` published to weekly dashboard |
+| #670 | Regenerate/retire `e2/e3/e4/e8` forward-cache spaces |
 
 **#372 aiwonder ZFS root migration CLOSED 2026-05-22.** `/zfs/archive/contextgraph` → `archive/contextgraph` ZFS dataset; `/zfs/hot/contextgraph` → `hotpool/contextgraph` ZFS. Legacy mounted-drive paths (`/mnt/d`, `/mnt/c`) forbidden in active code/FSV. Enforced behaviorally by `scripts/ci/check_no_c_drive_paths.sh` + the #612 → #613 → #614 → #615 → #631 → #632 → #641 → #666 audit chain.
 
@@ -87,27 +102,32 @@ prediction_oracle_correlation ≥ 0.95 × 4 rolling windows
   AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
 
-**Current:** rank-lift `0.7942190170`. **Gap:** `0.1557809830`. **Gate predicate provisional** until #633 manual revalidation.
+**Current:** raw Pearson `0.4843192995` (rank-safe `0.6916886568`; rank-lift `0.7942190170` is exemplar-similarity composite, not predictor — #695). **Honest gap:** `0.4657` against raw Pearson; rank-lift not gate-eligible. **Training/checkpoint lineage not countable through the public trainer** until #683 closes.
 
 ---
 
 ## Critical-path one-liner
 
-**P0 blocker:** the **#633 hardening gate**. Per pinned context #383, gate-active issue order is evidence-weighted; current evidence is "manual SoT verification is missing across host/runtime/storage/GPU/Docker/MPS, the predictor product path, MCP tools, slot-preserving panels, RocksDB CFs, trainer + mistake loop, CLI + hooks + shift log, build + tests + CI, observability, performance, security, documentation, benchmark honesty, and operational practice."
+**P0 blocker:** training/checkpoint lineage is not countable through the public trainer and production must fail closed without a manifest (#683). Per pinned context **#712**, the new evidence-weighted order is:
 
 ```
-#633 + children #634-#651
+#683 trainer/checkpoint lineage unified ⇒ production manifest required
   ↓
-#655 manual SoT guidance / #656 heal-drill / #657 geometry-label bakeoff
-  ├── #661 cross-embedder consensus → #662 promotion → #664 router → #665 prediction heads
+#670 + #704 regenerate e2/e3/e4/e8 ⇒ recover 4/12 panel dims
   ↓
-Doctrine repairs: #618 / #619 / #621 / #670
+#615 delete_test_call Docker batch ⇒ weak-cell support
   ↓
-Data-substrate: #615 (in-progress) / #616 / #671 / #672 / #673 / #674
+#618 + #619 doctrine repairs (per-slot OOD; slot-preserving projections)
   ↓
-Resume #392 trajectory ECE → #405 Panel B → 0.95 ship gate
+#691 hook scripts fail-closed ⇒ Q5 honesty
+  ↓
+#695 replace rank-lift with raw-Pearson + isotonic
+  ↓
+#685/#687/#688/#690/#707 strip hardcoded "passing" telemetry
+  ↓
+Resume #392 / #511 / #405 / #379 → 0.95 × 4-window gate + Panel B
 ```
 
-Post-0.95 roadmap stays archived/deferred. Active roadmap stops at 0.95 × 4-window gate + Panel B cross-check. Pathway exploration, skill-linkage expansions, info-physics formalization, creativity engine wait.
+Post-0.95 roadmap stays archived. Active roadmap stops at the gate + Panel B cross-check. Pathway exploration (#416), skill-linkage expansions (#417), info-physics (#511/#512/#514), creativity engine (#516-#520), neuroscience reserve (#538-#545) all wait.
 
 **Neuroscience-inspired reserve (filed 2026-05-20, DO NOT START until current queue concludes):** 8 contingency issues (#538-#545) at `priority:p3` with explicit `DO NOT START` markers. Reassess only after post-queue gap analysis identifies need. See `08 §6.9`.

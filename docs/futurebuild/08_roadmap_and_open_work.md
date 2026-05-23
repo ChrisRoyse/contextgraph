@@ -183,51 +183,38 @@ By priority (excerpt):
 
 ## 3. Critical Path (evidence-weighted ordering)
 
-Per pinned context #383 (LOCKED): gate-active issue order is **evidence-weighted, not vision-weighted**.
+Per pinned context #383 (LOCKED) + #712 (2026-05-23): gate-active issue order is **evidence-weighted, not vision-weighted**.
 
-### 3.−1 Active gate (supersedes previous "road to 0.95")
+### 3.−1 Active critical path (2026-05-23 Sherlock-validated, supersedes prior §3.0)
 
-The #633 manual full-system FSV gate is the only admissible work right now. Until it closes, no #392 / #511 / #405 / #379 work is in scope. Order:
+3-Sherlock parallel audit decomposed the `0.7942190170` measurement into three structural defects (untrained predictor #683 + 4/12 dead embedder slots #670/#704 + Goodhart-magnifier metric #695). Honest gap against raw Pearson = `0.4657`. New ordering:
 
-| Rank | Epic | Status |
-|---|---|---|
-| 1 | **#633** manual full-system FSV + hardening gate (parent) | in-progress p0 |
-| 1.1-1.17 | **#634-#651** 17 sub-tasks (see §0.4) | all needs-triage p0 |
-| 2 | **#655** retire Rust FSV examples → manual SoT guidance | in-progress p0 |
-| 3 | **#656** mejepa-heal-drill conformal-overcoverage repair | in-progress p0 |
-| 4 | **#657** TASK-PY-G-136 per-embedder geometry-label bakeoff (#413 successor — upstream geometry-label layer over each embedder's own vector space) | in-progress p0 |
-| 5 | **#661** TASK-PY-G-140 cross-embedder label consensus + disagreement map | blocked behind #657 |
-| 6 | **#662** TASK-PY-G-141 gate-safe promotion of geometry labels into predictor features | blocked behind #661 |
-| 7 | **#664** geometry region dictionary + per-embedder search router | blocked behind #657 |
-| 8 | **#665** new prediction heads over per-embedder geometry labels | blocked behind #664 |
-| 9 | Doctrine-violation repairs (**#618 / #619 / #620 / #621 / #670**) | needs-triage p0/p1 |
-| 10 | Data-substrate completion: **#615 (in-progress) → #616 → #671 / #672 / #673 / #674** | mixed |
+| Rank | Issue | Action | Expected impact | Status |
+|---|---|---|---|---|
+| 1 | **#683** | Wire real trainer: optimizer + backward pass + production `trained_checkpoint_manifest_path` at `mejepa/src/cli.rs:307-314` | Largest; predictor has never trained | open p0 |
+| 2 | **#670 + #704** | Regenerate `e2/e3/e4/e8`: fix `chunk.time` injection at `python_forward_cache_fsv.rs:2308`; `ff4d4c03` already fixed graph projection; rerun prod forward cache | Recovers 4/12 panel signal-bearing dims | open p0 |
+| 3 | **#615** | delete_test_call Docker oracle batch over 1,131 deterministic candidates → rebuild AST → #614 mask → labels → #392 → #611 | Closes `0.69 → ≥0.85` weak-cell ceiling | in-progress p0 |
+| 4 | **#618 + #619** | Per-slot OOD aggregation at `compiler.rs:502`; slot-preserving panel projections at `predictor/mod.rs:136-147` | Doctrine §1.5ter repair; removes anti-compensation cheat path | open p0 |
+| 5 | **#691** | Hook scripts `scripts/cc/hook_*.sh` exit non-zero on capture failure | Restores Q5 binary-prediction honesty | open p0 |
+| 6 | **#695** | Stop using rank-lift as gate metric; use raw Pearson + isotonic/Platt | Reveals honest gap; ECE-safe | open p1 |
+| 7 | **#685/#687/#688/#690/#707/#684/#689/#699** | Eliminate hardcoded passing telemetry: `forward_logits` zeros (`aux/mod.rs`); `detach_loras` no-op; `EpochSummary` hardcoded `KnownGood/CompileError/Python/Rust`; `retrain_triggered:true` literal; OOD strict fail-open; `per_slot_ood_reasons` 1:1 from `guard_violations`; `ExactPanelKeyIsolation` LUT inert; `calibrated_confidence_multiplier` from pseudo-certs | Prevents Goodhart on future mistake-loop wiring | open p0/p1 |
+| 8 | #616 / #671 / #672 / #673 / #674 / #618 / #619 / #621 / #656 / #657 | Carry-over from 2026-05-22 hardening pivot (data-substrate completion + heal-drill + geometry-label bakeoff) | Substrate prerequisites for #392 resume | mixed |
+| 9 | **#392 / #511 / #405 / #379** | Trajectory ECE / entropy aux loss / Panel B / multi-file holdout | **Blocked behind 1-8** | blocked |
 
-Once #633 + children close, gate-active queue resumes at:
+**#633 manual full-system FSV gate** stays active as parallel work; children #634-#651 still required. **#655** Rust `*_fsv.rs` retirement → manual SoT readback (`06 §1.9`).
 
-### 3.0 The road to 0.95 (suspended until #633 closes — historical critical path)
+### 3.0 Pre-2026-05-23 critical path (historical — superseded)
 
-| Rank | Epic | Status | Why moves gate |
+The ordering below was the working critical path through 2026-05-22, prior to the 3-Sherlock audit that exposed the trainer-not-training defect. Retained for proof-of-work continuity. Items 0 through 9 below describe the substrate work that **survives the audit** and remains valid; items 10 onward (#615/#616/#392/#511/#405/#379) are now rank 3-9 in §3.−1 above.
+
+| Rank | Epic | Status | Note |
 |---|---|---|---|
-| **0** | **REBASELINE + RANK-SAFE CALIBRATION** | ✅ landed #531/#534 | Valid Panel A rank-safe measurement: `0.6916886568` |
-| **0.5** | **#535** mixed-cell rank lift from real labels | ✅ landed 2026-05-20 | First valid Panel A rank-lift: `0.7937270999`, Brier `0.0936445221`, ECE `0.0338404700` |
-| 1 | **#537** real-input ablation revalidation | ✅ complete 2026-05-20 | #393/#398/EK-012 reruns not gate movers. Best #393: `0.2876047260`; best `λ_inv`: `0.6704055071` |
-| 1.5 | **#536** repair remaining weak cells after #535 | ✅ complete 2026-05-20 | Selected hard-negative rank-lift weighting (`tau=20.0`, `fail_boost=1.5`); measurement `0.7942190170`, Brier `0.0923729688`, ECE `0.0240316074` |
-| 2 | **#404** failure-mode hierarchy | ✅ closed + post-fix revalidated 2026-05-21 | Substrate REAL. Actual Fail coverage 114/114; post-fix predicted true-Fail 117/117. Aggregate predicted-Fail 137/150 — 13 false-positives have no named consequence explanation. Repair in #392 policy, not blanket skill expansion |
-| 3 | **#413** auto-label discovery | ✅ closed 2026-05-19 | 491-row accepted Level-0 registry — REAL |
-| 4 | **#414** skill substrate | ✅ closed 2026-05-19 | 128 Level-2 skills, 36,773 memberships, 10,579 reverse — REAL |
-| 5 | **#418** runtime hierarchical ability resolver | ✅ closed 2026-05-19 | Pure resolver logic — REAL |
-| 6 | **#406 / #523** online mistake loop + MCP | ✅ closed 2026-05-20 | Machinery shipped; needs real predictor mistakes to validate `mistake_repeat_rate ≤ 0.05` |
-| 7 | **#547** post-#536 calibration-disjointness | ✅ complete 2026-05-20 | Proves #536 selected on calibration only; overlaps zero; target-side labels excluded |
-| 8 | **#548** post-#547 mixed-cell ranking diagnostic | ✅ complete 2026-05-20 | Proved `MIXED_CELL_CALIBRATION_UNDERPOWERED` |
-| 9 | **#549** calibration-stable mixed-cell signal fusion | ✅ complete 2026-05-20 | Typed blocker `MIXED_CELL_SIGNAL_FUSION_INSUFFICIENT` |
-| 10 | **#615** delete_test_call assertion-duty regeneration | in-progress p0 | Aiwonder Docker oracle batch over 1,131 deterministic candidates to land split-stable failure-bearing rows. Blocks #392 active-cell repair on `delete_test_call` |
-| 11 | **#616** weak-cell oracle timeout/error reruns | open p0 | Classify `off_by_one` / `subtle_flip` timeouts/errors |
-| 12 | **#392 / #554 / #557 / #558 / #560 / #551** temporal trajectory features + skill usefulness repair | OPEN p3 (blocked), diagnostics complete | Latest evidence-semantics hardening selects cause-bin at corr `0.8939641118`, Brier `0.0504463837`, ECE `0.0402133949`. Final-bin tested + rejected. Next: lower ECE below #536 baseline without coverage expansion. Blocked behind #633/#615/#616/#618/#619/#670 |
-| 13 | **#511** information-entropy auxiliary loss | open p3 (blocked) | Only gate-moving if re-justified against `0.7942190170` and shown to improve true mixed cells under split-stable selection |
-| 14 | **#405** cross-panel triangulation Panel B | open p3 (blocked) | Even hitting 0.95 on Panel A not ship-eligible without Panel B. Defends against encoder-matched Goodhart |
-| 15 | **#379** multi-file structural patch holdout | open p3 (blocked) | Compositional generalization |
-| 16 | **#409** paper revision | open p3 (blocked) | Aligns PAPER §1 with binary doctrine + adds synthetic-vector remediation + #633 hardening pivot. Not gate-blocking |
+| **0** | **REBASELINE + RANK-SAFE CALIBRATION** | ✅ landed #531/#534 | Valid raw `0.4843192995`; rank-safe `0.6916886568` |
+| **0.5** | **#535** mixed-cell rank lift from real labels | ✅ landed 2026-05-20 | Per #695, rank-lift transform is a Goodhart magnifier — measures exemplar similarity, not predictor |
+| 1 | **#537** real-input ablation revalidation | ✅ complete 2026-05-20 | #393/#398/EK-012 reruns measured untrained-predictor head — results invalidated by #683 |
+| 1.5 | **#536** repair remaining weak cells after #535 | ✅ complete 2026-05-20 | Same caveat as #535 — rank-lift Goodhart (#695) |
+| 2-9 | **#404 / #413 / #414 / #418 / #406+#523 / #547 / #548 / #549** | ✅ closed | Structural substrate work — all survives 2026-05-23 audit |
+| 10+ | #615 / #616 / #392 / #511 / #405 / #379 | see §3.−1 above | |
 
 ### 3.1 Slot-preserving constellation architecture (#385 parent — substantially shipped)
 
@@ -475,13 +462,14 @@ Neuroscience-inspired architectures have mixed history in ML. Predictive coding 
 
 | # | Title | Why pinned |
 |---|---|---|
-| #633 | [P0] Manual full-system FSV and hardening gate before new work | **The active gate (2026-05-22).** Every other ship-gate-relevant epic blocked behind this + its 17 children. |
-| #310 | META Issue refactor | Tracks Phase G execution-order map; live "what to do NOW" |
-| #227 | Python ME-JEPA data explosion runtime policy | Defines runtime constraints during forward cache jobs |
-| #296 | aiwonder migration EPIC (closed but still load-bearing context) | Establishes migration plan |
-| #383 / TASK-PY-G-084 | Gate-active issue order must be evidence-weighted, not vision-weighted (p0) | When choosing next task, weight by measured impact on current post-fix gate gap, not invalid pre-fix `0.083` gap |
-| #397 / [PY-G] CONTEXT | ME-JEPA consequence-prediction truth-system contract (p0) | "Predicting reality" = predicting consequences of code being live; MCP presents calibrated consequence evidence; hidden human intent is not a prediction target |
-| #629 | 5-Sherlock parallel forensic audit closeout (`type:discovery`) | Indexes 2026-05-22 audit findings + fixes + new issues |
+| **#712** | **Sherlock-validated critical path (2026-05-23)** | **Authoritative ordering.** Decomposes `0.7942` into untrained predictor + dead slots + Goodhart metric. New ranks 1-9 supersede prior §3.0. |
+| #633 | [P0] Manual full-system FSV and hardening gate | Active in parallel (rank 8 of #712); children #634-#651 still required |
+| #310 | META Issue refactor | Phase G execution-order map; now subordinate to #712 |
+| #383 | Gate-active issue order must be evidence-weighted (p0) | Evidence per #712 |
+| #397 | ME-JEPA consequence-prediction truth-system contract (p0) | Binary contract intact post-Sherlock |
+| #227 | Python ME-JEPA data explosion runtime policy | Forward-cache job constraints |
+| #296 | aiwonder migration EPIC | Migration plan (closed but load-bearing) |
+| #629 | 5-Sherlock 2026-05-22 audit closeout (`type:discovery`) | Indexes audit findings + fixes + new issues |
 
 ---
 

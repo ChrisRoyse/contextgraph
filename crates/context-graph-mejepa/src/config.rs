@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -127,6 +128,8 @@ pub const INFER_DEFAULT_DDA_EXPECTED_EMBEDDER_COUNT: usize = 0;
 pub const INFER_MAX_DDA_EXPECTED_EMBEDDER_COUNT: usize = 256;
 pub const INFER_DEFAULT_MIN_CELL_SUPPORT_FOR_VERDICT: u32 = 50;
 pub const PATCH_SIMILARITY_CORPUS_SNAPSHOT_HASH_LEN: usize = 64;
+pub const ENV_TRAINED_CHECKPOINT_MANIFEST_PATH: &str =
+    "CONTEXTGRAPH_MEJEPA_TRAINED_CHECKPOINT_MANIFEST_PATH";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -163,9 +166,10 @@ pub struct MeJepaInferConfig {
     pub patch_similarity_index_dir: Option<PathBuf>,
     /// Expected 64-hex corpus snapshot hash for the configured exemplar index.
     pub patch_similarity_corpus_snapshot_hash: Option<String>,
-    /// Manifest for a trained ME-JEPA predictor checkpoint. When absent the
-    /// slot-preserving CUDA compiler may still emit non-countable diagnostic
-    /// predictions, but it must attest `MEJEPA_TRAINED_CHECKPOINT_LOADED=0.0`.
+    /// Manifest for a trained ME-JEPA predictor checkpoint. Slot-preserving
+    /// CUDA compiler construction requires this field or
+    /// `CONTEXTGRAPH_MEJEPA_TRAINED_CHECKPOINT_MANIFEST_PATH`; fixture
+    /// deterministic compilers remain the only no-checkpoint path.
     pub trained_checkpoint_manifest_path: Option<PathBuf>,
 }
 
@@ -264,14 +268,7 @@ impl MeJepaInferConfig {
             });
         }
         if let Some(path) = &self.trained_checkpoint_manifest_path {
-            validate_aiwonder_checkpoint_path("trained_checkpoint_manifest_path", path)?;
-            if path.extension().and_then(|value| value.to_str()) != Some("json") {
-                return Err(PredictorError::ConfigInvalid {
-                    detail:
-                        "trained_checkpoint_manifest_path must point to a JSON manifest artifact"
-                            .to_string(),
-                });
-            }
+            validate_trained_checkpoint_manifest_path("trained_checkpoint_manifest_path", path)?;
         }
         match (
             self.patch_similarity_index_dir.as_ref(),
@@ -302,6 +299,46 @@ impl MeJepaInferConfig {
         }
         Ok(())
     }
+}
+
+pub fn resolve_required_trained_checkpoint_manifest_path(
+    configured: Option<&PathBuf>,
+) -> Result<PathBuf, PredictorError> {
+    resolve_required_trained_checkpoint_manifest_path_from(
+        configured.map(PathBuf::as_path),
+        std::env::var_os(ENV_TRAINED_CHECKPOINT_MANIFEST_PATH),
+    )
+}
+
+pub(crate) fn resolve_required_trained_checkpoint_manifest_path_from(
+    configured: Option<&Path>,
+    env_value: Option<OsString>,
+) -> Result<PathBuf, PredictorError> {
+    let path = match configured {
+        Some(path) => path.to_path_buf(),
+        None => env_value
+            .map(PathBuf::from)
+            .ok_or_else(|| PredictorError::ConfigInvalid {
+                detail: format!(
+                    "slot-preserving CUDA compiler requires trained_checkpoint_manifest_path or {ENV_TRAINED_CHECKPOINT_MANIFEST_PATH}; refusing untrained diagnostic predictor weights"
+                ),
+            })?,
+    };
+    validate_trained_checkpoint_manifest_path("trained_checkpoint_manifest_path", &path)?;
+    Ok(path)
+}
+
+fn validate_trained_checkpoint_manifest_path(
+    field: &'static str,
+    path: &Path,
+) -> Result<(), PredictorError> {
+    validate_aiwonder_checkpoint_path(field, path)?;
+    if path.extension().and_then(|value| value.to_str()) != Some("json") {
+        return Err(PredictorError::ConfigInvalid {
+            detail: format!("{field} must point to a JSON manifest artifact"),
+        });
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_aiwonder_checkpoint_path(
@@ -373,5 +410,43 @@ mod tests {
             .validate()
             .expect_err("zero cold-cell support threshold must fail closed");
         assert_eq!(err.code(), "MEJEPA_PRED_CONFIG_INVALID");
+    }
+
+    #[test]
+    fn required_trained_checkpoint_resolution_rejects_missing_config_and_env() {
+        let err = resolve_required_trained_checkpoint_manifest_path_from(None, None)
+            .expect_err("slot-preserving CUDA compiler must not run untrained");
+        assert_eq!(err.code(), "MEJEPA_PRED_CONFIG_INVALID");
+        assert!(err
+            .to_string()
+            .contains("CONTEXTGRAPH_MEJEPA_TRAINED_CHECKPOINT_MANIFEST_PATH"));
+    }
+
+    #[test]
+    fn required_trained_checkpoint_resolution_accepts_aiwonder_json_env() {
+        let path = resolve_required_trained_checkpoint_manifest_path_from(
+            None,
+            Some(OsString::from(
+                "/zfs/archive/contextgraph/models/example/best.manifest.json",
+            )),
+        )
+        .expect("aiwonder JSON manifest env path should be accepted");
+        assert_eq!(
+            path,
+            PathBuf::from("/zfs/archive/contextgraph/models/example/best.manifest.json")
+        );
+    }
+
+    #[test]
+    fn required_trained_checkpoint_resolution_rejects_non_json_env() {
+        let err = resolve_required_trained_checkpoint_manifest_path_from(
+            None,
+            Some(OsString::from(
+                "/zfs/archive/contextgraph/models/example/best.safetensors",
+            )),
+        )
+        .expect_err("manifest path must be JSON");
+        assert_eq!(err.code(), "MEJEPA_PRED_CONFIG_INVALID");
+        assert!(err.to_string().contains("JSON manifest"));
     }
 }

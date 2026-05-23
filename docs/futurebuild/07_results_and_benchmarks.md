@@ -6,20 +6,34 @@
 
 ---
 
-## 0a. ⚠ 2026-05-22 hardening pivot — measurement validity requires re-affirmation
+## 0a. ⚠ 2026-05-23 3-Sherlock audit — measurement decomposed
 
-The 2026-05-22 5-Sherlock parallel forensic audit (#629 closeout) + **#633 manual full-system FSV + hardening gate** opening means **every measurement in this doc is now provisional** until manually re-verified under manual SoT contract (`06 §1.9`). Gate-moving conclusions ("predictor at 0.7942 rank-lift", "117/117 active true-Fail rows have FailLikely coverage", "#615 candidate plan is valid") were recorded against auto-FSV harnesses; per #655, those harnesses are being retired.
+The `0.7942190170` rank-lift number is a composite Goodhart-magnifier, not a predictor evaluation. 3-Sherlock parallel forensic audit (reports `docs/SHERLOCK_{PREDICTOR,SUBSTRATE,INFRA}_FINDINGS_2026-05-22.md`) decomposes it:
 
-Numbers below remain best available evidence; not gate-eligible until #633 sub-tasks (#634-#651) RESOLVED/BLOCKED with manual SoT before/after captures.
+| Layer | Defect | Issue |
+|---|---|---|
+| Predictor head | `Trainer::run_full_training` hard-coded `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE` at `mejepa-train/src/trainer/mod.rs:31-34, 409-422`; `predictor_parameter_update_count=0`; production never sets `trained_checkpoint_manifest_path`; `MeJepaPredictor` runs random `VarMap` every boot | #683 |
+| Substrate (`e2/e3/e4`) | `chunk.time` wall-clock injection at `python_forward_cache_fsv.rs:2308` identical for all 399,777 chunks → constant sinusoidal-PE output (1 unique vector per slot) | #704, #708 |
+| Substrate (`e8`) | `GraphModel::embed_batch()` missing `project_source_vector` before commit `ff4d4c03` (2026-05-22); prod corpus generated 7d earlier → byte-identical to `e1` | #704, #670 |
+| Gate metric | Rank-lift = category-local RBF exemplar similarity fitted on calibration split; lifts raw `0.4843 → 0.7942` without improving Brier/ECE; measures exemplar similarity, not predictor | #695 |
+| Active-subset diagnostic | `python_calibration_active_gate.py:322-378` selects per-cell `coverage` + `margin_threshold` to maximize gate pass; "active" = high `\|score-0.5\|` = easy rows; `0.953` corr is selection bias | #692 |
 
-**P0 audit-uncovered defects (`§2.0`) gate any further claim of correlation-class improvement:**
+**Honest gap:** `0.95 − 0.4843 = 0.4657` against raw Pearson.
 
-- **#618** aggregate OOD over flat 5,120-byte packed buffer (doctrine §1.5ter violation)
-- **#619** `forward_inverse_inner` flat `Linear(PANEL_DIM, hidden)` projections (doctrine §1.5ter violation)
-- **#621** hardcoded `gtau_pass_rate: 1.0` in HoldoutReport published to weekly dashboard
-- **#670** invalid forward-cache spaces `e2/e3/e4/e8` (forward-cache embedder collapse uncovered by #666)
+**29 new issues filed (#683-#711).** Critical-path ordering replaced by #712 (pinned context). Every #392 / #511 / #549 / #554 / #558 / #560 / #393 / #398 / #536 measurement in §1-§2 is a perturbation of (random-weights predictor) ∘ (4/12 dead slots) ∘ (rank-lift Goodhart). Five #392 trajectory repairs hit ECE walls because of these defects, not calibration limits.
 
-These three doctrine violations + embedder-collapse mean `0.7942190170` rank-lift rests on substrate with known-broken paths. Re-validate under manual FSV before re-claiming.
+## 0b. ⚠ 2026-05-22 hardening pivot — still active
+
+5-Sherlock parallel forensic audit (#629 closeout) + **#633 manual full-system FSV + hardening gate** opening. Manual SoT contract (`06 §1.9`) is binding for closure evidence; per #655, auto-FSV `*_fsv.rs` harnesses are being retired.
+
+P0 audit-uncovered defects (carried into 2026-05-23 critical path):
+
+| Issue | Defect |
+|---|---|
+| #618 | Aggregate OOD over flat 5,120-byte buffer (doctrine §1.5ter) |
+| #619 | `forward_inverse_inner` flat `Linear(PANEL_DIM, hidden)` projections (doctrine §1.5ter) |
+| #621 | Hardcoded `gtau_pass_rate: 1.0` to weekly dashboard |
+| #670 | Invalid forward-cache spaces `e2/e3/e4/e8` |
 
 ---
 
@@ -40,11 +54,13 @@ The corpus survives. The pre-fix measurement does not. Post-fix real-input rebas
 
 | Metric | Target | Latest measurement | Status |
 |---|---|---|---|
-| `prediction_oracle_correlation` | ≥ 0.95 (stable × 4 rolling windows × all Python mutation cells) | **`0.7942190170` rank-lift calibrated** (`0.6916886568` rank-safe, `0.4843192995` raw) | Post-fix aiwonder real-input rebaseline exists. #535 code-state-constellation rank-lift improved correlation by `+0.1020384431` over #534; #536 hard-negative weighting added `+0.0004919171`, Brier `0.0936445221 → 0.0923729688`, ECE `0.0338404700 → 0.0240316074`. Gate still fails on per-cell ranking + power blockers. |
-| Cross-panel oracle correlation (Panel B) | ≥ 0.95 with `\|corr_a − corr_b\| ≤ 0.05` | **Panel B active-surface parity green** on #392 205-row active subset: `corr_A=0.9526342154`, `corr_B=0.9902423024`, `\|corr_A-corr_B\|=0.0376080871` | Comparable #405/#521 parity for active #392 surface; full ship-gate waits on #612 → #392/#611 → #150/#610 → #167. |
-| `mistake_repeat_rate` | ≤ 0.05 (rolling 100-mistake window) | byte-readable via `mejepa_mistake_loop_status` | Awaits real predictor mistakes (machinery shipped #406/#523; needs post-fix predictor to generate disagreements) |
+| `prediction_oracle_correlation` (raw Pearson) | ≥ 0.95 stable × 4 rolling windows × all Python mutation cells | **`0.4843192995`** | **Honest predictor output. Gap = `0.4657`.** Predictor head untrained (#683); 4/12 embedder slots dead (#670, #704); rank-lift composite metric not gate-eligible (#695). |
+| `prediction_oracle_correlation` (rank-safe) | (diagnostic only) | `0.6916886568` | Monotonic recalibration. |
+| `prediction_oracle_correlation` (rank-lift) | (NOT gate-eligible per #695) | `0.7942190170` | Category-local RBF exemplar similarity over calibration split. Lifts raw `+0.31` without improving Brier/ECE. Measures exemplar similarity, not predictor. #535/#536 lift came from this transform, not from the model. |
+| Cross-panel oracle correlation (Panel B) | ≥ 0.95 with `\|corr_a − corr_b\| ≤ 0.05` | Panel B active-surface parity on #392 205-row subset: `corr_A=0.9526342154`, `corr_B=0.9902423024`, `\|Δ\|=0.0376080871` | Comparable #405/#521 only on active subset (selection bias #692). Full Panel B blocked behind #683 + #670. |
+| `mistake_repeat_rate` | ≤ 0.05 (rolling 100-mistake window) | byte-readable via `mejepa_mistake_loop_status` | Mistake-loop LUT inert because `protection_mode=ExactPanelKeyIsolation` keyed on exact panel-signature hash (#689). Production panels almost never collide. |
 
-**Gap to ship:** `0.1557809830` against rank-lift calibrated real-input Panel A measurement. Pre-fix `0.866667` not comparable (synthetic vectors).
+**Honest gap to ship:** `0.4657` against raw Pearson. The previously-claimed `0.1558` gap was against rank-lift, which is not the predictor. Pre-fix `0.866667` (synthetic-vector evidence) remains invalid.
 
 **Metric contract update (#532).** Per-cell Pearson not defined for zero-variance oracle cells. Active ship-gate FSV classifies every block as `mixed`, `all_fail`, `all_pass`, or `empty`: mixed → Pearson; degenerate → target-class recall + calibration (`actual_class_confidence_mean`, Brier, ECE). Each block carries statistical-power diagnostics.
 
