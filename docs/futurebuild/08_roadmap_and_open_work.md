@@ -1,28 +1,28 @@
 # 08 — Roadmap and Open Work
 
-Source: `gh issue list --state open`, recent `type:decision` closes, git log, GitHub issue comments.
+**Source:** `gh issue list --state open`, recent `type:decision` closes, git log, GitHub issue comments.
 
 ---
 
 ## 0. Doctrine Reminder (binary contract)
 
-The prediction contract is **three binary surfaces against ground truth** (Q1 bytes/AST, Q2 Docker oracle, Q5 shift log), **one explanation surface** (Q3 named failure mode + closest exemplar), and **Q4 removed entirely** (ambiguous heads not predictable). See `01_overview.md §1.1` and `05_predictor_pipeline.md §0`.
+Prediction contract is **three binary surfaces against ground truth** (Q1 bytes/AST, Q2 Docker oracle, Q5 shift log), **one explanation surface** (Q3 named failure mode + closest exemplar), **Q4 removed entirely** (ambiguous heads not predictable). See `01 §1.1`, `05 §0`.
 
 ---
 
-## 0.4. P0 GATE: 2026-05-22 manual full-system FSV + hardening (#633)
+## 0.4 P0 GATE: 2026-05-22 manual full-system FSV + hardening (#633)
 
-**Status (2026-05-22):** A 5-Sherlock parallel forensic audit (#629 closeout) over all 22 active workspace crates surfaced silent-success/fake-FSV/doctrine-violation defects across the entire product surface. Operator opened **#633 / [P0] Manual full-system FSV and hardening gate before new work** to stop all feature/gate-moving work until every product surface has been **manually** verified at the real source-of-truth bytes/rows/files/services on aiwonder. Return values, green scripts, and previously-passing FSV JSON are supporting evidence only — they are not the verdict.
+**Status (2026-05-22):** 5-Sherlock parallel forensic audit (#629 closeout) over all 22 active workspace crates surfaced silent-success/fake-FSV/doctrine-violation defects across the entire product surface. Operator opened **#633 / [P0] Manual full-system FSV and hardening gate before new work** to stop all feature/gate-moving work until every product surface has been **manually** verified at real source-of-truth bytes/rows/files/services on aiwonder. Return values, green scripts, previously-passing FSV JSON are supporting evidence only — not the verdict.
 
 **Binding contract** (must be followed for every child issue):
 
 1. Define the Source of Truth — exact file path, RocksDB CF/key, systemd unit, Docker container, ZFS dataset, model cache path, metric/log path, or external oracle artifact.
-2. Capture BEFORE — manually read the SoT and paste the observed state into the issue comment.
-3. Execute a concrete trigger with synthetic known input where possible.
-4. Capture AFTER — independently re-read the SoT and paste the observed delta.
+2. Capture BEFORE — manually read the SoT and paste observed state into issue comment.
+3. Execute concrete trigger with synthetic known input where possible.
+4. Capture AFTER — independently re-read SoT and paste observed delta.
 5. Exercise happy path **plus at least 3 edge classes**.
-6. On mismatch: stop, root-cause, fix or file a linked blocker, repeat manual FSV after fix.
-7. No child closes from a return code or generated JSON alone.
+6. On mismatch: stop, root-cause, fix or file linked blocker, repeat manual FSV after fix.
+7. No child closes from return code or generated JSON alone.
 
 **17 child sub-tasks (all `priority:p0`, `status:needs-triage`):**
 
@@ -46,26 +46,26 @@ The prediction contract is **three binary surfaces against ground truth** (Q1 by
 | #650 | benchmark + gate-metric honesty audit |
 | #651 | operational practice + RCA discipline hardening |
 
-**Done When:** all linked P0 children have either a RESOLVED comment with manual SoT before/after + happy + 3 edge cases, or a BLOCKED comment with a specific blocker issue and no hidden assumption. Only then does normal #615/#616 gate movement resume.
+**Done When:** all linked P0 children have either RESOLVED with manual SoT before/after + happy + 3 edge cases, or BLOCKED with specific blocker issue and no hidden assumption. Only then does normal #615/#616 gate movement resume.
 
-**Operational implication (#655, in-progress p0):** Rust `*_fsv.rs` examples and tests in the `crates/*/examples/` tree are being **retired** in favour of manual operator-driven SoT verification. New gate evidence is captured as issue comments with direct bytes-on-disk readback, not as auto-generated FSV JSON. See `06_operations_and_fsv.md §1.9` for the binding manual-FSV contract that replaces auto-FSV harnesses.
+**Operational implication (#655, in-progress p0):** Rust `*_fsv.rs` examples and tests are being **retired** in favour of manual operator-driven SoT verification. New gate evidence is captured as issue comments with direct bytes-on-disk readback. See `06 §1.9`.
 
 **Doctrine-violation P0s the audit surfaced (all open, all gate-blocking):**
 
 | Issue | Title | Source |
 |---|---|---|
-| #618 / TASK-PY-G-136 | Aggregate OOD score uses flat 5,120-byte panel buffer (doctrine §1.5ter violation) | mejepa |
-| #619 / TASK-PY-G-137 | `forward_inverse_inner` uses `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter violation) | mejepa + mejepa-train |
-| #620 | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook never invoked from training (doc drift) | mejepa + mejepa-train |
+| #618 / TASK-PY-G-136 | Aggregate OOD score uses flat 5,120-byte panel buffer (doctrine §1.5ter) | mejepa |
+| #619 / TASK-PY-G-137 | `forward_inverse_inner` uses `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter) | mejepa + mejepa-train |
+| #620 | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook never invoked from training | mejepa + mejepa-train |
 | #621 / TASK-PY-G-138 | Hardcoded `gtau_pass_rate: 1.0` in HoldoutReport published to MCP weekly dashboard | mejepa-train + mcp |
 | #622 | Trainer dead-code cleanup: distill + lora_wiring + aux | mejepa-train |
-| #623 | `cold_start_conformal_policy` emits `alpha=0.0` (invalid input dead public API) | mejepa |
-| #624 | `verdict_assembly` inline `CONTRADICTION_CALIBRATION_INVALID` not a declared constant | mejepa |
+| #623 | `cold_start_conformal_policy` emits `alpha=0.0` (dead public API) | mejepa |
+| #624 | `verdict_assembly` inline `CONTRADICTION_CALIBRATION_INVALID` not declared constant | mejepa |
 | #625 | `DeterministicPredictor` publicly re-exported (synthetic-vector landmine post-#422) | mejepa |
 | #626 / TASK-PY-G-139 | Hygiene retention default policy missing ~90 CFs | mejepa-hygiene |
-| #627 | shift-subscriber runner integration test fails on main (missing TCT centroid scaffold) | mejepa-shift-subscriber |
-| #628 | Doc/code error-string drift: `MEJEPA_TCT_DIM_MISMATCH` (docs) vs `MEJEPA_INFER_DIM_MISMATCH` (emitted) | docs |
-| #670 | Regenerate or retire invalid forward-cache spaces `e2/e3/e4/e8` (forward-cache embedder collapse) | mejepa-embedders |
+| #627 | shift-subscriber runner integration test fails on main | mejepa-shift-subscriber |
+| #628 | Doc/code drift: `MEJEPA_TCT_DIM_MISMATCH` (docs) vs `MEJEPA_INFER_DIM_MISMATCH` (emitted) | docs |
+| #670 | Regenerate or retire invalid forward-cache spaces `e2/e3/e4/e8` | mejepa-embedders |
 | #671 | Stale SWE-bench harness defaults point at missing aiwonder archive venv | scripts |
 | #672 | Geometry scalar feature lineage + leakage gate for `head_projection` promotion | mejepa + mejepa-train |
 | #673 | Label-quality audit ranks embedder signal vs noise | mejepa-train |
@@ -73,25 +73,62 @@ The prediction contract is **three binary surfaces against ground truth** (Q1 by
 
 ---
 
-## 0.5. Historical P0 BLOCKER (superseded by #633): #392 trajectory ECE repair
+## 0.5 Historical P0 BLOCKER (superseded by #633): #392 trajectory ECE repair
 
-Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-seeded synthetic vectors instead of calling real `E*Instrument` encoders. Six P0 fixes (#422 / #424 / #426 / #437 / #438 / #441 / #452, all closed 2026-05-19/20) replaced the broken pipeline. **The previous `0.866667` ship-gate measurement is INVALID** — it was the deterministic fixed-point output of a hash-derived predictor, not a real measurement of model quality on real code semantics. See `01_overview.md §1.7` and `07_results_and_benchmarks.md §0` for forensic detail.
+Between Phase G ramp and 2026-05-19 22:45 UTC, inference path used SHA256-seeded synthetic vectors. Six P0 fixes (#422 / #424 / #426 / #437 / #438 / #441 / #452, closed 2026-05-19/20) replaced broken pipeline. **Previous `0.866667` ship-gate measurement is INVALID.** See `01 §1.7`, `07 §0`.
 
-**Current real-input state (#536/#547/#548/#549/#392/#554/#557/#558/#560):** aiwonder FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/` reports raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe calibrated holdout `0.6916886568`, and real code-state-constellation rank-lift holdout `0.7942190170`; it also carries first-class #392 active/abstain diagnostics. Earlier row-trace run `run-20260520T185945Z` preserves #536 metrics and provides the raw/rank-safe/rank-lift row traces consumed by #549/#392. Calibration/rank-lift are fitted only on the 240-row calibration split, constants are restricted to structurally degenerate cells, rank-reversing transforms require mixed-class support ≥ 8 per class plus raw Pearson ≤ -0.25, and rank-lift excludes target-side oracle/docker/test labels. #536 selected train-only hard-negative weighting (`tau=20.0`, `fail_boost=1.5`) and improved correlation/Brier/ECE over #535, but the lift is small. #547 proved the #536 policy is split-disjoint and not holdout-selected. #548 proved typed blocker `MIXED_CELL_CALIBRATION_UNDERPOWERED`: holdout-selected thresholds can improve the metric, but legal calibration-selected candidates leave true mixed cells saturated. #549 proved static repo/path metadata and calibration-selected raw/rank-safe/rank-lift score fusion are useful but insufficient. #392 aggregate trajectories first lifted to `0.8008320332`; file-path plus skill/ability trajectories lifted to `0.8422425985`; sparse out-of-fold probability bins regressed ECE. The hardened #392 support-aware slice at `/zfs/archive/contextgraph/fsv/task-py-g-392-temporal-trajectory-features-fsv/run-20260520T214049Z/` selected global mean-bias at correlation `0.8497869968`, Brier `0.0697008073`, ECE `0.0299093761`, and accuracy `0.9083333611`. #554 proved targeted usefulness-weighted ordered skills increase consequence signal but remain ECE-sensitive. #558 then rematerialized the full v2 label corpus (`399777` chunk rows, `398215` episodes, `157` skills, `9489` memberships) and reran #392 from the new DB. Before the later #551/#392 correction, the strongest #558 trajectory candidate was `usefulness_weighted_combined`: correlation `0.8679359555`, Brier `0.0620564893`, ECE `0.0396374688`, accuracy `0.9083333611`, pass recall `0.9166666865`, fail recall `0.9000000`. #560 added a split-legal ECE-focused calibration diagnostic and proved it selects the same model and stays ECE-blocked (`0.0396374688`; support-shrink best `0.0396139733`). #557 then added the usefulness audit surface needed to keep the next repair targeted: source-byte representative sequences, lifecycle/demotion history, gap views, generic high-support rejections, and blanket-expansion regression evidence are now queryable without creating a new prediction head. This is a real lift, but it is still not promotable because ECE remains above the #536 baseline `0.0240316074`. The next lift must repair ECE through per-cell/per-constellation consequence evidence, cross-window validation, or true-mixed feature specialization, then pass Panel B / anti-Goodhart validation; do not spend more time on synthetic-input rebaselines, static score blends, aggregate-only trajectory, sparse bin calibration, affine/rank-lift blending, logit calibration, ECE-overweighted selection, support-only shrinkage, blanket skill expansion, or holdout threshold tunes.
+**Current real-input state (#536/#547/#548/#549/#392/#554/#557/#558/#560):**
 
-**2026-05-21 #551/#392 correction:** #551 is no longer an open P0 coverage repair. The uncovered `1469 / 3000` code states are pass/context-only; all `1139 / 1139` failure-evidence rows are skill-covered, and coverage-cap/pass-context expansion regressed #392. The corrected #392 rerun after removing evidence-consequence double-calibration is `/zfs/archive/contextgraph/fsv/task-py-g-392-skill-kind-evidence-fixed-base-fsv/run-20260521T053605Z/` (`all_passed=true`, report sha256 `9ed8830f184e0aca07a1ee47897b31b342dbdaf2db0bacc28d0a08981dfbc29c`). Legal best was mean-bias at correlation `0.8770877719`, Brier `0.0581485741`, ECE `0.0475411229`; evidence-consequence and bin-consequence were worse after correction. The later evidence-semantics hardening run `/zfs/archive/contextgraph/fsv/task-py-g-392-evidence-semantics-hardening-fsv-release/run-20260521T074421Z/` proves standardized cause-residual features and nonzero cause-bin application, selecting cause-bin calibration at correlation `0.8939641118`, Brier `0.0504463837`, ECE `0.0402133949`, accuracy `0.9375`. The final-bin diagnostic run `/zfs/archive/contextgraph/fsv/task-py-g-392-final-bin-guarded-fsv/run-20260521T090040Z/` slightly improves correlation/Brier but worsens ECE and is selector-forbidden, so the legal best remains cause-bin. The latest ship-gate FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/` wires #392 active/abstain into first-class gate accounting. It validates the diagnostic (`205 / 240` active rows, active coverage `0.8541666865`, corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978`) but full active/abstain gate remains false because `delete_test_call`, `off_by_one`, `subtle_flip`, rolling-window, and statistical-power checks fail. The #392 path stays P0 only through targeted active-cell/window/power repair without holdout tuning.
+Latest ship-gate FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`: raw `0.4843192995`, rank-safe `0.6916886568`, rank-lift `0.7942190170`. Carries first-class #392 active/abstain diagnostics. Earlier row-trace `run-20260520T185945Z` preserves #536 metrics + raw/rank-safe/rank-lift row traces for #549/#392.
 
-**2026-05-22 #610/#150/#611/#612/#613/#614/#615 data-substrate decisions:** #372 aiwonder root readiness and comparable #405/#521 Panel B parity are green, but burn-in is still not admissible. The retained #610 FSV `/zfs/archive/contextgraph/fsv/task-py-g-133-burn-in-admissibility-policy-fsv/run-20260522T123721Z/task_py_g_133_burn_in_admissibility_policy_fsv.json` (`sha256 d766c06d8da35f5a1e55cfbc7981b464ce65a595d910ca16bfbc15c7e465658c`) reports `all_passed=true`, `burn_in_start_allowed=false`, and `decision_code=TASK_PY_G_133_BURN_IN_POWER_NOT_ADMISSIBLE`. The #150 follow-up FSV `/zfs/archive/contextgraph/fsv/task-py-g-019-sample-efficiency-power-fsv/run-20260522T124456Z/task_py_g_019_sample_efficiency_power_fsv.json` (`sha256 585c54502084c6e96037d1c49df6b901a48822284a8c839c76c9542fe8513019`) reports `support_policy=blocked`: row support / longer windows alone cannot start #167 because active point correlations are below target for `delete_test_call`, `off_by_one`, and `subtle_flip`. #611 then proved no existing legal repair is promotable from the current aiwonder artifacts: `/zfs/archive/contextgraph/fsv/task-py-g-134-active-point-metric-repair-fsv/run-20260522T130250Z/task_py_g_134_active_point_metric_repair_fsv.json` (`sha256 ccea46d6ac5677cfc7a9b849c9dd70322570ae281ba6a7b8a23d76e6d772704f`) reports `all_passed=true`, `repair_promoted=false`, and typed blocker `TASK_PY_G_134_NO_EXISTING_LEGAL_WEAK_CELL_REPAIR`. #612 pivoted to the data substrate and produced `/zfs/archive/contextgraph/fsv/task-py-g-135-weak-cell-evidence-expansion-fsv/run-20260522T133526Z/task_py_g_135_data_substrate_lineage_fsv.json` (`sha256 5ff5ab01f4c1fba1d1286dded66c2d3941d01021717257fea0c9cf950ea609ed`): raw AST chunk rows had `399777 / 399777` legacy `/mnt/d` `absolute_path` + `dataschema` values, aiwonder had no `/mnt/d`, path-dereference consumers still existed, active v2 labels were scrubbed (`0` `/mnt/d` lines), the forward cache had real vectors but only `4665772 / 4797324` expected chunk/embedder records, and `delete_test_call` had only `3 / 300` oracle failures with zero calibration failures. #613 resolved the active source-lineage half: `/zfs/archive/contextgraph/fsv/task-py-g-135a-aiwonder-source-lineage-canonicalization-fsv/run-20260522T140211Z/task_py_g_135a_aiwonder_source_lineage_canonicalization_fsv.json` (`sha256 e518bdacb20281b6907bf119fae4b506298bebb4f5ed9b5c86f6299efc7bf13a`) reports `all_passed=true`; active AST rows now have `0` `/mnt/d` or `/mnt/c` hits in `absolute_path`/`dataschema`, with legacy values retained only as `legacy_*` provenance. #614 then produced the legal slot-completeness mask: `/zfs/archive/contextgraph/fsv/task-py-g-135b-forward-cache-slot-completion-fsv/run-20260522T141655Z/task_py_g_135b_forward_cache_slot_completion_fsv.json` (`sha256 8da6c7a213aa3b442b4909e5fae4ec170b827022c819132d0f5ab38ab0334092`) reports `all_passed=true`, `legal_missingness_mask_promoted=true`, and `slot_completion_promoted=false`. All `131552` missing chunk/embedder pairs are quarantined (`0` unaccounted); the mask is `/zfs/archive/contextgraph/state/forward-cache-completeness/task-py-g-135b-forward-cache-slot-completion-v1/forward_cache_slot_completeness_mask.jsonl` (`399777` rows). #615 then materialized the deterministic delete-test-call regeneration plan: `/zfs/archive/contextgraph/fsv/task-py-g-135c-delete-test-call-regeneration-fsv/run-20260522T143109Z/task_py_g_135c_delete_test_call_regeneration_fsv.json` (`sha256 c1431c11bd249b0bb51f24d1349080a678a69543b2430afcf1a2da397460d918`) reports `all_passed=true` and `regeneration_complete=false`; existing `production_plain_assert_deleted` has `0` calibration failures, and `/zfs/archive/contextgraph/state/regeneration-plans/task-py-g-135c-delete-test-call-regeneration-v1/delete_test_call_regeneration_candidates.jsonl` provides `1131` deterministic candidates for Docker oracle execution. #615 remains open for oracle execution/rebuild; #616 remains the other immediate P0 data-substrate queue item.
+Calibration/rank-lift fitted only on 240-row calibration split; constants restricted to structurally degenerate cells; rank-reversing transforms require mixed-class support ≥ 8 per class + raw Pearson ≤ -0.25; rank-lift excludes target-side oracle/docker/test labels. #536 selected hard-negative weighting `tau=20.0, fail_boost=1.5` — small lift.
+
+**#547 → #548 → #549 chain (all closed):** #547 proved #536 policy split-disjoint. #548 typed blocker `MIXED_CELL_CALIBRATION_UNDERPOWERED`: holdout-selected thresholds can lift metrics, but legal calibration leaves true mixed cells saturated. #549 proved static repo/path metadata + calibration-selected score fusion are useful but insufficient.
+
+**#392 trajectory chain (all ECE-blocked):**
+
+| Slice | Best | Status |
+|---|---|---|
+| Aggregate trajectories | `0.8008320332` | Initial lift |
+| File-path + skill/ability | `0.8422425985` | — |
+| Out-of-fold probability bins | — | Regressed ECE |
+| Hardened support-aware mean-bias | corr `0.8497869968`, Brier `0.0697008073`, ECE `0.0299093761`, accuracy `0.9083333611` | Exact #536 row-trace reproduction, no mixed-cell threshold degeneracy |
+
+**#554 / #558 / #560 / #557 / #551 (all closed):**
+
+- **#554:** targeted usefulness-weighted ordered skills increase consequence signal but ECE-sensitive.
+- **#558:** rematerialized full v2 label corpus (`399777` chunks, `398215` episodes, `157` skills, `9489` memberships). `usefulness_weighted_combined`: corr `0.8679359555`, Brier `0.0620564893`, ECE `0.0396374688`, accuracy `0.9083333611`, pass recall `0.9166666865`, fail recall `0.9000000`.
+- **#560:** split-legal ECE-focused calibration diagnostic selected same model; support-shrink best `0.0396139733` — non-promotable.
+- **#557:** usefulness audit surface (source-byte sequences, lifecycle/demotion, gap views, generic high-support rejections, blanket-expansion regression evidence) queryable without new prediction head.
+- **#551:** uncovered `1469/3000` code states are pass/context-only; all `1139/1139` failure-evidence rows skill-covered. Coverage/pass-context expansion regressed #392 — not the repair.
+
+ECE remains above #536 baseline `0.0240316074`. Next lift must repair ECE through per-cell/per-constellation consequence evidence, cross-window validation, or true-mixed feature specialization, then pass Panel B / anti-Goodhart validation. Do not spend more time on: synthetic-input rebaselines, static score blends, aggregate-only trajectory, sparse bin calibration, affine/rank-lift blending, logit calibration, ECE-overweighted selection, support-only shrinkage, blanket skill expansion, holdout threshold tunes.
+
+**2026-05-21 #551/#392 correction:** corrected #392 rerun at `fsv/task-py-g-392-skill-kind-evidence-fixed-base-fsv/run-20260521T053605Z/` (sha256 `9ed8830f184e0aca07a1ee47897b31b342dbdaf2db0bacc28d0a08981dfbc29c`) — mean-bias at corr `0.8770877719`, Brier `0.0581485741`, ECE `0.0475411229`. Evidence-semantics hardening at `fsv/task-py-g-392-evidence-semantics-hardening-fsv-release/run-20260521T074421Z/` proves standardized cause-residual features, selecting cause-bin: corr `0.8939641118`, Brier `0.0504463837`, ECE `0.0402133949`, accuracy `0.9375`. Final-bin diagnostic at `fsv/task-py-g-392-final-bin-guarded-fsv/run-20260521T090040Z/` improved corr/Brier but worsened ECE — selector-forbidden. Cause-bin remains legal best.
+
+Latest ship-gate FSV wires #392 active/abstain as first-class gate accounting: `205/240` active rows, active coverage `0.8541666865`, corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978`. Full active/abstain gate remains false: `delete_test_call`, `off_by_one`, `subtle_flip`, rolling-window, statistical-power checks fail. #392 stays P0 only through targeted active-cell/window/power repair without holdout tuning.
+
+**2026-05-22 #610/#150/#611/#612/#613/#614/#615 data-substrate decisions:** #372 aiwonder root readiness + comparable #405/#521 Panel B parity are green; burn-in still not admissible.
+
+| Ref | Result |
+|---|---|
+| **#610** | `burn_in_start_allowed=false`, `decision_code=TASK_PY_G_133_BURN_IN_POWER_NOT_ADMISSIBLE` |
+| **#150** | `support_policy=blocked`: row support / longer windows alone cannot start #167; active point correlations below target for `delete_test_call`, `off_by_one`, `subtle_flip` |
+| **#611** | `repair_promoted=false`, `TASK_PY_G_134_NO_EXISTING_LEGAL_WEAK_CELL_REPAIR` |
+| **#612** | Raw AST `399777/399777` rows had legacy `/mnt/d`; active v2 labels scrubbed (`0` `/mnt/d`); forward cache real but `4665772/4797324` chunk/embedder pairs; `delete_test_call` only `3/300` oracle failures, zero calibration |
+| **#613** | `all_passed=true`: active AST rows now `0` `/mnt/d`/`/mnt/c` hits; legacy retained only as `legacy_*` provenance |
+| **#614** | `all_passed=true`, `legal_missingness_mask_promoted=true`, `slot_completion_promoted=false`. `131552` missing chunk/embedder pairs all quarantined (`0` unaccounted). Mask: 399,777 rows |
+| **#615** | `all_passed=true`, `regeneration_complete=false`. `production_plain_assert_deleted` has `0` calibration failures. Plan: 1,131 deterministic candidates for Docker oracle execution |
 
 **Remaining revalidation queue:**
 
-1. #615: run the deterministic `delete_test_call` regeneration oracle batch, then rebuild AST chunks / #614 mask / labels / #392 / #611 from the new outcomes.
-2. #616: rerun and classify weak-cell oracle timeout/error rows for `off_by_one` and `subtle_flip`.
-3. Rerun #392, then #611/#150/#610, after the relevant #615-#616 data repairs exist and all reruns join the #614 completeness mask.
-4. Keep #167 blocked until #610 returns `burn_in_start_allowed=true`; then start four consecutive windows on the aiwonder ZFS roots.
-5. ✅ #129 OOD serving gate, #130 Gτ guard audit, #404 holdout coverage, #529 synthetic-vector rebaseline, #372 aiwonder root readiness, comparable #405/#521 Panel B parity, #610 burn-in decision, #150 row/window power decision, #611 no-existing-repair falsification, #612 data-substrate audit, #613 source-lineage canonicalization, and #614 forward-cache completeness mask are green/retained for the current queue.
+1. **#615:** run deterministic `delete_test_call` regeneration oracle batch, then rebuild AST → #614 mask → labels → #392 → #611 from new outcomes.
+2. **#616:** rerun + classify weak-cell oracle timeout/error rows for `off_by_one`, `subtle_flip`.
+3. Rerun #392, then #611/#150/#610, after #615-#616 data repairs + all reruns join #614 completeness mask.
+4. Keep #167 blocked until #610 returns `burn_in_start_allowed=true`; then start four consecutive windows on aiwonder ZFS roots.
+5. ✅ #129 OOD serving gate, #130 Gτ guard audit, #404 holdout coverage, #529 synthetic-vector rebaseline, #372 aiwonder root readiness, comparable #405/#521 Panel B parity, #610 burn-in decision, #150 row/window power decision, #611 no-existing-repair falsification, #612 data-substrate audit, #613 source-lineage canonicalization, #614 forward-cache completeness mask are green/retained.
 
-#529 is now a closed context: the synthetic-vector rebaseline and downstream #129/#130/#404 revalidations all have post-fix evidence. #536, #537, #547, #548, #549, #554, #557, #558, #560, and #551 are closed evidence; #392 is active with thirteen non-promotable/negative-control slices: aggregate trajectory, file/skill trajectory lift, out-of-fold probability calibration, affine file/skill calibration, affine/rank-lift blending, logit calibration, mean-bias calibration, ECE-overweighted selection, support-aware coverage hardening, usefulness-weighted skill policy ablation, full-corpus targeted skill rematerialization, ECE-focused mean-bias repair, and corrected skill-kind evidence-consequence/bin-consequence repair. **All issues listed in §3 below assume the real-input rebaseline, #536 rank-lift measurement, #547 disjointness proof, #548 typed blocker, #549 static-signal blocker, #392 trajectory-ECE blocker, #554 skill-usefulness ECE blocker, #557 usefulness audit surface, #558 rematerialized-skill ECE blocker, #560 ECE-repair blocker, and #551 justified-coverage-gap negative control exist unless explicitly noted otherwise.**
+#529 is closed context. #536, #537, #547, #548, #549, #554, #557, #558, #560, #551 are closed evidence; #392 is active with 13 non-promotable/negative-control slices. **All issues in §3 below assume the real-input rebaseline, #536 rank-lift, #547 disjointness, #548 typed blocker, #549 static-signal blocker, #392 trajectory-ECE blocker, #554 skill-usefulness ECE blocker, #557 usefulness audit, #558 rematerialized-skill ECE blocker, #560 ECE-repair blocker, #551 justified-coverage-gap negative control exist unless explicitly noted.**
 
 ---
 
@@ -101,20 +138,20 @@ Between Phase G ramp and 2026-05-19 22:45 UTC, the inference path used SHA256-se
 prediction_oracle_correlation ≥ 0.95
   stable × 4 consecutive rolling windows
   per mathematically-valid mixed (mutation_category × language) cell
-  with all-pass/all-fail cells using the #532 degenerate-cell replacement metric
-  on the 300×8 Python SWE-bench Lite corpus
-  using Q2 Docker-oracle agreement as the binary verdict
+  with all-pass/all-fail cells using #532 degenerate-cell replacement metric
+  on 300×8 Python SWE-bench Lite corpus
+  using Q2 Docker-oracle agreement as binary verdict
   AND cross-panel oracle correlation ≥ 0.95 on Panel B
   AND |corr_panel_a − corr_panel_b| ≤ 0.05
 ```
 
-**Last holdout measurement:** binary rank-lift remains `0.7942190170` from real code-state constellation labels (`0.6916886568` rank-safe calibrated, `0.4843192995` raw) in `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`. That same FSV carries #392 active/abstain diagnostics: active corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978` on `205 / 240` holdout rows, but full active/abstain gate remains false. Previous `0.866667` figure (from legacy pre-migration evidence) was measured against the synthetic-vector inference path and is invalidated.
+**Last holdout measurement:** binary rank-lift `0.7942190170` from real code-state constellation labels (`0.6916886568` rank-safe, `0.4843192995` raw) in `fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`. Same FSV carries #392 active/abstain diagnostics: active corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978` on `205/240` rows — full active/abstain gate remains false. Previous `0.866667` (legacy pre-migration evidence) measured against synthetic-vector inference path and is invalidated.
 
-**Gap to ship:** `0.1557809830` against the rank-lift calibrated real-input Panel A measurement, plus four-window stability and Panel B cross-checks.
+**Gap to ship:** `0.1557809830` against rank-lift Panel A measurement, plus four-window stability + Panel B cross-checks.
 
-**Degenerate-cell rule (#532).** `compile_error::python`, `wrong_file::python`, or any future single-class cell cannot honestly use Pearson correlation. The FSV must emit the cell's variance class, the replacement gate metric (`all_fail_recall_confidence_brier_ece` or `all_pass_recall_confidence_brier_ece`), and statistical-power diagnostics instead of a bare `correlation unavailable` blocker.
+**Degenerate-cell rule (#532).** `compile_error::python`, `wrong_file::python`, any future single-class cell cannot honestly use Pearson. FSV must emit cell's variance class, replacement gate metric (`all_fail_recall_confidence_brier_ece` or `all_pass_recall_confidence_brier_ece`), statistical-power diagnostics instead of bare `correlation unavailable` blocker.
 
-**P0 product contract (#397):** ME-JEPA is the binary reality predictor. It returns `Pass | Fail` for each candidate code change against the Docker oracle (Q2), with named-failure-mode + closest-exemplar explanation (Q3) on Fail. Q1 (claim-exists) and Q5 (predicted-shift-event) are additional binary predictions. Q4 ambiguous surfaces are out of scope.
+**P0 product contract (#397):** ME-JEPA is the binary reality predictor. Returns `Pass | Fail` per candidate change against Docker oracle (Q2), named-failure-mode + closest-exemplar explanation (Q3) on Fail. Q1 (claim-exists) + Q5 (predicted-shift-event) are additional binary predictions. Q4 ambiguous surfaces out of scope.
 
 Once met → human review of AI-generated Python patches is statistically unjustified. Auto-trust policy gates engage (#277).
 
@@ -122,7 +159,7 @@ Once met → human review of AI-generated Python patches is statistically unjust
 
 ## 2. Open Issue Snapshot (live tracker is authoritative)
 
-As of 2026-05-22: **137 open** issues across the workspace. Use the queries in §12 for current state.
+As of 2026-05-22: **137 open** issues across workspace. Use queries in §12 for current state.
 
 By phase:
 
@@ -140,7 +177,7 @@ By priority (excerpt):
 | `priority:p0` | **#633** manual full-system FSV gate (parent), #634-#651 sub-tasks, **#655** retire Rust FSV (in-progress), **#656** mejepa-heal-drill conformal-overcoverage (in-progress), **#657** TASK-PY-G-136 geometry-label bakeoff (in-progress), **#615** delete-test-call regeneration (in-progress), #616 weak-cell oracle reruns, #618/#619/#621 doctrine-violation P0s, #661/#662 geometry-label promotion (blocked behind #657), #670/#671/#672/#673/#674 audit P0s, **#397** consequence-prediction contract (context pin), **#383** evidence-weighted ordering (context pin), #167 burn-in (blocked by #633), #165 confidence gate (blocked by #167), #310 META context |
 | `priority:p1` | #630 long-source/OOM forward-cache quarantine recovery, #626 hygiene retention 90 CFs missing, #664 geometry region dictionary (blocked behind #657), #380 off-host backup, #379 multi-file holdout, #416 pathway, #417 skill linkage remaining, #511 entropy loss, #433 ability resolver replay completeness, #442 librocksdb-sys native build |
 | `priority:p2` | EK series tail, post-ship policies, #382 frozen-panel dimensionality ablation, #378 tool-usage telemetry, #622 trainer dead-code cleanup, #623/#624 minor doctrine string drift, #665 new prediction heads over geometry labels |
-| `priority:p3` | Deferred (SWE-bench Verified subset, v2 stretch tasks, future Docker image plan), 8× neuroscience-reserve issues (#538-#545) |
+| `priority:p3` | Deferred (SWE-bench Verified subset, v2 stretch, future Docker image plan), 8× neuroscience-reserve issues (#538-#545) |
 
 ---
 
@@ -148,7 +185,7 @@ By priority (excerpt):
 
 Per pinned context #383 (LOCKED): gate-active issue order is **evidence-weighted, not vision-weighted**.
 
-### 3.−1 Active gate (supersedes the previous "road to 0.95")
+### 3.−1 Active gate (supersedes previous "road to 0.95")
 
 The #633 manual full-system FSV gate is the only admissible work right now. Until it closes, no #392 / #511 / #405 / #379 work is in scope. Order:
 
@@ -158,7 +195,7 @@ The #633 manual full-system FSV gate is the only admissible work right now. Unti
 | 1.1-1.17 | **#634-#651** 17 sub-tasks (see §0.4) | all needs-triage p0 |
 | 2 | **#655** retire Rust FSV examples → manual SoT guidance | in-progress p0 |
 | 3 | **#656** mejepa-heal-drill conformal-overcoverage repair | in-progress p0 |
-| 4 | **#657** TASK-PY-G-136 per-embedder geometry-label bakeoff (the #413 successor — adds upstream geometry-label layer over each embedder's own vector space) | in-progress p0 |
+| 4 | **#657** TASK-PY-G-136 per-embedder geometry-label bakeoff (#413 successor — upstream geometry-label layer over each embedder's own vector space) | in-progress p0 |
 | 5 | **#661** TASK-PY-G-140 cross-embedder label consensus + disagreement map | blocked behind #657 |
 | 6 | **#662** TASK-PY-G-141 gate-safe promotion of geometry labels into predictor features | blocked behind #661 |
 | 7 | **#664** geometry region dictionary + per-embedder search router | blocked behind #657 |
@@ -166,60 +203,60 @@ The #633 manual full-system FSV gate is the only admissible work right now. Unti
 | 9 | Doctrine-violation repairs (**#618 / #619 / #620 / #621 / #670**) | needs-triage p0/p1 |
 | 10 | Data-substrate completion: **#615 (in-progress) → #616 → #671 / #672 / #673 / #674** | mixed |
 
-Once #633 + its children close, gate-active queue resumes at:
+Once #633 + children close, gate-active queue resumes at:
 
 ### 3.0 The road to 0.95 (suspended until #633 closes — historical critical path)
 
-| Rank | Epic | Status | Why it moves the gate |
+| Rank | Epic | Status | Why moves gate |
 |---|---|---|---|
-| **0** | **REBASELINE + RANK-SAFE CALIBRATION** — run `swebench_300x8_ship_gate_fsv` against real-instruments inference + real trained checkpoint | ✅ landed #531/#534 | Valid Panel A rank-safe measurement exists: `0.6916886568`. |
-| **0.5** | **#535** mixed-cell rank lift from real labels | ✅ landed 2026-05-20 | First valid Panel A rank-lift measurement: `0.7937270999`, Brier `0.0936445221`, ECE `0.0338404700`. |
-| 1 | **#537** real-input ablation revalidation | ✅ complete 2026-05-20 | #393 uncalibrated, #398 calibrated, and EK-012 `λ_inv` reruns are all not gate movers. Best #393 family: `0.2876047260`; best `λ_inv`: `0.6704055071`; all are below the #535 predecessor baseline and the #536 measurement of record. |
-| 1.5 | **#536** repair remaining weak cells after #535 | ✅ complete 2026-05-20 | Selected hard-negative rank-lift weighting (`tau=20.0`, `fail_boost=1.5`); measurement now `0.7942190170`, Brier `0.0923729688`, ECE `0.0240316074`. Small lift only; not a gate close. |
-| 2 | **#404** failure-mode hierarchy | ✅ closed + post-fix revalidated 2026-05-21 | Substrate REAL. Actual Fail coverage remains 114/114; post-fix predicted true-Fail coverage is 117/117. Aggregate predicted-Fail coverage is 137/150 because 13 false-positive Fail verdicts have no named consequence explanation; repair in #392 predictor policy/feature selection, not blanket skill expansion. |
-| 3 | **#413** auto-label discovery | ✅ closed 2026-05-19 | 491-row accepted Level-0 registry — REAL (deterministic over real forward cache) |
-| 4 | **#414** skill substrate | ✅ closed 2026-05-19 | 128 Level-2 skills, 36,773 chunk memberships, 10,579 reverse rows — REAL (derived from #413) |
+| **0** | **REBASELINE + RANK-SAFE CALIBRATION** | ✅ landed #531/#534 | Valid Panel A rank-safe measurement: `0.6916886568` |
+| **0.5** | **#535** mixed-cell rank lift from real labels | ✅ landed 2026-05-20 | First valid Panel A rank-lift: `0.7937270999`, Brier `0.0936445221`, ECE `0.0338404700` |
+| 1 | **#537** real-input ablation revalidation | ✅ complete 2026-05-20 | #393/#398/EK-012 reruns not gate movers. Best #393: `0.2876047260`; best `λ_inv`: `0.6704055071` |
+| 1.5 | **#536** repair remaining weak cells after #535 | ✅ complete 2026-05-20 | Selected hard-negative rank-lift weighting (`tau=20.0`, `fail_boost=1.5`); measurement `0.7942190170`, Brier `0.0923729688`, ECE `0.0240316074` |
+| 2 | **#404** failure-mode hierarchy | ✅ closed + post-fix revalidated 2026-05-21 | Substrate REAL. Actual Fail coverage 114/114; post-fix predicted true-Fail 117/117. Aggregate predicted-Fail 137/150 — 13 false-positives have no named consequence explanation. Repair in #392 policy, not blanket skill expansion |
+| 3 | **#413** auto-label discovery | ✅ closed 2026-05-19 | 491-row accepted Level-0 registry — REAL |
+| 4 | **#414** skill substrate | ✅ closed 2026-05-19 | 128 Level-2 skills, 36,773 memberships, 10,579 reverse — REAL |
 | 5 | **#418** runtime hierarchical ability resolver | ✅ closed 2026-05-19 | Pure resolver logic — REAL |
-| 6 | **#406 / #523** online mistake loop + MCP | ✅ closed 2026-05-20 | Machinery shipped; needs real predictor mistakes to validate `mistake_repeat_rate ≤ 0.05` convergence |
-| 7 | **#547** post-#536 calibration-disjointness revalidation | ✅ complete 2026-05-20 | Proves #536 selected `tau=20.0, fail_boost=1.5` on calibration only; train/calibration/holdout row and feature-member overlaps are zero; #413 label-lineage hashes stable; target-side labels excluded. |
-| 8 | **#548** post-#547 mixed-cell ranking diagnostic | ✅ complete 2026-05-20 | Proved `MIXED_CELL_CALIBRATION_UNDERPOWERED`: current surface has signal but legal calibration cannot select the holdout-working threshold. |
-| 9 | **#549** calibration-stable mixed-cell signal fusion | ✅ complete 2026-05-20 | Static metadata and score fusion are useful but insufficient; typed blocker `MIXED_CELL_SIGNAL_FUSION_INSUFFICIENT`. |
-| 10 | **#615** delete_test_call assertion-duty regeneration | in-progress p0 | Aiwonder Docker oracle batch over 1,131 deterministic candidates to land split-stable failure-bearing rows. Blocks #392 active-cell repair on `delete_test_call`. |
-| 11 | **#616** weak-cell oracle timeout/error reruns | open p0 | Classify `off_by_one` / `subtle_flip` timeouts/errors so they enter calibration/holdout cleanly. |
-| 12 | **#392 / #554 / #557 / #558 / #560 / #551** temporal constellation trajectory features + skill usefulness repair | OPEN p3 (blocked), prior diagnostics complete | Latest #392 evidence-semantics hardening selects cause-bin calibration at correlation `0.8939641118`, Brier `0.0504463837`, ECE `0.0402133949`, accuracy `0.9375`. Final-bin calibration was tested and rejected because ECE worsened. Next: lower ECE below the #536 baseline without coverage expansion. Blocked behind #633/#615/#616/#618/#619/#670. |
-| 13 | **#511** information-entropy auxiliary loss | open p3 (blocked) | Only gate-moving if re-justified against `0.7942190170` and shown to improve the true mixed cells under split-stable selection. |
-| 14 | **#405** cross-panel triangulation Panel B | open p3 (blocked) | Even hitting 0.95 on Panel A is not ship-eligible without Panel B. Defends 0.95 against encoder-matched Goodhart. |
+| 6 | **#406 / #523** online mistake loop + MCP | ✅ closed 2026-05-20 | Machinery shipped; needs real predictor mistakes to validate `mistake_repeat_rate ≤ 0.05` |
+| 7 | **#547** post-#536 calibration-disjointness | ✅ complete 2026-05-20 | Proves #536 selected on calibration only; overlaps zero; target-side labels excluded |
+| 8 | **#548** post-#547 mixed-cell ranking diagnostic | ✅ complete 2026-05-20 | Proved `MIXED_CELL_CALIBRATION_UNDERPOWERED` |
+| 9 | **#549** calibration-stable mixed-cell signal fusion | ✅ complete 2026-05-20 | Typed blocker `MIXED_CELL_SIGNAL_FUSION_INSUFFICIENT` |
+| 10 | **#615** delete_test_call assertion-duty regeneration | in-progress p0 | Aiwonder Docker oracle batch over 1,131 deterministic candidates to land split-stable failure-bearing rows. Blocks #392 active-cell repair on `delete_test_call` |
+| 11 | **#616** weak-cell oracle timeout/error reruns | open p0 | Classify `off_by_one` / `subtle_flip` timeouts/errors |
+| 12 | **#392 / #554 / #557 / #558 / #560 / #551** temporal trajectory features + skill usefulness repair | OPEN p3 (blocked), diagnostics complete | Latest evidence-semantics hardening selects cause-bin at corr `0.8939641118`, Brier `0.0504463837`, ECE `0.0402133949`. Final-bin tested + rejected. Next: lower ECE below #536 baseline without coverage expansion. Blocked behind #633/#615/#616/#618/#619/#670 |
+| 13 | **#511** information-entropy auxiliary loss | open p3 (blocked) | Only gate-moving if re-justified against `0.7942190170` and shown to improve true mixed cells under split-stable selection |
+| 14 | **#405** cross-panel triangulation Panel B | open p3 (blocked) | Even hitting 0.95 on Panel A not ship-eligible without Panel B. Defends against encoder-matched Goodhart |
 | 15 | **#379** multi-file structural patch holdout | open p3 (blocked) | Compositional generalization |
-| 16 | **#409** paper revision | open p3 (blocked) | Aligns PAPER §1 with binary doctrine + adds synthetic-vector remediation + #633 hardening pivot. Not gate-blocking. |
+| 16 | **#409** paper revision | open p3 (blocked) | Aligns PAPER §1 with binary doctrine + adds synthetic-vector remediation + #633 hardening pivot. Not gate-blocking |
 
 ### 3.1 Slot-preserving constellation architecture (#385 parent — substantially shipped)
 
-The slot-preserving refactor is largely shipped and architecturally correct. Closed children: #386 (schema), #387 (late-fusion predictor), #388 (cross-embedder tensors), #389 (per-slot calibration + OOD), #390 (consensus/contradiction heads), #391 (slot attribution), #393 (ablation suite), #394 (anti-compensation), #395 (real-corpus smoke), #396 (training objective), #398 (calibrated rerun), #441 (trained checkpoint export), #452 (native active-embedder adapter).
+Closed children: #386 (schema), #387 (late-fusion predictor), #388 (cross-embedder tensors), #389 (per-slot calibration + OOD), #390 (consensus/contradiction heads), #391 (slot attribution), #393 (ablation suite), #394 (anti-compensation), #395 (real-corpus smoke), #396 (training objective), #398 (calibrated rerun), #441 (trained checkpoint export), #452 (native active-embedder adapter).
 
-Remaining open children: #392 (temporal trajectory features), #382 (frozen-panel dimensionality ablation).
+Remaining open: #392 (temporal trajectory features), #382 (frozen-panel dimensionality ablation).
 
-**Current finding:** the slot-preserving architecture is correct and remains the required representation contract, but the pre-fix numerical conclusions are invalid because they measured synthetic-input panels. The real-input #393 uncalibrated, #398 calibrated, and EK-012 `λ_inv` reruns are now negative evidence, not promotion evidence; do not promote another constellation-wide feature family from these results.
+**Current finding:** slot-preserving architecture is correct and remains required representation contract, but pre-fix numerical conclusions are invalid because they measured synthetic-input panels. Real-input #393/#398/EK-012 reruns are now negative evidence; do not promote another constellation-wide feature family from these results.
 
 ### 3.2 Q4 head training — CLOSED (ambiguity boundary)
 
-Per binary doctrine (`01_overview.md §1.6`), all Q4 surfaces are out of the prediction contract. Q4 questions do not have a free binary form against reality — they require arbitrary thresholds on continuous heuristics or ask taste judgments with no ground truth.
+Per binary doctrine (`01 §1.6`), all Q4 surfaces out of prediction contract. Q4 questions do not have free binary form against reality.
 
-Closure status of all Q4 producer/calibration issues:
+Closure status:
 
 | Issue | Status |
 |---|---|
-| #266 perf, #267 accuracy, #268 cost, #269 reasoning, #270 non-trivial-on-Pass, #399 perf re-proof, #400 cost re-proof, #401 harvest expansion | `archived-display-only` |
+| #266 perf, #267 accuracy, #268 cost, #269 reasoning, #270 non-trivial-on-Pass, #399/#400/#401 | `archived-display-only` |
 | #127 confidence calibration, #377 trust gate | `archived-display-only` |
 | #402 security/structural producers | `wontfix-ambiguity-boundary` |
 | #118 per-head Q1-Q5 distillation | re-scoped to Q1/Q2/Q5 only; Q4 heads removed |
 
-`CF_MEJEPA_Q4_*` CFs remain readable for forensic continuity; not trained, not consumed by predictor, not ship-gate-relevant. Weekly delta-zero recheck via `mejepa_weekly_eval_dashboard.q4Freeze`.
+`CF_MEJEPA_Q4_*` CFs remain readable for forensic continuity; not trained, not consumed, not ship-gate-relevant. Weekly delta-zero recheck via `mejepa_weekly_eval_dashboard.q4Freeze`.
 
-**What replaces Q4 in operator answers.** Operators who used to want "what else could go wrong" answers now get them from the **named failure mode** + **closest exemplar** attached to Fail verdicts. If Pass: operator answer is "Pass + Q1=Yes (claim landed in bytes) + closest exemplars all Pass + cross-panel Panel B confirms" — not a list of speculative ambiguous risks.
+**What replaces Q4 in operator answers.** Operators who used to want "what else could go wrong" answers get them from **named failure mode** + **closest exemplar** attached to Fail verdicts. Pass: "Pass + Q1=Yes (claim landed in bytes) + closest exemplars all Pass + cross-panel Panel B confirms" — not speculative ambiguous risks.
 
 ### 3.3 Phase G calibration sweep (open p1/p2)
 
-All calibration items below are qualified by #385: their evidence must be per-slot/per-embedder constellation evidence, not flat panel aggregate.
+All items below qualified by #385: evidence must be per-slot/per-embedder constellation, not flat panel aggregate.
 
 | Issue | Task | Status |
 |---|---|---|
@@ -244,7 +281,7 @@ All calibration items below are qualified by #385: their evidence must be per-sl
 
 ### 3.5 Adversarial defense + ship-gate closure (after calibration green)
 
-All blocked behind #633 hardening gate. Status reflects 2026-05-22 state.
+All blocked behind #633 hardening gate.
 
 | Issue | Task | Status |
 |---|---|---|
@@ -292,11 +329,11 @@ Not gate-blocking; ships when gate-movers stabilize.
 
 ### 4.2 Bidirectional chunk↔skill linkage (#417 / TASK-PY-G-120, OPEN p1)
 
-Read-only MCP surfaces shipped 2026-05-19/21: `mejepa_skill_to_code`, `mejepa_code_to_skill`, `mejepa_skill_set_query`, `mejepa_skill_coverage_audit`, `mejepa_chunk_as_star`, `mejepa_constellation_membership`, `mejepa_skill_impact`, `mejepa_skill_graph_inspect`, `mejepa_skill_conflict_graph`, and `mejepa_skill_browse`.
+Read-only MCP surfaces shipped 2026-05-19/21: `mejepa_skill_to_code`, `mejepa_code_to_skill`, `mejepa_skill_set_query`, `mejepa_skill_coverage_audit`, `mejepa_chunk_as_star`, `mejepa_constellation_membership`, `mejepa_skill_impact`, `mejepa_skill_graph_inspect`, `mejepa_skill_conflict_graph`, `mejepa_skill_browse`.
 
-#557 extends the browse/audit surface with skill usefulness evidence: candidate kind, support/fail-pass distribution/lift, genericity, per-cell contribution count, live-safe labels vs target supervision labels, representative source sequences, lifecycle history, uncovered code-state keys, unknown ordered constellations, generic high-support rejections, and metric-regression rejections. It proves `stable_background_import_and_impl_scaffold` belongs in context/negative evidence, not failure-skill promotion, and exposes the blanket-expansion regression.
+#557 extends with skill usefulness evidence: candidate kind, support/fail-pass/lift, genericity, per-cell contribution, live-safe vs target supervision labels, source sequences, lifecycle, uncovered code-state keys, unknown ordered constellations, generic high-support rejections, metric-regression rejections. Proves `stable_background_import_and_impl_scaffold` belongs in context/negative evidence, exposes blanket-expansion regression.
 
-Remaining open: cross-repo skill transfer and pathway-leaf attachment.
+Remaining open: cross-repo skill transfer + pathway-leaf attachment.
 
 Constraint: skills are deterministic groupings of accepted Level-0 labels. Read-only navigation over training substrate; no new prediction surface; binary-leaf constraint preserved at prediction boundaries.
 
@@ -304,7 +341,7 @@ Constraint: skills are deterministic groupings of accepted Level-0 labels. Read-
 
 ## 5. Information-Physics Items (peer-reviewed framing)
 
-Four issues filed against `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md`. Formalize what the project already embodies but does not name:
+Four issues filed against `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md`:
 
 | Issue | Status | Source principle |
 |---|---|---|
@@ -313,20 +350,20 @@ Four issues filed against `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.
 | #513 / TASK-IP-003 — Connectome rich-club analysis | ✅ CLOSED 2026-05-20 as **demoted negative finding** | FlyWire connectome (Nature 634, 2024-10-02) |
 | #514 / TASK-IP-005 — Eon-style cold-load behavioural FSV | OPEN p1; safety net | Eon Systems fly demonstration (March 2026) |
 
-#513 was tested and demoted: #526 fixed split reproducibility (`7/8` cells at Jaccard ≥ 0.8), but #527 proved the stable topology is not promotion-worthy — modularity above null `1/8`, full finite-edge coverage `0`, diagnostic correlation regressed by `-0.583`. Topology harness kept diagnostic-only.
+#513 tested and demoted: #526 fixed split reproducibility (`7/8` cells at Jaccard ≥ 0.8), but #527 proved stable topology not promotion-worthy — modularity above null `1/8`, full finite-edge coverage `0`, diagnostic correlation regressed `-0.583`. Topology harness kept diagnostic-only.
 
 ---
 
 ## 6. Post-0.95 Creativity Engine (autonomous bounded growth)
 
-**The architectural framing.** ME-JEPA is the *engineering* half (verifies binary claims against reality). The *creativity* half is **autonomous embedder synthesis** with two oracles gating every proposal:
+**Architectural framing.** ME-JEPA is *engineering* half (verifies binary claims against reality). *Creativity* half is **autonomous embedder synthesis** with two oracles gating every proposal:
 
-1. **Novelty oracle** — cross-correlation test: candidate orthogonal to existing N? Reject if max correlation > τ_novelty (~0.7).
-2. **Utility oracle** — ablation test: improves per-cell oracle correlation by ≥ δ_utility (~0.005)?
+1. **Novelty oracle** — cross-correlation: candidate orthogonal to existing N? Reject if max correlation > τ_novelty (~0.7).
+2. **Utility oracle** — ablation: improves per-cell oracle correlation by ≥ δ_utility (~0.005)?
 
-Only candidates passing BOTH are promoted. Rejected candidates write a `CF_MEJEPA_EMBEDDER_PROPOSAL_AUDIT` row with typed reasons.
+Only candidates passing BOTH promoted. Rejected candidates write `CF_MEJEPA_EMBEDDER_PROPOSAL_AUDIT` row with typed reasons.
 
-**The non-obvious property.** Orthogonal informative axes ContextGraph admits is **bounded by reality** — by intrinsic dimensionality of the corpus. For code N* ≈ 50-500. The system **discovers its own N*** because the novelty oracle rejects every candidate once the corpus is fully resolved.
+**Bounded by reality.** Orthogonal informative axes ContextGraph admits is bounded by intrinsic dimensionality of corpus. For code N* ≈ 50-500. System discovers own N* because novelty oracle rejects every candidate once corpus fully resolved.
 
 **Five issues (all post-0.95 — none are gate-movers):**
 
@@ -338,58 +375,58 @@ Only candidates passing BOTH are promoted. Rejected candidates write a `CF_MEJEP
 | C-4 | **#519** Domain-routed sparse panel | Universal ~30 slots + per-domain ~15 extension; 3-5× storage saving | p1 |
 | C-5 | **#520** Episodic-to-semantic consolidation | Settled chunks → `(cluster_id, residual)`; 99% storage reduction in high-clustering regime | p2 |
 
-**Sequencing:** ship C-1 first (demand rows). Then C-2 (validates proposals). Then C-3 (closes loop with pruning). Then C-4 (multi-language scaling). Then C-5 (steady-state).
+**Sequencing:** C-1 first (demand rows). C-2 (validates proposals). C-3 (closes loop with pruning). C-4 (multi-language scaling). C-5 (steady-state).
 
-**Composition.** Together with v2-stretch creativity tasks (#329 AlphaEvolve outer loop, #335 reverse-prediction, #354-357 EK v2 series), these form a **self-resolving observer**: system grows panel until corpus is resolved, prunes dominated embedders, specializes per domain, compresses settled clusters. Bounded by reality, not ambition. Storage bounded; search precision maximal.
+**Composition.** Together with v2-stretch creativity tasks (#329 AlphaEvolve outer loop, #335 reverse-prediction, #354-357 EK v2 series), forms **self-resolving observer**: system grows panel until corpus resolved, prunes dominated embedders, specializes per domain, compresses settled clusters. Bounded by reality, not ambition. Storage bounded; search precision maximal.
 
-**Why none are gate-movers for 0.95.** The current `0.7942190170 → 0.95` gap is a function of remaining cell-specific ranking weakness and unproven cross-panel generalization, not embedder count or storage architecture. The targeted cell repair + real-input ablation reruns + cross-panel + calibration + entropy loss + mistake loop closes the gap. The creativity engine takes over after 0.95 is hit.
+**Why none are gate-movers for 0.95.** Current `0.7942190170 → 0.95` gap is function of remaining cell-specific ranking weakness and unproven cross-panel generalization, not embedder count or storage architecture. Targeted cell repair + real-input ablation reruns + cross-panel + calibration + entropy loss + mistake loop closes gap. Creativity engine takes over after 0.95.
 
-**NOT in scope.** No new ambiguous-head prediction surfaces. No consciousness / sentience / phenomenology framing. No simulation-hacking / reality-bending capability claims. The creativity engine is bounded creativity within a falsifiable substrate.
+**NOT in scope.** No new ambiguous-head prediction surfaces. No consciousness / sentience / phenomenology framing. No simulation-hacking / reality-bending claims. Bounded creativity within falsifiable substrate.
 
 ---
 
-## 6.9. Neuroscience-Inspired Reserve (filed 2026-05-20, DO NOT START until current queue concludes)
+## 6.9 Neuroscience-Inspired Reserve (filed 2026-05-20, DO NOT START until current queue concludes)
 
-**Status:** all eight issues filed at `priority:p3`, `status:needs-triage`, with explicit `⚠ DO NOT START — Neuroscience-reserve contingency` markers in their bodies.
+**Status:** all 8 issues filed at `priority:p3`, `status:needs-triage`, with explicit `⚠ DO NOT START — Neuroscience-reserve contingency` markers.
 
-**Activation rule:** these are *contingency plans* for if the current Phase G queue + creativity engine fail to close the remaining ship-gate gap. **They are NOT to be started until:**
+**Activation rule:** *contingency plans* for if current Phase G queue + creativity engine fail to close remaining ship-gate gap. **NOT to be started until:**
 
-1. The current queue concludes (#529 rebaseline → #535 rank lift → #536 weak-cell repair → #547 calibration disjointness → #548 typed blocker → #549 static-signal blocker → #392 temporal features → #511 entropy loss → #405 Panel B → #379 multi-file holdout).
-2. A post-queue gap analysis has been run and concludes the remaining gap is not closable with the current architecture + corpus + label substrate.
-3. The operator explicitly re-prioritizes any of these (or all) from `p3` based on what gap analysis identifies as needed.
+1. Current queue concludes (#529 rebaseline → #535 rank lift → #536 weak-cell repair → #547 calibration disjointness → #548 typed blocker → #549 static-signal blocker → #392 temporal features → #511 entropy loss → #405 Panel B → #379 multi-file holdout).
+2. Post-queue gap analysis concludes remaining gap not closable with current architecture + corpus + label substrate.
+3. Operator explicitly re-prioritizes any (or all) from `p3` based on what gap analysis identifies.
 
-If the gate closes via the current queue, these issues stay in `p3` reserve indefinitely. If the gate does not close, they become the candidate lever set for the next architectural sweep.
+If gate closes via current queue, these issues stay in `p3` reserve indefinitely. If gate does not close, become candidate lever set for next architectural sweep.
 
-### Tier 1 — high-impact, doctrine-compatible, addresses the current gap directly
+### Tier 1 — high-impact, doctrine-compatible, addresses current gap directly
 
 | Issue | Title | Neuroscience source |
 |---|---|---|
-| **#538 / TASK-PY-NEURO-001** | Predictive-coding head: top-down per-slot prediction + bottom-up residual | Rao & Ballard 1999 (*Nature Neuroscience*); Friston free-energy principle |
-| **#539 / TASK-PY-NEURO-002** | Hippocampal schema-prioritized replay consolidation (incl. reverse replay for pathway credit assignment) | Mattar & Daw 2018 (*Nature Neuroscience*); Liu et al. 2019 (*Cell*) |
-| **#540 / TASK-PY-NEURO-003** | Hierarchical predictive coding tied to the #404 / #413 / #414 label hierarchy | Felleman & Van Essen 1991 (*Cerebral Cortex*); Bastos et al. 2012 (*Neuron*) |
+| **#538 / TASK-PY-NEURO-001** | Predictive-coding head: top-down per-slot prediction + bottom-up residual | Rao & Ballard 1999 (*Nature Neuroscience*); Friston free-energy |
+| **#539 / TASK-PY-NEURO-002** | Hippocampal schema-prioritized replay consolidation (incl. reverse replay for pathway credit) | Mattar & Daw 2018 (*Nature Neuroscience*); Liu et al. 2019 (*Cell*) |
+| **#540 / TASK-PY-NEURO-003** | Hierarchical predictive coding tied to #404 / #413 / #414 hierarchy | Felleman & Van Essen 1991 (*Cerebral Cortex*); Bastos et al. 2012 (*Neuron*) |
 | **#541 / TASK-PY-NEURO-004** | Mixed-selectivity cross-slot binding layer (replaces #390's linear pairwise statistics) | Rigotti et al. 2013 (*Nature*); Fusi et al. 2016 (*Current Opinion in Neurobiology*) |
 
 ### Tier 2 — promising but more speculative; design-influence on existing epics
 
 | Issue | Title | Composes with |
 |---|---|---|
-| **#542 / TASK-PY-NEURO-005** | Population-dynamics low-dim trajectories for #416 pathway surface (Shenoy/Churchland/Cunningham) | #416 pathway exploration; #392 temporal trajectories |
+| **#542 / TASK-PY-NEURO-005** | Population-dynamics low-dim trajectories for #416 (Shenoy/Churchland/Cunningham) | #416 pathway; #392 temporal |
 | **#543 / TASK-PY-NEURO-006** | Sparse distributed representations per slot (Hawkins/Numenta; Olshausen & Field 1996) | #519 domain-routed sparse panel; #389 OOD |
-| **#544 / TASK-PY-NEURO-007** | Synchrony-based temporal binding for #392 trajectory features (Singer & Engel; Fries 2005) | #392 temporal features; #390 constellation intelligence |
-| **#545 / TASK-PY-NEURO-008** | Idle-time generative rollouts for proactive active learning (default-mode network analog) | #416, #517, #406, #520 |
+| **#544 / TASK-PY-NEURO-007** | Synchrony-based temporal binding for #392 (Singer & Engel; Fries 2005) | #392 temporal; #390 constellation intelligence |
+| **#545 / TASK-PY-NEURO-008** | Idle-time generative rollouts (default-mode network analog) | #416, #517, #406, #520 |
 
-### Doctrinal compatibility check (all eight verified before filing)
+### Doctrinal compatibility check (all 8 verified before filing)
 
-- ✅ Slot identity invariant preserved (no cross-embedder dim-wise compare anywhere)
-- ✅ Anti-compensation invariant (#394) preserved (strong slots cannot silence weak slots)
+- ✅ Slot identity invariant preserved (no cross-embedder dim compare)
+- ✅ Anti-compensation invariant (#394) preserved (strong slots cannot silence weak)
 - ✅ Binary contract preserved (final verdict still Q2 Pass/Fail; Q3 explanation-only; Q4 frozen)
 - ✅ Ambiguity boundary preserved (no ambiguous heads introduced)
 - ✅ No inner-LLM assumption introduced
-- ✅ No synthetic-input shortcut (all extensions ride the real instrument substrate)
+- ✅ No synthetic-input shortcut (all extensions ride real instrument substrate)
 
 ### Honest risk note
 
-Neuroscience-inspired architectures have a mixed history in ML. Predictive coding (Tier 1A/1C) has the strongest empirical track record; mixed selectivity (Tier 1D) is the most theoretically grounded; replay consolidation (Tier 1B) is the most directly tied to an existing problem (#406 convergence). The Tier-2 items are more speculative. None is a guarantee — they are a documented option set, not a commitment.
+Neuroscience-inspired architectures have mixed history in ML. Predictive coding (Tier 1A/1C) has strongest empirical track record; mixed selectivity (Tier 1D) is most theoretically grounded; replay consolidation (Tier 1B) is most directly tied to an existing problem (#406 convergence). Tier-2 items are more speculative. None is a guarantee — documented option set, not a commitment.
 
 ---
 
@@ -414,19 +451,19 @@ Neuroscience-inspired architectures have a mixed history in ML. Predictive codin
 
 ## 8. Aiwonder Migration (open tail)
 
-**Major milestone (2026-05-22):** **#372 CLOSED** — ContextGraph roots are now mounted on aiwonder ZFS pools (`/zfs/archive/contextgraph` → `archive/contextgraph` ZFS, `/zfs/hot/contextgraph` → `hotpool/contextgraph` ZFS). Aiwonder root-readiness blocker is satisfied. Legacy mounted-drive paths (`/mnt/d`, `/mnt/c`) are forbidden in active code and FSV; CI lint `scripts/ci/check_no_c_drive_paths.sh` plus the #612 → #613 → #614 → #615 → #631 → #632 → #641 → #666 audit chain enforce this behaviorally.
+**Major milestone (2026-05-22):** **#372 CLOSED** — ContextGraph roots mounted on aiwonder ZFS pools (`/zfs/archive/contextgraph` → `archive/contextgraph` ZFS, `/zfs/hot/contextgraph` → `hotpool/contextgraph` ZFS). Aiwonder root-readiness blocker satisfied. Legacy mounted-drive paths (`/mnt/d`, `/mnt/c`) forbidden in active code/FSV; CI lint `scripts/ci/check_no_c_drive_paths.sh` + #612 → #613 → #614 → #615 → #631 → #632 → #641 → #666 audit chain enforce behaviorally.
 
 | Issue | Task | Status |
 |---|---|---|
 | #310 | META Issue refactor | in-progress p0 |
 | #372 | ContextGraph roots must be mounted on aiwonder ZFS pools | ✅ closed 2026-05-22 |
-| #299-#305 | AIWONDER-003..010 install / transfer / build / launch / calibration sub-tasks | all closed with #372 |
+| #299-#305 | AIWONDER-003..010 install / transfer / build / launch / calibration | all closed with #372 |
 | #295 | PERF — resume launch scans full aiwonder FSV root | in-progress |
 | #368 | Host capability utilization audit + scheduler profile | blocked p3 (behind #633/#634) |
 | #380 | Off-host backup for `/zfs/archive` proof history | blocked p3 |
 | #384 | CUDA/candle rollback and reproducibility lane | blocked p3 |
 | #306 | SWE-bench Lite Python Docker image plan (future / Q3) | blocked p3 |
-| #312 | hot_root on ext4 throughput bottleneck — superseded by #372 | satisfied; close after #634 sub-task confirms no separate scheduler-profile work remains |
+| #312 | hot_root on ext4 throughput bottleneck — superseded by #372 | satisfied; close after #634 confirms no separate scheduler-profile work remains |
 | #442 | Track aiwonder librocksdb-sys cstdint native build requirement | blocked p1 |
 | #617 | WSL `/mnt/c` capacity snapshots remain in aiwonder FSV scripts | needs-triage p2 |
 | #671 | Stale SWE-bench harness defaults point at missing aiwonder archive venv | needs-triage p0 |
@@ -438,13 +475,13 @@ Neuroscience-inspired architectures have a mixed history in ML. Predictive codin
 
 | # | Title | Why pinned |
 |---|---|---|
-| #633 | [P0] Manual full-system FSV and hardening gate before new work | **The active gate (2026-05-22).** Every other ship-gate-relevant epic is blocked behind this and its 17 children (#634-#651). |
-| #310 | META Issue refactor | Tracks Phase G execution-order map; the live source of "what to do NOW" |
+| #633 | [P0] Manual full-system FSV and hardening gate before new work | **The active gate (2026-05-22).** Every other ship-gate-relevant epic blocked behind this + its 17 children. |
+| #310 | META Issue refactor | Tracks Phase G execution-order map; live "what to do NOW" |
 | #227 | Python ME-JEPA data explosion runtime policy | Defines runtime constraints during forward cache jobs |
-| #296 | aiwonder migration EPIC (closed but still load-bearing context) | Establishes the migration plan |
-| #383 / TASK-PY-G-084 | Gate-active issue order must be evidence-weighted, not vision-weighted (p0) | When choosing next task, weight by measured impact on the current post-fix gate gap and active/abstain blockers, not the invalid pre-fix `0.083` gap |
+| #296 | aiwonder migration EPIC (closed but still load-bearing context) | Establishes migration plan |
+| #383 / TASK-PY-G-084 | Gate-active issue order must be evidence-weighted, not vision-weighted (p0) | When choosing next task, weight by measured impact on current post-fix gate gap, not invalid pre-fix `0.083` gap |
 | #397 / [PY-G] CONTEXT | ME-JEPA consequence-prediction truth-system contract (p0) | "Predicting reality" = predicting consequences of code being live; MCP presents calibrated consequence evidence; hidden human intent is not a prediction target |
-| #629 | 5-Sherlock parallel forensic audit closeout (`type:discovery`) | Indexes the 2026-05-22 audit findings + fixes shipped + new issues filed |
+| #629 | 5-Sherlock parallel forensic audit closeout (`type:discovery`) | Indexes 2026-05-22 audit findings + fixes + new issues |
 
 ---
 
@@ -454,8 +491,8 @@ Neuroscience-inspired architectures have a mixed history in ML. Predictive codin
 
 | # | Title | Source |
 |---|---|---|
-| #618 | Aggregate OOD score uses flat 5,120-byte panel buffer (doctrine §1.5ter violation) | 5-Sherlock |
-| #619 | `forward_inverse_inner` uses `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter violation) | 5-Sherlock |
+| #618 | Aggregate OOD score uses flat 5,120-byte panel buffer (doctrine §1.5ter) | 5-Sherlock |
+| #619 | `forward_inverse_inner` uses `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter) | 5-Sherlock |
 | #621 | Hardcoded `gtau_pass_rate: 1.0` published to MCP weekly dashboard | 5-Sherlock |
 | #670 | Regenerate or retire invalid forward-cache spaces `e2/e3/e4/e8` | post-#666 |
 | #671 | Stale SWE-bench harness defaults point at missing aiwonder archive venv | post-#372 |
@@ -472,10 +509,10 @@ Neuroscience-inspired architectures have a mixed history in ML. Predictive codin
 | #620 | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook never invoked from training | needs-triage p2 |
 | #622 | Trainer dead-code cleanup batch (distill + lora_wiring + aux) | needs-triage p2 |
 | #623 | `cold_start_conformal_policy` invalid `alpha=0.0` dead public API | needs-triage p3 |
-| #624 | `verdict_assembly` inline `CONTRADICTION_CALIBRATION_INVALID` not a declared constant | needs-triage p3 |
+| #624 | `verdict_assembly` inline `CONTRADICTION_CALIBRATION_INVALID` not declared constant | needs-triage p3 |
 | #625 | `DeterministicPredictor` publicly re-exported (synthetic-vector landmine post-#422) | needs-triage p2 |
-| #626 | Hygiene retention default policy missing ~90 CFs (config/retention_policy.toml stale) | needs-triage p1 |
-| #627 | shift-subscriber runner integration test fails on main (missing TCT centroid scaffold) | needs-triage p2 |
+| #626 | Hygiene retention default policy missing ~90 CFs (`config/retention_policy.toml` stale) | needs-triage p1 |
+| #627 | shift-subscriber runner integration test fails on main | needs-triage p2 |
 | #628 | Doc/code error-string drift: `MEJEPA_TCT_DIM_MISMATCH` vs `MEJEPA_INFER_DIM_MISMATCH` | needs-triage p3 |
 | #630 | Recover long-source/OOM forward-cache quarantines after legal mask | needs-triage p1 |
 | #663 | Resolve duplicate TASK-PY-G keys after geometry-label issue creation | needs-triage p2 |
@@ -496,13 +533,13 @@ Neuroscience-inspired architectures have a mixed history in ML. Predictive codin
 |---|---|
 | #149 | SWE-bench Verified subset — separate dataset; ship gate uses Lite 300×8 |
 | #354-#357 | TASK-EK-018 v2 stretch (NAS from scratch / cross-library / self-rewriting / status reallocation) |
-| Non-Python ship-gate cells (Rust/JS/TS/Go/Java/C/Cpp/CSharp/Ruby/Php) | Active execution is Python-first; non-Python deferred until Python truth system is green |
+| Non-Python ship-gate cells (Rust/JS/TS/Go/Java/C/Cpp/CSharp/Ruby/Php) | Active execution Python-first; non-Python deferred until Python truth system green |
 
 ---
 
 ## 12. How to Pick Up Work (per AGENTS.md)
 
-1. Run the six-issue queries from `AGENTS.md`:
+1. Run six-issue queries from `AGENTS.md`:
    ```bash
    gh issue list --state open --label "type:context" --json number,title,body
    gh issue list --state open --label "status:in-progress" --json number,title,assignees
@@ -511,20 +548,20 @@ Neuroscience-inspired architectures have a mixed history in ML. Predictive codin
    gh issue list --state closed --label "type:decision" --limit 20
    gh issue list --state closed --label "type:discovery,type:pattern" --search "<kw>" --limit 20
    ```
-2. Read `README.md` for the current doc map, then `01_overview.md §1-2`, `07_results_and_benchmarks.md §1`, and this roadmap.
-3. Find the highest-priority open issue you can usefully unblock that does NOT have an in-progress assignee.
+2. Read `README.md` for current doc map, then `01 §1-2`, `07 §1`, this roadmap.
+3. Find highest-priority open issue you can usefully unblock that does NOT have an in-progress assignee.
 4. CLAIM (assign self + flip `status:needs-triage` → `status:in-progress` + post CLAIM comment with files-you-will-touch + ETA).
-5. Audit-the-task before writing code (`06_operations_and_fsv.md §1.6`).
+5. Audit-the-task before writing code (`06 §1.6`).
 6. Work; comment at every milestone.
-7. Produce FSV evidence per `06_operations_and_fsv.md §1.5`.
+7. Produce FSV evidence per `06 §1.5`.
 8. RESOLVED / PAUSE / BLOCKED issue closeout.
 9. Code-simplifier pass.
-10. File any observed defect / pattern / discovery as a fresh issue before ending the turn.
+10. File any observed defect / pattern / discovery as fresh issue before ending turn.
 
 ---
 
 ## 13. What This Doc Does NOT Cover
 
-- Day-to-day operator decisions outside the issue tracker — those happen in conversation with the operator and become `type:decision` issues when locked in.
+- Day-to-day operator decisions outside the issue tracker — those happen in conversation with operator and become `type:decision` issues when locked in.
 - Hardware procurement / aiwonder admin — `phase:migration` issues track that subset.
-- Time estimates — Phase G has no public ETA; per-cell convergence ETA tracker emits internal projections used by the heal scheduler.
+- Time estimates — Phase G has no public ETA; per-cell convergence ETA tracker emits internal projections used by heal scheduler.

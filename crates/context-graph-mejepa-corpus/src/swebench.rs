@@ -22,9 +22,8 @@
 // References:
 //   - `swebench.harness.run_evaluation` (CLI entrypoint).
 //   - `swebench.harness.grading.get_eval_report` (per-instance report
-//     producer; inspected at
-//     `/zfs/archive/contextgraph/cache/contextgraph-swebench/SWE-bench/swebench/harness/grading.py`
-//     during this implementation).
+//     producer; current aiwonder runtime is the installed package under
+//     `/zfs/hot/contextgraph/venv/lib/python*/site-packages/swebench`).
 //   - `docs/ruvectorfindings/sitrep/04_implementation_plans/plan_phase0_docker_oracle.md`.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -924,7 +923,7 @@ fn verify_python_docker_sdk_available(venv_python: &Path, timeout: Duration) -> 
         OracleError::command_failed(
             venv_python.display().to_string(),
             format!("failed to spawn Python Docker SDK preflight: {err}"),
-            "install the SWE-bench harness venv before invoking the Docker oracle",
+            "run through the aiwonder SWE-bench venv at /zfs/hot/contextgraph/venv/bin/python3 before invoking the Docker oracle",
         )
     })?;
     let output = wait_with_timeout_interruptible(
@@ -1051,7 +1050,7 @@ fn validate_config(config: &SwebenchOracleConfig) -> OracleResult<()> {
                 "venv_python is not a file: {}",
                 config.venv_python.display()
             ),
-            "install the SWE-bench harness venv (see scripts/swebench_lite_ops.py)",
+            "use the verified aiwonder SWE-bench venv at /zfs/hot/contextgraph/venv/bin/python3",
         ));
     }
 

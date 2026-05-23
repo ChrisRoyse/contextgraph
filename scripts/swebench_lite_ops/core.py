@@ -14,8 +14,16 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SWEBENCH_ROOT = Path("/zfs/archive/contextgraph/cache/contextgraph-swebench/SWE-bench")
-DEFAULT_SWEBENCH_VENV = Path("/zfs/archive/contextgraph/cache/contextgraph-swebench/venv")
+DEFAULT_SWEBENCH_VENV = Path(os.environ.get("CG_SWEBENCH_VENV", "/zfs/hot/contextgraph/venv"))
+DEFAULT_SWEBENCH_PYTHON = Path(
+    os.environ.get("CG_SWEBENCH_PYTHON", str(DEFAULT_SWEBENCH_VENV / "bin" / "python3"))
+)
+DEFAULT_SWEBENCH_ROOT = Path(
+    os.environ.get(
+        "CG_SWEBENCH_ROOT",
+        str(DEFAULT_SWEBENCH_VENV / "lib" / "python3.14" / "site-packages" / "swebench"),
+    )
+)
 DEFAULT_TASKS_DIR = REPO_ROOT / "tasks" / "swebench-lite"
 DEFAULT_EVIDENCE_ROOT = Path("/zfs/archive/contextgraph/swebench-artifacts/swebench-lite-readback")
 DEFAULT_CORPUS_INDEX_JSON = Path("/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json")
@@ -508,7 +516,12 @@ def official_image_ref(
 
 
 def python_bin(venv: Path) -> Path:
-    return venv / "bin" / "python"
+    if venv == DEFAULT_SWEBENCH_VENV:
+        return DEFAULT_SWEBENCH_PYTHON
+    python3 = venv / "bin" / "python3"
+    if python3.exists():
+        return python3
+    return python3
 
 
 def load_task_manifests(tasks_dir: Path) -> dict[str, dict[str, Any]]:

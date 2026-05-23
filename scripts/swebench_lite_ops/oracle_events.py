@@ -10,7 +10,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .core import SwebenchOpsError, ensure_file, run, utc_now, write_json_checked
+from .core import (
+    DEFAULT_SWEBENCH_PYTHON,
+    SwebenchOpsError,
+    ensure_file,
+    run,
+    utc_now,
+    write_json_checked,
+)
 
 
 SCHEMA_VERSION = 1
@@ -441,7 +448,7 @@ def command_string(outcome: dict[str, Any]) -> str:
     prediction = outcome.get("paths", {}).get("summary") or outcome.get("paths", {}).get("patch_diff") or "gold"
     return " ".join(
         [
-            "/zfs/archive/contextgraph/cache/contextgraph-swebench/venv/bin/python",
+            str(DEFAULT_SWEBENCH_PYTHON),
             "-m swebench.harness.run_evaluation",
             "--dataset_name SWE-bench/SWE-bench_Lite",
             "--split test",

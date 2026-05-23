@@ -246,10 +246,40 @@ Direct readback at #614 closeout: `399777` mask rows, `378444` complete 12-slot 
 
 `gh` and `rg` are installed in `/zfs/hot/contextgraph/bin` and visible through `contextgraph-shell`. `gh` authentication remains blocked by #562 until an operator-approved token path exists; do not move or print secrets to solve that.
 
+The local aiwonder SSH helper must be installed from the tracked template before
+manual FSV work:
+
+```bash
+scripts/ops/install_aiwonder_run_remote.sh install
+scripts/ops/install_aiwonder_run_remote.sh verify
+```
+
+The verifier compares `scripts/ops/aiwonder_run_remote.sh` to
+`/tmp/ssh-aiwonder/run-remote.sh` by sha256 and requires mode `700`. Do not run
+remote FSV commands through a drifted helper. For bounded remote commands, set
+`AIWONDER_REMOTE_TIMEOUT_SECONDS=<seconds>` on the helper invocation so timeout
+is enforced on aiwonder, not only by killing local SSH.
+
 Python operational commands must use the aiwonder virtualenv interpreter:
 `/zfs/hot/contextgraph/venv/bin/python3`. Do not use `/usr/bin/python3` for
 `scripts.swebench_lite_ops` commands; the system interpreter is not the
 controlled runtime and may lack required packages such as `numpy`.
+
+Before running schema-validating `scripts.swebench_lite_ops` commands, verify
+the venv against the source-controlled contract:
+`requirements/aiwonder-swebench-lite-ops.txt`.
+
+```bash
+contextgraph-shell '/zfs/hot/contextgraph/venv/bin/python3 \
+  -m scripts.swebench_lite_ops.cli aiwonder-python-runtime-preflight'
+```
+
+The preflight must pass before corpus materializers or FSV commands are allowed
+to write output roots. It checks the active interpreter path and exact pins for
+`jsonschema`, `jsonschema-specifications`, `referencing`, `rpds-py`, and
+`attrs`, then imports `jsonschema.Draft202012Validator`. Repair only by
+installing the pinned contract into `/zfs/hot/contextgraph/venv`, not by using
+system Python.
 
 **Scheduler invocation:**
 

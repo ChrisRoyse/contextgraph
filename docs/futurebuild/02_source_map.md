@@ -1,12 +1,12 @@
 # 02 — Source Code Map
 
-⚠ **2026-05-22 hardening pivot — module-level index of audit-uncovered defects (all open P0/P1):**
+## ⚠ 2026-05-22 hardening pivot — audit-uncovered defects (all open P0/P1)
 
 | Issue | File / Module | Defect |
 |---|---|---|
 | #618 | `crates/context-graph-mejepa/src/compiler.rs` aggregate OOD path | Reads flat 5,120-byte panel buffer (doctrine §1.5ter violation) |
-| #619 | `crates/context-graph-mejepa-train/src/loss/inverse.rs::forward_inverse_inner` | Uses `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter violation) |
-| #620 | `crates/context-graph-mejepa-train/` (trainer) | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook never invoked from training |
+| #619 | `crates/context-graph-mejepa-train/src/loss/inverse.rs::forward_inverse_inner` | `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter violation) |
+| #620 | `crates/context-graph-mejepa-train/` | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook never invoked from training |
 | #621 | `crates/context-graph-mejepa-train/` HoldoutReport publisher | Hardcoded `gtau_pass_rate: 1.0` published to MCP weekly dashboard |
 | #622 | `crates/context-graph-mejepa-train/src/{distill,lora_wiring,aux}.rs` | Trainer dead-code batch |
 | #623 | `crates/context-graph-mejepa/src/conformal.rs::cold_start_conformal_policy` | Emits `alpha=0.0` (invalid input to `calibrate_tau`) — dead public API |
@@ -17,17 +17,28 @@
 | #628 | `crates/context-graph-mejepa-tct/src/gtau.rs` vs docs | Error string drift: docs `MEJEPA_TCT_DIM_MISMATCH` vs emitted `MEJEPA_INFER_DIM_MISMATCH` |
 | #670 | `crates/context-graph-mejepa-embedders/` `e2/e3/e4/e8` adapters | Forward-cache embedder vector-space collapse — regenerate or retire |
 
-**Operational change (#655, in-progress p0):** the `crates/*/examples/*_fsv.rs` ecosystem is being **retired**. Per the 5-Sherlock audit, auto-FSV harnesses tended toward silent-success. New gate evidence is manual operator-driven SoT readback (see `06_operations_and_fsv.md §1.9`). The 210 example FSV files listed in `§9` below remain for historical/forensic reference but are not the closure form for new Phase G work.
+**Operational change (#655, in-progress p0):** the `crates/*/examples/*_fsv.rs` ecosystem is being retired in favour of manual operator-driven SoT readback (per `06 §1.9`). The 210 example FSVs in §9 remain for forensic reference.
 
-**Geometry-label epic modules (in-progress, #657 / TASK-PY-G-136):** per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Planned module addition: `crates/context-graph-mejepa-train/src/geometry_label_discovery/` + `crates/context-graph-mejepa/src/predictor/geometry_label_router.rs` (#664) + `crates/context-graph-mejepa/src/predictor/geometry_label_heads.rs` (#665). Outputs land at `/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v1/`.
+**Geometry-label epic (#657 / TASK-PY-G-136, in-progress):** per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Planned modules: `crates/context-graph-mejepa-train/src/geometry_label_discovery/` + `crates/context-graph-mejepa/src/predictor/geometry_label_router.rs` (#664) + `crates/context-graph-mejepa/src/predictor/geometry_label_heads.rs` (#665). Output: `/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v1/`.
 
 ---
 
-⚠ **Synthetic-vector remediation (2026-05-19/20) — fixed-module index:** `crates/context-graph-mejepa/src/compiler.rs::vectors_for` was producing SHA256-seeded synthetic vectors; replaced by `build_inference_panel_inputs` calling real `E*Instrument` encoders (commit `e2c51669`). `crates/context-graph-mejepa/src/project_cache.rs` was writing `deterministic_vector_blob` hashes as embeddings; now fails closed (commit `5330629e`). `crates/context-graph-mejepa/src/predictor_checkpoint.rs` now rejects `MEJEPA_BEST_STUB_V1` text-stub checkpoints at load and export (`:147-158, 239-250`). `crates/context-graph-mejepa-train` trainer now owns real `MeJepaPredictor` weights and exports manifest-verified checkpoints (commit `db83923a`). See `01_overview.md §1.7` for forensic and `08 §0.5` for rebaseline blocker. **`crates/context-graph-mejepa-embedders/` forward-cache pipeline was unaffected** — fail-closed guards in `src/forward.rs:122,207,349,422` ("no deterministic vector fallback is permitted") prevented contamination there.
+## ⚠ Synthetic-vector remediation (2026-05-19/20) — fixed-module index
 
-Source files: `Cargo.toml`, every `crates/*/Cargo.toml`, every `crates/*/src/lib.rs`, every `crates/*/src/main.rs`, every `[[bin]]` and `[[example]]` declaration.
+| Module | Pre-fix | Fix |
+|---|---|---|
+| `crates/context-graph-mejepa/src/compiler.rs::vectors_for` | SHA256-seeded synthetic vectors | Replaced by `build_inference_panel_inputs` calling real `E*Instrument` encoders (commit `e2c51669`) |
+| `crates/context-graph-mejepa/src/project_cache.rs` | Wrote `deterministic_vector_blob` as embeddings | Fails closed (commit `5330629e`) |
+| `crates/context-graph-mejepa/src/predictor_checkpoint.rs` | Accepted `MEJEPA_BEST_STUB_V1` text-stubs | Rejects at load + export (`:147-158, 239-250`) |
+| `crates/context-graph-mejepa-train` | No real predictor weight optimization | Now owns real `MeJepaPredictor` weights; exports manifest-verified checkpoints (commit `db83923a`) |
 
-Totals: **1,600** src/lib `.rs` files · **210** examples · **258** test files.
+**`crates/context-graph-mejepa-embedders/` forward-cache pipeline was unaffected** — fail-closed guards in `src/forward.rs:122,207,349,422` ("no deterministic vector fallback is permitted") prevented contamination.
+
+See `01 §1.7` for forensic and `08 §0.5` for rebaseline blocker.
+
+**Source files:** `Cargo.toml`, every `crates/*/Cargo.toml`, every `crates/*/src/lib.rs`, every `crates/*/src/main.rs`, every `[[bin]]` and `[[example]]` declaration.
+
+**Totals:** 1,600 src/lib `.rs` files · 210 examples · 258 test files.
 
 ---
 
@@ -45,7 +56,7 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 
 | # | Crate | Purpose | Key submodules |
 |---|---|---|---|
-| 1 | `context-graph-mcp` | MCP JSON-RPC stdio + HTTP, 204 tools, daemon, deprecation gate | `adapters/`, `daemon.rs`, `daemon_validate.rs`, `deprecation.rs`, `handlers/`, `health_probe.rs`, `monitoring.rs`, `protocol.rs`, `server/`, `telemetry/`, `tools/`, `weights.rs` |
+| 1 | `context-graph-mcp` | MCP JSON-RPC stdio + HTTP, 216 tools, daemon, deprecation gate | `adapters/`, `daemon.rs`, `daemon_validate.rs`, `deprecation.rs`, `handlers/`, `health_probe.rs`, `monitoring.rs`, `protocol.rs`, `server/`, `telemetry/`, `tools/`, `weights.rs` |
 | 2 | `context-graph-cli` | Operator CLI + helpers | `commands/`, `error.rs`, `governed_edit.rs`, `mcp_client.rs`, `mcp_helpers.rs` |
 | 3 | `context-graph-core` | Shared domain types (`CodeEntity`, `CodeLanguage`, etc.) | `types/` |
 | 4 | `context-graph-storage` | RocksDB wrapper + 19 teleological + 13 quantized + 5 code + 2 causal CFs | `code/`, `column_families.rs`, `dynamicjepa/`, `graph_edges/`, `indexes.rs`, `teleological/` |
@@ -57,7 +68,7 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 | 10 | `context-graph-embeddings` | E1-E14 pipeline, model loaders | `train-causal` bin |
 | 11 | `context-graph-cuda` | CUDA helper kernels | — |
 | 12 | **`context-graph-mejepa`** | **Predictor trunk** (73 modules) | see §3 |
-| 13 | `context-graph-mejepa-cf` | Canonical CF name registry (~120 ME-JEPA CFs in groups; zero internal deps) | (single-file lib) |
+| 13 | `context-graph-mejepa-cf` | Canonical CF name registry (~120 ME-JEPA CFs; zero internal deps) | (single-file lib) |
 | 14 | `context-graph-mejepa-corpus` | 8× mutation operators + SWE-bench bridge + split planner | see §4 |
 | 15 | `context-graph-mejepa-instruments` | 15 frozen instrument slots; `Panel` is array of 15 per-embedder vectors | see §5 |
 | 16 | `context-graph-mejepa-embedders` | 21 embedder slots, dynamic registry, calibration | `cache*.rs`, `calibration.rs`, `dynamic_registry.rs`, `embedder_id.rs`, `forward.rs`, `routing.rs`, `vram.rs` |
@@ -74,7 +85,7 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 
 | Module | Purpose |
 |---|---|
-| `compiler.rs` (67K) | `MeJepaCompiler::compile` / `compile_with_fingerprint_observation` — main Q1-Q5 entry. Reads panel, runs predictor, applies conformal + Gτ guard + Cold-cell metric, assembles `RealityPrediction` |
+| `compiler.rs` (67K) | `MeJepaCompiler::compile` / `compile_with_fingerprint_observation` — main Q1-Q5 entry. Reads panel, runs predictor, applies conformal + Gτ + Cold-cell metric, assembles `RealityPrediction` |
 | `predictor/` | `MeJepaPredictor` (slot-preserving per-slot encoders + late fusion), `TransformerLayer`, `ArchitectureSummary` |
 | `verdict_assembly.rs` | Stitches heads → `Verdict { Pass / Fail / OutOfDistribution / Abstain / GuardRejected }`; product surface returns Pass/Fail only |
 | `claim_graph.rs` (~30K) | Q1 claim parser + AST/bytes-on-disk reconciliation → `CF_MEJEPA_CLAIM_RECONCILIATION` |
@@ -117,8 +128,7 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 | `types.rs` (114K, largest) | `RealityPrediction`, `Verdict`, `RealityImpact`, `OracleScores`, all DTOs |
 | `store.rs` | `MejepaStore` — RocksDB handle |
 
-**Planned (active issues):**
-
+**Planned:**
 - `pathway/{tree,beam_search,leaf_predictor,exemplar_attach,skill_attach,store}.rs` (#416) — binary-leaf butterfly-effect pathway tree
 - `cross_panel.rs` + `panel_b/` submodule (#405) — Panel B Goodhart guard
 - `embedder_growth.rs` (#516) + `embedder_retirement.rs` (#518) — post-0.95 creativity engine
@@ -131,7 +141,7 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 |---|---|
 | `compile_error.rs` | Mutation op #8: Python syntax error |
 | `delete_test_call.rs` | Mutation op #5: delete one assertion call |
-| `generate.rs` | Corpus generator + SwebenchDockerOracle wrapper |
+| `generate.rs` | Corpus generator + `SwebenchDockerOracle` wrapper |
 | `generic_language_ops.rs` | 10 non-Python languages (deferred from current ship gate) |
 | `known_good.rs` | Mutation op #1: echo input unchanged |
 | `multilang_fixture_corpus.rs` | Multi-language fixture corpus |
@@ -155,9 +165,9 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 
 ## 5. `context-graph-mejepa-instruments` Modules
 
-The `Panel` is an **array of 15 per-embedder vectors** (a teleological constellation). The 5,120 f32 contiguous buffer is byte layout for serialization only. Cross-embedder dim-wise comparison is forbidden.
+`Panel` is array of 15 per-embedder vectors. 5,120 f32 contiguous buffer is byte layout only. Cross-embedder dim-wise compare forbidden.
 
-| Module | Instrument slot served | Dim | Notes |
+| Module | Slot served | Dim | Notes |
 |---|---|---|---|
 | `e_oracle.rs` | `EOracle` | 128 | Pass/fail/skip/error fractions + total + has_exception + 10-class one-hot |
 | `e_witness.rs` | `EWitness` | 256 | Witness-chain entry sequence encoder |
@@ -175,11 +185,10 @@ The `Panel` is an **array of 15 per-embedder vectors** (a teleological constella
 | `tests.rs` | — | — | 27+ unit tests |
 
 **Planned:**
-
 - `ecc.rs` (#512) — self-dual doubly-even ECC over 15-slot occupancy bitmap. Gates-style formal anti-compensation; `PARITY_CHECK_MATRIX`, `Syndrome`, `RecoveryRadius`.
 - `domain_routing.rs` (#519) — domain detector + per-domain panel manifest + sparse fill routing (post-0.95).
 
-Q4 producer modules and unconsumed TASK-RWD signals are retired from the active crate surface; only frozen display-only label readers remain.
+Q4 producer modules and unconsumed TASK-RWD signals retired; only frozen display-only label readers remain.
 
 ---
 
@@ -205,17 +214,16 @@ Q4 producer modules and unconsumed TASK-RWD signals are retired from the active 
 | `replay_buffer.rs` (~20K) | Surprise-prioritized M(t) replay; label/skill-aware priority rows |
 | `sampler/` | Batch sampling strategies (uniform / replay / curiosity / operator-override) |
 | `trainer/` | Trainer loop |
-| **`mistake_log.rs` + `online_head_state.rs` + `online_head_state_keys.rs` + `online_head_state_support.rs`** | **Mistake loop (#406, shipped):** `MistakeLogRow` type, writer, byte-replay readback; key-local exact-panel online-head state; reports `protection_mode=exactPanelKeyIsolation` |
+| **`mistake_log.rs` + `online_head_state.rs` + `online_head_state_keys.rs` + `online_head_state_support.rs`** | **Mistake loop (#406, shipped):** `MistakeLogRow`, byte-replay readback; `protection_mode=exactPanelKeyIsolation` |
 | `ability_resolver_refutation.rs` + `ability_resolver_types.rs` + `ability_resolver_storage.rs` | Live consumer bridge: ability refutations write mistake + replay + lifecycle audit + online-head rows |
 | `skill_sequence_discovery.rs` + `skill_sequence_types.rs` + `chunk_skill_membership.rs` + `skill_validation.rs` | Skill substrate (#414, shipped) |
 | `failure_mode_hierarchy.rs` + `skill_corpus_materialization.rs` | Level-1/2/3 hierarchy + named prediction rows (#404, shipped) |
 
-**Planned (active issues):**
-
+**Planned:**
 - `loss/entropy.rs` (#511) — Kraskov-style differential entropy estimator on late-fused latent; Vopson 2nd-law minimization
-- `embedder_demand.rs` (#517) — mistake-loop residual-signature emission when no slot can explain a disagreement (post-0.95)
+- `embedder_demand.rs` (#517) — mistake-loop residual-signature emission when no slot can explain disagreement (post-0.95)
 
-**FSV examples** (per `Cargo.toml`): `train_smoke_fsv`, `train_cert_chain_fsv`, `train_holdout_eval_fsv`, `train_full_fsv`, `train_edge_cases_fsv`, `utml_l_step_fsv`, `swebench_300x8_ship_gate_fsv`, `operator_override_sampler_fsv`, `task_py_g_053_online_observe_fsv`, `task_ek_015_credibility_override_fsv`, `label_transfer_consumer_fsv`, `phase_g_adversarial_retrain_fsv`, `task_fp_101_sigreg_fsv`, `task_rwd_210_replay_buffer_fsv`, `task_ek_012_bidirectional_corpus_fsv`, `task_ek_012_bidirectional_ablation_fsv`, `task_py_g_007_pairwise_mi_fsv`, `task_py_g_110_failure_mode_hierarchy_fsv`, `task_py_g_112_mistake_loop_convergence_fsv`, `task_py_g_118_skill_sequence_discovery_fsv`, `task_py_g_118_aiwonder_skill_materialization_fsv`.
+**FSV examples:** `train_smoke_fsv`, `train_cert_chain_fsv`, `train_holdout_eval_fsv`, `train_full_fsv`, `train_edge_cases_fsv`, `utml_l_step_fsv`, `swebench_300x8_ship_gate_fsv`, `operator_override_sampler_fsv`, `task_py_g_053_online_observe_fsv`, `task_ek_015_credibility_override_fsv`, `label_transfer_consumer_fsv`, `phase_g_adversarial_retrain_fsv`, `task_fp_101_sigreg_fsv`, `task_rwd_210_replay_buffer_fsv`, `task_ek_012_bidirectional_corpus_fsv`, `task_ek_012_bidirectional_ablation_fsv`, `task_py_g_007_pairwise_mi_fsv`, `task_py_g_110_failure_mode_hierarchy_fsv`, `task_py_g_112_mistake_loop_convergence_fsv`, `task_py_g_118_skill_sequence_discovery_fsv`, `task_py_g_118_aiwonder_skill_materialization_fsv`.
 
 ---
 
@@ -260,7 +268,7 @@ context-graph-mejepa-cf, context-graph-paths, context-graph-mincut, context-grap
 context-graph-tier-compression, context-graph-witness, context-graph-test-utils
 ```
 
-**Acyclic check.** No internal cycles; `mejepa-cf` is intentionally dependency-free so MCP / hygiene / train / runtime crates can share CF name constants without circular dependency.
+**Acyclic check.** No internal cycles; `mejepa-cf` is intentionally dependency-free so MCP / hygiene / train / runtime crates can share CF name constants.
 
 ---
 
@@ -274,7 +282,7 @@ context-graph-tier-compression, context-graph-witness, context-graph-test-utils
 | `mejepa` | `context-graph-mejepa` `[[bin]]` | `src/bin/mejepa.rs` | Standalone predictor harness |
 | `mejepa-heal-drill` | `context-graph-mejepa` `[[bin]]` | `src/bin/mejepa_heal_drill.rs` | Heal scheduler drill |
 | `mejepa-train` | `context-graph-mejepa-train` `[[bin]]` | `src/bin/mejepa_train.rs` | Trainer driver |
-| `train-causal` | `context-graph-embeddings` `[[bin]]` | (per Cargo.toml) | Causal embedder training |
+| `train-causal` | `context-graph-embeddings` `[[bin]]` | per Cargo.toml | Causal embedder training |
 
 ---
 
@@ -304,31 +312,30 @@ Full FSV evidence index → `07_results_and_benchmarks.md`.
 
 ## 10.5 Neuroscience-Inspired Reserve — Planned Modules (DO NOT START until current queue concludes)
 
-Eight contingency issues (#538-#545) document neuroscience-inspired architectural enhancements. All filed at `priority:p3` with explicit `⚠ DO NOT START` markers. See `08_roadmap_and_open_work.md §6.9` for activation rule.
+8 contingency issues (#538-#545) at `priority:p3` with `⚠ DO NOT START` markers. See `08 §6.9`.
 
-**Tier 1 planned modules (if activated):**
+**Tier 1 planned modules:**
 
 | Issue | Planned crate / module path | Tied existing crate |
 |---|---|---|
 | #538 Predictive-coding head | `crates/context-graph-mejepa/src/predictor/top_down_prediction.rs` + `crates/context-graph-mejepa-train/src/loss/predictive_coding.rs` | `context-graph-mejepa`, `context-graph-mejepa-train` |
 | #539 Schema-prioritized replay | `crates/context-graph-mejepa-train/src/replay_scheduler.rs` + `reverse_replay.rs` + `generative_replay.rs` | `context-graph-mejepa-train` (extends `replay_buffer.rs`) |
-| #540 Hierarchical predictive coding | `crates/context-graph-mejepa/src/hierarchical_prediction.rs` + `crates/context-graph-mejepa-train/src/loss/hierarchical_predictive.rs` | `context-graph-mejepa`, `context-graph-mejepa-train` (consumes shipped #404 / #414 substrate) |
-| #541 Mixed-selectivity binding | `crates/context-graph-mejepa/src/predictor/mixed_selectivity_binding.rs` + `binding_basis_audit.rs` | `context-graph-mejepa` (extends `predictor/` and #390 surface) |
+| #540 Hierarchical predictive coding | `crates/context-graph-mejepa/src/hierarchical_prediction.rs` + `crates/context-graph-mejepa-train/src/loss/hierarchical_predictive.rs` | consumes shipped #404 / #414 substrate |
+| #541 Mixed-selectivity binding | `crates/context-graph-mejepa/src/predictor/mixed_selectivity_binding.rs` + `binding_basis_audit.rs` | extends `predictor/` and #390 surface |
 
-**Tier 2 design influence (no separate modules; affect existing epic implementations):**
-
-- #542 → influences #416 `pathway/` design (manifold trajectories option)
-- #543 → influences #519 sparse-panel design + per-instrument top-k gates
-- #544 → influences #392 temporal-feature design + #390 synchrony scoring
+**Tier 2 design influence (no separate modules):**
+- #542 → #416 `pathway/` design (manifold trajectories option)
+- #543 → #519 sparse-panel design + per-instrument top-k gates
+- #544 → #392 temporal-feature design + #390 synchrony scoring
 - #545 → background tokio task composing with #416 / #517 / #406 / #520
 
-All eight verified doctrine-compatible (slot identity, anti-compensation, binary contract, ambiguity boundary, no inner LLM, no synthetic shortcuts) before filing.
+All 8 verified doctrine-compatible (slot identity, anti-compensation, binary contract, ambiguity boundary, no inner LLM, no synthetic shortcuts) before filing.
 
 ---
 
 ## 11. What Is NOT Included
 
-- No vendored upstream code. Clean-room only (per `CLAUDE.md §6.7`). Never vendor / path-dep / npm-depend on `ruvnet/agentdb` or `ruvnet/ruvector`.
+- No vendored upstream code. Clean-room only (`CLAUDE.md §6.7`). Never vendor / path-dep / npm-depend on `ruvnet/agentdb` or `ruvnet/ruvector`.
 - No backwards-compatibility migrations. Pre-production tree; wipe DB on schema change; fail fast with structured errors.
 - No inner-LLM code. `feature = "llm"` triggers `compile_error!`.
 - No HTTP from action paths. `WebSearch`/`WebFetch`/`mcp__exa__*` are read-only research tools only.
@@ -338,7 +345,7 @@ All eight verified doctrine-compatible (slot identity, anti-compensation, binary
 
 ## 12. New CFs for Q1/Q2/Q5 binary contract + labeling + cross-panel + mistake loop
 
-Source files supporting the binary doctrine. All shipped artifacts are additive to existing crates — no new top-level crate.
+All shipped artifacts are additive to existing crates — no new top-level crate.
 
 ### 12.1 Failure-mode labeling (#404, #413, #414, shipped)
 
@@ -354,21 +361,21 @@ Source files supporting the binary doctrine. All shipped artifacts are additive 
 | Planned module | Crate | Role |
 |---|---|---|
 | `src/cross_panel.rs` | `context-graph-mejepa` | Schedules Panel B evaluation, writes `CF_MEJEPA_CROSS_PANEL_AGREEMENT`, raises `CROSS_PANEL_GOODHART_DETECTED` |
-| `src/panel_b/` submodule | `context-graph-mejepa-instruments` | Panel B instrument variants: `e_ast_codebert.rs`, `e_cfg_pythia.rs`, `e_dataflow_joern.rs`, `e_code_voyage.rs`, `e_text_bge.rs` |
+| `src/panel_b/` submodule | `context-graph-mejepa-instruments` | Panel B variants: `e_ast_codebert.rs`, `e_cfg_pythia.rs`, `e_dataflow_joern.rs`, `e_code_voyage.rs`, `e_text_bge.rs` |
 | `examples/task_py_g_111_cross_panel_triangulation_fsv.rs` | `context-graph-mejepa` | FSV harness |
 
 ### 12.3 Online mistake-driven learning (#406 / #523, shipped)
 
 | Module | Crate | Role |
 |---|---|---|
-| `src/mistake_log.rs` | `mejepa-train` | `MistakeLogRow` type, writer, validation, byte-replay readback for `CF_MEJEPA_MISTAKE_LOG` |
+| `src/mistake_log.rs` | `mejepa-train` | `MistakeLogRow`, writer, validation, byte-replay readback for `CF_MEJEPA_MISTAKE_LOG` |
 | `src/online_head_state*.rs` (3 files) | `mejepa-train` | Key-local exact-panel online-head state; `protection_mode=exactPanelKeyIsolation` |
 | `src/ability_resolver_refutation*.rs` | `mejepa-train` | Live consumer bridge |
 | `src/handlers/tools/mejepa_mistake_loop_tools.rs` | `mejepa-mcp` | MCP wrappers: `mejepa_record_mistake`, `mejepa_mistake_history`, `mejepa_mistake_loop_status` |
 
 ### 12.4 Q4 freeze (deprecation, no new module)
 
-Q4 is removed from the prediction contract. No new Q4 modules planned. Existing `q4_*_labels.rs` modules remain compiled and CFs remain readable for forensic continuity; frozen — no new producer writes.
+Q4 removed from prediction contract. No new Q4 modules planned. Existing `q4_*_labels.rs` modules remain compiled and CFs remain readable for forensic continuity; frozen — no new producer writes.
 
 ### 12.5 Dependency graph addendum
 

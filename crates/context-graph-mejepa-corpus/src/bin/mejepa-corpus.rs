@@ -46,6 +46,7 @@ type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
 const LOG_TAIL_BYTES: u64 = 64 * 1024;
 const DOCKER_QUERY_TIMEOUT: Duration = Duration::from_secs(120);
 const OFFICIAL_PATCH_LOADER_TIMEOUT: Duration = Duration::from_secs(300);
+const AIWONDER_SWEBENCH_PYTHON: &str = "/zfs/hot/contextgraph/venv/bin/python3";
 
 #[derive(Parser, Debug)]
 #[command(version, about = "ME-JEPA Phase 0 corpus generation and verification")]
@@ -76,7 +77,7 @@ struct GenerateArgs {
     tasks_dir: PathBuf,
     #[arg(
         long,
-        default_value = "/zfs/archive/contextgraph/cache/contextgraph-swebench/venv/bin/python"
+        default_value = AIWONDER_SWEBENCH_PYTHON
     )]
     venv_python: PathBuf,
     #[arg(long = "instance-id")]
@@ -126,7 +127,7 @@ struct VerifyArgs {
     sample_keys: Vec<String>,
     #[arg(
         long,
-        default_value = "/zfs/archive/contextgraph/cache/contextgraph-swebench/venv/bin/python"
+        default_value = AIWONDER_SWEBENCH_PYTHON
     )]
     venv_python: PathBuf,
     #[arg(long, default_value = "mejepa-corpus-verify")]
@@ -155,7 +156,7 @@ struct SmokeArgs {
     tasks_dir: PathBuf,
     #[arg(
         long,
-        default_value = "/zfs/archive/contextgraph/cache/contextgraph-swebench/venv/bin/python"
+        default_value = AIWONDER_SWEBENCH_PYTHON
     )]
     venv_python: PathBuf,
     #[arg(long = "instance-id")]
@@ -348,7 +349,7 @@ fn main() -> CliResult<()> {
 
 fn generate(mut args: GenerateArgs) -> CliResult<()> {
     args.output = require_corpus_path(&args.output, "generate.output")?;
-    args.venv_python = require_durable_path(&args.venv_python, "generate.venv_python")?;
+    args.venv_python = require_runtime_python_path(&args.venv_python, "generate.venv_python")?;
     // Cache + source-work are ephemeral: rebuildable from durable inputs
     // and pinned to local scratch for throughput before durable aiwonder promotion.
     args.repo_cache_dir = require_ephemeral_path(&args.repo_cache_dir, "generate.repo_cache_dir")?;
@@ -729,7 +730,7 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
 
 fn verify(mut args: VerifyArgs) -> CliResult<()> {
     args.corpus = require_corpus_path(&args.corpus, "verify.corpus")?;
-    args.venv_python = require_durable_path(&args.venv_python, "verify.venv_python")?;
+    args.venv_python = require_runtime_python_path(&args.venv_python, "verify.venv_python")?;
     args.oracle_repeat_output = match args.oracle_repeat_output.take() {
         Some(path) => Some(require_durable_path(&path, "verify.oracle_repeat_output")?),
         None => None,
@@ -1993,7 +1994,7 @@ fn load_python_test_patch_sha_map(tasks_dir: &Path) -> CliResult<BTreeMap<String
 
 fn smoke(mut args: SmokeArgs) -> CliResult<()> {
     args.output = require_corpus_path(&args.output, "smoke.output")?;
-    args.venv_python = require_durable_path(&args.venv_python, "smoke.venv_python")?;
+    args.venv_python = require_runtime_python_path(&args.venv_python, "smoke.venv_python")?;
     // Same ephemeral-on-ext4 pattern as `generate` (see comments there) —
     // smoke is just generate-with-tighter-scope, so the cache/work paths
     // have identical durability semantics.
@@ -2321,6 +2322,12 @@ fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
 
 fn require_durable_path(path: &Path, field: &'static str) -> CliResult<PathBuf> {
     context_graph_paths::require_under_data_root(path, field).map_err(|err| err.to_string().into())
+}
+
+fn require_runtime_python_path(path: &Path, field: &'static str) -> CliResult<PathBuf> {
+    context_graph_paths::require_under_data_root(path, field)
+        .or_else(|_| context_graph_paths::require_production_hot_root(path, field))
+        .map_err(|err| err.to_string().into())
 }
 
 /// CLI-side validator for **ephemeral** paths (caches, scratch work). See
@@ -3759,6 +3766,46 @@ fn unix_ms() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn swebench_oracle_cli_defaults_to_aiwonder_hot_python() -> CliResult<()> {
+        let expected = PathBuf::from(AIWONDER_SWEBENCH_PYTHON);
+
+        let generate = Cli::try_parse_from([
+            "mejepa-corpus",
+            "generate",
+            "--output",
+            "/zfs/archive/contextgraph/corpus/synthetic-default-python",
+        ])?;
+        match generate.command {
+            CommandKind::Generate(args) => assert_eq!(args.venv_python, expected),
+            _ => panic!("expected generate command"),
+        }
+
+        let verify = Cli::try_parse_from([
+            "mejepa-corpus",
+            "verify",
+            "--corpus",
+            "/zfs/archive/contextgraph/corpus/synthetic-default-python",
+        ])?;
+        match verify.command {
+            CommandKind::Verify(args) => assert_eq!(args.venv_python, expected),
+            _ => panic!("expected verify command"),
+        }
+
+        let smoke = Cli::try_parse_from([
+            "mejepa-corpus",
+            "smoke",
+            "--output",
+            "/zfs/archive/contextgraph/corpus/synthetic-default-python-smoke",
+        ])?;
+        match smoke.command {
+            CommandKind::Smoke(args) => assert_eq!(args.venv_python, expected),
+            _ => panic!("expected smoke command"),
+        }
+
+        Ok(())
+    }
 
     #[test]
     fn smoke_stats_integrity_allows_partial_corpus_without_full_ship_gate() {

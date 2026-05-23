@@ -1,83 +1,85 @@
 # 05 — Predictor Pipeline (Embedders → Instruments → Panels → Heads → TCT → Training)
 
-Source files: `crates/context-graph-mejepa-embedders/src/lib.rs` + modules, `crates/context-graph-mejepa-instruments/src/lib.rs` + modules, `crates/context-graph-mejepa/src/lib.rs` + `compiler.rs` + `verdict_assembly.rs` + `claim_graph.rs` + `patch_similarity.rs` + `failure_fingerprint.rs` + `project_ingest.rs`, `crates/context-graph-mejepa-tct/src/lib.rs` + modules, `crates/context-graph-mejepa-train/src/lib.rs` + `learning_signal.rs` + `replay_buffer.rs` + `mistake_log.rs` + `online_head_state.rs` + `loss/inverse.rs`, `crates/context-graph-mejepa-corpus/src/lib.rs`, `crates/context-graph-mejepa-shift-subscriber/src/lib.rs`, `crates/context-graph-mejepa/src/heal/`.
+**Source files:** `crates/context-graph-mejepa-embedders/src/lib.rs` + modules, `crates/context-graph-mejepa-instruments/src/lib.rs` + modules, `crates/context-graph-mejepa/src/lib.rs` + `compiler.rs` + `verdict_assembly.rs` + `claim_graph.rs` + `patch_similarity.rs` + `failure_fingerprint.rs` + `project_ingest.rs`, `crates/context-graph-mejepa-tct/src/lib.rs` + modules, `crates/context-graph-mejepa-train/src/lib.rs` + `learning_signal.rs` + `replay_buffer.rs` + `mistake_log.rs` + `online_head_state.rs` + `loss/inverse.rs`, `crates/context-graph-mejepa-corpus/src/lib.rs`, `crates/context-graph-mejepa-shift-subscriber/src/lib.rs`, `crates/context-graph-mejepa/src/heal/`.
 
 ---
 
 ## 0b. ⚠ 2026-05-22 hardening pivot — pipeline-level audit findings
 
-The 5-Sherlock parallel forensic audit (#629 closeout) surfaced doctrine-violation and silent-success defects across the pipeline. All open until #633 hardening gate closes:
+5-Sherlock parallel forensic audit (#629 closeout) surfaced doctrine-violation + silent-success defects across the pipeline. All open until #633 hardening gate closes:
 
 | Issue | Pipeline surface | Defect |
 |---|---|---|
-| **#618** | `compiler.rs` aggregate OOD score | Reads flat 5,120-byte packed panel buffer instead of per-slot OOD evidence (doctrine §1.5ter violation) |
-| **#619** | `mejepa-train/src/loss/inverse.rs::forward_inverse_inner` | Uses `Linear(PANEL_DIM, hidden)` flat projections (doctrine §1.5ter violation; same class as the pre-#387 violation that the slot-preserving refactor was supposed to eliminate) |
-| **#620** | `mejepa-train/` training loop | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook from `frozen_hook.rs` is **never invoked** during training — the documented zero-grad guard exists but is unwired |
+| **#618** | `compiler.rs` aggregate OOD score | Reads flat 5,120-byte packed panel buffer instead of per-slot OOD evidence (doctrine §1.5ter) |
+| **#619** | `mejepa-train/src/loss/inverse.rs::forward_inverse_inner` | `Linear(PANEL_DIM, hidden)` flat projections (same class as pre-#387 violation that slot-preserving refactor was supposed to eliminate) |
+| **#620** | `mejepa-train/` training loop | `MEJEPA_INSTRUMENT_GRADIENT_LEAK` runtime hook from `frozen_hook.rs` **never invoked** during training |
 | **#621** | `mejepa-train/` HoldoutReport publisher | Hardcoded `gtau_pass_rate: 1.0` published to MCP `mejepa_weekly_eval_dashboard` (operator status lies) |
 | **#623** | `compiler.rs::cold_start_conformal_policy` | Emits `alpha=0.0`, invalid input to `calibrate_tau` (dead public API + landmine) |
 | **#625** | `lib.rs` public re-exports | `DeterministicPredictor` publicly re-exported (synthetic-vector landmine post-#422) |
-| **#670** | `mejepa-embedders/` `e2/e3/e4/e8` forward providers | Forward-cache embedder vector-space collapse uncovered by #666 closure; must be regenerated or retired before geometry-label promotion |
+| **#670** | `mejepa-embedders/` `e2/e3/e4/e8` forward providers | Forward-cache embedder vector-space collapse uncovered by #666; regenerate or retire before geometry-label promotion |
 
-**Pipeline implication:** the `0.7942190170` post-fix rank-lift measurement rides on a substrate that includes the flat-buffer OOD path (#618), the flat inverse-projection path (#619), the never-invoked gradient-leak guard (#620), and the invalid `e2/e3/e4/e8` embedder spaces (#670). Re-validation under manual SoT (`06 §1.9`) is required before any new claim of correlation-class improvement.
+**Pipeline implication:** the `0.7942190170` post-fix rank-lift measurement rides on substrate that includes the flat-buffer OOD path (#618), flat inverse-projection path (#619), never-invoked gradient-leak guard (#620), and invalid `e2/e3/e4/e8` embedder spaces (#670). Re-validation under manual SoT (`06 §1.9`) required before any new claim of correlation-class improvement.
 
-**Geometry-label epic (#657, in-progress, successor to #413):** per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Replaces the flat-vector "labels are derived from the constellation" framing with "each embedder gets its own deterministic geometry-label map, then a cross-embedder consensus layer (#661) decides what to promote (#662) into routing (#664) and prediction heads (#665)."
+**Geometry-label epic (#657, in-progress, #413 successor):** per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Replaces "labels are derived from the constellation" with "each embedder gets its own deterministic geometry-label map, then a cross-embedder consensus layer (#661) decides what to promote (#662) into routing (#664) and prediction heads (#665)."
 
-**Auto-FSV retirement (#655):** the predictor-pipeline FSV harnesses listed in §6/§7 are being retired. Manual operator-driven SoT readback (per `06 §1.9`) is the binding closeout form going forward.
+**Auto-FSV retirement (#655):** predictor-pipeline FSV harnesses listed in §6/§7 are being retired. Manual operator-driven SoT readback (per `06 §1.9`) is the binding closeout form.
 
 ---
 
 ## 0a. ⚠ Synthetic-vector remediation (2026-05-19/20) — real-input baseline active
 
-Between Phase G ramp and 2026-05-19 22:45 UTC, the **inference path** in `crates/context-graph-mejepa/src/compiler.rs::vectors_for` filled instrument-panel slots with SHA256-seeded synthetic vectors via `deterministic_vector(slot, &digest)` instead of calling the real frozen `E*Instrument` encoders. The forward cache pipeline (`crates/context-graph-mejepa-embedders/examples/python_forward_cache_fsv.rs`, ~24h GPU run, `precision_class: "candle_real_forward"`) was unaffected — it always used real Candle CUDA forward with SHA-pinned safetensors.
+Between Phase G ramp and 2026-05-19 22:45 UTC, **inference path** in `crates/context-graph-mejepa/src/compiler.rs::vectors_for` filled instrument-panel slots with SHA256-seeded synthetic vectors via `deterministic_vector(slot, &digest)` instead of real frozen `E*Instrument` encoders. Forward cache pipeline (`crates/context-graph-mejepa-embedders/examples/python_forward_cache_fsv.rs`, ~24h GPU, `precision_class: "candle_real_forward"`) was unaffected.
 
 **Six P0 fixes shipped 2026-05-19/20 (all closed):**
 
 | Issue | Fix |
 |---|---|
-| #422 | Production inference panels now route through real `E*Instrument` encoders (`compiler.rs::build_inference_panel_inputs`, commit `e2c51669`) |
+| #422 | Production inference panels route through real `E*Instrument` encoders (`compiler.rs::build_inference_panel_inputs`, commit `e2c51669`) |
 | #424 | Project cache fails closed on fake `deterministic_vector_blob` embeddings (commit `5330629e`) |
 | #426 | FSV/MCP deterministic harness can no longer pass without real compiler semantics |
 | #437 | Project ingest wired to active embedder forward providers (commit `a0849ac3`) |
 | #438 | Slot-preserving CUDA compiler must load verified trained checkpoint (commit `f982f29d`) |
-| #441 | Training loop now owns and optimizes real `MeJepaPredictor` weights; exports via manifest-verified pipeline (commit `db83923a`) |
+| #441 | Training loop owns and optimizes real `MeJepaPredictor` weights; exports via manifest-verified pipeline (commit `db83923a`) |
 | #452 | Native active-embedder constellation adapter preserves per-embedder ragged spaces (commit `d068d2ed`) |
 
-**Code guards now in production** (`crates/context-graph-mejepa/src/predictor_checkpoint.rs`):
+**Code guards in production** (`crates/context-graph-mejepa/src/predictor_checkpoint.rs`):
 
 - Lines 147-158: reject any checkpoint containing `PREDICTOR_CHECKPOINT_STUB_MAGIC = b"MEJEPA_BEST_STUB_V1"` at export
 - Lines 239-250: reject at load
 - `validate_aiwonder_checkpoint_path` rejects non-aiwonder roots
 - `trained_weight_sha256 != initial_weight_sha256` invariant on every manifest
 
-**P0 blocker for further gate work:** the real-input rebaseline exists and is below gate. Latest ship-gate FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/` preserves the binary rank-lift baseline: raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe calibrated holdout `0.6916886568`, and real code-state-constellation rank-lift holdout `0.7942190170` with Brier `0.0923729688` and ECE `0.0240316074`. The #392 active/abstain diagnostic is valid and promising (`205 / 240` active rows, corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978`), but it is not ship-gate-countable until per-cell active contracts, rolling windows, statistical power, and Panel B pass. The previous `0.866667` ship-gate measurement remains invalidated. `compile_error` now uses first-class invalid-source panels instead of the carrier workaround; rank-reversing calibration transforms are blocked unless calibration support and raw Pearson justify them; rank-lift excludes target-side oracle/docker/test labels. Next gate work must close the remaining per-cell ranking/power failures on real slot-preserving signals, not repeat the synthetic-input path. See `01_overview.md §1.7` and `08_roadmap_and_open_work.md §0.5`.
+**P0 blocker for further gate work:** real-input rebaseline exists and is below gate. Latest ship-gate FSV `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`: raw holdout `prediction_oracle_correlation = 0.4843192995`, rank-safe `0.6916886568`, rank-lift `0.7942190170`, Brier `0.0923729688`, ECE `0.0240316074`.
+
+**#392 active/abstain diagnostic** is valid and promising: `205/240` active rows, corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978`. Not ship-gate-countable until per-cell active contracts, rolling windows, statistical power, Panel B pass. Previous `0.866667` ship-gate measurement remains invalidated. `compile_error` now uses first-class invalid-source panels instead of carrier workaround; rank-reversing calibration transforms blocked unless calibration support + raw Pearson justify them; rank-lift excludes target-side oracle/docker/test labels. See `01 §1.7` and `08 §0.5`.
 
 ---
 
 ## 0. The Predictor Contract — binary + labeled + mistake-driven, no ambiguous heads
 
-This pipeline implements **three binary predicates** with free binary form against reality, plus one explanation surface:
+Three binary predicates with free binary form against reality, plus one explanation surface:
 
-| # | Predicate | Reality that renders the verdict |
+| # | Predicate | Reality that renders verdict |
 |---|---|---|
-| Q1 | `claim_exists(candidate_patch) → { Yes, No }` | Bytes/AST on disk after the patch |
-| Q2 | `oracle_passes(candidate_patch) → { Pass, Fail }` **(the product output)** | Docker oracle (`swebench.harness.run_evaluation`) |
+| Q1 | `claim_exists(candidate_patch) → { Yes, No }` | Bytes/AST on disk after patch |
+| Q2 | `oracle_passes(candidate_patch) → { Pass, Fail }` **(product output)** | Docker oracle (`swebench.harness.run_evaluation`) |
 | Q5 | `predicted_shift_event_occurred(event_id, patch) → { Yes, No }` per leaf | Durable shift-log JSONL on aiwonder |
 
-Q3 is **explanation only**: on Fail, attaches named failure mode + closest exemplar from the labeling hierarchy. Does NOT produce its own prediction subject to oracle correlation.
+Q3 is **explanation only**: on Fail, attaches named failure mode + closest exemplar. Does NOT produce its own prediction subject to oracle correlation.
 
-Q4 (perf, accuracy, cost, reasoning class, latent bugs) is **out of the prediction contract**. Q4 questions are ambiguous — they require arbitrary thresholds on continuous heuristics or ask taste judgments with no ground truth. The system does not predict ambiguous things because predicting heuristics introduces noise the mistake-driven loop cannot clean up.
+Q4 (perf, accuracy, cost, reasoning class, latent bugs) is **out of the prediction contract**. Ambiguous heads require arbitrary thresholds on continuous heuristics or ask taste judgments with no ground truth. Predicting heuristics introduces noise the mistake loop cannot clean up.
 
-The entire architecture below serves those three binary predicates. The 5-question `RealityPrediction` schema stays in `types.rs` for backward-compat, but the only fields determining product behavior are `Verdict::{Pass, Fail}` (Q2), `claim_reconciliation` (Q1), and per-leaf-event `predicted_shift_outcomes` (Q5).
+The architecture below serves those three binary predicates. The 5-question `RealityPrediction` schema stays in `types.rs` for backward-compat, but only `Verdict::{Pass, Fail}` (Q2), `claim_reconciliation` (Q1), per-leaf-event `predicted_shift_outcomes` (Q5) determine product behavior.
 
 **Three architectural primitives back the binary contract:**
 
-1. **Labeling layer (§4.3).** Raw slot violations + cross-embedder correlations → 4-level hierarchy of named failure modes (Action-Unit → Group → Skill → Constellation). Grounded by closest historical exemplar.
-2. **Online mistake loop (§9.6).** Disagreement with reality (oracle / PostToolUse / shift-log replay) materializes as a `CF_MEJEPA_MISTAKE_LOG` row; trainer consumes through exact-panel online-head state.
+1. **Labeling layer (§4.3).** Raw slot violations + cross-embedder correlations → 4-level hierarchy of named failure modes. Grounded by closest historical exemplar.
+2. **Online mistake loop (§9.6).** Disagreement with reality (oracle / PostToolUse / shift-log replay) materializes as `CF_MEJEPA_MISTAKE_LOG` row; trainer consumes through exact-panel online-head state.
 3. **Cross-panel triangulation (§4.4).** Panel B (non-overlapping instruments) re-scores every gate-relevant patch. 0.95 on Panel A counts only when Panel B agrees within 0.05.
 
-**No best-of-K at the product surface.** Internal Abstain / OOD / GuardRejected are present-tense failures to be eliminated, not product hedges. The path out is the mistake loop.
+**No best-of-K at product surface.** Internal Abstain / OOD / GuardRejected are present-tense failures to be eliminated, not product hedges. Path out is the mistake loop.
 
-**The ambiguity boundary (locked-in rule).** ME-JEPA only predicts questions with free binary form against reality. "Is this performant?" has no free binary form — it requires arbitrary threshold or taste judgment.
+**The ambiguity boundary (locked-in rule).** ME-JEPA only predicts questions with free binary form against reality. "Is this performant?" has no free binary form.
 
 ---
 
@@ -105,7 +107,7 @@ The entire architecture below serves those three binary predicates. The 5-questi
         E_Test 384 | E_Trace 512 | E_Diff 256 | E_Witness 256 |
         E_Oracle 128 | E_Problem 1024 | E_CommitMsg 384 |
         E_StaticAnalysis 256 | E_Runtime 256 | E_Reasoning 384 | Scalars 128
-        (each slot lives in its own embedder's space; array IS the constellation,
+        (each slot in own embedder's space; array IS the constellation,
          NOT a 5,120-d fused embedding; 5,120 is byte-layout only)
                  │  PanelBuilder validates: dim + finite + no double-fill
                  ▼
@@ -137,8 +139,7 @@ The entire architecture below serves those three binary predicates. The 5-questi
        ▼                     ▼
    AI agent             Verification capture (PostToolUse Bash matcher
    (mejepa_predict_     → CF_MEJEPA_PREDICTION_VERIFICATIONS)
-    latest /
-    project_report)
+    latest / project_report)
                               │
                               ▼  Confirmed / Refuted
                        Active learning queue + replay buffer
@@ -161,13 +162,13 @@ The entire architecture below serves those three binary predicates. The 5-questi
                        CF_MEJEPA_MODEL_PROMOTIONS + CF_MEJEPA_ACTIVE_POINTERS
 ```
 
-The pipeline is a consequence predictor, not an intention engine. It learns from observable reality-chain events: `explicit task text / agent claim → edit event → AST delta → per-embedder packed outputs → teleological constellation → frozen instruments → oracle / test / static / runtime / witness outcomes → prediction verification → replay / reward signal`.
+Pipeline is a consequence predictor, not an intention engine. It learns from observable reality-chain events: `explicit task text / agent claim → edit event → AST delta → per-embedder packed outputs → teleological constellation → frozen instruments → oracle / test / static / runtime / witness outcomes → prediction verification → replay / reward signal`.
 
 ---
 
 ## 2. Embedder Registry (21 slots; E5 retired)
 
-`crates/context-graph-mejepa-embedders/src/lib.rs`. Production loading requires schema-versioned `models_config.toml`, SHA-256 manifest pins, runtime CUDA, and E17 calibration evidence.
+`crates/context-graph-mejepa-embedders/src/lib.rs`. Production loading requires schema-versioned `models_config.toml`, SHA-256 manifest pins, runtime CUDA, E17 calibration evidence.
 
 | Slot | Family | Dim | Frozen | Active | Source |
 |---|---|---|---|---|---|
@@ -196,16 +197,16 @@ The pipeline is a consequence predictor, not an intention engine. It learns from
 
 ## 3. Instrument Panel — Array of Per-Embedder Vectors
 
-`crates/context-graph-mejepa-instruments/src/lib.rs:158-199`. The panel is **an array of 15 per-embedder/per-instrument vectors**, one vector per slot, each in its own embedder's space. The array IS the constellation, not a fused embedding.
+`crates/context-graph-mejepa-instruments/src/lib.rs:158-199`. Panel is **array of 15 per-embedder/per-instrument vectors**, one per slot, each in its own embedder's space. The array IS the constellation, not a fused embedding.
 
 **The locked-in rule:**
 
 1. Each slot's vector lives in its own embedder's space.
-2. Same-embedder cosines are valid (`gtau.rs:14` iterates per embedder).
-3. **Cross-embedder dimension compare is forbidden.** `cosine_similarity` at `gtau.rs:90` fails closed with `MEJEPA_TCT_DIM_MISMATCH`.
+2. Same-embedder cosines valid (`gtau.rs:14` iterates per embedder).
+3. **Cross-embedder dim compare forbidden.** `cosine_similarity` at `gtau.rs:90` fails closed with `MEJEPA_TCT_DIM_MISMATCH`.
 4. Whole arrays can be compared array-vs-array (per-slot cosine map, strict-conjunction gate, per-pair matrix with diagonal cosines).
-5. Cross-slot relationships are **scalar pairwise metrics** (MI, correlation), not vector dim-wise compares.
-6. **`PANEL_DIM = 5_120` is byte-layout only.** Forbidden: single linear/conv/attention over the packed buffer; flat residual; any operation where strong slot compensates for weak.
+5. Cross-slot relationships are **scalar pairwise metrics** (MI, correlation), not vector dim compares.
+6. **`PANEL_DIM = 5_120` is byte-layout only.** Forbidden: single linear/conv/attention over packed buffer; flat residual; any operation where strong slot compensates for weak.
 
 **Slot inventory:**
 
@@ -234,11 +235,11 @@ Total contiguous byte layout: 5,120 f32. Semantic unit is the array of 15 per-em
 - Every element finite else `MEJEPA_INSTRUMENTS_NUMERICAL_INVARIANT`
 - Slot not already filled else `MEJEPA_INSTRUMENTS_INVALID_INPUT`
 - Build rejects `filled_mask == 0`
-- All persistence flows through `try_from PanelSerde` so JSON round-trip re-validates
+- All persistence through `try_from PanelSerde` so JSON round-trip re-validates
 
-**Structural collapse-immunity invariant.** Instruments carry zero trainable parameters. `FrozenGuard` / `FrozenSnapshot` / `hash_f32s` enforce `ΔΞ.target_collapse = 0`. `grad_hook.rs::run_gradient_hook` checks `MEJEPA_INSTRUMENT_GRADIENT_LEAK`.
+**Structural collapse-immunity invariant.** Instruments carry zero trainable params. `FrozenGuard` / `FrozenSnapshot` / `hash_f32s` enforce `ΔΞ.target_collapse = 0`. `grad_hook.rs::run_gradient_hook` checks `MEJEPA_INSTRUMENT_GRADIENT_LEAK`.
 
-**Anti-compensation — formal ECC (planned, #512).** Replaces heuristic FSV with self-dual doubly-even ECC over the 15-slot occupancy bitmap (Gates et al. 2008 lineage). Recovery radius `t = 2`: corrupt up to 2 slots → guaranteed reconstruction; more → `PANEL_ECC_UNCORRECTABLE` typed reason into mistake log.
+**Anti-compensation — formal ECC (planned, #512).** Replaces heuristic FSV with self-dual doubly-even ECC over 15-slot occupancy bitmap (Gates et al. 2008 lineage). Recovery radius `t = 2`: corrupt up to 2 slots → guaranteed reconstruction; more → `PANEL_ECC_UNCORRECTABLE` typed reason into mistake log.
 
 ---
 
@@ -246,13 +247,13 @@ Total contiguous byte layout: 5,120 f32. Semantic unit is the array of 15 per-em
 
 `crates/context-graph-mejepa/src/predictor/` — `MeJepaPredictor`, `TransformerLayer`, `ArchitectureSummary`. CUDA-required.
 
-**Architectural rule:** the predictor consumes the panel **as an array of per-embedder vectors**, NOT as flat 5,120-d input. Per-slot input encoders → late fusion → per-slot output decoders. No `linear(PANEL_DIM, hidden)` projections — that pattern is architecturally forbidden.
+**Architectural rule:** predictor consumes panel **as array of per-embedder vectors**, NOT as flat 5,120-d input. Per-slot input encoders → late fusion → per-slot output decoders. No `linear(PANEL_DIM, hidden)` projections — architecturally forbidden.
 
 Default architecture:
 - 15 per-slot input encoders, each `linear(slot.dim(), per_slot_latent_dim)`
-- Late-fusion stack: typed concatenation of 15 latents → transformer layers operating on slot-preserving sequence (slot index = positional feature so transformer cannot treat dimensions as exchangeable)
+- Late-fusion stack: typed concatenation of 15 latents → transformer layers operating on slot-preserving sequence (slot index = positional feature so transformer cannot treat dims as exchangeable)
 - 15 per-slot output decoders emit per-slot residuals against frozen target
-- VICReg + Huber loss computed per-slot, aggregated via fail-closed conjunction
+- VICReg + Huber loss per-slot, aggregated via fail-closed conjunction
 - `INVERSE_ACTION_DIM = 16` action latent for inverse map
 
 Inference config (`MeJepaInferConfig`):
@@ -280,45 +281,45 @@ Inference config (`MeJepaInferConfig`):
 enum Verdict { Pass, Fail, OutOfDistribution, Abstain, GuardRejected }
 ```
 
-**Product surface:** only `Pass | Fail` ships to MCP caller. Internal `OutOfDistribution`, `Abstain`, `GuardRejected` are markers indicating the predictor lacks confidence on this `(cell × named_failure_mode)`. They MUST still be projected to `Pass | Fail` at the boundary (closest-exemplar majority outcome). Projected verdict is subject to ground-truth verification and mistake-loop update.
+**Product surface:** only `Pass | Fail` ships to MCP caller. Internal `OutOfDistribution`/`Abstain`/`GuardRejected` are markers indicating predictor lacks confidence on `(cell × named_failure_mode)`. MUST be projected to `Pass | Fail` at boundary (closest-exemplar majority outcome). Projected verdict subject to ground-truth verification + mistake-loop update.
 
-Decision flow (`compiler.rs::compile`):
+**Decision flow (`compiler.rs::compile`):**
 
 1. Materialize `Panel` for candidate change.
 2. Forward through `MeJepaPredictor`.
 3. Per-head DDA features (`head_projection.rs`).
 4. Split-conformal interval (`conformal.rs`).
-5. Per-slot OOD reasons (#389): `RealityPrediction.per_slot_ood_reasons` materialized from `/zfs/archive/contextgraph/state/calibration/per-slot-v1/`. Persists slot/embedder/pair-specific OOD reasons.
+5. Per-slot OOD reasons (#389): `RealityPrediction.per_slot_ood_reasons` from `/zfs/archive/contextgraph/state/calibration/per-slot-v1/`. Persists slot/embedder/pair-specific OOD reasons.
 6. Aggregate OOD gate. Strict-conjunction policy: aggregate score never overrides slot violation.
 7. TCT Gτ guard.
 8. Cold-cell metric: `n_supporting < 50` → `Abstain`.
-9. Contradiction thresholds (#263, shipped): high Q2/pass + high Q3 explanation/TCT consequence-pressure → `Abstain` with `MULTI_HEAD_CONTRADICTION`. Missing thresholds → `CONTRADICTION_THRESHOLD_MISSING`. Q4 thresholds frozen display-only.
-10. Constellation intelligence (#390, shipped): slot-pair consensus, contradiction, redundancy, novelty, blind-spot, consequence pressure.
+9. Contradiction thresholds (#263): high Q2/pass + high Q3 explanation/TCT consequence-pressure → `Abstain` with `MULTI_HEAD_CONTRADICTION`. Missing thresholds → `CONTRADICTION_THRESHOLD_MISSING`. Q4 thresholds frozen display-only.
+10. Constellation intelligence (#390): slot-pair consensus, contradiction, redundancy, novelty, blind-spot, consequence pressure.
 11. Match fingerprint catalog.
 12. Pull closest exemplars (`CF_MEJEPA_PATCH_SIMILARITY_META`).
 13. Reconcile claim graph (`CF_MEJEPA_CLAIM_RECONCILIATION`).
 14. Emit `RealityPrediction` → write `CF_MEJEPA_LIVE_PREDICTIONS` + `CF_MEJEPA_HIERARCHICAL_PREDICTIONS`.
 
-**Anti-compensation guard.** Corrupted / missing / stale / dimension-shifted slots, contradictory pair relationships, and temporal jumps cannot be accepted through aggregate evidence even when flat normalized score would pass. Code scan prevents flat-vector regressions.
+**Anti-compensation guard.** Corrupted/missing/stale/dimension-shifted slots, contradictory pair relationships, temporal jumps cannot be accepted through aggregate evidence even when flat normalized score would pass. Code scan prevents flat-vector regressions.
 
 ---
 
 ### 4.3 Failure-mode labeling hierarchy (the meaning layer)
 
-The 4-level hierarchy turns raw numerical evidence into named rules. Level 0 (deterministic compiler) and Level 1/2/3 (hierarchical naming) are shipped.
+4-level hierarchy turns raw numerical evidence into named rules. Level 0 (deterministic compiler) and Level 1/2/3 (hierarchical naming) shipped.
 
 **Shipped substrate:**
 
 | Layer | Source | Output |
 |---|---|---|
 | Level 0 deterministic compiler (#413) | `scripts/swebench_lite_ops/python_auto_label_discovery.py` (1,641 lines, no inner LLM) | 399,777 chunk labels, 491-row accepted registry, 3,000 code-state constellations under `/zfs/archive/contextgraph/state/labels/task-py-g-117-auto-label-discovery-v1/` |
-| Level 1/2/3 hierarchy (#404) | `crates/context-graph-mejepa-train/src/failure_mode_hierarchy.rs`, `src/skill_corpus_materialization.rs` | 8 Level-1 groups, 157 Level-2 skills, 379 Level-3 constellations, 536 named predictions |
-| Skill substrate (#414) | `src/skill_sequence_discovery.rs`, `src/chunk_skill_membership.rs` | 128 Level-2 skills, 36,773 chunk memberships, 10,579 reverse-index rows |
+| Level 1/2/3 hierarchy (#404) | `crates/context-graph-mejepa-train/src/failure_mode_hierarchy.rs`, `src/skill_corpus_materialization.rs` | 8 Level-1, 157 Level-2, 379 Level-3, 536 named predictions |
+| Skill substrate (#414) | `src/skill_sequence_discovery.rs`, `src/chunk_skill_membership.rs` | 128 Level-2 skills, 36,773 memberships, 10,579 reverse rows |
 | Runtime resolver (#418) | `src/ability_resolver_*.rs` | `AbilityContext`, ordered higher-ability IDs into `PredictionLabelContext` |
 
-**Holdout proof (#404):** 114/114 actual Fail rows have FailLikely named-mode coverage; closest-exemplar oracle agreement is 1.0 over 113/114 comparable holdout Fail rows. Post-fix revalidation adds the active-prediction view: 117/117 active predicted true-Fail rows resolve to FailLikely named modes, but aggregate predicted-Fail coverage is 137/150 because 13 false-positive Fail verdicts have no named consequence explanation. That blocker belongs to predictor policy/feature selection.
+**Holdout proof (#404):** 114/114 actual Fail rows have FailLikely named-mode coverage; closest-exemplar oracle agreement is 1.0 over 113/114. Post-fix active-prediction view: 117/117 active predicted true-Fail rows resolve to FailLikely; aggregate predicted-Fail coverage is 137/150 — 13 false-positive Fail verdicts have no named consequence explanation. Predictor policy/feature-selection blocker.
 
-**Leakage policy.** Target-side labels (oracle/Docker/test outcomes) marked `leakage_policy:target_side_only`. They are supervision/reward inputs only — **never** live predictor inputs.
+**Leakage policy.** Target-side labels (oracle/Docker/test outcomes) marked `leakage_policy:target_side_only`. Supervision/reward inputs only — **never** live predictor inputs.
 
 **Failure-mode vocabulary** (seeded, not invented):
 
@@ -345,13 +346,13 @@ pub struct NamedFailureMode {
 }
 ```
 
-**Bidirectional skill linkage (#417 shipped read surfaces, #557 audit surface).** Read-only MCP surfaces now include `mejepa_skill_to_code`, `mejepa_code_to_skill`, `mejepa_skill_set_query`, `mejepa_skill_coverage_audit`, `mejepa_chunk_as_star`, `mejepa_constellation_membership`, `mejepa_skill_impact`, `mejepa_skill_graph_inspect`, `mejepa_skill_conflict_graph`, and `mejepa_skill_browse`. #557 adds a usefulness audit surface over the same substrate: candidate kind, support/fail-pass distribution/lift, genericity, per-cell contribution count, live-safe labels vs target supervision labels, source-byte representative sequences, lifecycle history, uncovered code-state keys, unknown ordered constellations, and rejected/demoted patterns. Remaining #417 work is cross-repo transfer and pathway-leaf attachment.
+**Bidirectional skill linkage (#417 shipped read surfaces, #557 audit surface).** Read-only MCP surfaces: `mejepa_skill_to_code`, `mejepa_code_to_skill`, `mejepa_skill_set_query`, `mejepa_skill_coverage_audit`, `mejepa_chunk_as_star`, `mejepa_constellation_membership`, `mejepa_skill_impact`, `mejepa_skill_graph_inspect`, `mejepa_skill_conflict_graph`, `mejepa_skill_browse`. #557 adds usefulness audit (candidate kind, support/fail-pass/lift, genericity, per-cell contribution, live-safe vs target supervision labels, source-byte sequences, lifecycle, uncovered code-state keys, unknown ordered constellations, rejected/demoted). Remaining #417: cross-repo transfer + pathway-leaf attachment.
 
 ---
 
 ### 4.4 Cross-panel triangulation (the Goodhart guard)
 
-Panel A is both the training substrate AND the centroid set the Gτ guard evaluates against. Encoder-matched by construction → 0.95 on Panel A could mean the predictor learned the panel.
+Panel A is both training substrate AND centroid set Gτ guard evaluates against. Encoder-matched → 0.95 on Panel A could mean predictor learned the panel.
 
 **Panel B instrument map (non-overlapping):**
 
@@ -365,11 +366,11 @@ Panel A is both the training substrate AND the centroid set the Gτ guard evalua
 | Text (Test/Problem/CommitMsg) | e5-large-v2 | bge-large-en-v1.5 |
 | Trace/Witness/Oracle/StaticAnalysis/Runtime/Reasoning/Scalars | unchanged | unchanged (deterministic) |
 
-Only learned encoder slots swap; deterministic slots are shared (encode reality directly, not learned representations).
+Only learned encoder slots swap; deterministic slots shared (encode reality directly, not learned representations).
 
 **Triangulation procedure:**
 
-1. Every gate-relevant prediction scored on Panel A *and* Panel B.
+1. Every gate-relevant prediction scored on Panel A AND Panel B.
 2. Both go to `CF_MEJEPA_CROSS_PANEL_AGREEMENT` keyed by `(prediction_id, panel_pair_id)`.
 3. **Agreement metric:** `cross_panel_oracle_correlation = corr(verdict_a, oracle) AND corr(verdict_b, oracle)` — both must clear 0.95.
 4. **Drift metric:** `|corr_a - corr_b| ≤ 0.05` for ship eligibility.
@@ -385,7 +386,7 @@ Tracked by **#405 (open p0, blocked)**.
 
 `crates/context-graph-mejepa-tct/src/lib.rs`. Fail-closed: missing centroids, missing thresholds, under-sampled cells, stale constellations, provenance drift, non-finite floats are all errors. No permissive thresholds.
 
-A teleological constellation is the exact-state, slot-preserving observation of one reality object across all active embedders/instruments and its downstream consequence labels. Each embedder output remains in its own vector space. Mathematical work happens over the collection: per-embedder centroids/variance, pairwise correlation/MI, redundancy, disagreement, temporal movement, attribution, calibrated uncertainty.
+A teleological constellation is the exact-state, slot-preserving observation of one reality object across all active embedders/instruments + downstream consequence labels. Each embedder output remains in its own vector space. Math happens over the collection: per-embedder centroids/variance, pairwise correlation/MI, redundancy, disagreement, temporal movement, attribution, calibrated uncertainty.
 
 | Module | Purpose |
 |---|---|
@@ -394,7 +395,7 @@ A teleological constellation is the exact-state, slot-preserving observation of 
 | `constellation.rs` | Centroid + threshold container |
 | `freshness.rs` + `freshness_policy.rs` | Per-cell freshness checks |
 | `gtau.rs` | Gτ guard predicate |
-| `guard_audit.rs` | Per-Python-cell Gτ audit over cross-embedder tensors and per-slot calibration |
+| `guard_audit.rs` | Per-Python-cell Gτ audit over cross-embedder tensors + per-slot calibration |
 | `hinge.rs` + `hinge_types.rs` | Decision hinges |
 | `inspect.rs` | MCP `constellation_inspect` surface |
 | `shrinkage.rs` + `shrinkage_engine.rs` | Shrinkage for small-sample cells |
@@ -407,7 +408,7 @@ Cell key = `(mutation_category, language, …)`. Refresh log: `CF_MEJEPA_CONSTEL
 
 ## 6. Corpus Generator
 
-`crates/context-graph-mejepa-corpus/src/lib.rs`. Inspired by mutation-testing approaches (Mothra, MuJava, mutmut); no upstream code copied.
+`crates/context-graph-mejepa-corpus/src/lib.rs`. Inspired by mutation-testing (Mothra, MuJava, mutmut); no upstream code copied.
 
 ### 6.1 8 mutation categories
 
@@ -418,7 +419,7 @@ Cell key = `(mutation_category, language, …)`. Refresh log: `CF_MEJEPA_CONSTEL
 | 3 | `OffByOne` | `off_by_one` | Add ±1 to one numeric literal | FAIL |
 | 4 | `SwapVariable` | `swap_variable` | Rename one local to another in-scope name | FAIL |
 | 5 | `DeleteTestCall` | `delete_test_call` | Delete one assertion call | mixed |
-| 6 | `WrongFile` | `wrong_file` | Apply patch text to a DIFFERENT base file | FAIL on test discovery / runtime |
+| 6 | `WrongFile` | `wrong_file` | Apply patch text to DIFFERENT base file | FAIL on test discovery / runtime |
 | 7 | `OverEngineer` | `over_engineer` | Append unused helper function | PASS (correct but messy) |
 | 8 | `CompileError` | `compile_error` | Introduce Python syntax error | FAIL at parse |
 
@@ -434,7 +435,7 @@ Cell key = `(mutation_category, language, …)`. Refresh log: `CF_MEJEPA_CONSTEL
 - Converts `FAIL_TO_PASS` / `PASS_TO_PASS` / `FAIL_TO_FAIL` / `PASS_TO_FAIL` → `OracleVerdict`.
 - Docker-name-safe `run_id` validator.
 
-Lite dataset: 300 test + 23 dev instances across 12 repos (django=114, sympy=77, matplotlib=23, sklearn=23, pytest=17, sphinx=16, astropy=6, requests=6, +4 more). HF cache on aiwonder at `/zfs/hot/contextgraph/.cache/huggingface/hub/datasets--princeton-nlp--SWE-bench_Lite/`.
+Lite dataset: 300 test + 23 dev instances across 12 repos (django=114, sympy=77, matplotlib=23, sklearn=23, pytest=17, sphinx=16, astropy=6, requests=6, +4 more). HF cache: `/zfs/hot/contextgraph/.cache/huggingface/hub/datasets--princeton-nlp--SWE-bench_Lite/`.
 
 ### 6.4 Split planner
 
@@ -495,7 +496,7 @@ Performance gate: fresh ingest of 50-file Python project < 60 s on RTX 5090; re-
 
 `loss/inverse.rs` — `inverse_map_loss`, `compose_bidirectional_l_full`. Shared-trunk target-panel → input-panel + 16-d action latent.
 
-**Ablation result:** the original `λ_inv ∈ {0, 0.25, 0.5, 1.0}` fixed-point result (`0.8666666746139526` for every variant) is invalid synthetic-input evidence. The real-input rerun at `/zfs/archive/contextgraph/fsv/task-ek-012-bidirectional-ablation-realinput-fsv/run-20260520T172657Z/bidirectional_ablation_realinput_fsv.json` kept `lambda_inv=0.0` as best (`0.6704055071` rank-safe); positive lambdas regressed.
+**Ablation result:** original `λ_inv ∈ {0, 0.25, 0.5, 1.0}` fixed-point result (`0.8666666746139526` for every variant) is invalid synthetic-input evidence. Real-input rerun at `fsv/task-ek-012-bidirectional-ablation-realinput-fsv/run-20260520T172657Z/bidirectional_ablation_realinput_fsv.json` kept `lambda_inv=0.0` as best (`0.6704055071` rank-safe); positive lambdas regressed.
 
 ### 9.3 EWC++ + Continual Backprop
 
@@ -512,7 +513,7 @@ Performance gate: fresh ingest of 50-file Python project < 60 s on RTX 5090; re-
 
 ### 9.5bis Information-entropy auxiliary loss (#511, planned)
 
-`crates/context-graph-mejepa-train/src/loss/entropy.rs`. Adds `L_entropy = λ · H(z_latent)` to `L_step` where `H` is differential entropy of the slot-preserving predictor's late-fused latent (Kraskov k-NN estimator or variational lower bound). Formalizes Vopson 2nd-law-of-infodynamics (AIP Advances 12, 075310, 2022). λ starts at 1e-4, auto-calibrated against holdout Brier. **On the road to 0.95** — worst case = no movement, best case = 1-2 correlation points.
+`crates/context-graph-mejepa-train/src/loss/entropy.rs`. Adds `L_entropy = λ · H(z_latent)` to `L_step` where `H` is differential entropy of slot-preserving predictor's late-fused latent (Kraskov k-NN estimator or variational lower bound). Formalizes Vopson 2nd-law-of-infodynamics (AIP Advances 12, 075310, 2022). λ starts at 1e-4, auto-calibrated against holdout Brier. **On the road to 0.95** — worst case = no movement, best case = 1-2 correlation points.
 
 ### 9.6 Online mistake-driven adaptation — SHIPPED (#406 / #523)
 
@@ -520,7 +521,7 @@ Source files: `crates/context-graph-mejepa-train/src/mistake_log.rs`, `replay_bu
 
 Storage CFs: `CF_MEJEPA_MISTAKE_LOG`, `CF_MEJEPA_REPLAY_BUFFER`, `CF_MEJEPA_ONLINE_HEAD_STATE`, skill lifecycle audit CFs from #414/#418.
 
-**The shipped primitive.** The current online head is key-local exact-panel state over `panel_signature_hash`. It corrects the repeated same-panel mistake, records the label/skill/ability/membership context, and measures an unrelated control panel before/after to prove the update did not perturb unrelated state. It does NOT flatten slots, does NOT update a trainable vector head, and does NOT claim Fisher/EWC.
+**The shipped primitive.** Current online head is key-local exact-panel state over `panel_signature_hash`. It corrects the repeated same-panel mistake, records label/skill/ability/membership context, measures unrelated control panel before/after to prove update did not perturb unrelated state. Does NOT flatten slots, does NOT update trainable vector head, does NOT claim Fisher/EWC.
 
 ```
 if predicted_verdict != ground_truth_verdict:
@@ -543,11 +544,11 @@ if predicted_verdict != ground_truth_verdict:
 | Shift-log replay (Q5) | After patch lives in a session | `CF_MEJEPA_REALITY_IMPACT` |
 | Operator override | Operator labels a row | `CF_MEJEPA_OPERATOR_OVERRIDES` |
 
-Each ground-truth event materializes a `MistakeRow` with full context (prediction_id, ts_ns, cell_key, predicted/ground-truth verdict + named failure mode, source panel, panel signature hash, per-slot OOD reasons, accepted label IDs, ordered active skill IDs, skill_signature_hash, skill_lifecycle_decision, closest_exemplar_at_predict, ground_truth_source).
+Each ground-truth event materializes `MistakeRow` with full context (prediction_id, ts_ns, cell_key, predicted/ground-truth verdict + named failure mode, source panel, panel signature hash, per-slot OOD reasons, accepted label IDs, ordered active skill IDs, skill_signature_hash, skill_lifecycle_decision, closest_exemplar_at_predict, ground_truth_source).
 
 **Convergence target:** `mistake_repeat_rate = |second_mistake_on_same_cell+pattern| / |first_mistake| ≤ 0.05` over rolling window. Byte-readable from `CF_MEJEPA_MISTAKE_LOG` aggregations + `mejepa_mistake_loop_status`.
 
-**Why this beats best-of-K.** "If it needs 4 guesses to be most correct then it is already wrong." Best-of-K papers over an under-trained predictor by spending compute at inference time. The online perceptron pays the cost at *learning* time and converges to a predictor that is right on the first try.
+**Why this beats best-of-K.** "If it needs 4 guesses to be most correct then it is already wrong." Best-of-K papers over an under-trained predictor by spending compute at inference time. Online perceptron pays the cost at *learning* time and converges to a predictor right on first try.
 
 **#524 guard.** Any future Fisher/EWC claim requires a durable Fisher/EWC row; reports without one fail FSV.
 
@@ -562,9 +563,9 @@ Each ground-truth event materializes a `MistakeRow` with full context (predictio
 - **Pause** — `mejepa_pause_predictions`
 - **Distill** — distill from champion to smaller learner
 
-Per-cell convergence driver tracks per-cell ship-gate status. Mixed oracle cells use `prediction_oracle_correlation`; zero-variance all-pass/all-fail cells use the #532 replacement contract (target-class recall + actual-class confidence + Brier/ECE) because Pearson is undefined there. The driver then uses those typed metrics for targeted mutation expansion, conformal recalibration, holdout rotation, four-window ship-gate stability, and per-cell exemptions.
+Per-cell convergence driver tracks per-cell ship-gate status. Mixed oracle cells use `prediction_oracle_correlation`; zero-variance all-pass/all-fail cells use #532 replacement contract (target-class recall + actual-class confidence + Brier/ECE) because Pearson is undefined there. Driver uses those typed metrics for targeted mutation expansion, conformal recalibration, holdout rotation, four-window ship-gate stability, per-cell exemptions.
 
-MCP surfaces: `mejepa_heal_status`, `mejepa_daemon_status`, `mejepa_rollback_to`, `mejepa_promote_approval`.
+MCP: `mejepa_heal_status`, `mejepa_daemon_status`, `mejepa_rollback_to`, `mejepa_promote_approval`.
 
 **Cold-load behavioural FSV (planned, #514).** After promotion, sealed cold-load run on 30-instance random holdout must reproduce promotion-time oracle correlation within 0.02 and per-cell verdict distribution within 5% — with no further training/calibration/replay-buffer access. Catches training-state Goodhart (orthogonal to #405's encoder-matched defense). Promotion-time snapshots persist into `CF_MEJEPA_COLD_LOAD_SNAPSHOTS`.
 
@@ -576,7 +577,7 @@ MCP surfaces: `mejepa_heal_status`, `mejepa_daemon_status`, `mejepa_rollback_to`
 1. `tail.rs::ShiftLogTail` tails `runtime/shift-log.jsonl`.
 2. `models.rs` decodes `ShiftEntry`.
 3. `shift_transform.rs::shift_to_inference` maps shift → inference input.
-4. `subscriber.rs::ShiftSubscriber::run()` materializes a `Panel` and writes `CF_MEJEPA_PANELS`.
+4. `subscriber.rs::ShiftSubscriber::run()` materializes `Panel` + writes `CF_MEJEPA_PANELS`.
 5. `watermark.rs::WatermarkWriter` persists watermark — the durability gate.
 6. `status.rs::LiveSubscriberStatus` surfaced via `mejepa_subscriber_status`.
 
@@ -626,7 +627,7 @@ Top-1 same-failure-mode accuracy: 1.0.
 
 ## 16. Q4 Heads — OUT OF SCOPE (frozen as display-only historical data)
 
-**Status: Q4 heads are removed from the prediction contract.** The schema and CFs (`CF_MEJEPA_Q4_*`) are preserved for forensic continuity. `mejepa_explain_prediction` can still surface historical rows. But:
+**Status: Q4 heads removed from prediction contract.** Schema + CFs (`CF_MEJEPA_Q4_*`) preserved for forensic continuity. `mejepa_explain_prediction` can surface historical rows. But:
 
 - **No new Q4 training** — producers frozen; no new rows after freeze.
 - **No Q4 calibration prerequisite for ship** — 0.95 measures Q2 oracle correlation only.
@@ -635,9 +636,9 @@ Top-1 same-failure-mode accuracy: 1.0.
 
 **Code enforcement.** `Q4_DOCTRINE_FREEZE_ACTIVE = true` in `q4_trust_gate.rs`. Builder + prediction-surface inference clear Q4 display-only fields. `q4_inputs_to_ship_gate()` returns `0`. `mejepa_weekly_eval_dashboard.q4Freeze` section fails closed if frozen Q4 CFs grow.
 
-**Why removed.** Q4 questions are ambiguous (§0). They require an arbitrary threshold or ask a taste question reality does not render a binary verdict on. Predicting them trains the system to match heuristic tools (mutmut, semgrep, vulture, hyperfine, pytest-benchmark) rather than reality.
+**Why removed.** Q4 questions are ambiguous (§0). They require arbitrary threshold or ask taste question reality does not render binary verdict on. Predicting them trains system to match heuristic tools (mutmut, semgrep, vulture, hyperfine, pytest-benchmark) rather than reality.
 
-**What replaces Q4 in the operator answer.** Operators who used to want "what else could go wrong" answers get them from **named failure mode** Q3 surface: Fail verdict → named cause + closest exemplar. Pass → "Pass + claim landed in bytes (Q1=Yes), oracle agrees (Q2=Pass), closest exemplars all Pass" — not speculative ambiguous risks.
+**What replaces Q4 in operator answer.** Operators who used to want "what else could go wrong" answers get them from **named failure mode** Q3 surface: Fail verdict → named cause + closest exemplar. Pass → "Pass + claim landed in bytes (Q1=Yes), oracle agrees (Q2=Pass), closest exemplars all Pass" — not speculative ambiguous risks.
 
 ---
 
@@ -647,7 +648,7 @@ Top-1 same-failure-mode accuracy: 1.0.
 
 Behavior:
 - Reads persisted `RealityPrediction` rows from `CF_MEJEPA_LIVE_PREDICTIONS` by `prediction_id`.
-- Parses session `cgreality-shift-log/<session>.jsonl` over a bounded replay window.
+- Parses session `cgreality-shift-log/<session>.jsonl` over bounded replay window.
 - Classifies as `Confirmed`, `Missed`, or `NotYetObserved`, and unpredicted observed consequences as `Surprise`.
 - Fails closed on missing predictions, out-of-order timestamps, explicit shift-log SHA-chain breaks, unverifiable file-shift SHA evidence.
 - MCP: `mejepa_reality_impact`.
@@ -658,7 +659,7 @@ Q5 calibration consumer writes `CF_MEJEPA_Q5_CALIBRATIONS` from replay records. 
 
 ## 17bis. Pathway Exploration Surface — planned (#416)
 
-The L3 capability in the JEPA world-model rubric — counterfactual rollouts for decision support — instantiated on Q1/Q2/Q5 binary-leaf substrate. See `01_overview.md §1.5` for conceptual framing.
+L3 capability in JEPA world-model rubric — counterfactual rollouts for decision support — instantiated on Q1/Q2/Q5 binary-leaf substrate. See `01 §1.5`.
 
 **Architecture** (planned modules additive to `context-graph-mejepa`):
 
@@ -741,32 +742,32 @@ Operator picks one. System (when #335 ships) reverse-engineers patch-shape const
 
 ## 18.5. Neuroscience-Inspired Reserve (filed 2026-05-20, DO NOT START until current queue concludes)
 
-Eight contingency issues (#538-#545) document neuroscience-inspired architectural enhancements that would activate **only if** the current Phase G queue + creativity engine fail to close the remaining ship-gate gap. All filed at `priority:p3`, `status:needs-triage`, with explicit `⚠ DO NOT START — Neuroscience-reserve contingency` markers. Reassess only after post-queue gap analysis identifies need.
+8 contingency issues (#538-#545) at `priority:p3`, `status:needs-triage`, with `⚠ DO NOT START — Neuroscience-reserve contingency` markers. Activation: only after current Phase G queue + creativity engine fail to close gap + post-queue gap analysis identifies need.
 
-**Tier 1 — high-impact, addresses the gap directly:**
+**Tier 1 — high-impact, addresses gap directly:**
 
 | Issue | Planned modules / pipeline addition |
 |---|---|
-| **#538** Predictive-coding head (Rao & Ballard 1999; Friston free-energy) | `crates/context-graph-mejepa/src/predictor/top_down_prediction.rs` per-slot top-down prediction + residual against observation. `crates/context-graph-mejepa-train/src/loss/predictive_coding.rs` per-slot prediction-error term in `L_step`. Rewires bottom-up-only → bidirectional predict-then-observe-then-residual. Slot identity preserved. |
-| **#539** Schema-prioritized replay (Mattar & Daw 2018; Liu et al. 2019) | `crates/context-graph-mejepa-train/src/replay_scheduler.rs` schema-grouped batch sampler over #414 skill IDs. `reverse_replay.rs` for pathway credit assignment (#416 dependency). `generative_replay.rs` for idle-time rehearsal. |
+| **#538** Predictive-coding head (Rao & Ballard 1999; Friston) | `crates/context-graph-mejepa/src/predictor/top_down_prediction.rs` per-slot top-down prediction + residual against observation. `crates/context-graph-mejepa-train/src/loss/predictive_coding.rs` per-slot prediction-error term in `L_step`. Rewires bottom-up-only → bidirectional predict-then-observe-then-residual. Slot identity preserved. |
+| **#539** Schema-prioritized replay (Mattar & Daw 2018; Liu et al. 2019) | `crates/context-graph-mejepa-train/src/replay_scheduler.rs` schema-grouped batch sampler over #414 skill IDs. `reverse_replay.rs` for pathway credit assignment (#416 dep). `generative_replay.rs` for idle-time rehearsal. |
 | **#540** Hierarchical predictive coding on #404 hierarchy | `crates/context-graph-mejepa/src/hierarchical_prediction.rs` Level-3 → 2 → 1 → 0 backward prediction; per-level error attribution feeds skill lifecycle audit (#414). No new substrate. |
 | **#541** Mixed-selectivity binding (Rigotti et al. 2013) | `crates/context-graph-mejepa/src/predictor/mixed_selectivity_binding.rs` nonlinear basis layer between per-slot encoders and late fusion; replaces #390's linear pairwise statistics. Inputs are same-embedder scalar summaries only (anti-compensation preserved). |
 
 **Tier 2 — design-influence on existing epics:**
 
-| Issue | Design influence on |
+| Issue | Design influence |
 |---|---|
 | **#542** Population-dynamics trajectories | #416 pathway exploration design |
 | **#543** Per-slot sparse representations | Micro-analog of #519 macro-sparsity; per-slot top-k gates |
 | **#544** Synchrony-based temporal binding | #392 temporal trajectory features design |
 | **#545** Idle-time generative rollouts | Composes with #416 / #517 / #406 / #520 |
 
-**Doctrinal compatibility verified before filing:** slot identity preserved, anti-compensation invariant (#394) preserved, binary contract preserved, ambiguity boundary preserved, no inner LLM, no synthetic-input shortcuts. See `08_roadmap_and_open_work.md §6.9` for activation rule and full index.
+**Doctrinal compatibility verified before filing:** slot identity preserved, anti-compensation invariant (#394) preserved, binary contract preserved, ambiguity boundary preserved, no inner LLM, no synthetic-input shortcuts. See `08 §6.9`.
 
 ---
 
 ## 19. What This Doc Does NOT Cover
 
-- Exact transformer layer counts / hidden dims at runtime — read `MeJepaInferConfig` from the active checkpoint manifest.
+- Exact transformer layer counts / hidden dims at runtime — read `MeJepaInferConfig` from active checkpoint manifest.
 - Per-cell calibration scores — live in `CF_MEJEPA_CALIBRATION_HISTORY` and `CF_MEJEPA_FINGERPRINT_CALIBRATION`; inspect via `mejepa_constellation_inspect` and `mejepa_fingerprint_inspect`.
 - Heal-scheduler scheduling cadence — controlled by `~/.config/mejepa/daemon.toml` and per-cell convergence ETA tracking.

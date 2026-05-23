@@ -5,6 +5,58 @@ import json
 import sys
 from pathlib import Path
 
+
+def _maybe_run_lightweight_aiwonder_python_preflight() -> None:
+    if len(sys.argv) < 2 or sys.argv[1] != "aiwonder-python-runtime-preflight":
+        return
+
+    from .core import SwebenchOpsError, utc_now, write_json_checked
+    from .python_runtime_preflight import add_arguments, command_python_runtime_preflight
+
+    parser = argparse.ArgumentParser(
+        prog=f"{Path(sys.argv[0]).name} aiwonder-python-runtime-preflight",
+        description="Fail-closed aiwonder Python venv dependency preflight for swebench_lite_ops schema validation.",
+    )
+    add_arguments(parser)
+    parser.set_defaults(command="aiwonder-python-runtime-preflight")
+    args = parser.parse_args(sys.argv[2:])
+    evidence_root = args.evidence_root
+    evidence_name = "aiwonder-python-runtime-preflight-command-evidence.json"
+    evidence_path = evidence_root / evidence_name
+    try:
+        payload = command_python_runtime_preflight(args)
+        payload["evidence_path"] = str(evidence_path)
+        write_json_checked(evidence_path, payload)
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        raise SystemExit(0)
+    except SwebenchOpsError as exc:
+        payload = {
+            "checked_at": utc_now(),
+            "command": "aiwonder-python-runtime-preflight",
+            "evidence_path": str(evidence_path),
+            **exc.to_json(),
+        }
+        write_json_checked(evidence_path, payload)
+        print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
+        raise SystemExit(2)
+    except Exception as exc:
+        payload = {
+            "checked_at": utc_now(),
+            "command": "aiwonder-python-runtime-preflight",
+            "evidence_path": str(evidence_path),
+            "ok": False,
+            "error_code": "SWEBENCH_UNEXPECTED_ERROR",
+            "message": str(exc),
+            "remediation": "Fix the Python runtime preflight defect or unexpected environment issue before continuing.",
+            "details": {"type": type(exc).__name__},
+        }
+        write_json_checked(evidence_path, payload)
+        print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
+        raise SystemExit(3)
+
+
+_maybe_run_lightweight_aiwonder_python_preflight()
+
 from .commands import (
     command_gold_smoke,
     command_image_status,
@@ -114,6 +166,8 @@ from .python_geometry_label_atlas_materializer import (
     add_arguments as add_python_geometry_label_atlas_materializer_arguments,
 )
 from .python_geometry_label_atlas_materializer import command_python_geometry_label_atlas_materializer
+from .python_runtime_preflight import add_arguments as add_python_runtime_preflight_arguments
+from .python_runtime_preflight import command_python_runtime_preflight
 from .python_delete_test_call_regeneration import (
     add_arguments as add_python_delete_test_call_regeneration_arguments,
 )
@@ -178,6 +232,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Record dirty cache state instead of failing. Do not use for readiness gates.",
     )
     preflight.set_defaults(func=command_preflight, evidence_name="preflight-evidence.json")
+
+    aiwonder_python_preflight = sub.add_parser(
+        "aiwonder-python-runtime-preflight",
+        help="Fail-closed aiwonder Python venv dependency preflight for swebench_lite_ops schema validation.",
+    )
+    add_python_runtime_preflight_arguments(aiwonder_python_preflight)
+    aiwonder_python_preflight.set_defaults(
+        func=command_python_runtime_preflight,
+        evidence_name="aiwonder-python-runtime-preflight-command-evidence.json",
+    )
 
     status = sub.add_parser("image-status", help="Inspect local SWE-bench Docker image cache.")
     add_common(status)

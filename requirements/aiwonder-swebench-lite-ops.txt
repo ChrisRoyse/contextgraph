@@ -1,0 +1,14 @@
+# aiwonder Python runtime contract for scripts.swebench_lite_ops.
+#
+# Install/repair:
+#   /zfs/hot/contextgraph/venv/bin/python3 -m pip install -r requirements/aiwonder-swebench-lite-ops.txt
+#
+# Verify before corpus/FSV work:
+#   contextgraph-shell '/zfs/hot/contextgraph/venv/bin/python3 -m scripts.swebench_lite_ops.cli aiwonder-python-runtime-preflight'
+#
+# These pins mirror the package set manually proven on aiwonder after #675.
+attrs==26.1.0
+jsonschema==4.19.2
+jsonschema-specifications==2025.9.1
+referencing==0.37.0
+rpds-py==0.30.0

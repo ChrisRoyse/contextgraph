@@ -197,7 +197,13 @@ fn generate_with_config<O: Oracle>(
         "generate.output_root",
     )?;
     let venv_python =
-        context_graph_paths::require_under_data_root(&config.venv_python, "generate.venv_python")?;
+        context_graph_paths::require_under_data_root(&config.venv_python, "generate.venv_python")
+            .or_else(|_| {
+            context_graph_paths::require_production_hot_root(
+                &config.venv_python,
+                "generate.venv_python",
+            )
+        })?;
     // Cache and work roots are EPHEMERAL — rebuildable from the durable
     // corpus output + a fresh `git clone`. On WSL2 these paths benchmark
     // 40-100× faster on ext4 than on the aiwonder 9P shim, so the validator
@@ -758,9 +764,7 @@ fn json_error(context: impl Into<String>) -> impl FnOnce(serde_json::Error) -> M
 }
 
 fn default_venv_python() -> PathBuf {
-    context_graph_paths::ensure_subdir("cache/contextgraph-swebench")
-        .expect("ContextGraph aiwonder-backed SWE-bench cache root must be available")
-        .join("venv/bin/python")
+    PathBuf::from("/zfs/hot/contextgraph/venv/bin/python3")
 }
 
 fn default_repo_cache_dir() -> PathBuf {
@@ -771,6 +775,14 @@ fn default_repo_cache_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generate_config_defaults_to_aiwonder_hot_swebench_python() {
+        assert_eq!(
+            default_venv_python(),
+            PathBuf::from("/zfs/hot/contextgraph/venv/bin/python3")
+        );
+    }
 
     #[test]
     fn generate_output_outside_corpus_root_returns_error() {
