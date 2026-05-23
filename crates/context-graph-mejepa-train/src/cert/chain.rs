@@ -100,6 +100,7 @@ pub fn verify_chain(
                 format!("cert step field {} does not match key {step}", cert.step),
             ));
         }
+        cert.validate_phase3()?;
         if cert.parent_witness_hash != expected_parent {
             return Ok(ChainVerificationReport {
                 from: from_step,

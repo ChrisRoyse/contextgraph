@@ -67,6 +67,14 @@ pub struct TrainingCertificate {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub l_entropy_estimator: Option<String>,
     pub training_mode: String,
+    #[serde(default)]
+    pub trained_predictor: bool,
+    #[serde(default)]
+    pub predictor_parameter_update_count: u64,
+    #[serde(default)]
+    pub checkpoint_readback_verified: bool,
+    #[serde(default)]
+    pub ship_gate_countable_training: bool,
     pub distillation_cycle_id: Option<u64>,
     pub distillation_loss_mean: Option<f32>,
     pub distillation_skipped_count: Option<u64>,
@@ -143,6 +151,52 @@ impl TrainingCertificate {
                     "top-level pairwise MI {} diverges from signal ΔΞ predictor_redundancy {} at step {}",
                     self.predictor_redundancy_pairwise_mi,
                     self.signal.delta_xi_components.predictor_redundancy,
+                    self.step
+                ),
+            )
+            .with_step(self.step));
+        }
+        if !self.trained_predictor {
+            if self.predictor_parameter_update_count != 0 {
+                return Err(crate::error::TrainerError::new(
+                    crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                    format!(
+                        "certificate step {} has trained_predictor=false but predictor_parameter_update_count={}",
+                        self.step, self.predictor_parameter_update_count
+                    ),
+                )
+                .with_step(self.step));
+            }
+            if self.checkpoint_readback_verified {
+                return Err(crate::error::TrainerError::new(
+                    crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                    format!(
+                        "certificate step {} has trained_predictor=false but checkpoint_readback_verified=true",
+                        self.step
+                    ),
+                )
+                .with_step(self.step));
+            }
+            if self.ship_gate_countable_training {
+                return Err(crate::error::TrainerError::new(
+                    crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                    format!(
+                        "certificate step {} has trained_predictor=false but ship_gate_countable_training=true",
+                        self.step
+                    ),
+                )
+                .with_step(self.step));
+            }
+        }
+        if self.ship_gate_countable_training
+            && (!self.trained_predictor
+                || self.predictor_parameter_update_count == 0
+                || !self.checkpoint_readback_verified)
+        {
+            return Err(crate::error::TrainerError::new(
+                crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                format!(
+                    "certificate step {} is ship-gate countable without trained predictor, optimizer updates, and verified checkpoint readback",
                     self.step
                 ),
             )

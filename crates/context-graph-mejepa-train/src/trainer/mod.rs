@@ -326,6 +326,10 @@ impl Trainer {
                     .enabled
                     .then_some("knn-radius-v1-slot-preserving-latent".to_string()),
                 training_mode: DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE.to_string(),
+                trained_predictor: false,
+                predictor_parameter_update_count: 0,
+                checkpoint_readback_verified: false,
+                ship_gate_countable_training: false,
                 distillation_cycle_id: None,
                 distillation_loss_mean: None,
                 distillation_skipped_count: None,
@@ -792,7 +796,10 @@ fn default_embedder_versions() -> HashMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cert::{open_train_rocksdb, TrainingCertificate, CF_MEJEPA_TRAIN_CERTS};
+    use crate::cert::{
+        body_canonical_json, compute_self_hash, open_train_rocksdb, verify_chain,
+        TrainingCertificate, CF_MEJEPA_TRAIN_CERTS,
+    };
     use crate::eval::HoldoutExample;
     use candle_core::Device;
 
@@ -864,6 +871,24 @@ mod tests {
             Some(DIAGNOSTIC_CERTIFICATE_ONLY_WARNING)
         );
         assert_eq!(cert.phase3_dod_passed, Some(false));
+        assert!(!cert.trained_predictor);
+        assert_eq!(cert.predictor_parameter_update_count, 0);
+        assert!(!cert.checkpoint_readback_verified);
+        assert!(!cert.ship_gate_countable_training);
+        let serialized = serde_json::to_value(&cert)?;
+        assert_eq!(serialized["trained_predictor"], serde_json::json!(false));
+        assert_eq!(
+            serialized["predictor_parameter_update_count"],
+            serde_json::json!(0)
+        );
+        assert_eq!(
+            serialized["checkpoint_readback_verified"],
+            serde_json::json!(false)
+        );
+        assert_eq!(
+            serialized["ship_gate_countable_training"],
+            serde_json::json!(false)
+        );
         assert_eq!(
             cert.loss_components
                 .get("predictor_parameter_update_count")
@@ -875,6 +900,29 @@ mod tests {
                 .get("ship_gate_countable_training")
                 .copied(),
             Some(0.0)
+        );
+
+        let mut contradictory = cert.clone();
+        contradictory.ship_gate_countable_training = true;
+        let err = contradictory.validate_phase3().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("trained_predictor=false but ship_gate_countable_training=true"),
+            "{err}"
+        );
+
+        contradictory.self_hash.clear();
+        let body = body_canonical_json(&contradictory)?;
+        contradictory.self_hash = compute_self_hash(&body);
+        let cf = db
+            .cf_handle(CF_MEJEPA_TRAIN_CERTS)
+            .ok_or("missing CF_MEJEPA_TRAIN_CERTS")?;
+        db.put_cf(cf, 0_u64.to_be_bytes(), serde_json::to_vec(&contradictory)?)?;
+        let err = verify_chain(&db, CF_MEJEPA_TRAIN_CERTS, 0, 0).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("trained_predictor=false but ship_gate_countable_training=true"),
+            "{err}"
         );
         Ok(())
     }
