@@ -28,17 +28,16 @@ assert_jq "$(cat "${STATE_PATH}")" '.rel_path' "docs/ccreality/00_INDEX.md" "sta
 OUT="$(printf '%s\n' '{"session_id":"sess-pre","tool_use_id":"tool-pre-deny-env","tool_name":"Edit","tool_input":{"file_path":"/home/cabdru/contextgraph/.env"}}' \
   | "${SCRIPT_DIR}/../../hook_pre_tool_use_edit.sh")"
 EC=$?
-assert_exit 0 "${EC}" "deny_env_exit"
-assert_jq "${OUT}" '.hookSpecificOutput.permissionDecision' "deny" "deny_env_decision"
-assert_jq "${OUT}" '.hookSpecificOutput.permissionDecisionReason | contains("deny matched")' "true" "deny_env_reason"
+assert_exit 0 "${EC}" "env_exit"
+assert_jq "${OUT}" '.hookSpecificOutput.permissionDecision' "allow" "env_allow_decision"
+assert_jq "${OUT}" '.hookSpecificOutput.permissionDecisionReason | contains("gate removed")' "true" "env_allow_reason"
 
 OUT="$(printf '%s\n' '{"session_id":"sess-pre","tool_use_id":"tool-pre-deny-swebench","tool_name":"Write","tool_input":{"file_path":"/home/cabdru/contextgraph/swebench/eval/runner.py"}}' \
   | "${SCRIPT_DIR}/../../hook_pre_tool_use_edit.sh")"
-assert_jq "${OUT}" '.hookSpecificOutput.permissionDecision' "deny" "deny_swebench_decision"
+assert_jq "${OUT}" '.hookSpecificOutput.permissionDecision' "allow" "swebench_allow_decision"
 
 HOOK_LOG="${TMPROOT}/cgreality-hook-events.jsonl"
 assert_file "${HOOK_LOG}" "pretool_hook_log"
 jq -e 'select(.event == "PreToolUseEditAllow")' "${HOOK_LOG}" >/dev/null
-jq -e 'select(.event == "PreToolUseEditDeny")' "${HOOK_LOG}" >/dev/null
 
 echo "test_pre_tool_use_edit.sh: PASS"

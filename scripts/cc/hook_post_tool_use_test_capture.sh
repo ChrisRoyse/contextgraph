@@ -45,7 +45,8 @@ INPUT="$(cat)"
 if ! jq -e . >/dev/null 2>&1 <<<"${INPUT}"; then
   cgreality_droot_log_event "PostToolUseBashTestCaptureInvalidJson" '{"status":"invalid_json"}'
   posttooluse_capture_log_event "PostToolUseBashTestCaptureInvalidJson" '{"status":"invalid_json"}'
-  exit 0
+  cgreality_emit_hook_warning "MEJEPA_CAPTURE_INVALID_JSON" "PostToolUse Bash test capture input was not valid JSON; no test outcomes were bound." "stdin"
+  exit 1
 fi
 
 TOOL_NAME="$(jq -r '.tool_name // ""' <<<"${INPUT}")"
@@ -72,7 +73,7 @@ OUTPUT="$(jq -r '
 
 is_test_runner_command() {
   local lowered
-  lowered="$(printf '%s' "${COMMAND}" | tr 'A-Z' 'a-z')"
+  lowered="$(printf '%s' "${COMMAND}" | tr '[:upper:]' '[:lower:]')"
   [[ "${lowered}" == *pytest* || "${lowered}" == *"cargo test"* || "${lowered}" == *unittest* || "${lowered}" == *jest* || "${lowered}" == *vitest* || "${lowered}" == *"npm test"* || "${lowered}" == *"pnpm test"* ]]
 }
 
@@ -151,7 +152,7 @@ run_prediction_binding() {
     printf '{"status":"warning","error_code":"MEJEPA_VERIFICATION_CLI_UNAVAILABLE","source_of_truth":"%s"}\n' "$(cgreality_file_sot "${events_path}")" >&2
     cgreality_droot_log_event "PostToolUseBashVerificationCliUnavailable" "$(jq -nc --arg session_id "${SESSION_ID}" --arg command "${COMMAND}" '{session_id: $session_id, command: $command}')"
     posttooluse_capture_log_event "PostToolUseBashVerificationCliUnavailable" "$(jq -nc --arg session_id "${SESSION_ID}" --arg command "${COMMAND}" --arg evidence_path "${evidence_path}" '{session_id: $session_id, command: $command, evidence_path: $evidence_path}')"
-    return 0
+    return 1
   fi
   local args=(
     mejepa bind-test-outcomes
@@ -170,6 +171,7 @@ run_prediction_binding() {
   local bind_out bind_err exit_code
   bind_out="$(mktemp /tmp/cgreality-verification-bind-XXXXXX.out)"
   bind_err="$(mktemp /tmp/cgreality-verification-bind-XXXXXX.err)"
+  local status=0
   if timeout "${VERIFY_TIMEOUT_SECONDS}" "${cli_bin}" "${args[@]}" >"${bind_out}" 2>"${bind_err}"; then
     local written
     written="$(jq -r '.verifications_written // 0' "${bind_out}" 2>/dev/null || printf '0')"
@@ -186,8 +188,10 @@ run_prediction_binding() {
     printf '{"status":"warning","error_code":"%s","detail":%s,"source_of_truth":"%s"}\n' "${code}" "$(jq -Rn --arg text "${tail_text}" '$text')" "$(cgreality_file_sot "${events_path}")" >&2
     cgreality_droot_log_event "PostToolUseBashVerificationBindFailed" "$(jq -nc --arg session_id "${SESSION_ID}" --arg command "${COMMAND}" --arg code "${code}" --arg detail "${tail_text}" '{session_id: $session_id, command: $command, error_code: $code, detail: $detail}')"
     posttooluse_capture_log_event "PostToolUseBashVerificationBindFailed" "$(jq -nc --arg session_id "${SESSION_ID}" --arg command "${COMMAND}" --arg code "${code}" --arg detail "${tail_text}" --arg evidence_path "${evidence_path}" '{session_id: $session_id, command: $command, error_code: $code, detail: $detail, evidence_path: $evidence_path}')"
+    status=1
   fi
   rm -f "${bind_out}" "${bind_err}"
+  return "${status}"
 }
 
 TMP_EVENTS="$(mktemp /tmp/cgreality-test-outcomes-XXXXXX.jsonl)"
@@ -199,9 +203,13 @@ if [ -z "${OUTPUT}" ]; then
   if is_test_runner_command; then
     write_ambiguous_event "${TMP_EVENTS}"
     OUT_PATH="$(append_events_to_outcome_log "${TMP_EVENTS}")"
-    run_prediction_binding "${TMP_EVENTS}" "${OUT_PATH}" "false"
+    BIND_STATUS=0
+    run_prediction_binding "${TMP_EVENTS}" "${OUT_PATH}" "false" || BIND_STATUS=$?
     cgreality_emit_additional_context "PostToolUse" "Test outcome capture: wrote 1 inconclusive event to $(cgreality_file_sot "${OUT_PATH}")."
     posttooluse_capture_log_event "PostToolUseBashTestCaptureAmbiguousRecorded" "$(jq -nc --arg session_id "${SESSION_ID}" --arg path "${OUT_PATH}" '{session_id: $session_id, path: $path, event_count: 1}')"
+    if [ "${BIND_STATUS}" -ne 0 ]; then
+      exit "${BIND_STATUS}"
+    fi
   fi
   exit 0
 fi
@@ -213,7 +221,7 @@ if ! printf '%s' "${OUTPUT}" | "${ROOT}/scripts/cc/parse_test_output.py" \
   printf '{"status":"warning","error_code":"MEJEPA_VERIFICATION_PARSE_FAILURE","source_of_truth":"stdin"}\n' >&2
   cgreality_droot_log_event "PostToolUseBashTestCaptureParseFailed" "$(jq -nc --arg session_id "${SESSION_ID}" --arg command "${COMMAND}" '{session_id: $session_id, command: $command}')"
   posttooluse_capture_log_event "PostToolUseBashTestCaptureParseFailed" "$(jq -nc --arg session_id "${SESSION_ID}" --arg command "${COMMAND}" '{session_id: $session_id, command: $command}')"
-  exit 0
+  exit 1
 fi
 
 EVENT_COUNT="$(wc -l < "${TMP_EVENTS}" | tr -d ' ')"
@@ -221,9 +229,13 @@ if [ "${EVENT_COUNT}" = "0" ]; then
   if is_test_runner_command; then
     write_ambiguous_event "${TMP_EVENTS}"
     OUT_PATH="$(append_events_to_outcome_log "${TMP_EVENTS}")"
-    run_prediction_binding "${TMP_EVENTS}" "${OUT_PATH}" "false"
+    BIND_STATUS=0
+    run_prediction_binding "${TMP_EVENTS}" "${OUT_PATH}" "false" || BIND_STATUS=$?
     cgreality_emit_additional_context "PostToolUse" "Test outcome capture: wrote 1 inconclusive event to $(cgreality_file_sot "${OUT_PATH}")."
     posttooluse_capture_log_event "PostToolUseBashTestCaptureAmbiguousRecorded" "$(jq -nc --arg session_id "${SESSION_ID}" --arg path "${OUT_PATH}" '{session_id: $session_id, path: $path, event_count: 1}')"
+    if [ "${BIND_STATUS}" -ne 0 ]; then
+      exit "${BIND_STATUS}"
+    fi
   else
     posttooluse_capture_log_event "PostToolUseBashTestCaptureIgnored" "$(jq -nc --arg session_id "${SESSION_ID}" --arg command "${COMMAND}" '{session_id: $session_id, command: $command, reason: "no_test_outcome_events"}')"
   fi
@@ -232,7 +244,12 @@ fi
 
 OUT_PATH="$(append_events_to_outcome_log "${TMP_EVENTS}")"
 
-run_prediction_binding "${TMP_EVENTS}" "${OUT_PATH}" "false"
+BIND_STATUS=0
+run_prediction_binding "${TMP_EVENTS}" "${OUT_PATH}" "false" || BIND_STATUS=$?
 cgreality_emit_additional_context "PostToolUse" "Test outcome capture: wrote ${EVENT_COUNT} event(s) to $(cgreality_file_sot "${OUT_PATH}")."
 cgreality_droot_log_event "PostToolUseBashTestCaptureRecorded" "$(jq -nc --arg session_id "${SESSION_ID}" --arg path "${OUT_PATH}" --argjson event_count "${EVENT_COUNT}" '{session_id: $session_id, path: $path, event_count: $event_count}')"
 posttooluse_capture_log_event "PostToolUseBashTestCaptureRecorded" "$(jq -nc --arg session_id "${SESSION_ID}" --arg path "${OUT_PATH}" --argjson event_count "${EVENT_COUNT}" '{session_id: $session_id, path: $path, event_count: $event_count}')"
+if [ "${BIND_STATUS}" -ne 0 ]; then
+  exit "${BIND_STATUS}"
+fi
+exit 0

@@ -234,7 +234,7 @@ export FAKE_CURL_MODE=fail
 FAIL_OUT="$(run_hook "${SESSION_RAW}" 2>"${TMPROOT}/mcp-fail.stderr")"
 FAIL_EC=$?
 set -e
-assert_exit 0 "${FAIL_EC}" "mcp_unreachable_exit"
+assert_exit 1 "${FAIL_EC}" "mcp_unreachable_exit"
 if [ -n "${FAIL_OUT}" ]; then
   echo "FAIL [mcp_unreachable_stdout]: expected empty stdout, got ${FAIL_OUT}" >&2
   exit 1
@@ -247,7 +247,7 @@ set +e
 MALFORMED_OUT="$(run_hook "${SESSION_RAW}" 2>"${TMPROOT}/malformed.stderr")"
 MALFORMED_EC=$?
 set -e
-assert_exit 0 "${MALFORMED_EC}" "malformed_exit"
+assert_exit 1 "${MALFORMED_EC}" "malformed_exit"
 if [ -n "${MALFORMED_OUT}" ]; then
   echo "FAIL [malformed_stdout]: expected empty stdout, got ${MALFORMED_OUT}" >&2
   exit 1

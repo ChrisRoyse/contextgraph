@@ -82,6 +82,19 @@ cgreality_emit_pretool_decision() {
   }'
 }
 
+cgreality_emit_hook_warning() {
+  local code="$1"
+  local detail="$2"
+  local source="${3:-stdin}"
+  detail="$(printf '%s' "${detail}" | cgreality_truncate_context)"
+  jq -nc \
+    --arg status "warning" \
+    --arg code "${code}" \
+    --arg detail "${detail}" \
+    --arg source_of_truth "${source}" \
+    '{status: $status, error_code: $code, detail: $detail, source_of_truth: $source_of_truth}' >&2
+}
+
 cgreality_log_event() {
   local event="$1"
   local payload="${2:-}"

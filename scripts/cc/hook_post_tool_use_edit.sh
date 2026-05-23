@@ -6,8 +6,10 @@ source "${SCRIPT_DIR}/_common.sh"
 
 INPUT="$(cat)"
 if ! jq -e . >/dev/null 2>&1 <<<"${INPUT}"; then
-  cgreality_emit_additional_context "PostToolUse" "Post-edit reality: ccreality hook input was not valid JSON; source_of_truth=stdin."
-  exit 0
+  CTX="Post-edit reality: ERROR CCREALITY_HOOK_INVALID_JSON. ccreality hook input was not valid JSON; source_of_truth=stdin."
+  cgreality_emit_additional_context "PostToolUse" "${CTX}"
+  cgreality_emit_hook_warning "CCREALITY_HOOK_INVALID_JSON" "${CTX}" "stdin"
+  exit 1
 fi
 
 TOOL_NAME="$(jq -r '.tool_name // ""' <<<"${INPUT}")"
@@ -31,7 +33,8 @@ if [ ! -f "${ABS_PATH}" ]; then
   CTX="Post-edit reality: file=${REL_PATH} is missing after tool use; no harness transition recorded."
   cgreality_emit_additional_context "PostToolUse" "${CTX}"
   cgreality_log_event "PostToolUseEditMissingFile" "$(jq -nc --arg path "${REL_PATH}" '{path: $path}')"
-  exit 0
+  cgreality_emit_hook_warning "CCREALITY_POST_EDIT_FILE_MISSING" "${CTX}" "$(cgreality_file_sot "${ABS_PATH}")"
+  exit 1
 fi
 
 AFTER_SHA="$(cgreality_sha256_or_missing "${ABS_PATH}")"
@@ -49,13 +52,15 @@ if [ -n "${RUNTIME_ROOT}" ] && [ -d "${RUNTIME_ROOT}" ]; then
     CTX="Post-edit reality: ERROR CCREALITY_PREEDIT_STATE_MISSING. Expected PreToolUse state was not found at $(cgreality_file_sot "${STATE_PATH}"). File=${REL_PATH} after_sha=${AFTER_SHA}. Harness transition was not recorded because before_sha256 is required."
     cgreality_emit_additional_context "PostToolUse" "${CTX}"
     cgreality_log_event "PostToolUseEditPreStateMissing" "$(jq -nc --arg path "${REL_PATH}" --arg state_path "${STATE_PATH}" --arg after_sha "${AFTER_SHA}" '{path: $path, expected_state_path: $state_path, after_sha256: $after_sha}')"
-    exit 0
+    cgreality_emit_hook_warning "CCREALITY_PREEDIT_STATE_MISSING" "${CTX}" "$(cgreality_file_sot "${STATE_PATH}")"
+    exit 1
   fi
 else
   CTX="Post-edit reality: file=${REL_PATH} after_sha=${AFTER_SHA}. No active runtime root exists, so no harness transition was recorded. Active-root source of truth: $(cgreality_file_sot "${RUNTIME_ROOT_FILE}")."
   cgreality_emit_additional_context "PostToolUse" "${CTX}"
   cgreality_log_event "PostToolUseEditNoRuntimeRoot" "$(jq -nc --arg path "${REL_PATH}" --arg after_sha "${AFTER_SHA}" '{path: $path, after_sha256: $after_sha}')"
-  exit 0
+  cgreality_emit_hook_warning "CCREALITY_ACTIVE_RUNTIME_ROOT_MISSING" "${CTX}" "$(cgreality_file_sot "${RUNTIME_ROOT_FILE}")"
+  exit 1
 fi
 
 LINES_ADDED=0
@@ -89,10 +94,12 @@ fi
 
 CLI_BIN=""
 if ! CLI_BIN="$(cgreality_context_graph_cli_bin)"; then
-  CTX="Post-edit reality: ERROR CCREALITY_CONTEXT_GRAPH_CLI_MISSING. Expected executable at ${CGREALITY_CONTEXT_GRAPH_CLI:-${CONTEXTGRAPH_ROOT_RESOLVED}/target/debug/context-graph-cli}. File=${REL_PATH} after_sha=${AFTER_SHA}. Harness transition was not recorded."
+  EXPECTED_CLI="${CGREALITY_CONTEXT_GRAPH_CLI:-${CONTEXTGRAPH_ROOT_RESOLVED}/target/debug/context-graph-cli}"
+  CTX="Post-edit reality: ERROR CCREALITY_CONTEXT_GRAPH_CLI_MISSING. Expected executable at ${EXPECTED_CLI}. File=${REL_PATH} after_sha=${AFTER_SHA}. Harness transition was not recorded."
   cgreality_emit_additional_context "PostToolUse" "${CTX}"
-  cgreality_log_event "PostToolUseEditCliMissing" "$(jq -nc --arg path "${REL_PATH}" --arg expected "${CGREALITY_CONTEXT_GRAPH_CLI:-${CONTEXTGRAPH_ROOT_RESOLVED}/target/debug/context-graph-cli}" '{path: $path, expected_cli: $expected}')"
-  exit 0
+  cgreality_log_event "PostToolUseEditCliMissing" "$(jq -nc --arg path "${REL_PATH}" --arg expected "${EXPECTED_CLI}" '{path: $path, expected_cli: $expected}')"
+  cgreality_emit_hook_warning "CCREALITY_CONTEXT_GRAPH_CLI_MISSING" "${CTX}" "$(cgreality_file_sot "${EXPECTED_CLI}")"
+  exit 1
 fi
 
 CLI_ERR="$(mktemp /tmp/cgreality-record-transition-XXXXXX.stderr)"
@@ -135,4 +142,5 @@ rm -f "${CLI_ERR}"
 CTX="Post-edit reality: ERROR CCREALITY_HARNESS_TRANSITION_RECORD_FAILED. File=${REL_PATH} before_sha=${BEFORE_SHA} after_sha=${AFTER_SHA}. ${CLI_TAIL}. Expected source of truth: active runtime root ${RUNTIME_ROOT}."
 cgreality_emit_additional_context "PostToolUse" "${CTX}"
 cgreality_log_event "PostToolUseEditRecordFailed" "$(jq -nc --arg path "${REL_PATH}" --arg before_sha "${BEFORE_SHA}" --arg after_sha "${AFTER_SHA}" --arg error_tail "${CLI_TAIL}" '{path: $path, before_sha256: $before_sha, after_sha256: $after_sha, error_tail: $error_tail}')"
-exit 0
+cgreality_emit_hook_warning "CCREALITY_HARNESS_TRANSITION_RECORD_FAILED" "${CTX}" "$(cgreality_file_sot "${RUNTIME_ROOT}")"
+exit 1

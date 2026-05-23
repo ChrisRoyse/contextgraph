@@ -99,7 +99,7 @@ if ! RESPONSE="$(curl --silent --show-error --fail-with-body --max-time 4 \
   log_injection_event "daemon_unavailable" "${RESPONSE}"
   write_injection_history "mcp_unreachable" "false" "" "${RESPONSE}"
   emit_warning "MEJEPA_INJECT_MCP_UNREACHABLE" "${RESPONSE}"
-  exit 0
+  exit 1
 fi
 
 if jq -e '.result.isError == true' >/dev/null 2>&1 <<<"${RESPONSE}"; then
@@ -107,14 +107,14 @@ if jq -e '.result.isError == true' >/dev/null 2>&1 <<<"${RESPONSE}"; then
   log_injection_event "tool_error" "${DETAIL}"
   write_injection_history "tool_error" "false" "" "${DETAIL}"
   emit_warning "MEJEPA_INJECT_TOOL_ERROR" "${DETAIL}"
-  exit 0
+  exit 1
 fi
 
 if ! MARKDOWN="$(printf '%s' "${RESPONSE}" | "${RENDERER}" --max-bytes 4096 2>&1)"; then
   log_injection_event "render_failed" "${MARKDOWN}"
   write_injection_history "render_failed" "false" "" "${MARKDOWN}"
   emit_warning "MEJEPA_INJECT_RENDER_FAILED" "${MARKDOWN}"
-  exit 0
+  exit 1
 fi
 
 if [ -z "${MARKDOWN}" ]; then

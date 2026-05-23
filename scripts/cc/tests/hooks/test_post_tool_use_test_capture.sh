@@ -89,8 +89,17 @@ pytest_payload "tool-timeout" "pytest tests/test_timeout.py" "tests/test_timeout
   | "${SCRIPT_DIR}/../../hook_post_tool_use_test_capture.sh" >/dev/null 2>"${ERR}"
 EC=$?
 set -e
-assert_exit 0 "${EC}" "timeout_hook_exit"
+assert_exit 1 "${EC}" "timeout_hook_exit"
 grep -q "MEJEPA_HOOK_TIMEOUT" "${ERR}"
 jq -e 'select(.event == "PostToolUseBashVerificationBindFailed" and .payload.error_code == "MEJEPA_HOOK_TIMEOUT")' "${CGREALITY_POSTTOOLUSE_CAPTURE_LOG}" >/dev/null
+
+ERR_INVALID="${TMPROOT}/invalid-json.err"
+set +e
+printf '{not-json\n' | "${SCRIPT_DIR}/../../hook_post_tool_use_test_capture.sh" >/dev/null 2>"${ERR_INVALID}"
+INVALID_EC=$?
+set -e
+assert_exit 1 "${INVALID_EC}" "invalid_json_hook_exit"
+grep -q "MEJEPA_CAPTURE_INVALID_JSON" "${ERR_INVALID}"
+jq -e 'select(.event == "PostToolUseBashTestCaptureInvalidJson")' "${CGREALITY_POSTTOOLUSE_CAPTURE_LOG}" >/dev/null
 
 echo "test_post_tool_use_test_capture.sh: PASS"
