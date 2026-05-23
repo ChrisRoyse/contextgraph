@@ -166,6 +166,12 @@ from .python_geometry_label_atlas_materializer import (
     add_arguments as add_python_geometry_label_atlas_materializer_arguments,
 )
 from .python_geometry_label_atlas_materializer import command_python_geometry_label_atlas_materializer
+from .python_label_quality_signal import add_arguments as add_python_label_quality_signal_arguments
+from .python_label_quality_signal import command_python_label_quality_signal
+from .python_label_quality_downstream_lift import (
+    add_arguments as add_python_label_quality_downstream_lift_arguments,
+)
+from .python_label_quality_downstream_lift import command_python_label_quality_downstream_lift
 from .python_runtime_preflight import add_arguments as add_python_runtime_preflight_arguments
 from .python_runtime_preflight import command_python_runtime_preflight
 from .python_delete_test_call_regeneration import (
@@ -846,6 +852,26 @@ def build_parser() -> argparse.ArgumentParser:
     geometry_label_atlas_materializer.set_defaults(
         func=command_python_geometry_label_atlas_materializer,
         evidence_name="python-geometry-label-atlas-materializer-command-evidence.json",
+    )
+
+    label_quality_signal = sub.add_parser(
+        "python-label-quality-signal",
+        help="TASK-PY-G-673: rank label quality by embedder signal/noise over geometry-label SoTs.",
+    )
+    add_python_label_quality_signal_arguments(label_quality_signal)
+    label_quality_signal.set_defaults(
+        func=command_python_label_quality_signal,
+        evidence_name="python-label-quality-signal-command-evidence.json",
+    )
+
+    label_quality_downstream_lift = sub.add_parser(
+        "python-label-quality-downstream-lift",
+        help="TASK-PY-G-679: measure calibration-to-holdout lift from geometry label quality.",
+    )
+    add_python_label_quality_downstream_lift_arguments(label_quality_downstream_lift)
+    label_quality_downstream_lift.set_defaults(
+        func=command_python_label_quality_downstream_lift,
+        evidence_name="python-label-quality-downstream-lift-command-evidence.json",
     )
 
     delete_test_call_regeneration = sub.add_parser(
