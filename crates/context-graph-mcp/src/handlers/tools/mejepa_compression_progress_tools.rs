@@ -379,6 +379,14 @@ mod test_support {
             l_entropy_sample_count: None,
             l_entropy_estimator: None,
             training_mode: "task-ek-001-fsv".to_string(),
+            // #645 audit: TrainingCertificate gained predictor_parameter_update_count,
+            // trained_predictor, checkpoint_readback_verified, ship_gate_countable_training
+            // fields per #683. This synthetic fixture path emits the doctrinal
+            // "no real training" defaults so the FSV cert reflects diagnostic mode.
+            trained_predictor: false,
+            predictor_parameter_update_count: 0,
+            checkpoint_readback_verified: false,
+            ship_gate_countable_training: false,
             distillation_cycle_id: None,
             distillation_loss_mean: None,
             distillation_skipped_count: None,
