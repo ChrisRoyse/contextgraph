@@ -28,7 +28,19 @@ DEFAULT_READBACK_ROOT = Path(
     "/zfs/archive/contextgraph/fsv/task-py-g-135c-candidate-keyed-downstream-fsv/manual-readback"
 )
 
-TARGET_SIDE_MARKERS = ("oracle", "docker", "test_outcome", "target_side", "ground_truth")
+TARGET_SIDE_LABEL_FAMILIES = {
+    "oracle",
+    "oracle_exception",
+    "docker",
+    "test_phase",
+    "test_result",
+    "code_state_outcome",
+    "partition",
+    "leakage_policy",
+    "ground_truth",
+    "truth",
+    "post_tool_use",
+}
 
 
 class CandidateDownstreamError(SwebenchOpsError):
@@ -156,10 +168,17 @@ def target_leakage_count(rows: list[dict[str, Any]]) -> int:
     count = 0
     for row in rows:
         for label in row.get("live_predictor_labels") or []:
-            label_text = str(label).lower()
-            if any(marker in label_text for marker in TARGET_SIDE_MARKERS):
+            if is_target_side_live_label(str(label)):
                 count += 1
     return count
+
+
+def is_target_side_live_label(label_id: str) -> bool:
+    label_text = label_id.lower()
+    family = label_text.split(":", 1)[0]
+    if family in TARGET_SIDE_LABEL_FAMILIES:
+        return True
+    return label_text.startswith("target_") or ":target_side" in label_text or ":ground_truth" in label_text
 
 
 def split_support(rows: list[dict[str, Any]], min_calibration_failures: int) -> dict[str, Any]:
