@@ -1651,6 +1651,38 @@ def command_python_auto_label_discovery(args: argparse.Namespace) -> int:
         args.min_lift,
     )
     metric_count = write_jsonl_iter(usefulness_path, metric_rows)
+    # #711: compute slot admissibility BEFORE writing the accepted-label
+    # registry, so any slot:<inadmissible_embedder>:* label is dropped at
+    # write time. The accepted-label registry is the consumer surface that
+    # was leaking degenerate (E2/E3/E4) and aliased (E8≡E1) slot labels;
+    # filtering here makes the registry strictly admissibility-aware
+    # without requiring a two-pass refactor of the per-chunk emit loop.
+    # (Chunk-level `chunk_constellation_labels.jsonl` still contains the
+    # raw slot labels; downstream consumers of that file are already
+    # admissibility-aware via `vector_space_blockers`.)
+    early_slot_health = vector_space_health_from_hash_counts(
+        required_embedders,
+        slot_record_counts,
+        slot_vector_hash_counts,
+    )
+    inadmissible_embedders = {
+        row["embedder_id"]
+        for row in early_slot_health
+        if row.get("status") in {"missing", "degenerate", "duplicate"}
+    }
+    inadmissible_label_prefixes = tuple(
+        f"slot:{eid}:" for eid in sorted(inadmissible_embedders)
+    )
+    if inadmissible_label_prefixes:
+        accepted_rows_filtered = [
+            row
+            for row in accepted_rows
+            if not str(row.get("label_id", "")).startswith(inadmissible_label_prefixes)
+        ]
+        accepted_rows_dropped_711 = len(accepted_rows) - len(accepted_rows_filtered)
+        accepted_rows = accepted_rows_filtered
+    else:
+        accepted_rows_dropped_711 = 0
     accepted_count = write_jsonl_iter(registry_path, accepted_rows)
 
     selected_full = args.max_shards is None
