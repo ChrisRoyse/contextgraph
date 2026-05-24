@@ -48,7 +48,12 @@ pub fn materialize_panel(
                 "materialize each slot once and only once",
             ));
         }
-        builder.set_slot(input.slot, &input.vector)?;
+        // #801 / #710: production panel-build uses the strict-constant
+        // health check so embedder collapse (#666 E2/E3/E4 / #704) cannot
+        // pass through unchecked. Explicit zero-fills below use the
+        // permissive `set_slot` because zero is a legitimate value for
+        // the explicitly-declared zero_slots(time_step).
+        builder.set_slot_with_health_check(input.slot, &input.vector)?;
     }
 
     let active_slots = active_slots(time_step);
@@ -131,10 +136,14 @@ mod tests {
     use super::*;
 
     fn input(slot: InstrumentSlot) -> PanelVectorInput {
-        PanelVectorInput {
-            slot,
-            vector: vec![1.0; slot.dim()],
-        }
+        // #801 / #710: avoid strict-constant vectors so the production
+        // health check in `materialize_panel` accepts the test fixture.
+        // The exact pattern is unimportant — only that no slot vector is
+        // entirely identical across all dimensions.
+        let vector: Vec<f32> = (0..slot.dim())
+            .map(|i| 1.0 + (i as f32) * 0.001)
+            .collect();
+        PanelVectorInput { slot, vector }
     }
 
     #[test]
