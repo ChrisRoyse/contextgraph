@@ -289,8 +289,8 @@ impl LegacyCalibrationRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use context_graph_mejepa_instruments::InstrumentSlot;
     use crate::types::Language;
+    use context_graph_mejepa_instruments::InstrumentSlot;
 
     fn example(i: usize) -> CalibrationExample {
         CalibrationExample {

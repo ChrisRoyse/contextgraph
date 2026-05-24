@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
-use crate::calibration_types::CalibrationRecord;
+use crate::calibration_types::{complete_per_slot_sigma_squared, CalibrationRecord};
 use crate::heal::cf::{
     encode_active_pointer_key, encode_calibration_history_record_key, encode_value,
     ActivePointerValue, CF_MEJEPA_ACTIVE_POINTERS,
@@ -143,7 +143,7 @@ pub fn continuous_calibration_if_due(
         min_samples_per_stratum: 1,
         sample_count: writer.sliding_window.len(),
         per_language_counts,
-        per_slot_sigma_squared: None,
+        per_slot_sigma_squared: Some(complete_per_slot_sigma_squared(sigma_squared)),
         corpus_sha: pipeline.corpus_sha,
         embedder_versions: BTreeMap::new(),
         frozen_at,

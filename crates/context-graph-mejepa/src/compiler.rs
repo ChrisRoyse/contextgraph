@@ -499,12 +499,14 @@ impl MeJepaCompiler {
         }
         oracle.validate()?;
         let ood_threshold = self.ood_threshold_for_compilation()?;
-        let per_slot_sigma_squared = calibration.per_slot_sigma_squared.as_ref().ok_or_else(
-            || MejepaInferError::OodPerSlotCalibratorMissing {
-                detail: "strict slot-preserving OOD scoring requires per-slot sigma calibration"
-                    .to_string(),
-            },
-        )?;
+        let per_slot_sigma_squared =
+            calibration.per_slot_sigma_squared.as_ref().ok_or_else(|| {
+                MejepaInferError::OodPerSlotCalibratorMissing {
+                    detail:
+                        "strict slot-preserving OOD scoring requires per-slot sigma calibration"
+                            .to_string(),
+                }
+            })?;
         let slot_ood_scores =
             per_slot_residual_scores(&predicted, &target, Some(per_slot_sigma_squared))?;
         let ood_score = slot_ood_scores

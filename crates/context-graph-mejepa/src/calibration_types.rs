@@ -6,6 +6,13 @@ use serde::{Deserialize, Serialize};
 use crate::error::MejepaInferError;
 use crate::types::{EmbedderId, Language};
 
+pub fn complete_per_slot_sigma_squared(sigma_squared: f32) -> BTreeMap<InstrumentSlot, f32> {
+    InstrumentSlot::all()
+        .into_iter()
+        .map(|slot| (slot, sigma_squared))
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CalibrationRecord {

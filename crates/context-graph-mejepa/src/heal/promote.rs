@@ -7,7 +7,7 @@ use rocksdb::IteratorMode;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::calibration_types::CalibrationRecord;
+use crate::calibration_types::{complete_per_slot_sigma_squared, CalibrationRecord};
 use crate::heal::calibration::compute_conformal_tau;
 use crate::heal::cf::{
     encode_active_pointer_key, encode_calibration_history_record_key, encode_heal_report_key,
@@ -818,7 +818,7 @@ impl AbcPromoter {
             min_samples_per_stratum: 1,
             sample_count: holdout.examples.len(),
             per_language_counts,
-            per_slot_sigma_squared: None,
+            per_slot_sigma_squared: Some(complete_per_slot_sigma_squared(sigma_squared)),
             corpus_sha: holdout.corpus_sha,
             embedder_versions: BTreeMap::new(),
             frozen_at,

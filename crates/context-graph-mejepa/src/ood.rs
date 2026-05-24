@@ -28,20 +28,16 @@ pub fn per_slot_residual_scores(
     target: &Panel,
     per_slot_sigma_squared: Option<&BTreeMap<InstrumentSlot, f32>>,
 ) -> Result<Vec<SlotResidualScore>, MejepaInferError> {
-    let per_slot_sigma_squared = per_slot_sigma_squared.ok_or_else(|| {
-        MejepaInferError::OodPerSlotCalibratorMissing {
+    let per_slot_sigma_squared =
+        per_slot_sigma_squared.ok_or_else(|| MejepaInferError::OodPerSlotCalibratorMissing {
             detail: "missing per-slot sigma calibration for panel OOD scoring".to_string(),
-        }
-    })?;
+        })?;
     let mut scores = Vec::with_capacity(InstrumentSlot::all().len());
     for slot in InstrumentSlot::all() {
         let norm_sq = squared_l2(predicted.slot(slot), target.slot(slot))?;
         let sigma_squared = *per_slot_sigma_squared.get(&slot).ok_or_else(|| {
             MejepaInferError::OodPerSlotCalibratorMissing {
-                detail: format!(
-                    "missing per-slot sigma calibration for slot {:?}",
-                    slot
-                ),
+                detail: format!("missing per-slot sigma calibration for slot {:?}", slot),
             }
         })?;
         validate_sigma_squared(sigma_squared)?;

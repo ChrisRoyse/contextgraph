@@ -227,9 +227,9 @@ mod tests {
     use std::sync::Arc;
 
     use crate::{
-        build_fixture_deterministic_compiler, open_infer_rocksdb, sha256_bytes,
-        valid_witness_segment, AstDiff, CalibrationRecord, CalibrationStore, DiffHunk, Language,
-        MeJepaInferConfig, RocksDbInferStore, TaskEnvironment, TaskId, TestId,
+        build_fixture_deterministic_compiler, complete_per_slot_sigma_squared, open_infer_rocksdb,
+        sha256_bytes, valid_witness_segment, AstDiff, CalibrationRecord, CalibrationStore,
+        DiffHunk, Language, MeJepaInferConfig, RocksDbInferStore, TaskEnvironment, TaskId, TestId,
     };
 
     use super::*;
@@ -384,7 +384,7 @@ mod tests {
             min_samples_per_stratum: 1,
             sample_count: 1,
             per_language_counts: BTreeMap::from([(Language::Python, 1)]),
-            per_slot_sigma_squared: None,
+            per_slot_sigma_squared: Some(complete_per_slot_sigma_squared(1_000_000_000.0)),
             corpus_sha: [10; 32],
             embedder_versions: BTreeMap::new(),
             frozen_at: chrono::Utc::now().timestamp(),

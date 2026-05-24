@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use context_graph_mejepa_instruments::InstrumentSlot;
 use sha2::{Digest, Sha256};
 
-use crate::calibration_types::CalibrationRecord;
+use crate::calibration_types::{complete_per_slot_sigma_squared, CalibrationRecord};
 use crate::error::MejepaInferError;
 use crate::types::{ConformalSet, EmbedderId, Language, OracleOutcome, TaskContext};
 
@@ -153,12 +152,7 @@ pub fn calibrate(
     let empirical_coverage = covered as f32 / scores.len() as f32;
     let frozen_at = chrono::Utc::now().timestamp();
     let version = calibration_version(frozen_at, &scores, corpus_sha);
-    let per_slot_sigma_squared = Some(
-        InstrumentSlot::all()
-            .into_iter()
-            .map(|slot| (slot, sigma_squared))
-            .collect::<BTreeMap<_, _>>(),
-    );
+    let per_slot_sigma_squared = Some(complete_per_slot_sigma_squared(sigma_squared));
     let record = CalibrationRecord {
         version,
         alpha,
