@@ -189,6 +189,28 @@ CXXFLAGS_x86_64_unknown_linux_gnu = { value = "-include cstdint", force = false 
 
 Why: aiwonder currently exposes GCC 15.2.0 as `c++`. Fresh target builds of the vendored `librocksdb-sys` trace replay sources can fail before ContextGraph code compiles because RocksDB's trace headers use `uint32_t` / `uint64_t` before `<cstdint>` is visible to that translation unit. The shim is harmless for C++ builds, is not forced over an operator-provided `CXXFLAGS`, and should be removed once RocksDB or the dependency wrapper includes `<cstdint>` directly. Tracked by #525.
 
+### 3.5 RLIMIT_NOFILE — raise before `cargo test --workspace`
+
+aiwonder's default shell exposes `ulimit -n = 1024`. ContextGraph's workspace test suite opens many thousand RocksDB files in parallel (~1500 tests, each test opens its own DB; rocksdb itself opens dozens of SST/manifest fds per DB). Running the suite under the default limit produces dozens of false "test failures" all reporting `IO error: ... Too many open files` from `rocksdb::DB::open`. The same workspace passes on the WSL development box because WSL's default `ulimit -n` is far higher.
+
+This is an environment defect, not a code defect. Required operator workflow on aiwonder:
+
+```bash
+ssh aiwonder
+ulimit -n 65536       # raise current shell's RLIMIT_NOFILE
+cargo test --release --workspace -j 8   # use modest parallelism; -j 32 still risks fd thrash even at 65536
+```
+
+If the operator runs cargo test via a fresh non-interactive shell (e.g. nested `ssh aiwonder "cargo test ..."`), prefix the command:
+
+```bash
+ssh aiwonder 'bash -lc "ulimit -n 65536 && cargo test --release --workspace -j 8"'
+```
+
+Failure mode if the limit is too low: tests panic with `OpenFailed { ..., message: "IO error: ... Too many open files" }` from RocksDB or `tempfile`. The panic is descriptive enough to recognise, but it masquerades as ~196 individual test failures across ~17 crates and looks like a real regression unless the operator knows to inspect `ulimit -n`. Tracked by #802.
+
+Optional one-time host hardening (operator only, with sudo): bump `/etc/security/limits.conf` `* soft nofile 65536` / `hard nofile 1048576` and re-login. Not required for correctness; it just removes the per-shell prefix.
+
 ---
 
 ## 4. The corpus run on aiwonder (target architecture)
