@@ -12,11 +12,14 @@ use context_graph_mejepa::calibration::count_cf;
 use context_graph_mejepa::conformal::non_conformity_score;
 use context_graph_mejepa::gates::valid_witness_segment;
 use context_graph_mejepa::{
-    build_fixture_deterministic_compiler, open_infer_rocksdb, sha256_bytes, AstDiff,
-    CalibrationExample, CalibrationStore, DiffHunk, Language, MeJepaInferConfig, PatchBundle,
+    open_infer_rocksdb, sha256_bytes, AstDiff, CalibrationExample, CalibrationStore,
+    ConstellationCellSupport, ConstellationDecision, ConstellationGuard, ContradictionThresholds,
+    DeterministicOracleHead, DiffHunk, FrozenTarget, Language, MeJepaCompiler, MeJepaInferConfig,
+    MejepaInferError, PatchBundle, PatchWitnessReader, Predictor, RealityPrediction,
     RocksDbInferStore, TaskContext, TaskEnvironment, TaskId, TestId, VerifyVerdict,
-    CF_MEJEPA_LIVE_PREDICTIONS, MEJEPA_INFER_CFS,
+    CF_MEJEPA_LIVE_PREDICTIONS, CONTRADICTION_SCHEMA_VERSION, MEJEPA_INFER_CFS,
 };
+use context_graph_mejepa_instruments::{InstrumentSlot, Panel, PANEL_DIM};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -26,6 +29,7 @@ const TASK_ID: &str = "TASK-TEST-010";
 const HEADER_PREFIX: &str = "# me-jepa-adversarial-case ";
 const FALSE_CONFIDENT_PASS_THRESHOLD: f32 = 0.95;
 const MIN_NON_PASS_RATE: f32 = 0.80;
+const ADVERSARIAL_FSV_ROOT_ENV: &str = "CONTEXTGRAPH_ADVERSARIAL_FSV_ROOT";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -161,6 +165,22 @@ impl AdversarialScenario {
             Self::ConstellationReject => "scenario: constellation_reject",
         }
     }
+
+    fn deterministic_scenario(self) -> u8 {
+        match self {
+            Self::PredictedFailure => 2,
+            Self::GrangerRejection => 4,
+            Self::ConstellationReject => 5,
+        }
+    }
+
+    fn expected_failed_gate(self) -> &'static str {
+        match self {
+            Self::PredictedFailure => "PredictedFailure",
+            Self::GrangerRejection => "GrangerRejection",
+            Self::ConstellationReject => "ConstellationGuardRejected",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -203,17 +223,20 @@ pub fn run_adversarial_corpus_fsv(fsv_root: &Path) -> Result<AdversarialCorpusFs
         let db = open_infer_rocksdb(&db_path)?;
         let calibration = seed_calibration(db.clone())?;
         let store = Arc::new(RocksDbInferStore::new(db.clone()));
-        let compiler = build_fixture_deterministic_compiler(
-            repo_root.clone(),
-            store,
-            calibration,
-            MeJepaInferConfig {
-                outcome_set_max: 4,
-                ..MeJepaInferConfig::default()
-            },
-        )?;
+        seed_fixture_contradiction_thresholds(store.as_ref())?;
+        let config = MeJepaInferConfig {
+            outcome_set_max: 4,
+            ..MeJepaInferConfig::default()
+        };
         let mut results = Vec::with_capacity(cases.len());
         for case in &cases {
+            let compiler = build_adversarial_fixture_compiler(
+                repo_root.clone(),
+                store.clone(),
+                calibration.clone(),
+                config.clone(),
+                case.scenario,
+            )?;
             results.push(run_case(&compiler, &repo_root, case)?);
         }
         flush_infer_db(db.as_ref())?;
@@ -274,9 +297,33 @@ pub fn run_adversarial_corpus_fsv(fsv_root: &Path) -> Result<AdversarialCorpusFs
         && happy_path.iter().all(|case| case.pass)
         && boundary_cases.iter().all(|case| case.pass)
         && reopened_counts == cf_counts_after;
+    let failed_cases = happy_path
+        .iter()
+        .filter(|case| !case.pass)
+        .map(|case| {
+            json!({
+                "caseId": case.case_id,
+                "expected": case.expected,
+                "actual": case.actual,
+            })
+        })
+        .collect::<Vec<_>>();
+    let failed_boundaries = boundary_cases
+        .iter()
+        .filter(|case| !case.pass)
+        .map(|case| case.case.as_str())
+        .collect::<Vec<_>>();
     ensure!(
         all_passed,
-        "adversarial corpus FSV report contains failed evidence"
+        "adversarial corpus FSV report contains failed evidence: \
+         total_cases={total_cases} non_pass_count={non_pass_count} \
+         non_pass_rate={non_pass_rate:.3} high_confidence_false_passes={high_confidence_false_passes} \
+         categories_with_exactly_ten_cases={categories_with_exactly_ten_cases} \
+         live_rows_before={live_rows_before} live_rows_after={live_rows_after} \
+         expected_live_rows_after={} counts_reopened_equal={} failed_cases={failed_cases:?} \
+         failed_boundaries={failed_boundaries:?}",
+        live_rows_before + total_cases,
+        reopened_counts == cf_counts_after,
     );
 
     let report = AdversarialCorpusFsvReport {
@@ -363,7 +410,11 @@ fn run_case(
     let high_confidence_false_pass = is_final_pass
         && calibrated_confidence
             .is_some_and(|confidence| confidence > FALSE_CONFIDENT_PASS_THRESHOLD);
-    let pass = !is_final_pass && !high_confidence_false_pass;
+    let expected_failed_gate = case.scenario.expected_failed_gate();
+    let expected_gate_observed = failed_gate
+        .as_deref()
+        .is_some_and(|gate| gate.starts_with(expected_failed_gate));
+    let pass = !is_final_pass && !high_confidence_false_pass && expected_gate_observed;
     Ok(AdversarialCaseEvidence {
         case_id: case.id.clone(),
         category: case.category.as_str().to_string(),
@@ -373,6 +424,7 @@ fn run_case(
         trigger: "MeJepaCompiler::verify(adversarial patch)".to_string(),
         expected: json!({
             "finalClassification": "non_pass",
+            "failedGatePrefix": expected_failed_gate,
             "highConfidenceFalsePasses": 0
         }),
         actual: json!({
@@ -387,6 +439,105 @@ fn run_case(
         failed_gate,
         pass,
     })
+}
+
+fn build_adversarial_fixture_compiler(
+    repo_root: PathBuf,
+    store: Arc<RocksDbInferStore>,
+    calibration: CalibrationStore,
+    mut config: MeJepaInferConfig,
+    scenario: AdversarialScenario,
+) -> Result<MeJepaCompiler, MejepaInferError> {
+    config.outcome_set_max = config.outcome_set_max.max(1);
+    MeJepaCompiler::new(
+        config,
+        Arc::new(AdversarialScenarioPredictor { scenario }),
+        Arc::new(AdversarialScenarioTarget { scenario }),
+        Arc::new(DeterministicOracleHead),
+        Arc::new(AdversarialScenarioGuard { scenario }),
+        Arc::new(PatchWitnessReader),
+        store,
+        calibration,
+        repo_root,
+    )
+}
+
+#[derive(Clone)]
+struct AdversarialScenarioPredictor {
+    scenario: AdversarialScenario,
+}
+
+impl Predictor for AdversarialScenarioPredictor {
+    fn predict(&self, _panel_t0: &Panel, _panel_t1: &Panel) -> Result<Panel, MejepaInferError> {
+        adversarial_panel_for_scenario(self.scenario, false)
+    }
+}
+
+#[derive(Clone)]
+struct AdversarialScenarioTarget {
+    scenario: AdversarialScenario,
+}
+
+impl FrozenTarget for AdversarialScenarioTarget {
+    fn target(&self, _panel_t2: &Panel) -> Result<Panel, MejepaInferError> {
+        adversarial_panel_for_scenario(self.scenario, false)
+    }
+}
+
+#[derive(Clone)]
+struct AdversarialScenarioGuard {
+    scenario: AdversarialScenario,
+}
+
+impl ConstellationGuard for AdversarialScenarioGuard {
+    fn verify(
+        &self,
+        _prediction: &RealityPrediction,
+        _predicted_panel: &Panel,
+        _context: &TaskContext,
+    ) -> Result<ConstellationDecision, MejepaInferError> {
+        let approved = self.scenario != AdversarialScenario::ConstellationReject;
+        Ok(ConstellationDecision {
+            approved,
+            reason: if approved {
+                "adversarial fixture accepted".to_string()
+            } else {
+                "adversarial fixture requested constellation rejection".to_string()
+            },
+            version_id: "task-test-010-adversarial-fixture-v2".to_string(),
+            age_days: 0,
+        })
+    }
+
+    fn version_id(&self) -> Option<String> {
+        Some("task-test-010-adversarial-fixture-v2".to_string())
+    }
+
+    fn target_cell_support(
+        &self,
+        _context: &TaskContext,
+    ) -> Result<ConstellationCellSupport, MejepaInferError> {
+        ConstellationCellSupport::try_new(
+            format!("task_test_010:scenario={}", self.scenario.as_str()),
+            Some(100),
+        )
+    }
+}
+
+fn adversarial_panel_for_scenario(
+    scenario: AdversarialScenario,
+    force_ood: bool,
+) -> Result<Panel, MejepaInferError> {
+    let scenario_id = scenario.deterministic_scenario();
+    let base = if force_ood {
+        2.0
+    } else {
+        scenario_id as f32 * 0.001
+    };
+    let mut data = vec![base; PANEL_DIM];
+    data[InstrumentSlot::EDiff.offset()] = scenario_id as f32;
+    let filled_mask = (1u16 << InstrumentSlot::all().len()) - 1;
+    Ok(Panel::try_new(data, filled_mask)?)
 }
 
 fn classification(verdict: &VerifyVerdict) -> String {
@@ -722,6 +873,30 @@ fn seed_calibration(db: Arc<DB>) -> Result<CalibrationStore> {
     Ok(calibration_store)
 }
 
+fn seed_fixture_contradiction_thresholds(store: &RocksDbInferStore) -> Result<()> {
+    store.write_contradiction_thresholds(&ContradictionThresholds {
+        schema_version: CONTRADICTION_SCHEMA_VERSION,
+        cell_id: format!(
+            "task_test_010:scenario={}",
+            AdversarialScenario::PredictedFailure.as_str()
+        ),
+        tau_oracle: 0.99,
+        tau_failure_count: 2,
+        abstain_rate: 0.0,
+        false_abstain_rate: 0.0,
+        contradiction_recall: 1.0,
+        legitimate_pass_throughput: 1.0,
+        calibration_rows: 30,
+        adversarial_rows: 10,
+        legitimate_pass_rows: 20,
+        calibrated_at_unix_ms: 1,
+        source:
+            "task-test-010 fixture threshold: predicted_failure must reach PredictedFailure gate"
+                .to_string(),
+    })?;
+    Ok(())
+}
+
 fn count_live_predictions(db: &DB) -> Result<BTreeMap<String, u64>> {
     let mut counts = BTreeMap::new();
     counts.insert(
@@ -835,9 +1010,23 @@ fn git_head_short() -> String {
 mod tests {
     use super::*;
 
+    fn test_fsv_root() -> PathBuf {
+        if let Some(root) = std::env::var_os(ADVERSARIAL_FSV_ROOT_ENV).map(PathBuf::from) {
+            return root;
+        }
+        let aiwonder_root = default_fsv_root();
+        if aiwonder_root.parent().is_some_and(Path::is_dir) {
+            return aiwonder_root;
+        }
+        std::env::temp_dir().join(format!(
+            "contextgraph-adversarial-corpus-fsv-{}",
+            std::process::id()
+        ))
+    }
+
     #[test]
     fn task_test_010_adversarial_corpus_meets_non_pass_gate() {
-        let fsv_root = default_fsv_root();
+        let fsv_root = test_fsv_root();
         let report_path = default_report_path(&fsv_root);
         let report = run_adversarial_corpus_fsv(&fsv_root).expect("adversarial corpus FSV");
         write_report_with_readback(&report, &report_path).expect("write adversarial FSV report");
