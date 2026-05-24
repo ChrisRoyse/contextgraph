@@ -278,6 +278,7 @@ impl LegacyCalibrationRecord {
             min_samples_per_stratum: self.min_samples_per_stratum,
             sample_count: self.sample_count,
             per_language_counts: self.per_language_counts,
+            per_slot_sigma_squared: None,
             corpus_sha: self.corpus_sha,
             embedder_versions: self.embedder_versions,
             frozen_at: self.frozen_at,
@@ -288,6 +289,7 @@ impl LegacyCalibrationRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use context_graph_mejepa_instruments::InstrumentSlot;
     use crate::types::Language;
 
     fn example(i: usize) -> CalibrationExample {
@@ -310,6 +312,10 @@ mod tests {
             .unwrap();
         let loaded = store.load_active().unwrap();
         assert_eq!(loaded.version, record.version);
+        assert_eq!(
+            loaded.per_slot_sigma_squared.as_ref().unwrap().len(),
+            InstrumentSlot::all().len()
+        );
         assert_eq!(store.count_history().unwrap(), 1);
     }
 }

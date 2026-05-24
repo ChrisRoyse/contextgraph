@@ -143,6 +143,7 @@ pub fn continuous_calibration_if_due(
         min_samples_per_stratum: 1,
         sample_count: writer.sliding_window.len(),
         per_language_counts,
+        per_slot_sigma_squared: None,
         corpus_sha: pipeline.corpus_sha,
         embedder_versions: BTreeMap::new(),
         frozen_at,

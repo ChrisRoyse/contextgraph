@@ -499,8 +499,14 @@ impl MeJepaCompiler {
         }
         oracle.validate()?;
         let ood_threshold = self.ood_threshold_for_compilation()?;
+        let per_slot_sigma_squared = calibration.per_slot_sigma_squared.as_ref().ok_or_else(
+            || MejepaInferError::OodPerSlotCalibratorMissing {
+                detail: "strict slot-preserving OOD scoring requires per-slot sigma calibration"
+                    .to_string(),
+            },
+        )?;
         let slot_ood_scores =
-            per_slot_residual_scores(&predicted, &target, calibration.sigma_squared)?;
+            per_slot_residual_scores(&predicted, &target, Some(per_slot_sigma_squared))?;
         let ood_score = slot_ood_scores
             .iter()
             .map(|score| score.score)
@@ -3010,6 +3016,60 @@ mod tests {
         assert!(matches!(err, MejepaInferError::OodCalibratorMissing { .. }));
         assert_eq!(err.code(), "MEJEPA_INFER_OOD_CALIBRATOR_MISSING");
         assert!(err.to_string().contains("strict mode requires"));
+    }
+
+    #[test]
+    fn compile_with_panel_fails_closed_when_per_slot_ood_calibrator_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = crate::calibration::open_infer_rocksdb(temp.path()).unwrap();
+        let calibration = CalibrationStore::new(db.clone(), 30).unwrap();
+        let examples = (0..40)
+            .map(|idx| CalibrationExample {
+                language: Language::Python,
+                predicted_test_pass: vec![if idx % 10 == 0 { 0.2 } else { 0.95 }],
+                actual_test_pass: vec![if idx % 10 == 0 { 0.0 } else { 1.0 }],
+            })
+            .collect::<Vec<_>>();
+        let mut record = calibration
+            .calibrate(
+                &examples,
+                &[0.01; 40],
+                0.10,
+                30,
+                0.30,
+                [7; 32],
+                BTreeMap::new(),
+            )
+            .unwrap();
+        record.per_slot_sigma_squared = None;
+        calibration.persist(&record).unwrap();
+
+        let compiler = MeJepaCompiler::new(
+            MeJepaInferConfig {
+                pause_state_path: None,
+                ..MeJepaInferConfig::default()
+            },
+            Arc::new(FixedPanelPredictor {
+                panel: panel_with_slot_delta(InstrumentSlot::EReasoning, 3.0),
+            }),
+            Arc::new(FixedPanelTarget {
+                panel: panel_with_slot_delta(InstrumentSlot::EReasoning, 0.0),
+            }),
+            Arc::new(DeterministicOracleHead),
+            Arc::new(DeterministicConstellationGuard::default()),
+            Arc::new(PatchWitnessReader),
+            Arc::new(RocksDbInferStore::new(db)),
+            calibration,
+            PathBuf::from("/zfs/archive/contextgraph/test-repo"),
+        )
+        .unwrap();
+        let (patch, context) = sample_patch_context("missing per-slot OOD calibration");
+
+        let err = compiler.compile_with_panel(&patch, &context).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_OOD_PER_SLOT_CALIBRATOR_MISSING");
+        assert!(err
+            .to_string()
+            .contains("strict slot-preserving OOD scoring requires per-slot sigma calibration"));
     }
 
     #[test]

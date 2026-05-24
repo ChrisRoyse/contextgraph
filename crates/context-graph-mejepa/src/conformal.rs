@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use context_graph_mejepa_instruments::InstrumentSlot;
 use sha2::{Digest, Sha256};
 
 use crate::calibration_types::CalibrationRecord;
@@ -152,6 +153,12 @@ pub fn calibrate(
     let empirical_coverage = covered as f32 / scores.len() as f32;
     let frozen_at = chrono::Utc::now().timestamp();
     let version = calibration_version(frozen_at, &scores, corpus_sha);
+    let per_slot_sigma_squared = Some(
+        InstrumentSlot::all()
+            .into_iter()
+            .map(|slot| (slot, sigma_squared))
+            .collect::<BTreeMap<_, _>>(),
+    );
     let record = CalibrationRecord {
         version,
         alpha,
@@ -162,6 +169,7 @@ pub fn calibrate(
         min_samples_per_stratum,
         sample_count: examples.len(),
         per_language_counts: counts,
+        per_slot_sigma_squared,
         corpus_sha,
         embedder_versions,
         frozen_at,

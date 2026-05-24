@@ -157,6 +157,8 @@ pub enum MejepaInferError {
     },
     #[error("MEJEPA_INFER_OOD_CALIBRATOR_MISSING: {detail}")]
     OodCalibratorMissing { detail: String },
+    #[error("MEJEPA_INFER_OOD_PER_SLOT_CALIBRATOR_MISSING: {detail}")]
+    OodPerSlotCalibratorMissing { detail: String },
     #[error("MEJEPA_INFER_DIM_MISMATCH: expected={expected} actual={actual} context={context}")]
     DimMismatch {
         expected: usize,
@@ -259,6 +261,9 @@ impl MejepaInferError {
         match self {
             Self::OodRefuse { .. } => "MEJEPA_INFER_OOD_REFUSE",
             Self::OodCalibratorMissing { .. } => "MEJEPA_INFER_OOD_CALIBRATOR_MISSING",
+            Self::OodPerSlotCalibratorMissing { .. } => {
+                "MEJEPA_INFER_OOD_PER_SLOT_CALIBRATOR_MISSING"
+            }
             Self::DimMismatch { .. } => "MEJEPA_INFER_DIM_MISMATCH",
             Self::InstrumentMissing { .. } => "MEJEPA_INFER_INSTRUMENT_MISSING",
             Self::NanDetected { .. } => "MEJEPA_INFER_NAN_DETECTED",

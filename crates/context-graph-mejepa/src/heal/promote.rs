@@ -818,6 +818,7 @@ impl AbcPromoter {
             min_samples_per_stratum: 1,
             sample_count: holdout.examples.len(),
             per_language_counts,
+            per_slot_sigma_squared: None,
             corpus_sha: holdout.corpus_sha,
             embedder_versions: BTreeMap::new(),
             frozen_at,

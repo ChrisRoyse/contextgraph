@@ -713,6 +713,7 @@ mod tests {
             min_samples_per_stratum: 1,
             sample_count: 1,
             per_language_counts: BTreeMap::from([(Language::Python, 1)]),
+            per_slot_sigma_squared: None,
             corpus_sha: [8; 32],
             embedder_versions: BTreeMap::new(),
             frozen_at: chrono::Utc::now().timestamp(),
