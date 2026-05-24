@@ -552,6 +552,13 @@ fn run_eval_build_graph(
 }
 
 fn run_infer_test_command(args: InferTestArgs) -> Result<ExitCode, MejepaCliError> {
+    // #697: this subcommand is a SELF-TEST of the conformal coverage and infer
+    // pipeline math against a deterministic fixture predictor. It is not a
+    // real-prediction surface. Print a loud stderr warning so operator
+    // workflows cannot confuse the output with a real production prediction.
+    eprintln!(
+        "MEJEPA_INFER_TEST_FIXTURE_ONLY: this command uses build_fixture_deterministic_compiler (DeterministicPredictor + DeterministicOracleHead 4-scenario LUT + DeterministicConstellationGuard + IdentityFrozenTarget). Output is a self-test of conformal/calibration math, NOT a real prediction. For real predictions, run the production shift-subscriber path with build_slot_preserving_cuda_compiler against an aiwonder-rooted trained checkpoint manifest."
+    );
     let db_path = args.output_fsv.join("infer-rocksdb");
     let repo_root = args.output_fsv.join("infer-test-repo");
     let db = open_infer_rocksdb(&db_path).map_err(|err| {
