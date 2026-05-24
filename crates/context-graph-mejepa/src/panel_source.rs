@@ -10,8 +10,12 @@ use crate::error::PredictorError;
 pub const DEFAULT_PHASE1_PANEL_PATH: &str =
     "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-ast-embedder-smoke-fsv/panel.json";
 
+/// Selector for which synthetic-perturbation profile to emit when populating a
+/// dry-run latency batch via [`synthetic_dry_run_panel_perturbation`]. **NOT**
+/// a panel-source for real prediction; do not consume in any
+/// `MeJepaCompiler::compile` path.
 #[derive(Debug, Clone, Copy)]
-pub enum PanelBatchView {
+pub enum SyntheticDryRunPanelView {
     T0,
     T1,
     T2,
@@ -38,10 +42,24 @@ pub fn read_phase1_panel(path: &Path) -> Result<Panel, PredictorError> {
     Ok(panel)
 }
 
-pub fn panel_batch_tensor(
+/// Build a `(batch_size, PANEL_DIM)` tensor by deterministically perturbing a
+/// single source panel. **Synthetic data — dry-run latency benchmarks only.**
+///
+/// The batch dimension is fabricated: row N is a deterministic phase-modulated
+/// perturbation of the same single panel, not an independent panel. The
+/// resulting tensor is suitable as a fixed-shape input for `MeJepaPredictor`
+/// forward-pass timing and shape probes (`mejepa train --dry-run`), but the
+/// per-row content is meaningless and must not be interpreted as a batch of
+/// real predictions.
+///
+/// Real batched prediction goes through `MeJepaCompiler::compile` over a
+/// real `PatchBundle` per row — this function exists solely so the dry-run
+/// CUDA latency probe can emit a tensor of the right shape without an active
+/// shift-log or patch corpus. See #698.
+pub fn synthetic_dry_run_panel_perturbation(
     panel: &Panel,
     batch_size: usize,
-    view: PanelBatchView,
+    view: SyntheticDryRunPanelView,
     device: &Device,
     dtype: DType,
 ) -> Result<Tensor, PredictorError> {
@@ -58,16 +76,16 @@ pub fn panel_batch_tensor(
         for (col, base) in panel.data().iter().enumerate() {
             let col_phase = (col % 97) as f32 / 97.0;
             let modifier = match view {
-                PanelBatchView::T0 => -0.012 + row_phase * 0.006 + col_phase * 0.0007,
-                PanelBatchView::T1 => -0.004 + row_phase * 0.009 - col_phase * 0.0005,
-                PanelBatchView::T2 => row_phase * 0.004 + col_phase * 0.0003,
+                SyntheticDryRunPanelView::T0 => -0.012 + row_phase * 0.006 + col_phase * 0.0007,
+                SyntheticDryRunPanelView::T1 => -0.004 + row_phase * 0.009 - col_phase * 0.0005,
+                SyntheticDryRunPanelView::T2 => row_phase * 0.004 + col_phase * 0.0003,
             };
             let value = base.mul_add(1.0 + modifier, modifier * 0.01);
             if !value.is_finite() {
                 return Err(PredictorError::NanDetected {
                     nan_source: crate::error::NanSource::Input,
                     layer_id: None,
-                    tensor_name: Some("panel_batch_tensor".to_string()),
+                    tensor_name: Some("synthetic_dry_run_panel_perturbation".to_string()),
                 });
             }
             values.push(value);

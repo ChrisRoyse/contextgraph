@@ -10,7 +10,7 @@ use candle_core::{DType, Device};
 use clap::{Parser, Subcommand};
 use context_graph_mejepa::eval::{build_patch_similarity_graph, synthetic_patch_embeddings};
 use context_graph_mejepa::heal::{run_heal_drill, HealDrillArgs, InjectDrift, READBACK_ROOT};
-use context_graph_mejepa::panel_source::{self, PanelBatchView};
+use context_graph_mejepa::panel_source::{self, SyntheticDryRunPanelView};
 use context_graph_mejepa::readback_writer;
 use context_graph_mejepa::{
     build_fixture_deterministic_compiler, open_infer_rocksdb, CalibrationStore,
@@ -623,24 +623,24 @@ fn run_dry_run(args: &TrainArgs) -> Result<DryRunReport, MejepaCliError> {
         Some(context_graph_mejepa_instruments::hash_f32s(panel.data())),
     ));
     let predictor = MeJepaPredictor::new(PredictorConfig::default(), adapter, device.clone(), 30)?;
-    let panel_t0 = panel_source::panel_batch_tensor(
+    let panel_t0 = panel_source::synthetic_dry_run_panel_perturbation(
         &panel,
         args.batch_size,
-        PanelBatchView::T0,
+        SyntheticDryRunPanelView::T0,
         &device,
         DType::BF16,
     )?;
-    let panel_t1 = panel_source::panel_batch_tensor(
+    let panel_t1 = panel_source::synthetic_dry_run_panel_perturbation(
         &panel,
         args.batch_size,
-        PanelBatchView::T1,
+        SyntheticDryRunPanelView::T1,
         &device,
         DType::BF16,
     )?;
-    let panel_t2 = panel_source::panel_batch_tensor(
+    let panel_t2 = panel_source::synthetic_dry_run_panel_perturbation(
         &panel,
         args.batch_size,
-        PanelBatchView::T2,
+        SyntheticDryRunPanelView::T2,
         &device,
         DType::BF16,
     )?;
