@@ -192,6 +192,10 @@ from .python_forward_cache_completeness_mask import (
     add_arguments as add_python_forward_cache_completeness_mask_arguments,
 )
 from .python_forward_cache_completeness_mask import command_python_forward_cache_completeness_mask
+from .python_delete_test_call_candidate_labels import (
+    add_arguments as add_python_delete_test_call_candidate_labels_arguments,
+)
+from .python_delete_test_call_candidate_labels import command_python_delete_test_call_candidate_labels
 from .panel_b_artifacts import add_arguments as add_panel_b_artifacts_arguments
 from .panel_b_artifacts import command_panel_b_artifacts
 from .panel_b_model_scores import add_arguments as add_panel_b_model_scores_arguments
@@ -928,6 +932,16 @@ def build_parser() -> argparse.ArgumentParser:
     forward_cache_completeness_mask.set_defaults(
         func=command_python_forward_cache_completeness_mask,
         evidence_name="python-forward-cache-completeness-mask-command-evidence.json",
+    )
+
+    delete_test_call_candidate_labels = sub.add_parser(
+        "python-delete-test-call-candidate-labels",
+        help="TASK-PY-G-135C: rebuild candidate-keyed labels from #615 corpus, forward cache, and completeness mask.",
+    )
+    add_python_delete_test_call_candidate_labels_arguments(delete_test_call_candidate_labels)
+    delete_test_call_candidate_labels.set_defaults(
+        func=command_python_delete_test_call_candidate_labels,
+        evidence_name="python-delete-test-call-candidate-labels-command-evidence.json",
     )
 
     panel_b_artifacts = sub.add_parser(
