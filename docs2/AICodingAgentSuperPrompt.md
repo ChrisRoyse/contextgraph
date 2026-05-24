@@ -2,7 +2,63 @@
 
 **For:** any AI agent writing, reviewing, debugging, hardening, or shipping software.
 **Reading mode:** reference — grep the section, then act. Density beats brevity.
-**Status:** when this conflicts with any other instruction, this wins.
+**Status:** when this conflicts with any other instruction, this wins, except for the project-specific north-star predicate (see §0.0 below), which defines whether work belongs in a given repository at all.
+
+---
+
+## §0.0 — THE PROJECT NORTH STAR (if the project provides one, it defines whether the work is worth doing)
+
+Every well-formed project should pin a **numerical predicate** that defines what "the system works" means concretely. Universal doctrine (everything in this file from §0 down) defines **HOW** you work; the project north star defines **WHETHER** the work is worth doing.
+
+**The worthlessness test (universal rule, projects may strengthen it but never weaken it):**
+
+> If a proposed action does not move at least one number on the project's target sheet, or preserve at least one doctrine invariant the project has pinned, **it is worthless and must not ship.** Activity is not the goal. Movement of project-specific target numbers is the goal.
+
+This applies to:
+- New issues filed — if they don't trace to a target number, close as `out-of-scope`.
+- New code written — if it doesn't move a number or preserve an invariant, do not merge.
+- New abstractions introduced — if they don't make a number-moving action easier, do not introduce them.
+- New docs written — if they don't help future agents understand how to move a number, do not write them.
+- New tools added — if they don't unlock measurement of a number or enforcement of an invariant, do not add them.
+
+**How agents apply this:**
+
+1. Read the project's canonical target/north-star spec at session start (typically at `docs/.../TARGET-METRICS.md` or equivalent named pin).
+2. For every proposed action, explicitly answer:
+   - **Which target number does this move?** Be specific. "Improves quality" is not an answer.
+   - **By how much (expected delta)?** If < the project's stated minimum-meaningful delta, defer.
+   - **What's the falsification condition?** Under what measured outcome is this work classified as failed?
+   - **What invariant does this preserve, if any?** Tier-4-style hard invariants (must equal exactly X) supersede number-moving on the doctrine side.
+3. File the answer as part of the issue body / PR description / CLAIM comment per §3.4.
+
+If the project does NOT pin a target spec, fall back to the universal goal: produce production-quality software that hits its stated functional requirements with FSV evidence (§0, §4) and zero open `priority:p0` bugs.
+
+**The state is not the constraint — only doctrine invariants are.** If a project's targets stall on its current state (current corpus, current architecture, current threshold), the legitimate response is to **change the state** (expand corpus, add architecture, refine oracle, raise threshold to match higher-than-expected floor) — **not** to lower the targets. Targets define the destination; state is what we change to get there. Doctrine invariants (the project's "must equal exactly X" fences) are the only immovable constraints.
+
+State-change levers an agent may legitimately propose (provided the proposal is operator-authorized via `type:decision` and preserves all doctrine invariants):
+- Training-corpus expansion (more data, broader distribution)
+- Architecture refinement (new heads, new layers, new representation spaces)
+- Oracle harness improvement (replica voting, noise floor measurement, flakiness modeling)
+- Calibration refinement (per-cell, conformal, isotonic)
+- Substrate infrastructure (incremental caching, durable-state migration)
+- Threshold revision **upward** if a higher target is justified by a measured floor (never downward to match a stalled state — that is doctrine regression)
+- Multi-domain extension (replication of architecture into new domains)
+
+Decision rule before any state-change proposal: (1) which target is stalled with FSV evidence; (2) why current state cannot reach it; (3) minimum state change needed; (4) which invariants are preserved; (5) execution cost; (6) falsification condition. File as `type:decision` issue, operator authorize, execute, verify via FSV, re-measure target.
+
+---
+
+**For ContextGraph / ME-JEPA-Code (this repository):**
+
+- North-star explainer: [`docs/futurebuild/specs/NORTH-STAR.md`](../docs/futurebuild/specs/NORTH-STAR.md)
+- Numerical predicate: [`docs/futurebuild/specs/TARGET-METRICS.md`](../docs/futurebuild/specs/TARGET-METRICS.md)
+- Pinned GitHub context: `[P0] CONTEXT — Numerical target sheet (the perfect-state predicate) — THE GOAL`
+- Project addendum: [`CLAUDE.md`](../CLAUDE.md) §0
+- Per-turn entry: [`AGENTS.md`](../AGENTS.md) §0
+
+Project headline: `prediction_oracle_correlation ≥ 0.95` stably × 4 rolling windows on 300×8 SWE-bench Lite Python corpus, with cross-panel agreement, per-cell quality contract, mistake-loop convergence, and all Tier-4 invariants holding exactly. Current honest gap: `0.4657` against raw Pearson. Six tiers of numbers in `TARGET-METRICS.md`.
+
+---
 
 # FULL STATE VERIFICATION MUST BE DONE MANUALLY BY THE AI AGENT THEMSELVES AND NOT THROUGH A SCRIPT OR ANY OTHER AUTOMATED MEANS
 you must perform Full State Verification. Do not rely on return values alone. You must Define the 'Source of Truth': Identify where the final result is stored (e.g., a database, a file, a global variable, or a UI state).Execute & Inspect: Run the logic, then immediately perform a separate 'Read' operation on the Source of Truth to verify the data was processed correctly. Boundary & Edge Case Audit: Manually simulate 3 edge cases (e.g., empty inputs, maximum limits, or invalid formats). For each, you must print the state of the system before and after the action to prove the outcome. Evidence of Success: Provide a log showing the actual data residing in the system after execution.

@@ -1,5 +1,9 @@
 # 01 — System Overview
 
+> ## NORTH STAR — every action must move a number on the target sheet, or it is worthless
+>
+> Canonical specs: [`specs/NORTH-STAR.md`](specs/NORTH-STAR.md) (the goal + worthlessness test) + [`specs/TARGET-METRICS.md`](specs/TARGET-METRICS.md) (the perfect-state numerical predicate). Pinned GitHub context: `[P0] CONTEXT — Numerical target sheet (the perfect-state predicate) — THE GOAL`. Per #383 (locked rule): if a proposed action does not move a Tier-1/2/3/5/6 number or preserve a Tier-4 invariant in `TARGET-METRICS.md`, it does not ship.
+
 **Source files:** `Cargo.toml`, `CLAUDE.md`, `AGENTS.md`, `crates/context-graph-mcp/src/lib.rs`, `crates/context-graph-mejepa/src/lib.rs`, `crates/context-graph-mejepa-cf/src/lib.rs`, `crates/context-graph-mejepa-instruments/src/lib.rs`, `crates/context-graph-mejepa-corpus/src/lib.rs`, `crates/context-graph-storage/src/lib.rs`, `crates/context-graph-mcp/src/tools/definitions/mod.rs`.
 
 ---

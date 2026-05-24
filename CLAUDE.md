@@ -1,5 +1,32 @@
 # CLAUDE.md — ContextGraph / ME-JEPA-Code project addendum
 
+## §0. THE NORTH STAR — Every action must move a number on the target sheet, or it is worthless
+
+The single canonical goal of this project is the numerical predicate in **[`docs/futurebuild/specs/TARGET-METRICS.md`](docs/futurebuild/specs/TARGET-METRICS.md)**. The framing of why this is the goal lives in **[`docs/futurebuild/specs/NORTH-STAR.md`](docs/futurebuild/specs/NORTH-STAR.md)**.
+
+**The worthlessness test (locked, per #383):** if a proposed action does not move at least one Tier-1/2/3/5/6 number or preserve a Tier-4 invariant in `TARGET-METRICS.md`, **it is worthless and must not ship**. Every issue filed, every commit landed, every embedder trained, every corpus ingested, every FSV harness run, every doc written must trace to a number on that sheet. Activity is not the goal. Movement of those specific numbers is the goal.
+
+**One-line predicate:**
+
+```
+THE_SYSTEM_WORKS ⇔
+  prediction_oracle_correlation ≥ 0.95
+  STABLE × 4 consecutive rolling windows
+  AND cross_panel_oracle_correlation ≥ 0.95 on Panel B
+  AND |corr_panel_a − corr_panel_b| ≤ 0.05
+  AND per-cell quality contract holds for every (mutation_category × language) cell
+  AND online mistake-loop convergence holds
+  AND every doctrine invariant equals its required value exactly
+```
+
+When this evaluates `TRUE` for 4 consecutive windows on aiwonder against the 300×8 SWE-bench Lite Python corpus → **human review of AI-generated Python patches becomes statistically unjustified**. That is the moment the system has worked. Nothing else is the goal.
+
+**State is not the constraint — Tier-4 invariants are.** The 300×8 corpus, the current 15-slot panel, the current Docker oracle harness, and the `0.95` threshold are **starting state, not fixed constraints**. If reaching the targets requires corpus expansion (SWE-bench Verified ~500 / Full 2,294 / BugsInPy / etc.), panel expansion (in-slot causal embedder replacement #745 or new slots), oracle refinement (replica-mode voting per #723, flakiness modeling per BLINDSPOT-014), or upward threshold revision against a higher-than-expected oracle floor — those are acceptable paths. **Only Tier-4 doctrine invariants are immovable.** See `NORTH-STAR.md §9.5` and `TARGET-METRICS.md §7.5` for the full state-change-lever matrix.
+
+Pinned GitHub context: see the `[P0] CONTEXT — Numerical target sheet (the perfect-state predicate) — THE GOAL` issue, sister-pin to #712.
+
+---
+
 You are working in the **ContextGraph** repository, building **ME-JEPA-Code**: the deterministic **binary reality predictor** that lets AI coding agents stop generating unverified claims and start producing patches a calibrated verifier can trust. This file is loaded automatically into every Claude Code session that opens this directory.
 
 **Master rules (universal protocol):** [`docs2/AICodingAgentSuperPrompt.md`](docs2/AICodingAgentSuperPrompt.md) — the AI Coding Agent Doctrine. Read it once at session start. It is the canonical, density-first reference for memory (GitHub Issues), claiming, FSV, RCA, hardening, communication, session lifecycle, and the forensic + simplification disciplines.

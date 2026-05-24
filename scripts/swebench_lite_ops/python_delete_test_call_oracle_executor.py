@@ -35,9 +35,11 @@ DEFAULT_READBACK_ROOT = Path(
 DEFAULT_SWEBENCH_PYTHON = Path("/zfs/hot/contextgraph/venv/bin/python3")
 DEFAULT_HARNESS_LOCK = Path("/zfs/archive/contextgraph/state/locks/swebench-harness.lock")
 DEFAULT_MODEL_NAME = "contextgraph-delete-test-call-regeneration"
+DEFAULT_TASK_ID = "TASK-PY-G-135C"
 
 
 def add_arguments(parser) -> None:
+    parser.add_argument("--task-id", default=DEFAULT_TASK_ID)
     parser.add_argument("--candidate-patches", type=Path, default=DEFAULT_PATCHES_JSONL)
     parser.add_argument("--batch-plan", type=Path, default=DEFAULT_BATCH_PLAN_JSONL)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
@@ -133,7 +135,7 @@ def command_python_delete_test_call_oracle_executor(args) -> dict[str, Any]:
     )
     manifest = {
         "schema_version": 1,
-        "task_id": "TASK-PY-G-135C",
+        "task_id": args.task_id,
         "artifact_kind": "delete_test_call_oracle_outcome_manifest",
         "created_at": utc_now(),
         "candidate_patches": str(args.candidate_patches),

@@ -1,6 +1,10 @@
 # 06 — Operations, FSV, Runbook, DR, Test Suite
 
-**Source files:** `docs/futurebuild/specs/FSV-PROTOCOL.md`, `AGENTS.md`, `CLAUDE.md`, `docs2/AICodingAgentSuperPrompt.md`, `docs2/hardeningprompt.md`, `scripts/cc/*.sh`, `crates/context-graph-mejepa-hygiene/src/{quota,gc,reports,retention,witness_compress}.rs`, `crates/context-graph-mejepa-shift-subscriber/src/`, `crates/context-graph-mcp/src/{daemon.rs, daemon_validate.rs, health_probe.rs, monitoring.rs, deprecation.rs}`.
+> ## NORTH STAR — every operational action must move a number on the target sheet, or it is worthless
+>
+> Canonical specs: [`specs/NORTH-STAR.md`](specs/NORTH-STAR.md) + [`specs/TARGET-METRICS.md`](specs/TARGET-METRICS.md). The FSV protocol below exists to **verify that work has actually moved a target-sheet number**. An FSV that passes but does not produce readback evidence linkable to a Tier-1/2/3/5/6 number or a Tier-4 invariant is not admissible per the worthlessness test (locked per #383). Aiwonder-only execution per `CLAUDE.md §6.7` — all FSV evidence under `/zfs/archive/contextgraph/fsv/...`.
+
+**Source files:** `docs/futurebuild/specs/FSV-PROTOCOL.md`, `docs/futurebuild/specs/NORTH-STAR.md`, `docs/futurebuild/specs/TARGET-METRICS.md`, `AGENTS.md`, `CLAUDE.md`, `docs2/AICodingAgentSuperPrompt.md`, `docs2/hardeningprompt.md`, `scripts/cc/*.sh`, `crates/context-graph-mejepa-hygiene/src/{quota,gc,reports,retention,witness_compress}.rs`, `crates/context-graph-mejepa-shift-subscriber/src/`, `crates/context-graph-mcp/src/{daemon.rs, daemon_validate.rs, health_probe.rs, monitoring.rs, deprecation.rs}`.
 
 ---
 

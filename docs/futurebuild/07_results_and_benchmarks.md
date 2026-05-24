@@ -1,8 +1,12 @@
 # 07 — Results, Benchmarks, and FSV Evidence History
 
+> ## NORTH STAR — this doc tracks measurements against the target sheet
+>
+> Canonical specs: [`specs/NORTH-STAR.md`](specs/NORTH-STAR.md) + [`specs/TARGET-METRICS.md`](specs/TARGET-METRICS.md). Every measurement recorded here corresponds to a Tier-1/2/3/5/6 number in the target sheet. The headline gap is `0.4657` against raw Pearson on Tier-1 target #1. Two cheapest highest-leverage probes (#734 panel-sufficiency MI + #723 oracle noise floor) determine whether the predicate is reachable at all on the current substrate.
+
 **Source:** aiwonder `/zfs/archive/contextgraph/fsv/` for production evidence; git log; GitHub issue comments; per-issue RESOLVED comments.
 
-**Purpose:** preserve proof-of-work that future agents would otherwise lose. Every entry references a physical artifact (FSV JSON, sha256, CF) that can be re-verified.
+**Purpose:** preserve proof-of-work that future agents would otherwise lose. Every entry references a physical artifact (FSV JSON, sha256, CF) that can be re-verified, and every entry maps to a specific target-sheet number it moved (or failed to move).
 
 ---
 

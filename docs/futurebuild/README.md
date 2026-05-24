@@ -1,9 +1,19 @@
 # futurebuild — ME-JEPA-Code Reference
 
-Source-grounded reference for AI agents working on ContextGraph / ME-JEPA-Code. 8 docs + protocol.
+> ## THE GOAL — every action must move a number on the target sheet, or it is worthless
+>
+> **Canonical north star:** [`specs/NORTH-STAR.md`](specs/NORTH-STAR.md) — why this is the goal
+> **Numerical predicate:** [`specs/TARGET-METRICS.md`](specs/TARGET-METRICS.md) — what "the system works" means numerically
+> **Pinned GitHub context:** `[P0] CONTEXT — Numerical target sheet (the perfect-state predicate) — THE GOAL`
+>
+> The worthlessness test (locked per #383): if a proposed action does not move at least one Tier-1/2/3/5/6 number or preserve a Tier-4 invariant in `TARGET-METRICS.md`, **it is worthless and must not ship**. Every issue, commit, embedder, corpus, FSV, and doc must trace to a number on the sheet. Activity is not the goal. Movement of those specific numbers is the goal.
+>
+> When the predicate evaluates `TRUE` on the 300×8 SWE-bench Lite Python corpus for 4 consecutive rolling windows → **human review of AI-generated Python patches becomes statistically unjustified**. That is the only definition of done.
+
+Source-grounded reference for AI agents working on ContextGraph / ME-JEPA-Code. 8 docs + protocol + 2 canonical specs (`NORTH-STAR.md` + `TARGET-METRICS.md`).
 
 - **Source code:** `/home/cabdru/contextgraph/crates/` (22 active workspace crates)
-- **Authority:** `docs2/AICodingAgentSuperPrompt.md` (universal doctrine) > `CLAUDE.md` (project addendum) > this suite
+- **Authority hierarchy:** `specs/NORTH-STAR.md` + `specs/TARGET-METRICS.md` (the goal) > `docs2/AICodingAgentSuperPrompt.md` (universal doctrine) > `CLAUDE.md` (project addendum) > this suite
 
 ---
 
@@ -26,7 +36,11 @@ ME-JEPA-Code is a **binary reality predictor**: for any AI-generated code change
 | 7 | [`07_results_and_benchmarks.md`](07_results_and_benchmarks.md) | Current measurement, shipped milestones, FSV evidence catalog. |
 | 8 | [`08_roadmap_and_open_work.md`](08_roadmap_and_open_work.md) | Open issues, critical path, post-ship plans. |
 
-Plus: [`specs/FSV-PROTOCOL.md`](specs/FSV-PROTOCOL.md) — mandatory verification contract. [`_archived/`](_archived/) — read-only history.
+Plus:
+- [`specs/NORTH-STAR.md`](specs/NORTH-STAR.md) — **the explicit north star + worthlessness test (read first)**
+- [`specs/TARGET-METRICS.md`](specs/TARGET-METRICS.md) — **the perfect-state numerical predicate (every number with target + current value)**
+- [`specs/FSV-PROTOCOL.md`](specs/FSV-PROTOCOL.md) — mandatory verification contract
+- [`_archived/`](_archived/) — read-only history
 
 ---
 

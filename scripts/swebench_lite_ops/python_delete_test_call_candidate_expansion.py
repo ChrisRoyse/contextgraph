@@ -11,6 +11,7 @@ from typing import Any
 from .core import sha256_file, utc_now, write_json_checked
 from .python_delete_test_call_candidate_expansion_core import (
     ARTIFACT_KIND,
+    DEFAULT_BATCH_KEY_PREFIX,
     TASK_ID,
     annotate_selected_rows,
     build_batch_rows,
@@ -52,6 +53,8 @@ DEFAULT_READBACK_ROOT = Path(
 )
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--task-id", default=TASK_ID)
+    parser.add_argument("--batch-key-prefix", default=DEFAULT_BATCH_KEY_PREFIX)
     parser.add_argument("--candidate-patches", type=Path, default=DEFAULT_PATCHES_JSONL)
     parser.add_argument("--existing-label-root", type=Path, default=DEFAULT_LABEL_ROOT)
     parser.add_argument("--existing-outcomes-jsonl", type=Path, action="append", default=None)
@@ -84,8 +87,12 @@ def command_python_delete_test_call_candidate_expansion(args: argparse.Namespace
     args.readback_root.mkdir(parents=True, exist_ok=True)
 
     selected, shortfalls, available_counts = select_candidates(candidates, existing_ids, targets)
-    selected_rows = annotate_selected_rows(selected)
-    batch_rows = build_batch_rows(selected_rows)
+    selected_rows = annotate_selected_rows(selected, task_id=args.task_id)
+    batch_rows = build_batch_rows(
+        selected_rows,
+        batch_key_prefix=args.batch_key_prefix,
+        selection_policy=f"{args.task_id} fixed split/sublabel expansion",
+    )
     validation_failures = validate_selection(selected_rows, batch_rows, shortfalls)
 
     selected_path = args.output_root / "delete_test_call_candidate_expansion_selected.jsonl"
@@ -101,7 +108,7 @@ def command_python_delete_test_call_candidate_expansion(args: argparse.Namespace
     counts_by_group = Counter((row["stable_partition"], row["assertion_duty_sublabel"]) for row in selected_rows)
     manifest = {
         "schema_version": 1,
-        "task_id": TASK_ID,
+        "task_id": args.task_id,
         "artifact_kind": ARTIFACT_KIND,
         "created_at_utc": utc_now(),
         "candidate_patches": str(args.candidate_patches),
@@ -134,6 +141,7 @@ def command_python_delete_test_call_candidate_expansion(args: argparse.Namespace
         "policy": {
             "selection_kind": "fixed_split_sublabel_quota_from_source_backed_candidate_pool",
             "selection_order": "stable_source_task_path_offset_candidate_id",
+            "batch_key_prefix": args.batch_key_prefix,
             "holdout_tuning_used": False,
             "target_oracle_labels_used_as_features": False,
             "candidate_row_id_keyed": True,
@@ -145,7 +153,7 @@ def command_python_delete_test_call_candidate_expansion(args: argparse.Namespace
 
     readback = {
         "schema_version": 1,
-        "task_id": TASK_ID,
+        "task_id": args.task_id,
         "artifact_kind": f"{ARTIFACT_KIND}_readback",
         "started_at_utc": started_at,
         "completed_at_utc": utc_now(),

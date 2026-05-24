@@ -1,4 +1,4 @@
-"""Shared helpers for TASK-PY-G-135E candidate expansion."""
+"""Shared helpers for delete_test_call candidate expansion."""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ from .python_delete_test_call_regeneration import has_mounted_drive_fragment
 
 TASK_ID = "TASK-PY-G-135E"
 ARTIFACT_KIND = "delete_test_call_candidate_expansion_plan"
+DEFAULT_BATCH_KEY_PREFIX = "delete-test-call-135e-expansion-batch"
+DEFAULT_SELECTION_POLICY = "fixed_split_sublabel_quota_no_oracle_label_selection_v1"
 
 DEFAULT_TARGETS: dict[tuple[str, str], int] = {
     ("holdout", "other_assertion_like_deleted"): 8,
@@ -200,14 +202,7 @@ def load_existing_candidate_ids(args: argparse.Namespace) -> tuple[set[str], dic
 def resolve_existing_outcome_paths(args: argparse.Namespace) -> list[Path]:
     paths = list(args.existing_outcomes_jsonl or [])
     if args.existing_outcome_search_root.is_dir():
-        paths.extend(
-            sorted(
-                args.existing_outcome_search_root.glob(
-                    "task-py-g-135c-delete-test-call-regeneration-v3-oracle-outcomes*/"
-                    "delete_test_call_oracle_outcomes.jsonl"
-                )
-            )
-        )
+        paths.extend(sorted(args.existing_outcome_search_root.rglob("delete_test_call_oracle_outcomes.jsonl")))
     unique: list[Path] = []
     seen: set[str] = set()
     for path in paths:
@@ -265,7 +260,7 @@ def selection_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
-def annotate_selected_rows(selected: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def annotate_selected_rows(selected: list[dict[str, Any]], *, task_id: str = TASK_ID) -> list[dict[str, Any]]:
     ranks: Counter[tuple[str, str]] = Counter()
     out: list[dict[str, Any]] = []
     for ordinal, row in enumerate(selected):
@@ -274,7 +269,7 @@ def annotate_selected_rows(selected: list[dict[str, Any]]) -> list[dict[str, Any
         out.append(
             {
                 "schema_version": 1,
-                "task_id": TASK_ID,
+                "task_id": task_id,
                 "artifact_kind": "delete_test_call_candidate_expansion_selected_row",
                 "selection_ordinal": ordinal,
                 "selection_rank_in_group": ranks[key],
@@ -294,7 +289,7 @@ def annotate_selected_rows(selected: list[dict[str, Any]]) -> list[dict[str, Any
                 "source_site_offset": row.get("source_site_offset"),
                 "patch_path": row["patch_path"],
                 "patch_sha256": row.get("patch_sha256"),
-                "selection_policy": "fixed_split_sublabel_quota_no_oracle_label_selection_v1",
+                "selection_policy": DEFAULT_SELECTION_POLICY,
                 "holdout_tuning_used": False,
                 "target_oracle_label_used": False,
                 "target_oracle_labels_used_as_features": False,
@@ -303,7 +298,12 @@ def annotate_selected_rows(selected: list[dict[str, Any]]) -> list[dict[str, Any
     return out
 
 
-def build_batch_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_batch_rows(
+    rows: list[dict[str, Any]],
+    *,
+    batch_key_prefix: str = DEFAULT_BATCH_KEY_PREFIX,
+    selection_policy: str = "TASK-PY-G-135E fixed split/sublabel expansion",
+) -> list[dict[str, Any]]:
     batches: list[list[dict[str, Any]]] = []
     batch_tasks: list[set[str]] = []
     for row in rows:
@@ -315,19 +315,19 @@ def build_batch_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         batches[batch_index].append(row)
         batch_tasks[batch_index].add(row["source_task_id"])
         row["expansion_batch_index"] = batch_index
-        row["expansion_batch_key"] = f"delete-test-call-135e-expansion-batch-{batch_index:04d}"
+        row["expansion_batch_key"] = f"{batch_key_prefix}-{batch_index:04d}"
 
     return [
         {
             "schema_version": 1,
             "artifact_kind": "delete_test_call_oracle_batch",
             "batch_index": index,
-            "batch_key": f"delete-test-call-135e-expansion-batch-{index:04d}",
+            "batch_key": f"{batch_key_prefix}-{index:04d}",
             "prediction_count": len(batch),
             "source_task_ids": [row["source_task_id"] for row in batch],
             "candidate_row_ids": [row["candidate_row_id"] for row in batch],
             "patch_paths": [row["patch_path"] for row in batch],
-            "selection_policy": "TASK-PY-G-135E fixed split/sublabel expansion",
+            "selection_policy": selection_policy,
         }
         for index, batch in enumerate(batches)
     ]
