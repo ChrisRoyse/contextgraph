@@ -75,7 +75,13 @@ pub struct HoldoutReport {
     pub per_mutation_category_accuracy: HashMap<MutationCategory, f32>,
     pub per_language_accuracy: HashMap<Lang, f32>,
     pub predictor_redundancy_pairwise_mi: f32,
-    pub gtau_pass_rate: f32,
+    /// #621: was hardcoded `1.0` regardless of whether Gτ was evaluated.
+    /// The honest contract: `Some(rate)` ONLY when the holdout panels were
+    /// scored against `context-graph-mejepa-tct::gtau::evaluate_panel`;
+    /// `None` otherwise. The TCT wiring is tracked separately — until it
+    /// lands, every `HoldoutReport` row is `None` here and no consumer may
+    /// fabricate a value.
+    pub gtau_pass_rate: Option<f32>,
     pub generic_only_warning: Option<String>,
     pub phase3_dod_passed: Option<bool>,
     pub timestamp_iso8601: String,
@@ -90,14 +96,27 @@ pub struct EpochSummary {
     pub mean_delta_omega: f32,
     pub mean_delta_xi: f32,
     pub holdout_agreement: f32,
-    pub best_category: MutationCategory,
-    pub worst_category: MutationCategory,
-    pub best_language: Lang,
-    pub worst_language: Lang,
+    /// #688: only populated when `epoch_semantics` indicates per-category
+    /// accuracy was actually measured. The diagnostic-only training path emits
+    /// `None` rather than a hardcoded `MutationCategory::KnownGood`, so a
+    /// downstream consumer iterating `CF_MEJEPA_EPOCH_WITNESS` cannot mistake
+    /// a stub for a measurement.
+    pub best_category: Option<MutationCategory>,
+    /// #688: see `best_category`.
+    pub worst_category: Option<MutationCategory>,
+    /// #688: see `best_category`.
+    pub best_language: Option<Lang>,
+    /// #688: see `best_category`.
+    pub worst_language: Option<Lang>,
     pub total_steps_this_epoch: u64,
     pub skipped_steps_this_epoch: u64,
     pub parent_witness_hash: String,
     pub self_hash: String,
+    /// #688: mirrors `TrainingResult::training_semantics` — names the path
+    /// that produced this epoch's summary. Required so any consumer of
+    /// `CF_MEJEPA_EPOCH_WITNESS` can tell "computed from data" apart from
+    /// "diagnostic stub" without inspecting trainer-side context.
+    pub epoch_semantics: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

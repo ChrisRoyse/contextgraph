@@ -80,7 +80,18 @@ pub fn run_gradient_hook(
     for handle in adapter.grad_handles() {
         for tensor_id in handle.tensor_ids() {
             tensors_checked += 1;
-            let grad_norm = grads.get_norm(tensor_id).unwrap_or(0.0);
+            // #620: previously `grads.get_norm(tensor_id).unwrap_or(0.0)` —
+            // a registered tensor with no GradStore entry was silently
+            // treated as a measured zero. The doctrinal contract is: if
+            // the adapter claims a tensor is supervised, the GradStore
+            // MUST have measured it. Fail closed otherwise.
+            let grad_norm = grads.get_norm(tensor_id).ok_or_else(|| {
+                PredictorError::FrozenTargetGradUnmeasured {
+                    instrument_id: handle.instrument_id().to_string(),
+                    tensor_id: tensor_id.0.clone(),
+                    fix_at: "file:crates/context-graph-mejepa/src/grad_hook.rs".to_string(),
+                }
+            })?;
             max_grad_norm = max_grad_norm.max(grad_norm);
             if grad_norm > GRAD_NORM_NOISE_FLOOR {
                 return Err(PredictorError::FrozenTargetGrad {
@@ -143,6 +154,29 @@ mod tests {
             .expect("valid norm");
         let err = run_gradient_hook(&adapter, &grads).expect_err("grad must fail");
         assert_eq!(err.code(), "MEJEPA_PRED_FROZEN_TARGET_GRAD");
+        assert!(err.is_critical());
+    }
+
+    /// #620 regression: a frozen-target adapter that registers a tensor_id
+    /// MUST have a corresponding GradStore entry. Previously, `unwrap_or(0.0)`
+    /// silently treated absence as a measured zero — passing the hook even
+    /// when no measurement had occurred. The new behavior is fail-closed
+    /// with `MEJEPA_PRED_FROZEN_TARGET_GRAD_UNMEASURED`.
+    #[test]
+    fn gradient_unmeasured_tensor_fails_closed() {
+        let adapter = FrozenTargetAdapter::with_grad_handles(
+            TargetProvenance::new("test", BTreeMap::new(), 0, None),
+            vec![Box::new(SyntheticHandle {
+                ids: vec![TensorId("target.weight".to_string())],
+            })],
+        );
+        // GradStore deliberately empty — no measurement for the registered
+        // tensor_id. Old behavior: treated as 0.0 and passed. New: errors.
+        let grads = GradStore::default();
+        let err = run_gradient_hook(&adapter, &grads).expect_err(
+            "unmeasured tensor on a registered handle must fail closed (#620)",
+        );
+        assert_eq!(err.code(), "MEJEPA_PRED_FROZEN_TARGET_GRAD_UNMEASURED");
         assert!(err.is_critical());
     }
 }

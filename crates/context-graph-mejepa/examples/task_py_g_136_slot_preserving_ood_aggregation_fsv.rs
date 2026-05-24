@@ -165,6 +165,10 @@ fn seed_calibration_and_train_cert(
         delta_omega: 0.9,
         delta_xi: 0.9,
         witness_offset: 88,
+        // #699: FSV example simulates a "trained" cert; bump to 1 so the
+        // downstream confidence multiplier path exercises the Measured arm
+        // rather than DiagnosticCertificateOnlyNeutral.
+        predictor_parameter_update_count: 1,
     };
     db.put_cf(cf, b"cert:task-py-g-136:0001", bincode::serialize(&cert)?)?;
     Ok(json!({

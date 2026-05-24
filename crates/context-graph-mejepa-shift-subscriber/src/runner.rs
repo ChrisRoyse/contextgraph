@@ -489,6 +489,9 @@ mod tests {
             delta_omega: 0.8,
             delta_xi: 0.8,
             witness_offset: 44,
+            // #699: test-fixture cert; bump to 1 so the downstream verify
+            // flow exercises the Measured arm.
+            predictor_parameter_update_count: 1,
         };
         db.put_cf(cf, b"cert:runner:0001", bincode::serialize(&cert)?)?;
         Ok(())

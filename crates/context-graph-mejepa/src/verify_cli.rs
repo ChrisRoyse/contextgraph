@@ -317,6 +317,9 @@ fn seed_infer_db(db: std::sync::Arc<rocksdb::DB>) -> anyhow::Result<()> {
         delta_omega: 0.8,
         delta_xi: 0.8,
         witness_offset: 44,
+        // #699: verify-CLI seeded cert simulates a trained cert; the
+        // verify flow tests downstream consumption.
+        predictor_parameter_update_count: 1,
     };
     db.put_cf(cf, b"cert:phase7-dod:0001", bincode::serialize(&cert)?)?;
     let constellation_store = ConstellationStore::new(db.clone())?;

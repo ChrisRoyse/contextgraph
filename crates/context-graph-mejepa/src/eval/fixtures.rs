@@ -161,6 +161,9 @@ fn seed_calibration_and_train_certs(
         delta_omega: 0.9,
         delta_xi: 0.9,
         witness_offset: 88,
+        // #699: fixture proves "trained" path; bump to 1 so compute_train_health
+        // treats this cert as Measured rather than filtering it out.
+        predictor_parameter_update_count: 1,
     };
     db.put_cf(cf, b"cert:phase8-eval:0001", bincode::serialize(&cert)?)?;
     Ok(())

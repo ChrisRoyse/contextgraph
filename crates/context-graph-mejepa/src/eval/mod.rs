@@ -44,7 +44,22 @@ pub use fingerprint_ship_gate::{
     FINGERPRINT_SHIP_GATE_REQUIRED_CONSECUTIVE_WINDOWS, FINGERPRINT_SHIP_GATE_STABILITY_BLOCKER,
     FINGERPRINT_SHIP_GATE_UNKNOWN_OOD_RECALL_THRESHOLD,
 };
-pub use fixtures::{build_eval_compiler, synthetic_holdout, synthetic_patch_embeddings};
+// #694 / #594: `build_eval_compiler` and `synthetic_holdout` are
+// fixture-only — they construct deterministic fakes for the MCP weekly
+// dashboard regression-test surface (compiled only under
+// `#[cfg(test)] mod fsv_tests` in `mejepa_weekly_dashboard_tools.rs`).
+// Production entry points fail closed: `mejepa eval-run` at
+// `bin/mejepa.rs:524` returns `FIXTURE_EVAL_DISABLED`; the MCP tool
+// `mejepa_eval_run` at `mejepa_eval_tools.rs:111` returns
+// `MEJEPA_EVAL_FIXTURE_PATH_DISABLED`. The re-export is kept `pub` here
+// only for the `#[cfg(test)]` consumer; `#[doc(hidden)]` prevents the
+// symbols from appearing in cargo-doc as public API, and the inline
+// comment is the standing signal not to wire either symbol into a new
+// production path. Future hardening: split these into a separate
+// `context-graph-mejepa-test-fixtures` crate (follow-up filed under #694).
+#[doc(hidden)]
+pub use fixtures::{build_eval_compiler, synthetic_holdout};
+pub use fixtures::synthetic_patch_embeddings;
 pub use graph::{
     build_patch_similarity_graph, PatchEmbedding, PatchGraphEdge, PatchSimilarityGraph,
 };

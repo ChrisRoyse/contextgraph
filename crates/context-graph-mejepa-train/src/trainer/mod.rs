@@ -1,4 +1,3 @@
-use crate::aux::AuxHeadEnsemble;
 use crate::cert::{
     TrainCertWriter, TrainingCertificate, CF_MEJEPA_EPOCH_WITNESS, CF_MEJEPA_HOLDOUT_REPORTS,
     CF_MEJEPA_TRAIN_CERTS,
@@ -6,10 +5,9 @@ use crate::cert::{
 use crate::config::TrainingConfig;
 use crate::error::{TrainerError, TrainerErrorCode};
 use crate::eval::holdout::{CalibrationDataset, HoldoutDataset, HoldoutExample, TrainSplit};
-use crate::eval::{
-    EpochReport, EpochSummary, EpochWitnessChain, HoldoutEvaluator, HoldoutReport, Lang,
-    MutationCategory,
-};
+use crate::eval::{EpochReport, EpochSummary, EpochWitnessChain, HoldoutEvaluator, HoldoutReport};
+#[cfg(test)]
+use crate::eval::{Lang, MutationCategory};
 use crate::learning_signal::{
     compute_l_step, compute_per_head_learning_signal, pairwise_mi_audit, DeltaKComponents,
     DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents, DeltaXiComponents, HeadSignalInput,
@@ -44,7 +42,10 @@ pub const COUNTABLE_PREDICTOR_TRAINING_MODE: &str =
 
 pub struct Trainer {
     pub config: TrainingConfig,
-    pub aux_heads: AuxHeadEnsemble,
+    // #622: `aux_heads: AuxHeadEnsemble` field removed; the AuxHeadEnsemble
+    // type was a dead stub (#685) and the field was never read across the
+    // workspace. CheckpointPayload still carries its own unrelated
+    // `aux_heads: HashMap<String, TensorSnapshot>` (see `checkpoint.rs`).
     pub sampler: BatchSampler,
     pub cert_writer: TrainCertWriter,
     pub holdout_evaluator: HoldoutEvaluator,
@@ -138,7 +139,6 @@ impl Trainer {
         let signing_key = SigningKey::from_bytes(&[7u8; 32]);
         Ok(Self {
             config,
-            aux_heads: AuxHeadEnsemble::default(),
             sampler,
             cert_writer,
             holdout_evaluator: HoldoutEvaluator::new(
@@ -378,14 +378,20 @@ impl Trainer {
             mean_delta_omega: o_sum / count,
             mean_delta_xi: x_sum / count,
             holdout_agreement: self.best_holdout_agreement,
-            best_category: MutationCategory::KnownGood,
-            worst_category: MutationCategory::CompileError,
-            best_language: Lang::Python,
-            worst_language: Lang::Rust,
+            // #688: the diagnostic-only path does not compute per-category or
+            // per-language accuracy. Emit None rather than a hardcoded constant
+            // so downstream consumers of CF_MEJEPA_EPOCH_WITNESS cannot mistake
+            // these for measurements. Re-populate from real per-category
+            // aggregation once #683/#643 wire the countable trainer path.
+            best_category: None,
+            worst_category: None,
+            best_language: None,
+            worst_language: None,
             total_steps_this_epoch: self.step - start_step,
             skipped_steps_this_epoch: 0,
             parent_witness_hash: hex::encode(self.epoch_witness.last_epoch_hash),
             self_hash: String::new(),
+            epoch_semantics: DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE.to_string(),
         };
         let witness_entry = self.epoch_witness.append(summary.clone())?;
         Ok(EpochReport {
@@ -396,6 +402,17 @@ impl Trainer {
         })
     }
 
+    /// #701: orphan API kept only for source-compatibility with any caller
+    /// that still references `Trainer::evaluate_holdout`. The method always
+    /// errors because the trainer never had predictor/oracle inputs in
+    /// scope to fabricate holdout metrics from. Use
+    /// `HoldoutEvaluator::evaluate_with_forward_options` instead, which
+    /// takes explicit `PredictorForward` and `OracleHead` arguments.
+    #[deprecated(
+        since = "0.1.0",
+        note = "Trainer::evaluate_holdout is an orphan API that always errors; \
+                use HoldoutEvaluator::evaluate_with_forward_options instead (#701)."
+    )]
     pub fn evaluate_holdout(
         &self,
         _holdout: &HoldoutDataset,
@@ -403,7 +420,7 @@ impl Trainer {
     ) -> Result<HoldoutReport, TrainerError> {
         Err(TrainerError::new(
             TrainerErrorCode::MejepaTrainConfigInvalid,
-            "Trainer::evaluate_holdout has no predictor/oracle inputs; call HoldoutEvaluator::evaluate and persist the resulting report",
+            "Trainer::evaluate_holdout has no predictor/oracle inputs; call HoldoutEvaluator::evaluate_with_forward_options and persist the resulting report (#701)",
         )
         .with_context(serde_json::json!({
             "step": self.step,
@@ -1531,5 +1548,46 @@ mod tests {
             .get_cf(cf, step.to_be_bytes())?
             .ok_or("missing training certificate")?;
         Ok(serde_json::from_slice(&bytes)?)
+    }
+
+    /// #688 regression: the diagnostic-only training path emits `None` for
+    /// per-category / per-language best/worst fields on `EpochSummary` rather
+    /// than hardcoded constants, and tags the summary with the matching
+    /// `epoch_semantics` string. A downstream consumer reading
+    /// `CF_MEJEPA_EPOCH_WITNESS` must be able to tell a stub apart from a
+    /// measurement without inspecting trainer-side context.
+    #[test]
+    fn epoch_summary_diagnostic_path_does_not_emit_hardcoded_best_worst(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let temp = tempfile::tempdir()?;
+        let db = open_train_rocksdb(temp.path())?;
+        let cfg = TrainingConfig {
+            epochs: 1,
+            batch_size: 2,
+            full_finetune: true,
+            cross_task_transfer_probability: 0.0,
+            adversarial_mix_ratio: 0.0,
+            ..TrainingConfig::default()
+        };
+        let mut trainer = Trainer::new(cfg, db.clone(), Device::Cpu)?;
+        let report = trainer.train_one_epoch(&synthetic_dataset(4)?, 0)?;
+        assert!(report.summary.best_category.is_none());
+        assert!(report.summary.worst_category.is_none());
+        assert!(report.summary.best_language.is_none());
+        assert!(report.summary.worst_language.is_none());
+        assert_eq!(
+            report.summary.epoch_semantics,
+            DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE
+        );
+        let serialized = serde_json::to_value(&report.summary)?;
+        assert_eq!(serialized["best_category"], serde_json::Value::Null);
+        assert_eq!(serialized["worst_category"], serde_json::Value::Null);
+        assert_eq!(serialized["best_language"], serde_json::Value::Null);
+        assert_eq!(serialized["worst_language"], serde_json::Value::Null);
+        assert_eq!(
+            serialized["epoch_semantics"],
+            serde_json::json!(DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE)
+        );
+        Ok(())
     }
 }

@@ -1181,6 +1181,12 @@ fn process_row(
         },
         delta_xi: 0.90,
         witness_offset: step,
+        // #699: mejepa-train CLI currently writes certs as part of the
+        // diagnostic-only training loop (#683). Keep this at 0 so
+        // compute_train_health's gate fires DiagnosticCertificateOnlyNeutral
+        // and confidence is not scaled by these pseudo-values. Wire to a
+        // real predictor-update count once #683 closes.
+        predictor_parameter_update_count: 0,
     };
     cert.validate()?;
     let cert_key = row_key("train-cert", &row.attempt_id, step);

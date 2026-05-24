@@ -46,7 +46,7 @@ Ship-gate FSV fits deterministic calibration/rank-lift policies on the 240-row c
 
 ### 1.3 Active/abstain diagnostic (#392, not a gate pass)
 
-Latest ship-gate FSV folds #392 active/abstain as an easy-row diagnostic on `205/240` rows: active corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978`. **Not a hidden gate pass** — per-cell active metric + rolling-window + statistical-power blockers remain. #392 is blocked behind the #712 clean-substrate/trainer chain before renewed gate movement.
+Latest ship-gate FSV folds #392 active/abstain as an easy-row diagnostic on `205/240` rows: active corr `0.9526350498`, Brier `0.0231730901`, ECE `0.0169885978`. **The active-only correlation is selection-biased** (#692) — `35/240 = 14.6%` of holdout rows were abstained because the predictor was confused about them, and they are excluded from the active correlation. The honest full-holdout view treating abstained rows as score=0.5 (oracle-neutral) and the abstain-rate ceiling are now both emitted by `python_calibration_active_gate.py` (default `--max-abstain-rate 0.05`); the current 14.6% rate fails the abstain-rate ceiling on its own, so this is **not a hidden gate pass** — per-cell active metric + rolling-window + statistical-power blockers also remain. #392 is blocked behind the #712 clean-substrate/trainer chain before renewed gate movement.
 
 ---
 

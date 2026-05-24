@@ -481,6 +481,12 @@ impl ShiftSubscriber {
             delta_omega: bundle.delta_omega,
             delta_xi: bundle.delta_xi,
             witness_offset: entry.byte_offset,
+            // #699: shift-subscriber emits a cert per drift event. The drift
+            // pipeline itself is the diagnostic-mode signal carrier; until
+            // the upstream `bundle` carries a real predictor-update count
+            // (#683 wiring), keep this at 0 so compute_train_health's
+            // honest-source gate fires DiagnosticCertificateOnlyNeutral.
+            predictor_parameter_update_count: 0,
         };
         cert.validate()?;
         let key = format!(

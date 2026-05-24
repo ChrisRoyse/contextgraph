@@ -37,6 +37,20 @@ const PREDICTOR_VERSION: &str = "task-py-g-063-project-ingest-v1";
 const PROJECT_EMBEDDING_TIMESTAMP_BASE_SECS: i64 = 1_700_000_000;
 const PROJECT_EMBEDDING_TIMESTAMP_WINDOW_MS: u64 = 1_000_000_000;
 
+// #700: project-ingest rows are emitted with `degraded_status = true` and
+// `verdict = Verdict::Abstain` — no model produced the per-row prediction
+// scalars. Any downstream consumer of `CF_MEJEPA_LIVE_PREDICTIONS` MUST
+// filter on `degraded_status == true && verdict == Abstain` before
+// reading the scalars below. The constants are intentionally neutral
+// (no failure-mode discrimination) so a future bug in a downstream
+// aggregator that forgets to filter cannot accidentally read a
+// failure-mode-correlated signal. The proper Option<f32> structural fix
+// is tracked separately.
+const PROJECT_INGEST_DEGRADED_PREDICTED_ORACLE_PASS: f32 = 0.5;
+const PROJECT_INGEST_DEGRADED_PREDICTED_TEST_PASS: f32 = 0.5;
+const PROJECT_INGEST_DEGRADED_CALIBRATED_CONFIDENCE: f32 = 0.5;
+const PROJECT_INGEST_DEGRADED_OOD_SCORE: f32 = 0.35;
+
 pub struct MultiArrayProjectEmbeddingProvider {
     inner: Arc<dyn MultiArrayEmbeddingProvider>,
     project_id: String,
@@ -1460,10 +1474,16 @@ fn prediction_for_file(
     ))))
     .covered_chunks(vec![chunk_id])
     .verdict(Verdict::Abstain)
-    .predicted_oracle_pass(if failure_modes.is_empty() { 0.50 } else { 0.25 })
-    .predicted_test_pass(vec![if failure_modes.is_empty() { 0.50 } else { 0.20 }])
-    .ood_score(0.35)
-    .calibrated_confidence(if failure_modes.is_empty() { 0.41 } else { 0.66 })
+    // #700: failure-mode-conditioned hardcoded scalars (0.50/0.25, 0.50/0.20,
+    // 0.41/0.66) replaced with named sentinel constants. No model produced
+    // these values; the prior discrimination by `failure_modes.is_empty()`
+    // was itself a fake signal that downstream aggregators could read as
+    // a real correlation. Consumers MUST honor `degraded_status == true &&
+    // verdict == Abstain` before treating these as predictions.
+    .predicted_oracle_pass(PROJECT_INGEST_DEGRADED_PREDICTED_ORACLE_PASS)
+    .predicted_test_pass(vec![PROJECT_INGEST_DEGRADED_PREDICTED_TEST_PASS])
+    .ood_score(PROJECT_INGEST_DEGRADED_OOD_SCORE)
+    .calibrated_confidence(PROJECT_INGEST_DEGRADED_CALIBRATED_CONFIDENCE)
     .degraded_status(true)
     .predicted_failure_modes(failure_modes)
     .predicted_security_concerns(security_concerns)

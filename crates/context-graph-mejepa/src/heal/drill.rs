@@ -72,6 +72,11 @@ impl Default for HealDrillArgs {
 pub struct DrillStdoutSummary {
     pub drift_detected: DriftSeverity,
     pub observations_to_detect: u64,
+    /// #690: derived from real evidence, not hardcoded.
+    /// `true` iff (`weights_sha_winner != [0u8; 32]`) AND
+    /// (`evaluation_summary_sha != [0u8; 32]`) AND
+    /// (`mode_winner ∈ {B, C}`). Mode A is a no-promotion outcome and must
+    /// not be reported as a successful retrain.
     pub retrain_triggered: bool,
     pub mode_winner: char,
     pub promotion_latency_seconds: u64,
@@ -82,6 +87,11 @@ pub struct DrillStdoutSummary {
     pub readback_files_emitted: Vec<String>,
     pub all_readback_files_mode_0o600: bool,
     pub exit_code: i32,
+    /// #690: AND-folds every boundary check that drives `exit_code` so an
+    /// operator dashboard can rely on a single boolean to know whether
+    /// Phase-5 DoD was satisfied end-to-end. `exit_code == 0` is the
+    /// authoritative signal; this field is its serializable AND-fold.
+    pub phase_5_dod_completed: bool,
 }
 
 pub fn run_heal_drill(args: HealDrillArgs) -> Result<DrillStdoutSummary, HealError> {
@@ -279,19 +289,27 @@ pub fn run_heal_drill(args: HealDrillArgs) -> Result<DrillStdoutSummary, HealErr
     if drift_detected == DriftSeverity::WarmupNotReady {
         drift_detected = pipeline.drift_detector.last_severity;
     }
+    let retrain_triggered = derive_retrain_triggered(
+        report.weights_sha_winner,
+        report.evaluation_summary_sha,
+        abc_evidence.mode_winner,
+    );
+    let lora_refresh_succeeded = lora_evidence.post_plasticity > 0.4;
+    let phase_5_dod_completed = exit_code == 0;
     Ok(DrillStdoutSummary {
         drift_detected,
         observations_to_detect,
-        retrain_triggered: true,
+        retrain_triggered,
         mode_winner: abc_evidence.mode_winner.as_char(),
         promotion_latency_seconds: report.promotion_latency_seconds,
-        lora_refresh_succeeded: lora_evidence.post_plasticity > 0.4,
+        lora_refresh_succeeded,
         integrity_violation_detected,
         fisher_rank_after_10_boundaries: pipeline.ewc.fisher_rank(),
         fisher_full_rank,
         readback_files_emitted,
         all_readback_files_mode_0o600: all_modes,
         exit_code,
+        phase_5_dod_completed,
     })
 }
 
@@ -377,9 +395,75 @@ fn all_readback_files_mode_0o600(root: &Path) -> Result<bool, HealError> {
     Ok(true)
 }
 
+/// #690: derive `retrain_triggered` from real evidence rather than a hardcoded
+/// `true`. A true retrain requires (a) winner weights digest is non-zero,
+/// (b) evaluation summary digest is non-zero, AND (c) the ABC bandit
+/// promoted a non-control mode (B or C). Mode A is "no promotion" and must
+/// not be reported as a successful retrain.
+fn derive_retrain_triggered(
+    weights_sha_winner: [u8; 32],
+    evaluation_summary_sha: [u8; 32],
+    mode_winner: ModeWinner,
+) -> bool {
+    let weights_sha_present = weights_sha_winner != [0u8; 32];
+    let evaluation_summary_sha_present = evaluation_summary_sha != [0u8; 32];
+    let mode_winner_promoted = matches!(mode_winner, ModeWinner::B | ModeWinner::C);
+    weights_sha_present && evaluation_summary_sha_present && mode_winner_promoted
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn nonzero_digest() -> [u8; 32] {
+        let mut d = [0u8; 32];
+        d[0] = 1;
+        d
+    }
+
+    #[test]
+    fn derive_retrain_triggered_false_for_mode_a_no_op() {
+        // #690 regression: mode A is "no promotion" — even with non-zero
+        // weights and evaluation digests, the drill must NOT report a
+        // successful retrain.
+        assert!(!derive_retrain_triggered(
+            nonzero_digest(),
+            nonzero_digest(),
+            ModeWinner::A
+        ));
+    }
+
+    #[test]
+    fn derive_retrain_triggered_false_for_zero_weights_sha() {
+        assert!(!derive_retrain_triggered(
+            [0u8; 32],
+            nonzero_digest(),
+            ModeWinner::B
+        ));
+    }
+
+    #[test]
+    fn derive_retrain_triggered_false_for_zero_evaluation_summary_sha() {
+        assert!(!derive_retrain_triggered(
+            nonzero_digest(),
+            [0u8; 32],
+            ModeWinner::C
+        ));
+    }
+
+    #[test]
+    fn derive_retrain_triggered_true_only_when_all_three_signals_agree() {
+        assert!(derive_retrain_triggered(
+            nonzero_digest(),
+            nonzero_digest(),
+            ModeWinner::B
+        ));
+        assert!(derive_retrain_triggered(
+            nonzero_digest(),
+            nonzero_digest(),
+            ModeWinner::C
+        ));
+    }
 
     #[test]
     fn synthetic_oracle_produces_target_coverage_with_tolerance() {

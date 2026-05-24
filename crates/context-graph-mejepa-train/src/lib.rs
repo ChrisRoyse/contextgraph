@@ -10,7 +10,9 @@
 
 pub mod ability_resolver;
 pub mod active_constellation;
-pub mod aux;
+// #622: `aux`, `distill`, `lora_wiring` modules deleted as dead code; see
+// also #685 / #687. `CheckpointPayload.aux_heads` in `checkpoint.rs` is a
+// different field and is kept.
 pub mod cert;
 pub mod checkpoint;
 pub mod chunk_skill_membership;
@@ -18,7 +20,6 @@ pub mod cli;
 pub mod compression_progress;
 pub mod config;
 pub mod dda;
-pub mod distill;
 pub mod error;
 pub mod eval;
 pub mod failure_mode_hierarchy;
@@ -26,7 +27,6 @@ pub mod label_bridge;
 pub mod labels;
 pub mod learning_signal;
 pub mod live_skill_reverse_index;
-pub mod lora_wiring;
 pub mod loss;
 pub mod mistake_log;
 pub mod online_head_state;

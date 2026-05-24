@@ -38,7 +38,7 @@ use crate::contradiction::{
 };
 use crate::dda_features::{project_dda_features, DDA_FEATURE_PROJECTION_SCHEMA};
 use crate::degraded::{
-    calibrated_confidence, calibrated_confidence_multiplier, compute_train_health, evidence_factor,
+    calibrated_confidence, compute_train_health, effective_confidence_multiplier, evidence_factor,
 };
 use crate::error::{MejepaInferError, PredictorError};
 use crate::failure_fingerprint::{
@@ -86,6 +86,12 @@ pub struct TrainCertSummary {
     pub delta_omega: f32,
     pub delta_xi: f32,
     pub witness_offset: u64,
+    /// #699: mirrors `TrainingCertificate.predictor_parameter_update_count`
+    /// so the inference side can filter out diagnostic-only certs (where
+    /// no predictor weight actually moved) before averaging `delta_omega`
+    /// / `delta_xi` into a confidence multiplier. A cert with `0` here
+    /// MUST NOT contribute to the multiplier.
+    pub predictor_parameter_update_count: u64,
 }
 
 impl TrainCertSummary {
@@ -518,7 +524,17 @@ impl MeJepaCompiler {
             ood_threshold,
             &calibration.version,
         )?;
-        let mut per_slot_ood_reasons = per_slot_ood_assessment.reasons;
+        // #684: `per_slot_ood_reasons` is the residual-based, per-slot OOD
+        // signal — `SlotThresholdExceeded` / `DiffuseSlotThresholdExceeded`
+        // reasons derived from per-slot residual L2 against
+        // `per_slot_sigma_squared`. The prior code also `extend`ed this with
+        // `per_slot_ood_reasons_from_guard_violations(...)` which mirrored
+        // every guard violation into a `GtauViolation` reason — but those
+        // are already published via `prediction.guard_violations`, so the
+        // extend produced duplicate evidence and conflated two independent
+        // signals. The extend has been removed; `prediction.guard_violations`
+        // remains the authoritative guard-side surface.
+        let per_slot_ood_reasons = per_slot_ood_assessment.reasons;
         let slot_specific_ood_guard_count = per_slot_ood_assessment.slot_specific_guard_count;
         let train_certs = self
             .store
@@ -528,10 +544,10 @@ impl MeJepaCompiler {
             self.config.bootstrap_delta_omega,
             self.config.bootstrap_delta_xi,
         )?;
-        let multiplier = calibrated_confidence_multiplier(
-            train_health.delta_omega_mean,
-            train_health.delta_xi_mean,
-        )?;
+        // #699: source-aware multiplier — returns 1.0 (no adjustment) when
+        // certs are absent or all diagnostic-only, so the predictor's
+        // calibrated confidence is not silently scaled by pseudo-values.
+        let multiplier = effective_confidence_multiplier(&train_health)?;
         let outcomes = build_outcome_set(
             &oracle.predicted_test_pass,
             context,
@@ -615,10 +631,12 @@ impl MeJepaCompiler {
             &mut oracle.granger_attestations,
             &verdict_output.contradiction,
         )?;
-        per_slot_ood_reasons.extend(per_slot_ood_reasons_from_guard_violations(
-            &phase_b_surfaces.guard_violations,
-            &calibration.version,
-        )?);
+        // #684: removed `per_slot_ood_reasons.extend(per_slot_ood_reasons_from_guard_violations(...))`
+        // — guard violations are already published via
+        // `prediction.guard_violations`. Mirroring them into
+        // `per_slot_ood_reasons` conflated two independent evidence
+        // surfaces and inflated the `per_slot_ood_reasons.len()` count
+        // for any downstream consumer reading the field directly.
         let fingerprint_evidence =
             self.live_fingerprint_evidence_for_panel(&predicted, verdict, context, prediction_id)?;
         // F-005 fix: chain-of-custody requires a reproducible constellation version_id.
@@ -2298,36 +2316,12 @@ fn evidence_from_fingerprint_classification(
     })
 }
 
-fn per_slot_ood_reasons_from_guard_violations(
-    guard_violations: &[crate::types::GuardViolation],
-    calibration_version: &str,
-) -> Result<Vec<PerSlotOodReason>, MejepaInferError> {
-    guard_violations
-        .iter()
-        .map(|violation| {
-            let reason = PerSlotOodReason {
-                embedder: violation.embedder.clone(),
-                chunk: Some(violation.chunk.clone()),
-                reason: PerSlotOodReasonKind::GtauViolation,
-                observed_score: violation.cosine,
-                threshold: violation.threshold_tau_m,
-                margin: violation.deficit,
-                calibration_version: calibration_version.to_string(),
-                evidence: format!(
-                    "Gtau slot violation: embedder={} chunk={} centroid={} cosine={} threshold_tau_m={} deficit={}",
-                    violation.embedder.0,
-                    violation.chunk.0,
-                    violation.centroid_id,
-                    violation.cosine,
-                    violation.threshold_tau_m,
-                    violation.deficit
-                ),
-            };
-            reason.validate()?;
-            Ok(reason)
-        })
-        .collect()
-}
+// #684: `per_slot_ood_reasons_from_guard_violations` was deleted. It was
+// the helper that mirrored every guard violation into a `GtauViolation`
+// `PerSlotOodReason` and was appended into `per_slot_ood_reasons` at the
+// call site. Removing the helper makes the `per_slot_ood_reasons` surface
+// strictly residual-based; guard violations remain available via the
+// independent `prediction.guard_violations` field.
 
 struct PerSlotOodAssessment {
     reasons: Vec<PerSlotOodReason>,

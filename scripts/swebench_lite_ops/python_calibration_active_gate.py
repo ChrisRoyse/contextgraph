@@ -77,6 +77,12 @@ def add_arguments(parser: Any) -> None:
     parser.add_argument("--target-correlation", type=float, default=0.95)
     parser.add_argument("--smooth-ece-regression-budget", type=float, default=0.003)
     parser.add_argument("--shrinkage-strength", type=float, default=60.0)
+    # #692: ceiling on the per-cell abstain rate. The #392 active-only
+    # correlation is selection-biased (abstain pool removes the rows the
+    # predictor was confused about), so the gate MUST also enforce that the
+    # abstain rate is small. Default 0.05 per the issue's example value;
+    # operator can loosen via CLI if a wider abstain pool is intentional.
+    parser.add_argument("--max-abstain-rate", type=float, default=0.05)
 
 
 def command_python_calibration_active_gate(args: Any) -> dict[str, Any]:
@@ -142,6 +148,7 @@ def command_python_calibration_active_gate(args: Any) -> dict[str, Any]:
         after_holdout,
         target=float(args.target_correlation),
         smooth_ece_regressions=regression_cells,
+        max_abstain_rate=float(args.max_abstain_rate),
     )
     active_delta = None
     if isinstance(embedded_active.get("active_row_count"), int):
@@ -168,6 +175,7 @@ def command_python_calibration_active_gate(args: Any) -> dict[str, Any]:
             "targetCorrelation": float(args.target_correlation),
             "smoothEceRegressionBudget": float(args.smooth_ece_regression_budget),
             "shrinkageStrength": float(args.shrinkage_strength),
+            "maxAbstainRate": float(args.max_abstain_rate),
             "noNewPredictorFeatures": True,
             "noModelRetrain": True,
             "mountedDriveReadsOrWrites": False,
@@ -385,6 +393,12 @@ def split_report(
     selections: dict[str, CellSelection] | None = None,
 ) -> dict[str, Any]:
     active_rows: list[tuple[Row, float]] = []
+    # #692: also accumulate the "neutral-abstain" view where every row in
+    # the split contributes — abstained rows get a neutral score of 0.5
+    # so the full-holdout correlation is computable. This is the honest
+    # mirror of the selection-biased active-only correlation.
+    full_labels_neutral: list[int] = []
+    full_scores_neutral: list[float] = []
     per_cell: dict[str, Any] = {}
     for cell, cell_rows in sorted(group_rows(rows).items()):
         if selections is None:
@@ -394,6 +408,10 @@ def split_report(
         else:
             selection = selections[cell]
             if selection.policy_name == "abstain_all":
+                # #692: still need the calibrated scores for full-holdout
+                # accounting; use the row's raw score for the neutral-abstain
+                # view but mark every row as abstained (score=0.5).
+                scored = [(row, row.score) for row in cell_rows]
                 selected = []
             else:
                 assert policies is not None
@@ -405,6 +423,15 @@ def split_report(
                     if selection.margin_threshold is not None and abs(score - 0.5) >= selection.margin_threshold
                 ]
         active_rows.extend(selected)
+        # #692: build neutral-abstain view per cell. Selected rows keep
+        # their calibrated score; abstained rows get 0.5.
+        selected_row_ids = {id(r) for r, _ in selected}
+        for row, calibrated_score in scored:
+            full_labels_neutral.append(row.label)
+            if id(row) in selected_row_ids:
+                full_scores_neutral.append(calibrated_score)
+            else:
+                full_scores_neutral.append(0.5)
         per_cell[cell] = selection_report(cell_rows, selected, selection)
     labels = [row.label for row, _score in active_rows]
     scores = [score for _row, score in active_rows]
@@ -414,6 +441,14 @@ def split_report(
         "abstainRowCount": len(rows) - len(active_rows),
         "coverage": len(active_rows) / len(rows) if rows else None,
         "metrics": metric_block(labels, scores) if active_rows else empty_metric_block(),
+        # #692: honest full-holdout view that includes abstained rows at
+        # neutral score=0.5. A predictor that abstains a lot will have a
+        # lower correlation here than in the active-only metrics block.
+        "metricsFullNeutralAbstain": (
+            metric_block(full_labels_neutral, full_scores_neutral)
+            if full_labels_neutral
+            else empty_metric_block()
+        ),
         "perCell": per_cell,
     }
 
@@ -454,12 +489,37 @@ def holdout_gate_report(
     *,
     target: float,
     smooth_ece_regressions: list[dict[str, Any]],
+    max_abstain_rate: float,
 ) -> dict[str, Any]:
     blockers: list[str] = []
     metrics = report["metrics"]
     corr = metrics.get("prediction_oracle_correlation")
     if corr is None or corr < target:
         blockers.append(f"global_active_correlation {corr} < {target}")
+    # #692: enforce abstain-rate ceiling. The active-subset correlation is
+    # selection-biased; without this guard, the gate would pass on the easy
+    # rows alone.
+    row_count = report.get("rowCount") or 0
+    active_count = report.get("activeRowCount") or 0
+    abstain_count = max(0, row_count - active_count)
+    abstain_rate = (abstain_count / row_count) if row_count > 0 else None
+    if abstain_rate is None or abstain_rate > max_abstain_rate:
+        blockers.append(
+            f"abstain_rate {abstain_rate} > {max_abstain_rate}_max "
+            f"(active {active_count}/{row_count}); active-only correlation is "
+            f"selection-biased without this ceiling (#692)"
+        )
+    # #692: also gate the honest full-holdout-with-neutral-abstain correlation
+    # — abstained rows count as score=0.5, so the metric penalizes a
+    # high abstain rate AND lets the operator see what the gate would say
+    # if abstains were treated as "oracle disagreement".
+    neutral_metrics = report.get("metricsFullNeutralAbstain") or {}
+    full_corr = neutral_metrics.get("prediction_oracle_correlation")
+    if full_corr is None or full_corr < target:
+        blockers.append(
+            f"full_holdout_neutral_abstain_correlation {full_corr} < {target} "
+            f"(active-only corr is {corr}; treats abstained rows as score=0.5 per #692)"
+        )
     if smooth_ece_regressions:
         blockers.append(f"{len(smooth_ece_regressions)} per-cell SmoothECE regressions beyond budget")
     for cell, cell_report in report["perCell"].items():

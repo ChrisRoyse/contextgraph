@@ -203,7 +203,7 @@ Total contiguous byte layout: 5,120 f32. Semantic unit is the array of 15 per-em
 - Build rejects `filled_mask == 0`
 - All persistence through `try_from PanelSerde` so JSON round-trip re-validates
 
-**Structural collapse-immunity invariant.** Instruments carry zero trainable params. `FrozenGuard` / `FrozenSnapshot` / `hash_f32s` enforce `ΔΞ.target_collapse = 0`. `grad_hook.rs::run_gradient_hook` checks `MEJEPA_INSTRUMENT_GRADIENT_LEAK`.
+**Structural collapse-immunity invariant.** Instruments carry zero trainable params. `FrozenGuard` / `FrozenSnapshot` / `hash_f32s` enforce `ΔΞ.target_collapse = 0` at construction time via the static-empty-slice `parameters()` invariant on `FrozenTargetAdapter` — the adapter literally cannot hold trainable parameters, so per-batch wiring of `grad_hook.rs::run_gradient_hook` from the live training loop is not required. The runtime gradient-leak check (`MEJEPA_PRED_FROZEN_TARGET_GRAD` / `MEJEPA_PRED_FROZEN_TARGET_GRAD_UNMEASURED`) is invoked at dynamic-embedder promotion only (see `dynamic_embedder_freeze.rs` and `task_ek_018g_freeze_audit_fsv.rs`); per #620 it is also fail-closed when a registered tensor_id has no `GradStore` entry, so absence cannot masquerade as a measured zero. Re-evaluate per-batch wiring (Option B) post-0.95 if the Fisher/EWC story (#593) reopens the boundary-protection conversation.
 
 **Anti-compensation — formal ECC (planned, #512).** Self-dual doubly-even ECC over 15-slot occupancy bitmap (Gates et al. 2008 lineage). Recovery radius `t = 2`: corrupt up to 2 slots → guaranteed reconstruction; more → `PANEL_ECC_UNCORRECTABLE` typed reason into mistake log.
 

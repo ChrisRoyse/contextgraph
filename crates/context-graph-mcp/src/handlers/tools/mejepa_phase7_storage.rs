@@ -1067,6 +1067,8 @@ mod phase7_fsv_tests {
             delta_omega: 0.8,
             delta_xi: 0.8,
             witness_offset: 44,
+            // #699: phase7-storage FSV cert simulates a trained cert path.
+            predictor_parameter_update_count: 1,
         };
         db.put_cf(
             train_cf,

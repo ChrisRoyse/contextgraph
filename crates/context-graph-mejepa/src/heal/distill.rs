@@ -152,8 +152,18 @@ pub fn consume(
         ));
     }
     let teacher_score = oracle_handle.score(oracle_outcome);
-    let panel_mean = panel.data().iter().take(256).sum::<f32>() / 256.0;
+    // #705: the previous `panel.data().iter().take(256).sum() / 256.0`
+    // averaged the first 256 floats of the flat 5,120-d panel buffer,
+    // which spans E_AST + first 32 dims of E_CFG. That cross-embedder
+    // aggregate violated CLAUDE.md §6.2 and doc 01 §1.5ter and was being
+    // added to every per-embedder InfoNCE loss term. Removed entirely:
+    // the per-embedder `student_score` is already a per-embedder quantity
+    // and the panel-wide cross-slot average had no semantic meaning.
+    // (Per-embedder slot lookup deferred to a follow-up that adds a
+    // `slot: InstrumentSlot` field on `EmbedderHandle`.)
+    let _ = panel; // explicitly mark panel as not consumed in the loss
     let mut total_loss = 0.0f32;
+    let mut total_student_score = 0.0f32;
     let mut pre_norm = 0.0f32;
     let mut post_norm = 0.0f32;
     for embedder in &mut *active_embedders {
@@ -165,7 +175,7 @@ pub fn consume(
         }
         let student_score = embedder.weights.iter().sum::<f32>() / embedder.weights.len() as f32;
         let loss = info_nce_loss(
-            student_score + panel_mean,
+            student_score,
             teacher_score,
             distiller.info_nce_temperature,
         );
@@ -178,11 +188,16 @@ pub fn consume(
         ema_update_in_place(&mut embedder.weights, &after_grad, distiller.ema_tau)?;
         post_norm += l2(&embedder.weights);
         total_loss += loss;
+        total_student_score += student_score;
     }
     let frozen_at = chrono::Utc::now().timestamp();
     let step = DistillStep::Applied {
         teacher_score,
-        student_score: panel_mean,
+        // #705: was `student_score: panel_mean` (cross-embedder leak via a
+        // mislabeled field). Now the average of per-embedder student
+        // scores — slot-preserving because each student_score depended
+        // only on its own embedder's weights.
+        student_score: total_student_score / active_embedders.len() as f32,
         info_nce_loss: total_loss / active_embedders.len() as f32,
         ema_norm_pre: pre_norm,
         ema_norm_post: post_norm,
@@ -252,5 +267,101 @@ mod tests {
         let mut w = vec![1.0, 3.0];
         ema_update_in_place(&mut w, &[3.0, 7.0], 0.5).unwrap();
         assert_eq!(w, vec![2.0, 5.0]);
+    }
+
+    /// #705 regression: with the cross-embedder `panel_mean` term removed
+    /// from the InfoNCE loss, swapping the panel content of slots OTHER
+    /// than what the embedder reads (i.e., perturbing dims in the flat
+    /// buffer that no embedder consumed) MUST NOT change the emitted
+    /// `info_nce_loss`. Previously the first 256 flat-buffer dims were
+    /// averaged into every embedder's loss, so any panel mutation would
+    /// shift the loss. After the fix the loss depends only on
+    /// `embedder.weights` and `oracle_outcome`.
+    #[test]
+    fn heal_distill_loss_is_invariant_under_unrelated_panel_perturbations(
+    ) -> Result<(), HealError> {
+        use context_graph_mejepa_instruments::{InstrumentSlot, PanelBuilder};
+        use tempfile::TempDir;
+
+        fn panel_with_e_ast_pattern(scale: f32) -> Panel {
+            let mut builder = PanelBuilder::new();
+            for slot in InstrumentSlot::all() {
+                let v: Vec<f32> = (0..slot.dim())
+                    .map(|i| (i as f32) * 0.001 * scale)
+                    .collect();
+                builder.set_slot(slot, &v).expect("set slot");
+            }
+            builder.build().expect("panel builds")
+        }
+
+        let temp = TempDir::new().unwrap();
+        let storage_a = HealRocksStore::open(temp.path().join("db_a")).unwrap();
+        let storage_b = HealRocksStore::open(temp.path().join("db_b")).unwrap();
+
+        let mut distiller_a = OnlineDistiller::default();
+        let mut distiller_b = OnlineDistiller::default();
+        let mut embedders_a = vec![EmbedderHandle {
+            embedder_id: 7,
+            weights: vec![0.1, 0.2, 0.3, 0.4],
+        }];
+        let mut embedders_b = embedders_a.clone();
+        let oracle = OracleHandle {
+            pass_score: 0.9,
+            fail_score: 0.1,
+        };
+
+        // Two panels with very different content: only embedder.weights +
+        // oracle determine the loss. Pre-#705, the flat panel.data().take(256)
+        // mean leaked into the loss and the two runs would differ.
+        let panel_a = panel_with_e_ast_pattern(1.0);
+        let panel_b = panel_with_e_ast_pattern(50.0);
+        let signal_clarity = 0.8_f32;
+
+        let step_a = consume(
+            &mut distiller_a,
+            &panel_a,
+            &OracleOutcome::Pass,
+            signal_clarity,
+            &mut embedders_a,
+            &oracle,
+            storage_a.clone(),
+        )?;
+        let step_b = consume(
+            &mut distiller_b,
+            &panel_b,
+            &OracleOutcome::Pass,
+            signal_clarity,
+            &mut embedders_b,
+            &oracle,
+            storage_b.clone(),
+        )?;
+
+        match (step_a, step_b) {
+            (
+                DistillStep::Applied {
+                    info_nce_loss: loss_a,
+                    student_score: ss_a,
+                    ..
+                },
+                DistillStep::Applied {
+                    info_nce_loss: loss_b,
+                    student_score: ss_b,
+                    ..
+                },
+            ) => {
+                assert!(
+                    (loss_a - loss_b).abs() < 1e-6,
+                    "info_nce_loss must be invariant under unrelated panel \
+                     perturbations (#705); got loss_a={loss_a} loss_b={loss_b}"
+                );
+                assert!(
+                    (ss_a - ss_b).abs() < 1e-6,
+                    "student_score must be invariant under unrelated panel \
+                     perturbations (#705); got ss_a={ss_a} ss_b={ss_b}"
+                );
+            }
+            other => panic!("expected DistillStep::Applied pair, got {other:?}"),
+        }
+        Ok(())
     }
 }

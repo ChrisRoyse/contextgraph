@@ -245,7 +245,13 @@ impl HoldoutEvaluator {
             per_mutation_category_accuracy: per_cat,
             per_language_accuracy: per_lang,
             predictor_redundancy_pairwise_mi: redundancy,
-            gtau_pass_rate: 1.0,
+            // #621: emit None instead of a hardcoded 1.0. The Gτ guard is the
+            // doctrinal Goodhart guard (doc 01 §1.4 / CLAUDE.md §6 / §1.5ter);
+            // publishing 1.0 here misleads every consumer into believing the
+            // guard passed every holdout row when in fact it was never
+            // evaluated. The TCT-backed computation (HoldoutEvaluator →
+            // mejepa-tct::gtau::evaluate_panel) is tracked separately.
+            gtau_pass_rate: None,
             generic_only_warning: warning,
             phase3_dod_passed: if is_final_step {
                 Some(agreement >= phase3_dod_min)
@@ -298,4 +304,76 @@ fn softmax(logits: &[f32]) -> Result<Vec<f32>, TrainerError> {
     let exps = logits.iter().map(|v| (*v - max).exp()).collect::<Vec<_>>();
     let sum = exps.iter().sum::<f32>().max(1e-8);
     Ok(exps.iter().map(|v| v / sum).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::eval::{HoldoutReport, Lang, MutationCategory};
+    use std::collections::HashMap;
+
+    fn report_with_gtau(gtau: Option<f32>) -> HoldoutReport {
+        HoldoutReport {
+            step: 0,
+            prediction_oracle_agreement: 0.5,
+            conformal_coverage_calibration: 0.5,
+            per_mutation_category_accuracy: HashMap::<MutationCategory, f32>::new(),
+            per_language_accuracy: HashMap::<Lang, f32>::new(),
+            predictor_redundancy_pairwise_mi: 0.0,
+            gtau_pass_rate: gtau,
+            generic_only_warning: None,
+            phase3_dod_passed: None,
+            timestamp_iso8601: "1970-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    /// #621 regression: the diagnostic path emits `None` rather than a
+    /// hardcoded `1.0`, and the JSON form serializes that as `null` so a
+    /// downstream consumer cannot mistake unmeasured for perfect.
+    #[test]
+    fn holdout_report_gtau_pass_rate_is_optional_and_serializes_null_when_none() {
+        let r = report_with_gtau(None);
+        assert!(r.gtau_pass_rate.is_none());
+        let v = serde_json::to_value(&r).expect("HoldoutReport serializes");
+        assert_eq!(v["gtau_pass_rate"], serde_json::Value::Null);
+    }
+
+    /// #621: when a real Gτ evaluation eventually wires in, the same field
+    /// must round-trip as `Some(value)` through serde so consumers can read
+    /// the measurement honestly. (Use exact f32 bit patterns to avoid
+    /// f32→f64 widening noise in the assertion.)
+    #[test]
+    fn holdout_report_gtau_pass_rate_round_trips_some_value() {
+        let r = report_with_gtau(Some(0.5));
+        let v = serde_json::to_value(&r).expect("HoldoutReport serializes");
+        assert_eq!(v["gtau_pass_rate"], serde_json::json!(0.5));
+        let r2: HoldoutReport = serde_json::from_value(v).expect("HoldoutReport deserializes");
+        assert_eq!(r2.gtau_pass_rate, Some(0.5_f32));
+    }
+
+    /// #621: forbid the stale-form JSON (`gtau_pass_rate: 1.0`) from
+    /// deserializing into the new type as `Some(1.0)` on the diagnostic
+    /// path. The doctrinal contract is that the trainer construction site
+    /// must emit `None`; this test pins that construction-site behavior to
+    /// catch a future regression at the source rather than the schema.
+    #[test]
+    fn holdout_report_diagnostic_construction_emits_none() {
+        // Mirror the construction site at holdout.rs:241-260 exactly for
+        // the fields that matter — gtau_pass_rate must be None.
+        let r = HoldoutReport {
+            step: 0,
+            prediction_oracle_agreement: 0.5,
+            conformal_coverage_calibration: 0.5,
+            per_mutation_category_accuracy: HashMap::<MutationCategory, f32>::new(),
+            per_language_accuracy: HashMap::<Lang, f32>::new(),
+            predictor_redundancy_pairwise_mi: 0.0,
+            // #621: this MUST stay None on the diagnostic path. Changing
+            // to Some(_) requires also wiring `mejepa-tct::gtau::evaluate_panel`
+            // — file a sibling issue first.
+            gtau_pass_rate: None,
+            generic_only_warning: None,
+            phase3_dod_passed: None,
+            timestamp_iso8601: "1970-01-01T00:00:00Z".to_string(),
+        };
+        assert!(r.gtau_pass_rate.is_none());
+    }
 }

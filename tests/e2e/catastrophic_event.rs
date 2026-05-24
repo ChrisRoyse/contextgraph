@@ -557,6 +557,8 @@ fn seed_train_certs(store: &HealRocksStore) -> Result<()> {
             delta_omega: 0.70,
             delta_xi: 0.70,
             witness_offset: step,
+            // #699: e2e shim cert simulates a trained-path cert.
+            predictor_parameter_update_count: 1,
         };
         store.put_cf_readback(
             context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS,

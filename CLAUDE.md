@@ -84,7 +84,7 @@ Beyond the binary primitive ME-JEPA exposes two derived operator-facing surfaces
 
 ## 2. Phase status (refreshed 2026-05-19)
 
-**Phases A–H complete.** 35/35 Phase A–D items audit-verified 2026-05-12. Phase H (inner-actor LLM retirement) FSV-verified 2026-05-13 — `feature = "llm"` triggers `compile_error!` at `crates/context-graph-mcp/src/lib.rs:13`. The previously documented 9 `scripts/ci/phase_h_*.sh` absence-checks do **not** exist on disk; #693 tracks whether to create them or remove the historical claim everywhere.
+**Phases A–H complete.** 35/35 Phase A–D items audit-verified 2026-05-12. Phase H (inner-actor LLM retirement) FSV-verified 2026-05-13. The current hard guard for inner-actor LLM retirement is the single `compile_error!` at `crates/context-graph-mcp/src/lib.rs:13` triggered by `feature = "llm"`. The previously documented "9 `scripts/ci/phase_h_*.sh` absence-checks" never existed on disk and the claim is retracted per #693 (closed) — additional grep-style absence checks for `qwen3.6-27b` / `hermes-2-pro` / `ollama` / `llama.cpp` string-mentions in source or binaries are not required because the compile-error gate transitively prevents any path that would reach those runtimes from existing in the build.
 
 **The only outstanding gate is Phase G model-quality convergence:** valid real-input Panel A raw baseline is `prediction_oracle_correlation = 0.4843192995 < 0.95`; the `0.7942190170` rank-lift value is diagnostic only until #695 is resolved. Latest ship-gate FSV is `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`. The #392 active/abstain diagnostic has aggregate active correlation `0.9526350498`, Brier `0.0231730901`, and ECE `0.0169885978` on `205 / 240` holdout rows, but full ship-gate remains false due per-cell and rolling-window/power blockers. Panel B (#405/#521) still has no model-backed measurement.
 
@@ -98,7 +98,7 @@ Beyond the binary primitive ME-JEPA exposes two derived operator-facing surfaces
 - Retired **BlackBoxFix** subsystem from `context-graph-cli` (~52K LOC + 26 tests + `axum`/`reqwest`/`rusqlite` deps).
 - Retired **Q4 producer modules** (#408 closed): `composite_reward_signals`, `static_analysis_reward`, `telemetry_signals`, `live_session_signals`, `type_graph_signals`, `e_coverage`, `e_cyclomatic`, `e_diff_topology`, `e_embedder_heads` + their FSV examples. `q4_trust_gate.rs` (the freeze enforcement) remains. Q4 CFs are read-only forensic continuity.
 - Removed `linear_probe.rs`, `stdlib_registry.rs`, pre-pivot benchmark bins (`causal_*`, `multimodal_*`, `embedder_impact_*`, `weight_profile_bench`, `e2_manual_verification`, `e10_modifier_tuning`, `e11_entity_bench`).
-- Removed 42 retired Shakespeare LoRA training scripts (4 historical-only stubs retained — Phase H absence-check tracks them).
+- Removed 42 retired Shakespeare LoRA training scripts (4 historical-only stubs retained).
 - Removed `.claude/skills/ccreality-{iterate,readback,smoke,trigger-check}/`, `docs2/contextgraphspecs/`, `docs2/realitywhitepaper/`, `backupdocs/*` numbered duplicates.
 - Retired obsolete WSL/Shakespeare/EXP-2 script trees and re-pointed remaining active runtime defaults to aiwonder.
 - Re-branded 7 storage-test `validator_version: "hermes-2-pro-mistral-7b-q5-km@2026-04"` strings → `"deterministic-validator-v1@2026-05"`.
@@ -173,7 +173,7 @@ Workspace manifest: `Cargo.toml:6-30`. `default-members` mirrors the 22 active w
 
 - `context-graph-reality-loop` binary — deleted 2026-05-09 (Phase H). Do not reanimate without explicit operator authorization and new FSV evidence.
 - `context-graph-benchmark` crate — deleted 2026-05-20 after aiwonder FSV readback found no live benchmark evidence path and the ME-JEPA ship gate no longer uses pre-pivot benchmark bins.
-- Inner-actor LLM stack (Qwen3.6-27B / Hermes-2-Pro / Ollama / llama.cpp generative inference) — deleted 2026-05-09; current hard guard is the MCP `feature = "llm"` compile error. The `phase_h_*.sh` absence-check claim is unresolved docs drift tracked by #693.
+- Inner-actor LLM stack (Qwen3.6-27B / Hermes-2-Pro / Ollama / llama.cpp generative inference) — deleted 2026-05-09; current hard guard is the MCP `feature = "llm"` compile error. The historical "9 `phase_h_*.sh` absence-check" claim has been retracted per #693 (closed) — the compile-error gate is sufficient.
 - `context-graph-causal-agent`, `context-graph-graph-agent` — deleted 2026-05-19; LLM-backed callers were retired in the 2026-05-09 ME-JEPA pivot and the crates had zero workspace dependents.
 
 ---
@@ -220,7 +220,7 @@ These are non-negotiable and project-specific. Doctrine universal rules still ap
 3. **Structural collapse-immunity on the target side.** Frozen instruments have ZERO trainable parameters. `ΔΞ.target_collapse = 0` by construction. Never wire a gradient into the frozen-target path; the `MEJEPA_INSTRUMENT_GRADIENT_LEAK` guard is correct behavior.
 4. **Reality-shift principle.** No alteration without current state. No alteration without a delta back into perception. Pre/post-tool hooks enforce this.
 5. **GENERIC-ONLY in the trained model.** Every trained primitive must generalize across every SWE-bench task, every Python repo, every bug class. Mental check: *"would this be load-bearing for `psf__requests-2317` / `django__django-12286` / `sympy__sympy-13895` and any future repo?"* You may reason task-specifically when attempting a SWE-bench task; never bake task-specifics into the trained model.
-6. **Single outer loop around the invoking agent.** No inner LLM. The agent (Claude / Codex / Cursor) IS the actor. Its Edit / Write / Bash / tests ARE the data-generating process. Current enforced guard: MCP `feature = "llm"` compile error; #693 owns the missing absence-check scripts/docs drift.
+6. **Single outer loop around the invoking agent.** No inner LLM. The agent (Claude / Codex / Cursor) IS the actor. Its Edit / Write / Bash / tests ARE the data-generating process. Current enforced guard: MCP `feature = "llm"` compile error. The historical "9 absence-check scripts" claim was retracted per #693 (closed).
 7. **aiwonder only for post-migration production durable state.** Production corpora, FSV evidence, runtime shift logs, test outcomes, project-ingest outputs, and weekly exports live under `/zfs/archive/contextgraph/...` on aiwonder; hot staging lives under `/zfs/hot/contextgraph/...` or explicitly budgeted aiwonder scratch. 
 8. **No backwards compatibility.** Pre-production tree. Wipe DB on schema change; fail fast with structured errors; never write migration shims.
 9. **Upstream reference-only — clean-room.** Never vendor / path-dep / npm-depend on `ruvnet/agentdb` or `ruvnet/ruvector`. Reimplement borrowed ideas in our own crates.
@@ -399,7 +399,7 @@ cargo fmt
 
 **Self-referential static-source tests are forbidden.** A test that does `source.contains(forbidden_literal)` against its own file will self-match if the literal appears in the test itself (e.g., inside `r#"..."#` raw strings). Such tests always fail in CI and look like a real regression. If a contract must be enforced at the source level, do it via a separate tool (build script, `scripts/ci/*.sh` grep) or use a behavior test against the real error code, not the production source's substring shape.
 
-Phase H's real hard guard is the MCP `feature = "llm"` compile error. The previously documented `scripts/ci/phase_h_*.sh` absence-check suite is missing and tracked by #693. Phase G audit harnesses live at `scripts/ci/phase_g_*.sh`.
+Phase H's real hard guard is the MCP `feature = "llm"` compile error. The historical "9 `scripts/ci/phase_h_*.sh` absence-check" claim has been retracted per #693 (closed). Phase G audit harnesses live at `scripts/ci/phase_g_*.sh`.
 
 ---
 

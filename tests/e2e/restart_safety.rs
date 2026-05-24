@@ -463,6 +463,8 @@ fn seed_infer_db(path: &Path) -> Result<()> {
         delta_omega: 0.8,
         delta_xi: 0.8,
         witness_offset: 44,
+        // #699: e2e shim cert simulates a trained-path cert.
+        predictor_parameter_update_count: 1,
     };
     let value = bincode::serialize(&cert)?;
     let mut opts = WriteOptions::default();

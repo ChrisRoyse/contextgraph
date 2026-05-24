@@ -49,6 +49,18 @@ pub enum PredictorError {
         threshold: f32,
         fix_at: String,
     },
+    /// #620: a frozen-target adapter listed a tensor_id but the GradStore
+    /// has no entry for it. Previously this was silently treated as
+    /// `grad_norm = 0.0` ("safe"), which blurs measured-zero apart from
+    /// "I forgot to measure". The doctrinal contract is: if the adapter
+    /// claims a tensor is supervised, the GradStore MUST have measured
+    /// it. Fail closed.
+    #[error("MEJEPA_PRED_FROZEN_TARGET_GRAD_UNMEASURED: instrument_id={instrument_id} tensor_id={tensor_id} fix_at={fix_at}")]
+    FrozenTargetGradUnmeasured {
+        instrument_id: String,
+        tensor_id: String,
+        fix_at: String,
+    },
     #[error("MEJEPA_PRED_VICREG_DEGENERATE: low_variance_dim_count={low_variance_dim_count} total_dims={total_dims} gamma={gamma} consecutive_passes={consecutive_passes}")]
     VicregDegenerate {
         low_variance_dim_count: usize,
@@ -79,6 +91,7 @@ impl PredictorError {
             Self::NanDetected { .. } => "MEJEPA_PRED_NAN_DETECTED",
             Self::VramExceeded { .. } => "MEJEPA_PRED_VRAM_EXCEEDED",
             Self::FrozenTargetGrad { .. } => "MEJEPA_PRED_FROZEN_TARGET_GRAD",
+            Self::FrozenTargetGradUnmeasured { .. } => "MEJEPA_PRED_FROZEN_TARGET_GRAD_UNMEASURED",
             Self::VicregDegenerate { .. } => "MEJEPA_PRED_VICREG_DEGENERATE",
             Self::HeadFailure { .. } => "MEJEPA_HEAD_FAILURE",
             Self::Candle(_) => "MEJEPA_PRED_CANDLE",
@@ -88,7 +101,10 @@ impl PredictorError {
     }
 
     pub fn is_critical(&self) -> bool {
-        matches!(self, Self::FrozenTargetGrad { .. })
+        matches!(
+            self,
+            Self::FrozenTargetGrad { .. } | Self::FrozenTargetGradUnmeasured { .. }
+        )
     }
 }
 

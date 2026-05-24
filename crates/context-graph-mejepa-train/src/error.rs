@@ -31,6 +31,10 @@ pub enum TrainerErrorCode {
     /// one-dimensional latent batch. The entropy term must fail closed rather
     /// than convert collapse into a finite training reward.
     UtmlLatentEntropyDegenerate,
+    /// #687: a public Trainer API exists in the type surface but has no
+    /// implementation yet. Fail closed instead of silently returning Ok so that
+    /// a future caller cannot accidentally treat a no-op as success.
+    MejepaTrainNotImplemented,
 }
 
 impl TrainerErrorCode {
@@ -55,6 +59,7 @@ impl TrainerErrorCode {
                 "MEJEPA_TRAIN_PATCH_SIMILARITY_ZERO_NORM_VECTOR"
             }
             Self::UtmlLatentEntropyDegenerate => "UTML_LATENT_ENTROPY_DEGENERATE",
+            Self::MejepaTrainNotImplemented => "MEJEPA_TRAIN_NOT_IMPLEMENTED",
         }
     }
 }
