@@ -2501,6 +2501,21 @@ impl WitnessChainReader for PatchWitnessReader {
     }
 }
 
+/// #625 / #694 family — fixture-only primitive. `DeterministicPredictor`
+/// returns `synthetic_panel_for_scenario(round(EDiff[0]), ...)` — a Panel
+/// filled with a single base value based on scenario tag, not a real
+/// model. This is the **canonical synthetic-vector contamination** the
+/// 2026-05-19 P0 fixes retired from the inference path. Production MCP
+/// uses `build_slot_preserving_cuda_compiler`, NOT this. Re-export is
+/// kept `pub` so existing test/example call sites compile; `#[doc(hidden)]`
+/// removes it from cargo-doc as a discoverable production API.
+/// Reachable from `build_fixture_deterministic_compiler` (cli.rs:255),
+/// the `mejepa infer-test` CLI command (bin/mejepa.rs:564), and a
+/// handful of `#[cfg(test)]` / `examples/` fixtures. A future structural
+/// fix is to move all five `Deterministic*` / `Identity*` types into a
+/// separate `context-graph-mejepa-test-fixtures` crate that production
+/// builds do not link.
+#[doc(hidden)]
 #[derive(Default)]
 pub struct DeterministicPredictor;
 
@@ -2511,6 +2526,9 @@ impl Predictor for DeterministicPredictor {
     }
 }
 
+/// #625 — see `DeterministicPredictor`. Fixture-only frozen-target stub
+/// that maps the panel via `synthetic_panel_for_scenario`.
+#[doc(hidden)]
 #[derive(Default)]
 pub struct IdentityFrozenTarget;
 
@@ -2521,6 +2539,10 @@ impl FrozenTarget for IdentityFrozenTarget {
     }
 }
 
+/// #625 / #697 — fixture-only 4-scenario LUT keyed on EDiff[0]. Real
+/// production oracle scores come from the SWE-bench Docker harness, not
+/// this. See `DeterministicPredictor` for the full doctrinal context.
+#[doc(hidden)]
 #[derive(Default)]
 pub struct DeterministicOracleHead;
 
@@ -2546,6 +2568,9 @@ impl OracleHead for DeterministicOracleHead {
     }
 }
 
+/// #625 — fixture-only constellation guard with a single hardcoded
+/// scenario. See `DeterministicPredictor` for the full doctrinal context.
+#[doc(hidden)]
 #[derive(Debug, Clone)]
 pub struct DeterministicConstellationGuard {
     pub version_id: String,
