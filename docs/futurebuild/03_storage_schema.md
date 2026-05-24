@@ -355,6 +355,31 @@ All three are **`leakage_policy:target_side_only`** (chosen pathway is downstrea
 | `CF_MEJEPA_SKILL_CONFLICT_GRAPH` | Mutually exclusive / contradictory outcome |
 | `CF_MEJEPA_PATHWAY_SKILL_ATTACHMENTS` | Join #416 binary pathway leaves to concrete chunk/skill evidence |
 
+### 8.3bis Causal-embedder track (#744 / #745 / #746 TASK-CR-006/007/008)
+
+All aiwonder-only per `CLAUDE.md §6.7`.
+
+| CF | Issue | Key | Value | Purpose |
+|---|---|---|---|---|
+| `CF_MEJEPA_CROSS_CLUSTER_TRANSITIONS` | #744 | `(embedder_id, cluster_before, cluster_after)` | bincode `{transition_count, asymmetry_score, holdout_aug, p_value}` | Cross-cluster transition tensor per embedder, computed by auto-labeler extension (#413) on (commit_before, commit_after) chunk pairs. Directional asymmetry signal for causal direction detection. |
+| `CF_MEJEPA_EMBEDDER_REPLACEMENT_AUDIT` | #745 | `(slot_id, replacement_id, audit_ts_ns)` | bincode `{old_model_sha, new_model_sha, training_corpus_sha, gate_outcomes: {novelty_pass, utility_pass, quality_pass, leakage_pass}, promotion_decision, rollback_evidence}` | Per-slot in-slot replacement audit log. Used for promotion gate + revert path. |
+| `CF_MEJEPA_EMBEDDER_SIGNAL_AUDIT` | #746 | `(slot_id, audit_run_id)` | bincode `{drop_delta, per_cell_attribution, live_input_variance, decision, rank}` | Low-signal embedder audit output (Phase 1-4 of #746). Authoritative replacement-priority ranking feeding #745. |
+
+State directory additions (aiwonder-only):
+
+| Path | Issue | Purpose |
+|---|---|---|
+| `/zfs/archive/contextgraph/corpus/commitpackft-v1-<TS>/` | #744 | CommitPackFT 2GB ingestion + AST chunks per (commit_before, commit_after) |
+| `/zfs/archive/contextgraph/state/cross-cluster-transitions/task-cr-006-v1/` | #744 | Cross-cluster transition tensors per embedder + asymmetric AUC validation |
+| `/zfs/archive/contextgraph/corpus/commitpack-v1-<TS>/` | #745 | CommitPack 4TB ingestion (PHASE 2; if #744 PASSES) |
+| `/zfs/archive/contextgraph/corpus/causenet-v1-<TS>/` | #745 | CauseNet 11M + ConceptNet + ATOMIC ingestion |
+| `/zfs/archive/contextgraph/corpus/bugfix-corpus-v1-<TS>/` | #745 | BugsInPy + CommitPackFT bug-fix + SWE-bench Lite for E14 → C_BugFix |
+| `/zfs/archive/contextgraph/state/embedders/c-temporal-commit-v1/` | #745 | Trained C_TemporalCommit weights + SHA manifest |
+| `/zfs/archive/contextgraph/state/embedders/c-commonsense-causal-v1/` | #745 | Trained C_CommonsenseCausal weights + SHA manifest |
+| `/zfs/archive/contextgraph/state/embedders/c-bugfix-v1/` | #745 | Trained C_BugFix weights + SHA manifest |
+| `/zfs/archive/contextgraph/state/embedder-signal-audit/task-cr-008-signal-ranking-v1/embedder_replacement_priority.jsonl` | #746 | Authoritative replacement-priority output |
+| `/zfs/archive/contextgraph/fsv/task-cr-{006,007,008}-*-fsv/run-<TS>Z/` | #744/#745/#746 | FSV evidence per phase, manual SoT readback per `06 §1.9` |
+
 ### 8.4 Information-physics (#511 / #512 / #514)
 
 | CF | Issue | Purpose |

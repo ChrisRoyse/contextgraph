@@ -299,6 +299,19 @@ Strict binary-leaf rule: any non-Q1/Q2/Q5 leaf → `PATHWAY_AMBIGUOUS_LEAF_REJEC
 | `mejepa_panel_ecc_inspect` | #512 — panel ECC syndrome, recovered slots, uncorrectable detection |
 | `mejepa_cold_load_status` | #514 — last cold-load drift; promotion-time baseline snapshot |
 
+### 9.5bis Causal-embedder track (#744 / #745 / #746 — planned, aiwonder-only)
+
+The causal-embedder track (TASK-CR-006/007/008) is currently substrate-and-trainer work that doesn't add new MCP tools in PHASE 1. If #744 PASSES and #745 in-slot replacement completes, the following inspection surfaces become useful (read-only):
+
+| Tool (planned) | Issue | Purpose |
+|---|---|---|
+| `mejepa_inspect_cross_cluster_transitions` | #744 | Read `CF_MEJEPA_CROSS_CLUSTER_TRANSITIONS` rows; per-embedder directional asymmetry surface |
+| `mejepa_inspect_causal_embedder_audit` | #745 | Read `CF_MEJEPA_EMBEDDER_REPLACEMENT_AUDIT`; per-slot replacement lineage + gate outcomes + rollback events |
+| `mejepa_low_signal_embedder_ranking` | #746 | Read `/zfs/archive/contextgraph/state/embedder-signal-audit/task-cr-008-signal-ranking-v1/embedder_replacement_priority.jsonl` |
+| `mejepa_causal_query` | #745 | Asymmetric retrieval: `cause-mode` returns likely effects; `effect-mode` returns likely causes; per-causal-embedder slot |
+
+All read-only. All side-effect-free at MCP layer (trainer-side writes only). All aiwonder-execution-only per `CLAUDE.md §6.7`.
+
 ### 9.6 Post-0.95 creativity-engine inspection (#516 – #520)
 
 | Tool (planned) | Purpose |

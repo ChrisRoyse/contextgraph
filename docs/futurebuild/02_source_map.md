@@ -308,6 +308,25 @@ Additive to existing crates — no new top-level crate.
 | `src/pathway/skill_attach.rs` | `context-graph-mejepa` | Active skill IDs + source chunk memberships from #414/#417 |
 | `src/pathway/store.rs` | `context-graph-mejepa` | RocksDB writers for `CF_MEJEPA_PATHWAY_TREES` + `CF_MEJEPA_SURFACED_PATHWAYS` |
 
+### 12.2bis In-slot causal embedder replacement (#745 TASK-CR-007)
+
+In-slot replacement reuses existing instrument adapter pattern at `crates/context-graph-mejepa-instruments/src/e_*.rs`. No new top-level `EmbedderId` variants; existing E5/E11/E14 retained as the slot keys.
+
+| Planned module | Crate | Role (replaces) | Training corpus on aiwonder |
+|---|---|---|---|
+| `src/e5_causal_temporal_commit.rs` | `context-graph-mejepa-instruments` | Replaces retired E5 → dual-tower TransE-family asymmetric causal (cause-tower + effect-tower + relation_transform); 768-d | `/zfs/archive/contextgraph/corpus/commitpack-v1-<TS>/` (CommitPack 4TB) |
+| `src/e11_causal_commonsense.rs` | `context-graph-mejepa-instruments` | Replaces disabled E11 → KEPLER-shape causal KGE; 768-d | `/zfs/archive/contextgraph/corpus/causenet-v1-<TS>/` (CauseNet 11M + ConceptNet + ATOMIC) |
+| `src/e14_causal_bugfix.rs` | `context-graph-mejepa-instruments` | Replaces "reserved" E14 → bug-fix issue/patch/outcome triples; configurable dim | `/zfs/archive/contextgraph/corpus/bugfix-corpus-v1-<TS>/` (BugsInPy + CommitPackFT bug-fix + SWE-bench Lite) |
+
+Storage additions (planned, per #745):
+- `CF_MEJEPA_CROSS_CLUSTER_TRANSITIONS` — `(embedder_id, cluster_before, cluster_after) → transition_count` for #744 MVP and downstream causal embedder training (see `03 §8.x`).
+- `CF_MEJEPA_EMBEDDER_REPLACEMENT_AUDIT` — per-slot replacement decision log (audit results, gate outcomes, rollback events).
+
+Operational change (#745 FSV protocol):
+- Each replacement re-bakes only that slot's forward cache (~6-8h GPU on aiwonder RTX 5090).
+- Other 11 slots' forward cache preserved (key to avoiding #733 hard prereq for first wave).
+- `models_config.toml` SHA-pin update via manual SoT readback per `06 §1.9`.
+
 ### 12.3 Geometry-label epic (#657 / in-progress)
 
 | Planned module | Crate | Role |

@@ -154,6 +154,30 @@ Q5 calibration writes `CF_MEJEPA_Q5_CALIBRATIONS` from replay records. Cells key
 
 `/zfs/archive/contextgraph` → `archive/contextgraph` ZFS; `/zfs/hot/contextgraph` → `hotpool/contextgraph` ZFS. Legacy mounted-drive paths (`/mnt/d`, `/mnt/c`) forbidden in active code/FSV; enforced behaviorally by `scripts/ci/check_no_c_drive_paths.sh` + #612 → #613 → #614 → #615 → #631 → #632 → #641 → #666 audit chain.
 
+### 3.15bis Trainer / checkpoint lineage unified (#683, CLOSED 2026-05-23)
+
+Public Rust `Trainer::run_full_training` previously hard-coded `DIAGNOSTIC_CERTIFICATE_ONLY_TRAINING_MODE`. Production CLI checkpoint loading depended on optional `trained_checkpoint_manifest_path` — fresh `VarMap` predictor could be constructed if absent.
+
+Closed 2026-05-23 via commits `77abb11a` (added countable predictor training path to public Trainer) + `dd6ad14e` (trained-checkpoint verifier CLI) + `fcf34053` (training certificates made countability-explicit). Production now fail-closed if `trained_checkpoint_manifest_path` absent. Rank 1 of #712 critical path discharged.
+
+### 3.15ter Causal-embedder track filed (#744 / #745 / #746, 2026-05-23 / 2026-05-24)
+
+Operator-directed follow-up to BLINDSPOT-AUDIT-2026-05-23 (#739). Three new issues at `priority:p1`, all aiwonder-only execution per `CLAUDE.md §6.7`:
+
+| Issue | Title | Status | Pre-requisites |
+|---|---|---|---|
+| **#744** | TASK-CR-006 — Causal auto-labeling MVP on CommitPackFT | needs-triage | None (uses legacy v1 cache directly) |
+| **#745** | TASK-CR-007 — In-slot causal embedder replacement (E5/E11/E14) | blocked | #744 PASS + #746 + #715 + #516 + #518 + #680 + #732 |
+| **#746** | TASK-CR-008 — Low-signal embedder audit | blocked | #715 (closed: #683) |
+
+In-slot replacement strategy: E5/E11 slots are empty (retired/disabled); E14 is "reserved." Repopulating these slots' encoders with causal embedders (C_TemporalCommit / C_CommonsenseCausal / C_BugFix) does not require schema change or #733 incremental cache as hard prerequisite. Only the per-slot forward cache re-bakes (~6-8h GPU on aiwonder RTX 5090 per slot, sequential).
+
+Expected FSV artifacts (pending PHASE 1 execution):
+- `/zfs/archive/contextgraph/fsv/task-cr-006-causal-auto-labeling-mvp-fsv/run-<TS>Z/` — cross-cluster transition tensor + asymmetric AUC matrix.
+- `/zfs/archive/contextgraph/fsv/task-cr-007-in-slot-causal-replacement-fsv/<slot>/run-<TS>Z/` — per-slot replacement audit + promotion evidence + revert evidence (if applicable).
+- `/zfs/archive/contextgraph/fsv/task-cr-008-low-signal-embedder-audit-fsv/{phase-1-ablation,phase-2-attribution,phase-3-live-variance}/` — per-phase audit evidence.
+- `/zfs/archive/contextgraph/state/embedder-signal-audit/task-cr-008-signal-ranking-v1/embedder_replacement_priority.jsonl` — authoritative ranking.
+
 ### 3.16 Geometry-label epic opened (#657, in-progress)
 
 Per-embedder vector-space label discovery via Leiden-on-kNN / HDBSCAN / spherical k-means / UMAP-diagnostic bakeoff. Static AST label discovery is scoped to the clean 9-slot policy (`e1,e6,e7,e8,e9,e10,e12,e13,e14`) after #704/#714 retired temporal slots `e2/e3/e4` for static AST. Downstream: #661 cross-embedder consensus → #662 gate-safe promotion → #664 router → #665 prediction heads.

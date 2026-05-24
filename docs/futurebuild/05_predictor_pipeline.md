@@ -115,28 +115,43 @@ The pipeline is a consequence predictor, not an intention engine. It learns from
 
 ---
 
-## 2. Embedder registry (21 slots; E5 retired)
+## 2. Embedder registry (21 slots; E5/E11 retired/disabled — replacement-candidate slots)
 
 `crates/context-graph-mejepa-embedders/src/lib.rs`. Production loading requires schema-versioned `models_config.toml`, SHA-256 manifest pins, runtime CUDA, E17 calibration evidence.
 
-| Slot | Family | Dim | Frozen | Active | Source |
+| Slot | Family | Dim | Frozen | Active | Source / replacement plan |
 |---|---|---|---|---|---|
 | E1 | e5-large-v2 | 1024 | ✅ | ✅ | Semantic (default content embedder) |
-| E2 | temporal (recency PE) | 512 | tunable | weight-gated | Position-encoded recency |
-| E3 | temporal (periodic) | 512 | tunable | weight-gated | Periodic-pattern |
-| E4 | temporal (V_ordering) | 512 | tunable | weight-gated | Session-sequence position |
-| E5 | causal (asymmetric) | 768 | — | **retired** | Tools fail closed |
+| E2 | temporal (recency PE) | 512 | tunable | weight-gated | Position-encoded recency. Audit pending (#746). |
+| E3 | temporal (periodic) | 512 | tunable | weight-gated | Periodic-pattern. Audit pending (#746). |
+| E4 | temporal (V_ordering) | 512 | tunable | weight-gated | Session-sequence position. Audit pending (#746). |
+| **E5** | causal (asymmetric) | 768 | — | **retired (empty slot)** | **Replacement-candidate slot. #745 proposes C_TemporalCommit (CommitPack 4TB training corpus, aiwonder-only).** |
 | E6 | sparse keyword | 30K vocab | ✅ | ✅ | Keyword inverted index |
 | E7 | Qodo-Embed code | 1536 | ✅ | ✅ | Code AST/semantic |
-| E8 | graph | 1024 | ✅ | ✅ | Graph-aware |
-| E9 | HDC | 1024 | tunable | ✅ | Typo-robust hyperdimensional |
+| E8 | graph | 1024 | ✅ | ✅ | Graph-aware (post-`ff4d4c03` fix; v2 distinctness pending #715) |
+| E9 | HDC | 1024 | tunable | ✅ | Typo-robust hyperdimensional. Distinctness defect #716 pending fix. |
 | E10 | paraphrase | 768 (dual) | ✅ | ✅ | Paraphrase asymmetric |
-| E11 | entity (KEPLER/TransE) | 768 | — | **disabled** | Replaced by TransE-on-corpus |
+| **E11** | entity (KEPLER/TransE) | 768 | — | **disabled (empty slot)** | **Replacement-candidate slot. #745 proposes C_CommonsenseCausal (CauseNet 11M + ConceptNet + ATOMIC training corpora, aiwonder-only).** |
 | E12 | ColBERT late-interaction | 128 per token | ✅ | ✅ | Per-token MaxSim |
 | E13 | SPLADE sparse | 30K vocab | ✅ | ✅ | Sparse expansion |
-| E14 | (frozen-by-design slot) | per config | ✅ | ✅ | Reserved |
+| **E14** | (frozen-by-design slot) | per config | ✅ | ✅ | **"Reserved" — utilization audit pending #746. If audit confirms underutilization, #745 proposes C_BugFix replacement (BugsInPy + CommitPackFT + SWE-bench Lite training corpora, aiwonder-only).** |
 | E17 | (calibration certificate) | — | — | gated | `agent_state_score` |
 | E18-E21 | dynamic-registration | per registration | gated | gated | Dynamic embedders |
+
+### 2.1 In-slot causal embedder replacement strategy (#745 TASK-CR-007)
+
+**Doctrine-compatible architectural shortcut.** Instead of adding new slots (which would require schema change + #733 incremental forward cache as hard prerequisite + full ~24h re-bake), replace the encoder behind an already-empty / underutilized slot with a causal embedder. Slot identity preserved → §1.5ter intact. Only the per-slot forward cache re-bakes (~6-8h GPU on aiwonder RTX 5090 per slot, sequential).
+
+Replacement workflow per slot:
+
+1. **Audit (#746)** confirms slot is replaceable (drop-ablation delta < 0.001 AND production variance ≈ 0).
+2. **Train causal embedder** on aiwonder against the slot's target corpus → SHA-pinned manifest at `/zfs/archive/contextgraph/state/embedders/<embedder-id>-v1/`.
+3. **Re-bake forward cache** for that slot only → `/zfs/archive/contextgraph/corpus/python-forward-cache-v2-static-ast-<TS>/shards/<slot>/`.
+4. **Pass gates:** #516 novelty oracle (max-corr < 0.7 vs existing active slots) + #518 utility oracle (per-cell oracle corr lift ≥ 0.005) + #680 label-quality verdict + #732 pretraining-corpus leakage audit.
+5. **Promote** via `models_config.toml` model_sha update + manual SoT readback per `06 §1.9`.
+6. **Revert path:** rollback model_sha if FSV fails; slot returns to its prior state without affecting other slots.
+
+**Pre-requisites for #745 (hard blockers):** #744 PASS (auto-labeler extends to causal direction) + #746 audit complete + #715 v2 9-slot static cache live + #516/#518/#680/#732.
 
 **Static AST policy (post #704/#714):** the static AST forward cache uses 9 active slots (`e1, e6, e7, e8, e9, e10, e12, e13, e14`). Temporal slots `e2/e3/e4` are retired for static AST; they remain available for live-temporal data when semantic time evidence is present.
 

@@ -349,6 +349,26 @@ Missing CFs/files/models/env vars/malformed inputs MUST return a structured erro
 
 ---
 
+## 9.5 In-slot causal embedder replacement (2026-05-24 / #745 TASK-CR-007)
+
+Operator-directed architectural shortcut: instead of adding new slots for causal embedders (which would require schema change + #733 incremental forward cache as hard prerequisite), **replace the encoders behind already-empty / proven-low-signal slots** with causal embedders.
+
+| Replacement-candidate slot | Current state | Proposed replacement | Training corpus (aiwonder-only) |
+|---|---|---|---|
+| **E5** (768-d causal asymmetric, retired 2026-05-10) | empty | **C_TemporalCommit** | CommitPack 4TB |
+| **E11** (768-d entity KGE, disabled) | empty | **C_CommonsenseCausal** | CauseNet 11M + ConceptNet + ATOMIC |
+| **E14** (configurable, "reserved") | active but utilization-audit pending | **C_BugFix** | BugsInPy + CommitPackFT + SWE-bench Lite |
+
+Slot identity preserved → doctrine §1.6 (formerly §1.5ter) intact. Only the per-slot forward cache re-bakes (~6-8h GPU per slot on aiwonder RTX 5090). Reverts cleanly via `models_config.toml` model_sha rollback if FSV fails.
+
+**Pre-requisites:** #744 (auto-labeler MVP must validate extension to causal direction) + #746 (low-signal audit must confirm replaceability) + #715 (v2 9-slot static cache) + #516/#518/#680/#732 gates.
+
+**Aiwonder-only execution:** every training run / forward cache re-bake / FSV under `/zfs/archive/contextgraph/...`; no `/mnt/d` / `/mnt/c`; per `CLAUDE.md §6.7`.
+
+Full architectural detail in `05 §2.1`; roadmap detail in `08 §6.95`.
+
+---
+
 ## 10. What this system is NOT
 
 - Not a generative inference engine — no inner LLM. Product is a verifier, not a code-writer.

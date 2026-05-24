@@ -458,6 +458,47 @@ Any failure → `THRESHOLD_CALIBRATION_NONDISJOINT` and ship eligibility blocked
 4. Three independent cold-load runs all pass.
 5. ECC syndrome consistency (after #512) — `syndrome_drift_per_panel == 0`.
 
+### 12.6bis Causal-embedder track FSV protocols (#744 / #745 / #746 — aiwonder-only)
+
+All three issues bake in the aiwonder-only execution constraint per `CLAUDE.md §6.7`. No `/mnt/d` / `/mnt/c`; no local-host RocksDB durable writes; all FSV under `/zfs/archive/contextgraph/fsv/...`. Manual SoT readback per `§1.9` is binding for closure.
+
+**#744 / TASK-CR-006 — Causal auto-labeling MVP on CommitPackFT:**
+1. CommitPackFT 2GB ingestion + sha256 manifest persisted to `/zfs/archive/contextgraph/corpus/commitpackft-v1-<TS>/`.
+2. AST chunking of both sides of every (commit_before, commit_after) pair; chunk count + sha256.
+3. 12-embedder forward over all chunks via existing pipeline; SHA-pinned manifest per shard.
+4. Cross-cluster transition tensor built per embedder; sha256 over tensor JSON + bincode.
+5. Per-embedder asymmetric AUC matrix on 70/15/15 holdout split.
+6. Composition check: high-asymmetry directional edges' before-cluster appears in #413 accepted-label registry.
+7. Validation overlap: 50-instance BugsInPy overlap; per-overlap directional edge agreement.
+8. **Decision rule per slot:** AUC ≥ 0.7 → causal direction extractable; AUC ∈ [0.6, 0.7] → marginal; AUC < 0.6 → falsifies hypothesis.
+9. Manual SoT: BEFORE/AFTER readback via independent SSH session on aiwonder; ≥3 edge classes (empty corpus / oversize commit / concurrent ingestion / partial-failure restart).
+
+**#745 / TASK-CR-007 — In-slot causal embedder replacement (per slot):**
+For each of (E5, E11, E14):
+1. BEFORE manual readback: `/zfs/archive/contextgraph/state/calibration/per-slot-v1/<slot>.json` current calibration state.
+2. Train new instrument on aiwonder; SHA-pin new model_sha256 at `/zfs/archive/contextgraph/state/embedders/<embedder-id>-v1/`.
+3. Re-bake forward cache for that slot only at `/zfs/archive/contextgraph/corpus/python-forward-cache-v2-static-ast-<TS>/shards/<slot>/`; other 11 slots' cache preserved.
+4. Re-compute per-cell calibration; persist to same per-slot calibration JSON.
+5. AFTER manual readback (new SSH session): paste calibration delta.
+6. Gate checks:
+   - **#516 novelty oracle:** max-corr of new embedder vs all existing active slots < 0.7.
+   - **#518 utility oracle:** per-cell oracle correlation lift ≥ 0.005.
+   - **#680 label-quality:** training corpus labels pass signal/noise gate.
+   - **#732 pretraining-corpus leakage:** training corpus repo overlap with SWE-bench Lite documented; counterfactual cutoff experiment if overlap > 30%.
+7. Holdout corr delta vs pre-replacement baseline non-negative.
+8. **Asymmetric retrieval verification:** cause-query vs effect-query produce different neighborhoods; Spearman rank correlation between cause-neighborhood and effect-neighborhood ≤ 0.5.
+9. Cross-panel agreement preserved within 0.05 (or document why divergence is expected for causal slots).
+10. Promotion via `models_config.toml` model_sha update + sha256 manifest readback.
+11. Revert path: rollback model_sha; slot returns to prior state; persist `CF_MEJEPA_EMBEDDER_REPLACEMENT_AUDIT` rollback row.
+
+**#746 / TASK-CR-008 — Low-signal embedder audit (per-slot):**
+For each candidate slot S ∈ {E2, E3, E4, E9, E11, E14}:
+1. Phase 1 drop-ablation: zero S during training; measure holdout corr delta vs full-panel baseline on `swebench-300x8-ship-gate-fsv/run-20260521T132308Z/` corpus.
+2. Phase 2 per-cell attribution: compute `attribution[S, cell]` via #391 slot-attribution explainer; per-cell matrix persisted.
+3. Phase 3 live-input variance: sample 100 real-agent live predictions from `CF_MEJEPA_LIVE_PREDICTIONS`; mean + variance of S's slot vectors.
+4. Phase 4 decision rule applied; output `embedder_replacement_priority.jsonl` at `/zfs/archive/contextgraph/state/embedder-signal-audit/task-cr-008-signal-ranking-v1/`.
+5. Manual SoT: per-slot ablation FSV + per-slot attribution matrix + live-variance evidence all pasted into issue comments.
+
 ### 12.7 Creativity-engine FSV protocols (post-0.95)
 
 **#516 / TASK-CR-001 — Novelty + Utility oracle:**

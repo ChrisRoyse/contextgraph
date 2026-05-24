@@ -188,6 +188,10 @@ from .python_delete_test_call_candidate_corpus import (
     add_arguments as add_python_delete_test_call_candidate_corpus_arguments,
 )
 from .python_delete_test_call_candidate_corpus import command_python_delete_test_call_candidate_corpus
+from .python_forward_cache_completeness_mask import (
+    add_arguments as add_python_forward_cache_completeness_mask_arguments,
+)
+from .python_forward_cache_completeness_mask import command_python_forward_cache_completeness_mask
 from .panel_b_artifacts import add_arguments as add_panel_b_artifacts_arguments
 from .panel_b_artifacts import command_panel_b_artifacts
 from .panel_b_model_scores import add_arguments as add_panel_b_model_scores_arguments
@@ -914,6 +918,16 @@ def build_parser() -> argparse.ArgumentParser:
     delete_test_call_candidate_corpus.set_defaults(
         func=command_python_delete_test_call_candidate_corpus,
         evidence_name="python-delete-test-call-candidate-corpus-command-evidence.json",
+    )
+
+    forward_cache_completeness_mask = sub.add_parser(
+        "python-forward-cache-completeness-mask",
+        help="TASK-PY-G-135C: materialize candidate-keyed forward-cache slot-completeness mask rows.",
+    )
+    add_python_forward_cache_completeness_mask_arguments(forward_cache_completeness_mask)
+    forward_cache_completeness_mask.set_defaults(
+        func=command_python_forward_cache_completeness_mask,
+        evidence_name="python-forward-cache-completeness-mask-command-evidence.json",
     )
 
     panel_b_artifacts = sub.add_parser(

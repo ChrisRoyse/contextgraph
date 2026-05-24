@@ -65,14 +65,15 @@ Per pinned contexts #383 (LOCKED — gate-active issue order must be evidence-we
 
 | Rank | Issue | Action | Expected impact | Status |
 |---|---|---|---|---|
-| 1 | **#683** | Unify real training/checkpoint export with public trainer contract; require production `trained_checkpoint_manifest_path` at `mejepa/src/cli.rs:307-314` fail-closed | Largest; current checkpoint evidence is out-of-band from the public trainer | open p0 |
-| 2 | **#709 + #715** | Add/promote inter-embedder distinctness gate, then rebuild a v2 static AST cache with active slots `e1,e6,e7,e8,e9,e10,e12,e13,e14`; `e2/e3/e4` remain retired for static AST by #704/#714 | Replaces invalid v1 cache with a clean 9-slot substrate; proves post-`ff4d4c03` `e8` is not an `e1` alias | open p0 |
+| **1** | **#683** ✅ | Unified real training/checkpoint export with public trainer contract; production `trained_checkpoint_manifest_path` fail-closed at `mejepa/src/cli.rs:307-314` | Largest; trainer countability unified | **closed 2026-05-23** |
+| 2 | **#709 + #715** | Add/promote inter-embedder distinctness gate, then rebuild a v2 static AST cache with active slots `e1,e6,e7,e8,e9,e10,e12,e13,e14`; `e2/e3/e4` remain retired for static AST by #704/#714 | Replaces invalid v1 cache with a clean 9-slot substrate; proves post-`ff4d4c03` `e8` is not an `e1` alias | in-progress p0 |
 | 3 | **#615** | delete_test_call Docker oracle batch over 1,131 deterministic candidates → rebuild AST → #614 mask → labels → #392 → #611 | Closes `0.69 → ≥0.85` weak-cell ceiling | in-progress p0 |
 | 4 | **#618 + #619** | Per-slot OOD aggregation at `compiler.rs:502`; slot-preserving panel projections at `predictor/mod.rs:136-147` | Doctrine §1.5ter repair; removes anti-compensation cheat path | open p0 |
 | 5 | **#695** | Stop using rank-lift as gate metric; use raw Pearson + isotonic/Platt | Reveals honest gap; ECE-safe | open p0 |
 | 6 | **#620/#621/#622/#684/#685/#686/#687/#688/#689/#690/#692/#696/#699/#705/#706** | Eliminate hardcoded passing telemetry, pseudo-cert confidence, no-op trainer APIs, non-countable Q5/OOD claims, and exact-panel-only mistake-loop surfaces before future wiring can trust them | Prevents Goodhart on future mistake-loop/trainer wiring | mixed p0/p1 |
 | 7 | **#633 + #655 + #656 + #657 and children** | Manual full-system FSV/hardening gate, auto-FSV retirement, heal-drill truthfulness, geometry-label bakeoff | Evidence integrity and substrate prerequisites | mixed |
 | Done | **#704/#714/#670/#691/#707** | Static temporal retirement, invalid-space policy, hook fail-visible behavior, strict OOD fail-closed behavior | Closed evidence; retained as prerequisites | closed |
+| **8.5** | **#744 + #745 + #746 (causal-embedder track)** | **Parallel post-substrate workstream.** TASK-CR-006 auto-labeler MVP on CommitPackFT + TASK-CR-007 in-slot causal embedder replacement (E5/E11/E14 → C_TemporalCommit/C_CommonsenseCausal/C_BugFix) + TASK-CR-008 low-signal embedder audit. **Aiwonder-only execution.** | Avoids schema change + #733 hard prereq by reusing empty slots; if #744 PASSES, unlocks 3 directional causal embedders in ~3 weeks aiwonder uptime | new p1 |
 | 8 | **#392 / #511 / #405 / #379** | Trajectory ECE / entropy aux loss / Panel B / multi-file holdout | **Blocked behind active ranks 1-7** | blocked |
 
 ### 3.1 Manual full-system FSV gate (#633)
@@ -275,11 +276,58 @@ If the gate closes via the current queue, these issues stay in `p3` reserve inde
 
 ---
 
+## 6.95 Causal-embedder track (rank 8.5, 2026-05-23 / 2026-05-24)
+
+Operator-directed follow-up to the BLINDSPOT audit (#739). The causal-embedder direction has been concretized into 3 issues, all **aiwonder-only execution per `CLAUDE.md §6.7`**:
+
+| Issue | Title | Pre-requisites | Wall-clock on aiwonder |
+|---|---|---|---|
+| **#744** | TASK-CR-006 — Causal auto-labeling MVP on CommitPackFT (extends #413 pipeline) | None (uses legacy v1 cache directly) | ~3-4 days (2GB ingestion + 24-36h forward + cross-cluster transition + manual SoT) |
+| **#745** | TASK-CR-007 — In-slot causal embedder replacement (E5/E11/E14 retired/reserved slots) | #744 PASS + #746 + #715 + #516 + #518 + #680 + #732 | ~3 weeks (3 sequential trainings + 3 slot re-bakes) |
+| **#746** | TASK-CR-008 — Low-signal embedder audit + replacement target prioritization | #715 + #683 (closed) | ~5-7 days (drop-ablation matrix + per-cell attribution + live-input variance) |
+
+### Strategy: in-slot replacement (avoids #733 hard prereq for first 3 slots)
+
+Instead of adding new slots (schema change + #733 incremental cache prerequisite + full re-bake), **replace the encoders behind already-empty / proven-low-signal slots**:
+
+| Slot | Current state | Proposed replacement | Training corpus |
+|---|---|---|---|
+| **E5** | Retired 2026-05-10 (causal asymmetric, 768-d) | **C_TemporalCommit** | CommitPack 4TB |
+| **E11** | Disabled (entity KGE, 768-d) | **C_CommonsenseCausal** | CauseNet 11M + ConceptNet + ATOMIC |
+| **E14** | "Reserved" frozen-by-design (configurable dim) | **C_BugFix** | BugsInPy + CommitPackFT + SWE-bench Lite |
+
+Slot identity preserved → doctrine §1.5ter intact. Only the per-slot forward cache re-bakes (~6-8h GPU per slot on aiwonder RTX 5090). Reverts cleanly via `models_config.toml` model_sha rollback.
+
+### Decision rule
+
+- **#744 PASSES** (asymmetric AUC ≥ 0.7 on holdout) → causal-embedder track unlocks; #745 proceeds pending other prereqs.
+- **#744 FAILS** (AUC < 0.6) → falsifies the auto-labeler-extends-to-causal-direction hypothesis; close #745 + #746 as superseded; pivot to original #729 framing.
+
+### Public causal corpora cited
+
+- [CommitPack 4TB](https://huggingface.co/datasets/bigcode/commitpack) / [CommitPackFT 2GB](https://huggingface.co/datasets/bigcode/commitpackft)
+- [CommitChronicle 10.7M commits](https://github.com/saridormi/commit_chronicle)
+- [CauseNet 11M+ causal relations](https://causenet.org/)
+- [TSSB-3M 3M single-statement bugs](https://cedricrupb.github.io/TSSB3M/)
+- [BugsInPy 493 real Python bugs](https://github.com/soarsmu/BugsInPy)
+- [CodeNet 14M code samples](https://arxiv.org/pdf/2105.12655)
+- [WikiCausal evaluation framework](https://arxiv.org/html/2409.00331v1)
+- [ATOMIC if-then commonsense](https://allenai.org/data/atomic)
+
+### Theoretical backing
+
+- [Multi-View Causal Representation Learning (NeurIPS)](https://arxiv.org/abs/2311.04056) — identifiability for multi-encoder causal representations.
+- [CausalRAG (ACL 2025)](https://arxiv.org/abs/2503.19878) — causal-graph retrieval beats semantic retrieval.
+- [Hoyer et al. asymmetric distributions](https://arxiv.org/pdf/0909.4386) — directional asymmetry is identifiable from data.
+
+---
+
 ## 9. Active `type:context` pins (read at session start)
 
 | # | Title | Why pinned |
 |---|---|---|
-| **#712** | **Sherlock-validated critical path** | **Authoritative ordering.** New ranks supersede prior critical-path orderings; post-#704/#714 active substrate work is #709/#715. |
+| **#712** | **Sherlock-validated critical path** | **Authoritative ordering.** Updated 2026-05-24: rank 1 (#683) closed; rank 8.5 (causal-embedder track) added. |
+| **#739** | BLINDSPOT-AUDIT-2026-05-23 + CR-006/007/008 follow-ups | 17 unfiled blind spots + 3 causal-embedder track issues. Reference for audit-driven re-prioritization. |
 | #633 | [P0] Manual full-system FSV and hardening gate | Active in parallel (rank 7 of #712); children #634-#651 still required |
 | #310 | META Issue refactor | Phase G execution-order map; now subordinate to #712 |
 | #383 | Gate-active issue order must be evidence-weighted (p0) | Evidence per #712 |
