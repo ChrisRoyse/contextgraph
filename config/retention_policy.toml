@@ -217,3 +217,449 @@ minimum_retention_days = 365
 cf_name = "CF_MEJEPA_PARK_LIST"
 retention_class = "retry_control"
 minimum_retention_days = 30
+
+# #626-audit: added retention rules for ~88 CFs that were declared in code but missing from policy.
+# Classification heuristic (per #626 atomic-task spec):
+#   frozen_audit_continuity (365d): Q4 / witness / training certs / audits / registries
+#   rolling_active (90d): live predictions, mistakes, replay, recent logs
+#   derived_regenerable (30d): everything else — regeneratable from source
+
+[[column_families]]
+cf_name = "CF_MEJEPA_ABLATION_REPORTS"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_ACCEPTED_LABEL_REGISTRY"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_ADVERSARIAL_CORPUS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CHUNK_DEPENDENCY_GRAPH"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CHUNK_FOUNDATIONALITY"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CHUNK_SKILL_MEMBERSHIP"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CHURN_SIGNALS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CLAIM_RECONCILIATION"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_COLD_CELL_METRICS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_COMPLEXITY_SIGNALS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CONNECTOME_TOPOLOGY_FEATURES"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CONSTELLATION_PATTERNS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CONSTELLATION_REFRESH_LOG"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CONTRADICTION_THRESHOLDS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_COVERAGE_SIGNALS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CROSS_LIBRARY_REFERENCES"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CROSS_PANEL_AGREEMENT"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CURIOSITY_TELEMETRY"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_DEP_CVE_SIGNALS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_DOCKER_OUTCOME_LABELS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_DOC_COVERAGE_SIGNALS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_DYNAMIC_EMBEDDER_PROVENANCE"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_DYNAMIC_EMBEDDER_REGISTRY"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_EMBEDDER_DEPENDENCY_GRAPH"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_EMBEDDER_FOUNDATIONALITY"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_EMBEDDER_PROPOSALS"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_EMBEDDER_PROPOSAL_REJECTIONS"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FAILURE_EVIDENCE_SETS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FAILURE_FINGERPRINTS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FAILURE_MODE_LEVEL0"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FAILURE_MODE_LEVEL1"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FAILURE_MODE_LEVEL2_SKILLS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FAILURE_MODE_LEVEL3_CONSTELLATIONS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FAILURE_MODE_VOCABULARY"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FINGERPRINT_AUDIT"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FINGERPRINT_CALIBRATION"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FINGERPRINT_DORMANCY"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FINGERPRINT_FISHER"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FINGERPRINT_REFERENCES"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FINGERPRINT_REVERSE_INDEX"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FINGERPRINT_SHIP_GATE_WINDOWS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_HEAD_CALIBRATIONS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_HEAD_PROJECTION_REGISTRY"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_HIERARCHICAL_PREDICTIONS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_INSTRUMENT_PROPOSALS"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_LABEL_USEFULNESS_METRICS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_LIBRARY_FOUNDATIONALITY"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_LIBRARY_REGISTRY"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_LIVE_SESSION_SIGNALS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_LIVE_SESSION_TRACES"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_MINCUT_REPORTS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_MISTAKE_LOG"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_MISTAKE_REPLAY_PRIORITY"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_NAMED_PREDICTIONS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_ONLINE_HEAD_STATE"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_ONTOLOGY_GROWTH_AUDIT"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_OOD_CALIBRATIONS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_OOD_HARVEST"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_OPERATOR_PATHWAY_CHOICES"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PAIRWISE_MI"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PANELS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PANEL_B_OBSERVATIONS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PATCH_SIMILARITY_META"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PATHWAY_TREES"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PLASTICITY_HISTORY"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PREDICTION_VERIFICATIONS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PROJECT_REPORTS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_Q4_ACCURACY_LABELS"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_Q4_COST_LABELS"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_Q4_PASS_ANNOTATIONS"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_Q4_PERF_LABELS"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_Q4_REASONING_LABELS"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_Q4_SECURITY_LABELS"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_Q5_CALIBRATIONS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_REALITY_IMPACT"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_REDACTION_LOG"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_REPLAY_BUFFER"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_SAMPLER_REWARDS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_SIGNAL_DROP_LOG"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_SKILL_LIFECYCLE_AUDIT"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_SKILL_REVERSE_INDEX"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_STATIC_ANALYSIS_SIGNALS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_STRESS_RUNS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_SURFACED_PATHWAYS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_SYNTHETIC_STRESS_RESULTS"
+retention_class = "rolling_active"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_TELEMETRY_SIGNALS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_THRESHOLD_CALIBRATION_PROVENANCE"
+retention_class = "frozen_audit_continuity"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_TYPE_GRAPH_SIGNALS"
+retention_class = "derived_regenerable"
+minimum_retention_days = 30
