@@ -196,6 +196,10 @@ from .python_delete_test_call_candidate_labels import (
     add_arguments as add_python_delete_test_call_candidate_labels_arguments,
 )
 from .python_delete_test_call_candidate_labels import command_python_delete_test_call_candidate_labels
+from .python_delete_test_call_candidate_downstream import (
+    add_arguments as add_python_delete_test_call_candidate_downstream_arguments,
+)
+from .python_delete_test_call_candidate_downstream import command_python_delete_test_call_candidate_downstream
 from .panel_b_artifacts import add_arguments as add_panel_b_artifacts_arguments
 from .panel_b_artifacts import command_panel_b_artifacts
 from .panel_b_model_scores import add_arguments as add_panel_b_model_scores_arguments
@@ -942,6 +946,16 @@ def build_parser() -> argparse.ArgumentParser:
     delete_test_call_candidate_labels.set_defaults(
         func=command_python_delete_test_call_candidate_labels,
         evidence_name="python-delete-test-call-candidate-labels-command-evidence.json",
+    )
+
+    delete_test_call_candidate_downstream = sub.add_parser(
+        "python-delete-test-call-candidate-downstream",
+        help="TASK-PY-G-135C: prove candidate-keyed downstream identity/movement before #392/#611 reruns.",
+    )
+    add_python_delete_test_call_candidate_downstream_arguments(delete_test_call_candidate_downstream)
+    delete_test_call_candidate_downstream.set_defaults(
+        func=command_python_delete_test_call_candidate_downstream,
+        evidence_name="python-delete-test-call-candidate-downstream-command-evidence.json",
     )
 
     panel_b_artifacts = sub.add_parser(
