@@ -88,6 +88,17 @@ pub enum InstrumentError {
         message: String,
         remediation: &'static str,
     },
+    /// #710: a slot vector passed to `set_slot_with_health_check` is
+    /// degenerate (strict-constant, all elements equal). Defense in depth
+    /// against upstream embedder cache collapse (#666 / #704 / #707).
+    #[error(
+        "degenerate slot vector at {field}: {message}; remediation: {remediation}"
+    )]
+    DegenerateSlot {
+        field: &'static str,
+        message: String,
+        remediation: &'static str,
+    },
 }
 
 impl InstrumentError {
@@ -97,6 +108,7 @@ impl InstrumentError {
             Self::NumericalInvariant { .. } => "MEJEPA_INSTRUMENTS_NUMERICAL_INVARIANT",
             Self::FrozenViolation { .. } => "MEJEPA_INSTR_FROZEN_VIOLATION",
             Self::Store { .. } => "MEJEPA_INSTRUMENTS_STORE_ERROR",
+            Self::DegenerateSlot { .. } => "DEGENERATE_SLOT_VECTOR",
         }
     }
 
@@ -145,6 +157,18 @@ impl InstrumentError {
         Self::Store {
             operation,
             cf,
+            message: message.into(),
+            remediation,
+        }
+    }
+
+    pub(crate) fn degenerate_slot(
+        field: &'static str,
+        message: impl Into<String>,
+        remediation: &'static str,
+    ) -> Self {
+        Self::DegenerateSlot {
+            field,
             message: message.into(),
             remediation,
         }
@@ -334,6 +358,18 @@ impl Panel {
         let bit = slot_bit(slot);
         self.filled_mask & bit != 0
     }
+
+    /// #710: post-hoc check — is the slot's current vector strict-constant?
+    /// Useful for downstream consumers that need to verify health of a
+    /// panel built via the permissive `set_slot` path. Returns `false`
+    /// for unfilled slots (they hold uninitialized zeros, but the
+    /// answer "is this signal" is undefined; check `is_filled` first).
+    pub fn is_degenerate(&self, slot: InstrumentSlot) -> bool {
+        if !self.is_filled(slot) {
+            return false;
+        }
+        is_strict_constant_slice(self.slot(slot))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -418,6 +454,35 @@ impl PanelBuilder {
         self.data[offset..offset + dim].copy_from_slice(vector);
         self.filled_mask |= bit;
         Ok(())
+    }
+
+    /// #710: defense-in-depth at the panel-build layer. Identical to
+    /// `set_slot` plus a strict-constant-vector rejection. If every
+    /// element of `vector` is bit-equal, returns `DEGENERATE_SLOT_VECTOR`.
+    /// This catches the canonical E2/E3/E4 collapse (#666 / #704 / #707)
+    /// at construction time, before any prediction is made.
+    ///
+    /// Use this method on the production inference path (compiler.rs);
+    /// keep the permissive `set_slot` for synthetic tests that legitimately
+    /// fill placeholder zeros.
+    pub fn set_slot_with_health_check(
+        &mut self,
+        slot: InstrumentSlot,
+        vector: &[f32],
+    ) -> InstrumentResult<()> {
+        if is_strict_constant_slice(vector) {
+            return Err(InstrumentError::degenerate_slot(
+                "vector",
+                format!(
+                    "slot {:?} vector is strict-constant ({} dims all equal {}); rejected as degenerate",
+                    slot,
+                    vector.len(),
+                    vector.first().copied().unwrap_or(f32::NAN)
+                ),
+                "investigate the upstream embedder cache for collapse (#666 / #704); pass a non-constant vector",
+            ));
+        }
+        self.set_slot(slot, vector)
     }
 
     /// Convenience: encode `input` via `instrument` and write the result
@@ -519,6 +584,18 @@ fn slot_bit(slot: InstrumentSlot) -> u16 {
         .position(|s| *s == slot)
         .expect("InstrumentSlot::all is exhaustive");
     1u16 << idx
+}
+
+/// #710: strict-constant detector. Returns `true` iff every element of
+/// `values` is bit-equal to the first element. Empty slices return
+/// `false` (no constant-vector content to flag). Uses `to_bits()` so
+/// NaN representations compare correctly.
+fn is_strict_constant_slice(values: &[f32]) -> bool {
+    let Some(first) = values.first() else {
+        return false;
+    };
+    let first_bits = first.to_bits();
+    values.iter().all(|v| v.to_bits() == first_bits) && values.len() > 1
 }
 
 #[cfg(test)]
