@@ -653,6 +653,7 @@ mod tests {
                 constellation_version: "store-test-constellation".to_string(),
                 calibration_version: "calibration-v1".to_string(),
                 active_pointer: hex::encode([3; 16]),
+                train_health_source: String::new(),
             },
             source_panel_sha: [4; 32],
             calibration_version: "calibration-v1".to_string(),

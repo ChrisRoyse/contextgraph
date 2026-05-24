@@ -824,6 +824,7 @@ mod tests {
                 constellation_version: "verification-test".to_string(),
                 calibration_version: "verification-test".to_string(),
                 active_pointer: hex::encode(prediction_id),
+                train_health_source: String::new(),
             },
             source_panel_sha: [0x42; 32],
             calibration_version: "verification-test".to_string(),

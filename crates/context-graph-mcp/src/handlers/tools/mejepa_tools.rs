@@ -5875,6 +5875,7 @@ can_operator_override = {operator}
                 constellation_version: "inspect-test-constellation-v1".to_string(),
                 calibration_version: "inspect-test-calibration-v1".to_string(),
                 active_pointer: hex::encode(prediction_id),
+                train_health_source: String::new(),
             },
             source_panel_sha: [0x42; 32],
             calibration_version: "inspect-test-calibration-v1".to_string(),

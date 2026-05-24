@@ -656,6 +656,10 @@ impl MeJepaCompiler {
             constellation_version,
             calibration_version: calibration.version.clone(),
             active_pointer: hex::encode(prediction_id),
+            // #798 / #699: record which TrainHealthSource produced the
+            // multiplier so downstream consumers can see *why* the
+            // confidence was/wasn't scaled by real signal.
+            train_health_source: train_health.source.as_screaming_snake().to_string(),
         };
         RealityPredictionBuilder::from_parts(
             context.task_id.clone(),
@@ -1279,6 +1283,10 @@ impl MeJepaCompiler {
                 .unwrap_or_else(|| "unversioned".to_string()),
             calibration_version: PAUSE_REASON_CODE.to_string(),
             active_pointer: format!("paused_until_{}", pause_state.paused_until_unix_ms),
+            // #798: degraded-path predictions have no live TrainHealthSummary;
+            // leave the field empty so consumers can distinguish "no inference
+            // ran" from "inference ran with a known source".
+            train_health_source: String::new(),
         })
         .source_panel_sha(source_panel_sha)
         .calibration_version(PAUSE_REASON_CODE)
@@ -1333,6 +1341,8 @@ impl MeJepaCompiler {
                 .unwrap_or_else(|| "unversioned".to_string()),
             calibration_version: "MEJEPA_HEAD_FAILURE".to_string(),
             active_pointer: format!("head={head};code={code};detail_sha={}", short_sha(detail)),
+            // #798: head-failure shortcut path has no live TrainHealthSummary.
+            train_health_source: String::new(),
         })
         .source_panel_sha(source_panel_sha)
         .calibration_version("MEJEPA_HEAD_FAILURE")
@@ -1391,6 +1401,8 @@ impl MeJepaCompiler {
                     })?,
                 entry.attempt_count
             ),
+            // #798: parked-shortcut path has no live TrainHealthSummary.
+            train_health_source: String::new(),
         })
         .source_panel_sha(source_panel_sha)
         .calibration_version(PARK_LIST_REASON_CODE)
@@ -3275,6 +3287,98 @@ mod tests {
             neutral_t1.slot(InstrumentSlot::EProblem),
             scenario_t1.slot(InstrumentSlot::EProblem),
             "problem text still remains typed evidence; it is just not a control channel"
+        );
+    }
+
+    /// #798 Done When #2: a prediction emitted with no train certs at all
+    /// (fresh DB, bootstrap path) carries `train_health_source = "BOOTSTRAP_NO_DATA"`
+    /// so consumers can see the confidence multiplier was *not* scaled by real
+    /// signal.
+    #[test]
+    fn provenance_train_health_source_is_bootstrap_no_data_with_no_certs() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = crate::calibration::open_infer_rocksdb(temp.path()).unwrap();
+        let compiler = compiler_with_fixed_panels(
+            db,
+            panel_with_slot_delta(InstrumentSlot::EAst, 0.0),
+            panel_with_slot_delta(InstrumentSlot::EAst, 0.0),
+        );
+        let (patch, context) = sample_patch_context("bootstrap no certs case");
+        let (prediction, _) = compiler.compile_with_panel(&patch, &context).unwrap();
+        assert_eq!(
+            prediction.provenance.train_health_source,
+            "BOOTSTRAP_NO_DATA",
+            "no-cert fresh-DB prediction must record BootstrapNoData source"
+        );
+    }
+
+    /// #798 Done When #2: a prediction emitted while every persisted cert has
+    /// `predictor_parameter_update_count == 0` carries
+    /// `train_health_source = "DIAGNOSTIC_CERTIFICATE_ONLY_NEUTRAL"`.
+    #[test]
+    fn provenance_train_health_source_is_diagnostic_neutral_with_diagnostic_only_certs() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = crate::calibration::open_infer_rocksdb(temp.path()).unwrap();
+        // Persist diagnostic-only certs (update_count = 0) before building
+        // the compiler so the cert iterator picks them up.
+        let cf = context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS;
+        let cf_handle = db.cf_handle(cf).expect("train cert CF must exist");
+        for step in 0..3u64 {
+            let cert = TrainCertSummary {
+                step,
+                delta_omega: 0.8,
+                delta_xi: 0.8,
+                witness_offset: step * 32,
+                predictor_parameter_update_count: 0,
+            };
+            db.put_cf(cf_handle, step.to_be_bytes(), bincode::serialize(&cert).unwrap())
+                .unwrap();
+        }
+        let compiler = compiler_with_fixed_panels(
+            db,
+            panel_with_slot_delta(InstrumentSlot::EAst, 0.0),
+            panel_with_slot_delta(InstrumentSlot::EAst, 0.0),
+        );
+        let (patch, context) = sample_patch_context("diagnostic-only certs case");
+        let (prediction, _) = compiler.compile_with_panel(&patch, &context).unwrap();
+        assert_eq!(
+            prediction.provenance.train_health_source,
+            "DIAGNOSTIC_CERTIFICATE_ONLY_NEUTRAL",
+            "all-diagnostic-cert prediction must record DiagnosticCertificateOnlyNeutral source"
+        );
+    }
+
+    /// #798 Done When #3: a prediction emitted with at least one cert that
+    /// carries a real predictor weight update (`update_count > 0`) records
+    /// `train_health_source = "MEASURED"`.
+    #[test]
+    fn provenance_train_health_source_is_measured_with_at_least_one_measured_cert() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = crate::calibration::open_infer_rocksdb(temp.path()).unwrap();
+        let cf = context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS;
+        let cf_handle = db.cf_handle(cf).expect("train cert CF must exist");
+        // Two diagnostic certs and one measured cert (update_count > 0).
+        for (step, update_count) in [(0u64, 0u64), (1, 0), (2, 4)] {
+            let cert = TrainCertSummary {
+                step,
+                delta_omega: 0.8,
+                delta_xi: 0.8,
+                witness_offset: step * 32,
+                predictor_parameter_update_count: update_count,
+            };
+            db.put_cf(cf_handle, step.to_be_bytes(), bincode::serialize(&cert).unwrap())
+                .unwrap();
+        }
+        let compiler = compiler_with_fixed_panels(
+            db,
+            panel_with_slot_delta(InstrumentSlot::EAst, 0.0),
+            panel_with_slot_delta(InstrumentSlot::EAst, 0.0),
+        );
+        let (patch, context) = sample_patch_context("measured cert case");
+        let (prediction, _) = compiler.compile_with_panel(&patch, &context).unwrap();
+        assert_eq!(
+            prediction.provenance.train_health_source, "MEASURED",
+            "presence of one measured cert must record Measured source"
         );
     }
 }

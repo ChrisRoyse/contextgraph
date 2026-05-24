@@ -1406,6 +1406,14 @@ pub struct PredictionProvenance {
     pub constellation_version: String,
     pub calibration_version: String,
     pub active_pointer: String,
+    /// #798 / #699: which `TrainHealthSource` produced the `TrainHealthSummary`
+    /// at inference time. SCREAMING_SNAKE form of the enum
+    /// (`MEASURED` / `DIAGNOSTIC_CERTIFICATE_ONLY_NEUTRAL` /
+    /// `BOOTSTRAP_NO_DATA`). Empty string only for legacy / not-yet-recorded
+    /// rows; new rows always populate this field. Operators can read this to
+    /// see *why* the confidence multiplier was 1.0 vs. real.
+    #[serde(default)]
+    pub train_health_source: String,
 }
 
 impl PredictionProvenance {
@@ -1422,7 +1430,11 @@ impl PredictionProvenance {
             "prediction_provenance.calibration_version",
             &self.calibration_version,
         )?;
-        validate_optional_id("prediction_provenance.active_pointer", &self.active_pointer)
+        validate_optional_id("prediction_provenance.active_pointer", &self.active_pointer)?;
+        validate_optional_id(
+            "prediction_provenance.train_health_source",
+            &self.train_health_source,
+        )
     }
 }
 
@@ -5143,6 +5155,7 @@ mod tests {
             constellation_version: "decode-test-constellation".to_string(),
             calibration_version: "calibration-v1".to_string(),
             active_pointer: hex::encode([3; 16]),
+            train_health_source: String::new(),
         })
         .source_panel_sha([4; 32])
         .calibration_version("calibration-v1")
@@ -5280,6 +5293,7 @@ mod tests {
             constellation_version: "q4-freeze-build".to_string(),
             calibration_version: "q4-freeze-build".to_string(),
             active_pointer: "q4-freeze-build".to_string(),
+            train_health_source: String::new(),
         })
         .source_panel_sha([0x64; 32])
         .calibration_version("q4-freeze-build")
@@ -5407,6 +5421,7 @@ mod tests {
             constellation_version: "slot-test".to_string(),
             calibration_version: "slot-test".to_string(),
             active_pointer: "slot-test".to_string(),
+            train_health_source: String::new(),
         })
         .source_panel_sha([0x34; 32])
         .calibration_version("slot-test")
@@ -5441,6 +5456,7 @@ mod tests {
             constellation_version: "slot-test".to_string(),
             calibration_version: "slot-test".to_string(),
             active_pointer: "slot-test".to_string(),
+            train_health_source: String::new(),
         })
         .source_panel_sha([0x44; 32])
         .calibration_version("slot-test")

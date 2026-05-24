@@ -1500,6 +1500,8 @@ fn prediction_for_file(
             file.blake3,
             &blake3_hex(file.path.as_bytes())[..16]
         ),
+        // #798: cold-cell project-ingest path has no live TrainHealthSummary.
+        train_health_source: String::new(),
     })
     .source_panel_sha(source_panel_sha)
     .calibration_version("cold-cell-v1")

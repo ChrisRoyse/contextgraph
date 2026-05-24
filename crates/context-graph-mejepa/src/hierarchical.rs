@@ -311,6 +311,7 @@ mod tests {
             constellation_version: "task-fp-102-unit".to_string(),
             calibration_version: "task-fp-102-unit".to_string(),
             active_pointer: "unit".to_string(),
+            train_health_source: String::new(),
         })
         .source_panel_sha([10; 32])
         .calibration_version("task-fp-102-unit")

@@ -2525,6 +2525,7 @@ mod tests {
                 constellation_version: "scheduler-test-constellation".to_string(),
                 calibration_version: "scheduler-test-calibration".to_string(),
                 active_pointer: hex::encode([0x46; 16]),
+                train_health_source: String::new(),
             },
             source_panel_sha: [0x5b; 32],
             calibration_version: "scheduler-test-calibration".to_string(),

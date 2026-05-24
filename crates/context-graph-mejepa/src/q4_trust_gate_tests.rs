@@ -105,6 +105,7 @@ fn trusted_q4_consequences_omits_all_heads_under_freeze() {
         constellation_version: "q4-freeze-unit".to_string(),
         calibration_version: "q4-freeze-unit".to_string(),
         active_pointer: "q4-freeze-unit".to_string(),
+        train_health_source: String::new(),
     })
     .source_panel_sha([0x17; 32])
     .calibration_version("q4-freeze-unit")

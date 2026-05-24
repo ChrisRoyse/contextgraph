@@ -825,6 +825,8 @@ fn legacy_untrusted_pass_prediction(
         constellation_version: "legacy-project-report-quarantine".to_string(),
         calibration_version: "legacy-project-report-quarantine".to_string(),
         active_pointer: "legacy-project-report-quarantine".to_string(),
+        // #798: legacy quarantine path has no live TrainHealthSummary.
+        train_health_source: String::new(),
     })
     .source_panel_sha([0u8; 32])
     .calibration_version("legacy-project-report-quarantine")
@@ -1923,6 +1925,7 @@ mod tests {
                 constellation_version: "trust-test-constellation".to_string(),
                 calibration_version: "trust-test-calibration".to_string(),
                 active_pointer: "trust-test-active".to_string(),
+                train_health_source: String::new(),
             },
             source_panel_sha: [0x44; 32],
             calibration_version: "trust-test-calibration".to_string(),
