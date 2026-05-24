@@ -204,6 +204,10 @@ from .python_delete_test_call_candidate_metric_rerun import (
     add_arguments as add_python_delete_test_call_candidate_metric_rerun_arguments,
 )
 from .python_delete_test_call_candidate_metric_rerun import command_python_delete_test_call_candidate_metric_rerun
+from .python_delete_test_call_candidate_expansion import (
+    add_arguments as add_python_delete_test_call_candidate_expansion_arguments,
+)
+from .python_delete_test_call_candidate_expansion import command_python_delete_test_call_candidate_expansion
 from .panel_b_artifacts import add_arguments as add_panel_b_artifacts_arguments
 from .panel_b_artifacts import command_panel_b_artifacts
 from .panel_b_model_scores import add_arguments as add_panel_b_model_scores_arguments
@@ -970,6 +974,16 @@ def build_parser() -> argparse.ArgumentParser:
     delete_test_call_candidate_metric_rerun.set_defaults(
         func=command_python_delete_test_call_candidate_metric_rerun,
         evidence_name="python-delete-test-call-candidate-metric-rerun-command-evidence.json",
+    )
+
+    delete_test_call_candidate_expansion = sub.add_parser(
+        "python-delete-test-call-candidate-expansion",
+        help="TASK-PY-G-135E: predeclare deterministic split/sublabel delete_test_call oracle expansion rows.",
+    )
+    add_python_delete_test_call_candidate_expansion_arguments(delete_test_call_candidate_expansion)
+    delete_test_call_candidate_expansion.set_defaults(
+        func=command_python_delete_test_call_candidate_expansion,
+        evidence_name="python-delete-test-call-candidate-expansion-command-evidence.json",
     )
 
     panel_b_artifacts = sub.add_parser(
