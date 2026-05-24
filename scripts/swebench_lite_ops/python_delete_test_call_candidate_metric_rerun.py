@@ -7,6 +7,7 @@ import json
 import math
 import shutil
 from collections import Counter, defaultdict
+from itertools import combinations
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -52,6 +53,11 @@ ACTIVE_SCORE_HIGH = 0.80
 SHIP_CORRELATION_TARGET = 0.95
 SHIP_BRIER_TARGET = 0.05
 SHIP_ECE_TARGET = 0.05
+MIN_FEATURE_FIT_SUPPORT = 2
+MIN_MIXED_CLASS_SUPPORT = 8
+MIN_HOLDOUT_ROWS = 30
+TOP_FEATURE_POLICY_LIMIT = 24
+TOP_PAIR_POLICY_LIMIT = 32
 
 
 class CandidateMetricRerunError(SwebenchOpsError):
@@ -209,6 +215,26 @@ def score_rows(rows: list[dict[str, Any]], policy: dict[str, Any]) -> list[dict[
     return scored
 
 
+def score_rows_with_scores(rows: list[dict[str, Any]], *, policy_name: str, scores: dict[str, float]) -> list[dict[str, Any]]:
+    scored = []
+    for row in rows:
+        row_id = str(row.get("candidate_row_id"))
+        score = float(scores[row_id])
+        scored.append(
+            {
+                **row_identity(row),
+                "actual": 1 if bool(row.get("oracle_all_passed")) else 0,
+                "actual_oracle_pass": bool(row.get("oracle_all_passed")),
+                "score": finite_float(score),
+                "predicted_pass": score >= 0.5,
+                "score_in_abstain_band": ACTIVE_SCORE_LOW < score < ACTIVE_SCORE_HIGH,
+                "active_after_abstain": score <= ACTIVE_SCORE_LOW or score >= ACTIVE_SCORE_HIGH,
+                "policy": policy_name,
+            }
+        )
+    return scored
+
+
 def score_for_row(row: dict[str, Any], policy: dict[str, Any]) -> float:
     name = policy["name"]
     if name == "legacy_collapsed_global_empirical_bayes":
@@ -325,6 +351,252 @@ def build_policies(rows: list[dict[str, Any]], *, alpha: float) -> list[dict[str
         },
     ]
 
+
+def live_safe_features(row: dict[str, Any]) -> list[str]:
+    features = {str(label) for label in row.get("live_predictor_labels") or []}
+    sublabel = str(row.get("assertion_duty_sublabel") or "").strip()
+    if sublabel:
+        features.add(f"candidate_sublabel:{sublabel}")
+    return sorted(features)
+
+
+def validate_live_safe_feature_map(rows: list[dict[str, Any]], feature_map: dict[str, list[str]]) -> list[str]:
+    synthetic = [{"live_predictor_labels": features} for features in feature_map.values()]
+    failures = []
+    if target_leakage_count(synthetic):
+        failures.append("DTC_METRIC_FEATURE_AUDIT_TARGET_LABEL_IN_LIVE_INPUT")
+    row_ids = {str(row.get("candidate_row_id")) for row in rows}
+    if set(feature_map) != row_ids:
+        failures.append("DTC_METRIC_FEATURE_AUDIT_ROW_ID_MISMATCH")
+    return failures
+
+
+def candidate_feature_policy_report(
+    rows: list[dict[str, Any]],
+    feature_map: dict[str, list[str]],
+    *,
+    feature_tuple: tuple[str, ...],
+    fallback_score: float,
+    alpha: float,
+    policy_kind: str,
+) -> dict[str, Any]:
+    fit_rows = [row for row in rows if str(row.get("partition")) in FIT_SPLITS]
+    present_fit = [
+        row
+        for row in fit_rows
+        if all(feature in set(feature_map[str(row.get("candidate_row_id"))]) for feature in feature_tuple)
+    ]
+    score = smooth_pass_rate(present_fit, alpha)
+    scores = {}
+    for row in rows:
+        row_id = str(row.get("candidate_row_id"))
+        present = all(feature in set(feature_map[row_id]) for feature in feature_tuple)
+        scores[row_id] = score if present else fallback_score
+    policy_name = f"candidate_live_{policy_kind}_empirical_bayes::{'+'.join(feature_tuple)}"
+    scored = score_rows_with_scores(rows, policy_name=policy_name, scores=scores)
+    metrics = policy_metrics(scored)
+    return {
+        "policy": {
+            "name": policy_name,
+            "kind": policy_kind,
+            "features": list(feature_tuple),
+            "fit_splits": sorted(FIT_SPLITS),
+            "fit_row_count": len(fit_rows),
+            "support": len(present_fit),
+            "fit_pass_count": sum(1 for row in present_fit if bool(row.get("oracle_all_passed"))),
+            "fit_fail_count": sum(1 for row in present_fit if not bool(row.get("oracle_all_passed"))),
+            "score_when_present": finite_float(score),
+            "score_when_absent": finite_float(fallback_score),
+            "holdout_tuning_used": False,
+        },
+        "metrics": metrics,
+        "holdout_gate_verdict": gate_verdict(metrics["by_split"]["holdout"]["full"]),
+    }
+
+
+def calibration_brier(report: dict[str, Any]) -> float:
+    brier = report["metrics"]["by_split"]["calibration"]["full"].get("brier")
+    return float("inf") if brier is None else float(brier)
+
+
+def feature_policy_audit(rows: list[dict[str, Any]], *, alpha: float) -> dict[str, Any]:
+    fit_rows = [row for row in rows if str(row.get("partition")) in FIT_SPLITS]
+    fallback = smooth_pass_rate(fit_rows, alpha)
+    feature_map = {str(row.get("candidate_row_id")): live_safe_features(row) for row in rows}
+    validation_failures = validate_live_safe_feature_map(rows, feature_map)
+    feature_counts = Counter(
+        feature
+        for row in fit_rows
+        for feature in feature_map[str(row.get("candidate_row_id"))]
+    )
+    feature_tuples = [
+        (feature,)
+        for feature, support in sorted(feature_counts.items())
+        if support >= MIN_FEATURE_FIT_SUPPORT
+    ]
+    pair_counts: Counter[tuple[str, str]] = Counter()
+    for row in fit_rows:
+        row_features = feature_map[str(row.get("candidate_row_id"))]
+        pair_counts.update(tuple(pair) for pair in combinations(row_features, 2))
+    pair_tuples = [
+        pair
+        for pair, support in sorted(pair_counts.items())
+        if support >= MIN_FEATURE_FIT_SUPPORT
+    ]
+
+    individual_reports = [
+        candidate_feature_policy_report(
+            rows,
+            feature_map,
+            feature_tuple=feature_tuple,
+            fallback_score=fallback,
+            alpha=alpha,
+            policy_kind="feature",
+        )
+        for feature_tuple in feature_tuples
+    ]
+    pair_reports = [
+        candidate_feature_policy_report(
+            rows,
+            feature_map,
+            feature_tuple=feature_tuple,
+            fallback_score=fallback,
+            alpha=alpha,
+            policy_kind="feature_pair",
+        )
+        for feature_tuple in pair_tuples
+    ]
+    individual_reports.sort(key=lambda report: (calibration_brier(report), report["policy"]["name"]))
+    pair_reports.sort(key=lambda report: (calibration_brier(report), report["policy"]["name"]))
+    selectable = individual_reports + pair_reports
+    selectable.sort(key=lambda report: (calibration_brier(report), report["policy"]["name"]))
+    selected = selectable[0] if selectable else None
+    return {
+        "selection_split": "calibration",
+        "fit_splits": sorted(FIT_SPLITS),
+        "holdout_tuning_used": False,
+        "fallback_fit_pass_rate": finite_float(fallback),
+        "min_feature_fit_support": MIN_FEATURE_FIT_SUPPORT,
+        "feature_row_count": len(feature_map),
+        "candidate_feature_count": len(feature_tuples),
+        "candidate_pair_count": len(pair_tuples),
+        "validation_failures": validation_failures,
+        "selected_policy": selected,
+        "selected_policy_promoted": bool(selected and selected["holdout_gate_verdict"]["passed"]),
+        "top_individual_feature_policies": individual_reports[:TOP_FEATURE_POLICY_LIMIT],
+        "top_pair_feature_policies": pair_reports[:TOP_PAIR_POLICY_LIMIT],
+    }
+
+
+def split_class_counts(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    counts: dict[str, dict[str, int]] = {}
+    for split in EVALUATION_SPLITS:
+        split_rows = [row for row in rows if str(row.get("partition")) == split]
+        pass_count = sum(1 for row in split_rows if bool(row.get("oracle_all_passed")))
+        counts[split] = {"n": len(split_rows), "pass": pass_count, "fail": len(split_rows) - pass_count}
+    return counts
+
+
+def sublabel_support(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sublabels = sorted({str(row.get("assertion_duty_sublabel")) for row in rows})
+    out = []
+    for sublabel in sublabels:
+        split_counts = {}
+        members = [row for row in rows if str(row.get("assertion_duty_sublabel")) == sublabel]
+        for split in EVALUATION_SPLITS:
+            split_rows = [row for row in members if str(row.get("partition")) == split]
+            pass_count = sum(1 for row in split_rows if bool(row.get("oracle_all_passed")))
+            split_counts[split] = {"n": len(split_rows), "pass": pass_count, "fail": len(split_rows) - pass_count}
+        out.append(
+            {
+                "assertion_duty_sublabel": sublabel,
+                "total": {
+                    "n": len(members),
+                    "pass": sum(1 for row in members if bool(row.get("oracle_all_passed"))),
+                    "fail": sum(1 for row in members if not bool(row.get("oracle_all_passed"))),
+                },
+                "by_split": split_counts,
+            }
+        )
+    return out
+
+
+def next_action_report(rows: list[dict[str, Any]], policy_reports: list[dict[str, Any]], feature_audit: dict[str, Any]) -> dict[str, Any]:
+    split_counts = split_class_counts(rows)
+    sublabels = sublabel_support(rows)
+    selected_base = next(report for report in policy_reports if report["policy"]["name"] == selected_policy_name(policy_reports))
+    selected_feature = feature_audit.get("selected_policy")
+    selected_base_holdout = selected_base["metrics"]["by_split"]["holdout"]["full"]
+    selected_feature_holdout = (selected_feature or {}).get("metrics", {}).get("by_split", {}).get("holdout", {}).get("full", {})
+    calibration = split_counts["calibration"]
+    holdout = split_counts["holdout"]
+    support_deficits = {
+        "calibration_pass_deficit_to_min_mixed_class_support": max(0, MIN_MIXED_CLASS_SUPPORT - calibration["pass"]),
+        "calibration_fail_deficit_to_min_mixed_class_support": max(0, MIN_MIXED_CLASS_SUPPORT - calibration["fail"]),
+        "holdout_pass_deficit_to_min_mixed_class_support": max(0, MIN_MIXED_CLASS_SUPPORT - holdout["pass"]),
+        "holdout_fail_deficit_to_min_mixed_class_support": max(0, MIN_MIXED_CLASS_SUPPORT - holdout["fail"]),
+        "holdout_row_deficit_to_min_holdout_rows": max(0, MIN_HOLDOUT_ROWS - holdout["n"]),
+    }
+    sublabel_deficits = []
+    for item in sublabels:
+        reasons = []
+        if item["by_split"]["calibration"]["pass"] == 0:
+            reasons.append("NO_CALIBRATION_PASS_SUPPORT")
+        if item["by_split"]["holdout"]["pass"] == 0:
+            reasons.append("NO_HOLDOUT_PASS_SUPPORT")
+        if item["total"]["pass"] == 0:
+            reasons.append("NO_PASS_SUPPORT_ANY_SPLIT")
+        if item["by_split"]["holdout"]["n"] < 3:
+            reasons.append("LOW_HOLDOUT_N_PER_SUBLABEL")
+        if reasons:
+            sublabel_deficits.append({"assertion_duty_sublabel": item["assertion_duty_sublabel"], "reasons": reasons, "support": item})
+    no_promotable_feature = not bool(feature_audit.get("selected_policy_promoted"))
+    no_promotable_base = not bool(selected_base["holdout_gate_verdict"]["passed"])
+    if no_promotable_base and no_promotable_feature:
+        action_kind = "generate_more_split_stable_candidate_oracle_rows"
+        action = (
+            "Extend deterministic candidate generation before another metric-promotion attempt. "
+            "Current legal priors and calibration-selected live-safe feature interactions do not produce a promotable holdout policy; "
+            "use a predeclared generator across all splits, then rerun candidate labels and this metric readback without selecting on holdout."
+        )
+    elif no_promotable_base:
+        action_kind = "evaluate_selected_live_safe_feature_policy"
+        action = "A calibration-selected live-safe feature policy is the next candidate metric; rerun with this policy isolated and manual readback."
+    else:
+        action_kind = "promote_candidate_sublabel_policy"
+        action = "Selected candidate-sublabel policy passes the holdout gate; promote through the downstream gate."
+    return {
+        "artifact_kind": f"{ARTIFACT_KIND}_next_action_report",
+        "schema_version": 1,
+        "task_id": TASK_ID,
+        "created_at_utc": utc_now(),
+        "selection_split": "calibration",
+        "holdout_tuning_used": False,
+        "split_class_counts": split_counts,
+        "sublabel_support": sublabels,
+        "support_deficits": support_deficits,
+        "sublabel_deficits": sublabel_deficits,
+        "base_policy_selected": selected_base["policy"],
+        "base_policy_holdout_full_metric": selected_base_holdout,
+        "feature_policy_selected": (selected_feature or {}).get("policy"),
+        "feature_policy_holdout_full_metric": selected_feature_holdout,
+        "feature_policy_selected_holdout_gate_verdict": (selected_feature or {}).get("holdout_gate_verdict"),
+        "recommended_action_kind": action_kind,
+        "recommended_action": action,
+        "minimum_support_targets": {
+            "min_mixed_class_support_per_eval_split": MIN_MIXED_CLASS_SUPPORT,
+            "min_holdout_rows": MIN_HOLDOUT_ROWS,
+            "promotion_corr_target": SHIP_CORRELATION_TARGET,
+            "promotion_brier_target": SHIP_BRIER_TARGET,
+            "promotion_ece_target": SHIP_ECE_TARGET,
+        },
+        "validation_notes": [
+            "live-safe feature audit uses live_predictor_labels plus assertion_duty_sublabel only",
+            "target-side oracle labels remain supervision-only",
+            "feature/policy selection uses calibration metrics; holdout is read only after selection",
+        ],
+    }
+
 def command_python_delete_test_call_candidate_metric_rerun(args: argparse.Namespace) -> dict[str, Any]:
     started_at = utc_now()
     for name, path in (
@@ -366,9 +638,12 @@ def command_python_delete_test_call_candidate_metric_rerun(args: argparse.Namesp
             }
         )
 
+    feature_audit = feature_policy_audit(rows, alpha=float(args.smoothing_alpha))
+    validation_failures.extend(feature_audit.get("validation_failures") or [])
     selected = selected_policy_name(policy_reports)
     selected_report = next(report for report in policy_reports if report["policy"]["name"] == selected)
     repair_promoted = bool(selected_report["holdout_gate_verdict"]["passed"])
+    next_action = next_action_report(rows, policy_reports, feature_audit)
     decision = {
         "repair_promoted": repair_promoted,
         "selected_policy": selected,
@@ -377,12 +652,15 @@ def command_python_delete_test_call_candidate_metric_rerun(args: argparse.Namesp
         "typed_blocker": None if repair_promoted else "TASK_PY_G_135C_CANDIDATE_KEYED_METRIC_NOT_PROMOTABLE",
         "next_smallest_evidence_action": None
         if repair_promoted
-        else "Do not promote a delete_test_call repair from these candidate-keyed rows alone; use this readback to design the next split-legal feature/data action before rerunning #150/#610.",
+        else next_action["recommended_action"],
+        "next_smallest_evidence_action_kind": None if repair_promoted else next_action["recommended_action_kind"],
         "holdout_gate_verdict": selected_report["holdout_gate_verdict"],
     }
 
     rows_path = args.output_root / "candidate_metric_rerun_rows.jsonl"
     policy_path = args.output_root / "candidate_metric_policy_reports.json"
+    feature_path = args.output_root / "candidate_live_feature_policy_audit.json"
+    next_action_path = args.output_root / "candidate_keyed_next_action_report.json"
     report_path = args.output_root / "candidate_keyed_metric_rerun_report.json"
     readback_path = args.readback_root / "candidate_keyed_metric_rerun_readback.json"
     row_count = write_jsonl(rows_path, all_scored_rows)
@@ -412,6 +690,17 @@ def command_python_delete_test_call_candidate_metric_rerun(args: argparse.Namesp
         "policy_reports": policy_reports,
     }
     write_json_checked(policy_path, policy_payload)
+    write_json_checked(
+        feature_path,
+        {
+            "artifact_kind": f"{ARTIFACT_KIND}_live_feature_policy_audit",
+            "schema_version": 1,
+            "task_id": TASK_ID,
+            "created_at_utc": utc_now(),
+            **feature_audit,
+        },
+    )
+    write_json_checked(next_action_path, next_action)
     report = {
         "artifact_kind": f"{ARTIFACT_KIND}_report",
         "schema_version": 1,
@@ -447,14 +736,20 @@ def command_python_delete_test_call_candidate_metric_rerun(args: argparse.Namesp
         },
         "summary": summary,
         "policy_reports": policy_reports,
+        "feature_policy_audit": feature_audit,
+        "next_action_report": next_action,
         "output_artifacts": {
             "candidate_metric_rerun_rows": str(rows_path),
             "candidate_metric_policy_reports": str(policy_path),
+            "candidate_live_feature_policy_audit": str(feature_path),
+            "candidate_keyed_next_action_report": str(next_action_path),
         },
         "line_counts": {"candidate_metric_rerun_rows": row_count},
         "stable_hashes": {
             "candidate_metric_rerun_rows": sha256_file(rows_path),
             "candidate_metric_policy_reports": sha256_file(policy_path),
+            "candidate_live_feature_policy_audit": sha256_file(feature_path),
+            "candidate_keyed_next_action_report": sha256_file(next_action_path),
         },
         "policy": {
             "candidate_row_id_keyed": True,
@@ -483,8 +778,12 @@ def command_python_delete_test_call_candidate_metric_rerun(args: argparse.Namesp
         "stable_hashes": {
             "candidate_metric_rerun_rows": sha256_file(rows_path),
             "candidate_metric_policy_reports": sha256_file(policy_path),
+            "candidate_live_feature_policy_audit": sha256_file(feature_path),
+            "candidate_keyed_next_action_report": sha256_file(next_action_path),
         },
         "summary": summary,
+        "next_action_report_path": str(next_action_path),
+        "next_action_report_sha256": sha256_file(next_action_path),
     }
     write_json_checked(readback_path, readback)
     return {
