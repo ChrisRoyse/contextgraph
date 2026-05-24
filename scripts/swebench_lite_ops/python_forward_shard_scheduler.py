@@ -3274,7 +3274,19 @@ def write_checkpoint(
         "started_at_utc": started_at,
         "created_at_utc": utc_now(),
         "phase": phase,
-        "status": "running" if next_shard is not None else "ready_for_final_aggregate",
+        # #741: status is phase-aware now. Pre-#741, the line was
+        # `"running" if next_shard is not None else "ready_for_final_aggregate"`
+        # which incorrectly kept reporting "ready_for_final_aggregate" even
+        # after the aggregate manifest was written under phase="final".
+        # Monitors keying off `status` instead of `phase + readback artifacts`
+        # would see a stuck-pre-aggregate state on a finished run.
+        "status": (
+            "final_aggregate_complete"
+            if phase == "final"
+            else "running"
+            if next_shard is not None
+            else "ready_for_final_aggregate"
+        ),
         "source_of_truth": {
             "checkpoint_cache_path": str(args.cache_root / "python_forward_cache_checkpoint.json"),
             "checkpoint_readback_path": str(args.readback_root / "python_forward_cache_checkpoint.json"),
