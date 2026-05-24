@@ -97,10 +97,10 @@ fn main() -> Result<()> {
 }
 
 fn output_root() -> Result<PathBuf> {
-    let mut root = std::env::var_os("CONTEXTGRAPH_FSV_OUTPUT_ROOT")
+    let mut root = std::env::var_os("CONTEXTGRAPH_READBACK_OUTPUT_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            std::env::temp_dir().join("task_py_g_136_slot_preserving_ood_aggregation_fsv")
+            std::env::temp_dir().join("task_py_g_136_slot_preserving_ood_aggregation_readback")
         });
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
@@ -165,7 +165,7 @@ fn seed_calibration_and_train_cert(
         delta_omega: 0.9,
         delta_xi: 0.9,
         witness_offset: 88,
-        // #699: FSV example simulates a "trained" cert; bump to 1 so the
+        // #699: readback example simulates a "trained" cert; bump to 1 so the
         // downstream confidence multiplier path exercises the Measured arm
         // rather than DiagnosticCertificateOnlyNeutral.
         predictor_parameter_update_count: 1,
@@ -394,7 +394,7 @@ fn panel_with_all_slot_deltas(delta: f32) -> Panel {
 
 fn report_markdown(report: &Value) -> String {
     format!(
-        "# TASK-PY-G-136 Slot-Preserving OOD FSV\n\n- run_dir: `{}`\n- calibration_cf: `{}`\n- live_prediction_cf: `{}`\n- calibration per-slot sigma count: `{}`\n- single_slot verdict: `{}`\n- single_slot readback: `{}`\n- diffuse verdict: `{}`\n- diffuse readback: `{}`\n- missing per-slot calibrator error: `{}`\n- missing per-slot write blocked: `{}`\n",
+        "# TASK-PY-G-136 Slot-Preserving OOD Readback\n\n- run_dir: `{}`\n- calibration_cf: `{}`\n- live_prediction_cf: `{}`\n- calibration per-slot sigma count: `{}`\n- single_slot verdict: `{}`\n- single_slot readback: `{}`\n- diffuse verdict: `{}`\n- diffuse readback: `{}`\n- missing per-slot calibrator error: `{}`\n- missing per-slot write blocked: `{}`\n",
         report["run_dir"].as_str().unwrap_or_default(),
         report["calibration_cf"].as_str().unwrap_or_default(),
         report["live_prediction_cf"].as_str().unwrap_or_default(),
