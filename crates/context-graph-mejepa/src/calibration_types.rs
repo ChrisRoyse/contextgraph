@@ -1,9 +1,17 @@
 use std::collections::BTreeMap;
 
+use context_graph_mejepa_instruments::InstrumentSlot;
 use serde::{Deserialize, Serialize};
 
 use crate::error::MejepaInferError;
 use crate::types::{EmbedderId, Language};
+
+pub fn complete_per_slot_sigma_squared(sigma_squared: f32) -> BTreeMap<InstrumentSlot, f32> {
+    InstrumentSlot::all()
+        .into_iter()
+        .map(|slot| (slot, sigma_squared))
+        .collect()
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,6 +25,7 @@ pub struct CalibrationRecord {
     pub min_samples_per_stratum: usize,
     pub sample_count: usize,
     pub per_language_counts: BTreeMap<Language, usize>,
+    pub per_slot_sigma_squared: Option<BTreeMap<InstrumentSlot, f32>>,
     pub corpus_sha: [u8; 32],
     pub embedder_versions: BTreeMap<EmbedderId, String>,
     pub frozen_at: i64,
@@ -119,6 +128,27 @@ impl CalibrationRecord {
                     expected: self.min_samples_per_stratum,
                     actual: *count,
                 });
+            }
+        }
+        if let Some(per_slot_sigma_squared) = &self.per_slot_sigma_squared {
+            if per_slot_sigma_squared.len() != InstrumentSlot::all().len() {
+                return Err(MejepaInferError::OodPerSlotCalibratorMissing {
+                    detail: format!(
+                        "per-slot sigma calibration must cover all {} instrument slots; got {}",
+                        InstrumentSlot::all().len(),
+                        per_slot_sigma_squared.len()
+                    ),
+                });
+            }
+            for (slot, sigma_squared) in per_slot_sigma_squared {
+                if !sigma_squared.is_finite() || *sigma_squared <= 0.0 {
+                    return Err(MejepaInferError::InvalidInput {
+                        field: "per_slot_sigma_squared".to_string(),
+                        detail: format!(
+                            "slot {slot:?} sigma_squared must be finite and > 0; got {sigma_squared}"
+                        ),
+                    });
+                }
             }
         }
         if self.frozen_at <= 0 {

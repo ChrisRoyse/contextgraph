@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use context_graph_mejepa_instruments::{InstrumentSlot, Panel};
 
 use crate::error::MejepaInferError;
@@ -12,9 +14,9 @@ pub struct SlotResidualScore {
 pub fn compute_ood_score(
     predicted: &Panel,
     target: &Panel,
-    sigma_squared: f32,
+    per_slot_sigma_squared: Option<&BTreeMap<InstrumentSlot, f32>>,
 ) -> Result<f32, MejepaInferError> {
-    let scores = per_slot_residual_scores(predicted, target, sigma_squared)?;
+    let scores = per_slot_residual_scores(predicted, target, per_slot_sigma_squared)?;
     Ok(scores
         .iter()
         .map(|score| score.score)
@@ -24,12 +26,21 @@ pub fn compute_ood_score(
 pub fn per_slot_residual_scores(
     predicted: &Panel,
     target: &Panel,
-    sigma_squared: f32,
+    per_slot_sigma_squared: Option<&BTreeMap<InstrumentSlot, f32>>,
 ) -> Result<Vec<SlotResidualScore>, MejepaInferError> {
-    validate_sigma_squared(sigma_squared)?;
+    let per_slot_sigma_squared =
+        per_slot_sigma_squared.ok_or_else(|| MejepaInferError::OodPerSlotCalibratorMissing {
+            detail: "missing per-slot sigma calibration for panel OOD scoring".to_string(),
+        })?;
     let mut scores = Vec::with_capacity(InstrumentSlot::all().len());
     for slot in InstrumentSlot::all() {
         let norm_sq = squared_l2(predicted.slot(slot), target.slot(slot))?;
+        let sigma_squared = *per_slot_sigma_squared.get(&slot).ok_or_else(|| {
+            MejepaInferError::OodPerSlotCalibratorMissing {
+                detail: format!("missing per-slot sigma calibration for slot {:?}", slot),
+            }
+        })?;
+        validate_sigma_squared(sigma_squared)?;
         scores.push(SlotResidualScore {
             slot,
             norm_sq,
@@ -180,6 +191,7 @@ fn validate_score(name: &str, idx: usize, value: f32) -> Result<(), MejepaInferE
 mod tests {
     use super::*;
     use context_graph_mejepa_instruments::{InstrumentSlot, PANEL_DIM};
+    use std::collections::BTreeMap;
 
     fn panel_with_slot_delta(slot: InstrumentSlot, delta: f32) -> Panel {
         let mut data = vec![0.0_f32; PANEL_DIM];
@@ -187,11 +199,19 @@ mod tests {
         Panel::try_new(data, (1u16 << InstrumentSlot::all().len()) - 1).unwrap()
     }
 
+    fn uniform_sigma_map(value: f32) -> BTreeMap<InstrumentSlot, f32> {
+        InstrumentSlot::all()
+            .into_iter()
+            .map(|slot| (slot, value))
+            .collect()
+    }
+
     #[test]
     fn ood_score_uses_expected_formula() {
         let predicted = panel_with_slot_delta(InstrumentSlot::EAst, 1.0);
         let target = panel_with_slot_delta(InstrumentSlot::EAst, 0.0);
-        let score = compute_ood_score(&predicted, &target, 2.0).unwrap();
+        let sigma = uniform_sigma_map(2.0);
+        let score = compute_ood_score(&predicted, &target, Some(&sigma)).unwrap();
         let expected = 1.0 - (-0.5f32).exp();
         assert!((score - expected).abs() < 1e-6);
     }
@@ -200,7 +220,8 @@ mod tests {
     fn ood_score_keeps_slot_residual_identity() {
         let predicted = panel_with_slot_delta(InstrumentSlot::EReasoning, 3.0);
         let target = panel_with_slot_delta(InstrumentSlot::EReasoning, 0.0);
-        let scores = per_slot_residual_scores(&predicted, &target, 2.0).unwrap();
+        let sigma = uniform_sigma_map(2.0);
+        let scores = per_slot_residual_scores(&predicted, &target, Some(&sigma)).unwrap();
         let max_slot = scores
             .iter()
             .max_by(|left, right| left.score.total_cmp(&right.score))
@@ -209,16 +230,27 @@ mod tests {
         assert_eq!(max_slot.slot, InstrumentSlot::EReasoning);
         assert_eq!(max_slot.norm_sq, 9.0);
         assert_eq!(
-            compute_ood_score(&predicted, &target, 2.0).unwrap(),
+            compute_ood_score(&predicted, &target, Some(&sigma)).unwrap(),
             max_slot.score
         );
+    }
+
+    #[test]
+    fn ood_score_rejects_missing_per_slot_calibrator_before_scoring() {
+        let predicted = panel_with_slot_delta(InstrumentSlot::EAst, 1.0);
+        let target = panel_with_slot_delta(InstrumentSlot::EAst, 0.0);
+        let err = compute_ood_score(&predicted, &target, None).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_OOD_PER_SLOT_CALIBRATOR_MISSING");
+        assert!(err.to_string().contains("per-slot sigma calibration"));
     }
 
     #[test]
     fn ood_score_rejects_invalid_sigma_before_scoring() {
         let predicted = panel_with_slot_delta(InstrumentSlot::EAst, 1.0);
         let target = panel_with_slot_delta(InstrumentSlot::EAst, 0.0);
-        let err = compute_ood_score(&predicted, &target, 0.0).unwrap_err();
+        let mut sigma = uniform_sigma_map(2.0);
+        sigma.insert(InstrumentSlot::EAst, 0.0);
+        let err = compute_ood_score(&predicted, &target, Some(&sigma)).unwrap_err();
         assert_eq!(err.code(), "MEJEPA_INFER_INVALID_INPUT");
         assert!(err.to_string().contains("sigma_squared"));
     }
