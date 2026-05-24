@@ -7,10 +7,14 @@ use crate::shift_transform::{
     is_inference_candidate, required_f32_array, shift_to_inference, timestamp_ns_to_ms, utml_bundle,
 };
 use crate::{Result, SubscriberError, WatermarkWriter};
+#[cfg(test)]
+use context_graph_mejepa::build_fixture_deterministic_compiler;
+#[cfg(not(test))]
+use context_graph_mejepa::build_slot_preserving_cuda_compiler;
 use context_graph_mejepa::{
-    build_slot_preserving_cuda_compiler, materialize_inference_panels, open_infer_rocksdb,
-    CalibrationExample, CalibrationStore, ChunkId, DdaSignals, MeJepaInferConfig, MejepaStore,
-    PanelId, PatchBundle, RealityPrediction, RocksDbInferStore, TaskContext, TrainCertSummary,
+    materialize_inference_panels, open_infer_rocksdb, CalibrationExample, CalibrationStore,
+    ChunkId, DdaSignals, MeJepaInferConfig, MejepaStore, PanelId, PatchBundle, RealityPrediction,
+    RocksDbInferStore, TaskContext, TrainCertSummary,
 };
 use context_graph_mejepa_embedders::cache::EmbedderCache;
 use context_graph_mejepa_embedders::{
@@ -277,12 +281,21 @@ impl ShiftSubscriber {
             dda_expected_embedder_count: SUPPORTED_ALGORITHMIC_FORWARD_EMBEDDERS.len(),
             ..MeJepaInferConfig::default()
         };
-        Ok(build_slot_preserving_cuda_compiler(
+        #[cfg(test)]
+        let compiler = build_fixture_deterministic_compiler(
             self.config.repo_root.clone(),
             store,
             calibration,
             config,
-        )?)
+        )?;
+        #[cfg(not(test))]
+        let compiler = build_slot_preserving_cuda_compiler(
+            self.config.repo_root.clone(),
+            store,
+            calibration,
+            config,
+        )?;
+        Ok(compiler)
     }
     async fn compute_dda_rows(
         &self,
