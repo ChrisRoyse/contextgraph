@@ -56,7 +56,11 @@ pub fn assemble_verdict_with_evidence(input: VerdictAssemblyInput<'_>) -> Verdic
     )
     .unwrap_or_else(|err| ContradictionDecision {
         kind: crate::contradiction::ContradictionDecisionKind::ThresholdMissing,
-        reason: format!("CONTRADICTION_CALIBRATION_INVALID:{}", err.code()),
+        reason: format!(
+            "{}:{}",
+            crate::contradiction::CONTRADICTION_CALIBRATION_INVALID,
+            err.code()
+        ),
         cell_id: input.contradiction_cell_id.map(ToString::to_string),
         oracle_pass_confidence: input.oracle_pass_confidence,
         high_severity_failure_count: high_severity_concerns,

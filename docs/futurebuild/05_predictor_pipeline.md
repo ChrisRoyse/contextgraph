@@ -169,7 +169,7 @@ Replacement workflow per slot:
 
 1. Each slot's vector lives in its own embedder's space.
 2. Same-embedder cosines valid (`gtau.rs:14` iterates per embedder).
-3. **Cross-embedder dim compare forbidden.** `cosine_similarity` at `gtau.rs:90` fails closed with `MEJEPA_TCT_DIM_MISMATCH`.
+3. **Cross-embedder dim compare forbidden.** `cosine_similarity` at `gtau.rs:90` fails closed with `MEJEPA_INFER_DIM_MISMATCH` (per #628).
 4. Whole arrays can be compared array-vs-array (per-slot cosine map, strict-conjunction gate, per-pair matrix with diagonal cosines).
 5. Cross-slot relationships are **scalar pairwise metrics** (MI, correlation), not vector dim compares.
 6. **`PANEL_DIM = 5_120` is byte-layout only.** Forbidden: single linear/conv/attention over packed buffer; flat residual; any operation where strong slot compensates for weak.

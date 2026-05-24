@@ -543,7 +543,7 @@ For each candidate slot S ∈ {E2, E3, E4, E9, E11, E14}:
 
 **#538 Predictive-coding head FSV:**
 1. Top-down per-slot prediction matches `InstrumentSlot::dim()` per slot.
-2. Per-slot residual computed in same-embedder space (no cross-embedder dim compare; `MEJEPA_TCT_DIM_MISMATCH` on violation).
+2. Per-slot residual computed in same-embedder space (no cross-embedder dim compare; `MEJEPA_INFER_DIM_MISMATCH` on violation; per #628).
 3. Independent RocksDB readback of `CF_MEJEPA_PER_SLOT_PREDICTIONS` after flush/drop/reopen.
 4. Ablation: predictor-with-PC-head vs current late-fusion head; persist correlation delta against real Panel A baseline.
 5. OOD-by-residual rank-orders OOD calibrator at Spearman ≥ 0.7.

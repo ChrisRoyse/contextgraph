@@ -143,7 +143,7 @@ The `Panel` is an **array of 15 per-embedder vectors**, NOT a 5,120-d fused embe
 - `residual_norm_sq` over packed 5,120 buffer ✗
 - Any operation where a strong slot compensates for a weak slot
 
-**Code-level enforcement.** `crates/context-graph-mejepa-tct/src/gtau.rs:14` iterates `for embedder in EmbedderId::all()`; `cosine_similarity` at `gtau.rs:90` errors `MEJEPA_TCT_DIM_MISMATCH` on length mismatch. The slot-preserving late-fusion predictor (#387) replaced the flat-projection predictor.
+**Code-level enforcement.** `crates/context-graph-mejepa-tct/src/gtau.rs:14` iterates `for embedder in EmbedderId::all()`; `cosine_similarity` at `gtau.rs:90` errors `MEJEPA_INFER_DIM_MISMATCH` on length mismatch (per #628 — code emits `MEJEPA_INFER_*` family, prior `MEJEPA_TCT_DIM_MISMATCH` doc string was drift). The slot-preserving late-fusion predictor (#387) replaced the flat-projection predictor.
 
 ---
 
@@ -320,7 +320,7 @@ Every crate has an `Error` enum with `SCREAMING_SNAKE_CASE` codes via `.code()`:
 | `context-graph-mejepa-instruments` | `MEJEPA_INSTRUMENTS_INVALID_INPUT`, `MEJEPA_INSTRUMENTS_NUMERICAL_INVARIANT`, `MEJEPA_INSTR_FROZEN_VIOLATION` |
 | `context-graph-mejepa-corpus` | `MEJEPA_CORPUS_INVALID_INPUT`, `MEJEPA_CORPUS_NO_MUTATION_SITE`, `MEJEPA_CORPUS_LEAKAGE_DETECTED`, `MEJEPA_CORPUS_SUBPROCESS_TIMEOUT` |
 | `context-graph-mejepa` | `MEJEPA_INSTRUMENT_GRADIENT_LEAK`, `OOD_CALIBRATOR_MISSING`, `OOD_SCORE_ABOVE_THRESHOLD`, `MULTI_HEAD_CONTRADICTION`, `CONTRADICTION_THRESHOLD_MISSING`, `CROSS_PANEL_GOODHART_DETECTED`, `PATHWAY_AMBIGUOUS_LEAF_REJECTED` |
-| `context-graph-mejepa-tct` | `MEJEPA_TCT_DIM_MISMATCH` |
+| `context-graph-mejepa-tct` | `MEJEPA_INFER_DIM_MISMATCH` |
 | `context-graph-mcp` | `CCREALITY_ENGINE_RETIRED` (retired tool callers fail closed) |
 
 Missing CFs/files/models/env vars/malformed inputs MUST return a structured error with `.code()`. No silent defaults.

@@ -14,33 +14,16 @@ pub struct CalibrationExample {
     pub actual_test_pass: Vec<f32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ColdStartConformalPolicy {
-    pub oracle_outcome_count: usize,
-    pub coverage_target: f32,
-    pub alpha: f32,
-    pub confidence_interval: (f32, f32),
-}
-
-pub fn cold_start_conformal_policy(
-    oracle_outcome_count: usize,
-) -> Result<ColdStartConformalPolicy, MejepaInferError> {
-    let (coverage_target, confidence_interval) = if oracle_outcome_count < 100 {
-        (1.0, (0.0, 1.0))
-    } else if oracle_outcome_count < 1000 {
-        (0.99, (0.0, 1.0))
-    } else {
-        (0.90, (0.05, 0.95))
-    };
-    let alpha = 1.0 - coverage_target;
-    Ok(ColdStartConformalPolicy {
-        oracle_outcome_count,
-        coverage_target,
-        alpha,
-        confidence_interval,
-    })
-}
+// #623: `ColdStartConformalPolicy` struct and `cold_start_conformal_policy`
+// function deleted as dead public API with contradictory invariant. The
+// function returned `alpha = 1.0 - coverage_target` which, for
+// `oracle_outcome_count < 100`, was `0.0` — and `calibrate_tau` below
+// rejects `alpha <= 0.0`. Workspace grep showed zero callers outside
+// this file's now-deleted unit tests. If a cold-start contract is
+// needed later, file a new issue and reintroduce as a tagged enum
+// (e.g. `ConformalPolicyDecision::ColdStart { ... } |
+// ::Calibrated { alpha, tau }`) so the type system prevents
+// `alpha=0.0` from reaching `calibrate_tau`.
 
 pub fn non_conformity_score(
     predicted_test_pass: &[f32],
@@ -308,20 +291,8 @@ mod tests {
         assert_eq!(tau, 0.4);
     }
 
-    #[test]
-    fn cold_start_policy_widens_until_enough_oracle_outcomes_exist() {
-        let first = cold_start_conformal_policy(99).unwrap();
-        assert_eq!(first.confidence_interval, (0.0, 1.0));
-        assert_eq!(first.coverage_target, 1.0);
-
-        let mid = cold_start_conformal_policy(100).unwrap();
-        assert_eq!(mid.confidence_interval, (0.0, 1.0));
-        assert_eq!(mid.coverage_target, 0.99);
-
-        let standard = cold_start_conformal_policy(1000).unwrap();
-        assert_eq!(standard.confidence_interval, (0.05, 0.95));
-        assert_eq!(standard.coverage_target, 0.90);
-    }
+    // #623: `cold_start_policy_widens_until_enough_oracle_outcomes_exist`
+    // test deleted alongside the `cold_start_conformal_policy` function.
 
     #[test]
     fn sharp_prediction_returns_pass_only() {

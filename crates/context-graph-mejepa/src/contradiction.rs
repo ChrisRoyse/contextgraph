@@ -9,6 +9,11 @@ pub const CONTRADICTION_SCHEMA_VERSION: u16 = 1;
 pub const MULTI_HEAD_CONTRADICTION: &str = "MULTI_HEAD_CONTRADICTION";
 pub const CONTRADICTION_THRESHOLD_MISSING: &str = "CONTRADICTION_THRESHOLD_MISSING";
 pub const SINGLE_HEAD_ONLY: &str = "SINGLE_HEAD_ONLY";
+/// #624: declared so the inline string `"CONTRADICTION_CALIBRATION_INVALID:..."`
+/// at `verdict_assembly.rs::detect_multi_head_contradiction`'s error fallback
+/// uses the canonical constant. Operators grepping logs for the constant name
+/// must find rows tagged with this exact prefix.
+pub const CONTRADICTION_CALIBRATION_INVALID: &str = "CONTRADICTION_CALIBRATION_INVALID";
 pub const CONTRADICTION_FALSE_ABSTAIN_LIMIT: f32 = 0.05;
 pub const CONTRADICTION_RECALL_FLOOR: f32 = 0.80;
 
