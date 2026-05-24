@@ -602,7 +602,7 @@ impl MeJepaCompiler {
             confidence_interval: &confidence_interval,
             pass_threshold: self.config.p_test_threshold,
             ood_threshold,
-            interval_width_threshold: 0.8,
+            interval_width_threshold: self.config.interval_width_threshold,
             safety_constraint_violation_count: objective_report.constraint_violations.len(),
             objective_total_cost: objective_report.cost.total_cost,
             objective_cost_ceiling: objective_report.objective.pass_cost_ceiling,

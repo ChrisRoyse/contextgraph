@@ -117,6 +117,12 @@ pub const INFER_DEFAULT_MAX_CALIBRATION_AGE_DAYS: u32 = 30;
 pub const INFER_DEFAULT_MAX_CONSTELLATION_AGE_DAYS: u32 = 90;
 pub const INFER_DEFAULT_P_TEST_THRESHOLD: f32 = 0.80;
 pub const INFER_DEFAULT_OOD_REFUSE_THRESHOLD: f32 = 0.50;
+/// #686 — verdict-assembly threshold for conformal-interval width. Wider than
+/// this signals epistemic uncertainty about calibration coverage, not necessarily
+/// that the input is out-of-distribution. Previously a hardcoded `0.8` literal in
+/// `compiler.rs::compile`. Default remains `0.8` to preserve existing behavior;
+/// override via [`MeJepaInferConfig::interval_width_threshold`].
+pub const INFER_DEFAULT_INTERVAL_WIDTH_THRESHOLD: f32 = 0.80;
 pub const INFER_DEFAULT_OUTCOME_SET_MAX: usize = 2;
 pub const INFER_DEFAULT_BOOTSTRAP_DELTA_OMEGA: f32 = 0.50;
 pub const INFER_DEFAULT_BOOTSTRAP_DELTA_XI: f32 = 0.50;
@@ -140,6 +146,14 @@ pub struct MeJepaInferConfig {
     pub max_constellation_age_days: u32,
     pub p_test_threshold: f32,
     pub ood_refuse_threshold: f32,
+    /// #686 — width gate for the predictor's conformal interval. When the
+    /// interval is wider than this, verdict-assembly returns `Verdict::Abstain`
+    /// ("insufficient calibration evidence to claim coverage"), not
+    /// `Verdict::OutOfDistribution`. Decoupling these two failure modes lets
+    /// the OOD verdict mean exactly what its name says — the input is outside
+    /// the training distribution — instead of conflating it with cold-start
+    /// calibration looseness.
+    pub interval_width_threshold: f32,
     pub outcome_set_max: usize,
     pub bootstrap_delta_omega: f32,
     pub bootstrap_delta_xi: f32,
@@ -182,6 +196,7 @@ impl Default for MeJepaInferConfig {
             max_constellation_age_days: INFER_DEFAULT_MAX_CONSTELLATION_AGE_DAYS,
             p_test_threshold: INFER_DEFAULT_P_TEST_THRESHOLD,
             ood_refuse_threshold: INFER_DEFAULT_OOD_REFUSE_THRESHOLD,
+            interval_width_threshold: INFER_DEFAULT_INTERVAL_WIDTH_THRESHOLD,
             outcome_set_max: INFER_DEFAULT_OUTCOME_SET_MAX,
             bootstrap_delta_omega: INFER_DEFAULT_BOOTSTRAP_DELTA_OMEGA,
             bootstrap_delta_xi: INFER_DEFAULT_BOOTSTRAP_DELTA_XI,
