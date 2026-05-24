@@ -1043,6 +1043,28 @@ def _disk_snapshot_targets() -> list[str]:
     else:
         targets = [t.strip() for t in raw.split(",") if t.strip()]
     require("MEJEPA_SCHEDULER_DISK_TARGETS_EMPTY: at least one df target required", bool(targets))
+    # #751: contextgraph-shell historically exports parent ZFS pool roots
+    # (/zfs/hot, /zfs/archive) which resolve via `df` to "/" because the actual
+    # ContextGraph datasets are mounted at /zfs/hot/contextgraph and
+    # /zfs/archive/contextgraph. Pre-flight rejects this with a clear remediation
+    # message instead of letting `df` parsing fail later with KeyError.
+    parent_pool_overrides = {
+        "/zfs/hot": str(AIWONDER_HOT_ROOT),
+        "/zfs/archive": str(AIWONDER_DURABLE_ROOT),
+    }
+    misrouted = [t for t in targets if t in parent_pool_overrides]
+    require(
+        (
+            "MEJEPA_SCHEDULER_DISK_TARGETS_PARENT_POOL: CG_MEJEPA_DISK_TARGETS lists ZFS "
+            "pool parent path(s) {} that are not separate mount points on aiwonder. "
+            "Replace each with its ContextGraph dataset child: {}. "
+            "Workaround: prefix the command with "
+            "`CG_MEJEPA_DISK_TARGETS=/,/zfs/hot/contextgraph,/zfs/archive/contextgraph "
+            "CG_MEJEPA_HOT_DISK_TARGET=/zfs/hot/contextgraph "
+            "CG_MEJEPA_DURABLE_DISK_TARGET=/zfs/archive/contextgraph`."
+        ).format(misrouted, [parent_pool_overrides[t] for t in misrouted]),
+        not misrouted,
+    )
     return targets
 
 
