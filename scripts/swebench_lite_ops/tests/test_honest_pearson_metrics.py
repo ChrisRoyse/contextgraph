@@ -145,8 +145,9 @@ def test_honest_report_predictor_ablation_matches_constant_pearson():
     # Rank-correlated binary data → Pearson around 0.85 (perfect rank order
     # but non-linear thresholding caps Pearson below 1.0).
     assert rep.raw_pearson > 0.80
-    # Constant-vs-labels has zero variance on predictions -> Pearson NaN.
-    # ablation_constant=0.5 is the "predictor-removed" baseline.
+    # Constant-vs-labels has zero variance on predictions -> Pearson NaN
+    # internally, surfaced as float NaN on the dataclass and None in the
+    # JSON-canonical .to_dict() form.
     assert math.isnan(rep.predictor_ablation_raw_pearson)
     assert rep.sample_count == 4
 
@@ -197,8 +198,9 @@ def test_honest_report_dict_round_trip_finite():
     ):
         assert math.isfinite(payload[key]), (key, payload)
     assert payload["predictor_ablation"]["ablated_score_constant"] == 0.5
-    # ablated_raw_pearson is NaN because constant predictions have 0 variance.
-    assert math.isnan(payload["predictor_ablation"]["ablated_raw_pearson"])
+    # ablated_raw_pearson is None (was NaN, mapped to None for JSON canonicality)
+    # because constant predictions have 0 variance and Pearson is undefined.
+    assert payload["predictor_ablation"]["ablated_raw_pearson"] is None
 
 
 def test_isotonic_recalibration_reduces_brier_on_overconfident_predictor():

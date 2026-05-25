@@ -80,9 +80,12 @@ class HonestPearsonReport:
         }
 
 
-def _round(value: float) -> float:
+def _round(value: float) -> float | None:
+    """Round to 10 decimal places; map non-finite (NaN/Inf) to None so the
+    payload is canonical JSON (NaN is not valid per RFC 8259 and breaks
+    read-after-write equality checks)."""
     if not np.isfinite(value):
-        return float("nan")
+        return None
     return float(np.float64(value).round(10))
 
 
