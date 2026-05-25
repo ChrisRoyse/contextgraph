@@ -81,6 +81,24 @@ def _extract_rows(
     return predictions, labels
 
 
+def _raw_prediction_rows(
+    execute: dict[str, Any], split_label: str
+) -> tuple[str, list[dict[str, Any]]]:
+    for key in (
+        f"{split_label}_raw_predictions",
+        f"{split_label}_predictions",
+        f"{split_label}_rank_lift_predictions",
+    ):
+        if key in execute and execute.get(key) is not None:
+            return key, _require_array(execute.get(key), key)
+    raise SwebenchOpsError(
+        "HONEST_PEARSON_BAD_INPUT",
+        f"{split_label} raw prediction rows are missing",
+        "Pass a ship-gate report with raw per-row prediction arrays.",
+        {"split": split_label},
+    )
+
+
 def _maybe_extract_rank_lift(rows: list[dict[str, Any]]) -> list[float] | None:
     if not rows:
         return None
@@ -99,28 +117,77 @@ def _maybe_extract_rank_lift(rows: list[dict[str, Any]]) -> list[float] | None:
     return out
 
 
+def _extract_comparator_scores(
+    value: Any,
+    raw_labels: list[float],
+    label: str,
+) -> list[float] | None:
+    if value is None:
+        return None
+    rows = _require_array(value, label)
+    if not rows:
+        return None
+    scores, labels = _extract_rows(rows, label)
+    if len(scores) != len(raw_labels) or labels != raw_labels:
+        raise SwebenchOpsError(
+            "HONEST_PEARSON_COMPARATOR_MISMATCH",
+            f"{label} does not align with raw prediction labels",
+            "Rank-lift/rank-safe comparator rows must align with the raw prediction split.",
+            {
+                "label": label,
+                "comparator_count": len(scores),
+                "raw_count": len(raw_labels),
+            },
+        )
+    return scores
+
+
 def build_report(report_path: Path) -> dict[str, Any]:
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     execute = _require_object(payload.get("execute_and_inspect"), "execute_and_inspect")
-    calibration_rows = _require_array(
-        execute.get("calibration_predictions")
-        or execute.get("calibration_rank_lift_predictions"),
-        "calibration_predictions / calibration_rank_lift_predictions",
-    )
-    holdout_rows = _require_array(
-        execute.get("holdout_predictions")
-        or execute.get("holdout_rank_lift_predictions"),
-        "holdout_predictions / holdout_rank_lift_predictions",
-    )
+    calibration_source, calibration_rows = _raw_prediction_rows(execute, "calibration")
+    holdout_source, holdout_rows = _raw_prediction_rows(execute, "holdout")
     cal_p, cal_y = _extract_rows(calibration_rows, "calibration")
     hol_p, hol_y = _extract_rows(holdout_rows, "holdout")
-    cal_rank_lift = _maybe_extract_rank_lift(calibration_rows)
-    hol_rank_lift = _maybe_extract_rank_lift(holdout_rows)
+    cal_rank_lift = _extract_comparator_scores(
+        execute.get("calibration_rank_lift_predictions"),
+        cal_y,
+        "calibration_rank_lift_predictions",
+    ) or _maybe_extract_rank_lift(calibration_rows)
+    hol_rank_lift = _extract_comparator_scores(
+        execute.get("holdout_rank_lift_predictions"),
+        hol_y,
+        "holdout_rank_lift_predictions",
+    )
+    if hol_rank_lift is None and holdout_source == "holdout_raw_predictions":
+        hol_rank_lift = _extract_comparator_scores(
+            execute.get("holdout_predictions"),
+            hol_y,
+            "holdout_predictions",
+        )
+    if hol_rank_lift is None:
+        hol_rank_lift = _maybe_extract_rank_lift(holdout_rows)
+    cal_rank_safe = _extract_comparator_scores(
+        execute.get("calibration_rank_safe_predictions"),
+        cal_y,
+        "calibration_rank_safe_predictions",
+    )
+    hol_rank_safe = _extract_comparator_scores(
+        execute.get("holdout_rank_safe_predictions"),
+        hol_y,
+        "holdout_rank_safe_predictions",
+    )
     cal_report = honest_predictor_report(
-        cal_p, cal_y, rank_lift_predictions=cal_rank_lift
+        cal_p,
+        cal_y,
+        rank_lift_predictions=cal_rank_lift,
+        rank_safe_predictions=cal_rank_safe,
     )
     hol_report = honest_predictor_report(
-        hol_p, hol_y, rank_lift_predictions=hol_rank_lift
+        hol_p,
+        hol_y,
+        rank_lift_predictions=hol_rank_lift,
+        rank_safe_predictions=hol_rank_safe,
     )
     return {
         "schema_version": 1,
@@ -128,6 +195,10 @@ def build_report(report_path: Path) -> dict[str, Any]:
         "created_at_utc": utc_now(),
         "ship_gate_report_path": str(report_path),
         "ship_gate_report_sha256": sha256_file(report_path),
+        "raw_prediction_sources": {
+            "calibration": calibration_source,
+            "holdout": holdout_source,
+        },
         "calibration": cal_report.to_dict(),
         "holdout": hol_report.to_dict(),
         "notes": (

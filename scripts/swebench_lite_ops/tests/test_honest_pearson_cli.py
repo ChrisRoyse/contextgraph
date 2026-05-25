@@ -143,3 +143,37 @@ def test_predictor_ablation_isolates_noise(tmp_path):
     # Predictor near zero correlation; rank-lift carries the signal.
     assert abs(cal["raw_pearson"]) < 0.35
     assert cal["rank_lift_minus_raw_pearson"] > 0.3
+
+
+def test_build_report_prefers_holdout_raw_predictions_over_rank_lift_projection(tmp_path):
+    """The 2026-05-21 ship-gate FSV stores rank-lift in holdout_predictions
+    and the predictor scores in holdout_raw_predictions. The honest report
+    must not count the rank-lift projection as raw Pearson."""
+    actual = [False, False, True, True, False, True, False, True]
+    raw = [0.45, 0.55, 0.40, 0.60, 0.52, 0.48, 0.50, 0.51]
+    rank_lift = [0.05, 0.10, 0.88, 0.91, 0.20, 0.86, 0.15, 0.94]
+    rank_safe = [0.20, 0.25, 0.70, 0.75, 0.30, 0.80, 0.35, 0.85]
+    raw_rows = [_row(p, a) for p, a in zip(raw, actual)]
+    rank_lift_rows = [_row(p, a) for p, a in zip(rank_lift, actual)]
+    rank_safe_rows = [_row(p, a) for p, a in zip(rank_safe, actual)]
+    fsv_path = tmp_path / "ship-gate-fsv.json"
+    fsv_path.write_text(
+        json.dumps(
+            {
+                "execute_and_inspect": {
+                    "calibration_predictions": raw_rows,
+                    "calibration_rank_lift_predictions": rank_lift_rows,
+                    "calibration_rank_safe_predictions": rank_safe_rows,
+                    "holdout_raw_predictions": raw_rows,
+                    "holdout_predictions": rank_lift_rows,
+                    "holdout_rank_safe_predictions": rank_safe_rows,
+                }
+            }
+        )
+    )
+    report = build_report(fsv_path)
+    assert report["raw_prediction_sources"]["holdout"] == "holdout_raw_predictions"
+    # Raw is weak/noisy; rank-lift is strongly label-aligned.
+    assert abs(report["holdout"]["raw_pearson"]) < 0.35
+    assert report["holdout"]["rank_lift_minus_raw_pearson"] > 0.6
+    assert report["holdout"]["rank_safe_minus_raw_pearson"] > 0.4
