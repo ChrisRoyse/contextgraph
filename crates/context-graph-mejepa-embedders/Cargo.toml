@@ -12,6 +12,7 @@ context-graph-cuda = { path = "../context-graph-cuda" }
 context-graph-embeddings = { path = "../context-graph-embeddings" }
 context-graph-paths = { path = "../context-graph-paths" }
 async-trait = { workspace = true }
+chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10"
@@ -20,7 +21,6 @@ toml = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-chrono = { workspace = true }
 context-graph-mejepa-cf = { path = "../context-graph-mejepa-cf" }
 rocksdb = "0.22"
 tempfile = "3.10"

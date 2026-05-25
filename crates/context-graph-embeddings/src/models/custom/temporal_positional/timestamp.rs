@@ -42,7 +42,6 @@ impl PositionInfo {
             is_sequence: false,
         }
     }
-
 }
 
 // =============================================================================
@@ -75,7 +74,8 @@ impl HybridPositionInfo {
         }
     }
 
-    /// Create a hybrid position with no session context (legacy mode).
+    /// Create a hybrid position with no session context for direct legacy math tests.
+    #[allow(dead_code)]
     #[must_use]
     pub fn without_session(position: i64, is_sequence: bool) -> Self {
         Self {
@@ -84,7 +84,6 @@ impl HybridPositionInfo {
             session_id: None,
         }
     }
-
 }
 
 /// Extract position from ModelInput for E4 embedding.
@@ -121,7 +120,6 @@ pub fn extract_position(input: &ModelInput) -> EmbeddingResult<PositionInfo> {
 ///
 /// The instruction field can contain:
 /// - `"session:abc123 sequence:42"` - Session ID with sequence position
-/// - `"session:abc123 sequence:42"` - Session ID with sequence position
 ///
 /// # Returns
 ///
@@ -140,22 +138,6 @@ pub fn extract_hybrid_position(input: &ModelInput) -> EmbeddingResult<HybridPosi
             "unsupported input for E4 hybrid position extraction: {other:?}"
         ))),
     }
-}
-
-/// Parse hybrid position from instruction string.
-///
-/// Supports the strict hybrid format:
-/// - "session:abc123 sequence:42"
-///
-/// # Arguments
-///
-/// * `instruction` - The instruction string to parse
-///
-/// # Returns
-///
-/// `Some(HybridPositionInfo)` with extracted session_id and position info when valid.
-pub fn parse_hybrid_position(instruction: &str) -> Option<HybridPositionInfo> {
-    parse_hybrid_position_result(instruction).ok()
 }
 
 /// Parse strict hybrid position from instruction string.
@@ -249,7 +231,9 @@ pub fn parse_position_result(instruction: &str) -> EmbeddingResult<PositionInfo>
                 ));
             }
             let secs = epoch_str.parse::<i64>().map_err(|err| {
-                invalid_positional_instruction(format!("invalid epoch seconds {epoch_str:?}: {err}"))
+                invalid_positional_instruction(format!(
+                    "invalid epoch seconds {epoch_str:?}: {err}"
+                ))
             })?;
             return Ok(PositionInfo::timestamp(secs));
         }
@@ -434,7 +418,7 @@ mod tests {
 
     #[test]
     fn test_parse_hybrid_session_sequence() {
-        let hybrid = parse_hybrid_position("session:abc123 sequence:42").unwrap();
+        let hybrid = parse_hybrid_position_result("session:abc123 sequence:42").unwrap();
         assert_eq!(hybrid.session_id, Some("abc123".to_string()));
         assert_eq!(hybrid.position, 42);
         assert!(hybrid.is_sequence);
@@ -450,7 +434,7 @@ mod tests {
     #[test]
     fn test_parse_hybrid_reversed_order() {
         // Order shouldn't matter
-        let hybrid = parse_hybrid_position("sequence:100 session:my-session").unwrap();
+        let hybrid = parse_hybrid_position_result("sequence:100 session:my-session").unwrap();
         assert_eq!(hybrid.session_id, Some("my-session".to_string()));
         assert_eq!(hybrid.position, 100);
         assert!(hybrid.is_sequence);
@@ -465,7 +449,7 @@ mod tests {
     #[test]
     fn test_parse_hybrid_uuid_session() {
         let hybrid =
-            parse_hybrid_position("session:a1b2c3d4-e5f6-7890-abcd-ef1234567890 sequence:1")
+            parse_hybrid_position_result("session:a1b2c3d4-e5f6-7890-abcd-ef1234567890 sequence:1")
                 .unwrap();
         assert_eq!(
             hybrid.session_id,

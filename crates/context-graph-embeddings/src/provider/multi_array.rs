@@ -1380,7 +1380,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
     /// # Behavior
     ///
     /// - E2/E3: Uses `metadata.e2_instruction()`/`e3_instruction()` to pass "timestamp:..." for decay/periodic encoding
-    /// - E4: Uses `metadata.e4_instruction()` to pass "sequence:N" or "epoch:N"
+    /// - E4: Uses `metadata.e4_instruction()` to pass "session:X sequence:N"
     /// - All other embedders: Unchanged
     async fn embed_all_with_metadata(
         &self,
@@ -2213,7 +2213,7 @@ path = \"{}\"
         // This test verifies the fix at the metadata level
         let metadata = EmbeddingMetadata::with_sequence("test-session-id", 100);
 
-        let instruction = metadata.e4_instruction();
+        let instruction = metadata.e4_instruction().unwrap();
 
         // Critical assertion: session_id must be in the instruction
         assert!(
@@ -2240,8 +2240,8 @@ path = \"{}\"
         let metadata1 = EmbeddingMetadata::with_sequence("session-A", 1);
         let metadata2 = EmbeddingMetadata::with_sequence("session-B", 1);
 
-        let inst1 = metadata1.e4_instruction();
-        let inst2 = metadata2.e4_instruction();
+        let inst1 = metadata1.e4_instruction().unwrap();
+        let inst2 = metadata2.e4_instruction().unwrap();
 
         assert_ne!(
             inst1, inst2,
@@ -2267,7 +2267,7 @@ path = \"{}\"
             causal_hint: None,
         };
 
-        let instruction = metadata.e2_instruction();
+        let instruction = metadata.e2_instruction().unwrap();
         assert!(
             instruction.starts_with("timestamp:"),
             "e2_instruction() must start with 'timestamp:'. Got: {}",
@@ -2301,8 +2301,8 @@ path = \"{}\"
         };
 
         assert_ne!(
-            meta1.e2_instruction(),
-            meta2.e2_instruction(),
+            meta1.e2_instruction().unwrap(),
+            meta2.e2_instruction().unwrap(),
             "Different timestamps must produce different E2 instructions"
         );
     }
@@ -2319,17 +2319,17 @@ path = \"{}\"
             causal_hint: None,
         };
 
-        let e2 = metadata.e2_instruction();
-        let e3 = metadata.e3_instruction();
+        let e2 = metadata.e2_instruction().unwrap();
+        let e3 = metadata.e3_instruction().unwrap();
         assert_eq!(
             e2, e3,
             "E3 instruction should delegate to E2 (same timestamp format)"
         );
     }
 
-    /// Test that e2_instruction without timestamp produces epoch-based instruction.
+    /// Test that e2_instruction without timestamp fails closed.
     #[test]
-    fn test_e2_instruction_fallback_to_epoch() {
+    fn test_e2_instruction_rejects_missing_timestamp() {
         let metadata = EmbeddingMetadata {
             session_id: None,
             session_sequence: None,
@@ -2337,17 +2337,16 @@ path = \"{}\"
             causal_hint: None,
         };
 
-        let instruction = metadata.e2_instruction();
+        let err = metadata.e2_instruction().unwrap_err();
         assert!(
-            instruction.starts_with("epoch:"),
-            "Without timestamp, e2_instruction() must use epoch format. Got: {}",
-            instruction
+            err.to_string().contains("timestamp"),
+            "missing E2 timestamp must fail closed, got {err}"
         );
     }
 
-    /// Test backward compatibility: metadata without session_id still works.
+    /// Test E4 metadata without session_id fails closed.
     #[test]
-    fn test_backward_compatible_no_session_metadata() {
+    fn test_e4_instruction_rejects_no_session_metadata() {
         let metadata = EmbeddingMetadata {
             session_id: None,
             session_sequence: Some(42),
@@ -2355,16 +2354,11 @@ path = \"{}\"
             causal_hint: None,
         };
 
-        let instruction = metadata.e4_instruction();
+        let err = metadata.e4_instruction().unwrap_err();
 
-        // Should produce legacy format without session prefix
-        assert_eq!(
-            instruction, "sequence:42",
-            "Legacy format should work without session_id"
-        );
         assert!(
-            !instruction.contains("session:"),
-            "No session prefix when session_id is None"
+            err.to_string().contains("session_id"),
+            "missing E4 session_id must fail closed, got {err}"
         );
     }
 }

@@ -1527,7 +1527,7 @@ mod tests {
     #[test]
     fn test_e4_instruction_with_session_and_sequence() {
         let metadata = EmbeddingMetadata::with_sequence("session-123", 42);
-        let instruction = metadata.e4_instruction();
+        let instruction = metadata.e4_instruction().unwrap();
 
         assert!(
             instruction.contains("session:session-123"),
@@ -1542,64 +1542,53 @@ mod tests {
         assert_eq!(instruction, "session:session-123 sequence:42");
     }
 
-    /// Test e4_instruction() without session_id (backward compatible legacy mode).
+    /// Test e4_instruction() without session_id fails closed.
     #[test]
-    fn test_e4_instruction_without_session() {
+    fn test_e4_instruction_rejects_without_session() {
         let metadata = EmbeddingMetadata {
             session_id: None,
             session_sequence: Some(42),
             timestamp: None,
             causal_hint: None,
         };
-        let instruction = metadata.e4_instruction();
+        let err = metadata.e4_instruction().unwrap_err();
 
-        assert_eq!(instruction, "sequence:42");
         assert!(
-            !instruction.contains("session:"),
-            "Should NOT include session prefix when session_id is None"
+            err.to_string().contains("session_id"),
+            "missing session must fail closed, got {err}"
         );
     }
 
-    /// Test e4_instruction() with timestamp only (no session or sequence).
+    /// Test e4_instruction() with timestamp only (no session or sequence) fails closed.
     #[test]
-    fn test_e4_instruction_with_timestamp_only() {
+    fn test_e4_instruction_rejects_timestamp_only() {
         use chrono::TimeZone;
         let ts = Utc.with_ymd_and_hms(2024, 1, 15, 10, 30, 0).unwrap();
-        let expected_epoch = ts.timestamp(); // Get the actual epoch value
         let metadata = EmbeddingMetadata::with_timestamp(ts);
-        let instruction = metadata.e4_instruction();
+        let err = metadata.e4_instruction().unwrap_err();
 
-        assert!(instruction.starts_with("epoch:"), "Got: {}", instruction);
         assert!(
-            !instruction.contains("session:"),
-            "Should NOT include session prefix"
+            err.to_string().contains("session_id"),
+            "timestamp-only E4 must fail closed, got {err}"
         );
-        assert_eq!(instruction, format!("epoch:{}", expected_epoch));
     }
 
-    /// Test e4_instruction() with session_id and timestamp (no sequence).
+    /// Test e4_instruction() with session_id and timestamp (no sequence) fails closed.
     #[test]
-    fn test_e4_instruction_with_session_and_timestamp() {
+    fn test_e4_instruction_rejects_session_and_timestamp_without_sequence() {
         use chrono::TimeZone;
         let ts = Utc.with_ymd_and_hms(2024, 1, 15, 10, 30, 0).unwrap();
-        let expected_epoch = ts.timestamp(); // Get the actual epoch value
         let metadata = EmbeddingMetadata {
             session_id: Some("my-session".to_string()),
             session_sequence: None,
             timestamp: Some(ts),
             causal_hint: None,
         };
-        let instruction = metadata.e4_instruction();
+        let err = metadata.e4_instruction().unwrap_err();
 
         assert!(
-            instruction.contains("session:my-session"),
-            "Got: {}",
-            instruction
-        );
-        assert!(instruction.contains("epoch:"), "Got: {}", instruction);
-        assert_eq!(
-            instruction,
-            format!("session:my-session epoch:{}", expected_epoch)
+            err.to_string().contains("session_sequence"),
+            "missing E4 sequence must fail closed, got {err}"
         );
     }
 
@@ -1608,7 +1597,7 @@ mod tests {
     fn test_e4_instruction_with_uuid_session() {
         let uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
         let metadata = EmbeddingMetadata::with_sequence(uuid, 100);
-        let instruction = metadata.e4_instruction();
+        let instruction = metadata.e4_instruction().unwrap();
 
         assert_eq!(
             instruction,
@@ -1616,13 +1605,15 @@ mod tests {
         );
     }
 
-    /// Test e4_instruction() with empty string session_id (edge case).
+    /// Test e4_instruction() with empty string session_id (edge case) fails closed.
     #[test]
-    fn test_e4_instruction_with_empty_session() {
+    fn test_e4_instruction_rejects_empty_session() {
         let metadata = EmbeddingMetadata::with_sequence("", 5);
-        let instruction = metadata.e4_instruction();
+        let err = metadata.e4_instruction().unwrap_err();
 
-        // Empty session_id is still included (it's Some(""))
-        assert_eq!(instruction, "session: sequence:5");
+        assert!(
+            err.to_string().contains("session_id"),
+            "empty session must fail closed, got {err}"
+        );
     }
 }

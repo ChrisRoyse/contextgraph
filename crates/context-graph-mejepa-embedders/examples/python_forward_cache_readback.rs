@@ -1,3 +1,4 @@
+use chrono::DateTime;
 use context_graph_core::memory::ast::Language as AstLanguage;
 use context_graph_mejepa_embedders::{
     AlgorithmicEmbedderForward, EmbedError, EmbedderForward, EmbedderId, EmbedderInput,
@@ -806,7 +807,21 @@ async fn run_embedder_batches(
                 });
                 continue;
             }
-            let identity = forward_input_identity(forwarder.embedder(), chunk);
+            let identity = match forward_input_identity(forwarder.embedder(), chunk) {
+                Ok(identity) => identity,
+                Err(err) => {
+                    quarantines.push(QuarantineRecord {
+                        row: quarantine_row(
+                            forwarder.embedder(),
+                            chunk,
+                            err.code,
+                            err.message,
+                            None,
+                        ),
+                    });
+                    continue;
+                }
+            };
             if let Some(output) = output_cache.get(&identity.input_sha256) {
                 duplicate_forward_cache_hits += 1;
                 plans.push(BatchRecordPlan::Cached {
@@ -978,6 +993,8 @@ fn source_id_for_embedder(embedder: EmbedderId, chunk: &ChunkRow) -> String {
 fn forward_input_identity_policy(embedder: EmbedderId) -> &'static str {
     if embedder == EmbedderId::E7 {
         "e7_language_and_source_text_sha256_v1"
+    } else if matches!(embedder, EmbedderId::E2 | EmbedderId::E3 | EmbedderId::E4) {
+        "temporal_instruction_and_source_text_sha256_v2"
     } else {
         "source_text_sha256_v1"
     }
@@ -989,7 +1006,10 @@ fn e7_forward_language_identity(chunk: &ChunkRow) -> String {
         .unwrap_or_else(|_| format!("unsupported_source_id:{}", chunk.relative_path))
 }
 
-fn forward_input_identity(embedder: EmbedderId, chunk: &ChunkRow) -> ForwardInputIdentity {
+fn forward_input_identity(
+    embedder: EmbedderId,
+    chunk: &ChunkRow,
+) -> Result<ForwardInputIdentity, ForwardFailure> {
     let policy = forward_input_identity_policy(embedder);
     let input_sha256 = if embedder == EmbedderId::E7 {
         sha256_value(&json!({
@@ -999,13 +1019,148 @@ fn forward_input_identity(embedder: EmbedderId, chunk: &ChunkRow) -> ForwardInpu
             "language": e7_forward_language_identity(chunk),
             "source_sha256": chunk.source_sha256,
         }))
+    } else if matches!(embedder, EmbedderId::E2 | EmbedderId::E3 | EmbedderId::E4) {
+        let temporal_instruction = temporal_instruction_for_identity(embedder, chunk)?;
+        sha256_value(&json!({
+            "schema_version": SCHEMA_VERSION,
+            "policy": policy,
+            "embedder_id": embedder.slug(),
+            "source_sha256": chunk.source_sha256,
+            "temporal_instruction": temporal_instruction,
+        }))
     } else {
         chunk.source_sha256.clone()
     };
-    ForwardInputIdentity {
+    Ok(ForwardInputIdentity {
         input_sha256,
         policy,
+    })
+}
+
+fn temporal_instruction_for_identity(
+    embedder: EmbedderId,
+    chunk: &ChunkRow,
+) -> Result<String, ForwardFailure> {
+    let source_id = source_id_for_embedder(embedder, chunk);
+    let mut invalid_supported_instruction = None;
+    for candidate in [source_id.as_str(), chunk.source_text.as_str()] {
+        for line in candidate.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let has_supported_prefix = match embedder {
+                EmbedderId::E2 | EmbedderId::E3 => has_timestamp_prefix(trimmed),
+                EmbedderId::E4 => has_positional_prefix(trimmed),
+                _ => false,
+            };
+            if !has_supported_prefix {
+                continue;
+            }
+            match validate_temporal_instruction_for_identity(embedder, trimmed) {
+                Ok(()) => return Ok(trimmed.to_string()),
+                Err(err) => {
+                    invalid_supported_instruction.get_or_insert(err);
+                }
+            }
+        }
     }
+    Err(ForwardFailure::new(
+        "MEJEPA_PY_FORWARD_TEMPORAL_INSTRUCTION_INVALID",
+        invalid_supported_instruction.unwrap_or_else(|| match embedder {
+            EmbedderId::E2 | EmbedderId::E3 => {
+                "missing explicit timestamp instruction; expected timestamp:<RFC3339> or epoch:<seconds>".to_string()
+            }
+            EmbedderId::E4 => {
+                "missing explicit session sequence instruction; expected session:<id> sequence:<n>".to_string()
+            }
+            _ => "embedder has no temporal instruction contract".to_string(),
+        }),
+    ))
+}
+
+fn has_timestamp_prefix(value: &str) -> bool {
+    value.starts_with("timestamp:") || value.starts_with("epoch:")
+}
+
+fn has_positional_prefix(value: &str) -> bool {
+    value.starts_with("session:") || value.starts_with("sequence:") || has_timestamp_prefix(value)
+}
+
+fn validate_temporal_instruction_for_identity(
+    embedder: EmbedderId,
+    value: &str,
+) -> Result<(), String> {
+    match embedder {
+        EmbedderId::E2 | EmbedderId::E3 => validate_timestamp_instruction_for_identity(value),
+        EmbedderId::E4 => validate_e4_session_sequence_instruction_for_identity(value),
+        _ => Err(format!("{} is not a temporal embedder", embedder.slug())),
+    }
+}
+
+fn validate_timestamp_instruction_for_identity(value: &str) -> Result<(), String> {
+    if let Some(ts_str) = value.strip_prefix("timestamp:") {
+        let ts_str = ts_str.trim();
+        if ts_str.is_empty() {
+            return Err("timestamp instruction is empty; expected timestamp:<RFC3339>".to_string());
+        }
+        DateTime::parse_from_rfc3339(ts_str)
+            .map_err(|err| format!("invalid RFC3339 timestamp {ts_str:?}: {err}"))?;
+        return Ok(());
+    }
+    if let Some(epoch_str) = value.strip_prefix("epoch:") {
+        let epoch_str = epoch_str.trim();
+        if epoch_str.is_empty() {
+            return Err("epoch instruction is empty; expected epoch:<seconds>".to_string());
+        }
+        let secs = epoch_str
+            .parse::<i64>()
+            .map_err(|err| format!("invalid epoch seconds {epoch_str:?}: {err}"))?;
+        chrono::DateTime::from_timestamp(secs, 0).ok_or_else(|| {
+            format!("epoch seconds {secs} is outside chrono's DateTime<Utc> range")
+        })?;
+        return Ok(());
+    }
+    Err(format!(
+        "unsupported timestamp instruction {value:?}; expected timestamp:<RFC3339> or epoch:<seconds>"
+    ))
+}
+
+fn validate_e4_session_sequence_instruction_for_identity(value: &str) -> Result<(), String> {
+    let mut session_id = None;
+    let mut sequence = None;
+    for part in value.split_whitespace() {
+        if let Some(id) = part.strip_prefix("session:") {
+            if id.is_empty() {
+                return Err("session instruction is empty; expected session:<id>".to_string());
+            }
+            session_id = Some(id);
+            continue;
+        }
+        if let Some(seq_str) = part.strip_prefix("sequence:") {
+            if seq_str.is_empty() {
+                return Err("sequence instruction is empty; expected sequence:<n>".to_string());
+            }
+            let parsed = seq_str
+                .parse::<u64>()
+                .map_err(|err| format!("invalid sequence {seq_str:?}: {err}"))?;
+            sequence = Some(parsed);
+            continue;
+        }
+        if part.starts_with("timestamp:") || part.starts_with("epoch:") {
+            return Err(
+                "E4 live-temporal instruction must be session-scoped sequence, not timestamp/epoch"
+                    .to_string(),
+            );
+        }
+    }
+    if session_id.is_none() {
+        return Err("missing non-empty session id; expected session:<id> sequence:<n>".to_string());
+    }
+    if sequence.is_none() {
+        return Err("missing sequence; expected session:<id> sequence:<n>".to_string());
+    }
+    Ok(())
 }
 
 fn forward_record(
@@ -1382,7 +1537,9 @@ fn evaluate_embedder_distinctness(
             >= MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
             && input_with_multiple_vectors_count == 0
             && non_colliding_unique_input_fraction >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION;
-        let status = if distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION {
+        let status = if row_count == 0 {
+            "no_forward_records"
+        } else if distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION {
             "usable"
         } else if duplicate_bounded_usable {
             "usable_duplicate_bounded"
@@ -1390,6 +1547,7 @@ fn evaluate_embedder_distinctness(
             "collapse"
         };
         let metric = json!({
+            "forward_record_count": row_count,
             "unique_vector_sha256_count": unique_count,
             "distinctness_fraction": distinctness_fraction,
             "distinctness_gate_status": status,
@@ -1955,19 +2113,63 @@ mod tests {
         let right = chunk("chunk-right", "print(1)\n", "sha256:source-a", "pkg/b.py");
         let different_language = chunk("chunk-rs", "print(1)\n", "sha256:source-a", "pkg/a.rs");
 
-        let left_e7 = forward_input_identity(EmbedderId::E7, &left);
-        let right_e7 = forward_input_identity(EmbedderId::E7, &right);
-        let different_language_e7 = forward_input_identity(EmbedderId::E7, &different_language);
+        let left_e7 = forward_input_identity(EmbedderId::E7, &left).unwrap();
+        let right_e7 = forward_input_identity(EmbedderId::E7, &right).unwrap();
+        let different_language_e7 =
+            forward_input_identity(EmbedderId::E7, &different_language).unwrap();
 
         assert_eq!(left_e7.policy, "e7_language_and_source_text_sha256_v1");
         assert_eq!(left_e7.input_sha256, right_e7.input_sha256);
         assert_ne!(left_e7.input_sha256, different_language_e7.input_sha256);
 
-        let left_e1 = forward_input_identity(EmbedderId::E1, &left);
-        let right_e1 = forward_input_identity(EmbedderId::E1, &right);
+        let left_e1 = forward_input_identity(EmbedderId::E1, &left).unwrap();
+        let right_e1 = forward_input_identity(EmbedderId::E1, &right).unwrap();
         assert_eq!(left_e1.policy, "source_text_sha256_v1");
         assert_eq!(left_e1.input_sha256, "sha256:source-a");
         assert_eq!(left_e1.input_sha256, right_e1.input_sha256);
+    }
+
+    #[test]
+    fn forward_input_identity_includes_temporal_instruction_for_live_temporal_slots() {
+        let earlier = chunk(
+            "chunk-a",
+            "timestamp:2026-05-24T12:00:00Z\nvalue = 1\n",
+            "sha256:source-a",
+            "pkg/a.py",
+        );
+        let later = chunk(
+            "chunk-b",
+            "timestamp:2026-05-24T13:00:00Z\nvalue = 1\n",
+            "sha256:source-a",
+            "pkg/a.py",
+        );
+
+        let earlier_e2 = forward_input_identity(EmbedderId::E2, &earlier).unwrap();
+        let later_e2 = forward_input_identity(EmbedderId::E2, &later).unwrap();
+
+        assert_eq!(
+            earlier_e2.policy,
+            "temporal_instruction_and_source_text_sha256_v2"
+        );
+        assert_ne!(
+            earlier_e2.input_sha256, later_e2.input_sha256,
+            "same source text hash at different event times must not share a temporal cache identity"
+        );
+    }
+
+    #[test]
+    fn forward_input_identity_rejects_invalid_temporal_instruction() {
+        let invalid = chunk(
+            "chunk-a",
+            "session:attempt-1 sequence:not-a-number\nvalue = 1\n",
+            "sha256:source-a",
+            "pkg/a.py",
+        );
+
+        let err = forward_input_identity(EmbedderId::E4, &invalid).unwrap_err();
+
+        assert_eq!(err.code, "MEJEPA_PY_FORWARD_TEMPORAL_INSTRUCTION_INVALID");
+        assert!(err.message.contains("invalid sequence"));
     }
 
     #[tokio::test]
@@ -2114,6 +2316,26 @@ mod tests {
         assert_eq!(
             report.per_embedder_metrics["e1"]["unique_vector_sha256_count"],
             json!(1)
+        );
+    }
+
+    #[test]
+    fn distinctness_gate_treats_all_quarantine_as_no_forward_records() {
+        let active = vec!["e2".to_string()];
+        let inputs_by_embedder = BTreeMap::new();
+
+        let report = evaluate_embedder_distinctness(&active, &inputs_by_embedder);
+
+        assert!(report.passes());
+        assert_eq!(report.collapse_failures.len(), 0);
+        assert_eq!(report.alias_failures.len(), 0);
+        assert_eq!(
+            report.per_embedder_metrics["e2"]["distinctness_gate_status"],
+            json!("no_forward_records")
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e2"]["forward_record_count"],
+            json!(0)
         );
     }
 

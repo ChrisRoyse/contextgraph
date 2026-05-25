@@ -4,6 +4,7 @@ use crate::embedder_id::{EmbedderId, EmbedderKind};
 use crate::error::{EmbedError, EmbedResult};
 use crate::types::{EmbedderInput, EmbedderOutput};
 use async_trait::async_trait;
+use chrono::DateTime;
 use context_graph_core::memory::ast::Language as AstLanguage;
 use context_graph_cuda::compute_hdc_embeddings_gpu;
 use context_graph_embeddings::models::custom::HdcModel;
@@ -14,7 +15,6 @@ use context_graph_embeddings::models::{
 };
 use context_graph_embeddings::traits::{EmbeddingModel, SingleModelConfig};
 use context_graph_embeddings::types::{ModelId, ModelInput};
-use chrono::DateTime;
 use std::path::{Path, PathBuf};
 
 pub const SUPPORTED_PRETRAINED_FORWARD_EMBEDDERS: &[EmbedderId] = &[
@@ -762,9 +762,8 @@ fn validate_timestamp_instruction(value: &str) -> Result<(), String> {
         if ts_str.is_empty() {
             return Err("timestamp instruction is empty; expected timestamp:<RFC3339>".to_string());
         }
-        DateTime::parse_from_rfc3339(ts_str).map_err(|err| {
-            format!("invalid RFC3339 timestamp {ts_str:?}: {err}")
-        })?;
+        DateTime::parse_from_rfc3339(ts_str)
+            .map_err(|err| format!("invalid RFC3339 timestamp {ts_str:?}: {err}"))?;
         return Ok(());
     }
     if let Some(epoch_str) = value.strip_prefix("epoch:") {

@@ -83,6 +83,7 @@ impl TemporalPeriodicModel {
     /// Supports formats:
     /// - ISO 8601: "timestamp:2024-01-15T10:30:00Z"
     /// - Unix epoch: "epoch:1705315800"
+    #[allow(dead_code)]
     pub(crate) fn parse_timestamp(instruction: &str) -> Option<DateTime<Utc>> {
         Self::parse_timestamp_result(instruction).ok()
     }

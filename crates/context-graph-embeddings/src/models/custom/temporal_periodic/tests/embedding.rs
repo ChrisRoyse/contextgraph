@@ -7,11 +7,8 @@ use crate::types::ModelInput;
 #[tokio::test]
 async fn test_embed_returns_512d_vector() {
     let model = TemporalPeriodicModel::new();
-    let input = ModelInput::text_with_instruction(
-        "test content",
-        "timestamp:2024-01-15T10:30:00Z",
-    )
-    .expect("Failed to create input");
+    let input = ModelInput::text_with_instruction("test content", "timestamp:2024-01-15T10:30:00Z")
+        .expect("Failed to create input");
 
     let embedding = model.embed(&input).await.expect("Embed should succeed");
 

@@ -8,11 +8,9 @@ use super::super::TemporalPositionalModel;
 #[tokio::test]
 async fn test_embed_returns_512d_vector() {
     let model = TemporalPositionalModel::new();
-    let input = ModelInput::text_with_instruction(
-        "test content",
-        "session:test-session sequence:0",
-    )
-    .expect("Failed to create input");
+    let input =
+        ModelInput::text_with_instruction("test content", "session:test-session sequence:0")
+            .expect("Failed to create input");
 
     let embedding = model.embed(&input).await.expect("Embed should succeed");
 
