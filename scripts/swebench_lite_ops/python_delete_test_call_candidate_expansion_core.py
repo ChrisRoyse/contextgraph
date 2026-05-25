@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 from collections import Counter, defaultdict
@@ -17,6 +18,7 @@ TASK_ID = "TASK-PY-G-135E"
 ARTIFACT_KIND = "delete_test_call_candidate_expansion_plan"
 DEFAULT_BATCH_KEY_PREFIX = "delete-test-call-135e-expansion-batch"
 DEFAULT_SELECTION_POLICY = "fixed_split_sublabel_quota_no_oracle_label_selection_v1"
+PASS_HYPOTHESIS_POLICY_VERSION = "delete_test_call_pre_oracle_pass_hypothesis_v1"
 
 DEFAULT_TARGETS: dict[tuple[str, str], int] = {
     ("holdout", "other_assertion_like_deleted"): 8,
@@ -224,6 +226,9 @@ def select_candidates(
     candidates: list[dict[str, Any]],
     existing_ids: set[str],
     targets: dict[tuple[str, str], int],
+    *,
+    prefer_pass_hypothesis: bool = False,
+    require_pass_hypothesis: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, int]], Counter[tuple[str, str]]]:
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in candidates:
@@ -231,9 +236,13 @@ def select_candidates(
             continue
         key = (str(row["stable_partition"]), str(row["assertion_duty_sublabel"]))
         if key in targets:
+            if prefer_pass_hypothesis or require_pass_hypothesis:
+                ensure_pre_oracle_pass_hypothesis(row)
+                if require_pass_hypothesis and not has_pre_oracle_pass_hypothesis(row):
+                    continue
             grouped[key].append(row)
     for key in grouped:
-        grouped[key].sort(key=selection_sort_key)
+        grouped[key].sort(key=lambda row: expansion_selection_sort_key(row, prefer_pass_hypothesis))
 
     selected: list[dict[str, Any]] = []
     shortfalls: dict[str, dict[str, int]] = {}
@@ -258,6 +267,361 @@ def selection_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
         int(row.get("source_site_effective_offset") or row.get("source_site_offset") or 0),
         str(row.get("candidate_row_id") or ""),
     )
+
+
+def expansion_selection_sort_key(row: dict[str, Any], prefer_pass_hypothesis: bool) -> tuple[Any, ...]:
+    if not prefer_pass_hypothesis:
+        return selection_sort_key(row)
+    payload = ensure_pre_oracle_pass_hypothesis(row)
+    return (
+        0 if has_pre_oracle_pass_hypothesis(row) else 1,
+        -float(payload.get("highest_confidence") or 0.0),
+        str(payload.get("primary_kind") or ""),
+        *selection_sort_key(row),
+    )
+
+
+def ensure_pre_oracle_pass_hypothesis(row: dict[str, Any]) -> dict[str, Any]:
+    payload = row.get("pre_oracle_pass_hypothesis")
+    if isinstance(payload, dict):
+        return payload
+    payload = detect_pre_oracle_pass_hypothesis(row)
+    row["pre_oracle_pass_hypothesis"] = payload
+    return payload
+
+
+def has_pre_oracle_pass_hypothesis(row: dict[str, Any]) -> bool:
+    payload = ensure_pre_oracle_pass_hypothesis(row)
+    hypotheses = payload.get("hypotheses")
+    return isinstance(hypotheses, list) and bool(hypotheses)
+
+
+def detect_pre_oracle_pass_hypothesis(row: dict[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "policy_version": PASS_HYPOTHESIS_POLICY_VERSION,
+        "analysis_status": "not_evaluated",
+        "target_oracle_labels_used_as_features": False,
+        "hypotheses": [],
+    }
+    source_file = Path(str(row.get("source_file") or ""))
+    if not source_file.is_file() or has_mounted_drive_fragment(source_file):
+        payload["analysis_status"] = "source_file_unavailable"
+        payload["source_file"] = str(source_file) if str(source_file) else None
+        return finalize_pass_hypothesis_payload(payload)
+
+    try:
+        source_text = source_file.read_text(encoding="utf-8")
+        tree = ast.parse(source_text)
+    except (OSError, UnicodeDecodeError, SyntaxError, ValueError) as exc:
+        payload["analysis_status"] = "source_parse_unavailable"
+        payload["source_file"] = str(source_file)
+        payload["error"] = f"{type(exc).__name__}: {exc}"
+        return finalize_pass_hypothesis_payload(payload)
+
+    selected_line = selected_statement_start_line(row)
+    if selected_line is None:
+        payload["analysis_status"] = "selected_line_unavailable"
+        payload["source_file"] = str(source_file)
+        return finalize_pass_hypothesis_payload(payload)
+
+    statement = find_statement_node(tree, selected_line)
+    if statement is None:
+        payload["analysis_status"] = "selected_statement_unavailable"
+        payload["source_file"] = str(source_file)
+        payload["selected_line"] = selected_line
+        return finalize_pass_hypothesis_payload(payload)
+
+    payload["analysis_status"] = "evaluated"
+    payload["source_file"] = str(source_file)
+    payload["selected_line"] = selected_line
+    payload["selected_node_type"] = type(statement).__name__
+
+    payload["hypotheses"].extend(tautological_assertion_hypotheses(statement))
+    payload["hypotheses"].extend(trivial_pytest_raises_hypotheses(statement))
+    redundant = redundant_assertion_hypothesis(tree, statement, selected_line)
+    if redundant is not None:
+        payload["hypotheses"].append(redundant)
+
+    return finalize_pass_hypothesis_payload(payload)
+
+
+def selected_statement_start_line(row: dict[str, Any]) -> int | None:
+    statement = row.get("selected_statement")
+    if isinstance(statement, dict) and isinstance(statement.get("start_line"), int):
+        return int(statement["start_line"])
+    return None
+
+
+def finalize_pass_hypothesis_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    hypotheses = payload.get("hypotheses")
+    if not isinstance(hypotheses, list):
+        hypotheses = []
+        payload["hypotheses"] = hypotheses
+    hypotheses.sort(key=lambda item: (-float(item.get("confidence") or 0.0), str(item.get("kind") or "")))
+    payload["hypothesis_count"] = len(hypotheses)
+    payload["highest_confidence"] = float(hypotheses[0].get("confidence") or 0.0) if hypotheses else 0.0
+    payload["primary_kind"] = str(hypotheses[0].get("kind") or "") if hypotheses else None
+    return payload
+
+
+def find_statement_node(tree: ast.AST, candidate_line: int) -> ast.stmt | None:
+    candidates: list[ast.stmt] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.stmt):
+            continue
+        if not hasattr(node, "lineno") or not hasattr(node, "end_lineno"):
+            continue
+        end_line = int(getattr(node, "end_lineno", None) or node.lineno)
+        if int(node.lineno) <= candidate_line <= end_line:
+            candidates.append(node)
+    if not candidates:
+        return None
+    candidates.sort(
+        key=lambda node: (
+            int(getattr(node, "end_lineno", None) or node.lineno) - int(node.lineno),
+            int(getattr(node, "col_offset", 0)),
+            -int(node.lineno),
+        )
+    )
+    return candidates[0]
+
+
+def tautological_assertion_hypotheses(statement: ast.stmt) -> list[dict[str, Any]]:
+    hypotheses: list[dict[str, Any]] = []
+    if isinstance(statement, ast.Assert):
+        kind = tautology_kind_for_expr(statement.test)
+        if kind is not None:
+            hypotheses.append(
+                {
+                    "kind": "tautological_assertion",
+                    "confidence": 0.9,
+                    "evidence": {"tautology_kind": kind, "lineno": int(statement.lineno)},
+                }
+            )
+    call = assertion_call(statement)
+    if call is not None:
+        method = assertion_call_method_name(call)
+        args = list(call.args)
+        tautology_kind: str | None = None
+        if method in {"asserttrue", "assert_true"} and args:
+            tautology_kind = tautology_kind_for_expr(args[0])
+        elif method in {"assertfalse", "assert_false"} and args and falsehood_kind_for_expr(args[0]) is not None:
+            tautology_kind = falsehood_kind_for_expr(args[0])
+        elif method in {"assertequal", "assertequals", "assertis"} and len(args) >= 2 and expr_key(args[0]) == expr_key(args[1]):
+            tautology_kind = "same_expression_arguments"
+        if tautology_kind is not None:
+            hypotheses.append(
+                {
+                    "kind": "tautological_assertion",
+                    "confidence": 0.9,
+                    "evidence": {"tautology_kind": tautology_kind, "method": method, "lineno": int(statement.lineno)},
+                }
+            )
+    return hypotheses
+
+
+def tautology_kind_for_expr(expr: ast.expr) -> str | None:
+    if isinstance(expr, ast.Constant) and bool(expr.value) is True:
+        return "truthy_constant"
+    if isinstance(expr, ast.UnaryOp) and isinstance(expr.op, ast.Not):
+        return falsehood_kind_for_expr(expr.operand)
+    if isinstance(expr, ast.Compare) and len(expr.ops) == 1 and len(expr.comparators) == 1:
+        left = expr.left
+        right = expr.comparators[0]
+        op = expr.ops[0]
+        if isinstance(op, (ast.Eq, ast.Is)) and expr_key(left) == expr_key(right):
+            return "same_expression_comparison"
+        if isinstance(op, ast.GtE) and is_len_call(left) and is_zero_constant(right):
+            return "len_nonnegative"
+        if isinstance(op, ast.LtE) and is_zero_constant(left) and is_len_call(right):
+            return "len_nonnegative"
+    return None
+
+
+def falsehood_kind_for_expr(expr: ast.expr) -> str | None:
+    if isinstance(expr, ast.Constant) and bool(expr.value) is False:
+        return "falsey_constant"
+    if isinstance(expr, ast.Compare) and len(expr.ops) == 1 and len(expr.comparators) == 1:
+        if isinstance(expr.ops[0], (ast.NotEq, ast.IsNot)) and expr_key(expr.left) == expr_key(expr.comparators[0]):
+            return "same_expression_negative_comparison"
+    return None
+
+
+def trivial_pytest_raises_hypotheses(statement: ast.stmt) -> list[dict[str, Any]]:
+    if not isinstance(statement, ast.With):
+        return []
+    raises_call = pytest_raises_call(statement)
+    if raises_call is None or len(statement.body) != 1 or not isinstance(statement.body[0], ast.Raise):
+        return []
+    expected = expr_key(raises_call.args[0]) if raises_call.args else ""
+    actual = raised_exception_key(statement.body[0])
+    if expected and actual and expected == actual:
+        return [
+            {
+                "kind": "trivial_pytest_raises_block",
+                "confidence": 0.75,
+                "evidence": {"exception_key": expected, "lineno": int(statement.lineno)},
+            }
+        ]
+    return []
+
+
+def pytest_raises_call(statement: ast.With) -> ast.Call | None:
+    for item in statement.items:
+        call = item.context_expr
+        if isinstance(call, ast.Call) and call_name(call.func).endswith("pytest.raises"):
+            return call
+        if isinstance(call, ast.Call) and call_name(call.func) == "raises":
+            return call
+    return None
+
+
+def raised_exception_key(node: ast.Raise) -> str:
+    exc = node.exc
+    if isinstance(exc, ast.Call):
+        return expr_key(exc.func)
+    if isinstance(exc, ast.expr):
+        return expr_key(exc)
+    return ""
+
+
+def redundant_assertion_hypothesis(tree: ast.AST, statement: ast.stmt, selected_line: int) -> dict[str, Any] | None:
+    keys = assertion_semantic_keys(statement)
+    if not keys:
+        return None
+    scope = enclosing_scope(tree, selected_line)
+    matches: list[int] = []
+    for other in iter_scope_assertion_statements(scope):
+        if assertion_semantic_keys(other) & keys:
+            matches.append(int(other.lineno))
+    if len(set(matches)) < 2:
+        return None
+    return {
+        "kind": "redundant_assertion_same_scope",
+        "confidence": 0.65,
+        "evidence": {
+            "scope_name": scope_name(scope),
+            "scope_node_type": type(scope).__name__,
+            "matching_assertion_count": len(set(matches)),
+            "matching_lines": sorted(set(matches))[:20],
+            "semantic_keys": sorted(keys)[:10],
+        },
+    }
+
+
+def enclosing_scope(tree: ast.AST, line: int) -> ast.AST:
+    scopes: list[ast.AST] = [tree]
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        end_line = int(getattr(node, "end_lineno", None) or node.lineno)
+        if int(node.lineno) <= line <= end_line:
+            scopes.append(node)
+    scopes.sort(key=lambda node: scope_span(node))
+    return scopes[0]
+
+
+def scope_span(node: ast.AST) -> int:
+    if isinstance(node, ast.Module):
+        return 10**9
+    return int(getattr(node, "end_lineno", 0) or 0) - int(getattr(node, "lineno", 0) or 0)
+
+
+def scope_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Module):
+        return "<module>"
+    return str(getattr(node, "name", type(node).__name__))
+
+
+def iter_scope_assertion_statements(scope: ast.AST) -> Iterable[ast.stmt]:
+    def walk(node: ast.AST, *, root: bool = False) -> Iterable[ast.stmt]:
+        if not root and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            return
+        if isinstance(node, (ast.Assert, ast.Expr, ast.With)) and assertion_semantic_keys(node):
+            yield node
+        for child in ast.iter_child_nodes(node):
+            yield from walk(child)
+
+    yield from walk(scope, root=True)
+
+
+def assertion_semantic_keys(statement: ast.stmt) -> set[str]:
+    if isinstance(statement, ast.Assert):
+        return expression_assertion_keys(statement.test)
+    call = assertion_call(statement)
+    if call is None:
+        if isinstance(statement, ast.With):
+            raises = pytest_raises_call(statement)
+            if raises is not None and raises.args:
+                return {f"pytest_raises:{expr_key(raises.args[0])}"}
+        return set()
+    method = assertion_call_method_name(call)
+    args = list(call.args)
+    if method in {"assertequal", "assertequals"} and len(args) >= 2:
+        return {commutative_key("equals", args[0], args[1])}
+    if method == "assertis" and len(args) >= 2:
+        return {commutative_key("is", args[0], args[1])}
+    if method == "assertisinstance" and len(args) >= 2:
+        return {f"isinstance:{expr_key(args[0])}:{expr_key(args[1])}"}
+    if method in {"asserttrue", "assert_true"} and args:
+        return {f"truthy:{expr_key(args[0])}"}
+    if method in {"assertfalse", "assert_false"} and args:
+        return {f"falsey:{expr_key(args[0])}"}
+    return set()
+
+
+def expression_assertion_keys(expr: ast.expr) -> set[str]:
+    if isinstance(expr, ast.Compare) and len(expr.ops) == 1 and len(expr.comparators) == 1:
+        op = expr.ops[0]
+        right = expr.comparators[0]
+        if isinstance(op, ast.Eq):
+            return {commutative_key("equals", expr.left, right)}
+        if isinstance(op, ast.Is):
+            return {commutative_key("is", expr.left, right)}
+    if isinstance(expr, ast.Call) and call_name(expr.func) == "isinstance" and len(expr.args) >= 2:
+        return {f"isinstance:{expr_key(expr.args[0])}:{expr_key(expr.args[1])}"}
+    if isinstance(expr, ast.UnaryOp) and isinstance(expr.op, ast.Not):
+        return {f"falsey:{expr_key(expr.operand)}"}
+    return {f"truthy:{expr_key(expr)}"}
+
+
+def assertion_call(statement: ast.stmt) -> ast.Call | None:
+    if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
+        return None
+    name = call_name(statement.value.func)
+    if ".assert" in name or name.startswith("assert"):
+        return statement.value
+    return None
+
+
+def assertion_call_method_name(call: ast.Call) -> str:
+    return call_name(call.func).rsplit(".", 1)[-1].lower()
+
+
+def call_name(expr: ast.expr) -> str:
+    if isinstance(expr, ast.Name):
+        return expr.id
+    if isinstance(expr, ast.Attribute):
+        prefix = call_name(expr.value)
+        return f"{prefix}.{expr.attr}" if prefix else expr.attr
+    return ""
+
+
+def commutative_key(prefix: str, left: ast.expr, right: ast.expr) -> str:
+    first, second = sorted((expr_key(left), expr_key(right)))
+    return f"{prefix}:{first}:{second}"
+
+
+def expr_key(expr: ast.AST) -> str:
+    return ast.dump(expr, annotate_fields=True, include_attributes=False)
+
+
+def is_zero_constant(expr: ast.expr) -> bool:
+    return isinstance(expr, ast.Constant) and expr.value == 0
+
+
+def is_len_call(expr: ast.expr) -> bool:
+    return isinstance(expr, ast.Call) and call_name(expr.func) == "len" and len(expr.args) == 1
 
 
 def annotate_selected_rows(selected: list[dict[str, Any]], *, task_id: str = TASK_ID) -> list[dict[str, Any]]:
@@ -290,6 +654,8 @@ def annotate_selected_rows(selected: list[dict[str, Any]], *, task_id: str = TAS
                 "patch_path": row["patch_path"],
                 "patch_sha256": row.get("patch_sha256"),
                 "selection_policy": DEFAULT_SELECTION_POLICY,
+                "pre_oracle_pass_hypothesis": row.get("pre_oracle_pass_hypothesis"),
+                "pre_oracle_pass_hypothesis_used_for_selection": has_pre_oracle_pass_hypothesis(row),
                 "holdout_tuning_used": False,
                 "target_oracle_label_used": False,
                 "target_oracle_labels_used_as_features": False,
@@ -337,6 +703,8 @@ def validate_selection(
     selected_rows: list[dict[str, Any]],
     batch_rows: list[dict[str, Any]],
     shortfalls: dict[str, dict[str, int]],
+    *,
+    require_pass_hypothesis: bool = False,
 ) -> list[str]:
     failures: list[str] = []
     candidate_ids = [row["candidate_row_id"] for row in selected_rows]
@@ -348,6 +716,8 @@ def validate_selection(
         failures.append("DTC_EXPANSION_TARGET_SHORTFALL")
     if duplicate_task_batch_count(batch_rows):
         failures.append("DTC_EXPANSION_BATCH_DUPLICATE_TASK")
+    if require_pass_hypothesis and any(not has_pre_oracle_pass_hypothesis(row) for row in selected_rows):
+        failures.append("DTC_EXPANSION_SELECTED_ROW_MISSING_PASS_HYPOTHESIS")
     for row in selected_rows:
         for field in ("source_file", "patch_path"):
             value = row.get(field)
@@ -466,3 +836,15 @@ def mounted_drive_hit_count(paths: list[Path]) -> int:
 
 def target_map(counter: Counter[tuple[str, str]] | dict[tuple[str, str], int]) -> dict[str, int]:
     return {"|".join(key): int(value) for key, value in sorted(counter.items())}
+
+
+def pass_hypothesis_kind_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        payload = row.get("pre_oracle_pass_hypothesis")
+        if not isinstance(payload, dict):
+            continue
+        for hypothesis in payload.get("hypotheses") or []:
+            if isinstance(hypothesis, dict) and hypothesis.get("kind"):
+                counts[str(hypothesis["kind"])] += 1
+    return dict(sorted(counts.items()))

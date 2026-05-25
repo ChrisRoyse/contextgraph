@@ -17,9 +17,11 @@ from .python_delete_test_call_candidate_expansion_core import (
     build_batch_rows,
     count_lines,
     duplicate_task_batch_count,
+    has_pre_oracle_pass_hypothesis,
     load_candidate_patches,
     load_existing_candidate_ids,
     mounted_drive_hit_count,
+    pass_hypothesis_kind_counts,
     read_json,
     read_next_action,
     select_candidates,
@@ -70,6 +72,16 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="Override one fixed quota as split:sublabel=count, for example holdout:pytest_raises_deleted=4.",
     )
     parser.add_argument("--clean-output", action="store_true")
+    parser.add_argument(
+        "--prefer-pass-hypothesis",
+        action="store_true",
+        help="Prefer candidates with static pre-oracle pass hypotheses while preserving split/sublabel quotas.",
+    )
+    parser.add_argument(
+        "--require-pass-hypothesis",
+        action="store_true",
+        help="Select only candidates carrying a static pre-oracle pass hypothesis.",
+    )
 
 
 def command_python_delete_test_call_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
@@ -86,14 +98,25 @@ def command_python_delete_test_call_candidate_expansion(args: argparse.Namespace
     args.output_root.mkdir(parents=True, exist_ok=True)
     args.readback_root.mkdir(parents=True, exist_ok=True)
 
-    selected, shortfalls, available_counts = select_candidates(candidates, existing_ids, targets)
+    selected, shortfalls, available_counts = select_candidates(
+        candidates,
+        existing_ids,
+        targets,
+        prefer_pass_hypothesis=args.prefer_pass_hypothesis or args.require_pass_hypothesis,
+        require_pass_hypothesis=args.require_pass_hypothesis,
+    )
     selected_rows = annotate_selected_rows(selected, task_id=args.task_id)
     batch_rows = build_batch_rows(
         selected_rows,
         batch_key_prefix=args.batch_key_prefix,
         selection_policy=f"{args.task_id} fixed split/sublabel expansion",
     )
-    validation_failures = validate_selection(selected_rows, batch_rows, shortfalls)
+    validation_failures = validate_selection(
+        selected_rows,
+        batch_rows,
+        shortfalls,
+        require_pass_hypothesis=args.require_pass_hypothesis,
+    )
 
     selected_path = args.output_root / "delete_test_call_candidate_expansion_selected.jsonl"
     batch_plan_path = args.output_root / "delete_test_call_candidate_expansion_oracle_batch_plan.jsonl"
@@ -106,6 +129,8 @@ def command_python_delete_test_call_candidate_expansion(args: argparse.Namespace
     write_text_checked(ids_path, "".join(f"{row['candidate_row_id']}\n" for row in selected_rows))
 
     counts_by_group = Counter((row["stable_partition"], row["assertion_duty_sublabel"]) for row in selected_rows)
+    pass_hypothesis_selected_count = sum(1 for row in selected_rows if has_pre_oracle_pass_hypothesis(row))
+    pass_hypothesis_counts = pass_hypothesis_kind_counts(selected_rows)
     manifest = {
         "schema_version": 1,
         "task_id": args.task_id,
@@ -124,6 +149,13 @@ def command_python_delete_test_call_candidate_expansion(args: argparse.Namespace
         "selected_candidate_count": len(selected_rows),
         "oracle_batch_count": len(batch_rows),
         "counts_by_partition_sublabel": target_map(counts_by_group),
+        "pre_oracle_pass_hypothesis": {
+            "prefer_pass_hypothesis": args.prefer_pass_hypothesis or args.require_pass_hypothesis,
+            "require_pass_hypothesis": args.require_pass_hypothesis,
+            "selected_with_hypothesis_count": pass_hypothesis_selected_count,
+            "hypothesis_kind_counts": pass_hypothesis_counts,
+            "target_oracle_labels_used_as_features": False,
+        },
         "shortfalls": shortfalls,
         "validation_failures": validation_failures,
         "source_of_truth": {
@@ -141,6 +173,9 @@ def command_python_delete_test_call_candidate_expansion(args: argparse.Namespace
         "policy": {
             "selection_kind": "fixed_split_sublabel_quota_from_source_backed_candidate_pool",
             "selection_order": "stable_source_task_path_offset_candidate_id",
+            "pass_hypothesis_ordering": "hypothesis_first_then_confidence_then_stable_order"
+            if args.prefer_pass_hypothesis or args.require_pass_hypothesis
+            else "disabled",
             "batch_key_prefix": args.batch_key_prefix,
             "holdout_tuning_used": False,
             "target_oracle_labels_used_as_features": False,
@@ -170,10 +205,17 @@ def command_python_delete_test_call_candidate_expansion(args: argparse.Namespace
         "mounted_drive_hits_in_outputs": mounted_drive_hit_count([selected_path, batch_plan_path, ids_path, manifest_path]),
         "selected_sha256": sha256_file(selected_path),
         "batch_plan_sha256": sha256_file(batch_plan_path),
+        "pre_oracle_pass_hypothesis": {
+            "selected_with_hypothesis_count": pass_hypothesis_selected_count,
+            "hypothesis_kind_counts": pass_hypothesis_counts,
+            "target_oracle_labels_used_as_features": False,
+        },
         "summary": {
             "selected_candidate_count": len(selected_rows),
             "oracle_batch_count": len(batch_rows),
             "counts_by_partition_sublabel": target_map(counts_by_group),
+            "selected_with_hypothesis_count": pass_hypothesis_selected_count,
+            "hypothesis_kind_counts": pass_hypothesis_counts,
             "shortfalls": shortfalls,
             "validation_failures": validation_failures,
         },
@@ -192,6 +234,8 @@ def command_python_delete_test_call_candidate_expansion(args: argparse.Namespace
         "selected_candidate_count": len(selected_rows),
         "oracle_batch_count": len(batch_rows),
         "counts_by_partition_sublabel": target_map(counts_by_group),
+        "selected_with_hypothesis_count": pass_hypothesis_selected_count,
+        "hypothesis_kind_counts": pass_hypothesis_counts,
         "shortfalls": shortfalls,
         "validation_failures": validation_failures,
     }
