@@ -20,8 +20,12 @@ SCHEMA_VERSION = 1
 ARTIFACT_KIND = "label_quality_downstream_lift"
 FORMULA_VERSION = "label_quality_downstream_lift_v1"
 
-DEFAULT_LABEL_QUALITY_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-label-quality-embedder-signal-v1")
-DEFAULT_GEOMETRY_LABEL_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v1")
+DEFAULT_LABEL_QUALITY_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-673-label-quality-embedder-signal-v2-static-ast-v1"
+)
+DEFAULT_GEOMETRY_LABEL_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v2-static-ast-v1"
+)
 DEFAULT_SHIP_GATE_REPORT = Path(
     "/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/ship-gate-fsv.json"
 )
@@ -29,7 +33,9 @@ DEFAULT_ACTIVE_ABSTAIN_REPORT = Path(
     "/zfs/archive/contextgraph/fsv/task-py-g-392-temporal-trajectory-features-fsv/"
     "run-20260521T171548Z/task_py_g_392_temporal_trajectory_features_fsv.json"
 )
-DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-label-quality-downstream-lift-v1")
+DEFAULT_OUTPUT_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-679-label-quality-downstream-lift-v2-static-ast-v1"
+)
 
 WEAK_CELLS = ("delete_test_call", "off_by_one", "subtle_flip")
 BETA_GRID = (-1.0, -0.65, -0.35, -0.18, -0.08, 0.0, 0.08, 0.18, 0.35, 0.65, 1.0)
@@ -533,6 +539,9 @@ def collect_features(
 ) -> dict[tuple[str, str, str, str], FeatureAccumulator]:
     features: dict[tuple[str, str, str, str], FeatureAccumulator] = defaultdict(FeatureAccumulator)
     expected = set(expected_embedders)
+    target_splits_by_cell: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for split, task_id, category in target_keys:
+        target_splits_by_cell[(task_id, category)].add(split)
     seen = 0
     retained = 0
     for _line_no, row in iter_jsonl(path):
@@ -544,12 +553,18 @@ def collect_features(
             continue
         key = (partition, task_id, category)
         seen += 1
-        if key not in target_keys:
+        if key in target_keys:
+            target_splits = (partition,)
+        elif partition in ("", "unknown"):
+            target_splits = tuple(sorted(target_splits_by_cell.get((task_id, category), ())))
+        else:
             continue
         cluster_id = str(row.get("cluster_id") or "")
         require(cluster_id, "LABEL_QUALITY_LIFT_MEMBERSHIP_CLUSTER_ID_MISSING", f"{path}:{_line_no}")
-        features[(partition, task_id, category, embedder_id)].add(quality_by_cluster.get(cluster_id))
-        retained += 1
+        quality = quality_by_cluster.get(cluster_id)
+        for split in target_splits:
+            features[(split, task_id, category, embedder_id)].add(quality)
+            retained += 1
     require(retained > 0, "LABEL_QUALITY_LIFT_NO_MEMBERSHIPS_JOINED", str(path), {"seen": seen})
     return features
 
@@ -833,7 +848,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--evidence-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--expected-calibration-count", type=int, default=240)
     parser.add_argument("--expected-holdout-count", type=int, default=240)
-    parser.add_argument("--expected-embedders", default="e1,e2,e3,e4,e6,e7,e8,e9,e10,e12,e13,e14")
+    parser.add_argument("--expected-embedders", default="e1,e6,e7,e8,e9,e10,e12,e13,e14")
     parser.add_argument("--smooth-ece-regression-budget", type=float, default=0.003)
     parser.add_argument("--min-featured-rows", type=int, default=30)
     parser.add_argument("--clean-output", action="store_true")

@@ -18,11 +18,21 @@ SCHEMA_VERSION = 1
 ARTIFACT_KIND = "geometry_scalar_feature_contract"
 FORMULA_VERSION = "geometry_scalar_feature_contract_v1"
 
-DEFAULT_ADMISSIBILITY_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-143-geometry-label-admissibility-v1")
-DEFAULT_GEOMETRY_LABEL_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v1")
-DEFAULT_LABEL_QUALITY_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-label-quality-embedder-signal-v1")
-DEFAULT_DOWNSTREAM_LIFT_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-label-quality-downstream-lift-v1")
-DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-672-geometry-scalar-contract-v1")
+DEFAULT_ADMISSIBILITY_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-143-geometry-label-admissibility-v2-static-ast-v1"
+)
+DEFAULT_GEOMETRY_LABEL_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v2-static-ast-v1"
+)
+DEFAULT_LABEL_QUALITY_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-673-label-quality-embedder-signal-v2-static-ast-v1"
+)
+DEFAULT_DOWNSTREAM_LIFT_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-679-label-quality-downstream-lift-v2-static-ast-v1"
+)
+DEFAULT_OUTPUT_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-672-geometry-scalar-contract-v2-static-ast-v1"
+)
 
 GEOMETRY_SCALAR_SCHEMA = "head-projection-geometry-scalar-contract-v1"
 ALLOWED_GEOMETRY_SCALARS = (
@@ -292,13 +302,14 @@ def command_python_geometry_scalar_contract(args: argparse.Namespace) -> dict[st
         },
         {
             "check": "valid_policy_denominator_preserved",
-            "passed": len(eligible_embedders) == int(policy.get("valid_independent_embedder_count")) and int(policy.get("valid_independent_pair_denominator")) == 28,
+            "passed": len(eligible_embedders) == int(policy.get("valid_independent_embedder_count"))
+            and int(policy.get("valid_independent_pair_denominator")) == len(eligible_embedders) * (len(eligible_embedders) - 1) // 2,
             "actual": {
                 "eligible": list(eligible_embedders),
                 "count": policy.get("valid_independent_embedder_count"),
                 "pair_denominator": policy.get("valid_independent_pair_denominator"),
             },
-            "expected": "8 independent embedders / 28 pairs for current forward-cache geometry",
+            "expected": "policy pair denominator matches current independent static-AST embedder set",
         },
         {
             "check": "alias_and_degenerate_rows_non_live",
@@ -307,7 +318,7 @@ def command_python_geometry_scalar_contract(args: argparse.Namespace) -> dict[st
                 "degenerate": list(degenerate_embedders),
                 "aliases": duplicate_alias_map,
             },
-            "expected": "e2/e3/e4/e8 scalar rows are not independent live signal",
+            "expected": "configured alias/degenerate scalar rows are not independent live signal; static AST v2 has no e8 alias",
         },
         {
             "check": "source_samples_written",
@@ -542,6 +553,8 @@ def name_is_rejected(name: str) -> bool:
 
 
 def alias_and_degenerate_rows_non_live(path: Path, degenerate: set[str], aliases: set[str]) -> bool:
+    if not degenerate and not aliases:
+        return True
     checked = 0
     for _line_no, row in iter_jsonl(path):
         embedder_id = str(row.get("embedder_id") or "")

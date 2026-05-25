@@ -17,14 +17,23 @@ SCHEMA_VERSION = 1
 ARTIFACT_KIND = "label_quality_embedder_signal"
 FORMULA_VERSION = "physical_label_quality_signal_v1"
 
-DEFAULT_LABEL_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v1")
-DEFAULT_ADMISSIBILITY_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-143-geometry-label-admissibility-v1")
-DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-label-quality-embedder-signal-v1")
-DEFAULT_EVIDENCE_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-673-label-quality-signal-readback")
+DEFAULT_LABEL_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v2-static-ast-v1"
+)
+DEFAULT_ADMISSIBILITY_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-143-geometry-label-admissibility-v2-static-ast-v1"
+)
+DEFAULT_OUTPUT_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-673-label-quality-embedder-signal-v2-static-ast-v1"
+)
+DEFAULT_EVIDENCE_ROOT = Path(
+    "/zfs/archive/contextgraph/fsv/task-py-g-136-per-embedder-geometry-labels-fsv/v2-static-ast-label-quality-v1"
+)
 
-INDEPENDENT_EMBEDDERS = frozenset(("e1", "e6", "e7", "e9", "e10", "e12", "e13", "e14"))
-ALIAS_EMBEDDERS = {"e8": "e1"}
-DEGENERATE_EMBEDDERS = frozenset(("e2", "e3", "e4"))
+INDEPENDENT_EMBEDDERS = frozenset(("e1", "e6", "e7", "e8", "e9", "e10", "e12", "e13", "e14"))
+ALIAS_EMBEDDERS: dict[str, str] = {}
+DEGENERATE_EMBEDDERS = frozenset(())
+RETIRED_STATIC_AST_EMBEDDERS = frozenset(("e2", "e3", "e4"))
 SAFE_LEAKAGE_POLICY = "live_descriptor_excludes_partition_and_mutation_category; audit_fields_not_live_input"
 TARGET_LEAKAGE_TOKENS = (
     "oracle",
@@ -468,6 +477,8 @@ def finalize_summary(embedder_id: str, raw: dict[str, Any]) -> dict[str, Any]:
     signal_noise_index = round((avg_signal * 0.55 + signal_yield * 0.35) - (avg_noise * 0.10), 6)
     if embedder_id in DEGENERATE_EMBEDDERS:
         action = "retire_or_repair_degenerate_space_before_prediction"
+    elif embedder_id in RETIRED_STATIC_AST_EMBEDDERS:
+        action = "retired_for_static_ast_not_expected_in_label_source"
     elif embedder_id in ALIAS_EMBEDDERS:
         action = "exclude_as_independent_signal; use_only_for_redundancy_diagnostic"
     elif live_rows == 0:
@@ -710,15 +721,17 @@ def command_python_label_quality_signal(args: argparse.Namespace) -> dict[str, A
         },
         {
             "check": "alias_embedder_excluded_from_live_prediction_signal",
-            "passed": all(row["live_prediction_candidate_rows"] == 0 for row in finalized if row["embedder_id"] in ALIAS_EMBEDDERS),
+            "passed": not ALIAS_EMBEDDERS
+            or all(row["live_prediction_candidate_rows"] == 0 for row in finalized if row["embedder_id"] in ALIAS_EMBEDDERS),
             "actual": [row for row in finalized if row["embedder_id"] in ALIAS_EMBEDDERS],
-            "expected": "alias rows may exist but must have zero live prediction candidates",
+            "expected": "alias rows may exist but must have zero live prediction candidates; static AST v2 has no e8 alias",
         },
         {
             "check": "degenerate_embedders_excluded_from_live_prediction_signal",
-            "passed": all(row["live_prediction_candidate_rows"] == 0 for row in finalized if row["embedder_id"] in DEGENERATE_EMBEDDERS),
+            "passed": not DEGENERATE_EMBEDDERS
+            or all(row["live_prediction_candidate_rows"] == 0 for row in finalized if row["embedder_id"] in DEGENERATE_EMBEDDERS),
             "actual": [row for row in finalized if row["embedder_id"] in DEGENERATE_EMBEDDERS],
-            "expected": "e2/e3/e4 must have zero live prediction candidates",
+            "expected": "configured degenerate embedders must have zero live prediction candidates; e2/e3/e4 are retired before static AST v2 labeling",
         },
         {
             "check": "singleton_or_tiny_labels_retained_when_physically_grounded",
@@ -799,6 +812,7 @@ def command_python_label_quality_signal(args: argparse.Namespace) -> dict[str, A
             "independent_embedders": sorted(INDEPENDENT_EMBEDDERS),
             "alias_embedders": dict(sorted(ALIAS_EMBEDDERS.items())),
             "degenerate_embedders": sorted(DEGENERATE_EMBEDDERS),
+            "retired_static_ast_embedders": sorted(RETIRED_STATIC_AST_EMBEDDERS),
         },
         "counts": {
             **dict(sorted(stats.items())),

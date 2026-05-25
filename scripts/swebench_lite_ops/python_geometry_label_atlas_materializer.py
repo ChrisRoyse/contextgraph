@@ -33,15 +33,24 @@ CLUSTER_STATUS = "exact_occupied_vector_microcell_source_layer_not_final_semanti
 LABEL_ALGORITHM = "deterministic_exact_microcell_ast_descriptor_v2"
 DERIVED_LABEL_ALGORITHM = "deterministic_multi_resolution_region_labels_v1"
 MASK_POLICY = "slot_identity_preserved_missingness_mask_v1"
-DEFAULT_FORWARD_ROOT = Path("/zfs/archive/contextgraph/corpus/python-forward-cache-v1-aiwonder-prod-20260515-191116Z")
-DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
-DEFAULT_COMPLETENESS_MASK = Path(
-    "/zfs/archive/contextgraph/state/forward-cache-completeness/"
-    "task-py-g-135b-forward-cache-slot-completion-v1/forward_cache_slot_completeness_mask.jsonl"
+DEFAULT_FORWARD_ROOT = Path(
+    "/zfs/archive/contextgraph/corpus/"
+    "python-forward-cache-v2-static-ast-e7lang-fa703b89-20260523T204324Z"
 )
-DEFAULT_ADMISSIBILITY_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-143-geometry-label-admissibility-v1")
-DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-144-geometry-label-atlas-materializer-v1")
-DEFAULT_EVIDENCE_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-144-geometry-label-atlas-materializer-readback")
+DEFAULT_CHUNKS_JSONL = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
+DEFAULT_ADMISSIBILITY_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-143-geometry-label-admissibility-v2-static-ast-v1"
+)
+DEFAULT_OUTPUT_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v2-static-ast-v1"
+)
+DEFAULT_EVIDENCE_ROOT = Path(
+    "/zfs/archive/contextgraph/fsv/task-py-g-136-per-embedder-geometry-labels-fsv/v2-static-ast-v1"
+)
+DEFAULT_ELIGIBLE_INDEPENDENT = "e1,e6,e7,e8,e9,e10,e12,e13,e14"
+DEFAULT_ALIAS_MAP = ""
+DEFAULT_DEGENERATE = ""
+DEFAULT_RETIRED_STATIC_AST = "e2,e3,e4"
 TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{1,63}")
 STOP_TERMS = {
     "self",
@@ -231,9 +240,67 @@ def tree_state(path: Path) -> dict[str, Any]:
     }
 
 
-def load_policy(admissibility_root: Path) -> dict[str, Any]:
+def parse_alias_map(raw: str | None) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    if raw is None or not raw.strip():
+        return aliases
+    for item in raw.split(","):
+        if not item.strip():
+            continue
+        parts = [part.strip() for part in item.split(":", 1)]
+        require(len(parts) == 2 and all(parts), "GEOMETRY_LABEL_ATLAS_BAD_ALIAS_MAP", item)
+        alias, target = parts
+        require(alias not in aliases, "GEOMETRY_LABEL_ATLAS_DUPLICATE_ALIAS", alias)
+        aliases[alias] = target
+    return aliases
+
+
+def validate_policy(eligible: tuple[str, ...], aliases: dict[str, str], degenerate: tuple[str, ...], context: str) -> None:
+    require(eligible, "GEOMETRY_LABEL_ATLAS_POLICY_NO_ELIGIBLE_EMBEDDERS", context)
+    require(set(aliases.values()).issubset(set(eligible)), "GEOMETRY_LABEL_ATLAS_ALIAS_TARGET_NOT_INDEPENDENT", str(aliases))
+    require(not (set(aliases) & set(eligible)), "GEOMETRY_LABEL_ATLAS_ALIAS_MARKED_INDEPENDENT", str(aliases))
+    require(not (set(degenerate) & set(eligible)), "GEOMETRY_LABEL_ATLAS_DEGENERATE_MARKED_INDEPENDENT", str(degenerate))
+
+
+def cli_policy(args: argparse.Namespace) -> dict[str, Any]:
+    eligible = tuple(sorted(parse_csv(args.eligible_independent_embedders)))
+    aliases = parse_alias_map(args.alias_map)
+    degenerate = tuple(sorted(parse_csv(args.degenerate_embedders)))
+    retired = tuple(sorted(parse_csv(args.retired_static_ast_embedders)))
+    validate_policy(eligible, aliases, degenerate, "cli static-AST geometry policy")
+    policy = {
+        "artifact_kind": "geometry_label_admissibility_space_policy",
+        "schema_version": SCHEMA_VERSION,
+        "formula_version": "static_ast_v2_independent_embedder_policy_v1",
+        "created_at_utc": utc_now(),
+        "eligible_independent_embedder_ids": list(eligible),
+        "duplicate_alias_map": dict(sorted(aliases.items())),
+        "degenerate_embedder_ids": list(degenerate),
+        "retired_for_static_ast_embedder_ids": list(retired),
+        "valid_independent_embedder_count": len(eligible),
+        "valid_independent_pair_denominator": len(eligible) * (len(eligible) - 1) // 2,
+        "source_policy": "static AST v2 cache treats e8 as independent and retires e2/e3/e4 from the label source space",
+    }
+    return {
+        "path": "cli:static_ast_v2_policy",
+        "sha256": sha256_json(policy),
+        "manifest_path": None,
+        "manifest_sha256": None,
+        "policy": policy,
+        "source_manifest": None,
+        "eligible": eligible,
+        "aliases": aliases,
+        "degenerate": degenerate,
+        "retired": retired,
+    }
+
+
+def load_policy(args: argparse.Namespace) -> dict[str, Any]:
+    admissibility_root = args.admissibility_root
     policy_path = admissibility_root / "geometry_label_space_policy.json"
     manifest_path = admissibility_root / "geometry_label_admissibility_manifest.json"
+    if not policy_path.is_file() or args.use_cli_policy:
+        return cli_policy(args)
     policy = read_json(policy_path)
     manifest = read_json(manifest_path)
     require(
@@ -244,10 +311,7 @@ def load_policy(admissibility_root: Path) -> dict[str, Any]:
     eligible = tuple(str(item) for item in policy.get("eligible_independent_embedder_ids") or [])
     aliases = {str(k): str(v) for k, v in (policy.get("duplicate_alias_map") or {}).items()}
     degenerate = tuple(str(item) for item in policy.get("degenerate_embedder_ids") or [])
-    require(eligible, "GEOMETRY_LABEL_ATLAS_POLICY_NO_ELIGIBLE_EMBEDDERS", str(policy_path))
-    require(set(aliases.values()).issubset(set(eligible)), "GEOMETRY_LABEL_ATLAS_ALIAS_TARGET_NOT_INDEPENDENT", str(aliases))
-    require(not (set(aliases) & set(eligible)), "GEOMETRY_LABEL_ATLAS_ALIAS_MARKED_INDEPENDENT", str(aliases))
-    require(not (set(degenerate) & set(eligible)), "GEOMETRY_LABEL_ATLAS_DEGENERATE_MARKED_INDEPENDENT", str(degenerate))
+    validate_policy(eligible, aliases, degenerate, str(policy_path))
     return {
         "path": str(policy_path),
         "sha256": sha256_file(policy_path),
@@ -258,6 +322,7 @@ def load_policy(admissibility_root: Path) -> dict[str, Any]:
         "eligible": eligible,
         "aliases": aliases,
         "degenerate": degenerate,
+        "retired": tuple(str(item) for item in policy.get("retired_for_static_ast_embedder_ids") or []),
     }
 
 
@@ -333,12 +398,17 @@ def load_window_jsonl(path: Path, ranges: list[tuple[int, int]]) -> tuple[dict[s
         digest.update(json.dumps(row, sort_keys=True, separators=(",", ":")).encode("utf-8"))
         digest.update(b"\n")
         rows += 1
-    expected = sum(end - start for start, end in ranges)
-    require(rows == expected, "GEOMETRY_LABEL_ATLAS_WINDOW_ROW_COUNT_MISMATCH", f"{path}: expected {expected}, found {rows}")
+    expected_capacity = sum(end - start for start, end in ranges)
+    require(
+        rows > 0 and rows <= expected_capacity,
+        "GEOMETRY_LABEL_ATLAS_WINDOW_ROW_COUNT_MISMATCH",
+        f"{path}: expected at most {expected_capacity}, found {rows}",
+    )
     return by_key, {
         "path": str(path),
         "bytes": path.stat().st_size,
         "selected_rows": rows,
+        "selected_capacity_rows": expected_capacity,
         "selected_window_sha256": "sha256:" + digest.hexdigest(),
     }
 
@@ -371,6 +441,196 @@ def load_jsonl_by_keys(path: Path, required_keys: set[str]) -> tuple[dict[str, d
         "scanned_rows": scanned,
         "selected_rows": len(by_key),
         "selected_keyset_sha256": "sha256:" + digest.hexdigest(),
+    }
+
+
+def pair_key_from_record(row: dict[str, Any]) -> tuple[str, str]:
+    key = row.get("key") or {}
+    chunk = row.get("chunk") or {}
+    return (
+        row_key_from_fields(
+            str(chunk.get("task_instance_id") or row.get("task_instance_id") or ""),
+            str(chunk.get("workspace_state") or row.get("workspace_state") or ""),
+            str(key.get("chunk_id") or row.get("chunk_id") or ""),
+            str(key.get("source_sha256") or row.get("source_sha256") or ""),
+        ),
+        str(key.get("embedder_id") or row.get("embedder_id") or ""),
+    )
+
+
+def pair_key_from_quarantine(row: dict[str, Any]) -> tuple[str, str]:
+    return (
+        row_key_from_fields(
+            str(row.get("task_instance_id") or ""),
+            str(row.get("workspace_state") or ""),
+            str(row.get("chunk_id") or ""),
+            str(row.get("source_sha256") or ""),
+        ),
+        str(row.get("embedder_id") or ""),
+    )
+
+
+def mask_row_from_forward_cache(
+    row_key: str,
+    chunk: dict[str, Any],
+    *,
+    included: tuple[str, ...],
+    retired: tuple[str, ...],
+    present_slots: set[str],
+    quarantine_reasons: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    present = tuple(slot for slot in included if slot in present_slots)
+    missing = tuple(slot for slot in included if slot not in present_slots)
+    missing_reasons = {slot: quarantine_reasons[slot] for slot in missing if slot in quarantine_reasons}
+    require(len(missing_reasons) == len(missing), "GEOMETRY_LABEL_ATLAS_UNACCOUNTED_MISSING_PAIR", row_key)
+    if not missing:
+        status = "complete"
+    elif not present:
+        status = "zero_slot"
+    else:
+        status = "partial"
+    return {
+        "artifact_kind": "geometry_label_forward_cache_derived_mask_row",
+        "schema_version": SCHEMA_VERSION,
+        "mask_policy_version": "static_ast_v2_forward_cache_derived_missingness_mask_v1",
+        "row_key": row_key,
+        "task_instance_id": chunk.get("task_instance_id"),
+        "workspace_state": chunk.get("workspace_state"),
+        "chunk_id": chunk.get("chunk_id"),
+        "source_sha256": chunk.get("source_sha256"),
+        "file_sha256": chunk.get("file_sha256"),
+        "repo": chunk.get("repo"),
+        "relative_path": chunk.get("relative_path"),
+        "mutation_category": chunk.get("mutation_category"),
+        "partition": chunk.get("partition") or "unknown",
+        "chunk_kind": chunk.get("chunk_kind"),
+        "node_kind": chunk.get("node_kind"),
+        "line_start": chunk.get("line_start"),
+        "line_end": chunk.get("line_end"),
+        "byte_start": chunk.get("byte_start"),
+        "byte_end": chunk.get("byte_end"),
+        "source_text_bytes": chunk.get("source_text_bytes"),
+        "expected_slots": list(included),
+        "retired_slots": list(retired),
+        "present_slots": list(present),
+        "missing_slots": list(missing),
+        "present_slot_count": len(present),
+        "missing_slot_count": len(missing),
+        "row_status": status,
+        "complete_static_ast_9slot_row": status == "complete" and len(included) == 9,
+        "missing_slot_reasons": missing_reasons,
+    }
+
+
+def derive_mask_from_forward_cache(
+    args: argparse.Namespace,
+    shards: list[dict[str, Any]],
+    chunk_by_key: dict[str, dict[str, Any]],
+    included: tuple[str, ...],
+    retired: tuple[str, ...],
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    active = set(included)
+    present: dict[str, set[str]] = {key: set() for key in chunk_by_key}
+    quarantines: dict[str, dict[str, dict[str, Any]]] = {key: {} for key in chunk_by_key}
+    stats: Counter[str] = Counter()
+    packed_inputs: list[dict[str, Any]] = []
+
+    for shard in sorted(shards, key=lambda item: str(item.get("shard_id"))):
+        shard_id = str(shard.get("shard_id") or "")
+        shard_root = args.forward_root / "shards" / shard_id
+        packed_manifest_path = shard_root / "python_forward_cache_packed_manifest.json"
+        packed_manifest = read_json(packed_manifest_path)
+        require(packed_manifest.get("passes") is True, "GEOMETRY_LABEL_ATLAS_PACKED_MANIFEST_NOT_PASSING", shard_id)
+        per_embedder = packed_manifest.get("per_embedder") or {}
+        require(
+            active.issubset(set(per_embedder)),
+            "GEOMETRY_LABEL_ATLAS_MASK_EMBEDDER_MISSING_FROM_PACKED_MANIFEST",
+            f"{shard_id}:{sorted(active - set(per_embedder))}",
+        )
+        packed_inputs.append(
+            {
+                "shard_id": shard_id,
+                "packed_manifest_path": str(packed_manifest_path),
+                "packed_manifest_sha256": sha256_file(packed_manifest_path),
+            }
+        )
+        for embedder_id in included:
+            entry = per_embedder[embedder_id]
+            record_path = Path(entry["record_path"])
+            record_count = 0
+            for line_no, record in iter_jsonl(record_path):
+                row_key, actual_embedder = pair_key_from_record(record)
+                require(
+                    actual_embedder == embedder_id,
+                    "GEOMETRY_LABEL_ATLAS_MASK_RECORD_EMBEDDER_MISMATCH",
+                    f"{record_path}:{line_no}:{actual_embedder}",
+                )
+                if row_key not in chunk_by_key:
+                    continue
+                require(embedder_id not in present[row_key], "GEOMETRY_LABEL_ATLAS_DUPLICATE_PRESENT_PAIR", f"{row_key}:{embedder_id}")
+                present[row_key].add(embedder_id)
+                stats[f"present_rows:{embedder_id}"] += 1
+                record_count += 1
+            require(
+                record_count == int(entry.get("row_count") or -1),
+                "GEOMETRY_LABEL_ATLAS_MASK_PACKED_ROW_COUNT_MISMATCH",
+                f"{record_path}:{record_count}!={entry.get('row_count')}",
+            )
+
+        quarantine_path = shard_root / "python_forward_cache_quarantine.jsonl"
+        require(quarantine_path.is_file(), "GEOMETRY_LABEL_ATLAS_QUARANTINE_MISSING", str(quarantine_path))
+        for line_no, row in iter_jsonl(quarantine_path):
+            row_key, embedder_id = pair_key_from_quarantine(row)
+            if embedder_id not in active or row_key not in chunk_by_key:
+                continue
+            require(embedder_id not in quarantines[row_key], "GEOMETRY_LABEL_ATLAS_DUPLICATE_QUARANTINE_PAIR", f"{row_key}:{embedder_id}")
+            quarantines[row_key][embedder_id] = {
+                "error_code": row.get("error_code"),
+                "reason": row.get("reason"),
+                "instrument_id": row.get("instrument_id"),
+                "source_text_bytes": row.get("source_text_bytes"),
+                "max_forward_source_text_bytes": row.get("max_forward_source_text_bytes"),
+                "shard_id": shard_id,
+            }
+            stats[f"quarantine_rows:{embedder_id}"] += 1
+
+    overlap = [(key, slot) for key, slots in present.items() for slot in slots if slot in quarantines.get(key, {})]
+    require(not overlap, "GEOMETRY_LABEL_ATLAS_PRESENT_AND_QUARANTINED_PAIR", str(overlap[:20]))
+
+    mask_by_key: dict[str, dict[str, Any]] = {}
+    status_counts: Counter[str] = Counter()
+    present_pairs = 0
+    missing_pairs = 0
+    digest = hashlib.sha256()
+    for row_key, chunk in sorted(chunk_by_key.items()):
+        row = mask_row_from_forward_cache(
+            row_key,
+            chunk,
+            included=included,
+            retired=retired,
+            present_slots=present[row_key],
+            quarantine_reasons=quarantines[row_key],
+        )
+        mask_by_key[row_key] = row
+        status_counts[str(row["row_status"])] += 1
+        present_pairs += len(row["present_slots"])
+        missing_pairs += len(row["missing_slots"])
+        digest.update(json.dumps(row, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        digest.update(b"\n")
+
+    return mask_by_key, {
+        "path": "derived-from-forward-cache",
+        "forward_root": str(args.forward_root),
+        "selected_rows": len(mask_by_key),
+        "expected_slots": list(included),
+        "retired_slots": list(retired),
+        "present_pairs": present_pairs,
+        "missing_pairs": missing_pairs,
+        "accounted_pairs": present_pairs + missing_pairs,
+        "row_status_counts": dict(sorted(status_counts.items())),
+        "selected_mask_sha256": "sha256:" + digest.hexdigest(),
+        "packed_inputs": packed_inputs,
+        "pair_stats": dict(sorted(stats.items())),
     }
 
 
@@ -788,10 +1048,11 @@ def membership_row(
 
 def materialize(args: argparse.Namespace) -> dict[str, Any]:
     started_at = utc_now()
-    policy_info = load_policy(args.admissibility_root)
+    policy_info = load_policy(args)
     eligible = set(policy_info["eligible"])
     aliases = dict(policy_info["aliases"])
     degenerate = set(policy_info["degenerate"])
+    retired = tuple(policy_info.get("retired") or parse_csv(args.retired_static_ast_embedders))
     policy_embedders = tuple(sorted(eligible | set(aliases) | degenerate))
     included = tuple(parse_csv(args.included_embedders) or policy_embedders)
     unknown = sorted(set(included) - set(policy_embedders))
@@ -806,7 +1067,10 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     shards, shard_summary = completed_shard_entries(args)
     ranges = selected_ranges(shards)
     chunk_by_key, chunk_summary = load_window_jsonl(args.chunks_jsonl, ranges)
-    mask_by_key, mask_summary = load_jsonl_by_keys(args.completeness_mask_jsonl, set(chunk_by_key))
+    if args.completeness_mask_jsonl is None:
+        mask_by_key, mask_summary = derive_mask_from_forward_cache(args, shards, chunk_by_key, included, retired)
+    else:
+        mask_by_key, mask_summary = load_jsonl_by_keys(args.completeness_mask_jsonl, set(chunk_by_key))
     require(set(chunk_by_key) == set(mask_by_key), "GEOMETRY_LABEL_ATLAS_CHUNK_MASK_KEY_MISMATCH", "selected windows differ")
 
     before = {"output_root": tree_state(args.output_root)}
@@ -1103,16 +1367,16 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                     )
             registry_sink.write(registry)
 
-        artifacts = {
-            "cluster_candidates": candidate_sink.artifact(),
-            "cluster_memberships": membership_sink.artifact(),
-            "cluster_noise_ood": noise_sink.artifact(),
-            "geometry_label_registry": registry_sink.artifact(),
-            "geometry_label_descriptors": descriptor_sink.artifact(),
-            "geometry_label_exemplars": exemplar_sink.artifact(),
-            "geometry_derived_region_labels": derived_region_label_sink.artifact(),
-            "geometry_label_rejections": rejection_sink.artifact(),
-        }
+    artifacts = {
+        "cluster_candidates": candidate_sink.artifact(),
+        "cluster_memberships": membership_sink.artifact(),
+        "cluster_noise_ood": noise_sink.artifact(),
+        "geometry_label_registry": registry_sink.artifact(),
+        "geometry_label_descriptors": descriptor_sink.artifact(),
+        "geometry_label_exemplars": exemplar_sink.artifact(),
+        "geometry_derived_region_labels": derived_region_label_sink.artifact(),
+        "geometry_label_rejections": rejection_sink.artifact(),
+    }
 
     candidate_counts = Counter(cluster.space_admissibility for cluster in clusters.values())
     expected_noise_rows = sum(value for key, value in stats.items() if key.startswith("noise_rows:"))
@@ -1250,11 +1514,16 @@ def command_python_geometry_label_atlas_materializer(args: argparse.Namespace) -
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--forward-root", type=Path, default=DEFAULT_FORWARD_ROOT)
     parser.add_argument("--chunks-jsonl", type=Path, default=DEFAULT_CHUNKS_JSONL)
-    parser.add_argument("--completeness-mask-jsonl", type=Path, default=DEFAULT_COMPLETENESS_MASK)
+    parser.add_argument("--completeness-mask-jsonl", type=Path, default=None)
     parser.add_argument("--admissibility-root", type=Path, default=DEFAULT_ADMISSIBILITY_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--evidence-root", type=Path, default=DEFAULT_EVIDENCE_ROOT)
     parser.add_argument("--included-embedders", default=None, help="Comma-separated subset. Default: all embedders in #143 policy.")
+    parser.add_argument("--eligible-independent-embedders", default=DEFAULT_ELIGIBLE_INDEPENDENT)
+    parser.add_argument("--alias-map", default=DEFAULT_ALIAS_MAP)
+    parser.add_argument("--degenerate-embedders", default=DEFAULT_DEGENERATE)
+    parser.add_argument("--retired-static-ast-embedders", default=DEFAULT_RETIRED_STATIC_AST)
+    parser.add_argument("--use-cli-policy", action="store_true")
     parser.add_argument("--max-completed-shards", type=int, default=1)
     parser.add_argument("--all-completed-shards", action="store_true")
     parser.add_argument("--shards", default=None, help="Comma-separated shard IDs, e.g. shard-000000-offset-000000000")

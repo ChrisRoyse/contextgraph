@@ -17,12 +17,19 @@ SCHEMA_VERSION = 1
 ARTIFACT_KIND = "geometry_label_admissibility"
 FORMULA_VERSION = "valid_independent_embedder_policy_v1"
 
-DEFAULT_LABEL_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v1")
-DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/state/labels/task-py-g-143-geometry-label-admissibility-v1")
-DEFAULT_EVIDENCE_ROOT = Path("/zfs/archive/contextgraph/readback/task-py-g-143-geometry-label-admissibility-readback")
-DEFAULT_ELIGIBLE_INDEPENDENT = "e1,e6,e7,e9,e10,e12,e13,e14"
-DEFAULT_ALIAS_MAP = "e8:e1"
-DEFAULT_DEGENERATE = "e2,e3,e4"
+DEFAULT_LABEL_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-136-per-embedder-geometry-labels-v2-static-ast-v1"
+)
+DEFAULT_OUTPUT_ROOT = Path(
+    "/zfs/archive/contextgraph/state/labels/task-py-g-143-geometry-label-admissibility-v2-static-ast-v1"
+)
+DEFAULT_EVIDENCE_ROOT = Path(
+    "/zfs/archive/contextgraph/fsv/task-py-g-136-per-embedder-geometry-labels-fsv/v2-static-ast-admissibility-v1"
+)
+DEFAULT_ELIGIBLE_INDEPENDENT = "e1,e6,e7,e8,e9,e10,e12,e13,e14"
+DEFAULT_ALIAS_MAP = ""
+DEFAULT_DEGENERATE = ""
+DEFAULT_RETIRED_STATIC_AST = "e2,e3,e4"
 
 
 class GeometryLabelAdmissibilityError(SwebenchOpsError):
@@ -210,6 +217,7 @@ def command_python_geometry_label_admissibility(args: argparse.Namespace) -> dic
     eligible = set(parse_csv(args.eligible_independent_embedders))
     aliases = parse_alias_map(args.alias_map)
     degenerate = set(parse_csv(args.degenerate_embedders))
+    retired_static_ast = set(parse_csv(args.retired_static_ast_embedders))
     require(not (eligible & set(aliases)), "GEOMETRY_LABEL_ALIAS_MARKED_INDEPENDENT", str(sorted(eligible & set(aliases))))
     require(not (eligible & degenerate), "GEOMETRY_LABEL_DEGENERATE_MARKED_INDEPENDENT", str(sorted(eligible & degenerate)))
     require(not (set(aliases) & degenerate), "GEOMETRY_LABEL_ALIAS_MARKED_DEGENERATE", str(sorted(set(aliases) & degenerate)))
@@ -250,7 +258,11 @@ def command_python_geometry_label_admissibility(args: argparse.Namespace) -> dic
 
     partial = args.max_registry_rows is not None
     if not partial:
-        require(stats["alias_source_live_rows"] > 0, "GEOMETRY_LABEL_ALIAS_LIVE_EDGE_NOT_OBSERVED", "expected duplicate alias rows to prove scrub")
+        require(
+            not aliases or stats["alias_source_live_rows"] > 0,
+            "GEOMETRY_LABEL_ALIAS_LIVE_EDGE_NOT_OBSERVED",
+            "expected duplicate alias rows to prove scrub when aliases are configured",
+        )
         require(stats["rejection_rows_seen"] == len(degenerate), "GEOMETRY_LABEL_DEGENERATE_REJECTION_COUNT_MISMATCH", str(dict(stats)))
         require(all(embedder_counts[item] > 0 for item in eligible), "GEOMETRY_LABEL_ELIGIBLE_EMBEDDER_MISSING", str(dict(embedder_counts)))
         require(all(embedder_counts[item] > 0 for item in aliases), "GEOMETRY_LABEL_ALIAS_EMBEDDER_MISSING", str(dict(embedder_counts)))
@@ -264,7 +276,7 @@ def command_python_geometry_label_admissibility(args: argparse.Namespace) -> dic
         "eligible_independent_embedder_ids": sorted(eligible),
         "duplicate_alias_map": dict(sorted(aliases.items())),
         "degenerate_embedder_ids": sorted(degenerate),
-        "retired_for_static_ast_embedder_ids": sorted(degenerate),
+        "retired_for_static_ast_embedder_ids": sorted(retired_static_ast),
         "static_ast_retirement_reason": "E2/E3/E4 require semantic temporal instructions; AST chunker run timestamps are non-semantic and collapse temporal spaces",
         "valid_independent_embedder_count": len(eligible),
         "valid_independent_pair_denominator": len(eligible) * (len(eligible) - 1) // 2,
@@ -276,9 +288,9 @@ def command_python_geometry_label_admissibility(args: argparse.Namespace) -> dic
     checks = [
         {
             "check": "alias_source_live_rows_are_scrubbed",
-            "passed": stats["alias_source_live_rows"] > 0 if not partial else True,
+            "passed": (not aliases or stats["alias_source_live_rows"] > 0) if not partial else True,
             "actual_alias_source_live_rows": stats["alias_source_live_rows"],
-            "expected": "alias rows may exist in source but independent_live_input_allowed is false in overlay",
+            "expected": "alias rows are scrubbed when aliases are configured; static AST v2 has no e8 alias",
         },
         {
             "check": "degenerate_rejections_present",
@@ -343,5 +355,6 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--eligible-independent-embedders", default=DEFAULT_ELIGIBLE_INDEPENDENT)
     parser.add_argument("--alias-map", default=DEFAULT_ALIAS_MAP)
     parser.add_argument("--degenerate-embedders", default=DEFAULT_DEGENERATE)
+    parser.add_argument("--retired-static-ast-embedders", default=DEFAULT_RETIRED_STATIC_AST)
     parser.add_argument("--max-registry-rows", type=int, default=None)
     parser.add_argument("--clean-output", action="store_true")
