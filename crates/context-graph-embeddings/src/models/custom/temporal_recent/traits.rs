@@ -32,7 +32,7 @@ impl EmbeddingModel for TemporalRecentModel {
         let start = std::time::Instant::now();
 
         // 2. Extract timestamp from input
-        let timestamp = extract_timestamp(input);
+        let timestamp = extract_timestamp(input)?;
 
         // 3. Compute decay embedding
         let vector = compute_decay_embedding(timestamp, self.reference_time, &self.decay_rates);
@@ -87,7 +87,9 @@ mod tests {
     #[tokio::test]
     async fn test_embed_returns_512d_vector() {
         let model = TemporalRecentModel::new();
-        let input = ModelInput::text("test content").expect("Failed to create input");
+        let input =
+            ModelInput::text_with_instruction("test content", "timestamp:2024-01-15T10:30:00Z")
+                .expect("Failed to create input");
 
         let embedding = model.embed(&input).await.expect("Embed should succeed");
 
@@ -97,7 +99,8 @@ mod tests {
     #[tokio::test]
     async fn test_embed_model_id_correct() {
         let model = TemporalRecentModel::new();
-        let input = ModelInput::text("test").expect("Failed to create input");
+        let input = ModelInput::text_with_instruction("test", "timestamp:2024-01-15T10:30:00Z")
+            .expect("Failed to create input");
 
         let embedding = model.embed(&input).await.expect("Embed should succeed");
 
@@ -107,7 +110,11 @@ mod tests {
     #[tokio::test]
     async fn test_embed_l2_normalized() {
         let model = TemporalRecentModel::new();
-        let input = ModelInput::text("test normalization").expect("Failed to create input");
+        let input = ModelInput::text_with_instruction(
+            "test normalization",
+            "timestamp:2024-01-15T10:30:00Z",
+        )
+        .expect("Failed to create input");
 
         let embedding = model.embed(&input).await.expect("Embed should succeed");
 
@@ -123,7 +130,8 @@ mod tests {
     #[tokio::test]
     async fn test_embed_no_nan_values() {
         let model = TemporalRecentModel::new();
-        let input = ModelInput::text("test").expect("Failed to create input");
+        let input = ModelInput::text_with_instruction("test", "timestamp:2024-01-15T10:30:00Z")
+            .expect("Failed to create input");
 
         let embedding = model.embed(&input).await.expect("Embed should succeed");
 
@@ -135,7 +143,8 @@ mod tests {
     #[tokio::test]
     async fn test_embed_no_inf_values() {
         let model = TemporalRecentModel::new();
-        let input = ModelInput::text("test").expect("Failed to create input");
+        let input = ModelInput::text_with_instruction("test", "timestamp:2024-01-15T10:30:00Z")
+            .expect("Failed to create input");
 
         let embedding = model.embed(&input).await.expect("Embed should succeed");
 
@@ -147,7 +156,9 @@ mod tests {
     #[tokio::test]
     async fn test_embed_records_latency() {
         let model = TemporalRecentModel::new();
-        let input = ModelInput::text("test latency").expect("Failed to create input");
+        let input =
+            ModelInput::text_with_instruction("test latency", "timestamp:2024-01-15T10:30:00Z")
+                .expect("Failed to create input");
 
         let embedding = model.embed(&input).await.expect("Embed should succeed");
 
@@ -160,7 +171,9 @@ mod tests {
     #[tokio::test]
     async fn test_embed_latency_under_2ms() {
         let model = TemporalRecentModel::new();
-        let input = ModelInput::text("test performance").expect("Failed to create input");
+        let input =
+            ModelInput::text_with_instruction("test performance", "timestamp:2024-01-15T10:30:00Z")
+                .expect("Failed to create input");
 
         let start = std::time::Instant::now();
         let _embedding = model.embed(&input).await.expect("Embed should succeed");
@@ -237,5 +250,18 @@ mod tests {
             }
             other => panic!("Expected UnsupportedModality error, got {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn test_embed_rejects_missing_timestamp_instruction() {
+        let model = TemporalRecentModel::new();
+        let input = ModelInput::text("test").expect("Failed to create input");
+
+        let err = model.embed(&input).await.unwrap_err();
+
+        assert!(
+            err.to_string().contains("[TEMPORAL_INPUT_INVALID]"),
+            "missing timestamp instruction must fail closed, got {err}"
+        );
     }
 }

@@ -1,6 +1,6 @@
 //! Timestamp parsing and extraction tests for TemporalPeriodicModel.
 
-use chrono::{Datelike, Utc};
+use chrono::Datelike;
 
 use crate::models::custom::temporal_periodic::TemporalPeriodicModel;
 use crate::types::ModelInput;
@@ -47,7 +47,9 @@ async fn test_extract_timestamp_with_iso8601() {
     let input = ModelInput::text_with_instruction("content", "timestamp:2024-01-15T10:30:00Z")
         .expect("Failed to create input");
 
-    let timestamp = model.extract_timestamp(&input);
+    let timestamp = model
+        .extract_timestamp(&input)
+        .expect("timestamp should parse");
 
     assert_eq!(timestamp.year(), 2024);
     assert_eq!(timestamp.month(), 1);
@@ -55,14 +57,14 @@ async fn test_extract_timestamp_with_iso8601() {
 }
 
 #[tokio::test]
-async fn test_extract_timestamp_fallback_to_now() {
+async fn test_extract_timestamp_rejects_missing_instruction() {
     let model = TemporalPeriodicModel::new();
     let input = ModelInput::text("no timestamp").expect("Failed to create input");
 
-    let before = Utc::now();
-    let timestamp = model.extract_timestamp(&input);
-    let after = Utc::now();
+    let err = model.extract_timestamp(&input).unwrap_err();
 
-    assert!(timestamp >= before, "Fallback should be >= before");
-    assert!(timestamp <= after, "Fallback should be <= after");
+    assert!(
+        err.to_string().contains("[TEMPORAL_INPUT_INVALID]"),
+        "missing timestamp must fail closed, got {err}"
+    );
 }

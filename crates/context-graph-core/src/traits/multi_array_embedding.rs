@@ -624,7 +624,7 @@ pub struct EmbeddingMetadata {
 
     /// Explicit timestamp for E2 (V_freshness) and E3 (V_periodicity).
     ///
-    /// If not provided, defaults to `Utc::now()`.
+    /// Required. Missing timestamps fail closed for E2/E3.
     pub timestamp: Option<DateTime<Utc>>,
 
     /// Optional legacy causal hint for E5 (V_causality) enhancement.
@@ -675,48 +675,53 @@ impl EmbeddingMetadata {
     ///
     /// Returns "session:X sequence:N" if both session_id and session_sequence are set,
     /// enabling the E4 hybrid mode to generate session-specific signatures.
-    /// Falls back to "sequence:N" or "epoch:N" for backward compatibility.
+    /// Missing/empty session ids or sequences fail closed. E4's production
+    /// contract is within-session ordering, so timestamp-only positions are
+    /// rejected instead of being treated as order evidence.
     ///
     /// # Output Examples
     ///
     /// - With session + sequence: `"session:abc123 sequence:42"`
-    /// - With session + timestamp: `"session:abc123 epoch:1705315800"`
-    /// - Without session (legacy): `"sequence:42"` or `"epoch:1705315800"`
-    #[must_use]
-    pub fn e4_instruction(&self) -> String {
-        let mut parts = Vec::new();
+    /// # Errors
+    ///
+    /// Returns `CoreError::ValidationError` when either required field is absent
+    /// or the session id is empty/whitespace.
+    pub fn e4_instruction(&self) -> CoreResult<String> {
+        let session_id = self
+            .session_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|session_id| !session_id.is_empty())
+            .ok_or_else(|| CoreError::ValidationError {
+                field: "metadata.session_id".to_string(),
+                message: "E4 temporal-positional requires non-empty session_id; expected session:<id> sequence:<n>".to_string(),
+            })?;
+        let seq = self
+            .session_sequence
+            .ok_or_else(|| CoreError::ValidationError {
+                field: "metadata.session_sequence".to_string(),
+                message: "E4 temporal-positional requires session_sequence; timestamp-only E4 instructions are rejected".to_string(),
+            })?;
 
-        // Include session_id if present (for hybrid mode)
-        if let Some(ref sess) = self.session_id {
-            parts.push(format!("session:{}", sess));
-        }
-
-        // Include position (sequence or timestamp)
-        if let Some(seq) = self.session_sequence {
-            parts.push(format!("sequence:{}", seq));
-        } else if let Some(ts) = self.timestamp {
-            parts.push(format!("epoch:{}", ts.timestamp()));
-        } else {
-            parts.push(format!("epoch:{}", Utc::now().timestamp()));
-        }
-
-        parts.join(" ")
+        Ok(format!("session:{session_id} sequence:{seq}"))
     }
 
     /// Generate instruction string for E2 (V_freshness) embedding.
     ///
-    /// Passes the memory's creation timestamp so E2 computes a unique
-    /// decay vector per memory. Without this, E2 defaults to Utc::now()
-    /// producing identical vectors for all memories in a batch.
+    /// Passes the memory's creation timestamp so E2 computes a unique decay
+    /// vector per memory. Missing timestamps fail closed instead of fabricating
+    /// current-time vectors.
     ///
     /// Format: `"timestamp:2024-01-15T10:30:00+00:00"` or `"epoch:1705315800"`
-    #[must_use]
-    pub fn e2_instruction(&self) -> String {
-        if let Some(ts) = self.timestamp {
-            format!("timestamp:{}", ts.to_rfc3339())
-        } else {
-            format!("epoch:{}", Utc::now().timestamp())
-        }
+    /// # Errors
+    ///
+    /// Returns `CoreError::ValidationError` when `timestamp` is absent.
+    pub fn e2_instruction(&self) -> CoreResult<String> {
+        let ts = self.timestamp.ok_or_else(|| CoreError::ValidationError {
+            field: "metadata.timestamp".to_string(),
+            message: "E2 temporal-recent requires explicit timestamp; no current-time fallback is allowed".to_string(),
+        })?;
+        Ok(format!("timestamp:{}", ts.to_rfc3339()))
     }
 
     /// Generate instruction string for E3 (V_periodicity) embedding.
@@ -725,8 +730,10 @@ impl EmbeddingMetadata {
     /// time-of-day and day-of-week periodic patterns for this memory.
     ///
     /// Uses the same format as E2 since both parse timestamps identically.
-    #[must_use]
-    pub fn e3_instruction(&self) -> String {
+    /// # Errors
+    ///
+    /// Returns `CoreError::ValidationError` when `timestamp` is absent.
+    pub fn e3_instruction(&self) -> CoreResult<String> {
         self.e2_instruction()
     }
 }
@@ -826,30 +833,17 @@ pub trait MultiArrayEmbeddingProvider: Send + Sync {
     ///
     /// # Default Implementation
     ///
-    /// **WARNING**: The default implementation ignores metadata and logs a warning.
-    /// Implementations MUST override this method to properly support E4 (V_ordering)
-    /// temporal-positional embeddings. Failure to do so means E4 will not work correctly.
-    ///
-    /// The default exists only for backward compatibility during migration.
+    /// The default implementation fails closed. Implementations must override
+    /// this method when they can propagate temporal metadata to E2/E3/E4.
     async fn embed_all_with_metadata(
         &self,
         content: &str,
         metadata: EmbeddingMetadata,
     ) -> CoreResult<MultiArrayEmbeddingOutput> {
-        // Log warning when metadata is discarded - this is a CRITICAL issue
-        // E4 temporal-positional embeddings will NOT work without proper metadata handling
-        if metadata.session_sequence.is_some() || metadata.causal_hint.is_some() {
-            tracing::warn!(
-                session_id = ?metadata.session_id,
-                session_sequence = ?metadata.session_sequence,
-                has_causal_hint = metadata.causal_hint.is_some(),
-                "embed_all_with_metadata: METADATA DISCARDED - implementation does not override default. \
-                 E4 temporal-positional embeddings will be incorrect. \
-                 Override this method to properly handle metadata."
-            );
-        }
-        // Default: delegate to embed_all (metadata ignored - see warning above)
-        self.embed_all(content).await
+        let _ = (content, metadata);
+        Err(CoreError::Internal(
+            "embed_all_with_metadata is not implemented for this provider; refusing to discard temporal metadata".to_string(),
+        ))
     }
 
     /// Generate fingerprints for multiple contents in batch.
@@ -860,10 +854,8 @@ pub trait MultiArrayEmbeddingProvider: Send + Sync {
     /// # Arguments
     ///
     /// * `contents` - Slice of text content to embed
-    /// * `metadata` - Slice of metadata for each content item. If shorter than
-    ///   `contents`, remaining items use `EmbeddingMetadata::default()`. This
-    ///   ensures E4 receives sequence instructions and E5 receives causal hints
-    ///   through the batch path (EMB-H1 fix).
+    /// * `metadata` - Slice of metadata for each content item. Length must
+    ///   equal `contents.len()` so temporal slots cannot use default metadata.
     ///
     /// # Returns
     ///

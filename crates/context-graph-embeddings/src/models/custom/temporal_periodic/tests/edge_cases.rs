@@ -89,21 +89,23 @@ async fn test_edge_case_2_same_weekday_different_weeks() {
 }
 
 #[tokio::test]
-async fn test_edge_case_3_no_timestamp_fallback() {
+async fn test_edge_case_3_no_timestamp_fails_closed() {
     let model = TemporalPeriodicModel::new();
 
-    println!("=== EDGE CASE 3: No Timestamp (Fallback) ===");
+    println!("=== EDGE CASE 3: No Timestamp (Fail Closed) ===");
     println!("BEFORE: input has no timestamp instruction");
 
     let input = ModelInput::text("content without timestamp").expect("Failed to create input");
 
-    let embedding = model.embed(&input).await.expect("Embed should succeed");
+    let err = model.embed(&input).await.unwrap_err();
 
-    println!("AFTER: vector[0..5] = {:?}", &embedding.vector[0..5]);
-    println!("AFTER: Should use current time as fallback");
+    println!("AFTER: error = {err}");
+    println!("AFTER: no vector was emitted");
 
-    assert_eq!(embedding.vector.len(), 512);
-    assert!(embedding.vector.iter().all(|x| x.is_finite()));
+    assert!(
+        err.to_string().contains("[TEMPORAL_INPUT_INVALID]"),
+        "missing timestamp instruction must fail closed"
+    );
 }
 
 #[tokio::test]

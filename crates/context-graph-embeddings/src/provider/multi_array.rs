@@ -1176,6 +1176,12 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                 message: "Content cannot be empty".to_string(),
             });
         }
+        if TEMPORAL_EMBEDDERS_ENABLED {
+            return Err(CoreError::ValidationError {
+                field: "metadata".to_string(),
+                message: "embed_all cannot run E2/E3/E4 without explicit temporal metadata; call embed_all_with_metadata or disable temporal slots for this profile".to_string(),
+            });
+        }
 
         let start = Instant::now();
 
@@ -1217,9 +1223,8 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                 let c = content_owned.clone();
                 async move { e1.embed(&c).await }
             }),
-            // E2/E3/E4: No instruction needed for search queries — Utc::now() fallback
-            // correctly represents query-time temporal position. When disabled, zero vectors
-            // preserve fingerprint validation.
+            // E2/E3/E4: enabled temporal slots are rejected above unless callers
+            // provide explicit metadata through embed_all_with_metadata.
             Self::timed_embed("E2_TemporalRecent", {
                 let c = content_owned.clone();
                 async move {
@@ -1409,9 +1414,9 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         let content_owned = content.to_string();
 
         // Generate temporal instructions from metadata timestamps
-        let e2_instruction = metadata.e2_instruction();
-        let e3_instruction = metadata.e3_instruction();
-        let e4_instruction = metadata.e4_instruction();
+        let e2_instruction = metadata.e2_instruction()?;
+        let e3_instruction = metadata.e3_instruction()?;
+        let e4_instruction = metadata.e4_instruction()?;
 
         // Run all 14 embedders in parallel
         let (
@@ -1607,6 +1612,17 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
     ) -> CoreResult<Vec<MultiArrayEmbeddingOutput>> {
         use futures::future::join_all;
 
+        if contents.len() != metadata.len() {
+            return Err(CoreError::ValidationError {
+                field: "metadata".to_string(),
+                message: format!(
+                    "embed_batch_all requires one EmbeddingMetadata per content item; contents={}, metadata={}",
+                    contents.len(),
+                    metadata.len()
+                ),
+            });
+        }
+
         // Clone self for spawned tasks (Arc references are cheap to clone)
         let e1 = Arc::clone(&self.e1_semantic);
         let e2 = Arc::clone(&self.e2_temporal_recent);
@@ -1629,8 +1645,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             .enumerate()
             .map(|(idx, content)| {
                 let content = content.clone();
-                // EMB-H1: Get corresponding metadata or default for this content item
-                let item_metadata = metadata.get(idx).cloned().unwrap_or_default();
+                let item_metadata = metadata[idx].clone();
                 let e1 = Arc::clone(&e1);
                 let e2 = Arc::clone(&e2);
                 let e3 = Arc::clone(&e3);
@@ -1650,9 +1665,9 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                     let start = Instant::now();
 
                     // Generate temporal instructions from metadata (same as embed_all_with_metadata)
-                    let e2_instruction = item_metadata.e2_instruction();
-                    let e3_instruction = item_metadata.e3_instruction();
-                    let e4_instruction = item_metadata.e4_instruction();
+                    let e2_instruction = item_metadata.e2_instruction()?;
+                    let e3_instruction = item_metadata.e3_instruction()?;
+                    let e4_instruction = item_metadata.e4_instruction()?;
                     // Run all 14 embedders in parallel for this content
                     let (
                         (r1, d1),

@@ -14,6 +14,7 @@ use context_graph_embeddings::models::{
 };
 use context_graph_embeddings::traits::{EmbeddingModel, SingleModelConfig};
 use context_graph_embeddings::types::{ModelId, ModelInput};
+use chrono::DateTime;
 use std::path::{Path, PathBuf};
 
 pub const SUPPORTED_PRETRAINED_FORWARD_EMBEDDERS: &[EmbedderId] = &[
@@ -680,11 +681,11 @@ fn model_input_for_embedder(
         });
     }
     if matches!(embedder, EmbedderId::E2 | EmbedderId::E3 | EmbedderId::E4) {
-        let instruction = temporal_instruction(embedder, input).ok_or_else(|| {
+        let instruction = temporal_instruction(embedder, input).map_err(|message| {
             EmbedError::forward(
                 embedder,
-                "temporal algorithmic embedder input did not contain an explicit supported temporal instruction",
-                "prefix the chunk text or source_id with timestamp:<RFC3339>/epoch:<seconds> for E2/E3, or session:<id> sequence:<n>/sequence:<n>/timestamp:<RFC3339>/epoch:<seconds> for E4",
+                format!("temporal algorithmic embedder input rejected: {message}"),
+                "prefix the chunk text or source_id with timestamp:<RFC3339>/epoch:<seconds> for E2/E3, or session:<id> sequence:<n> for E4",
             )
         })?;
         return ModelInput::text_with_instruction(&input.text, instruction).map_err(|err| {
@@ -704,39 +705,121 @@ fn model_input_for_embedder(
     })
 }
 
-fn temporal_instruction(embedder: EmbedderId, input: &EmbedderInput) -> Option<&str> {
+fn temporal_instruction(embedder: EmbedderId, input: &EmbedderInput) -> Result<&str, String> {
+    let mut invalid_supported_instruction = None;
     for candidate in [input.source_id.as_str(), input.text.as_str()] {
         for line in candidate.lines() {
             let trimmed = line.trim();
-            let is_supported = match embedder {
-                EmbedderId::E2 | EmbedderId::E3 => is_timestamp_instruction(trimmed),
-                EmbedderId::E4 => is_positional_instruction(trimmed),
+            if trimmed.is_empty() {
+                continue;
+            }
+            let has_supported_prefix = match embedder {
+                EmbedderId::E2 | EmbedderId::E3 => has_timestamp_prefix(trimmed),
+                EmbedderId::E4 => has_positional_prefix(trimmed),
                 _ => false,
             };
-            if is_supported {
-                return Some(trimmed);
+            if !has_supported_prefix {
+                continue;
+            }
+            match validate_temporal_instruction(embedder, trimmed) {
+                Ok(()) => return Ok(trimmed),
+                Err(err) => {
+                    invalid_supported_instruction.get_or_insert(err);
+                }
             }
         }
     }
-    None
+    Err(invalid_supported_instruction.unwrap_or_else(|| match embedder {
+        EmbedderId::E2 | EmbedderId::E3 => {
+            "missing explicit timestamp instruction; expected timestamp:<RFC3339> or epoch:<seconds>".to_string()
+        }
+        EmbedderId::E4 => {
+            "missing explicit session sequence instruction; expected session:<id> sequence:<n>".to_string()
+        }
+        _ => "embedder has no temporal instruction contract".to_string(),
+    }))
 }
 
-fn is_timestamp_instruction(value: &str) -> bool {
+fn has_timestamp_prefix(value: &str) -> bool {
     value.starts_with("timestamp:") || value.starts_with("epoch:")
 }
 
-fn is_positional_instruction(value: &str) -> bool {
-    let starts_with_supported_prefix = value.starts_with("session:")
-        || value.starts_with("sequence:")
-        || is_timestamp_instruction(value);
-    if !starts_with_supported_prefix {
-        return false;
+fn has_positional_prefix(value: &str) -> bool {
+    value.starts_with("session:") || value.starts_with("sequence:") || has_timestamp_prefix(value)
+}
+
+fn validate_temporal_instruction(embedder: EmbedderId, value: &str) -> Result<(), String> {
+    match embedder {
+        EmbedderId::E2 | EmbedderId::E3 => validate_timestamp_instruction(value),
+        EmbedderId::E4 => validate_e4_session_sequence_instruction(value),
+        _ => Err(format!("{} is not a temporal embedder", embedder.slug())),
     }
-    value.split_whitespace().any(|part| {
-        part.starts_with("sequence:")
-            || part.starts_with("timestamp:")
-            || part.starts_with("epoch:")
-    })
+}
+
+fn validate_timestamp_instruction(value: &str) -> Result<(), String> {
+    if let Some(ts_str) = value.strip_prefix("timestamp:") {
+        let ts_str = ts_str.trim();
+        if ts_str.is_empty() {
+            return Err("timestamp instruction is empty; expected timestamp:<RFC3339>".to_string());
+        }
+        DateTime::parse_from_rfc3339(ts_str).map_err(|err| {
+            format!("invalid RFC3339 timestamp {ts_str:?}: {err}")
+        })?;
+        return Ok(());
+    }
+    if let Some(epoch_str) = value.strip_prefix("epoch:") {
+        let epoch_str = epoch_str.trim();
+        if epoch_str.is_empty() {
+            return Err("epoch instruction is empty; expected epoch:<seconds>".to_string());
+        }
+        let secs = epoch_str
+            .parse::<i64>()
+            .map_err(|err| format!("invalid epoch seconds {epoch_str:?}: {err}"))?;
+        chrono::DateTime::from_timestamp(secs, 0).ok_or_else(|| {
+            format!("epoch seconds {secs} is outside chrono's DateTime<Utc> range")
+        })?;
+        return Ok(());
+    }
+    Err(format!(
+        "unsupported timestamp instruction {value:?}; expected timestamp:<RFC3339> or epoch:<seconds>"
+    ))
+}
+
+fn validate_e4_session_sequence_instruction(value: &str) -> Result<(), String> {
+    let mut session_id = None;
+    let mut sequence = None;
+    for part in value.split_whitespace() {
+        if let Some(id) = part.strip_prefix("session:") {
+            if id.is_empty() {
+                return Err("session instruction is empty; expected session:<id>".to_string());
+            }
+            session_id = Some(id);
+            continue;
+        }
+        if let Some(seq_str) = part.strip_prefix("sequence:") {
+            if seq_str.is_empty() {
+                return Err("sequence instruction is empty; expected sequence:<n>".to_string());
+            }
+            let parsed = seq_str
+                .parse::<u64>()
+                .map_err(|err| format!("invalid sequence {seq_str:?}: {err}"))?;
+            sequence = Some(parsed);
+            continue;
+        }
+        if part.starts_with("timestamp:") || part.starts_with("epoch:") {
+            return Err(
+                "E4 live-temporal instruction must be session-scoped sequence, not timestamp/epoch"
+                    .to_string(),
+            );
+        }
+    }
+    if session_id.is_none() {
+        return Err("missing non-empty session id; expected session:<id> sequence:<n>".to_string());
+    }
+    if sequence.is_none() {
+        return Err("missing sequence; expected session:<id> sequence:<n>".to_string());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -805,19 +888,17 @@ mod tests {
     }
 
     #[test]
-    fn temporal_instruction_routes_e4_sequence_only_to_e4() {
+    fn temporal_instruction_rejects_e4_sequence_without_session() {
         let input = EmbedderInput {
             embedder: EmbedderId::E4,
             text: "sequence:42\nfn temporal_signal() {}".to_string(),
             source_id: "synthetic.rs#0".to_string(),
         };
 
-        assert_eq!(
-            temporal_instruction(EmbedderId::E4, &input),
-            Some("sequence:42")
-        );
-        assert_eq!(temporal_instruction(EmbedderId::E2, &input), None);
-        assert_eq!(temporal_instruction(EmbedderId::E3, &input), None);
+        let err = temporal_instruction(EmbedderId::E4, &input).unwrap_err();
+        assert!(err.contains("missing non-empty session id"));
+        assert!(temporal_instruction(EmbedderId::E2, &input).is_err());
+        assert!(temporal_instruction(EmbedderId::E3, &input).is_err());
     }
 
     #[test]
@@ -828,7 +909,38 @@ mod tests {
             source_id: "synthetic.rs#0".to_string(),
         };
 
-        assert_eq!(temporal_instruction(EmbedderId::E4, &input), None);
+        let err = temporal_instruction(EmbedderId::E4, &input).unwrap_err();
+        assert!(err.contains("missing sequence"));
+    }
+
+    #[test]
+    fn temporal_instruction_rejects_invalid_timestamp_prefix() {
+        let input = EmbedderInput {
+            embedder: EmbedderId::E2,
+            text: "timestamp:not-a-date\nfn temporal_signal() {}".to_string(),
+            source_id: "synthetic.rs#0".to_string(),
+        };
+
+        let err = temporal_instruction(EmbedderId::E2, &input).unwrap_err();
+
+        assert!(
+            err.contains("invalid RFC3339 timestamp"),
+            "invalid timestamp must be reported directly, got {err}"
+        );
+    }
+
+    #[test]
+    fn temporal_instruction_accepts_valid_e4_session_sequence() {
+        let input = EmbedderInput {
+            embedder: EmbedderId::E4,
+            text: "session:attempt-1 sequence:7\nfn temporal_signal() {}".to_string(),
+            source_id: "synthetic.rs#0".to_string(),
+        };
+
+        assert_eq!(
+            temporal_instruction(EmbedderId::E4, &input).unwrap(),
+            "session:attempt-1 sequence:7"
+        );
     }
 
     #[tokio::test]

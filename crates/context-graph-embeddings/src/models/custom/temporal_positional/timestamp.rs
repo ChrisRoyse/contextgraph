@@ -1,18 +1,18 @@
 //! Timestamp and sequence position parsing utilities for the Temporal-Positional model (E4).
 //!
 //! E4 encodes session sequence positions to enable "before/after" queries within a session.
-//! This module supports both sequence-based positions (preferred) and timestamp-based positions
-//! (fallback for backward compatibility).
+//! Hybrid mode requires explicit session-scoped sequence positions. Missing or
+//! malformed fields fail closed; this module never fabricates wall-clock time.
 //!
 //! # Hybrid Mode Parsing
 //!
 //! For hybrid mode, instructions can include a session identifier:
 //! - `"session:abc123 sequence:42"` - Session ID with sequence position
-//! - `"session:abc123 timestamp:2024-01-15T10:30:00Z"` - Session ID with timestamp
-//! - `"sequence:42"` - Legacy format without session (uses sentinel)
+//! - `"session:abc123 sequence:42"` - Session ID with sequence position
 
 use chrono::{DateTime, Utc};
 
+use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::types::ModelInput;
 
 /// Position information extracted from input.
@@ -43,11 +43,6 @@ impl PositionInfo {
         }
     }
 
-    /// Create a position from current time.
-    #[must_use]
-    pub fn now() -> Self {
-        Self::timestamp(Utc::now().timestamp())
-    }
 }
 
 // =============================================================================
@@ -90,11 +85,6 @@ impl HybridPositionInfo {
         }
     }
 
-    /// Create a default hybrid position using current time, no session.
-    #[must_use]
-    pub fn now() -> Self {
-        Self::without_session(Utc::now().timestamp(), false)
-    }
 }
 
 /// Extract position from ModelInput for E4 embedding.
@@ -103,17 +93,22 @@ impl HybridPositionInfo {
 /// 1. "sequence:N" - Session sequence number (preferred for E4)
 /// 2. "timestamp:ISO8601" - ISO 8601 timestamp
 /// 3. "epoch:N" - Unix epoch seconds
-/// 4. Falls back to current time
+/// 4. Missing or malformed position instructions fail closed
 ///
 /// Returns `PositionInfo` indicating whether position is sequence-based or timestamp-based.
-pub fn extract_position(input: &ModelInput) -> PositionInfo {
+pub fn extract_position(input: &ModelInput) -> EmbeddingResult<PositionInfo> {
     match input {
-        ModelInput::Text { instruction, .. } => instruction
-            .as_ref()
-            .and_then(|inst| parse_position(inst))
-            .unwrap_or_else(PositionInfo::now),
-        // For non-text inputs, use current time
-        _ => PositionInfo::now(),
+        ModelInput::Text { instruction, .. } => {
+            let instruction = instruction.as_deref().ok_or_else(|| {
+                invalid_positional_instruction(
+                    "missing E4 position instruction; expected session:<id> sequence:<n>",
+                )
+            })?;
+            parse_position_result(instruction)
+        }
+        other => Err(invalid_positional_instruction(format!(
+            "unsupported input for E4 position extraction: {other:?}"
+        ))),
     }
 }
 
@@ -126,29 +121,31 @@ pub fn extract_position(input: &ModelInput) -> PositionInfo {
 ///
 /// The instruction field can contain:
 /// - `"session:abc123 sequence:42"` - Session ID with sequence position
-/// - `"session:abc123 timestamp:2024-01-15T10:30:00Z"` - Session ID with timestamp
-/// - `"sequence:42"` - Legacy format without session
+/// - `"session:abc123 sequence:42"` - Session ID with sequence position
 ///
 /// # Returns
 ///
 /// `HybridPositionInfo` with session_id (if present), position, and is_sequence flag.
-pub fn extract_hybrid_position(input: &ModelInput) -> HybridPositionInfo {
+pub fn extract_hybrid_position(input: &ModelInput) -> EmbeddingResult<HybridPositionInfo> {
     match input {
-        ModelInput::Text { instruction, .. } => instruction
-            .as_ref()
-            .map(|inst| parse_hybrid_position(inst))
-            .unwrap_or_else(HybridPositionInfo::now),
-        // For non-text inputs, use current time with no session
-        _ => HybridPositionInfo::now(),
+        ModelInput::Text { instruction, .. } => {
+            let instruction = instruction.as_deref().ok_or_else(|| {
+                invalid_positional_instruction(
+                    "missing E4 hybrid instruction; expected session:<id> sequence:<n>",
+                )
+            })?;
+            parse_hybrid_position_result(instruction)
+        }
+        other => Err(invalid_positional_instruction(format!(
+            "unsupported input for E4 hybrid position extraction: {other:?}"
+        ))),
     }
 }
 
 /// Parse hybrid position from instruction string.
 ///
-/// Supports formats:
-/// - "session:abc123 sequence:42" (preferred)
-/// - "session:abc123 timestamp:2024-01-15T10:30:00Z"
-/// - Legacy formats without session (backward compatible)
+/// Supports the strict hybrid format:
+/// - "session:abc123 sequence:42"
 ///
 /// # Arguments
 ///
@@ -156,12 +153,27 @@ pub fn extract_hybrid_position(input: &ModelInput) -> HybridPositionInfo {
 ///
 /// # Returns
 ///
-/// `HybridPositionInfo` with extracted session_id and position info.
-pub fn parse_hybrid_position(instruction: &str) -> HybridPositionInfo {
-    let session_id = extract_session_id(instruction);
-    let position_info = parse_position(instruction).unwrap_or_else(PositionInfo::now);
+/// `Some(HybridPositionInfo)` with extracted session_id and position info when valid.
+pub fn parse_hybrid_position(instruction: &str) -> Option<HybridPositionInfo> {
+    parse_hybrid_position_result(instruction).ok()
+}
 
-    HybridPositionInfo::from_position_info(position_info, session_id)
+/// Parse strict hybrid position from instruction string.
+///
+/// E4's purpose is within-session ordering. The production hybrid path therefore
+/// requires a non-empty session identifier and a valid sequence number.
+pub fn parse_hybrid_position_result(instruction: &str) -> EmbeddingResult<HybridPositionInfo> {
+    let session_id = extract_session_id(instruction).ok_or_else(|| {
+        invalid_positional_instruction(format!(
+            "missing non-empty session id in {instruction:?}; expected session:<id> sequence:<n>"
+        ))
+    })?;
+    let position_info = parse_sequence_position_result(instruction)?;
+
+    Ok(HybridPositionInfo::from_position_info(
+        position_info,
+        Some(session_id),
+    ))
 }
 
 /// Extract session_id from instruction string.
@@ -201,31 +213,51 @@ fn extract_session_id(instruction: &str) -> Option<String> {
 /// # Returns
 /// `Some(PositionInfo)` if parsing succeeded, `None` otherwise.
 pub fn parse_position(instruction: &str) -> Option<PositionInfo> {
+    parse_position_result(instruction).ok()
+}
+
+/// Parse position from instruction string and error on malformed supported fields.
+pub fn parse_position_result(instruction: &str) -> EmbeddingResult<PositionInfo> {
     // Search each whitespace-separated part of the instruction
     for part in instruction.split_whitespace() {
         // Priority 1: Sequence number (e.g., "sequence:123")
         if let Some(seq_str) = part.strip_prefix("sequence:") {
-            if let Ok(seq) = seq_str.parse::<u64>() {
-                return Some(PositionInfo::sequence(seq));
-            }
+            return parse_sequence_value(seq_str, instruction);
         }
 
         // Priority 2: ISO 8601 timestamp (e.g., "timestamp:2024-01-15T10:30:00Z")
         if let Some(ts_str) = part.strip_prefix("timestamp:") {
-            if let Ok(dt) = DateTime::parse_from_rfc3339(ts_str) {
-                return Some(PositionInfo::timestamp(dt.with_timezone(&Utc).timestamp()));
+            if ts_str.is_empty() {
+                return Err(invalid_positional_instruction(
+                    "timestamp position is empty; expected timestamp:<RFC3339>",
+                ));
             }
+            return DateTime::parse_from_rfc3339(ts_str)
+                .map(|dt| PositionInfo::timestamp(dt.with_timezone(&Utc).timestamp()))
+                .map_err(|err| {
+                    invalid_positional_instruction(format!(
+                        "invalid RFC3339 timestamp {ts_str:?}: {err}"
+                    ))
+                });
         }
 
         // Priority 3: Unix epoch (e.g., "epoch:1705315800")
         if let Some(epoch_str) = part.strip_prefix("epoch:") {
-            if let Ok(secs) = epoch_str.parse::<i64>() {
-                return Some(PositionInfo::timestamp(secs));
+            if epoch_str.is_empty() {
+                return Err(invalid_positional_instruction(
+                    "epoch position is empty; expected epoch:<seconds>",
+                ));
             }
+            let secs = epoch_str.parse::<i64>().map_err(|err| {
+                invalid_positional_instruction(format!("invalid epoch seconds {epoch_str:?}: {err}"))
+            })?;
+            return Ok(PositionInfo::timestamp(secs));
         }
     }
 
-    None
+    Err(invalid_positional_instruction(format!(
+        "unsupported E4 position instruction {instruction:?}; expected session:<id> sequence:<n>"
+    )))
 }
 
 /// Extract timestamp from ModelInput (legacy API for backward compatibility).
@@ -234,17 +266,20 @@ pub fn parse_position(instruction: &str) -> Option<PositionInfo> {
 /// - ISO 8601 format: "timestamp:2024-01-15T10:30:00Z"
 /// - Unix epoch: "epoch:1705315800"
 ///
-/// Falls back to current time if no valid timestamp found.
-///
 /// Note: For new code, prefer `extract_position()` which also supports sequence numbers.
-pub fn extract_timestamp(input: &ModelInput) -> DateTime<Utc> {
+pub fn extract_timestamp(input: &ModelInput) -> EmbeddingResult<DateTime<Utc>> {
     match input {
-        ModelInput::Text { instruction, .. } => instruction
-            .as_ref()
-            .and_then(|inst| parse_timestamp(inst))
-            .unwrap_or_else(Utc::now),
-        // For non-text inputs, use current time
-        _ => Utc::now(),
+        ModelInput::Text { instruction, .. } => {
+            let instruction = instruction.as_deref().ok_or_else(|| {
+                invalid_positional_instruction(
+                    "missing E4 timestamp instruction; expected timestamp:<RFC3339> or epoch:<seconds>",
+                )
+            })?;
+            parse_timestamp_result(instruction)
+        }
+        other => Err(invalid_positional_instruction(format!(
+            "unsupported input for E4 timestamp extraction: {other:?}"
+        ))),
     }
 }
 
@@ -256,21 +291,83 @@ pub fn extract_timestamp(input: &ModelInput) -> DateTime<Utc> {
 ///
 /// Note: For new code, prefer `parse_position()` which also supports sequence numbers.
 pub fn parse_timestamp(instruction: &str) -> Option<DateTime<Utc>> {
+    parse_timestamp_result(instruction).ok()
+}
+
+/// Parse timestamp from instruction string (legacy API for backward compatibility).
+pub fn parse_timestamp_result(instruction: &str) -> EmbeddingResult<DateTime<Utc>> {
+    let instruction = instruction.trim();
+
     // Try ISO 8601 format: "timestamp:2024-01-15T10:30:00Z"
     if let Some(ts_str) = instruction.strip_prefix("timestamp:") {
-        if let Ok(dt) = DateTime::parse_from_rfc3339(ts_str.trim()) {
-            return Some(dt.with_timezone(&Utc));
+        let ts_str = ts_str.trim();
+        if ts_str.is_empty() {
+            return Err(invalid_positional_instruction(
+                "timestamp instruction is empty; expected timestamp:<RFC3339>",
+            ));
         }
+        return DateTime::parse_from_rfc3339(ts_str)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|err| {
+                invalid_positional_instruction(format!(
+                    "invalid RFC3339 timestamp {ts_str:?}: {err}"
+                ))
+            });
     }
 
     // Try Unix epoch: "epoch:1705315800"
     if let Some(epoch_str) = instruction.strip_prefix("epoch:") {
-        if let Ok(secs) = epoch_str.trim().parse::<i64>() {
-            return DateTime::from_timestamp(secs, 0);
+        let epoch_str = epoch_str.trim();
+        if epoch_str.is_empty() {
+            return Err(invalid_positional_instruction(
+                "epoch instruction is empty; expected epoch:<seconds>",
+            ));
         }
+        let secs = epoch_str.parse::<i64>().map_err(|err| {
+            invalid_positional_instruction(format!("invalid epoch seconds {epoch_str:?}: {err}"))
+        })?;
+        return DateTime::from_timestamp(secs, 0).ok_or_else(|| {
+            invalid_positional_instruction(format!(
+                "epoch seconds {secs} is outside chrono's DateTime<Utc> range"
+            ))
+        });
     }
 
-    None
+    Err(invalid_positional_instruction(format!(
+        "unsupported timestamp instruction {instruction:?}; expected timestamp:<RFC3339> or epoch:<seconds>"
+    )))
+}
+
+fn parse_sequence_position_result(instruction: &str) -> EmbeddingResult<PositionInfo> {
+    for part in instruction.split_whitespace() {
+        if let Some(seq_str) = part.strip_prefix("sequence:") {
+            return parse_sequence_value(seq_str, instruction);
+        }
+    }
+    Err(invalid_positional_instruction(format!(
+        "missing sequence in {instruction:?}; expected session:<id> sequence:<n>"
+    )))
+}
+
+fn parse_sequence_value(seq_str: &str, instruction: &str) -> EmbeddingResult<PositionInfo> {
+    if seq_str.is_empty() {
+        return Err(invalid_positional_instruction(format!(
+            "empty sequence in {instruction:?}; expected sequence:<n>"
+        )));
+    }
+    let seq = seq_str.parse::<u64>().map_err(|err| {
+        invalid_positional_instruction(format!("invalid sequence {seq_str:?}: {err}"))
+    })?;
+    Ok(PositionInfo::sequence(seq))
+}
+
+fn invalid_positional_instruction(message: impl Into<String>) -> EmbeddingError {
+    EmbeddingError::ConfigError {
+        message: format!(
+            "[TEMPORAL_INPUT_INVALID] E4 temporal-positional input rejected: {}",
+            message.into()
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -337,42 +434,39 @@ mod tests {
 
     #[test]
     fn test_parse_hybrid_session_sequence() {
-        let hybrid = parse_hybrid_position("session:abc123 sequence:42");
+        let hybrid = parse_hybrid_position("session:abc123 sequence:42").unwrap();
         assert_eq!(hybrid.session_id, Some("abc123".to_string()));
         assert_eq!(hybrid.position, 42);
         assert!(hybrid.is_sequence);
     }
 
     #[test]
-    fn test_parse_hybrid_session_timestamp() {
-        let hybrid = parse_hybrid_position("session:sess-456 timestamp:2024-01-15T10:30:00Z");
-        assert_eq!(hybrid.session_id, Some("sess-456".to_string()));
-        assert_eq!(hybrid.position, 1705314600);
-        assert!(!hybrid.is_sequence);
+    fn test_parse_hybrid_rejects_session_timestamp() {
+        let err = parse_hybrid_position_result("session:sess-456 timestamp:2024-01-15T10:30:00Z")
+            .unwrap_err();
+        assert!(err.to_string().contains("missing sequence"));
     }
 
     #[test]
     fn test_parse_hybrid_reversed_order() {
         // Order shouldn't matter
-        let hybrid = parse_hybrid_position("sequence:100 session:my-session");
+        let hybrid = parse_hybrid_position("sequence:100 session:my-session").unwrap();
         assert_eq!(hybrid.session_id, Some("my-session".to_string()));
         assert_eq!(hybrid.position, 100);
         assert!(hybrid.is_sequence);
     }
 
     #[test]
-    fn test_parse_hybrid_no_session() {
-        // Legacy format without session
-        let hybrid = parse_hybrid_position("sequence:42");
-        assert_eq!(hybrid.session_id, None);
-        assert_eq!(hybrid.position, 42);
-        assert!(hybrid.is_sequence);
+    fn test_parse_hybrid_rejects_no_session() {
+        let err = parse_hybrid_position_result("sequence:42").unwrap_err();
+        assert!(err.to_string().contains("missing non-empty session"));
     }
 
     #[test]
     fn test_parse_hybrid_uuid_session() {
         let hybrid =
-            parse_hybrid_position("session:a1b2c3d4-e5f6-7890-abcd-ef1234567890 sequence:1");
+            parse_hybrid_position("session:a1b2c3d4-e5f6-7890-abcd-ef1234567890 sequence:1")
+                .unwrap();
         assert_eq!(
             hybrid.session_id,
             Some("a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string())
@@ -381,11 +475,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_hybrid_empty_session() {
-        // Empty session: should be None
-        let hybrid = parse_hybrid_position("session: sequence:42");
-        assert_eq!(hybrid.session_id, None);
-        assert_eq!(hybrid.position, 42);
+    fn test_parse_hybrid_rejects_empty_session() {
+        let err = parse_hybrid_position_result("session: sequence:42").unwrap_err();
+        assert!(err.to_string().contains("missing non-empty session"));
     }
 
     #[test]

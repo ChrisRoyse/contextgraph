@@ -34,7 +34,7 @@ impl EmbeddingModel for TemporalPeriodicModel {
         let start = std::time::Instant::now();
 
         // 2. Extract timestamp from input
-        let timestamp = self.extract_timestamp(input);
+        let timestamp = self.extract_timestamp(input)?;
 
         // 3. Compute Fourier embedding
         let vector = self.compute_fourier_embedding(timestamp);

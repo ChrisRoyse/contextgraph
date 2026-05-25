@@ -52,13 +52,8 @@ use super::timestamp::{
 ///
 /// For hybrid mode, instructions should include session context:
 /// - `"session:abc123 sequence:42"` (preferred) - Session ID with sequence position
-/// - `"session:abc123 timestamp:2024-01-15T10:30:00Z"` - Session ID with timestamp
 ///
-/// Legacy formats without session are still supported (backward compatible):
-/// - `"sequence:N"` - Session sequence number (uses sentinel session)
-/// - `"timestamp:ISO8601"` - ISO 8601 timestamp
-/// - `"epoch:N"` - Unix epoch seconds
-/// - Falls back to `Utc::now()` if no instruction provided
+/// Missing session ids, missing sequences, and malformed positions fail closed.
 ///
 /// # Algorithm
 ///
@@ -269,7 +264,7 @@ impl TemporalPositionalModel {
     ///
     /// Legacy method for backward compatibility.
     #[allow(dead_code)]
-    fn extract_timestamp(&self, input: &ModelInput) -> DateTime<Utc> {
+    fn extract_timestamp(&self, input: &ModelInput) -> EmbeddingResult<DateTime<Utc>> {
         extract_timestamp(input)
     }
 
@@ -325,11 +320,11 @@ impl EmbeddingModel for TemporalPositionalModel {
         // 2. Compute embedding based on mode (hybrid vs legacy)
         let vector = if self.hybrid_mode {
             // Hybrid mode: session_signature || position_encoding (256D + 256D)
-            let hybrid_info = extract_hybrid_position(input);
+            let hybrid_info = extract_hybrid_position(input)?;
             self.compute_hybrid_embedding(&hybrid_info)
         } else {
             // Legacy mode: full 512D positional encoding
-            let position_info = extract_position(input);
+            let position_info = extract_position(input)?;
             self.compute_positional_encoding_from_pos(
                 position_info.position,
                 position_info.is_sequence,
