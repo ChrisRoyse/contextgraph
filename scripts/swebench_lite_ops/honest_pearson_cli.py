@@ -18,11 +18,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 from typing import Any
 
 from .core import SwebenchOpsError, sha256_file, utc_now, write_json_checked
-from .honest_pearson_metrics import honest_predictor_report
+from .honest_pearson_metrics import honest_predictor_report, pearson_correlation
 
 
 def _require_object(value: Any, label: str) -> dict[str, Any]:
@@ -142,6 +143,34 @@ def _extract_comparator_scores(
     return scores
 
 
+def _round_metric(value: float) -> float | None:
+    if not math.isfinite(value):
+        return None
+    return float(round(value, 10))
+
+
+def _rank_lift_predictor_ablation(
+    rank_lift_predictions: list[float] | None,
+    labels: list[float],
+) -> dict[str, Any] | None:
+    if rank_lift_predictions is None:
+        return None
+    rank_lift_pearson = pearson_correlation(rank_lift_predictions, labels)
+    return {
+        "ablated_score_constant": 0.5,
+        "ablated_rank_lift_pearson": _round_metric(rank_lift_pearson),
+        "rank_lift_with_predictor_pearson": _round_metric(rank_lift_pearson),
+        "predictor_contribution_to_rank_lift_pearson_pp": 0.0,
+        "rank_lift_uses_predicted_oracle_pass": False,
+        "basis": (
+            "Retired #536 rank-lift generator replaces each row score with "
+            "category-local RBF exemplar score model.score(task_id, category); "
+            "therefore setting predicted_oracle_pass=0.5 leaves rank-lift "
+            "Pearson unchanged."
+        ),
+    }
+
+
 def build_report(report_path: Path) -> dict[str, Any]:
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     execute = _require_object(payload.get("execute_and_inspect"), "execute_and_inspect")
@@ -189,6 +218,14 @@ def build_report(report_path: Path) -> dict[str, Any]:
         rank_lift_predictions=hol_rank_lift,
         rank_safe_predictions=hol_rank_safe,
     )
+    cal_payload = cal_report.to_dict()
+    hol_payload = hol_report.to_dict()
+    cal_payload["rank_lift_predictor_constant_ablation"] = (
+        _rank_lift_predictor_ablation(cal_rank_lift, cal_y)
+    )
+    hol_payload["rank_lift_predictor_constant_ablation"] = (
+        _rank_lift_predictor_ablation(hol_rank_lift, hol_y)
+    )
     return {
         "schema_version": 1,
         "artifact_kind": "honest_pearson_ship_gate_report",
@@ -199,8 +236,21 @@ def build_report(report_path: Path) -> dict[str, Any]:
             "calibration": calibration_source,
             "holdout": holdout_source,
         },
-        "calibration": cal_report.to_dict(),
-        "holdout": hol_report.to_dict(),
+        "rank_lift_source_contract": {
+            "retired_generator_commit": "0b5c8b90",
+            "retired_generator_path": (
+                "crates/context-graph-mejepa-train/examples/"
+                "swebench_300x8_ship_gate_fsv.rs"
+            ),
+            "apply_rank_lift_policy_ignores_input_predicted_oracle_pass": True,
+            "score_function": "rank_lift_score_for_row(rows, train_indices_by_category, idx, candidate)",
+            "constant_predictor_ablation_interpretation": (
+                "Zeroing predicted_oracle_pass does not change published rank-lift rows; "
+                "the ablated rank-lift Pearson equals the rank-lift Pearson."
+            ),
+        },
+        "calibration": cal_payload,
+        "holdout": hol_payload,
         "notes": (
             "Per #695: raw Pearson is the gate-honest metric. Isotonic should "
             "preserve Pearson within numerical noise on a held-out split (this "

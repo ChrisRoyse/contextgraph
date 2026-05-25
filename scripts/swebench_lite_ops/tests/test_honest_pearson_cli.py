@@ -70,6 +70,14 @@ def test_build_report_with_rank_correlated_predictions(tmp_path):
     assert hol["raw_pearson"] > 0.3
     assert cal["rank_lift_minus_raw_pearson"] is not None
     assert hol["rank_lift_minus_raw_pearson"] is not None
+    assert cal["rank_lift_predictor_constant_ablation"] is not None
+    assert hol["rank_lift_predictor_constant_ablation"] is not None
+    assert (
+        cal["rank_lift_predictor_constant_ablation"][
+            "predictor_contribution_to_rank_lift_pearson_pp"
+        ]
+        == 0.0
+    )
     # By construction the rank-lift composite is at least as correlated as
     # the raw predictor in expectation.
     assert cal["rank_lift_minus_raw_pearson"] >= -0.1
@@ -173,7 +181,15 @@ def test_build_report_prefers_holdout_raw_predictions_over_rank_lift_projection(
     )
     report = build_report(fsv_path)
     assert report["raw_prediction_sources"]["holdout"] == "holdout_raw_predictions"
+    assert report["rank_lift_source_contract"][
+        "apply_rank_lift_policy_ignores_input_predicted_oracle_pass"
+    ]
     # Raw is weak/noisy; rank-lift is strongly label-aligned.
     assert abs(report["holdout"]["raw_pearson"]) < 0.35
     assert report["holdout"]["rank_lift_minus_raw_pearson"] > 0.6
     assert report["holdout"]["rank_safe_minus_raw_pearson"] > 0.4
+    ablation = report["holdout"]["rank_lift_predictor_constant_ablation"]
+    assert ablation["ablated_score_constant"] == 0.5
+    assert ablation["rank_lift_uses_predicted_oracle_pass"] is False
+    assert ablation["ablated_rank_lift_pearson"] > 0.9
+    assert ablation["predictor_contribution_to_rank_lift_pearson_pp"] == 0.0
