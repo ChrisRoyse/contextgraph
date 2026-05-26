@@ -179,7 +179,13 @@ from .python_runtime_preflight import command_python_runtime_preflight
 from .python_delete_test_call_regeneration import (
     add_arguments as add_python_delete_test_call_regeneration_arguments,
 )
-from .python_delete_test_call_regeneration import command_python_delete_test_call_regeneration
+from .python_delete_test_call_regeneration import (
+    add_source_extension_arguments as add_python_delete_test_call_source_extension_arguments,
+)
+from .python_delete_test_call_regeneration import (
+    command_python_delete_test_call_regeneration,
+    command_python_delete_test_call_source_extension,
+)
 from .python_delete_test_call_oracle_executor import (
     add_arguments as add_python_delete_test_call_oracle_executor_arguments,
 )
@@ -914,6 +920,16 @@ def build_parser() -> argparse.ArgumentParser:
     delete_test_call_regeneration.set_defaults(
         func=command_python_delete_test_call_regeneration,
         evidence_name="python-delete-test-call-regeneration-command-evidence.json",
+    )
+
+    delete_test_call_source_extension = sub.add_parser(
+        "python-delete-test-call-source-extension",
+        help="TASK-PY-G-135I: generate source-backed delete_test_call pass-hypothesis extension candidates.",
+    )
+    add_python_delete_test_call_source_extension_arguments(delete_test_call_source_extension)
+    delete_test_call_source_extension.set_defaults(
+        func=command_python_delete_test_call_source_extension,
+        evidence_name="python-delete-test-call-source-extension-command-evidence.json",
     )
 
     delete_test_call_oracle_executor = sub.add_parser(

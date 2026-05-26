@@ -95,8 +95,19 @@ def command_python_delete_test_call_oracle_executor(args) -> dict[str, Any]:
     manifest_path = args.output_root / "delete_test_call_oracle_run_manifest.json"
 
     run_stamp = utc_now().replace("+00:00", "Z").replace(":", "").replace("-", "")
-    all_outcomes: list[dict[str, Any]] = []
-    command_failures: list[dict[str, Any]] = []
+    all_outcomes: list[dict[str, Any]] = read_jsonl(outcomes_path) if outcomes_path.exists() and not args.clean_output else []
+    command_failures: list[dict[str, Any]] = read_jsonl(failures_path) if failures_path.exists() and not args.clean_output else []
+    loaded_existing_outcome_count = len(all_outcomes)
+    existing_outcome_ids = validate_existing_outcomes(all_outcomes, outcomes_path)
+    original_selected_batch_count = len(selected_batches)
+    original_selected_candidate_count = sum(len(batch["candidate_row_ids"]) for batch in selected_batches)
+    original_selected_candidate_ids = [candidate_id for batch in selected_batches for candidate_id in batch["candidate_row_ids"]]
+    skipped_existing_batches = 0
+    selected_batches, skipped_existing_batches = filter_existing_outcome_batches(
+        selected_batches,
+        existing_outcome_ids=existing_outcome_ids,
+        candidates=candidates,
+    )
     batch_summaries: list[dict[str, Any]] = []
 
     for ordinal, batch in enumerate(selected_batches):
@@ -120,6 +131,9 @@ def command_python_delete_test_call_oracle_executor(args) -> dict[str, Any]:
                 batch_summary,
             )
         all_outcomes.extend(batch_outcomes)
+        existing_outcome_ids.update(row["candidate_row_id"] for row in batch_outcomes)
+        write_jsonl_checked(outcomes_path, all_outcomes)
+        write_jsonl_checked(failures_path, command_failures)
 
     write_jsonl_checked(outcomes_path, all_outcomes)
     write_jsonl_checked(failures_path, command_failures)
@@ -133,6 +147,10 @@ def command_python_delete_test_call_oracle_executor(args) -> dict[str, Any]:
         )
         for row in all_outcomes
     )
+    outcomes_by_candidate_id = {row["candidate_row_id"]: row for row in all_outcomes}
+    selected_outcomes = [outcomes_by_candidate_id.get(candidate_id) for candidate_id in original_selected_candidate_ids]
+    selected_outcome_rows = [row for row in selected_outcomes if row is not None]
+    selected_outcomes_complete = len(selected_outcome_rows) == len(original_selected_candidate_ids)
     manifest = {
         "schema_version": 1,
         "task_id": args.task_id,
@@ -149,9 +167,13 @@ def command_python_delete_test_call_oracle_executor(args) -> dict[str, Any]:
         "split": args.split,
         "namespace": args.namespace,
         "model_name": args.model_name,
-        "selected_batch_count": len(selected_batches),
-        "attempted_candidate_count": sum(len(batch["candidate_row_ids"]) for batch in selected_batches),
+        "selected_batch_count": original_selected_batch_count,
+        "pending_batch_count": len(selected_batches),
+        "skipped_existing_batch_count": skipped_existing_batches,
+        "attempted_candidate_count": original_selected_candidate_count,
+        "pending_candidate_count": sum(len(batch["candidate_row_ids"]) for batch in selected_batches),
         "outcome_rows": len(all_outcomes),
+        "selected_outcome_rows": len(selected_outcome_rows),
         "command_failure_rows": len(command_failures),
         "oracle_status_counts": dict(sorted(by_status.items())),
         "counts_by_partition_sublabel_status": counter_to_dict(by_partition_sublabel_status),
@@ -160,11 +182,12 @@ def command_python_delete_test_call_oracle_executor(args) -> dict[str, Any]:
         "outcomes_jsonl_sha256": sha256_file(outcomes_path),
         "failures_jsonl": str(failures_path),
         "failures_jsonl_sha256": sha256_file(failures_path),
-        "executor_all_passed": len(all_outcomes) == sum(len(batch["candidate_row_ids"]) for batch in selected_batches)
+        "executor_all_passed": selected_outcomes_complete
         and not command_failures
-        and all(row["oracle_status"] not in {"missing_report", "report_invalid", "infra_error"} for row in all_outcomes),
+        and all(row["oracle_status"] not in {"missing_report", "report_invalid", "infra_error"} for row in selected_outcome_rows),
         "target_oracle_labels_used_as_features": False,
         "candidate_row_id_keyed_outcomes": True,
+        "resumed_from_existing_outcomes": loaded_existing_outcome_count > 0,
     }
     manifest["all_passed"] = manifest["executor_all_passed"]
     write_json_checked(manifest_path, manifest)
@@ -386,6 +409,61 @@ def select_batches(
         out["prediction_count"] = len(candidate_ids)
         normalized.append(out)
     return normalized
+
+
+def validate_existing_outcomes(rows: list[dict[str, Any]], path: Path) -> set[str]:
+    candidate_ids: set[str] = set()
+    for line_number, row in enumerate(rows, start=1):
+        candidate_id = row.get("candidate_row_id")
+        if not isinstance(candidate_id, str) or not candidate_id:
+            raise SwebenchOpsError(
+                "DELETE_TEST_CALL_ORACLE_EXISTING_OUTCOME_ID_MISSING",
+                f"existing outcome row is missing candidate_row_id at {path}:{line_number}",
+                "Do not resume from malformed oracle outcomes; move the bad artifact aside and rerun.",
+                {"path": str(path), "line_number": line_number},
+            )
+        if candidate_id in candidate_ids:
+            raise SwebenchOpsError(
+                "DELETE_TEST_CALL_ORACLE_EXISTING_OUTCOME_DUPLICATE_ID",
+                f"duplicate candidate_row_id in existing outcomes: {candidate_id}",
+                "Do not resume from ambiguous oracle outcomes; move the bad artifact aside and rerun.",
+                {"path": str(path), "line_number": line_number, "candidate_row_id": candidate_id},
+            )
+        candidate_ids.add(candidate_id)
+    return candidate_ids
+
+
+def filter_existing_outcome_batches(
+    selected_batches: list[dict[str, Any]],
+    *,
+    existing_outcome_ids: set[str],
+    candidates: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    if not existing_outcome_ids:
+        return selected_batches, 0
+
+    pending_batches: list[dict[str, Any]] = []
+    skipped_batches = 0
+    for batch in selected_batches:
+        candidate_ids = [candidate_id for candidate_id in batch["candidate_row_ids"] if candidate_id not in existing_outcome_ids]
+        if not candidate_ids:
+            skipped_batches += 1
+            continue
+        if len(candidate_ids) == len(batch["candidate_row_ids"]):
+            pending_batches.append(batch)
+            continue
+
+        task_ids = [require_candidate_field(candidates[candidate_id], "source_task_id") for candidate_id in candidate_ids]
+        ensure_unique_task_ids(task_ids, f"{batch.get('batch_key')}-resume-pending")
+        pending_batch = dict(batch)
+        pending_batch["candidate_row_ids"] = candidate_ids
+        pending_batch["source_task_ids"] = task_ids
+        pending_batch["patch_paths"] = [
+            require_candidate_field(candidates[candidate_id], "patch_path") for candidate_id in candidate_ids
+        ]
+        pending_batch["prediction_count"] = len(candidate_ids)
+        pending_batches.append(pending_batch)
+    return pending_batches, skipped_batches
 
 
 def run_oracle_batch(
