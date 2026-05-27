@@ -1,0 +1,33 @@
+# Secrets - NEVER commit
+.env
+.env.*
+!.env.example
+secrets/*.local
+secrets/*.key
+secrets/anthropic-*
+*.pem
+*.key
+credentials.json
+
+# Infisical local config
+.infisical.config.local
+
+# Build artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+target/
+node_modules/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Logs
+logs/
+*.log
+
+# Local DB
+db/
+*.rocksdb/
