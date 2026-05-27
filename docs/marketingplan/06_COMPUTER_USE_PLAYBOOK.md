@@ -33,7 +33,7 @@ In 2026, most of the channels that matter for the three products do not have eco
 
 ### 2.1 Synapse (primary)
 
-The operator-owned Synapse MCP server (`/home/cabdru/contextgraph/docs2/contextgraphspecs/synapse.md` etc.) gives the agent fleet:
+The operator-owned Synapse MCP server gives the agent fleet:
 
 - **Perception:** `observe`, `find`, `read_text` — read the screen and the UIA accessibility tree.
 - **Action:** `act_click`, `act_type`, `act_press`, `act_aim`, `act_drag`, `act_scroll`, `act_pad`, `act_clipboard` — operate the OS at a human-shaped rate.
@@ -281,7 +281,7 @@ Suspension is treated as a critical learning event, not a routine. Repeat suspen
 
 ## §11. Cross-references
 
-- Synapse contract (Action/Perception/Reflex): see ContextGraph Synapse systemspec docs.
+- Synapse contract (Action/Perception/Reflex): see `leapablememory` Synapse systemspec docs.
 - Channel cards: `channel_cards/*.yaml` (per-platform operational state)
 - Brand Voice Scorer: `05_AGENT_FLEET_DESIGN.md §6.3`
 - Compliance details: `14_COMPLIANCE_AND_ETHICS.md`

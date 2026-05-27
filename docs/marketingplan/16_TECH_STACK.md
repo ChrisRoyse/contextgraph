@@ -120,7 +120,7 @@ The memory layer is the single biggest leverage point. Borrowed from Karpathy's 
 **Operational pattern:**
 
 The agent fleet queries the relevant expert vault before planning. Example:
-- Before drafting a Grand Slam Offer for ContextGraph, P4 (Brief Generator) queries `AlexHormoziTranscripts` for Hormozi's offer-structure principles, then drafts the brief grounded in primary-source Hormozi material.
+- Before drafting a Grand Slam Offer for Leapable, P4 (Brief Generator) queries `AlexHormoziTranscripts` for Hormozi's offer-structure principles, then drafts the brief grounded in primary-source Hormozi material.
 - Before launching a podcast tour for Polis, D8 (Podcast Booker) queries any operator-curated `PodcastingPlaybook` vault for tactical patterns and host-relationship etiquette.
 - Before structuring a viral loop, O3 (Referral Engineer) queries the Hormozi vault for the Skool.com two-prize-giveaway worked example.
 
@@ -133,7 +133,7 @@ The agent fleet queries the relevant expert vault before planning. Example:
 | `OperatorBrandVoices` | Every operator-approved piece of content, every operator-rejected piece, every operator correction | P1/P2 brand voice grounding; evaluator calibration |
 | `CompetitiveIntel` | Public docs, blog posts, talks from named competitors | S5 Competitive Intelligence |
 | `Tier3ContactProfiles` | Public-facing content from operator's Tier-3 target list — talks, papers, posts | Influence Network Mapper (S3), Pre-Call Briefer |
-| `ProductTechSpecs` | ContextGraph, Synapse, Polis full documentation (CLAUDE.md, etc.) | P2 Technical Writer, accuracy grounding for every claim |
+| `ProductTechSpecs` | Leapable, Synapse, Polis full documentation (CLAUDE.md, etc.) | P2 Technical Writer, accuracy grounding for every claim |
 | `DevRelLiterature` | Open-source DevRel playbooks (FORKOFF, 5W, etc.) | D2, D3, D8 |
 | `ComplianceCorpus` | CAN-SPAM text, GDPR text, CCPA text, CASL text, EU AI Act text, platform ToS docs | Compliance Check at the Guardrail Engine |
 | `LeapableVaultMeta` | Internal vault about how to use leapable vaults effectively | Wiki Gardener M10 |
@@ -210,7 +210,7 @@ CF_KILL_SWITCHES          — Active flags, cached (≤2s TTL)
 
 ### 6.2 PostgreSQL (where SoT matters)
 
-- ContextGraph product DB (CF_INTEGRATIONS readback for predicate)
+- Leapable product DB (CF_QUERIES readback for predicate)
 - Synapse product DB (CF_SESSIONS readback for predicate)
 - Polis product DB (event_attendances table readback for predicate)
 
@@ -325,7 +325,7 @@ Why:
 
 Each product has its own native technology that the fleet needs to integrate with:
 
-- **ContextGraph:** RocksDB CFs for SoT readback. The fleet queries `CF_INTEGRATIONS`, `CF_MEJEPA_VERDICTS`, `CF_MEJEPA_PAYMENT_TIER` for predicate evaluation. ContextGraph's own MCP surface (the 54 live `mejepa_*` tools) is available to the fleet for the "test the product end-to-end" verification operations.
+- **Leapable:** RocksDB CFs for SoT readback. The fleet queries `CF_QUERIES`, `CF_SUBSCRIPTIONS`, `CF_CREATOR_PUBLISH` for predicate evaluation. Leapable's own MCP surface (the 163 live `leapable_*` tools) is available to the fleet for the "test the product end-to-end" verification operations.
 
 - **Synapse:** The Synapse MCP server runs on the operator's Win11 desktop and is the **primary computer-use surface for the fleet itself** (the fleet uses Synapse to operate other platforms!). Synapse is dogfooded.
 

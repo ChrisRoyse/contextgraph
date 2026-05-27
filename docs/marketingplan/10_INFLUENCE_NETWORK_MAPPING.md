@@ -166,7 +166,7 @@ Before any operator–target conversation, the Pre-Call Briefer (a sub-agent of 
 - Bridge: Bob Lee
 - Bridge's framing of the intro: "[verbatim from Bob's forwarded note]"
 - Scheduled: 2026-06-10 14:00 PT, Zoom
-- Operator's stated objective: explore enterprise pilot for ME-JEPA-Code
+- Operator's stated objective: explore enterprise pilot for Leapable
 
 ### Last 90 days of public signal on Alice
 - Mentioned "AI verification" 4 times across podcast / X / NeurIPS
@@ -180,7 +180,7 @@ Before any operator–target conversation, the Pre-Call Briefer (a sub-agent of 
 3. Operator burnout on engineering teams
 
 ### Operator's strongest talking points (mapped to her interests)
-- ME-JEPA-Code's deterministic verification = her #1 (regulatory)
+- Leapable's deterministic verification = her #1 (regulatory)
 - MCP-native interface = her #2 (composability)
 - Reduces senior engineer code-review hours = her #3 (burnout)
 
@@ -252,7 +252,7 @@ A single violation of this section is a **brand-level kill switch event**. The R
 
 Hormozi: *"The last skill you ever need to learn is how to get other people to do everything you need for you."*
 
-Tier-3 endorsement is the highest-leverage form of this. A single named adoption by a recognized expert ("I use ContextGraph", "I trust Synapse for X", "I attended a Polis salon and here's why it works") moves a market segment.
+Tier-3 endorsement is the highest-leverage form of this. A single named adoption by a recognized expert ("I use Leapable", "I trust Synapse for X", "I attended a Polis salon and here's why it works") moves a market segment.
 
 **But**: a Tier-3 endorsement that's clearly transactional ("paid promotion") is **negative leverage**. The endorser loses credibility; the operator's brand inherits the suspicion.
 

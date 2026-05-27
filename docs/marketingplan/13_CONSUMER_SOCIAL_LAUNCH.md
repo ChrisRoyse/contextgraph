@@ -1,6 +1,6 @@
 # 13 — Consumer Social Launch (Polis)
 
-> Polis is fundamentally different from ContextGraph/Synapse. It is a **consumer social platform** where the unit of value is a **physical / synchronous gathering** in a **dense friend cluster**. Network effects dominate. This doc adapts the BeReal / Bluesky cold-start playbooks, layers in Hormozi's giveaway mechanics + Steve's tier model, and produces a Polis-specific cold-start plan.
+> Polis is fundamentally different from Leapable/Synapse. It is a **consumer social platform** where the unit of value is a **physical / synchronous gathering** in a **dense friend cluster**. Network effects dominate. This doc adapts the BeReal / Bluesky cold-start playbooks, layers in Hormozi's giveaway mechanics + Steve's tier model, and produces a Polis-specific cold-start plan.
 
 ---
 

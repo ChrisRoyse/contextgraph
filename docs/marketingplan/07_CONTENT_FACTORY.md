@@ -73,12 +73,12 @@ The single most-violated thing in autonomous content systems is brand voice. The
 
 ```yaml
 ---
-product: contextgraph
+product: leapable
 last_updated: 2026-05-26
 calibration_kappa: 0.78  # against operator labels
 ---
 
-# ContextGraph Brand Voice
+# Leapable Brand Voice
 
 ## Stance
 - Technical first. We assume the reader is a working AI engineer.
@@ -98,7 +98,7 @@ calibration_kappa: 0.78  # against operator labels
 - No begging phrases ("hope you enjoyed!", "let me know what you think!").
 
 ## Structural
-- Headlines: claim-first ("ME-JEPA-Code closes 85% of patches Cursor leaves open"), not curiosity-bait ("You won't believe what we just found...").
+- Headlines: claim-first ("Leapable closes 85% of patches Cursor leaves open"), not curiosity-bait ("You won't believe what we just found...").
 - Numbers preferred over adjectives. "12.4× faster" not "much faster."
 - Code preferred over English when explaining technical mechanics.
 
@@ -135,14 +135,14 @@ Every content brief carries a Value Equation block. Drafts are checked against i
 
 ```yaml
 value_equation_block:
-  dream_outcome: "Ship AI-generated patches that pass Docker oracle on first try"
-  perceived_likelihood: "ME-JEPA-Code reaches 0.95 oracle correlation on Python SWE-bench Lite"
-  time_delay: "Seconds per patch (vs minutes per human review)"
-  effort_sacrifice: "No new tools to learn — drop-in MCP server"
+  dream_outcome: "Ask any expert anything; get the answer they actually gave with the receipts"
+  perceived_likelihood: "Source-grounded with verbatim citation + page number; 163 MCP tools live"
+  time_delay: "Install in 60s via signed installer; first Ask in <30s"
+  effort_sacrifice: "No setup, no API keys, no learning prompts — drag files in, ask questions"
 target_reader_states_post_consumption:
-  - "I now believe ContextGraph + ME-JEPA-Code can actually verify what Claude/Codex produces"
-  - "I have a specific reason to try it this week (not someday)"
-  - "I know the next step (install + run heal-drill demo)"
+  - "I now believe Leapable Vaults give me an answer ChatGPT/Claude can't"
+  - "I have a specific reason to install today (not someday)"
+  - "I know the next step (install + try the Hormozi Vault free for 30 days)"
 ```
 
 If a draft doesn't explicitly hit the dream outcome, perceived likelihood, time delay, and effort/sacrifice — the brief is rewritten. This is mechanical. The factory doesn't ship copy that fails to express the value equation any more than it ships copy that fails the brand voice score.
@@ -161,7 +161,7 @@ The Outreach Drafter (D4) uses this exact structure. Every cold message has all 
 
 Programmatic SEO via the Programmatic SEO Engineer (O1) generates landing pages at scale for long-tail queries the audience actually searches:
 
-- ContextGraph: `"how to verify <patch type> with ME-JEPA"` × 60 patch types
+- Leapable: `"how to Ask <expert> about <topic>"` × hundreds of (expert, topic) pairs from named-Vault corpora
 - Synapse: `"<task> with MCP computer use"` × ~150 tasks
 - Polis: `"third place in <city>"` × top-100 cities; `"how to meet <demographic> in person <city>"`
 
@@ -202,7 +202,7 @@ The factory produces seven anchor archetypes. Each has its own template, voice, 
 |---|---|---|---|
 | **Deep dive** | Cornerstone technical content, the kind that earns HN front page | 2,500-5,000 words | 1 / week |
 | **Tactical post** | Specific how-to, code-led | 800-1,500 words | 2 / week |
-| **Comparison** | "X vs Y" content (high GEO yield) | 1,500-2,500 words | 1 / week |
+| **Comparison** | "X vs Y" content (high GEO yield) — e.g. "Leapable Vault vs raw RAG vs ChatGPT memory" | 1,500-2,500 words | 1 / week |
 | **Build log** | Karpathy/Linear-style "this week we shipped X" | 600-1,000 words | 1 / week |
 | **Postmortem** | "We tried X. It failed. Here's why." High trust signal. | 1,000-2,500 words | 1 / month |
 | **Founder thread** | Operator's personal narrative; not delegated to agent | 500-2,500 chars | 2-3 / week (operator-written) |
@@ -226,7 +226,7 @@ Three layers:
 
 ## §8. Persona handling
 
-When the operator runs multiple personas (a personal account, a product account, optionally one or more pen-name personas), each anchor is written for **one** persona and only repurposed within that persona's channel set. The Persona Carrier (P5) enforces — content tagged `persona: chris` cannot be published from `persona: contextgraph_team`.
+When the operator runs multiple personas (a personal account, a product account, optionally one or more pen-name personas), each anchor is written for **one** persona and only repurposed within that persona's channel set. The Persona Carrier (P5) enforces — content tagged `persona: chris` cannot be published from `persona: leapable_team`.
 
 Each persona has:
 - Own brand voice doc

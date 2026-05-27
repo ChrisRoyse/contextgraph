@@ -39,7 +39,7 @@
 | ID | Class | Role | Autonomy default |
 |---|---|---|---|
 | P1 | **Content Writer** | Draft long-form, short-form, threads, posts; reads brand voice | `LOG` (publish after eval gate; sample audit) |
-| P2 | **Technical Writer** | Tutorials, READMEs, benchmark posts, deep code-led content for ContextGraph/Synapse | `LOG` |
+| P2 | **Technical Writer** | Tutorials, READMEs, benchmark posts, deep code-led content for Leapable/Synapse | `LOG` |
 | P3 | **Visual Generator** | Images, diagrams, video stitching, thumbnails | `LOG` |
 | P4 | **Brief Generator** | From topic → structured brief for downstream writers | `AUTO` |
 | P5 | **Persona Carrier** | Writes in a specific operator persona (if multi-persona) | `LOG` w/ persona-specific brand-voice gate |
@@ -243,7 +243,7 @@ For multi-persona accounts (e.g., the operator runs three X handles for three au
 - Own cadence cards
 - Own forbidden topics list
 
-The Persona Carrier loads the persona's full context before generating. The Evaluator gates with persona-specific rubrics. Cross-persona content leakage (e.g., the "Polis" persona accidentally posting in the "ContextGraph" voice) is a deny gate.
+The Persona Carrier loads the persona's full context before generating. The Evaluator gates with persona-specific rubrics. Cross-persona content leakage (e.g., the "Polis" persona accidentally posting in the "Leapable" voice) is a deny gate.
 
 ---
 

@@ -37,8 +37,8 @@ The fleet's goal is **K = 0.4–0.7 with t ≤ 7 days**. This is the realistic, 
 |---|---|---|---|
 | **Incentivized referral** | Two-sided reward for referrer + referee | Dropbox storage, PayPal cash | Anything with a stickable per-user cost benefit |
 | **Collaboration-driven** | The product needs others to be useful | Figma (design review), Notion (shared workspace), Slack (channel mates), Polis (event with friends) | Polis primarily |
-| **Content / UGC** | Users create artifacts that are inherently shareable; the artifact carries acquisition signal | Loom (recorded video), Canva (designs), AI-generated music/video | Synapse (computer-use demos), ContextGraph (verification reports) |
-| **Template / library** | Users publish templates that other users adopt, each requiring the product to run | Notion templates, Cursor rules, ChatGPT GPTs | ContextGraph (verification rule libraries), Synapse (automation playbooks) |
+| **Content / UGC** | Users create artifacts that are inherently shareable; the artifact carries acquisition signal | Loom (recorded video), Canva (designs), AI-generated music/video | Synapse (computer-use demos), Leapable (verification reports) |
+| **Template / library** | Users publish templates that other users adopt, each requiring the product to run | Notion templates, Cursor rules, ChatGPT GPTs | Leapable (verification rule libraries), Synapse (automation playbooks) |
 | **Product-led SEO** | Product creates public surface area that ranks; visitors convert | Zapier integration pages, Notion public docs, GitHub READMEs | All three |
 | **Social proof** | Visible adoption by named users / orgs creates inevitability | "Built with X" badges, customer logos, GitHub star counts | All three |
 | **Network effect** | The product gets better as more people join | Polis (friends), BeReal (friend graph), Bluesky (federation) | Polis exclusively |
@@ -49,13 +49,13 @@ The Referral Engineer (O3) selects the loop type per product based on product fi
 
 ## §3. Per-product loop design
 
-### 3.1 ContextGraph / ME‑JEPA‑Code
+### 3.1 Leapable / ME‑JEPA‑Code
 
 **Primary loop: Content / UGC (verification reports) + Template (rule libraries).**
 
 Mechanic:
-- When a developer runs ME‑JEPA verification on a patch, the output is a publishable verification report ("ContextGraph verified this Cursor patch passes the SWE-bench oracle") with an embedded `Verified by ContextGraph` badge.
-- The badge links back to ContextGraph with the developer's referral ID.
+- When a developer runs ME‑JEPA verification on a patch, the output is a publishable verification report ("Leapable verified this Cursor patch passes the SWE-bench oracle") with an embedded `Verified by Leapable` badge.
+- The badge links back to Leapable with the developer's referral ID.
 - High-trust developers (paid tier, OSS contributors, verified accounts) get extra-prominent badge placement that they share voluntarily on PRs and X.
 - Template library: rule libraries (custom verification rubrics for specific stacks — Django, Rails, Next.js) are published by the community, each driving install demand.
 
@@ -117,7 +117,7 @@ Hormozi (`$100M Leads`, "How Referrals Grow Your Business"):
 The Cohort Health Auditor (O7) is the enforcement: if 28-day cohort retention drops below the per-product floor, the Referral Engineer's program is paused. **No referral effort on a leaky bucket.** This is doctrine.
 
 Retention floors per product:
-- ContextGraph: 70% 28-day retention on paid users; 50% on free.
+- Leapable: 70% 28-day retention on paid users; 50% on free.
 - Synapse: 65% 28-day retention.
 - Polis: 75% within-cluster retention (active users in the same friend cluster).
 
@@ -149,7 +149,7 @@ If a product launches with a waitlist, the referral mechanic is **the** acquisit
 
 > *"Adding a referral program later means your first 200 subscribers never had the chance to share. Set it up before driving any traffic."*
 
-Polis specifically: a Dropbox-pattern waitlist with queue-jump per referral is the canonical pre-launch loop. ContextGraph and Synapse can use this for major product unlocks (e.g., a new feature in private beta).
+Polis specifically: a Dropbox-pattern waitlist with queue-jump per referral is the canonical pre-launch loop. Leapable and Synapse can use this for major product unlocks (e.g., a new feature in private beta).
 
 ### 5.2 The Hormozi "Skool.com" giveaway
 
@@ -157,7 +157,7 @@ Hormozi's two-prize giveaway pattern:
 
 > *"Give Away Two Prizes For Twice The Leads. If you give away one prize, that's fine. But if you give away two grand prizes, you can get twice the leads (or more). Just tell everyone that if someone they refer wins the grand prize, they win one too."*
 
-Polis events have natural prize mechanics (high-density curated dinners, intellectual-creator hosted salons). Each event marketing carries the two-prize structure. ContextGraph + Synapse can run periodic "you and your referee win" launches around product milestones.
+Polis events have natural prize mechanics (high-density curated dinners, intellectual-creator hosted salons). Each event marketing carries the two-prize structure. Leapable + Synapse can run periodic "you and your referee win" launches around product milestones.
 
 Hormozi's three giveaway rules:
 - **Scarcity** — bounded by entries or time
@@ -170,7 +170,7 @@ Hormozi: *"If you don't X, I will Y. Most people forget the second part. You hav
 
 For referrals, the acceptance message structure is:
 
-> *"Sarah recommended you try ContextGraph. If you don't successfully verify your first patch within 7 days, we'll give you 50 verification credits ($25 value) and a 30-minute walkthrough with our engineer."*
+> *"Sarah recommended you try Leapable. If you don't successfully verify your first patch within 7 days, we'll give you 50 verification credits ($25 value) and a 30-minute walkthrough with our engineer."*
 
 The "or else" makes the offer credible. The Outreach Drafter (D4) and the referral landing-page generator both enforce this structure.
 
@@ -194,7 +194,7 @@ If `TRUE` → paid acquisition can scale without cash-flow risk.
 If `FALSE` → paid acquisition is capped at the available cash float.
 
 Per-product first-30-days targets:
-- ContextGraph: $90 of gross profit per acquired developer in 30d (the Pro plan at $99/mo - fulfillment cost)
+- Leapable: $90 of gross profit per acquired developer in 30d (the Pro plan at $99/mo - fulfillment cost)
 - Synapse: $50 (lower plan price; offset by lower CAC)
 - Polis: $25 (consumer; offset by very low CAC)
 
@@ -213,7 +213,7 @@ Loops fall into two categories that the fleet treats differently:
 
 Marketing loops the fleet can ship directly: referral landing pages, two-sided incentive copy, prize-draw email sequences, A/B tests on referral-link click-through.
 
-Product loops the fleet only **proposes**: in-app referral UI, post-event share prompt for Polis, verification-report badge for ContextGraph. The operator + product team builds these.
+Product loops the fleet only **proposes**: in-app referral UI, post-event share prompt for Polis, verification-report badge for Leapable. The operator + product team builds these.
 
 ---
 
@@ -268,5 +268,5 @@ What the Referral Engineer does **not** do:
 - Referral Engineer agent spec: `05_AGENT_FLEET_DESIGN.md §1.5`
 - Client-financed acquisition: `15_METRICS_AND_OBSERVABILITY.md §5`
 - Polis-specific viral mechanics: `13_CONSUMER_SOCIAL_LAUNCH.md §4`
-- ContextGraph/Synapse-specific loops: `11_PRODUCT_PLAYBOOKS.md`
+- Leapable/Synapse-specific loops: `11_PRODUCT_PLAYBOOKS.md`
 - Pre-launch waitlist 90-day playbook: `17_LAUNCH_PLAYBOOK_90DAY.md`

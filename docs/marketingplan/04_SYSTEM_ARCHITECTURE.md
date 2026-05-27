@@ -102,7 +102,7 @@ Produces a structured `AssessmentReport`:
 
 ```yaml
 assessment:
-  goal_id: contextgraph-50k-q3-2026
+  goal_id: leapable-50k-q3-2026
   cycle_id: 2026-05-26T14:00:00Z
   predicate_status:
     current: 12_400
@@ -114,7 +114,7 @@ assessment:
   approvals_pending: 2
   guardrail_violations: 0
   new_signals:
-    - mention: "@swyx referenced ContextGraph in Latent Space podcast ep 247"
+    - mention: "@swyx referenced Leapable in Latent Space podcast ep 247"
       relevance: high
       suggested_followup: thank + amplify + reach out for deeper conversation
     - platform: "X new bot-detection rollout; reduce posting cadence to 4/day"
@@ -207,7 +207,7 @@ This bounds the cost of stuck loops while preserving the learning across attempt
 
 ## §5. Memory layer — the LLM Wiki
 
-Borrowed from Karpathy's LLM Wiki gist (`karpathy/442a6bf555914893e9891c11519de94f`). The Memory is **not a chat history**. It is a structured, queryable, append-only knowledge base of:
+Borrowed from Karpathy's LLM Wiki gist (`karpathy/442a6bf555914893e9891c11519de94f`) + **Leapable as the production-grade backend** for expert-vault queries. The Memory is **not a chat history**. It is a structured, queryable, append-only knowledge base of:
 
 - **Skills** — reusable playbooks for specific tactics ("how to launch on Product Hunt", "how to engage on r/MachineLearning", "how to pitch Latent Space")
 - **Channel cards** — per-channel operational state (rate limits, current cadence, brand voice deltas, common pitfalls, last performance)
@@ -242,7 +242,7 @@ The system survives:
 
 How: LangGraph **durable execution + checkpointing** into RocksDB. Every node's state is serialized at every meaningful transition. On restart, the OuterLoop reads the last checkpoint and resumes mid-cycle. Idempotency keys on every external action prevent double-publishing.
 
-RocksDB column families relevant to the marketing platform (separate from ContextGraph's CFs):
+RocksDB column families relevant to the marketing platform:
 - `CF_GOALS` — active and historical goal specs
 - `CF_GOAL_CYCLES` — every assess→plan→build→communicate pass with timestamps
 - `CF_EXPERIMENT_NODES` — the DAG state per goal
@@ -302,7 +302,7 @@ The Tool Gateway is the **only path** from agents to external systems. It expose
 
 | Backend type | Examples | When used |
 |---|---|---|
-| **MCP servers** (preferred) | Markifact (300+ ad/CRM ops), Hyper MCP (200+ integrations), Windsor (325+ data sources), 0nMCP (995+ tools), Synapse (computer-use) | Whenever the platform exposes a real, supported MCP server |
+| **MCP servers** (preferred) | Markifact (300+ ad/CRM ops), Hyper MCP (200+ integrations), Windsor (325+ data sources), 0nMCP (995+ tools), Synapse (computer-use), **Leapable** (vault search + memory) | Whenever the platform exposes a real, supported MCP server |
 | **Bespoke API adapters** | Custom GitHub, custom Discord webhook, custom Slack bot | Where MCP coverage is shallow but operator owns the integration |
 | **Computer-use** | Synapse + Playwright + Browser-Use | When the platform has no API or the API is gated beyond the operator's tier (LinkedIn beyond Sales Nav, etc.); see `06_COMPUTER_USE_PLAYBOOK.md` |
 | **Operator-mediated** | "Send this to operator's iMessage for hand-forward" | Tier-3 outreach; legal documents; never automated |
@@ -417,7 +417,7 @@ A weekly report compiles cycle outcomes into operator-readable form (markdown), 
 
 ## §15. Multi-product, single-fleet
 
-The fleet is shared across all three products (ContextGraph, Synapse, Polis). Goals scope tools, content, and contacts to a product. The same Content Writer agent class serves all three; it loads the product-specific brand voice and channel cards at start.
+The fleet is shared across all three products (Leapable, Synapse, Polis). Goals scope tools, content, and contacts to a product. The same Content Writer agent class serves all three; it loads the product-specific brand voice and channel cards at start.
 
 This means the operator does not need three separate marketing setups. One platform, three goal contexts.
 

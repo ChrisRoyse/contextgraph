@@ -47,7 +47,7 @@ The Referral Engineer (O3) owns customer referrals. Employees aren't agent-contr
 Each channel is scored on:
 - **Quadrant** (Core Four classification)
 - **Tier fit** (T1 mass / T2 engaged / T3 elite — from `03_TIER_MODEL_AUDIENCE.md`)
-- **Product fit** (CG ContextGraph / SY Synapse / PO Polis)
+- **Product fit** (LE Leapable / SY Synapse / PO Polis)
 - **CAC range** (typical 2026 benchmarks)
 - **Ramp** (weeks to first material traction)
 - **Owner agent class** (`05_AGENT_FLEET_DESIGN.md`)
@@ -151,7 +151,7 @@ For any goal, the Planner chooses channels based on:
 The Planner outputs a channel mix per goal:
 
 ```yaml
-channel_mix_for_goal: contextgraph-50k-q3-2026
+channel_mix_for_goal: leapable-50k-q3-2026
 total_budget_monthly_usd: 25000
 allocation:
   github:                  { share: 0.10, mode: free_owned, owner: D3 }
@@ -182,7 +182,7 @@ Each channel has a YAML card stored in `channel_cards/<platform>.yaml`. Schema:
 platform: hackernews
 quadrant: posting_content
 tiers: [t2]
-products: [contextgraph, synapse]
+products: [leapable, synapse]
 
 operator_accounts:
   - {id: hn_chris, karma: 4290, account_age_years: 8}
@@ -243,7 +243,7 @@ The fleet **does not skip ahead.** A goal that's 30 days in and on its second ch
 
 The starting channel mix per product (`03_TIER_MODEL_AUDIENCE.md §9`):
 
-### 7.1 ContextGraph / ME‑JEPA‑Code
+### 7.1 Leapable / ME‑JEPA‑Code
 
 Primary (start here): **GitHub + HN + X-organic**. These are where AI engineers actually live.
 

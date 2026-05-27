@@ -1,6 +1,6 @@
 # 12 — Developer Marketing (DevRel Flywheel)
 
-> For ContextGraph and Synapse, developer marketing is the engine. Borrowed from FORKOFF's AI DevRel Flywheel + the Cursor / Linear / Vercel / Anthropic playbooks. Five surfaces — notebooks, open-source refs, hackathons, content DevRel, integrations guild — that compound into each other. Joe Karlsson's depth-over-breadth law applies. Hormozi's volume applies to artifact production; depth applies to engagement.
+> For Leapable and Synapse, developer marketing is the engine. Borrowed from FORKOFF's AI DevRel Flywheel + the Cursor / Linear / Vercel / Anthropic playbooks. Five surfaces — notebooks, open-source refs, hackathons, content DevRel, integrations guild — that compound into each other. Joe Karlsson's depth-over-breadth law applies. Hormozi's volume applies to artifact production; depth applies to engagement.
 
 ---
 
@@ -56,24 +56,24 @@ The primary trust-transfer surface for AI dev tools in 2026. A 3-minute time-to-
 - **Time to first output ≤ 3 minutes.** From open Colab → result shown.
 - **No setup gymnastics.** No API key required (use free tier); no Docker assumed; no GPU assumed.
 - **Side-by-side outputs.** Show the tool's output next to the alternative (without-tool, or competitor) for direct comparison.
-- **One canonical artifact per use case.** ContextGraph: "Verify a Claude Code patch." Synapse: "Drive Notepad with an AI agent."
+- **One canonical artifact per use case.** Leapable: "Verify a Claude Code patch." Synapse: "Drive Notepad with an AI agent."
 - **Weekly maintenance.** Stale notebooks (broken APIs, deprecated dependencies) are net-negative trust. Updated every Friday.
 
 ### 2.2 Initial notebook set per product
 
-ContextGraph (target: 12 notebooks in first 90 days):
+Leapable (target: 12 notebooks in first 90 days):
 1. "Verify your first Claude Code patch in under 60 seconds"
-2. "Why ME-JEPA disagrees with the dashboard — three real cases"
+2. "Why Leapable disagrees with the dashboard — three real cases"
 3. "Building a custom rule library for Django projects"
-4. "ME-JEPA + Cursor: the full setup walkthrough"
-5. "Comparing ME-JEPA verdicts to oracle outcomes on 100 SWE-bench tasks"
+4. "Leapable + Cursor: the full setup walkthrough"
+5. "Comparing Leapable verdicts to oracle outcomes on 100 SWE-bench tasks"
 6. "Catching subtle-flip mutations the human reviewer missed"
-7. "Integrating ME-JEPA into a CI pipeline"
+7. "Integrating Leapable into a CI pipeline"
 8. "How the conformal interval prevents false confidence"
 9. "Reading the named-failure-mode hierarchy"
 10. "The TCT Gτ guard explained with worked examples"
 11. "Building a community rule library: contributor walkthrough"
-12. "ME-JEPA on a non-Python codebase: a research preview"
+12. "Leapable on a non-Python codebase: a research preview"
 
 Synapse (target: 12 notebooks in first 90 days):
 1. "Drive Notepad with an AI agent in 60 seconds"
@@ -87,7 +87,7 @@ Synapse (target: 12 notebooks in first 90 days):
 9. "Reflex controllers for sub-frame latency in game scenarios"
 10. "The operator panic hotkey and safety guarantees"
 11. "Audit logging: tracing every Synapse action"
-12. "Synapse + ContextGraph: verifying that the agent did what it claimed"
+12. "Synapse + Leapable: verifying that the agent did what it claimed"
 
 ### 2.3 Metrics
 
@@ -104,7 +104,7 @@ Reference implementations. Distinct from notebooks: notebooks are step-by-step p
 
 ### 3.1 What good looks like
 
-- **One repo per integration target.** `contextgraph-cursor-example`, `contextgraph-codex-example`, `contextgraph-aider-example`, `contextgraph-continue-example`.
+- **One repo per integration target.** `leapable-claude-code-example`, `leapable-codex-example`, `leapable-cursor-example`, `leapable-continue-example`.
 - **README that walks talk.** Hormozi's principle: prove the concept by being the concept. The README itself is the strongest marketing asset.
 - **CI on the repo runs the example.** Demonstrates the example actually works.
 - **README quickstart in 5 commands max.** Five lines, one paste, success.
@@ -150,7 +150,7 @@ Compress months of marketing into 48 hours of shipped artifacts. Sponsored, atte
 | **Attend with team** | Operator wants direct face-time with target builders | Travel + $500-2k | Karpathy "find the right people" mode |
 | **Host operator-run hackathon** | Operator wants exclusive community + branded artifact set | $5-25k | All submitted projects use the operator's tool; case studies for content DevRel |
 
-For ContextGraph and Synapse in the first 90 days, **sponsor 3 hackathons** targeting AI agent / AI engineering audiences:
+For Leapable and Synapse in the first 90 days, **sponsor 3 hackathons** targeting AI agent / AI engineering audiences:
 - AGI House hackathons
 - AI Engineer Summit hackathons
 - MCP-specific (Anthropic-organized) hackathons
@@ -197,7 +197,7 @@ Per `07_CONTENT_FACTORY.md §6`, the developer-relevant subset:
 |---|---|
 | Deep dive (cornerstone technical content) | 1/week |
 | Tactical post (specific code-led how-to) | 2/week |
-| Comparison ("ContextGraph vs Goodfire vs human review") | 1/week |
+| Comparison ("Leapable vs Goodfire vs human review") | 1/week |
 | Build log (Linear-style "this week we shipped X") | 1/week |
 | Postmortem (high trust signal) | 1/month |
 | Behind-the-numbers (charts + benchmarks) | 1/month |
@@ -232,7 +232,7 @@ The most lagging but highest-leverage surface. Once the prior surfaces have prov
 
 ### 6.1 What
 
-For ContextGraph: official partnerships with Cursor, Continue.dev, Aider, Anthropic Claude Code, OpenAI Codex, Replit Agent, Devin (Cognition).
+For Leapable: official partnerships with Cursor, Continue.dev, Aider, Anthropic Claude Code, OpenAI Codex, Replit Agent, Devin (Cognition).
 
 For Synapse: official partnerships as the default computer-use backend for popular AI agent frameworks — LangChain, CrewAI, AutoGen, Anthropic Agent Framework, Browser-Use (interop).
 
@@ -303,7 +303,7 @@ The fleet's translation:
 Pattern: massive open-source download number → become default → enterprise upsell.
 
 The fleet's translation:
-- ContextGraph: open-source the rule libraries; become the default verification stack in AI agent frameworks
+- Leapable: open-source the rule libraries; become the default verification stack in AI agent frameworks
 - Synapse: open-source the playbooks; become the default computer-use backend
 - Polis: open-source the gathering-hosting tools; become the default substrate for IRL community events
 

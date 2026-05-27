@@ -81,11 +81,11 @@ The most-litigated marketing surface. Per the 2026 cold-email compliance literat
 For B2B outbound to EU contacts, the operator maintains a written balancing test per campaign:
 
 ```yaml
-campaign_id: contextgraph_enterprise_q3_2026
+campaign_id: leapable_enterprise_q3_2026
 target_population:
   - role: VP Engineering / Director of AI Platform / Head of Developer Tools
   - employer: any company with ≥50 engineers and AI agent deployment
-purpose: introduce ContextGraph for AI patch verification
+purpose: introduce Leapable for AI patch verification
 data_source: public LinkedIn, Crunchbase, conference attendance lists, public AI-discussions
 data_minimization: only role, employer, public-statement context; no protected attributes
 balancing_test:
@@ -191,7 +191,7 @@ Schema:
 
 ```yaml
 audit_id: uuidv7
-goal_id: contextgraph-50k-q3-2026
+goal_id: leapable-50k-q3-2026
 cycle_id: 2026-05-26T14:00:00Z
 node_id: experiment-ph-launch-001
 agent_class: D1

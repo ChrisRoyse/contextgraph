@@ -1,12 +1,12 @@
 # 15 — Metrics and Observability
 
-> The numerical target sheet, the attribution model, the evaluator calibration discipline, and the operator's dashboards. Borrowed from ContextGraph's tiered metric system (Tier-1 critical, Tier-2 operational, etc.) and applied to a marketing surface. Vendor dashboards are diagnostic; **source-of-truth product database readback is the verdict** (`02_FIRST_PRINCIPLES.md §5`).
+> The numerical target sheet, the attribution model, the evaluator calibration discipline, and the operator's dashboards. Borrowed from Leapable's tiered metric system (Tier-1 critical, Tier-2 operational, etc.) and applied to a marketing surface. Vendor dashboards are diagnostic; **source-of-truth product database readback is the verdict** (`02_FIRST_PRINCIPLES.md §5`).
 
 ---
 
 ## §1. Metric tiers
 
-Per ContextGraph's pattern, marketing metrics are tiered. Higher tier = higher gate-status.
+Per Leapable's pattern, marketing metrics are tiered. Higher tier = higher gate-status.
 
 | Tier | What it is | Gate status |
 |---|---|---|
@@ -23,14 +23,14 @@ Per ContextGraph's pattern, marketing metrics are tiered. Higher tier = higher g
 
 Per `01_NORTH_STAR.md §3`:
 
-### 2.1 ContextGraph
+### 2.1 Leapable
 
 ```yaml
-metric: weekly_active_integrations
-definition: unique_developer_ids with ≥1 ME-JEPA verification call in the past 7 days,
+metric: weekly_active_subscribers
+definition: unique_developer_ids with ≥1 Leapable verification call in the past 7 days,
             where the verification produced a non-trivial verdict
             (verdict_kind != "noop" or "input_unreadable")
-source_of_truth: rocksdb://contextgraph/cf_integrations
+source_of_truth: rocksdb://leapable/cf_queries
 evaluator: M7 reads SoT once per 24h cycle
 goal_thresholds_examples:
   90_day: 2_000
@@ -73,7 +73,7 @@ goal_thresholds_examples:
 
 | Product | Floor | Best-in-class |
 |---|---|---|
-| ContextGraph | 3.0:1 (paid subscribers) | 5:1 |
+| Leapable | 3.0:1 (paid subscribers) | 5:1 |
 | Synapse | 3.0:1 (paid subscribers) | 4.5:1 |
 | Polis | 4.0:1 (Plus + Curator paid tiers) | 6:1 |
 
@@ -83,7 +83,7 @@ goal_thresholds_examples:
 
 | Product | Ceiling |
 |---|---|
-| ContextGraph | 12 months (B2B SaaS, dev-tools-class) |
+| Leapable | 12 months (B2B SaaS, dev-tools-class) |
 | Synapse | 12 months |
 | Polis | 9 months (consumer; faster payback required) |
 
@@ -93,8 +93,8 @@ goal_thresholds_examples:
 
 | Product | 28-day floor | 90-day floor |
 |---|---|---|
-| ContextGraph (paid) | 70% | 50% |
-| ContextGraph (free) | 50% | 25% |
+| Leapable (paid) | 70% | 50% |
+| Leapable (free) | 50% | 25% |
 | Synapse (paid) | 65% | 45% |
 | Polis (Plus paid) | 75% | 55% |
 | Polis (free attendees) | 60% within-cluster | 35% within-cluster |
@@ -105,7 +105,7 @@ goal_thresholds_examples:
 
 | Product | K floor | K target | Cycle time target |
 |---|---|---|---|
-| ContextGraph | 0.2 | 0.4 | 5 days |
+| Leapable | 0.2 | 0.4 | 5 days |
 | Synapse | 0.15 | 0.35 | 7 days |
 | Polis | 0.3 | 0.6 | 3 days |
 
@@ -117,7 +117,7 @@ realized_30d_gross_profit_per_acquired_user >= CAC + 30d_fulfillment_cost
 
 | Product | Target |
 |---|---|
-| ContextGraph | $90 30d-GP per acquired developer ($99/mo Pro × ~90% margin) |
+| Leapable | $90 30d-GP per acquired developer ($99/mo Pro × ~90% margin) |
 | Synapse | $50 30d-GP |
 | Polis | $25 30d-GP |
 
@@ -132,7 +132,7 @@ Per channel × product, tracked daily:
 
 ```yaml
 channel: hackernews
-product: contextgraph
+product: leapable
 last_28d:
   posts_published: 4
   total_impressions: 142_500
@@ -173,7 +173,7 @@ Operator's primary dashboard view (refreshed every 15 minutes):
 
 ```
 ┌─ ACTIVE GOALS ────────────────────────────────────────┐
-│ contextgraph-50k-q3-2026: WEEK 8 of 14                 │
+│ leapable-50k-q3-2026: WEEK 8 of 14                 │
 │   predicate: 1,247 / 2,000  (62%)  ▲ +180 wk-over-wk   │
 │   spend:     $13,400 / $25,000  (54%)                  │
 │   ltv:cac:   4.1:1  ✓ above 3.0 floor                  │
@@ -245,7 +245,7 @@ Per `14_COMPLIANCE_AND_ETHICS.md §7`, the audit log is the single source of tru
 - Every external action logged with payload, timestamp, account, agent, outcome.
 - Every approval-queue decision logged with approver, decision, timestamp.
 - Every guardrail decision (allow/deny) logged with the reason.
-- Append-only; cryptographically chained (per ContextGraph audit doctrine).
+- Append-only; cryptographically chained (per Leapable audit doctrine).
 
 Operator query patterns:
 
@@ -309,7 +309,7 @@ The Auditor runs daily, checks predicate vs three correlated reality signals, tr
 
 | Product | Predicate | Reality signals |
 |---|---|---|
-| ContextGraph | `weekly_active_integrations` | Paid subscribers, GitHub star velocity, HN mention velocity, Discord question rate |
+| Leapable | `weekly_active_subscribers` | Paid subscribers, GitHub star velocity, HN mention velocity, Discord question rate |
 | Synapse | `weekly_active_mcp_sessions_with_depth` | Tools-per-session distribution, third-party MCP servers referencing Synapse, hackathon project count |
 | Polis | `monthly_active_event_attendances` | Return attendance rate, attendee NPS, photo-consent rate, friend-graph density delta |
 

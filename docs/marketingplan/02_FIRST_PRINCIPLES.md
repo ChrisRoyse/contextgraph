@@ -59,7 +59,7 @@ This is brutal. It kills a lot of "marketing activity" that feels productive but
 
 When the agent fleet asks "did experiment X work?", the answer comes from **the product's source of truth** (RocksDB, the SQL database, the event stream), not from a vendor analytics dashboard. Vendor dashboards lag, double-count, drop events, and silently change attribution models. Source-of-truth readback is the verdict.
 
-Concretely, every experiment node carries `source_of_truth: rocksdb://contextgraph/cf_integrations` or equivalent. The Evaluator agent queries the SoT directly, not Mixpanel/Posthog/Amplitude.
+Concretely, every experiment node carries `source_of_truth: rocksdb://leapable/cf_queries` or equivalent. The Evaluator agent queries the SoT directly, not Mixpanel/Posthog/Amplitude.
 
 Vendor dashboards are diagnostic tools. They never decide.
 
@@ -69,7 +69,7 @@ Vendor dashboards are diagnostic tools. They never decide.
 
 The agent fleet builds generic capabilities, not task-specific hacks. A `discord_engager` agent that knows how to operate well in *any* technical Discord beats nine specialized agents for nine specific Discords. The cost of specialization is fragility — when the channel evolves, the specialization breaks.
 
-Borrowed from ContextGraph CLAUDE.md (GENERIC-ONLY rule). The fleet is allowed to specialize on the **inside of a tactic** ("how the agent operates on r/MachineLearning specifically") in playbooks, but the **agent code** stays generic and reads the playbook.
+GENERIC-ONLY rule. The fleet is allowed to specialize on the **inside of a tactic** ("how the agent operates on r/MachineLearning specifically") in playbooks, but the **agent code** stays generic and reads the playbook.
 
 ---
 
@@ -131,7 +131,7 @@ The autonomy slider moves right over months and years as the fleet earns trust o
 
 ## §13. Slot identity: each agent owns one job
 
-Borrowed from ContextGraph's "Slot identity is sacred" rule. Each agent class has **one** primary responsibility. The Content Writer doesn't also do scheduling. The Scheduler doesn't also do brand-voice evaluation. The Evaluator doesn't also do writing.
+Borrowed from Leapable's "Slot identity is sacred" rule. Each agent class has **one** primary responsibility. The Content Writer doesn't also do scheduling. The Scheduler doesn't also do brand-voice evaluation. The Evaluator doesn't also do writing.
 
 Why: cross-responsibility agents accumulate prompts. Prompts that try to do five things do all five badly. Specialized agents with one job stay tight.
 
@@ -155,9 +155,9 @@ When an experiment fails, the Reflector agent writes a structured post-mortem �
 
 ```yaml
 experiment_id: ph-launch-2026-01-22
-goal_id: contextgraph-50k-q3-2026
+goal_id: leapable-50k-q3-2026
 outcome: missed
-expected: +200-400 new weekly_active_integrations
+expected: +200-400 new weekly_active_subscribers
 actual: +47
 diagnostics:
   - launched_same_day_as_anthropic_claude_5_announcement

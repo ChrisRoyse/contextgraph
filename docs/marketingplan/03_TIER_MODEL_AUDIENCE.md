@@ -104,7 +104,7 @@ Tier assignment is reviewable; the operator can override (e.g., "this person is 
 
 ### 5.2 Channels
 
-- GitHub (for ContextGraph, Synapse): issues, discussions, code review on adjacent projects
+- GitHub (for Leapable, Synapse): issues, discussions, code review on adjacent projects
 - Hacker News (Show HN, comments, niche threads)
 - Reddit (technical subreddits: r/MachineLearning, r/LocalLLaMA, r/programming, r/devops)
 - Discord (named tech Discords: AI engineering communities, Anthropic-builder, OpenAI-dev, Cursor, LangChain, MCP, individual VC dev communities)
@@ -221,8 +221,8 @@ Different products lean on different tiers for primary momentum:
 
 | Product | T1 weight | T2 weight | T3 weight | Rationale |
 |---|---:|---:|---:|---|
-| ContextGraph / ME‑JEPA‑Code | 20% | 60% | 20% | Developer trust earned in T2 (HN/GitHub/Discord); T3 endorsements from AI lab leaders unlock enterprise; T1 SEO supports retention |
-| Synapse | 25% | 55% | 20% | Similar to ContextGraph; T3 endorsement from MCP / Anthropic ecosystem heavyweights is high-leverage |
+| Leapable | 30% | 50% | 20% | Subscribers acquired via T1 mass (SEO/GEO/creator-led discovery); developers in T2 (HN/GitHub/Discord); T3 endorsement from named experts publishing Vaults gives marketplace legitimacy |
+| Synapse | 25% | 55% | 20% | Developer trust earned in T2 (HN/GitHub/Discord); T3 endorsement from MCP / Anthropic ecosystem heavyweights is high-leverage |
 | Polis | 50% | 35% | 15% | Consumer; T1 TikTok virality is the catalyst; T2 campus ambassadors create density; T3 intellectual creator endorsements give cultural legitimacy |
 
 These weights are the **starting** allocation. The fleet shifts them based on which tier's experiments are moving the predicate fastest within a given goal.
