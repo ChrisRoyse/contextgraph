@@ -1,0 +1,65 @@
+[
+  {
+    "name": "Leapable Subscriber",
+    "metadata": {"product":"leapable","tier":"subscriber"},
+    "product_id": "prod_UalC18rpJmK7qP",
+    "price_id": "price_1TbZg8RR6EhrWnFxP4A4mbj4",
+    "monthly_usd": 9
+  }
+,
+  {
+    "name": "Leapable Creator Pro",
+    "metadata": {"product":"leapable","tier":"creator_pro"},
+    "product_id": "prod_UalCHZ89qZiiDX",
+    "price_id": "price_1TbZg9RR6EhrWnFxrPAo5ttw",
+    "monthly_usd": 29
+  }
+,
+  {
+    "name": "Leapable Creator Plus",
+    "metadata": {"product":"leapable","tier":"creator_plus"},
+    "product_id": "prod_UalCVx0cfWrkfX",
+    "price_id": "price_1TbZgARR6EhrWnFxWA53XeYI",
+    "monthly_usd": 99
+  }
+,
+  {
+    "name": "Synapse Individual Pro",
+    "metadata": {"product":"synapse","tier":"individual_pro"},
+    "product_id": "prod_UalCG4ky8alExj",
+    "price_id": "price_1TbZgBRR6EhrWnFxq87noygB",
+    "monthly_usd": 29
+  }
+,
+  {
+    "name": "Synapse Team",
+    "metadata": {"product":"synapse","tier":"team"},
+    "product_id": "prod_UalCGvDUGRN6fx",
+    "price_id": "price_1TbZgCRR6EhrWnFx8t4NuPcQ",
+    "monthly_usd": 499
+  }
+,
+  {
+    "name": "Polis Plus",
+    "metadata": {"product":"polis","tier":"plus"},
+    "product_id": "prod_UalCqKAjXNgbga",
+    "price_id": "price_1TbZgDRR6EhrWnFxkQ34gYfD",
+    "monthly_usd": 9
+  }
+,
+  {
+    "name": "Polis Host",
+    "metadata": {"product":"polis","tier":"host"},
+    "product_id": "prod_UalCfQJzj8KoLM",
+    "price_id": "price_1TbZgERR6EhrWnFxxzHr7KyD",
+    "monthly_usd": 29
+  }
+,
+  {
+    "name": "Polis Curator",
+    "metadata": {"product":"polis","tier":"curator"},
+    "product_id": "prod_UalCCxHWV26i8K",
+    "price_id": "price_1TbZgFRR6EhrWnFxTZOayD7S",
+    "monthly_usd": 99
+  }
+]
