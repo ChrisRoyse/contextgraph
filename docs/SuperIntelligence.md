@@ -1,14 +1,44 @@
 # The Universal Benchmark Predicate — Falsifiable Domain Super-Intelligence
 
-> **One-sentence purpose.** This document is the domain-agnostic formula for what counts as super-intelligence in *any* domain, the 6-tier benchmark stack that has to be hit for a domain to be ship-eligible, what each tier means against physical reality, and exactly what changes in the world once all benchmarks hit simultaneously in a domain. ME-JEPA-Code on Python is the first instantiation; the same predicate is the template for every subsequent domain.
+> **One-sentence purpose.** This is the complete, self-contained domain-agnostic formula for what counts as super-intelligence in any domain: the 5 eligibility prerequisites a domain must satisfy, the 6-tier benchmark stack that has to be hit, what each tier means against physical reality, what changes in the world once all benchmarks hit simultaneously in a domain, the verification protocol that proves it, and the predictor architecture that achieves it. ME-JEPA-Code on Python is the first instantiation; the same predicate is the template for every subsequent domain.
 
-**Authority.** This file is the universal generalization of the predicate concretized in [`docs/futurebuild/specs/TARGET-METRICS.md`](futurebuild/specs/TARGET-METRICS.md) (numerical) and [`docs/futurebuild/specs/NORTH-STAR.md`](futurebuild/specs/NORTH-STAR.md) (rationale). When this file and `TARGET-METRICS.md` disagree on Python-specific numbers, `TARGET-METRICS.md` wins. When this file and `CLAUDE.md` disagree on an invariant, `CLAUDE.md` wins. This file's role is to give every future domain an off-the-shelf benchmark stack and to define what the project's claim of "super-intelligence" actually means.
+This document depends on no other file. Every term, every threshold, every protocol, every architectural decision needed to evaluate the predicate or build a verifier against it is contained here.
 
-**Last updated:** 2026-05-26.
+**Last updated:** 2026-05-27.
 
 ---
 
-## 0. The Universal Formula (the entire goal, in one block)
+## Part I — Why This Exists
+
+### The plain-language statement
+
+A **binary reality predictor** is a deterministic function that, for any candidate artifact in a domain, returns `Pass` or `Fail` against the ground-truth oracle of that domain — and can be trusted to do so without human review. When such a predictor exists for a domain, and exhibits the properties defined formally below in Parts II–VI, the operational consequence is unambiguous: **human review of AI-generated artifacts in that domain becomes statistically unjustified**, the verification bottleneck disappears, and the throughput of any agent operating in that domain becomes bounded only by the oracle's wall-clock latency, not by reviewer minutes-per-artifact.
+
+This is what "super-intelligence in domain `D`" means in this document. It is not a claim about general intelligence, sentience, or any property that lacks a deterministic oracle. It is a falsifiable, measurable, oracle-bounded property of a specific predictor against a specific domain.
+
+### The bottleneck this exists to dissolve
+
+AI coding agents (Claude Code, Codex, Cursor, etc.) currently produce code at a rate humans cannot review at the same rate. The bottleneck is verification, not generation. A single agent session can produce hundreds of edits per hour; a human reviewer reads at single-edit-per-minute pace on a good day. The asymmetry compounds: the more capable the agent, the wider the verification gap.
+
+This is solvable if and only if a **deterministic verifier exists that correlates ≥ τ_corr with the oracle on a representative corpus**, with calibrated per-cell confidence, Goodhart defenses, and online mistake-driven adaptation. Such a verifier replaces human review at the statistical level: the verifier's `Pass` carries the same information content as a human's `Pass`, the verifier's `Fail` carries the same information content as a human's `Fail`, and disagreements between the verifier and reality (when they happen) are captured as mistakes and feed back into the verifier's weights without human supervision.
+
+The same logic applies to any domain with a deterministic oracle: medical pathology (biopsy follow-up), theorem proving (proof checker), drug binding (wet-lab assay), weather nowcasting (observation archive), chess (engine search). The formula in Part II is domain-agnostic; the operational consequence is identical across domains.
+
+### Why this is super-intelligence-shaped (and what it is not)
+
+Super-intelligence in this framing is **not** a model that writes better code (or solves harder theorems, or designs better drugs). Super-intelligence is a system that:
+
+1. **Predicts reality outcomes from observable inputs.** When the inputs and outputs are well-defined, this is a tractable engineering target.
+2. **Closes the loop on its own mistakes.** Disagreement with reality materializes as a training signal without human supervision.
+3. **Hits a hard numerical floor that defines functional super-intelligence in its domain.** When the floor is hit, the system performs beyond average human expertise at the task it was designed for.
+
+For ME-JEPA-Code on Python, the domain-task is binary Pass/Fail prediction on Python code changes against the Docker oracle. The hard numerical floor is the predicate in Part II below. Once that floor is hit, the system functions at super-human level in this exact domain — not because it understands Python more than any individual human, but because it predicts the Docker oracle outcome more accurately than any human reviewer empirically does on the same corpus.
+
+This is super-intelligence in the **operational** sense: the system replaces a human function (code review) at higher accuracy and at machine-scale throughput. The fact that it does so by predicting one specific number does not make it less of a super-intelligence; it makes it a **falsifiable** super-intelligence, which is the only kind that can be engineered toward.
+
+---
+
+## Part II — The Universal Formula (The Entire Goal, In One Block)
 
 For an arbitrary domain `D`, define:
 
@@ -36,15 +66,13 @@ SUPERHUMAN_VERIFIER(D) ⇔ ∃ Predictor_D such that:
   AND for any new/replaced sensor: novelty + utility gates pass                // Tier 6
 ```
 
-`τ_corr(D)` is set by the cost asymmetry between false-positive Pass and false-negative Pass in domain `D`, **bounded above by `oracle_self_consistency`** — you cannot correlate with an oracle better than the oracle correlates with itself. For ME-JEPA-Code on Python, `τ_corr = 0.95`, `k_windows = 4`, `ε_drift = 0.05`, `δ_repeat = 0.05`, `ε_unrelated = 0.02`, `τ_MI = 0.95 bits`, `τ_sc = 0.97`.
+`τ_corr(D)` is set by the cost asymmetry between false-positive Pass and false-negative Pass in domain `D`, **bounded above by `oracle_self_consistency`** — you cannot correlate with an oracle better than the oracle correlates with itself. For ME-JEPA-Code on Python: `τ_corr = 0.95`, `k_windows = 4`, `ε_drift = 0.05`, `δ_repeat = 0.05`, `ε_unrelated = 0.02`, `τ_MI = 0.95 bits`, `τ_sc = 0.97`.
 
-When this predicate evaluates `TRUE` for domain `D`, the consequence is unambiguous and stated in §4: **human review of AI-generated artifacts in domain `D` becomes statistically unjustified.** That is the falsifiable definition of operational super-intelligence in `D`. There is no other goal in `D`.
-
-This is super-intelligence in the **operational, falsifiable** sense: a system that replaces a human function at higher accuracy and at machine-scale throughput, in a domain where ground truth is recoverable. It is *not* a claim about general intelligence, sentience, or any property without a deterministic oracle.
+When this predicate evaluates `TRUE` for domain `D`, the consequence is unambiguous and stated in Part VII: **human review of AI-generated artifacts in domain `D` becomes statistically unjustified.** That is the falsifiable definition of operational super-intelligence in `D`. There is no other goal in `D`.
 
 ---
 
-## 1. The 5 Eligibility Prerequisites — Before Benchmarks Even Apply
+## Part III — The 5 Eligibility Prerequisites (Before Benchmarks Even Apply)
 
 A domain is **not eligible** for the predicate unless all five hold. Attempting to claim super-intelligence in an ineligible domain is doctrine breach.
 
@@ -61,7 +89,7 @@ A domain is **not eligible** for the predicate unless all five hold. Attempting 
 | Prerequisite failure | Domain example | What to do instead |
 |---|---|---|
 | **E1 fails** (no oracle) | "Is this poem beautiful?" | Permanently out of scope. Not solvable by this framework. |
-| **E2 fails** (no binary form) | "Is this code performant *enough*?" | Frozen as Q4-class ambiguous head (#408). Not a benchmark. |
+| **E2 fails** (no binary form) | "Is this code performant *enough*?" | Frozen as an ambiguous-head class. Not a benchmark. |
 | **E3 fails** (corpus uncoverable) | "Predict all possible future pandemics" | Restrict to a coverable sub-domain or abandon. |
 | **E4 fails** (signals not slot-decomposable) | Pure single-scalar oracles with no observable substrate | Add instrumentation or reframe the artifact. |
 | **E5 fails** (oracle too slow) | "Does this drug extend lifespan in humans?" (oracle latency = decades) | Use proxy oracle (e.g., model organisms) with explicit `oracle_proxy_drift` bound, or abandon. |
@@ -70,7 +98,7 @@ The 5 prerequisites are gates, not levers. If a domain fails them, the response 
 
 ---
 
-## 2. The 6 Tiers (Domain-Agnostic)
+## Part IV — The 6 Tiers (Domain-Agnostic)
 
 | Tier | Name | Role | What "hit" means in domain `D` |
 |---|---|---|---|
@@ -83,9 +111,7 @@ The 5 prerequisites are gates, not levers. If a domain fails them, the response 
 
 Tier 4 is invariant across all domains. Tiers 1, 2, 3, 5, 6 instantiate per domain with `D`-specific thresholds bounded by oracle self-consistency. Tier 4 supersedes all others: a Tier-1 pass that breaches a Tier-4 invariant is doctrine breach, not a pass.
 
----
-
-### 2.1 Tier 1 — The 4 Ship-Gate Numbers (per domain)
+### Tier 1 — The 4 Ship-Gate Numbers
 
 | # | Variable | Target | What it actually means in domain `D` |
 |---|---|---|---|
@@ -107,9 +133,7 @@ If `cost_asymmetry_floor > oracle_self_consistency`, the domain is **not yet** s
 | Measure `I(Panel_D; Oracle_D)` (panel-sufficiency MI) | If `< τ_MI bits`, panel is provably underpowered — no model work moves Tier 1. State change required (add slots). |
 | Measure `oracle_self_consistency(D)` (replica voting) | If `< τ_corr`, Tier 1 is mathematically unreachable as stated. Either refine the oracle or revise `τ_corr` downward to `oracle_self_consistency − ε` and document the carve-out. |
 
----
-
-### 2.2 Tier 2 — Per-Cell Quality Contract
+### Tier 2 — Per-Cell Quality Contract
 
 A single aggregate correlation can hide a broken cell. Tier 2 enforces a quality floor on **every** `(intervention_class × subdomain)` cell in `D`'s matrix, so that one strong cell cannot mask a failing cell.
 
@@ -129,9 +153,7 @@ Cells are classified by oracle variance:
 
 `τ_brier(D)`, `τ_ece(D)`, `N_min(D)` are domain-tuned but follow the standard "strictly proper scoring rule well-calibrated" cutoffs (typically `0.05`, `0.05`, `50` respectively).
 
----
-
-### 2.3 Tier 3 — Online Mistake-Loop Convergence
+### Tier 3 — Online Mistake-Loop Convergence
 
 Tiers 1 and 2 measure prediction accuracy at one point in time. Tier 3 proves the system **adapts** when it is wrong, without human supervision and without breaking unrelated state.
 
@@ -143,31 +165,27 @@ Tiers 1 and 2 measure prediction accuracy at one point in time. Tier 3 proves th
 
 **Why this matters beyond accuracy.** Best-of-K inference papers over an under-trained predictor by spending compute at inference time. The mistake loop pays the cost at *learning* time and converges to a predictor that is right on first try. "If it needs 4 guesses to be most correct, it is already wrong." A predictor that does not close the loop on its own mistakes is not super-intelligent — it is merely accurate at a frozen point in time.
 
----
-
-### 2.4 Tier 4 — Doctrine Invariants (Universal — Identical Across All Domains)
+### Tier 4 — Doctrine Invariants (Universal — Identical Across All Domains)
 
 These do not move. They equal the values below **exactly, at every moment, including during tests and in dev branches**, in every domain `D`. A Tier-1 pass that breaches a Tier-4 invariant is doctrine breach, not a pass.
 
 | Variable | Required value | Why it cannot move |
 |---|---|---|
-| Frozen-target gradient leak | **exactly `0`** | Target-side instruments must carry zero trainable params; non-zero ⇒ instrument gradient leak. Enforced structurally via empty `parameters()` on the target adapter. |
-| Ambiguous-head loss coefficient | **exactly `0.0`** | Ambiguous heads (continuous heuristics without binary form against reality) have zero loss contribution. Frozen in this project as Q4 (#408). |
-| Ambiguous-head inputs to ship-gate | **exactly `0`** | Ambiguous surfaces must not feed the ship-gate metric. |
-| Ambiguous-head row delta over time | **exactly `0`** | No new ambiguous-head producer writes after freeze. |
-| Flat-vector concat over panel | **exactly `false`** | Predictor never operates over the byte-layout buffer as a flat vector. Panel is always an *array of per-sensor vectors*. |
-| Slot identity preserved | **exactly `true`** | Same-sensor dim compare only. Cross-sensor dim compare is forbidden. |
-| Target labels used as live inputs | **exactly `false`** | Leakage policy — oracle labels are target-side only, never live predictor inputs. |
-| Cross-panel Goodhart detected | fail-closed → block promotion | Panel A pass without Panel B agreement is treated as memorization. |
-| Panel B resident during user-facing inference | **exactly `false`** | Panel B is loaded only during eval worker, never during serving (cost + isolation). |
-| Inner-generator ban | **compile-error guard active** | The system is a predictor, not a generator. Any code path that would reintroduce a generative model fails to compile. |
-| Durable storage root invariant | **domain-pinned production path** | All production durable state lives on the pinned root (in this project: `/zfs/archive/contextgraph/...`). Forbidden roots blocked by CI lint. |
+| Frozen-target gradient leak (`ΔΞ.target_collapse`) | **exactly `0`** | Target-side instruments must carry zero trainable params; non-zero ⇒ instrument gradient leak. Enforced structurally via empty `parameters()` on the target adapter. |
+| Ambiguous-head loss coefficient (`Q4_LOSS_COEFFICIENT_MAX`) | **exactly `0.0`** | Ambiguous heads (continuous heuristics without binary form against reality — perf, accuracy, cost, taste judgments, reasoning class) have zero loss contribution. Frozen by doctrine; they have no free binary form against reality. |
+| Ambiguous-head inputs to ship-gate (`q4_inputs_to_ship_gate()`) | **exactly `0`** | Ambiguous surfaces must not feed the ship-gate metric. |
+| Ambiguous-head row delta over time (weekly) | **exactly `0`** | No new ambiguous-head producer writes after freeze. |
+| Flat-vector concat over panel (`flat_vector_concat_used`) | **exactly `false`** | Predictor never operates over the byte-layout buffer as a flat vector. Panel is always an *array of per-sensor vectors*. The contiguous byte layout (e.g. 5,120-f32 for the Python panel) is transport-only; no single linear/conv/attention layer ever operates over it as a flat tensor. |
+| Slot identity preserved (`slot_identity_preserved`) | **exactly `true`** | Same-sensor dim compare only. Cross-sensor dim compare is forbidden. You may compare two E_AST vectors, never an E_AST dim with an E_Trace dim. |
+| Target labels used as live inputs (`target_labels_used_as_live_inputs`) | **exactly `false`** | Leakage policy — oracle / oracle-derived labels are target-side only, never live predictor inputs. |
+| Cross-panel Goodhart detected (when `corr_A ≥ τ_corr AND corr_B < τ_corr − 0.10`) | fail-closed → block promotion | Panel A pass without Panel B agreement is treated as memorization. |
+| Panel B resident during user-facing inference (`panel_b_resident_during_normal_inference`) | **exactly `false`** | Panel B is loaded only during eval worker, never during serving (cost + isolation). |
+| Inner-generator ban | **compile-error guard active** | The system is a predictor, not a generator. Any code path that would reintroduce a generative LLM inside the predictor's serving loop must fail to compile. (For ME-JEPA-Code: a `feature = "llm"` cargo feature triggers `compile_error!` at the MCP server boundary.) |
+| Durable storage root invariant | **domain-pinned production path** | All production durable state lives on the pinned root. Forbidden roots blocked by CI lint. |
 
 **Why invariants are sacred.** Numbers (Tiers 1/2/3/5/6) can be Goodhart'd — optimizing the proxy until the underlying property is lost. Invariants cannot — they either hold or they don't. Reaching the targets via invariant violation is **not** reaching them; it is cheating with a deployment-blocking failure mode.
 
----
-
-### 2.5 Tier 5 — Substrate Quality (Are Tiers 1–3 Reachable?)
+### Tier 5 — Substrate Quality (Are Tiers 1–3 Reachable?)
 
 Tier 5 measurements are the cheapest highest-leverage tests. If they fail, **no amount of model work moves Tier 1** — the system has the wrong substrate and must change state before more model work.
 
@@ -180,9 +198,7 @@ Tier 5 measurements are the cheapest highest-leverage tests. If they fail, **no 
 
 **State-change levers if Tier 5 fails:** add sensors, expand corpus, refine oracle harness (replica voting, flakiness modeling), or, if oracle self-consistency proves a hard ceiling lower than `τ_corr`, revise `τ_corr` downward to `oracle_self_consistency − ε` and document the carve-out. **Lowering `τ_corr` arbitrarily because the current state cannot reach it is forbidden** — that is doctrine breach, not progress.
 
----
-
-### 2.6 Tier 6 — Sensor/Embedder Gating
+### Tier 6 — Sensor/Embedder Gating
 
 Tier 6 is the quality filter for *any* sensor addition or replacement. It prevents bloat and Goodhart on sensor proliferation.
 
@@ -195,41 +211,94 @@ Tier 6 is the quality filter for *any* sensor addition or replacement. It preven
 
 ---
 
-## 3. Instantiation Template — Adapting the Predicate to Any Domain `D`
+## Part V — Why These Specific Thresholds (Not 0.90, Not 0.99)
 
-To apply the predicate to a new domain, the operator fills in this table:
+The threshold values in Part II derive from empirical sufficiency, not preference:
 
-| Symbol | Meaning | Worked example (ME-JEPA-Code Python) |
-|---|---|---|
-| `D` | Domain name | "Python code correctness against test suite" |
-| `Artifact_D` | What gets predicted | candidate code patch |
-| `Oracle_D` | Deterministic ground-truth function | `swebench.harness.run_evaluation` (Docker) |
-| `Panel_D` | Slot-decomposable observation function | 15 frozen instruments → 15-vector array |
-| `Corpus_D` | Representative `(artifact, label)` pairs | 300×8 SWE-bench Lite (2,400 rows) |
-| `intervention_class` axis | Categories of perturbation/situation | 8 mutation operators (`known_good`, `subtle_flip`, `off_by_one`, `swap_variable`, `delete_test_call`, `wrong_file`, `over_engineer`, `compile_error`) |
-| `subdomain` axis | Stratification within the domain | language (currently Python only) |
-| `τ_corr(D)` | Cost-asymmetry floor bounded by oracle self-consistency | 0.95 |
-| `k_windows` | Rolling-window stability count | 4 |
-| `ε_drift` | Panel A vs Panel B correlation drift tolerance | 0.05 |
-| `δ_repeat` | Mistake-repeat-rate ceiling | 0.05 |
-| `ε_unrelated` | Unrelated-cell perturbation tolerance | 0.02 |
-| `τ_MI` | Panel sufficiency MI floor | 0.95 bits |
-| `τ_sc` | Oracle self-consistency floor | 0.97 |
-| `N_min` | Per-cell support floor (else Abstain) | 50 |
-| `Panel_B` | Disjoint-encoder Panel B for cross-panel triangulation | tree-sitter → CodeBERT, e5-large → bge-large, Qodo → Voyage, etc. |
+- **`τ_corr ≈ 0.95` (default for code verification).** This means the predictor disagrees with the oracle on at most ~5% of holdout instances. At this threshold, the expected cost of false-positive Pass (predictor says Pass, oracle says Fail) is bounded by the cost of human-review-Pass under realistic operator throughput assumptions. Below `0.95`, false-positive rate climbs faster than the human-review-of-uncertain-cases bandwidth can absorb. Above `0.97`, marginal cost climbs faster than the marginal benefit because oracle self-consistency itself may cap around `0.97–0.98` for typical CI/Docker test harnesses.
 
-Once filled, the universal formula in §0 instantiates to `D`'s exact ship-gate predicate. The 5 prerequisites in §1 must all hold; the 6 tiers in §2 are then the benchmark stack to be hit.
+- **`k_windows = 4` consecutive windows.** This is the smallest interval at which the time-series statistic `corr ≥ τ_corr` cannot be a flake under realistic distribution shift between calibration and serving. Fewer windows → drift-vulnerable. More windows → diminishing returns.
+
+- **`ε_drift = 0.05` Panel B agreement.** Means the predictor cannot have memorized Panel A. If two independently-encoded panels reach the same Pass/Fail verdict within 5%, the predictor learned about the domain, not about the panel encoders.
+
+- **`τ_brier = 0.05`, `τ_ece = 0.05`.** Standard calibration cutoffs below which probabilistic outputs are "well-calibrated" in the strict-proper-scoring-rule sense. Calibration matters because the predictor's `Pass with 0.93 confidence` must mean 93% of those cases are actually Pass in reality.
+
+- **`δ_repeat = 0.05` mistake-repeat rate.** After observing a mistake on `(cell, pattern)`, the next presentation of the same `(cell, pattern)` should produce the correct verdict at least 95% of the time. Otherwise the loop is not actually closing.
+
+- **`ε_unrelated = 0.02` unrelated-cell perturbation.** When the predictor learns from a mistake, accuracy on unrelated cells should not drop by more than 2%. Larger drops indicate catastrophic forgetting.
+
+- **`τ_MI = 0.95 bits` panel-sufficiency MI.** The mutual information between the slot-decomposable panel and the oracle outcome must exceed 0.95 bits — i.e., the panel carries enough information that *some* predictor reading it could in principle determine the oracle outcome at ≥ 0.95 accuracy.
+
+- **`τ_sc = 0.97` oracle self-consistency.** The oracle must agree with itself 97% of the time when run on the same artifact twice. Below this, `τ_corr = 0.95` is mathematically unreachable (you cannot correlate with the oracle better than the oracle correlates with itself).
+
+None of these are operator preference. They derive from the cost asymmetry between false-positive Pass (production regression) and false-negative Pass (wasted review of working patches), bounded by the oracle's intrinsic noise floor. For a different domain with different cost asymmetry (e.g., medical diagnosis with much higher false-positive cost), `τ_corr` would be set higher (perhaps 0.99) with correspondingly higher `τ_sc` required.
 
 ---
 
-## 4. What "All Benchmarks Hit in Domain `D`" Means
+## Part VI — State-Change Levers Per Tier (The State Is Not The Constraint)
+
+**The current state of any project is the starting point, not the goal and not the constraint.** If reaching the numerical targets requires expanding the test corpus, adding instrument slots, scaling the substrate, refining the oracle harness, or any other change to current state — that is the acceptable path. Only Tier-4 doctrine invariants are immovable.
+
+### What CAN change to reach the targets
+
+| Lever | Examples | Tier(s) it addresses |
+|---|---|---|
+| **Corpus expansion** | Code: 300×8 SWE-bench Lite → SWE-bench Verified (~500) → SWE-bench Full (2,294) → CommitPack (4TB) → BugsInPy. Medical: TCGA expansion → CAMELYON → tissue-type matrix expansion. Theorem proving: mathlib → coq-contribs → multi-system corpus. | Tier-1 statistical power; Tier-2 per-cell support |
+| **Panel expansion** | Add instrument slots; in-slot encoder replacement; new domain-specific slots | Tier-5 panel sufficiency; Tier-1 ceiling |
+| **Architectural refinement** | Iterative predictor head; multi-chunk aggregation; causal embedders; pathway exploration | Tier-1 ceiling; Tier-2 calibration |
+| **Calibration refinement** | Per-slot OOD; conformal recalibration; isotonic/Platt per-cell | Tier-2; Tier-3 |
+| **Oracle refinement** | Replica-mode voting; per-instance flakiness modeling; per-test isolation | Tier-1 ceiling against oracle self-consistency floor |
+| **Threshold revision** | `τ_corr` raised (e.g., 0.95 → 0.97) if oracle self-consistency proves higher; or admit irreducible-noise carve-out for flaky cells | Tier-1 if substrate measurement justifies |
+| **Substrate refinement** | Incremental forward cache; v2 cache rebuild; production-host migration | Tier-5 substrate quality |
+
+### What CANNOT change (Tier-4 doctrine invariants — fences, not levers)
+
+- Slot identity preservation
+- Anti-compensation invariant
+- Binary contract (Pass/Fail only; ambiguous heads frozen)
+- No inner generator (compile guard)
+- Domain-pinned durable root
+- Slot-preserving architecture (no flat-vector concat)
+- Leakage policy (target labels not as live inputs)
+- ΔΞ.target_collapse = exactly 0
+
+These are not levers because changing them would invalidate the entire architectural claim. Reaching the targets via Tier-4 violation = the system has not worked; it has cheated.
+
+### Specific corpus-scale options (Tier-1 / Tier-2 lever, with concrete code-verification numbers)
+
+If statistical power on the current corpus is the bottleneck (Pearson CI width too loose, per-cell support insufficient, or distribution coverage too narrow), these are the known corpus-scale levers in order of cost-effectiveness for the ME-JEPA-Code Python case:
+
+| Corpus | Instances | Rows (× 8 mutations) | Holdout (~10%) | Pearson 95% CI at r=0.95 | Cost estimate |
+|---|---|---|---|---|---|
+| **Current: SWE-bench Lite** | 300 | 2,400 | 240 | ±0.062 | shipped baseline |
+| **+ SWE-bench Verified** | +500 | +4,000 | +400 | ±0.036 (combined ~640) | ~3–5 days compute |
+| **+ SWE-bench Full** | +2,294 | +18,352 | +1,835 | ±0.014 (combined ~2,075) | ~10–14 days compute |
+| **+ BugsInPy** | +493 | +3,944 | +394 | covers real-Python bugs (different oracle contract) | ~3–5 days + oracle-adapter work |
+| **+ TSSB-3M** | +3M single-statement bugs | +24M | impractical for full holdout | training corpus only | weeks; training only |
+| **+ CommitPack** | 4TB of paired state | ~742M pairs | training corpus only | training corpus only | months; training only |
+
+**Minimum corpus expansion for statistically-tight Pearson CI at the 0.95 target:**
+
+- For `±0.01` confidence interval at r=0.95: ~1,100 holdout rows needed → 4-5× current corpus (Lite + Verified + Full).
+- For `±0.025` confidence interval (operational tolerance): ~440 holdout rows → 2× corpus (Lite + Verified).
+- For `±0.05` confidence interval (loose but defensible): current 240 holdout sufficient.
+
+**Decision rule for corpus expansion:** if 4-window stability fails because per-window variance exceeds `0.03` at r ≥ 0.95, expand to the next corpus tier. If per-cell support drops below 50 in mixed cells, expand to Full.
+
+### State-change is not threshold-change
+
+Lowering `τ_corr` from `0.95` to `0.85` because the current corpus can't support `0.95` is **not** a state-change — it's a doctrine change, and a regression. The correct response to a corpus limitation is **corpus expansion**, not threshold relaxation. The only legitimate threshold revision is **upward** (e.g., `0.95 → 0.97` if oracle self-consistency measurement justifies it).
+
+---
+
+## Part VII — What "All Benchmarks Hit in Domain `D`" Means
 
 This is the actual answer to "what does success look like." The events are sequential and binding.
 
-### 4.1 The activation moment
+### The activation moment
 
 ```
-=== Ship-Gate FSV — All Targets Met (Domain: D) ===
+=== Ship-Gate Final-State Verification — All Targets Met (Domain: D) ===
 
 Tier 1 (ship gate):
   prediction_oracle_correlation:      ≥ τ_corr(D)         ✓
@@ -276,18 +345,18 @@ Tier 6 (sensor gating; for any add/replace):
 === Human review of AI-generated artifacts in D: STATISTICALLY UNJUSTIFIED ===
 ```
 
-### 4.2 The 8 sequential consequences
+### The 8 sequential consequences
 
 1. **Ship-gate status reports `green`** per-cell across all `(intervention_class × subdomain)` cells in `D`.
-2. **Promotion approval engages** operator first-promotion review — the one human-in-the-loop step left.
+2. **Promotion approval engages** operator first-promotion review — the one human-in-the-loop step left. Per-tier oversight: any first-time promotion of a verifier checkpoint requires operator approval; subsequent promotions on the same model line can be auto-promoted once mistake-loop convergence is sustained.
 3. **After operator approval, the active-pointer flips** and the trained checkpoint becomes the serving predictor in `D`.
-4. **Prediction surface begins returning `Verdict::Pass | Fail`** with calibrated confidence on every artifact in `D`. Named failure mode on `Fail`, closest exemplars on both. Latency bounded by the predictor's forward pass.
+4. **Prediction surface begins returning `Verdict::Pass | Fail`** with calibrated confidence on every artifact in `D`. Named failure mode on `Fail`, closest exemplars on both. Latency bounded by the predictor's forward pass (typically milliseconds on a single GPU).
 5. **Capture hooks record every reality-outcome event** into the verification log. Any disagreement between predictor and oracle still materializes as a mistake row — the loop never sleeps.
 6. **The mistake loop continues consuming** new mistake rows. The predictor's online head corrects same-context future predictions. Convergence target `mistake_repeat_rate ≤ δ_repeat` is monitored against the rolling window.
 7. **Per-cell drift guardrails engage.** Any cell whose correlation drops below `τ_corr − 0.02` triggers retraining; below `τ_corr − 0.05` triggers automatic rollback to the previous active pointer.
 8. **The post-ship creativity engine begins** in `D`: novelty oracle, mistake-driven sensor demand, retirement audit, domain-routed sparse panel, episodic-to-semantic consolidation. Autonomous bounded growth into the corpus's intrinsic dimensionality.
 
-### 4.3 What changes for users of the system in domain `D`
+### What changes for users of the system in domain `D`
 
 | Before | After |
 |---|---|
@@ -298,7 +367,7 @@ Tier 6 (sensor gating; for any add/replace):
 | Verification cost grows linearly with agent throughput | Verification cost is per-artifact constant (predictor latency) |
 | Manual triage of which change broke what | Predictor's mistake log directly identifies the cell + named failure mode |
 
-### 4.4 What does NOT change
+### What does NOT change
 
 - **The product is still binary in `D`.** Pass/Fail is the surface. Explanation surfaces (named failure mode, closest exemplar) are labels on Pass/Fail, not separate predictions. Ambiguous heads remain out of scope.
 - **Tier-4 invariants are still continuously enforced.** Slot identity, no flat-vector concat, no inner generator, durable storage root — none of these unlock or relax post-ship. They tighten.
@@ -307,39 +376,389 @@ Tier 6 (sensor gating; for any add/replace):
 
 ---
 
-## 5. Worked Instantiation: ME-JEPA-Code on Python (the current ContextGraph project)
+## Part VIII — What This Framework Is NOT
 
-| Symbol | Concrete value |
-|---|---|
-| `D` | Python code correctness against the SWE-bench Lite test suite |
-| `Artifact_D` | Candidate code patch (unified diff) |
-| `Oracle_D` | `swebench.harness.run_evaluation` parsed `FAIL_TO_PASS` / `PASS_TO_PASS` / `FAIL_TO_FAIL` / `PASS_TO_FAIL` per `swebench/harness/grading.py` |
-| `Panel_D` | 15-slot frozen instrument panel: `E_AST 384 + E_CFG 256 + E_DataFlow 256 + E_TypeGraph 256 + E_Test 384 + E_Trace 512 + E_Diff 256 + E_Witness 256 + E_Oracle 128 + E_Problem 1024 + E_CommitMsg 384 + E_StaticAnalysis 256 + E_Runtime 256 + E_Reasoning 384 + Scalars 128`, **array of per-sensor vectors**, never flat 5,120-d |
-| `Corpus_D` | 300 instances × 8 mutation categories = 2,400 rows on SWE-bench Lite (12 repos: django, sympy, matplotlib, sklearn, pytest, sphinx, astropy, requests, +4 more); split 240 holdout / 240 calibration / 1,920 train via `InstanceAtomic` |
-| `intervention_class` axis | 8 mutation operators (`known_good`, `subtle_flip`, `off_by_one`, `swap_variable`, `delete_test_call`, `wrong_file`, `over_engineer`, `compile_error`) |
-| `subdomain` axis | Programming language (currently Python only; other languages deferred to post-ship) |
-| `τ_corr(D)` | **0.95** |
-| `k_windows` | **4** |
-| `ε_drift` | **0.05** |
-| `δ_repeat` | **0.05** |
-| `ε_unrelated` | **0.02** |
-| `τ_MI` | **0.95 bits** (#734, not yet measured) |
-| `τ_sc` | **0.97** (#723, not yet measured) |
-| `N_min` | **50** |
-| `Panel_B` | tree-sitter → CodeBERT, e5-large → bge-large-en-v1.5, Qodo-Embed-1 → Voyage-code-2, attention CFG → Pythia program-graph, def-use → joern, tree-sitter type → pytype JSON (deterministic slots shared) |
-| Durable root | `/zfs/archive/contextgraph/...` (aiwonder ZFS) |
-
-**Current measurement (2026-05-24).** Tier-1 #1 raw Pearson `0.4843192995` on holdout — gap to ship `0.4657`. Tier-2 Brier `0.0924`, ECE `0.0240`. Tier-1 #2/#3/#4 blocked behind Panel B encoder training (#405). Tier-5 #734 and #723 cheap probes not yet executed. Latest ship-gate FSV: `/zfs/archive/contextgraph/fsv/swebench-300x8-ship-gate-fsv/run-20260521T132308Z/`.
-
-**Activation event for Python.** When the §4.1 banner emits TRUE, the 8 consequences in §4.2 execute: human review of AI-generated Python patches becomes statistically unjustified, and the same predicate template begins instantiation for the next domain.
+- **Not a generative model.** No LLM inside the predictor's serving loop (`feature = "llm"` triggers `compile_error!` at the MCP server boundary). The system predicts whether an externally-generated artifact works; it does not generate the artifact.
+- **Not a code reviewer / artifact reviewer in the human-judgment sense.** It does not assess style, maintainability, idiomaticity, taste, or "is this a good thing." Those are ambiguous-head questions and explicitly out of scope.
+- **Not a benchmark harness.** The corpus is the training/eval substrate, not the product. The product is the predictor that runs in milliseconds on any candidate artifact.
+- **Not a research project.** Every architectural decision is gated by the numerical predicate. If it does not move at least one of the Tier-1/2/3/5/6 numbers, or preserve a Tier-4 invariant, it must justify its existence on those grounds or be rejected.
+- **Not multi-domain at ship-gate time.** Each domain ships independently against its own oracle. The first domain (e.g. Python on SWE-bench Lite) ships first; other languages, other domains follow with their own instantiations.
 
 ---
 
-## 6. Worked Instantiation Sketches — Other Eligible Domains
+## Part IX — Verification Protocol (FSV — Final-State Verification)
+
+This is the binding verification contract for every task that contributes evidence to the predicate. Universal protocol:
+
+> *A return value is a claim. The Source of Truth is the verdict. Read the verdict.*
+
+### The 4 questions
+
+Before declaring any implementation complete, answer all four:
+
+1. **What state changed?** File, database column-family row, metric, queue item, report, or external system record.
+2. **Where does that state live?** Exact path, database name and key, metric name, or external identifier.
+3. **How is it read back independently?** Separate database open, file read, checksum, source command, or equivalent.
+4. **What exact value is expected?** Literal value, schema, count delta, hash, or bounded range.
+
+If any answer is unknown, the feature is not ready to call done.
+
+### Trigger → Process → Outcome
+
+Every FSV-able feature has this shape:
+
+```
+[Trigger]   ─►   [Process]   ─►   [Outcome]
+ observable      measurable        verifiable at source-of-truth
+```
+
+Document these before implementation:
+- **Trigger:** API call, CLI command, scheduler tick, hook event, file event, or operator action.
+- **Process:** Code path and functions that execute.
+- **Outcome:** Physical end state to read back, including exact path, database column, key, and expected value.
+
+### Hard rules
+
+1. No mocks for completion gates.
+2. No fallbacks that hide required-output failure.
+3. No verifier weakening, ignored tests, or silent bypasses.
+4. Tests must fail when the feature is broken.
+5. Missing infrastructure (CFs, files, models, env vars, malformed inputs) fail closed with structured `SCREAMING_SNAKE_CASE` errors.
+6. Assume the task is wrong until live files, symbols, and infrastructure names prove it is current.
+7. Prefer the smallest implementation that satisfies the requirement.
+
+### Synthetic data properties
+
+Synthetic FSV input is allowed when it is deterministic, distinguishable, representative, boundary-rich, privacy-safe, and cleanup-tagged. Mocked subsystems are not acceptable completion evidence.
+
+### Boundary cases (cover at least 3 per code path)
+
+1. Empty or missing input
+2. Single item
+3. Maximum allowed
+4. Maximum plus one
+5. Minimum allowed
+6. Minimum minus one
+7. Wrong type or malformed input
+8. Unicode, control-byte, or very long string edges
+9. Duplicate or replayed event
+10. Out-of-order event
+11. Concurrent writers or sessions
+12. Authorization or tenant-scope variants
+13. Time edges: skew, negative timestamp, DST, leap second, month boundary
+14. Resource exhaustion: full disk, OOM, pool exhaustion, rate limit
+
+Each boundary case needs: before state, trigger/action, after state, expected value, actual value, pass/fail.
+
+### Required FSV evidence per task
+
+1. **Build evidence:** compile output without warnings.
+2. **Test evidence:** all tests pass, zero failed, zero ignored without justification.
+3. **Lint evidence:** static-analysis output clean.
+4. **Source-of-truth readback artifact:** production FSV must be written to the domain's pinned durable root, with a pass field, exact source-of-truth path, happy path, boundary cases, and physical artifact hashes or counts.
+5. **Independent verification** for column-family / database writes: flush/drop/reopen through the production opener or an equivalent separate handle, then decode the same row back.
+
+Minimum SoT evidence shape:
+
+```json
+{
+  "task": "TASK-EXAMPLE-NNN",
+  "sourceOfTruth": "<CF/key or absolute file path>",
+  "trigger": "<exact command or action>",
+  "expected": "<expected value>",
+  "actual": "<actual value read independently>",
+  "cases": [],
+  "allPassed": true
+}
+```
+
+### Failure modes that mean NOT done
+
+Green tests are not sufficient if any of these are true:
+- The test checks a constant instead of exercising the implementation.
+- The tested branch is inactive.
+- A column-family row is written but never flushed or reopened.
+- The test uses a different opener or serializer than production.
+- Missing values are hidden with defaults.
+- Async producer tasks are spawned but not joined before readback.
+- Evidence proves existence only, not field-level correctness.
+
+### Evidence that cannot be skipped
+
+The evidence must include:
+- A true pass verdict in the artifact (`allPassed` or local equivalent).
+- Counts before/after for any column-family the task writes.
+- Field-level readback, not merely "row exists".
+- Physical file/database artifact proof.
+- Boundary-case detail strings naming the invariant tested.
+- A clear source-of-truth path that a fresh agent can read without trusting the claim.
+
+Anything less is not FSV; it is a claim waiting to be verified.
+
+---
+
+## Part X — Predictor Architecture (Slot-Preserving Late-Fusion)
+
+The predictor that achieves the Tier-1 numbers has a specific architecture. The architecture is **load-bearing** for the Tier-4 invariants — alternative architectures that flatten the panel into a single vector cannot satisfy the slot-identity invariant.
+
+### Three architectural primitives back the binary contract
+
+1. **Labeling layer.** Raw slot violations + cross-embedder correlations → 4-level hierarchy of named failure modes. Grounded by closest historical exemplar.
+2. **Online mistake loop.** Disagreement with reality materializes as a mistake-log row; the trainer consumes through exact-panel online-head state.
+3. **Cross-panel triangulation.** Panel B (non-overlapping instruments) re-scores every gate-relevant artifact. The Tier-1 #1 threshold on Panel A counts only when Panel B agrees within `ε_drift`.
+
+### The Panel — array of per-embedder vectors
+
+The Panel is **an array of N per-embedder/per-instrument vectors**, one per slot, each in its own embedder's space. The array IS the constellation, not a fused embedding.
+
+**The locked-in rule:**
+
+1. Each slot's vector lives in its own embedder's space.
+2. Same-embedder cosines valid; cross-embedder dim compare forbidden (`MEJEPA_INFER_DIM_MISMATCH` typed error fails the predictor closed).
+3. Whole arrays can be compared array-vs-array (per-slot cosine map, strict-conjunction gate, per-pair matrix with diagonal cosines).
+4. Cross-slot relationships are **scalar pairwise metrics** (MI, correlation), not vector dim compares.
+5. The contiguous byte-layout dimension (e.g., 5,120 f32 for the Python panel) is **byte-layout only**. Forbidden: single linear/conv/attention over packed buffer; flat residual; any operation where a strong slot compensates for a weak slot.
+
+### Predictor pipeline (data flow)
+
+```
+[External: operator / AI agent edit + tool calls + test outcomes]
+                 │
+                 ▼
+       Capture hooks (PostToolUse, Stop, observe ticker)
+                 │  JSONL
+                 ▼
+   <durable-root>/runtime/shift-log.jsonl
+                 │  (tail)
+                 ▼
+      Shift subscriber (tokio task tailing shift log)
+                 │
+                 ▼
+     N embedders → M active content slots
+                 │
+                 ▼
+      N frozen instruments → array of N per-embedder vectors (teleological constellation)
+        Each slot in its own embedder's space; array IS the constellation,
+        NOT a flat fused embedding; byte-layout dim is transport-only.
+                 │  Panel builder validates: dim + finite + no double-fill
+                 ▼
+      Durable panel column-families + watermark
+                 │
+                 ▼
+      Live label compiler → live-input-safe slot/pair/group labels per chunk
+      Runtime ability resolver → ability context with all active memberships preserved
+                 │
+                 ▼
+      Predictor.forward(panel, prediction-label-context)
+        + per-slot input encoders + late fusion + per-slot output decoders
+        + split-conformal interval + OOD gate + teleological-constellation guard
+        + cold-cell metric (Abstain if n_supporting < N_min)
+        + multi-head contradiction gate
+        + constellation intelligence heads
+        + matched fingerprint + closest exemplars HNSW
+                 │
+                 ▼
+      Reality prediction (binary verdict + named failure mode + closest exemplars + slot violations)
+                 │
+                 ▼
+      Durable live-predictions column-family
+                 │
+       ┌─────────┴───────────┐
+       ▼                     ▼
+   AI agent             Verification capture (PostToolUse hook
+   (predictor MCP       → prediction-verifications column-family)
+    tool calls)
+                              │
+                              ▼  Confirmed / Refuted
+                       Active learning queue + replay buffer
+                              │
+                              ▼  Mistake loop
+                       Mistake log + online-head state
+                              │
+                              ▼
+                       Trainer (UTML L_step = ΔP·ΔK·ΔΩ·ΔΞ)
+                       + EWC++ Fisher + Continual Backprop + Inverse-map head
+                              │
+                              ▼
+                       Train certificates
+                              │
+                              ▼
+                       Heal scheduler (drift, per-cell convergence, promote / rollback)
+                              │
+                              ▼
+                       Model promotions + active pointers
+```
+
+### Predictor heads (per Q-question structure)
+
+For the Python instantiation, the predictor exposes a 3-binary + 1-explanation structure:
+
+| Head | What it predicts | Reality that renders verdict |
+|---|---|---|
+| Q1 (claim-exists) | Did the AI's claim physically land in bytes/AST? | Bytes on disk + AST diff after action |
+| **Q2 (oracle-passes)** | **Does the artifact pass the deterministic oracle? (PRIMARY)** | **Docker oracle / proof checker / wet-lab assay / etc.** |
+| Q5 (shift-event-occurred) | Per predicted side effect: did the corresponding shift-log event occur? | Durable shift log on production root |
+| Q3 (explanation only) | Named failure mode + closest exemplar on Fail | Not a separate prediction — a label on Q2 |
+
+Q4 ambiguous heads (perf, accuracy, cost, taste, reasoning class) are **frozen out** — they have no free binary form against reality.
+
+### Verdict assembly
+
+```
+enum Verdict { Pass, Fail, OutOfDistribution, Abstain, GuardRejected }
+```
+
+**Product surface:** only `Pass | Fail` ships to the caller. Internal `OutOfDistribution`/`Abstain`/`GuardRejected` are markers that the predictor lacks confidence on `(cell × named_failure_mode)`. They MUST be projected to `Pass | Fail` at the boundary (closest-exemplar majority outcome). The projected verdict is subject to ground-truth verification + mistake-loop update.
+
+### Anti-compensation guard
+
+Corrupted / missing / stale / dimension-shifted slots, contradictory pair relationships, and temporal jumps cannot be accepted through aggregate evidence even when a flat normalized score would pass. The predictor fails closed on any per-slot violation; one bad slot cannot be hidden by aggregate distance.
+
+### Cross-panel triangulation (the Goodhart guard)
+
+Panel A is both training substrate AND the centroid set the guard evaluates against. Encoder-matched → Tier-1 #1 on Panel A alone could mean the predictor learned the panel.
+
+**Panel B instrument map (non-overlapping):** Only learned encoder slots swap between Panel A and Panel B; deterministic slots are shared. Cross-encoder examples:
+- AST: tree-sitter (Panel A) → CodeBERT (Panel B)
+- Code-semantic: Qodo-Embed (Panel A) → Voyage-code (Panel B)
+- Text: e5-large (Panel A) → bge-large (Panel B)
+
+**Triangulation procedure:**
+
+1. Every gate-relevant prediction scored on Panel A AND Panel B.
+2. Both go to cross-panel agreement column-family keyed by `(prediction_id, panel_pair_id)`.
+3. **Agreement metric:** `cross_panel_oracle_correlation = corr(verdict_a, oracle) AND corr(verdict_b, oracle)` — both must clear `τ_corr(D)`.
+4. **Drift metric:** `|corr_a − corr_b| ≤ ε_drift` for ship eligibility.
+5. **Fail-closed:** Panel A ≥ τ_corr AND Panel B < (τ_corr − 0.10) → `CROSS_PANEL_GOODHART_DETECTED`.
+
+**Cost.** Panel B requires loading 5 new encoders (for the Python instantiation). VRAM ~12 GB during evaluation only; never resident during inference (Tier-4 invariant). Panel B worker reads live predictions periodically and writes Panel B observations.
+
+### Failure-mode labeling hierarchy (the meaning layer)
+
+4-level hierarchy turns raw numerical evidence into named rules. Level 0 (deterministic compiler) and Level 1/2/3 (hierarchical naming):
+
+| Layer | Source | Output |
+|---|---|---|
+| Level 0 deterministic compiler | Per-chunk auto-label script (no inner LLM) | Per-chunk labels + accepted label registry + code-state constellations |
+| Level 1/2/3 hierarchy | Failure-mode-hierarchy module + skill-corpus materialization | Hierarchy groups + skills + constellations + named predictions |
+| Skill substrate | Skill-sequence discovery + chunk-skill membership | Named skills + memberships + reverse rows |
+| Runtime resolver | Ability-resolver module | Ability context, ordered higher-ability IDs into prediction-label-context |
+
+**Leakage policy.** Target-side labels (oracle / test outcomes / Docker labels) are marked `leakage_policy: target_side_only`. Supervision / reward inputs only — **never** live predictor inputs.
+
+### Training (UTML — Universal Training Meta-Loss)
+
+`L_step = ΔP × ΔK × ΔΩ × ΔΞ`:
+
+| Term | What it measures |
+|---|---|
+| `ΔP` | Predictor improvement |
+| `ΔK` | Catastrophic-forgetting violation (Fisher diagonal) |
+| `ΔΩ` | Plasticity (continual backprop) |
+| `ΔΞ` | Structural-collapse safety margin (frozen-target invariant) |
+
+The mistake loop (Tier 3) consumes mistake rows through replay buffer + online-head state with exact-panel-key isolation. Per-fingerprint EWC + continual-backprop preserve per-fingerprint catalog stability.
+
+### Heal scheduler
+
+Reads drift signals, decides:
+- **Retrain** — append new training step
+- **Promote** — flip active pointer (operator-approval-gated for first promotion + catastrophic class)
+- **Rollback** — revert active pointer
+- **Pause** — pause predictions
+- **Distill** — distill from champion to smaller learner
+
+Per-cell convergence driver tracks per-cell ship-gate status. Mixed oracle cells use `prediction_oracle_correlation`; zero-variance all-pass/all-fail cells use the replacement contract (target-class recall + actual-class confidence + Brier/ECE) because Pearson is undefined there.
+
+### Adversarial defenses
+
+| Defense | Purpose |
+|---|---|
+| Negative-action ablation falsifier | Confirms the predictor is using real features, not constants |
+| Multi-head contradiction | High-confidence Pass + high-severity Fail signal → `MULTI_HEAD_CONTRADICTION` abstain |
+| Constellation disagreement pressure | Slot-pair consensus + contradiction + redundancy + novelty + blind-spot detection |
+| OOD gate floor | Per-slot OOD residuals; strict-conjunction policy (aggregate never overrides slot violation) |
+| Conformal interval floor | Per-head conformal predictor with split-α calibration |
+| Adversarial-embedder-injection mitigation | Refuses hot-swapped embedders without freeze certificate |
+| Secret redaction | Pre-publication scan of all artifacts |
+| Cross-language label gating | Prevents Python labels from polluting other-language cells |
+| Adversarial corpus | Deliberate adversarial fingerprints kept in evaluation set |
+
+---
+
+## Part XI — Instantiation Template (Adapting the Predicate to Any Domain)
+
+To apply the predicate to a new domain `D`, the operator fills in this table:
+
+| Symbol | Meaning | Worked example (ME-JEPA-Code Python) |
+|---|---|---|
+| `D` | Domain name | "Python code correctness against test suite" |
+| `Artifact_D` | What gets predicted | candidate code patch (unified diff) |
+| `Oracle_D` | Deterministic ground-truth function | `swebench.harness.run_evaluation` (Docker), parsed FAIL_TO_PASS / PASS_TO_PASS / FAIL_TO_FAIL / PASS_TO_FAIL semantics |
+| `Panel_D` | Slot-decomposable observation function | 15 frozen instruments → 15-vector array (E_AST 384 + E_CFG 256 + E_DataFlow 256 + E_TypeGraph 256 + E_Test 384 + E_Trace 512 + E_Diff 256 + E_Witness 256 + E_Oracle 128 + E_Problem 1024 + E_CommitMsg 384 + E_StaticAnalysis 256 + E_Runtime 256 + E_Reasoning 384 + Scalars 128); array of per-sensor vectors, NEVER flat 5,120-d |
+| `Corpus_D` | Representative `(artifact, label)` pairs | 300 instances × 8 mutation categories = 2,400 rows on SWE-bench Lite; split 240 holdout / 240 calibration / 1,920 train via `InstanceAtomic` mode |
+| `intervention_class` axis | Categories of perturbation/situation | 8 mutation operators: `known_good`, `subtle_flip`, `off_by_one`, `swap_variable`, `delete_test_call`, `wrong_file`, `over_engineer`, `compile_error` |
+| `subdomain` axis | Stratification within the domain | Programming language (currently Python only; other languages deferred to post-ship) |
+| `τ_corr(D)` | Cost-asymmetry floor bounded by oracle self-consistency | **0.95** |
+| `k_windows` | Rolling-window stability count | **4** |
+| `ε_drift` | Panel A vs Panel B correlation drift tolerance | **0.05** |
+| `τ_brier(D)` | Mixed-cell Brier ceiling | **0.05** |
+| `τ_ece(D)` | Expected calibration error ceiling | **0.05** |
+| `δ_repeat` | Mistake-repeat-rate ceiling | **0.05** |
+| `ε_unrelated` | Unrelated-cell perturbation tolerance | **0.02** |
+| `τ_MI` | Panel sufficiency MI floor | **0.95 bits** |
+| `τ_sc` | Oracle self-consistency floor | **0.97** |
+| `N_min` | Per-cell support floor (else Abstain) | **50** |
+| `Panel_B` | Disjoint-encoder Panel B for cross-panel triangulation | tree-sitter → CodeBERT; e5-large → bge-large; Qodo-Embed-1 → Voyage-code-2; attention CFG → Pythia program-graph; def-use → joern; tree-sitter type → pytype JSON (deterministic slots shared) |
+| Durable root | Pinned production storage path | `/zfs/archive/contextgraph/...` (specific to this project) |
+
+Once filled, the universal formula in Part II instantiates to `D`'s exact ship-gate predicate. The 5 prerequisites in Part III must all hold; the 6 tiers in Part IV are then the benchmark stack to be hit.
+
+---
+
+## Part XII — Worked Instantiation: ME-JEPA-Code on Python (Current Project State)
+
+**Current measurement (2026-05-24).**
+
+| Metric | Target | Latest measurement |
+|---|---|---|
+| `prediction_oracle_correlation` (raw Pearson, holdout) | ≥ 0.95 stable × 4 rolling windows × all Python mutation cells | `0.4843192995` |
+| Brier (aggregate) | ≤ 0.05 | `0.0923729688` |
+| ECE (aggregate) | ≤ 0.05 | `0.0240316074` ✓ |
+| Cross-panel `corr_B` (Panel B) | ≥ 0.95 with `|corr_a − corr_b| ≤ 0.05` | Not yet measured |
+| `mistake_repeat_rate` (rolling 100-mistake window) | ≤ 0.05 | Storage/MCP shipped; full convergence measurement blocked behind trainer + telemetry repairs |
+
+**Honest gap to ship:** `0.95 − 0.4843 = 0.4657` against raw Pearson.
+
+**Tier 5 substrate probes (not yet measured — cheapest highest-leverage tests in the project):**
+- `I(panel; oracle_outcome)` ≥ 0.95 bits — if below, panel is provably underpowered; no further model work moves Tier-1 #1 without state change (corpus/panel expansion). Estimated cost ~3-5 days of compute.
+- `oracle_self_consistency` ≥ 0.97 — if below, Tier-1 #1 is mathematically unreachable at 0.95; either raise oracle replica voting or revise `τ_corr` downward to floor minus epsilon. Estimated cost ~2 hours of Docker oracle re-runs.
+
+Both probes have the property that they can falsify Tier 1 in advance of any further model work. Running them before more model investment is mandatory.
+
+**Per-cell weak cells today:** `delete_test_call`, `off_by_one`, `subtle_flip`. `delete_test_call` is corpus-starved (zero calibration-split failures) — addressed by an active regeneration plan (1,131 deterministic candidates awaiting Docker oracle batch).
+
+**Activation event for Python.** When the activation banner in Part VII emits TRUE, the 8 consequences execute: human review of AI-generated Python patches becomes statistically unjustified, and the same predicate template begins instantiation for the next eligible domain.
+
+**Critical path to ship.** The ordered sequence required to move Tier-1 #1 from `0.4843` to `0.95`:
+
+1. Unified real training path with public trainer contract; production checkpoint manifest required fail-closed.
+2. Inter-embedder distinctness gate passes; v2 static AST cache rebuild with 9 active slots (`e1, e6, e7, e8, e9, e10, e12, e13, e14`); retired temporal slots stay retired for static AST.
+3. Per-cell weak-cell corpus regeneration (e.g., `delete_test_call` Docker oracle batch over 1,131 deterministic candidates → rebuild AST → labels).
+4. Per-slot OOD aggregation; slot-preserving panel projections (anti-compensation invariant repair).
+5. Replace any rank-lift Goodhart metric with raw Pearson + isotonic/Platt calibration.
+6. Eliminate hardcoded/no-op telemetry, pseudo-cert confidence, dead public training surfaces.
+7. Manual full-system FSV/hardening gate; auto-FSV retirement; heal-drill truthfulness; geometry-label bakeoff.
+8. (Parallel post-substrate) Causal-embedder track: auto-labeler extension + in-slot causal embedder replacement + low-signal embedder audit.
+9. (Blocked behind 1-8) Trajectory ECE / entropy aux loss / Panel B / multi-file holdout.
+
+---
+
+## Part XIII — Worked Instantiation Sketches (Other Eligible Domains)
 
 These are sketch-level illustrations of how the universal formula applies elsewhere. Each domain would require its own full instantiation document, corpus build, sensor panel, and FSV protocol before the predicate could be claimed.
 
-### 6.1 Medical pathology — binary malignancy classification
+### Medical pathology — binary malignancy classification
 
 | Symbol | Sketch |
 |---|---|
@@ -351,19 +770,19 @@ These are sketch-level illustrations of how the universal formula applies elsewh
 | `intervention_class × subdomain` | (tissue type) × (stain protocol / scanner vendor) |
 | Notes | E1 satisfied via biopsy follow-up subset. E5 oracle latency is biopsy turnaround — economically feasible at training scale. `τ_sc` bounded by inter-pathologist agreement (~0.85–0.90 typical) — `τ_corr(D)` set to that ceiling minus ε, with explicit carve-out. |
 
-### 6.2 Theorem proving — proof correctness verification
+### Theorem proving — proof correctness verification
 
 | Symbol | Sketch |
 |---|---|
 | `D` | Mathematical-theorem proof correctness in a decidable fragment (Lean / Coq / Isabelle) |
 | `Artifact_D` | Candidate proof term |
 | `Oracle_D` | Proof checker (deterministic, fast, near-perfect self-consistency) |
-| `Panel_D` | proof-term AST embedding, tactic-sequence embedding, lemma-dependency graph embedding, type-signature embedding, definitional-unfolding embedding, …  |
+| `Panel_D` | proof-term AST embedding, tactic-sequence embedding, lemma-dependency graph embedding, type-signature embedding, definitional-unfolding embedding, … |
 | `Corpus_D` | mathlib / coq-contribs / archive of formal proofs |
 | `intervention_class × subdomain` | (proof-class: induction / case-analysis / contradiction / construction / rewrite-only) × (mathematics subfield) |
 | Notes | All 5 prerequisites trivially satisfied. `τ_sc ≈ 1.0`. Highest-fidelity domain for this framework. |
 
-### 6.3 Drug-target binding affinity — binary "binds at threshold X" classification
+### Drug-target binding affinity — binary "binds at threshold X" classification
 
 | Symbol | Sketch |
 |---|---|
@@ -375,7 +794,7 @@ These are sketch-level illustrations of how the universal formula applies elsewh
 | `intervention_class × subdomain` | (chemotype scaffold class) × (protein family) |
 | Notes | E5 is the binding constraint — wet-lab is slow. Proxy oracle (HTS) is acceptable if `oracle_proxy_drift` is bounded and the carve-out is documented. |
 
-### 6.4 Weather nowcasting — binary precipitation-in-next-hour
+### Weather nowcasting — binary precipitation-in-next-hour
 
 | Symbol | Sketch |
 |---|---|
@@ -387,7 +806,7 @@ These are sketch-level illustrations of how the universal formula applies elsewh
 | `intervention_class × subdomain` | (regime: convective / stratiform / orographic / frontal) × (geographic region) |
 | Notes | `oracle_self_consistency` bounded by gauge measurement noise. Long-tail regimes (e.g., flash-flood convective) need explicit per-cell support. |
 
-### 6.5 Chess / Go / Poker — binary "this move is engine-best at depth N"
+### Chess / Go / Poker — binary "this move is engine-best at depth N"
 
 | Symbol | Sketch |
 |---|---|
@@ -398,9 +817,21 @@ These are sketch-level illustrations of how the universal formula applies elsewh
 | `Corpus_D` | historical positions stratified by phase + material balance |
 | Notes | Trivially eligible; `τ_sc` engine-determined. This domain is already nominally super-human; the framework here would discipline the verifier's calibration. |
 
+### Component manufacturing QC — binary pass/fail against test rig
+
+| Symbol | Sketch |
+|---|---|
+| `D` | Manufactured component passes QC test rig |
+| `Artifact_D` | Physical component + serial number |
+| `Oracle_D` | Test-rig pass/fail (deterministic; near-perfect self-consistency) |
+| `Panel_D` | dimensional measurements, surface-finish scan, X-ray internals, thermal imaging, weight/density, electrical resistance, … |
+| `Corpus_D` | production-line history with rig outcomes |
+| `intervention_class × subdomain` | (defect class: cosmetic / dimensional / electrical / thermal / latent) × (part SKU) |
+| Notes | Tier-3 mistake loop is fast (rig latency seconds-minutes). Cost asymmetry typically high → `τ_corr` often 0.99+. |
+
 ---
 
-## 7. Permanently Out of Scope
+## Part XIV — Permanently Out of Scope
 
 These categories cannot be benchmarked by the predicate. Claiming super-intelligence in them via this framework would be doctrine breach.
 
@@ -420,21 +851,21 @@ The framework deliberately does **not** attempt to answer these. Doing so would 
 
 ---
 
-## 8. The 5-Question Worthlessness Test (Universal)
+## Part XV — The 5-Question Worthlessness Test (Universal)
 
-Before filing any new issue, writing any new code, training any new sensor, or proposing any new architectural change *in any domain*, answer:
+Before filing any new task, writing any new code, training any new sensor, or proposing any new architectural change *in any domain*, answer:
 
 1. **Which Tier-1/2/3/5/6 number in which domain does this move?** Be specific. "Improves the predictor" is not an answer. "Increases per-cell Pearson on `<intervention_class>::<subdomain>` from `<x>` to `<y>` in domain `D`" is an answer.
 2. **By how much?** If expected delta < 0.005 on any target and work cost > 1 day, defer.
 3. **What's the falsification condition?** Under what measured outcome is this work classified as failed and rolled back?
 4. **What's the doctrine cost?** Does this preserve every Tier-4 invariant? If not, it does not ship.
-5. **What's the production execution path?** Specify the durable-root path, SHA-pinning, and manual SoT readback protocol.
+5. **What's the production execution path?** Specify the durable-root path, SHA-pinning, and manual source-of-truth readback protocol.
 
 If the work cannot answer (1) cleanly with a specific number it moves, **it is worthless by definition** and must be reconsidered or rejected. Activity is not the goal. Movement of the numbers in this document is the goal — in some domain, against some oracle, with every invariant intact.
 
 ---
 
-## 9. The Universal Definition of Super-Intelligence Used in This Project
+## Part XVI — The Universal Definition of Super-Intelligence
 
 > **Super-intelligence in domain `D` is the existence of a deterministic predictor `Predictor_D` over a slot-identity-preserved observation panel of `D`, whose binary verdicts correlate with the deterministic oracle of `D` above the cost-asymmetry floor (bounded by oracle self-consistency), stably across rolling windows, with cross-panel encoder triangulation confirming the predictor learned about `D` rather than about Panel A, with per-cell quality holding on every mathematically valid cell, with online mistake-loop convergence proving adaptive correction without unrelated-state perturbation, with every architectural-invariant fence intact at every moment, and with substrate-sufficiency probes (panel MI + oracle self-consistency + sensor distinctness) confirming the predicate is reachable on the current state.**
 
@@ -446,25 +877,50 @@ This definition is:
 - **Invariant-protected.** A pass that breaches Tier 4 is not a pass. Goodhart is structurally blocked.
 - **Adaptive.** The system that achieves it continues to adapt to its own mistakes after deployment — Tier 3 is not satisfied at one moment, it is satisfied as a continuous property.
 
-Anything that does not match this definition, in this project, is either a different goal or a confused goal. The first instantiation is ME-JEPA-Code on Python; the same predicate is the template for every subsequent domain.
+Anything that does not match this definition is either a different goal or a confused goal.
 
 ---
 
-## 10. Authority and Cross-References
+## Part XVII — The Behavioral Rules That Cross-Cut Every Implementation
 
-| Topic | Canonical doc |
-|---|---|
-| Universal predicate (this file) | `docs/BENCHMARKS_DEFINITION_AND_CONSEQUENCES.md` |
-| Python instantiation rationale | [`docs/futurebuild/specs/NORTH-STAR.md`](futurebuild/specs/NORTH-STAR.md) |
-| Python instantiation numbers | [`docs/futurebuild/specs/TARGET-METRICS.md`](futurebuild/specs/TARGET-METRICS.md) |
-| Verification protocol (FSV) | [`docs/futurebuild/specs/FSV-PROTOCOL.md`](futurebuild/specs/FSV-PROTOCOL.md) |
-| Project doctrine + Tier-4 invariants | [`CLAUDE.md`](../CLAUDE.md) |
-| Universal protocol | [`docs2/AICodingAgentSuperPrompt.md`](../docs2/AICodingAgentSuperPrompt.md) |
-| Python instantiation overview | [`docs/futurebuild/01_overview.md`](futurebuild/01_overview.md) |
-| Predictor pipeline (Python) | [`docs/futurebuild/05_predictor_pipeline.md`](futurebuild/05_predictor_pipeline.md) |
-| Current measurement history (Python) | [`docs/futurebuild/07_results_and_benchmarks.md`](futurebuild/07_results_and_benchmarks.md) |
-| Open work + critical path (Python) | [`docs/futurebuild/08_roadmap_and_open_work.md`](futurebuild/08_roadmap_and_open_work.md) |
+These rules apply continuously, in every implementation, in every domain. They are the operational counterpart of the Tier-4 doctrine invariants.
+
+1. **Do what the predicate asks; nothing more, nothing less.** Activity that does not move a number or preserve an invariant is worthless by definition.
+
+2. **NEVER create files unless absolutely necessary.** Prefer editing existing surfaces.
+
+3. **NEVER commit secrets, credentials, or `.env` files.** Any leaked credential must be rotated.
+
+4. **ALWAYS read a file before editing it.** Cold reads are doctrine.
+
+5. **Source-of-truth readback is the verdict, never the return value or the dashboard.** Vendor dashboards lag, double-count, drop events. Read the column-family directly.
+
+6. **No mocks gate completion.** An experiment is not "successful" because the agent reports success. It is successful when the source of truth shows the metric moved.
+
+7. **Bench-delta gate on every agent class change.** Material prompt / model / tool changes ship only after delta-tested against held-out evaluation set: non-regression on goal-relevant metrics; ≤ +5% cost-per-artifact.
+
+8. **Reflexion memory, not amnesia.** Every failed task leaves a structured post-mortem (channel, hypothesis, expected, actual, why-it-differed, retry-conditions) so the next attempt at a similar task inherits the lesson.
+
+9. **Fail closed on unknowns.** Missing infrastructure produces a structured `SCREAMING_SNAKE_CASE` error and halts the operation. Never silently fall back to defaults that hide failure.
+
+10. **Production durable state has a pinned root.** All writes go to the domain's production path. Forbidden roots (development machines, scratch dirs, mounted Windows drives) are blocked by CI lint.
+
+11. **No backwards compatibility shims in pre-production.** Wipe and rebuild on schema change rather than carrying migration code that may itself be wrong.
+
+12. **GENERIC-ONLY in the trained model.** Every trained primitive must generalize across every domain instance. You may reason task-specifically when attempting a specific instance; never bake task-specifics into the trained model.
+
+13. **No HTTP from action paths.** Tool gateways are the only network surface for agent action. Out-of-band fetches in action code paths are doctrine violations.
+
+14. **No destructive git in normal operation.** Force-push, hard reset, branch deletion, etc. require explicit operator authorization on each instance.
+
+15. **Frozen target adapters carry zero trainable parameters.** Enforced structurally via empty `parameters()` on the target adapter, not via convention.
+
+16. **Mistake-loop is the only permitted online weight-update path.** No other code path may update predictor weights at serving time.
+
+17. **Every architectural decision must trace to a number it moves or an invariant it preserves.** If neither, it does not ship.
 
 ---
 
-**End state per domain `D`.** When the universal formula in §0 evaluates `TRUE` for domain `D` with `D`'s instantiated thresholds (§3), the predictor replaces human review of artifacts in `D`, the activation moment in §4.1 fires, the 8 consequences in §4.2 execute, and the same predicate template begins instantiation for the next eligible domain. Until that moment in any domain, every action either moves a number in that domain, preserves a Tier-4 invariant (which is universal), or should be reconsidered.
+**End state per domain `D`.** When the universal formula in Part II evaluates `TRUE` for domain `D` with `D`'s instantiated thresholds (Part XI), the predictor replaces human review of artifacts in `D`, the activation moment in Part VII fires, the 8 consequences execute, and the same predicate template begins instantiation for the next eligible domain. Until that moment in any domain, every action either moves a number in that domain, preserves a Tier-4 invariant (which is universal), or should be reconsidered.
+
+This document is the complete specification. No external references are required to evaluate the predicate, build a verifier against it, or assess whether a claimed super-intelligence in some domain `D` is genuine. If a question about the framework cannot be answered from this document, the question is not in scope; if a claim about the framework cannot be checked against this document, the claim is not load-bearing.
