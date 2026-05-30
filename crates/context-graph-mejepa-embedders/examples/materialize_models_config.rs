@@ -64,6 +64,10 @@ fn main() -> ExampleResult<()> {
         "include_learner_state": include_learner_state,
     });
 
+    if include_learner_state {
+        require_learner_state_roots(&models_root)?;
+    }
+
     let (config, registrations) = build_config(&models_root, include_learner_state)?;
     config.validate()?;
     let config_text = toml::to_string_pretty(&config)?;
@@ -208,7 +212,10 @@ fn registration_from_spec(
 
 fn verify_model_identity(base_dir: &Path, identity: ModelIdentity) -> ExampleResult<()> {
     let path = base_dir.join(identity.config_file);
-    let value: Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+    let text = fs::read_to_string(&path)
+        .map_err(|err| format!("{} cannot be read: {err}", path.display()))?;
+    let value: Value = serde_json::from_str(&text)
+        .map_err(|err| format!("{} cannot be parsed as JSON: {err}", path.display()))?;
     if let Some(expected) = identity.model_type {
         let model_type = value
             .get("model_type")
@@ -272,6 +279,24 @@ fn parse_bool_env(name: &'static str) -> ExampleResult<bool> {
         },
         Err(std::env::VarError::NotPresent) => Ok(false),
         Err(err) => Err(format!("{name} is not valid Unicode: {err}").into()),
+    }
+}
+
+fn require_learner_state_roots(models_root: &Path) -> ExampleResult<()> {
+    let missing: Vec<String> = EmbedderId::learner_state()
+        .into_iter()
+        .map(|embedder| models_root.join(embedder.default_model_dir()))
+        .filter(|path| !path.is_dir())
+        .map(|path| path.display().to_string())
+        .collect();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "learner-state registration requested but model directories are absent: {}",
+            missing.join(", ")
+        )
+        .into())
     }
 }
 
