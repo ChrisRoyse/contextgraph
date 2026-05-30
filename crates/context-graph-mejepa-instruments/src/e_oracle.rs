@@ -23,6 +23,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Instrument, InstrumentError, InstrumentResult, InstrumentSlot};
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 /// Per-test outcome from a Python test runner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -124,7 +128,7 @@ pub struct OracleVerdict {
     pub exception: Option<ExceptionClass>,
     /// True when the oracle has not run yet and the slot is intentionally
     /// unavailable. This is distinct from observed Skip/Error outcomes.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub evidence_unavailable: bool,
 }
 

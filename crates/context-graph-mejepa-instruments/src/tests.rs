@@ -1002,6 +1002,35 @@ fn e_oracle_rejects_schema_drift_on_verdict_json() {
 }
 
 #[test]
+fn oracle_verdict_serialization_preserves_legacy_hash_shape() {
+    let verdict = verdict_all_pass(1);
+    let value = serde_json::to_value(&verdict).unwrap();
+    assert_eq!(value.get("evidence_unavailable"), None);
+
+    let legacy = serde_json::json!({
+        "per_test": [{
+            "test_id": "tests/test_0.py::test_passes",
+            "outcome": "pass",
+            "runtime_ms": 0,
+        }],
+        "exception": null,
+    });
+    let parsed: OracleVerdict = serde_json::from_value(legacy.clone()).unwrap();
+    assert!(!parsed.evidence_unavailable);
+    assert_eq!(serde_json::to_value(&parsed).unwrap(), legacy);
+
+    let unavailable = OracleVerdict {
+        per_test: vec![],
+        exception: None,
+        evidence_unavailable: true,
+    };
+    assert_eq!(
+        serde_json::to_value(&unavailable).unwrap()["evidence_unavailable"],
+        true
+    );
+}
+
+#[test]
 fn e_oracle_set_via_panel_builder_round_trips_through_slot_view() {
     let inst = EOracleInstrument;
     let verdict = verdict_all_pass(7);
