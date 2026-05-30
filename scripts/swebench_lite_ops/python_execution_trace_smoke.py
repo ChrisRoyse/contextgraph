@@ -231,6 +231,7 @@ def _heredoc_script_lines(max_events: int) -> list[str]:
 
 def _trace_emit_lines() -> list[str]:
     return [
+        "set +x",
         f"if [ -s {shlex.quote(TRACE_OUTPUT_PATH)} ]; then",
         f"  echo {TRACE_BEGIN}",
         f"  cat {shlex.quote(TRACE_OUTPUT_PATH)}",
@@ -238,6 +239,7 @@ def _trace_emit_lines() -> list[str]:
         "else",
         "  echo CONTEXTGRAPH_EXECUTION_TRACE_MISSING",
         "fi",
+        "set -x",
     ]
 
 
@@ -281,6 +283,13 @@ def extract_trace_payload(test_output: str) -> dict[str, Any]:
     require(begin >= 0 and end > begin, "EXECUTION_TRACE_SMOKE_TRACE_MARKERS_MISSING")
     body = test_output[begin + len(TRACE_BEGIN):end].strip()
     require(body, "EXECUTION_TRACE_SMOKE_TRACE_PAYLOAD_EMPTY")
+    first_json = body.find("{")
+    last_json = body.rfind("}")
+    require(
+        first_json >= 0 and last_json > first_json,
+        "EXECUTION_TRACE_SMOKE_TRACE_PAYLOAD_JSON_OBJECT_MISSING",
+    )
+    body = body[first_json:last_json + 1]
     try:
         payload = json.loads(body)
     except json.JSONDecodeError as exc:

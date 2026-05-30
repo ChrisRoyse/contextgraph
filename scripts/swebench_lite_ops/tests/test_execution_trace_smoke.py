@@ -69,6 +69,29 @@ def test_extract_trace_payload_validates_live_trace_keys():
     assert parsed["trace_events"][0]["event"] == "line"
 
 
+def test_extract_trace_payload_tolerates_bash_xtrace_noise():
+    payload = {
+        "coverage": {"lines_executed": 1, "files_touched": 1, "events_seen": 2},
+        "line_coverage": [{"location": "pkg/mod.py:1", "count": 1}],
+        "runtime_metrics": {"elapsed_ms": 3, "pytest_exit_code": 0},
+        "steps": {"event_counts": {"line": 1}},
+        "trace_events": [{"event": "line", "file": "pkg/mod.py", "line": 1, "function": "f"}],
+    }
+    output = "\n".join(
+        [
+            TRACE_BEGIN,
+            "+ echo CONTEXTGRAPH_EXECUTION_TRACE_BEGIN",
+            "+ cat /tmp/contextgraph_execution_trace.json",
+            json.dumps(payload),
+            TRACE_END,
+        ]
+    )
+
+    parsed = extract_trace_payload(output)
+
+    assert parsed["coverage"]["events_seen"] == 2
+
+
 def test_extract_trace_payload_fails_closed_without_events():
     payload = {
         "coverage": {"lines_executed": 0},
