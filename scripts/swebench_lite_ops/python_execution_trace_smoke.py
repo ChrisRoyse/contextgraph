@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 from collections import Counter
 from datetime import datetime, timezone
@@ -292,10 +293,23 @@ def extract_trace_payload(test_output: str) -> dict[str, Any]:
     body = body[first_json:last_json + 1]
     try:
         payload = json.loads(body)
-    except json.JSONDecodeError as exc:
-        raise ExecutionTraceSmokeError(f"EXECUTION_TRACE_SMOKE_TRACE_PAYLOAD_BAD_JSON: {exc}") from exc
+    except json.JSONDecodeError as first_exc:
+        sanitized = strip_bash_xtrace_fragments(body)
+        if sanitized == body:
+            raise ExecutionTraceSmokeError(f"EXECUTION_TRACE_SMOKE_TRACE_PAYLOAD_BAD_JSON: {first_exc}") from first_exc
+        try:
+            payload = json.loads(sanitized)
+        except json.JSONDecodeError as exc:
+            raise ExecutionTraceSmokeError(
+                f"EXECUTION_TRACE_SMOKE_TRACE_PAYLOAD_BAD_JSON_AFTER_XTRACE_STRIP: {exc}"
+            ) from exc
     validate_trace_payload(payload)
     return payload
+
+
+def strip_bash_xtrace_fragments(body: str) -> str:
+    """Remove shell xtrace fragments interleaved into marked JSON output."""
+    return re.sub(r"[ \t]*\+{1,6} [^\n]*(?:\n|$)", "", body)
 
 
 def validate_trace_payload(payload: Any) -> None:

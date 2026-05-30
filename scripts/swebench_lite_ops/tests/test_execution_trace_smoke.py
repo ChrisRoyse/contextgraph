@@ -92,6 +92,32 @@ def test_extract_trace_payload_tolerates_bash_xtrace_noise():
     assert parsed["coverage"]["events_seen"] == 2
 
 
+def test_extract_trace_payload_strips_xtrace_fragment_inside_json_body():
+    payload = {
+        "coverage": {"lines_executed": 1, "files_touched": 1, "events_seen": 2},
+        "line_coverage": [{"location": "pkg/mod.py:1", "count": 1}],
+        "runtime_metrics": {"elapsed_ms": 3, "pytest_exit_code": 0},
+        "steps": {"event_counts": {"line": 1}},
+        "trace_events": [
+            {"event": "line", "file": "pkg/mod.py", "line": 1, "function": "f"},
+            {"event": "return", "file": "pkg/mod.py", "line": 2, "function": "f"},
+        ],
+    }
+    encoded = json.dumps(payload)
+    split_at = encoded.index('"return"')
+    contaminated = (
+        encoded[:split_at]
+        + "+ git checkout d16bfe05 astropy/modeling/tests/test_separable.py\n"
+        + encoded[split_at:]
+    )
+    output = f"{TRACE_BEGIN}\n{contaminated}\n{TRACE_END}\n"
+
+    parsed = extract_trace_payload(output)
+
+    assert len(parsed["trace_events"]) == 2
+    assert parsed["trace_events"][1]["event"] == "return"
+
+
 def test_extract_trace_payload_fails_closed_without_events():
     payload = {
         "coverage": {"lines_executed": 0},
