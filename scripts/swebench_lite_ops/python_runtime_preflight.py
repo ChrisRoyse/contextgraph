@@ -15,6 +15,7 @@ DEFAULT_EXPECTED_PYTHON = Path("/zfs/hot/contextgraph/venv/bin/python3")
 PIN_RE = re.compile(r"^([A-Za-z0-9_.-]+)==([^\\s#]+)$")
 REQUIRED_IMPORTS = {
     "jsonschema": ("jsonschema", "Draft202012Validator"),
+    "pytest": ("pytest", "main"),
 }
 
 
