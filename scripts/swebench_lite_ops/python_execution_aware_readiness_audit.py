@@ -481,7 +481,7 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
     ship_gate = load_ship_gate_rows(ship_gate_report)
     entries = load_corpus_index(corpus_root, args.expected_corpus_rows)
     inventory, artifact_counts = discover_artifacts(
-        [corpus_root, *trace_roots],
+        [*trace_roots, corpus_root],
         max_inventory=int(args.max_inventory_rows),
     )
     trace_mapping = mapped_trace_rows(entries, inventory)

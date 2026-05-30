@@ -206,6 +206,49 @@ def test_state_trace_root_is_scanned_with_corpus_root(tmp_path: Path):
     assert manifest["decision"]["execution_aware_pretraining_ready"] is False
 
 
+def test_explicit_trace_root_takes_inventory_priority(tmp_path: Path):
+    rows = [row("org__repo-1", "org/repo", "off_by_one", True)]
+    corpus_root = tmp_path / "corpus"
+    trace_root = tmp_path / "state" / "execution-traces" / "run-smoke" / "trace-smoke"
+    write_corpus(corpus_root, rows)
+    write_json(
+        corpus_root / "swebench-runs" / "mejepa-known_good.run.json",
+        {"resolved_ids": ["org__repo-1"], "completed_ids": ["org__repo-1"]},
+    )
+    write_json(
+        trace_root / "org__repo-1" / "off_by_one.execution-trace.json",
+        {
+            "task_id": "org__repo-1",
+            "category": "off_by_one",
+            "trace_events": [{"line": 1, "event": "call"}],
+        },
+    )
+    fsv = tmp_path / "ship-gate-fsv.json"
+    write_json(fsv, report(rows))
+    result = run_audit(
+        Namespace(
+            ship_gate_report=fsv,
+            corpus_root=corpus_root,
+            trace_root=trace_root,
+            output_root=tmp_path / "fsv",
+            state_root=tmp_path / "state-readiness",
+            run_id="run-test",
+            expected_corpus_rows=1,
+            max_inventory_rows=1,
+            allow_non_aiwonder_roots=True,
+        )
+    )
+    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+    inventory = [
+        json.loads(line)
+        for line in Path(result["trace_inventory"]).read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert inventory[0]["eligible_live_execution_feature"] is True
+    assert inventory[0]["scan_root"] == str(trace_root)
+    assert manifest["trace_coverage"]["eligible_execution_trace_rows"] == 1
+
+
 def test_missing_corpus_index_fails_closed(tmp_path: Path):
     fsv = tmp_path / "ship-gate-fsv.json"
     rows = [row("org__repo-1", "org/repo", "off_by_one", True)]
