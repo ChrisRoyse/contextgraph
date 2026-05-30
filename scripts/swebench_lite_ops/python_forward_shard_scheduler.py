@@ -30,11 +30,9 @@ from typing import Any, Callable
 # write-then-readback-assert in jsonl_append_checked().
 _JSONL_APPEND_LOCK = threading.Lock()
 
-# Serializes promote_hot_stage_shard across parallel-isolated worker threads.
-# Multiple subruns from the SAME shard all promote to the same durable
-# cache_root/readback_root pair; without this lock they race on tree_state byte
-# counts and trip promote_tree_verified assertions. Forward (GPU) work still
-# happens in parallel; only the brief move/archive step is serialized. #302.
+# Serializes durable hot-stage promotions. Isolated embedder subruns now remain
+# staged until composite consolidation, but non-isolated promotion still uses
+# this lock to keep move/archive readback deterministic. #302/#722.
 _PROMOTE_HOT_STAGE_LOCK = threading.Lock()
 
 
@@ -1847,6 +1845,7 @@ def run_shard(
     require_packed_store: bool | None = None,
     post_promotion_snapshot: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     seed_hot_stage_from_durable: bool = True,
+    promote_hot_stage: bool = True,
 ) -> dict[str, Any]:
     stage_promotion: dict[str, Any] | None = None
     stage_setup: dict[str, Any] | None = None
@@ -1942,6 +1941,14 @@ def run_shard(
         stage_readback_started = time.monotonic()
         stage_readback = shard_completion_readback(args, runner_shard, require_packed_store)
         timing_ms["stage_readback_ms"] = elapsed_ms(stage_readback_started)
+        if not promote_hot_stage:
+            run_log.update(stage_readback)
+            run_log["hot_stage_readback"] = stage_readback
+            run_log["timing_ms"] = timing_ms
+            run_log["skipped_completed"] = False
+            json_dump_checked(run_log_path, run_log)
+            event(event_path, event_phase, run_log)
+            return run_log
         promotion_started = time.monotonic()
         # Serialize promotion against concurrent isolated subruns (#302). The
         # GPU forward work above already completed in parallel; this lock only
@@ -2505,17 +2512,7 @@ def run_shard_embedder_isolated(
 
     def _run_one_isolated_subrun(slug: str) -> tuple[str, dict[str, Any], dict[str, Any]]:
         extra_env = isolated_embedder_extra_env(args, slug)
-        snapshot_holder: dict[str, Any] = {}
-
-        def _snapshot_after_promotion(subrun_log: dict[str, Any]) -> dict[str, Any]:
-            snapshot = snapshot_isolated_subrun_rows(args, shard, slug, subrun_log)
-            snapshot_holder["snapshot"] = snapshot
-            return {
-                "embedder_id": slug,
-                "manifest_sha256": snapshot["manifest_sha256"],
-                "packed_row_count": snapshot["packed_records"]["row_count"],
-                "passes": True,
-            }
+        run_log_name = f"{shard.shard_id}.{slug}.json"
 
         subrun_inner = run_shard(
             args,
@@ -2523,17 +2520,34 @@ def run_shard_embedder_isolated(
             event_path,
             preflight,
             extra_env=extra_env,
-            run_log_name=f"{shard.shard_id}.{slug}.json",
+            run_log_name=run_log_name,
             event_phase="shard_embedder_subrun_complete",
             require_packed_store=False,
-            post_promotion_snapshot=_snapshot_after_promotion if use_hot_stage_for_shard(args) else None,
             seed_hot_stage_from_durable=False,
+            promote_hot_stage=not use_hot_stage_for_shard(args),
         )
-        snapshot_inner = snapshot_holder.get("snapshot")
-        if snapshot_inner is None:
-            snapshot_inner = snapshot_isolated_subrun_rows(args, shard, slug, subrun_inner)
-        else:
-            snapshot_inner["run_log_sha256"] = sha256_file(args.readback_root / "run_logs" / f"{shard.shard_id}.{slug}.json")
+        snapshot_source_shard = shard
+        stage_root = None
+        if use_hot_stage_for_shard(args):
+            snapshot_source_shard = hot_stage_shard(args, shard, run_log_name)
+            stage_root = hot_stage_root(args, shard, run_log_name)
+        snapshot_inner = snapshot_isolated_subrun_rows(args, snapshot_source_shard, slug, subrun_inner)
+        if stage_root is not None:
+            stage_before_cleanup = tree_state(stage_root)
+            shutil.rmtree(stage_root)
+            require(f"{shard.shard_id} {slug} isolated hot-stage removed after snapshot", not stage_root.exists())
+            subrun_inner["isolated_stage_snapshot"] = {
+                "embedder_id": slug,
+                "snapshot_root": snapshot_inner["snapshot_root"],
+                "manifest_sha256": snapshot_inner["manifest_sha256"],
+                "readback_sha256": snapshot_inner["readback_sha256"],
+                "packed_row_count": snapshot_inner["packed_records"]["row_count"],
+                "stage_root_before_cleanup": stage_before_cleanup,
+                "stage_root_after_cleanup": tree_state(stage_root),
+                "passes": True,
+            }
+            json_dump_checked(args.readback_root / "run_logs" / run_log_name, subrun_inner)
+        snapshot_inner["run_log_sha256"] = sha256_file(args.readback_root / "run_logs" / run_log_name)
         return slug, subrun_inner, snapshot_inner
 
     if parallel_workers == 1:
