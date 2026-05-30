@@ -143,4 +143,14 @@ mod tests {
         assert!(!active.contains_key("compile_error::python"));
         assert!(active.contains_key("off_by_one::rust"));
     }
+
+    #[test]
+    fn repository_cell_exemptions_config_parses() {
+        let raw = include_str!("../../../../config/cell_exemptions.toml");
+        let config: CellExemptionConfig = toml::from_str(raw).unwrap();
+        let active = config.active_map(1_800_000_000_000).unwrap();
+        let exemption = active.get("delete_test_call::python").unwrap();
+        assert_eq!(exemption.operator_id, "github-issue-810");
+        assert!(exemption.reason.contains("#810"));
+    }
 }

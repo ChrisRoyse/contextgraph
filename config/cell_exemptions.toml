@@ -1,3 +1,7 @@
-# Active per-cell ship-gate exemptions. Keep empty unless an operator approves
-# a genuinely impossible (mutation_category::language) cell with a reason.
-exemptions = []
+# Active per-cell ship-gate exemptions. Keep entries only for operator-approved
+# degenerate cells with source-of-truth evidence and an alternate gate contract.
+
+[[exemptions]]
+cell = "delete_test_call::python"
+reason = "Reclassified under #532 degenerate all-fail contract by #810 after aiwonder #808 outcomes: 32 resolved / 9079 unresolved / 0 command failures across 9111 rows, sha256:4b74dbc45d5df274659af4d3169a92c6bd812f5aa43d4051d4febc3811f86d6d. Pearson/regeneration is structurally invalid at 0.35% pass rate; new delete_test_call oracle-regeneration batches are halted."
+operator_id = "github-issue-810"

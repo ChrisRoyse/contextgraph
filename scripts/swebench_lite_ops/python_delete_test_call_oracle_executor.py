@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .core import DEFAULT_DATASET, DEFAULT_SPLIT, SwebenchOpsError, sha256_file, tail, utc_now, write_json_checked
+from .python_delete_test_call_regeneration import halt_delete_test_call_regeneration
 
 
 DEFAULT_PATCH_ROOT = Path(
@@ -64,6 +65,7 @@ def add_arguments(parser) -> None:
 
 
 def command_python_delete_test_call_oracle_executor(args) -> dict[str, Any]:
+    halt_delete_test_call_regeneration("python-delete-test-call-oracle-executor")
     validate_args(args)
     candidates = load_candidate_patches(args.candidate_patches)
     batch_plan = load_batch_plan(args.batch_plan)

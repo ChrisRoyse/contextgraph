@@ -35,6 +35,7 @@ from .python_delete_test_call_candidate_expansion_core import (
 )
 from .python_delete_test_call_regeneration import (
     DEFAULT_OUTPUT_ROOT as DEFAULT_PATCH_ROOT,
+    halt_delete_test_call_regeneration,
 )
 
 
@@ -85,6 +86,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def command_python_delete_test_call_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
+    halt_delete_test_call_regeneration("python-delete-test-call-candidate-expansion")
     started_at = utc_now()
     validate_paths(args)
     targets = target_quotas(args.target)

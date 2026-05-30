@@ -47,6 +47,42 @@ DEFAULT_PRIOR_SOURCE_EXTENSION_PLAN = Path(
 )
 SOURCE_EXTENSION_TASK_ID = "TASK-PY-G-135I"
 SOURCE_EXTENSION_POLICY_VERSION = "delete_test_call_source_pass_hypothesis_extension_v2"
+DELETE_TEST_CALL_DEGENERATE_CELL_HALT_CODE = "DELETE_TEST_CALL_DEGENERATE_CELL_REGENERATION_HALTED"
+DELETE_TEST_CALL_DEGENERATE_CELL_DECISION_ISSUE = "https://github.com/ChrisRoyse/contextgraph/issues/810"
+DELETE_TEST_CALL_DEGENERATE_CELL_EVIDENCE_ISSUE = "https://github.com/ChrisRoyse/contextgraph/issues/808"
+DELETE_TEST_CALL_DEGENERATE_CELL_OUTCOMES_PATH = Path(
+    "/zfs/archive/contextgraph/state/regeneration-plans/"
+    "task-py-g-135i-delete-test-call-oracle-outcomes-v1/"
+    "delete_test_call_oracle_outcomes.jsonl"
+)
+DELETE_TEST_CALL_DEGENERATE_CELL_OUTCOMES_SHA256 = (
+    "sha256:4b74dbc45d5df274659af4d3169a92c6bd812f5aa43d4051d4febc3811f86d6d"
+)
+DELETE_TEST_CALL_DEGENERATE_CELL_OUTCOME_COUNTS = {
+    "resolved": 32,
+    "unresolved": 9079,
+    "command_failure": 0,
+    "rows": 9111,
+}
+
+
+def halt_delete_test_call_regeneration(command: str) -> None:
+    raise SwebenchOpsError(
+        DELETE_TEST_CALL_DEGENERATE_CELL_HALT_CODE,
+        f"{command} is halted by #810: delete_test_call::python is a degenerate all-fail cell, not a Pearson-regeneration target",
+        "Use the #532 degenerate-cell contract for delete_test_call::python and redirect new oracle budget to mixed cells.",
+        {
+            "command": command,
+            "cell": "delete_test_call::python",
+            "decision_issue": DELETE_TEST_CALL_DEGENERATE_CELL_DECISION_ISSUE,
+            "evidence_issue": DELETE_TEST_CALL_DEGENERATE_CELL_EVIDENCE_ISSUE,
+            "outcomes_jsonl": str(DELETE_TEST_CALL_DEGENERATE_CELL_OUTCOMES_PATH),
+            "outcomes_sha256": DELETE_TEST_CALL_DEGENERATE_CELL_OUTCOMES_SHA256,
+            "outcome_counts": DELETE_TEST_CALL_DEGENERATE_CELL_OUTCOME_COUNTS,
+            "oracle_pass_rate": 32 / 9111,
+            "gate_contract": "degenerate_all_fail_fail_recall_wilson_brier_ece",
+        },
+    )
 
 
 @dataclass(frozen=True)
@@ -97,6 +133,7 @@ def add_source_extension_arguments(parser) -> None:
 
 
 def command_python_delete_test_call_regeneration(args) -> dict[str, Any]:
+    halt_delete_test_call_regeneration("python-delete-test-call-regeneration")
     if args.max_candidates is not None and args.max_candidates <= 0:
         raise SwebenchOpsError(
             "DELETE_TEST_CALL_BAD_MAX_CANDIDATES",
@@ -245,6 +282,7 @@ def command_python_delete_test_call_regeneration(args) -> dict[str, Any]:
 
 
 def command_python_delete_test_call_source_extension(args) -> dict[str, Any]:
+    halt_delete_test_call_regeneration("python-delete-test-call-source-extension")
     validate_source_extension_args(args)
     if args.clean_output and args.output_root.exists():
         shutil.rmtree(args.output_root)

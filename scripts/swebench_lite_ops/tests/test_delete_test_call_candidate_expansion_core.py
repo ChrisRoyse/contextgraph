@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import textwrap
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,11 +11,16 @@ from ..python_delete_test_call_candidate_expansion_core import (
     select_candidates,
 )
 from ..core import SwebenchOpsError
+from ..python_delete_test_call_candidate_expansion import command_python_delete_test_call_candidate_expansion
 from ..python_delete_test_call_regeneration import (
+    DELETE_TEST_CALL_DEGENERATE_CELL_HALT_CODE,
     generate_source_extension_candidates,
+    command_python_delete_test_call_regeneration,
+    command_python_delete_test_call_source_extension,
     materialize_candidate,
 )
 from ..python_delete_test_call_oracle_executor import (
+    command_python_delete_test_call_oracle_executor,
     filter_existing_outcome_batches,
     validate_existing_outcomes,
 )
@@ -298,3 +304,28 @@ def test_oracle_resume_rejects_duplicate_existing_outcome_ids(tmp_path: Path):
         )
 
     assert exc_info.value.code == "DELETE_TEST_CALL_ORACLE_EXISTING_OUTCOME_DUPLICATE_ID"
+
+
+@pytest.mark.parametrize(
+    ("command_name", "command"),
+    [
+        ("python-delete-test-call-source-extension", command_python_delete_test_call_source_extension),
+        ("python-delete-test-call-regeneration", command_python_delete_test_call_regeneration),
+        ("python-delete-test-call-candidate-expansion", command_python_delete_test_call_candidate_expansion),
+        ("python-delete-test-call-oracle-executor", command_python_delete_test_call_oracle_executor),
+    ],
+)
+def test_delete_test_call_batch_commands_are_halted_by_degenerate_decision(command_name: str, command):
+    with pytest.raises(SwebenchOpsError) as exc_info:
+        command(SimpleNamespace())
+
+    assert exc_info.value.code == DELETE_TEST_CALL_DEGENERATE_CELL_HALT_CODE
+    assert exc_info.value.details["command"] == command_name
+    assert exc_info.value.details["cell"] == "delete_test_call::python"
+    assert exc_info.value.details["decision_issue"].endswith("/810")
+    assert exc_info.value.details["outcome_counts"] == {
+        "resolved": 32,
+        "unresolved": 9079,
+        "command_failure": 0,
+        "rows": 9111,
+    }
