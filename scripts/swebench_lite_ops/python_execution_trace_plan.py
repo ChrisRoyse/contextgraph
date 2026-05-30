@@ -197,20 +197,23 @@ def parse_command(command: str) -> list[str]:
 
 def is_marker_or_setup(command: str) -> bool:
     stripped = command.strip()
+    lowered = stripped.lower()
     if not stripped:
         return True
-    if stripped.startswith(": 'START TEST OUTPUT'") or stripped.startswith(": 'END TEST OUTPUT'"):
+    if "start test output" in lowered or "end test output" in lowered:
         return True
     setup_prefixes = (
         "source ",
         "conda ",
         "cd ",
+        "git -c ",
         "git apply ",
         "git config ",
         "git checkout ",
         "git reset ",
         "git show",
         "git status",
+        "python -m pip install ",
         "python - <<",
         "cat > ",
         "export ",
@@ -280,6 +283,14 @@ def command_family(command: str) -> dict[str, Any]:
             "handler": "tox_command_trace_adapter_required",
             "blocker_code": "EXECUTION_TRACE_PLAN_UNSUPPORTED_TOX",
         }
+    if tokens[0] in {"bin/test", "./bin/test"}:
+        return {
+            "command": command,
+            "family": "sympy_bin_test",
+            "support_status": "handler_required",
+            "handler": "python_script_sys_settrace_required",
+            "blocker_code": "EXECUTION_TRACE_PLAN_UNSUPPORTED_SYMPY_BIN_TEST",
+        }
     if executable in {"python", "python3"} and any(token.endswith(".py") for token in tokens[1:]):
         return {
             "command": command,
@@ -317,9 +328,10 @@ def test_output_commands(eval_script_list: list[str]) -> list[str]:
     start = None
     end = None
     for idx, command in enumerate(eval_script_list):
-        if "START TEST OUTPUT" in command and start is None:
+        lowered = command.lower()
+        if "start test output" in lowered and start is None:
             start = idx
-        if "END TEST OUTPUT" in command and start is not None:
+        if "end test output" in lowered and start is not None:
             end = idx
             break
     if start is not None and end is not None and end > start:

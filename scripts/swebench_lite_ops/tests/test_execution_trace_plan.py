@@ -102,6 +102,23 @@ def test_git_apply_heredoc_with_pytest_text_is_setup_not_test_command():
     assert result["test_commands"] == ["pytest -rA lib/matplotlib/tests/test_artist.py"]
 
 
+def test_variant_test_output_markers_classify_sympy_bin_test():
+    result = classify_eval_script(
+        [
+            "git -c core.fileMode=false diff abc123",
+            "python -m pip install -e .",
+            "git apply -v - <<'EOF_123'\n+def test_ccode(): pass\nEOF_123",
+            ": '>>>>> Start Test Output'",
+            "PYTHONWARNINGS='ignore::UserWarning,ignore::SyntaxWarning' bin/test -C --verbose sympy/tests/test_thing.py",
+            ": '>>>>> End Test Output'",
+        ]
+    )
+
+    assert result["command_family"] == "sympy_bin_test"
+    assert result["support_status"] == "handler_required"
+    assert result["blocker_code"] == "EXECUTION_TRACE_PLAN_UNSUPPORTED_SYMPY_BIN_TEST"
+
+
 def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
     corpus_root = tmp_path / "corpus"
     rows = [
