@@ -87,6 +87,21 @@ def test_classify_multiple_test_commands_fails_closed():
     assert result["blocker_code"] == "EXECUTION_TRACE_PLAN_MULTIPLE_TEST_COMMANDS"
 
 
+def test_git_apply_heredoc_with_pytest_text_is_setup_not_test_command():
+    result = classify_eval_script(
+        [
+            ": 'START TEST OUTPUT'",
+            "git apply -v - <<'EOF_123'\n+import pytest\nEOF_123",
+            "pytest -rA lib/matplotlib/tests/test_artist.py",
+            ": 'END TEST OUTPUT'",
+        ]
+    )
+
+    assert result["command_family"] == "pytest_direct"
+    assert result["support_status"] == "supported_current"
+    assert result["test_commands"] == ["pytest -rA lib/matplotlib/tests/test_artist.py"]
+
+
 def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
     corpus_root = tmp_path / "corpus"
     rows = [
