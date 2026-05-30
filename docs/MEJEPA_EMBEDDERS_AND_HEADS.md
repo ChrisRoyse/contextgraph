@@ -62,12 +62,13 @@ Verified against `crates/context-graph-mejepa-embedders/src/embedder_id.rs` (lin
 
 **Selection rules from source:**
 - `EmbedderId::all().len() == 21`
-- `required_registrations().len() == 19` (everything except E5/E11)
+- `required_registrations().len() == 12` (the current ME-JEPA-Code content ship-gate set)
+- `all_non_retired_registrations().len() == 19` (content plus optional learner-state; everything except E5/E11)
 - `content().len() == 12` (E1, E2, E3, E4, E6, E7, E8, E9, E10, E12, E13, E14)
 - `learner_state().len() == 7` (E15–E21)
 - `is_retired() == true` for E5 and E11 only
 
-The current ME-JEPA-Code ship gate (Python on SWE-bench Lite) reads **only the 12 content embedders**. The 7 learner-state embedders (E15–E21) are domain-extension scaffolding for a separate application surface and do not feed the code prediction pipeline.
+The current ME-JEPA-Code ship gate (Python on SWE-bench Lite) reads **only the 12 content embedders**. The 7 learner-state embedders (E15–E21) are optional domain-extension scaffolding for a separate application surface and do not feed the code prediction pipeline. Per #816, production `mejepa_models_config.toml` must omit E15-E21 until the real aiwonder learner-state artifacts exist and pass digest verification.
 
 ### §2.1 Why each content embedder is in the panel — purpose, signal, choice rationale, mechanism, and why it works
 

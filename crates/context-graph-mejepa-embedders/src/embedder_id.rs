@@ -64,7 +64,11 @@ impl EmbedderId {
         ]
     }
 
-    pub const fn required_registrations() -> [Self; 19] {
+    pub const fn required_registrations() -> [Self; 12] {
+        Self::content()
+    }
+
+    pub const fn all_non_retired_registrations() -> [Self; 19] {
         [
             Self::E1,
             Self::E2,
@@ -298,9 +302,11 @@ mod tests {
     #[test]
     fn ids_cover_all_phase1b_slots() {
         assert_eq!(EmbedderId::all().len(), 21);
-        assert_eq!(EmbedderId::required_registrations().len(), 19);
+        assert_eq!(EmbedderId::required_registrations().len(), 12);
+        assert_eq!(EmbedderId::all_non_retired_registrations().len(), 19);
         assert!(!EmbedderId::required_registrations().contains(&EmbedderId::E5));
         assert!(!EmbedderId::required_registrations().contains(&EmbedderId::E11));
+        assert!(!EmbedderId::required_registrations().contains(&EmbedderId::E15));
         assert_eq!(EmbedderId::content().len(), 12);
         assert!(!EmbedderId::content().contains(&EmbedderId::E5));
         assert!(!EmbedderId::content().contains(&EmbedderId::E11));

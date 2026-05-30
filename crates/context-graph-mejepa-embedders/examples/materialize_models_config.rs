@@ -1,5 +1,5 @@
 use context_graph_mejepa_embedders::{
-    digest_manifest_for_embedder, verify_all_registration_digests, EmbedderId, EmbedderKind,
+    digest_manifest_for_embedder, verify_declared_registration_digests, EmbedderId, EmbedderKind,
     EmbedderRegistration, ModelsConfig,
 };
 use serde::Serialize;
@@ -55,35 +55,50 @@ fn main() -> ExampleResult<()> {
                 "/zfs/archive/contextgraph/fsv/contextgraph-mejepa-models-config-materialization/models-config-materialization.json",
             )
         });
+    let include_learner_state = parse_bool_env("CONTEXTGRAPH_INCLUDE_LEARNER_STATE")?;
 
     let before = json!({
         "models_root": models_root.display().to_string(),
         "output_path": output_path.display().to_string(),
         "output_exists": output_path.exists(),
+        "include_learner_state": include_learner_state,
     });
 
-    let (config, registrations) = build_config(&models_root)?;
+    let (config, registrations) = build_config(&models_root, include_learner_state)?;
     config.validate()?;
     let config_text = toml::to_string_pretty(&config)?;
     write_checked(&output_path, config_text.as_bytes())?;
 
     let readback = ModelsConfig::load(&output_path)?;
-    let digest_readback = verify_all_registration_digests(&readback)?;
+    let digest_readback = verify_declared_registration_digests(&readback)?;
     require(
-        "all active registrations verified after disk readback",
-        digest_readback.len() == EmbedderId::required_registrations().len(),
+        "all declared registrations verified after disk readback",
+        digest_readback.len()
+            == readback
+                .embedders
+                .values()
+                .filter(|registration| !registration.embedder.is_retired())
+                .count(),
     )?;
 
     let evidence = json!({
         "source_of_truth": {
             "models_config": output_path.display().to_string(),
             "models_root": models_root.display().to_string(),
+            "decision_issue": "https://github.com/ChrisRoyse/contextgraph/issues/816",
+        },
+        "learner_state_registration_policy": if include_learner_state {
+            "included_and_digest_verified"
+        } else {
+            "omitted_until_real_assets_exist"
         },
         "before_state": before,
         "after_state": {
             "config_exists": output_path.exists(),
             "registration_count": readback.embedders.len(),
-            "digest_verified_count": digest_readback.len(),
+            "declared_digest_verified_count": digest_readback.len(),
+            "required_registration_count": EmbedderId::required_registrations().len(),
+            "optional_learner_state_registered": include_learner_state,
             "retired": ["e5", "e11"],
             "registrations": registrations,
         },
@@ -106,11 +121,14 @@ fn main() -> ExampleResult<()> {
     Ok(())
 }
 
-fn build_config(models_root: &Path) -> ExampleResult<(ModelsConfig, Vec<RegistrationEvidence>)> {
+fn build_config(
+    models_root: &Path,
+    include_learner_state: bool,
+) -> ExampleResult<(ModelsConfig, Vec<RegistrationEvidence>)> {
     let mut embedders = BTreeMap::new();
     let mut evidence = Vec::new();
 
-    for spec in slot_specs() {
+    for spec in slot_specs(include_learner_state) {
         let (registration, registration_evidence) = registration_from_spec(models_root, spec)?;
         embedders.insert(spec.id.slug().to_string(), registration);
         evidence.push(registration_evidence);
@@ -245,6 +263,18 @@ fn verify_model_identity(base_dir: &Path, identity: ModelIdentity) -> ExampleRes
     Ok(())
 }
 
+fn parse_bool_env(name: &'static str) -> ExampleResult<bool> {
+    match std::env::var(name) {
+        Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
+            "" | "0" | "false" | "no" | "off" => Ok(false),
+            "1" | "true" | "yes" | "on" => Ok(true),
+            other => Err(format!("{name} must be a boolean, got {other:?}").into()),
+        },
+        Err(std::env::VarError::NotPresent) => Ok(false),
+        Err(err) => Err(format!("{name} is not valid Unicode: {err}").into()),
+    }
+}
+
 fn write_checked(path: &Path, bytes: &[u8]) -> ExampleResult<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -291,8 +321,8 @@ fn numeric_identity(
     }
 }
 
-fn slot_specs() -> Vec<SlotSpec> {
-    vec![
+fn slot_specs(include_learner_state: bool) -> Vec<SlotSpec> {
+    let mut specs = vec![
         pretrained(
             EmbedderId::E1,
             "semantic",
@@ -376,80 +406,87 @@ fn slot_specs() -> Vec<SlotSpec> {
             &["config.json", "model.safetensors", "tokenizer.json"],
             Some(transformer_identity("xlm-roberta", Some(1024))),
         ),
-        pretrained(
-            EmbedderId::E15,
-            "affect_speech",
-            "learner-state/affect-speech",
-            "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim",
-            &["model.safetensors", "preprocessor_config.json"],
-            Some(transformer_identity("wav2vec2", Some(1024))),
-        ),
-        pretrained(
-            EmbedderId::E16,
-            "affect_face",
-            "learner-state/affect-face",
-            "github:CMU-MultiComp-Lab/OpenFace-3.0 + hf:nutPace/openface_weights",
-            &[
-                "OpenFace/interface.py",
-                "OpenFace/model/MLT.py",
-                "OpenFace/weights/Alignment_RetinaFace.pth",
-                "OpenFace/weights/Landmark_98.pkl",
-                "OpenFace/weights/MTL_backbone.pth",
-            ],
-            None,
-        ),
-        pretrained(
-            EmbedderId::E17,
-            "affect_text",
-            "learner-state/affect-text",
-            "sentence-transformers/all-MiniLM-L6-v2",
-            &["model.safetensors", "tokenizer.json"],
-            Some(transformer_identity("bert", Some(384))),
-        ),
-        pretrained(
-            EmbedderId::E18,
-            "ppg",
-            "learner-state/ppg",
-            "zenodo:10.5281/zenodo.13983110 + github:Nokia-Bell-Labs/papagei-foundation-model",
-            &["config.json", "papagei_s.pt"],
-            None,
-        ),
-        pretrained(
-            EmbedderId::E19,
-            "eda",
-            "learner-state/eda",
-            "official:WESAD University of Siegen + local real-data stress-head training",
-            &["config.json", "wesad_cnn.safetensors"],
-            None,
-        ),
-        pretrained(
-            EmbedderId::E20,
-            "eeg",
-            "learner-state/eeg",
-            "braindecode/labram-pretrained",
-            &["model.safetensors"],
-            Some(numeric_identity(
-                &[("n_outputs", 0), ("n_times", 3000)],
-                &["n_chans", "sfreq"],
-            )),
-        ),
-        pretrained(
-            EmbedderId::E21,
-            "eeg_artifact_robust",
-            "learner-state/eeg-robust",
-            "braindecode/eegpt-pretrained",
-            &["model.safetensors"],
-            Some(numeric_identity(
+    ];
+
+    if include_learner_state {
+        specs.extend([
+            pretrained(
+                EmbedderId::E15,
+                "affect_speech",
+                "learner-state/affect-speech",
+                "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim",
+                &["model.safetensors", "preprocessor_config.json"],
+                Some(transformer_identity("wav2vec2", Some(1024))),
+            ),
+            pretrained(
+                EmbedderId::E16,
+                "affect_face",
+                "learner-state/affect-face",
+                "github:CMU-MultiComp-Lab/OpenFace-3.0 + hf:nutPace/openface_weights",
                 &[
-                    ("n_outputs", 1),
-                    ("n_chans", 62),
-                    ("n_times", 1000),
-                    ("sfreq", 250),
+                    "OpenFace/interface.py",
+                    "OpenFace/model/MLT.py",
+                    "OpenFace/weights/Alignment_RetinaFace.pth",
+                    "OpenFace/weights/Landmark_98.pkl",
+                    "OpenFace/weights/MTL_backbone.pth",
                 ],
-                &[],
-            )),
-        ),
-    ]
+                None,
+            ),
+            pretrained(
+                EmbedderId::E17,
+                "affect_text",
+                "learner-state/affect-text",
+                "sentence-transformers/all-MiniLM-L6-v2",
+                &["model.safetensors", "tokenizer.json"],
+                Some(transformer_identity("bert", Some(384))),
+            ),
+            pretrained(
+                EmbedderId::E18,
+                "ppg",
+                "learner-state/ppg",
+                "zenodo:10.5281/zenodo.13983110 + github:Nokia-Bell-Labs/papagei-foundation-model",
+                &["config.json", "papagei_s.pt"],
+                None,
+            ),
+            pretrained(
+                EmbedderId::E19,
+                "eda",
+                "learner-state/eda",
+                "official:WESAD University of Siegen + local real-data stress-head training",
+                &["config.json", "wesad_cnn.safetensors"],
+                None,
+            ),
+            pretrained(
+                EmbedderId::E20,
+                "eeg",
+                "learner-state/eeg",
+                "braindecode/labram-pretrained",
+                &["model.safetensors"],
+                Some(numeric_identity(
+                    &[("n_outputs", 0), ("n_times", 3000)],
+                    &["n_chans", "sfreq"],
+                )),
+            ),
+            pretrained(
+                EmbedderId::E21,
+                "eeg_artifact_robust",
+                "learner-state/eeg-robust",
+                "braindecode/eegpt-pretrained",
+                &["model.safetensors"],
+                Some(numeric_identity(
+                    &[
+                        ("n_outputs", 1),
+                        ("n_chans", 62),
+                        ("n_times", 1000),
+                        ("sfreq", 250),
+                    ],
+                    &[],
+                )),
+            ),
+        ]);
+    }
+
+    specs
 }
 
 fn pretrained(

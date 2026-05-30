@@ -146,6 +146,11 @@ dimension = 1024
 weight_files = ["config.json", "model.safetensors", "tokenizer.json"]
 manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
+# Optional learner-state domain-extension slots.
+# These do not feed the current ME-JEPA-Code Python ship gate. Omit E15-E21
+# from production `mejepa_models_config.toml` until the real aiwonder
+# learner-state artifacts exist and pass digest verification.
+
 [embedders.e15]
 embedder = "e15"
 name = "affect_speech"

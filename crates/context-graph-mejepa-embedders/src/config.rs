@@ -70,7 +70,7 @@ impl ModelsConfig {
                 return Err(EmbedError::invalid(
                     "ModelsConfig.embedders",
                     format!("duplicate registration for {}", reg.embedder),
-                    "register each active E1-E21 slot exactly once; E5 and E11 are retired/disabled",
+                    "register each required ME-JEPA-Code content slot exactly once; E5/E11 are retired and E15-E21 are optional learner-state domain-extension slots",
                 ));
             }
         }
@@ -78,7 +78,7 @@ impl ModelsConfig {
             if !seen.contains(&id) {
                 return Err(EmbedError::MissingRegistration {
                     embedder: id,
-                    remediation: "add a complete [embedders.eN] entry to models_config.toml; E5 and E11 are retired/disabled and are not required",
+                    remediation: "add a complete [embedders.eN] entry for each required ME-JEPA-Code content slot; E5/E11 are retired and E15-E21 are optional learner-state domain-extension slots",
                 });
             }
         }
@@ -90,14 +90,14 @@ impl ModelsConfig {
             return Err(EmbedError::invalid(
                 "ModelsConfig.registration",
                 format!("{id} is retired and disabled"),
-                "remove retired/disabled embedders from active ME-JEPA/embedder requests; use E1/E7/E8/E10/E12/E13/E14 and learner-state embedders as appropriate",
+                "remove retired/disabled embedders from active ME-JEPA/embedder requests; use active content slots or explicitly configured learner-state slots as appropriate",
             ));
         }
         self.embedders
             .get(id.slug())
             .ok_or(EmbedError::MissingRegistration {
                 embedder: id,
-                remediation: "add the missing [embedders.eN] entry to models_config.toml; E5 and E11 are retired/disabled and are not required",
+                remediation: "add the missing [embedders.eN] entry to models_config.toml only if the requested slot is active for this runtime; E5/E11 are retired and E15-E21 require real learner-state artifacts before use",
             })
     }
 }
@@ -256,7 +256,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_requires_all_slots_and_exact_schema() {
+    fn config_requires_content_ship_gate_slots_and_exact_schema() {
         let config = ModelsConfig {
             schema_version: MODELS_CONFIG_SCHEMA_VERSION,
             embedders: BTreeMap::new(),
@@ -264,6 +264,42 @@ mod tests {
         assert_eq!(
             config.validate().unwrap_err().code(),
             "MEJEPA_EMBED_REGISTRATION_MISSING"
+        );
+    }
+
+    #[test]
+    fn content_ship_gate_config_does_not_require_learner_state_slots() {
+        let config = ModelsConfig {
+            schema_version: MODELS_CONFIG_SCHEMA_VERSION,
+            embedders: EmbedderId::required_registrations()
+                .into_iter()
+                .map(|embedder| (embedder.slug().to_string(), valid_registration(embedder)))
+                .collect(),
+        };
+
+        config.validate().unwrap();
+        assert!(!config.embedders.contains_key(EmbedderId::E15.slug()));
+        assert!(!config.embedders.contains_key(EmbedderId::E21.slug()));
+    }
+
+    #[test]
+    fn optional_learner_state_registration_is_validated_when_present() {
+        let mut config = ModelsConfig {
+            schema_version: MODELS_CONFIG_SCHEMA_VERSION,
+            embedders: EmbedderId::required_registrations()
+                .into_iter()
+                .map(|embedder| (embedder.slug().to_string(), valid_registration(embedder)))
+                .collect(),
+        };
+        let mut learner = valid_registration(EmbedderId::E15);
+        learner.dimension = 1;
+        config
+            .embedders
+            .insert(EmbedderId::E15.slug().to_string(), learner);
+
+        assert_eq!(
+            config.validate().unwrap_err().code(),
+            "MEJEPA_EMBED_INVALID_INPUT"
         );
     }
 
@@ -291,5 +327,34 @@ mod tests {
             .join("../../config/models_config.toml.example");
         let err = ModelsConfig::load(path).unwrap_err();
         assert_eq!(err.code(), "MEJEPA_EMBED_INVALID_INPUT");
+    }
+
+    fn valid_registration(embedder: EmbedderId) -> EmbedderRegistration {
+        let kind = embedder.kind();
+        match kind {
+            EmbedderKind::ContentDeterministic => EmbedderRegistration {
+                embedder,
+                name: embedder.display_name().to_ascii_lowercase(),
+                kind,
+                path: String::new(),
+                repo: None,
+                dimension: embedder.dimension(),
+                weight_files: Vec::new(),
+                manifest_sha256: String::new(),
+            },
+            EmbedderKind::ContentPretrained | EmbedderKind::LearnerState => EmbedderRegistration {
+                embedder,
+                name: embedder.display_name().to_ascii_lowercase(),
+                kind,
+                path: format!(
+                    "/zfs/hot/contextgraph/models/{}",
+                    embedder.default_model_dir()
+                ),
+                repo: embedder.default_repo().map(str::to_string),
+                dimension: embedder.dimension(),
+                weight_files: vec!["model.safetensors".to_string()],
+                manifest_sha256: "a".repeat(64),
+            },
+        }
     }
 }

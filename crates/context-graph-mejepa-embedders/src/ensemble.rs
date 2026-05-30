@@ -99,6 +99,12 @@ pub fn verify_content_registrations(config: &ModelsConfig) -> EmbedResult<Vec<Lo
 pub fn verify_all_registration_digests(
     config: &ModelsConfig,
 ) -> EmbedResult<BTreeMap<EmbedderId, LoadedEmbedder>> {
+    verify_required_registration_digests(config)
+}
+
+pub fn verify_required_registration_digests(
+    config: &ModelsConfig,
+) -> EmbedResult<BTreeMap<EmbedderId, LoadedEmbedder>> {
     let mut out = BTreeMap::new();
     for embedder in EmbedderId::required_registrations() {
         let reg = config.registration(embedder)?;
@@ -106,6 +112,23 @@ pub fn verify_all_registration_digests(
         out.insert(
             embedder,
             loaded_from_files(embedder, &reg.name, &reg.manifest_sha256, &files),
+        );
+    }
+    Ok(out)
+}
+
+pub fn verify_declared_registration_digests(
+    config: &ModelsConfig,
+) -> EmbedResult<BTreeMap<EmbedderId, LoadedEmbedder>> {
+    let mut out = BTreeMap::new();
+    for reg in config.embedders.values() {
+        if reg.embedder.is_retired() {
+            continue;
+        }
+        let files = verify_registration_digest(reg)?;
+        out.insert(
+            reg.embedder,
+            loaded_from_files(reg.embedder, &reg.name, &reg.manifest_sha256, &files),
         );
     }
     Ok(out)

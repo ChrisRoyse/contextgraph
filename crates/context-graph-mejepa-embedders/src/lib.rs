@@ -2,8 +2,9 @@
 //!
 //! This crate is intentionally fail-closed. It does not synthesize vectors or
 //! silently switch to CPU. Production loading requires:
-//! - a schema-versioned `models_config.toml` with active E1-E21 registrations
-//!   (E5 is retired and intentionally not required),
+//! - a schema-versioned `models_config.toml` with active ME-JEPA-Code content
+//!   registrations; E5/E11 are retired and E15-E21 are optional learner-state
+//!   domain-extension registrations until real assets are materialized,
 //! - SHA-256 manifest pins for every pretrained weight file,
 //! - runtime CUDA access for the configured GPU budget,
 //! - E17 calibration evidence before `agent_state_score` is used.
@@ -44,8 +45,9 @@ pub use dynamic_registry::{
 };
 pub use embedder_id::{EmbedderId, EmbedderKind};
 pub use ensemble::{
-    verify_all_registration_digests, verify_content_registrations, Ensemble, EnsembleStatus,
-    LoadedEmbedder,
+    verify_all_registration_digests, verify_content_registrations,
+    verify_declared_registration_digests, verify_required_registration_digests, Ensemble,
+    EnsembleStatus, LoadedEmbedder,
 };
 pub use error::{EmbedError, EmbedResult};
 pub use forward::{
