@@ -69,6 +69,7 @@ TASK_ID = "TASK-PY-DATA-029"
 SUPPORTED_TRUE_BATCH_SLUGS = {"e1", "e6", "e7", "e8", "e9", "e10", "e12", "e13", "e14"}
 STATIC_AST_RETIRED_TEMPORAL_FORWARD_SLUGS = ("e2", "e3", "e4")
 ISOLATED_FORWARD_SLUGS = ("e1", "e10", "e12", "e13", "e14", "e6", "e7", "e8", "e9")
+LOAD_SENSITIVE_ISOLATED_FORWARD_SLUGS = ("e8",)
 DEFAULT_ACTIVE_EMBEDDER_COUNT = len(ISOLATED_FORWARD_SLUGS)
 DEFAULT_CORPUS_PROFILE = "static_ast_python"
 MIN_UNIQUE_VECTOR_FRACTION = 0.5
@@ -513,6 +514,15 @@ def isolated_embedder_extra_env(args: argparse.Namespace, slug: str) -> dict[str
             args.embedder_max_padded_source_byte_map[slug]
         )
     return extra_env
+
+
+def isolated_forward_dispatch_groups(parallel_workers: int) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    if parallel_workers <= 1:
+        return (), ISOLATED_FORWARD_SLUGS
+    load_sensitive = set(LOAD_SENSITIVE_ISOLATED_FORWARD_SLUGS)
+    serialized = tuple(slug for slug in ISOLATED_FORWARD_SLUGS if slug in load_sensitive)
+    parallel = tuple(slug for slug in ISOLATED_FORWARD_SLUGS if slug not in load_sensitive)
+    return serialized, parallel
 
 
 def sha256_file(path: Path) -> str:
@@ -2586,17 +2596,33 @@ def run_shard_embedder_isolated(
             },
         )
         results_by_slug: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=parallel_workers,
-            thread_name_prefix="isolated_subrun",
-        ) as executor:
-            future_to_slug = {
-                executor.submit(_run_one_isolated_subrun, slug): slug
-                for slug in ISOLATED_FORWARD_SLUGS
-            }
-            for future in concurrent.futures.as_completed(future_to_slug):
-                slug_done, subrun_done, snapshot_done = future.result()
+        serialized_slugs, parallel_slugs = isolated_forward_dispatch_groups(parallel_workers)
+        if serialized_slugs:
+            event(
+                event_path,
+                "shard_embedder_isolation_serialized_subruns",
+                {
+                    "shard_id": shard.shard_id,
+                    "serialized_embedder_slugs": list(serialized_slugs),
+                    "parallel_embedder_slugs": list(parallel_slugs),
+                    "reason": "load_sensitive_embedder_model_initialization",
+                },
+            )
+            for slug in serialized_slugs:
+                slug_done, subrun_done, snapshot_done = _run_one_isolated_subrun(slug)
                 results_by_slug[slug_done] = (subrun_done, snapshot_done)
+        if parallel_slugs:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(parallel_workers, len(parallel_slugs)),
+                thread_name_prefix="isolated_subrun",
+            ) as executor:
+                future_to_slug = {
+                    executor.submit(_run_one_isolated_subrun, slug): slug
+                    for slug in parallel_slugs
+                }
+                for future in concurrent.futures.as_completed(future_to_slug):
+                    slug_done, subrun_done, snapshot_done = future.result()
+                    results_by_slug[slug_done] = (subrun_done, snapshot_done)
         # Re-order deterministically by ISOLATED_FORWARD_SLUGS so consolidation
         # is identical to the sequential path.
         for slug in ISOLATED_FORWARD_SLUGS:

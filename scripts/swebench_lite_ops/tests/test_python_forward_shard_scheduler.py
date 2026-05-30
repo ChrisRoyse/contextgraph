@@ -182,6 +182,20 @@ def _scheduler_args(tmp_path: Path, fake_runner: Path) -> argparse.Namespace:
     )
 
 
+def _read_jsonl(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def test_e8_dispatch_groups_serialize_load_sensitive_slug(monkeypatch):
+    monkeypatch.setattr(scheduler, "ISOLATED_FORWARD_SLUGS", ("e1", "e8", "e9"))
+
+    serialized, parallel = scheduler.isolated_forward_dispatch_groups(4)
+
+    assert serialized == ("e8",)
+    assert parallel == ("e1", "e9")
+    assert scheduler.isolated_forward_dispatch_groups(1) == ((), ("e1", "e8", "e9"))
+
+
 def test_isolated_hot_stage_subrun_does_not_publish_composite_readback(tmp_path, monkeypatch):
     monkeypatch.setattr(
         scheduler,
@@ -259,3 +273,51 @@ def test_isolated_hot_stage_subrun_does_not_publish_composite_readback(tmp_path,
     probe_path.write_text(json.dumps(probe, indent=2, sort_keys=True), encoding="utf-8")
     probe_readback = json.loads(probe_path.read_text(encoding="utf-8"))
     assert probe_readback == probe
+
+
+def test_parallel_isolated_scheduler_runs_e8_outside_worker_pool(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        scheduler,
+        "resource_snapshot",
+        lambda _args, phase: {"phase": phase, "synthetic": True},
+    )
+    monkeypatch.setattr(scheduler, "ISOLATED_FORWARD_SLUGS", ("e1", "e8"))
+    monkeypatch.setenv("CG_MEJEPA_PY_FORWARD_PARALLEL_EMBEDDERS", "2")
+    fake_runner = tmp_path / "fake_forward_runner.py"
+    _write_fake_forward_runner(fake_runner)
+    args = _scheduler_args(tmp_path, fake_runner)
+    args.active_embedder_count = 2
+    shard = scheduler.ShardSpec(
+        "shard-000000-offset-000000000",
+        0,
+        1,
+        args.cache_root / "shards" / "shard-000000-offset-000000000",
+        args.readback_root / "shards" / "shard-000000-offset-000000000",
+    )
+    event_path = args.readback_root / "scheduler_events.jsonl"
+
+    run = scheduler.run_shard_embedder_isolated(args, shard, event_path, {"synthetic_preflight": True})
+
+    events = _read_jsonl(event_path)
+    serialized_events = [
+        row for row in events if row.get("phase") == "shard_embedder_isolation_serialized_subruns"
+    ]
+    assert len(serialized_events) == 1
+    serialized_event = serialized_events[0]["detail"]
+    assert serialized_event["serialized_embedder_slugs"] == ["e8"]
+    assert serialized_event["parallel_embedder_slugs"] == ["e1"]
+    assert run["summary"]["active_embedder_count"] == 2
+    assert run["summary"]["accounted_pairs"] == 2
+    assert scheduler.read_json(shard.readback_path())["summary"]["active_embedder_count"] == 2
+    assert "e8" in {
+        row["embedder_id"]
+        for row in run["isolated_embedder_subruns"]
+    }
+    probe = {
+        "serialized_event": serialized_event,
+        "final_readback": scheduler.read_json(shard.readback_path()),
+        "passes": True,
+    }
+    probe_path = tmp_path / "fsv_e8_serialized_dispatch_probe.json"
+    probe_path.write_text(json.dumps(probe, indent=2, sort_keys=True), encoding="utf-8")
+    assert json.loads(probe_path.read_text(encoding="utf-8")) == probe
