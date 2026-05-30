@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TASK-CR-008 low-signal embedder audit preflight.
+"""TASK-CR-008 low-signal embedder audit ranking.
 
 This runner is intentionally conservative. It creates a replacement-priority
 preflight from already-landed source-of-truth artifacts, but it does not mark
@@ -25,6 +25,7 @@ from typing import Any
 
 TASK_ID = "TASK-CR-008"
 ARTIFACT_KIND = "low_signal_embedder_audit_preflight"
+FINAL_ARTIFACT_KIND = "low_signal_embedder_audit_final_ranking"
 SCHEMA_VERSION = 1
 
 DEFAULT_MI_MANIFEST = Path(
@@ -39,8 +40,26 @@ DEFAULT_ORACLE_MANIFEST = Path(
     "/zfs/archive/contextgraph/fsv/inv-035-oracle-noise-floor-fsv/"
     "run-20260529T233417Z/oracle_self_consistency_manifest.json"
 )
+DEFAULT_PREFLIGHT_MANIFEST = Path(
+    "/zfs/archive/contextgraph/fsv/task-cr-008-low-signal-embedder-audit-fsv/preflight/"
+    "run-20260530T015049Z/low_signal_embedder_audit_preflight_manifest.json"
+)
+DEFAULT_ATTRIBUTION_MANIFEST = Path(
+    "/zfs/archive/contextgraph/fsv/task-cr-008-low-signal-embedder-audit-fsv/phase-2-attribution/"
+    "run-20260530T020453Z/low_signal_slot_attribution_manifest.json"
+)
+DEFAULT_PHASE3_SUMMARY = Path(
+    "/zfs/archive/contextgraph/fsv/task-cr-008-low-signal-embedder-audit-fsv/phase-3-live-source-audit/"
+    "run-20260530T030302Z/phase_3_live_source_audit_summary.json"
+)
+DEFAULT_DROP_ABLATION_MANIFEST = Path(
+    "/zfs/archive/contextgraph/fsv/task-cr-812-forward-cache-slot-ablation-runner-fsv/"
+    "run-20260530T044230Z/low_signal_static_drop_ablation_manifest.json"
+)
 DEFAULT_OUTPUT_PARENT = Path("/zfs/archive/contextgraph/fsv/task-cr-008-low-signal-embedder-audit-fsv/preflight")
+DEFAULT_FINAL_OUTPUT_PARENT = Path("/zfs/archive/contextgraph/fsv/task-cr-008-low-signal-embedder-audit-fsv/final-ranking")
 DEFAULT_STATE_ROOT = Path("/zfs/archive/contextgraph/state/embedder-signal-audit/task-cr-008-signal-ranking-v1")
+DEFAULT_FINAL_STATE_PARENT = Path("/zfs/archive/contextgraph/state/embedder-signal-audit/task-cr-008-signal-ranking-v2")
 
 ACTIVE_STATIC_SLOTS = ("e1", "e6", "e7", "e8", "e9", "e10", "e12", "e13", "e14")
 TEMPORAL_SLOTS = ("e2", "e3", "e4")
@@ -63,6 +82,16 @@ class Evidence:
     test_bugfix_transition_auc: float | None = None
     test_asymmetry_auc: float | None = None
     validation_bugfix_transition_auc: float | None = None
+    holdout_corr_delta_when_dropped: float | None = None
+    authoritative_for_holdout_corr_delta: bool = False
+    drop_ablation_decision: str | None = None
+    per_cell_median_attribution: float | None = None
+    per_cell_valid_corr_count: int | None = None
+    attribution_decision: str | None = None
+    live_variance: float | None = None
+    temporal_decision: str | None = None
+    temporal_measured: bool | None = None
+    temporal_blockers: tuple[str, ...] = ()
     static_active: bool = False
     static_retired_temporal: bool = False
 
@@ -198,16 +227,168 @@ def parse_oracle_evidence(oracle_manifest: dict[str, Any]) -> dict[str, Any]:
     return {"oracle_self_consistency": value, "noise_floor_non_binding": value >= 0.97}
 
 
-def merge_evidence(mi: dict[str, Evidence], auc: dict[str, Evidence], slot: str) -> Evidence:
+def require_manifest_passes(doc: dict[str, Any], code: str) -> None:
+    require(doc.get("passes") is True and doc.get("allPassed", True) is True, code)
+
+
+def require_doctrine_flags(doc: dict[str, Any], prefix: str) -> dict[str, Any]:
+    doctrine = doc.get("doctrine") or {}
+    require(doctrine.get("slot_identity_preserved") is True, f"{prefix}_SLOT_IDENTITY_NOT_PRESERVED")
+    require(doctrine.get("flat_vector_concat_used") is False, f"{prefix}_FLAT_VECTOR_USED")
+    require(doctrine.get("target_labels_used_as_live_inputs") is False, f"{prefix}_TARGET_LEAK")
+    return doctrine
+
+
+def summary_rows(doc: dict[str, Any], code: str) -> list[dict[str, Any]]:
+    rows = ((doc.get("actual") or {}).get("summary_rows")) or doc.get("summary_rows") or []
+    require(isinstance(rows, list), code)
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def parse_preflight_manifest(preflight_manifest: dict[str, Any]) -> dict[str, Any]:
+    require_manifest_passes(preflight_manifest, "LOW_SIGNAL_AUDIT_PREFLIGHT_NOT_PASSING")
+    require(
+        preflight_manifest.get("artifact_kind") == "low_signal_embedder_audit_preflight",
+        "LOW_SIGNAL_AUDIT_PREFLIGHT_WRONG_ARTIFACT",
+        preflight_manifest.get("artifact_kind"),
+    )
+    actual = preflight_manifest.get("actual") or {}
+    require(actual.get("replaceable_slots") == ["E5", "E11"], "LOW_SIGNAL_AUDIT_PREFLIGHT_EMPTY_SLOT_DRIFT", actual)
+    require(actual.get("active_replaceable_slots") == [], "LOW_SIGNAL_AUDIT_PREFLIGHT_ACTIVE_REPLACEABLE_DRIFT", actual)
+    require_doctrine_flags(preflight_manifest, "LOW_SIGNAL_AUDIT_PREFLIGHT")
+    return actual
+
+
+def parse_drop_ablation_evidence(drop_manifest: dict[str, Any]) -> dict[str, Evidence]:
+    require_manifest_passes(drop_manifest, "LOW_SIGNAL_AUDIT_DROP_ABLATION_NOT_PASSING")
+    require(
+        drop_manifest.get("runner_contract") == "forward-cache-production",
+        "LOW_SIGNAL_AUDIT_DROP_ABLATION_WRONG_CONTRACT",
+        drop_manifest.get("runner_contract"),
+    )
+    doctrine = require_doctrine_flags(drop_manifest, "LOW_SIGNAL_AUDIT_DROP_ABLATION")
+    require(
+        doctrine.get("instrument_slot_namespace_used") is False,
+        "LOW_SIGNAL_AUDIT_DROP_ABLATION_INSTRUMENT_NAMESPACE_USED",
+    )
+    require(
+        doctrine.get("production_mejepa_checkpoint_retrained") is False,
+        "LOW_SIGNAL_AUDIT_DROP_ABLATION_CHECKPOINT_RETRAINED_CLAIMED",
+    )
+    require(
+        doctrine.get("dedicated_forward_cache_ablation_runner") is True,
+        "LOW_SIGNAL_AUDIT_DROP_ABLATION_NOT_DEDICATED_RUNNER",
+    )
+    by_slot: dict[str, Evidence] = {}
+    for row in summary_rows(drop_manifest, "LOW_SIGNAL_AUDIT_DROP_ABLATION_SUMMARY_ROWS_MISSING"):
+        slot = str(row.get("slot") or "").lower()
+        if not slot:
+            continue
+        delta = finite_float(row.get("holdout_corr_delta_when_dropped"))
+        measured = row.get("measured") is True
+        authoritative = row.get("authoritative_for_holdout_corr_delta") is True
+        require(not measured or delta is not None, "LOW_SIGNAL_AUDIT_DROP_ABLATION_DELTA_MISSING", row)
+        require(not measured or authoritative, "LOW_SIGNAL_AUDIT_DROP_ABLATION_NOT_AUTHORITATIVE", row)
+        by_slot[slot] = Evidence(
+            holdout_corr_delta_when_dropped=delta,
+            authoritative_for_holdout_corr_delta=authoritative,
+            drop_ablation_decision=row.get("decision"),
+            static_active=slot in ACTIVE_STATIC_SLOTS,
+        )
+    require({"e9", "e14"}.issubset(by_slot), "LOW_SIGNAL_AUDIT_DROP_ABLATION_E9_E14_MISSING", sorted(by_slot))
+    return by_slot
+
+
+def parse_attribution_evidence(attribution_manifest: dict[str, Any]) -> dict[str, Evidence]:
+    require_manifest_passes(attribution_manifest, "LOW_SIGNAL_AUDIT_ATTRIBUTION_NOT_PASSING")
+    require(
+        attribution_manifest.get("artifact_kind") == "low_signal_slot_attribution_phase_2",
+        "LOW_SIGNAL_AUDIT_ATTRIBUTION_WRONG_ARTIFACT",
+        attribution_manifest.get("artifact_kind"),
+    )
+    require_doctrine_flags(attribution_manifest, "LOW_SIGNAL_AUDIT_ATTRIBUTION")
+    by_slot: dict[str, Evidence] = {}
+    for row in summary_rows(attribution_manifest, "LOW_SIGNAL_AUDIT_ATTRIBUTION_SUMMARY_ROWS_MISSING"):
+        slot = str(row.get("slot") or "").lower()
+        if not slot:
+            continue
+        by_slot[slot] = Evidence(
+            per_cell_median_attribution=finite_float(row.get("per_cell_median_attribution")),
+            per_cell_valid_corr_count=int(row["per_cell_valid_corr_count"])
+            if isinstance(row.get("per_cell_valid_corr_count"), int)
+            else None,
+            attribution_decision=row.get("decision"),
+            static_active=slot in ACTIVE_STATIC_SLOTS,
+            static_retired_temporal=slot in TEMPORAL_SLOTS,
+        )
+    require({"e9", "e14"}.issubset(by_slot), "LOW_SIGNAL_AUDIT_ATTRIBUTION_E9_E14_MISSING", sorted(by_slot))
+    return by_slot
+
+
+def parse_phase3_evidence(phase3_summary: dict[str, Any]) -> dict[str, Evidence]:
+    require_manifest_passes(phase3_summary, "LOW_SIGNAL_AUDIT_PHASE3_NOT_PASSING")
+    require(
+        phase3_summary.get("artifact_kind") == "low_signal_phase_3_live_source_audit",
+        "LOW_SIGNAL_AUDIT_PHASE3_WRONG_ARTIFACT",
+        phase3_summary.get("artifact_kind"),
+    )
+    doctrine = require_doctrine_flags(phase3_summary, "LOW_SIGNAL_AUDIT_PHASE3")
+    require(doctrine.get("static_ast_temporal_proxy_used") is False, "LOW_SIGNAL_AUDIT_PHASE3_STATIC_PROXY_USED")
+    require(
+        doctrine.get("active_temporal_replacement_authorized") is False,
+        "LOW_SIGNAL_AUDIT_PHASE3_TEMPORAL_REPLACEMENT_AUTHORIZED",
+    )
+    decisions = phase3_summary.get("temporal_slot_decisions") or []
+    require(isinstance(decisions, list), "LOW_SIGNAL_AUDIT_PHASE3_DECISIONS_NOT_LIST")
+    by_slot: dict[str, Evidence] = {}
+    for row in decisions:
+        require(isinstance(row, dict), "LOW_SIGNAL_AUDIT_PHASE3_DECISION_NOT_OBJECT", row)
+        slot = str(row.get("slot") or "").lower()
+        if not slot:
+            continue
+        blockers = tuple(str(item) for item in row.get("blockers", []) if str(item))
+        by_slot[slot] = Evidence(
+            live_variance=finite_float(row.get("variance")),
+            temporal_decision=row.get("decision"),
+            temporal_measured=row.get("measured") is True,
+            temporal_blockers=blockers,
+            static_retired_temporal=slot in TEMPORAL_SLOTS,
+        )
+    require(set(TEMPORAL_SLOTS).issubset(by_slot), "LOW_SIGNAL_AUDIT_PHASE3_TEMPORAL_MISSING", sorted(by_slot))
+    return by_slot
+
+
+def merge_evidence(
+    mi: dict[str, Evidence],
+    auc: dict[str, Evidence],
+    slot: str,
+    *,
+    drop: dict[str, Evidence] | None = None,
+    attribution: dict[str, Evidence] | None = None,
+    phase3: dict[str, Evidence] | None = None,
+) -> Evidence:
     left = mi.get(slot, Evidence())
     right = auc.get(slot, Evidence())
+    drop_evidence = (drop or {}).get(slot, Evidence())
+    attribution_evidence = (attribution or {}).get(slot, Evidence())
+    phase3_evidence = (phase3 or {}).get(slot, Evidence())
     return Evidence(
         mi_delta_bits=left.mi_delta_bits,
         mi_drop_one_bits=left.mi_drop_one_bits,
         test_bugfix_transition_auc=right.test_bugfix_transition_auc,
         test_asymmetry_auc=right.test_asymmetry_auc,
         validation_bugfix_transition_auc=right.validation_bugfix_transition_auc,
-        static_active=slot in ACTIVE_STATIC_SLOTS or left.static_active or right.static_active,
+        holdout_corr_delta_when_dropped=drop_evidence.holdout_corr_delta_when_dropped,
+        authoritative_for_holdout_corr_delta=drop_evidence.authoritative_for_holdout_corr_delta,
+        drop_ablation_decision=drop_evidence.drop_ablation_decision,
+        per_cell_median_attribution=attribution_evidence.per_cell_median_attribution,
+        per_cell_valid_corr_count=attribution_evidence.per_cell_valid_corr_count,
+        attribution_decision=attribution_evidence.attribution_decision,
+        live_variance=phase3_evidence.live_variance,
+        temporal_decision=phase3_evidence.temporal_decision,
+        temporal_measured=phase3_evidence.temporal_measured,
+        temporal_blockers=phase3_evidence.temporal_blockers,
+        static_active=slot in ACTIVE_STATIC_SLOTS or left.static_active or right.static_active or drop_evidence.static_active,
         static_retired_temporal=slot in TEMPORAL_SLOTS,
     )
 
@@ -287,6 +468,130 @@ def classify_slot(slot: str, evidence: Evidence, *, live_variance_available: boo
     }
 
 
+def classify_final_slot(slot: str, evidence: Evidence) -> dict[str, Any]:
+    slot = slot.lower()
+    measurements: dict[str, Any] = {
+        "holdout_corr_delta_when_dropped": evidence.holdout_corr_delta_when_dropped,
+        "authoritative_for_holdout_corr_delta": evidence.authoritative_for_holdout_corr_delta,
+        "drop_ablation_decision": evidence.drop_ablation_decision,
+        "per_cell_median_attribution": evidence.per_cell_median_attribution,
+        "per_cell_valid_corr_count": evidence.per_cell_valid_corr_count,
+        "attribution_decision": evidence.attribution_decision,
+        "live_variance": evidence.live_variance,
+        "temporal_measured": evidence.temporal_measured,
+        "mi_delta_from_global_bits_proxy": evidence.mi_delta_bits,
+        "mi_drop_one_bounded_best_bits_proxy": evidence.mi_drop_one_bits,
+        "test_bugfix_transition_auc_proxy": evidence.test_bugfix_transition_auc,
+        "test_asymmetry_auc_proxy": evidence.test_asymmetry_auc,
+        "validation_bugfix_transition_auc_proxy": evidence.validation_bugfix_transition_auc,
+    }
+
+    if slot in EMPTY_SLOT_STATES:
+        return {
+            "slot": slot.upper(),
+            "current_state": EMPTY_SLOT_STATES[slot],
+            "replaceable": True,
+            "replacement_queue_candidate": True,
+            "authoritative_for_replacement": True,
+            "authoritative_for_keep_default": False,
+            "preflight_only": False,
+            "final_ranking": True,
+            "rank_bucket": 0,
+            "decision": "promote_empty_slot_to_replacement_queue",
+            "reason": "slot already empty; #746 preflight marks it trivially replaceable",
+            "blockers": [],
+            "measurements": measurements,
+        }
+
+    if slot in TEMPORAL_SLOTS:
+        blockers = list(evidence.temporal_blockers) or ["no_post_683_live_raw_temporal_vector_source"]
+        return {
+            "slot": slot.upper(),
+            "current_state": "active_temporal_static_ast_retired",
+            "replaceable": False,
+            "replacement_queue_candidate": False,
+            "authoritative_for_replacement": False,
+            "authoritative_for_keep_default": True,
+            "preflight_only": False,
+            "final_ranking": True,
+            "rank_bucket": 30,
+            "decision": evidence.temporal_decision or "keep_by_default",
+            "reason": "Phase 3 found no post-#683 live raw temporal-vector source; absence of evidence cannot authorize replacement",
+            "blockers": blockers,
+            "measurements": measurements,
+        }
+
+    if slot == "e14":
+        require(
+            evidence.authoritative_for_holdout_corr_delta and evidence.holdout_corr_delta_when_dropped is not None,
+            "LOW_SIGNAL_AUDIT_FINAL_E14_DROP_DELTA_MISSING",
+        )
+        require(evidence.per_cell_median_attribution is not None, "LOW_SIGNAL_AUDIT_FINAL_E14_ATTRIBUTION_MISSING")
+        low_signal = evidence.holdout_corr_delta_when_dropped < 0.001 and evidence.per_cell_median_attribution < 0.005
+        return {
+            "slot": "E14",
+            "current_state": "active_static_reserved",
+            "replaceable": False,
+            "replacement_queue_candidate": bool(low_signal),
+            "authoritative_for_replacement": False,
+            "authoritative_for_keep_default": False,
+            "preflight_only": False,
+            "final_ranking": True,
+            "rank_bucket": 10 if low_signal else 25,
+            "decision": "active_low_signal_candidate_pending_downstream_gates"
+            if low_signal
+            else "active_slot_not_low_signal_after_final_evidence",
+            "reason": "Phase 2 attribution and #812 forward-cache drop-delta are both below the #746 signal threshold, but #745/#516/#518/#680/#732 gates still control any replacement",
+            "blockers": [
+                "task_cr_007_replacement_gate_required",
+                "novelty_utility_retirement_gates_required",
+                "causal_replacement_dependencies_required",
+            ],
+            "measurements": measurements,
+        }
+
+    if slot == "e9":
+        require(
+            evidence.authoritative_for_holdout_corr_delta and evidence.holdout_corr_delta_when_dropped is not None,
+            "LOW_SIGNAL_AUDIT_FINAL_E9_DROP_DELTA_MISSING",
+        )
+        require(evidence.per_cell_median_attribution is not None, "LOW_SIGNAL_AUDIT_FINAL_E9_ATTRIBUTION_MISSING")
+        conflicting_signal = evidence.per_cell_median_attribution >= 0.005 and evidence.holdout_corr_delta_when_dropped < 0.001
+        return {
+            "slot": "E9",
+            "current_state": "active_static",
+            "replaceable": False,
+            "replacement_queue_candidate": False,
+            "authoritative_for_replacement": False,
+            "authoritative_for_keep_default": True,
+            "preflight_only": False,
+            "final_ranking": True,
+            "rank_bucket": 20,
+            "decision": "keep_by_default_conflicting_signal_detected"
+            if conflicting_signal
+            else "keep_by_default_after_final_evidence",
+            "reason": "Phase 2 attribution is positive while #812 drop-delta is negative; conservative #746 rule keeps active E9 by default",
+            "blockers": ["conflicting_phase_2_positive_attribution"],
+            "measurements": measurements,
+        }
+
+    return {
+        "slot": slot.upper(),
+        "current_state": "active_or_reserved",
+        "replaceable": False,
+        "replacement_queue_candidate": False,
+        "authoritative_for_replacement": False,
+        "authoritative_for_keep_default": False,
+        "preflight_only": False,
+        "final_ranking": True,
+        "rank_bucket": 40,
+        "decision": "not_in_final_active_evidence_set",
+        "reason": "slot was not part of the final #746 active evidence set",
+        "blockers": ["missing_final_evidence"],
+        "measurements": measurements,
+    }
+
+
 def rank_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     def key(row: dict[str, Any]) -> tuple[int, float, str]:
         measurements = row["measurements"]
@@ -310,11 +615,34 @@ def build_priority_rows(
     *,
     mi_manifest: dict[str, Any],
     auc_manifest: dict[str, Any],
+    drop_ablation_manifest: dict[str, Any] | None = None,
+    attribution_manifest: dict[str, Any] | None = None,
+    phase3_summary: dict[str, Any] | None = None,
+    preflight_manifest: dict[str, Any] | None = None,
+    final_ranking: bool = False,
     live_variance_available: bool = False,
     full_ablation_available: bool = False,
 ) -> list[dict[str, Any]]:
     mi = parse_mi_evidence(mi_manifest)
     auc = parse_causal_auc_evidence(auc_manifest)
+    drop = parse_drop_ablation_evidence(drop_ablation_manifest) if final_ranking and drop_ablation_manifest else {}
+    attribution = parse_attribution_evidence(attribution_manifest) if final_ranking and attribution_manifest else {}
+    phase3 = parse_phase3_evidence(phase3_summary) if final_ranking and phase3_summary else {}
+    if final_ranking:
+        require(drop_ablation_manifest is not None, "LOW_SIGNAL_AUDIT_FINAL_DROP_ABLATION_REQUIRED")
+        require(attribution_manifest is not None, "LOW_SIGNAL_AUDIT_FINAL_ATTRIBUTION_REQUIRED")
+        require(phase3_summary is not None, "LOW_SIGNAL_AUDIT_FINAL_PHASE3_REQUIRED")
+        require(preflight_manifest is not None, "LOW_SIGNAL_AUDIT_FINAL_PREFLIGHT_REQUIRED")
+        parse_preflight_manifest(preflight_manifest)
+        rows = [
+            classify_final_slot(
+                slot,
+                merge_evidence(mi, auc, slot, drop=drop, attribution=attribution, phase3=phase3),
+            )
+            for slot in CANDIDATE_SLOTS
+        ]
+        return rank_rows(rows)
+
     rows = [
         classify_slot(
             slot,
@@ -329,6 +657,7 @@ def build_priority_rows(
 
 def validate_priority_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     cases = []
+    final_ranking = any(row.get("final_ranking") is True for row in rows)
     empty = [row for row in rows if row["slot"] in {"E5", "E11"}]
     active_replaceable = [
         row
@@ -355,10 +684,15 @@ def validate_priority_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     cases.append(
         {
             "case": "temporal_slots_require_live_variance",
-            "expected": "E2/E3/E4 carry phase_3_live_temporal_variance_required blocker",
+            "expected": "E2/E3/E4 are never replacement-authorized without live-vector variance",
             "actual": {row["slot"]: row.get("blockers", []) for row in temporal},
             "pass": len(temporal) == 3
-            and all("phase_3_live_temporal_variance_required" in row.get("blockers", []) for row in temporal),
+            and all(row.get("replaceable") is False for row in temporal)
+            and (
+                all("phase_3_live_temporal_variance_required" in row.get("blockers", []) for row in temporal)
+                if not final_ranking
+                else all("no_post_683_live_raw_temporal_vector_source" in row.get("blockers", []) for row in temporal)
+            ),
         }
     )
     cases.append(
@@ -369,6 +703,53 @@ def validate_priority_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "pass": sorted(row["slot"] for row in rows) == sorted(slot.upper() for slot in CANDIDATE_SLOTS),
         }
     )
+    if final_ranking:
+        by_slot = {row["slot"]: row for row in rows}
+        e9 = by_slot.get("E9", {})
+        e14 = by_slot.get("E14", {})
+        cases.extend(
+            [
+                {
+                    "case": "final_ranking_uses_direct_drop_ablation_for_active_static_slots",
+                    "expected": "E9/E14 carry authoritative #812 holdout_corr_delta_when_dropped",
+                    "actual": {
+                        slot: (by_slot.get(slot, {}).get("measurements", {}) or {}).get(
+                            "authoritative_for_holdout_corr_delta"
+                        )
+                        for slot in ("E9", "E14")
+                    },
+                    "pass": all(
+                        (by_slot.get(slot, {}).get("measurements", {}) or {}).get(
+                            "authoritative_for_holdout_corr_delta"
+                        )
+                        is True
+                        for slot in ("E9", "E14")
+                    ),
+                },
+                {
+                    "case": "e9_conflict_kept_by_default",
+                    "expected": "E9 positive Phase 2 attribution plus negative drop-delta is keep-by-default",
+                    "actual": {
+                        "decision": e9.get("decision"),
+                        "replacement_queue_candidate": e9.get("replacement_queue_candidate"),
+                    },
+                    "pass": e9.get("decision") == "keep_by_default_conflicting_signal_detected"
+                    and e9.get("replacement_queue_candidate") is False,
+                },
+                {
+                    "case": "e14_low_signal_candidate_not_promotion_authorized",
+                    "expected": "E14 is a low-signal candidate but not replaceable until downstream gates pass",
+                    "actual": {
+                        "decision": e14.get("decision"),
+                        "replacement_queue_candidate": e14.get("replacement_queue_candidate"),
+                        "replaceable": e14.get("replaceable"),
+                    },
+                    "pass": e14.get("decision") == "active_low_signal_candidate_pending_downstream_gates"
+                    and e14.get("replacement_queue_candidate") is True
+                    and e14.get("replaceable") is False,
+                },
+            ]
+        )
     return cases
 
 
@@ -378,8 +759,10 @@ def artifact_hashes(paths: dict[str, Path]) -> dict[str, str]:
 
 def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
     run_id = args.run_id or f"run-{utc_stamp()}"
-    output_root = args.output_root or (args.output_parent / run_id)
-    state_root = args.state_root
+    final_ranking = bool(getattr(args, "final_ranking", False))
+    output_parent = args.output_parent or (DEFAULT_FINAL_OUTPUT_PARENT if final_ranking else DEFAULT_OUTPUT_PARENT)
+    output_root = args.output_root or (output_parent / run_id)
+    state_root = args.state_root or ((DEFAULT_FINAL_STATE_PARENT / run_id) if final_ranking else DEFAULT_STATE_ROOT)
     require_aiwonder_path(output_root, "output_root", args.allow_non_aiwonder_roots)
     require_aiwonder_path(state_root, "state_root", args.allow_non_aiwonder_roots)
 
@@ -387,40 +770,71 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
     if args.clean:
         if output_root.exists():
             shutil.rmtree(output_root)
+        if final_ranking and state_root.exists():
+            shutil.rmtree(state_root)
         state_root.mkdir(parents=True, exist_ok=True)
 
     mi_manifest, mi_source = load_manifest(args.mi_manifest, "mi_manifest", args.allow_non_aiwonder_roots)
     auc_manifest, auc_source = load_manifest(args.causal_auc_manifest, "causal_auc_manifest", args.allow_non_aiwonder_roots)
     oracle_manifest, oracle_source = load_manifest(args.oracle_manifest, "oracle_manifest", args.allow_non_aiwonder_roots)
+    preflight_manifest = attribution_manifest = phase3_summary = drop_ablation_manifest = None
+    preflight_source = attribution_source = phase3_source = drop_ablation_source = None
+    if final_ranking:
+        preflight_manifest, preflight_source = load_manifest(
+            args.preflight_manifest, "preflight_manifest", args.allow_non_aiwonder_roots
+        )
+        attribution_manifest, attribution_source = load_manifest(
+            args.attribution_manifest, "attribution_manifest", args.allow_non_aiwonder_roots
+        )
+        phase3_summary, phase3_source = load_manifest(args.phase3_summary, "phase3_summary", args.allow_non_aiwonder_roots)
+        drop_ablation_manifest, drop_ablation_source = load_manifest(
+            args.drop_ablation_manifest, "drop_ablation_manifest", args.allow_non_aiwonder_roots
+        )
     oracle_summary = parse_oracle_evidence(oracle_manifest)
 
     rows = build_priority_rows(
         mi_manifest=mi_manifest,
         auc_manifest=auc_manifest,
+        drop_ablation_manifest=drop_ablation_manifest,
+        attribution_manifest=attribution_manifest,
+        phase3_summary=phase3_summary,
+        preflight_manifest=preflight_manifest,
+        final_ranking=final_ranking,
         live_variance_available=False,
-        full_ablation_available=False,
+        full_ablation_available=final_ranking,
     )
     cases = validate_priority_rows(rows)
     all_passed = all(case["pass"] for case in cases)
 
     ranking_path = state_root / "embedder_replacement_priority.jsonl"
     ranking_count = write_jsonl(ranking_path, rows)
-    summary_path = state_root / "embedder_replacement_priority.preflight-summary.json"
+    summary_path = state_root / (
+        "embedder_replacement_priority.final-summary.json"
+        if final_ranking
+        else "embedder_replacement_priority.preflight-summary.json"
+    )
     state_summary = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": "low_signal_embedder_replacement_priority_preflight_summary",
+        "artifact_kind": "low_signal_embedder_replacement_priority_final_summary"
+        if final_ranking
+        else "low_signal_embedder_replacement_priority_preflight_summary",
         "created_at_utc": utc_now(),
         "run_id": run_id,
-        "preflight_only": True,
-        "full_audit_complete": False,
+        "preflight_only": not final_ranking,
+        "final_ranking_complete": final_ranking,
+        "full_audit_complete": final_ranking,
         "ranking_path": str(ranking_path),
         "ranking_row_count": ranking_count,
     }
     write_json(summary_path, state_summary)
 
     output_root.mkdir(parents=True, exist_ok=True)
-    manifest_path = output_root / "low_signal_embedder_audit_preflight_manifest.json"
+    manifest_path = output_root / (
+        "low_signal_embedder_audit_final_ranking_manifest.json"
+        if final_ranking
+        else "low_signal_embedder_audit_preflight_manifest.json"
+    )
     readback_path = output_root / "manual_readback_summary.json"
     hashes_path = output_root / "artifact_hashes.json"
     source_of_truth = {
@@ -437,6 +851,8 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         "flat_vector_concat_used": False,
         "target_labels_used_as_live_inputs": False,
         "no_inner_llm_used": True,
+        "active_non_empty_replacement_authorized": False,
+        "production_checkpoint_modified": False,
         "aiwonder_durable_root_required": (
             str(output_root).startswith("/zfs/archive/contextgraph/")
             and str(state_root).startswith("/zfs/archive/contextgraph/")
@@ -447,35 +863,59 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "task_id": TASK_ID,
-        "artifact_kind": ARTIFACT_KIND,
+        "artifact_kind": FINAL_ARTIFACT_KIND if final_ranking else ARTIFACT_KIND,
         "created_at_utc": utc_now(),
         "run_id": run_id,
-        "preflight_only": True,
-        "full_audit_complete": False,
+        "preflight_only": not final_ranking,
+        "final_ranking_complete": final_ranking,
+        "full_audit_complete": final_ranking,
         "allPassed": all_passed,
         "passes": all_passed,
         "sourceOfTruth": source_of_truth,
         "trigger": " ".join(sys.argv),
-        "expected": "conservative #746 preflight ranking; only already-empty E5/E11 replaceable",
+        "expected": (
+            "final #746 ranking integrating preflight, Phase 2 attribution, Phase 3 source audit, and #812 drop-ablation; no active replacement authorized"
+            if final_ranking
+            else "conservative #746 preflight ranking; only already-empty E5/E11 replaceable"
+        ),
         "actual": {
             "ranking_rows": ranking_count,
             "replaceable_slots": [row["slot"] for row in rows if row["replaceable"]],
             "active_replaceable_slots": [
                 row["slot"] for row in rows if row["slot"] not in {"E5", "E11"} and row["replaceable"]
             ],
+            "replacement_queue_candidates": [row["slot"] for row in rows if row.get("replacement_queue_candidate")],
+            "active_low_signal_candidates": [
+                row["slot"]
+                for row in rows
+                if row["slot"] not in {"E5", "E11"} and row.get("replacement_queue_candidate")
+            ],
+            "keep_default_slots": [row["slot"] for row in rows if row.get("authoritative_for_keep_default")],
         },
         "cases": cases,
         "source_artifacts": {
             "mi_manifest": mi_source,
             "causal_auc_manifest": auc_source,
             "oracle_manifest": oracle_source,
+            **(
+                {
+                    "preflight_manifest": preflight_source,
+                    "attribution_manifest": attribution_source,
+                    "phase3_summary": phase3_source,
+                    "drop_ablation_manifest": drop_ablation_source,
+                }
+                if final_ranking
+                else {}
+            ),
         },
         "oracle_summary": oracle_summary,
         "decision_limits": {
-            "active_non_empty_slots_require_full_drop_ablation": True,
+            "active_non_empty_slots_require_direct_drop_ablation": True,
             "active_non_empty_slots_require_per_cell_attribution": True,
-            "temporal_slots_require_live_temporal_variance": True,
+            "temporal_slots_require_live_temporal_variance_or_keep_default_source_audit": True,
             "proxy_metrics_are_not_promotion_metrics": True,
+            "e14_replacement_requires_downstream_gates": True,
+            "e9_conflicting_evidence_keeps_slot_by_default": final_ranking,
         },
         "doctrine": doctrine,
         "before": before,
@@ -495,16 +935,29 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         "active_replaceable_slots": [
             row["slot"] for row in rows if row["slot"] not in {"E5", "E11"} and row["replaceable"]
         ],
+        "replacement_queue_candidates": [row["slot"] for row in rows if row.get("replacement_queue_candidate")],
+        "active_low_signal_candidates": [
+            row["slot"] for row in rows if row["slot"] not in {"E5", "E11"} and row.get("replacement_queue_candidate")
+        ],
+        "keep_default_slots": [row["slot"] for row in rows if row.get("authoritative_for_keep_default")],
         "cases": cases,
         "hashes_path": str(hashes_path),
     }
     write_json(readback_path, readback)
     hashes = artifact_hashes(
         {
-            "low_signal_embedder_audit_preflight_manifest.json": manifest_path,
+            (
+                "low_signal_embedder_audit_final_ranking_manifest.json"
+                if final_ranking
+                else "low_signal_embedder_audit_preflight_manifest.json"
+            ): manifest_path,
             "manual_readback_summary.json": readback_path,
             "embedder_replacement_priority.jsonl": ranking_path,
-            "embedder_replacement_priority.preflight-summary.json": summary_path,
+            (
+                "embedder_replacement_priority.final-summary.json"
+                if final_ranking
+                else "embedder_replacement_priority.preflight-summary.json"
+            ): summary_path,
         }
     )
     write_json(hashes_path, hashes)
@@ -548,14 +1001,154 @@ def fixture_auc_manifest() -> dict[str, Any]:
     }
 
 
-def write_fixture_manifests(root: Path) -> tuple[Path, Path, Path]:
+def fixture_preflight_manifest() -> dict[str, Any]:
+    return {
+        "passes": True,
+        "allPassed": True,
+        "artifact_kind": "low_signal_embedder_audit_preflight",
+        "actual": {
+            "ranking_rows": 7,
+            "replaceable_slots": ["E5", "E11"],
+            "active_replaceable_slots": [],
+        },
+        "doctrine": {
+            "slot_identity_preserved": True,
+            "flat_vector_concat_used": False,
+            "target_labels_used_as_live_inputs": False,
+        },
+    }
+
+
+def fixture_attribution_manifest() -> dict[str, Any]:
+    return {
+        "passes": True,
+        "allPassed": True,
+        "artifact_kind": "low_signal_slot_attribution_phase_2",
+        "doctrine": {
+            "slot_identity_preserved": True,
+            "flat_vector_concat_used": False,
+            "target_labels_used_as_live_inputs": False,
+        },
+        "actual": {
+            "summary_rows": [
+                {
+                    "slot": "E9",
+                    "measured": True,
+                    "replaceable": False,
+                    "decision": "phase_2_keep_signal_detected",
+                    "per_cell_median_attribution": 0.03573408148454456,
+                    "per_cell_valid_corr_count": 6,
+                },
+                {
+                    "slot": "E14",
+                    "measured": True,
+                    "replaceable": False,
+                    "decision": "phase_2_low_signal_candidate_needs_phase_1_confirmation",
+                    "per_cell_median_attribution": -0.012332886348498384,
+                    "per_cell_valid_corr_count": 6,
+                },
+            ],
+        },
+    }
+
+
+def fixture_drop_ablation_manifest() -> dict[str, Any]:
+    return {
+        "passes": True,
+        "allPassed": True,
+        "artifact_kind": "low_signal_static_drop_ablation_phase_1",
+        "runner_contract": "forward-cache-production",
+        "doctrine": {
+            "slot_identity_preserved": True,
+            "flat_vector_concat_used": False,
+            "target_labels_used_as_live_inputs": False,
+            "instrument_slot_namespace_used": False,
+            "production_mejepa_checkpoint_retrained": False,
+            "dedicated_forward_cache_ablation_runner": True,
+        },
+        "actual": {
+            "summary_rows": [
+                {
+                    "slot": "E9",
+                    "measured": True,
+                    "replaceable": False,
+                    "authoritative_for_holdout_corr_delta": True,
+                    "decision": "phase_1_static_low_signal_candidate_needs_production_confirmation",
+                    "holdout_corr_delta_when_dropped": -0.007558421887908839,
+                },
+                {
+                    "slot": "E14",
+                    "measured": True,
+                    "replaceable": False,
+                    "authoritative_for_holdout_corr_delta": True,
+                    "decision": "phase_1_static_low_signal_candidate_needs_production_confirmation",
+                    "holdout_corr_delta_when_dropped": -0.00982154958911502,
+                },
+            ],
+        },
+    }
+
+
+def fixture_phase3_summary() -> dict[str, Any]:
+    return {
+        "passes": True,
+        "allPassed": True,
+        "artifact_kind": "low_signal_phase_3_live_source_audit",
+        "phase_3_result": "phase_3_unmeasurable_no_live_vector_source",
+        "doctrine": {
+            "slot_identity_preserved": True,
+            "flat_vector_concat_used": False,
+            "target_labels_used_as_live_inputs": False,
+            "static_ast_temporal_proxy_used": False,
+            "active_temporal_replacement_authorized": False,
+        },
+        "temporal_slot_decisions": [
+            {
+                "slot": "E2",
+                "measured": False,
+                "variance": None,
+                "replaceable": False,
+                "decision": "keep_by_default",
+                "blockers": ["no_post_683_live_raw_temporal_vector_source"],
+            },
+            {
+                "slot": "E3",
+                "measured": False,
+                "variance": None,
+                "replaceable": False,
+                "decision": "keep_by_default",
+                "blockers": ["no_post_683_live_raw_temporal_vector_source"],
+            },
+            {
+                "slot": "E4",
+                "measured": False,
+                "variance": None,
+                "replaceable": False,
+                "decision": "keep_by_default",
+                "blockers": ["no_post_683_live_raw_temporal_vector_source"],
+            },
+        ],
+    }
+
+
+def write_fixture_manifests(root: Path, *, final_ranking: bool = False) -> tuple[Path, Path, Path, Path | None, Path | None, Path | None, Path | None]:
     mi = root / "mi.json"
     auc = root / "auc.json"
     oracle = root / "oracle.json"
     write_json(mi, fixture_mi_manifest())
     write_json(auc, fixture_auc_manifest())
     write_json(oracle, {"oracle_self_consistency": 1.0})
-    return mi, auc, oracle
+    if not final_ranking:
+        return mi, auc, oracle, None, None, None, None
+    preflight = root / "preflight.json"
+    attribution = root / "attribution.json"
+    phase3 = root / "phase3.json"
+    drop = root / "drop.json"
+    write_json(preflight, fixture_preflight_manifest())
+    write_json(attribution, fixture_attribution_manifest())
+    write_json(phase3, fixture_phase3_summary())
+    write_json(drop, fixture_drop_ablation_manifest())
+    return mi, auc, oracle, preflight, attribution, phase3, drop
 
 
 def run_self_test(args: argparse.Namespace) -> int:
@@ -563,17 +1156,23 @@ def run_self_test(args: argparse.Namespace) -> int:
     if args.clean and root.exists():
         shutil.rmtree(root)
     root.mkdir(parents=True, exist_ok=True)
-    mi, auc, oracle = write_fixture_manifests(root)
+    final_ranking = bool(getattr(args, "final_ranking", False))
+    mi, auc, oracle, preflight, attribution, phase3, drop = write_fixture_manifests(root, final_ranking=final_ranking)
     run_args = argparse.Namespace(
         mi_manifest=mi,
         causal_auc_manifest=auc,
         oracle_manifest=oracle,
+        preflight_manifest=preflight,
+        attribution_manifest=attribution,
+        phase3_summary=phase3,
+        drop_ablation_manifest=drop,
         output_parent=root / "fsv",
         output_root=root / "fsv" / "run-self-test",
         state_root=root / "state",
         run_id="run-self-test",
         clean=True,
         allow_non_aiwonder_roots=True,
+        final_ranking=final_ranking,
     )
     readback = run_pipeline(run_args)
     rows = [json.loads(line) for line in (root / "state" / "embedder_replacement_priority.jsonl").read_text().splitlines()]
@@ -594,12 +1193,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--mi-manifest", type=Path, default=DEFAULT_MI_MANIFEST)
     parser.add_argument("--causal-auc-manifest", type=Path, default=DEFAULT_CAUSAL_AUC_MANIFEST)
     parser.add_argument("--oracle-manifest", type=Path, default=DEFAULT_ORACLE_MANIFEST)
-    parser.add_argument("--output-parent", type=Path, default=DEFAULT_OUTPUT_PARENT)
+    parser.add_argument("--preflight-manifest", type=Path, default=DEFAULT_PREFLIGHT_MANIFEST)
+    parser.add_argument("--attribution-manifest", type=Path, default=DEFAULT_ATTRIBUTION_MANIFEST)
+    parser.add_argument("--phase3-summary", type=Path, default=DEFAULT_PHASE3_SUMMARY)
+    parser.add_argument("--drop-ablation-manifest", type=Path, default=DEFAULT_DROP_ABLATION_MANIFEST)
+    parser.add_argument("--output-parent", type=Path)
     parser.add_argument("--output-root", type=Path)
-    parser.add_argument("--state-root", type=Path, default=DEFAULT_STATE_ROOT)
+    parser.add_argument("--state-root", type=Path)
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--clean", action="store_true")
     parser.add_argument("--allow-non-aiwonder-roots", action="store_true")
+    parser.add_argument("--final-ranking", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--self-test-root", type=Path)
     return parser.parse_args(argv)
