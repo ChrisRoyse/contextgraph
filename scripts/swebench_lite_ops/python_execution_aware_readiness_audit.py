@@ -24,6 +24,7 @@ DEFAULT_SHIP_GATE_REPORT = Path(
 DEFAULT_CORPUS_ROOT = Path("/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511")
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/fsv/inv-010-execution-aware-fsv")
 DEFAULT_STATE_ROOT = Path("/zfs/archive/contextgraph/state/execution-aware-audit/inv-010-v1")
+DEFAULT_TRACE_ROOT = None
 ELIGIBLE_TRACE_KEYS = {
     "coverage",
     "execution_trace",
@@ -282,21 +283,25 @@ def classify_dynamic_candidate(path: Path, payload: Any) -> dict[str, Any]:
     }
 
 
-def discover_artifacts(corpus_root: Path, *, max_inventory: int) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    require(corpus_root.is_dir(), "EXECUTION_AWARE_READINESS_CORPUS_ROOT_MISSING", {"corpus_root": str(corpus_root)})
+def discover_artifacts(roots: list[Path], *, max_inventory: int) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    require(bool(roots), "EXECUTION_AWARE_READINESS_SCAN_ROOTS_EMPTY")
     inventory: list[dict[str, Any]] = []
     counts: Counter[str] = Counter()
-    for path in sorted(corpus_root.rglob("*")):
-        if not path.is_file():
-            continue
-        kind = file_kind(path)
-        if kind == "other":
-            continue
-        counts[kind] += 1
-        if len(inventory) >= max_inventory:
-            continue
-        payload = read_limited_jsonish(path)
-        inventory.append(classify_dynamic_candidate(path, payload))
+    for root in roots:
+        require(root.is_dir(), "EXECUTION_AWARE_READINESS_SCAN_ROOT_MISSING", {"root": str(root)})
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            kind = file_kind(path)
+            if kind == "other":
+                continue
+            counts[kind] += 1
+            if len(inventory) >= max_inventory:
+                continue
+            payload = read_limited_jsonish(path)
+            item = classify_dynamic_candidate(path, payload)
+            item["scan_root"] = str(root)
+            inventory.append(item)
     return inventory, dict(sorted(counts.items()))
 
 
@@ -361,6 +366,7 @@ def build_manifest(
     *,
     ship_gate_report: Path,
     corpus_root: Path,
+    trace_roots: list[Path],
     state_run_root: Path,
     run_id: str,
     ship_gate: dict[str, Any],
@@ -397,6 +403,7 @@ def build_manifest(
         "corpus_root": str(corpus_root),
         "corpus_index_path": str(corpus_root / "index.json"),
         "corpus_index_sha256": sha256_file(corpus_root / "index.json"),
+        "trace_scan_roots": [str(path) for path in trace_roots],
         "raw_prediction_sources": {
             "calibration": ship_gate["calibration_source"],
             "holdout": ship_gate["holdout_source"],
@@ -458,9 +465,13 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
     output_root = Path(args.output_root)
     state_root = Path(args.state_root)
     corpus_root = Path(args.corpus_root)
+    trace_root_arg = getattr(args, "trace_root", DEFAULT_TRACE_ROOT)
+    trace_roots = [Path(trace_root_arg)] if trace_root_arg else []
     ship_gate_report = Path(args.ship_gate_report)
     require_archive_path(output_root, "output_root", bool(args.allow_non_aiwonder_roots))
     require_archive_path(state_root, "state_root", bool(args.allow_non_aiwonder_roots))
+    for trace_root in trace_roots:
+        require_archive_path(trace_root, "trace_root", bool(args.allow_non_aiwonder_roots))
     run_id = str(args.run_id or f"run-{utc_stamp()}")
     fsv_run_root = output_root / run_id
     state_run_root = state_root / run_id
@@ -469,7 +480,10 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
 
     ship_gate = load_ship_gate_rows(ship_gate_report)
     entries = load_corpus_index(corpus_root, args.expected_corpus_rows)
-    inventory, artifact_counts = discover_artifacts(corpus_root, max_inventory=int(args.max_inventory_rows))
+    inventory, artifact_counts = discover_artifacts(
+        [corpus_root, *trace_roots],
+        max_inventory=int(args.max_inventory_rows),
+    )
     trace_mapping = mapped_trace_rows(entries, inventory)
     trace_inventory_path = fsv_run_root / "execution_artifact_inventory.jsonl"
     missing_rows_path = fsv_run_root / "missing_execution_trace_rows.jsonl"
@@ -487,6 +501,7 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
     manifest = build_manifest(
         ship_gate_report=ship_gate_report,
         corpus_root=corpus_root,
+        trace_roots=trace_roots,
         state_run_root=state_run_root,
         run_id=run_id,
         ship_gate=ship_gate,
@@ -530,6 +545,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Audit execution-aware feature readiness for #774")
     parser.add_argument("--ship-gate-report", type=Path, default=DEFAULT_SHIP_GATE_REPORT)
     parser.add_argument("--corpus-root", type=Path, default=DEFAULT_CORPUS_ROOT)
+    parser.add_argument(
+        "--trace-root",
+        type=Path,
+        default=DEFAULT_TRACE_ROOT,
+        help="Optional execution-trace state root to scan in addition to the corpus root.",
+    )
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--state-root", type=Path, default=DEFAULT_STATE_ROOT)
     parser.add_argument("--run-id", default=None)
