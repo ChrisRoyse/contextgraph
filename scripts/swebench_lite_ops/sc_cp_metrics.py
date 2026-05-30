@@ -397,6 +397,224 @@ def build_sc_cp_report(
     }
 
 
+def build_mondrian_conformal_report(
+    calibration_rows: Sequence[dict[str, Any]],
+    holdout_rows: Sequence[dict[str, Any]],
+    *,
+    alpha: float = 0.10,
+    min_cell_rows: int = 20,
+    in_band_cell_fraction: float = 0.80,
+    source_label: str = "ship_gate_fsv",
+) -> dict[str, Any]:
+    cal = [_coerce_input_row(row, idx, "calibration") for idx, row in enumerate(calibration_rows)]
+    hol = [_coerce_input_row(row, idx, "holdout") for idx, row in enumerate(holdout_rows)]
+    if len(cal) < 2:
+        raise ValueError(
+            "build_mondrian_conformal_report: calibration split requires at least two rows"
+        )
+    if not hol:
+        raise ValueError("build_mondrian_conformal_report: holdout split is empty")
+    if min_cell_rows < 2:
+        raise ValueError("build_mondrian_conformal_report: min_cell_rows must be >= 2")
+    if (
+        not math.isfinite(in_band_cell_fraction)
+        or in_band_cell_fraction <= 0.0
+        or in_band_cell_fraction > 1.0
+    ):
+        raise ValueError(
+            "build_mondrian_conformal_report: in_band_cell_fraction must be in (0,1]"
+        )
+
+    cal_scores = [row["score"] for row in cal]
+    cal_labels = [row["label"] for row in cal]
+    global_cal_va = leave_one_out_venn_abers(cal_scores, cal_labels)
+    global_interval_tau = conformal_tau(
+        [
+            interval_residual(row["label"], va.lower, va.upper)
+            for row, va in zip(cal, global_cal_va)
+        ],
+        alpha,
+    )
+    global_class_tau = conformal_tau(
+        [class_residual(row["label"], va.point) for row, va in zip(cal, global_cal_va)],
+        alpha,
+    )
+
+    cell_fits = _mondrian_cell_fits(cal, alpha=alpha, min_cell_rows=min_cell_rows)
+    rows: list[ScCpRow] = []
+    for raw in hol:
+        cell = cell_key(str(raw["category"]), str(raw["language"]))
+        fit = cell_fits.get(cell)
+        if fit is not None and fit["eligible"]:
+            fit_scores = fit["scores"]
+            fit_labels = fit["labels"]
+            va = venn_abers_predict(fit_scores, fit_labels, raw["score"])
+            interval_tau = float(fit["interval_tau"])
+            class_tau = float(fit["class_tau"])
+            interval_tau_source = f"mondrian_cell:{cell}"
+            class_tau_source = f"mondrian_cell:{cell}"
+        else:
+            va = venn_abers_predict(cal_scores, cal_labels, raw["score"])
+            interval_tau = global_interval_tau
+            class_tau = global_class_tau
+            interval_tau_source = f"global_diagnostic_fallback:{cell}"
+            class_tau_source = f"global_diagnostic_fallback:{cell}"
+        low = max(0.0, va.lower - interval_tau)
+        high = min(1.0, va.upper + interval_tau)
+        label = int(raw["label"])
+        class_set = classification_set(va.point, class_tau)
+        rows.append(
+            ScCpRow(
+                row_index=int(raw["row_index"]),
+                task_id=str(raw["task_id"]),
+                repo=str(raw["repo"]),
+                category=str(raw["category"]),
+                language=str(raw["language"]),
+                raw_score=float(raw["score"]),
+                label=label,
+                va_lower=va.lower,
+                va_upper=va.upper,
+                va_point=va.point,
+                prediction_bin=-1,
+                interval_tau=interval_tau,
+                interval_tau_source=interval_tau_source,
+                interval_low=low,
+                interval_high=high,
+                interval_covered=(float(label) >= low and float(label) <= high),
+                class_tau=class_tau,
+                class_tau_source=class_tau_source,
+                class_set=class_set,
+                class_set_covered=(label in class_set),
+            )
+        )
+
+    raw_scores = [row["score"] for row in hol]
+    labels = [row["label"] for row in hol]
+    va_points = [row.va_point for row in rows]
+    global_block = coverage_block(rows, min_rows=1)
+    holdout_by_cell = _group_rows_by_cell(rows)
+    per_cell = {
+        cell: _mondrian_cell_report_block(
+            cell,
+            cell_rows,
+            cell_fits.get(cell),
+            min_cell_rows=min_cell_rows,
+        )
+        for cell, cell_rows in sorted(holdout_by_cell.items())
+    }
+    coverage_min = 1.0 - alpha - 0.02
+    coverage_max = 1.0 - alpha + 0.02
+    eligible_cells = {
+        cell: block
+        for cell, block in per_cell.items()
+        if block["eligible_for_decision"] is True
+        and block["mondrian_fit_eligible"] is True
+    }
+    cells_in_band = [
+        cell
+        for cell, block in eligible_cells.items()
+        if _in_band(block["interval_coverage"], coverage_min, coverage_max)
+    ]
+    cells_below_band = [
+        cell
+        for cell, block in eligible_cells.items()
+        if isinstance(block["interval_coverage"], (int, float))
+        and float(block["interval_coverage"]) < coverage_min
+    ]
+    cells_above_band = [
+        cell
+        for cell, block in eligible_cells.items()
+        if isinstance(block["interval_coverage"], (int, float))
+        and float(block["interval_coverage"]) > coverage_max
+    ]
+    eligible_cell_fraction_in_band = (
+        len(cells_in_band) / len(eligible_cells) if eligible_cells else 0.0
+    )
+    support_gap_cells = [
+        cell
+        for cell, block in per_cell.items()
+        if block["eligible_for_decision"] is not True
+        or block["mondrian_fit_eligible"] is not True
+    ]
+    brier_raw = brier_score(raw_scores, labels)
+    brier_va = brier_score(va_points, labels)
+    ece_raw = ece_l1(raw_scores, labels, bins=10)
+    ece_va = ece_l1(va_points, labels, bins=10)
+    calibration_regressions = []
+    if brier_va > brier_raw + 1.0e-9:
+        calibration_regressions.append("brier_regressed")
+    if ece_va > ece_raw + 1.0e-9:
+        calibration_regressions.append("ece_regressed")
+    promotion_allowed = (
+        len(eligible_cells) > 0
+        and not support_gap_cells
+        and eligible_cell_fraction_in_band >= in_band_cell_fraction
+        and not calibration_regressions
+    )
+    return {
+        "schema_version": 1,
+        "artifact_kind": "inv_019_mondrian_conformal_report",
+        "source_label": source_label,
+        "policy": {
+            "method": "mondrian_cell_venn_abers_split_conformal",
+            "mondrian_category": "mutation_category_x_language",
+            "alpha": alpha,
+            "target_coverage": 1.0 - alpha,
+            "coverage_band_min": coverage_min,
+            "coverage_band_max": coverage_max,
+            "min_cell_rows": min_cell_rows,
+            "required_eligible_cell_fraction_in_band": in_band_cell_fraction,
+            "fit_partition": "calibration_only",
+            "holdout_used_for_fitting": False,
+            "diagnostic_global_fallback_blocks_promotion": True,
+        },
+        "calibration_fit": {
+            "sample_count": len(cal),
+            "label_counts": _label_counts(cal_labels),
+            "cell_count": len(cell_fits),
+            "eligible_cell_fit_count": sum(
+                1 for fit in cell_fits.values() if fit["eligible"] is True
+            ),
+            "global_diagnostic_interval_tau": round_float(global_interval_tau),
+            "global_diagnostic_class_tau": round_float(global_class_tau),
+            "per_cell": {
+                cell: _public_mondrian_fit_block(fit)
+                for cell, fit in sorted(cell_fits.items())
+            },
+        },
+        "holdout": {
+            **global_block,
+            "raw_metrics": metric_payload(raw_scores, labels),
+            "mondrian_venn_abers_point_metrics": metric_payload(va_points, labels),
+            "brier_delta_mondrian_minus_raw": round_float(brier_va - brier_raw),
+            "ece_delta_mondrian_minus_raw": round_float(ece_va - ece_raw),
+            "raw_prediction_pearson": round_float(pearson_correlation(raw_scores, labels)),
+            "mondrian_venn_abers_point_pearson": round_float(
+                pearson_correlation(va_points, labels)
+            ),
+        },
+        "per_cell": per_cell,
+        "decision": {
+            "promotion_allowed": promotion_allowed,
+            "eligible_cell_count": len(eligible_cells),
+            "cell_count": len(per_cell),
+            "cells_in_band_count": len(cells_in_band),
+            "eligible_cell_fraction_in_band": round_float(eligible_cell_fraction_in_band),
+            "cells_in_band": cells_in_band,
+            "cells_below_band": cells_below_band,
+            "cells_above_band": cells_above_band,
+            "support_gap_cells": support_gap_cells,
+            "calibration_regressions": calibration_regressions,
+            "result": (
+                "promote_mondrian_conformal_probe"
+                if promotion_allowed
+                else "do_not_promote_mondrian_conformal_on_current_split"
+            ),
+        },
+        "row_predictions": [row.to_dict() for row in rows],
+    }
+
+
 def _coerce_input_row(value: dict[str, Any], index: int, split: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{split}[{index}] must be an object")
@@ -446,6 +664,139 @@ def _group_rows_by_cell(rows: Iterable[ScCpRow]) -> dict[str, list[ScCpRow]]:
     for row in rows:
         grouped[cell_key(row.category, row.language)].append(row)
     return grouped
+
+
+def _group_input_rows_by_cell(rows: Iterable[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[cell_key(str(row["category"]), str(row["language"]))].append(row)
+    return grouped
+
+
+def _mondrian_cell_fits(
+    rows: Sequence[dict[str, Any]],
+    *,
+    alpha: float,
+    min_cell_rows: int,
+) -> dict[str, dict[str, Any]]:
+    grouped = _group_input_rows_by_cell(rows)
+    fits: dict[str, dict[str, Any]] = {}
+    for cell, cell_rows in sorted(grouped.items()):
+        scores = [float(row["score"]) for row in cell_rows]
+        labels = [int(row["label"]) for row in cell_rows]
+        eligible = len(cell_rows) >= min_cell_rows and len(cell_rows) >= 2
+        fit: dict[str, Any] = {
+            "cell": cell,
+            "scores": scores,
+            "labels": labels,
+            "sample_count": len(cell_rows),
+            "label_counts": _label_counts(labels),
+            "eligible": eligible,
+            "status": "ready" if eligible else "insufficient_calibration_cell_support",
+            "interval_tau": None,
+            "class_tau": None,
+            "loocv_interval_coverage": None,
+            "loocv_class_set_coverage": None,
+            "loocv_mean_interval_width": None,
+            "loocv_mean_class_set_size": None,
+        }
+        if eligible:
+            loo = leave_one_out_venn_abers(scores, labels)
+            interval_residuals = [
+                interval_residual(label, va.lower, va.upper)
+                for label, va in zip(labels, loo)
+            ]
+            class_residuals = [
+                class_residual(label, va.point) for label, va in zip(labels, loo)
+            ]
+            interval_tau = conformal_tau(interval_residuals, alpha)
+            class_tau = conformal_tau(class_residuals, alpha)
+            intervals = [
+                (
+                    max(0.0, va.lower - interval_tau),
+                    min(1.0, va.upper + interval_tau),
+                )
+                for va in loo
+            ]
+            class_sets = [classification_set(va.point, class_tau) for va in loo]
+            interval_covered = sum(
+                1
+                for label, (low, high) in zip(labels, intervals)
+                if float(label) >= low and float(label) <= high
+            )
+            class_covered = sum(
+                1 for label, class_set in zip(labels, class_sets) if label in class_set
+            )
+            fit.update(
+                {
+                    "interval_tau": interval_tau,
+                    "class_tau": class_tau,
+                    "loocv_interval_coverage": interval_covered / len(labels),
+                    "loocv_class_set_coverage": class_covered / len(labels),
+                    "loocv_mean_interval_width": sum(
+                        high - low for low, high in intervals
+                    )
+                    / len(intervals),
+                    "loocv_mean_class_set_size": sum(
+                        len(class_set) for class_set in class_sets
+                    )
+                    / len(class_sets),
+                }
+            )
+        fits[cell] = fit
+    return fits
+
+
+def _public_mondrian_fit_block(fit: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "sample_count": fit["sample_count"],
+        "label_counts": fit["label_counts"],
+        "eligible": fit["eligible"],
+        "status": fit["status"],
+        "interval_tau": round_float(fit["interval_tau"])
+        if fit["interval_tau"] is not None
+        else None,
+        "class_tau": round_float(fit["class_tau"]) if fit["class_tau"] is not None else None,
+        "loocv_interval_coverage": round_float(fit["loocv_interval_coverage"])
+        if fit["loocv_interval_coverage"] is not None
+        else None,
+        "loocv_class_set_coverage": round_float(fit["loocv_class_set_coverage"])
+        if fit["loocv_class_set_coverage"] is not None
+        else None,
+        "loocv_mean_interval_width": round_float(fit["loocv_mean_interval_width"])
+        if fit["loocv_mean_interval_width"] is not None
+        else None,
+        "loocv_mean_class_set_size": round_float(fit["loocv_mean_class_set_size"])
+        if fit["loocv_mean_class_set_size"] is not None
+        else None,
+    }
+
+
+def _mondrian_cell_report_block(
+    cell: str,
+    rows: Sequence[ScCpRow],
+    fit: dict[str, Any] | None,
+    *,
+    min_cell_rows: int,
+) -> dict[str, Any]:
+    block = coverage_block(rows, min_rows=min_cell_rows)
+    fit_block = _public_mondrian_fit_block(fit) if fit is not None else None
+    block.update(
+        {
+            "calibration_sample_count": fit["sample_count"] if fit is not None else 0,
+            "calibration_label_counts": fit["label_counts"]
+            if fit is not None
+            else _label_counts([]),
+            "mondrian_fit_eligible": fit["eligible"] if fit is not None else False,
+            "mondrian_fit_status": fit["status"] if fit is not None else "missing_cell_fit",
+            "mondrian_fit": fit_block,
+            "used_global_diagnostic_fallback": any(
+                row.interval_tau_source == f"global_diagnostic_fallback:{cell}"
+                for row in rows
+            ),
+        }
+    )
+    return block
 
 
 def coverage_block(rows: Sequence[ScCpRow], *, min_rows: int) -> dict[str, Any]:
