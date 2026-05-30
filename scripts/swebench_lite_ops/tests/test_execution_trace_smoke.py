@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from ..python_execution_trace_smoke import (
+    ExecutionTraceSmokeError,
+    TRACE_BEGIN,
+    TRACE_END,
+    extract_trace_payload,
+    load_corpus_entry,
+    transform_eval_script_list,
+)
+
+
+def write_json(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def test_transform_wraps_single_pytest_command_after_trace_runner():
+    eval_script = [
+        "source /opt/miniconda3/bin/activate",
+        "conda activate testbed",
+        "cd /testbed",
+        ": 'START TEST OUTPUT'",
+        "pytest -rA test_requests.py",
+        ": 'END TEST OUTPUT'",
+        "git checkout base test_requests.py",
+    ]
+
+    transformed, metadata = transform_eval_script_list(eval_script, max_events=12)
+
+    wrapped_index = transformed.index("python /tmp/contextgraph_trace_pytest.py -rA test_requests.py")
+    end_index = transformed.index(": 'END TEST OUTPUT'")
+    begin_marker_index = transformed.index("  echo CONTEXTGRAPH_EXECUTION_TRACE_BEGIN")
+    assert metadata["original_test_command"] == "pytest -rA test_requests.py"
+    assert metadata["wrapped_test_command"] == "python /tmp/contextgraph_trace_pytest.py -rA test_requests.py"
+    assert any(line == "export CONTEXTGRAPH_TRACE_MAX_EVENTS=12" for line in transformed)
+    assert wrapped_index > transformed.index("CONTEXTGRAPH_TRACE_PY")
+    assert begin_marker_index > end_index
+
+
+def test_transform_rejects_non_pytest_command():
+    with pytest.raises(ExecutionTraceSmokeError, match="EXECUTION_TRACE_SMOKE_UNSUPPORTED_TEST_COMMAND"):
+        transform_eval_script_list(["./tests/runtests.py migrations.test_commands"], max_events=10)
+
+
+def test_transform_rejects_multiple_pytest_commands():
+    with pytest.raises(ExecutionTraceSmokeError, match="EXECUTION_TRACE_SMOKE_UNSUPPORTED_TEST_COMMAND"):
+        transform_eval_script_list(["pytest tests/a.py", "pytest tests/b.py"], max_events=10)
+
+
+def test_extract_trace_payload_validates_live_trace_keys():
+    payload = {
+        "coverage": {"lines_executed": 1, "files_touched": 1, "events_seen": 2},
+        "line_coverage": [{"location": "pkg/mod.py:1", "count": 1}],
+        "runtime_metrics": {"elapsed_ms": 3, "pytest_exit_code": 0},
+        "steps": {"event_counts": {"line": 1}},
+        "trace_events": [{"event": "line", "file": "pkg/mod.py", "line": 1, "function": "f"}],
+    }
+    output = f"before\n{TRACE_BEGIN}\n{json.dumps(payload)}\n{TRACE_END}\nafter\n"
+
+    parsed = extract_trace_payload(output)
+
+    assert parsed["coverage"]["lines_executed"] == 1
+    assert parsed["trace_events"][0]["event"] == "line"
+
+
+def test_extract_trace_payload_fails_closed_without_events():
+    payload = {
+        "coverage": {"lines_executed": 0},
+        "line_coverage": [],
+        "runtime_metrics": {},
+        "steps": {},
+        "trace_events": [],
+    }
+    output = f"{TRACE_BEGIN}\n{json.dumps(payload)}\n{TRACE_END}\n"
+
+    with pytest.raises(ExecutionTraceSmokeError, match="EXECUTION_TRACE_SMOKE_TRACE_EVENTS_EMPTY"):
+        extract_trace_payload(output)
+
+
+def test_load_corpus_entry_resolves_patch_and_hash(tmp_path: Path):
+    corpus = tmp_path / "corpus"
+    patch = corpus / "mutations" / "org__repo-1" / "known_good.patch"
+    patch.parent.mkdir(parents=True)
+    patch.write_text("diff --git a/a.py b/a.py\n", encoding="utf-8")
+    write_json(
+        corpus / "index.json",
+        {
+            "entries": [
+                {
+                    "task_id": "org__repo-1",
+                    "category": "known_good",
+                    "repo": "org/repo",
+                    "patch_path": "mutations/org__repo-1/known_good.patch",
+                }
+            ]
+        },
+    )
+
+    row = load_corpus_entry(corpus, "org__repo-1", "known_good")
+
+    assert row["patch_abspath"] == str(patch)
+    assert row["patch_sha256"].startswith("sha256:")
