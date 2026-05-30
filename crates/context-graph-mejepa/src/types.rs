@@ -3996,6 +3996,11 @@ pub enum FailedGate {
         threshold: u32,
         reason: String,
     },
+    WideInterval {
+        interval_width: f32,
+        threshold: f32,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

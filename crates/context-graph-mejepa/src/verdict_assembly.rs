@@ -82,18 +82,15 @@ pub fn assemble_verdict_with_evidence(input: VerdictAssemblyInput<'_>) -> Verdic
             contradiction,
         };
     }
-    // #686 — `interval_width_threshold` is now config-driven (was a hardcoded
-    // `0.8` literal in `compiler.rs::compile`). Semantic decoupling of OOD-
-    // detector signal from wide-interval signal is the right next step (so
-    // cold-start cells are not labelled OOD purely on calibration looseness),
-    // but it requires updating downstream gate semantics that today only
-    // know how to escalate through `Verdict::OutOfDistribution`/`GuardRejected`
-    // paths. Tracked separately so the threshold-honesty fix can ship now.
-    if input.ood_score >= input.ood_threshold
-        || input.confidence_interval.width() > input.interval_width_threshold
-    {
+    if input.ood_score >= input.ood_threshold {
         return VerdictAssemblyOutput {
             verdict: Verdict::OutOfDistribution,
+            contradiction,
+        };
+    }
+    if input.confidence_interval.width() > input.interval_width_threshold {
+        return VerdictAssemblyOutput {
+            verdict: Verdict::Abstain,
             contradiction,
         };
     }
@@ -378,12 +375,12 @@ mod tests {
         assert_eq!(positive_evidence, Verdict::Pass);
     }
 
-    /// #686 regression: the configurable interval_width_threshold actually
-    /// gates the OOD verdict. Setting it tighter than the interval width
-    /// produces OOD even when ood_score is low; setting it looser allows the
-    /// flow to reach later gates.
+    /// #804 regression: a wide confidence interval is insufficient calibration
+    /// evidence, not an OOD detector hit. Setting the interval threshold tighter
+    /// than the interval width now produces Abstain while true OOD still uses
+    /// the OOD score.
     #[test]
-    fn configurable_interval_width_threshold_gates_ood_verdict() {
+    fn configurable_interval_width_threshold_abstains_without_ood() {
         let base = VerdictAssemblyInput {
             contradiction_cell_id: None,
             contradiction_thresholds: None,
@@ -404,8 +401,7 @@ mod tests {
             objective_cost_ceiling: 0.65,
             constellation_verdict_pressure: 0.0,
         };
-        // Default (config-driven) threshold 0.8 < width 1.0 -> OOD.
-        assert_eq!(assemble_verdict(base), Verdict::OutOfDistribution);
+        assert_eq!(assemble_verdict(base), Verdict::Abstain);
         // Looser threshold 1.5 > width 1.0 -> falls through. With no
         // contradiction / safety / predicted-failure issues, this fixture
         // does not produce Pass (no predicted_works), so the trailing arm
@@ -415,5 +411,30 @@ mod tests {
             ..base
         };
         assert_ne!(assemble_verdict(loose), Verdict::OutOfDistribution);
+    }
+
+    #[test]
+    fn ood_score_still_gates_ood_verdict() {
+        let input = VerdictAssemblyInput {
+            contradiction_cell_id: None,
+            contradiction_thresholds: None,
+            oracle_pass_confidence: 0.92,
+            failure_modes: &[],
+            predicted_failed_test_count: 0,
+            predicted_works: &[],
+            security_concern_count: 0,
+            guard_violation_count: 0,
+            ood_score: 0.91,
+            confidence_interval: &interval(0.80, 0.82),
+            pass_threshold: 0.8,
+            ood_threshold: 0.9,
+            interval_width_threshold: 0.8,
+            safety_constraint_violation_count: 0,
+            objective_total_cost: 0.05,
+            objective_cost_ceiling: 0.65,
+            constellation_verdict_pressure: 0.0,
+        };
+
+        assert_eq!(assemble_verdict(input), Verdict::OutOfDistribution);
     }
 }

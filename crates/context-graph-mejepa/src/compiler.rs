@@ -64,6 +64,9 @@ const PARK_LIST_REASON_CODE: &str = "MEJEPA_PREDICTION_PARKED";
 pub const COLD_CELL_INSUFFICIENT_SUPPORT: &str = "COLD_CELL_INSUFFICIENT_SUPPORT";
 pub const COLD_CELL_LOOKUP_FAILURE: &str = "COLD_CELL_LOOKUP_FAILURE";
 pub const COLD_CELL_Q4_NOTE: &str = "emitted_under_abstain";
+pub const WIDE_INTERVAL_ABSTAIN_REASON: &str = "MEJEPA_WIDE_INTERVAL_ABSTAIN";
+pub const WIDE_INTERVAL_ABSTAIN_ATTESTATION_KEY: &str =
+    "wide_interval:MEJEPA_WIDE_INTERVAL_ABSTAIN";
 use crate::prediction_surfaces::{
     covered_chunks_for_patch, enrich_predicted_works_with_known_good_exemplars,
     infer_phase_b_surfaces,
@@ -631,6 +634,14 @@ impl MeJepaCompiler {
             &mut oracle.granger_attestations,
             &verdict_output.contradiction,
         )?;
+        if verdict == Verdict::Abstain
+            && ood_score < ood_threshold
+            && confidence_interval.width() > self.config.interval_width_threshold
+        {
+            oracle
+                .granger_attestations
+                .insert(WIDE_INTERVAL_ABSTAIN_ATTESTATION_KEY.to_string(), 1.0);
+        }
         // #684: removed `per_slot_ood_reasons.extend(per_slot_ood_reasons_from_guard_violations(...))`
         // — guard violations are already published via
         // `prediction.guard_violations`. Mirroring them into
@@ -1032,6 +1043,19 @@ impl MeJepaCompiler {
             });
         }
 
+        if let Some(failed_gate) = self.wide_interval_failed_gate(&prediction) {
+            self.store.record_park_list_failure(
+                prediction.prediction_id,
+                current_unix_ms(),
+                WIDE_INTERVAL_ABSTAIN_REASON,
+            )?;
+            return Ok(VerifyVerdict::EscalateToHuman {
+                reality_prediction: Some(prediction.clone()),
+                failed_gate,
+                gates_passed: 2,
+            });
+        }
+
         if let Some(failed_gate) = self.contradiction_failed_gate(&prediction, context)? {
             let reason = match &failed_gate {
                 FailedGate::MultiHeadContradiction { reason, .. } => reason.as_str(),
@@ -1177,6 +1201,21 @@ impl MeJepaCompiler {
             reason: reason.to_string(),
         };
         Ok(Some((abstain, gate)))
+    }
+
+    fn wide_interval_failed_gate(&self, prediction: &RealityPrediction) -> Option<FailedGate> {
+        if prediction.verdict != Verdict::Abstain
+            || !prediction
+                .granger_attestations
+                .contains_key(WIDE_INTERVAL_ABSTAIN_ATTESTATION_KEY)
+        {
+            return None;
+        }
+        Some(FailedGate::WideInterval {
+            interval_width: prediction.confidence_interval.width(),
+            threshold: self.config.interval_width_threshold,
+            reason: WIDE_INTERVAL_ABSTAIN_REASON.to_string(),
+        })
     }
 
     fn contradiction_failed_gate(
@@ -2823,7 +2862,7 @@ mod tests {
     use crate::store::RocksDbInferStore;
     use crate::types::{AstDiff, DiffHunk, Language, TaskEnvironment, TaskId, TestId, Verdict};
     use context_graph_mejepa_instruments::PANEL_DIM;
-    use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+    use std::{collections::BTreeMap, fs, path::PathBuf, sync::Arc};
 
     #[derive(Clone)]
     struct FixedPanelPredictor {
@@ -2922,12 +2961,28 @@ mod tests {
         predicted: Panel,
         target: Panel,
     ) -> MeJepaCompiler {
-        let calibration = CalibrationStore::new(db.clone(), 30).unwrap();
-        seed_calibration(&calibration);
         let config = MeJepaInferConfig {
             pause_state_path: None,
             ..MeJepaInferConfig::default()
         };
+        compiler_with_fixed_panels_and_config(
+            db,
+            predicted,
+            target,
+            config,
+            PathBuf::from("/zfs/archive/contextgraph/test-repo"),
+        )
+    }
+
+    fn compiler_with_fixed_panels_and_config(
+        db: Arc<rocksdb::DB>,
+        predicted: Panel,
+        target: Panel,
+        config: MeJepaInferConfig,
+        repo_root: PathBuf,
+    ) -> MeJepaCompiler {
+        let calibration = CalibrationStore::new(db.clone(), 30).unwrap();
+        seed_calibration(&calibration);
         MeJepaCompiler::new(
             config,
             Arc::new(FixedPanelPredictor { panel: predicted }),
@@ -2937,7 +2992,7 @@ mod tests {
             Arc::new(PatchWitnessReader),
             Arc::new(RocksDbInferStore::new(db)),
             calibration,
-            PathBuf::from("/zfs/archive/contextgraph/test-repo"),
+            repo_root,
         )
         .unwrap()
     }
@@ -3010,6 +3065,71 @@ mod tests {
         };
 
         assert!(ood_gate_failed(&decision));
+    }
+
+    #[test]
+    fn verify_wide_interval_abstain_escalates_and_persists_without_ood() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let repo_dir = tempfile::tempdir().unwrap();
+        let repo_src = repo_dir.path().join("src");
+        fs::create_dir_all(&repo_src).unwrap();
+
+        let (patch, context) = sample_patch_context("wide interval abstain");
+        fs::write(repo_src.join("example.py"), &patch.ast_diff.hunks[0].after).unwrap();
+
+        let db = crate::calibration::open_infer_rocksdb(db_dir.path()).unwrap();
+        let compiler = compiler_with_fixed_panels_and_config(
+            db,
+            panel_with_slot_delta(InstrumentSlot::EAst, 0.0),
+            panel_with_slot_delta(InstrumentSlot::EAst, 0.0),
+            MeJepaInferConfig {
+                interval_width_threshold: 0.0,
+                ood_refuse_threshold: 1.0,
+                pause_state_path: None,
+                ..MeJepaInferConfig::default()
+            },
+            repo_dir.path().to_path_buf(),
+        );
+
+        let verdict = compiler.verify(&patch, &context).unwrap();
+        let VerifyVerdict::EscalateToHuman {
+            reality_prediction: Some(prediction),
+            failed_gate:
+                FailedGate::WideInterval {
+                    interval_width,
+                    threshold,
+                    reason,
+                },
+            gates_passed,
+        } = verdict
+        else {
+            panic!("expected wide-interval escalation, got {verdict:?}");
+        };
+
+        assert_eq!(prediction.verdict, Verdict::Abstain);
+        assert!(prediction.ood_score < compiler.config.ood_refuse_threshold);
+        assert!(interval_width > threshold);
+        assert_eq!(threshold, 0.0);
+        assert_eq!(reason, WIDE_INTERVAL_ABSTAIN_REASON);
+        assert_eq!(gates_passed, 2);
+        assert!(prediction
+            .granger_attestations
+            .contains_key(WIDE_INTERVAL_ABSTAIN_ATTESTATION_KEY));
+
+        let live = compiler
+            .store
+            .read_live_predictions(context.session_id, 100)
+            .unwrap();
+        assert!(live
+            .iter()
+            .any(|stored| stored.prediction_id == prediction.prediction_id
+                && stored.verdict == Verdict::Abstain));
+        let parked = compiler
+            .store
+            .read_park_list_entry(prediction.prediction_id)
+            .unwrap()
+            .expect("wide interval should be park-list tracked");
+        assert_eq!(parked.last_error_code, WIDE_INTERVAL_ABSTAIN_REASON);
     }
 
     fn selected_ood_report(threshold: f32) -> OodCalibrationReport {
