@@ -94,6 +94,26 @@ def fake_trace_runner(args: Namespace) -> dict[str, object]:
     }
 
 
+def fake_trace_runner_asserts_started_progress(args: Namespace) -> dict[str, object]:
+    progress_path = Path(args.output_root).parent / "direct_pytest_trace_batch_progress.json"
+    state_progress_path = Path(args.state_root).parent / "direct_pytest_trace_batch_progress.json"
+    fsv_progress = json.loads(progress_path.read_text(encoding="utf-8"))
+    state_progress = json.loads(state_progress_path.read_text(encoding="utf-8"))
+
+    assert fsv_progress == state_progress
+    assert fsv_progress["phase"] == "row_started"
+    assert fsv_progress["counts"] == {
+        "selected_rows": 1,
+        "attempted_rows": 0,
+        "succeeded_rows": 0,
+        "failed_rows": 0,
+        "remaining_rows": 1,
+    }
+    assert fsv_progress["current_row_key"]["task_id"] == args.task_id
+    assert fsv_progress["current_row_key"]["category"] == args.category
+    return fake_trace_runner(args)
+
+
 def test_load_runnable_rows_rejects_target_side_fields(tmp_path: Path):
     rows_path = tmp_path / "rows.jsonl"
     row = runnable_row("org__repo-1", "known_good", 0)
@@ -158,6 +178,42 @@ def test_run_batch_with_fake_runner_writes_generated_traces_and_state_mirror(tmp
     assert manifest["doctrine_policy"]["target_labels_used_as_live_inputs"] is False
 
 
+def test_run_batch_writes_progress_heartbeat_before_and_after_rows(tmp_path: Path):
+    rows_path = tmp_path / "runnable.jsonl"
+    write_jsonl(rows_path, [runnable_row("org__repo-1", "known_good", 0)])
+
+    result = run_batch(
+        batch_args(tmp_path, rows_path),
+        trace_runner=fake_trace_runner_asserts_started_progress,
+    )
+
+    progress_path = Path(result["progress"])
+    state_progress_path = tmp_path / "state" / "run-test" / "pytest-batch" / progress_path.name
+    progress_history_path = Path(result["progress_history"])
+    state_history_path = tmp_path / "state" / "run-test" / "pytest-batch" / progress_history_path.name
+    progress = json.loads(progress_path.read_text(encoding="utf-8"))
+    state_progress = json.loads(state_progress_path.read_text(encoding="utf-8"))
+    history = [json.loads(line) for line in progress_history_path.read_text(encoding="utf-8").splitlines()]
+    state_history = [json.loads(line) for line in state_history_path.read_text(encoding="utf-8").splitlines()]
+    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+
+    assert progress == state_progress
+    assert history == state_history
+    assert [row["phase"] for row in history] == ["selected", "row_started", "row_completed", "batch_finalizing"]
+    assert progress["phase"] == "batch_finalizing"
+    assert progress["counts"] == {
+        "selected_rows": 1,
+        "attempted_rows": 1,
+        "succeeded_rows": 1,
+        "failed_rows": 0,
+        "remaining_rows": 0,
+    }
+    assert progress["last_completed_row_key"]["task_id"] == "org__repo-1"
+    assert progress["last_completed_artifacts"]["state_trace_sha256"] == progress["last_completed_artifacts"]["fsv_trace_sha256"]
+    assert manifest["artifacts"]["progress"] == str(progress_path)
+    assert manifest["artifacts"]["progress_history"] == str(progress_history_path)
+
+
 def test_run_batch_continue_on_error_records_failed_rows(tmp_path: Path):
     rows_path = tmp_path / "runnable.jsonl"
     rows = [
@@ -180,11 +236,17 @@ def test_run_batch_continue_on_error_records_failed_rows(tmp_path: Path):
         for line in Path(result["failed_rows"]).read_text(encoding="utf-8").splitlines()
     ]
     manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+    progress = json.loads(Path(result["progress"]).read_text(encoding="utf-8"))
+    history = [json.loads(line) for line in Path(result["progress_history"]).read_text(encoding="utf-8").splitlines()]
 
     assert result["ok"] is False
     assert len(failed) == 1
     assert failed[0]["task_id"] == "org__repo-2"
     assert "one_or_more_direct_pytest_trace_rows_failed" in manifest["decision"]["decision_reasons"]
+    assert progress["counts"]["attempted_rows"] == 2
+    assert progress["counts"]["failed_rows"] == 1
+    assert progress["last_completed_artifacts"]["error"] == "RuntimeError: synthetic trace failure"
+    assert [row["phase"] for row in history].count("row_completed") == 2
 
 
 def test_non_aiwonder_roots_fail_closed_without_local_override(tmp_path: Path):

@@ -27,6 +27,7 @@ from .python_execution_trace_smoke import (
 SCHEMA_VERSION = 1
 TASK_ID = "INV-010"
 ARTIFACT_KIND = "execution_trace_pytest_batch"
+PROGRESS_ARTIFACT_KIND = "execution_trace_pytest_batch_progress"
 AIWONDER_ARCHIVE_ROOT = "/zfs/archive/contextgraph/"
 AIWONDER_HOT_ROOT = "/zfs/hot/contextgraph/"
 DEFAULT_OUTPUT_ROOT = Path("/zfs/archive/contextgraph/fsv/inv-010-execution-aware-fsv")
@@ -249,6 +250,18 @@ def row_run_id(row: dict[str, Any]) -> str:
     return f"row-{int(row['row_index']):04d}-{sanitize_part(row['task_id'])}-{sanitize_part(row['category'])}"
 
 
+def row_key(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "task_id": str(row.get("task_id") or ""),
+        "category": str(row.get("category") or ""),
+        "row_index": int(row.get("row_index") or 0),
+        "source_line_index": int(row.get("source_line_index") or 0),
+        "row_run_id": str(row.get("row_run_id") or row_run_id(row)),
+    }
+
+
 def copy_trace(src: Path, dest: Path, code: str) -> str:
     require(src.is_file(), code, {"src": str(src)})
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -319,6 +332,116 @@ def run_one_row(
     }
 
 
+def result_artifacts(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    if row.get("status") == "succeeded":
+        return {
+            "state_trace": row.get("state_trace"),
+            "fsv_trace": row.get("fsv_trace"),
+            "state_trace_sha256": row.get("state_trace_sha256"),
+            "fsv_trace_sha256": row.get("fsv_trace_sha256"),
+            "trace_summary": row.get("trace_summary") or {},
+        }
+    if row.get("status") == "failed":
+        return {"error": row.get("error")}
+    return None
+
+
+def build_progress_snapshot(
+    *,
+    args: argparse.Namespace,
+    run_id: str,
+    fsv_run_root: Path,
+    state_run_root: Path,
+    selected_rows: list[dict[str, Any]],
+    row_results: list[dict[str, Any]],
+    phase: str,
+    progress_sequence: int,
+    current_row: dict[str, Any] | None,
+    last_completed_row: dict[str, Any] | None,
+) -> dict[str, Any]:
+    successes = [row for row in row_results if row.get("status") == "succeeded"]
+    failures = [row for row in row_results if row.get("status") == "failed"]
+    attempted = len(row_results)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "artifact_kind": PROGRESS_ARTIFACT_KIND,
+        "task_id": TASK_ID,
+        "created_at_utc": utc_now(),
+        "run_id": run_id,
+        "phase": phase,
+        "progress_sequence": progress_sequence,
+        "counts": {
+            "selected_rows": len(selected_rows),
+            "attempted_rows": attempted,
+            "succeeded_rows": len(successes),
+            "failed_rows": len(failures),
+            "remaining_rows": max(len(selected_rows) - attempted, 0),
+        },
+        "current_row_key": row_key(current_row),
+        "last_completed_row_key": row_key(last_completed_row),
+        "last_completed_status": last_completed_row.get("status") if last_completed_row else None,
+        "last_completed_artifacts": result_artifacts(last_completed_row),
+        "selection": {
+            "offset": args.offset,
+            "limit": args.limit,
+            "categories": sorted(args.categories or []),
+            "task_ids": sorted(args.task_ids or []),
+        },
+        "artifact_paths": {
+            "fsv_progress": str(fsv_run_root / "direct_pytest_trace_batch_progress.json"),
+            "state_progress": str(state_run_root / "direct_pytest_trace_batch_progress.json"),
+            "fsv_progress_history": str(fsv_run_root / "direct_pytest_trace_batch_progress.jsonl"),
+            "state_progress_history": str(state_run_root / "direct_pytest_trace_batch_progress.jsonl"),
+            "generated_trace_fsv_root": str(fsv_run_root / "generated-traces"),
+            "generated_trace_state_root": str(state_run_root / "generated-traces"),
+        },
+    }
+
+
+def write_progress_artifacts(
+    *,
+    args: argparse.Namespace,
+    run_id: str,
+    fsv_run_root: Path,
+    state_run_root: Path,
+    selected_rows: list[dict[str, Any]],
+    row_results: list[dict[str, Any]],
+    progress_history: list[dict[str, Any]],
+    phase: str,
+    current_row: dict[str, Any] | None = None,
+    last_completed_row: dict[str, Any] | None = None,
+) -> dict[str, Path]:
+    snapshot = build_progress_snapshot(
+        args=args,
+        run_id=run_id,
+        fsv_run_root=fsv_run_root,
+        state_run_root=state_run_root,
+        selected_rows=selected_rows,
+        row_results=row_results,
+        phase=phase,
+        progress_sequence=len(progress_history),
+        current_row=current_row,
+        last_completed_row=last_completed_row,
+    )
+    progress_history.append(snapshot)
+    fsv_progress_path = fsv_run_root / "direct_pytest_trace_batch_progress.json"
+    state_progress_path = state_run_root / fsv_progress_path.name
+    fsv_history_path = fsv_run_root / "direct_pytest_trace_batch_progress.jsonl"
+    state_history_path = state_run_root / fsv_history_path.name
+    write_json(fsv_progress_path, snapshot)
+    write_json(state_progress_path, snapshot)
+    write_jsonl(fsv_history_path, progress_history)
+    write_jsonl(state_history_path, progress_history)
+    return {
+        "fsv_progress": fsv_progress_path,
+        "state_progress": state_progress_path,
+        "fsv_history": fsv_history_path,
+        "state_history": state_history_path,
+    }
+
+
 def write_artifact_hashes(root: Path, paths: list[Path]) -> Path:
     rows = []
     for path in sorted(paths):
@@ -342,6 +465,8 @@ def build_manifest(
     batch_rows_path: Path,
     trace_index_path: Path,
     failed_rows_path: Path,
+    progress_path: Path,
+    progress_history_path: Path,
 ) -> dict[str, Any]:
     successes = [row for row in row_results if row.get("status") == "succeeded"]
     failures = [row for row in row_results if row.get("status") == "failed"]
@@ -426,6 +551,8 @@ def build_manifest(
             "batch_rows": str(batch_rows_path),
             "generated_trace_index": str(trace_index_path),
             "failed_rows": str(failed_rows_path),
+            "progress": str(progress_path),
+            "progress_history": str(progress_history_path),
             "generated_trace_fsv_root": str(fsv_run_root / "generated-traces"),
             "generated_trace_state_root": str(state_run_root / "generated-traces"),
         },
@@ -479,7 +606,29 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
     state_run_root.mkdir(parents=True, exist_ok=True)
 
     row_results: list[dict[str, Any]] = []
+    progress_history: list[dict[str, Any]] = []
+    progress_paths = write_progress_artifacts(
+        args=args,
+        run_id=run_id,
+        fsv_run_root=fsv_run_root,
+        state_run_root=state_run_root,
+        selected_rows=selected_rows,
+        row_results=row_results,
+        progress_history=progress_history,
+        phase="selected",
+    )
     for row in selected_rows:
+        write_progress_artifacts(
+            args=args,
+            run_id=run_id,
+            fsv_run_root=fsv_run_root,
+            state_run_root=state_run_root,
+            selected_rows=selected_rows,
+            row_results=row_results,
+            progress_history=progress_history,
+            phase="row_started",
+            current_row=row,
+        )
         try:
             row_results.append(
                 run_one_row(
@@ -498,8 +647,31 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
                 "error": f"{type(exc).__name__}: {exc}",
             }
             row_results.append(failed)
-            if not args.continue_on_error:
-                break
+        write_progress_artifacts(
+            args=args,
+            run_id=run_id,
+            fsv_run_root=fsv_run_root,
+            state_run_root=state_run_root,
+            selected_rows=selected_rows,
+            row_results=row_results,
+            progress_history=progress_history,
+            phase="row_completed",
+            last_completed_row=row_results[-1],
+        )
+        if row_results[-1].get("status") == "failed" and not args.continue_on_error:
+            break
+
+    progress_paths = write_progress_artifacts(
+        args=args,
+        run_id=run_id,
+        fsv_run_root=fsv_run_root,
+        state_run_root=state_run_root,
+        selected_rows=selected_rows,
+        row_results=row_results,
+        progress_history=progress_history,
+        phase="batch_finalizing",
+        last_completed_row=row_results[-1] if row_results else None,
+    )
 
     selected_rows_path = fsv_run_root / "selected_direct_pytest_rows.jsonl"
     batch_rows_path = fsv_run_root / "direct_pytest_trace_batch_rows.jsonl"
@@ -533,6 +705,8 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
         batch_rows_path=batch_rows_path,
         trace_index_path=trace_index_path,
         failed_rows_path=failed_rows_path,
+        progress_path=progress_paths["fsv_progress"],
+        progress_history_path=progress_paths["fsv_history"],
     )
     manifest_path = fsv_run_root / "direct_pytest_trace_batch_manifest.json"
     state_manifest_path = state_run_root / manifest_path.name
@@ -545,11 +719,15 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
         batch_rows_path,
         trace_index_path,
         failed_rows_path,
+        progress_paths["fsv_progress"],
+        progress_paths["fsv_history"],
         state_manifest_path,
         state_selected_rows_path,
         state_batch_rows_path,
         state_trace_index_path,
         state_failed_rows_path,
+        progress_paths["state_progress"],
+        progress_paths["state_history"],
         *[Path(row["state_trace"]) for row in successes],
         *[Path(row["fsv_trace"]) for row in successes],
     ]
@@ -567,6 +745,8 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
         "batch_rows": str(batch_rows_path),
         "generated_trace_index": str(trace_index_path),
         "failed_rows": str(failed_rows_path),
+        "progress": str(progress_paths["fsv_progress"]),
+        "progress_history": str(progress_paths["fsv_history"]),
         "artifact_hashes": str(hash_path),
         "summary": manifest["summary"],
         "decision": manifest["decision"],
