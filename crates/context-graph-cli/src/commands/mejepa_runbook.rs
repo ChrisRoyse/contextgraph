@@ -195,33 +195,61 @@ pub struct StorageVerifyArgs {
 pub struct StorageVerifyOutput {
     pub db_path: PathBuf,
     pub paranoid_open_ok: bool,
+    pub read_mode: String,
+    pub discovered_cf_count: usize,
     pub cf_count: usize,
     pub cf_row_counts: std::collections::BTreeMap<String, u64>,
+    pub missing_infer_cfs: Vec<String>,
+    pub extra_column_families: Vec<String>,
     pub source_of_truth: Value,
 }
 
 pub fn run_storage_verify(args: StorageVerifyArgs) -> Result<StorageVerifyOutput> {
-    validate_dir(&args.db_path, "storage-db-path")?;
-    let db = open_infer_rocksdb(&args.db_path).with_context(|| {
-        format!(
-            "MEJEPA_RUNBOOK_STORAGE_VERIFY_OPEN_FAILED: {}",
-            args.db_path.display()
-        )
-    })?;
+    let (db, discovered_cfs) =
+        open_existing_rocksdb_read_only(&args.db_path).with_context(|| {
+            format!(
+                "MEJEPA_RUNBOOK_STORAGE_VERIFY_OPEN_FAILED: {}",
+                args.db_path.display()
+            )
+        })?;
+    let discovered_set = discovered_cfs
+        .iter()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    let infer_set = context_graph_mejepa_cf::INFER_CFS
+        .iter()
+        .map(|value| (*value).to_string())
+        .collect::<std::collections::BTreeSet<_>>();
     let mut counts = std::collections::BTreeMap::new();
     for cf_name in context_graph_mejepa_cf::INFER_CFS {
+        if !discovered_set.contains(*cf_name) {
+            continue;
+        }
         let count = context_graph_mejepa::count_cf(db.as_ref(), cf_name)
             .with_context(|| format!("MEJEPA_RUNBOOK_STORAGE_VERIFY_CF_FAILED: {cf_name}"))?;
         counts.insert((*cf_name).to_string(), count);
     }
+    let missing_infer_cfs = infer_set
+        .difference(&discovered_set)
+        .cloned()
+        .collect::<Vec<_>>();
+    let extra_column_families = discovered_set
+        .difference(&infer_set)
+        .cloned()
+        .collect::<Vec<_>>();
     Ok(StorageVerifyOutput {
         db_path: args.db_path.clone(),
         paranoid_open_ok: true,
+        read_mode: "read_only_existing_column_families".to_string(),
+        discovered_cf_count: discovered_cfs.len(),
         cf_count: counts.len(),
         cf_row_counts: counts,
+        missing_infer_cfs,
+        extra_column_families,
         source_of_truth: json!({
-            "writer": "rocksdb DB::open_cf_descriptors with set_paranoid_checks(true)",
-            "verification": "count_cf walks every iterator key — surfaces SST corruption",
+            "reader": "rocksdb DB::list_cf + DB::open_cf_descriptors_read_only with set_paranoid_checks(true)",
+            "verification": "count_cf walks every present canonical inference CF iterator key — surfaces SST corruption without creating missing CFs",
+            "mutation_policy": "read-only; no CF creation, migration, deletion, or writes",
         }),
     })
 }
@@ -768,6 +796,29 @@ fn open_hygiene_rocksdb_read_only(path: &Path) -> Result<rocksdb::DB> {
             path.display()
         )
     })
+}
+
+fn open_existing_rocksdb_read_only(path: &Path) -> Result<(Arc<rocksdb::DB>, Vec<String>)> {
+    validate_dir(path, "storage-db-path")?;
+    let mut opts = Options::default();
+    opts.create_if_missing(false);
+    opts.create_missing_column_families(false);
+    opts.set_paranoid_checks(true);
+    let mut column_families = rocksdb::DB::list_cf(&opts, path)
+        .with_context(|| format!("MEJEPA_RUNBOOK_STORAGE_LIST_CF_FAILED: {}", path.display()))?;
+    column_families.sort();
+    let descriptors = column_families
+        .iter()
+        .map(|cf| ColumnFamilyDescriptor::new(cf.clone(), Options::default()))
+        .collect::<Vec<_>>();
+    let db = rocksdb::DB::open_cf_descriptors_read_only(&opts, path, descriptors, false)
+        .with_context(|| {
+            format!(
+                "MEJEPA_RUNBOOK_STORAGE_READ_ONLY_OPEN_FAILED: {}",
+                path.display()
+            )
+        })?;
+    Ok((Arc::new(db), column_families))
 }
 
 fn validate_hygiene_cf_name(raw: &str, field: &str) -> Result<String> {
@@ -1527,5 +1578,59 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(empty_path.contains("MEJEPA_RUNBOOK_PAUSE_STATE_PATH_EMPTY"));
+    }
+
+    #[test]
+    fn run_storage_verify_opens_mixed_schema_read_only() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        opts.create_missing_column_families(true);
+        opts.set_paranoid_checks(true);
+        let descriptors = vec![
+            ColumnFamilyDescriptor::new(
+                context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
+                Options::default(),
+            ),
+            ColumnFamilyDescriptor::new("legacy_extra_cf", Options::default()),
+        ];
+        {
+            let db = rocksdb::DB::open_cf_descriptors(&opts, temp.path(), descriptors).unwrap();
+            let cf = db
+                .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS)
+                .unwrap();
+            db.put_cf(
+                cf,
+                b"session-ts-prediction",
+                b"not-decoded-by-storage-verify",
+            )
+            .unwrap();
+        }
+
+        let output = run_storage_verify(StorageVerifyArgs {
+            db_path: temp.path().to_path_buf(),
+        })
+        .unwrap();
+
+        assert!(output.paranoid_open_ok);
+        assert_eq!(output.read_mode, "read_only_existing_column_families");
+        assert!(output.discovered_cf_count >= 2);
+        assert_eq!(
+            output
+                .cf_row_counts
+                .get(context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS),
+            Some(&1)
+        );
+        assert!(output
+            .missing_infer_cfs
+            .contains(&context_graph_mejepa_cf::CF_MEJEPA_CALIBRATION_HISTORY.to_string()));
+        assert!(output
+            .extra_column_families
+            .contains(&"legacy_extra_cf".to_string()));
+
+        let listed = rocksdb::DB::list_cf(&Options::default(), temp.path()).unwrap();
+        assert!(
+            !listed.contains(&context_graph_mejepa_cf::CF_MEJEPA_CALIBRATION_HISTORY.to_string())
+        );
     }
 }

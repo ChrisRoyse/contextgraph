@@ -666,13 +666,43 @@ If a project has no target sheet, fall back to: production-quality software hitt
 
 ## §0.5 — THE ACTIVE OBJECTIVE OF THIS RUN
 
+**END GOAL (the only definition of done for this run):** make ME-JEPA-Code reach functional super-intelligence in the Python-code domain — i.e. drive the North-Star predicate in `docs/futurebuild/specs/TARGET-METRICS.md §7` to evaluate **TRUE for 4 consecutive rolling windows with every Tier-4 invariant intact**, proven by source-of-truth readback on aiwonder. When it hits, human review of AI-generated Python patches is statistically unjustified. That moment is the goal. Nothing before it is "done."
+
+```
+DONE ⇔ ship_gate_FSV(TARGET-METRICS.md §7) = TRUE  (read back from CF_MEJEPA_* / holdout / Docker oracle, not a dashboard)
+  Tier1 raw-Pearson predictor↔oracle ≥0.95 (NOW 0.4843) ×4 windows + Panel B ≥0.95 + |corrA−corrB|≤0.05
+  Tier2 every (mutation_category×language) cell passes its #532 metric (Pearson|recall+conf), Brier≤0.05, ECE≤0.05, cover 88-92%, n≥50
+  Tier3 mistake_repeat_rate≤0.05, unrelated_delta≤0.02     Tier5 I(panel;oracle)≥0.95 bits, oracle_self_consistency≥0.97, slot distinctness pass
+  Tier4 fences EXACT always: flat_concat=false, slot_identity=true, ΔΞ=0, Q4 loss=0, labels_as_inputs=false, no inner LLM, durable state only on /zfs/archive/contextgraph
+```
+
+**Working the GitHub issue queue is the MECHANISM; the predicate above is the END.** Every issue you close must trace to a target number or a Tier-4 fence (§0.0 worthlessness test). The run-level success function:
+
 ```
 GOAL = ∀ issue ∈ open(chrisroyse/contextgraph) :
         status(issue) ∈ {closed, blocked-on-external}
        ∧ every closure has FSV evidence in a RESOLVED comment
        ∧ no doctrine invariant violated
        ∧ no fake-done claim made
+   — pursued in the MANDATORY ORDER below, because step 0 can void the rest.
 ```
+
+**MANDATORY ORDER (read `docs/MEJEPA_SHIP_GATE_STRATEGY_2026-05-29.md` for full rationale + decision tree):**
+
+0. **FALSIFY FIRST — highest leverage, do before any corpus/trainer spend.** Run **#760** (10-replica oracle self-consistency, ~2h) + **#759** (panel-MI `I(panel;oracle)`, ~3-5d). These decide whether 0.95 is reachable at all. Branch:
+   - `oracle_self_consistency < 0.97` → **re-frame the gate to `min(0.95, floor−ε)` + quarantine flaky instances** (#754/#738). This is allowed and honest; arbitrary lowering of 0.95 is a doctrine breach. The 2026 literature (OpenAI retired SWE-bench Verified over ~59% flawed tests; SWE-ABS ~20% wrong) makes a sub-1.0 floor near-certain.
+   - `I(panel;oracle) ≥ 0.95 bits` → panel sufficient; execute downstream.
+   - `0.7 ≤ I < 0.95` → add 1-2 informative slots (execution-trace / runtime / dep-version, in-slot replacement #745) IN PARALLEL with downstream.
+   - `I < 0.7` → panel **provably insufficient**; pivot to expanded/sparse panel (#519/#517) BEFORE more trainer work. Report it; do NOT grind training that cannot converge.
+1. **Honest metric:** remove the 0.79 rank-lift Goodhart transform from the gate (#695); raw Pearson + per-cell isotonic/Venn-Abers calibration (#761/#786/#791).
+2. **Stop the unwinnable grind:** reclassify `delete_test_call` to the #532 degenerate contract + halt its oracle-regeneration batches (#810). Today's run: 32 Pass / 9,079 Fail = structurally pass-sparse.
+3. **Close the contested mixed cells** (`subtle_flip`, `off_by_one`, `swap_variable` — where the 0.4843 gap actually lives): SWE-bench Verified power (#756) ONLY after #759 says the panel can support 0.95; group-relative/contrastive objective (#809); execution-aware features (#774) if #759 says "marginal".
+4. **De-fake before trusting green:** eliminate every no-op / hardcoded-passing telemetry path BEFORE believing any gate reading — #685 #687 #688 #690 #621 #699 #618 #619. A gate that can be faked is not a gate.
+5. Mistake-loop countability (#689) → 4-window burn-in (#167) → Panel B encoder training + cross-panel triangulation (#405/#771).
+
+**Anti-Goodhart prime directive:** a Tier-1 number that hits while any Tier-4 fence is broken is **NOT a pass — it is a doctrine breach**. Never quote the 0.79 rank-lift as the score. Never report a number you cannot re-derive from the source of truth. Inflating the metric is easier than earning it and is the #1 failure mode in this repo's history (#621/#685/#695) — refuse it.
+
+**Aiwonder (all durable state + GPU + Docker oracle live here):** SSH alias `aiwonder` (`croyse@aiwonder.mst.com`); credentials/recipe in `~/.config/aiwonder.env`; durable root `/zfs/archive/contextgraph/...`, hot `/zfs/hot/contextgraph/...`. Never write durable state off aiwonder (no `/mnt/c`, `/mnt/d`); CI lint enforces.
 
 Stop conditions (any one true → stop):
 
