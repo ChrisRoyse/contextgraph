@@ -283,9 +283,12 @@ def classify_dynamic_candidate(path: Path, payload: Any) -> dict[str, Any]:
     }
 
 
-def discover_artifacts(roots: list[Path], *, max_inventory: int) -> tuple[list[dict[str, Any]], dict[str, int]]:
+def discover_artifacts(
+    roots: list[Path], *, max_inventory: int
+) -> tuple[list[dict[str, Any]], dict[str, int], list[str]]:
     require(bool(roots), "EXECUTION_AWARE_READINESS_SCAN_ROOTS_EMPTY")
     inventory: list[dict[str, Any]] = []
+    eligible_trace_paths: list[str] = []
     counts: Counter[str] = Counter()
     for root in roots:
         require(root.is_dir(), "EXECUTION_AWARE_READINESS_SCAN_ROOT_MISSING", {"root": str(root)})
@@ -296,21 +299,21 @@ def discover_artifacts(roots: list[Path], *, max_inventory: int) -> tuple[list[d
             if kind == "other":
                 continue
             counts[kind] += 1
-            if len(inventory) >= max_inventory:
+            should_classify_for_mapping = kind == "candidate_dynamic_json"
+            should_keep_inventory_item = len(inventory) < max_inventory
+            if not should_classify_for_mapping and not should_keep_inventory_item:
                 continue
             payload = read_limited_jsonish(path)
             item = classify_dynamic_candidate(path, payload)
             item["scan_root"] = str(root)
-            inventory.append(item)
-    return inventory, dict(sorted(counts.items()))
+            if item.get("eligible_live_execution_feature") is True:
+                eligible_trace_paths.append(item["path"])
+            if should_keep_inventory_item:
+                inventory.append(item)
+    return inventory, dict(sorted(counts.items())), eligible_trace_paths
 
 
-def mapped_trace_rows(entries: list[dict[str, Any]], inventory: list[dict[str, Any]]) -> dict[str, Any]:
-    eligible_paths = [
-        item["path"]
-        for item in inventory
-        if item.get("eligible_live_execution_feature") is True
-    ]
+def mapped_trace_rows(entries: list[dict[str, Any]], eligible_paths: list[str]) -> dict[str, Any]:
     mapped: set[tuple[str, str]] = set()
     for row in entries:
         task_id = row["task_id"]
@@ -480,11 +483,11 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
 
     ship_gate = load_ship_gate_rows(ship_gate_report)
     entries = load_corpus_index(corpus_root, args.expected_corpus_rows)
-    inventory, artifact_counts = discover_artifacts(
+    inventory, artifact_counts, eligible_trace_paths = discover_artifacts(
         [*trace_roots, corpus_root],
         max_inventory=int(args.max_inventory_rows),
     )
-    trace_mapping = mapped_trace_rows(entries, inventory)
+    trace_mapping = mapped_trace_rows(entries, eligible_trace_paths)
     trace_inventory_path = fsv_run_root / "execution_artifact_inventory.jsonl"
     missing_rows_path = fsv_run_root / "missing_execution_trace_rows.jsonl"
     write_jsonl(trace_inventory_path, inventory)
