@@ -53,20 +53,22 @@ This is not about hiding what you believe. It is **channel discipline**: the phy
 
 ---
 
-## 4. The core scientific offer (the intellectual spine of everything)
+## 4. The core scientific offer (RE-CENTERED 2026-05-31 on DDA / TCT)
+
+**Strategic pivot (operator directive):** Chris is *far* more comfortable talking about **DDA / meaning compression / TCT** than about ME-JEPA-Code / the "Oracle" / the oracle-correlation number — he knows the former cold and can talk for days; he does not yet understand the Pearson/oracle material well enough to defend it live. So the whole engagement leads with the **information side**, and the code-verifier is demoted to one honest line ("something I'm developing"), surfaced only if Vopson presses. This is also *stronger*: the measured anchors (0.961 voice SECS, Shakespeare 5/5) beat the 0.48 oracle number, and meaning compression is a genuinely novel, Vopson-native idea.
 
 **Claim to Vopson, in his language:**
 
-> ME-JEPA-Code is a learning system whose internal state is an *array of frozen per-embedder vectors* (a "teleological constellation"). As the predictor is trained by its own mistakes against a deterministic oracle, the **per-slot information entropy of that constellation should monotonically decrease across training windows**, and that decrease should **track** the rise in predictor–oracle correlation. If it does, ME-JEPA is a working **bench-top instrument for the second law of infodynamics** in a substrate that is neither a genome nor the cosmos — it is a *self-optimising computational learner*, exactly the kind of "computational process" your simulation-hypothesis work predicts reality to be.
+> I decompose a fixed corpus of real data through a panel of N **frozen, approximately-independent measurement instruments** (embedders), which yields up to N + C(N,2) (+1) structured supervisory signals per input — I call the density of this extraction **meaning compression**, and propose it as a *fourth* compression category alongside bit-, weight-, and activation-compression. The same frozen panel then becomes a **geometric alignment target**: a "constellation" of identity centroids, never flattened, that a generator is trained to land inside, with every output verified by a per-output cosine gate. Two things meet your physics: (1) the panel is engineered to **maximise differentiated information per instrument** — each must add ≥ 0.05 *bits* of new information about a real outcome or it is retired as noise; and (2) aligning a generator to the frozen constellation **collapses its outputs toward a high-symmetry, low-entropy state** around the centroid — your second law of infodynamics, observable in a learning machine, with a *measured endpoint* (0.961 mean cosine-to-centroid on a real voice clone).
 
-This is genuinely novel for him and genuinely true to your architecture:
-- Your **compression-progress** metric `CP_Φ(t)` (reduction in conditional description length of the frozen target panel per training step) is *literally* an information-entropy-reduction-over-time measurement — Vopson's second law in your own logged units (`CF_MEJEPA_TRAIN_CERTS`).
-- Your planned **information-entropy auxiliary loss** (#511, `L_entropy = λ·H(z_latent)`) is *explicitly a formalisation of Vopson's 2022 paper* in your training objective. You already cite it that way internally.
-- His **"high symmetry = low information entropy"** result maps directly onto your hypothesis that the panel "collapses toward higher-symmetry, lower-entropy slot configurations" during training.
+This is novel for him and true to the work:
+- **Meaning compression** is a new compression axis — the compression-as-physics theme he loves — with a real counting identity (92 signals/input at N=13). The clearest co-authorship hook.
+- The **differentiation contract** (D1 distinctness ≤ 0.6 corr; D2 marginal info ≥ 0.05 bits; D3 frozen) on the socialmedia2.com 21-slot slate is Shannon information as a build contract, measured in bits against a real outcome — a metrologist's dream.
+- His **"high symmetry = low information entropy"** result maps directly onto TCT's centroid collapse, and the voice number is the *measured endpoint* of that collapse.
 
-**The honesty boundary you must hold:** this is a **hypothesis with a measurement protocol**, not a result you have in hand. You have NOT yet measured per-slot entropy trajectories. You have a 0.4843 correlation and a clear gap. So the joint work is framed as: *"here is the system, here is the protocol, here is the data we will jointly generate; here is the falsification condition under which the hypothesis dies."* That framing is exactly what a metrologist wants to hear, and it is the opposite of "no data in it."
+**The honesty boundary:** the entropy *trajectory* of the collapse is a hypothesis with a protocol (not yet logged); the *endpoint* (0.961) and the bit-level differentiation contract are real and running. State the **encoder-matched** caveat on 0.961 before he asks. Frame the joint work as: *"here are the measured systems, here is the protocol, here is the falsification condition."*
 
-Full mapping in `06_infodynamics_mapping.md`. The data you can show *today* + the data plan in `03_data_package_infodynamics_evidence.md`.
+Full mapping in `06_infodynamics_mapping.md`. Measured data + protocol in `03_data_package_infodynamics_evidence.md`. The two figures to attach: `ipi_fig1_constellation.png` and `ipi_fig2_meaning_compression.png`.
 
 ---
 
@@ -94,7 +96,7 @@ Per `CLAUDE.md` and `NORTH-STAR.md`, your real goal is the numerical predicate (
 
 ## 8. Hard "don'ts" for the Vopson channel
 
-1. Don't say "the Oracle is born / works" — it isn't. Say "predictor at 0.4843 Pearson, gated at 0.95, here's the path."
+1. **Lead with DDA/TCT, not the Oracle.** Don't say "the Oracle is born / works." The code-verifier is the *developing* piece — one honest line only if asked ("about 0.48 against a 0.95 target, still building it"). The measured anchors you lead with are 0.961 voice SECS and Shakespeare 5/5.
 2. Don't use souls / gods / prophet / "everyone is stupid" / "removes software engineers entirely" framing.
 3. Don't quote the `0.79` rank-lift number as your score — it's a diagnostic exemplar-similarity transform (your own issue #695 calls it a "Goodhart magnifier"). Quote raw Pearson `0.4843` and the honest gap. **Vopson will respect the honesty far more than the inflated number, and if he ever finds the #695 note himself, the inflated number ends the relationship.**
 4. Don't overstate the infodynamics link as proven. It's a hypothesis + protocol until measured.

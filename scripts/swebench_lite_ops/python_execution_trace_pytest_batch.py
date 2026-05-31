@@ -295,6 +295,7 @@ def run_one_row(
         tag=args.tag,
         instance_timeout=args.instance_timeout,
         max_events=args.max_events,
+        command_family=SUPPORTED_COMMAND_FAMILY,
         allow_non_aiwonder_roots=bool(args.allow_non_aiwonder_roots),
     )
     result = trace_runner(smoke_args)

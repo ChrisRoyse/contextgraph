@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +12,7 @@ from ..python_execution_trace_smoke import (
     ExecutionTraceSmokeError,
     TRACE_BEGIN,
     TRACE_END,
+    build_python_script_trace_runner_source,
     build_trace_runner_source,
     extract_trace_payload,
     load_corpus_entry,
@@ -26,6 +30,13 @@ def test_trace_runner_source_avoids_future_annotations_for_python36_testbeds():
 
     assert "from __future__ import annotations" not in source
     compile(source, "contextgraph_trace_pytest.py", "exec")
+
+
+def test_python_script_trace_runner_source_avoids_future_annotations_for_python36_testbeds():
+    source = build_python_script_trace_runner_source()
+
+    assert "from __future__ import annotations" not in source
+    compile(source, "contextgraph_trace_python_script.py", "exec")
 
 
 def test_transform_wraps_single_pytest_command_after_trace_runner():
@@ -49,6 +60,82 @@ def test_transform_wraps_single_pytest_command_after_trace_runner():
     assert any(line == "export CONTEXTGRAPH_TRACE_MAX_EVENTS=12" for line in transformed)
     assert wrapped_index > transformed.index("CONTEXTGRAPH_TRACE_PY")
     assert begin_marker_index > end_index
+
+
+def test_transform_wraps_django_runtests_command_after_trace_runner():
+    eval_script = [
+        "source /opt/miniconda3/bin/activate",
+        "conda activate testbed",
+        "cd /testbed",
+        ": '>>>>> Start Test Output'",
+        "./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 test_utils.tests",
+        ": '>>>>> End Test Output'",
+        "git checkout base tests/runtests.py",
+    ]
+
+    transformed, metadata = transform_eval_script_list(eval_script, max_events=12, command_family="django_runtests")
+
+    wrapped = (
+        "python /tmp/contextgraph_trace_python_script.py ./tests/runtests.py "
+        "--verbosity 2 --settings=test_sqlite --parallel 1 test_utils.tests"
+    )
+    wrapped_index = transformed.index(wrapped)
+    end_index = transformed.index(": '>>>>> End Test Output'")
+    begin_marker_index = transformed.index("  echo CONTEXTGRAPH_EXECUTION_TRACE_BEGIN")
+    assert metadata["command_family"] == "django_runtests"
+    assert metadata["handler"] == "python_script_sys_settrace_v1"
+    assert metadata["script_path"] == "./tests/runtests.py"
+    assert metadata["script_args"] == ["--verbosity", "2", "--settings=test_sqlite", "--parallel", "1", "test_utils.tests"]
+    assert any(line == "export CONTEXTGRAPH_TRACE_MAX_EVENTS=12" for line in transformed)
+    assert wrapped_index > transformed.index("CONTEXTGRAPH_TRACE_SCRIPT_PY")
+    assert begin_marker_index > end_index
+
+
+def test_python_script_runner_executes_synthetic_script_and_writes_trace(tmp_path: Path):
+    repo = tmp_path / "repo"
+    script = repo / "tests" / "runtests.py"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        "\n".join(
+            [
+                "import sys",
+                "value = 2",
+                "if sys.argv[1] != 'expected':",
+                "    raise SystemExit(5)",
+                "result = value + 2",
+                "raise SystemExit(0 if result == 4 else 6)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner = tmp_path / "contextgraph_trace_python_script.py"
+    output = tmp_path / "trace.json"
+    runner.write_text(build_python_script_trace_runner_source(), encoding="utf-8")
+    env = dict(os.environ)
+    env.update(
+        {
+            "CONTEXTGRAPH_TRACE_OUTPUT": str(output),
+            "CONTEXTGRAPH_TRACE_REPO_ROOT": str(repo),
+            "CONTEXTGRAPH_TRACE_MAX_EVENTS": "50",
+        }
+    )
+
+    completed = subprocess.run(
+        [sys.executable, str(runner), str(script), "expected"],
+        check=False,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert completed.returncode == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["producer"] == "contextgraph.execution_trace_smoke.python_script_sys_settrace"
+    assert payload["runtime_metrics"]["python_script_exit_code"] == 0
+    assert payload["steps"]["script_args"] == ["expected"]
+    assert payload["coverage"]["lines_executed"] > 0
+    assert payload["trace_events"]
 
 
 def test_transform_rejects_non_pytest_command():

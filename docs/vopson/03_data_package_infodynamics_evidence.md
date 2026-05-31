@@ -1,91 +1,86 @@
 # 03 — The Data Package: Answering "there was no data in it"
 
-**This is the single most important document in the package.** Vopson's one critique was that your ResearchGate paper had "no data, no data processing." This file is the rebuttal: every measured number you actually have on disk, with its source, plus the measurement protocol for the infodynamics claim. **Send a curated version of this (cover note in `08`).**
+**RE-CENTERED 2026-05-31 on DDA / TCT.** Vopson's one critique was "no data, no data processing." This is the rebuttal — but now built from the **measured DDA/TCT results** (0.961 voice, Shakespeare 5/5, three real embedder panels) rather than the unfinished code-verifier. **Send a curated version (cover note in `08`).**
 
-**Governing principle:** show real numbers including the ones that aren't where you want them yet. A metrologist trusts the person who shows the gap.
-
----
-
-## A. What is measured TODAY (real artifacts on disk — verifiable)
-
-### A.1 The verifier — honest current state
-| Metric | Value | Source of truth |
-|---|---|---|
-| Predictor–oracle correlation (raw Pearson, held-out) | **0.4843192995** | `swebench-300x8-ship-gate-fsv/ship-gate-fsv.json`; futurebuild `07 §1` |
-| Brier score | **0.0924** | same |
-| Expected Calibration Error (ECE) | **0.0240** (already under the 0.05 target) | same |
-| Deployment gate | 0.95 Pearson, stable × 4 rolling windows, per cell | `ship_gate_stability_fsv.json` (`shipGateCorrelationThreshold=0.95`, `requiredConsecutivePassingWindows=4`) |
-| Honest gap | **0.4657** to gate | computed |
-
-**How to present it:** "The calibration is already good (ECE 0.024 — when it says 90% it's right ~90% of the time). The raw correlation is 0.48 against a 0.95 gate. I am less than halfway and I will not pretend otherwise. What follows is the protocol for whether the infodynamics structure is even reachable on this substrate."
-
-> **DO NOT** quote the `0.79` "rank-lift" figure as your score. It is a category-local exemplar-similarity transform that your own issue **#695** classifies as a "Goodhart magnifier" — it lifts the apparent number without improving Brier/ECE. If Vopson ever finds that note, an inflated number ends the relationship. Quote `0.4843`.
-
-### A.2 The infodynamics instrument you ALREADY have — compression progress `CP_Φ`
-This is the most Vopson-relevant artifact you possess. The trainer logs, per step, the **conditional description length (in bits)** of the frozen target panel under the predictor, and computes `CP_Φ(t)` = the per-step **reduction** in that bit-length.
-
-- **Source of truth:** `CF_MEJEPA_TRAIN_CERTS`; FSV at `/mnt/d/contextgraph/fsv/task-ek-001-compression-progress-fsv/run-*/compression_progress_fsv.json` (7 runs).
-- **What the harness proves:** `monotonicityPassed: true`, `negativeCpPointCount: 0`, monotonic decrease of conditional description length, fail-closed error codes (`MEJEPA_NO_CERT_HISTORY`, `MEJEPA_CP_CERT_MISSING_BITS`, `MEJEPA_CP_NON_FINITE`). It is exposed via `mejepa_compression_progress` (MCP) and `context-graph-cli mejepa compression-progress`.
-- **The honest caveat (state it):** the values in the current FSV runs (8 → 6 → 4 → 2 bits) are a **verification fixture** proving the instrument works end-to-end; they are not yet a full real-training trajectory. The joint experiment is to run this over a real training schedule and publish the curve.
-- **Why it's the bridge:** `CP_Φ(t) > 0` over time is *literally information entropy of the system's state decreasing over training* — Schmidhuber's "compression progress," and in form, **Vopson's second law of infodynamics in the system's own logged units.** You don't have to build the instrument; you have to run it for the paper.
-
-### A.3 Cross-embedder structure — the MI substrate (#388)
-The system already computes a **pairwise cross-embedder correlation tensor** over the panel channels (the 78-pair / 66-active-pair structure): per-cell/window slot distribution tensors and upper-triangle pair tensors (futurebuild `07 §3.8`: 516 slot tensors, 2,838 pair tensors, 1,400 valid pair rows). An `exports/pairwise-mi/` path exists for the mutual-information export (computed on the aiwonder production host).
-- **Why it matters to Vopson:** measuring `I(channel_i ; channel_j)` and `I(panel ; oracle_outcome)` in bits is exactly the kind of Shannon-information measurement his framework is built on. The panel-sufficiency MI probe (your issue **#734**) is one of the two cheap experiments that could falsify the whole program in advance — and it's the kind of measurement he'd want to co-design.
-
-### A.4 A SECOND domain already at a publishable number (voice cloning)
-Your video/voice system (ClipCannon, `docs/PAPER.md`) gives Vopson an *additional, independent* demonstration that the frozen-panel + best-of-K + cosine-guard method produces real, benchmarked results — on a standard public benchmark, with honest cross-encoder caveats:
-
-| Benchmark | Encoder | Result | Baseline |
-|---|---|---|---|
-| **SeedTTS-Eval (test-en), n=1088** | WavLM-Large (official scoring) | **sim_mean 0.7785**, median 0.7852, p90 0.8419 | SeedTTS-DiT **0.79**; human ground truth **0.73** |
-| Santa single-speaker ablation, n=10 | WavLM-base-plus-sv (encoder-matched) | 0.9708 → **0.9772** across config ladder | — |
-| **Cross-encoder honesty check** | **ECAPA-TDNN (independent, 192-d)** | **EER 0.25 — "DISTINGUISHABLE"** (real 0.6051 vs synth 0.4892) | — |
-
-- **Source:** `clipcannon/benchmarks/results/{00_all_results.json, 09_seedtts_final.json, 01_sv_eer.json}`.
-- **How to present it (this is the credibility move):** "On the standard SeedTTS public benchmark with the official WavLM scorer, the clone scores 0.778 — essentially at the SOTA DiT (0.79) and above human ground-truth similarity (0.73). But I want to be precise: when I score with a *fully independent* encoder (ECAPA-TDNN) the clone is still **distinguishable** from the real speaker — equal-error-rate 0.25. The within-encoder 0.97 is the guard working, not cross-encoder identity proof. I report both." — *That sentence is worth more to Vopson than any single high number.* It shows you understand encoder-matched vs. cross-encoder evaluation, which is exactly where over-claimers get caught.
-
-### A.5 A working JEPA world-model demo (separate from the code predictor)
-`tmp/5090jepa_evidence/` holds 10 phases of FSV for **DynamicJEPA** (the 5090jepa MCP surface, 39 tools): a self-contained JEPA world model with instrument readings, latent panels, constellations, guard decisions, plan traces, and surprise logs. Useful as a live, runnable demonstration that the architecture isn't vaporware.
+**Governing principle:** lead with real, measured numbers including their honest scope caveats. A metrologist trusts the person who states the encoder-matched limitation before being asked.
 
 ---
 
-## B. What is NOT yet measured (be explicit — this is the joint work)
+## A. What is MEASURED today (real artifacts, with scope flags)
 
-| Quantity | Status | Who/when |
+### A.1 Voice identity reproduction — the quantitative anchor (Case 3, MEASURED 2026-04-16)
+| Metric | Value | Scope |
 |---|---|---|
-| Per-channel information entropy `H_i(t)` across training windows | **Not measured.** The core infodynamics measurement. | **The joint experiment.** |
-| Correlation of `H_i(t)` decrease with rising oracle agreement | Not measured | joint |
-| Channel-configuration **symmetry** vs. training step (his 2023 symmetry result) | Not measured | joint |
-| `I(panel ; oracle_outcome)` panel-sufficiency MI (#734) | Not measured (~3–5 days compute) | cheap probe — do first |
-| `oracle_self_consistency` (replica voting; #723) | Not measured (~2 h Docker) | cheap probe — do first |
-| Full real-training `CP_Φ` trajectory (not the fixture) | Harness ready; not yet run at scale | joint |
+| Mean WavLM SECS (speaker-embedding cosine) | **0.961** | N=10 held-out English sentences, **one speaker**, encoder-matched (guard + evaluator both WavLM-base-plus-sv) |
+| Max / min SECS | **0.975 / 0.914**; 9 of 10 ≥ 0.95 | same |
+| 95% bootstrap CI on the mean | **[0.951, 0.971]** | retrospective, 10k resamples, fixed seed |
+| DNSMOS P.808 naturalness | clone **3.93** vs real **3.93** (N=14) | descriptive parity, neural proxy |
+| UTMOS naturalness | clone **3.012** vs real **2.997** | descriptive parity |
+| Field reference band | VALL-E 2 ≈ 0.881, NaturalSpeech 3 ≈ 0.891; field clusters 0.86–0.89 | paradigm anchors |
+
+- **Method:** Qwen3-TTS conditioned on a **50-clip frozen centroid**, best-of-12 selection at T=0.3, τ=0.95 guard. The centroid *is* the TCT constellation for one modality (speaker).
+- **The mandatory honesty line (say it louder than the headline):** *"0.961 is an **encoder-matched** measurement — the selector and the scorer are both WavLM. It shows the guard behaves exactly as specified; it is **not** cross-encoder identity proof. An independent encoder (ECAPA-TDNN) triangulation is instrument-ready and pending."* That sentence is worth more to Vopson than the number.
+- **Why it's the infodynamics anchor:** 0.961 mean cosine to the centroid = the generated outputs are **tightly clustered around the identity centroid** — a high-symmetry, low-entropy configuration. This is the measured *endpoint* of the entropy-collapse the joint experiment would log in full.
+
+### A.2 Style model that holds identity under attack (Case 1, MEASURED 2026-04-17)
+- Shakespeare stylistic LoRA on Gemma-4-E4B-it (rank 256, α=512, 258 modules), SFT loss 1.12 / 98.9% token acc, DPO loss 0.47 / 98.0% rewards-acc, ~7.5 h on one RTX 5090.
+- **5/5 Full State Verification PASS**: love-poem, quantum-entanglement-in-verse, **prompt-injection refusal in character**, Go binary-search with Shakespeare comments, and an **emergent zero-shot cross-lingual transfer** (a Spanish prompt produced *Golden Age* Spanish, not modern Spanish).
+- **Public weights:** `huggingface.co/cabdru/shakespeare-lora-gemma4`. Reproducible artifact — rare in this literature.
+
+### A.3 Derived Data Abundance — the counting identity, in three real panels
+A fixed input through N frozen, approximately-independent instruments yields **N + C(N,2) (+1)** structured signals — *up to*; the pairwise term is a constructive upper bound pending an MI audit.
+
+| System | Domain | N | Signals / input | Scale |
+|---|---|---|---|---|
+| **ClipCannon** | video | 7 | **28** | 67,585-line Python, 23-stage DAG, 7 modalities × 4,044 dims |
+| **Context Graph** | text + code | 13 | **92** (13+78+1) | ≈370,000-line Rust, 59 RocksDB CFs, 75 MCP tools, 5,184 tests |
+| **socialmedia2.com (Polis)** | civic matching | 21 | **231** (21+210) | 21-slot slate across 11 orthogonal axes |
+
+Figure: `ipi_fig2_meaning_compression.png` (the growth curve with these three systems marked) + `ipi_fig1_constellation.png` (the frozen multi-instrument identity manifold).
+
+### A.4 The information-theoretic embedder design — Shannon made a build contract (socialmedia2.com / Polis)
+This is the cleanest "high-signal / low-noise" example, and it is pure information theory — exactly Vopson's register. The 21-slot panel ships only if a three-part **differentiation contract** holds:
+- **D1 Distinctness:** every pair `corr₊(Eᵢ, Eⱼ) ≤ 0.6` on a ≥500-citizen calibration set.
+- **D2 Marginal information:** every slot must add **≥ 0.05 bits** of *new* information about the real outcome (30-day in-person tie formation): `H(y | E₁..Eᵢ₋₁) − H(y | E₁..Eᵢ) ≥ 0.05`.
+- **D3 Frozen** across match / train / eval / serve.
+- **The principle (the user's insight, mathematised):** *the panel's value is `Σᵢ ΔHᵢ = Σᵢ I(y; Eᵢ | E₁..Eᵢ₋₁)`, not `Σᵢ H(Eᵢ)` — maximise **differentiated information per instrument**, not raw dimensionality. A redundant slot (corr ≈ 1) contributes ΔHᵢ ≈ 0 → it is noise, and is retired at the quarterly 210-pair audit.* The outcome `y` is durable real-world connection — explicitly **not** engagement / time-on-app.
+
+### A.5 Meaning compression as a fourth taxonomic category
+Bit-, weight-, and activation-compression all ask "for fixed content, how few bits/params/memory?" Meaning compression flips it: **"for fixed raw data, how many structured supervisory signals can I extract?"** Unit: signals per raw-data-unit — semantically distinct, complementary (a pipeline can do all four). This is the contribution Vopson, as a compression-and-information physicist, is most likely to want to co-author on.
+
+---
+
+## B. The infodynamics bridge (what's a hypothesis vs. what's measured)
+
+| Claim | Status |
+|---|---|
+| Aligning a generator to a frozen constellation collapses its output distribution to a low-entropy, high-symmetry state around the centroid | **Endpoint measured** (0.961 tight cluster, voice); full per-step entropy trajectory **not yet logged** — the joint experiment |
+| Maximising differentiated information per instrument (D1/D2 gates, in bits) | **Implemented & enforced** (Polis 21-slot contract) |
+| Meaning compression as a fourth compression category | **Proposed** (counting identity is real; taxonomic acceptance is a scholarly judgement) |
+| "High symmetry ⇔ low information entropy" (Vopson 2023) governs constellation collapse | **Hypothesised**, with a measured endpoint and a falsification condition |
 
 ---
 
 ## C. The measurement protocol (this is "data processing" — give him the recipe)
 
-**Experiment: does ME-JEPA's training obey the second law of infodynamics?**
-
-1. **Substrate:** 300×8 SWE-bench Lite Python corpus (2,400 cases), frozen 15-channel panel, deterministic Docker oracle.
-2. **Instrument the training loop** to log, at each training window `t`:
-   - per-channel information entropy `H_i(t)` (Kraskov k-NN differential-entropy estimator over each channel's distribution; same-channel only — never cross-channel, per slot-identity rule),
-   - `CP_Φ(t)` (already logged in `CF_MEJEPA_TRAIN_CERTS`),
-   - a channel-configuration symmetry score,
-   - predictor–oracle correlation on held-out.
-3. **Confirmation criterion:** `Σ_i H_i(t)` decreases monotonically toward a floor AND tracks rising oracle correlation (cross-correlation of the two curves > 0, lag ≈ 0).
-4. **Falsification criterion:** oracle correlation rises while `Σ_i H_i(t)` is flat or rising → the second law of infodynamics does **not** govern this learner. *(This is a publishable negative result — it bounds the law's domain. Say so. A pre-registered falsification condition is the strongest credibility signal you can give a physicist.)*
-5. **Controls:** repeat with shuffled labels (entropy should not fall toward a meaningful floor) and with a frozen (untrained) predictor (no `CP_Φ`).
-6. **Output:** four logged curves + the cross-correlation + all raw certificates released for independent re-analysis. That is data, processed, reproducible.
+**Experiment: does identity-locked generation under TCT obey the second law of infodynamics?**
+1. **Substrate:** a frozen N-instrument constellation for one subject (start with the measured voice case: WavLM speaker centroid, 50 clips).
+2. **Instrument the run** to log, across training/selection windows t: per-modality **information entropy** of the generated-output distribution around the centroid `H_m(t)` (Kraskov k-NN estimator, same-embedder only — never cross-embedder); a **channel-symmetry** score; and **mean cosine-to-centroid** (the identity-similarity that ends at 0.961).
+3. **Confirmation:** `Σ_m H_m(t)` falls monotonically toward a floor AND tracks rising cosine-to-centroid (zero-lag cross-correlation > 0).
+4. **Falsification:** identity-similarity rises while entropy stays flat/rising → the law does not govern this learner (a publishable null result).
+5. **Controls:** shuffled-reference run; untrained-generator run.
+6. **Output:** logged curves + the cross-correlation + raw artifacts released for independent re-analysis.
 
 ---
 
-## D. Existing internal synthesis you can hand him
+## D. The one honest line for ME-JEPA-Code (only on request)
 
-The repo already contains **`docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md`** (2026-05-20, 645 lines) — a citation-verified mapping of Vopson's published work (2nd law of infodynamics, mass–energy–information, Wheeler "it from bit," Gates' adinkra ECC, FlyWire) onto the system, with five concrete improvement proposals (entropy-loss term, self-dual ECC over the panel, connectome rich-club analysis of the cross-embedder tensor, stars-as-vectors formalization, Eon-style load-and-behave test) and an honest appendix flagging which transcript claims it could and could not verify. **This document is your half of a joint paper already drafted.** Offer it to him as the technical companion to the talk. (It even independently notes the same credibility cautions in `00 §3` — don't claim consciousness, don't collapse the panel, don't promise simulation-hacking.)
+> "I'm separately developing a code-verification predictor on the same frozen substrate — it predicts whether an AI's patch will pass its tests. That's earlier-stage (about 0.48 against a 0.95 target) and I'm still building and understanding it. The measured, mature work is the DDA/TCT side above; I'm glad to discuss the predictor if it's of interest."
+
+Do **not** lead with this, and do not quote the `0.79` rank-lift number anywhere — Chris's own issue log flags it as a Goodhart magnifier.
 
 ---
 
 ## E. One-paragraph version (for the email)
 
-> "On the data point: here are the real numbers. The code verifier is at 0.48 Pearson against a 0.95 gate (calibration is already good, ECE 0.024) — I'll show the honest gap, not a flattering transform. More relevant to your work: the trainer already logs the per-step reduction in the conditional description length of the system's frozen state — information entropy falling over training, in bits, in `CF_MEJEPA_TRAIN_CERTS`. The joint experiment I'm proposing is to run that alongside per-channel entropy and channel-symmetry across a full training schedule, with a pre-registered falsification condition, and see whether your second law of infodynamics governs a learning machine. Separately, the same frozen-panel method already hits 0.778 on the standard SeedTTS voice benchmark (vs 0.79 SOTA, 0.73 human) — with the honest caveat that an independent cross-encoder still finds the clone distinguishable (EER 0.25). I'd rather you see all of it."
+> "On the data point: here are the real, measured numbers. Using a frozen panel of independent embedders as both a labeller and a geometric alignment target, I reproduced a speaker's voice at **0.961 mean WavLM speaker-similarity** (N=10, one speaker — honestly, that's an *encoder-matched* number; an independent-encoder check is pending and I'll show that caveat on the slide), with naturalness parity to real recordings; and I trained a style model that refuses to break character under prompt injection and passed 5/5 verification, with public weights. The same method runs across three production panels of 7, 13, and 21 frozen instruments. Where it touches your work: the panel is designed to **maximise differentiated information per instrument** — each must add ≥0.05 bits about a real outcome or it's retired as noise — and aligning a generator to the frozen constellation **collapses its outputs toward a low-entropy, high-symmetry state** around the identity centroid (0.961 is the measured endpoint of exactly that collapse). I propose 'meaning compression' as a fourth compression category, and a joint experiment to log the full entropy trajectory with a pre-registered falsification condition."

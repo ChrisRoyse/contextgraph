@@ -1,47 +1,43 @@
-# 06 — The Infodynamics Mapping: ME-JEPA ↔ Vopson's Laws (the scientific core)
+# 06 — The Infodynamics Mapping: DDA / TCT ↔ Vopson's Laws (the scientific core)
 
-**Purpose:** the precise, claim-by-claim bridge between your system and Vopson's published theory, with an explicit **honesty tier** on every row (Proven / Hypothesised / Speculative). This is the intellectual content of the collaboration. Pair it with the joint proposal (`04`). It builds on, and should be read with, the repo's existing `docs/INFORMATION_PHYSICS_AND_STARS_AS_VECTORS_REPORT.md` (645 lines, citation-verified).
-
-**Rule:** never present a Hypothesised or Speculative row as Proven. Vopson is attacked for exactly that; align yourself with the careful side of the line.
+**RE-CENTERED 2026-05-31 on DDA / meaning compression / TCT.** The bridge to Vopson's information physics now runs through the **information-side** work Chris owns, not the code-verifier. Every row carries an **honesty tier** (Proven / Measured-endpoint / Hypothesised / Speculative). Never present a lower tier as Proven — Vopson is attacked for exactly that.
 
 ---
 
 ## 1. The master mapping table
 
-| Vopson's claim (citation) | ME-JEPA quantity | Tier | Notes |
+| Vopson's claim (citation) | DDA / TCT quantity | Tier | Notes |
 |---|---|---|---|
-| **2nd law of infodynamics:** info entropy of a closed info system stays constant or **decreases** over time, min at equilibrium (AIP Adv. 12, 075310, 2022) | `CP_Φ(t)` ≥ 0 (per-step reduction in conditional description length of frozen target state), logged in `CF_MEJEPA_TRAIN_CERTS` | **Proven that the instrument exists & is monotonic on the test fixture; Hypothesised on full training** | The single strongest bridge. Run it for real → confirm/falsify. |
-| Same law, per-component | per-channel entropy `Σ_i H_i(t)` falls across windows | **Hypothesised (the joint experiment)** | Not yet measured. Pre-registered H1 in `04`. |
-| **High symmetry ⇔ low information entropy** (preferred states; AIP Adv. 13, 105308, 2023) | trained channel-configuration becomes more symmetric / lower-entropy than untrained | **Hypothesised** | Pre-registered H3. The "panel collapses toward higher-symmetry, lower-entropy slot configurations" claim from your first email. |
-| **Mass–energy–information equivalence;** info is the "5th state of matter" (AIP Adv. 9, 095206, 2019) | every bit in storage has a real physical/energy footprint; denser (entropy-reduced) labels → better convergence per parameter | **Speculative** | Do NOT claim you measured information's mass. At most: "a measurably entropy-reducing learner is the kind of system where a Landauer/energy signature would be interesting to look for." Flag speculative. |
-| **Wheeler "it from bit"** — physical claims reduce to yes/no against reality (Wheeler 1989) | the binary contract: only Q1 (bytes exist), Q2 (oracle Pass/Fail), Q5 (shift event occurred) are predicted; ambiguous "Q4" heads frozen out | **Proven (architectural)** | Your binary reframe is independently Wheeler's principle. Strong, defensible, philosophically resonant with his audience. |
-| **Gravity as entropic information force** — universe compacts information (AIP Adv. 2025) | (analogy only) training "pulls" the predictor toward low-entropy configurations | **Speculative / analogy** | Use lightly. Don't claim a gravity analogue. |
-| **Gates self-dual error-correcting codes** in SUSY representations (Doran/Faux/Gates 2008) | self-dual ECC over the 15-channel panel occupancy = formal anti-compensation (your #512) | **Hypothesised (math is real; not yet implemented)** | Genuine shared interest. The math is standard; the application to your panel is new and buildable. |
-| **FlyWire → digital organism:** behaviour emerges from wiring alone, no training (Vopson, IPI Letters 4(2), 2026; *Nature* 634, 2024) | outcome predicted from structure (frozen-channel readings) without reward shaping | **Hypothesised / analogy** | Your best rhetorical bridge. "Structure suffices for behaviour" (his fly) ↔ "structure suffices for outcome prediction" (your panel). Analogy, not proof. |
-| **Genome compression** — info entropy of genomes decreases (SARS-CoV-2; bacterial streamlining) | pruning dead channels/heads (Q4 freeze #408) = removing information not under selective pressure | **Proven (you did prune); analogy to his biology** | Honest: you froze Q4 because it added no predictive lift — operationally identical to genome streamlining. |
+| **High symmetry ⇔ low information entropy**, the preferred state (AIP Adv. 13, 105308, 2023) | TCT aligns a generator to a frozen constellation; its output distribution **collapses toward a high-symmetry, low-entropy state** around the identity centroid | **Measured endpoint, Hypothesised trajectory** | 0.961 mean cosine-to-centroid (voice) is the measured tight cluster; the full per-step entropy curve is the joint experiment |
+| **2nd law of infodynamics:** info entropy of a closed info system stays constant or **decreases** over time (AIP Adv. 12, 075310, 2022) | the entropy `Σ_m H_m(t)` of generated outputs around the constellation falls monotonically across training/selection | **Hypothesised (the joint experiment)** | pre-registered confirm/falsify in `03 §C`; measured endpoint anchors it |
+| **Information is physical and countable**; the universe is a compression-optimising process | **Meaning compression** — a fixed input through N frozen instruments yields N+C(N,2)(+1) structured signals; proposed as a **fourth compression category** | **Proven (counting identity) / Proposed (taxonomy)** | the strongest *novel* bridge: a new compression axis, his favourite theme |
+| **Shannon mutual information / entropy as the substrate** | the panel-design contract: each instrument must add **≥ 0.05 bits** of new info about a real outcome (`ΔHᵢ = I(y;Eᵢ|E₁..Eᵢ₋₁) ≥ τ`), redundant slots retired | **Proven (implemented & enforced)** | socialmedia2.com 21-slot slate; Shannon information as a build contract, measured in bits |
+| **Genome / storage entropy decreases** (SARS-CoV-2; bacterial streamlining) | pruning redundant instruments (corr ≈ 1 ⇒ ΔHᵢ ≈ 0 ⇒ noise ⇒ retired) = removing information not under selective pressure | **Proven (you prune) / analogy to his biology** | operationally identical to genome streamlining |
+| **Model collapse under recursion** (Shumailov 2024) is an entropy-collapse failure | DDA decomposes **real** data through frozen instruments → **structurally outside** the generator-in-loop recursion | **Proven (scope argument)** | an information-dynamics story: extract signal without the entropy collapse of recursive generation |
+| **Mass–energy–information equivalence** (AIP Adv. 9, 095206, 2019) | (speculative) does a measurably entropy-reducing learner have a Landauer/energy signature? | **Speculative** | flag as speculative; do not claim to have measured information's mass |
+| **Wheeler "it from bit"** | identity asserted as a yes/no geometric predicate `G_τ` per output (cosine ≥ τ to the frozen centroid) | **Proven (architectural)** | per-output verifiability; philosophically clean for his audience |
 
 ## 2. The three rigorous bridges (lead with these)
 
-**Bridge 1 — Compression progress = the second law in logged bits.** You already log `CP_Φ(t)` = bits-saved-per-step in describing the frozen target state. Positive `CP_Φ` over time **is** information entropy decreasing over time. This is the only bridge where you have *running instrumentation today*. Lead with it.
+**Bridge 1 — Meaning compression is a fourth kind of compression.** Bit/weight/activation-compression ask "fewer bits/params/memory for fixed content?"; meaning compression asks "more structured signal for fixed raw data?" This is a *new axis* in the compression-as-physics line Vopson loves — and it's the contribution he's most likely to co-author. Real counting identity (92 signals/input at N=13); taxonomic acceptance is a scholarly judgement we don't pre-empt.
 
-**Bridge 2 — The binary contract = Wheeler's "it from bit."** You deliberately restricted predictions to yes/no questions answerable against reality, because only those are falsifiable. Wheeler's principle, arrived at independently from your "ambiguity boundary." Philosophically clean; impresses physicists.
+**Bridge 2 — Panel design = Shannon entropy as a build contract.** The 21-slot Polis slate ships only if every instrument adds ≥ 0.05 *bits* of new information about a real outcome and no pair correlates above 0.6. The objective is `Σᵢ ΔHᵢ`, not `Σᵢ H(Eᵢ)` — maximise *differentiated* information, retire redundancy as noise. This is measurement to a metrologist's standard, in his own units.
 
-**Bridge 3 — Symmetry/entropy as a measurable training signature.** His 2023 result says low-entropy states are high-symmetry and preferred. Your hypothesis: trained channel configurations become more symmetric. This is the experiment that, if it works, makes the collaboration a *result* rather than an analogy.
+**Bridge 3 — TCT collapse = the second law, with a measured endpoint.** Aligning a generator to a frozen constellation drives its outputs to a low-entropy, high-symmetry cluster around the centroid. The voice result (0.961 tight cluster) is the measured endpoint; the joint experiment logs the full trajectory `Σ_m H_m(t) ↓` against rising identity-similarity, with a written falsification condition.
 
 ## 3. The honest gap between the bridges and a "result"
-- You have the **instruments** (CP_Φ, the cross-channel correlation/MI tensor #388).
-- You do **not** yet have the **measured trajectory** (per-channel entropy across a full training schedule, correlated with oracle agreement).
-- The collaboration is precisely: *use his rigor to run the measurement to a physics standard and adjudicate confirmation vs. falsification.*
+- **Have:** the instruments (three frozen panels, 7/13/21), the bit-level differentiation contract, the measured collapse *endpoint* (0.961), the public style model (5/5).
+- **Don't have yet:** the logged per-step entropy *trajectory* of the collapse, and the cross-encoder triangulation of the voice number. Both are instrument-ready.
+- The collaboration is precisely: use his rigor to log the entropy trajectory to a physics standard and adjudicate confirmation vs. falsification.
 
-## 4. What this mapping must NOT become (credibility fences — from the repo's own §4)
-The internal report explicitly fences these; adopt the same discipline with Vopson:
-1. **Do not chase "consciousness"** as a property of the system.
-2. **Do not collapse the panel to "a single brain"** — slot identity is the whole point; don't undersell it as one network.
-3. **Do not promise simulation-hacking / reality-bending** capabilities.
-4. **Do not invoke souls, gods, prophets, or "the Oracle is born."** Those are your channel's register; here they are credibility poison (see `00 §3`).
+## 4. Credibility fences (same discipline he is judged by)
+1. Don't claim "consciousness," "souls," "gods," "the Oracle is born," or "I calculate all of reality." (Chris's channel register — poison here.)
+2. Don't present the entropy *trajectory* as measured — only the *endpoint* is.
+3. Don't quote the `0.79` rank-lift or lead with the `0.48` oracle number; the code-verifier is the *developing* piece, mentioned only on request (`03 §D`).
+4. Always state the **encoder-matched** caveat on the 0.961 before he asks.
+5. Don't claim meaning compression *supersedes* the other three compression categories — it's a complementary fourth axis.
 
 ## 5. Why he, specifically, is the right collaborator
-- He is an **experimentalist/metrologist** (NPL, Seagate) — he will insist the entropy measurement is done right, which is exactly what your honest-data posture needs.
-- He **owns the journal** (IPI Letters) — short path to publication of a careful result.
-- His framework **predicts** what you're seeing — a learning system that compresses its state toward low entropy is precisely a "computational process optimising itself," his central thesis. You're handing him a controllable, replayable instance of his own claim.
-- The relationship is symbiotic: he gets a third, controllable substrate + a live demo; you get physics rigor, a citation-worthy framing, and credibility that converts your YouTube vision into peer-reviewed standing.
+- He is a **metrologist** who will insist the entropy measurement is done right — exactly what the honest-data posture needs.
+- He **owns IPI Letters** — short path to a careful result.
+- His framework **predicts** what the panel does: a system that maximises differentiated information and collapses generation toward low-entropy identity states is a "computational process optimising information" — his central thesis, instantiated, measurable, and replayable.

@@ -56,12 +56,13 @@ def test_command_family_direct_pytest_is_currently_supported():
     assert result["blocker_code"] is None
 
 
-def test_classify_django_runtests_gets_typed_handler_blocker():
+def test_classify_django_runtests_is_currently_supported_by_python_script_handler():
     result = classify_eval_script(script_with_command("./tests/runtests.py migrations.test_commands"))
 
     assert result["command_family"] == "django_runtests"
-    assert result["support_status"] == "handler_required"
-    assert result["blocker_code"] == "EXECUTION_TRACE_PLAN_UNSUPPORTED_DJANGO_RUNTESTS"
+    assert result["support_status"] == "supported_current"
+    assert result["handler"] == "python_script_sys_settrace_v1"
+    assert result["blocker_code"] is None
 
 
 def test_classify_python_module_pytest_is_not_claimed_supported_yet():
@@ -126,6 +127,8 @@ def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
         {"task_id": "org__repo-1", "repo": "org/repo", "category": "off_by_one"},
         {"task_id": "django__django-1", "repo": "django/django", "category": "known_good"},
         {"task_id": "django__django-1", "repo": "django/django", "category": "subtle_flip"},
+        {"task_id": "sympy__sympy-1", "repo": "sympy/sympy", "category": "known_good"},
+        {"task_id": "sympy__sympy-1", "repo": "sympy/sympy", "category": "swap_variable"},
     ]
     write_corpus(corpus_root, rows)
     fixture = tmp_path / "spec-fixture.json"
@@ -135,6 +138,7 @@ def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
             "tasks": {
                 "org__repo-1": script_with_command("pytest -rA tests/test_widget.py"),
                 "django__django-1": script_with_command("./tests/runtests.py migrations.test_commands"),
+                "sympy__sympy-1": script_with_command("bin/test -C --verbose sympy/tests/test_thing.py"),
             }
         },
     )
@@ -147,7 +151,7 @@ def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
             output_root=tmp_path / "fsv",
             state_root=tmp_path / "state",
             run_id="run-test",
-            expected_corpus_rows=4,
+            expected_corpus_rows=6,
             namespace="swebench",
             arch="x86_64",
             tag="latest",
@@ -169,19 +173,32 @@ def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
         json.loads(line)
         for line in Path(result["unsupported_command_rows"]).read_text(encoding="utf-8").splitlines()
     ]
+    django_rows = [
+        json.loads(line)
+        for line in Path(result["runnable_current_django_runtests_rows"]).read_text(encoding="utf-8").splitlines()
+    ]
+    pytest_rows = [
+        json.loads(line)
+        for line in Path(result["runnable_current_pytest_rows"]).read_text(encoding="utf-8").splitlines()
+    ]
 
     assert manifest == state_manifest
     assert manifest["summary"]["task_command_family_counts"] == {
         "django_runtests": 1,
         "pytest_direct": 1,
+        "sympy_bin_test": 1,
     }
     assert manifest["summary"]["row_support_status_counts"] == {
         "handler_required": 2,
-        "supported_current": 2,
+        "supported_current": 4,
     }
-    assert manifest["summary"]["current_supported_trace_fraction"] == 0.5
-    assert len(row_plan) == 4
+    assert manifest["summary"]["current_supported_trace_fraction"] == 0.6666666667
+    assert len(row_plan) == 6
     assert len(unsupported) == 2
+    assert len(django_rows) == 2
+    assert all(item["command_family"] == "django_runtests" for item in django_rows)
+    assert len(pytest_rows) == 2
+    assert all(item["command_family"] == "pytest_direct" for item in pytest_rows)
     assert all("oracle_all_passed" not in item for item in row_plan)
     assert "typed_trace_handlers_required" in manifest["decision"]["decision_reasons"]
     assert manifest["doctrine_policy"]["target_labels_used_as_live_inputs"] is False
