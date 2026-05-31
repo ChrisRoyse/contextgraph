@@ -123,9 +123,7 @@ def load_corpus_entry(corpus_root: Path, task_id: str, category: str) -> dict[st
 
 
 def build_trace_runner_source() -> str:
-    return r'''from __future__ import annotations
-
-import json
+    return r'''import json
 import os
 import sys
 import time

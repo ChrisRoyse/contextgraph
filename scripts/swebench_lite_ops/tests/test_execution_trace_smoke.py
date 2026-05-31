@@ -9,6 +9,7 @@ from ..python_execution_trace_smoke import (
     ExecutionTraceSmokeError,
     TRACE_BEGIN,
     TRACE_END,
+    build_trace_runner_source,
     extract_trace_payload,
     load_corpus_entry,
     transform_eval_script_list,
@@ -18,6 +19,13 @@ from ..python_execution_trace_smoke import (
 def write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def test_trace_runner_source_avoids_future_annotations_for_python36_testbeds():
+    source = build_trace_runner_source()
+
+    assert "from __future__ import annotations" not in source
+    compile(source, "contextgraph_trace_pytest.py", "exec")
 
 
 def test_transform_wraps_single_pytest_command_after_trace_runner():
