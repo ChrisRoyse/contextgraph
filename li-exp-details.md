@@ -1,502 +1,486 @@
 - generic [ref=e2]:
-  - heading "0 notifications" [level=2] [ref=e512]
-  - generic [ref=e513]:
+  - heading "0 notifications" [level=2] [ref=e493]
+  - generic [ref=e494]:
     - generic:
       - generic "Skip navigation menu":
-        - generic [ref=e514]:
-          - button "Skip to main content" [ref=e515] [cursor=pointer]:
-            - generic [ref=e517]: Skip to main content
-          - button "Skip to primary content" [ref=e518] [cursor=pointer]:
-            - generic [ref=e520]: Skip to primary content
-          - button "Skip to aside" [ref=e521] [cursor=pointer]:
-            - generic [ref=e523]: Skip to aside
-          - button "Skip to footer" [ref=e524] [cursor=pointer]:
-            - generic [ref=e526]: Skip to footer
-          - button "Close jump menu" [ref=e528] [cursor=pointer]:
-            - img [ref=e530]
-    - generic [ref=e532]:
-      - banner [ref=e534]:
-        - generic [ref=e537]:
-          - button "LinkedIn" [ref=e538] [cursor=pointer]:
-            - img "LinkedIn" [ref=e539]
-          - generic [ref=e541]:
-            - status [ref=e542]
-            - search [ref=e543]:
-              - generic [ref=e544]:
-                - img [ref=e546]
-                - textbox "I'm looking for…" [ref=e548]
-          - generic [ref=e550]:
-            - figure [ref=e555]
-            - navigation [ref=e559]:
-              - list [ref=e560]:
-                - listitem [ref=e561]:
-                  - button "Home, 1 new notification" [ref=e562] [cursor=pointer]:
-                    - img [ref=e564]
-                    - generic [ref=e568]: Home
-                - listitem [ref=e569]:
-                  - link "My Network, 0 new notifications" [ref=e570] [cursor=pointer]:
+        - generic [ref=e495]:
+          - button "Skip to main content" [ref=e496] [cursor=pointer]:
+            - generic [ref=e498]: Skip to main content
+          - button "Skip to primary content" [ref=e499] [cursor=pointer]:
+            - generic [ref=e501]: Skip to primary content
+          - button "Skip to aside" [ref=e502] [cursor=pointer]:
+            - generic [ref=e504]: Skip to aside
+          - button "Skip to footer" [ref=e505] [cursor=pointer]:
+            - generic [ref=e507]: Skip to footer
+          - button "Close jump menu" [ref=e509] [cursor=pointer]:
+            - img [ref=e511]
+    - generic [ref=e513]:
+      - banner [ref=e515]:
+        - generic [ref=e518]:
+          - button "LinkedIn" [ref=e519] [cursor=pointer]:
+            - img "LinkedIn" [ref=e520]
+          - generic [ref=e522]:
+            - status [ref=e523]
+            - search [ref=e524]:
+              - generic [ref=e525]:
+                - img [ref=e527]
+                - textbox "I'm looking for…" [ref=e529]
+          - generic [ref=e531]:
+            - figure [ref=e536]
+            - navigation [ref=e540]:
+              - list [ref=e541]:
+                - listitem [ref=e542]:
+                  - button "Home, 1 new notification" [ref=e543] [cursor=pointer]:
+                    - img [ref=e545]
+                    - generic [ref=e549]: Home
+                - listitem [ref=e550]:
+                  - link "My Network, 0 new notifications" [ref=e551] [cursor=pointer]:
                     - /url: https://www.linkedin.com/mynetwork
-                    - img [ref=e572]
-                    - generic [ref=e575]: My Network
-                - listitem [ref=e576]:
-                  - link "Jobs, 0 new notifications" [ref=e577] [cursor=pointer]:
+                    - img [ref=e553]
+                    - generic [ref=e556]: My Network
+                - listitem [ref=e557]:
+                  - link "Jobs, 0 new notifications" [ref=e558] [cursor=pointer]:
                     - /url: https://www.linkedin.com/jobs/
-                    - img [ref=e579]
-                    - generic [ref=e582]: Jobs
-                - listitem [ref=e583]:
-                  - link "Messaging, 0 new notifications" [ref=e584] [cursor=pointer]:
+                    - img [ref=e560]
+                    - generic [ref=e563]: Jobs
+                - listitem [ref=e564]:
+                  - link "Messaging, 0 new notifications" [ref=e565] [cursor=pointer]:
                     - /url: https://www.linkedin.com/messaging/
-                    - img [ref=e586]
-                    - generic [ref=e589]: Messaging
-                - listitem [ref=e590]:
-                  - link "Notifications, 1 new notification" [ref=e591] [cursor=pointer]:
+                    - img [ref=e567]
+                    - generic [ref=e570]: Messaging
+                - listitem [ref=e571]:
+                  - link "Notifications, 1 new notification" [ref=e572] [cursor=pointer]:
                     - /url: https://www.linkedin.com/notifications/
-                    - generic [ref=e592]:
-                      - img [ref=e593]
-                      - generic [ref=e595]: "1"
-                    - generic [ref=e597]: Notifications
-                - listitem [ref=e598]:
-                  - button "Me" [ref=e599] [cursor=pointer]:
-                    - figure [ref=e601]
-                    - generic [ref=e603]:
+                    - generic [ref=e573]:
+                      - img [ref=e574]
+                      - generic [ref=e576]: "1"
+                    - generic [ref=e578]: Notifications
+                - listitem [ref=e579]:
+                  - button "Me" [ref=e580] [cursor=pointer]:
+                    - figure [ref=e582]
+                    - generic [ref=e584]:
                       - text: Me
-                      - img [ref=e604]
-            - navigation [ref=e608]:
-              - list [ref=e609]:
-                - listitem [ref=e610]:
-                  - button "For Business" [ref=e611] [cursor=pointer]:
-                    - img [ref=e613]
-                    - generic [ref=e616]:
+                      - img [ref=e585]
+            - navigation [ref=e589]:
+              - list [ref=e590]:
+                - listitem [ref=e591]:
+                  - button "For Business" [ref=e592] [cursor=pointer]:
+                    - img [ref=e594]
+                    - generic [ref=e597]:
                       - text: For Business
-                      - img [ref=e617]
-                - listitem [ref=e619]:
-                  - link "Advertise, 0 new notifications" [ref=e620] [cursor=pointer]:
+                      - img [ref=e598]
+                - listitem [ref=e600]:
+                  - link "Advertise, 0 new notifications" [ref=e601] [cursor=pointer]:
                     - /url: https://www.linkedin.com/campaignmanager/accounts/
-                    - img [ref=e622]
-                    - generic [ref=e626]: Advertise
-      - generic [ref=e628]:
-        - toolbar [ref=e629]:
-          - link "Christopher Royse" [ref=e638] [cursor=pointer]:
+                    - img [ref=e603]
+                    - generic [ref=e607]: Advertise
+      - generic [ref=e609]:
+        - toolbar [ref=e610]:
+          - link "Christopher Royse" [ref=e619] [cursor=pointer]:
             - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
-            - generic "Christopher Royse" [ref=e639]:
-              - figure [ref=e640]
-              - generic [ref=e641]:
-                - paragraph [ref=e642]: Christopher Royse
-                - paragraph [ref=e644]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
-        - main [ref=e645]:
-          - generic [ref=e647]:
-            - region "Primary content" [ref=e648]:
-              - generic [ref=e653]:
-                - generic [ref=e654]:
-                  - generic [ref=e655]:
-                    - link "Navigate back to profile main screen" [active] [ref=e657] [cursor=pointer]:
+            - generic "Christopher Royse" [ref=e620]:
+              - figure [ref=e621]
+              - generic [ref=e622]:
+                - paragraph [ref=e623]: Christopher Royse
+                - paragraph [ref=e625]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+        - main [ref=e626]:
+          - generic [ref=e628]:
+            - region "Primary content" [ref=e629]:
+              - generic [ref=e634]:
+                - generic [ref=e635]:
+                  - generic [ref=e636]:
+                    - link "Navigate back to profile main screen" [active] [ref=e638] [cursor=pointer]:
                       - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
-                      - img [ref=e659]
-                    - paragraph [ref=e661]: Experience
-                  - generic [ref=e662]:
-                    - link "Reorder the grouped experiences" [ref=e663] [cursor=pointer]:
+                      - img [ref=e640]
+                    - paragraph [ref=e642]: Experience
+                  - generic [ref=e643]:
+                    - link "Reorder the grouped experiences" [ref=e644] [cursor=pointer]:
                       - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/reorder/
-                      - img [ref=e665]
-                    - button "Add a position or career break" [ref=e667] [cursor=pointer]:
-                      - img [ref=e669]
-                - generic [ref=e672]:
-                  - generic [ref=e675]:
-                    - figure [ref=e676]:
-                      - img "socialmedia2.com logo" [ref=e677]
-                    - generic [ref=e683]:
-                      - link "Founder socialmedia2.com May 2026 - Present · 1 mo" [ref=e684] [cursor=pointer]:
+                      - img [ref=e646]
+                    - button "Add a position or career break" [ref=e648] [cursor=pointer]:
+                      - img [ref=e650]
+                - generic [ref=e653]:
+                  - generic [ref=e656]:
+                    - figure [ref=e657]:
+                      - img "socialmedia2.com logo" [ref=e658]
+                    - generic [ref=e664]:
+                      - link "Founder socialmedia2.com May 2026 - Present · 1 mo" [ref=e665] [cursor=pointer]:
                         - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2928077786/
-                        - generic [ref=e685]:
-                          - generic [ref=e687]:
-                            - paragraph [ref=e688]: Founder
-                            - paragraph [ref=e689]: socialmedia2.com
-                          - paragraph [ref=e690]: May 2026 - Present · 1 mo
-                      - paragraph [ref=e692]:
-                        - generic [ref=e693]: Polis (socialmedia2.com) is civic software for forming real-world gatherings without social-media engagement mechanics — no algorithmic feed, no follower counts, no likes, no ad revenue. Citizens create a private page, name the place they want real rooms to form, and are matched into in-person formats (Symposium, Agora, Gymnasium, Theater, Festival). Matching uses a 21-slot frozen embedding "Constellation"; the objective is durable in-person civic ties, not time on app. Privacy-preserving, US-first, Apache-2.0.
-                  - link "Edit Founder at socialmedia2.com" [ref=e695] [cursor=pointer]:
+                        - generic [ref=e666]:
+                          - generic [ref=e668]:
+                            - paragraph [ref=e669]: Founder
+                            - paragraph [ref=e670]: socialmedia2.com
+                          - paragraph [ref=e671]: May 2026 - Present · 1 mo
+                      - paragraph [ref=e673]:
+                        - generic [ref=e674]: Polis (socialmedia2.com) is civic software for forming real-world gatherings without social-media engagement mechanics — no algorithmic feed, no follower counts, no likes, no ad revenue. Citizens create a private page, name the place they want real rooms to form, and are matched into in-person formats (Symposium, Agora, Gymnasium, Theater, Festival). Matching uses a 21-slot frozen embedding "Constellation"; the objective is durable in-person civic ties, not time on app. Privacy-preserving, US-first, Apache-2.0.
+                  - link "Edit Founder at socialmedia2.com" [ref=e676] [cursor=pointer]:
                     - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2928077786/
-                    - img [ref=e697]
-                - generic [ref=e700]:
-                  - generic [ref=e703]:
-                    - link [ref=e704] [cursor=pointer]:
-                      - /url: https://www.linkedin.com/company/115144456/
-                      - figure [ref=e705]:
-                        - img "Teleox logo" [ref=e706]
-                    - link "Founder Teleox Apr 2025 - Present · 1 yr 2 mos" [ref=e708] [cursor=pointer]:
-                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2895760008/
-                      - generic [ref=e709]:
-                        - generic [ref=e711]:
-                          - paragraph [ref=e712]: Founder
-                          - paragraph [ref=e713]: Teleox
-                        - paragraph [ref=e714]: Apr 2025 - Present · 1 yr 2 mos
-                  - link "Edit Founder at Teleox" [ref=e716] [cursor=pointer]:
-                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2895760008/
-                    - img [ref=e718]
-                - generic [ref=e721]:
-                  - generic [ref=e724]:
-                    - figure [ref=e725]:
-                      - img "Frontier Tech Strategies logo" [ref=e726]
-                    - generic [ref=e732]:
-                      - link "AI Business Strategy Consultant Frontier Tech Strategies · Full-time Mar 2025 - Present · 1 yr 3 mos Junction City, Kansas, United States · Remote" [ref=e733] [cursor=pointer]:
+                    - img [ref=e678]
+                - generic [ref=e681]:
+                  - generic [ref=e684]:
+                    - figure [ref=e685]:
+                      - img "Frontier Tech Strategies logo" [ref=e686]
+                    - generic [ref=e692]:
+                      - link "AI Business Strategy Consultant Frontier Tech Strategies · Full-time Mar 2025 - Present · 1 yr 3 mos Junction City, Kansas, United States · Remote" [ref=e693] [cursor=pointer]:
                         - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2591092777/
-                        - generic [ref=e734]:
-                          - generic [ref=e736]:
-                            - paragraph [ref=e737]: AI Business Strategy Consultant
-                            - paragraph [ref=e738]: Frontier Tech Strategies · Full-time
-                          - paragraph [ref=e739]: Mar 2025 - Present · 1 yr 3 mos
-                          - paragraph [ref=e740]: Junction City, Kansas, United States · Remote
-                      - paragraph [ref=e742]:
-                        - generic [ref=e743]: "As an AI Business Consultant at Frontier Tech Strategies, I specialize in transforming businesses through cutting-edge AI solutions, with a particular focus on browser-based implementations and marketing analytics. My core responsibilities include: Strategic Leadership & Innovation Design and implement custom AI strategies tailored to each client's business objectives Develop browser-based AI solutions that ensure data privacy while delivering powerful insights Lead rapid AI integration projects with 2-3 week implementation timelines Pioneer privacy-first approaches to data analytics and automation Technical Expertise Architect browser-based AI solutions that run entirely client-side Develop real-time analytics systems for marketing optimization Create custom AI implementations that integrate seamlessly with existing business processes Design and implement privacy-focused data processing solutions Project Management & Implementation Lead end-to-end AI implementation projects from strategy to deployment Ensure rapid deployment and integration of AI solutions Provide comprehensive team training and enablement Maintain ongoing optimization and evolution of implemented systems Key Focus Areas Marketing Analytics & Optimization Browser-Based AI Development Privacy-First Data Processing Real-Time Business Intelligence Custom AI Solution Architecture Team AI Enablement & Training Specialized Skills AI Strategy Development Rapid Implementation Methodology Privacy-Focused Solution Design Marketing Analytics Optimization Client-Side AI Architecture Business Process Automation This role combines deep technical expertise in AI with practical business implementation, focusing on delivering measurable results while maintaining data privacy and security through innovative browser-based solutions."
-                      - paragraph [ref=e744]:
-                        - link "Consulting, Business Strategy and +3 skills" [ref=e745] [cursor=pointer]:
+                        - generic [ref=e694]:
+                          - generic [ref=e696]:
+                            - paragraph [ref=e697]: AI Business Strategy Consultant
+                            - paragraph [ref=e698]: Frontier Tech Strategies · Full-time
+                          - paragraph [ref=e699]: Mar 2025 - Present · 1 yr 3 mos
+                          - paragraph [ref=e700]: Junction City, Kansas, United States · Remote
+                      - paragraph [ref=e702]:
+                        - generic [ref=e703]: "As an AI Business Consultant at Frontier Tech Strategies, I specialize in transforming businesses through cutting-edge AI solutions, with a particular focus on browser-based implementations and marketing analytics. My core responsibilities include: Strategic Leadership & Innovation Design and implement custom AI strategies tailored to each client's business objectives Develop browser-based AI solutions that ensure data privacy while delivering powerful insights Lead rapid AI integration projects with 2-3 week implementation timelines Pioneer privacy-first approaches to data analytics and automation Technical Expertise Architect browser-based AI solutions that run entirely client-side Develop real-time analytics systems for marketing optimization Create custom AI implementations that integrate seamlessly with existing business processes Design and implement privacy-focused data processing solutions Project Management & Implementation Lead end-to-end AI implementation projects from strategy to deployment Ensure rapid deployment and integration of AI solutions Provide comprehensive team training and enablement Maintain ongoing optimization and evolution of implemented systems Key Focus Areas Marketing Analytics & Optimization Browser-Based AI Development Privacy-First Data Processing Real-Time Business Intelligence Custom AI Solution Architecture Team AI Enablement & Training Specialized Skills AI Strategy Development Rapid Implementation Methodology Privacy-Focused Solution Design Marketing Analytics Optimization Client-Side AI Architecture Business Process Automation This role combines deep technical expertise in AI with practical business implementation, focusing on delivering measurable results while maintaining data privacy and security through innovative browser-based solutions."
+                      - paragraph [ref=e704]:
+                        - link "Consulting, Business Strategy and +3 skills" [ref=e705] [cursor=pointer]:
                           - /url: https://www.linkedin.com/in/christopher-royse-b624b596/overlay/2591092777/skill-associations-details/
-                          - img [ref=e747]
+                          - img [ref=e707]
                           - text: Consulting, Business Strategy and +3 skills
-                  - link "Edit AI Business Strategy Consultant at Frontier Tech Strategies" [ref=e750] [cursor=pointer]:
+                  - link "Edit AI Business Strategy Consultant at Frontier Tech Strategies" [ref=e710] [cursor=pointer]:
                     - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2591092777/
-                    - img [ref=e752]
-                - generic [ref=e755]:
-                  - generic [ref=e758]:
-                    - link [ref=e759] [cursor=pointer]:
+                    - img [ref=e712]
+                - generic [ref=e715]:
+                  - generic [ref=e718]:
+                    - link [ref=e719] [cursor=pointer]:
                       - /url: https://www.linkedin.com/company/105894583/
-                      - figure [ref=e760]:
-                        - img "Agentics Foundation logo" [ref=e761]
-                    - generic [ref=e762]:
-                      - link "Contributor Agentics Foundation · Contract Feb 2025 - Present · 1 yr 4 mos Manhattan, Kansas, United States · Remote" [ref=e763] [cursor=pointer]:
+                      - figure [ref=e720]:
+                        - img "Agentics Foundation logo" [ref=e721]
+                    - generic [ref=e722]:
+                      - link "Contributor Agentics Foundation · Contract Feb 2025 - Present · 1 yr 4 mos Manhattan, Kansas, United States · Remote" [ref=e723] [cursor=pointer]:
                         - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2587044749/
-                        - generic [ref=e764]:
-                          - generic [ref=e766]:
-                            - paragraph [ref=e767]: Contributor
-                            - paragraph [ref=e768]: Agentics Foundation · Contract
-                          - paragraph [ref=e769]: Feb 2025 - Present · 1 yr 4 mos
-                          - paragraph [ref=e770]: Manhattan, Kansas, United States · Remote
-                      - 'link "Master AI Without Coding: Build $20K Projects in 90 Minutes | Prompt Engineering Secrets Revealed Agentics Foundation: https://agentics.org/ LinikedIn: https://www.linkedin.com/company/agentics-org/posts/?feedView=all" [ref=e773] [cursor=pointer]':
+                        - generic [ref=e724]:
+                          - generic [ref=e726]:
+                            - paragraph [ref=e727]: Contributor
+                            - paragraph [ref=e728]: Agentics Foundation · Contract
+                          - paragraph [ref=e729]: Feb 2025 - Present · 1 yr 4 mos
+                          - paragraph [ref=e730]: Manhattan, Kansas, United States · Remote
+                      - 'link "Master AI Without Coding: Build $20K Projects in 90 Minutes | Prompt Engineering Secrets Revealed Agentics Foundation: https://agentics.org/ LinikedIn: https://www.linkedin.com/company/agentics-org/posts/?feedView=all" [ref=e733] [cursor=pointer]':
                         - /url: https://www.linkedin.com/in/christopher-royse-b624b596/overlay/Position/2587044749/treasury/?profileId=ACoAABRc8zoBsfI3w6qkhcTpLQdVy2JGfTU-NMY
-                        - generic [ref=e774]:
-                          - figure [ref=e776]:
-                            - 'img "Thumbnail for Master AI Without Coding: Build $20K Projects in 90 Minutes | Prompt Engineering Secrets Revealed" [ref=e777]'
-                          - generic [ref=e778]:
-                            - paragraph [ref=e779]: "Master AI Without Coding: Build $20K Projects in 90 Minutes | Prompt Engineering Secrets Revealed"
-                            - paragraph [ref=e781]: "Agentics Foundation: https://agentics.org/ LinikedIn: https://www.linkedin.com/company/agentics-org/posts/?feedView=all"
-                      - paragraph [ref=e782]:
-                        - link "Prompt Engineering and Agentic Coding" [ref=e783] [cursor=pointer]:
+                        - generic [ref=e734]:
+                          - figure [ref=e736]:
+                            - 'img "Thumbnail for Master AI Without Coding: Build $20K Projects in 90 Minutes | Prompt Engineering Secrets Revealed" [ref=e737]'
+                          - generic [ref=e738]:
+                            - paragraph [ref=e739]: "Master AI Without Coding: Build $20K Projects in 90 Minutes | Prompt Engineering Secrets Revealed"
+                            - paragraph [ref=e741]: "Agentics Foundation: https://agentics.org/ LinikedIn: https://www.linkedin.com/company/agentics-org/posts/?feedView=all"
+                      - paragraph [ref=e742]:
+                        - link "Prompt Engineering and Agentic Coding" [ref=e743] [cursor=pointer]:
                           - /url: https://www.linkedin.com/in/christopher-royse-b624b596/overlay/2587044749/skill-associations-details/
-                          - img [ref=e785]
+                          - img [ref=e745]
                           - text: Prompt Engineering and Agentic Coding
-                  - link "Edit Contributor at Agentics Foundation" [ref=e788] [cursor=pointer]:
+                  - link "Edit Contributor at Agentics Foundation" [ref=e748] [cursor=pointer]:
                     - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2587044749/
-                    - img [ref=e790]
-                - generic [ref=e793]:
-                  - generic [ref=e796]:
-                    - link [ref=e797] [cursor=pointer]:
+                    - img [ref=e750]
+                - generic [ref=e753]:
+                  - generic [ref=e756]:
+                    - link [ref=e757] [cursor=pointer]:
                       - /url: https://www.linkedin.com/company/115094401/
-                      - figure [ref=e798]:
-                        - img "Leapable logo" [ref=e799]
-                    - generic [ref=e800]:
-                      - link "Founder Leapable Feb 2025 - Present · 1 yr 4 mos" [ref=e801] [cursor=pointer]:
+                      - figure [ref=e758]:
+                        - img "Leapable logo" [ref=e759]
+                    - generic [ref=e760]:
+                      - link "Founder Leapable Feb 2025 - Present · 1 yr 4 mos" [ref=e761] [cursor=pointer]:
                         - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2895745630/
-                        - generic [ref=e802]:
-                          - generic [ref=e804]:
-                            - paragraph [ref=e805]: Founder
-                            - paragraph [ref=e806]: Leapable
-                          - paragraph [ref=e807]: Feb 2025 - Present · 1 yr 4 mos
-                      - paragraph [ref=e809]:
-                        - generic [ref=e810]: Leapable.ai is a local-first MCP knowledge-vault marketplace. AI agents add Sources to Private Vaults, Ask source-grounded questions with full citations and provenance, and reach public creator Vaults through Discover. Built on an open-source OCR + provenance foundation; runs on the user's machine via a signed installer (no Docker, Python, or model weights to manage). Creators keep 70% of every query and 70% of paywall subscriptions.
-                  - link "Edit Founder at Leapable" [ref=e812] [cursor=pointer]:
+                        - generic [ref=e762]:
+                          - generic [ref=e764]:
+                            - paragraph [ref=e765]: Founder
+                            - paragraph [ref=e766]: Leapable
+                          - paragraph [ref=e767]: Feb 2025 - Present · 1 yr 4 mos
+                      - paragraph [ref=e769]:
+                        - generic [ref=e770]: Leapable.ai is a local-first MCP knowledge-vault marketplace. AI agents add Sources to Private Vaults, Ask source-grounded questions with full citations and provenance, and reach public creator Vaults through Discover. Built on an open-source OCR + provenance foundation; runs on the user's machine via a signed installer (no Docker, Python, or model weights to manage). Creators keep 70% of every query and 70% of paywall subscriptions.
+                  - link "Edit Founder at Leapable" [ref=e772] [cursor=pointer]:
                     - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2895745630/
-                    - img [ref=e814]
-                - generic [ref=e816]:
-                  - generic [ref=e819]:
-                    - link [ref=e820] [cursor=pointer]:
+                    - img [ref=e774]
+                - generic [ref=e776]:
+                  - generic [ref=e779]:
+                    - link [ref=e780] [cursor=pointer]:
                       - /url: https://www.linkedin.com/school/7031/
-                      - figure [ref=e821]:
-                        - img "Kansas State University logo" [ref=e822]
-                    - link "Kansas State University Part-time · 1 yr 9 mos" [ref=e824] [cursor=pointer]:
+                      - figure [ref=e781]:
+                        - img "Kansas State University logo" [ref=e782]
+                    - link "Kansas State University Part-time · 1 yr 9 mos" [ref=e784] [cursor=pointer]:
                       - /url: https://www.linkedin.com/school/7031/
-                      - generic [ref=e827]:
-                        - paragraph [ref=e828]: Kansas State University
-                        - paragraph [ref=e829]: Part-time · 1 yr 9 mos
-                  - list [ref=e830]:
-                    - listitem [ref=e831]:
-                      - generic [ref=e834]:
-                        - generic [ref=e835]:
-                          - link "Graduate Teaching Assistant Dec 2024 - Present · 1 yr 6 mos Junction City, Kansas, United States · Remote" [ref=e836] [cursor=pointer]:
+                      - generic [ref=e787]:
+                        - paragraph [ref=e788]: Kansas State University
+                        - paragraph [ref=e789]: Part-time · 1 yr 9 mos
+                  - list [ref=e790]:
+                    - listitem [ref=e791]:
+                      - generic [ref=e794]:
+                        - generic [ref=e795]:
+                          - link "Graduate Teaching Assistant Dec 2024 - Present · 1 yr 6 mos Junction City, Kansas, United States · Remote" [ref=e796] [cursor=pointer]:
                             - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2465848567/
-                            - generic [ref=e837]:
-                              - paragraph [ref=e838]: Graduate Teaching Assistant
-                              - paragraph [ref=e839]: Dec 2024 - Present · 1 yr 6 mos
-                              - paragraph [ref=e840]: Junction City, Kansas, United States · Remote
-                          - link "Edit Graduate Teaching Assistant at Kansas State University" [ref=e841] [cursor=pointer]:
+                            - generic [ref=e797]:
+                              - paragraph [ref=e798]: Graduate Teaching Assistant
+                              - paragraph [ref=e799]: Dec 2024 - Present · 1 yr 6 mos
+                              - paragraph [ref=e800]: Junction City, Kansas, United States · Remote
+                          - link "Edit Graduate Teaching Assistant at Kansas State University" [ref=e801] [cursor=pointer]:
                             - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2465848567/
-                            - img [ref=e843]
-                        - generic [ref=e845]:
-                          - paragraph [ref=e846]:
-                            - generic [ref=e847]: Software Engineer
-                          - 'link "Skills: Graduate Level" [ref=e848] [cursor=pointer]':
+                            - img [ref=e803]
+                        - generic [ref=e805]:
+                          - paragraph [ref=e806]:
+                            - generic [ref=e807]: Software Engineer
+                          - 'link "Skills: Graduate Level" [ref=e808] [cursor=pointer]':
                             - /url: https://www.linkedin.com/in/christopher-royse-b624b596/overlay/2465848567/skill-associations-details/
-                            - paragraph [ref=e849]:
-                              - strong [ref=e850]: "Skills:"
+                            - paragraph [ref=e809]:
+                              - strong [ref=e810]: "Skills:"
                               - text: Graduate Level
-                    - listitem [ref=e851]:
-                      - generic [ref=e854]:
-                        - generic [ref=e855]:
-                          - link "Undergraduate Student Researcher Sep 2024 - Dec 2024 · 4 mos Manhattan, Kansas, United States · Hybrid" [ref=e856] [cursor=pointer]:
+                    - listitem [ref=e811]:
+                      - generic [ref=e814]:
+                        - generic [ref=e815]:
+                          - link "Undergraduate Student Researcher Sep 2024 - Dec 2024 · 4 mos Manhattan, Kansas, United States · Hybrid" [ref=e816] [cursor=pointer]:
                             - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2538381424/
-                            - generic [ref=e857]:
-                              - paragraph [ref=e858]: Undergraduate Student Researcher
-                              - paragraph [ref=e859]: Sep 2024 - Dec 2024 · 4 mos
-                              - paragraph [ref=e860]: Manhattan, Kansas, United States · Hybrid
-                          - link "Edit Undergraduate Student Researcher at Kansas State University" [ref=e861] [cursor=pointer]:
+                            - generic [ref=e817]:
+                              - paragraph [ref=e818]: Undergraduate Student Researcher
+                              - paragraph [ref=e819]: Sep 2024 - Dec 2024 · 4 mos
+                              - paragraph [ref=e820]: Manhattan, Kansas, United States · Hybrid
+                          - link "Edit Undergraduate Student Researcher at Kansas State University" [ref=e821] [cursor=pointer]:
                             - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/edit/forms/2538381424/
-                            - img [ref=e863]
-                        - generic [ref=e865]:
-                          - paragraph [ref=e866]:
-                            - generic [ref=e867]: I recorded 723 million chat messages from Twitch.tv live chat channels over a 2 month period. I analyzed messages from over 12 million unique users. I contextually embedded the messages and I was able to use those contextual groupings to identify quantitatively how many of those messages were misogynistic. 1/1000 of the messages spoken in 64 female streaming channels contained misogyny.
-                          - 'link "Skills: Natural Language Processing (NLP), Software Development" [ref=e868] [cursor=pointer]':
+                            - img [ref=e823]
+                        - generic [ref=e825]:
+                          - paragraph [ref=e826]:
+                            - generic [ref=e827]: I recorded 723 million chat messages from Twitch.tv live chat channels over a 2 month period. I analyzed messages from over 12 million unique users. I contextually embedded the messages and I was able to use those contextual groupings to identify quantitatively how many of those messages were misogynistic. 1/1000 of the messages spoken in 64 female streaming channels contained misogyny.
+                          - 'link "Skills: Natural Language Processing (NLP), Software Development" [ref=e828] [cursor=pointer]':
                             - /url: https://www.linkedin.com/in/christopher-royse-b624b596/overlay/2538381424/skill-associations-details/
-                            - paragraph [ref=e869]:
-                              - strong [ref=e870]: "Skills:"
+                            - paragraph [ref=e829]:
+                              - strong [ref=e830]: "Skills:"
                               - text: Natural Language Processing (NLP), Software Development
-            - complementary "Aside" [ref=e871]:
-              - generic [ref=e872]:
-                - generic [ref=e873]:
-                  - generic [ref=e877]:
-                    - generic [ref=e878]:
-                      - heading "Profile language" [level=2] [ref=e879]
-                      - link "Edit profile language" [ref=e881] [cursor=pointer]:
+            - complementary "Aside" [ref=e831]:
+              - generic [ref=e832]:
+                - generic [ref=e833]:
+                  - generic [ref=e837]:
+                    - generic [ref=e838]:
+                      - heading "Profile language" [level=2] [ref=e839]
+                      - link "Edit profile language" [ref=e841] [cursor=pointer]:
                         - /url: https://www.linkedin.com/in/christopher-royse-b624b596/edit/secondary-language/
-                        - img [ref=e883]
-                    - paragraph [ref=e886]: English
-                  - iframe [ref=e889]:
-                    - main "Work With Us Container" [ref=f2e3]:
-                      - generic [ref=f2e4]:
-                        - img [ref=f2e6]
-                        - generic [ref=f2e7]:
-                          - img "Christopher" [ref=f2e8]
-                          - link "Ferrellgas" [ref=f2e9] [cursor=pointer]:
-                            - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F16710%2Flife&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee9czsG8BcnkYTJ3o6kphNJ-VrYkFiUusD1pjWVBZeT_JN1dou8rldtNWOUVVnfGCzQFjG5JtilTdJnBFOaCokq1N-l4-N-Ygm5nQbLx1CFW7qq6dQ5-mWFUSj1-NDmLMs1cXXihbr4zoWTpuezKQpTU6K62mOtfUFfB5McdulXZxvvZVeTmtpO5GMjEe4QYLNlC5Qn_chmm6hbcxivRMknsuU9MX8yZ6M7SQIwaf4LGN1kTG3erMruvtii4yZpflWoi5yXM1j0rjhKuXni5lp4ve0832Wms0FzN7NOO4usbXhb7nuWbvYy3Sq7zaUILW7W8-dmLEGZGfeTIYtJ1ojCWz0I-_-O_Mw_1gV_9rO5ktrvwLACCm6a6T2DYP7cK0uUQ42Pco-edni4gIg3ZPDPiB01dMjI5Qv6apsbNWB0diVWLAtHPoJgT5Pd51x4ZIJNtH0PwRjm_fdXt_ZgAZFH3emPZs-aNQgkgMJ41mtQo-BE9rltofvNvh9WrpYDjMz5fltMBI43taWzmt1tTSXfdtpdTTperERRBp3WuTZ5YKUJM-wk7_b8ZOrboQSyVSUi4kVJYLgNs9wnU6-AmU_aAjb9UISFrLPWEbE1xqbAUnfD6KIbvFLZO1aLNLCROrgVqcGHYrRrhp4ZDNOzOqRk3zHFHQGIlQKKGHwngBG0OasJVK_BVqgVk0XMIpjr80cmQuUvDNe-sCTjqbgax2zfvGvH1TCGV7pNzSWiz_MPZP6N1QjIV8nO2VfBngR3KzcTrMcG9XdhuSi4fK5mbabyzthc_nQIi_IgTQjXU5p8Zdi3hFy8cug8kt6YrXMBS7kHN9iUpm-kvoJF2AuODShnWvFYqo9W7gnasa5kSeaIiS5uw6IDsb8KxnwEmKpIFBxpfcSRF48cmL9qxyrAqRA2G6fARMl4kvCHiY4fqxP_bcxIaMqVnza3JKNALuO3Rcnt7MIrDc5Hfe3pMSEWf8G_T70yAYb2ACTBZaVnbfl4oKNwDRH0iutF29pJQWqQFJvmWDr6ao0kN_Tlpym4DygwqtiMKxddFBA6VsAinjqlDnBh1egSh98h2f%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base_position_details%22%2C%22trackingId%22%3A%2299d5a0a4-a8dc-4e3e-9206-d2708f9db940%22%7D%2C%22time%22%3A1780194161528%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base_position_details%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
-                            - img "Ferrellgas" [ref=f2e10]
-                      - generic [ref=f2e11]:
-                        - generic [ref=f2e12]:
-                          - paragraph [ref=f2e13]: Christopher, explore relevant opportunities with Ferrellgas
-                          - paragraph [ref=f2e14]: Get the latest jobs and industry news
-                        - link "Follow" [ref=f2e15] [cursor=pointer]:
-                          - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F16710%2Flife%3FisFollowingPage%3Dtrue&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee9czsB1AvbK82C3LxoqLtiZ2l39gbkP8izuoM3-PD15AHI35WY1fdSlyRl_jZioR1AyjTKqkn5AK9iJKU52c-T-HLinNkXA69AfN-k6hhG0VALFdI7auCubr7bvOjczXiDvDd6iQuJBgsssprkW1HOlHzV5_shp5PO0dJHZvT9Ya5n3V39YhS5ccERtokEJedNtfxynWtFf9T98rRFZNH03L8egkqufoqhBGv1-xP-lBZSTlpAI1snEF1ab2Sr1oG1Q05bicbT-EHEP-Ztw7bNYgHgWFgHhkYcHgZATWTeLzg-13YH3N7yXX7n-6tI0mV1AwZ0FBAzHzA5bDkLwn5xbj6rdM6vP3G-RuXF_FKiRdDgwksf8KIEhxlUoZio1Wmznna9OGesC2hTPmGwVBs51syKq8GSX3cADgqQtSZWwmwz6ngVnUtNVshTZkg4EwltnFgvkz6kl180cWN_jVlJGb0nx8GkX2D_FKoiMO9jv40kTkv1L8fvuNyHAxPxFDAtGNciynPfhQ5gDmKpMF61WmR133weaSm0ER_zedTo_zcb5OPVzYOlxwSAVy8dh1qmkISEjUqlEwWAfdw_YfpDx969Vf61cMW0YlNbCCvinLmJecOj08MRbjJ3-xVk-UefNYFxM1JGuyMjWKJdBn7YdgQ4TM0XoX7_yxCGGYGUrgSzmm9_JHpf0hKI0bN3228IrrCMpYaMsSl4qPWM__nnkicqI1wqopPShUWqzsedgmOIa-wh3k5DACSG9kf3xTRYc6gn896Q1iA0F7vDN3Wtp69NV4CJCmsom3IIYS0gFkCENoaWh8Vsa6PwS9t4-7LitLyMDsbFhCKhFba_5r1AFBsdaR0CDY5hL13eVa4m0uzNTBCpB_39_qQO2gCc6P3oxnEfTxc96eaVal1uDGNaLIDyX8kSfNOPz74fdEPqh55VoAFbRI5uRrFkCPv2_tRWUxlewMVulfuY6HEnPE8KKf5vfxYE0K5pUpog096PGMZV8Ig22_2rpsSdXQDiJuETR-sDtORnpOE8oqDnbiVBfzl-xtzn2jgqhfBiPZakzSWiWiiylCKG_FccgOYYgHpKN1AqWCdlHikj5BRbDWRlC5Z67ewHF5%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base_position_details%22%2C%22trackingId%22%3A%2205c57c4e-9178-42c1-8001-9fb62f6b1cef%22%7D%2C%22time%22%3A1780194161528%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base_position_details%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
-                      - generic [ref=f2e16]:
-                        - paragraph [ref=f2e17]: Promoted
-                        - button "Ad Options" [ref=f2e18] [cursor=pointer]:
-                          - img [ref=f2e19]
-                          - generic [ref=f2e23]: Ad Options
-                  - generic [ref=e892]:
-                    - generic [ref=e894]:
-                      - img "Premium" [ref=e895]
-                      - heading "Who your viewers also viewed" [level=3] [ref=e901]
-                      - paragraph [ref=e902]: Private to you
-                    - generic [ref=e904]:
-                      - generic [ref=e906]:
-                        - link "Reuven Cohen Verified · 1st ♾️ Agentic Engineer / Founder @ Cognitum.One" [ref=e909] [cursor=pointer]:
+                        - img [ref=e843]
+                    - paragraph [ref=e846]: English
+                  - iframe [ref=e849]:
+                    - main "Work With Us Container" [ref=f16e3]:
+                      - generic [ref=f16e4]:
+                        - img [ref=f16e6]
+                        - generic [ref=f16e7]:
+                          - img "Christopher" [ref=f16e8]
+                          - link "HBS" [ref=f16e9] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F466785%2Flife&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee9nBx30-mbRA36yXh_AWC5NMK0x9xy4PR0Gj5DNh4HMZ2fy32ZPZrzljxEjOvxhuxkoF8RMtynxHXXefEPwHiPcDRv-IF1KHpW3UsRsKTW9PTBm0FAfUI-G538n1GKsTcpPHKEe4lMUauZzmziCf2jjfiFWxJYBU6NpXTUSaO7h3GKdYP9zPEv2RlCzFnMnfM-6V3b3GVB2yY1dlnHlpNP78l5xLGVrb_JN5zETuOY5yLOjvdJPFScv_8wy99BzIBtXMNVASNYOnIMxitBxXZY9AuUx86PObXgj8zpgprGzHczd7tFlJ-RnZOmO8sBHDcBLUMVr3way9Lfs_IJ4zM4eeER1IfxS6W_sghdxXy7ZU8E2PwPQHM3wIQYRWRsb4A6v0cWrz_YHWh_p2PmnpoVOC1jraEFiRFEaejjGuWS-1cMUQP0muFNi2SUSmYVosR_Fn9tPWe121MmhHSxgPp-MW_tNSK03OuOJvc0LQaurbLvwsUsrs3_O6h7CUlg_9hdc6755j24JDJF__Uwf_YNQDic6OqXObTNiashaK0eDcs5bsx_DUeg2_R3OzWvdYisCKdGGIpyciL8b-kV0VD9yMQ_reGkgcOOI6NYHdczeDLWP7wTYwEBYgkk5BEi4BWu-5reGekBh61nSUzKIUdU0pTjBWxGWHL9KRjGgv9B9k73BM6epC1cKF0Z2y25rbe5AZr4ZgzG6bP3317nWl39r_X0c4jWx28U8UdfYaj6CyTavOoOEyPTDjnESuxg1PReS3Wh0bRL1braqngNImfcBP7TZYd_KF73H06fgYI_1ZeVPEeKA0wMiOoMJ6bmc-Jt6hKcPogXJQfybG8s1ICO0p9-AkYbHhPlSSCPzASWwWz0dN_DWjyG5QGt7gT1aw1nmbhrK2cKTlVocZz1Zt6J9QG2hvYrdDudoYus8BKwIfDFP72j1z1XlpDi-zdBh9F9JHdADXNVFeGSaKF-YJjXEbgi3H8fLkc366aPQvZ4Mh0EaSUTxZUgP9r0FRVkif_vCqrH9j1JrhrSy1BZexXzepCShTiXDbjUKmuFEKPHN2w8xACycwMA%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base_position_details%22%2C%22trackingId%22%3A%22deed7c6b-4ebd-43e6-bccf-b5d96387e1e3%22%7D%2C%22time%22%3A1780194328991%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base_position_details%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
+                            - img "HBS" [ref=f16e10]
+                      - generic [ref=f16e11]:
+                        - generic [ref=f16e12]:
+                          - paragraph [ref=f16e13]: Christopher, explore relevant opportunities with HBS
+                          - paragraph [ref=f16e14]: Get the latest jobs and industry news
+                        - link "Follow" [ref=f16e15] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F466785%2Flife%3FisFollowingPage%3Dtrue&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee9nBx9xF0pxtAbsDXEhEg2mGMEH-PcnTL8PztEXWuTGJemvvRxlSV9ZVPsElPkQD2n3bpNY8LdRmvyzwI7TScMCYBeksG4r9Zp6PTwC8K8j1_5WRV6T96UHjBhl1xvwAWIEqwhfK78faYzrMGXaN-h6Nk-6mfXFcAYElMo3ON74SdeQn54QhTprMnkv0i6JeaEJlIsQbo9FpA9D1MiP3dHR2HYLf1EIh_xw8XUQtwRZnhzrfLXwTxLKrQPNwayDCgi4tWSGE1OObCh77YAHUCOkJEoFZB4O9X4w8dHqisxWYjv-BpOOlidRfdonbV4nCzDd6npkYAv4DNNwKbYhHfLN-pG9FCOZOFrFkAhEda3dXtSzNutJhuT01ePUTXTai8YAw_XX4SocUQkEy04-bBR1gddRQrjGfcft5_qMwVBTo0JD2vI1khSXdx3ZELcZd3-P3LE45EiwG_d90A8mnUpQsZP9jz4acoxbfZzcw5EsKusTcBzpeLRByM3GAUaaledThQU_6bUeik4AW4joXYAxtLJ6N0eId48SMZDBwJ-57i_KtjwOZpW9EKjVl6mxvaHHekhgw2SQOuBGMGaUIIE0pPa6w3iLrLvPOKwrpsMolJSA9qW8ZIXJKv3vzyjg1aweGyimM1Pv2B5yq-P8I6VjJpnDkQrY8bzv4nIqfiwlgorImINQ8E2kMBP0VKu9YbWQhXVqAzfiyFUMQpcL2Nq1VartF3iqh38bX43qVeqNRb_sM7_nAUROpyqyQRB2puFM43dUBEml5qFyD9wlzZ4b94hvA9twNtma5GeRfqYiaiJEMIw5yoa_rcMBaayZG4XVGHg0gfc3SKwFc_jaqbytepV3LlGZYlcaOkTvCkH9OZI9WOSYmtz-UFvUyL4k19we7yYQJ32sBcPrAXEky5qAETsfQD3EpRPaSpY_YLF6_R7JzJ1UrDsUESHm7K4xyBWPE2enNKewVwmX7w3Hrzv7HvXB8V3uE9sjqplUMuDP4qQyawFGWKkygwp6biYBGCvAREowIkdWyTTNHGRF0dXT29ZyWqe1rcq7Q2qBva2p7b55lBSkHF2Hb6ZK0Y444tG_IlJIK1SejRydrVPJOTv7Z5RFjdPA%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base_position_details%22%2C%22trackingId%22%3A%22792c4bb1-bfa1-44ee-809f-189450eb973d%22%7D%2C%22time%22%3A1780194328991%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base_position_details%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
+                      - generic [ref=f16e16]:
+                        - paragraph [ref=f16e17]: Promoted
+                        - button "Ad Options" [ref=f16e18] [cursor=pointer]:
+                          - img [ref=f16e19]
+                          - generic [ref=f16e23]: Ad Options
+                  - generic [ref=e852]:
+                    - generic [ref=e854]:
+                      - img "Premium" [ref=e855]
+                      - heading "Who your viewers also viewed" [level=3] [ref=e861]
+                      - paragraph [ref=e862]: Private to you
+                    - generic [ref=e864]:
+                      - generic [ref=e866]:
+                        - link "Reuven Cohen Verified · 1st ♾️ Agentic Engineer / Founder @ Cognitum.One" [ref=e869] [cursor=pointer]:
                           - /url: https://www.linkedin.com/in/reuvencohen/
-                          - generic [ref=e910]:
-                            - figure [ref=e911]
-                            - generic [ref=e912]:
-                              - generic [ref=e913]:
-                                - paragraph [ref=e915]:
-                                  - link "Reuven Cohen Verified" [ref=e917]:
+                          - generic [ref=e870]:
+                            - figure [ref=e871]
+                            - generic [ref=e872]:
+                              - generic [ref=e873]:
+                                - paragraph [ref=e875]:
+                                  - link "Reuven Cohen Verified" [ref=e877]:
                                     - /url: https://www.linkedin.com/in/reuvencohen/
                                     - text: Reuven Cohen
-                                    - img "Verified" [ref=e918]:
-                                      - img [ref=e919]
-                                - paragraph [ref=e921]: · 1st
-                              - paragraph [ref=e923]: ♾️ Agentic Engineer / Founder @ Cognitum.One
-                        - link "Message Reuven Cohen" [ref=e927] [cursor=pointer]:
+                                    - img "Verified" [ref=e878]:
+                                      - img [ref=e879]
+                                - paragraph [ref=e881]: · 1st
+                              - paragraph [ref=e883]: ♾️ Agentic Engineer / Founder @ Cognitum.One
+                        - link "Message Reuven Cohen" [ref=e887] [cursor=pointer]:
                           - /url: /messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AACoAAAAsDPgBDJuUuadvvnSxPUkh_oT8zWlUvrk&recipient=ACoAAAAsDPgBDJuUuadvvnSxPUkh_oT8zWlUvrk&screenContext=NON_SELF_PROFILE_VIEW&interop=msgOverlay
-                          - generic [ref=e928]:
-                            - img [ref=e929]
-                            - generic [ref=e931]: Message
-                      - generic [ref=e933]:
-                        - link "Brad Ross Verified · 1st ♾️Harvard CS | AI Agentics Engineer | Deterministic AI and Recursive Self Learning Systems | research, teaching, consulting" [ref=e936] [cursor=pointer]:
+                          - generic [ref=e888]:
+                            - img [ref=e889]
+                            - generic [ref=e891]: Message
+                      - generic [ref=e893]:
+                        - link "Brad Ross Verified · 1st ♾️Harvard CS | AI Agentics Engineer | Deterministic AI and Recursive Self Learning Systems | research, teaching, consulting" [ref=e896] [cursor=pointer]:
                           - /url: https://www.linkedin.com/in/bradaross/
-                          - generic [ref=e937]:
-                            - figure [ref=e938]
-                            - generic [ref=e939]:
-                              - generic [ref=e940]:
-                                - paragraph [ref=e942]:
-                                  - link "Brad Ross Verified" [ref=e944]:
+                          - generic [ref=e897]:
+                            - figure [ref=e898]
+                            - generic [ref=e899]:
+                              - generic [ref=e900]:
+                                - paragraph [ref=e902]:
+                                  - link "Brad Ross Verified" [ref=e904]:
                                     - /url: https://www.linkedin.com/in/bradaross/
                                     - text: Brad Ross
-                                    - img "Verified" [ref=e945]:
-                                      - img [ref=e946]
-                                - paragraph [ref=e948]: · 1st
-                              - paragraph [ref=e950]: ♾️Harvard CS | AI Agentics Engineer | Deterministic AI and Recursive Self Learning Systems | research, teaching, consulting
-                        - link "Message Brad Ross" [ref=e954] [cursor=pointer]:
+                                    - img "Verified" [ref=e905]:
+                                      - img [ref=e906]
+                                - paragraph [ref=e908]: · 1st
+                              - paragraph [ref=e910]: ♾️Harvard CS | AI Agentics Engineer | Deterministic AI and Recursive Self Learning Systems | research, teaching, consulting
+                        - link "Message Brad Ross" [ref=e914] [cursor=pointer]:
                           - /url: /messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AACoAAABGwt0BkKsEPDwsAcZLmSipocfFwyjjSuk&recipient=ACoAAABGwt0BkKsEPDwsAcZLmSipocfFwyjjSuk&screenContext=NON_SELF_PROFILE_VIEW&interop=msgOverlay
-                          - generic [ref=e955]:
-                            - img [ref=e956]
-                            - generic [ref=e958]: Message
-                      - generic [ref=e960]:
-                        - link "Marcus Patman Verified · 1st Agentic Systems Engineer | Building Agentic Platforms for Secure Cloud & DevOps | Linux | AgenticOps | Founder At Creando Tu Matrix" [ref=e963] [cursor=pointer]:
+                          - generic [ref=e915]:
+                            - img [ref=e916]
+                            - generic [ref=e918]: Message
+                      - generic [ref=e920]:
+                        - link "Marcus Patman Verified · 1st Agentic Systems Engineer | Building Agentic Platforms for Secure Cloud & DevOps | Linux | AgenticOps | Founder At Creando Tu Matrix" [ref=e923] [cursor=pointer]:
                           - /url: https://www.linkedin.com/in/marcuspatman/
-                          - generic [ref=e964]:
-                            - figure [ref=e965]
-                            - generic [ref=e966]:
-                              - generic [ref=e967]:
-                                - paragraph [ref=e969]:
-                                  - link "Marcus Patman Verified" [ref=e971]:
+                          - generic [ref=e924]:
+                            - figure [ref=e925]
+                            - generic [ref=e926]:
+                              - generic [ref=e927]:
+                                - paragraph [ref=e929]:
+                                  - link "Marcus Patman Verified" [ref=e931]:
                                     - /url: https://www.linkedin.com/in/marcuspatman/
                                     - text: Marcus Patman
-                                    - img "Verified" [ref=e972]:
-                                      - img [ref=e973]
-                                - paragraph [ref=e975]: · 1st
-                              - paragraph [ref=e977]: Agentic Systems Engineer | Building Agentic Platforms for Secure Cloud & DevOps | Linux | AgenticOps | Founder At Creando Tu Matrix
-                        - link "Message Marcus Patman" [ref=e981] [cursor=pointer]:
+                                    - img "Verified" [ref=e932]:
+                                      - img [ref=e933]
+                                - paragraph [ref=e935]: · 1st
+                              - paragraph [ref=e937]: Agentic Systems Engineer | Building Agentic Platforms for Secure Cloud & DevOps | Linux | AgenticOps | Founder At Creando Tu Matrix
+                        - link "Message Marcus Patman" [ref=e941] [cursor=pointer]:
                           - /url: /messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AACoAAADTEvcBTyDJHZ07x7kOodOzR7Y_iHTC-B4&recipient=ACoAAADTEvcBTyDJHZ07x7kOodOzR7Y_iHTC-B4&screenContext=NON_SELF_PROFILE_VIEW&interop=msgOverlay
-                          - generic [ref=e982]:
-                            - img [ref=e983]
-                            - generic [ref=e985]: Message
-                      - generic [ref=e987]:
-                        - link "Kunal Dalal Premium · 1st ♾️ Agentic Leadership Strategist | AI Parentologist | Keynote Speaker" [ref=e990] [cursor=pointer]:
+                          - generic [ref=e942]:
+                            - img [ref=e943]
+                            - generic [ref=e945]: Message
+                      - generic [ref=e947]:
+                        - link "Kunal Dalal Premium · 1st ♾️ Agentic Leadership Strategist | AI Parentologist | Keynote Speaker" [ref=e950] [cursor=pointer]:
                           - /url: https://www.linkedin.com/in/kunal-dalal-ed/
-                          - generic [ref=e991]:
-                            - figure [ref=e992]
-                            - generic [ref=e993]:
-                              - generic [ref=e994]:
-                                - paragraph [ref=e996]:
-                                  - link "Kunal Dalal Premium" [ref=e998]:
+                          - generic [ref=e951]:
+                            - figure [ref=e952]
+                            - generic [ref=e953]:
+                              - generic [ref=e954]:
+                                - paragraph [ref=e956]:
+                                  - link "Kunal Dalal Premium" [ref=e958]:
                                     - /url: https://www.linkedin.com/in/kunal-dalal-ed/
                                     - text: Kunal Dalal
-                                    - img "Premium" [ref=e999]:
-                                      - img [ref=e1000]
-                                - paragraph [ref=e1002]: · 1st
-                              - paragraph [ref=e1004]: ♾️ Agentic Leadership Strategist | AI Parentologist | Keynote Speaker
-                        - link "Message Kunal Dalal" [ref=e1008] [cursor=pointer]:
+                                    - img "Premium" [ref=e959]:
+                                      - img [ref=e960]
+                                - paragraph [ref=e962]: · 1st
+                              - paragraph [ref=e964]: ♾️ Agentic Leadership Strategist | AI Parentologist | Keynote Speaker
+                        - link "Message Kunal Dalal" [ref=e968] [cursor=pointer]:
                           - /url: /messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AACoAAAFlpxAB3s7KE9dGTXRcyhoE4XvuxLnzchg&recipient=ACoAAAFlpxAB3s7KE9dGTXRcyhoE4XvuxLnzchg&screenContext=NON_SELF_PROFILE_VIEW&interop=msgOverlay
-                          - generic [ref=e1009]:
-                            - img [ref=e1010]
-                            - generic [ref=e1012]: Message
-                      - generic [ref=e1014]:
-                        - link "Dragan Spiridonov Verified · 1st ♾️ Agentic Quality Engineer | Quality Engineering Consultant | AI-Driven Testing | Serbian Agentics Foundation" [ref=e1017] [cursor=pointer]:
+                          - generic [ref=e969]:
+                            - img [ref=e970]
+                            - generic [ref=e972]: Message
+                      - generic [ref=e974]:
+                        - link "Dragan Spiridonov Verified · 1st ♾️ Agentic Quality Engineer | Quality Engineering Consultant | AI-Driven Testing | Serbian Agentics Foundation" [ref=e977] [cursor=pointer]:
                           - /url: https://www.linkedin.com/in/dragan-spiridonov/
-                          - generic [ref=e1018]:
-                            - figure [ref=e1019]
-                            - generic [ref=e1020]:
-                              - generic [ref=e1021]:
-                                - paragraph [ref=e1023]:
-                                  - link "Dragan Spiridonov Verified" [ref=e1025]:
+                          - generic [ref=e978]:
+                            - figure [ref=e979]
+                            - generic [ref=e980]:
+                              - generic [ref=e981]:
+                                - paragraph [ref=e983]:
+                                  - link "Dragan Spiridonov Verified" [ref=e985]:
                                     - /url: https://www.linkedin.com/in/dragan-spiridonov/
                                     - text: Dragan Spiridonov
-                                    - img "Verified" [ref=e1026]:
-                                      - img [ref=e1027]
-                                - paragraph [ref=e1029]: · 1st
-                              - paragraph [ref=e1031]: ♾️ Agentic Quality Engineer | Quality Engineering Consultant | AI-Driven Testing | Serbian Agentics Foundation
-                        - link "Message Dragan Spiridonov" [ref=e1035] [cursor=pointer]:
+                                    - img "Verified" [ref=e986]:
+                                      - img [ref=e987]
+                                - paragraph [ref=e989]: · 1st
+                              - paragraph [ref=e991]: ♾️ Agentic Quality Engineer | Quality Engineering Consultant | AI-Driven Testing | Serbian Agentics Foundation
+                        - link "Message Dragan Spiridonov" [ref=e995] [cursor=pointer]:
                           - /url: /messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AACoAAAZqBgYBx5CVyc_-LE136fh_66aPFm_yBdA&recipient=ACoAAAZqBgYBx5CVyc_-LE136fh_66aPFm_yBdA&screenContext=NON_SELF_PROFILE_VIEW&interop=msgOverlay
-                          - generic [ref=e1036]:
-                            - img [ref=e1037]
-                            - generic [ref=e1039]: Message
-                      - button "Show more" [ref=e1041] [cursor=pointer]:
-                        - generic [ref=e1042]:
-                          - img [ref=e1043]
-                          - generic [ref=e1045]: Show more
-                - iframe [ref=e1050]:
-                  - generic [ref=f3e3]:
-                    - banner [ref=f3e4]:
-                      - generic [ref=f3e5]:
-                        - link "Promoted" [ref=f3e6] [cursor=pointer]:
+                          - generic [ref=e996]:
+                            - img [ref=e997]
+                            - generic [ref=e999]: Message
+                      - button "Show more" [ref=e1001] [cursor=pointer]:
+                        - generic [ref=e1002]:
+                          - img [ref=e1003]
+                          - generic [ref=e1005]: Show more
+                - iframe [ref=e1010]:
+                  - generic [ref=f17e3]:
+                    - banner [ref=f17e4]:
+                      - generic [ref=f17e5]:
+                        - link "Promoted" [ref=f17e6] [cursor=pointer]:
                           - /url: https://www.linkedin.com/ads/start?src=en-all-ad-li-ads_by_li&trk=ads_by_li&utm_medium=ad&utm_source=li&utm_campaign=ads_by_li
-                        - button [ref=f3e7] [cursor=pointer]:
-                          - img [ref=f3e8]
-                    - generic [ref=f3e13]:
-                      - link "Ad Image 225,716,804 Study Health Informatics CAHIIM-Accredited Grad Programs. Online/On Campus at Boston University. Dr.Akshaya Dr.Akshaya & 1 other connection also follow Boston University Metropolitan College" [ref=f3e14] [cursor=pointer]:
-                        - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=https%3A%2F%2Fchoosemet.bu.edu%2Fhealth-informatics-graduate-programs%2F%3Futm_source%3Dlinkedin%26utm_medium%3Dcpc%26utm_campaign%3DCISHealthInformaticsSkills%26utm_content%3DGenHI%26li_fat_id%3De5b072a8-50cb-46bb-a2f5-0d826733d3fd&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee9cz31_EBeqMydipl6Gk4J6kBmQ-Pa554jthlW_b7xMx5XzX7oDtbpFTw8ZAOgC2N9U57Sy8NIBHOAfVSWKvujbzOl5Vvm60gSEw1bgy6S_0vPq8NNj6hxk_fQJJ6BywMJmgMxKJsAov9HOpZ6PDCF7caX5r80XBS19SQrqrDJ0craDOVwE3IqRbjiRvKiDSL-dm6GMNzqNVAeYvUihVKODxNiGrzYM_ZXcJj6mD7UG5slvJlcmShWdQaL36bYUwWmvuyrH-zwlNmG0E42ZL3mfjQujFF0cpPMrZQx-PBq1DPDAeGtVhOny3EqBZdyYUO32P_aCtSOzfHg3IcYnJ6Ix-ZMjdAbjAl7eBp5Sawq6TL9IzGBtMVVkXWIwWbVTm9oehwqoLSFjFTg2jvXyuXdBNdwxAfh7LRJxtvifxReNiw4rwO6niHUj80HDCAyIyDs3nmu4aHZDEQXDKh8mkSHdqVTH5JfbitVrf9QLYSp_klInTM_bDQDWJe0lHP7XO1sm4230OD7L81z2lIt-Ao_AEMQi07YRrl3ft5Izg_Ms6jZTWkOl0dxLGq2dyBYQxAHqgVMBvgyWEoawr6bWDZLkl_wHumRnHomgrbCK0I4Iy70lNxcHpUVdUhLOp5263-SRY465Jlvu84MnqEFT5UzopNSuTdvyan_t0Dzs7rAUqCEnDCLmj9WV9aHdBwI0WxWD_xUl0y1ezo0LNG4sD11BlQSynwU5VcXAad33WnPeb7rIMksxYC9r6J_0ncSfxIHJQv6_ZPgkNryiHsdkn_7KFbpjaFWlL-3jTy0EEKTn7Go4APFzDbBY5orSiXD89rJNjjHQOCUWS2AejdA1hXDsXb8A6dQ_qUyTbFTMeQ6P2tlikYuTssNdr0EyGzWD7dFjgEnVfhZnwwAzmFMLsZ-VzYvske2uO08EsI7Vb_HoOellcByCTZ4H4TFOYrY3EGOHMQ34uaPNwCKNp2JQfwSOEufJZwF06HG1ullbtURmYNcJgxL_hZh0I7lBfTJ0%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base_position_details%22%2C%22trackingId%22%3A%221b72127f-cfd4-40f8-ac49-08a63de91649%22%7D%2C%22time%22%3A1780194161631%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base_position_details%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
-                        - img "Ad Image 225,716,804" [ref=f3e16]
-                        - generic [ref=f3e17]:
-                          - heading "Study Health Informatics" [level=4] [ref=f3e18]
-                          - paragraph [ref=f3e19]: CAHIIM-Accredited Grad Programs. Online/On Campus at Boston University.
-                          - generic [ref=f3e20]:
-                            - img "Dr.Akshaya" [ref=f3e22]
-                            - paragraph [ref=f3e23]: Dr.Akshaya & 1 other connection also follow Boston University Metropolitan College
-                      - 'link "Ad Image 1,147,088,194 Limited-Time Sale: $2/wk The Benchmark in Business. Michael Stephen & 173 other connections also follow The Wall Street Journal" [ref=f3e24] [cursor=pointer]':
-                        - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=https%3A%2F%2Fwww.wsj.com%2Fsubscribe%2F%3Fpage%3Dwsjcoreiybns%26swg%3Dtrue%26trackingCode%3Da44be2e5%26ucid%3DWSJ_SMD_LNK_ACQ_SAL_LTW_PRS_2PW_LW1_WSP%26n2IKsaD9%3Dn2IKsaD9%26Pg9aWOPT%3DPg9aWOPT%26Cp5dKJWb%3DCp5dKJWb%26APCc9OU1%3DAPCc9OU1%26li_fat_id%3De5b072a8-50cb-46bb-a2f5-0d826733d3fd&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee9cz3k6P2U3BhmSA_BY-8kOSoxGhLK-800uEXeZnxQO1Ofd_yR2TyBmEvM7YQmmCjO31-Kda5kXc1MV3pGuKExxVwJBl3J7ZGq0oaEO2b1p2snMS4ltpjWh3S9e9AopCcogEjhloPEQNk7AITzt_cHzu-15xu_eMP2E-R-_y3pnUovnZGxGX_o7D55iy7rdN2S8Tmn2W94Z19NnhEGwTsgUYxkIBM0T8lSC0w9JQ4ulkCGq8JJy0DcrMFD4MyC3R3teHfLTht-HjaxhSBWiWL5ToUgmxmIHxRGqYHzrIyAFaO9uugMPVZ69BWpmpT_CCPnVTaseBaviPIP7N79OjTi_60eUfaDdAX0HNtdmX8xl0sTWQxijUvdfwzkqrYnmtiDXaRlZWHtpX9m2dE0gOfyCC-4dXQkjGRhFG1zYDKzoSW7pr7Ens4ZaKszKw_QzXfpgqOuRrHtg3CEQIwHwRWhgqYFA5ODFGtID_uSl0FsSngRX_ZqWHDSyHP0IWAu7hDro_gtKAnfMmEgXPajKeBaY5EShSxNOKN0-ilU4g0wPUSgkm7-4aMsBdnYG_Nk76TGrMmEwn8Bh2cJ3uq3Ol8glikuzzu7aRxGNM4IT6p3mE-_O3h7FMmwzAyFfp0WN4s4uply2g2Eo-h9B0EaukBaiELMXP-y2Ka-ofmyYv-V4A41rXztHL_0JjFwdv5kmsNbdQYYaJNGMpD-b2ix_QDRzOjJc0o0YZdf3sMZoxiMjcHkdEQokdJWWFbF6wyCU92IcgvfWUdusgYPbZGCmSyM9avlDaibNZe6VsUjzWjKrmSJrphKfXmVk3ZyGCohcgZjKQT3ZeXgzp9T_JsqEeTobtzEtsWJ5S3hc1H4C6zEXPzknNxizCaf5j85A-f15zDiJLiY0_HBZzr0EgFPl_J7ELUNr_0YBhjeEW-U6aE0zxzCR1vqeBbPlGwx1y2DAby67nyN4L2_CmDjJs-rrTZ0xYeTTvUB8eY9JAC8EnbN_0dpfLZKY0rvIY0a63_ibCMmooCb7qGjB3vg%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base_position_details%22%2C%22trackingId%22%3A%225b858cb6-59dd-4c9e-814e-c973095fbf99%22%7D%2C%22time%22%3A1780194161630%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base_position_details%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
-                        - img "Ad Image 1,147,088,194" [ref=f3e26]
-                        - generic [ref=f3e27]:
-                          - 'heading "Limited-Time Sale: $2/wk" [level=4] [ref=f3e28]'
-                          - paragraph [ref=f3e29]: The Benchmark in Business.
-                          - paragraph [ref=f3e31]: Michael Stephen & 173 other connections also follow The Wall Street Journal
-            - generic "Footer" [ref=e1051]:
-              - generic [ref=e1054]:
-                - generic [ref=e1055]:
-                  - navigation [ref=e1056]:
-                    - link "About" [ref=e1057] [cursor=pointer]:
+                        - button [ref=f17e7] [cursor=pointer]:
+                          - img [ref=f17e8]
+                    - generic [ref=f17e13]:
+                      - link "Ad Image 225,716,804 Study Health Informatics CAHIIM-Accredited Grad Programs. Online/On Campus at Boston University. Dr.Akshaya Dr.Akshaya & 1 other connection also follow Boston University Metropolitan College" [ref=f17e14] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=https%3A%2F%2Fchoosemet.bu.edu%2Fhealth-informatics-graduate-programs%2F%3Futm_source%3Dlinkedin%26utm_medium%3Dcpc%26utm_campaign%3DCISHealthInformaticsSkills%26utm_content%3DGenHI%26li_fat_id%3De5b072a8-50cb-46bb-a2f5-0d826733d3fd&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee9nCCFJj-brDVkKj26FJvscIp0y3sYfD7RQxkQe70ALFEtvJO6PaTuienlFgANp2RWOs-aKEusARH-M3BbFKP_YBbJ4OezENiPCbR14Y_3iPUGTqW0p2DuH8sc37jetcrzm-qKPsDjOB7d6uVtGkxUkhE3dYMDhvxbDnLSi9kgqFVdDOAhGlVeW1finJPiYMMPzHQTj3duyVjCB26kIHuoGDpxpvytuySnw4m3m2vCB2E0IoCqiKs3nu4BjThmipSUSkhNQj2Pryi7fbwcue2AxcFXZ0YC4jHjRknst5ZZdVA2qIFZG0UTTnGXwleRE3mCFApbUAPdVYSI-r5kKprQ60yzy-Bl0ea4CY7GbdYMZxK2TcUcSTQzNkuqrf-g0EwoSzKWBOCRTT9Z4Ch-UzA19jXY_pg3_uIC83ULytRaMFU-yfaWEDY7CHILBLpUg2JmxsQjflDyiOH1hrTmTxNkhb8u-vetV5orwMyoHFMIcIWLM8xRLxmA-66A6hW2VrhihII3sNUWMRkzheNDlnpXj3Wn3fS-Hg74eAFoKKcjhPdnam3nYOfMh2WrGuiOVCtD2sDhkDoHNtZ5qe9wc2PY2doTxD9xpjJaqyOx_PcnrFk3VGWu1QBmhYVG2kvUfphsds5w5yCYSvZD0MC0fxl4ETq5jd4j0ez2_SMWWQTvMqYFxgOAVz4xTn-uF4eUlGO52elIjzL8URDMr2chaUS5S7MaTG9HK1JnNhOTNafdJcSxI2kjJsIXUZviVZDom2hg5yEDT_2GyndOdb2TFCsy6w5GAIax_tpn4h5zzVlPRF1n3dSPExtXBupJyq96mHWpLA-omPzj9rUXU25vdgeecViYIWo62I6KypcP81bH_gzC6jR7a_0sNd_jWHWeQU7DA0tyoA4ALuO_zJOFztmK-p2T9fFpR-GJgJbGKUNsuYBBtAOaH621eBEHDxe1fmaj8PKFAf3LwrKdWkx6aH9_d0rQMd9yaCtQCbam1BUvG-uf_EvpXlLlKDKJBE%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base_position_details%22%2C%22trackingId%22%3A%22db22dfda-6a34-4268-b741-08f9064b1da6%22%7D%2C%22time%22%3A1780194329096%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base_position_details%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
+                        - img "Ad Image 225,716,804" [ref=f17e16]
+                        - generic [ref=f17e17]:
+                          - heading "Study Health Informatics" [level=4] [ref=f17e18]
+                          - paragraph [ref=f17e19]: CAHIIM-Accredited Grad Programs. Online/On Campus at Boston University.
+                          - generic [ref=f17e20]:
+                            - img "Dr.Akshaya" [ref=f17e22]
+                            - paragraph [ref=f17e23]: Dr.Akshaya & 1 other connection also follow Boston University Metropolitan College
+                      - link "Ad Image 1,279,543,944 The Full Story. Daily. More stories, more insight, more value. Join WSJ+ today. Michael Stephen & 173 other connections also follow The Wall Street Journal" [ref=f17e24] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=https%3A%2F%2Fwww.wsj.com%2Fsubscribe%2F%3Fpage%3Dwsjpluss26%26swg%3Dtrue%26trackingCode%3Dd642782a%26ucid%3DWSJ_SMD_LNK_ACQ_SAL_VPR_PRS_3PW_VP1_GSP%26n2IKsaD9%3Dn2IKsaD9%26Pg9aWOPT%3DPg9aWOPT%26Cp5dKJWb%3DCp5dKJWb%26APCc9OU1%3DAPCc9OU1%26li_fat_id%3De5b072a8-50cb-46bb-a2f5-0d826733d3fd%26utm_medium%3Dpaid-social%26utm_id%3D562304274%26utm_source%3Dlinkedin%23offers-block&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee9nCB_SOjhu48Ew89iCWBNXlI6mXobkN004F5xnieORXUiyFM1Vn-gt0XrMIyvS5O1Ft1XhZklV0gEm974uR6ZIJlDuKuo5Pd--KZcMxFsrbycYcA1qUi7kb_CVRS92TsPFaubEMU2_Ft8GLaux1vcKO-lCY-xwOdnDjzG5hFOX6h2Umjyh0clWdvWuzb3yNKHYwp6Mu55v-TSqG32xr9SOryW__NzRvVTOs2xyrw0qRT8_6XI9V8ZI1Il0zQk2CRej5ceoOzelDrgAIV9oBXESc9eLSLmNTLJFi8zD3Ilg-yEiMScQz2WDsV0ZZc6F-EoRmxNA5-hgB3TrqDkKZcsAFNcImHT0JiYh7TzFb9FnqB1rSf9Td4rvQgbWlCpnQ3rUbLNS0PlJjDPFmfalVlMIiDdCYw74dciwgm98GhIUAgGFyIP6KCgh5TsTikkphGSOBqmDX3_MDoo-0hpKd8evEF1V7_I6G82wQxFDM8_dRTZjeaoVBxYPM_-KgEdAz8f4NtIuhRD_F0EoOrwccVdMVxxf05yoV5OYloNRB69i6UvVhqxkwuKNz0LUFKxOdki0K5R_-FenBsHrOi4sve4lo5Fj1TJ5AbNpNtDeb8uK7iB8J4R1wRnPWBFJ8Gu513kKD5gVl7oDjG_1ZIBvmObmnh2ugPDOwNbzpiN86RCqsKZdXaUVV0l6Q9hnX3d6aaXlxMpPPU3PS7GeIwH8Tfbd3VYY4YH7FEMDM9ys0mvzy1_MBKk9SZjuk02zQmCAM8-ZKwT9Dwe97dln8uTjcsPss3culcSoGZUlLE2C_BWCYJUTfWkGpVSlvEiAOz9pzG9Ora1WmijSSTJBVSLlZAgYTYIK8ZRvB0cioSI-1j4vugIgTcx1nHkAeHEiwyuHYyWtUU_mijbkivEy4DX8mJydLfQyFMmi7PShwIcYDEjbYwB0fYj3EIFgHcw7hWnHgiM-_Co2q4ntxUkQnLRC0xCnxqF-Czdp9jeBoYPgfcfIjAAdYAGSffEpRLs8N-bUkZ4d3yibStnj0GA%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base_position_details%22%2C%22trackingId%22%3A%223298964e-11a0-4804-bf7e-b93a97885b4d%22%7D%2C%22time%22%3A1780194329095%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base_position_details%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
+                        - img "Ad Image 1,279,543,944" [ref=f17e26]
+                        - generic [ref=f17e27]:
+                          - heading "The Full Story. Daily." [level=4] [ref=f17e28]
+                          - paragraph [ref=f17e29]: More stories, more insight, more value. Join WSJ+ today.
+                          - paragraph [ref=f17e31]: Michael Stephen & 173 other connections also follow The Wall Street Journal
+            - generic "Footer" [ref=e1011]:
+              - generic [ref=e1014]:
+                - generic [ref=e1015]:
+                  - navigation [ref=e1016]:
+                    - link "About" [ref=e1017] [cursor=pointer]:
                       - /url: https://about.linkedin.com/
-                      - paragraph [ref=e1058]: About
-                    - link "Accessibility" [ref=e1059] [cursor=pointer]:
+                      - paragraph [ref=e1018]: About
+                    - link "Accessibility" [ref=e1019] [cursor=pointer]:
                       - /url: https://www.linkedin.com/accessibility/
-                      - paragraph [ref=e1060]: Accessibility
-                    - link "Talent Solutions" [ref=e1061] [cursor=pointer]:
+                      - paragraph [ref=e1020]: Accessibility
+                    - link "Talent Solutions" [ref=e1021] [cursor=pointer]:
                       - /url: https://business.linkedin.com/talent-solutions?trk=flagship_nav&veh=li-footer-lts-control&src=li-footer
-                      - paragraph [ref=e1062]: Talent Solutions
-                    - link "Community Guidelines" [ref=e1063] [cursor=pointer]:
+                      - paragraph [ref=e1022]: Talent Solutions
+                    - link "Community Guidelines" [ref=e1023] [cursor=pointer]:
                       - /url: https://www.linkedin.com/legal/professional-community-policies/
-                      - paragraph [ref=e1064]: Community Guidelines
-                    - link "Careers" [ref=e1065] [cursor=pointer]:
+                      - paragraph [ref=e1024]: Community Guidelines
+                    - link "Careers" [ref=e1025] [cursor=pointer]:
                       - /url: https://careers.linkedin.com/
-                      - paragraph [ref=e1066]: Careers
-                    - link "Marketing Solutions" [ref=e1067] [cursor=pointer]:
+                      - paragraph [ref=e1026]: Careers
+                    - link "Marketing Solutions" [ref=e1027] [cursor=pointer]:
                       - /url: https://business.linkedin.com/advertise?trk=n_nav_lms_f&src=li-footer
-                      - paragraph [ref=e1068]: Marketing Solutions
-                    - button "Privacy & Terms" [ref=e1069] [cursor=pointer]:
-                      - generic [ref=e1070]:
-                        - paragraph [ref=e1071]: Privacy & Terms
-                        - img [ref=e1072]
-                    - link "Ad Choices" [ref=e1074] [cursor=pointer]:
+                      - paragraph [ref=e1028]: Marketing Solutions
+                    - button "Privacy & Terms" [ref=e1029] [cursor=pointer]:
+                      - generic [ref=e1030]:
+                        - paragraph [ref=e1031]: Privacy & Terms
+                        - img [ref=e1032]
+                    - link "Ad Choices" [ref=e1034] [cursor=pointer]:
                       - /url: https://www.linkedin.com/help/linkedin/answer/62931/
-                      - paragraph [ref=e1075]: Ad Choices
-                    - link "Advertising" [ref=e1076] [cursor=pointer]:
+                      - paragraph [ref=e1035]: Ad Choices
+                    - link "Advertising" [ref=e1036] [cursor=pointer]:
                       - /url: https://www.linkedin.com/ad/start/?trk=n_nav_ads_rr
-                      - paragraph [ref=e1077]: Advertising
-                    - link "Sales Solutions" [ref=e1078] [cursor=pointer]:
+                      - paragraph [ref=e1037]: Advertising
+                    - link "Sales Solutions" [ref=e1038] [cursor=pointer]:
                       - /url: https://business.linkedin.com/sales-solutions?trk=flagship_nav&veh=li-footer-lss-control&src=li-footer
-                      - paragraph [ref=e1079]: Sales Solutions
-                    - link "Mobile" [ref=e1080] [cursor=pointer]:
+                      - paragraph [ref=e1039]: Sales Solutions
+                    - link "Mobile" [ref=e1040] [cursor=pointer]:
                       - /url: https://mobile.linkedin.com/
-                      - paragraph [ref=e1081]: Mobile
-                    - link "Small Business" [ref=e1082] [cursor=pointer]:
+                      - paragraph [ref=e1041]: Mobile
+                    - link "Small Business" [ref=e1042] [cursor=pointer]:
                       - /url: https://business.linkedin.com/grow?src=li-footer
-                      - paragraph [ref=e1083]: Small Business
-                    - link "Safety Center" [ref=e1084] [cursor=pointer]:
+                      - paragraph [ref=e1043]: Small Business
+                    - link "Safety Center" [ref=e1044] [cursor=pointer]:
                       - /url: https://safety.linkedin.com/
-                      - paragraph [ref=e1085]: Safety Center
-                  - paragraph [ref=e1087]: LinkedIn Corporation © 2026
-                - generic [ref=e1088]:
-                  - list [ref=e1089]:
-                    - listitem [ref=e1090]:
-                      - generic [ref=e1091]:
-                        - img [ref=e1092]
-                        - generic [ref=e1094]:
-                          - link "Questions?" [ref=e1095] [cursor=pointer]:
+                      - paragraph [ref=e1045]: Safety Center
+                  - paragraph [ref=e1047]: LinkedIn Corporation © 2026
+                - generic [ref=e1048]:
+                  - list [ref=e1049]:
+                    - listitem [ref=e1050]:
+                      - generic [ref=e1051]:
+                        - img [ref=e1052]
+                        - generic [ref=e1054]:
+                          - link "Questions?" [ref=e1055] [cursor=pointer]:
                             - /url: https://www.linkedin.com/help/linkedin/
-                            - paragraph [ref=e1096]: Questions?
-                          - paragraph [ref=e1097]: Visit our Help Center.
-                    - listitem [ref=e1098]:
-                      - generic [ref=e1099]:
-                        - img [ref=e1100]
-                        - generic [ref=e1102]:
-                          - link "Manage your account and privacy" [ref=e1103] [cursor=pointer]:
+                            - paragraph [ref=e1056]: Questions?
+                          - paragraph [ref=e1057]: Visit our Help Center.
+                    - listitem [ref=e1058]:
+                      - generic [ref=e1059]:
+                        - img [ref=e1060]
+                        - generic [ref=e1062]:
+                          - link "Manage your account and privacy" [ref=e1063] [cursor=pointer]:
                             - /url: https://www.linkedin.com/mypreferences/d/
-                            - paragraph [ref=e1104]: Manage your account and privacy
-                          - paragraph [ref=e1105]: Go to your Settings.
-                    - listitem [ref=e1106]:
-                      - generic [ref=e1107]:
-                        - img [ref=e1108]
-                        - generic [ref=e1110]:
-                          - link "Recommendation transparency" [ref=e1111] [cursor=pointer]:
+                            - paragraph [ref=e1064]: Manage your account and privacy
+                          - paragraph [ref=e1065]: Go to your Settings.
+                    - listitem [ref=e1066]:
+                      - generic [ref=e1067]:
+                        - img [ref=e1068]
+                        - generic [ref=e1070]:
+                          - link "Recommendation transparency" [ref=e1071] [cursor=pointer]:
                             - /url: https://www.linkedin.com/help/linkedin/answer/a1339724/
-                            - paragraph [ref=e1112]: Recommendation transparency
-                          - paragraph [ref=e1113]: Learn more about Recommended Content.
-                  - generic [ref=e1115]:
-                    - paragraph [ref=e1117]: Select language
-                    - generic [ref=e1118]:
-                      - combobox "Select language" [ref=e1119] [cursor=pointer]:
+                            - paragraph [ref=e1072]: Recommendation transparency
+                          - paragraph [ref=e1073]: Learn more about Recommended Content.
+                  - generic [ref=e1075]:
+                    - paragraph [ref=e1077]: Select language
+                    - generic [ref=e1078]:
+                      - combobox "Select language" [ref=e1079] [cursor=pointer]:
                         - option "العربية (Arabic)"
                         - option "বাংলা (Bangla)"
                         - option "Čeština (Czech)"
@@ -539,107 +523,107 @@
       - generic:
         - generic:
           - complementary:
-            - generic [ref=e1120]:
-              - generic [ref=e1121]:
-                - generic [ref=e1123] [cursor=pointer]:
-                  - generic [ref=e1124]:
-                    - img "Christopher Royse" [ref=e1125]
-                    - generic [ref=e1127]: Status is online
-                  - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e1128]:
-                    - generic [ref=e1129]:
-                      - generic [ref=e1130]: Messaging
-                      - generic [ref=e1131]: You are on the messaging overlay. Press enter to open the list of conversations.
-                - generic [ref=e1132]:
-                  - button "Open messenger dropdown menu" [ref=e1134] [cursor=pointer]:
-                    - img "Open messenger dropdown menu" [ref=e1135]
-                  - button "Compose message" [ref=e1138] [cursor=pointer]:
-                    - img [ref=e1139]
-                    - generic [ref=e1141]: Compose message
-                  - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e1142] [cursor=pointer]:
-                    - img [ref=e1143]
-                    - generic [ref=e1145]: You are on the messaging overlay. Press enter to open the list of conversations.
-              - generic [ref=e1146]:
-                - heading "Page inboxes" [level=3] [ref=e1148]
-                - generic [ref=e1149] [cursor=pointer]:
-                  - generic [ref=e1150]: Click to see affiliated inboxes
-                  - button "Page inboxes" [ref=e1151]:
-                    - img [ref=e1152]
+            - generic [ref=e1080]:
+              - generic [ref=e1081]:
+                - generic [ref=e1083] [cursor=pointer]:
+                  - generic [ref=e1084]:
+                    - img "Christopher Royse" [ref=e1085]
+                    - generic [ref=e1087]: Status is online
+                  - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e1088]:
+                    - generic [ref=e1089]:
+                      - generic [ref=e1090]: Messaging
+                      - generic [ref=e1091]: You are on the messaging overlay. Press enter to open the list of conversations.
+                - generic [ref=e1092]:
+                  - button "Open messenger dropdown menu" [ref=e1094] [cursor=pointer]:
+                    - img "Open messenger dropdown menu" [ref=e1095]
+                  - button "Compose message" [ref=e1098] [cursor=pointer]:
+                    - img [ref=e1099]
+                    - generic [ref=e1101]: Compose message
+                  - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e1102] [cursor=pointer]:
+                    - img [ref=e1103]
+                    - generic [ref=e1105]: You are on the messaging overlay. Press enter to open the list of conversations.
+              - generic [ref=e1106]:
+                - heading "Page inboxes" [level=3] [ref=e1108]
+                - generic [ref=e1109] [cursor=pointer]:
+                  - generic [ref=e1110]: Click to see affiliated inboxes
+                  - button "Page inboxes" [ref=e1111]:
+                    - img [ref=e1112]
           - complementary "AI-powered assistant to get help with your career, jobs etc"
-  - iframe [ref=e1154]:
-    - generic [active] [ref=f4e1]:
+  - iframe [ref=e1114]:
+    - generic [active] [ref=f18e1]:
       - generic:
         - region "Toast message":
-          - heading "0 notifications total" [level=2] [ref=f4e3]
+          - heading "0 notifications total" [level=2] [ref=f18e3]
           - alert
-      - generic [ref=f4e4]:
-        - generic [ref=f4e6]:
-          - button "Skip to search" [ref=f4e7] [cursor=pointer]:
-            - generic [ref=f4e8]: Skip to search
-          - button "Skip to main content" [ref=f4e9] [cursor=pointer]:
-            - generic [ref=f4e10]: Skip to main content
-          - button "Keyboard shortcuts" [ref=f4e11] [cursor=pointer]:
-            - generic [ref=f4e12]: Keyboard shortcuts
-          - button "Close jump menu" [ref=f4e13] [cursor=pointer]:
-            - img [ref=f4e14]
-            - generic [ref=f4e16]: Close jump menu
-        - banner "Global Navigation" [ref=f4e17]:
-          - generic [ref=f4e18]:
-            - link "LinkedIn" [ref=f4e19] [cursor=pointer]:
+      - generic [ref=f18e4]:
+        - generic [ref=f18e6]:
+          - button "Skip to search" [ref=f18e7] [cursor=pointer]:
+            - generic [ref=f18e8]: Skip to search
+          - button "Skip to main content" [ref=f18e9] [cursor=pointer]:
+            - generic [ref=f18e10]: Skip to main content
+          - button "Keyboard shortcuts" [ref=f18e11] [cursor=pointer]:
+            - generic [ref=f18e12]: Keyboard shortcuts
+          - button "Close jump menu" [ref=f18e13] [cursor=pointer]:
+            - img [ref=f18e14]
+            - generic [ref=f18e16]: Close jump menu
+        - banner "Global Navigation" [ref=f18e17]:
+          - generic [ref=f18e18]:
+            - link "LinkedIn" [ref=f18e19] [cursor=pointer]:
               - /url: https://www.linkedin.com/feed/?nis=true
-              - img "LinkedIn" [ref=f4e22]:
-                - img [ref=f4e23]
-            - generic [ref=f4e27]:
-              - combobox "I’m looking for..." [ref=f4e28]
+              - img "LinkedIn" [ref=f18e22]:
+                - img [ref=f18e23]
+            - generic [ref=f18e27]:
+              - combobox "I’m looking for..." [ref=f18e28]
               - generic:
                 - img
-            - navigation "Primary Navigation" [ref=f4e29]:
-              - list [ref=f4e30]:
-                - listitem [ref=f4e31]:
-                  - link "new feed updates notifications Home" [ref=f4e32] [cursor=pointer]:
+            - navigation "Primary Navigation" [ref=f18e29]:
+              - list [ref=f18e30]:
+                - listitem [ref=f18e31]:
+                  - link "new feed updates notifications Home" [ref=f18e32] [cursor=pointer]:
                     - /url: https://www.linkedin.com/feed/
-                    - generic [ref=f4e33]:
-                      - generic [ref=f4e36]: new feed updates notifications
-                      - img [ref=f4e40]
-                    - generic "Home" [ref=f4e42]
-                - listitem [ref=f4e43]:
-                  - link "My Network" [ref=f4e44] [cursor=pointer]:
+                    - generic [ref=f18e33]:
+                      - generic [ref=f18e36]: new feed updates notifications
+                      - img [ref=f18e40]
+                    - generic "Home" [ref=f18e42]
+                - listitem [ref=f18e43]:
+                  - link "My Network" [ref=f18e44] [cursor=pointer]:
                     - /url: https://www.linkedin.com/mynetwork/?
-                    - img [ref=f4e48]
-                    - generic "My Network" [ref=f4e50]
-                - listitem [ref=f4e51]:
-                  - link "Jobs" [ref=f4e52] [cursor=pointer]:
+                    - img [ref=f18e48]
+                    - generic "My Network" [ref=f18e50]
+                - listitem [ref=f18e51]:
+                  - link "Jobs" [ref=f18e52] [cursor=pointer]:
                     - /url: https://www.linkedin.com/jobs/?
-                    - img [ref=f4e56]
-                    - generic "Jobs" [ref=f4e58]
-                - listitem [ref=f4e59]:
-                  - link "Messaging" [ref=f4e60] [cursor=pointer]:
+                    - img [ref=f18e56]
+                    - generic "Jobs" [ref=f18e58]
+                - listitem [ref=f18e59]:
+                  - link "Messaging" [ref=f18e60] [cursor=pointer]:
                     - /url: https://www.linkedin.com/messaging/?
-                    - img [ref=f4e64]
-                    - generic "Messaging" [ref=f4e66]
-                - listitem [ref=f4e67]:
-                  - link "1 new notification Notifications" [ref=f4e68] [cursor=pointer]:
+                    - img [ref=f18e64]
+                    - generic "Messaging" [ref=f18e66]
+                - listitem [ref=f18e67]:
+                  - link "1 new notification Notifications" [ref=f18e68] [cursor=pointer]:
                     - /url: https://www.linkedin.com/notifications/?
-                    - generic [ref=f4e69]:
-                      - generic [ref=f4e70]:
-                        - generic [ref=f4e71]: "1"
-                        - generic [ref=f4e72]: 1 new notification
-                      - img [ref=f4e76]
-                    - generic "Notifications" [ref=f4e78]
-                - listitem [ref=f4e79]:
-                  - button "Christopher Royse Me" [ref=f4e81] [cursor=pointer]:
-                    - img "Christopher Royse" [ref=f4e82]
-                    - generic [ref=f4e83]:
+                    - generic [ref=f18e69]:
+                      - generic [ref=f18e70]:
+                        - generic [ref=f18e71]: "1"
+                        - generic [ref=f18e72]: 1 new notification
+                      - img [ref=f18e76]
+                    - generic "Notifications" [ref=f18e78]
+                - listitem [ref=f18e79]:
+                  - button "Christopher Royse Me" [ref=f18e81] [cursor=pointer]:
+                    - img "Christopher Royse" [ref=f18e82]
+                    - generic [ref=f18e83]:
                       - text: Me
-                      - img [ref=f4e84]
-                - listitem [ref=f4e86]:
-                  - button "For Business" [ref=f4e88] [cursor=pointer]:
-                    - img [ref=f4e92]
-                    - generic "For Business" [ref=f4e94]:
+                      - img [ref=f18e84]
+                - listitem [ref=f18e86]:
+                  - button "For Business" [ref=f18e88] [cursor=pointer]:
+                    - img [ref=f18e92]
+                    - generic "For Business" [ref=f18e94]:
                       - text: For Business
-                      - img [ref=f4e95]
-                - listitem [ref=f4e97]:
-                  - link "Advertise" [ref=f4e98] [cursor=pointer]:
+                      - img [ref=f18e95]
+                - listitem [ref=f18e97]:
+                  - link "Advertise" [ref=f18e98] [cursor=pointer]:
                     - /url: https://www.linkedin.com/campaignmanager/accounts?
-                    - img [ref=f4e102]
-                    - generic "Advertise" [ref=f4e105]
-      - region [ref=f4e121]
+                    - img [ref=f18e102]
+                    - generic "Advertise" [ref=f18e105]
+      - region [ref=f18e121]

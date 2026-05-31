@@ -1,0 +1,87 @@
+- generic [ref=e2]:
+  - heading "0 notifications" [level=2] [ref=e3]
+  - dialog "Cover photo" [active] [ref=e3027]:
+    - button "Dismiss" [ref=e3028] [cursor=pointer]:
+      - img [ref=e3030]
+    - generic [ref=e3032]:
+      - banner [ref=e3033]:
+        - heading "Cover photo" [level=2] [ref=e3034]
+      - generic [ref=e3038]:
+        - figure [ref=e3039]:
+          - img "Profile photo" [ref=e3040]
+        - generic [ref=e3041]:
+          - button "Edit" [ref=e3042] [cursor=pointer]:
+            - generic [ref=e3043]
+          - link "Change photo" [ref=e3047] [cursor=pointer]:
+            - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+            - generic [ref=e3048]
+          - button "Delete" [ref=e3052] [cursor=pointer]:
+            - generic [ref=e3053]
+  - generic [ref=e4]:
+    - generic:
+      - generic "Skip navigation menu":
+        - generic [ref=e401]:
+          - button "Skip to main content" [ref=e402] [cursor=pointer]:
+            - generic [ref=e404]: Skip to main content
+          - button "Skip to primary content" [ref=e405] [cursor=pointer]:
+            - generic [ref=e407]: Skip to primary content
+          - button "Skip to aside" [ref=e408] [cursor=pointer]:
+            - generic [ref=e410]: Skip to aside
+          - button "Skip to footer" [ref=e411] [cursor=pointer]:
+            - generic [ref=e413]: Skip to footer
+          - button "Close jump menu" [ref=e6] [cursor=pointer]:
+            - img [ref=e414]
+    - generic [ref=e9]:
+      - banner [ref=e11]:
+        - generic [ref=e14]:
+          - button "LinkedIn" [ref=e416] [cursor=pointer]:
+            - img "LinkedIn" [ref=e417]
+          - generic [ref=e419]:
+            - status [ref=e420]
+            - search [ref=e421]
+          - generic [ref=e18]:
+            - figure [ref=e431]
+            - navigation [ref=e433]
+            - navigation [ref=e68]
+      - generic [ref=e85]:
+        - toolbar [ref=e86]:
+          - generic [ref=e90]:
+            - link "Christopher Royse" [ref=e91] [cursor=pointer]:
+              - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+            - generic [ref=e98]
+        - main [ref=e110]:
+          - generic [ref=e112]:
+            - region "Primary content" [ref=e113]
+            - complementary "Aside" [ref=e310]
+            - generic "Footer" [ref=e336]
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - complementary:
+            - generic [ref=e2992]
+          - complementary "AI-powered assistant to get help with your career, jobs etc"
+  - iframe [ref=e3026]:
+    - generic [active] [ref=f74e1]:
+      - generic:
+        - region "Toast message":
+          - heading "0 notifications total" [level=2] [ref=f74e3]
+          - alert
+      - region [ref=f74e4]
+      - generic [ref=f74e5]:
+        - generic [ref=f74e7]:
+          - button "Skip to search" [ref=f74e8] [cursor=pointer]:
+            - generic [ref=f74e9]: Skip to search
+          - button "Skip to main content" [ref=f74e10] [cursor=pointer]:
+            - generic [ref=f74e11]: Skip to main content
+          - button "Keyboard shortcuts" [ref=f74e12] [cursor=pointer]:
+            - generic [ref=f74e13]: Keyboard shortcuts
+          - button "Close jump menu" [ref=f74e14] [cursor=pointer]:
+            - img [ref=f74e15]
+            - generic [ref=f74e17]: Close jump menu
+        - banner "Global Navigation" [ref=f74e18]:
+          - generic [ref=f74e19]:
+            - link "LinkedIn" [ref=f74e20] [cursor=pointer]:
+              - /url: https://www.linkedin.com/feed/?nis=true
+            - generic [ref=f74e28]
+            - navigation "Primary Navigation" [ref=f74e30]

@@ -1,0 +1,68 @@
+- generic [ref=e2]:
+  - heading "0 notifications" [level=2] [ref=e3]
+  - generic [ref=e4]:
+    - generic:
+      - generic "Skip navigation menu":
+        - generic [ref=e401]:
+          - button "Skip to main content" [ref=e402] [cursor=pointer]:
+            - generic [ref=e404]: Skip to main content
+          - button "Skip to primary content" [ref=e405] [cursor=pointer]:
+            - generic [ref=e407]: Skip to primary content
+          - button "Skip to aside" [ref=e408] [cursor=pointer]:
+            - generic [ref=e410]: Skip to aside
+          - button "Skip to footer" [ref=e411] [cursor=pointer]:
+            - generic [ref=e413]: Skip to footer
+          - button "Close jump menu" [ref=e6] [cursor=pointer]
+    - generic [ref=e9]:
+      - banner [ref=e11]:
+        - generic [ref=e14]:
+          - button [ref=e15] [cursor=pointer]
+          - generic [ref=e416]:
+            - status [ref=e417]
+            - search [ref=e418]:
+              - textbox "I'm looking for…" [ref=e422]
+          - generic [ref=e18]:
+            - navigation [ref=e424]:
+              - list [ref=e425]:
+                - listitem [ref=e426]
+                - listitem [ref=e434]
+                - listitem [ref=e441]
+                - listitem [ref=e448]
+                - listitem [ref=e455]
+                - listitem [ref=e463]
+            - navigation [ref=e68]:
+              - list [ref=e69]:
+                - listitem [ref=e70]
+                - listitem [ref=e78]
+      - generic [ref=e85]:
+        - toolbar [ref=e86]:
+          - generic [ref=e90]:
+            - link "Christopher Royse" [ref=e91] [cursor=pointer]:
+              - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+              - generic "Christopher Royse" [ref=e92]:
+                - figure [ref=e93]
+                - generic [ref=e94]
+            - generic [ref=e98]:
+              - button "More" [ref=e100] [cursor=pointer]
+              - link "Add section" [ref=e103] [cursor=pointer]:
+                - /url: https://www.linkedin.com/
+                - generic [ref=e105]: Add section
+              - button "Open to" [ref=e107] [cursor=pointer]:
+                - generic [ref=e109]: Open to
+        - main [ref=e110]:
+          - generic [ref=e112]:
+            - region "Primary content" [ref=e113]:
+              - generic [ref=e120]:
+                - generic [ref=e121]
+                - generic [ref=e143]
+            - complementary "Aside" [ref=e310]:
+              - generic [ref=e311]:
+                - generic [ref=e312]
+                - iframe [ref=e577]:
+                  
+            - generic "Footer" [ref=e336]:
+              - generic [ref=e339]:
+                - generic [ref=e340]
+                - generic [ref=e372]
+  - iframe [ref=e582]:
+    

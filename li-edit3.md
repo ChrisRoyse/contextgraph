@@ -1,0 +1,490 @@
+- generic [ref=e2]:
+  - heading "0 notifications" [level=2] [ref=e3]
+  - dialog "Add a cover image" [ref=e3057]:
+    - button "Dismiss" [ref=e3028] [cursor=pointer]:
+      - img [ref=e3030]
+    - generic [ref=e3032]:
+      - banner [ref=e3033]:
+        - heading "Add a cover image" [level=2] [ref=e3058]
+      - generic [ref=e3060]:
+        - generic [ref=e3061]:
+          - generic [ref=e3062]:
+            - generic [ref=e3063]:
+              - generic [ref=e3064]:
+                - paragraph [ref=e3065]: Upload your own
+                - paragraph [ref=e3066]: Showcase your personality, interests, work, or team moments
+              - button "Upload single photo" [ref=e3067] [cursor=pointer]:
+                - generic [ref=e3068]:
+                  - img [ref=e3069]
+                  - generic [ref=e3071]: Upload single photo
+              - link "Create slideshow" [ref=e3073] [cursor=pointer]:
+                - /url: /preload/edit-cover-slideshow/
+                - generic [ref=e3074]:
+                  - img [ref=e3075]
+                  - generic [ref=e3077]: Create slideshow
+            - paragraph [ref=e3078]: Choose an image
+            - paragraph [ref=e3079]:
+              - text: Powered by
+              - link "Lummi.ai" [ref=e3080] [cursor=pointer]:
+                - /url: https://www.linkedin.com/safety/go/?url=https%3A%2F%2Fwww%2Elummi%2Eai&urlhash=-S6K&mt=yIdtFHHzYpy9kryYkZBRf4h2F4BCpMOVe7QcDveMU1XaRcQL7OY7ic1QfMb5Ce9DZfy3iqp_OD8aBwGa-h6H5OfzqfI&isSdui=true
+                - strong [ref=e3081]: Lummi.ai
+          - button [ref=e3082] [cursor=pointer]:
+            - generic [ref=e3085]:
+              - radio "Aerial view of teal ocean waves crashing onto a sandy beach, creating white foam patterns against the dark water, image, not selected" [ref=e3086]
+              - figure [ref=e3089]:
+                - img "Aerial view of teal ocean waves crashing onto a sandy beach, creating white foam patterns against the dark water" [ref=e3090]
+          - button [ref=e3091] [cursor=pointer]:
+            - generic [ref=e3094]:
+              - radio "A modern glass cabin by a tranquil lake, surrounded by lush forest. Perfect reflection on the water creates a serene, harmonious scene., image, not selected" [ref=e3095]
+              - figure [ref=e3098]:
+                - img "A modern glass cabin by a tranquil lake, surrounded by lush forest. Perfect reflection on the water creates a serene, harmonious scene." [ref=e3099]
+          - button [ref=e3100] [cursor=pointer]:
+            - generic [ref=e3103]:
+              - radio "A colorful meadow of wildflowers in full bloom under a bright blue sky, showcasing daisies, cosmos, and more in vibrant hues., image, not selected" [ref=e3104]
+              - figure [ref=e3107]:
+                - img "A colorful meadow of wildflowers in full bloom under a bright blue sky, showcasing daisies, cosmos, and more in vibrant hues." [ref=e3108]
+          - button [ref=e3109] [cursor=pointer]:
+            - generic [ref=e3112]:
+              - radio "Stunning coastal landscape with cliffs, ocean waves, and a waterfall at sunset, showcasing nature’s beauty and vibrant colors., image, not selected" [ref=e3113]
+              - figure [ref=e3116]:
+                - img "Stunning coastal landscape with cliffs, ocean waves, and a waterfall at sunset, showcasing nature’s beauty and vibrant colors." [ref=e3117]
+          - button [ref=e3118] [cursor=pointer]:
+            - generic [ref=e3121]:
+              - radio "Bright bakery with a yellow-orange facade, turquoise door, striped awning, and a window full of baked goods. Potted plants add charm., image, not selected" [ref=e3122]
+              - figure [ref=e3125]:
+                - img "Bright bakery with a yellow-orange facade, turquoise door, striped awning, and a window full of baked goods. Potted plants add charm." [ref=e3126]
+          - button [ref=e3127] [cursor=pointer]:
+            - generic [ref=e3130]:
+              - radio "Sunlit Mediterranean-style arch with pink bougainvillea, palm frond shadows, and a wrought iron railing for a serene tropical vibe., image, not selected" [ref=e3131]
+              - figure [ref=e3134]:
+                - img "Sunlit Mediterranean-style arch with pink bougainvillea, palm frond shadows, and a wrought iron railing for a serene tropical vibe." [ref=e3135]
+          - button [ref=e3136] [cursor=pointer]:
+            - generic [ref=e3139]:
+              - radio "A stunning nighttime cityscape with glowing skyscrapers and vibrant yellow lights, capturing the energy of an urban skyline., image, not selected" [ref=e3140]
+              - figure [ref=e3143]:
+                - img "A stunning nighttime cityscape with glowing skyscrapers and vibrant yellow lights, capturing the energy of an urban skyline." [ref=e3144]
+          - button [ref=e3145] [cursor=pointer]:
+            - generic [ref=e3148]:
+              - radio "Minimalist architecture with bold red and white walls against a cyan sky, showcasing sharp shadows and geometric contrasts., image, not selected" [ref=e3149]
+              - figure [ref=e3152]:
+                - img "Minimalist architecture with bold red and white walls against a cyan sky, showcasing sharp shadows and geometric contrasts." [ref=e3153]
+          - button [ref=e3154] [cursor=pointer]:
+            - generic [ref=e3157]:
+              - radio "Vibrant abstract artwork with colorful vertical streaks resembling a soundwave on a black background. Dynamic and visually striking., image, not selected" [ref=e3158]
+              - figure [ref=e3161]:
+                - img "Vibrant abstract artwork with colorful vertical streaks resembling a soundwave on a black background. Dynamic and visually striking." [ref=e3162]
+          - button [ref=e3163] [cursor=pointer]:
+            - generic [ref=e3166]:
+              - radio "Abstract pastel blobs with glossy finish on a light background, creating a soothing and playful visual effect., image, not selected" [ref=e3167]
+              - figure [ref=e3170]:
+                - img "Abstract pastel blobs with glossy finish on a light background, creating a soothing and playful visual effect." [ref=e3171]
+          - button [ref=e3172] [cursor=pointer]:
+            - generic [ref=e3175]:
+              - radio "A vibrant abstract artwork with wavy textures blending blues, yellows, and pinks, creating a dynamic and luminous visual effect., image, not selected" [ref=e3176]
+              - figure [ref=e3179]:
+                - img "A vibrant abstract artwork with wavy textures blending blues, yellows, and pinks, creating a dynamic and luminous visual effect." [ref=e3180]
+          - button [ref=e3181] [cursor=pointer]:
+            - generic [ref=e3184]:
+              - radio "Vibrant abstract swirl of orange, teal, and black colors creating a dynamic, fluid motion with a marbled texture., image, not selected" [ref=e3185]
+              - figure [ref=e3188]:
+                - img "Vibrant abstract swirl of orange, teal, and black colors creating a dynamic, fluid motion with a marbled texture." [ref=e3189]
+          - button [ref=e3190] [cursor=pointer]:
+            - generic [ref=e3193]:
+              - radio "A stunning floral arrangement with daisies, pastel roses, and purple blossoms, creating a soft and vibrant mix of colors and textures., image, not selected" [ref=e3194]
+              - figure [ref=e3197]:
+                - img "A stunning floral arrangement with daisies, pastel roses, and purple blossoms, creating a soft and vibrant mix of colors and textures." [ref=e3198]
+          - button [ref=e3199] [cursor=pointer]:
+            - generic [ref=e3202]:
+              - radio "Abstract layers in soft pastel tones of cream, beige, and green, resembling geological formations with intricate textures and depth., image, not selected" [ref=e3203]
+              - figure [ref=e3206]:
+                - img "Abstract layers in soft pastel tones of cream, beige, and green, resembling geological formations with intricate textures and depth." [ref=e3207]
+          - button [ref=e3208] [cursor=pointer]:
+            - generic [ref=e3211]:
+              - radio "Rustic wooden planks with natural grain and knots, showcasing a warm, earthy brown tone. Perfect for backgrounds or textures., image, not selected" [ref=e3212]
+              - figure [ref=e3215]:
+                - img "Rustic wooden planks with natural grain and knots, showcasing a warm, earthy brown tone. Perfect for backgrounds or textures." [ref=e3216]
+          - button [ref=e3217] [cursor=pointer]:
+            - generic [ref=e3220]:
+              - radio "Minimalist desk setup with two potted plants and a closed laptop on a white surface., image, not selected" [ref=e3221]
+              - figure [ref=e3224]:
+                - img "Minimalist desk setup with two potted plants and a closed laptop on a white surface." [ref=e3225]
+          - button [ref=e3226] [cursor=pointer]:
+            - generic [ref=e3229]:
+              - radio "Red coffee cup with latte art on a wooden table, next to a laptop and glasses, creating a cozy work setting., image, not selected" [ref=e3230]
+              - figure [ref=e3233]:
+                - img "Red coffee cup with latte art on a wooden table, next to a laptop and glasses, creating a cozy work setting." [ref=e3234]
+          - button [ref=e3235] [cursor=pointer]:
+            - generic [ref=e3238]:
+              - radio "Minimalist home office with a wooden desk, beige chair, abstract art, and lush greenery, bathed in natural light from a glass door., image, not selected" [ref=e3239]
+              - figure [ref=e3242]:
+                - img "Minimalist home office with a wooden desk, beige chair, abstract art, and lush greenery, bathed in natural light from a glass door." [ref=e3243]
+        - generic [ref=e3245]:
+          - paragraph [ref=e3246]:
+            - text: A cover image can help you stand out.
+            - link "Learn more" [ref=e3247] [cursor=pointer]:
+              - /url: https://www.linkedin.com/help/linkedin/answer/120013/
+              - strong [ref=e3248]: Learn more
+          - button "Save" [disabled] [ref=e3249]:
+            - generic:
+              - generic: Save
+  - generic [ref=e4]:
+    - generic:
+      - generic "Skip navigation menu":
+        - generic [ref=e401]:
+          - button "Skip to main content" [ref=e402] [cursor=pointer]:
+            - generic [ref=e404]: Skip to main content
+          - button "Skip to primary content" [ref=e405] [cursor=pointer]:
+            - generic [ref=e407]: Skip to primary content
+          - button "Skip to aside" [ref=e408] [cursor=pointer]:
+            - generic [ref=e410]: Skip to aside
+          - button "Skip to footer" [ref=e411] [cursor=pointer]:
+            - generic [ref=e413]: Skip to footer
+          - button "Close jump menu" [ref=e6] [cursor=pointer]:
+            - img [ref=e414]
+    - generic [ref=e9]:
+      - banner [ref=e11]:
+        - generic [ref=e14]:
+          - button "LinkedIn" [ref=e416] [cursor=pointer]:
+            - img "LinkedIn" [ref=e417]
+          - generic [ref=e419]:
+            - status [ref=e420]
+            - search [ref=e421]:
+              - generic [ref=e422]:
+                - img [ref=e424]
+                - textbox "I'm looking for…" [ref=e426]
+          - generic [ref=e18]:
+            - figure [ref=e431]
+            - navigation [ref=e433]:
+              - list [ref=e434]:
+                - listitem [ref=e435]:
+                  - button "Home, 1 new notification" [ref=e436] [cursor=pointer]:
+                    - img [ref=e438]
+                    - generic [ref=e442]: Home
+                - listitem [ref=e443]:
+                  - link "My Network, 0 new notifications" [ref=e444] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/mynetwork
+                    - img [ref=e446]
+                    - generic [ref=e449]: My Network
+                - listitem [ref=e450]:
+                  - link "Jobs, 0 new notifications" [ref=e451] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/jobs/
+                    - img [ref=e453]
+                    - generic [ref=e456]: Jobs
+                - listitem [ref=e457]:
+                  - link "Messaging, 0 new notifications" [ref=e458] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/messaging/
+                    - img [ref=e460]
+                    - generic [ref=e463]: Messaging
+                - listitem [ref=e464]:
+                  - link "Notifications, 1 new notification" [ref=e465] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/notifications/
+                    - generic [ref=e466]
+                    - generic [ref=e471]: Notifications
+                - listitem [ref=e472]:
+                  - button "Me" [ref=e473] [cursor=pointer]:
+                    - figure [ref=e475]
+                    - generic [ref=e477]
+            - navigation [ref=e68]:
+              - list [ref=e69]:
+                - listitem [ref=e70]:
+                  - button "For Business" [ref=e71] [cursor=pointer]:
+                    - img [ref=e73]
+                    - generic [ref=e76]
+                - listitem [ref=e78]:
+                  - link "Advertise, 0 new notifications" [ref=e79] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/campaignmanager/accounts/
+                    - img [ref=e482]
+                    - generic [ref=e83]: Advertise
+      - generic [ref=e85]:
+        - toolbar [ref=e86]:
+          - generic [ref=e90]:
+            - link "Christopher Royse" [ref=e91] [cursor=pointer]:
+              - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+              - generic "Christopher Royse" [ref=e92]:
+                - figure [ref=e93]
+                - generic [ref=e94]:
+                  - paragraph [ref=e95]: Christopher Royse
+                  - paragraph [ref=e97]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+            - generic [ref=e98]:
+              - button "More" [ref=e100] [cursor=pointer]:
+                - img [ref=e485]
+              - link "Add section" [ref=e103] [cursor=pointer]:
+                - /url: https://www.linkedin.com/
+                - generic [ref=e105]: Add section
+              - button "Open to" [ref=e107] [cursor=pointer]:
+                - generic [ref=e109]: Open to
+        - main [ref=e110]:
+          - generic [ref=e112]:
+            - region "Primary content" [ref=e113]:
+              - generic [ref=e115]:
+                - generic [ref=e120]:
+                  - generic [ref=e121]:
+                    - generic [ref=e122]
+                    - link "Profile photo" [ref=e133] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/
+                    - generic [ref=e136]
+                  - generic [ref=e143]:
+                    - generic [ref=e144]
+                    - link "500+ connections" [ref=e178] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/mynetwork/invite-connect/connections/
+                    - generic [ref=e183]
+                - generic [ref=e535]:
+                  - generic [ref=e538]:
+                    - generic [ref=e540]
+                    - generic [ref=e546]
+                  - generic [ref=e582]:
+                    - generic [ref=e583]
+                    - paragraph [ref=e591]
+                  - generic [ref=e599]:
+                    - generic [ref=e600]
+                    - generic [ref=e612]
+                - generic [ref=e857]:
+                  - generic [ref=e858]:
+                    - generic [ref=e859]
+                    - generic [ref=e864]
+                  - generic [ref=e872]:
+                    - radio "Posts" [checked] [ref=e873] [cursor=pointer]
+                    - radio "Comments" [ref=e876] [cursor=pointer]
+                    - radio "Videos" [ref=e879] [cursor=pointer]
+                    - radio "Images" [ref=e882] [cursor=pointer]
+                    - radio "Documents" [ref=e885] [cursor=pointer]
+                  - generic [ref=e889]:
+                    - generic [ref=e895]
+                    - link "Show all" [ref=e2254] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/recent-activity/all/
+                - generic [ref=e2260]:
+                  - generic [ref=e2265]:
+                    - generic [ref=e2266]
+                    - generic [ref=e2277]
+                  - generic [ref=e2412]:
+                    - generic [ref=e2413]
+                    - generic [ref=e2425]
+                  - generic [ref=e2469]:
+                    - generic [ref=e2470]
+                    - generic [ref=e2486]
+                - generic [ref=e2506]:
+                  - heading "Interests" [level=2] [ref=e2508]
+                  - generic [ref=e2509]:
+                    - generic [ref=e2510]
+                    - generic [ref=e2527]
+            - complementary "Aside" [ref=e310]:
+              - generic [ref=e311]:
+                - generic [ref=e312]:
+                  - generic [ref=e316]:
+                    - generic [ref=e317]
+                    - paragraph [ref=e324]: English
+                    - generic [ref=e325]
+                    - paragraph [ref=e332]: www.linkedin.com/in/christopher-royse-b624b596
+                  - iframe [ref=e335]:
+                    - main "Work With Us Container" [ref=f87e3]:
+                      - generic [ref=f87e4]:
+                        - img [ref=f87e6]
+                        - generic [ref=f87e7]:
+                          - img "Christopher" [ref=f87e8]
+                          - link "True Talent Group" [ref=f87e9] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F279753%2Flife&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee-m_rU2PwPnQlipoLg4Ll6de4N_gNcNL1mC9-t_kRdkIOl1ai-EzwIFhwYHqu4vF9ilHS3t2LRnXOgFNdocygMRFnSDNVeU2y61l0g4ef_e7-bIo188gM16yaiMu_kZs5XhwbsjvSLDk2wNfvqPFFamRKM64R-I8H3ZvxJHns-WPaxYC3zavDnYkhu03onBIRREX9pPmipdciNepTGiDiSGYq40y7ITssaYrpwM5N9pTy-XZe8nI8sgFviSRnAV37cgc1wv30Ou8jvLN1q9ElqJ87Lrn9HqOb0K03BiHQnPnv8qPGMBdIvmxf8UrzjulZSfqxHFlw7FXII9GnHVjEi5GePg0etirfYISnFAA1Z7TYsew7jBo_wClyH01BqhFoMbA69vCW-jE6tpeHaeOlT0ZEheutSuLmbvlNkgAXK3QQnIMYWXgBOkHNycARxLNgjHo6orfodUf_9sqk8VneLOEGYIt97UJemfrTjPofR68mww91iqXnY3GWLxL6iPcMWP5s6pO6-U13quweHGt1hZafkM8AQdvnuxnepY6CnwNE27pY82r10MPljF8EDlCwqye3bQqgmvHxwV3em1JeV8ntWTOjQ3VtGLePTquSTHyUh29AYvEH6cQKjQ9nZWa9_2gOf1-9k_VvqrOZunajF0IgnlaHxZnbftDT_toIgUoRxnFBMupbVCtP9NIFrrYypCTQcQZjOUOpcVLNd3ziIFX2O_XeNz32j7lVUz2xhdJorOwwr8pWBrAICgjDAVuJwB1uFuhiZR0QrDUfl0d0iPM8nm3AVzXNV7f4Fi16ygCrl-bKZ5kNPvkjc7lWiC2WjXlSetR28nUCVxxGNB9PpKr3jIeC7PGRH42jxUc9S5LAjFkQpJSzAQpc24EPrqXar6uIz3C-QggfPY9EupVAf6DzWL9rgqW6lbF1XeeNTC-KljHsKp65buZEvhMozhuAmps1bUtVqC7u5WqoYWMuEcw6PRPo6WtSJyoiA4ox0olDTJVa3WMy5daib5MQPGupev-I2hU6CI6Z1YhOXj_R7npkfnKXDvxC10gs2jx6FzoMTg%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base%22%2C%22trackingId%22%3A%22e2c0ace3-ae22-4554-bd42-6409bfbcd01e%22%7D%2C%22time%22%3A1780195377047%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
+                            - img "True Talent Group" [ref=f87e10]
+                      - generic [ref=f87e11]:
+                        - generic [ref=f87e12]:
+                          - paragraph [ref=f87e13]: Christopher, explore relevant opportunities with True Talent Group
+                          - paragraph [ref=f87e14]: Get the latest jobs and industry news
+                        - link "Follow" [ref=f87e15] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F279753%2Flife%3FisFollowingPage%3Dtrue&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee-m_rVMEz-gQ4Zj_0g_PsWf_m3Dt06CS9l-DpPjxG-MskDwlOVanPolywPijEhC-rHDK1EkDlCV6ODx97qD7isaXvnsX0sU0h3non3YyzdQ7f7KFixFBrl9dM6tv5uoj4wj685mZKxuLVQQaXrv1UOY4g6YXgVUCPveAE6YJylh-rRLeU4eX0UBtL7C9rwmCHcdCN8FuzdTz6T2gxz-sfSLmzJ34naD9S4e2pdTZPZ-wzKV9GL_sz7QjfkoygTYnhQwbgcQ3v9Od3RzVFYL7cPpda_-up1NikjDE3N9682OTBdhwXuOdoXkgEoOF0vzMOhliSF1JfG6X4wKEklZh9VYA9MTvAO-wImYq_Bdfog6I8-ugQnr3QEzHZRlOj6fCCFyofkvILf4RIsqT6v8dL3FapwWYxHWxbnElPQXln8EqUmhYI0gRqxiwI3lrysjvhcD7na6aMb7XqrlRajMcYnSccvSVH1aF0RftjlEnow5FL8EhW9SWPML3qD3KSk5v78b2maeOKSz1WEjAq2oVlznpVcOeO0carw6wkyZq3K3zH4em3b4cz5dxHQS_3xNYcm8cp4lSnN3IzpFRFtgAp7WA0JUqeMG2TLTkZf0JSqib7qkYI767gaJB3jHrDENxZC9ztQwBYcycBMCjQnBDKjMo-QVysx4agke816_boA7Jc9Lt5DFu4GKOdN0rNnJObTtt1QmW41O6EcDYdto0BPnxKDn3nE_WeNmOuSAh4aZNms0ahWLhS567Jsbx30CMjooR-l_SYk5R9em1d6WKmsMaZvtLidJPUgE_3zzHd5ejJIcAZsH2NspgIoYkQGQEeqSD0gZXciwZ8KF3lUQ8Jcup4jvmRC2V9IXsUheHCbSLFPZME5CBlozgN8S16aCWemGhdlKN7RnAIzWroqQeiD6R0o1Vd6CARm8ahxvkOM5mhX6k-8vNXsVCNqOsFMfvOhPQfwTRD0cuwMWP1qh4Bvr2vQ4Cp-GZjQF3QflpSMCmvxT6j2IFNSd3Wb6epz9YCAys-MDkuwjFCOKjNPqEUVXFRS1sReHngfLf8DbsOueSyV2drwgpZ9ttrLC7uQjKm9lZUJtt97zDF-pRHet6AwwY%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base%22%2C%22trackingId%22%3A%22c559f015-edf6-4232-ba7d-fe8002670ea7%22%7D%2C%22time%22%3A1780195377047%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
+                      - generic [ref=f87e16]:
+                        - paragraph [ref=f87e17]: Promoted
+                        - button "Ad Options" [ref=f87e18] [cursor=pointer]:
+                          - img [ref=f87e19]
+                          - generic [ref=f87e23]: Ad Options
+                  - generic [ref=e2601]:
+                    - generic [ref=e2603]
+                    - generic [ref=e2613]
+                    - link "Show all people also viewed" [ref=e2750] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/overlay/browsemap-recommendations/
+                  - generic [ref=e2759]:
+                    - generic [ref=e2761]
+                    - generic [ref=e2765]
+                    - link "Show all people you may know" [ref=e2899] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                  - generic [ref=e2908]:
+                    - generic [ref=e2910]
+                    - generic [ref=e2914]
+                    - link "Show all pages you might like" [ref=e2974] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                - iframe [ref=e2983]:
+                  - generic [ref=f88e3]:
+                    - banner [ref=f88e4]
+                    - generic [ref=f88e13]
+            - generic "Footer" [ref=e336]:
+              - generic [ref=e339]:
+                - generic [ref=e340]:
+                  - navigation [ref=e341]:
+                    - link "About" [ref=e342] [cursor=pointer]:
+                      - /url: https://about.linkedin.com/
+                    - link "Accessibility" [ref=e344] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/accessibility/
+                    - link "Talent Solutions" [ref=e346] [cursor=pointer]:
+                      - /url: https://business.linkedin.com/talent-solutions?trk=flagship_nav&veh=li-footer-lts-control&src=li-footer
+                    - link "Community Guidelines" [ref=e348] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/legal/professional-community-policies/
+                    - link "Careers" [ref=e350] [cursor=pointer]:
+                      - /url: https://careers.linkedin.com/
+                    - link "Marketing Solutions" [ref=e352] [cursor=pointer]:
+                      - /url: https://business.linkedin.com/advertise?trk=n_nav_lms_f&src=li-footer
+                    - button "Privacy & Terms" [ref=e354] [cursor=pointer]
+                    - link "Ad Choices" [ref=e358] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/help/linkedin/answer/62931/
+                    - link "Advertising" [ref=e360] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/ad/start/?trk=n_nav_ads_rr
+                    - link "Sales Solutions" [ref=e362] [cursor=pointer]:
+                      - /url: https://business.linkedin.com/sales-solutions?trk=flagship_nav&veh=li-footer-lss-control&src=li-footer
+                    - link "Mobile" [ref=e364] [cursor=pointer]:
+                      - /url: https://mobile.linkedin.com/
+                    - link "Small Business" [ref=e366] [cursor=pointer]:
+                      - /url: https://business.linkedin.com/grow?src=li-footer
+                    - link "Safety Center" [ref=e368] [cursor=pointer]:
+                      - /url: https://safety.linkedin.com/
+                  - paragraph [ref=e371]: LinkedIn Corporation © 2026
+                - generic [ref=e372]:
+                  - list [ref=e373]:
+                    - listitem [ref=e374]
+                    - listitem [ref=e381]
+                    - listitem [ref=e388]
+                  - generic [ref=e396]:
+                    - paragraph [ref=e398]: Select language
+                    - generic [ref=e399]
+  - dialog [active] [ref=e3250]:
+    - button "Dismiss" [ref=e3251] [cursor=pointer]:
+      - img [ref=e3253]
+    - generic [ref=e3255]:
+      - banner [ref=e3256]:
+        - heading "Edit image" [level=2] [ref=e3257]
+      - generic [ref=e3259]:
+        - generic [ref=e3267]:
+          - tablist [ref=e3268]:
+            - tab "Crop" [selected] [ref=e3269] [cursor=pointer]:
+              - generic [ref=e3270]: Crop
+            - tab "Filter" [ref=e3271] [cursor=pointer]:
+              - generic [ref=e3272]: Filter
+            - tab "Adjust" [ref=e3273] [cursor=pointer]:
+              - generic [ref=e3274]: Adjust
+          - tabpanel "Crop" [ref=e3275]:
+            - generic [ref=e3276]:
+              - generic [ref=e3278]:
+                - button "Rotate image anti clockwise by 90 degrees" [ref=e3279] [cursor=pointer]:
+                  - img [ref=e3281]
+                - button "Rotate image clockwise for 90 degrees" [ref=e3283] [cursor=pointer]:
+                  - img [ref=e3285]
+                - button "Flip image horizontally" [ref=e3287] [cursor=pointer]:
+                  - img [ref=e3289]
+                - button "Flip image vertically" [ref=e3291] [cursor=pointer]:
+                  - img [ref=e3293]
+              - generic [ref=e3295]:
+                - paragraph [ref=e3298]: Zoom
+                - generic [ref=e3300]:
+                  - slider "Zoom" [ref=e3301]: "1"
+                  - status: "1"
+              - generic [ref=e3302]:
+                - paragraph [ref=e3305]: Straighten
+                - generic [ref=e3307]:
+                  - slider "Straighten" [ref=e3308]: "0"
+                  - status: "0"
+        - contentinfo [ref=e3309]:
+          - button "Save changes" [ref=e3310] [cursor=pointer]:
+            - generic [ref=e3312]: Save changes
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - complementary:
+            - generic [ref=e2992]:
+              - generic [ref=e2993]:
+                - generic [ref=e2995] [cursor=pointer]:
+                  - generic [ref=e2996]:
+                    - img "Christopher Royse" [ref=e2997]
+                    - generic [ref=e2999]: Status is online
+                  - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e3000]:
+                    - generic [ref=e3001]
+                - generic [ref=e3004]:
+                  - button "Open messenger dropdown menu" [ref=e3006] [cursor=pointer]:
+                    - img "Open messenger dropdown menu" [ref=e3007]
+                  - button "Compose message" [ref=e3010] [cursor=pointer]:
+                    - img [ref=e3011]
+                    - generic [ref=e3013]: Compose message
+                  - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e3014] [cursor=pointer]:
+                    - img [ref=e3015]
+                    - generic [ref=e3017]: You are on the messaging overlay. Press enter to open the list of conversations.
+              - generic [ref=e3018]:
+                - heading "Page inboxes" [level=3] [ref=e3020]
+                - generic [ref=e3021] [cursor=pointer]:
+                  - generic [ref=e3022]: Click to see affiliated inboxes
+                  - button "Page inboxes" [ref=e3023]:
+                    - img [ref=e3024]
+          - complementary "AI-powered assistant to get help with your career, jobs etc"
+  - iframe [ref=e3026]:
+    - generic [active] [ref=f89e1]:
+      - generic:
+        - region "Toast message":
+          - heading "0 notifications total" [level=2] [ref=f89e3]
+          - alert
+      - region [ref=f89e4]
+      - generic [ref=f89e5]:
+        - generic [ref=f89e7]:
+          - button "Skip to search" [ref=f89e8] [cursor=pointer]:
+            - generic [ref=f89e9]: Skip to search
+          - button "Skip to main content" [ref=f89e10] [cursor=pointer]:
+            - generic [ref=f89e11]: Skip to main content
+          - button "Keyboard shortcuts" [ref=f89e12] [cursor=pointer]:
+            - generic [ref=f89e13]: Keyboard shortcuts
+          - button "Close jump menu" [ref=f89e14] [cursor=pointer]:
+            - img [ref=f89e15]
+            - generic [ref=f89e17]: Close jump menu
+        - banner "Global Navigation" [ref=f89e18]:
+          - generic [ref=f89e19]:
+            - link "LinkedIn" [ref=f89e20] [cursor=pointer]:
+              - /url: https://www.linkedin.com/feed/?nis=true
+              - img "LinkedIn" [ref=f89e23]:
+                - img [ref=f89e24]
+            - generic [ref=f89e28]:
+              - combobox "I’m looking for..." [ref=f89e29]
+              - generic:
+                - img
+            - navigation "Primary Navigation" [ref=f89e30]:
+              - list [ref=f89e31]:
+                - listitem [ref=f89e32]:
+                  - link "new feed updates notifications Home" [ref=f89e33] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/feed/
+                    - generic [ref=f89e34]
+                    - generic "Home" [ref=f89e43]
+                - listitem [ref=f89e44]:
+                  - link "My Network" [ref=f89e45] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/mynetwork/?
+                    - img [ref=f89e49]
+                    - generic "My Network" [ref=f89e51]
+                - listitem [ref=f89e52]:
+                  - link "Jobs" [ref=f89e53] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/jobs/?
+                    - img [ref=f89e57]
+                    - generic "Jobs" [ref=f89e59]
+                - listitem [ref=f89e60]:
+                  - link "Messaging" [ref=f89e61] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/messaging/?
+                    - img [ref=f89e65]
+                    - generic "Messaging" [ref=f89e67]
+                - listitem [ref=f89e68]:
+                  - link "1 new notification Notifications" [ref=f89e69] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/notifications/?
+                    - generic [ref=f89e70]
+                    - generic "Notifications" [ref=f89e79]
+                - listitem [ref=f89e80]:
+                  - button "Christopher Royse Me" [ref=f89e82] [cursor=pointer]:
+                    - img "Christopher Royse" [ref=f89e83]
+                    - generic [ref=f89e84]
+                - listitem [ref=f89e87]:
+                  - button "For Business" [ref=f89e89] [cursor=pointer]:
+                    - img [ref=f89e93]
+                    - generic "For Business" [ref=f89e95]
+                - listitem [ref=f89e98]:
+                  - link "Advertise" [ref=f89e99] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/campaignmanager/accounts?
+                    - img [ref=f89e103]
+                    - generic "Advertise" [ref=f89e106]

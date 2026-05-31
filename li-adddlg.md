@@ -1,0 +1,2594 @@
+- generic [ref=e2]:
+  - heading "0 notifications" [level=2] [ref=e3]
+  - dialog "Add a cover image" [active] [ref=e3057]:
+    - button "Dismiss" [ref=e3028] [cursor=pointer]:
+      - img [ref=e3030]
+    - generic [ref=e3032]:
+      - banner [ref=e3033]:
+        - heading "Add a cover image" [level=2] [ref=e3058]
+      - generic [ref=e3060]:
+        - generic [ref=e3061]:
+          - generic [ref=e3062]:
+            - generic [ref=e3063]:
+              - generic [ref=e3064]:
+                - paragraph [ref=e3065]: Upload your own
+                - paragraph [ref=e3066]: Showcase your personality, interests, work, or team moments
+              - button "Upload single photo" [ref=e3067] [cursor=pointer]:
+                - generic [ref=e3068]:
+                  - img [ref=e3069]
+                  - generic [ref=e3071]: Upload single photo
+              - link "Create slideshow" [ref=e3073] [cursor=pointer]:
+                - /url: /preload/edit-cover-slideshow/
+                - generic [ref=e3074]:
+                  - img [ref=e3075]
+                  - generic [ref=e3077]: Create slideshow
+            - paragraph [ref=e3078]: Choose an image
+            - paragraph [ref=e3079]:
+              - text: Powered by
+              - link "Lummi.ai" [ref=e3080] [cursor=pointer]:
+                - /url: https://www.linkedin.com/safety/go/?url=https%3A%2F%2Fwww%2Elummi%2Eai&urlhash=-S6K&mt=cSIwVYjwclmY2JLX8EaapFDpoc0gRbu8EzdY_w33kpFoHegEGAKVPKOMg2WGvmPagSuTY1foEyFMQhUB78PayQk4mTM&isSdui=true
+                - strong [ref=e3081]: Lummi.ai
+          - button [ref=e3082] [cursor=pointer]:
+            - generic [ref=e3085]:
+              - radio "Aerial view of teal ocean waves crashing onto a sandy beach, creating white foam patterns against the dark water, image, not selected" [ref=e3086]
+              - figure [ref=e3089]:
+                - img "Aerial view of teal ocean waves crashing onto a sandy beach, creating white foam patterns against the dark water" [ref=e3090]
+          - button [ref=e3091] [cursor=pointer]:
+            - generic [ref=e3094]:
+              - radio "A modern glass cabin by a tranquil lake, surrounded by lush forest. Perfect reflection on the water creates a serene, harmonious scene., image, not selected" [ref=e3095]
+              - figure [ref=e3098]:
+                - img "A modern glass cabin by a tranquil lake, surrounded by lush forest. Perfect reflection on the water creates a serene, harmonious scene." [ref=e3099]
+          - button [ref=e3100] [cursor=pointer]:
+            - generic [ref=e3103]:
+              - radio "A colorful meadow of wildflowers in full bloom under a bright blue sky, showcasing daisies, cosmos, and more in vibrant hues., image, not selected" [ref=e3104]
+              - figure [ref=e3107]:
+                - img "A colorful meadow of wildflowers in full bloom under a bright blue sky, showcasing daisies, cosmos, and more in vibrant hues." [ref=e3108]
+          - button [ref=e3109] [cursor=pointer]:
+            - generic [ref=e3112]:
+              - radio "Stunning coastal landscape with cliffs, ocean waves, and a waterfall at sunset, showcasing nature’s beauty and vibrant colors., image, not selected" [ref=e3113]
+              - figure [ref=e3116]:
+                - img "Stunning coastal landscape with cliffs, ocean waves, and a waterfall at sunset, showcasing nature’s beauty and vibrant colors." [ref=e3117]
+          - button [ref=e3118] [cursor=pointer]:
+            - generic [ref=e3121]:
+              - radio "Bright bakery with a yellow-orange facade, turquoise door, striped awning, and a window full of baked goods. Potted plants add charm., image, not selected" [ref=e3122]
+              - figure [ref=e3125]:
+                - img "Bright bakery with a yellow-orange facade, turquoise door, striped awning, and a window full of baked goods. Potted plants add charm." [ref=e3126]
+          - button [ref=e3127] [cursor=pointer]:
+            - generic [ref=e3130]:
+              - radio "Sunlit Mediterranean-style arch with pink bougainvillea, palm frond shadows, and a wrought iron railing for a serene tropical vibe., image, not selected" [ref=e3131]
+              - figure [ref=e3134]:
+                - img "Sunlit Mediterranean-style arch with pink bougainvillea, palm frond shadows, and a wrought iron railing for a serene tropical vibe." [ref=e3135]
+          - button [ref=e3136] [cursor=pointer]:
+            - generic [ref=e3139]:
+              - radio "A stunning nighttime cityscape with glowing skyscrapers and vibrant yellow lights, capturing the energy of an urban skyline., image, not selected" [ref=e3140]
+              - figure [ref=e3143]:
+                - img "A stunning nighttime cityscape with glowing skyscrapers and vibrant yellow lights, capturing the energy of an urban skyline." [ref=e3144]
+          - button [ref=e3145] [cursor=pointer]:
+            - generic [ref=e3148]:
+              - radio "Minimalist architecture with bold red and white walls against a cyan sky, showcasing sharp shadows and geometric contrasts., image, not selected" [ref=e3149]
+              - figure [ref=e3152]:
+                - img "Minimalist architecture with bold red and white walls against a cyan sky, showcasing sharp shadows and geometric contrasts." [ref=e3153]
+          - button [ref=e3154] [cursor=pointer]:
+            - generic [ref=e3157]:
+              - radio "Vibrant abstract artwork with colorful vertical streaks resembling a soundwave on a black background. Dynamic and visually striking., image, not selected" [ref=e3158]
+              - figure [ref=e3161]:
+                - img "Vibrant abstract artwork with colorful vertical streaks resembling a soundwave on a black background. Dynamic and visually striking." [ref=e3162]
+          - button [ref=e3163] [cursor=pointer]:
+            - generic [ref=e3166]:
+              - radio "Abstract pastel blobs with glossy finish on a light background, creating a soothing and playful visual effect., image, not selected" [ref=e3167]
+              - figure [ref=e3170]:
+                - img "Abstract pastel blobs with glossy finish on a light background, creating a soothing and playful visual effect." [ref=e3171]
+          - button [ref=e3172] [cursor=pointer]:
+            - generic [ref=e3175]:
+              - radio "A vibrant abstract artwork with wavy textures blending blues, yellows, and pinks, creating a dynamic and luminous visual effect., image, not selected" [ref=e3176]
+              - figure [ref=e3179]:
+                - img "A vibrant abstract artwork with wavy textures blending blues, yellows, and pinks, creating a dynamic and luminous visual effect." [ref=e3180]
+          - button [ref=e3181] [cursor=pointer]:
+            - generic [ref=e3184]:
+              - radio "Vibrant abstract swirl of orange, teal, and black colors creating a dynamic, fluid motion with a marbled texture., image, not selected" [ref=e3185]
+              - figure [ref=e3188]:
+                - img "Vibrant abstract swirl of orange, teal, and black colors creating a dynamic, fluid motion with a marbled texture." [ref=e3189]
+          - button [ref=e3190] [cursor=pointer]:
+            - generic [ref=e3193]:
+              - radio "A stunning floral arrangement with daisies, pastel roses, and purple blossoms, creating a soft and vibrant mix of colors and textures., image, not selected" [ref=e3194]
+              - figure [ref=e3197]:
+                - img "A stunning floral arrangement with daisies, pastel roses, and purple blossoms, creating a soft and vibrant mix of colors and textures." [ref=e3198]
+          - button [ref=e3199] [cursor=pointer]:
+            - generic [ref=e3202]:
+              - radio "Abstract layers in soft pastel tones of cream, beige, and green, resembling geological formations with intricate textures and depth., image, not selected" [ref=e3203]
+              - figure [ref=e3206]:
+                - img "Abstract layers in soft pastel tones of cream, beige, and green, resembling geological formations with intricate textures and depth." [ref=e3207]
+          - button [ref=e3208] [cursor=pointer]:
+            - generic [ref=e3211]:
+              - radio "Rustic wooden planks with natural grain and knots, showcasing a warm, earthy brown tone. Perfect for backgrounds or textures., image, not selected" [ref=e3212]
+              - figure [ref=e3215]:
+                - img "Rustic wooden planks with natural grain and knots, showcasing a warm, earthy brown tone. Perfect for backgrounds or textures." [ref=e3216]
+          - button [ref=e3217] [cursor=pointer]:
+            - generic [ref=e3220]:
+              - radio "Minimalist desk setup with two potted plants and a closed laptop on a white surface., image, not selected" [ref=e3221]
+              - figure [ref=e3224]:
+                - img "Minimalist desk setup with two potted plants and a closed laptop on a white surface." [ref=e3225]
+          - button [ref=e3226] [cursor=pointer]:
+            - generic [ref=e3229]:
+              - radio "Red coffee cup with latte art on a wooden table, next to a laptop and glasses, creating a cozy work setting., image, not selected" [ref=e3230]
+              - figure [ref=e3233]:
+                - img "Red coffee cup with latte art on a wooden table, next to a laptop and glasses, creating a cozy work setting." [ref=e3234]
+          - button [ref=e3235] [cursor=pointer]:
+            - generic [ref=e3238]:
+              - radio "Minimalist home office with a wooden desk, beige chair, abstract art, and lush greenery, bathed in natural light from a glass door., image, not selected" [ref=e3239]
+              - figure [ref=e3242]:
+                - img "Minimalist home office with a wooden desk, beige chair, abstract art, and lush greenery, bathed in natural light from a glass door." [ref=e3243]
+        - generic [ref=e3245]:
+          - paragraph [ref=e3246]:
+            - text: A cover image can help you stand out.
+            - link "Learn more" [ref=e3247] [cursor=pointer]:
+              - /url: https://www.linkedin.com/help/linkedin/answer/120013/
+              - strong [ref=e3248]: Learn more
+          - button "Save" [disabled] [ref=e3249]:
+            - generic:
+              - generic: Save
+  - generic [ref=e4]:
+    - generic:
+      - generic "Skip navigation menu":
+        - generic [ref=e401]:
+          - button "Skip to main content" [ref=e402] [cursor=pointer]:
+            - generic [ref=e404]: Skip to main content
+          - button "Skip to primary content" [ref=e405] [cursor=pointer]:
+            - generic [ref=e407]: Skip to primary content
+          - button "Skip to aside" [ref=e408] [cursor=pointer]:
+            - generic [ref=e410]: Skip to aside
+          - button "Skip to footer" [ref=e411] [cursor=pointer]:
+            - generic [ref=e413]: Skip to footer
+          - button "Close jump menu" [ref=e6] [cursor=pointer]:
+            - img [ref=e414]
+    - generic [ref=e9]:
+      - banner [ref=e11]:
+        - generic [ref=e14]:
+          - button "LinkedIn" [ref=e416] [cursor=pointer]:
+            - img "LinkedIn" [ref=e417]
+          - generic [ref=e419]:
+            - status [ref=e420]
+            - search [ref=e421]:
+              - generic [ref=e422]:
+                - img [ref=e424]
+                - textbox "I'm looking for…" [ref=e426]
+          - generic [ref=e18]:
+            - figure [ref=e431]
+            - navigation [ref=e433]:
+              - list [ref=e434]:
+                - listitem [ref=e435]:
+                  - button "Home, 1 new notification" [ref=e436] [cursor=pointer]:
+                    - img [ref=e438]
+                    - generic [ref=e442]: Home
+                - listitem [ref=e443]:
+                  - link "My Network, 0 new notifications" [ref=e444] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/mynetwork
+                    - img [ref=e446]
+                    - generic [ref=e449]: My Network
+                - listitem [ref=e450]:
+                  - link "Jobs, 0 new notifications" [ref=e451] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/jobs/
+                    - img [ref=e453]
+                    - generic [ref=e456]: Jobs
+                - listitem [ref=e457]:
+                  - link "Messaging, 0 new notifications" [ref=e458] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/messaging/
+                    - img [ref=e460]
+                    - generic [ref=e463]: Messaging
+                - listitem [ref=e464]:
+                  - link "Notifications, 1 new notification" [ref=e465] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/notifications/
+                    - generic [ref=e466]:
+                      - img [ref=e467]
+                      - generic [ref=e469]: "1"
+                    - generic [ref=e471]: Notifications
+                - listitem [ref=e472]:
+                  - button "Me" [ref=e473] [cursor=pointer]:
+                    - figure [ref=e475]
+                    - generic [ref=e477]:
+                      - text: Me
+                      - img [ref=e478]
+            - navigation [ref=e68]:
+              - list [ref=e69]:
+                - listitem [ref=e70]:
+                  - button "For Business" [ref=e71] [cursor=pointer]:
+                    - img [ref=e73]
+                    - generic [ref=e76]:
+                      - text: For Business
+                      - img [ref=e480]
+                - listitem [ref=e78]:
+                  - link "Advertise, 0 new notifications" [ref=e79] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/campaignmanager/accounts/
+                    - img [ref=e482]
+                    - generic [ref=e83]: Advertise
+      - generic [ref=e85]:
+        - toolbar [ref=e86]:
+          - generic [ref=e90]:
+            - link "Christopher Royse" [ref=e91] [cursor=pointer]:
+              - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+              - generic "Christopher Royse" [ref=e92]:
+                - figure [ref=e93]
+                - generic [ref=e94]:
+                  - paragraph [ref=e95]: Christopher Royse
+                  - paragraph [ref=e97]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+            - generic [ref=e98]:
+              - button "More" [ref=e100] [cursor=pointer]:
+                - img [ref=e485]
+              - link "Add section" [ref=e103] [cursor=pointer]:
+                - /url: https://www.linkedin.com/
+                - generic [ref=e105]: Add section
+              - button "Open to" [ref=e107] [cursor=pointer]:
+                - generic [ref=e109]: Open to
+        - main [ref=e110]:
+          - generic [ref=e112]:
+            - region "Primary content" [ref=e113]:
+              - generic [ref=e115]:
+                - generic [ref=e120]:
+                  - generic [ref=e121]:
+                    - generic [ref=e122]:
+                      - button [ref=e124] [cursor=pointer]:
+                        - figure [ref=e125]:
+                          - img "Cover photo" [ref=e126]
+                      - button "Edit background image" [ref=e130] [cursor=pointer]:
+                        - img [ref=e487]
+                    - link "Profile photo" [ref=e133] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/
+                      - generic "Profile photo" [ref=e134]:
+                        - figure [ref=e135]
+                    - generic [ref=e136]:
+                      - link "Christopher is a Premium member" [ref=e518] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/
+                        - img "Christopher is a Premium member" [ref=e519]
+                      - link "Edit profile" [ref=e140] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/christopher-royse-b624b596/edit/intro/
+                        - img [ref=e521]
+                  - generic [ref=e143]:
+                    - generic [ref=e144]:
+                      - generic [ref=e146]:
+                        - link "Christopher (Chris) Royse View Christopher’s verifications" [ref=e523] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/
+                          - generic [ref=e152]:
+                            - heading "Christopher (Chris) Royse" [level=2] [ref=e153]
+                            - img "View Christopher’s verifications" [ref=e524]
+                        - paragraph [ref=e155]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+                        - generic [ref=e156]:
+                          - paragraph [ref=e157]: Junction City, Kansas, United States
+                          - paragraph [ref=e158]: ·
+                          - paragraph [ref=e159]:
+                            - link "Contact info" [ref=e160] [cursor=pointer]:
+                              - /url: https://www.linkedin.com/in/christopher-royse-b624b596/overlay/contact-info/
+                      - generic [ref=e162]:
+                        - button "socialmedia2.com" [ref=e163] [cursor=pointer]:
+                          - generic [ref=e164]:
+                            - figure [ref=e165]:
+                              - img [ref=e526]
+                            - paragraph [ref=e169]: socialmedia2.com
+                        - button "Kansas State University" [ref=e170] [cursor=pointer]:
+                          - generic [ref=e171]:
+                            - figure [ref=e172]
+                            - paragraph [ref=e176]: Kansas State University
+                    - link "500+ connections" [ref=e178] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/mynetwork/invite-connect/connections/
+                      - paragraph [ref=e179]: 500+ connections
+                    - generic [ref=e183]:
+                      - button "Open to" [ref=e185] [cursor=pointer]:
+                        - generic [ref=e187]: Open to
+                      - link "Add section" [ref=e188] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/
+                        - generic [ref=e190]: Add section
+                      - link "Add custom button" [ref=e192] [cursor=pointer]:
+                        - /url: /in/me/overlay/custom-button/
+                        - generic [ref=e194]: Add custom button
+                      - button "More" [ref=e196] [cursor=pointer]:
+                        - img [ref=e532]
+                - generic [ref=e535]:
+                  - generic [ref=e538]:
+                    - generic [ref=e540]:
+                      - heading "Analytics" [level=2] [ref=e541]
+                      - generic [ref=e542]:
+                        - img [ref=e543]
+                        - paragraph [ref=e545]: Private to you
+                    - generic [ref=e546]:
+                      - generic [ref=e549]:
+                        - link "555 profile views Discover who’s viewed your profile." [ref=e550] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/analytics/profile-views/
+                          - generic [ref=e551]:
+                            - img [ref=e552]
+                            - generic [ref=e554]:
+                              - paragraph [ref=e555]: 555 profile views
+                              - paragraph [ref=e556]: Discover who’s viewed your profile.
+                        - link "1,682 post impressions Check out who’s engaging with your posts. Past 7 days" [ref=e557] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/analytics/creator/content/?timeRange=past_7_days&dimension=INDUSTRY&metricType=IMPRESSIONS
+                          - generic [ref=e558]:
+                            - img [ref=e559]
+                            - generic [ref=e561]:
+                              - paragraph [ref=e562]: 1,682 post impressions
+                              - paragraph [ref=e563]: Check out who’s engaging with your posts.
+                              - paragraph [ref=e564]: Past 7 days
+                        - link "47 search appearances See how often you appear in search results." [ref=e565] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/analytics/search-appearances/
+                          - generic [ref=e566]:
+                            - img [ref=e567]
+                            - generic [ref=e569]:
+                              - paragraph [ref=e570]: 47 search appearances
+                              - paragraph [ref=e571]: See how often you appear in search results.
+                      - link "Show all analytics" [ref=e573] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/dashboard/
+                        - generic [ref=e574]:
+                          - img [ref=e575]
+                          - generic [ref=e577]: Show all
+                  - generic [ref=e582]:
+                    - generic [ref=e583]:
+                      - heading "About" [level=2] [ref=e584]
+                      - link "Edit about" [ref=e586] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/christopher-royse-b624b596/edit/forms/summary/new/
+                        - img [ref=e588]
+                    - paragraph [ref=e591]:
+                      - generic [ref=e592]:
+                        - text: "I build data-layer AI infrastructure and the products on top of it. Leapable.ai is a local-first MCP knowledge-vault marketplace. AI agents add Sources to Private Vaults, Ask source-grounded questions with full citations and provenance, and reach public creator Vaults through Discover. It runs on the user's machine via a signed installer — no Docker, Python, or model weights to manage — and creators keep 70% of every query and 70% of paywall subscriptions. socialmedia2.com (Polis) is civic software for forming real-world gatherings without social-media engagement mechanics — no algorithmic feed, no follower counts, no likes, no ad revenue. Citizens create a private page, name the place they want real rooms to form, and get matched into in-person formats (Symposium, Agora, Gymnasium, Theater, Festival). The objective is durable in-person civic ties, not time on app. Both run on the same idea: a frozen multi-embedder \"teleological constellation\" — an array of independent measurement channels kept separate by type, never flattened into one vector — used for source-grounded retrieval, identity-locked generation, and privacy-preserving matching. I write about this work: \"Teleological Constellation Training\" (multi-embedder meaning compression and a third path around the data wall) and \"The Symmetry of Knowing,\" a theory of epistemic transformation in the age of AI accepted to the 2026 AEJMC conference. Kansas State University — Graduate Teaching Assistant, A.Q. Miller School of Media and Communication. If you work on the data wall, post-training alignment, multi-embedder retrieval, or privacy-first civic technology, I'd value the conversation."
+                        - button:
+                          - generic [ref=e594] [cursor=pointer]: … more
+                  - generic [ref=e599]:
+                    - generic [ref=e600]:
+                      - heading "Featured" [level=2] [ref=e601]
+                      - generic [ref=e602]:
+                        - button "Featured overflow menu" [ref=e603] [cursor=pointer]:
+                          - img [ref=e605]
+                        - link "View featured detail screen" [ref=e607] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/featured/
+                          - img [ref=e609]
+                    - generic [ref=e612]:
+                      - list [ref=e614]:
+                        - listitem [ref=e615]:
+                          - listitem [ref=e616]:
+                            - link [ref=e619] [cursor=pointer]:
+                              - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463670815046279168/
+                              - generic [ref=e620]:
+                                - button "Post" [ref=e621]
+                                - generic [ref=e622]:
+                                  - paragraph [ref=e624]:
+                                    - generic [ref=e625]:
+                                      - text: I believe information is the 5th element.
+                                      - text: Not metaphor. Math.
+                                      - text: Give a system enough embedding spaces — semantics, audio waveforms, emotional tone, images, code structure, causal direction, time — and a single moment in the world becomes a unique constellation of vectors across all of them. I call that a teleological constellation. It is finite. It is computable. And it is the language LLMs already think in.
+                                      - text: "A few things this lets you do:"
+                                      - text: → Stop guessing whether AI output is "aligned" and start measuring it. If the generated constellation falls outside the allowed region of the space, it fails closed. Prompt injection becomes a cosine-similarity problem, not a vibe check.
+                                      - text: → Scale data and search at the same time. More well-differentiated embedders means more meaning captured AND a more refined region for the model to search inside. They aren't a tradeoff.
+                                      - text: → Borrow from biology. The human brain has 100,000–200,000 cortical columns gating information flow. I think evolution converged on something structurally similar to what I'm describing. We can build it deliberately.
+                                      - text: The architecture is real, the math holds, and the path is finite.
+                                      - text: "I walked through the full thesis in the video. The research paper (Derived Data Abundance: Multi-Modal Embedding Decomposition and the Data Scaling Wall) is on ResearchGate and linked in the comments."
+                                      - text: If you push back on any of this, I want to hear it. I learn more from being wrong publicly than from being right quietly.
+                                      - link "#AI" [ref=e627]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai
+                                      - link "#MachineLearning" [ref=e628]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23machinelearning
+                                      - link "#Embeddings" [ref=e629]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23embeddings
+                                      - link "#LLM" [ref=e630]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23llm
+                                      - link "#Alignment" [ref=e631]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23alignment
+                                      - link "#VectorSearch" [ref=e632]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23vectorsearch
+                                      - link "#PromptInjection" [ref=e633]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23promptinjection
+                                      - link "#TeleologicalConstellation" [ref=e634]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23teleologicalconstellation
+                                  - generic [ref=e635]:
+                                    - figure [ref=e636]
+                                    - img [ref=e638]
+                                - generic [ref=e640]:
+                                  - img [ref=e641]
+                                  - img [ref=e646]
+                                  - paragraph [ref=e654]:
+                                    - generic [ref=e655]: 5 reactions · 4 comments
+                                    - text: 5 · 4 comments
+                        - listitem [ref=e656]:
+                          - listitem [ref=e657]:
+                            - link [ref=e660] [cursor=pointer]:
+                              - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463237902370525184/
+                              - generic [ref=e661]:
+                                - button "Post" [ref=e662]
+                                - generic [ref=e663]:
+                                  - paragraph [ref=e665]:
+                                    - generic [ref=e666]:
+                                      - text: I built The Oracle — an MCP server that tells you, with math, whether your AI agent's code will actually work.
+                                      - text: "It's backed by a working JEPA-based world model for code. You hand it a patch from any AI agent — Claude, Cursor, Codex, whatever — and it returns a binary Pass/Fail against the real Docker test oracle. Three additional grounded surfaces attach to that verdict:"
+                                      - text: → Q1 — Does what the AI said it did actually exist on disk?
+                                      - text: → Q2 — Does it work? (binary, calibrated, against the real oracle)
+                                      - text: → Q3 — On Fail, why? (named failure mode + the closest historical exemplars)
+                                      - text: → Q5 — How is this change impacting reality? (predicted shift events vs. the live runtime log)
+                                      - text: "The architectural commitment underneath: the system only trains on outcomes that actually happened in reality. No synthetic rewards. No \"looks right.\" Bytes on disk, the test verdict, the shift log. That's the entire training contract."
+                                      - text: "What that buys you: code review stops being a human bottleneck for AI-generated patches. You can pre-compute the consequences of a change before you ship — and pick the architectural path with the consequences you actually want."
+                                      - text: Currently optimized for Python on SWE-bench Lite. Other languages roll in over the coming weeks. Public MCP release in 4–8 weeks.
+                                      - text: Two papers this is built on — Teleological Constellation Training, and combining that with Yann LeCun's JEPA into a working world model for code.
+                                      - text: Links in the first comment. I'd rather you read those than take my word for any of this.
+                                      - text: Full walkthrough on the Leapable YouTube channel today.
+                                      - link "#AI" [ref=e667]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai
+                                      - link "#MCP" [ref=e668]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23mcp
+                                      - link "#JEPA" [ref=e669]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23jepa
+                                      - link "#WorldModel" [ref=e670]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23worldmodel
+                                      - link "#AICoding" [ref=e671]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23aicoding
+                                      - link "#SWEBench" [ref=e672]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23swebench
+                                  - generic [ref=e673]:
+                                    - figure [ref=e674]
+                                    - img [ref=e676]
+                                - generic [ref=e678]:
+                                  - img [ref=e679]
+                                  - img [ref=e684]
+                                  - paragraph [ref=e692]:
+                                    - generic [ref=e693]: 22 reactions · 1 comment
+                                    - text: 22 · 1 comment
+                        - listitem [ref=e694]:
+                          - listitem [ref=e695]:
+                            - link [ref=e698] [cursor=pointer]:
+                              - /url: https://www.linkedin.com/feed/update/urn:li:activity:7443670280041934848/
+                              - generic [ref=e699]:
+                                - button "Post" [ref=e700]
+                                - generic [ref=e701]:
+                                  - paragraph [ref=e703]:
+                                    - generic [ref=e704]:
+                                      - text: "I just spent 24 hours trying to beat a voice cloning benchmark. Here's what I actually discovered: The benchmark is broken."
+                                      - text: SeedTTS-Eval is the standard the entire industry uses. Every TTS paper reports numbers on it. It uses Common Voice recordings as reference clips—crowdsourced audio from random microphones, untreated rooms, and inconsistent quality.
+                                      - text: My system, ClipCannon, scores 0.975 speaker similarity on clean reference audio. Three independent quality systems (WavLM, DNSMOS, UTMOS) cannot tell my clones from real speech.
+                                      - text: But on the benchmark? 0.754.
+                                      - text: "I tested everything to close the gap:"
+                                      - text: Tried 4 different state-of-the-art TTS models.
+                                      - text: Swept every audio processing technique (zero improvement).
+                                      - text: Built gradient-based waveform optimization.
+                                      - text: Ran automated parameter optimization across 14 configurations.
+                                      - text: "The Discovery: The benchmark's WavLM-Large encoder is a temporal pattern detector. It needs clean, consistent reference audio to work. Common Voice recordings strip out exactly the nuances that make high-fidelity voice cloning work—mic character, room tone, and speaking rhythm consistency."
+                                      - text: It's like judging a 4K camera by asking it to reproduce a blurry phone photo, then declaring the phone photo "better" because it matches the original blur more closely.
+                                      - text: "The Real Metrics:"
+                                      - text: "📊 Clean reference: 0.975 SECS (Inside human verification band)"
+                                      - text: "📊 DNSMOS naturalness: Clone 3.93 vs Real 3.93 (Perfect parity)"
+                                      - text: "📊 Intelligibility: 0.000 Word Error Rate"
+                                      - text: "📊 The Irony: I still beat human ground truth on the broken benchmark (0.754 vs 0.730)."
+                                      - text: "The industry needs a better benchmark. One that uses studio-quality references and measures what actually matters: Does the clone sound like the person to human ears?"
+                                      - text: "Check out the model card here:"
+                                      - link "https://lnkd.in/gDg4gw4u" [ref=e705]:
+                                        - /url: https://www.linkedin.com/safety/go/?url=https%3A%2F%2Flnkd%2Ein%2FgDg4gw4u&urlhash=PA3U&mt=iQhJ-GvoCNeTeYAOdPm-jMT77hoP5GuGbMtfSKCy4NI-3DHo3bUCcqE17tr-VVk-t7R6igxzyoauGJWndoBYs_hhTXE&isSdui=true
+                                      - text: "Here is a link to my paper laying out all the benchmarks and results. (I haven't updated with SST yet since it isn't finished):"
+                                      - link "https://lnkd.in/gPzkafM6" [ref=e706]:
+                                        - /url: https://www.linkedin.com/safety/go/?url=https%3A%2F%2Flnkd%2Ein%2FgPzkafM6&urlhash=ir01&mt=lEKTSvs5N8UGubbFH25KWTktYCL91SM7BvoS-HcxiwrDSAWF7vuz4rCOLs3VCeSoU-rYMhcb60-eTxM8aEFuZiLl6vc&isSdui=true
+                                      - link "#AI" [ref=e707]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai
+                                      - link "#VoiceAI" [ref=e708]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23voiceai
+                                      - link "#MachineLearning" [ref=e709]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23machinelearning
+                                      - link "#AudioEngineering" [ref=e710]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23audioengineering
+                                      - link "#DeepLearning" [ref=e711]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23deeplearning
+                                      - link "#TechTransparency" [ref=e712]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23techtransparency
+                                  - generic [ref=e713]:
+                                    - figure [ref=e714]
+                                    - img [ref=e716]
+                                - generic [ref=e718]:
+                                  - img [ref=e719]
+                                  - img [ref=e724]
+                                  - img [ref=e732]
+                                  - paragraph [ref=e738]:
+                                    - generic [ref=e739]: 16 reactions · 2 comments
+                                    - text: 16 · 2 comments
+                        - listitem [ref=e740]:
+                          - listitem [ref=e741]:
+                            - link [ref=e744] [cursor=pointer]:
+                              - /url: https://www.linkedin.com/feed/update/urn:li:activity:7443359178275930112/
+                              - generic [ref=e745]:
+                                - button "Post" [ref=e746]
+                                - generic [ref=e747]:
+                                  - paragraph [ref=e749]:
+                                    - generic [ref=e750]:
+                                      - text: Three independent AI systems. None can tell my voice clone from my real voice. 🎙️🤖
+                                      - text: "I recently tested my new voice cloning pipeline, ClipCannon, against every quality metric I could find. The results were startling:"
+                                      - text: "✅ WavLM Speaker Verification: 0.961 similarity (on words I never said)"
+                                      - text: "✅ DNSMOS Naturalness: Clone 3.93 vs Real 3.93 (Identical)"
+                                      - text: "✅ UTMOS Naturalness: Clone 3.012 vs Real 2.997 (Clone scored higher)"
+                                      - text: "Why this matters:"
+                                      - text: Microsoft previously declared "human parity" in speech synthesis at a similarity score of 0.881. The current academic state-of-the-art (NaturalSpeech 3) sits at 0.891.
+                                      - text: "By reaching 0.961, this pipeline moves past \"sounding like me\" and into the \"same person, same session\" verification band. Three separate research teams' methodologies all confirm: the clone is indistinguishable from a real recording."
+                                      - text: "The Secret Sauce:"
+                                      - text: "The model itself isn't custom—it’s an unmodified Qwen3-TTS. The breakthrough is entirely in the pipeline engineering:"
+                                      - text: "Full In-Context Learning: Utilizing reference audio + transcripts."
+                                      - text: "Evaluation-Specific Scoring: Alignment with the evaluation encoder."
+                                      - text: "Spectral Consistency: Strict temperature control (0.3)."
+                                      - text: "Centroid Enrollment: Using 50-clip references for robust identity."
+                                      - text: Individually, these aren't new ideas. But in combination, they push AI speech across the finish line of true parity.
+                                      - text: "Explore the Tech:"
+                                      - text: "Full Report:"
+                                      - link "https://lnkd.in/gPzkafM6" [ref=e751]:
+                                        - /url: https://www.linkedin.com/safety/go/?url=https%3A%2F%2Flnkd%2Ein%2FgPzkafM6&urlhash=ir01&mt=ru0MhXB_JTOCnMIMq7mRMBmayHKVOWv3iOywX38glBdLP7NKZGewv0jmxgeL-U4kQ2kZF2u4CFthG5vFkH787m-HrQU&isSdui=true
+                                      - text: "HuggingFace Model:"
+                                      - link "https://lnkd.in/gDg4gw4u" [ref=e752]:
+                                        - /url: https://www.linkedin.com/safety/go/?url=https%3A%2F%2Flnkd%2Ein%2FgDg4gw4u&urlhash=PA3U&mt=Wp3leX5GWgAoeNnilVOKJopH4KNIumSEHUtJxEUI4BvpsmgL24xtS5lYMSB4iRiddwK5O-D5Z8rOsYIUAQOYaS4NFlI&isSdui=true
+                                      - link "#ArtificialIntelligence" [ref=e753]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23artificialintelligence
+                                      - link "#VoiceAI" [ref=e754]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23voiceai
+                                      - link "#MachineLearning" [ref=e755]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23machinelearning
+                                      - link "#SpeechSynthesis" [ref=e756]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23speechsynthesis
+                                      - link "#Innovation" [ref=e757]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23innovation
+                                      - link "#Qwen3" [ref=e758]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23qwen3
+                                      - link "#ClipCannon" [ref=e759]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23clipcannon
+                                  - generic [ref=e760]:
+                                    - figure [ref=e761]
+                                    - img [ref=e763]
+                                - generic [ref=e765]:
+                                  - img [ref=e766]
+                                  - img [ref=e771]
+                                  - img [ref=e777]
+                                  - paragraph [ref=e785]:
+                                    - generic [ref=e786]: 19 reactions
+                                    - text: "19"
+                        - listitem [ref=e787]:
+                          - listitem [ref=e788]:
+                            - link [ref=e791] [cursor=pointer]:
+                              - /url: https://www.linkedin.com/feed/update/urn:li:activity:7443069989428862976/
+                              - generic [ref=e792]:
+                                - button "Post" [ref=e793]
+                                - generic [ref=e794]:
+                                  - paragraph [ref=e796]:
+                                    - generic [ref=e797]:
+                                      - text: 98.9% 𝐬𝐩𝐞𝐚𝐤𝐞𝐫 𝐬𝐢𝐦𝐢𝐥𝐚𝐫𝐢𝐭𝐲 𝐨𝐧 𝐧𝐨𝐯𝐞𝐥 𝐜𝐨𝐧𝐭𝐞𝐧𝐭 - 𝐂𝐥𝐢𝐩𝐂𝐚𝐧𝐧𝐨𝐧
+                                      - text: "Every voice cloning benchmark in the industry has the same flaw: they test the AI on text where the speaker's real recording exists."
+                                      - text: I tested mine differently.
+                                      - text: I gave it a reference clip of me saying one sentence, then asked it to generate completely different words I've never spoken. No overlapping text. No pattern matching. Pure voice understanding.
+                                      - text: "Result: 98.9% speaker similarity on novel content."
+                                      - text: "For comparison, here's what published benchmarks report on their standard (easier) tests:"
+                                      - text: "ElevenLabs: 75-85%"
+                                      - text: "Microsoft VALL-E 2 (\"human parity\"): 88.1%"
+                                      - text: "NaturalSpeech 3 (current academic SOTA): 89.1%"
+                                      - text: "My pipeline: 98.9% - on a harder test."
+                                      - text: "The difference isn't a better model. It's three engineering decisions most people skip:"
+                                      - text: 1. Score against your real voice, not a synthetic average
+                                      - text: 2. Generate multiple candidates and keep only the best
+                                      - text: 3. Use the right post-processing (most people use too much and destroy the voice)
+                                      - text: One reference recording. Any sentence. 98.9% match.
+                                      - text: The demo video is below - original voice, then stripped audio, then the AI clone saying words I never said. See if you can hear the difference.
+                                      - text: If you want human sounding AI Agents then your going to have to come to me.
+                                      - link "ocrprovenance.com" [ref=e799]:
+                                        - /url: https://www.linkedin.com/safety/go/?url=http%3A%2F%2Focrprovenance%2Ecom&urlhash=nLXt&mt=hV-gOEY_I8x9JwO9B9zo85-Y_9ZJiln4YwmdyPWiyGji4q1bsbcrMKk2LllirsXzZdDvwtNn_Yq-qBqiFqoeTS6Flq0&isSdui=true
+                                      - link "#VoiceCloning" [ref=e800]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23voicecloning
+                                      - link "#AI" [ref=e801]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai
+                                      - link "#TTS" [ref=e802]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23tts
+                                      - link "#DeepLearning" [ref=e803]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23deeplearning
+                                      - link "#SpeechSynthesis" [ref=e804]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23speechsynthesis
+                                      - link "#MachineLearning" [ref=e805]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23machinelearning
+                                  - generic [ref=e806]:
+                                    - figure [ref=e807]
+                                    - img [ref=e809]
+                                - generic [ref=e811]:
+                                  - img [ref=e812]
+                                  - img [ref=e817]
+                                  - img [ref=e825]
+                                  - paragraph [ref=e839]:
+                                    - generic [ref=e840]: 33 reactions · 5 comments
+                                    - text: 33 · 5 comments
+                        - listitem [ref=e841]:
+                          - link "Show all featured items" [ref=e844] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/featured/
+                            - generic [ref=e845]:
+                              - img [ref=e846]
+                              - generic [ref=e848]: Show all featured items
+                      - button "Next" [ref=e849] [cursor=pointer]:
+                        - img [ref=e851]
+                - generic [ref=e857]:
+                  - generic [ref=e858]:
+                    - generic [ref=e859]:
+                      - heading "Activity" [level=2] [ref=e860]
+                      - link "2,148 followers" [ref=e862] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/feed/followers/
+                        - paragraph [ref=e863]: 2,148 followers
+                    - generic [ref=e864]:
+                      - link "Create a post" [ref=e865] [cursor=pointer]:
+                        - /url: /preload/sharebox/
+                        - generic [ref=e867]: Create a post
+                      - link "Edit default activity" [ref=e868] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/christopher-royse-b624b596/edit/forms/content-collections-star-pill/new/
+                        - img [ref=e870]
+                  - generic [ref=e872]:
+                    - radio "Posts" [checked] [ref=e873] [cursor=pointer]:
+                      - generic [ref=e874]:
+                        - checkbox "Posts" [checked]
+                        - generic [ref=e875]: Posts
+                    - radio "Comments" [ref=e876] [cursor=pointer]:
+                      - generic [ref=e877]:
+                        - checkbox "Comments"
+                        - generic [ref=e878]: Comments
+                    - radio "Videos" [ref=e879] [cursor=pointer]:
+                      - generic [ref=e880]:
+                        - checkbox "Videos"
+                        - generic [ref=e881]: Videos
+                    - radio "Images" [ref=e882] [cursor=pointer]:
+                      - generic [ref=e883]:
+                        - checkbox "Images"
+                        - generic [ref=e884]: Images
+                    - radio "Documents" [ref=e885] [cursor=pointer]:
+                      - generic [ref=e886]:
+                        - checkbox "Documents"
+                        - generic [ref=e887]: Documents
+                  - generic [ref=e889]:
+                    - generic [ref=e895]:
+                      - list [ref=e896]:
+                        - list [ref=e897]:
+                          - listitem [ref=e898]:
+                            - listitem [ref=e900]:
+                              - generic [ref=e901]:
+                                - generic [ref=e902]:
+                                  - link [ref=e903] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - figure [ref=e904]:
+                                      - img "View Christopher Royse’s profile" [ref=e905]
+                                  - generic [ref=e907]:
+                                    - link "Christopher Royse Premium Profile You" [ref=e910] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - generic "Christopher Royse Premium Profile You" [ref=e912]:
+                                        - paragraph [ref=e915]: Christopher Royse
+                                        - paragraph [ref=e917]:
+                                          - generic [ref=e918]:
+                                            - img [ref=e920]
+                                            - text: • You
+                                    - paragraph [ref=e923]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+                                    - paragraph [ref=e925]:
+                                      - generic [ref=e926]:
+                                        - text: 3d •
+                                        - 'img "Visibility: Global" [ref=e927]'
+                                    - link:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                  - button "Open control menu for post by Christopher Royse" [ref=e929] [cursor=pointer]:
+                                    - img [ref=e931]
+                                - 'link "I recorded a long-form breakdown of the question that keeps pulling on me: If AI becomes accurate enough to model branching futures, who gets to decide which future you see? The video connects DDA/TCT, meaning compression, superintelligence as a measurable benchmark, Plato''s cave, social media recommendation loops, and the free-will problem that emerges when prediction becomes steering. The provocative version: if an AI oracle can predict consequences and an algorithm controls the menu of futures in front of you, free will becomes an interface design problem. I''m starting with the measurable engineering target in Python code, but the larger question is bigger: what does it mean to build systems that predict reality without letting hidden actors choose reality for everyone else? Video: https://lnkd.in/gaF3NQ8N #AI #Superintelligence #FreeWill #ArtificialIntelligence #PhilosophyOfAI" [ref=e933] [cursor=pointer]':
+                                  - /url: https://www.linkedin.com/feed/update/urn:li:activity:7465247924290121729/
+                                  - paragraph [ref=e934]:
+                                    - generic [ref=e935]:
+                                      - text: "I recorded a long-form breakdown of the question that keeps pulling on me:"
+                                      - text: If AI becomes accurate enough to model branching futures, who gets to decide which future you see?
+                                      - text: The video connects DDA/TCT, meaning compression, superintelligence as a measurable benchmark, Plato's cave, social media recommendation loops, and the free-will problem that
+                                      - text: emerges when prediction becomes steering.
+                                      - text: "The provocative version: if an AI oracle can predict consequences and an algorithm controls the menu of futures in front of you, free will becomes an interface design problem."
+                                      - text: "I'm starting with the measurable engineering target in Python code, but the larger question is bigger: what does it mean to build systems that predict reality without letting hidden actors choose reality for everyone else?"
+                                      - text: "Video:"
+                                      - link "https://lnkd.in/gaF3NQ8N" [ref=e937]:
+                                        - /url: https://www.linkedin.com/safety/go/?url=https%3A%2F%2Flnkd%2Ein%2FgaF3NQ8N&urlhash=QlnD&mt=IPTpQubPcoj5jd60JMRg6JP2LL9gPGhu50JN88Phaiu9ZFBwMZiq6fJl4m7prGHZx_-ff_7WyeOWgguCohGp2fXkFfwhj1SXpC7H5FIMHiqLc_Un4bDKHlBuEw&isSdui=true
+                                        - strong [ref=e939]: https://lnkd.in/gaF3NQ8N
+                                      - link "#AI" [ref=e940]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e942]: "#AI"
+                                      - link "#Superintelligence" [ref=e943]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23superintelligence&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e945]: "#Superintelligence"
+                                      - link "#FreeWill" [ref=e946]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23freewill&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e948]: "#FreeWill"
+                                      - link "#ArtificialIntelligence" [ref=e949]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23artificialintelligence&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e951]: "#ArtificialIntelligence"
+                                      - link "#PhilosophyOfAI" [ref=e952]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23philosophyofai&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e954]: "#PhilosophyOfAI"
+                                      - button:
+                                        - generic [ref=e956]: … more
+                                - link "Could AI Superintelligence Steal Free Will? The Fifth Element Is Information youtube.com" [ref=e957] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/safety/go/?url=https%3A%2F%2Fyoutu%2Ebe%2FzuqJ6eyMJXw&urlhash=XSCV&mt=vfPTyjJJLntalcrjSgQC0ijUFX2TaxjvEmzzQ3WsU8_e2fqqzI5cEKE5PvdSImI73VhQacYeHYDOiE5kw2RzeRy10Fy6zqBX6TvAfO7EcBVflzJuqYj-CFXn-A&isSdui=true
+                                  - generic [ref=e958]:
+                                    - figure [ref=e959]
+                                    - generic [ref=e960]:
+                                      - paragraph [ref=e962]:
+                                        - generic [ref=e963]:
+                                          - generic [ref=e964]: Could AI Superintelligence Steal Free Will? The Fifth Element Is Information
+                                          - text: Could AI Superintelligence Steal Free Will? The Fifth Element Is Information
+                                      - paragraph [ref=e966]: youtube.com
+                              - generic [ref=e967]:
+                                - generic [ref=e968]:
+                                  - link "Dave Brace and 3 others reacted" [ref=e969] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e970]:
+                                      - img [ref=e971]
+                                      - paragraph [ref=e978]:
+                                        - generic [ref=e979]:
+                                          - generic [ref=e980]: Dave Brace and 3 others reacted
+                                          - generic [ref=e981]: Dave Brace and 3 others
+                                  - link "1 comment" [ref=e983] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7465247924290121729/
+                                    - paragraph [ref=e984]:
+                                      - generic [ref=e985]: 1 comment
+                                      - generic [ref=e986]: 1 comment
+                                - generic [ref=e987]:
+                                  - generic [ref=e988]:
+                                    - 'button "Reaction button state: no reaction" [ref=e991] [cursor=pointer]':
+                                      - generic [ref=e992]:
+                                        - img [ref=e993]
+                                        - generic [ref=e995]: Like
+                                    - button "Open reactions menu":
+                                      - img [ref=e997] [cursor=pointer]
+                                  - link "Comment" [ref=e999] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7465247924290121729/
+                                    - generic [ref=e1000]:
+                                      - img [ref=e1001]
+                                      - generic [ref=e1003]: Comment
+                                  - button "Repost" [ref=e1004] [cursor=pointer]:
+                                    - generic [ref=e1005]:
+                                      - img [ref=e1006]
+                                      - generic [ref=e1008]: Repost
+                                  - link "Send" [ref=e1009] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1010]:
+                                      - img [ref=e1011]
+                                      - generic [ref=e1013]: Send
+                          - listitem [ref=e1014]:
+                            - listitem [ref=e1016]:
+                              - generic [ref=e1017]:
+                                - generic [ref=e1018]:
+                                  - link [ref=e1019] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - figure [ref=e1020]:
+                                      - img "View Christopher Royse’s profile" [ref=e1021]
+                                  - generic [ref=e1023]:
+                                    - link "Christopher Royse Premium Profile You" [ref=e1026] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - generic "Christopher Royse Premium Profile You" [ref=e1028]:
+                                        - paragraph [ref=e1031]: Christopher Royse
+                                        - paragraph [ref=e1033]:
+                                          - generic [ref=e1034]:
+                                            - img [ref=e1036]
+                                            - text: • You
+                                    - paragraph [ref=e1039]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+                                    - paragraph [ref=e1041]:
+                                      - generic [ref=e1042]:
+                                        - text: 4d •
+                                        - 'img "Visibility: Global" [ref=e1043]'
+                                    - link:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                  - button "Open control menu for post by Christopher Royse" [ref=e1045] [cursor=pointer]:
+                                    - img [ref=e1047]
+                                - link [ref=e1049] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/feed/update/urn:li:activity:7465054893612044289/
+                                  - paragraph [ref=e1050]:
+                                    - generic [ref=e1051]:
+                                      - text: Information is the 5th element.
+                                      - text: Once you accept that, building software stops being a coding problem and becomes a translation problem — and the AI does the translating.
+                                      - text: "You don't need to be a software engineer to build the thing you're dreaming about. You need to do one job, and one job only:"
+                                      - text: Make the target unambiguous.
+                                      - text: "Here's the exact loop I run:"
+                                      - text: 1. Dream as big as you want. Don't filter for feasibility. That's not your job — it's the AI's.
+                                      - text: 2. Pour the dream into MD files. Talk to Claude. Iterate until you have 500k–600k tokens of unambiguous description. Tell it to hunt for blind spots. Cover every edge.
+                                      - text: "3. Make Claude convert all of it into MATH. Benchmarks. Variables. Numbers. The rule: if every benchmark passes, the entire system is built, live, and fully operational. No \"interpretation\" slack for the AI."
+                                      - text: "4. Load it into Codex. One goal: pass every benchmark. Walk away."
+                                      - text: That's the whole game.
+                                      - text: The AI doesn't need a senior engineer holding its hand. It needs a reality predicate it can't argue with. Math is that predicate.
+                                      - text: "For my own system, one of the benchmarks I set is: \"don't stop until 50,000 users are on the platform.\""
+                                      - text: Codex has some work to do.
+                                      - link "#AI" [ref=e1052]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1054]: "#AI"
+                                      - link "#Codex" [ref=e1055]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23codex&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1057]: "#Codex"
+                                      - link "#ClaudeCode" [ref=e1058]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23claudecode&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1060]: "#ClaudeCode"
+                                      - link "#AgenticAI" [ref=e1061]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23agenticai&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1063]: "#AgenticAI"
+                                      - link "#AICoding" [ref=e1064]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23aicoding&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1066]: "#AICoding"
+                                      - link "#LLM" [ref=e1067]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23llm&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1069]: "#LLM"
+                                      - link "#SoftwareEngineering" [ref=e1070]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23softwareengineering&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1072]: "#SoftwareEngineering"
+                                      - button:
+                                        - generic [ref=e1074]: … more
+                                - generic [ref=e1075]:
+                                  - region "Video Player" [ref=e1077]:              
+                                  - link "Play video" [ref=e1082] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7465054893612044289/
+                                    - img [ref=e1084]
+                              - generic [ref=e1086]:
+                                - generic [ref=e1087]:
+                                  - link "Hertzel Karbasi and 10 others reacted" [ref=e1088] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1089]:
+                                      - img [ref=e1090]
+                                      - img [ref=e1096]
+                                      - img [ref=e1110]
+                                      - paragraph [ref=e1119]:
+                                        - generic [ref=e1120]:
+                                          - generic [ref=e1121]: Hertzel Karbasi and 10 others reacted
+                                          - generic [ref=e1122]: Hertzel Karbasi and 10 others
+                                  - generic [ref=e1123]:
+                                    - link "1 comment" [ref=e1124] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/feed/update/urn:li:activity:7465054893612044289/
+                                      - paragraph [ref=e1125]:
+                                        - generic [ref=e1126]: 1 comment
+                                        - generic [ref=e1127]: 1 comment
+                                    - paragraph [ref=e1128]: •
+                                    - link "1 repost" [ref=e1129] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - paragraph [ref=e1130]:
+                                        - generic [ref=e1131]: 1 repost
+                                        - generic [ref=e1132]: 1 repost
+                                - generic [ref=e1133]:
+                                  - generic [ref=e1134]:
+                                    - 'button "Reaction button state: no reaction" [ref=e1137] [cursor=pointer]':
+                                      - generic [ref=e1138]:
+                                        - img [ref=e1139]
+                                        - generic [ref=e1141]: Like
+                                    - button "Open reactions menu":
+                                      - img [ref=e1143] [cursor=pointer]
+                                  - link "Comment" [ref=e1145] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7465054893612044289/
+                                    - generic [ref=e1146]:
+                                      - img [ref=e1147]
+                                      - generic [ref=e1149]: Comment
+                                  - button "Repost" [ref=e1150] [cursor=pointer]:
+                                    - generic [ref=e1151]:
+                                      - img [ref=e1152]
+                                      - generic [ref=e1154]: Repost
+                                  - link "Send" [ref=e1155] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1156]:
+                                      - img [ref=e1157]
+                                      - generic [ref=e1159]: Send
+                          - listitem [ref=e1160]:
+                            - listitem [ref=e1162]:
+                              - generic [ref=e1163]:
+                                - generic [ref=e1164]:
+                                  - link [ref=e1165] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - figure [ref=e1166]:
+                                      - img "View Christopher Royse’s profile" [ref=e1167]
+                                  - generic [ref=e1169]:
+                                    - link "Christopher Royse Premium Profile You" [ref=e1172] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - generic "Christopher Royse Premium Profile You" [ref=e1174]:
+                                        - paragraph [ref=e1177]: Christopher Royse
+                                        - paragraph [ref=e1179]:
+                                          - generic [ref=e1180]:
+                                            - img [ref=e1182]
+                                            - text: • You
+                                    - paragraph [ref=e1185]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+                                    - paragraph [ref=e1187]:
+                                      - generic [ref=e1188]:
+                                        - text: 1w •
+                                        - 'img "Visibility: Global" [ref=e1189]'
+                                    - link:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                  - button "Open control menu for post by Christopher Royse" [ref=e1191] [cursor=pointer]:
+                                    - img [ref=e1193]
+                                - link [ref=e1195] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463672158779621378/
+                                  - paragraph [ref=e1196]:
+                                    - generic [ref=e1197]:
+                                      - text: Most "prompt compression" advice is just ambiguity in a costume.
+                                      - text: A prompt is source code for behavior. The LLM is the interpreter. Tokens are the wire format. Compressing a prompt is engineering, not editing. You're trying to maximize signal-per-token while keeping the model's residual ambiguity below the threshold where it starts guessing wrong.
+                                      - text: "There are only two real ceilings:"
+                                      - text: 1) Shannon limit — the statistical floor. Drop tokens the model would have predicted anyway. This is what LLMLingua, Selective Context, and entropy-based compressors automate.
+                                      - text: 2) Kolmogorov limit — the algorithmic floor. Replace prose with notation, structure, and canonical terms the model has memorized. "STRIDE," "idempotent," "fail-closed," "least privilege" — each one is a single token that decodes into a paragraph the model already knows. This lever is bigger than the first, and almost nobody pulls it deliberately.
+                                      - text: "A few rules I now refuse to compromise on:"
+                                      - text: "→ Keep verbatim what has no prior: numbers, file paths, error codes, named entities, deny-lists, RFC 2119 modal words. The model can regenerate prose. It cannot regenerate \".env\" or \"EWC++\" or \"≥ 0.95.\""
+                                      - text: → Cut meta-self-reference, restatement, and trivial examples first. "Please carefully," "in this prompt," "for example, 2+2=4" — all free deletes.
+                                      - text: "→ Substitute symbols for logical structure. \"user ∈ {Admins, Owners} ∧ ¬Guests\" is shorter and stricter than the English equivalent."
+                                      - text: → Round-trip every compression. Paste the compressed version into a fresh model session and ask it to expand. If the expansion drops a load-bearing constraint, you compressed too far — that's not compression, that's ablation.
+                                      - text: → Never accept vague-word substitution as compression. Replacing "fail closed with MEJEPA_INSTRUMENT_GRADIENT_LEAK on detected gradient leakage into a frozen-target slot" with "handle errors safely" is not compression. It's lost specification. The model fills in the modal interpretation, which is rarely yours.
+                                      - text: "The one-line thesis: compress along specificity per token, not ambiguity per token. Density is measurable. Ambiguity is a regression dressed as savings."
+                                      - text: I wrote the full doctrine — 13 sections, 32 techniques, anti-patterns, per-domain playbook, citations — and dropped it in the comments. Free, takes about 25 minutes to read but more importantly you'll want to feed it to your AI when they are writing documents like planning .md documents.
+                                      - text: If you build with LLMs and your prompts have grown past 2,000 tokens, this will pay for itself within an hour.
+                                      - link "#AI" [ref=e1199]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1201]: "#AI"
+                                      - link "#LLM" [ref=e1202]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23llm&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1204]: "#LLM"
+                                      - link "#PromptEngineering" [ref=e1205]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23promptengineering&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1207]: "#PromptEngineering"
+                                      - link "#InformationTheory" [ref=e1208]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23informationtheory&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1210]: "#InformationTheory"
+                                      - link "#Compression" [ref=e1211]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23compression&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1213]: "#Compression"
+                                      - link "#Shannon" [ref=e1214]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23shannon&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1216]: "#Shannon"
+                                      - link "#Kolmogorov" [ref=e1217]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23kolmogorov&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1219]: "#Kolmogorov"
+                                      - link "#MachineLearning" [ref=e1220]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23machinelearning&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1222]: "#MachineLearning"
+                                      - link "#SoftwareEngineering" [ref=e1223]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23softwareengineering&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1225]: "#SoftwareEngineering"
+                                      - button:
+                                        - generic [ref=e1227]: … more
+                                - link [ref=e1229] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463672158779621378/
+                                  - figure [ref=e1230]:
+                                    - img "View image" [ref=e1231]
+                              - generic [ref=e1232]:
+                                - generic [ref=e1233]:
+                                  - link "Daniel Laufer and 5 others reacted" [ref=e1234] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1235]:
+                                      - img [ref=e1236]
+                                      - img [ref=e1242]
+                                      - img [ref=e1250]
+                                      - paragraph [ref=e1262]:
+                                        - generic [ref=e1263]:
+                                          - generic [ref=e1264]: Daniel Laufer and 5 others reacted
+                                          - generic [ref=e1265]: Daniel Laufer and 5 others
+                                  - generic [ref=e1266]:
+                                    - link "2 comments" [ref=e1267] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463672158779621378/
+                                      - paragraph [ref=e1268]:
+                                        - generic [ref=e1269]: 2 comments
+                                        - generic [ref=e1270]: 2 comments
+                                    - paragraph [ref=e1271]: •
+                                    - link "1 repost" [ref=e1272] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - paragraph [ref=e1273]:
+                                        - generic [ref=e1274]: 1 repost
+                                        - generic [ref=e1275]: 1 repost
+                                - generic [ref=e1276]:
+                                  - generic [ref=e1277]:
+                                    - 'button "Reaction button state: no reaction" [ref=e1280] [cursor=pointer]':
+                                      - generic [ref=e1281]:
+                                        - img [ref=e1282]
+                                        - generic [ref=e1284]: Like
+                                    - button "Open reactions menu":
+                                      - img [ref=e1286] [cursor=pointer]
+                                  - link "Comment" [ref=e1288] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463672158779621378/
+                                    - generic [ref=e1289]:
+                                      - img [ref=e1290]
+                                      - generic [ref=e1292]: Comment
+                                  - button "Repost" [ref=e1293] [cursor=pointer]:
+                                    - generic [ref=e1294]:
+                                      - img [ref=e1295]
+                                      - generic [ref=e1297]: Repost
+                                  - link "Send" [ref=e1298] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1299]:
+                                      - img [ref=e1300]
+                                      - generic [ref=e1302]: Send
+                          - listitem [ref=e1303]:
+                            - listitem [ref=e1305]:
+                              - generic [ref=e1306]:
+                                - generic [ref=e1307]:
+                                  - link [ref=e1308] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - figure [ref=e1309]:
+                                      - img "View Christopher Royse’s profile" [ref=e1310]
+                                  - generic [ref=e1312]:
+                                    - link "Christopher Royse Premium Profile You" [ref=e1315] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - generic "Christopher Royse Premium Profile You" [ref=e1317]:
+                                        - paragraph [ref=e1320]: Christopher Royse
+                                        - paragraph [ref=e1322]:
+                                          - generic [ref=e1323]:
+                                            - img [ref=e1325]
+                                            - text: • You
+                                    - paragraph [ref=e1328]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+                                    - paragraph [ref=e1330]:
+                                      - generic [ref=e1331]:
+                                        - text: 1w •
+                                        - 'img "Visibility: Global" [ref=e1332]'
+                                    - link:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                  - button "Open control menu for post by Christopher Royse" [ref=e1334] [cursor=pointer]:
+                                    - img [ref=e1336]
+                                - link [ref=e1338] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463670815046279168/
+                                  - paragraph [ref=e1339]:
+                                    - generic [ref=e1340]:
+                                      - text: I believe information is the 5th element.
+                                      - text: Not metaphor. Math.
+                                      - text: Give a system enough embedding spaces — semantics, audio waveforms, emotional tone, images, code structure, causal direction, time — and a single moment in the world becomes a unique constellation of vectors across all of them. I call that a teleological constellation. It is finite. It is computable. And it is the language LLMs already think in.
+                                      - text: "A few things this lets you do:"
+                                      - text: → Stop guessing whether AI output is "aligned" and start measuring it. If the generated constellation falls outside the allowed region of the space, it fails closed. Prompt injection becomes a cosine-similarity problem, not a vibe check.
+                                      - text: → Scale data and search at the same time. More well-differentiated embedders means more meaning captured AND a more refined region for the model to search inside. They aren't a tradeoff.
+                                      - text: → Borrow from biology. The human brain has 100,000–200,000 cortical columns gating information flow. I think evolution converged on something structurally similar to what I'm describing. We can build it deliberately.
+                                      - text: The architecture is real, the math holds, and the path is finite.
+                                      - text: "I walked through the full thesis in the video. The research paper (Derived Data Abundance: Multi-Modal Embedding Decomposition and the Data Scaling Wall) is on ResearchGate and linked in the comments."
+                                      - text: If you push back on any of this, I want to hear it. I learn more from being wrong publicly than from being right quietly.
+                                      - link "#AI" [ref=e1342]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1344]: "#AI"
+                                      - link "#MachineLearning" [ref=e1345]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23machinelearning&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1347]: "#MachineLearning"
+                                      - link "#Embeddings" [ref=e1348]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23embeddings&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1350]: "#Embeddings"
+                                      - link "#LLM" [ref=e1351]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23llm&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1353]: "#LLM"
+                                      - link "#Alignment" [ref=e1354]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23alignment&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1356]: "#Alignment"
+                                      - link "#VectorSearch" [ref=e1357]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23vectorsearch&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1359]: "#VectorSearch"
+                                      - link "#PromptInjection" [ref=e1360]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23promptinjection&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1362]: "#PromptInjection"
+                                      - link "#TeleologicalConstellation" [ref=e1363]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23teleologicalconstellation&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1365]: "#TeleologicalConstellation"
+                                      - button:
+                                        - generic [ref=e1367]: … more
+                                - generic [ref=e1368]:
+                                  - region "Video Player" [ref=e1370]:              
+                                  - link "Play video" [ref=e1375] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463670815046279168/
+                                    - img [ref=e1377]
+                              - generic [ref=e1379]:
+                                - generic [ref=e1380]:
+                                  - link "Dan Todor and 4 others reacted" [ref=e1381] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1382]:
+                                      - img [ref=e1383]
+                                      - img [ref=e1389]
+                                      - paragraph [ref=e1398]:
+                                        - generic [ref=e1399]:
+                                          - generic [ref=e1400]: Dan Todor and 4 others reacted
+                                          - generic [ref=e1401]: Dan Todor and 4 others
+                                  - generic [ref=e1402]:
+                                    - link "4 comments" [ref=e1403] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463670815046279168/
+                                      - paragraph [ref=e1404]:
+                                        - generic [ref=e1405]: 4 comments
+                                        - generic [ref=e1406]: 4 comments
+                                    - paragraph [ref=e1407]: •
+                                    - link "1 repost" [ref=e1408] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - paragraph [ref=e1409]:
+                                        - generic [ref=e1410]: 1 repost
+                                        - generic [ref=e1411]: 1 repost
+                                - generic [ref=e1412]:
+                                  - generic [ref=e1413]:
+                                    - 'button "Reaction button state: no reaction" [ref=e1416] [cursor=pointer]':
+                                      - generic [ref=e1417]:
+                                        - img [ref=e1418]
+                                        - generic [ref=e1420]: Like
+                                    - button "Open reactions menu":
+                                      - img [ref=e1422] [cursor=pointer]
+                                  - link "Comment" [ref=e1424] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463670815046279168/
+                                    - generic [ref=e1425]:
+                                      - img [ref=e1426]
+                                      - generic [ref=e1428]: Comment
+                                  - button "Repost" [ref=e1429] [cursor=pointer]:
+                                    - generic [ref=e1430]:
+                                      - img [ref=e1431]
+                                      - generic [ref=e1433]: Repost
+                                  - link "Send" [ref=e1434] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1435]:
+                                      - img [ref=e1436]
+                                      - generic [ref=e1438]: Send
+                          - listitem [ref=e1439]:
+                            - listitem [ref=e1441]:
+                              - generic [ref=e1442]:
+                                - generic [ref=e1443]:
+                                  - link [ref=e1444] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - figure [ref=e1445]:
+                                      - img "View Christopher Royse’s profile" [ref=e1446]
+                                  - generic [ref=e1448]:
+                                    - link "Christopher Royse Premium Profile You" [ref=e1451] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - generic "Christopher Royse Premium Profile You" [ref=e1453]:
+                                        - paragraph [ref=e1456]: Christopher Royse
+                                        - paragraph [ref=e1458]:
+                                          - generic [ref=e1459]:
+                                            - img [ref=e1461]
+                                            - text: • You
+                                    - paragraph [ref=e1464]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+                                    - paragraph [ref=e1466]:
+                                      - generic [ref=e1467]:
+                                        - text: 1w •
+                                        - 'img "Visibility: Global" [ref=e1468]'
+                                    - link:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                  - button "Open control menu for post by Christopher Royse" [ref=e1470] [cursor=pointer]:
+                                    - img [ref=e1472]
+                                - link [ref=e1474] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463332307412881408/
+                                  - paragraph [ref=e1475]:
+                                    - generic [ref=e1476]:
+                                      - text: The Oracle is a brain.
+                                      - text: Not a metaphor. The architecture I'm building for ME-JEPA — an array of per-embedder vectors held side-by-side as a teleological constellation, never flattened, never collapsed — turns out to mirror how the human brain organizes knowledge in cortical columns.
+                                      - text: "Same pattern, at two scales:"
+                                      - text: "→ Brain: each cortical column is an organ-pipe of stacked neurons specialized for a slice of the world. Add a column, add a viewpoint."
+                                      - text: "→ Oracle: each embedder produces its own vector in its own space. Add an embedder, add a dimension of search and a new way to discriminate failure modes."
+                                      - text: "Three consequences fall out of that:"
+                                      - text: 1) Every embedder you add explodes the system's representational reach AND improves its ability to navigate its own data. More signal, better search, simultaneously.
+                                      - text: 2) The Oracle can be wrong once. After that, the online mistake-driven loop under EWC++ Fisher protection permanently corrects its wiring against that failure mode. It learns from reality — bytes-on-disk, the Docker test oracle, shift events — not from synthetic rewards.
+                                      - text: 3) The system can autonomously prune weak embedders and grow better ones, refining its own observational basis over time. That's how it evolves.
+                                      - text: The engineering Oracle (this one) is the first half of super-intelligence. The second half is the creativity engine — the super-system that proposes new dimensions of measurement, gated by a novelty oracle (rejects rediscovery) and a utility oracle (rejects measurements that don't improve real-world prediction).
+                                      - text: If the brain organizes knowledge this way and an effective AI architecture independently lands on the same organization, the question of what counts as "artificial" gets less sharp.
+                                      - text: A short personal note in the video on where the first piece of information had to come from. Both evolution and a divine inception can be true at once.
+                                      - link "#AI" [ref=e1477]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1479]: "#AI"
+                                      - link "#MCP" [ref=e1480]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23mcp&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1482]: "#MCP"
+                                      - link "#JEPA" [ref=e1483]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23jepa&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1485]: "#JEPA"
+                                      - link "#WorldModel" [ref=e1486]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23worldmodel&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1488]: "#WorldModel"
+                                      - link "#AICoding" [ref=e1489]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23aicoding&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1491]: "#AICoding"
+                                      - link "#Neuroscience" [ref=e1492]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23neuroscience&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1494]: "#Neuroscience"
+                                      - link "#CorticalColumns" [ref=e1495]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23corticalcolumns&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1497]: "#CorticalColumns"
+                                      - link "#SuperIntelligence" [ref=e1498]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23superintelligence&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1500]: "#SuperIntelligence"
+                                      - button:
+                                        - generic [ref=e1502]: … more
+                                - generic [ref=e1503]:
+                                  - region "Video Player" [ref=e1505]:              
+                                  - link "Play video" [ref=e1510] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463332307412881408/
+                                    - img [ref=e1512]
+                              - generic [ref=e1514]:
+                                - generic [ref=e1515]:
+                                  - link "Markku Tauriainen 🚀 and 9 others reacted" [ref=e1516] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1517]:
+                                      - img [ref=e1518]
+                                      - img [ref=e1524]
+                                      - paragraph [ref=e1539]:
+                                        - generic [ref=e1540]:
+                                          - generic [ref=e1541]: Markku Tauriainen 🚀 and 9 others reacted
+                                          - generic [ref=e1542]: Markku Tauriainen 🚀 and 9 others
+                                  - link "1 comment" [ref=e1544] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463332307412881408/
+                                    - paragraph [ref=e1545]:
+                                      - generic [ref=e1546]: 1 comment
+                                      - generic [ref=e1547]: 1 comment
+                                - generic [ref=e1548]:
+                                  - generic [ref=e1549]:
+                                    - 'button "Reaction button state: no reaction" [ref=e1552] [cursor=pointer]':
+                                      - generic [ref=e1553]:
+                                        - img [ref=e1554]
+                                        - generic [ref=e1556]: Like
+                                    - button "Open reactions menu":
+                                      - img [ref=e1558] [cursor=pointer]
+                                  - link "Comment" [ref=e1560] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463332307412881408/
+                                    - generic [ref=e1561]:
+                                      - img [ref=e1562]
+                                      - generic [ref=e1564]: Comment
+                                  - button "Repost" [ref=e1565] [cursor=pointer]:
+                                    - generic [ref=e1566]:
+                                      - img [ref=e1567]
+                                      - generic [ref=e1569]: Repost
+                                  - link "Send" [ref=e1570] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1571]:
+                                      - img [ref=e1572]
+                                      - generic [ref=e1574]: Send
+                          - listitem [ref=e1575]:
+                            - listitem [ref=e1577]:
+                              - generic [ref=e1578]:
+                                - generic [ref=e1579]:
+                                  - link [ref=e1580] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - figure [ref=e1581]:
+                                      - img "View Christopher Royse’s profile" [ref=e1582]
+                                  - generic [ref=e1584]:
+                                    - link "Christopher Royse Premium Profile You" [ref=e1587] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - generic "Christopher Royse Premium Profile You" [ref=e1589]:
+                                        - paragraph [ref=e1592]: Christopher Royse
+                                        - paragraph [ref=e1594]:
+                                          - generic [ref=e1595]:
+                                            - img [ref=e1597]
+                                            - text: • You
+                                    - paragraph [ref=e1600]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+                                    - paragraph [ref=e1602]:
+                                      - generic [ref=e1603]:
+                                        - text: 1w •
+                                        - 'img "Visibility: Global" [ref=e1604]'
+                                    - link:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                  - button "Open control menu for post by Christopher Royse" [ref=e1606] [cursor=pointer]:
+                                    - img [ref=e1608]
+                                - link [ref=e1610] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463318760280571904/
+                                  - paragraph [ref=e1611]:
+                                    - generic [ref=e1612]:
+                                      - text: The end of code review.
+                                      - text: A walkthrough of why that's becoming statistically defensible.
+                                      - text: ME-JEPA has no inner LLM. It does not generate code. It sits between the AI agent and your codebase and predicts the real-world consequences of every candidate patch — against bytes-on-disk and the Docker test oracle, not against human taste.
+                                      - text: "Six sections in the video:"
+                                      - text: → The AI trust problem (untrusted LLM agents)
+                                      - text: → The binary predictor (free binary form)
+                                      - text: → The mistake loop (self-correcting AI)
+                                      - text: → The end of code review (statistically unjustified)
+                                      - text: → Butterfly pathways (concrete branching)
+                                      - text: → Reality design (the creativity engine)
+                                      - text: "The mechanic underneath: code is represented as an array of 15 distinct per-embedder vectors — a teleological constellation — never flattened. A strong signal in one observational dimension cannot hide a fatal flaw in another. The system corrects its own mistakes via an online mistake-driven loop under EWC++ Fisher protection. Goodhart-resistance via cross-panel triangulation: Panel A and Panel B use non-overlapping toolchains; if they disagree by more than 0.05, the system fails closed."
+                                      - text: "Once prediction-oracle correlation crosses 0.95 stably across rolling windows, human review of AI-generated patches becomes statistically unjustified. The operator role shifts: from reviewing lines of code to picking among the top three-to-five concrete future trajectories the system surfaces."
+                                      - text: Reviewers become reality directors.
+                                      - link "#AI" [ref=e1613]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1615]: "#AI"
+                                      - link "#MCP" [ref=e1616]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23mcp&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1618]: "#MCP"
+                                      - link "#JEPA" [ref=e1619]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23jepa&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1621]: "#JEPA"
+                                      - link "#WorldModel" [ref=e1622]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23worldmodel&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1624]: "#WorldModel"
+                                      - link "#AICoding" [ref=e1625]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23aicoding&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1627]: "#AICoding"
+                                      - link "#SWEBench" [ref=e1628]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23swebench&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1630]: "#SWEBench"
+                                      - link "#CodeReview" [ref=e1631]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23codereview&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1633]: "#CodeReview"
+                                      - button:
+                                        - generic [ref=e1635]: … more
+                                - generic [ref=e1636]:
+                                  - region "Video Player" [ref=e1638]:              
+                                  - link "Play video" [ref=e1643] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463318760280571904/
+                                    - img [ref=e1645]
+                              - generic [ref=e1647]:
+                                - generic [ref=e1648]:
+                                  - link "Roman Tsyupryk and 21 others reacted" [ref=e1649] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1650]:
+                                      - img [ref=e1651]
+                                      - img [ref=e1657]
+                                      - img [ref=e1665]
+                                      - paragraph [ref=e1672]:
+                                        - generic [ref=e1673]:
+                                          - generic [ref=e1674]: Roman Tsyupryk and 21 others reacted
+                                          - generic [ref=e1675]: Roman Tsyupryk and 21 others
+                                  - generic [ref=e1676]:
+                                    - link "3 comments" [ref=e1677] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463318760280571904/
+                                      - paragraph [ref=e1678]:
+                                        - generic [ref=e1679]: 3 comments
+                                        - generic [ref=e1680]: 3 comments
+                                    - paragraph [ref=e1681]: •
+                                    - link "1 repost" [ref=e1682] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - paragraph [ref=e1683]:
+                                        - generic [ref=e1684]: 1 repost
+                                        - generic [ref=e1685]: 1 repost
+                                - generic [ref=e1686]:
+                                  - generic [ref=e1687]:
+                                    - 'button "Reaction button state: no reaction" [ref=e1690] [cursor=pointer]':
+                                      - generic [ref=e1691]:
+                                        - img [ref=e1692]
+                                        - generic [ref=e1694]: Like
+                                    - button "Open reactions menu":
+                                      - img [ref=e1696] [cursor=pointer]
+                                  - link "Comment" [ref=e1698] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463318760280571904/
+                                    - generic [ref=e1699]:
+                                      - img [ref=e1700]
+                                      - generic [ref=e1702]: Comment
+                                  - button "Repost" [ref=e1703] [cursor=pointer]:
+                                    - generic [ref=e1704]:
+                                      - img [ref=e1705]
+                                      - generic [ref=e1707]: Repost
+                                  - link "Send" [ref=e1708] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1709]:
+                                      - img [ref=e1710]
+                                      - generic [ref=e1712]: Send
+                          - listitem [ref=e1713]:
+                            - listitem [ref=e1715]:
+                              - generic [ref=e1716]:
+                                - generic [ref=e1717]:
+                                  - link [ref=e1718] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - figure [ref=e1719]:
+                                      - img "View Christopher Royse’s profile" [ref=e1720]
+                                  - generic [ref=e1722]:
+                                    - link "Christopher Royse Premium Profile You" [ref=e1725] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - generic "Christopher Royse Premium Profile You" [ref=e1727]:
+                                        - paragraph [ref=e1730]: Christopher Royse
+                                        - paragraph [ref=e1732]:
+                                          - generic [ref=e1733]:
+                                            - img [ref=e1735]
+                                            - text: • You
+                                    - paragraph [ref=e1738]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+                                    - paragraph [ref=e1740]:
+                                      - generic [ref=e1741]:
+                                        - text: 1w •
+                                        - 'img "Visibility: Global" [ref=e1742]'
+                                    - link:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                  - button "Open control menu for post by Christopher Royse" [ref=e1744] [cursor=pointer]:
+                                    - img [ref=e1746]
+                                - link [ref=e1748] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463237902370525184/
+                                  - paragraph [ref=e1749]:
+                                    - generic [ref=e1750]:
+                                      - text: I built The Oracle — an MCP server that tells you, with math, whether your AI agent's code will actually work.
+                                      - text: "It's backed by a working JEPA-based world model for code. You hand it a patch from any AI agent — Claude, Cursor, Codex, whatever — and it returns a binary Pass/Fail against the real Docker test oracle. Three additional grounded surfaces attach to that verdict:"
+                                      - text: → Q1 — Does what the AI said it did actually exist on disk?
+                                      - text: → Q2 — Does it work? (binary, calibrated, against the real oracle)
+                                      - text: → Q3 — On Fail, why? (named failure mode + the closest historical exemplars)
+                                      - text: → Q5 — How is this change impacting reality? (predicted shift events vs. the live runtime log)
+                                      - text: "The architectural commitment underneath: the system only trains on outcomes that actually happened in reality. No synthetic rewards. No \"looks right.\" Bytes on disk, the test verdict, the shift log. That's the entire training contract."
+                                      - text: "What that buys you: code review stops being a human bottleneck for AI-generated patches. You can pre-compute the consequences of a change before you ship — and pick the architectural path with the consequences you actually want."
+                                      - text: Currently optimized for Python on SWE-bench Lite. Other languages roll in over the coming weeks. Public MCP release in 4–8 weeks.
+                                      - text: Two papers this is built on — Teleological Constellation Training, and combining that with Yann LeCun's JEPA into a working world model for code.
+                                      - text: Links in the first comment. I'd rather you read those than take my word for any of this.
+                                      - text: Full walkthrough on the Leapable YouTube channel today.
+                                      - link "#AI" [ref=e1752]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1754]: "#AI"
+                                      - link "#MCP" [ref=e1755]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23mcp&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1757]: "#MCP"
+                                      - link "#JEPA" [ref=e1758]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23jepa&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1760]: "#JEPA"
+                                      - link "#WorldModel" [ref=e1761]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23worldmodel&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1763]: "#WorldModel"
+                                      - link "#AICoding" [ref=e1764]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23aicoding&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1766]: "#AICoding"
+                                      - link "#SWEBench" [ref=e1767]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23swebench&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1769]: "#SWEBench"
+                                      - button:
+                                        - generic [ref=e1771]: … more
+                                - generic [ref=e1772]:
+                                  - region "Video Player" [ref=e1774]:              
+                                  - link "Play video" [ref=e1779] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463237902370525184/
+                                    - img [ref=e1781]
+                              - generic [ref=e1783]:
+                                - generic [ref=e1784]:
+                                  - link "John Messing and 21 others reacted" [ref=e1785] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1786]:
+                                      - img [ref=e1787]
+                                      - img [ref=e1793]
+                                      - paragraph [ref=e1802]:
+                                        - generic [ref=e1803]:
+                                          - generic [ref=e1804]: John Messing and 21 others reacted
+                                          - generic [ref=e1805]: John Messing and 21 others
+                                  - generic [ref=e1806]:
+                                    - link "1 comment" [ref=e1807] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463237902370525184/
+                                      - paragraph [ref=e1808]:
+                                        - generic [ref=e1809]: 1 comment
+                                        - generic [ref=e1810]: 1 comment
+                                    - paragraph [ref=e1811]: •
+                                    - link "1 repost" [ref=e1812] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - paragraph [ref=e1813]:
+                                        - generic [ref=e1814]: 1 repost
+                                        - generic [ref=e1815]: 1 repost
+                                - generic [ref=e1816]:
+                                  - generic [ref=e1817]:
+                                    - 'button "Reaction button state: no reaction" [ref=e1820] [cursor=pointer]':
+                                      - generic [ref=e1821]:
+                                        - img [ref=e1822]
+                                        - generic [ref=e1824]: Like
+                                    - button "Open reactions menu":
+                                      - img [ref=e1826] [cursor=pointer]
+                                  - link "Comment" [ref=e1828] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7463237902370525184/
+                                    - generic [ref=e1829]:
+                                      - img [ref=e1830]
+                                      - generic [ref=e1832]: Comment
+                                  - button "Repost" [ref=e1833] [cursor=pointer]:
+                                    - generic [ref=e1834]:
+                                      - img [ref=e1835]
+                                      - generic [ref=e1837]: Repost
+                                  - link "Send" [ref=e1838] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1839]:
+                                      - img [ref=e1840]
+                                      - generic [ref=e1842]: Send
+                          - listitem [ref=e1843]:
+                            - listitem [ref=e1845]:
+                              - generic [ref=e1846]:
+                                - generic [ref=e1847]:
+                                  - link [ref=e1848] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - figure [ref=e1849]:
+                                      - img "View Christopher Royse’s profile" [ref=e1850]
+                                  - generic [ref=e1852]:
+                                    - link "Christopher Royse Premium Profile You" [ref=e1855] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - generic "Christopher Royse Premium Profile You" [ref=e1857]:
+                                        - paragraph [ref=e1860]: Christopher Royse
+                                        - paragraph [ref=e1862]:
+                                          - generic [ref=e1863]:
+                                            - img [ref=e1865]
+                                            - text: • You
+                                    - paragraph [ref=e1868]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+                                    - paragraph [ref=e1870]:
+                                      - generic [ref=e1871]:
+                                        - text: 2w •
+                                        - 'img "Visibility: Global" [ref=e1872]'
+                                    - link:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                  - button "Open control menu for post by Christopher Royse" [ref=e1874] [cursor=pointer]:
+                                    - img [ref=e1876]
+                                - link [ref=e1878] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/feed/update/urn:li:activity:7461031739151536128/
+                                  - paragraph [ref=e1879]:
+                                    - generic [ref=e1880]:
+                                      - text: I haven't had Codex tokens for 12 hours.
+                                      - text: My agents have been coding for 20.
+                                      - text: This isn't a hack. It's a quirk in how OpenAI designed their pricing — and most developers don't see it.
+                                      - text: "Here's the mechanic:"
+                                      - text: When Claude Code hits your token limit, it cuts you off mid-task. Codex doesn't. OpenAI made the polite choice — they let the agent finish the job that's currently running before locking you out.
+                                      - text: That sounds harmless. Then they shipped a feature called Goals.
+                                      - text: A Goal is an instruction that the agent keeps pursuing across multiple jobs. When one task ends, the agent automatically queues the next one because the goal isn't satisfied yet.
+                                      - text: "Combine the two and you get something OpenAI probably didn't plan for:"
+                                      - text: "→ Set the goal: \"close every open GitHub issue\""
+                                      - text: → Keep adding GitHub issues to the queue
+                                      - text: → The goal never resolves
+                                      - text: → The agent never gets cut off
+                                      - text: You could start with 5% of your weekly limit, set ten goals, and burn through what would normally take five weeks of usage in a few days.
+                                      - text: The really interesting part isn't the token math. It's how you steer the agent.
+                                      - text: You don't re-prompt it. You don't interrupt it. You don't touch the chat.
+                                      - text: You just edit the GitHub issues.
+                                      - text: Need to change direction? Rewrite the issue. Want to pause work on something? Close the ticket. Want to add a new capability? File a new issue.
+                                      - text: The issue tracker stops being a project management tool. It becomes the steering wheel.
+                                      - text: I had one agent run for 5 straight days porting a backend to a new database. Zero re-prompts. Just issue edits.
+                                      - text: "One warning: if you hit the escape key during a goal, the goal dies and your token cap kicks in immediately. Don't touch it."
+                                      - text: The lesson isn't really about Codex. It's about workflow design.
+                                      - text: The best AI workflows in 2026 won't be the ones with the cleverest prompts. They'll be the ones built around external state — issues, files, queues — that the agent can read, update, and never lose.
+                                      - text: Are you running long-horizon agents yet? What's your longest unsupervised run?
+                                      - link "#AIAgents" [ref=e1882]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23aiagents&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1884]: "#AIAgents"
+                                      - link "#Codex" [ref=e1885]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23codex&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1887]: "#Codex"
+                                      - link "#OpenAI" [ref=e1888]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23openai&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e1890]: "#OpenAI"
+                                      - button:
+                                        - generic [ref=e1892]: … more
+                                - generic [ref=e1893]:
+                                  - region "Video Player" [ref=e1895]:              
+                                  - link "Play video" [ref=e1900] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7461031739151536128/
+                                    - img [ref=e1902]
+                              - generic [ref=e1904]:
+                                - generic [ref=e1905]:
+                                  - link "Scott Silverstein and 36 others reacted" [ref=e1906] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1907]:
+                                      - img [ref=e1908]
+                                      - img [ref=e1914]
+                                      - img [ref=e1922]
+                                      - paragraph [ref=e1937]:
+                                        - generic [ref=e1938]:
+                                          - generic [ref=e1939]: Scott Silverstein and 36 others reacted
+                                          - generic [ref=e1940]: Scott Silverstein and 36 others
+                                  - generic [ref=e1941]:
+                                    - link "7 comments" [ref=e1942] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/feed/update/urn:li:activity:7461031739151536128/
+                                      - paragraph [ref=e1943]:
+                                        - generic [ref=e1944]: 7 comments
+                                        - generic [ref=e1945]: 7 comments
+                                    - paragraph [ref=e1946]: •
+                                    - link "3 reposts" [ref=e1947] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - paragraph [ref=e1948]:
+                                        - generic [ref=e1949]: 3 reposts
+                                        - generic [ref=e1950]: 3 reposts
+                                - generic [ref=e1951]:
+                                  - generic [ref=e1952]:
+                                    - 'button "Reaction button state: no reaction" [ref=e1955] [cursor=pointer]':
+                                      - generic [ref=e1956]:
+                                        - img [ref=e1957]
+                                        - generic [ref=e1959]: Like
+                                    - button "Open reactions menu":
+                                      - img [ref=e1961] [cursor=pointer]
+                                  - link "Comment" [ref=e1963] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7461031739151536128/
+                                    - generic [ref=e1964]:
+                                      - img [ref=e1965]
+                                      - generic [ref=e1967]: Comment
+                                  - button "Repost" [ref=e1968] [cursor=pointer]:
+                                    - generic [ref=e1969]:
+                                      - img [ref=e1970]
+                                      - generic [ref=e1972]: Repost
+                                  - link "Send" [ref=e1973] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e1974]:
+                                      - img [ref=e1975]
+                                      - generic [ref=e1977]: Send
+                          - listitem [ref=e1978]:
+                            - listitem [ref=e1980]:
+                              - generic [ref=e1981]:
+                                - generic [ref=e1982]:
+                                  - link [ref=e1983] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - figure [ref=e1984]:
+                                      - img "View Christopher Royse’s profile" [ref=e1985]
+                                  - generic [ref=e1987]:
+                                    - link "Christopher Royse Premium Profile You" [ref=e1990] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - generic "Christopher Royse Premium Profile You" [ref=e1992]:
+                                        - paragraph [ref=e1995]: Christopher Royse
+                                        - paragraph [ref=e1997]:
+                                          - generic [ref=e1998]:
+                                            - img [ref=e2000]
+                                            - text: • You
+                                    - paragraph [ref=e2003]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+                                    - paragraph [ref=e2005]:
+                                      - generic [ref=e2006]:
+                                        - text: 2w •
+                                        - 'img "Visibility: Global" [ref=e2007]'
+                                    - link:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                  - button "Open control menu for post by Christopher Royse" [ref=e2009] [cursor=pointer]:
+                                    - img [ref=e2011]
+                                - link [ref=e2013] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/feed/update/urn:li:activity:7460351378813652992/
+                                  - paragraph [ref=e2014]:
+                                    - generic [ref=e2015]:
+                                      - text: The trick to making AI code autonomously for days isn't a better model.
+                                      - text: It's GitHub Issues.
+                                      - text: I've been running coding agents that work for 6+ hours without me touching them. Yesterday, one closed 293 issues in a single phase.
+                                      - text: "Here's what almost nobody is doing:"
+                                      - text: Most people treat AI coding agents like an assistant they have to babysit. Prompt → wait → review → prompt again. The agent forgets context. You forget what you asked for. Nothing finishes.
+                                      - text: The fix isn't a smarter model. It's giving the agent a system it can coordinate with itself through.
+                                      - text: GitHub Issues turns out to be that system.
+                                      - text: "The setup is embarrassingly simple:"
+                                      - text: 1. Write a spec or PRD for whatever you're building
+                                      - text: 2. Tell the AI to break it into atomic GitHub issues — one per task
+                                      - text: "3. Drop the agent into a loop: /loop in Claude Code, /goal in Codex"
+                                      - text: 4. Walk away
+                                      - text: "The loop tells the agent one thing: close every open issue."
+                                      - text: While it's working, it sees other broken stuff. It doesn't fix those — that would break focus. It files a new issue and keeps going. Now the tracker is growing while it's shrinking.
+                                      - text: Eventually the queue hits zero. The agent stops.
+                                      - text: "A few rules that make this actually work:"
+                                      - text: → Full state verification. The agent doesn't trust its own code. It runs the system, checks the output against expected results, and only closes the issue if reality matches the spec.
+                                      - text: → When your prompt has a vague word like "useful" or "robust," ask a second AI what that word means for your context. Paste the definition back in. Suddenly the agent knows what done looks like.
+                                      - text: The issue tracker stops being a project management tool. It becomes the agent's memory, coordination layer, and finish line — all at once.
+                                      - text: Link to my Prompts in Comments.
+                                      - link "#AIAgents" [ref=e2017]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23aiagents&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e2019]: "#AIAgents"
+                                      - link "#ClaudeCode" [ref=e2020]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23claudecode&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e2022]: "#ClaudeCode"
+                                      - link "#Codex" [ref=e2023]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23codex&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e2025]: "#Codex"
+                                      - button:
+                                        - generic [ref=e2027]: … more
+                                - generic [ref=e2028]:
+                                  - region "Video Player" [ref=e2030]:              
+                                  - link "Play video" [ref=e2035] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7460351378813652992/
+                                    - img [ref=e2037]
+                              - generic [ref=e2039]:
+                                - generic [ref=e2040]:
+                                  - link "Mark Ruddock and 47 others reacted" [ref=e2041] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e2042]:
+                                      - img [ref=e2043]
+                                      - img [ref=e2049]
+                                      - img [ref=e2057]
+                                      - paragraph [ref=e2072]:
+                                        - generic [ref=e2073]:
+                                          - generic [ref=e2074]: Mark Ruddock and 47 others reacted
+                                          - generic [ref=e2075]: Mark Ruddock and 47 others
+                                  - generic [ref=e2076]:
+                                    - link "7 comments" [ref=e2077] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/feed/update/urn:li:activity:7460351378813652992/
+                                      - paragraph [ref=e2078]:
+                                        - generic [ref=e2079]: 7 comments
+                                        - generic [ref=e2080]: 7 comments
+                                    - paragraph [ref=e2081]: •
+                                    - link "3 reposts" [ref=e2082] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - paragraph [ref=e2083]:
+                                        - generic [ref=e2084]: 3 reposts
+                                        - generic [ref=e2085]: 3 reposts
+                                - generic [ref=e2086]:
+                                  - generic [ref=e2087]:
+                                    - 'button "Reaction button state: no reaction" [ref=e2090] [cursor=pointer]':
+                                      - generic [ref=e2091]:
+                                        - img [ref=e2092]
+                                        - generic [ref=e2094]: Like
+                                    - button "Open reactions menu":
+                                      - img [ref=e2096] [cursor=pointer]
+                                  - link "Comment" [ref=e2098] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7460351378813652992/
+                                    - generic [ref=e2099]:
+                                      - img [ref=e2100]
+                                      - generic [ref=e2102]: Comment
+                                  - button "Repost" [ref=e2103] [cursor=pointer]:
+                                    - generic [ref=e2104]:
+                                      - img [ref=e2105]
+                                      - generic [ref=e2107]: Repost
+                                  - link "Send" [ref=e2108] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e2109]:
+                                      - img [ref=e2110]
+                                      - generic [ref=e2112]: Send
+                          - listitem [ref=e2113]:
+                            - listitem [ref=e2115]:
+                              - generic [ref=e2116]:
+                                - generic [ref=e2117]:
+                                  - link [ref=e2118] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - figure [ref=e2119]:
+                                      - img "View Christopher Royse’s profile" [ref=e2120]
+                                  - generic [ref=e2122]:
+                                    - link "Christopher Royse Premium Profile You" [ref=e2125] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - generic "Christopher Royse Premium Profile You" [ref=e2127]:
+                                        - paragraph [ref=e2130]: Christopher Royse
+                                        - paragraph [ref=e2132]:
+                                          - generic [ref=e2133]:
+                                            - img [ref=e2135]
+                                            - text: • You
+                                    - paragraph [ref=e2138]: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+                                    - paragraph [ref=e2140]:
+                                      - generic [ref=e2141]:
+                                        - text: 2w •
+                                        - 'img "Visibility: Global" [ref=e2142]'
+                                    - link:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                  - button "Open control menu for post by Christopher Royse" [ref=e2144] [cursor=pointer]:
+                                    - img [ref=e2146]
+                                - link [ref=e2148] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/feed/update/urn:li:activity:7459671129599766528/
+                                  - paragraph [ref=e2149]:
+                                    - generic [ref=e2150]:
+                                      - text: Within 30 minutes of opening TikTok, your child's identity has already been chosen for them.
+                                      - text: I spent the last year researching how this happens.
+                                      - text: Here's what I found 👇
+                                      - text: Between ages 12 and 16, a healthy adolescent is supposed to try on different identities — skater one week, gamer the next, artist the week after — and pull the pieces they like into something genuinely theirs.
+                                      - text: That process is called identity exploration. It's how you become a person.
+                                      - text: The algorithms have replaced it with something else.
+                                      - text: I call it 𝗮𝗹𝗴𝗼𝗿𝗶𝘁𝗵𝗺𝗶𝗰 𝗳𝗼𝗿𝗲𝗰𝗹𝗼𝘀𝘂𝗿𝗲 — a single identity, picked for the child by an engagement-optimization system, before they ever had the chance to explore.
+                                      - text: "This semester I analyzed the same crisis through the lens of crisis communication theory. Under Coombs's framework, this is a textbook preventable crisis:"
+                                      - text: → Frances Haugen's 2021 Senate testimony
+                                      - text: → The 2023 Surgeon General advisory
+                                      - text: → 41 state attorneys general suing Meta
+                                      - text: → 10,000+ personal injury cases in MDL 3047
+                                      - text: → Nearly 800 school district claims
+                                      - text: → A $6M bellwether verdict against Meta and Google in April 2026
+                                      - text: 𝗧𝗵𝗲 𝗰𝗼𝗺𝗽𝗮𝗻𝗶𝗲𝘀 𝗸𝗻𝗲𝘄.
+                                      - text: 𝐓𝐡𝐞 𝐢𝐧𝐭𝐞𝐫𝐧𝐚𝐥 𝐫𝐞𝐬𝐞𝐚𝐫𝐜𝐡 𝐞𝐱𝐢𝐬𝐭𝐞𝐝.
+                                      - text: 𝐓𝐡𝐞𝐲 𝐩𝐫𝐨𝐜𝐞𝐞𝐝𝐞𝐝 𝐚𝐧𝐲𝐰𝐚𝐲.
+                                      - text: I don't think I've cracked anything new. People smarter than me have been raising this alarm for years.
+                                      - text: What I do think is missing is that nobody has actually asked the adolescents themselves how they perceive any of this.
+                                      - text: Link to the Research Papers in the Comments.
+                                      - link "#AlgorithmicForeclosure" [ref=e2152]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23algorithmicforeclosure&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e2154]: "#AlgorithmicForeclosure"
+                                      - link "#SocialMediaHarm" [ref=e2155]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23socialmediaharm&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e2157]: "#SocialMediaHarm"
+                                      - link "#TeenMentalHealth" [ref=e2158]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23teenmentalhealth&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e2160]: "#TeenMentalHealth"
+                                      - link "#BigTech" [ref=e2161]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23bigtech&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e2163]: "#BigTech"
+                                      - link "#CrisisCommunication" [ref=e2164]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23crisiscommunication&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e2166]: "#CrisisCommunication"
+                                      - link "#DigitalParenting" [ref=e2167]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23digitalparenting&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e2169]: "#DigitalParenting"
+                                      - link "#Meta" [ref=e2170]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23meta&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e2172]: "#Meta"
+                                      - link "#TikTok" [ref=e2173]:
+                                        - /url: https://www.linkedin.com/search/results/all/?keywords=%23tiktok&origin=HASH_TAG_FROM_FEED
+                                        - strong [ref=e2175]: "#TikTok"
+                                      - button:
+                                        - generic [ref=e2177]: … more
+                                - generic [ref=e2178]:
+                                  - region "Video Player" [ref=e2180]:              
+                                  - link "Play video" [ref=e2185] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7459671129599766528/
+                                    - img [ref=e2187]
+                              - generic [ref=e2189]:
+                                - generic [ref=e2190]:
+                                  - link "Michael O'Boyle and 10 others reacted" [ref=e2191] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e2192]:
+                                      - img [ref=e2193]
+                                      - img [ref=e2199]
+                                      - paragraph [ref=e2208]:
+                                        - generic [ref=e2209]:
+                                          - generic [ref=e2210]: Michael O'Boyle and 10 others reacted
+                                          - generic [ref=e2211]: Michael O'Boyle and 10 others
+                                  - generic [ref=e2212]:
+                                    - link "3 comments" [ref=e2213] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/feed/update/urn:li:activity:7459671129599766528/
+                                      - paragraph [ref=e2214]:
+                                        - generic [ref=e2215]: 3 comments
+                                        - generic [ref=e2216]: 3 comments
+                                    - paragraph [ref=e2217]: •
+                                    - link "1 repost" [ref=e2218] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                      - paragraph [ref=e2219]:
+                                        - generic [ref=e2220]: 1 repost
+                                        - generic [ref=e2221]: 1 repost
+                                - generic [ref=e2222]:
+                                  - generic [ref=e2223]:
+                                    - 'button "Reaction button state: no reaction" [ref=e2226] [cursor=pointer]':
+                                      - generic [ref=e2227]:
+                                        - img [ref=e2228]
+                                        - generic [ref=e2230]: Like
+                                    - button "Open reactions menu":
+                                      - img [ref=e2232] [cursor=pointer]
+                                  - link "Comment" [ref=e2234] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/feed/update/urn:li:activity:7459671129599766528/
+                                    - generic [ref=e2235]:
+                                      - img [ref=e2236]
+                                      - generic [ref=e2238]: Comment
+                                  - button "Repost" [ref=e2239] [cursor=pointer]:
+                                    - generic [ref=e2240]:
+                                      - img [ref=e2241]
+                                      - generic [ref=e2243]: Repost
+                                  - link "Send" [ref=e2244] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                                    - generic [ref=e2245]:
+                                      - img [ref=e2246]
+                                      - generic [ref=e2248]: Send
+                      - button "Next" [ref=e2249] [cursor=pointer]:
+                        - img [ref=e2251]
+                    - link "Show all" [ref=e2254] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/recent-activity/all/
+                      - generic [ref=e2255]:
+                        - img [ref=e2256]
+                        - generic [ref=e2258]: Show all
+                - generic [ref=e2260]:
+                  - generic [ref=e2265]:
+                    - generic [ref=e2266]:
+                      - heading "Experience" [level=2] [ref=e2267]
+                      - generic [ref=e2268]:
+                        - button "Add experience" [ref=e2269] [cursor=pointer]:
+                          - img [ref=e2271]
+                        - link "Edit experience" [ref=e2273] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/experience/
+                          - img [ref=e2275]
+                    - generic [ref=e2277]:
+                      - generic [ref=e2282]:
+                        - figure [ref=e2283]:
+                          - img "socialmedia2.com logo" [ref=e2284]
+                        - generic [ref=e2290]:
+                          - link "Founder socialmedia2.com May 2026 - Present · 1 mo" [ref=e2291] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/in/christopher-royse-b624b596/edit/forms/position/2928077786/
+                            - generic [ref=e2292]:
+                              - generic [ref=e2294]:
+                                - paragraph [ref=e2295]: Founder
+                                - paragraph [ref=e2296]: socialmedia2.com
+                              - paragraph [ref=e2297]: May 2026 - Present · 1 mo
+                          - paragraph [ref=e2299]:
+                            - generic [ref=e2300]:
+                              - text: Polis (socialmedia2.com) is civic software for forming real-world gatherings without social-media engagement mechanics — no algorithmic feed, no follower counts, no likes, no ad revenue. Citizens create a private page, name the place they want real rooms to form, and are matched into in-person formats (Symposium, Agora, Gymnasium, Theater, Festival). Matching uses a 21-slot frozen embedding "Constellation"; the objective is durable in-person civic ties, not time on app. Privacy-preserving, US-first, Apache-2.0.
+                              - button:
+                                - generic [ref=e2302] [cursor=pointer]: … more
+                      - generic [ref=e2307]:
+                        - link [ref=e2308] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/company/105894583/
+                          - figure [ref=e2309]:
+                            - img "Agentics Foundation logo" [ref=e2310]
+                        - generic [ref=e2311]:
+                          - link "Contributor Agentics Foundation · Contract Feb 2025 - Present · 1 yr 4 mos Manhattan, Kansas, United States · Remote" [ref=e2312] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/in/christopher-royse-b624b596/edit/forms/position/2587044749/
+                            - generic [ref=e2313]:
+                              - generic [ref=e2315]:
+                                - paragraph [ref=e2316]: Contributor
+                                - paragraph [ref=e2317]: Agentics Foundation · Contract
+                              - paragraph [ref=e2318]: Feb 2025 - Present · 1 yr 4 mos
+                              - paragraph [ref=e2319]: Manhattan, Kansas, United States · Remote
+                          - 'link "Master AI Without Coding: Build $20K Projects in 90 Minutes | Prompt Engineering Secrets Revealed Agentics Foundation: https://agentics.org/ LinikedIn: https://www.linkedin.com/company/agentics-org/posts/?feedView=all" [ref=e2322] [cursor=pointer]':
+                            - /url: https://www.linkedin.com/in/christopher-royse-b624b596/overlay/Position/2587044749/treasury/?profileId=ACoAABRc8zoBsfI3w6qkhcTpLQdVy2JGfTU-NMY
+                            - generic [ref=e2323]:
+                              - figure [ref=e2325]:
+                                - 'img "Thumbnail for Master AI Without Coding: Build $20K Projects in 90 Minutes | Prompt Engineering Secrets Revealed" [ref=e2326]'
+                              - generic [ref=e2327]:
+                                - paragraph [ref=e2328]: "Master AI Without Coding: Build $20K Projects in 90 Minutes | Prompt Engineering Secrets Revealed"
+                                - paragraph [ref=e2330]: "Agentics Foundation: https://agentics.org/ LinikedIn: https://www.linkedin.com/company/agentics-org/posts/?feedView=all"
+                          - paragraph [ref=e2331]:
+                            - link "Prompt Engineering and Agentic Coding" [ref=e2332] [cursor=pointer]:
+                              - /url: https://www.linkedin.com/in/christopher-royse-b624b596/overlay/2587044749/skill-associations-details/
+                              - img [ref=e2334]
+                              - text: Prompt Engineering and Agentic Coding
+                      - generic [ref=e2340]:
+                        - link [ref=e2341] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/company/115094401/
+                          - figure [ref=e2342]:
+                            - img "Leapable logo" [ref=e2343]
+                        - generic [ref=e2344]:
+                          - link "Founder Leapable Feb 2025 - Present · 1 yr 4 mos" [ref=e2345] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/in/christopher-royse-b624b596/edit/forms/position/2895745630/
+                            - generic [ref=e2346]:
+                              - generic [ref=e2348]:
+                                - paragraph [ref=e2349]: Founder
+                                - paragraph [ref=e2350]: Leapable
+                              - paragraph [ref=e2351]: Feb 2025 - Present · 1 yr 4 mos
+                          - paragraph [ref=e2353]:
+                            - generic [ref=e2354]:
+                              - text: Leapable.ai is a local-first MCP knowledge-vault marketplace. AI agents add Sources to Private Vaults, Ask source-grounded questions with full citations and provenance, and reach public creator Vaults through Discover. Built on an open-source OCR + provenance foundation; runs on the user's machine via a signed installer (no Docker, Python, or model weights to manage). Creators keep 70% of every query and 70% of paywall subscriptions.
+                              - button:
+                                - generic [ref=e2356] [cursor=pointer]: … more
+                      - generic [ref=e2357]:
+                        - generic [ref=e2360]:
+                          - link [ref=e2361] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/school/7031/
+                            - figure [ref=e2362]:
+                              - img "Kansas State University logo" [ref=e2363]
+                          - link "Kansas State University Part-time · 1 yr 9 mos" [ref=e2365] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/school/7031/
+                            - generic [ref=e2368]:
+                              - paragraph [ref=e2369]: Kansas State University
+                              - paragraph [ref=e2370]: Part-time · 1 yr 9 mos
+                        - list [ref=e2371]:
+                          - listitem [ref=e2372]:
+                            - generic [ref=e2375]:
+                              - link "Graduate Teaching Assistant Dec 2024 - Present · 1 yr 6 mos Junction City, Kansas, United States · Remote" [ref=e2376] [cursor=pointer]:
+                                - /url: https://www.linkedin.com/in/christopher-royse-b624b596/edit/forms/position/2465848567/
+                                - generic [ref=e2377]:
+                                  - paragraph [ref=e2378]: Graduate Teaching Assistant
+                                  - paragraph [ref=e2379]: Dec 2024 - Present · 1 yr 6 mos
+                                  - paragraph [ref=e2380]: Junction City, Kansas, United States · Remote
+                              - generic [ref=e2381]:
+                                - paragraph [ref=e2382]:
+                                  - generic [ref=e2383]: Software Engineer
+                                - paragraph [ref=e2384]:
+                                  - link "Graduate Level" [ref=e2385] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/overlay/2465848567/skill-associations-details/
+                                    - img [ref=e2387]
+                                    - text: Graduate Level
+                          - listitem [ref=e2389]:
+                            - generic [ref=e2392]:
+                              - link "Undergraduate Student Researcher Sep 2024 - Dec 2024 · 4 mos Manhattan, Kansas, United States · Hybrid" [ref=e2393] [cursor=pointer]:
+                                - /url: https://www.linkedin.com/in/christopher-royse-b624b596/edit/forms/position/2538381424/
+                                - generic [ref=e2394]:
+                                  - paragraph [ref=e2395]: Undergraduate Student Researcher
+                                  - paragraph [ref=e2396]: Sep 2024 - Dec 2024 · 4 mos
+                                  - paragraph [ref=e2397]: Manhattan, Kansas, United States · Hybrid
+                              - generic [ref=e2398]:
+                                - paragraph [ref=e2399]:
+                                  - generic [ref=e2400]:
+                                    - text: I recorded 723 million chat messages from Twitch.tv live chat channels over a 2 month period. I analyzed messages from over 12 million unique users. I contextually embedded the messages and I was able to use those contextual groupings to identify quantitatively how many of those messages were misogynistic. 1/1000 of the messages spoken in 64 female streaming channels contained misogyny.
+                                    - button:
+                                      - generic [ref=e2402] [cursor=pointer]: … more
+                                - paragraph [ref=e2403]:
+                                  - link "Natural Language Processing (NLP) and Software Development" [ref=e2404] [cursor=pointer]:
+                                    - /url: https://www.linkedin.com/in/christopher-royse-b624b596/overlay/2538381424/skill-associations-details/
+                                    - img [ref=e2406]
+                                    - text: Natural Language Processing (NLP) and Software Development
+                  - generic [ref=e2412]:
+                    - generic [ref=e2413]:
+                      - heading "Education" [level=2] [ref=e2414]
+                      - generic [ref=e2415]:
+                        - link "Add education" [ref=e2416] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/christopher-royse-b624b596/edit/forms/education/new/
+                          - img [ref=e2418]
+                        - link "Edit education" [ref=e2420] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/education/
+                          - img [ref=e2422]
+                    - generic [ref=e2425]:
+                      - generic [ref=e2429]:
+                        - link [ref=e2430] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/school/7031/
+                          - figure [ref=e2431]:
+                            - img "Kansas State University logo" [ref=e2432]
+                        - generic [ref=e2433]:
+                          - link "Kansas State University Bachelor of Business Administration - BBA, Marketing Aug 2003 – Dec 2024" [ref=e2434] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/education/edit/forms/974268529/
+                            - generic [ref=e2435]:
+                              - generic [ref=e2437]:
+                                - paragraph [ref=e2438]: Kansas State University
+                                - paragraph [ref=e2439]: Bachelor of Business Administration - BBA, Marketing
+                              - paragraph [ref=e2440]: Aug 2003 – Dec 2024
+                          - paragraph [ref=e2441]: "Grade: Senior"
+                          - paragraph [ref=e2442]: "Activities and societies: Outdoor Enthusiast. Business and Marketing Consultant"
+                          - paragraph [ref=e2443]:
+                            - generic [ref=e2444]: thenumberonellc.com
+                      - generic [ref=e2448]:
+                        - figure [ref=e2449]:
+                          - img "Kansas State University logo" [ref=e2450]
+                        - link "Kansas State University BA, Business and Marketing 2020 – 2024" [ref=e2458] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/education/edit/forms/995061251/
+                          - generic [ref=e2459]:
+                            - generic [ref=e2461]:
+                              - paragraph [ref=e2462]: Kansas State University
+                              - paragraph [ref=e2463]: BA, Business and Marketing
+                            - paragraph [ref=e2464]: 2020 – 2024
+                  - generic [ref=e2469]:
+                    - generic [ref=e2470]:
+                      - heading "Licenses & certifications" [level=2] [ref=e2471]
+                      - generic [ref=e2472]:
+                        - link "Add a certification" [ref=e2473] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/christopher-royse-b624b596/edit/forms/certification/new/
+                          - img [ref=e2475]
+                        - link "Edit a certification" [ref=e2477] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/certifications/
+                          - img [ref=e2479]
+                    - generic [ref=e2486]:
+                      - link [ref=e2487] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/company/2453129/
+                        - figure [ref=e2488]:
+                          - img "Coursera logo" [ref=e2489]
+                      - generic [ref=e2490]:
+                        - generic [ref=e2491]:
+                          - generic [ref=e2493]:
+                            - paragraph [ref=e2494]: Google Data Analytics Professional Certificate
+                            - paragraph [ref=e2495]: Coursera
+                          - paragraph [ref=e2496]: Issued Apr 2025
+                        - link "Show credential for Google Data Analytics Professional Certificate" [ref=e2497] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/safety/go/?url=https%3A%2F%2Fwww%2Ecredly%2Ecom%2Fbadges%2F6a3dfff2-0444-40ab-8ffb-288c5f24c588%2Flinked_in_profile&urlhash=nf27&mt=ymBp9YunbTD7Vxbs-4mWGt3NmORrTkq9oQNfOSV5hmlrRFY2YUaAD1Svtwi9PtZAc9RMAUkoPXKFcmX4oNomCGr3uwI&isSdui=true
+                          - generic [ref=e2498]:
+                            - img [ref=e2499]
+                            - generic [ref=e2501]: Show credential
+                - generic [ref=e2506]:
+                  - heading "Interests" [level=2] [ref=e2508]
+                  - generic [ref=e2509]:
+                    - generic [ref=e2510]:
+                      - radio "Top Voices" [checked] [ref=e2511] [cursor=pointer]:
+                        - generic [ref=e2512]:
+                          - checkbox "Top Voices" [checked]
+                          - generic [ref=e2513]: Top Voices
+                      - radio "Companies" [ref=e2514] [cursor=pointer]:
+                        - generic [ref=e2515]:
+                          - checkbox "Companies"
+                          - generic [ref=e2516]: Companies
+                      - radio "Groups" [ref=e2517] [cursor=pointer]:
+                        - generic [ref=e2518]:
+                          - checkbox "Groups"
+                          - generic [ref=e2519]: Groups
+                      - radio "Newsletters" [ref=e2520] [cursor=pointer]:
+                        - generic [ref=e2521]:
+                          - checkbox "Newsletters"
+                          - generic [ref=e2522]: Newsletters
+                      - radio "Schools" [ref=e2523] [cursor=pointer]:
+                        - generic [ref=e2524]:
+                          - checkbox "Schools"
+                          - generic [ref=e2525]: Schools
+                    - generic [ref=e2527]:
+                      - generic [ref=e2530]:
+                        - generic [ref=e2532]:
+                          - link "Andrew Ng Executive Top Voice · 3rd DeepLearning.AI, AI Fund and AI Aspire 2,508,350 followers" [ref=e2534] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/in/andrewyng/
+                            - generic [ref=e2535]:
+                              - figure [ref=e2536]
+                              - generic [ref=e2537]:
+                                - generic [ref=e2538]:
+                                  - paragraph [ref=e2540]:
+                                    - link "Andrew Ng Executive Top Voice" [ref=e2542]:
+                                      - /url: https://www.linkedin.com/in/andrewyng/
+                                      - text: Andrew Ng
+                                      - img "Executive Top Voice" [ref=e2543]:
+                                        - img [ref=e2544]
+                                  - paragraph [ref=e2546]: · 3rd
+                                - paragraph [ref=e2547]: DeepLearning.AI, AI Fund and AI Aspire
+                                - paragraph [ref=e2548]: 2,508,350 followers
+                          - button "Following, click to unfollow Andrew Ng" [ref=e2553] [cursor=pointer]:
+                            - generic [ref=e2554]:
+                              - img [ref=e2555]
+                              - generic [ref=e2558]: Following
+                        - generic [ref=e2560]:
+                          - link "Satya Nadella Executive Top Voice · 3rd Chairman and CEO at Microsoft 12,002,268 followers" [ref=e2562] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/in/satyanadella/
+                            - generic [ref=e2563]:
+                              - figure [ref=e2564]
+                              - generic [ref=e2565]:
+                                - generic [ref=e2566]:
+                                  - paragraph [ref=e2568]:
+                                    - link "Satya Nadella Executive Top Voice" [ref=e2570]:
+                                      - /url: https://www.linkedin.com/in/satyanadella/
+                                      - text: Satya Nadella
+                                      - img "Executive Top Voice" [ref=e2571]:
+                                        - img [ref=e2572]
+                                  - paragraph [ref=e2574]: · 3rd
+                                - paragraph [ref=e2575]: Chairman and CEO at Microsoft
+                                - paragraph [ref=e2576]: 12,002,268 followers
+                          - button "Following, click to unfollow Satya Nadella" [ref=e2581] [cursor=pointer]:
+                            - generic [ref=e2582]:
+                              - img [ref=e2583]
+                              - generic [ref=e2586]: Following
+                      - link "Show all interests" [ref=e2588] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/christopher-royse-b624b596/details/interests/?initialTabId=interest_top_voices
+                        - generic [ref=e2589]:
+                          - img [ref=e2590]
+                          - generic [ref=e2592]: Show all
+            - complementary "Aside" [ref=e310]:
+              - generic [ref=e311]:
+                - generic [ref=e312]:
+                  - generic [ref=e316]:
+                    - generic [ref=e317]:
+                      - heading "Profile language" [level=2] [ref=e318]
+                      - link "Edit profile language" [ref=e320] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/christopher-royse-b624b596/edit/secondary-language/
+                        - img [ref=e2593]
+                    - paragraph [ref=e324]: English
+                    - generic [ref=e325]:
+                      - heading "Public profile & URL" [level=2] [ref=e326]
+                      - link "Edit Public profile & URL" [ref=e328] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/public-profile/settings/?trk=d_flagship3_profile_self_view_public_profile
+                        - img [ref=e2595]
+                    - paragraph [ref=e332]: www.linkedin.com/in/christopher-royse-b624b596
+                  - iframe [ref=e335]:
+                    - main "Work With Us Container" [ref=f72e3]:
+                      - generic [ref=f72e4]:
+                        - img [ref=f72e6]
+                        - generic [ref=f72e7]:
+                          - img "Christopher" [ref=f72e8]
+                          - link "Ferrellgas" [ref=f72e9] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F16710%2Flife&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee-j8dwp0PYyNKga1r7BxWfXXz8avNGXqNSoozXpKYEKVMvhhKbEhrNBzhYeDZcINpYGfyOd0vrrSRsdk8hzUPSJQDQuZZjIi4N60-cDiMA1BSgJ77V_ttOnyaeEsH7fsCrbZxQs8gPZaIxhhlCxEKH9qW-D54d9TpHX1Sb3KnX0jr-H6FUBK9V8k_QmJTlMI7AhAwB_dj0ZwJ2dsyOI6iY95ba0gYfJO2ItolFBRT0dzk_VLNr_JsSV1U4TI4MUGU3n6zvpq5t4gVc-tEWuYdITfjAzk9K7VQKnoP5sYHgWoxrtqo90Cv0CioDOxlgx-RgSzqFd1AmnF_Ql8mp7P0wx2WfZfXUePqxK3BnekTF9ub4SVtbr26iTa5O3jMg6JLA_85WDNrhSfwMNAUVgM6MSCJfYvKvxf17pT---xMNUiLtWQk6SzGz_vX7nfJ0g_faqnnLT3qLNXS4B4g-_rp1M1iBJ_QALcx37fwrTTtbnBQmhoJTth5S8CieLv45jqCswJt2xmBEGCa1jrjMUkFL-DcCC1-_iH-rn345IaxyZ5-OEyKiy0Z2ly4q7I_sgVcLEf3ud4Ozm2RxpareaIEc5-cdvNBMPUhDbH7LPEypPcXU_t74x9VOa3hvhzLYYrlR2hbFDsHsQlgAloGJ8EA7pq-76Cy_Geq2Q9unyefje2Cgj1YX5cFCrgW1GGUDNIz38AijqnPH0B5alvUEY4oqBn-aLXzM-qTFrmxbH1KaQT6Vf--dKhh2BUtQ90bBv_1ZODo4GKqnMgCkEUkWa3N5wF669X63F_NivvtiyBxmT5MdxpVtOH0FLiMANl-jvOddN8VYEuuA_ODF7NgDK5KeiQ-C84c40Vmf7GTgVrFVpBYg2FaFXep957HmWQ9z3Xhhpf0Q1KCjV0qoM-8TYQxNX_UGTb9C7m3LwLEDomrF8fgtg9x_kNDKvKG7OoacJ9apit2KWzC_ApRex6vYvxdWar-KyYBXuU74lzrPZB-wEun4IpL_qnIzQcZYIgM6Axd7QVxrULunQGEOm3OeP0IEJRCDxzQ7WxHkRX9z9Oar2dTQM8JWJ3KZFA%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base%22%2C%22trackingId%22%3A%22828ad37a-b1f3-4284-936b-56d7992e42e9%22%7D%2C%22time%22%3A1780195327043%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
+                            - img "Ferrellgas" [ref=f72e10]
+                      - generic [ref=f72e11]:
+                        - generic [ref=f72e12]:
+                          - paragraph [ref=f72e13]: Christopher, explore relevant opportunities with Ferrellgas
+                          - paragraph [ref=f72e14]: Get the latest jobs and industry news
+                        - link "Follow" [ref=f72e15] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F16710%2Flife%3FisFollowingPage%3Dtrue&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee-j8d0Maf_et3A4HtivDxLBE-L_IiNyYvNXB3r-F_BGvIHKMvRUuURi1n6LOekUvpVrox81VsJIBWdHbAAScSMZtzDU6jnyMmIY1y1VJvffBv42rOhy0wbm8NFyR_Ops0Ry6qrUgvW7tqVi4KfaGbO3qUbCtP1F-BM53V2q0ovbPgahsR6oVpB5WtoIp9lPo12TF7GW5dpdPiZwCi9fAXoKSeF1k4Ww-_blkmdYPzxOV5Guq8_--3AKW-7e806Z_Ed6Kduc6QZ7XJ-Weqdim-W7VI-PvyRTr9SaenFQN6QvvuWjD0Eve4QJ1Vdie0nWuSEux8ZfDgvomFqzI9CRql04edr_Js_Ywxf51jBAA-3FNT27lLBQp9PUX1gIMQLF-0j-auxibjjc4TfpIT1ImaVPNrh0ILBpByxidl_wVt_Oy8m9iMbJy0fEAOqqFkrpDqPTvfGF_LkXvP8GiKW_RgImEmwpBpU9wlLgfWLGqOKF0hT8lrfJBxMXOMXbJxvVJAue021A9VHW11WpsnVfEbo6oMKSPdBb1o6_efaKgd6Q8IQ6v_-MVrGuz9H3_U3PKm9VFNQwLKOle-Th2_My_y_KM0ttqyrXezYJuUAYN8kDfKTSwq69PMfAElhevdHMygH0-UlUz7AUX2II7ydSVK7gco9GIYisVNRxgAM-nqQWIZBjXPIQYqhpc-nx789lnguwenV3LX69qkZwpfH0EMXUp6yUico6ZqqnypueT8sPJ1A5cft-n_k-BddIgRmkfZmjJ-DYOyL1TLgaKriWDT5Fh8UOItRFvOVm_JSVKjIdoydlBiOx-Vq-_oSsZMm57nSi6rG-9ERB-nh0Ng2fh-bS7u7i6tPHnmCjksek_1oAiRr0aD34PW1ORmciYbZgetcqfKKTLiE9EeIBuY5nm3rR25nUyBQrRwRtsJy1_WaxWodzOKxjFhGhhyu6WrFtZYuBunyHwbkwu4nC0lDVzhCfvEGlUY9mJRLPB46od9dh0cNEuYnjfeNLE0EF3ODlrevrqmerCbE2xwtlOavdvG-u2gZnACZr2_eY96oBE7NuRnP3dlXsRtW3EZ126B-H6Ww4p4_eRaBXeOF_2XYKdQmHRDAXsQLwH%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base%22%2C%22trackingId%22%3A%220992614a-aa25-44e5-b0e1-3a7686d4e893%22%7D%2C%22time%22%3A1780195327043%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
+                      - generic [ref=f72e16]:
+                        - paragraph [ref=f72e17]: Promoted
+                        - button "Ad Options" [ref=f72e18] [cursor=pointer]:
+                          - img [ref=f72e19]
+                          - generic [ref=f72e23]: Ad Options
+                  - generic [ref=e2601]:
+                    - generic [ref=e2603]:
+                      - img "Premium" [ref=e2604]
+                      - heading "Who your viewers also viewed" [level=3] [ref=e2610]
+                      - paragraph [ref=e2611]: Private to you
+                    - generic [ref=e2613]:
+                      - generic [ref=e2615]:
+                        - link "Reuven Cohen Verified · 1st ♾️ Agentic Engineer / Founder @ Cognitum.One" [ref=e2618] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/reuvencohen/
+                          - generic [ref=e2619]:
+                            - figure [ref=e2620]
+                            - generic [ref=e2621]:
+                              - generic [ref=e2622]:
+                                - paragraph [ref=e2624]:
+                                  - link "Reuven Cohen Verified" [ref=e2626]:
+                                    - /url: https://www.linkedin.com/in/reuvencohen/
+                                    - text: Reuven Cohen
+                                    - img "Verified" [ref=e2627]:
+                                      - img [ref=e2628]
+                                - paragraph [ref=e2630]: · 1st
+                              - paragraph [ref=e2632]: ♾️ Agentic Engineer / Founder @ Cognitum.One
+                        - link "Message Reuven Cohen" [ref=e2636] [cursor=pointer]:
+                          - /url: /messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AACoAAAAsDPgBDJuUuadvvnSxPUkh_oT8zWlUvrk&recipient=ACoAAAAsDPgBDJuUuadvvnSxPUkh_oT8zWlUvrk&screenContext=NON_SELF_PROFILE_VIEW&interop=msgOverlay
+                          - generic [ref=e2637]:
+                            - img [ref=e2638]
+                            - generic [ref=e2640]: Message
+                      - generic [ref=e2642]:
+                        - link "Brad Ross Verified · 1st ♾️Harvard CS | AI Agentics Engineer | Deterministic AI and Recursive Self Learning Systems | research, teaching, consulting" [ref=e2645] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/bradaross/
+                          - generic [ref=e2646]:
+                            - figure [ref=e2647]
+                            - generic [ref=e2648]:
+                              - generic [ref=e2649]:
+                                - paragraph [ref=e2651]:
+                                  - link "Brad Ross Verified" [ref=e2653]:
+                                    - /url: https://www.linkedin.com/in/bradaross/
+                                    - text: Brad Ross
+                                    - img "Verified" [ref=e2654]:
+                                      - img [ref=e2655]
+                                - paragraph [ref=e2657]: · 1st
+                              - paragraph [ref=e2659]: ♾️Harvard CS | AI Agentics Engineer | Deterministic AI and Recursive Self Learning Systems | research, teaching, consulting
+                        - link "Message Brad Ross" [ref=e2663] [cursor=pointer]:
+                          - /url: /messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AACoAAABGwt0BkKsEPDwsAcZLmSipocfFwyjjSuk&recipient=ACoAAABGwt0BkKsEPDwsAcZLmSipocfFwyjjSuk&screenContext=NON_SELF_PROFILE_VIEW&interop=msgOverlay
+                          - generic [ref=e2664]:
+                            - img [ref=e2665]
+                            - generic [ref=e2667]: Message
+                      - generic [ref=e2669]:
+                        - link "Marcus Patman Verified · 1st Agentic Systems Engineer | Building Agentic Platforms for Secure Cloud & DevOps | Linux | AgenticOps | Founder At Creando Tu Matrix" [ref=e2672] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/marcuspatman/
+                          - generic [ref=e2673]:
+                            - figure [ref=e2674]
+                            - generic [ref=e2675]:
+                              - generic [ref=e2676]:
+                                - paragraph [ref=e2678]:
+                                  - link "Marcus Patman Verified" [ref=e2680]:
+                                    - /url: https://www.linkedin.com/in/marcuspatman/
+                                    - text: Marcus Patman
+                                    - img "Verified" [ref=e2681]:
+                                      - img [ref=e2682]
+                                - paragraph [ref=e2684]: · 1st
+                              - paragraph [ref=e2686]: Agentic Systems Engineer | Building Agentic Platforms for Secure Cloud & DevOps | Linux | AgenticOps | Founder At Creando Tu Matrix
+                        - link "Message Marcus Patman" [ref=e2690] [cursor=pointer]:
+                          - /url: /messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AACoAAADTEvcBTyDJHZ07x7kOodOzR7Y_iHTC-B4&recipient=ACoAAADTEvcBTyDJHZ07x7kOodOzR7Y_iHTC-B4&screenContext=NON_SELF_PROFILE_VIEW&interop=msgOverlay
+                          - generic [ref=e2691]:
+                            - img [ref=e2692]
+                            - generic [ref=e2694]: Message
+                      - generic [ref=e2696]:
+                        - link "Kunal Dalal Premium · 1st ♾️ Agentic Leadership Strategist | AI Parentologist | Keynote Speaker" [ref=e2699] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/kunal-dalal-ed/
+                          - generic [ref=e2700]:
+                            - figure [ref=e2701]
+                            - generic [ref=e2702]:
+                              - generic [ref=e2703]:
+                                - paragraph [ref=e2705]:
+                                  - link "Kunal Dalal Premium" [ref=e2707]:
+                                    - /url: https://www.linkedin.com/in/kunal-dalal-ed/
+                                    - text: Kunal Dalal
+                                    - img "Premium" [ref=e2708]:
+                                      - img [ref=e2709]
+                                - paragraph [ref=e2711]: · 1st
+                              - paragraph [ref=e2713]: ♾️ Agentic Leadership Strategist | AI Parentologist | Keynote Speaker
+                        - link "Message Kunal Dalal" [ref=e2717] [cursor=pointer]:
+                          - /url: /messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AACoAAAFlpxAB3s7KE9dGTXRcyhoE4XvuxLnzchg&recipient=ACoAAAFlpxAB3s7KE9dGTXRcyhoE4XvuxLnzchg&screenContext=NON_SELF_PROFILE_VIEW&interop=msgOverlay
+                          - generic [ref=e2718]:
+                            - img [ref=e2719]
+                            - generic [ref=e2721]: Message
+                      - generic [ref=e2723]:
+                        - link "Dragan Spiridonov Verified · 1st ♾️ Agentic Quality Engineer | Quality Engineering Consultant | AI-Driven Testing | Serbian Agentics Foundation" [ref=e2726] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/dragan-spiridonov/
+                          - generic [ref=e2727]:
+                            - figure [ref=e2728]
+                            - generic [ref=e2729]:
+                              - generic [ref=e2730]:
+                                - paragraph [ref=e2732]:
+                                  - link "Dragan Spiridonov Verified" [ref=e2734]:
+                                    - /url: https://www.linkedin.com/in/dragan-spiridonov/
+                                    - text: Dragan Spiridonov
+                                    - img "Verified" [ref=e2735]:
+                                      - img [ref=e2736]
+                                - paragraph [ref=e2738]: · 1st
+                              - paragraph [ref=e2740]: ♾️ Agentic Quality Engineer | Quality Engineering Consultant | AI-Driven Testing | Serbian Agentics Foundation
+                        - link "Message Dragan Spiridonov" [ref=e2744] [cursor=pointer]:
+                          - /url: /messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AACoAAAZqBgYBx5CVyc_-LE136fh_66aPFm_yBdA&recipient=ACoAAAZqBgYBx5CVyc_-LE136fh_66aPFm_yBdA&screenContext=NON_SELF_PROFILE_VIEW&interop=msgOverlay
+                          - generic [ref=e2745]:
+                            - img [ref=e2746]
+                            - generic [ref=e2748]: Message
+                    - link "Show all people also viewed" [ref=e2750] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/overlay/browsemap-recommendations/
+                      - generic [ref=e2751]:
+                        - img [ref=e2752]
+                        - generic [ref=e2754]: Show all
+                  - generic [ref=e2759]:
+                    - generic [ref=e2761]:
+                      - heading "People you may know" [level=2] [ref=e2762]
+                      - paragraph [ref=e2763]: From your job title
+                    - generic [ref=e2765]:
+                      - generic [ref=e2767]:
+                        - link "Stéphane Marin Verified · 2nd AI made code cheap. We make changes safe" [ref=e2769] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/le-steph/en/
+                          - generic [ref=e2770]:
+                            - figure [ref=e2771]
+                            - generic [ref=e2772]:
+                              - generic [ref=e2773]:
+                                - paragraph [ref=e2775]:
+                                  - link "Stéphane Marin Verified" [ref=e2777]:
+                                    - /url: https://www.linkedin.com/in/le-steph/en/
+                                    - text: Stéphane Marin
+                                    - img "Verified" [ref=e2778]:
+                                      - img [ref=e2779]
+                                - paragraph [ref=e2781]: · 2nd
+                              - paragraph [ref=e2783]: AI made code cheap. We make changes safe
+                        - button "Invite Stéphane Marin to connect" [ref=e2787] [cursor=pointer]:
+                          - generic [ref=e2788]:
+                            - img [ref=e2789]
+                            - generic [ref=e2792]: Connect
+                      - generic [ref=e2794]:
+                        - link "Kevin McCullough · 3rd+ Founder at Massapplyai.com" [ref=e2796] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/kevin-mccullough-502031408/
+                          - generic [ref=e2797]:
+                            - figure [ref=e2798]
+                            - generic [ref=e2799]:
+                              - generic [ref=e2800]:
+                                - paragraph [ref=e2802]:
+                                  - link "Kevin McCullough" [ref=e2804]:
+                                    - /url: https://www.linkedin.com/in/kevin-mccullough-502031408/
+                                - paragraph [ref=e2805]: · 3rd+
+                              - paragraph [ref=e2807]: Founder at Massapplyai.com
+                        - button "Invite Kevin McCullough to connect" [ref=e2811] [cursor=pointer]:
+                          - generic [ref=e2812]:
+                            - img [ref=e2813]
+                            - generic [ref=e2816]: Connect
+                      - generic [ref=e2818]:
+                        - link "Mathew Beane Premium · 2nd Architecting the Post-SaaS Era | Fractional CTOx | AI Workflow Systems | Ops-Centric E-Com Modernization" [ref=e2820] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/mathew-beane/
+                          - generic [ref=e2821]:
+                            - figure [ref=e2822]
+                            - generic [ref=e2823]:
+                              - generic [ref=e2824]:
+                                - paragraph [ref=e2826]:
+                                  - link "Mathew Beane Premium" [ref=e2828]:
+                                    - /url: https://www.linkedin.com/in/mathew-beane/
+                                    - text: Mathew Beane
+                                    - img "Premium" [ref=e2829]:
+                                      - img [ref=e2830]
+                                - paragraph [ref=e2832]: · 2nd
+                              - paragraph [ref=e2834]: Architecting the Post-SaaS Era | Fractional CTOx | AI Workflow Systems | Ops-Centric E-Com Modernization
+                        - button "Invite Mathew Beane to connect" [ref=e2838] [cursor=pointer]:
+                          - generic [ref=e2839]:
+                            - img [ref=e2840]
+                            - generic [ref=e2843]: Connect
+                      - generic [ref=e2845]:
+                        - link "S Phillips Premium · 3rd+ Founder & AI Systems Architect at AGNTC Systems" [ref=e2847] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/founder-agentic-ai-systems-architect/
+                          - generic [ref=e2848]:
+                            - figure [ref=e2849]
+                            - generic [ref=e2850]:
+                              - generic [ref=e2851]:
+                                - paragraph [ref=e2853]:
+                                  - link "S Phillips Premium" [ref=e2855]:
+                                    - /url: https://www.linkedin.com/in/founder-agentic-ai-systems-architect/
+                                    - text: S Phillips
+                                    - img "Premium" [ref=e2856]:
+                                      - img [ref=e2857]
+                                - paragraph [ref=e2859]: · 3rd+
+                              - paragraph [ref=e2861]: Founder & AI Systems Architect at AGNTC Systems
+                        - button "Invite S Phillips to connect" [ref=e2865] [cursor=pointer]:
+                          - generic [ref=e2866]:
+                            - img [ref=e2867]
+                            - generic [ref=e2870]: Connect
+                      - generic [ref=e2872]:
+                        - 'link "Steve Jones, CFA Verified · 2nd CEO at VeilStream: Preview environments for the AI age | Author - A Mind Made of Math" [ref=e2874] [cursor=pointer]':
+                          - /url: https://www.linkedin.com/in/jonessteven/
+                          - generic [ref=e2875]:
+                            - figure [ref=e2876]
+                            - generic [ref=e2877]:
+                              - generic [ref=e2878]:
+                                - paragraph [ref=e2880]:
+                                  - link "Steve Jones, CFA Verified" [ref=e2882]:
+                                    - /url: https://www.linkedin.com/in/jonessteven/
+                                    - text: Steve Jones, CFA
+                                    - img "Verified" [ref=e2883]:
+                                      - img [ref=e2884]
+                                - paragraph [ref=e2886]: · 2nd
+                              - paragraph [ref=e2888]: "CEO at VeilStream: Preview environments for the AI age | Author - A Mind Made of Math"
+                        - button "Invite Steve Jones, CFA to connect" [ref=e2892] [cursor=pointer]:
+                          - generic [ref=e2893]:
+                            - img [ref=e2894]
+                            - generic [ref=e2897]: Connect
+                    - link "Show all people you may know" [ref=e2899] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                      - generic [ref=e2900]:
+                        - img [ref=e2901]
+                        - generic [ref=e2903]: Show all
+                  - generic [ref=e2908]:
+                    - generic [ref=e2910]:
+                      - heading "You might like" [level=2] [ref=e2911]
+                      - paragraph [ref=e2912]: Pages for you
+                    - generic [ref=e2914]:
+                      - link "Databricks Software Development 1,232,390 followers Daniel & 217 other connections follow this page Follow Databricks" [ref=e2917] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/company/databricks/
+                        - generic [ref=e2918]:
+                          - figure [ref=e2919]
+                          - generic [ref=e2920]:
+                            - paragraph [ref=e2923]:
+                              - generic [ref=e2924]:
+                                - text: Databricks
+                                - img [ref=e2926]
+                            - paragraph [ref=e2929]: Software Development
+                            - paragraph [ref=e2930]: 1,232,390 followers
+                            - generic [ref=e2931]:
+                              - figure [ref=e2932]
+                              - paragraph [ref=e2934]:
+                                - link "Daniel & 217 other connections follow this page" [ref=e2936]:
+                                  - /url: https://www.linkedin.com/company/databricks/?showInNetworkFollowers=true
+                            - button "Follow Databricks" [ref=e2939]:
+                              - generic [ref=e2940]:
+                                - img [ref=e2941]
+                                - generic [ref=e2943]: Follow
+                      - link "Snowflake Software Development 1,301,894 followers Daniel & 178 other connections follow this page Follow Snowflake" [ref=e2946] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/company/snowflake-computing/
+                        - generic [ref=e2947]:
+                          - figure [ref=e2948]
+                          - generic [ref=e2949]:
+                            - paragraph [ref=e2952]:
+                              - generic [ref=e2953]:
+                                - text: Snowflake
+                                - img [ref=e2955]
+                            - paragraph [ref=e2958]: Software Development
+                            - paragraph [ref=e2959]: 1,301,894 followers
+                            - generic [ref=e2960]:
+                              - figure [ref=e2961]
+                              - paragraph [ref=e2963]:
+                                - link "Daniel & 178 other connections follow this page" [ref=e2965]:
+                                  - /url: https://www.linkedin.com/company/snowflake-computing/?showInNetworkFollowers=true
+                            - button "Follow Snowflake" [ref=e2968]:
+                              - generic [ref=e2969]:
+                                - img [ref=e2970]
+                                - generic [ref=e2972]: Follow
+                    - link "Show all pages you might like" [ref=e2974] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/in/christopher-royse-b624b596/
+                      - generic [ref=e2975]:
+                        - img [ref=e2976]
+                        - generic [ref=e2978]: Show all
+                - iframe [ref=e2983]:
+                  - generic [ref=f73e3]:
+                    - banner [ref=f73e4]:
+                      - generic [ref=f73e5]:
+                        - link "Promoted" [ref=f73e6] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/ads/start?src=en-all-ad-li-ads_by_li&trk=ads_by_li&utm_medium=ad&utm_source=li&utm_campaign=ads_by_li
+                        - button [ref=f73e7] [cursor=pointer]:
+                          - img [ref=f73e8]
+                    - generic [ref=f73e13]:
+                      - link "Ad Image 1,268,394,883 Limited Time Offer Unlock unlimited access and uncompromising coverage just $180/first year. Christopher Christopher & 126 other connections also follow Bloomberg News" [ref=f73e14] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=https%3A%2F%2Fwww.bloomberg.com%2Fsubscriptions%2Fuspaid%3Futm_source%3Dlinkedin%26utm_medium%3Dcpc_social%26utm_campaign%3DUC_BLUM_OFF_ACQN_SOC_FY26_Q1-Q4_Linkedin_BRN_PrismaID_Prospecting_Conversions%26utm_term%3D%257B%257BCREATIVE_ID%257D%257D%26li_fat_id%3De5b072a8-50cb-46bb-a2f5-0d826733d3fd&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee-j9Ajs81vrzdhSSM9eIqyNGdVxQiCZfnoxwH9p2mXNlfxgW7S7swXB9n21E6m0CsfQsYCUxfNs6qsOu9ib3Bb3UATpJhNYZPMfFKMUWFW501vkwZonsUx-hfk5csNIhV5pQN78SB_g89ZnNUssoGhr8W7_oHACMmlOnZZZnTYW2Ch2o4GqSM-DEYyVo6_EoP31f_bW_h2Pm8VAs_h3NdxlH_Nl6pZTI-eVSA2br5CNKFvmmc2LtaVf--Ve-zpSu56cYM32eI8RvJo7GqJXGWvxK3cow_Ujmy6ZGTmWX3DqFOaJVf4eQEl8T-Xn7ClbQNUxCv7zgtflZyFDe9CSITCOlHlgET7Qf4JK-yPjOl-OBRYXCEhWzo_2oAZuk_1ityxRykmL4ozWRTcMZTM1PTdgjwatw12XEPd5OHLA4_BXoDVS9JJX7OAwcrlO4t0JyHx7n5c7xj8q1d-ks1XBtRsPbLN9Emt3wtxnLrPVyFG4YhsVL0D8sNoMB2ayZws3EYfpEououD5nERolbwmYyCa51aLLluL--VjbbuTtHTOyu_kFZdIcUgWkycEuXUDHA4oI8UgqAkUtepZJplWgLmfLXl47k5IzybaxgOd7ZZd1LIPaq_T8UF5YYHL2V8byrm0uAF7eIBuKkELhrhLSEv81YNnjbqVgwviyBsyyglBjYQJbig_8Jlc-7BVgd8MaCzkHVMpJGpC-cWE3Ctmb44u2MZ4mDixYoIPI04hgxhZXcTCX_spL1gsVoQjM9JX5KdlaGGx4FY3FgkbGBp0ooRfP2-Rx-ZaRR5fwwh2ehi9H0xYstlVr9OGouTaJtJe4ACNtVBjiJf2IG7hw3h5JX_yn5MvRqz9EWe8FPm8jrEMMqYSlk7gEtYI1htutaGPlX6lcFAbMsz-wogoIiTbsNE3CwAZeGARWcyCfBUPOvfiNf7yDct_xCZezF4WafSp6ftpPnB_0XhsrVL5ElQIh06yG8bZy3KipuWDHt2uYpkXcLNpJcD9fgCa2xZAb-68_G%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base%22%2C%22trackingId%22%3A%229b35b082-53b0-438b-b822-768c46792cfb%22%7D%2C%22time%22%3A1780195327234%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
+                        - img "Ad Image 1,268,394,883" [ref=f73e16]
+                        - generic [ref=f73e17]:
+                          - heading "Limited Time Offer" [level=4] [ref=f73e18]
+                          - paragraph [ref=f73e19]: Unlock unlimited access and uncompromising coverage just $180/first year.
+                          - generic [ref=f73e20]:
+                            - img "Christopher" [ref=f73e22]
+                            - paragraph [ref=f73e23]: Christopher & 126 other connections also follow Bloomberg News
+                      - link "Ad Image 1,072,936,994 Design Thinking Skills Build innovation strategy expertise with Wharton Online. Sebastian Sebastian & 11 other connections also follow Wharton Online" [ref=f73e24] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=https%3A%2F%2Fexecutiveeducation.wharton.upenn.edu%2Ffor-individuals%2Fall-programs%2Finnovation-strategy-and-design-thinking-certificate%2F%3Futm_source%3Dlinkedin%26utm_medium%3Dpaidsocial%26utm_campaign%3Dlinkedin26isdt_p%26utm_content%3Dtext&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGee-j9Avb_Rr05IvY2IS7H9aSnXzJ_2zjIjRueMPDBXT3Uo1UBv8Yl2ohcRbV8_yNKCLWAt-I2TGb79ZPUPT1YvlNlGCfg0hBrm7caUlRXH5k61HdpqdSlfiSZucXxLkcWb9poKwqxGiuLwu5mmVpkn-byCjkmZtPasZ4Go_QPaRo805X21BYGWPxZXCkWIy8qmsiOTEJC3WKybmqo-_yjCUOGdCTu9llTnRYhkCbK9y7R3l1RMJvC6tc0LOjpmlTaWbBeu0gxtNeJKJLrtMAtko7ydlWIcbXQ3zbKflJJd5RC7vOl6kmmZqD64eXi-E_RgveVMmKBNLK4C_ffY9j8aq-IH-Zbb9Marl_KoKM8RiBNuYF17X_A7XX-AiOIw_IBE7odlBzTYa1JfvvU2EqlZRFH9ks2vAy8CJqlQL3D_bFQPKG8-V6MXcHlNi0K5_hD8Hy5knaM2Byirq5U0bnGiy01fLkKBnAkdriva2_qMqKHQ43obS4JwcxnffSWo3HOR6kxpH_GZ8FX3kGSt2zYqNF935haXsFezgbGWmctUFRFNUwmuBUdDRciR4WJuYSmTvaWg9y7LRM-AAH0yuWjrbswy2a0HgYjTGELDGpsyre5yJASfbOYKFjBh0rQJquPzSbExrfECuW4y61u7AFDnocU-YGscfkpRAuq-mVu9IgFe_tP7NeQBuaSGSBx7PCVhHd_B4t4a5w7GDcDhR9mGTBuqtJzamBaw7w1hEz17gLtHRtPlZRoQvQHt8GLJBuvA1IngKRY1RKvPBtx6L9FJxaxpYC3KBifNlZVmvN2bfjt7L9WixptJa-Qm9BeaH7mspGc7pQguFsVgOVMsHWOz8TZvWZZqxyyRrTVXpEEa5EKX_aNXlfUaXZHS6BMwGXktb2rGIi5To7vyHGRLhwSSSVVCgiL9k-S0wC1yDfA1JKmY1u3PywOpHG8tIQSmp0Q15rzRzD7uR9BBJxeijGdk8PKZDZHtLyq9dKG-qpjeb0i_uxeNPjzIgA1ZBLXwAkrcBse%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_profile_view_base%22%2C%22trackingId%22%3A%22d1565ce3-3385-469e-b008-436c73a74c80%22%7D%2C%22time%22%3A1780195327234%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_profile_view_base%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8845588023261250284
+                        - img "Ad Image 1,072,936,994" [ref=f73e26]
+                        - generic [ref=f73e27]:
+                          - heading "Design Thinking Skills" [level=4] [ref=f73e28]
+                          - paragraph [ref=f73e29]: Build innovation strategy expertise with Wharton Online.
+                          - generic [ref=f73e30]:
+                            - img "Sebastian" [ref=f73e32]
+                            - paragraph [ref=f73e33]: Sebastian & 11 other connections also follow Wharton Online
+            - generic "Footer" [ref=e336]:
+              - generic [ref=e339]:
+                - generic [ref=e340]:
+                  - navigation [ref=e341]:
+                    - link "About" [ref=e342] [cursor=pointer]:
+                      - /url: https://about.linkedin.com/
+                      - paragraph [ref=e343]: About
+                    - link "Accessibility" [ref=e344] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/accessibility/
+                      - paragraph [ref=e345]: Accessibility
+                    - link "Talent Solutions" [ref=e346] [cursor=pointer]:
+                      - /url: https://business.linkedin.com/talent-solutions?trk=flagship_nav&veh=li-footer-lts-control&src=li-footer
+                      - paragraph [ref=e347]: Talent Solutions
+                    - link "Community Guidelines" [ref=e348] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/legal/professional-community-policies/
+                      - paragraph [ref=e349]: Community Guidelines
+                    - link "Careers" [ref=e350] [cursor=pointer]:
+                      - /url: https://careers.linkedin.com/
+                      - paragraph [ref=e351]: Careers
+                    - link "Marketing Solutions" [ref=e352] [cursor=pointer]:
+                      - /url: https://business.linkedin.com/advertise?trk=n_nav_lms_f&src=li-footer
+                      - paragraph [ref=e353]: Marketing Solutions
+                    - button "Privacy & Terms" [ref=e354] [cursor=pointer]:
+                      - generic [ref=e355]:
+                        - paragraph [ref=e356]: Privacy & Terms
+                        - img [ref=e2984]
+                    - link "Ad Choices" [ref=e358] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/help/linkedin/answer/62931/
+                      - paragraph [ref=e359]: Ad Choices
+                    - link "Advertising" [ref=e360] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/ad/start/?trk=n_nav_ads_rr
+                      - paragraph [ref=e361]: Advertising
+                    - link "Sales Solutions" [ref=e362] [cursor=pointer]:
+                      - /url: https://business.linkedin.com/sales-solutions?trk=flagship_nav&veh=li-footer-lss-control&src=li-footer
+                      - paragraph [ref=e363]: Sales Solutions
+                    - link "Mobile" [ref=e364] [cursor=pointer]:
+                      - /url: https://mobile.linkedin.com/
+                      - paragraph [ref=e365]: Mobile
+                    - link "Small Business" [ref=e366] [cursor=pointer]:
+                      - /url: https://business.linkedin.com/grow?src=li-footer
+                      - paragraph [ref=e367]: Small Business
+                    - link "Safety Center" [ref=e368] [cursor=pointer]:
+                      - /url: https://safety.linkedin.com/
+                      - paragraph [ref=e369]: Safety Center
+                  - paragraph [ref=e371]: LinkedIn Corporation © 2026
+                - generic [ref=e372]:
+                  - list [ref=e373]:
+                    - listitem [ref=e374]:
+                      - generic [ref=e375]:
+                        - img [ref=e2986]
+                        - generic [ref=e377]:
+                          - link "Questions?" [ref=e378] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/help/linkedin/
+                            - paragraph [ref=e379]: Questions?
+                          - paragraph [ref=e380]: Visit our Help Center.
+                    - listitem [ref=e381]:
+                      - generic [ref=e382]:
+                        - img [ref=e2988]
+                        - generic [ref=e384]:
+                          - link "Manage your account and privacy" [ref=e385] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/mypreferences/d/
+                            - paragraph [ref=e386]: Manage your account and privacy
+                          - paragraph [ref=e387]: Go to your Settings.
+                    - listitem [ref=e388]:
+                      - generic [ref=e389]:
+                        - img [ref=e2990]
+                        - generic [ref=e391]:
+                          - link "Recommendation transparency" [ref=e392] [cursor=pointer]:
+                            - /url: https://www.linkedin.com/help/linkedin/answer/a1339724/
+                            - paragraph [ref=e393]: Recommendation transparency
+                          - paragraph [ref=e394]: Learn more about Recommended Content.
+                  - generic [ref=e396]:
+                    - paragraph [ref=e398]: Select language
+                    - generic [ref=e399]:
+                      - combobox "Select language" [ref=e400] [cursor=pointer]:
+                        - option "العربية (Arabic)"
+                        - option "বাংলা (Bangla)"
+                        - option "Čeština (Czech)"
+                        - option "Dansk (Danish)"
+                        - option "Deutsch (German)"
+                        - option "Ελληνικά (Greek)"
+                        - option "English (English)" [selected]
+                        - option "Español (Spanish)"
+                        - option "فارسی (Persian)"
+                        - option "Suomi (Finnish)"
+                        - option "Français (French)"
+                        - option "हिंदी (Hindi)"
+                        - option "Magyar (Hungarian)"
+                        - option "Bahasa Indonesia (Indonesian)"
+                        - option "Italiano (Italian)"
+                        - option "עברית (Hebrew)"
+                        - option "日本語 (Japanese)"
+                        - option "한국어 (Korean)"
+                        - option "मराठी (Marathi)"
+                        - option "Bahasa Malaysia (Malay)"
+                        - option "Nederlands (Dutch)"
+                        - option "Norsk (Norwegian)"
+                        - option "ਪੰਜਾਬੀ (Punjabi)"
+                        - option "Polski (Polish)"
+                        - option "Português (Portuguese)"
+                        - option "Română (Romanian)"
+                        - option "Русский (Russian)"
+                        - option "Svenska (Swedish)"
+                        - option "తెలుగు (Telugu)"
+                        - option "ภาษาไทย (Thai)"
+                        - option "Tagalog (Tagalog)"
+                        - option "Türkçe (Turkish)"
+                        - option "Українська (Ukrainian)"
+                        - option "Tiếng Việt (Vietnamese)"
+                        - option "简体中文 (Chinese (Simplified))"
+                        - option "正體中文 (Chinese (Traditional))"
+                      - img
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - complementary:
+            - generic [ref=e2992]:
+              - generic [ref=e2993]:
+                - generic [ref=e2995] [cursor=pointer]:
+                  - generic [ref=e2996]:
+                    - img "Christopher Royse" [ref=e2997]
+                    - generic [ref=e2999]: Status is online
+                  - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e3000]:
+                    - generic [ref=e3001]:
+                      - generic [ref=e3002]: Messaging
+                      - generic [ref=e3003]: You are on the messaging overlay. Press enter to open the list of conversations.
+                - generic [ref=e3004]:
+                  - button "Open messenger dropdown menu" [ref=e3006] [cursor=pointer]:
+                    - img "Open messenger dropdown menu" [ref=e3007]
+                  - button "Compose message" [ref=e3010] [cursor=pointer]:
+                    - img [ref=e3011]
+                    - generic [ref=e3013]: Compose message
+                  - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e3014] [cursor=pointer]:
+                    - img [ref=e3015]
+                    - generic [ref=e3017]: You are on the messaging overlay. Press enter to open the list of conversations.
+              - generic [ref=e3018]:
+                - heading "Page inboxes" [level=3] [ref=e3020]
+                - generic [ref=e3021] [cursor=pointer]:
+                  - generic [ref=e3022]: Click to see affiliated inboxes
+                  - button "Page inboxes" [ref=e3023]:
+                    - img [ref=e3024]
+          - complementary "AI-powered assistant to get help with your career, jobs etc"
+  - iframe [ref=e3026]:
+    - generic [active] [ref=f74e1]:
+      - generic:
+        - region "Toast message":
+          - heading "0 notifications total" [level=2] [ref=f74e3]
+          - alert
+      - region [ref=f74e4]
+      - generic [ref=f74e5]:
+        - generic [ref=f74e7]:
+          - button "Skip to search" [ref=f74e8] [cursor=pointer]:
+            - generic [ref=f74e9]: Skip to search
+          - button "Skip to main content" [ref=f74e10] [cursor=pointer]:
+            - generic [ref=f74e11]: Skip to main content
+          - button "Keyboard shortcuts" [ref=f74e12] [cursor=pointer]:
+            - generic [ref=f74e13]: Keyboard shortcuts
+          - button "Close jump menu" [ref=f74e14] [cursor=pointer]:
+            - img [ref=f74e15]
+            - generic [ref=f74e17]: Close jump menu
+        - banner "Global Navigation" [ref=f74e18]:
+          - generic [ref=f74e19]:
+            - link "LinkedIn" [ref=f74e20] [cursor=pointer]:
+              - /url: https://www.linkedin.com/feed/?nis=true
+              - img "LinkedIn" [ref=f74e23]:
+                - img [ref=f74e24]
+            - generic [ref=f74e28]:
+              - combobox "I’m looking for..." [ref=f74e29]
+              - generic:
+                - img
+            - navigation "Primary Navigation" [ref=f74e30]:
+              - list [ref=f74e31]:
+                - listitem [ref=f74e32]:
+                  - link "new feed updates notifications Home" [ref=f74e33] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/feed/
+                    - generic [ref=f74e34]:
+                      - generic [ref=f74e37]: new feed updates notifications
+                      - img [ref=f74e41]
+                    - generic "Home" [ref=f74e43]
+                - listitem [ref=f74e44]:
+                  - link "My Network" [ref=f74e45] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/mynetwork/?
+                    - img [ref=f74e49]
+                    - generic "My Network" [ref=f74e51]
+                - listitem [ref=f74e52]:
+                  - link "Jobs" [ref=f74e53] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/jobs/?
+                    - img [ref=f74e57]
+                    - generic "Jobs" [ref=f74e59]
+                - listitem [ref=f74e60]:
+                  - link "Messaging" [ref=f74e61] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/messaging/?
+                    - img [ref=f74e65]
+                    - generic "Messaging" [ref=f74e67]
+                - listitem [ref=f74e68]:
+                  - link "1 new notification Notifications" [ref=f74e69] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/notifications/?
+                    - generic [ref=f74e70]:
+                      - generic [ref=f74e71]:
+                        - generic [ref=f74e72]: "1"
+                        - generic [ref=f74e73]: 1 new notification
+                      - img [ref=f74e77]
+                    - generic "Notifications" [ref=f74e79]
+                - listitem [ref=f74e80]:
+                  - button "Christopher Royse Me" [ref=f74e82] [cursor=pointer]:
+                    - img "Christopher Royse" [ref=f74e83]
+                    - generic [ref=f74e84]:
+                      - text: Me
+                      - img [ref=f74e85]
+                - listitem [ref=f74e87]:
+                  - button "For Business" [ref=f74e89] [cursor=pointer]:
+                    - img [ref=f74e93]
+                    - generic "For Business" [ref=f74e95]:
+                      - text: For Business
+                      - img [ref=f74e96]
+                - listitem [ref=f74e98]:
+                  - link "Advertise" [ref=f74e99] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/campaignmanager/accounts?
+                    - img [ref=f74e103]
+                    - generic "Advertise" [ref=f74e106]
