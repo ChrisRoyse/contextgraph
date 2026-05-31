@@ -27,16 +27,23 @@ def write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
     )
 
 
-def runnable_row(task_id: str, category: str, row_index: int) -> dict[str, object]:
+def runnable_row(
+    task_id: str,
+    category: str,
+    row_index: int,
+    *,
+    command_family: str = "pytest_direct",
+    handler: str = "pytest_sys_settrace_v1",
+) -> dict[str, object]:
     return {
         "schema_version": 1,
         "task_id": task_id,
         "repo": task_id.split("__", 1)[0] + "/repo",
         "category": category,
         "row_index": row_index,
-        "command_family": "pytest_direct",
+        "command_family": command_family,
         "support_status": "supported_current",
-        "handler": "pytest_sys_settrace_v1",
+        "handler": handler,
     }
 
 
@@ -49,6 +56,7 @@ def batch_args(tmp_path: Path, rows_path: Path, **overrides: object) -> Namespac
         "output_root": tmp_path / "fsv",
         "state_root": tmp_path / "state",
         "venv_python": tmp_path / "venv" / "bin" / "python3",
+        "command_family": "pytest_direct",
         "run_id": "run-test",
         "expected_corpus_rows": 2400,
         "expected_runnable_rows": None,
@@ -114,6 +122,11 @@ def fake_trace_runner_asserts_started_progress(args: Namespace) -> dict[str, obj
     return fake_trace_runner(args)
 
 
+def fake_trace_runner_asserts_django(args: Namespace) -> dict[str, object]:
+    assert args.command_family == "django_runtests"
+    return fake_trace_runner(args)
+
+
 def test_load_runnable_rows_rejects_target_side_fields(tmp_path: Path):
     rows_path = tmp_path / "rows.jsonl"
     row = runnable_row("org__repo-1", "known_good", 0)
@@ -132,6 +145,23 @@ def test_load_runnable_rows_rejects_non_pytest_family(tmp_path: Path):
 
     with pytest.raises(ExecutionTracePytestBatchError, match="UNSUPPORTED_COMMAND_FAMILY"):
         load_runnable_rows(rows_path)
+
+
+def test_load_runnable_rows_accepts_django_family_when_requested(tmp_path: Path):
+    rows_path = tmp_path / "rows.jsonl"
+    row = runnable_row(
+        "django__django-1",
+        "known_good",
+        0,
+        command_family="django_runtests",
+        handler="python_script_sys_settrace_v1",
+    )
+    write_jsonl(rows_path, [row])
+
+    rows = load_runnable_rows(rows_path, command_family="django_runtests")
+
+    assert rows[0]["command_family"] == "django_runtests"
+    assert rows[0]["handler"] == "python_script_sys_settrace_v1"
 
 
 def test_select_rows_applies_category_offset_and_limit():
@@ -176,6 +206,41 @@ def test_run_batch_with_fake_runner_writes_generated_traces_and_state_mirror(tmp
         assert Path(row["fsv_trace"]).is_file()
         assert row["state_trace_sha256"] == row["fsv_trace_sha256"]
     assert manifest["doctrine_policy"]["target_labels_used_as_live_inputs"] is False
+
+
+def test_run_batch_django_mode_writes_family_specific_artifacts(tmp_path: Path):
+    rows_path = tmp_path / "runnable-django.jsonl"
+    rows = [
+        runnable_row(
+            "django__django-1",
+            "known_good",
+            0,
+            command_family="django_runtests",
+            handler="python_script_sys_settrace_v1",
+        )
+    ]
+    write_jsonl(rows_path, rows)
+
+    result = run_batch(
+        batch_args(tmp_path, rows_path, command_family="django_runtests"),
+        trace_runner=fake_trace_runner_asserts_django,
+    )
+
+    manifest_path = Path(result["manifest"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    state_manifest = json.loads(
+        (tmp_path / "state" / "run-test" / "django-runtests-batch" / "django_runtests_trace_batch_manifest.json")
+        .read_text(encoding="utf-8")
+    )
+
+    assert result["ok"] is True
+    assert result["command_family"] == "django_runtests"
+    assert manifest_path.name == "django_runtests_trace_batch_manifest.json"
+    assert manifest == state_manifest
+    assert manifest["artifact_kind"] == "execution_trace_django_runtests_batch"
+    assert manifest["summary"]["django_runtests_trace_rows_generated"] == 1
+    assert manifest["decision"]["django_runtests_batch_complete"] is True
+    assert Path(result["progress"]).name == "django_runtests_trace_batch_progress.json"
 
 
 def test_run_batch_writes_progress_heartbeat_before_and_after_rows(tmp_path: Path):

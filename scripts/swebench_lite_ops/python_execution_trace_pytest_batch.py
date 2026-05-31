@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Batch direct-pytest execution-trace generation for INV-010 / #774."""
+"""Batch supported command-family execution-trace generation for INV-010 / #774."""
 
 from __future__ import annotations
 
@@ -39,6 +39,38 @@ DEFAULT_RUNNABLE_ROWS = Path(
 SUPPORTED_COMMAND_FAMILY = "pytest_direct"
 SUPPORTED_STATUS = "supported_current"
 SUPPORTED_HANDLER = "pytest_sys_settrace_v1"
+COMMAND_FAMILY_CONFIGS: dict[str, dict[str, str]] = {
+    "pytest_direct": {
+        "artifact_kind": "execution_trace_pytest_batch",
+        "bounded_reason": "bounded_subset_run_not_full_direct_pytest_batch",
+        "complete_key": "direct_pytest_batch_complete",
+        "complete_reason": "direct_pytest_trace_generation_complete_for_supported_rows",
+        "failure_reason": "one_or_more_direct_pytest_trace_rows_failed",
+        "file_prefix": "direct_pytest",
+        "fraction_key": "direct_pytest_trace_fraction_of_corpus",
+        "generated_key": "direct_pytest_trace_rows_generated",
+        "handler": "pytest_sys_settrace_v1",
+        "incomplete_reason": "direct_pytest_trace_generation_incomplete",
+        "live_reason": "live_sys_settrace_artifacts_generated_for_direct_pytest_rows",
+        "progress_artifact_kind": "execution_trace_pytest_batch_progress",
+        "run_suffix": "pytest-batch",
+    },
+    "django_runtests": {
+        "artifact_kind": "execution_trace_django_runtests_batch",
+        "bounded_reason": "bounded_subset_run_not_full_django_runtests_batch",
+        "complete_key": "django_runtests_batch_complete",
+        "complete_reason": "django_runtests_trace_generation_complete_for_supported_rows",
+        "failure_reason": "one_or_more_django_runtests_trace_rows_failed",
+        "file_prefix": "django_runtests",
+        "fraction_key": "django_runtests_trace_fraction_of_corpus",
+        "generated_key": "django_runtests_trace_rows_generated",
+        "handler": "python_script_sys_settrace_v1",
+        "incomplete_reason": "django_runtests_trace_generation_incomplete",
+        "live_reason": "live_sys_settrace_artifacts_generated_for_django_runtests_rows",
+        "progress_artifact_kind": "execution_trace_django_runtests_batch_progress",
+        "run_suffix": "django-runtests-batch",
+    },
+}
 TARGET_SIDE_KEYS = {
     "actual_oracle_pass",
     "completed_ids",
@@ -163,7 +195,28 @@ def sanitize_part(value: str) -> str:
     return cleaned[:120] or "unknown"
 
 
-def load_runnable_rows(path: Path) -> list[dict[str, Any]]:
+def command_family_config(command_family: str | None) -> dict[str, str]:
+    family = command_family or SUPPORTED_COMMAND_FAMILY
+    require(
+        family in COMMAND_FAMILY_CONFIGS,
+        "EXECUTION_TRACE_PYTEST_BATCH_UNSUPPORTED_BATCH_COMMAND_FAMILY",
+        {"command_family": family, "supported": sorted(COMMAND_FAMILY_CONFIGS)},
+    )
+    config = dict(COMMAND_FAMILY_CONFIGS[family])
+    config["command_family"] = family
+    return config
+
+
+def args_command_family_config(args: argparse.Namespace) -> dict[str, str]:
+    return command_family_config(str(getattr(args, "command_family", SUPPORTED_COMMAND_FAMILY) or SUPPORTED_COMMAND_FAMILY))
+
+
+def progress_basename(config: dict[str, str], suffix: str) -> str:
+    return f"{config['file_prefix']}_trace_batch_progress.{suffix}"
+
+
+def load_runnable_rows(path: Path, command_family: str | None = None) -> list[dict[str, Any]]:
+    config = command_family_config(command_family)
     rows = read_jsonl(path, "EXECUTION_TRACE_PYTEST_BATCH_RUNNABLE_ROWS_MISSING")
     out: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -179,9 +232,14 @@ def load_runnable_rows(path: Path) -> list[dict[str, Any]]:
         require(task_id, "EXECUTION_TRACE_PYTEST_BATCH_TASK_ID_MISSING", {"line_index": idx})
         require(category, "EXECUTION_TRACE_PYTEST_BATCH_CATEGORY_MISSING", {"line_index": idx, "task_id": task_id})
         require(
-            str(row.get("command_family") or "") == SUPPORTED_COMMAND_FAMILY,
+            str(row.get("command_family") or "") == config["command_family"],
             "EXECUTION_TRACE_PYTEST_BATCH_UNSUPPORTED_COMMAND_FAMILY",
-            {"task_id": task_id, "category": category, "command_family": row.get("command_family")},
+            {
+                "task_id": task_id,
+                "category": category,
+                "command_family": row.get("command_family"),
+                "expected_command_family": config["command_family"],
+            },
         )
         require(
             str(row.get("support_status") or "") == SUPPORTED_STATUS,
@@ -189,9 +247,14 @@ def load_runnable_rows(path: Path) -> list[dict[str, Any]]:
             {"task_id": task_id, "category": category, "support_status": row.get("support_status")},
         )
         require(
-            str(row.get("handler") or "") == SUPPORTED_HANDLER,
+            str(row.get("handler") or "") == config["handler"],
             "EXECUTION_TRACE_PYTEST_BATCH_UNSUPPORTED_HANDLER",
-            {"task_id": task_id, "category": category, "handler": row.get("handler")},
+            {
+                "task_id": task_id,
+                "category": category,
+                "handler": row.get("handler"),
+                "expected_handler": config["handler"],
+            },
         )
         key = (task_id, category)
         require(
@@ -208,9 +271,9 @@ def load_runnable_rows(path: Path) -> list[dict[str, Any]]:
                 "task_id": task_id,
                 "repo": str(row.get("repo") or ""),
                 "category": category,
-                "command_family": SUPPORTED_COMMAND_FAMILY,
+                "command_family": config["command_family"],
                 "support_status": SUPPORTED_STATUS,
-                "handler": SUPPORTED_HANDLER,
+                "handler": config["handler"],
             }
         )
     return out
@@ -279,6 +342,7 @@ def run_one_row(
     state_run_root: Path,
     trace_runner: TraceRunner,
 ) -> dict[str, Any]:
+    config = args_command_family_config(args)
     child_run_id = row_run_id(row)
     smoke_args = Namespace(
         dataset_name=args.dataset_name,
@@ -295,7 +359,7 @@ def run_one_row(
         tag=args.tag,
         instance_timeout=args.instance_timeout,
         max_events=args.max_events,
-        command_family=SUPPORTED_COMMAND_FAMILY,
+        command_family=config["command_family"],
         allow_non_aiwonder_roots=bool(args.allow_non_aiwonder_roots),
     )
     result = trace_runner(smoke_args)
@@ -362,15 +426,18 @@ def build_progress_snapshot(
     current_row: dict[str, Any] | None,
     last_completed_row: dict[str, Any] | None,
 ) -> dict[str, Any]:
+    config = args_command_family_config(args)
     successes = [row for row in row_results if row.get("status") == "succeeded"]
     failures = [row for row in row_results if row.get("status") == "failed"]
     attempted = len(row_results)
     return {
         "schema_version": SCHEMA_VERSION,
-        "artifact_kind": PROGRESS_ARTIFACT_KIND,
+        "artifact_kind": config["progress_artifact_kind"],
         "task_id": TASK_ID,
         "created_at_utc": utc_now(),
         "run_id": run_id,
+        "command_family": config["command_family"],
+        "handler": config["handler"],
         "phase": phase,
         "progress_sequence": progress_sequence,
         "counts": {
@@ -391,10 +458,10 @@ def build_progress_snapshot(
             "task_ids": sorted(args.task_ids or []),
         },
         "artifact_paths": {
-            "fsv_progress": str(fsv_run_root / "direct_pytest_trace_batch_progress.json"),
-            "state_progress": str(state_run_root / "direct_pytest_trace_batch_progress.json"),
-            "fsv_progress_history": str(fsv_run_root / "direct_pytest_trace_batch_progress.jsonl"),
-            "state_progress_history": str(state_run_root / "direct_pytest_trace_batch_progress.jsonl"),
+            "fsv_progress": str(fsv_run_root / progress_basename(config, "json")),
+            "state_progress": str(state_run_root / progress_basename(config, "json")),
+            "fsv_progress_history": str(fsv_run_root / progress_basename(config, "jsonl")),
+            "state_progress_history": str(state_run_root / progress_basename(config, "jsonl")),
             "generated_trace_fsv_root": str(fsv_run_root / "generated-traces"),
             "generated_trace_state_root": str(state_run_root / "generated-traces"),
         },
@@ -414,6 +481,7 @@ def write_progress_artifacts(
     current_row: dict[str, Any] | None = None,
     last_completed_row: dict[str, Any] | None = None,
 ) -> dict[str, Path]:
+    config = args_command_family_config(args)
     snapshot = build_progress_snapshot(
         args=args,
         run_id=run_id,
@@ -427,9 +495,9 @@ def write_progress_artifacts(
         last_completed_row=last_completed_row,
     )
     progress_history.append(snapshot)
-    fsv_progress_path = fsv_run_root / "direct_pytest_trace_batch_progress.json"
+    fsv_progress_path = fsv_run_root / progress_basename(config, "json")
     state_progress_path = state_run_root / fsv_progress_path.name
-    fsv_history_path = fsv_run_root / "direct_pytest_trace_batch_progress.jsonl"
+    fsv_history_path = fsv_run_root / progress_basename(config, "jsonl")
     state_history_path = state_run_root / fsv_history_path.name
     write_json(fsv_progress_path, snapshot)
     write_json(state_progress_path, snapshot)
@@ -469,6 +537,7 @@ def build_manifest(
     progress_path: Path,
     progress_history_path: Path,
 ) -> dict[str, Any]:
+    config = args_command_family_config(args)
     successes = [row for row in row_results if row.get("status") == "succeeded"]
     failures = [row for row in row_results if row.get("status") == "failed"]
     category_success = Counter(row["category"] for row in successes)
@@ -478,16 +547,17 @@ def build_manifest(
     complete = selected_all and len(successes) == len(runnable_rows) and not failures
     reasons: list[str] = []
     if failures:
-        reasons.append("one_or_more_direct_pytest_trace_rows_failed")
+        reasons.append(config["failure_reason"])
     if not selected_all:
-        reasons.append("bounded_subset_run_not_full_direct_pytest_batch")
+        reasons.append(config["bounded_reason"])
     if not complete:
-        reasons.append("direct_pytest_trace_generation_incomplete")
+        reasons.append(config["incomplete_reason"])
     if successes:
-        reasons.append("live_sys_settrace_artifacts_generated_for_direct_pytest_rows")
+        reasons.append(config["live_reason"])
+    trace_fraction = round(len(successes) / expected_corpus_rows, 10) if expected_corpus_rows else 0.0
     return {
         "schema_version": SCHEMA_VERSION,
-        "artifact_kind": ARTIFACT_KIND,
+        "artifact_kind": config["artifact_kind"],
         "task_id": TASK_ID,
         "created_at_utc": utc_now(),
         "run_id": run_id,
@@ -499,6 +569,8 @@ def build_manifest(
             "runnable_row_count": len(runnable_rows),
             "expected_runnable_rows": args.expected_runnable_rows,
             "expected_corpus_rows": expected_corpus_rows,
+            "command_family": config["command_family"],
+            "handler": config["handler"],
             "selection": {
                 "offset": args.offset,
                 "limit": args.limit,
@@ -521,21 +593,22 @@ def build_manifest(
             "attempted_rows": len(row_results),
             "succeeded_rows": len(successes),
             "failed_rows": len(failures),
-            "direct_pytest_trace_rows_generated": len(successes),
-            "direct_pytest_trace_fraction_of_corpus": (
-                round(len(successes) / expected_corpus_rows, 10) if expected_corpus_rows else 0.0
-            ),
+            "trace_rows_generated": len(successes),
+            "trace_fraction_of_corpus": trace_fraction,
+            config["generated_key"]: len(successes),
+            config["fraction_key"]: trace_fraction,
             "selected_rows_by_cell": dict(sorted(category_selected.items())),
             "succeeded_rows_by_cell": dict(sorted(category_success.items())),
         },
         "decision": {
-            "direct_pytest_batch_complete": complete,
+            "batch_complete": complete,
+            config["complete_key"]: complete,
             "trace_generation_required": True,
             "readiness_rerun_required": bool(successes),
             "per_cell_oracle_correlation_lift_measured": False,
             "promotion_allowed": False,
             "canonical_issue": "#774",
-            "decision_reasons": reasons or ["direct_pytest_trace_generation_complete_for_supported_rows"],
+            "decision_reasons": reasons or [config["complete_reason"]],
         },
         "doctrine_policy": {
             "measurement_only": True,
@@ -561,6 +634,7 @@ def build_manifest(
 
 
 def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_smoke) -> dict[str, Any]:
+    config = args_command_family_config(args)
     allow_non_aiwonder = bool(args.allow_non_aiwonder_roots)
     corpus_root = Path(args.corpus_root)
     runnable_rows_path = Path(args.runnable_rows)
@@ -575,7 +649,7 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
     if not allow_non_aiwonder:
         require(venv_python.is_file(), "EXECUTION_TRACE_PYTEST_BATCH_VENV_PYTHON_MISSING", {"venv_python": str(venv_python)})
 
-    runnable_rows = load_runnable_rows(runnable_rows_path)
+    runnable_rows = load_runnable_rows(runnable_rows_path, command_family=config["command_family"])
     if args.expected_runnable_rows is not None:
         require(
             len(runnable_rows) == int(args.expected_runnable_rows),
@@ -590,9 +664,9 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
         task_ids=args.task_ids,
     )
 
-    run_id = str(args.run_id or f"run-{utc_stamp()}-pytest-batch")
-    fsv_run_root = output_root / run_id / "pytest-batch"
-    state_run_root = state_root / run_id / "pytest-batch"
+    run_id = str(args.run_id or f"run-{utc_stamp()}-{config['run_suffix']}")
+    fsv_run_root = output_root / run_id / config["run_suffix"]
+    state_run_root = state_root / run_id / config["run_suffix"]
     require(
         not fsv_run_root.exists() or not any(fsv_run_root.iterdir()),
         "EXECUTION_TRACE_PYTEST_BATCH_OUTPUT_ROOT_NOT_EMPTY",
@@ -674,10 +748,10 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
         last_completed_row=row_results[-1] if row_results else None,
     )
 
-    selected_rows_path = fsv_run_root / "selected_direct_pytest_rows.jsonl"
-    batch_rows_path = fsv_run_root / "direct_pytest_trace_batch_rows.jsonl"
+    selected_rows_path = fsv_run_root / f"selected_{config['file_prefix']}_rows.jsonl"
+    batch_rows_path = fsv_run_root / f"{config['file_prefix']}_trace_batch_rows.jsonl"
     trace_index_path = fsv_run_root / "generated_trace_index.jsonl"
-    failed_rows_path = fsv_run_root / "failed_direct_pytest_rows.jsonl"
+    failed_rows_path = fsv_run_root / f"failed_{config['file_prefix']}_rows.jsonl"
     successes = [row for row in row_results if row.get("status") == "succeeded"]
     failures = [row for row in row_results if row.get("status") == "failed"]
     write_jsonl(selected_rows_path, selected_rows)
@@ -709,7 +783,7 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
         progress_path=progress_paths["fsv_progress"],
         progress_history_path=progress_paths["fsv_history"],
     )
-    manifest_path = fsv_run_root / "direct_pytest_trace_batch_manifest.json"
+    manifest_path = fsv_run_root / f"{config['file_prefix']}_trace_batch_manifest.json"
     state_manifest_path = state_run_root / manifest_path.name
     write_json(manifest_path, manifest)
     write_json(state_manifest_path, manifest)
@@ -739,6 +813,8 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
     result = {
         "ok": not failures,
         "run_id": run_id,
+        "command_family": config["command_family"],
+        "handler": config["handler"],
         "fsv_run_root": str(fsv_run_root),
         "state_run_root": str(state_run_root),
         "manifest": str(manifest_path),
@@ -768,6 +844,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--state-root", type=Path, default=DEFAULT_STATE_ROOT)
     parser.add_argument("--venv-python", type=Path, default=DEFAULT_VENV_PYTHON)
+    parser.add_argument(
+        "--command-family",
+        choices=sorted(COMMAND_FAMILY_CONFIGS),
+        default=SUPPORTED_COMMAND_FAMILY,
+        help="Supported trace command family to batch; pytest_direct remains the default.",
+    )
     parser.add_argument("--run-id")
     parser.add_argument("--expected-corpus-rows", type=int, default=2400)
     parser.add_argument("--expected-runnable-rows", type=int)
