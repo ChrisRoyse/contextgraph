@@ -312,7 +312,12 @@ def strip_bash_xtrace_fragments(body: str) -> str:
         "",
         body,
     )
-    return re.sub(r"[ \t]*\+{1,6} [^\n]*(?:\n|$)", "", without_git_checkout)
+    without_checkout_output = re.sub(
+        r"[ \t]*Updated \d+ paths? from [0-9a-f]+(?:\n|$)",
+        "",
+        without_git_checkout,
+    )
+    return re.sub(r"[ \t]*\+{1,6} [^\n]*(?:\n|$)", "", without_checkout_output)
 
 
 def validate_trace_payload(payload: Any) -> None:
