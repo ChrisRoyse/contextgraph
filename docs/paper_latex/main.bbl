@@ -1,0 +1,220 @@
+\begin{thebibliography}{23}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Alemohammad et~al.(2023)Alemohammad, Casco-Rodriguez, Luzi, Humayun,
+  Babaei, LeJeune, Siahkoohi, and Baraniuk]{alemohammad2023mad}
+Sina Alemohammad, Josue Casco-Rodriguez, Lorenzo Luzi, Ahmed~Imtiaz Humayun,
+  Hossein Babaei, Daniel LeJeune, Ali Siahkoohi, and Richard~G. Baraniuk.
+\newblock Self-consuming generative models go {MAD}.
+\newblock \emph{arXiv preprint arXiv:2307.01850}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2307.01850}.
+\newblock ICLR 2024.
+
+\bibitem[Bai et~al.(2022)Bai, Kadavath, Kundu, Askell, Kernion, Jones, Chen,
+  et~al.]{bai2022constitutional}
+Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kernion,
+  Andy Jones, Anna Chen, et~al.
+\newblock Constitutional {AI}: {Harmlessness} from {AI} feedback.
+\newblock \emph{arXiv preprint arXiv:2212.08073}, 2022.
+\newblock URL \url{https://arxiv.org/abs/2212.08073}.
+
+\bibitem[Chen et~al.(2022)Chen, Wang, Chen, Wu, Liu, Chen, Li, Kanda, Yoshioka,
+  Xiao, Wu, Zhou, Ren, Qian, Qian, Wu, Zeng, Yu, and Wei]{chen2022wavlm}
+Sanyuan Chen, Chengyi Wang, Zhengyang Chen, Yu~Wu, Shujie Liu, Zhuo Chen, Jinyu
+  Li, Naoyuki Kanda, Takuya Yoshioka, Xiong Xiao, Jian Wu, Long Zhou, Shuo Ren,
+  Yanmin Qian, Yao Qian, Jian Wu, Michael Zeng, Xiangzhan Yu, and Furu Wei.
+\newblock {WavLM}: {Large}-scale self-supervised pre-training for full stack
+  speech processing.
+\newblock \emph{IEEE Journal of Selected Topics in Signal Processing},
+  16\penalty0 (6):\penalty0 1505--1518, 2022.
+\newblock URL \url{https://arxiv.org/abs/2110.13900}.
+\newblock arXiv:2110.13900.
+
+\bibitem[Chen et~al.(2024)Chen, Liu, Zhou, Liu, Tan, Li, Zhao, Qian, and
+  Wei]{chen2024valle2}
+Sanyuan Chen, Shujie Liu, Long Zhou, Yanqing Liu, Xu~Tan, Jinyu Li, Sheng Zhao,
+  Yao Qian, and Furu Wei.
+\newblock {VALL-E 2}: {Neural} codec language models are human parity zero-shot
+  text to speech synthesizers.
+\newblock \emph{arXiv preprint arXiv:2406.05370}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2406.05370}.
+
+\bibitem[Cormack et~al.(2009)Cormack, Clarke, and Buettcher]{cormack2009rrf}
+Gordon~V. Cormack, Charles L.~A. Clarke, and Stefan Buettcher.
+\newblock Reciprocal rank fusion outperforms {Condorcet} and individual rank
+  learning methods.
+\newblock In \emph{Proceedings of the 32nd International ACM SIGIR Conference},
+  pages 758--759, 2009.
+\newblock \doi{10.1145/1571941.1572114}.
+
+\bibitem[Del{\'e}tang et~al.(2023)Del{\'e}tang, Ruoss, Duquenne, Catt,
+  Genewein, Mattern, Grau-Moya, Wenliang, Aitchison, Orseau, Hutter, and
+  Veness]{deletang2024compression}
+Gr{\'e}goire Del{\'e}tang, Anian Ruoss, Paul-Ambroise Duquenne, Elliot Catt,
+  Tim Genewein, Christopher Mattern, Jordi Grau-Moya, Li~Kevin Wenliang,
+  Matthew Aitchison, Laurent Orseau, Marcus Hutter, and Joel Veness.
+\newblock Language modeling is compression.
+\newblock \emph{arXiv preprint arXiv:2309.10668}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2309.10668}.
+\newblock ICLR 2024.
+
+\bibitem[Desplanques et~al.(2020)Desplanques, Thienpondt, and
+  Demuynck]{desplanques2020ecapa}
+Brecht Desplanques, Jenthe Thienpondt, and Kris Demuynck.
+\newblock {ECAPA-TDNN}: {Emphasized} channel attention, propagation and
+  aggregation in {TDNN} based speaker verification.
+\newblock In \emph{Proc. Interspeech}, 2020.
+\newblock URL \url{https://arxiv.org/abs/2005.07143}.
+\newblock arXiv:2005.07143.
+
+\bibitem[Dohmatob et~al.(2024)Dohmatob, Feng, Yang, Charton, and
+  Kempe]{dohmatob2024tale}
+Elvis Dohmatob, Yunzhen Feng, Pu~Yang, Francois Charton, and Julia Kempe.
+\newblock A tale of tails: {Model} collapse as a change of scaling laws.
+\newblock \emph{arXiv preprint arXiv:2402.07043}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2402.07043}.
+\newblock ICML 2024.
+
+\bibitem[Feng et~al.(2024)Feng, Dohmatob, Yang, Charton, and
+  Kempe]{feng2024beyond}
+Yunzhen Feng, Elvis Dohmatob, Pu~Yang, Francois Charton, and Julia Kempe.
+\newblock Beyond model collapse: {Scaling} up with synthesized data requires
+  verification.
+\newblock \emph{arXiv preprint arXiv:2406.07515}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2406.07515}.
+
+\bibitem[Formal et~al.(2021)Formal, Piwowarski, and
+  Clinchant]{formal2021splade}
+Thibault Formal, Benjamin Piwowarski, and St{\'e}phane Clinchant.
+\newblock {SPLADE}: {Sparse} lexical and expansion model for first stage
+  ranking.
+\newblock In \emph{Proceedings of the 44th International ACM SIGIR Conference},
+  2021.
+\newblock URL \url{https://arxiv.org/abs/2107.05720}.
+\newblock arXiv:2107.05720.
+
+\bibitem[Gerstgrasser et~al.(2024)Gerstgrasser, Schaeffer, Dey, Rafailov,
+  Sleight, Hughes, Korbak, Agrawal, Pai, Gromov, Roberts, Yang, Donoho, and
+  Koyejo]{gerstgrasser2024inevitable}
+Matthias Gerstgrasser, Rylan Schaeffer, Apratim Dey, Rafael Rafailov, Henry
+  Sleight, John Hughes, Tomasz Korbak, Rajashree Agrawal, Dhruv Pai, Andrey
+  Gromov, Daniel~A. Roberts, Diyi Yang, David~L. Donoho, and Sanmi Koyejo.
+\newblock Is model collapse inevitable? {Breaking} the curse of recursion by
+  accumulating real and synthetic data.
+\newblock \emph{arXiv preprint arXiv:2404.01413}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2404.01413}.
+
+\bibitem[Huang et~al.(2024)Huang, Zhang, Shan, and He]{huang2024compression}
+Yuzhen Huang, Jinghan Zhang, Zifei Shan, and Junxian He.
+\newblock Compression represents intelligence linearly.
+\newblock \emph{arXiv preprint arXiv:2404.09937}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2404.09937}.
+\newblock COLM 2024.
+
+\bibitem[Ju et~al.(2024)Ju, Wang, Shen, Tan, Xin, Yang,
+  et~al.]{ju2024naturalspeech3}
+Zeqian Ju, Yuancheng Wang, Kai Shen, Xu~Tan, Detai Xin, Dongchao Yang, et~al.
+\newblock {NaturalSpeech 3}: {Zero}-shot speech synthesis with factorized codec
+  and diffusion models.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2403.03100}.
+\newblock arXiv:2403.03100.
+
+\bibitem[Longpre et~al.(2024)Longpre, Mahari, Lee, Lund, Oderinwale, Brannon,
+  et~al.]{longpre2024consent}
+Shayne Longpre, Robert Mahari, Ariel Lee, Campbell Lund, Hamidah Oderinwale,
+  William Brannon, et~al.
+\newblock Consent in crisis: {The} rapid decline of the {AI} data commons.
+\newblock \emph{arXiv preprint arXiv:2407.14933}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2407.14933}.
+
+\bibitem[Malkov and Yashunin(2018)]{malkov2018hnsw}
+Yu~A. Malkov and Dmitry~A. Yashunin.
+\newblock Efficient and robust approximate nearest neighbor search using
+  hierarchical navigable small world graphs.
+\newblock \emph{IEEE Transactions on Pattern Analysis and Machine
+  Intelligence}, 42\penalty0 (4):\penalty0 824--836, 2018.
+\newblock URL \url{https://arxiv.org/abs/1603.09320}.
+\newblock arXiv:1603.09320.
+
+\bibitem[Nussbaum et~al.(2024)Nussbaum, Morris, Duderstadt, and
+  Mulyar]{nussbaum2024nomic}
+Zach Nussbaum, John~X. Morris, Brandon Duderstadt, and Andriy Mulyar.
+\newblock Nomic embed: {Training} a reproducible long context text embedder.
+\newblock \emph{arXiv preprint arXiv:2402.01613}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2402.01613}.
+
+\bibitem[Ouyang et~al.(2022)Ouyang, Wu, Jiang, Almeida, Wainwright, Mishkin,
+  Zhang, Agarwal, Slama, Ray, et~al.]{ouyang2022instructgpt}
+Long Ouyang, Jeff Wu, Xu~Jiang, Diogo Almeida, Carroll~L. Wainwright, Pamela
+  Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et~al.
+\newblock Training language models to follow instructions with human feedback.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2022.
+\newblock URL \url{https://arxiv.org/abs/2203.02155}.
+\newblock arXiv:2203.02155.
+
+\bibitem[Rafailov et~al.(2023)Rafailov, Sharma, Mitchell, Ermon, Manning, and
+  Finn]{rafailov2023dpo}
+Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher~D.
+  Manning, and Chelsea Finn.
+\newblock Direct preference optimization: {Your} language model is secretly a
+  reward model.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2305.18290}.
+\newblock arXiv:2305.18290.
+
+\bibitem[Santhanam et~al.(2022)Santhanam, Khattab, Saad-Falcon, Potts, and
+  Zaharia]{santhanam2022colbertv2}
+Keshav Santhanam, Omar Khattab, Jon Saad-Falcon, Christopher Potts, and Matei
+  Zaharia.
+\newblock {ColBERTv2}: {Effective} and efficient retrieval via lightweight late
+  interaction.
+\newblock In \emph{Proceedings of NAACL-HLT}, 2022.
+\newblock URL \url{https://arxiv.org/abs/2112.01488}.
+\newblock arXiv:2112.01488.
+
+\bibitem[Shumailov et~al.(2024)Shumailov, Shumaylov, Zhao, Papernot, Anderson,
+  and Gal]{shumailov2024collapse}
+Ilia Shumailov, Zakhar Shumaylov, Yiren Zhao, Nicolas Papernot, Ross Anderson,
+  and Yarin Gal.
+\newblock {AI} models collapse when trained on recursively generated data.
+\newblock \emph{Nature}, 631:\penalty0 755--759, 2024.
+\newblock \doi{10.1038/s41586-024-07566-y}.
+\newblock URL \url{https://www.nature.com/articles/s41586-024-07566-y}.
+
+\bibitem[Villalobos et~al.(2022)Villalobos, Ho, Sevilla, Besiroglu, Heim, and
+  Hobbhahn]{villalobos2022data}
+Pablo Villalobos, Anson Ho, Jaime Sevilla, Tamay Besiroglu, Lennart Heim, and
+  Marius Hobbhahn.
+\newblock Will we run out of data? {Limits} of {LLM} scaling based on
+  human-generated data.
+\newblock \emph{arXiv preprint arXiv:2211.04325}, 2022.
+\newblock URL \url{https://arxiv.org/abs/2211.04325}.
+\newblock Revised 2024; ICML 2024.
+
+\bibitem[Wang et~al.(2021)Wang, Gao, Zhu, Zhang, Liu, Li, and
+  Tang]{wang2021kepler}
+Xiaozhi Wang, Tianyu Gao, Zhaocheng Zhu, Zhengyan Zhang, Zhiyuan Liu, Juanzi
+  Li, and Jian Tang.
+\newblock {KEPLER}: {A} unified model for knowledge embedding and pre-trained
+  language representation.
+\newblock \emph{Transactions of the Association for Computational Linguistics
+  (TACL)}, 9:\penalty0 176--194, 2021.
+\newblock URL \url{https://arxiv.org/abs/1911.06136}.
+\newblock arXiv:1911.06136.
+
+\bibitem[Zhai et~al.(2023)Zhai, Mustafa, Kolesnikov, and Beyer]{zhai2023siglip}
+Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer.
+\newblock Sigmoid loss for language image pre-training.
+\newblock In \emph{Proceedings of the IEEE/CVF International Conference on
+  Computer Vision (ICCV)}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2303.15343}.
+\newblock arXiv:2303.15343.
+
+\end{thebibliography}
