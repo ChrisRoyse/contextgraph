@@ -306,8 +306,13 @@ def extract_trace_payload(test_output: str) -> dict[str, Any]:
 
 
 def strip_bash_xtrace_fragments(body: str) -> str:
-    """Remove shell xtrace fragments interleaved into marked JSON output."""
-    return re.sub(r"[ \t]*\+{1,6} [^\n]*(?:\n|$)", "", body)
+    """Remove shell cleanup fragments interleaved into marked JSON output."""
+    without_git_checkout = re.sub(
+        r"[ \t]*\+{1,6} git checkout [^\n]*(?:\nUpdated \d+ paths? from [0-9a-f]+\n?)?",
+        "",
+        body,
+    )
+    return re.sub(r"[ \t]*\+{1,6} [^\n]*(?:\n|$)", "", without_git_checkout)
 
 
 def validate_trace_payload(payload: Any) -> None:

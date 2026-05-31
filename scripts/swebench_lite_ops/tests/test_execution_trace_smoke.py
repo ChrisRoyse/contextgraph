@@ -116,6 +116,7 @@ def test_extract_trace_payload_strips_xtrace_fragment_inside_json_body():
     contaminated = (
         encoded[:split_at]
         + "+ git checkout d16bfe05 astropy/modeling/tests/test_separable.py\n"
+        + "Updated 2 paths from 5831e739\n"
         + encoded[split_at:]
     )
     output = f"{TRACE_BEGIN}\n{contaminated}\n{TRACE_END}\n"
