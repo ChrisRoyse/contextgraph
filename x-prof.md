@@ -1,0 +1,368 @@
+- generic [ref=e2]:
+  - generic:
+    - generic:
+      - heading "To view keyboard shortcuts, press question mark View keyboard shortcuts" [level=2] [ref=e3]:
+        - generic [ref=e4]: To view keyboard shortcuts, press question mark
+        - link "View keyboard shortcuts" [ref=e5] [cursor=pointer]:
+          - /url: /i/keyboard_shortcuts
+      - generic:
+        - generic:
+          - button "Grok" [ref=e6] [cursor=pointer]:
+            - img [ref=e7]
+          - button "Chat" [ref=e10] [cursor=pointer]:
+            - img [ref=e11]
+      - generic [ref=e14]:
+        - button "Skip to home timeline" [ref=e15] [cursor=pointer]
+        - button "Skip to trending" [ref=e17] [cursor=pointer]
+        - banner [ref=e19]:
+          - generic [ref=e21]:
+            - generic [ref=e22]:
+              - heading "X" [level=1] [ref=e24] [cursor=pointer]:
+                - link "X" [ref=e25]:
+                  - /url: /home
+                  - img [ref=e27]
+              - navigation "Primary" [ref=e31]:
+                - link "Home" [ref=e32] [cursor=pointer]:
+                  - /url: /home
+                  - generic [ref=e33]:
+                    - img [ref=e35]
+                    - generic [ref=e38]: Home
+                - link "Search and explore" [ref=e39] [cursor=pointer]:
+                  - /url: /explore
+                  - generic [ref=e40]:
+                    - img [ref=e42]
+                    - generic [ref=e45]: Explore
+                - link "Notifications" [ref=e46] [cursor=pointer]:
+                  - /url: /notifications
+                  - generic [ref=e47]:
+                    - img [ref=e49]
+                    - generic [ref=e52]: Notifications
+                - link "Follow" [ref=e53] [cursor=pointer]:
+                  - /url: /i/connect_people
+                  - generic [ref=e54]:
+                    - img [ref=e56]
+                    - generic [ref=e59]: Follow
+                - link "Direct Messages" [ref=e60] [cursor=pointer]:
+                  - /url: /i/chat
+                  - generic [ref=e61]:
+                    - img [ref=e63]
+                    - generic [ref=e66]: Chat
+                - link "Grok" [ref=e67] [cursor=pointer]:
+                  - /url: /i/grok
+                  - generic [ref=e68]:
+                    - generic [ref=e69]:
+                      - img [ref=e70]
+                      - generic "undefined unread items" [ref=e73]
+                    - generic [ref=e74]: Grok
+                - link "Bookmarks" [ref=e75] [cursor=pointer]:
+                  - /url: /i/bookmarks
+                  - generic [ref=e76]:
+                    - img [ref=e78]
+                    - generic [ref=e81]: Bookmarks
+                - link "Creator Studio" [ref=e82] [cursor=pointer]:
+                  - /url: /i/jf/creators/studio
+                  - generic [ref=e83]:
+                    - img [ref=e85]
+                    - generic [ref=e89]: Creator Studio
+                - link "Premium" [ref=e90] [cursor=pointer]:
+                  - /url: /i/premium_sign_up
+                  - generic [ref=e91]:
+                    - img [ref=e93]
+                    - generic [ref=e96]: Premium
+                    - generic [ref=e97]:
+                      - generic:
+                        - generic: 50% off
+                - link "Profile" [ref=e98] [cursor=pointer]:
+                  - /url: /ChrisRoyseAI1
+                  - generic [ref=e99]:
+                    - img [ref=e101]
+                    - generic [ref=e104]: Profile
+                - button "More menu items" [ref=e105] [cursor=pointer]:
+                  - generic [ref=e106]:
+                    - img [ref=e108]
+                    - generic [ref=e111]: More
+              - link "Post" [ref=e113] [cursor=pointer]:
+                - /url: /compose/post
+                - generic [ref=e119]: Post
+            - button "Account menu" [ref=e122] [cursor=pointer]:
+              - generic [ref=e130]:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic "Chris Royse":
+                        - img "Chris Royse"
+              - generic [ref=e134]:
+                - generic [ref=e138]: Chris Royse
+                - generic [ref=e142]: "@ChrisRoyseAI1"
+              - img [ref=e144]
+        - main [ref=e147]:
+          - generic [ref=e150]:
+            - generic "Home timeline" [ref=e152]:
+              - generic [ref=e153]:
+                - generic [ref=e159] [cursor=pointer]:
+                  - button "Back" [ref=e161]:
+                    - img [ref=e163]
+                  - generic [ref=e167]:
+                    - heading "Chris Royse" [level=2] [ref=e168]:
+                      - generic [ref=e174]: Chris Royse
+                    - generic [ref=e175]: 3 posts
+                  - button "Search" [ref=e178]:
+                    - img [ref=e180]
+                - generic:
+                  - generic:
+                    - status:
+                      - button:
+                        - generic:
+                          - img
+                          - generic: See new posts
+              - generic [ref=e185]:
+                - generic [ref=e186]:
+                  - link [ref=e187] [cursor=pointer]:
+                    - /url: /ChrisRoyseAI1/header_photo
+                  - generic [ref=e193]:
+                    - generic [ref=e194]:
+                      - link "Opens profile photo" [ref=e202] [cursor=pointer]:
+                        - /url: /ChrisRoyseAI1/photo
+                        - generic:
+                          - generic:
+                            - generic
+                      - link "Edit profile" [ref=e206] [cursor=pointer]:
+                        - /url: /settings/profile
+                        - generic [ref=e209]: Edit profile
+                    - generic [ref=e213]:
+                      - generic [ref=e217]: Chris Royse
+                      - generic [ref=e221]: "@ChrisRoyseAI1"
+                    - generic [ref=e224]:
+                      - text: "Primitive in the AI data layer: n·(N+C(N,2)) supervisory signals per input. Founder —"
+                      - link "Teleox.ai" [ref=e225] [cursor=pointer]:
+                        - /url: https://t.co/zzxXnalLL6
+                      - text: +
+                      - link "Leapable.ai" [ref=e226] [cursor=pointer]:
+                        - /url: https://t.co/EMcLHlaYAW
+                      - text: . Author, TCT/DDA paper.
+                    - generic [ref=e228]:
+                      - img [ref=e229]
+                      - generic [ref=e232]: Junction City, KS
+                      - link "teleox.ai" [ref=e233] [cursor=pointer]:
+                        - /url: https://t.co/DQNAZC52tk
+                        - img [ref=e234]
+                        - text: teleox.ai
+                      - link "Joined March 2026" [ref=e238] [cursor=pointer]:
+                        - /url: /ChrisRoyseAI1/about
+                        - img [ref=e239]
+                        - text: Joined March 2026
+                        - img [ref=e242]
+                    - generic [ref=e245]:
+                      - link "4 Following" [ref=e247] [cursor=pointer]:
+                        - /url: /ChrisRoyseAI1/following
+                        - generic [ref=e248]: "4"
+                        - generic [ref=e249]: Following
+                      - link "2 Followers" [ref=e251] [cursor=pointer]:
+                        - /url: /ChrisRoyseAI1/verified_followers
+                        - generic [ref=e252]: "2"
+                        - generic [ref=e253]: Followers
+                  - generic [ref=e256]:
+                    - button [ref=e257] [cursor=pointer]:
+                      - img [ref=e259]
+                    - generic [ref=e262]:
+                      - generic [ref=e263]:
+                        - text: You aren’t verified yet
+                        - img [ref=e264]
+                      - generic [ref=e267]: Get verified for boosted replies, analytics, ad-free browsing, and more. Upgrade your profile now.
+                      - link "Get verified" [ref=e268] [cursor=pointer]:
+                        - /url: /i/premium_sign_up
+                        - generic [ref=e271]: Get verified
+                - navigation "Profile timelines" [ref=e273]:
+                  - generic [ref=e274]:
+                    - generic:
+                      - button "Previous" [disabled]:
+                        - generic:
+                          - img
+                    - tablist [ref=e276]:
+                      - tab "Posts" [selected] [ref=e277] [cursor=pointer]:
+                        - generic [ref=e280]: Posts
+                      - tab "Replies" [ref=e282] [cursor=pointer]:
+                        - generic [ref=e285]: Replies
+                      - tab "Highlights" [ref=e286] [cursor=pointer]:
+                        - generic [ref=e289]: Highlights
+                      - tab "Articles" [ref=e290] [cursor=pointer]:
+                        - generic [ref=e293]: Articles
+                      - tab "Media" [ref=e294] [cursor=pointer]:
+                        - generic [ref=e297]: Media
+                      - tab "Likes" [ref=e298] [cursor=pointer]:
+                        - generic [ref=e301]: Likes
+                    - generic:
+                      - button "Next" [disabled]:
+                        - generic:
+                          - img
+                - region "Chris Royse’s posts" [ref=e475]:
+                  - heading "Chris Royse’s posts" [level=1] [ref=e476]
+                  - 'generic "Timeline: Chris Royse’s posts" [ref=e477]':
+                    - generic [ref=e478]:
+                      - 'article "Chris Royse @ChrisRoyseAI1 May 21 I built The Oracle. An MCP server that tells you, with math, whether your AI agent''s code will actually work — binary verdict against the real Docker oracle, built on @ylecun ''s JEPA architecture. Walkthrough → youtu.be/9QJwb6cGsSs cc @elonmusk youtube.com I Built The Oracle — A World Model That Verifies AI Code Against... For two years I''ve been building one thing: a system that can tell ..." [ref=e482] [cursor=pointer]':
+                        - generic [ref=e488]:
+                          - link [ref=e500]:
+                            - /url: /ChrisRoyseAI1
+                          - generic [ref=e503]:
+                            - generic [ref=e505]
+                            - generic [ref=e546]
+                            - 'generic "youtube.com I Built The Oracle — A World Model That Verifies AI Code Against... For two years I''ve been building one thing: a system that can tell ..." [ref=e554]'
+                            - group "3 views" [ref=e579]
+                      - 'article "Chris Royse @ChrisRoyseAI1 Apr 21 New paper: a primitive in the AI data layer. Project a fixed corpus through N frozen embedders to get n*(N+C(N,2)) supervisory signals. Shakespeare LoRA on HF." [ref=e644] [cursor=pointer]':
+                        - generic [ref=e650]:
+                          - link [ref=e662]:
+                            - /url: /ChrisRoyseAI1
+                          - generic [ref=e665]:
+                            - generic [ref=e667]
+                            - generic [ref=e708]: "New paper: a primitive in the AI data layer. Project a fixed corpus through N frozen embedders to get n*(N+C(N,2)) supervisory signals. Shakespeare LoRA on HF."
+                            - group "19 views" [ref=e711]
+                      - heading "Who to follow" [level=2] [ref=e777]:
+                        - generic [ref=e778]: Who to follow
+                      - button "Sunday A. follows Diagon Alley @QunlayAdewole Follow @QunlayAdewole Believer! Materials chemist! @ucmerced Chem&Biochem PhD Candidate! Singer! In love with Music ! Chelsea fan on break 💙 💙" [ref=e782] [cursor=pointer]:
+                        - generic [ref=e784]:
+                          - img [ref=e786]
+                          - generic [ref=e793]: Sunday A. follows
+                        - generic [ref=e794]:
+                          - link [ref=e804]:
+                            - /url: /QunlayAdewole
+                          - generic [ref=e807]:
+                            - generic [ref=e808]
+                            - generic [ref=e826]
+                      - button "Sunday A. follows ogungbemi peter @peter_ogungbemi Follow @peter_ogungbemi WRITER | BELIEVER | LOVE DOCTOR||" [ref=e835] [cursor=pointer]:
+                        - generic [ref=e837]:
+                          - img [ref=e839]
+                          - generic [ref=e846]: Sunday A. follows
+                        - generic [ref=e847]:
+                          - link [ref=e857]:
+                            - /url: /peter_ogungbemi
+                          - generic [ref=e860]:
+                            - generic [ref=e861]
+                            - generic [ref=e879]: WRITER | BELIEVER | LOVE DOCTOR||
+                      - button "Sunday A. follows Naomi @Nhana_chi Follow @Nhana_chi Innovation/ Project manager/ A Certified virtual assistant/" [ref=e883] [cursor=pointer]:
+                        - generic [ref=e885]:
+                          - img [ref=e887]
+                          - generic [ref=e894]: Sunday A. follows
+                        - generic [ref=e895]:
+                          - link [ref=e905]:
+                            - /url: /Nhana_chi
+                          - generic [ref=e908]:
+                            - generic [ref=e909]
+                            - generic [ref=e927]: Innovation/ Project manager/ A Certified virtual assistant/
+                      - link "Show more" [ref=e931] [cursor=pointer]:
+                        - /url: /i/connect_people?user_id=2028751603923349504
+                        - generic [ref=e932]: Show more
+            - generic "Trending" [ref=e312]:
+              - generic [ref=e313]:
+                - search "Search" [ref=e318]:
+                  - generic [ref=e323]:
+                    - img [ref=e325]
+                    - combobox "Search query" [ref=e330]
+                - complementary "Who to follow" [ref=e334]:
+                  - heading "You might like" [level=2] [ref=e336]:
+                    - generic [ref=e337]: You might like
+                  - list [ref=e338]:
+                    - listitem [ref=e339] [cursor=pointer]:
+                      - generic [ref=e340]:
+                        - link [ref=e350]:
+                          - /url: /Gratefulchula
+                        - generic [ref=e354]:
+                          - generic [ref=e356]:
+                            - link "NfoTECH" [ref=e358]:
+                              - /url: /Gratefulchula
+                            - link "@Gratefulchula" [ref=e364]:
+                              - /url: /Gratefulchula
+                          - button "Follow @Gratefulchula" [ref=e368]:
+                            - generic [ref=e371]: Follow
+                    - listitem [ref=e372] [cursor=pointer]:
+                      - generic [ref=e373]:
+                        - link [ref=e383]:
+                          - /url: /BadekaleTola
+                        - generic [ref=e387]:
+                          - generic [ref=e389]:
+                            - link "Tola Badekale. Verified account" [ref=e391]:
+                              - /url: /BadekaleTola
+                            - link "@BadekaleTola" [ref=e402]:
+                              - /url: /BadekaleTola
+                          - button "Follow @BadekaleTola" [ref=e406]:
+                            - generic [ref=e409]: Follow
+                    - listitem [ref=e410] [cursor=pointer]:
+                      - generic [ref=e411]:
+                        - link [ref=e421]:
+                          - /url: /AnInspirator
+                        - generic [ref=e425]:
+                          - generic [ref=e427]:
+                            - link "Ṣayọ̀" [ref=e429]:
+                              - /url: /AnInspirator
+                            - link "@AnInspirator" [ref=e435]:
+                              - /url: /AnInspirator
+                          - button "Follow @AnInspirator" [ref=e439]:
+                            - generic [ref=e442]: Follow
+                  - link "Show more" [ref=e443] [cursor=pointer]:
+                    - /url: /i/connect_people?user_id=2028751603923349504
+                    - generic [ref=e444]: Show more
+                - region "Trending now" [ref=e936]:
+                  - heading "Trending now" [level=1] [ref=e937]
+                  - 'generic "Timeline: Trending now" [ref=e938]':
+                    - generic [ref=e939]:
+                      - heading "What’s happening" [level=2] [ref=e943]:
+                        - generic [ref=e944]: What’s happening
+                      - link "Sports · Trending Caruso Trending with Dylan Harper, Castle More" [ref=e947] [cursor=pointer]:
+                        - generic [ref=e948]:
+                          - generic [ref=e950]: Sports · Trending
+                          - generic [ref=e951]: Caruso
+                          - generic [ref=e952]:
+                            - text: Trending with
+                            - link "Dylan Harper" [ref=e953]:
+                              - /url: /search?q=Dylan%20Harper&src=trend_click&vertical=trends
+                            - text: ","
+                            - link "Castle" [ref=e954]:
+                              - /url: /search?q=Castle&src=trend_click&vertical=trends
+                          - button "More" [ref=e957]:
+                            - img [ref=e961]
+                      - link "Sports · Trending Chet More" [ref=e966] [cursor=pointer]:
+                        - generic [ref=e967]:
+                          - generic [ref=e969]: Sports · Trending
+                          - generic [ref=e970]: Chet
+                          - button "More" [ref=e973]:
+                            - img [ref=e977]
+                      - link "Sports · Trending Luke Kornet More" [ref=e982] [cursor=pointer]:
+                        - generic [ref=e983]:
+                          - generic [ref=e985]: Sports · Trending
+                          - generic [ref=e986]: Luke Kornet
+                          - button "More" [ref=e989]:
+                            - img [ref=e993]
+                      - link "Sports · Trending Keldon Johnson More" [ref=e998] [cursor=pointer]:
+                        - generic [ref=e999]:
+                          - generic [ref=e1001]: Sports · Trending
+                          - generic [ref=e1002]: Keldon Johnson
+                          - button "More" [ref=e1005]:
+                            - img [ref=e1009]
+                      - link "Show more" [ref=e1014] [cursor=pointer]:
+                        - /url: /explore/tabs/for-you
+                        - generic [ref=e1015]: Show more
+                - navigation "Footer" [ref=e453]:
+                  - generic [ref=e454]:
+                    - link "Terms of Service" [ref=e455] [cursor=pointer]:
+                      - /url: https://x.com/tos
+                    - generic [ref=e456]: "|"
+                  - generic [ref=e457]:
+                    - link "Privacy Policy" [ref=e458] [cursor=pointer]:
+                      - /url: https://x.com/privacy
+                    - generic [ref=e459]: "|"
+                  - generic [ref=e460]:
+                    - link "Cookie Policy" [ref=e461] [cursor=pointer]:
+                      - /url: https://support.x.com/articles/20170514
+                    - generic [ref=e462]: "|"
+                  - generic [ref=e463]:
+                    - link "Accessibility" [ref=e464] [cursor=pointer]:
+                      - /url: https://help.x.com/resources/accessibility
+                    - generic [ref=e465]: "|"
+                  - generic [ref=e466]:
+                    - link "Ads info" [ref=e467] [cursor=pointer]:
+                      - /url: https://business.x.com/en/help/troubleshooting/how-twitter-ads-work.html?ref=web-twc-ao-gbl-adsinfo&utm_source=twc&utm_medium=web&utm_campaign=ao&utm_content=adsinfo
+                    - generic [ref=e468]: "|"
+                  - button "More" [ref=e469] [cursor=pointer]:
+                    - generic [ref=e470]:
+                      - text: More
+                      - img [ref=e471]
+                  - generic [ref=e474]: © 2026 X Corp.

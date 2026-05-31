@@ -1,0 +1,230 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic:
+      - generic:
+        - heading "To view keyboard shortcuts, press question mark View keyboard shortcuts" [level=2] [ref=e3]:
+          - generic [ref=e4]: To view keyboard shortcuts, press question mark
+          - link "View keyboard shortcuts" [ref=e5] [cursor=pointer]:
+            - /url: /i/keyboard_shortcuts
+        - generic:
+          - generic:
+            - button "Grok" [ref=e6] [cursor=pointer]:
+              - img [ref=e7]
+            - button "Chat" [ref=e10] [cursor=pointer]:
+              - img [ref=e11]
+        - generic [ref=e14]:
+          - button "Skip to home timeline" [ref=e15] [cursor=pointer]
+          - button "Skip to trending" [ref=e17] [cursor=pointer]
+          - banner [ref=e19]:
+            - generic [ref=e21]:
+              - generic [ref=e22]:
+                - heading "X" [level=1] [ref=e24] [cursor=pointer]:
+                  - link "X" [ref=e25]:
+                    - /url: /home
+                    - img [ref=e27]
+                - navigation "Primary" [ref=e31]:
+                  - link "Home" [ref=e32] [cursor=pointer]:
+                    - /url: /home
+                    - generic [ref=e33]:
+                      - img [ref=e35]
+                      - generic [ref=e38]: Home
+                  - link "Search and explore" [ref=e39] [cursor=pointer]:
+                    - /url: /explore
+                    - generic [ref=e40]:
+                      - img [ref=e42]
+                      - generic [ref=e45]: Explore
+                  - link "Notifications" [ref=e46] [cursor=pointer]:
+                    - /url: /notifications
+                    - generic [ref=e47]:
+                      - img [ref=e49]
+                      - generic [ref=e52]: Notifications
+                  - link "Follow" [ref=e53] [cursor=pointer]:
+                    - /url: /i/connect_people
+                    - generic [ref=e54]:
+                      - img [ref=e56]
+                      - generic [ref=e59]: Follow
+                  - link "Direct Messages" [ref=e60] [cursor=pointer]:
+                    - /url: /i/chat
+                    - generic [ref=e61]:
+                      - img [ref=e63]
+                      - generic [ref=e66]: Chat
+                  - link "Grok" [ref=e67] [cursor=pointer]:
+                    - /url: /i/grok
+                    - generic [ref=e68]:
+                      - generic [ref=e69]:
+                        - img [ref=e70]
+                        - generic "undefined unread items" [ref=e73]
+                      - generic [ref=e74]: Grok
+                  - link "Bookmarks" [ref=e75] [cursor=pointer]:
+                    - /url: /i/bookmarks
+                    - generic [ref=e76]:
+                      - img [ref=e78]
+                      - generic [ref=e81]: Bookmarks
+                  - link "Creator Studio" [ref=e82] [cursor=pointer]:
+                    - /url: /i/jf/creators/studio
+                    - generic [ref=e83]:
+                      - img [ref=e85]
+                      - generic [ref=e89]: Creator Studio
+                  - link "Premium" [ref=e90] [cursor=pointer]:
+                    - /url: /i/premium_sign_up
+                    - generic [ref=e91]:
+                      - img [ref=e93]
+                      - generic [ref=e96]: Premium
+                      - generic [ref=e97]:
+                        - generic
+                  - link "Profile" [ref=e98] [cursor=pointer]:
+                    - /url: /ChrisRoyseAI1
+                    - generic [ref=e99]:
+                      - img [ref=e101]
+                      - generic [ref=e104]: Profile
+                  - button "More menu items" [ref=e105] [cursor=pointer]:
+                    - generic [ref=e106]:
+                      - img [ref=e108]
+                      - generic [ref=e111]: More
+                - link "Post" [ref=e113] [cursor=pointer]:
+                  - /url: /compose/post
+                  - generic [ref=e119]: Post
+              - button "Account menu" [ref=e122] [cursor=pointer]:
+                - generic [ref=e130]:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic "Chris Royse"
+                - generic [ref=e134]:
+                  - generic [ref=e138]: Chris Royse
+                  - generic [ref=e142]: "@ChrisRoyseAI1"
+                - img [ref=e144]
+          - main [ref=e147]:
+            - generic [ref=e150]:
+              - generic "Home timeline" [ref=e152]:
+                - generic [ref=e153]:
+                  - navigation [ref=e158]:
+                    - generic [ref=e159]:
+                      - generic:
+                        - button "Previous" [disabled]
+                      - tablist [ref=e161]:
+                        - tab "For you" [selected] [ref=e162] [cursor=pointer]
+                        - tab "Following" [ref=e167] [cursor=pointer]
+                      - generic:
+                        - button "Next" [disabled]
+                  - generic:
+                    - generic:
+                      - status:
+                        - button
+                - generic [ref=e177]:
+                  - link "Chris Royse" [ref=e186] [cursor=pointer]:
+                    - /url: /ChrisRoyseAI1
+                    - generic:
+                      - generic:
+                        - generic
+                  - generic [ref=e189]:
+                    - generic [ref=e207]:
+                      - generic [ref=e209]: What’s happening?
+                      - textbox "Post text" [ref=e211]
+                    - generic [ref=e218]:
+                      - navigation [ref=e219]:
+                        - generic [ref=e220]
+                      - button "Post" [disabled] [ref=e287]:
+                        - generic [ref=e290]: Post
+                - region "Your Home Timeline" [ref=e293]:
+                  - heading "Your Home Timeline" [level=1] [ref=e294]
+                  - 'generic "Timeline: Your Home Timeline" [ref=e295]':
+                    - generic [ref=e296]:
+                      - article "MrBeast Verified account @MrBeast 10 hours ago I heard MrBeast uploaded a YouTube video 3300 replies, 780 reposts, 13574 likes, 206 bookmarks, 1128072 views" [ref=e2189] [cursor=pointer]:
+                        - generic [ref=e306]
+                      - article "Supermicro Verified account @Supermicro Want to see AI Factories in action? Watch ServeTheHome’s latest video breakdown to see how Supermicro and NVIDIA deliver turnkey AI infrastructure at scale. Embedded video 0:15 Click to Watch the Video From supermicro.com 1134 replies, 1806 reposts, 12995 likes, 3295 bookmarks, 110658090 views" [ref=e2193] [cursor=pointer]:
+                        - generic [ref=e459]
+                      - 'article "Elon Musk Verified account @elonmusk 20 hours ago Grok Build is moving fast Quote X Freeze Verified account @XFreeze 20 hours ago xAI has been shipping Grok Build updates non-stop If you have not been keeping track, here is what xAI has rolled out up to v0.2.11: New commands & core features → Integrated 𝕏 search and much faster web search → Added /export, /login, /usage, and /config-agents → Added an x.com/xai/status/206… 3032 replies, 4391 reposts, 28957 likes, 800 bookmarks, 12566184 views" [ref=e2196] [cursor=pointer]':
+                        - generic [ref=e613]
+                      - article "Elon Musk Verified account @elonmusk 21 minutes ago Problems in Paris Embedded video Play Video 1407 replies, 2200 reposts, 14055 likes, 535 bookmarks, 544558 views" [ref=e2200] [cursor=pointer]:
+                        - generic [ref=e803]
+                      - article "MLB Verified account @MLB 23 hours ago Bunny sighting at Coors Field 🐰 Embedded video Play Video 185 replies, 7194 reposts, 22556 likes, 2709 bookmarks, 1905586 views" [ref=e972] [cursor=pointer]:
+                        - generic [ref=e978]
+                      - article "ijn Verified account @godknowsdgj1 11 hours ago Now this is some next-level dedication to alcohol 😭 👇 Embedded video Play Video 132 replies, 382 reposts, 2402 likes, 303 bookmarks, 925622 views" [ref=e1144] [cursor=pointer]:
+                        - generic [ref=e1150]
+                      - article "Aesthetics 𝕏 Verified account @aestheticsguyy 9 hours ago Post a picture YOU took. Just a pic. No description Image 2086 replies, 1051 reposts, 12521 likes, 788 bookmarks, 378015 views" [ref=e2205] [cursor=pointer]:
+                        - generic [ref=e1320]
+                      - article "Athena Verified account @athenago Emails drafted, inbox cleared, priorities surfaced. An Executive Assistant that keeps you moving. athena.com Get Matched with an EA From athena.com 562 reposts, 1394 likes, 76 bookmarks, 2036826 views" [ref=e1474] [cursor=pointer]:
+                        - generic [ref=e1480]
+                      - article "İnşaat Doktoru Verified account @insaatdoktoru 16 hours ago The $1 trillion Line project in Saudi Arabia, whose construction was halted, was supposed to look like this when completed. Embedded video Play Video 255 replies, 442 reposts, 2720 likes, 771 bookmarks, 1122251 views" [ref=e1612] [cursor=pointer]:
+                        - generic [ref=e1618]
+              - generic "Trending" [ref=e1790]:
+                - generic [ref=e1791]:
+                  - search "Search" [ref=e1796]:
+                    - generic [ref=e1801]:
+                      - img [ref=e1803]
+                      - combobox "Search query" [ref=e1808]
+                  - complementary "Subscribe to Premium" [ref=e1812]:
+                    - generic [ref=e1813]:
+                      - generic [ref=e1814]: Subscribe to Premium
+                      - generic [ref=e1816]: 50% off
+                    - generic [ref=e1817]: Get rid of ads, see your analytics, boost your replies and unlock 20+ features.
+                    - link "Subscribe" [ref=e1818] [cursor=pointer]:
+                      - /url: /i/premium_sign_up
+                      - generic [ref=e1821]: Subscribe
+                  - generic [ref=e1825]:
+                    - heading "Today’s News Close" [level=2] [ref=e1827]:
+                      - generic [ref=e1828]: Today’s News
+                      - button "Close" [ref=e1831] [cursor=pointer]:
+                        - img [ref=e1833]
+                    - generic [ref=e1836]:
+                      - link "FSU's Cam Fisher Homers After Bonking Coastal Reliever's Head 1 hour ago · Sports · 3,972 posts" [ref=e1837] [cursor=pointer]:
+                        - generic [ref=e1840]
+                      - link "Spurs Lead Early in Thunder Hotel Noise Game 7 Thriller 5 hours ago · Sports · 49.6K posts" [ref=e1881] [cursor=pointer]:
+                        - generic [ref=e1884]
+                      - link "Caruso's Hard Foul on Castle Ignites Tension in Thunder-Spurs Game 7 1 hour ago · Sports · 8,308 posts" [ref=e1925] [cursor=pointer]:
+                        - generic [ref=e1928]
+                  - region "Trending now" [ref=e1970]:
+                    - heading "Trending now" [level=1] [ref=e1971]
+                    - 'generic "Timeline: Trending now" [ref=e1972]':
+                      - generic [ref=e1973]:
+                        - heading "What’s happening" [level=2] [ref=e1977]
+                        - link "Sports · Trending Caruso Trending with Dylan Harper, Castle More" [ref=e1981] [cursor=pointer]
+                        - link "Sports · Trending Chet More" [ref=e2000] [cursor=pointer]
+                        - link "Sports · Trending Luke Kornet More" [ref=e2016] [cursor=pointer]
+                        - link "Sports · Trending Keldon Johnson More" [ref=e2032] [cursor=pointer]
+                        - link "Show more" [ref=e2048] [cursor=pointer]:
+                          - /url: /explore/tabs/for-you
+                  - complementary "Who to follow" [ref=e2052]:
+                    - heading "Who to follow" [level=2] [ref=e2054]:
+                      - generic [ref=e2055]: Who to follow
+                    - list [ref=e2056]:
+                      - listitem [ref=e2057] [cursor=pointer]:
+                        - generic [ref=e2058]
+                      - listitem [ref=e2090] [cursor=pointer]:
+                        - generic [ref=e2091]
+                      - listitem [ref=e2126] [cursor=pointer]:
+                        - generic [ref=e2127]
+                    - link "Show more" [ref=e2164] [cursor=pointer]:
+                      - /url: /i/connect_people?user_id=2028751603923349504
+                      - generic [ref=e2165]: Show more
+                  - navigation "Footer" [ref=e2167]:
+                    - generic [ref=e2168]:
+                      - link "Terms of Service" [ref=e2169] [cursor=pointer]:
+                        - /url: https://x.com/tos
+                      - generic [ref=e2170]: "|"
+                    - generic [ref=e2171]:
+                      - link "Privacy Policy" [ref=e2172] [cursor=pointer]:
+                        - /url: https://x.com/privacy
+                      - generic [ref=e2173]: "|"
+                    - generic [ref=e2174]:
+                      - link "Cookie Policy" [ref=e2175] [cursor=pointer]:
+                        - /url: https://support.x.com/articles/20170514
+                      - generic [ref=e2176]: "|"
+                    - generic [ref=e2177]:
+                      - link "Accessibility" [ref=e2178] [cursor=pointer]:
+                        - /url: https://help.x.com/resources/accessibility
+                      - generic [ref=e2179]: "|"
+                    - generic [ref=e2180]:
+                      - link "Ads info" [ref=e2181] [cursor=pointer]:
+                        - /url: https://business.x.com/en/help/troubleshooting/how-twitter-ads-work.html?ref=web-twc-ao-gbl-adsinfo&utm_source=twc&utm_medium=web&utm_campaign=ao&utm_content=adsinfo
+                      - generic [ref=e2182]: "|"
+                    - button "More" [ref=e2183] [cursor=pointer]:
+                      - generic [ref=e2184]:
+                        - text: More
+                        - img [ref=e2185]
+                    - generic [ref=e2188]: © 2026 X Corp.
+  - generic:
+    - img
+  - generic:
+    - img

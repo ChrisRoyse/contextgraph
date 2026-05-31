@@ -1,0 +1,230 @@
+- generic [ref=e1]:
+  - generic:
+    - generic [ref=e2]: Channel customization
+    - generic [ref=e4]:
+      - banner [ref=e6]:
+        - button "Collapse menu" [ref=e7] [cursor=pointer]:
+          - generic [ref=e10]:
+            - img
+        - link "YouTube Studio dashboard" [ref=e12] [cursor=pointer]:
+          - /url: /channel/UC1yBb0iQWF7ByG5NugAZhvg
+          - img "YouTube Studio dashboard" [ref=e13]
+        - button "Skip navigation" [ref=e16] [cursor=pointer]:
+          - generic [ref=e17]: Skip navigation
+        - generic [ref=e22]:
+          - generic [ref=e25]:
+            - img
+          - textbox "Search across your channel" [ref=e27]
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - button "Chat with Creator Support" [ref=e382] [cursor=pointer]:
+              - generic [ref=e385]:
+                - img
+            - button "Help" [ref=e32] [cursor=pointer]:
+              - generic [ref=e35]:
+                - img
+            - button "Ask Studio" [ref=e41] [cursor=pointer]:
+              - generic [ref=e44]:
+                - img
+            - button "Notifications" [ref=e46] [cursor=pointer]:
+              - generic [ref=e49]:
+                - img
+          - button "Create" [ref=e52] [cursor=pointer]:
+            - generic [ref=e56]:
+              - img
+            - generic [ref=e57]: Create
+          - generic "Account" [ref=e61]:
+            - button "Account" [ref=e62]
+      - generic [ref=e64]:
+        - navigation [ref=e66]:
+          - generic [ref=e67]:
+            - generic:
+              - img "Leapable" [ref=e70]
+              - generic [ref=e71]:
+                - generic [ref=e72]: Your channel
+                - generic [ref=e73]: Leapable
+          - menu [ref=e75]:
+            - menuitem "Dashboard" [ref=e76] [cursor=pointer]:
+              - generic [ref=e77]:
+                - generic [ref=e81]:
+                  - img
+                - generic [ref=e82]: Dashboard
+            - menuitem "Content" [ref=e83] [cursor=pointer]:
+              - generic [ref=e84]:
+                - generic [ref=e88]:
+                  - img
+                - generic [ref=e89]: Content
+            - menuitem "Analytics" [ref=e90] [cursor=pointer]:
+              - generic [ref=e91]:
+                - generic [ref=e95]:
+                  - img
+                - generic [ref=e96]: Analytics
+            - menuitem "Community" [ref=e97] [cursor=pointer]:
+              - generic [ref=e98]:
+                - generic [ref=e102]:
+                  - img
+                - generic [ref=e103]: Community
+            - menuitem "Languages" [ref=e104] [cursor=pointer]:
+              - generic [ref=e105]:
+                - generic [ref=e109]:
+                  - img
+                - generic [ref=e110]: Languages
+            - menuitem "Content detection" [ref=e111] [cursor=pointer]:
+              - generic [ref=e112]:
+                - generic [ref=e116]:
+                  - img
+                - generic [ref=e117]: Content detection
+            - menuitem "Earn" [ref=e118] [cursor=pointer]:
+              - generic [ref=e119]:
+                - generic [ref=e123]:
+                  - img
+                - generic [ref=e124]: Earn
+            - menuitem "Customization" [ref=e125] [cursor=pointer]:
+              - generic [ref=e126]:
+                - generic [ref=e130]:
+                  - img
+                - generic [ref=e131]: Customization
+            - menuitem "Creator Music [Beta]" [ref=e132] [cursor=pointer]:
+              - generic [ref=e133]:
+                - generic [ref=e137]:
+                  - img
+                - generic [ref=e138]: Creator Music [Beta]
+          - list [ref=e140]:
+            - listitem [ref=e141]:
+              - button "Settings" [ref=e142] [cursor=pointer]:
+                - generic [ref=e146]:
+                  - img
+                - generic [ref=e147]: Settings
+            - listitem [ref=e148]:
+              - button "Send feedback" [ref=e150] [cursor=pointer]:
+                - generic [ref=e154]:
+                  - img
+                - generic [ref=e155]: Send feedback
+        - main [ref=e156]:
+          - generic [ref=e157]:
+            - heading "Channel customization" [level=1] [ref=e160]
+            - generic [ref=e162]:
+              - generic [ref=e165]:
+                - tablist [ref=e167]:
+                  - generic [ref=e169]:
+                    - tab "Profile" [selected] [ref=e171] [cursor=pointer]:
+                      - generic [ref=e173]: Profile
+                    - tab "Home tab" [ref=e174] [cursor=pointer]:
+                      - generic [ref=e176]: Home tab
+                - generic [ref=e177]:
+                  - button "View channel" [ref=e180] [cursor=pointer]:
+                    - generic [ref=e181]: View channel
+                  - button "Cancel" [disabled] [ref=e187]:
+                    - generic [ref=e188]: Cancel
+                  - button "Publish" [disabled] [ref=e191]:
+                    - generic [ref=e192]: Publish
+              - generic [ref=e196]:
+                - generic [ref=e199]:
+                  - generic [ref=e200]: Banner image
+                  - generic [ref=e201]: This image will appear across the top of your channel
+                  - generic [ref=e202]:
+                    - img [ref=e204]
+                    - generic [ref=e217]:
+                      - generic [ref=e218]: For the best results on all devices, use an image that’s at least 2048 x 1152 pixels and 6MB or less.
+                      - generic [ref=e219]:
+                        - button "Change" [ref=e222] [cursor=pointer]:
+                          - generic [ref=e223]: Change
+                        - button "Remove" [ref=e229] [cursor=pointer]:
+                          - generic [ref=e230]: Remove
+                - generic [ref=e236]:
+                  - generic [ref=e237]: Picture
+                  - generic [ref=e238]: Your profile picture will appear where your channel is presented on YouTube, like next to your videos and comments
+                  - generic [ref=e239]:
+                    - img "Profile picture" [ref=e241]
+                    - generic [ref=e242]:
+                      - generic [ref=e243]: It’s recommended to use a picture that’s at least 98 x 98 pixels and 4MB or less. Use a PNG or GIF (no animations) file. Make sure your picture follows the YouTube Community Guidelines.
+                      - generic [ref=e244]:
+                        - button "Change" [ref=e247] [cursor=pointer]:
+                          - generic [ref=e248]: Change
+                        - button "Remove" [ref=e254] [cursor=pointer]:
+                          - generic [ref=e255]: Remove
+                - generic [ref=e259]:
+                  - heading "Name" [level=2] [ref=e260]
+                  - generic [ref=e261]:
+                    - generic [ref=e262]: Choose a channel name that represents you and your content. Changes made to your name and picture are visible only on YouTube and not other Google services. You can change your name twice in 14 days.
+                    - textbox "Enter channel name" [ref=e267]: Leapable
+                  - generic [ref=e269]:
+                    - heading "Handle" [level=2] [ref=e270]
+                    - generic [ref=e271]: Your handle is a unique @name that helps people find your channel, different from your channel name. You can change your handle twice within a 14-day period. We hold your previous handle for 14 days in case you’d like to switch back.
+                    - generic [ref=e275]:
+                      - text: "@"
+                      - textbox "Set your handle" [ref=e276]: Leapableai
+                    - generic [ref=e278]: https://www.youtube.com/@Leapableai
+                  - heading "Description" [level=2] [ref=e279]
+                  - textbox "Tell viewers about your channel. Your description will appear in the About section of your channel and search results, among other places." [ref=e286]
+                  - button "Add language" [ref=e290] [cursor=pointer]:
+                    - generic [ref=e294]:
+                      - img
+                    - generic [ref=e295]: Add language
+                - generic [ref=e300]:
+                  - heading "Channel URL" [level=2] [ref=e301]
+                  - generic [ref=e302]:
+                    - text: This is the standard web address for your channel. It includes your unique channel ID, which is the numbers and letters at the end of the URL.
+                    - generic "Your channel can have more than one URL that directs your audience to your channel homepage. These URLs can look different from one another, but each URL can point your audience to the same place - your channel. Handle URLs, custom URLs, and legacy username URLs are all forms of personalized URLs. You can view all URLs associated with your channel at youtube.com/handle." [ref=e304]:
+                      - generic [ref=e306]:
+                        - img
+                  - generic [ref=e307]:
+                    - textbox [ref=e308]: https://www.youtube.com/channel/UC1yBb0iQWF7ByG5NugAZhvg
+                    - button "Copy" [ref=e309] [cursor=pointer]:
+                      - generic [ref=e312]:
+                        - img
+                - generic [ref=e314]:
+                  - heading "Links" [level=2] [ref=e315]
+                  - generic [ref=e316]: Share external links with your viewers. They'll be visible on your channel profile and about page.
+                  - generic [ref=e319]:
+                    - generic [ref=e323]:
+                      - img
+                    - generic [ref=e325]:
+                      - generic [ref=e326]: Link title (required)
+                      - textbox "Enter a title" [ref=e328]: Website
+                    - generic [ref=e330]:
+                      - generic [ref=e331]: URL (required)
+                      - textbox "Enter a URL" [ref=e333]: leapable.ai
+                    - button "Remove" [ref=e334] [cursor=pointer]:
+                      - generic [ref=e337]:
+                        - img
+                  - button "Add link" [ref=e340] [cursor=pointer]:
+                    - generic [ref=e344]:
+                      - img
+                    - generic [ref=e345]: Add link
+                - generic [ref=e349]:
+                  - generic [ref=e350]:
+                    - heading "Contact info" [level=2] [ref=e351]
+                    - generic [ref=e352]: Let people know how to contact you with business inquiries. The email address you enter may appear in the About section of your channel and be visible to viewers.
+                  - generic [ref=e354]:
+                    - generic [ref=e355]: Email
+                    - textbox "Email address" [ref=e357]: chrisroyseai@gmail.com
+                - generic [ref=e360]:
+                  - generic [ref=e361]: Video watermark
+                  - generic [ref=e362]: The watermark will appear on your videos in the right-hand corner of the video player
+                  - generic [ref=e363]:
+                    - generic [ref=e369]:
+                      - img
+                    - generic [ref=e370]:
+                      - generic [ref=e371]: An image that’s 150 x 150 pixels is recommended. Use a PNG, GIF (no animations), BMP, or JPEG file that’s 1MB or less.
+                      - button "Upload" [ref=e376] [cursor=pointer]:
+                        - generic [ref=e377]: Upload
+  - generic:
+    - generic "Customize banner art":
+      - dialog "Customize banner art" [active] [ref=e386]:
+        - generic [ref=e390]: Customize banner art
+        - generic [ref=e392]:
+          - generic [ref=e393]:
+            - generic [ref=e396]:
+              - img
+            - paragraph [ref=e397]: For the best results, use an image that's at least 2560 x 1440 pixels
+          - generic [ref=e398]:
+            - button "Top left corner of image crop" [ref=e400]
+            - button "Top right corner of image crop" [ref=e401]
+            - button "Bottom left corner of image crop" [ref=e402]
+            - button "Bottom right corner of image crop" [ref=e403]
+        - generic [ref=e405]:
+          - button "Cancel" [ref=e408] [cursor=pointer]:
+            - generic [ref=e409]: Cancel
+          - button "Done" [ref=e415] [cursor=pointer]:
+            - generic [ref=e416]: Done

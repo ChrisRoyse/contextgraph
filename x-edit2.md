@@ -1,0 +1,356 @@
+- generic [ref=e2]:
+  - generic:
+    - generic:
+      - heading "To view keyboard shortcuts, press question mark View keyboard shortcuts" [level=2] [ref=e3]:
+        - generic [ref=e4]: To view keyboard shortcuts, press question mark
+        - link "View keyboard shortcuts" [ref=e5] [cursor=pointer]:
+          - /url: /i/keyboard_shortcuts
+      - generic:
+        - generic:
+          - button "Grok" [ref=e6] [cursor=pointer]:
+            - img [ref=e7]
+          - button "Chat" [ref=e10] [cursor=pointer]:
+            - img [ref=e11]
+        - generic:
+          - generic:
+            - generic:
+              - dialog:
+                - group [ref=e1016]:
+                  - dialog "Edit profile" [ref=e1018]:
+                    - generic [ref=e1021]:
+                      - generic [ref=e1027]:
+                        - button "Close" [active] [ref=e1029] [cursor=pointer]
+                        - heading "Edit profile" [level=2] [ref=e1036]
+                        - button "Save" [ref=e1038] [cursor=pointer]
+                      - generic [ref=e1042]:
+                        - generic [ref=e1045]
+                        - generic [ref=e1075]
+                        - generic [ref=e1116]
+                        - generic [ref=e1126]
+                        - generic [ref=e1136]
+                        - generic [ref=e1146]
+                        - button "Birth date February 5, 1985" [ref=e1154] [cursor=pointer]
+                        - tab "Switch to professional" [ref=e1161] [cursor=pointer]
+      - generic [ref=e14]:
+        - button [ref=e1168] [cursor=pointer]
+        - button [ref=e1169] [cursor=pointer]
+        - banner [ref=e19]:
+          - generic [ref=e21]:
+            - generic [ref=e22]:
+              - heading [level=1] [ref=e1170] [cursor=pointer]:
+                - link [ref=e1171]:
+                  - /url: /home
+                  - img [ref=e27]
+              - navigation [ref=e1172]:
+                - link [ref=e1173] [cursor=pointer]:
+                  - /url: /home
+                  - generic [ref=e33]:
+                    - img [ref=e35]
+                    - generic [ref=e38]: Home
+                - link [ref=e1174] [cursor=pointer]:
+                  - /url: /explore
+                  - generic [ref=e40]:
+                    - img [ref=e42]
+                    - generic [ref=e45]: Explore
+                - link [ref=e1175] [cursor=pointer]:
+                  - /url: /notifications
+                  - generic [ref=e47]:
+                    - img [ref=e49]
+                    - generic [ref=e52]: Notifications
+                - link [ref=e1176] [cursor=pointer]:
+                  - /url: /i/connect_people
+                  - generic [ref=e54]:
+                    - img [ref=e56]
+                    - generic [ref=e59]: Follow
+                - link [ref=e1177] [cursor=pointer]:
+                  - /url: /i/chat
+                  - generic [ref=e61]:
+                    - img [ref=e63]
+                    - generic [ref=e66]: Chat
+                - link [ref=e1178] [cursor=pointer]:
+                  - /url: /i/grok
+                  - generic [ref=e68]:
+                    - img [ref=e70]
+                    - generic [ref=e74]: Grok
+                - link [ref=e1180] [cursor=pointer]:
+                  - /url: /i/bookmarks
+                  - generic [ref=e76]:
+                    - img [ref=e78]
+                    - generic [ref=e81]: Bookmarks
+                - link [ref=e1181] [cursor=pointer]:
+                  - /url: /i/jf/creators/studio
+                  - generic [ref=e83]:
+                    - img [ref=e85]
+                    - generic [ref=e89]: Creator Studio
+                - link [ref=e1182] [cursor=pointer]:
+                  - /url: /i/premium_sign_up
+                  - generic [ref=e91]:
+                    - img [ref=e93]
+                    - generic [ref=e96]: Premium
+                    - generic [ref=e97]:
+                      - generic:
+                        - generic: 50% off
+                - link [ref=e1183] [cursor=pointer]:
+                  - /url: /ChrisRoyseAI1
+                  - generic [ref=e99]:
+                    - img [ref=e101]
+                    - generic [ref=e104]: Profile
+                - button [ref=e1184] [cursor=pointer]:
+                  - generic [ref=e106]:
+                    - img [ref=e108]
+                    - generic [ref=e111]: More
+              - link [ref=e1185] [cursor=pointer]:
+                - /url: /compose/post
+                - generic [ref=e119]: Post
+            - button [ref=e1186] [cursor=pointer]:
+              - generic [ref=e130]:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+              - generic [ref=e134]:
+                - generic [ref=e138]: Chris Royse
+                - generic [ref=e142]: "@ChrisRoyseAI1"
+              - img [ref=e144]
+        - main [ref=e147]:
+          - generic [ref=e150]:
+            - generic [ref=e1187]:
+              - generic [ref=e153]:
+                - generic [ref=e159] [cursor=pointer]:
+                  - button [ref=e1188]:
+                    - img [ref=e163]
+                  - generic [ref=e167]:
+                    - heading [level=2] [ref=e1189]:
+                      - generic [ref=e174]: Chris Royse
+                    - generic [ref=e175]: 3 posts
+                  - button [ref=e1190]:
+                    - img [ref=e180]
+                - generic:
+                  - generic:
+                    - status:
+                      - button:
+                        - generic
+              - generic [ref=e185]:
+                - generic [ref=e186]:
+                  - link [ref=e187] [cursor=pointer]:
+                    - /url: /ChrisRoyseAI1/header_photo
+                  - generic [ref=e193]:
+                    - generic [ref=e194]:
+                      - link [ref=e1191] [cursor=pointer]:
+                        - /url: /ChrisRoyseAI1/photo
+                        - generic
+                      - link [ref=e1192] [cursor=pointer]:
+                        - /url: /settings/profile
+                        - generic [ref=e209]: Edit profile
+                    - generic [ref=e213]:
+                      - generic [ref=e217]: Chris Royse
+                      - generic [ref=e221]: "@ChrisRoyseAI1"
+                    - generic [ref=e224]:
+                      - text: "Primitive in the AI data layer: n·(N+C(N,2)) supervisory signals per input. Founder —"
+                      - link [ref=e1193] [cursor=pointer]:
+                        - /url: https://t.co/zzxXnalLL6
+                        - text: Teleox.ai
+                      - text: +
+                      - link [ref=e1194] [cursor=pointer]:
+                        - /url: https://t.co/EMcLHlaYAW
+                        - text: Leapable.ai
+                      - text: . Author, TCT/DDA paper.
+                    - generic [ref=e228]:
+                      - img [ref=e229]
+                      - generic [ref=e232]: Junction City, KS
+                      - link [ref=e1195] [cursor=pointer]:
+                        - /url: https://t.co/DQNAZC52tk
+                        - img [ref=e234]
+                        - text: teleox.ai
+                      - link [ref=e1196] [cursor=pointer]:
+                        - /url: /ChrisRoyseAI1/about
+                        - img [ref=e239]
+                        - text: Joined March 2026
+                        - img [ref=e242]
+                    - generic [ref=e245]:
+                      - link [ref=e1197] [cursor=pointer]:
+                        - /url: /ChrisRoyseAI1/following
+                        - generic [ref=e248]: "4"
+                        - generic [ref=e249]: Following
+                      - link [ref=e1198] [cursor=pointer]:
+                        - /url: /ChrisRoyseAI1/verified_followers
+                        - generic [ref=e252]: "2"
+                        - generic [ref=e253]: Followers
+                  - generic [ref=e256]:
+                    - button [ref=e257] [cursor=pointer]:
+                      - img [ref=e259]
+                    - generic [ref=e262]:
+                      - generic [ref=e263]:
+                        - text: You aren’t verified yet
+                        - img [ref=e264]
+                      - generic [ref=e267]: Get verified for boosted replies, analytics, ad-free browsing, and more. Upgrade your profile now.
+                      - link [ref=e1199] [cursor=pointer]:
+                        - /url: /i/premium_sign_up
+                        - generic [ref=e271]: Get verified
+                - navigation [ref=e1200]:
+                  - generic [ref=e274]:
+                    - generic:
+                      - button [disabled]:
+                        - generic
+                    - tablist [ref=e276]:
+                      - tab [selected] [ref=e1201] [cursor=pointer]:
+                        - generic [ref=e280]: Posts
+                      - tab [ref=e1202] [cursor=pointer]:
+                        - generic [ref=e285]: Replies
+                      - tab [ref=e1203] [cursor=pointer]:
+                        - generic [ref=e289]: Highlights
+                      - tab [ref=e1204] [cursor=pointer]:
+                        - generic [ref=e293]: Articles
+                      - tab [ref=e1205] [cursor=pointer]:
+                        - generic [ref=e297]: Media
+                      - tab [ref=e1206] [cursor=pointer]:
+                        - generic [ref=e301]: Likes
+                    - generic:
+                      - button [disabled]:
+                        - generic
+                - region [ref=e1207]:
+                  - heading [level=1] [ref=e1208]: Chris Royse’s posts
+                  - generic [ref=e478]:
+                    - article [ref=e1210] [cursor=pointer]:
+                      - generic [ref=e488]:
+                        - link [ref=e500]:
+                          - /url: /ChrisRoyseAI1
+                        - generic [ref=e503]
+                    - article [ref=e1229] [cursor=pointer]:
+                      - generic [ref=e650]:
+                        - link [ref=e662]:
+                          - /url: /ChrisRoyseAI1
+                        - generic [ref=e665]
+                    - heading [level=2] [ref=e1242]:
+                      - generic [ref=e778]: Who to follow
+                    - button [ref=e1243] [cursor=pointer]:
+                      - generic [ref=e784]:
+                        - img [ref=e786]
+                        - generic [ref=e793]: Sunday A. follows
+                      - generic [ref=e794]:
+                        - link [ref=e804]:
+                          - /url: /QunlayAdewole
+                        - generic [ref=e807]
+                    - button [ref=e1250] [cursor=pointer]:
+                      - generic [ref=e837]:
+                        - img [ref=e839]
+                        - generic [ref=e846]: Sunday A. follows
+                      - generic [ref=e847]:
+                        - link [ref=e857]:
+                          - /url: /peter_ogungbemi
+                        - generic [ref=e860]
+                    - button [ref=e1254] [cursor=pointer]:
+                      - generic [ref=e885]:
+                        - img [ref=e887]
+                        - generic [ref=e894]: Sunday A. follows
+                      - generic [ref=e895]:
+                        - link [ref=e905]:
+                          - /url: /Nhana_chi
+                        - generic [ref=e908]
+                    - link [ref=e1258] [cursor=pointer]:
+                      - /url: /i/connect_people?user_id=2028751603923349504
+                      - generic [ref=e932]: Show more
+            - generic [ref=e313]:
+              - search [ref=e1260]:
+                - generic [ref=e323]:
+                  - img [ref=e325]
+                  - combobox [ref=e1261]
+              - complementary [ref=e1262]:
+                - heading [level=2] [ref=e1263]:
+                  - generic [ref=e337]: You might like
+                - list [ref=e338]:
+                  - listitem [ref=e339] [cursor=pointer]:
+                    - generic [ref=e340]:
+                      - link [ref=e350]:
+                        - /url: /Gratefulchula
+                      - generic [ref=e354]:
+                        - generic [ref=e356]
+                        - button [ref=e1266]
+                  - listitem [ref=e372] [cursor=pointer]:
+                    - generic [ref=e373]:
+                      - link [ref=e383]:
+                        - /url: /BadekaleTola
+                      - generic [ref=e387]:
+                        - generic [ref=e389]
+                        - button [ref=e1270]
+                  - listitem [ref=e410] [cursor=pointer]:
+                    - generic [ref=e411]:
+                      - link [ref=e421]:
+                        - /url: /AnInspirator
+                      - generic [ref=e425]:
+                        - generic [ref=e427]
+                        - button [ref=e1273]
+                - link [ref=e1274] [cursor=pointer]:
+                  - /url: /i/connect_people?user_id=2028751603923349504
+                  - generic [ref=e444]: Show more
+              - region [ref=e1275]:
+                - heading [level=1] [ref=e1276]: Trending now
+                - generic [ref=e939]:
+                  - heading [level=2] [ref=e1278]:
+                    - generic [ref=e944]: What’s happening
+                  - link [ref=e1279] [cursor=pointer]:
+                    - generic [ref=e948]:
+                      - generic [ref=e950]: Sports · Trending
+                      - generic [ref=e951]: Caruso
+                      - generic [ref=e952]:
+                        - text: Trending with
+                        - link [ref=e1280]:
+                          - /url: /search?q=Dylan%20Harper&src=trend_click&vertical=trends
+                        - text: ","
+                        - link [ref=e1281]:
+                          - /url: /search?q=Castle&src=trend_click&vertical=trends
+                      - button [ref=e1282]:
+                        - img [ref=e961]
+                  - link [ref=e1283] [cursor=pointer]:
+                    - generic [ref=e967]:
+                      - generic [ref=e969]: Sports · Trending
+                      - generic [ref=e970]: Chet
+                      - button [ref=e1284]:
+                        - img [ref=e977]
+                  - link [ref=e1285] [cursor=pointer]:
+                    - generic [ref=e983]:
+                      - generic [ref=e985]: Sports · Trending
+                      - generic [ref=e986]: Luke Kornet
+                      - button [ref=e1286]:
+                        - img [ref=e993]
+                  - link [ref=e1287] [cursor=pointer]:
+                    - generic [ref=e999]:
+                      - generic [ref=e1001]: Sports · Trending
+                      - generic [ref=e1002]: Keldon Johnson
+                      - button [ref=e1288]:
+                        - img [ref=e1009]
+                  - link [ref=e1289] [cursor=pointer]:
+                    - /url: /explore/tabs/for-you
+                    - generic [ref=e1015]: Show more
+              - navigation [ref=e1290]:
+                - generic [ref=e454]:
+                  - link [ref=e1291] [cursor=pointer]:
+                    - /url: https://x.com/tos
+                    - text: Terms of Service
+                  - generic [ref=e456]: "|"
+                - generic [ref=e457]:
+                  - link [ref=e1292] [cursor=pointer]:
+                    - /url: https://x.com/privacy
+                    - text: Privacy Policy
+                  - generic [ref=e459]: "|"
+                - generic [ref=e460]:
+                  - link [ref=e1293] [cursor=pointer]:
+                    - /url: https://support.x.com/articles/20170514
+                    - text: Cookie Policy
+                  - generic [ref=e462]: "|"
+                - generic [ref=e463]:
+                  - link [ref=e1294] [cursor=pointer]:
+                    - /url: https://help.x.com/resources/accessibility
+                    - text: Accessibility
+                  - generic [ref=e465]: "|"
+                - generic [ref=e466]:
+                  - link [ref=e1295] [cursor=pointer]:
+                    - /url: https://business.x.com/en/help/troubleshooting/how-twitter-ads-work.html?ref=web-twc-ao-gbl-adsinfo&utm_source=twc&utm_medium=web&utm_campaign=ao&utm_content=adsinfo
+                    - text: Ads info
+                  - generic [ref=e468]: "|"
+                - button [ref=e1296] [cursor=pointer]:
+                  - generic [ref=e470]:
+                    - text: More
+                    - img [ref=e471]
+                - generic [ref=e474]: © 2026 X Corp.

@@ -1,0 +1,46 @@
+- generic [ref=e1042]:
+  - generic [ref=e1045]:
+    - generic "Media" [ref=e1297] [cursor=pointer]
+    - generic [ref=e1053]:
+      - button "Add banner photo" [ref=e1054] [cursor=pointer]:
+        - img [ref=e1056]
+      - button "Choose File" [ref=e1061]
+      - button "Edit with Imagine" [ref=e1062] [cursor=pointer]:
+        - img [ref=e1064]
+      - button "Remove photo" [ref=e1070] [cursor=pointer]:
+        - img [ref=e1072]
+  - generic [ref=e1075]:
+    - generic [ref=e1091]:
+      - button "Add avatar photo" [ref=e1092] [cursor=pointer]:
+        - img [ref=e1094]
+      - button "Choose File" [ref=e1099]
+    - generic [ref=e1100]:
+      - generic [ref=e1101]:
+        - generic [ref=e1102]: Edit your photo with Imagine
+        - generic [ref=e1103]: Customize yourself in seconds
+      - button "Edit Photo" [ref=e1104] [cursor=pointer]:
+        - generic [ref=e1105]:
+          - img [ref=e1106]
+          - generic [ref=e1113]: Edit Photo
+  - generic [ref=e1116]:
+    - generic [ref=e1118]: Name
+    - textbox "Name" [ref=e1121]: Chris Royse
+  - generic [ref=e1126]:
+    - generic [ref=e1128]: Bio
+    - textbox "Bio" [ref=e1131]: "Primitive in the AI data layer: n·(N+C(N,2)) supervisory signals per input. Founder — http://Teleox.ai + http://Leapable.ai. Author, TCT/DDA paper."
+  - generic [ref=e1136]:
+    - generic [ref=e1138]: Location
+    - textbox "Location" [ref=e1141]: Junction City, KS
+  - generic [ref=e1146]:
+    - generic [ref=e1148]: Website
+    - textbox "Website" [ref=e1151]: https://teleox.ai
+  - button "Birth date February 5, 1985" [ref=e1154] [cursor=pointer]:
+    - generic [ref=e1155]:
+      - generic [ref=e1156]:
+        - generic [ref=e1157]: Birth date
+        - text: February 5, 1985
+      - img [ref=e1158]
+  - tab "Switch to professional" [ref=e1161] [cursor=pointer]:
+    - generic [ref=e1162]:
+      - generic [ref=e1164]: Switch to professional
+      - img [ref=e1165]
