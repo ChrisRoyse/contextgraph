@@ -293,7 +293,10 @@ def extract_trace_payload(test_output: str) -> dict[str, Any]:
         payload = json.loads(body)
     except json.JSONDecodeError as first_exc:
         sanitized = strip_bash_xtrace_fragments(body)
-        if sanitized == body:
+        repaired = strip_json_string_line_wraps(sanitized)
+        if repaired != sanitized:
+            sanitized = repaired
+        elif sanitized == body:
             raise ExecutionTraceSmokeError(f"EXECUTION_TRACE_SMOKE_TRACE_PAYLOAD_BAD_JSON: {first_exc}") from first_exc
         try:
             payload = json.loads(sanitized)
@@ -318,6 +321,29 @@ def strip_bash_xtrace_fragments(body: str) -> str:
         without_git_checkout,
     )
     return re.sub(r"[ \t]*\+{1,6} [^\n]*(?:\n|$)", "", without_checkout_output)
+
+
+def strip_json_string_line_wraps(body: str) -> str:
+    """Remove raw CR/LF characters inserted inside a JSON string by log wrapping."""
+    out: list[str] = []
+    in_string = False
+    escaped = False
+    for char in body:
+        if in_string and char in "\r\n":
+            continue
+        out.append(char)
+        if escaped:
+            escaped = False
+            continue
+        if not in_string:
+            if char == '"':
+                in_string = True
+            continue
+        if char == "\\":
+            escaped = True
+        elif char == '"':
+            in_string = False
+    return "".join(out)
 
 
 def validate_trace_payload(payload: Any) -> None:
