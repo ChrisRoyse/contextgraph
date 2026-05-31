@@ -276,7 +276,12 @@ def main() -> int:
     exit_code = 1
     unhandled_exception_type = None
     previous_argv = sys.argv
+    previous_path = list(sys.path)
+    script_abspath = os.path.abspath(script_path)
+    script_dir = os.path.dirname(script_abspath)
     sys.argv = [script_path] + script_args
+    if script_dir:
+        sys.path.insert(0, script_dir)
     sys.settrace(tracer)
     try:
         runpy.run_path(script_path, run_name="__main__")
@@ -290,6 +295,7 @@ def main() -> int:
     finally:
         sys.settrace(None)
         sys.argv = previous_argv
+        sys.path[:] = previous_path
         elapsed_ms = int((time.monotonic() - started) * 1000)
         line_items = sorted(line_counts.items())
         payload = {
@@ -307,6 +313,7 @@ def main() -> int:
                 "elapsed_ms": elapsed_ms,
                 "python_script_exit_code": exit_code,
                 "max_events": max_events,
+                "script_dir": script_dir,
                 "unhandled_exception_type": unhandled_exception_type,
             },
             "steps": {

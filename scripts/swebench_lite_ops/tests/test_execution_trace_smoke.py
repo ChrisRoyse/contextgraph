@@ -95,15 +95,17 @@ def test_python_script_runner_executes_synthetic_script_and_writes_trace(tmp_pat
     repo = tmp_path / "repo"
     script = repo / "tests" / "runtests.py"
     script.parent.mkdir(parents=True)
+    (script.parent / "helper_for_runtests.py").write_text("expected_value = 4\n", encoding="utf-8")
     script.write_text(
         "\n".join(
             [
                 "import sys",
+                "from helper_for_runtests import expected_value",
                 "value = 2",
                 "if sys.argv[1] != 'expected':",
                 "    raise SystemExit(5)",
                 "result = value + 2",
-                "raise SystemExit(0 if result == 4 else 6)",
+                "raise SystemExit(0 if result == expected_value else 6)",
             ]
         )
         + "\n",
@@ -133,6 +135,7 @@ def test_python_script_runner_executes_synthetic_script_and_writes_trace(tmp_pat
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["producer"] == "contextgraph.execution_trace_smoke.python_script_sys_settrace"
     assert payload["runtime_metrics"]["python_script_exit_code"] == 0
+    assert payload["runtime_metrics"]["script_dir"] == str(script.parent)
     assert payload["steps"]["script_args"] == ["expected"]
     assert payload["coverage"]["lines_executed"] > 0
     assert payload["trace_events"]
