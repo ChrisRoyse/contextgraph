@@ -1,0 +1,289 @@
+- dialog "Add experience" [ref=e401]:
+  - button "Dismiss" [ref=e402] [cursor=pointer]:
+    - img [ref=e404]
+  - generic [ref=e406]:
+    - banner [ref=e407]:
+      - heading "Add experience" [level=2] [ref=e408]
+    - generic [ref=e411]:
+      - generic [ref=e412]:
+        - generic [ref=e413]:
+          - generic [ref=e414]:
+            - paragraph [ref=e415]: Notify network
+            - paragraph [ref=e416]:
+              - text: Turn on to notify your network of key profile changes (such as new job) and work anniversaries. Updates can take up to 2 hours. Learn more about
+              - link "sharing profile changes" [ref=e417] [cursor=pointer]:
+                - /url: https://www.linkedin.com/help/linkedin/answer/86236/
+              - text: .
+          - switch "Notify network Turn on to notify your network of key profile changes (such as new job) and work anniversaries. Updates can take up to 2 hours. Learn more about sharing profile changes." [checked] [ref=e418] [cursor=pointer]:
+            - generic [ref=e419]:
+              - generic:
+                - paragraph
+              - generic [ref=e420]:
+                - generic [ref=e421]: "On"
+                - generic [ref=e422]:
+                  - switch [checked]
+        - paragraph [ref=e425]: "* Indicates required"
+        - generic [ref=e426]:
+          - paragraph [ref=e427]: Title*
+          - generic [ref=e428]:
+            - status [ref=e429]
+            - textbox "Title*" [ref=e432]:
+              - /placeholder: "Ex: Retail Sales Manager"
+              - text: Founder
+        - generic [ref=e434]:
+          - generic [ref=e436]: Employment type
+          - generic [ref=e437]:
+            - combobox "Employment type" [ref=e438] [cursor=pointer]:
+              - option "Please select" [selected]
+              - option "Full-time"
+              - option "Part-time"
+              - option "Self-employed"
+              - option "Freelance"
+              - option "Contract"
+              - option "Internship"
+              - option "Apprenticeship"
+              - option "Seasonal"
+            - img
+        - generic [ref=e439]:
+          - paragraph [ref=e440]: Company or organization*
+          - generic [ref=e441]:
+            - status [ref=e442]
+            - textbox "Company or organization*" [ref=e445]:
+              - /placeholder: "Ex: Microsoft"
+              - text: socialmedia2.com
+        - checkbox "I am currently working in this role" [checked] [ref=e447] [cursor=pointer]:
+          - generic [ref=e448]:
+            - generic [ref=e449]:
+              - checkbox [checked]
+              - img
+            - paragraph [ref=e452]: I am currently working in this role
+        - checkbox "End current position as of now - Founder" [ref=e454] [cursor=pointer]:
+          - generic [ref=e455]:
+            - generic [ref=e456]:
+              - checkbox
+            - paragraph [ref=e459]: End current position as of now - Founder
+        - checkbox "End current position as of now - AI Business Strategy Consultant" [ref=e461] [cursor=pointer]:
+          - generic [ref=e462]:
+            - generic [ref=e463]:
+              - checkbox
+            - paragraph [ref=e466]: End current position as of now - AI Business Strategy Consultant
+        - checkbox "End current position as of now - Contributor" [ref=e468] [cursor=pointer]:
+          - generic [ref=e469]:
+            - generic [ref=e470]:
+              - checkbox
+            - paragraph [ref=e473]: End current position as of now - Contributor
+        - checkbox "End current position as of now - Founder" [ref=e475] [cursor=pointer]:
+          - generic [ref=e476]:
+            - generic [ref=e477]:
+              - checkbox
+            - paragraph [ref=e480]: End current position as of now - Founder
+        - checkbox "End current position as of now - Graduate Teaching Assistant" [ref=e482] [cursor=pointer]:
+          - generic [ref=e483]:
+            - generic [ref=e484]:
+              - checkbox
+            - paragraph [ref=e487]: End current position as of now - Graduate Teaching Assistant
+        - generic [ref=e489]:
+          - paragraph [ref=e490]: Start date
+          - generic [ref=e491]:
+            - group "Start date month" [ref=e492]:
+              - generic [ref=e494]: Month
+              - generic [ref=e495]:
+                - combobox "Month" [ref=e496] [cursor=pointer]:
+                  - option "Month"
+                  - option "January"
+                  - option "February"
+                  - option "March"
+                  - option "April"
+                  - option "May" [selected]
+                  - option "June"
+                  - option "July"
+                  - option "August"
+                  - option "September"
+                  - option "October"
+                  - option "November"
+                  - option "December"
+                - img
+            - group "Start date year" [ref=e498]:
+              - generic [ref=e500]: Year*
+              - generic [ref=e501]:
+                - combobox "Year*" [ref=e502] [cursor=pointer]:
+                  - option "Year"
+                  - option "2026" [selected]
+                  - option "2025"
+                  - option "2024"
+                  - option "2023"
+                  - option "2022"
+                  - option "2021"
+                  - option "2020"
+                  - option "2019"
+                  - option "2018"
+                  - option "2017"
+                  - option "2016"
+                  - option "2015"
+                  - option "2014"
+                  - option "2013"
+                  - option "2012"
+                  - option "2011"
+                  - option "2010"
+                  - option "2009"
+                  - option "2008"
+                  - option "2007"
+                  - option "2006"
+                  - option "2005"
+                  - option "2004"
+                  - option "2003"
+                  - option "2002"
+                  - option "2001"
+                  - option "2000"
+                  - option "1999"
+                  - option "1998"
+                  - option "1997"
+                  - option "1996"
+                  - option "1995"
+                  - option "1994"
+                  - option "1993"
+                  - option "1992"
+                  - option "1991"
+                  - option "1990"
+                  - option "1989"
+                  - option "1988"
+                  - option "1987"
+                  - option "1986"
+                  - option "1985"
+                  - option "1984"
+                  - option "1983"
+                  - option "1982"
+                  - option "1981"
+                  - option "1980"
+                  - option "1979"
+                  - option "1978"
+                  - option "1977"
+                  - option "1976"
+                  - option "1975"
+                  - option "1974"
+                  - option "1973"
+                  - option "1972"
+                  - option "1971"
+                  - option "1970"
+                  - option "1969"
+                  - option "1968"
+                  - option "1967"
+                  - option "1966"
+                  - option "1965"
+                  - option "1964"
+                  - option "1963"
+                  - option "1962"
+                  - option "1961"
+                  - option "1960"
+                  - option "1959"
+                  - option "1958"
+                  - option "1957"
+                  - option "1956"
+                  - option "1955"
+                  - option "1954"
+                  - option "1953"
+                  - option "1952"
+                  - option "1951"
+                  - option "1950"
+                  - option "1949"
+                  - option "1948"
+                  - option "1947"
+                  - option "1946"
+                  - option "1945"
+                  - option "1944"
+                  - option "1943"
+                  - option "1942"
+                  - option "1941"
+                  - option "1940"
+                  - option "1939"
+                  - option "1938"
+                  - option "1937"
+                  - option "1936"
+                  - option "1935"
+                  - option "1934"
+                  - option "1933"
+                  - option "1932"
+                  - option "1931"
+                  - option "1930"
+                  - option "1929"
+                  - option "1928"
+                  - option "1927"
+                  - option "1926"
+                - img
+        - generic [ref=e503]:
+          - paragraph [ref=e504]: Location
+          - generic [ref=e505]:
+            - status [ref=e506]
+            - textbox "Location" [ref=e509]:
+              - /placeholder: "Ex: London, United Kingdom"
+        - generic [ref=e511]:
+          - generic [ref=e513]: Location type
+          - generic [ref=e514]:
+            - combobox "Location type" [ref=e515] [cursor=pointer]:
+              - option "Please select" [selected]
+              - option "On-site"
+              - option "Hybrid"
+              - option "Remote"
+            - img
+          - paragraph [ref=e517]: "Pick a location type (ex: remote)"
+        - generic [ref=e518]:
+          - paragraph [ref=e519]: Description
+          - generic [ref=e521]:
+            - textbox [active] [ref=e526]:
+              - paragraph [ref=e527]: Polis (socialmedia2.com) is civic software for forming real-world gatherings without social-media engagement mechanics — no algorithmic feed, no follower counts, no likes, no ad revenue. Citizens create a private page, name the place they want real rooms to form, and are matched into in-person formats (Symposium, Agora, Gymnasium, Theater, Festival). Matching uses a 21-slot frozen embedding "Constellation"; the objective is durable in-person civic ties, not time on app. Privacy-preserving, US-first, Apache-2.0.
+            - generic [ref=e528]:
+              - button "Rewrite with AI" [ref=e530] [cursor=pointer]:
+                - generic [ref=e531]:
+                  - img [ref=e532]
+                  - generic [ref=e534]: Rewrite with AI
+              - img "Premium" [ref=e535]
+          - generic [ref=e540]:
+            - paragraph [ref=e542]: Unlock AI assistance with 20 words
+            - paragraph [ref=e3224]: 516/2,000
+        - generic [ref=e549]:
+          - generic [ref=e551]: Profile headline
+          - textbox "Profile headline, maximum 220 characters" [ref=e553]:
+            - /placeholder: "Ex: Software engineer"
+            - text: Founder — Leapable.ai (local-first MCP knowledge-vault marketplace) & socialmedia2.com (real-world civic gatherings, no feed) · Data-layer AI infrastructure · KSU
+          - generic [ref=e554]:
+            - paragraph [ref=e555]: Appears below your name at the top of your profile.
+            - paragraph [ref=e556]:
+              - text: 162/220
+              - generic [ref=e557]: 162 of 220 characters
+        - generic [ref=e559]:
+          - generic [ref=e561]: Where did you find the job?
+          - generic [ref=e562]:
+            - combobox "Where did you find the job?" [ref=e563] [cursor=pointer]:
+              - option "Please select" [selected]
+              - option "LinkedIn"
+              - option "Company website"
+              - option "Indeed"
+              - option "Other job sites"
+              - option "Referral"
+              - option "Contacted by recruiter"
+              - option "Staffing agency"
+              - option "Other"
+            - img
+          - paragraph [ref=e565]: This information will be used to improve LinkedIns job search experience.
+        - generic [ref=e566]:
+          - generic [ref=e567]:
+            - paragraph [ref=e568]: Skills
+            - paragraph [ref=e569]: We recommend adding your top 5 used in this role. They'll also appear in your Skills section.
+          - list:
+            - status [ref=e570]
+          - button "Add skill" [ref=e576] [cursor=pointer]:
+            - generic [ref=e578]: Add skill
+        - generic [ref=e579]:
+          - generic [ref=e580]:
+            - paragraph [ref=e581]: Media
+            - paragraph [ref=e582]:
+              - text: Add media like images, documents, sites or presentations (up to 50). Learn more about
+              - link "media file types supported" [ref=e583] [cursor=pointer]:
+                - /url: https://www.linkedin.com/help/linkedin/answer/a1516731/
+                - strong [ref=e584]: media file types supported
+          - button "Add media" [ref=e585] [cursor=pointer]:
+            - generic [ref=e586]:
+              - img [ref=e587]
+              - generic [ref=e589]: Add media
+      - button "Save" [ref=e591] [cursor=pointer]:
+        - generic [ref=e593]: Save

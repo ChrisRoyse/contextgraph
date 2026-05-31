@@ -1,0 +1,124 @@
+- generic [ref=e2]:
+  - heading "0 notifications" [level=2] [ref=e3]
+  - generic [ref=e5]:
+    - link "LinkedIn" [ref=e9] [cursor=pointer]:
+      - /url: https://www.linkedin.com/feed/?nis=true
+      - heading "LinkedIn" [level=1] [ref=e10]
+      - img [ref=e11]
+    - main [ref=e16]:
+      - generic [ref=e17]:
+        - img [ref=e24]
+        - heading "This page doesn’t exist" [level=2] [ref=e19]
+        - paragraph [ref=e20]: Please check your URL or return to LinkedIn home.
+        - link "Go to your feed" [ref=e21] [cursor=pointer]:
+          - /url: https://linkedin.com/
+          - generic [ref=e23]: Go to your feed
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - complementary:
+            - generic [ref=e126]:
+              - generic [ref=e127]:
+                - generic [ref=e129] [cursor=pointer]:
+                  - generic [ref=e130]:
+                    - img "Christopher Royse" [ref=e131]
+                    - generic [ref=e133]: Status is online
+                  - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e134]:
+                    - generic [ref=e135]:
+                      - generic [ref=e136]: Messaging
+                      - generic [ref=e137]: You are on the messaging overlay. Press enter to open the list of conversations.
+                - generic [ref=e138]:
+                  - button "Open messenger dropdown menu" [ref=e140] [cursor=pointer]:
+                    - img "Open messenger dropdown menu" [ref=e141]
+                  - button "Compose message" [ref=e144] [cursor=pointer]:
+                    - img [ref=e145]
+                    - generic [ref=e147]: Compose message
+                  - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e148] [cursor=pointer]:
+                    - img [ref=e149]
+                    - generic [ref=e151]: You are on the messaging overlay. Press enter to open the list of conversations.
+              - generic [ref=e152]:
+                - heading "Page inboxes" [level=3] [ref=e154]
+                - generic [ref=e155] [cursor=pointer]:
+                  - generic [ref=e156]: Click to see affiliated inboxes
+                  - button "Page inboxes" [ref=e157]:
+                    - img [ref=e158]
+          - complementary "AI-powered assistant to get help with your career, jobs etc"
+  - iframe [ref=e160]:
+    - generic [active] [ref=f58e1]:
+      - generic:
+        - region "Toast message":
+          - heading "0 notifications total" [level=2] [ref=f58e3]
+          - alert
+      - generic [ref=f58e4]:
+        - generic [ref=f58e6]:
+          - button "Skip to search" [ref=f58e7] [cursor=pointer]:
+            - generic [ref=f58e8]: Skip to search
+          - button "Skip to main content" [ref=f58e9] [cursor=pointer]:
+            - generic [ref=f58e10]: Skip to main content
+          - button "Keyboard shortcuts" [ref=f58e11] [cursor=pointer]:
+            - generic [ref=f58e12]: Keyboard shortcuts
+          - button "Close jump menu" [ref=f58e13] [cursor=pointer]:
+            - img [ref=f58e14]
+            - generic [ref=f58e16]: Close jump menu
+        - banner "Global Navigation" [ref=f58e17]:
+          - generic [ref=f58e18]:
+            - link "LinkedIn" [ref=f58e19] [cursor=pointer]:
+              - /url: https://www.linkedin.com/feed/?nis=true
+              - img "LinkedIn" [ref=f58e22]:
+                - img [ref=f58e23]
+            - generic [ref=f58e27]:
+              - combobox "I’m looking for..." [ref=f58e28]
+              - generic:
+                - img
+            - navigation "Primary Navigation" [ref=f58e29]:
+              - list [ref=f58e30]:
+                - listitem [ref=f58e31]:
+                  - link "new feed updates notifications Home" [ref=f58e32] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/feed/
+                    - generic [ref=f58e33]:
+                      - generic [ref=f58e36]: new feed updates notifications
+                      - img [ref=f58e40]
+                    - generic "Home" [ref=f58e42]
+                - listitem [ref=f58e43]:
+                  - link "My Network" [ref=f58e44] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/mynetwork/?
+                    - img [ref=f58e48]
+                    - generic "My Network" [ref=f58e50]
+                - listitem [ref=f58e51]:
+                  - link "Jobs" [ref=f58e52] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/jobs/?
+                    - img [ref=f58e56]
+                    - generic "Jobs" [ref=f58e58]
+                - listitem [ref=f58e59]:
+                  - link "Messaging" [ref=f58e60] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/messaging/?
+                    - img [ref=f58e64]
+                    - generic "Messaging" [ref=f58e66]
+                - listitem [ref=f58e67]:
+                  - link "1 new notification Notifications" [ref=f58e68] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/notifications/?
+                    - generic [ref=f58e69]:
+                      - generic [ref=f58e70]:
+                        - generic [ref=f58e71]: "1"
+                        - generic [ref=f58e72]: 1 new notification
+                      - img [ref=f58e76]
+                    - generic "Notifications" [ref=f58e78]
+                - listitem [ref=f58e79]:
+                  - button "Christopher Royse Me" [ref=f58e81] [cursor=pointer]:
+                    - img "Christopher Royse" [ref=f58e82]
+                    - generic [ref=f58e83]:
+                      - text: Me
+                      - img [ref=f58e84]
+                - listitem [ref=f58e86]:
+                  - button "For Business" [ref=f58e88] [cursor=pointer]:
+                    - img [ref=f58e92]
+                    - generic "For Business" [ref=f58e94]:
+                      - text: For Business
+                      - img [ref=f58e95]
+                - listitem [ref=f58e97]:
+                  - link "Advertise" [ref=f58e98] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/campaignmanager/accounts?
+                    - img [ref=f58e102]
+                    - generic "Advertise" [ref=f58e105]
+      - region [ref=f58e121]
