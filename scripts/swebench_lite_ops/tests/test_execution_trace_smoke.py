@@ -239,6 +239,26 @@ def test_extract_trace_payload_strips_git_checkout_output_fragment_inside_json_b
     assert parsed["trace_events"][1]["event"] == "line"
 
 
+def test_extract_trace_payload_strips_git_checkout_fragment_inside_json_number():
+    payload = {
+        "coverage": {"lines_executed": 1, "files_touched": 1, "events_seen": 2},
+        "line_coverage": [{"location": "pkg/mod.py:412", "count": 1}],
+        "runtime_metrics": {"elapsed_ms": 3, "pytest_exit_code": 0},
+        "steps": {"event_counts": {"line": 1}},
+        "trace_events": [
+            {"event": "line", "file": "pkg/mod.py", "line": 412, "function": "f"},
+        ],
+    }
+    encoded = json.dumps(payload)
+    split_at = encoded.index('"line": 412') + len('"line": 41')
+    contaminated = encoded[:split_at] + "+ git checkout 475cffd tests/admin_views/tests.py\n" + encoded[split_at:]
+    output = f"{TRACE_BEGIN}\n{contaminated}\n{TRACE_END}\n"
+
+    parsed = extract_trace_payload(output)
+
+    assert parsed["trace_events"][0]["line"] == 412
+
+
 def test_extract_trace_payload_repairs_log_wrapped_json_string():
     payload = {
         "coverage": {"lines_executed": 1, "files_touched": 1, "events_seen": 2},
