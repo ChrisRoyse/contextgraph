@@ -340,6 +340,14 @@ def eval_container_name(row: dict[str, Any]) -> str:
     return f"sweb.eval.{row['task_id']}.{row_run_id(row)}"
 
 
+def effective_instance_timeout(args: argparse.Namespace) -> int:
+    instance_timeout = int(args.instance_timeout)
+    row_timeout_value = getattr(args, "row_timeout", None)
+    if row_timeout_value is None or int(row_timeout_value) <= 0:
+        return instance_timeout
+    return min(instance_timeout, int(row_timeout_value))
+
+
 def stop_eval_container(row: dict[str, Any], args: argparse.Namespace, reason: str) -> dict[str, Any]:
     container_name = eval_container_name(row)
     result: dict[str, Any] = {
@@ -436,7 +444,7 @@ def run_one_row(
         namespace=args.namespace,
         arch=args.arch,
         tag=args.tag,
-        instance_timeout=args.instance_timeout,
+        instance_timeout=effective_instance_timeout(args),
         max_events=args.max_events,
         command_family=config["command_family"],
         allow_non_aiwonder_roots=bool(args.allow_non_aiwonder_roots),

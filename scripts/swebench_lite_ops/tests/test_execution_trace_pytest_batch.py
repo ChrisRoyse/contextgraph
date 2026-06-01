@@ -249,6 +249,42 @@ def test_run_batch_django_mode_writes_family_specific_artifacts(tmp_path: Path):
     assert Path(result["progress"]).name == "django_runtests_trace_batch_progress.json"
 
 
+def test_run_batch_row_timeout_bounds_smoke_instance_timeout(tmp_path: Path):
+    rows_path = tmp_path / "runnable.jsonl"
+    write_jsonl(rows_path, [runnable_row("org__repo-1", "known_good", 0)])
+    observed: list[int] = []
+
+    def runner(args: Namespace) -> dict[str, object]:
+        observed.append(int(args.instance_timeout))
+        return fake_trace_runner(args)
+
+    result = run_batch(
+        batch_args(tmp_path, rows_path, instance_timeout=1800, row_timeout=5),
+        trace_runner=runner,
+    )
+
+    assert result["ok"] is True
+    assert observed == [5]
+
+
+def test_run_batch_keeps_smaller_instance_timeout_when_row_timeout_is_larger(tmp_path: Path):
+    rows_path = tmp_path / "runnable.jsonl"
+    write_jsonl(rows_path, [runnable_row("org__repo-1", "known_good", 0)])
+    observed: list[int] = []
+
+    def runner(args: Namespace) -> dict[str, object]:
+        observed.append(int(args.instance_timeout))
+        return fake_trace_runner(args)
+
+    result = run_batch(
+        batch_args(tmp_path, rows_path, instance_timeout=3, row_timeout=5),
+        trace_runner=runner,
+    )
+
+    assert result["ok"] is True
+    assert observed == [3]
+
+
 def test_run_batch_writes_progress_heartbeat_before_and_after_rows(tmp_path: Path):
     rows_path = tmp_path / "runnable.jsonl"
     write_jsonl(rows_path, [runnable_row("org__repo-1", "known_good", 0)])
