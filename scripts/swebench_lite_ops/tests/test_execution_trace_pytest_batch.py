@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import signal
 from argparse import Namespace
 from pathlib import Path
 
@@ -68,6 +69,7 @@ def batch_args(tmp_path: Path, rows_path: Path, **overrides: object) -> Namespac
         "arch": "x86_64",
         "tag": "latest",
         "instance_timeout": 1800,
+        "row_timeout": None,
         "max_events": 20,
         "continue_on_error": False,
         "allow_non_aiwonder_roots": True,
@@ -105,10 +107,14 @@ def fake_trace_runner(args: Namespace) -> dict[str, object]:
 def fake_trace_runner_asserts_started_progress(args: Namespace) -> dict[str, object]:
     progress_path = Path(args.output_root).parent / "direct_pytest_trace_batch_progress.json"
     state_progress_path = Path(args.state_root).parent / "direct_pytest_trace_batch_progress.json"
+    selected_path = Path(args.output_root).parent / "selected_direct_pytest_rows.jsonl"
+    state_selected_path = Path(args.state_root).parent / "selected_direct_pytest_rows.jsonl"
     fsv_progress = json.loads(progress_path.read_text(encoding="utf-8"))
     state_progress = json.loads(state_progress_path.read_text(encoding="utf-8"))
 
     assert fsv_progress == state_progress
+    assert selected_path.read_text(encoding="utf-8") == state_selected_path.read_text(encoding="utf-8")
+    assert "org__repo-1" in selected_path.read_text(encoding="utf-8")
     assert fsv_progress["phase"] == "row_started"
     assert fsv_progress["counts"] == {
         "selected_rows": 1,
@@ -312,6 +318,70 @@ def test_run_batch_continue_on_error_records_failed_rows(tmp_path: Path):
     assert progress["counts"]["failed_rows"] == 1
     assert progress["last_completed_artifacts"]["error"] == "RuntimeError: synthetic trace failure"
     assert [row["phase"] for row in history].count("row_completed") == 2
+
+
+def test_run_batch_sigterm_writes_failed_ledgers_manifest_and_cleanup(tmp_path: Path):
+    rows_path = tmp_path / "runnable.jsonl"
+    write_jsonl(rows_path, [runnable_row("org__repo-1", "known_good", 0)])
+    cleanup_calls: list[tuple[str, str]] = []
+
+    def runner(_args: Namespace) -> dict[str, object]:
+        signal.raise_signal(signal.SIGTERM)
+        raise AssertionError("SIGTERM handler should interrupt the row")
+
+    def cleanup(row: dict[str, object], _args: Namespace, reason: str) -> dict[str, object]:
+        cleanup_calls.append((str(row["task_id"]), reason))
+        return {
+            "attempted": True,
+            "removed": True,
+            "container_name": "sweb.eval.org__repo-1.row-0000-org__repo-1-known_good",
+            "reason": reason,
+        }
+
+    with pytest.raises(ExecutionTracePytestBatchError, match="STOPPED_AFTER_ROW_FAILURE"):
+        run_batch(
+            batch_args(tmp_path, rows_path),
+            trace_runner=runner,
+            container_cleanup=cleanup,
+        )
+
+    fsv_root = tmp_path / "fsv" / "run-test" / "pytest-batch"
+    state_root = tmp_path / "state" / "run-test" / "pytest-batch"
+    manifest_path = fsv_root / "direct_pytest_trace_batch_manifest.json"
+    failed_rows_path = fsv_root / "failed_direct_pytest_rows.jsonl"
+    selected_rows_path = fsv_root / "selected_direct_pytest_rows.jsonl"
+    batch_rows_path = fsv_root / "direct_pytest_trace_batch_rows.jsonl"
+    trace_index_path = fsv_root / "generated_trace_index.jsonl"
+    artifact_hashes_path = fsv_root / "artifact_hashes.json"
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    state_manifest = json.loads((state_root / manifest_path.name).read_text(encoding="utf-8"))
+    failed = [json.loads(line) for line in failed_rows_path.read_text(encoding="utf-8").splitlines()]
+    batch_rows = [json.loads(line) for line in batch_rows_path.read_text(encoding="utf-8").splitlines()]
+    history = [
+        json.loads(line)
+        for line in (fsv_root / "direct_pytest_trace_batch_progress.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert cleanup_calls == [("org__repo-1", "EXECUTION_TRACE_PYTEST_BATCH_INTERRUPTED")]
+    assert manifest == state_manifest
+    assert selected_rows_path.read_text(encoding="utf-8") == (state_root / selected_rows_path.name).read_text(encoding="utf-8")
+    assert failed_rows_path.read_text(encoding="utf-8") == (state_root / failed_rows_path.name).read_text(encoding="utf-8")
+    assert batch_rows_path.read_text(encoding="utf-8") == (state_root / batch_rows_path.name).read_text(encoding="utf-8")
+    assert trace_index_path.read_text(encoding="utf-8") == ""
+    assert artifact_hashes_path.is_file()
+    assert (state_root / "artifact_hashes.json").is_file()
+    assert len(failed) == 1
+    assert failed == batch_rows
+    assert failed[0]["error_code"] == "EXECUTION_TRACE_PYTEST_BATCH_INTERRUPTED"
+    assert failed[0]["error_type"] == "ExecutionTracePytestBatchInterrupted"
+    assert failed[0]["container_cleanup"]["removed"] is True
+    assert manifest["summary"]["attempted_rows"] == 1
+    assert manifest["summary"]["failed_rows"] == 1
+    assert manifest["summary"]["succeeded_rows"] == 0
+    assert manifest["decision"]["promotion_allowed"] is False
+    assert "one_or_more_direct_pytest_trace_rows_failed" in manifest["decision"]["decision_reasons"]
+    assert [row["phase"] for row in history] == ["selected", "row_started", "row_completed", "batch_finalizing"]
 
 
 def test_non_aiwonder_roots_fail_closed_without_local_override(tmp_path: Path):

@@ -8,11 +8,15 @@ import hashlib
 import json
 import re
 import shutil
+import signal
+import subprocess
 from argparse import Namespace
 from collections import Counter
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from types import FrameType
+from typing import Any, Callable, Iterable, Iterator
 
 from .python_execution_trace_smoke import (
     DEFAULT_CORPUS_ROOT,
@@ -92,6 +96,13 @@ class ExecutionTracePytestBatchError(RuntimeError):
 
 
 TraceRunner = Callable[[Namespace], dict[str, Any]]
+ContainerCleanup = Callable[[dict[str, Any], argparse.Namespace, str], dict[str, Any]]
+
+
+class ExecutionTracePytestBatchInterrupted(ExecutionTracePytestBatchError):
+    def __init__(self, signal_name: str):
+        self.signal_name = signal_name
+        super().__init__(f"EXECUTION_TRACE_PYTEST_BATCH_INTERRUPTED: {signal_name}")
 
 
 def utc_stamp() -> str:
@@ -325,6 +336,74 @@ def row_key(row: dict[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
+def eval_container_name(row: dict[str, Any]) -> str:
+    return f"sweb.eval.{row['task_id']}.{row_run_id(row)}"
+
+
+def stop_eval_container(row: dict[str, Any], args: argparse.Namespace, reason: str) -> dict[str, Any]:
+    container_name = eval_container_name(row)
+    result: dict[str, Any] = {
+        "container_name": container_name,
+        "reason": reason,
+        "attempted": False,
+        "removed": False,
+    }
+    docker_bin = shutil.which("docker")
+    if docker_bin is None:
+        result["error"] = "docker_cli_missing"
+        return result
+    try:
+        completed = subprocess.run(
+            [docker_bin, "rm", "-f", container_name],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as exc:
+        result.update({"attempted": True, "error": f"docker_rm_timeout_after_{exc.timeout}s"})
+        return result
+    except OSError as exc:
+        result.update({"attempted": True, "error": f"{type(exc).__name__}: {exc}"})
+        return result
+    result.update(
+        {
+            "attempted": True,
+            "returncode": completed.returncode,
+            "stdout_tail": completed.stdout[-500:],
+            "stderr_tail": completed.stderr[-500:],
+            "removed": completed.returncode == 0,
+        }
+    )
+    return result
+
+
+def classify_error_code(exc: BaseException) -> str:
+    if isinstance(exc, ExecutionTracePytestBatchInterrupted):
+        return "EXECUTION_TRACE_PYTEST_BATCH_INTERRUPTED"
+    text = str(exc)
+    match = re.match(r"([A-Z0-9_]{8,})(?::|$)", text)
+    if match:
+        return match.group(1)
+    return "EXECUTION_TRACE_PYTEST_BATCH_ROW_FAILED"
+
+
+def failed_row_record(
+    row: dict[str, Any],
+    exc: BaseException,
+    cleanup: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return {
+        **row,
+        "status": "failed",
+        "row_run_id": row_run_id(row),
+        "error_code": classify_error_code(exc),
+        "error_type": type(exc).__name__,
+        "error": f"{type(exc).__name__}: {exc}",
+        "container_cleanup": cleanup,
+    }
+
+
 def copy_trace(src: Path, dest: Path, code: str) -> str:
     require(src.is_file(), code, {"src": str(src)})
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -521,6 +600,47 @@ def write_artifact_hashes(root: Path, paths: list[Path]) -> Path:
     return out
 
 
+@contextmanager
+def batch_signal_handlers() -> Iterator[None]:
+    handled = [signal.SIGTERM, signal.SIGINT]
+    if hasattr(signal, "SIGALRM"):
+        handled.append(signal.SIGALRM)
+    previous: dict[signal.Signals, Any] = {}
+
+    def raise_interrupted(signum: int, _frame: FrameType | None) -> None:
+        try:
+            signal_name = signal.Signals(signum).name
+        except ValueError:
+            signal_name = f"signal_{signum}"
+        raise ExecutionTracePytestBatchInterrupted(signal_name)
+
+    for signum in handled:
+        try:
+            previous[signum] = signal.getsignal(signum)
+            signal.signal(signum, raise_interrupted)
+        except (OSError, ValueError):
+            continue
+    try:
+        yield
+    finally:
+        if hasattr(signal, "setitimer"):
+            signal.setitimer(signal.ITIMER_REAL, 0)
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+
+
+@contextmanager
+def row_timeout(seconds: int | None) -> Iterator[None]:
+    if not seconds or seconds <= 0 or not hasattr(signal, "setitimer"):
+        yield
+        return
+    signal.setitimer(signal.ITIMER_REAL, int(seconds))
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+
+
 def build_manifest(
     *,
     args: argparse.Namespace,
@@ -585,6 +705,7 @@ def build_manifest(
             "arch": args.arch,
             "tag": args.tag,
             "instance_timeout": args.instance_timeout,
+            "row_timeout": getattr(args, "row_timeout", None),
             "max_events": args.max_events,
             "continue_on_error": bool(args.continue_on_error),
         },
@@ -633,7 +754,120 @@ def build_manifest(
     }
 
 
-def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_smoke) -> dict[str, Any]:
+def batch_artifact_paths(
+    config: dict[str, str],
+    fsv_run_root: Path,
+    state_run_root: Path,
+) -> dict[str, Path]:
+    selected_rows_path = fsv_run_root / f"selected_{config['file_prefix']}_rows.jsonl"
+    batch_rows_path = fsv_run_root / f"{config['file_prefix']}_trace_batch_rows.jsonl"
+    trace_index_path = fsv_run_root / "generated_trace_index.jsonl"
+    failed_rows_path = fsv_run_root / f"failed_{config['file_prefix']}_rows.jsonl"
+    manifest_path = fsv_run_root / f"{config['file_prefix']}_trace_batch_manifest.json"
+    return {
+        "selected_rows": selected_rows_path,
+        "batch_rows": batch_rows_path,
+        "trace_index": trace_index_path,
+        "failed_rows": failed_rows_path,
+        "manifest": manifest_path,
+        "state_selected_rows": state_run_root / selected_rows_path.name,
+        "state_batch_rows": state_run_root / batch_rows_path.name,
+        "state_trace_index": state_run_root / trace_index_path.name,
+        "state_failed_rows": state_run_root / failed_rows_path.name,
+        "state_manifest": state_run_root / manifest_path.name,
+    }
+
+
+def mirror_jsonl(path: Path, state_path: Path, rows: list[dict[str, Any]]) -> None:
+    write_jsonl(path, rows)
+    write_jsonl(state_path, rows)
+
+
+def finalize_batch_artifacts(
+    *,
+    args: argparse.Namespace,
+    run_id: str,
+    config: dict[str, str],
+    fsv_run_root: Path,
+    state_run_root: Path,
+    runnable_rows: list[dict[str, Any]],
+    selected_rows: list[dict[str, Any]],
+    row_results: list[dict[str, Any]],
+    progress_paths: dict[str, Path],
+) -> dict[str, Any]:
+    paths = batch_artifact_paths(config, fsv_run_root, state_run_root)
+    successes = [row for row in row_results if row.get("status") == "succeeded"]
+    failures = [row for row in row_results if row.get("status") == "failed"]
+    mirror_jsonl(paths["selected_rows"], paths["state_selected_rows"], selected_rows)
+    mirror_jsonl(paths["batch_rows"], paths["state_batch_rows"], row_results)
+    mirror_jsonl(paths["trace_index"], paths["state_trace_index"], successes)
+    mirror_jsonl(paths["failed_rows"], paths["state_failed_rows"], failures)
+
+    manifest = build_manifest(
+        args=args,
+        run_id=run_id,
+        fsv_run_root=fsv_run_root,
+        state_run_root=state_run_root,
+        runnable_rows=runnable_rows,
+        selected_rows=selected_rows,
+        row_results=row_results,
+        selected_rows_path=paths["selected_rows"],
+        batch_rows_path=paths["batch_rows"],
+        trace_index_path=paths["trace_index"],
+        failed_rows_path=paths["failed_rows"],
+        progress_path=progress_paths["fsv_progress"],
+        progress_history_path=progress_paths["fsv_history"],
+    )
+    write_json(paths["manifest"], manifest)
+    write_json(paths["state_manifest"], manifest)
+
+    hash_inputs = [
+        paths["manifest"],
+        paths["selected_rows"],
+        paths["batch_rows"],
+        paths["trace_index"],
+        paths["failed_rows"],
+        progress_paths["fsv_progress"],
+        progress_paths["fsv_history"],
+        paths["state_manifest"],
+        paths["state_selected_rows"],
+        paths["state_batch_rows"],
+        paths["state_trace_index"],
+        paths["state_failed_rows"],
+        progress_paths["state_progress"],
+        progress_paths["state_history"],
+        *[Path(row["state_trace"]) for row in successes],
+        *[Path(row["fsv_trace"]) for row in successes],
+    ]
+    hash_path = write_artifact_hashes(fsv_run_root, hash_inputs)
+    state_hash_path = state_run_root / hash_path.name
+    write_json(state_hash_path, read_json(hash_path, "EXECUTION_TRACE_PYTEST_BATCH_HASH_JSON_INVALID"))
+
+    return {
+        "ok": not failures,
+        "run_id": run_id,
+        "command_family": config["command_family"],
+        "handler": config["handler"],
+        "fsv_run_root": str(fsv_run_root),
+        "state_run_root": str(state_run_root),
+        "manifest": str(paths["manifest"]),
+        "state_manifest": str(paths["state_manifest"]),
+        "batch_rows": str(paths["batch_rows"]),
+        "generated_trace_index": str(paths["trace_index"]),
+        "failed_rows": str(paths["failed_rows"]),
+        "progress": str(progress_paths["fsv_progress"]),
+        "progress_history": str(progress_paths["fsv_history"]),
+        "artifact_hashes": str(hash_path),
+        "summary": manifest["summary"],
+        "decision": manifest["decision"],
+    }
+
+
+def run_batch(
+    args: argparse.Namespace,
+    trace_runner: TraceRunner = run_trace_smoke,
+    container_cleanup: ContainerCleanup = stop_eval_container,
+) -> dict[str, Any]:
     config = args_command_family_config(args)
     allow_non_aiwonder = bool(args.allow_non_aiwonder_roots)
     corpus_root = Path(args.corpus_root)
@@ -680,6 +914,8 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
     fsv_run_root.mkdir(parents=True, exist_ok=True)
     state_run_root.mkdir(parents=True, exist_ok=True)
 
+    paths = batch_artifact_paths(config, fsv_run_root, state_run_root)
+    mirror_jsonl(paths["selected_rows"], paths["state_selected_rows"], selected_rows)
     row_results: list[dict[str, Any]] = []
     progress_history: list[dict[str, Any]] = []
     progress_paths = write_progress_artifacts(
@@ -692,37 +928,49 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
         progress_history=progress_history,
         phase="selected",
     )
-    for row in selected_rows:
-        write_progress_artifacts(
-            args=args,
-            run_id=run_id,
-            fsv_run_root=fsv_run_root,
-            state_run_root=state_run_root,
-            selected_rows=selected_rows,
-            row_results=row_results,
-            progress_history=progress_history,
-            phase="row_started",
-            current_row=row,
-        )
-        try:
-            row_results.append(
-                run_one_row(
-                    row=row,
-                    args=args,
-                    fsv_run_root=fsv_run_root,
-                    state_run_root=state_run_root,
-                    trace_runner=trace_runner,
-                )
+    effective_row_timeout = getattr(args, "row_timeout", None)
+    with batch_signal_handlers():
+        for row in selected_rows:
+            write_progress_artifacts(
+                args=args,
+                run_id=run_id,
+                fsv_run_root=fsv_run_root,
+                state_run_root=state_run_root,
+                selected_rows=selected_rows,
+                row_results=row_results,
+                progress_history=progress_history,
+                phase="row_started",
+                current_row=row,
             )
-        except (ExecutionTracePytestBatchError, ExecutionTraceSmokeError, OSError, RuntimeError) as exc:
-            failed = {
-                **row,
-                "status": "failed",
-                "row_run_id": row_run_id(row),
-                "error": f"{type(exc).__name__}: {exc}",
-            }
-            row_results.append(failed)
-        write_progress_artifacts(
+            try:
+                with row_timeout(effective_row_timeout):
+                    row_results.append(
+                        run_one_row(
+                            row=row,
+                            args=args,
+                            fsv_run_root=fsv_run_root,
+                            state_run_root=state_run_root,
+                            trace_runner=trace_runner,
+                        )
+                    )
+            except (ExecutionTracePytestBatchError, ExecutionTraceSmokeError, OSError, RuntimeError) as exc:
+                cleanup = container_cleanup(row, args, classify_error_code(exc))
+                row_results.append(failed_row_record(row, exc, cleanup))
+            write_progress_artifacts(
+                args=args,
+                run_id=run_id,
+                fsv_run_root=fsv_run_root,
+                state_run_root=state_run_root,
+                selected_rows=selected_rows,
+                row_results=row_results,
+                progress_history=progress_history,
+                phase="row_completed",
+                last_completed_row=row_results[-1],
+            )
+            if row_results[-1].get("status") == "failed" and not args.continue_on_error:
+                break
+
+        progress_paths = write_progress_artifacts(
             args=args,
             run_id=run_id,
             fsv_run_root=fsv_run_root,
@@ -730,110 +978,28 @@ def run_batch(args: argparse.Namespace, trace_runner: TraceRunner = run_trace_sm
             selected_rows=selected_rows,
             row_results=row_results,
             progress_history=progress_history,
-            phase="row_completed",
-            last_completed_row=row_results[-1],
+            phase="batch_finalizing",
+            last_completed_row=row_results[-1] if row_results else None,
         )
-        if row_results[-1].get("status") == "failed" and not args.continue_on_error:
-            break
 
-    progress_paths = write_progress_artifacts(
-        args=args,
-        run_id=run_id,
-        fsv_run_root=fsv_run_root,
-        state_run_root=state_run_root,
-        selected_rows=selected_rows,
-        row_results=row_results,
-        progress_history=progress_history,
-        phase="batch_finalizing",
-        last_completed_row=row_results[-1] if row_results else None,
-    )
-
-    selected_rows_path = fsv_run_root / f"selected_{config['file_prefix']}_rows.jsonl"
-    batch_rows_path = fsv_run_root / f"{config['file_prefix']}_trace_batch_rows.jsonl"
-    trace_index_path = fsv_run_root / "generated_trace_index.jsonl"
-    failed_rows_path = fsv_run_root / f"failed_{config['file_prefix']}_rows.jsonl"
-    successes = [row for row in row_results if row.get("status") == "succeeded"]
-    failures = [row for row in row_results if row.get("status") == "failed"]
-    write_jsonl(selected_rows_path, selected_rows)
-    write_jsonl(batch_rows_path, row_results)
-    write_jsonl(trace_index_path, successes)
-    write_jsonl(failed_rows_path, failures)
-
-    state_selected_rows_path = state_run_root / selected_rows_path.name
-    state_batch_rows_path = state_run_root / batch_rows_path.name
-    state_trace_index_path = state_run_root / trace_index_path.name
-    state_failed_rows_path = state_run_root / failed_rows_path.name
-    write_jsonl(state_selected_rows_path, selected_rows)
-    write_jsonl(state_batch_rows_path, row_results)
-    write_jsonl(state_trace_index_path, successes)
-    write_jsonl(state_failed_rows_path, failures)
-
-    manifest = build_manifest(
-        args=args,
-        run_id=run_id,
-        fsv_run_root=fsv_run_root,
-        state_run_root=state_run_root,
-        runnable_rows=runnable_rows,
-        selected_rows=selected_rows,
-        row_results=row_results,
-        selected_rows_path=selected_rows_path,
-        batch_rows_path=batch_rows_path,
-        trace_index_path=trace_index_path,
-        failed_rows_path=failed_rows_path,
-        progress_path=progress_paths["fsv_progress"],
-        progress_history_path=progress_paths["fsv_history"],
-    )
-    manifest_path = fsv_run_root / f"{config['file_prefix']}_trace_batch_manifest.json"
-    state_manifest_path = state_run_root / manifest_path.name
-    write_json(manifest_path, manifest)
-    write_json(state_manifest_path, manifest)
-
-    hash_inputs = [
-        manifest_path,
-        selected_rows_path,
-        batch_rows_path,
-        trace_index_path,
-        failed_rows_path,
-        progress_paths["fsv_progress"],
-        progress_paths["fsv_history"],
-        state_manifest_path,
-        state_selected_rows_path,
-        state_batch_rows_path,
-        state_trace_index_path,
-        state_failed_rows_path,
-        progress_paths["state_progress"],
-        progress_paths["state_history"],
-        *[Path(row["state_trace"]) for row in successes],
-        *[Path(row["fsv_trace"]) for row in successes],
-    ]
-    hash_path = write_artifact_hashes(fsv_run_root, hash_inputs)
-    state_hash_path = state_run_root / hash_path.name
-    write_json(state_hash_path, read_json(hash_path, "EXECUTION_TRACE_PYTEST_BATCH_HASH_JSON_INVALID"))
-
-    result = {
-        "ok": not failures,
-        "run_id": run_id,
-        "command_family": config["command_family"],
-        "handler": config["handler"],
-        "fsv_run_root": str(fsv_run_root),
-        "state_run_root": str(state_run_root),
-        "manifest": str(manifest_path),
-        "state_manifest": str(state_manifest_path),
-        "batch_rows": str(batch_rows_path),
-        "generated_trace_index": str(trace_index_path),
-        "failed_rows": str(failed_rows_path),
-        "progress": str(progress_paths["fsv_progress"]),
-        "progress_history": str(progress_paths["fsv_history"]),
-        "artifact_hashes": str(hash_path),
-        "summary": manifest["summary"],
-        "decision": manifest["decision"],
-    }
-    if failures and not args.continue_on_error:
-        raise ExecutionTracePytestBatchError(
-            "EXECUTION_TRACE_PYTEST_BATCH_STOPPED_AFTER_ROW_FAILURE: "
-            + canonical_json({"manifest": str(manifest_path), "failed_rows": str(failed_rows_path)})
+        result = finalize_batch_artifacts(
+            args=args,
+            run_id=run_id,
+            config=config,
+            fsv_run_root=fsv_run_root,
+            state_run_root=state_run_root,
+            runnable_rows=runnable_rows,
+            selected_rows=selected_rows,
+            row_results=row_results,
+            progress_paths=progress_paths,
         )
-    return result
+        failures = [row for row in row_results if row.get("status") == "failed"]
+        if failures and not args.continue_on_error:
+            raise ExecutionTracePytestBatchError(
+                "EXECUTION_TRACE_PYTEST_BATCH_STOPPED_AFTER_ROW_FAILURE: "
+                + canonical_json({"manifest": result["manifest"], "failed_rows": result["failed_rows"]})
+            )
+        return result
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -861,6 +1027,11 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--arch", default="x86_64")
     parser.add_argument("--tag", default="latest")
     parser.add_argument("--instance-timeout", type=int, default=1800)
+    parser.add_argument(
+        "--row-timeout",
+        type=int,
+        help="Optional Python-side row watchdog. SIGALRM writes a failed-row ledger before finalization.",
+    )
     parser.add_argument("--max-events", type=int, default=5000)
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument("--allow-non-aiwonder-roots", action="store_true")
