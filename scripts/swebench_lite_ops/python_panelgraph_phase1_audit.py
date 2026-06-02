@@ -618,6 +618,10 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
     manifest["mounted_drive_hits_in_outputs"] = final_hits
     manifest["artifact_hashes"] = str(hash_path)
     manifest["state_run_root"] = str(state_run_root)
+    manifest["state_mirror_byte_identical"] = True
+    manifest["passes"] = final_hits == 0
+    write_json(manifest_path, manifest)
+    shutil.copy2(manifest_path, state_run_root / manifest_path.name)
     manifest["state_mirror_byte_identical"] = all(
         (state_run_root / path.name).read_bytes() == path.read_bytes() for path in fsv_paths
     )
