@@ -15,6 +15,8 @@ import json
 import os
 import re
 import shutil
+import shlex
+import subprocess
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -29,6 +31,7 @@ INDEX_ARTIFACT_KIND = "python_ast_chunk_forward_v3_index"
 ACTIVE_MODELS_ARTIFACT_KIND = "forward_cache_active_models"
 DEFAULT_CORPUS_PROFILE = "static_ast_python"
 DEFAULT_OUTPUT_PARENT = Path("/zfs/archive/contextgraph/state/forward-cache-incremental-v3")
+DEFAULT_FORWARD_RUNNER_COMMAND = "target/release/examples/python_forward_cache_readback"
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 MOUNTED_PATH_MARKERS = ("/mnt/c", "/mnt/d")
 V3_KEY_FIELDS = (
@@ -43,6 +46,7 @@ V3_KEY_FIELDS = (
 )
 MISSING_KEY_PLAN_ARTIFACT_KIND = "forward_cache_missing_key_plan"
 MISSING_KEY_ARTIFACT_KIND = "forward_cache_missing_key"
+RECOMPUTE_ARTIFACT_KIND = "forward_cache_missing_key_recompute"
 
 
 class IncrementalIndexError(RuntimeError):
@@ -160,6 +164,21 @@ def tree_state(path: Path) -> dict[str, Any]:
     }
 
 
+def file_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"exists": False, "path": str(path)}
+    require(path.is_file(), "MEJEPA_FORWARD_CACHE_INCREMENTAL_EXPECTED_FILE", path)
+    stat = path.stat()
+    return {
+        "exists": True,
+        "kind": "file",
+        "path": str(path),
+        "byte_count": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+        "sha256": sha256_file(path),
+    }
+
+
 def artifact_hashes(root: Path) -> dict[str, str]:
     hashes: dict[str, str] = {}
     for child in sorted(p for p in root.rglob("*") if p.is_file()):
@@ -196,6 +215,36 @@ def validate_v3_key_fields(value: dict[str, Any], code: str, detail: Any) -> dic
 def reject_mounted_path(path: Path, code: str) -> None:
     text = path.as_posix()
     require(not any(marker in text for marker in MOUNTED_PATH_MARKERS), code, text)
+
+
+def resolved(path: Path) -> Path:
+    return path.expanduser().resolve(strict=False)
+
+
+def path_is_under(path: Path, parent: Path) -> bool:
+    try:
+        resolved(path).relative_to(resolved(parent))
+        return True
+    except ValueError:
+        return False
+
+
+def paths_overlap(left: Path, right: Path) -> bool:
+    left_resolved = resolved(left)
+    right_resolved = resolved(right)
+    return (
+        left_resolved == right_resolved
+        or path_is_under(left_resolved, right_resolved)
+        or path_is_under(right_resolved, left_resolved)
+    )
+
+
+def require_no_path_overlap(output_root: Path, other: Path, code: str) -> None:
+    require(
+        not paths_overlap(output_root, other),
+        code,
+        {"output_root": str(output_root), "other": str(other)},
+    )
 
 
 def require_aiwonder_root(path: Path, allow_non_aiwonder_roots: bool) -> None:
@@ -965,12 +1014,574 @@ def run_missing_key_plan(args: argparse.Namespace) -> dict[str, Any]:
     return readback
 
 
+def read_missing_inventory(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    require(path.is_file(), "MEJEPA_FORWARD_CACHE_INCREMENTAL_MISSING_INVENTORY_MISSING", path)
+    reject_mounted_path(path, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_INVENTORY_PATH")
+    rows: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for line_no, row in iter_jsonl(path):
+        detail = {"inventory_path": str(path), "line_no": line_no}
+        require(
+            row.get("artifact_kind") == MISSING_KEY_ARTIFACT_KIND,
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_MISSING_INVENTORY_KIND_INVALID",
+            detail,
+        )
+        key = validate_v3_key_fields(row, "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_KEY_INVALID", detail)
+        cache_key_sha256 = validate_sha(
+            row.get("cache_key_sha256"),
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_CACHE_KEY_INVALID",
+            detail,
+        )
+        recomputed = sha256_json(key)
+        require(
+            cache_key_sha256 == recomputed,
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_CACHE_KEY_MISMATCH",
+            {**detail, "expected": recomputed, "actual": cache_key_sha256},
+        )
+        require(
+            cache_key_sha256 not in seen_keys,
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_DUPLICATE_ROW",
+            {**detail, "cache_key_sha256": cache_key_sha256},
+        )
+        require(
+            key["source_text_sha256"] == key["source_sha256"],
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_SOURCE_TEXT_SHA_UNSUPPORTED",
+            {
+                **detail,
+                "source_sha256": key["source_sha256"],
+                "source_text_sha256": key["source_text_sha256"],
+                "reason": "current Rust forwarder records source_text_sha256 as source_sha256",
+            },
+        )
+        seen_keys.add(cache_key_sha256)
+        rows.append({**row, **key, "cache_key_sha256": cache_key_sha256})
+    require(rows, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MISSING_INVENTORY_EMPTY", path)
+    embedders = sorted({str(row["embedder_id"]) for row in rows})
+    model_values = sorted({str(row["model_sha256"]) for row in rows})
+    chunker_values = sorted({str(row["chunker_sha256"]) for row in rows})
+    preprocessing_values = sorted({str(row["preprocessing_sha256"]) for row in rows})
+    corpus_profiles = sorted({str(row["corpus_profile"]) for row in rows})
+    require(
+        len(embedders) == 1,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_MISSING_INVENTORY_TARGET_MISMATCH",
+        {"embedders": embedders},
+    )
+    require(
+        len(model_values) == 1,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_MISSING_INVENTORY_MODEL_MISMATCH",
+        {"model_sha256_values": model_values},
+    )
+    require(
+        len(chunker_values) == 1,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_MISSING_INVENTORY_CHUNKER_MISMATCH",
+        {"chunker_sha256_values": chunker_values},
+    )
+    require(
+        len(preprocessing_values) == 1,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_MISSING_INVENTORY_PREPROCESSING_MISMATCH",
+        {"preprocessing_sha256_values": preprocessing_values},
+    )
+    require(
+        len(corpus_profiles) == 1,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_MISSING_INVENTORY_CORPUS_PROFILE_MISMATCH",
+        {"corpus_profiles": corpus_profiles},
+    )
+    summary = {
+        "inventory_path": str(path),
+        "inventory_sha256": sha256_file(path),
+        "row_count": len(rows),
+        "target_embedder_id": embedders[0],
+        "target_model_sha256": model_values[0],
+        "target_chunker_sha256": chunker_values[0],
+        "target_preprocessing_sha256": preprocessing_values[0],
+        "corpus_profile": corpus_profiles[0],
+        "unique_cache_key_count": len(seen_keys),
+    }
+    return rows, summary
+
+
+def source_chunk_key(row: dict[str, Any]) -> tuple[str, str]:
+    return str(row.get("chunk_id") or ""), str(row.get("source_sha256") or "")
+
+
+def find_contiguous_chunk_window(
+    chunks_jsonl: Path,
+    inventory_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    require(chunks_jsonl.is_file(), "MEJEPA_FORWARD_CACHE_INCREMENTAL_CHUNKS_JSONL_MISSING", chunks_jsonl)
+    reject_mounted_path(chunks_jsonl, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_CHUNKS_PATH")
+    needed: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in inventory_rows:
+        key = source_chunk_key(row)
+        require(
+            all(key),
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_CHUNK_IDENTITY_INVALID",
+            {"row": row},
+        )
+        existing = needed.get(key)
+        require(
+            existing is None or existing["cache_key_sha256"] == row["cache_key_sha256"],
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_CHUNK_IDENTITY_CONFLICT",
+            {"chunk_key": key},
+        )
+        needed[key] = row
+    matches: dict[tuple[str, str], dict[str, Any]] = {}
+    with chunks_jsonl.open("r", encoding="utf-8") as handle:
+        for raw_index, line in enumerate(handle):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            chunk_id = str(row.get("chunk_id") or "")
+            source_sha256 = str(row.get("source_sha256") or "")
+            key = (chunk_id, source_sha256)
+            if key not in needed:
+                continue
+            require(
+                key not in matches,
+                "MEJEPA_FORWARD_CACHE_INCREMENTAL_CHUNK_SOURCE_DUPLICATE",
+                {"chunks_jsonl": str(chunks_jsonl), "chunk_id": chunk_id, "source_sha256": source_sha256},
+            )
+            absolute_path = str(row.get("absolute_path") or "")
+            relative_path = str(row.get("relative_path") or "")
+            if absolute_path:
+                reject_mounted_path(Path(absolute_path), "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_CHUNK_SOURCE_PATH")
+            if relative_path:
+                reject_mounted_path(Path(relative_path), "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_CHUNK_SOURCE_PATH")
+            matches[key] = {
+                "raw_line_index_zero_based": raw_index,
+                "chunk_id": chunk_id,
+                "source_sha256": source_sha256,
+                "relative_path": relative_path,
+                "absolute_path": absolute_path,
+            }
+    missing = [
+        {"chunk_id": key[0], "source_sha256": key[1]}
+        for key in sorted(set(needed) - set(matches))
+    ]
+    require(
+        not missing,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_CHUNK_SOURCE_MISSING",
+        {"chunks_jsonl": str(chunks_jsonl), "missing": missing[:10], "missing_count": len(missing)},
+    )
+    ordered = sorted(matches.values(), key=lambda row: int(row["raw_line_index_zero_based"]))
+    line_indices = [int(row["raw_line_index_zero_based"]) for row in ordered]
+    start = line_indices[0]
+    expected = list(range(start, start + len(line_indices)))
+    require(
+        line_indices == expected,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_NON_CONTIGUOUS_CHUNK_SELECTION",
+        {
+            "chunks_jsonl": str(chunks_jsonl),
+            "line_indices": line_indices,
+            "expected_contiguous_indices": expected,
+        },
+    )
+    return {
+        "chunks_jsonl": str(chunks_jsonl),
+        "chunk_offset": start,
+        "max_chunks": len(line_indices),
+        "selected_chunk_count": len(line_indices),
+        "line_indices": line_indices,
+        "selected_chunks": ordered,
+    }
+
+
+def unchanged_record_file_states(index_root: Path, chunker_sha256: str, target_embedder_id: str) -> dict[str, dict[str, Any]]:
+    require(index_root is not None, "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_ROOT_MISSING", "--index-root")
+    require(index_root.exists(), "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_ROOT_MISSING", index_root)
+    rows, _files = read_v3_index_rows(index_root, chunker_sha256)
+    paths = sorted(
+        {
+            str(row.get("record_path") or "").split("#", 1)[0]
+            for row in rows
+            if str(row.get("embedder_id")) != target_embedder_id and str(row.get("record_path") or "")
+        }
+    )
+    require(
+        paths,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_UNCHANGED_RECORD_SET_EMPTY",
+        {"index_root": str(index_root), "target_embedder_id": target_embedder_id},
+    )
+    states: dict[str, dict[str, Any]] = {}
+    for raw_path in paths:
+        path = Path(raw_path)
+        reject_mounted_path(path, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_RECORD_PATH")
+        states[raw_path] = file_state(path)
+    return states
+
+
+def changed_file_states(before: dict[str, dict[str, Any]], after: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    changed: dict[str, Any] = {}
+    for path, before_state in before.items():
+        after_state = after.get(path)
+        if after_state != before_state:
+            changed[path] = {"before": before_state, "after": after_state}
+    return changed
+
+
+def runner_env_for_recompute(
+    args: argparse.Namespace,
+    *,
+    cache_root: Path,
+    readback_root: Path,
+    window: dict[str, Any],
+    inventory_summary: dict[str, Any],
+) -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "CG_MEJEPA_PY_FORWARD_CACHE_ROOT": str(cache_root),
+            "CG_MEJEPA_PY_FORWARD_CACHE_READBACK_ROOT": str(readback_root),
+            "CG_MEJEPA_PY_CHUNKS_JSONL": str(args.chunks_jsonl),
+            "CG_MEJEPA_PY_FORWARD_CACHE_CHUNK_OFFSET": str(window["chunk_offset"]),
+            "CG_MEJEPA_PY_FORWARD_CACHE_MAX_CHUNKS": str(window["max_chunks"]),
+            "CG_MEJEPA_PY_FORWARD_MAX_SOURCE_BYTES": str(args.max_source_bytes),
+            "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE": str(args.true_batch_size),
+            "CG_MEJEPA_PY_FORWARD_GPU_VRAM_GUARD_BYTES": str(args.gpu_vram_guard_bytes),
+            "CG_MEJEPA_PY_FORWARD_CACHE_STORE_LAYOUT": "packed",
+            "CG_MEJEPA_PY_FORWARD_ONLY_EMBEDDER": inventory_summary["target_embedder_id"],
+            "CG_MEJEPA_PY_FORWARD_CORPUS_PROFILE": inventory_summary["corpus_profile"],
+        }
+    )
+    if args.models_config:
+        env["CG_MEJEPA_MODELS_CONFIG"] = str(args.models_config)
+    return env
+
+
+def run_forward_runner(args: argparse.Namespace, env: dict[str, str]) -> dict[str, Any]:
+    command = shlex.split(args.runner_command)
+    require(command, "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_COMMAND_EMPTY", args.runner_command)
+    started_at = utc_now()
+    completed = subprocess.run(
+        command,
+        text=True,
+        capture_output=True,
+        env=env,
+        timeout=args.runner_timeout_seconds,
+        check=False,
+    )
+    run_log = {
+        "started_at_utc": started_at,
+        "completed_at_utc": utc_now(),
+        "command": args.runner_command,
+        "exit_code": completed.returncode,
+        "stdout_tail": completed.stdout[-8000:],
+        "stderr_tail": completed.stderr[-8000:],
+    }
+    require(
+        completed.returncode == 0,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_FAILED",
+        run_log,
+    )
+    return run_log
+
+
+def validate_runner_manifest(
+    runner_cache_root: Path,
+    runner_readback_root: Path,
+    args: argparse.Namespace,
+    inventory_summary: dict[str, Any],
+    window: dict[str, Any],
+) -> dict[str, Any]:
+    manifest_path = runner_cache_root / "python_forward_cache_manifest.json"
+    readback_path = runner_readback_root / "python_forward_cache_readback.json"
+    require(manifest_path.is_file(), "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_MANIFEST_MISSING", manifest_path)
+    require(readback_path.is_file(), "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_READBACK_MISSING", readback_path)
+    manifest = read_json(manifest_path)
+    readback = read_json(readback_path)
+    summary = manifest.get("summary") or {}
+    inputs = manifest.get("inputs") or {}
+    require(manifest.get("passes") is True, "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_MANIFEST_NOT_PASSING", manifest_path)
+    require(readback.get("passes") is True, "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_READBACK_NOT_PASSING", readback_path)
+    require(
+        inputs.get("only_embedder") == inventory_summary["target_embedder_id"],
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_TARGET_MISMATCH",
+        {"expected": inventory_summary["target_embedder_id"], "actual": inputs.get("only_embedder")},
+    )
+    require(
+        int(inputs.get("chunk_offset", -1)) == int(window["chunk_offset"]),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_WINDOW_MISMATCH",
+        {"expected": window["chunk_offset"], "actual": inputs.get("chunk_offset")},
+    )
+    require(
+        int(inputs.get("max_chunks", -1)) == int(window["max_chunks"]),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_WINDOW_MISMATCH",
+        {"expected": window["max_chunks"], "actual": inputs.get("max_chunks")},
+    )
+    require(
+        str(inputs.get("chunks_jsonl") or "") == str(args.chunks_jsonl),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_CHUNKS_SOURCE_MISMATCH",
+        {"expected": str(args.chunks_jsonl), "actual": inputs.get("chunks_jsonl")},
+    )
+    require(
+        int(summary.get("active_embedder_count", -1)) == 1,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_ACTIVE_EMBEDDER_COUNT_MISMATCH",
+        summary,
+    )
+    require(
+        summary.get("active_embedder_ids") == [inventory_summary["target_embedder_id"]],
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_TARGET_MISMATCH",
+        summary,
+    )
+    require(
+        int(summary.get("cache_record_count", -1)) == int(inventory_summary["row_count"]),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_RECORD_COUNT_MISMATCH",
+        {"expected": inventory_summary["row_count"], "actual": summary.get("cache_record_count")},
+    )
+    require(
+        int(summary.get("quarantine_row_count", 0)) == 0,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_QUARANTINE_NONEMPTY",
+        summary,
+    )
+    return {
+        "manifest": manifest,
+        "readback": readback,
+        "manifest_sha256": sha256_file(manifest_path),
+        "readback_sha256": sha256_file(readback_path),
+    }
+
+
+def validate_recomputed_rows(
+    *,
+    args: argparse.Namespace,
+    runner_cache_root: Path,
+    output_root: Path,
+    inventory_rows: list[dict[str, Any]],
+    inventory_summary: dict[str, Any],
+) -> dict[str, Any]:
+    recomputed_index_root = output_root / "recomputed_v3"
+    recomputed_index_root.mkdir(parents=True, exist_ok=True)
+    seen_keys: dict[str, dict[str, Any]] = {}
+    summary, _models_by_embedder, row_count = process_shard(
+        shard={"shard_id": "recomputed-target", "cache_root": str(runner_cache_root)},
+        output_root=recomputed_index_root,
+        corpus_profile=inventory_summary["corpus_profile"],
+        chunker_sha256=inventory_summary["target_chunker_sha256"],
+        embedder_filter=(inventory_summary["target_embedder_id"],),
+        seen_keys=seen_keys,
+        limit_records_per_embedder=None,
+    )
+    rows = load_index_rows(Path(summary["v3_index_path"]))
+    inventory_key_set = {str(row["cache_key_sha256"]) for row in inventory_rows}
+    produced_key_set = {str(row["cache_key_sha256"]) for row in rows}
+    require(
+        produced_key_set == inventory_key_set,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RECOMPUTE_OUTPUT_KEY_MISMATCH",
+        {
+            "missing_from_output": sorted(inventory_key_set - produced_key_set),
+            "unexpected_output_keys": sorted(produced_key_set - inventory_key_set),
+        },
+    )
+    require(
+        all(str(row["embedder_id"]) == inventory_summary["target_embedder_id"] for row in rows),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RECOMPUTE_TARGET_MISMATCH",
+        {"target_embedder_id": inventory_summary["target_embedder_id"]},
+    )
+    require(
+        all(str(row["model_sha256"]) == inventory_summary["target_model_sha256"] for row in rows),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RECOMPUTE_MODEL_MISMATCH",
+        {"target_model_sha256": inventory_summary["target_model_sha256"]},
+    )
+    require(
+        row_count == inventory_summary["row_count"],
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_RECOMPUTE_ROW_COUNT_MISMATCH",
+        {"expected": inventory_summary["row_count"], "actual": row_count},
+    )
+    return {
+        "v3_index_summary": summary,
+        "produced_row_count": row_count,
+        "produced_cache_key_count": len(produced_key_set),
+        "produced_index_sha256": sha256_file(Path(summary["v3_index_path"])),
+    }
+
+
+def run_recompute_missing(args: argparse.Namespace) -> dict[str, Any]:
+    require(args.index_root is not None, "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_ROOT_MISSING", "--index-root")
+    require(args.missing_key_inventory is not None, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MISSING_INVENTORY_MISSING", "--missing-key-inventory")
+    require(args.chunks_jsonl is not None, "MEJEPA_FORWARD_CACHE_INCREMENTAL_CHUNKS_JSONL_MISSING", "--chunks-jsonl")
+    require(args.output_root is not None, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_ROOT_MISSING", "--output-root")
+    require(args.max_source_bytes > 0, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MAX_SOURCE_BYTES_INVALID", args.max_source_bytes)
+    require(args.true_batch_size > 0, "MEJEPA_FORWARD_CACHE_INCREMENTAL_TRUE_BATCH_SIZE_INVALID", args.true_batch_size)
+    require(args.runner_timeout_seconds > 0, "MEJEPA_FORWARD_CACHE_INCREMENTAL_RUNNER_TIMEOUT_INVALID", args.runner_timeout_seconds)
+    require_aiwonder_root(args.output_root, args.allow_non_aiwonder_roots)
+    reject_mounted_path(args.output_root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_OUTPUT_ROOT")
+    reject_mounted_path(args.index_root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_INDEX_ROOT")
+    reject_mounted_path(args.chunks_jsonl, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_CHUNKS_PATH")
+    reject_mounted_path(args.missing_key_inventory, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_INVENTORY_PATH")
+    require_no_path_overlap(args.output_root, args.index_root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_OVERLAPS_INDEX_ROOT")
+    require_no_path_overlap(args.output_root, args.missing_key_inventory, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_OVERLAPS_INVENTORY")
+    require_no_path_overlap(args.output_root, args.chunks_jsonl, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_OVERLAPS_CHUNKS")
+    if args.models_config:
+        reject_mounted_path(args.models_config, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_MODELS_CONFIG")
+        require(args.models_config.is_file(), "MEJEPA_FORWARD_CACHE_INCREMENTAL_MODELS_CONFIG_MISSING", args.models_config)
+
+    before = {"output_root": tree_state(args.output_root)}
+    if args.output_root.exists():
+        require(args.clean_output, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_EXISTS", args.output_root)
+
+    inventory_rows, inventory_summary = read_missing_inventory(args.missing_key_inventory)
+    if args.target_embedder_id:
+        require(
+            args.target_embedder_id == inventory_summary["target_embedder_id"],
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_MISSING_INVENTORY_TARGET_MISMATCH",
+            {"expected": args.target_embedder_id, "actual": inventory_summary["target_embedder_id"]},
+        )
+    if args.target_model_sha256:
+        target_model_sha256 = validate_sha(
+            args.target_model_sha256,
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_TARGET_MODEL_HASH_INVALID",
+            "--target-model-sha256",
+        )
+        require(
+            target_model_sha256 == inventory_summary["target_model_sha256"],
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_MISSING_INVENTORY_MODEL_MISMATCH",
+            {"expected": target_model_sha256, "actual": inventory_summary["target_model_sha256"]},
+        )
+    window = find_contiguous_chunk_window(args.chunks_jsonl, inventory_rows)
+    unchanged_before = unchanged_record_file_states(
+        args.index_root,
+        inventory_summary["target_chunker_sha256"],
+        inventory_summary["target_embedder_id"],
+    )
+    if args.output_root.exists():
+        shutil.rmtree(args.output_root)
+    args.output_root.mkdir(parents=True, exist_ok=False)
+    runner_cache_root = args.output_root / "runner_cache"
+    runner_readback_root = args.output_root / "runner_readback"
+    env = runner_env_for_recompute(
+        args,
+        cache_root=runner_cache_root,
+        readback_root=runner_readback_root,
+        window=window,
+        inventory_summary=inventory_summary,
+    )
+    run_log = run_forward_runner(args, env)
+    write_json(args.output_root / "runner_invocation.json", run_log)
+    runner_readback = validate_runner_manifest(
+        runner_cache_root,
+        runner_readback_root,
+        args,
+        inventory_summary,
+        window,
+    )
+    recomputed = validate_recomputed_rows(
+        args=args,
+        runner_cache_root=runner_cache_root,
+        output_root=args.output_root,
+        inventory_rows=inventory_rows,
+        inventory_summary=inventory_summary,
+    )
+    unchanged_after = {
+        path: file_state(Path(path))
+        for path in unchanged_before
+    }
+    unchanged_changes = changed_file_states(unchanged_before, unchanged_after)
+    require(
+        not unchanged_changes,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_UNCHANGED_RECORD_FILE_REWRITTEN",
+        unchanged_changes,
+    )
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": RECOMPUTE_ARTIFACT_KIND,
+        "created_at_utc": utc_now(),
+        "passes": True,
+        "inputs": {
+            "index_root": str(args.index_root),
+            "missing_key_inventory": str(args.missing_key_inventory),
+            "chunks_jsonl": str(args.chunks_jsonl),
+            "output_root": str(args.output_root),
+            "runner_command": args.runner_command,
+            "target_embedder_id": inventory_summary["target_embedder_id"],
+            "target_model_sha256": inventory_summary["target_model_sha256"],
+            "max_source_bytes": args.max_source_bytes,
+            "true_batch_size": args.true_batch_size,
+            "gpu_vram_guard_bytes": args.gpu_vram_guard_bytes,
+            "models_config": str(args.models_config) if args.models_config else None,
+        },
+        "source_summary": {
+            "inventory": inventory_summary,
+            "chunk_window": window,
+            "unchanged_record_files_before": unchanged_before,
+            "runner_manifest_sha256": runner_readback["manifest_sha256"],
+            "runner_readback_sha256": runner_readback["readback_sha256"],
+        },
+        "summary": {
+            "target_embedder_id": inventory_summary["target_embedder_id"],
+            "target_model_sha256": inventory_summary["target_model_sha256"],
+            "missing_key_count": inventory_summary["row_count"],
+            "runner_cache_record_count": runner_readback["manifest"]["summary"]["cache_record_count"],
+            "recomputed_v3_row_count": recomputed["produced_row_count"],
+            "unchanged_record_file_count": len(unchanged_before),
+            "unchanged_record_changed_count": len(unchanged_changes),
+            "runner_exit_code": run_log["exit_code"],
+        },
+        "runner": {
+            "invocation": run_log,
+            "manifest_path": str(runner_cache_root / "python_forward_cache_manifest.json"),
+            "readback_path": str(runner_readback_root / "python_forward_cache_readback.json"),
+        },
+        "recomputed": recomputed,
+        "cases": [
+            {
+                "case": "inventory_single_target",
+                "expected": "one embedder and one target model",
+                "actual": {
+                    "target_embedder_id": inventory_summary["target_embedder_id"],
+                    "target_model_sha256": inventory_summary["target_model_sha256"],
+                },
+                "pass": True,
+            },
+            {
+                "case": "source_chunk_window_contiguous",
+                "expected": list(range(window["chunk_offset"], window["chunk_offset"] + window["max_chunks"])),
+                "actual": window["line_indices"],
+                "pass": True,
+            },
+            {
+                "case": "runner_target_only",
+                "expected": [inventory_summary["target_embedder_id"]],
+                "actual": runner_readback["manifest"]["summary"]["active_embedder_ids"],
+                "pass": True,
+            },
+            {
+                "case": "recomputed_keys_match_inventory",
+                "expected": inventory_summary["row_count"],
+                "actual": recomputed["produced_cache_key_count"],
+                "pass": recomputed["produced_cache_key_count"] == inventory_summary["row_count"],
+            },
+            {
+                "case": "unchanged_record_files_stable",
+                "expected": 0,
+                "actual": len(unchanged_changes),
+                "pass": len(unchanged_changes) == 0,
+            },
+        ],
+    }
+    write_json(args.output_root / "recompute_manifest.json", manifest)
+    write_json(args.output_root / "recompute_artifact_hashes.json", artifact_hashes(args.output_root))
+    readback = read_json(args.output_root / "recompute_manifest.json")
+    after = {"output_root": tree_state(args.output_root)}
+    readback["manual_readback"] = {
+        "before": before,
+        "after": after,
+        "manifest_sha256": sha256_file(args.output_root / "recompute_manifest.json"),
+        "artifact_hashes_sha256": sha256_file(args.output_root / "recompute_artifact_hashes.json"),
+        "unchanged_record_files_after": unchanged_after,
+    }
+    write_json(args.output_root / "recompute_manifest.readback.json", readback)
+    return readback
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("index", "plan-missing"), default="index")
+    parser.add_argument("--mode", choices=("index", "plan-missing", "recompute-missing"), default="index")
     parser.add_argument("--cache-root", type=Path)
     parser.add_argument("--index-root", type=Path)
     parser.add_argument("--active-models-path", type=Path)
+    parser.add_argument("--missing-key-inventory", type=Path)
+    parser.add_argument("--chunks-jsonl", type=Path)
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--output-parent", type=Path, default=DEFAULT_OUTPUT_PARENT)
     parser.add_argument("--run-id", default=None)
@@ -986,6 +1597,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-model-sha256")
     parser.add_argument("--target-preprocessing-sha256")
     parser.add_argument("--allow-empty-plan", action="store_true")
+    parser.add_argument("--runner-command", default=DEFAULT_FORWARD_RUNNER_COMMAND)
+    parser.add_argument("--runner-timeout-seconds", type=int, default=3600)
+    parser.add_argument("--max-source-bytes", type=int, default=32768)
+    parser.add_argument("--true-batch-size", type=int, default=1)
+    parser.add_argument("--gpu-vram-guard-bytes", type=int, default=0)
+    parser.add_argument("--models-config", type=Path)
     return parser
 
 
@@ -999,8 +1616,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.mode == "index":
             readback = run_pipeline(args)
             print(json.dumps(readback["summary"], indent=2, sort_keys=True))
-        else:
+        elif args.mode == "plan-missing":
             readback = run_missing_key_plan(args)
+            print(json.dumps(readback["summary"], indent=2, sort_keys=True))
+        else:
+            readback = run_recompute_missing(args)
             print(json.dumps(readback["summary"], indent=2, sort_keys=True))
     except IncrementalIndexError as exc:
         print(str(exc), file=sys.stderr)
