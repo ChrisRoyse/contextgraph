@@ -128,8 +128,10 @@ def load_corpus_entry(corpus_root: Path, task_id: str, category: str) -> dict[st
 def build_trace_runner_source() -> str:
     return r'''import json
 import os
+import _thread
 import signal
 import sys
+import threading
 import time
 from collections import Counter
 
@@ -163,10 +165,12 @@ class TraceSoftTimeout(BaseException):
 
 def describe_soft_timeout(exc):
     info = {"type": "TraceSoftTimeout", "message": str(exc)}
-    if exc.filename is not None:
-        info["filename"] = str(exc.filename)
-    if exc.lineno is not None:
-        info["lineno"] = int(exc.lineno)
+    filename = getattr(exc, "filename", None)
+    lineno = getattr(exc, "lineno", None)
+    if filename is not None:
+        info["filename"] = str(filename)
+    if lineno is not None:
+        info["lineno"] = int(lineno)
     return info
 
 
@@ -219,9 +223,16 @@ def main() -> int:
     exit_code = 2
     execution_outcome = "executed"
     captured_exception = None
+    soft_timeout_triggered = [False]
+    soft_timeout_timer = [None]
 
     def soft_timeout_handler(signum, frame):
+        soft_timeout_triggered[0] = True
         raise TraceSoftTimeout(frame)
+
+    def trigger_soft_timeout():
+        soft_timeout_triggered[0] = True
+        _thread.interrupt_main()
 
     # Import pytest under guard: a compile_error mutation in any module on the
     # import path (e.g. _pytest/assertion/rewrite.py for the pytest repo itself)
@@ -237,6 +248,10 @@ def main() -> int:
         if soft_timeout_s > 0:
             signal.signal(signal.SIGALRM, soft_timeout_handler)
             signal.alarm(soft_timeout_s)
+            timer = threading.Timer(soft_timeout_s, trigger_soft_timeout)
+            timer.daemon = True
+            timer.start()
+            soft_timeout_timer[0] = timer
         sys.settrace(tracer)
         try:
             exit_code = int(pytest_module.main(sys.argv[1:]))
@@ -247,11 +262,19 @@ def main() -> int:
             execution_outcome = "run_timeout"
             captured_exception = describe_soft_timeout(exc)
             exit_code = 124
+        except KeyboardInterrupt as exc:
+            if not soft_timeout_triggered[0]:
+                raise
+            execution_outcome = "run_timeout"
+            captured_exception = describe_soft_timeout(exc)
+            exit_code = 124
         except BaseException as exc:  # noqa: BLE001 - record any in-run failure truthfully
             execution_outcome = "run_exception"
             captured_exception = describe_exception(exc)
             exit_code = 2
         finally:
+            if soft_timeout_timer[0] is not None:
+                soft_timeout_timer[0].cancel()
             if soft_timeout_s > 0:
                 signal.alarm(0)
             sys.settrace(None)
@@ -311,9 +334,11 @@ if __name__ == "__main__":
 def build_python_script_trace_runner_source() -> str:
     return r'''import json
 import os
+import _thread
 import runpy
 import signal
 import sys
+import threading
 import time
 from collections import Counter
 
@@ -355,10 +380,12 @@ class TraceSoftTimeout(BaseException):
 
 def describe_soft_timeout(exc):
     info = {"type": "TraceSoftTimeout", "message": str(exc)}
-    if exc.filename is not None:
-        info["filename"] = str(exc.filename)
-    if exc.lineno is not None:
-        info["lineno"] = int(exc.lineno)
+    filename = getattr(exc, "filename", None)
+    lineno = getattr(exc, "lineno", None)
+    if filename is not None:
+        info["filename"] = str(filename)
+    if lineno is not None:
+        info["lineno"] = int(lineno)
     return info
 
 
@@ -414,6 +441,8 @@ def main() -> int:
     exit_code = 1
     execution_outcome = "executed"
     captured_exception = None
+    soft_timeout_triggered = [False]
+    soft_timeout_timer = [None]
     previous_argv = sys.argv
     previous_path = list(sys.path)
     script_abspath = os.path.abspath(script_path)
@@ -422,11 +451,20 @@ def main() -> int:
     if script_dir:
         sys.path.insert(0, script_dir)
     def soft_timeout_handler(signum, frame):
+        soft_timeout_triggered[0] = True
         raise TraceSoftTimeout(frame)
+
+    def trigger_soft_timeout():
+        soft_timeout_triggered[0] = True
+        _thread.interrupt_main()
 
     if soft_timeout_s > 0:
         signal.signal(signal.SIGALRM, soft_timeout_handler)
         signal.alarm(soft_timeout_s)
+        timer = threading.Timer(soft_timeout_s, trigger_soft_timeout)
+        timer.daemon = True
+        timer.start()
+        soft_timeout_timer[0] = timer
     sys.settrace(tracer)
     try:
         runpy.run_path(script_path, run_name="__main__")
@@ -441,11 +479,19 @@ def main() -> int:
         execution_outcome = "run_timeout"
         captured_exception = describe_soft_timeout(exc)
         exit_code = 124
+    except KeyboardInterrupt as exc:
+        if not soft_timeout_triggered[0]:
+            raise
+        execution_outcome = "run_timeout"
+        captured_exception = describe_soft_timeout(exc)
+        exit_code = 124
     except BaseException as exc:  # noqa: BLE001 - record any failure truthfully
         execution_outcome = "run_exception"
         captured_exception = describe_exception(exc)
         exit_code = 1
     finally:
+        if soft_timeout_timer[0] is not None:
+            soft_timeout_timer[0].cancel()
         if soft_timeout_s > 0:
             signal.alarm(0)
         sys.settrace(None)
