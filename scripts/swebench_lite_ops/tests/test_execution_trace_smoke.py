@@ -456,7 +456,10 @@ def test_python_script_runner_writes_payload_on_soft_timeout(tmp_path: Path):
                 "total = 0",
                 "for i in range(10):",
                 "    total += i",
-                "time.sleep(20)",
+                "try:",
+                "    time.sleep(20)",
+                "except Exception:",
+                "    raise SystemExit(7)",
             ]
         )
         + "\n",

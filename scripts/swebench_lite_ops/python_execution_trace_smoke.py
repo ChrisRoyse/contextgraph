@@ -154,7 +154,7 @@ def describe_exception(exc):
     return info
 
 
-class TraceSoftTimeout(Exception):
+class TraceSoftTimeout(BaseException):
     def __init__(self, frame):
         self.filename = getattr(getattr(frame, "f_code", None), "co_filename", None)
         self.lineno = getattr(frame, "f_lineno", None)
@@ -346,7 +346,7 @@ def describe_exception(exc):
     return info
 
 
-class TraceSoftTimeout(Exception):
+class TraceSoftTimeout(BaseException):
     def __init__(self, frame):
         self.filename = getattr(getattr(frame, "f_code", None), "co_filename", None)
         self.lineno = getattr(frame, "f_lineno", None)
