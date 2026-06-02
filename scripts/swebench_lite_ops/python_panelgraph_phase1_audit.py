@@ -29,10 +29,10 @@ except ImportError:  # pragma: no cover - direct script execution on aiwonder.
     from swebench_lite_ops.python_diff_chunk_map_core import parse_unified_diff, overlap  # type: ignore
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 TASK_ID = "BLINDSPOT-004"
 ARTIFACT_KIND = "panelgraph_phase1_measurement"
-FORMULA_VERSION = "panelgraph_phase1_v1"
+FORMULA_VERSION = "panelgraph_phase1_v2"
 AIWONDER_ARCHIVE_ROOT = "/zfs/archive/contextgraph/"
 DEFAULT_CORPUS_ROOT = Path("/zfs/archive/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511")
 DEFAULT_AST_CHUNKS = Path("/zfs/archive/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
@@ -51,6 +51,14 @@ TARGET_SIDE_KEYS = {
     "predicted_oracle_pass",
     "predicted_pass",
 }
+TARGET_LABEL_KEYS = {
+    "actual_oracle_pass",
+    "oracle_all_passed",
+    "oracle_exception",
+    "oracle_per_test_count",
+    "oracle_verdict_sha256",
+}
+CHUNK_AGGREGATION_STRATEGIES = ("mean", "max", "min")
 
 
 class PanelGraphPhase1Error(RuntimeError):
@@ -100,6 +108,14 @@ def require(condition: bool, code: str, detail: Any = None) -> None:
 def reject_mounted_drive(label: str, value: str) -> None:
     require(
         not (value.startswith("/mnt/c/") or value.startswith("/mnt/d/")),
+        "PANELGRAPH_PHASE1_MOUNTED_DRIVE_FORBIDDEN",
+        {label: value},
+    )
+
+
+def reject_mounted_drive_fragment(label: str, value: str) -> None:
+    require(
+        "/mnt/c/" not in value and "/mnt/d/" not in value,
         "PANELGRAPH_PHASE1_MOUNTED_DRIVE_FORBIDDEN",
         {label: value},
     )
@@ -328,6 +344,7 @@ def map_patch_to_chunks(entry: dict[str, Any], corpus_root: Path, indexes: AstIn
         "change_kind_counts": dict(sorted(change_kinds.items())),
         "primary_chunk_kind_counts": dict(sorted(primary_chunk_kinds.items())),
         "sample_touched_files": sorted(touched_files)[:8],
+        "primary_chunk_ids": sorted(primary_chunk_ids),
         "sample_primary_chunk_ids": sorted(primary_chunk_ids)[:8],
         "sample_unmapped_hunks": unmapped_hunks[:8],
         "patch_sha256": sha256_file(patch_file),
@@ -374,6 +391,7 @@ def build_rows(
                 "change_kind_counts": {},
                 "primary_chunk_kind_counts": {},
                 "sample_touched_files": [],
+                "primary_chunk_ids": [],
                 "sample_primary_chunk_ids": [],
                 "sample_unmapped_hunks": [{"error": str(exc)[:240]}],
                 "patch_sha256": None,
@@ -397,6 +415,7 @@ def build_rows(
             "change_kind_counts": mapped["change_kind_counts"],
             "primary_chunk_kind_counts": mapped["primary_chunk_kind_counts"],
             "sample_touched_files": mapped["sample_touched_files"],
+            "primary_chunk_ids": mapped["primary_chunk_ids"],
             "sample_primary_chunk_ids": mapped["sample_primary_chunk_ids"],
             "sample_unmapped_hunks": mapped["sample_unmapped_hunks"],
         }
@@ -418,6 +437,7 @@ def build_rows(
                     "patch_touched_file_count": mapped["live_features"]["patch_touched_file_count"],
                     "patch_touched_chunk_count": mapped["live_features"]["patch_touched_chunk_count"],
                     "candidate_state_chunk_count": mapped["live_features"]["candidate_state_chunk_count"],
+                    "primary_chunk_ids": mapped["primary_chunk_ids"],
                     "predicted_oracle_pass": prediction.score,
                     "actual_oracle_pass": bool(prediction.label),
                     "absolute_error": abs(prediction.score - prediction.label),
@@ -427,7 +447,239 @@ def build_rows(
     return live_rows, eval_rows, {"mapping_errors": mapping_errors}
 
 
-def summarize(live_rows: list[dict[str, Any]], eval_rows: list[dict[str, Any]], ast_indexes: AstIndexes) -> dict[str, Any]:
+def load_per_chunk_verdict_rows(
+    path: Path | None,
+    live_rows: list[dict[str, Any]],
+    eval_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if path is None:
+        return {
+            "sanitized_rows": [],
+            "aggregation_rows": [],
+            "error_rows": [
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "artifact_kind": "panelgraph_phase1_per_chunk_verdict_error",
+                    "error": "per_chunk_verdict_rows_unavailable",
+                    "detail": "No --per-chunk-verdict-rows input was provided.",
+                }
+            ],
+            "summary": {
+                "source_path": None,
+                "source_available": False,
+                "coverage_complete": False,
+                "valid_row_count": 0,
+                "ignored_non_eval_row_count": 0,
+                "error_count": 1,
+                "expected_eval_row_count": len(eval_rows),
+                "eval_rows_with_complete_chunk_scores": 0,
+                "aggregation_summary": None,
+            },
+        }
+
+    require(path.is_file(), "PANELGRAPH_PHASE1_PER_CHUNK_VERDICT_ROWS_MISSING", str(path))
+    live_chunks_by_key = {
+        (row["task_id"], row["category"]): set(row.get("primary_chunk_ids") or [])
+        for row in live_rows
+    }
+    eval_by_key = {(row["task_id"], row["category"]): row for row in eval_rows}
+    expected_eval_chunks = {
+        key: set(row.get("primary_chunk_ids") or [])
+        for key, row in eval_by_key.items()
+    }
+    provided_eval_scores: dict[tuple[str, str], dict[str, float]] = defaultdict(dict)
+    seen_rows: set[tuple[str, str, str]] = set()
+    sanitized_rows: list[dict[str, Any]] = []
+    error_rows: list[dict[str, Any]] = []
+    ignored_non_eval = 0
+
+    with path.open("r", encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                raw = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise PanelGraphPhase1Error(f"PANELGRAPH_PHASE1_PER_CHUNK_VERDICT_JSON_ERROR: {path}:{line_no}: {exc}") from exc
+            require(isinstance(raw, dict), "PANELGRAPH_PHASE1_PER_CHUNK_VERDICT_ROW_NOT_OBJECT", line_no)
+            for key, value in raw.items():
+                if isinstance(value, str):
+                    reject_mounted_drive_fragment(key, value)
+            forbidden = TARGET_LABEL_KEYS.intersection(raw)
+            require(
+                not forbidden,
+                "PANELGRAPH_PHASE1_TARGET_KEYS_IN_PER_CHUNK_VERDICT_ROWS",
+                {"line": line_no, "keys": sorted(forbidden)},
+            )
+            task_id = required_string(raw, "task_id", line_no)
+            category = required_string(raw, "category", line_no)
+            chunk_id = required_string(raw, "chunk_id", line_no)
+            score = raw.get("predicted_oracle_pass")
+            require(
+                type(score) in (int, float) and math.isfinite(float(score)) and 0.0 <= float(score) <= 1.0,
+                "PANELGRAPH_PHASE1_PER_CHUNK_VERDICT_SCORE_INVALID",
+                {"line": line_no, "task_id": task_id, "category": category, "chunk_id": chunk_id},
+            )
+            row_key = (task_id, category)
+            duplicate_key = (task_id, category, chunk_id)
+            require(
+                duplicate_key not in seen_rows,
+                "PANELGRAPH_PHASE1_DUPLICATE_PER_CHUNK_VERDICT_ROW",
+                {"task_id": task_id, "category": category, "chunk_id": chunk_id},
+            )
+            seen_rows.add(duplicate_key)
+            live_chunk_ids = live_chunks_by_key.get(row_key)
+            if live_chunk_ids is None:
+                error_rows.append(per_chunk_error(line_no, task_id, category, chunk_id, "per_chunk_verdict_row_not_in_live_shape_rows"))
+                continue
+            if chunk_id not in live_chunk_ids:
+                error_rows.append(per_chunk_error(line_no, task_id, category, chunk_id, "per_chunk_verdict_chunk_id_not_mapped_to_patch"))
+                continue
+            used_for_eval = row_key in eval_by_key
+            if used_for_eval:
+                provided_eval_scores[row_key][chunk_id] = float(score)
+            else:
+                ignored_non_eval += 1
+            sanitized_rows.append(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "artifact_kind": "panelgraph_phase1_per_chunk_verdict_row",
+                    "formula_version": FORMULA_VERSION,
+                    "task_id": task_id,
+                    "category": category,
+                    "chunk_id": chunk_id,
+                    "predicted_oracle_pass": float(score),
+                    "used_for_offline_aggregation": used_for_eval,
+                    "target_labels_excluded": True,
+                }
+            )
+
+    for (task_id, category), expected_chunks in sorted(expected_eval_chunks.items()):
+        missing = sorted(expected_chunks.difference(provided_eval_scores.get((task_id, category), {})))
+        if missing:
+            error_rows.append(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "artifact_kind": "panelgraph_phase1_per_chunk_verdict_error",
+                    "task_id": task_id,
+                    "category": category,
+                    "error": "per_chunk_verdict_missing_expected_chunks",
+                    "expected_chunk_count": len(expected_chunks),
+                    "missing_chunk_count": len(missing),
+                    "sample_missing_chunk_ids": missing[:8],
+                }
+            )
+
+    coverage_complete = not error_rows and all(
+        expected_chunks and expected_chunks.issubset(provided_eval_scores.get(key, {}))
+        for key, expected_chunks in expected_eval_chunks.items()
+    )
+    aggregation_rows = build_chunk_aggregation_rows(eval_rows, provided_eval_scores) if coverage_complete else []
+    aggregation_summary = summarize_chunk_aggregation(aggregation_rows) if aggregation_rows else None
+    return {
+        "sanitized_rows": sanitized_rows,
+        "aggregation_rows": aggregation_rows,
+        "error_rows": error_rows,
+        "summary": {
+            "source_path": str(path),
+            "source_available": True,
+            "coverage_complete": coverage_complete,
+            "valid_row_count": len(sanitized_rows),
+            "ignored_non_eval_row_count": ignored_non_eval,
+            "error_count": len(error_rows),
+            "expected_eval_row_count": len(eval_rows),
+            "eval_rows_with_complete_chunk_scores": len(aggregation_rows),
+            "aggregation_summary": aggregation_summary,
+        },
+    }
+
+
+def per_chunk_error(line_no: int, task_id: str, category: str, chunk_id: str, error: str) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "artifact_kind": "panelgraph_phase1_per_chunk_verdict_error",
+        "line": line_no,
+        "task_id": task_id,
+        "category": category,
+        "chunk_id": chunk_id,
+        "error": error,
+    }
+
+
+def build_chunk_aggregation_rows(
+    eval_rows: list[dict[str, Any]],
+    provided_scores: dict[tuple[str, str], dict[str, float]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for eval_row in eval_rows:
+        key = (eval_row["task_id"], eval_row["category"])
+        chunk_ids = sorted(eval_row.get("primary_chunk_ids") or [])
+        scores = [float(provided_scores[key][chunk_id]) for chunk_id in chunk_ids]
+        label = 1.0 if eval_row["actual_oracle_pass"] else 0.0
+        row_score = float(eval_row["predicted_oracle_pass"])
+        aggregations = {
+            "mean": mean(scores),
+            "max": max(scores),
+            "min": min(scores),
+        }
+        out = {
+            "schema_version": SCHEMA_VERSION,
+            "artifact_kind": "panelgraph_phase1_chunk_aggregation_row",
+            "formula_version": FORMULA_VERSION,
+            "task_id": eval_row["task_id"],
+            "repo": eval_row["repo"],
+            "category": eval_row["category"],
+            "split": eval_row["split"],
+            "shape_class": eval_row["shape_class"],
+            "chunk_score_count": len(scores),
+            "chunk_ids": chunk_ids,
+            "row_level_predicted_oracle_pass": row_score,
+            "actual_oracle_pass": bool(eval_row["actual_oracle_pass"]),
+            "row_level_absolute_error": abs(row_score - label),
+            "offline_eval_labels_not_live_inputs": True,
+        }
+        for strategy in CHUNK_AGGREGATION_STRATEGIES:
+            score_value = float(aggregations[strategy])
+            out[f"{strategy}_chunk_predicted_oracle_pass"] = score_value
+            out[f"{strategy}_chunk_absolute_error"] = abs(score_value - label)
+            out[f"{strategy}_chunk_abs_score_discrepancy_vs_row_level"] = abs(score_value - row_score)
+            out[f"{strategy}_chunk_absolute_error_delta_vs_row_level"] = abs(score_value - label) - abs(row_score - label)
+        rows.append(out)
+    return rows
+
+
+def summarize_chunk_aggregation(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    row_level_errors = [float(row["row_level_absolute_error"]) for row in rows]
+    summary: dict[str, Any] = {
+        "row_count": len(rows),
+        "row_level_mean_absolute_error": mean(row_level_errors),
+    }
+    max_abs_score_discrepancy = 0.0
+    max_oracle_error_gap = 0.0
+    for strategy in CHUNK_AGGREGATION_STRATEGIES:
+        absolute_errors = [float(row[f"{strategy}_chunk_absolute_error"]) for row in rows]
+        score_discrepancies = [float(row[f"{strategy}_chunk_abs_score_discrepancy_vs_row_level"]) for row in rows]
+        error_deltas = [float(row[f"{strategy}_chunk_absolute_error_delta_vs_row_level"]) for row in rows]
+        summary[f"{strategy}_chunk_mean_absolute_error"] = mean(absolute_errors)
+        summary[f"{strategy}_chunk_mean_absolute_error_delta_vs_row_level"] = mean(error_deltas)
+        summary[f"{strategy}_chunk_mean_abs_score_discrepancy_vs_row_level"] = mean(score_discrepancies)
+        summary[f"{strategy}_chunk_max_abs_score_discrepancy_vs_row_level"] = max(score_discrepancies) if score_discrepancies else None
+        summary[f"{strategy}_chunk_max_absolute_error_delta_vs_row_level"] = max(error_deltas) if error_deltas else None
+        if score_discrepancies:
+            max_abs_score_discrepancy = max(max_abs_score_discrepancy, max(score_discrepancies))
+        if error_deltas:
+            max_oracle_error_gap = max(max_oracle_error_gap, max(error_deltas))
+    summary["max_abs_score_discrepancy_vs_row_level"] = max_abs_score_discrepancy
+    summary["max_oracle_error_gap_vs_row_level"] = max_oracle_error_gap
+    return summary
+
+
+def summarize(
+    live_rows: list[dict[str, Any]],
+    eval_rows: list[dict[str, Any]],
+    ast_indexes: AstIndexes,
+    per_chunk_summary: dict[str, Any],
+) -> dict[str, Any]:
     shape_counts = Counter(row["shape_class"] for row in live_rows)
     split_shape_counts = Counter(f"{row['split']}::{row['shape_class']}" for row in eval_rows)
     multi_file_rows = [row for row in live_rows if row["live_features"]["patch_touched_file_count"] >= 2]
@@ -465,6 +717,7 @@ def summarize(live_rows: list[dict[str, Any]], eval_rows: list[dict[str, Any]], 
         "support_summary": support_summary,
         "offline_eval_by_shape": eval_by_shape,
         "multi_file_vs_single_file_mean_absolute_error_delta": error_gap,
+        "per_chunk_verdict_summary": per_chunk_summary,
     }
 
 
@@ -487,21 +740,41 @@ def pearson(scores: list[float], labels: list[int]) -> float | None:
     return cov / math.sqrt(var_x * var_y)
 
 
-def decide(summary: dict[str, Any], *, min_multi_file_rows: int, min_mapping_coverage: float) -> dict[str, Any]:
+def decide(
+    summary: dict[str, Any],
+    *,
+    min_multi_file_rows: int,
+    min_mapping_coverage: float,
+    min_chunk_aggregation_score_discrepancy: float,
+) -> dict[str, Any]:
     support = summary["support_summary"]
+    per_chunk = summary["per_chunk_verdict_summary"]
     blockers: list[str] = []
     if support["mapping_coverage_fraction"] < min_mapping_coverage:
         blockers.append("patch_to_chunk_mapping_coverage_below_threshold")
     if support["multi_file_split_eval_rows"] < min_multi_file_rows:
         blockers.append("insufficient_multi_file_split_eval_rows")
-    blockers.append("per_chunk_verdict_rows_unavailable")
+    if not per_chunk["source_available"]:
+        blockers.append("per_chunk_verdict_rows_unavailable")
+    elif not per_chunk["coverage_complete"]:
+        blockers.append("per_chunk_verdict_rows_incomplete")
+    aggregation_summary = per_chunk.get("aggregation_summary")
+    discrepancy_measured = bool(per_chunk["coverage_complete"] and aggregation_summary)
+    schema_triggered = False
+    if discrepancy_measured:
+        schema_triggered = (
+            float(aggregation_summary["max_abs_score_discrepancy_vs_row_level"]) >= min_chunk_aggregation_score_discrepancy
+            or float(aggregation_summary["max_oracle_error_gap_vs_row_level"]) >= min_chunk_aggregation_score_discrepancy
+        )
+    schema_allowed = discrepancy_measured and not blockers and schema_triggered
     return {
         "phase1_measured": True,
         "panelgraph_support_present": support["multi_file_corpus_rows"] > 0 and support["multi_chunk_corpus_rows"] > 0,
-        "chunk_aggregation_discrepancy_measured": False,
-        "full_panelgraph_schema_change_recommended": False,
-        "full_panelgraph_schema_change_allowed": False,
-        "next_required_artifact": "per_chunk_verdict_rows_joined_by_task_category_chunk_id",
+        "chunk_aggregation_discrepancy_measured": discrepancy_measured,
+        "chunk_aggregation_schema_triggered": schema_triggered,
+        "full_panelgraph_schema_change_recommended": schema_allowed,
+        "full_panelgraph_schema_change_allowed": schema_allowed,
+        "next_required_artifact": None if discrepancy_measured else "per_chunk_verdict_rows_joined_by_task_category_chunk_id",
         "phase2_blockers": blockers,
     }
 
@@ -534,6 +807,7 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
     corpus_root = Path(args.corpus_root)
     ast_chunks = Path(args.ast_chunks)
     ship_gate_report = Path(args.ship_gate_report)
+    per_chunk_verdict_rows_path = Path(args.per_chunk_verdict_rows) if args.per_chunk_verdict_rows else None
     output_root = Path(args.output_root)
     state_root = Path(args.state_root)
     run_id = args.run_id or f"run-{utc_stamp()}-panelgraph-phase1"
@@ -547,6 +821,8 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
         ("state_root", state_root),
     ):
         require_archive_path(path, label, args.allow_non_aiwonder_roots)
+    if per_chunk_verdict_rows_path is not None:
+        require_archive_path(per_chunk_verdict_rows_path, "per_chunk_verdict_rows", args.allow_non_aiwonder_roots)
     require(not fsv_run_root.exists(), "PANELGRAPH_PHASE1_FSV_ROOT_EXISTS", str(fsv_run_root))
     require(not state_run_root.exists(), "PANELGRAPH_PHASE1_STATE_ROOT_EXISTS", str(state_run_root))
     fsv_run_root.mkdir(parents=True, exist_ok=False)
@@ -556,21 +832,31 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
     predictions = load_ship_gate_rows(ship_gate_report)
     ast_indexes = load_ast_indexes(ast_chunks)
     live_rows, eval_rows, diagnostics = build_rows(index_rows, corpus_root, ast_indexes, predictions)
-    summary = summarize(live_rows, eval_rows, ast_indexes)
+    per_chunk_verdicts = load_per_chunk_verdict_rows(per_chunk_verdict_rows_path, live_rows, eval_rows)
+    summary = summarize(live_rows, eval_rows, ast_indexes, per_chunk_verdicts["summary"])
     decision = decide(
         summary,
         min_multi_file_rows=int(args.min_multi_file_split_eval_rows),
         min_mapping_coverage=float(args.min_mapping_coverage),
+        min_chunk_aggregation_score_discrepancy=float(args.min_chunk_aggregation_score_discrepancy),
     )
 
     live_rows_path = fsv_run_root / "panelgraph_phase1_live_shape_rows.jsonl"
     eval_rows_path = fsv_run_root / "panelgraph_phase1_offline_eval_rows.jsonl"
     mapping_errors_path = fsv_run_root / "panelgraph_phase1_mapping_errors.jsonl"
+    per_chunk_rows_path = fsv_run_root / "panelgraph_phase1_per_chunk_verdict_rows.jsonl"
+    chunk_aggregation_path = fsv_run_root / "panelgraph_phase1_chunk_aggregation_rows.jsonl"
+    per_chunk_errors_path = fsv_run_root / "panelgraph_phase1_per_chunk_verdict_errors.jsonl"
     manifest_path = fsv_run_root / "panelgraph_phase1_manifest.json"
     write_jsonl(live_rows_path, live_rows)
     write_jsonl(eval_rows_path, eval_rows)
     write_jsonl(mapping_errors_path, diagnostics["mapping_errors"])
-    output_hits_before_manifest = mounted_drive_hits([live_rows_path, eval_rows_path, mapping_errors_path])
+    write_jsonl(per_chunk_rows_path, per_chunk_verdicts["sanitized_rows"])
+    write_jsonl(chunk_aggregation_path, per_chunk_verdicts["aggregation_rows"])
+    write_jsonl(per_chunk_errors_path, per_chunk_verdicts["error_rows"])
+    output_hits_before_manifest = mounted_drive_hits(
+        [live_rows_path, eval_rows_path, mapping_errors_path, per_chunk_rows_path, chunk_aggregation_path, per_chunk_errors_path]
+    )
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "artifact_kind": ARTIFACT_KIND,
@@ -583,11 +869,16 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
             "corpus_root": str(corpus_root),
             "ast_chunks": str(ast_chunks),
             "ship_gate_report": str(ship_gate_report),
+            "per_chunk_verdict_rows": str(per_chunk_verdict_rows_path) if per_chunk_verdict_rows_path else None,
+            "min_chunk_aggregation_score_discrepancy": float(args.min_chunk_aggregation_score_discrepancy),
         },
         "artifacts": {
             "live_shape_rows": str(live_rows_path),
             "offline_eval_rows": str(eval_rows_path),
             "mapping_errors": str(mapping_errors_path),
+            "per_chunk_verdict_rows": str(per_chunk_rows_path),
+            "chunk_aggregation_rows": str(chunk_aggregation_path),
+            "per_chunk_verdict_errors": str(per_chunk_errors_path),
         },
         "summary": summary,
         "decision": decision,
@@ -605,7 +896,15 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
         "passes": output_hits_before_manifest == 0,
     }
     write_json(manifest_path, manifest)
-    fsv_paths = [live_rows_path, eval_rows_path, mapping_errors_path, manifest_path]
+    fsv_paths = [
+        live_rows_path,
+        eval_rows_path,
+        mapping_errors_path,
+        per_chunk_rows_path,
+        chunk_aggregation_path,
+        per_chunk_errors_path,
+        manifest_path,
+    ]
     state_paths = copy_to_state(fsv_paths, fsv_run_root, state_run_root)
     hash_path = fsv_run_root / "artifact_hashes.json"
     all_hashes = artifact_hashes(
@@ -649,11 +948,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--corpus-root", type=Path, default=DEFAULT_CORPUS_ROOT)
     parser.add_argument("--ast-chunks", type=Path, default=DEFAULT_AST_CHUNKS)
     parser.add_argument("--ship-gate-report", type=Path, default=DEFAULT_SHIP_GATE_REPORT)
+    parser.add_argument("--per-chunk-verdict-rows", type=Path, default=None)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--state-root", type=Path, default=DEFAULT_STATE_ROOT)
     parser.add_argument("--run-id", default="")
     parser.add_argument("--min-multi-file-split-eval-rows", type=int, default=30)
     parser.add_argument("--min-mapping-coverage", type=float, default=0.95)
+    parser.add_argument("--min-chunk-aggregation-score-discrepancy", type=float, default=0.10)
     parser.add_argument("--allow-non-aiwonder-roots", action="store_true")
     return parser.parse_args()
 

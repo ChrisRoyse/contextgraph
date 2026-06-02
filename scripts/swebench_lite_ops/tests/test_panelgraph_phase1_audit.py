@@ -123,6 +123,15 @@ def pred(task_id: str, category: str, actual: bool, score: float) -> dict:
     }
 
 
+def chunk_verdict(task_id: str, category: str, chunk_suffix: str, score: float) -> dict:
+    return {
+        "task_id": task_id,
+        "category": category,
+        "chunk_id": "sha256:" + hashlib64(chunk_suffix),
+        "predicted_oracle_pass": score,
+    }
+
+
 def args(tmp_path: Path, corpus: Path, ast: Path, ship: Path, **overrides: object) -> Namespace:
     values = {
         "corpus_root": corpus,
@@ -133,6 +142,8 @@ def args(tmp_path: Path, corpus: Path, ast: Path, ship: Path, **overrides: objec
         "run_id": "run-test-panelgraph",
         "min_multi_file_split_eval_rows": 1,
         "min_mapping_coverage": 0.95,
+        "per_chunk_verdict_rows": None,
+        "min_chunk_aggregation_score_discrepancy": 0.10,
         "allow_non_aiwonder_roots": True,
     }
     values.update(overrides)
@@ -152,8 +163,10 @@ def test_panelgraph_phase1_writes_live_and_eval_artifacts_without_mounted_paths(
     assert manifest["decision"]["panelgraph_support_present"] is True
     assert manifest["decision"]["full_panelgraph_schema_change_allowed"] is False
     assert "per_chunk_verdict_rows_unavailable" in manifest["decision"]["phase2_blockers"]
+    assert manifest["summary"]["per_chunk_verdict_summary"]["source_available"] is False
     assert Path(result["state_manifest"]).read_text(encoding="utf-8") == Path(result["manifest"]).read_text(encoding="utf-8")
     assert all("actual_oracle_pass" not in row["live_features"] for row in live_rows)
+    assert all(row["primary_chunk_ids"] for row in live_rows)
     assert any(row["shape_class"] == "multi_file_multi_chunk" for row in live_rows)
     assert len(eval_rows) == 3
     for path in [Path(result["manifest"]), Path(manifest["artifacts"]["live_shape_rows"]), Path(manifest["artifacts"]["offline_eval_rows"])]:
@@ -170,6 +183,77 @@ def test_insufficient_multifile_support_blocks_phase2(tmp_path: Path):
     assert manifest["decision"]["panelgraph_support_present"] is True
     assert "insufficient_multi_file_split_eval_rows" in manifest["decision"]["phase2_blockers"]
     assert manifest["decision"]["full_panelgraph_schema_change_recommended"] is False
+
+
+def test_valid_per_chunk_verdict_rows_measure_aggregation_discrepancy(tmp_path: Path):
+    corpus, ast, ship = seed_fixture(tmp_path)
+    verdict_rows = tmp_path / "per_chunk_verdicts.jsonl"
+    write_jsonl(
+        verdict_rows,
+        [
+            chunk_verdict("task-single", "off_by_one", "candidate-task-single-0", 0.20),
+            chunk_verdict("task-multi", "known_good", "candidate-task-multi-0", 0.10),
+            chunk_verdict("task-multi", "known_good", "candidate-task-multi-1", 0.90),
+            chunk_verdict("task-cal", "swap_variable", "candidate-task-cal-0", 0.20),
+            chunk_verdict("task-cal", "swap_variable", "candidate-task-cal-1", 0.40),
+        ],
+    )
+
+    result = run_audit(args(tmp_path, corpus, ast, ship, per_chunk_verdict_rows=verdict_rows))
+    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+    aggregation_rows = [
+        json.loads(line)
+        for line in Path(manifest["artifacts"]["chunk_aggregation_rows"]).read_text(encoding="utf-8").splitlines()
+    ]
+    verdict_out_rows = [
+        json.loads(line)
+        for line in Path(manifest["artifacts"]["per_chunk_verdict_rows"]).read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert manifest["decision"]["chunk_aggregation_discrepancy_measured"] is True
+    assert manifest["decision"]["chunk_aggregation_schema_triggered"] is True
+    assert manifest["decision"]["full_panelgraph_schema_change_allowed"] is True
+    assert "per_chunk_verdict_rows_unavailable" not in manifest["decision"]["phase2_blockers"]
+    assert manifest["summary"]["per_chunk_verdict_summary"]["coverage_complete"] is True
+    assert manifest["summary"]["per_chunk_verdict_summary"]["aggregation_summary"]["row_count"] == 3
+    assert len(aggregation_rows) == 3
+    assert len(verdict_out_rows) == 5
+    assert all("actual_oracle_pass" not in row for row in verdict_out_rows)
+
+
+def test_per_chunk_verdict_rows_reject_target_label_leakage(tmp_path: Path):
+    corpus, ast, ship = seed_fixture(tmp_path)
+    verdict_rows = tmp_path / "per_chunk_verdicts.jsonl"
+    leaked = chunk_verdict("task-single", "off_by_one", "candidate-task-single-0", 0.20)
+    leaked["actual_oracle_pass"] = False
+    write_jsonl(verdict_rows, [leaked])
+
+    with pytest.raises(PanelGraphPhase1Error, match="PANELGRAPH_PHASE1_TARGET_KEYS_IN_PER_CHUNK_VERDICT_ROWS"):
+        run_audit(args(tmp_path, corpus, ast, ship, per_chunk_verdict_rows=verdict_rows))
+
+
+def test_incomplete_per_chunk_verdict_rows_block_discrepancy_measurement(tmp_path: Path):
+    corpus, ast, ship = seed_fixture(tmp_path)
+    verdict_rows = tmp_path / "per_chunk_verdicts.jsonl"
+    write_jsonl(
+        verdict_rows,
+        [
+            chunk_verdict("task-single", "off_by_one", "candidate-task-single-0", 0.20),
+            chunk_verdict("task-multi", "known_good", "candidate-task-multi-0", 0.10),
+            chunk_verdict("task-cal", "swap_variable", "candidate-task-cal-0", 0.20),
+        ],
+    )
+
+    result = run_audit(args(tmp_path, corpus, ast, ship, per_chunk_verdict_rows=verdict_rows))
+    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+    error_rows = [
+        json.loads(line)
+        for line in Path(manifest["artifacts"]["per_chunk_verdict_errors"]).read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert manifest["decision"]["chunk_aggregation_discrepancy_measured"] is False
+    assert "per_chunk_verdict_rows_incomplete" in manifest["decision"]["phase2_blockers"]
+    assert any(row["error"] == "per_chunk_verdict_missing_expected_chunks" for row in error_rows)
 
 
 def test_empty_index_fails_closed(tmp_path: Path):
