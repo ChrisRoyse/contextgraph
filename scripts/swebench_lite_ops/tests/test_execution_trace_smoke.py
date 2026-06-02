@@ -36,6 +36,7 @@ def _run_pytest_trace_runner(
     repo_root: Path,
     argv: list[str] | None = None,
     max_events: int = 5000,
+    exit_at_max_events: bool = False,
 ) -> dict:
     """Execute the REAL generated runner in a subprocess against a synthetic repo.
 
@@ -55,6 +56,7 @@ def _run_pytest_trace_runner(
     env["CONTEXTGRAPH_TRACE_OUTPUT"] = str(output_path)
     env["CONTEXTGRAPH_TRACE_REPO_ROOT"] = str(repo_root)
     env["CONTEXTGRAPH_TRACE_MAX_EVENTS"] = str(max_events)
+    env["CONTEXTGRAPH_TRACE_EXIT_AT_MAX_EVENTS"] = "1" if exit_at_max_events else "0"
     completed = subprocess.run(
         [sys.executable, "-S", str(runner_path), *(argv or [])],
         env=env,
@@ -175,6 +177,45 @@ def test_pytest_runner_stops_tracing_at_max_events(tmp_path: Path):
     assert payload["coverage"]["events_recorded"] == 5
     assert payload["coverage"]["truncated"] is True
     assert payload["runtime_metrics"]["trace_stopped_at_max_events"] is True
+    validate_trace_payload(payload)
+
+
+def test_pytest_runner_can_exit_at_max_events_for_tox_rows(tmp_path: Path):
+    repo_root = tmp_path / "testbed"
+    repo_root.mkdir()
+    (repo_root / "busy.py").write_text(
+        "def run():\n"
+        "    total = 0\n"
+        "    for i in range(1000):\n"
+        "        total += i\n"
+        "    return total\n",
+        encoding="utf-8",
+    )
+    fake_pytest = (
+        "import sys\n"
+        "def main(argv):\n"
+        "    sys.path.insert(0, " + repr(str(repo_root)) + ")\n"
+        "    import busy\n"
+        "    busy.run()\n"
+        "    raise SystemExit(9)\n"
+    )
+
+    payload = _run_pytest_trace_runner(
+        tmp_path,
+        fake_pytest_pkg=fake_pytest,
+        repo_root=repo_root,
+        argv=["tests/test_sphinx.py"],
+        max_events=5,
+        exit_at_max_events=True,
+    )
+
+    assert payload["execution_outcome"] == "max_events_reached"
+    assert payload["captured_exception"]["type"] == "TraceMaxEventsReached"
+    assert payload["runtime_metrics"]["pytest_exit_code"] == 0
+    assert payload["runtime_metrics"]["exit_at_max_events"] is True
+    assert payload["runtime_metrics"]["trace_stopped_at_max_events"] is True
+    assert payload["coverage"]["truncated"] is True
+    assert len(payload["trace_events"]) == 5
     validate_trace_payload(payload)
 
 
@@ -416,6 +457,7 @@ def test_transform_wraps_tox_current_env_passthrough_with_pytest_runner():
     assert metadata["tox_passthrough_args"] == ["tests/test_ext_viewcode.py", "tests/test_domain_std.py"]
     assert metadata["pytest_args"] == ["tests/test_ext_viewcode.py", "tests/test_domain_std.py"]
     assert any(line == "export CONTEXTGRAPH_TRACE_MAX_EVENTS=12" for line in transformed)
+    assert any(line == "export CONTEXTGRAPH_TRACE_EXIT_AT_MAX_EVENTS=1" for line in transformed)
     assert wrapped_index > transformed.index("CONTEXTGRAPH_TRACE_PY")
     assert begin_marker_index > end_index
 
