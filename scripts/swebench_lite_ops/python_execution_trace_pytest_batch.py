@@ -89,6 +89,21 @@ COMMAND_FAMILY_CONFIGS: dict[str, dict[str, str]] = {
         "progress_artifact_kind": "execution_trace_sympy_bin_test_batch_progress",
         "run_suffix": "sympy-bin-test-batch",
     },
+    "tox": {
+        "artifact_kind": "execution_trace_tox_batch",
+        "bounded_reason": "bounded_subset_run_not_full_tox_batch",
+        "complete_key": "tox_batch_complete",
+        "complete_reason": "tox_trace_generation_complete_for_supported_rows",
+        "failure_reason": "one_or_more_tox_trace_rows_failed",
+        "file_prefix": "tox",
+        "fraction_key": "tox_trace_fraction_of_corpus",
+        "generated_key": "tox_trace_rows_generated",
+        "handler": "tox_current_env_pytest_sys_settrace_v1",
+        "incomplete_reason": "tox_trace_generation_incomplete",
+        "live_reason": "live_sys_settrace_artifacts_generated_for_tox_rows",
+        "progress_artifact_kind": "execution_trace_tox_batch_progress",
+        "run_suffix": "tox-batch",
+    },
 }
 TARGET_SIDE_KEYS = {
     "actual_oracle_pass",

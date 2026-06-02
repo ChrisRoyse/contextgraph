@@ -276,12 +276,29 @@ def command_family(command: str) -> dict[str, Any]:
             "blocker_code": None,
         }
     if executable in {"tox", "tox4"}:
+        tox_args = tokens[1:]
+        if "--current-env" not in tox_args:
+            return {
+                "command": command,
+                "family": "tox",
+                "support_status": "handler_required",
+                "handler": "tox_current_env_pytest_sys_settrace_v1_requires_current_env",
+                "blocker_code": "EXECUTION_TRACE_PLAN_UNSUPPORTED_TOX_WITHOUT_CURRENT_ENV",
+            }
+        if "--" not in tox_args or not tox_args[tox_args.index("--") + 1:]:
+            return {
+                "command": command,
+                "family": "tox",
+                "support_status": "handler_required",
+                "handler": "tox_current_env_pytest_sys_settrace_v1_requires_passthrough",
+                "blocker_code": "EXECUTION_TRACE_PLAN_UNSUPPORTED_TOX_WITHOUT_PASSTHROUGH",
+            }
         return {
             "command": command,
             "family": "tox",
-            "support_status": "handler_required",
-            "handler": "tox_command_trace_adapter_required",
-            "blocker_code": "EXECUTION_TRACE_PLAN_UNSUPPORTED_TOX",
+            "support_status": "supported_current",
+            "handler": "tox_current_env_pytest_sys_settrace_v1",
+            "blocker_code": None,
         }
     if tokens[0] in {"bin/test", "./bin/test"}:
         return {
@@ -579,6 +596,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
     runnable_pytest_rows = [row for row in runnable_rows if row["command_family"] == "pytest_direct"]
     runnable_django_rows = [row for row in runnable_rows if row["command_family"] == "django_runtests"]
     runnable_sympy_rows = [row for row in runnable_rows if row["command_family"] == "sympy_bin_test"]
+    runnable_tox_rows = [row for row in runnable_rows if row["command_family"] == "tox"]
     unsupported_rows = [row for row in row_rows if row["support_status"] != "supported_current"]
     unexpected_categories = sorted(set(summary["categories"]) - EXPECTED_CATEGORIES)
     decision_reasons: list[str] = []
@@ -599,6 +617,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
     runnable_pytest_rows_path = fsv_run_root / "runnable_current_pytest_rows.jsonl"
     runnable_django_rows_path = fsv_run_root / "runnable_current_django_runtests_rows.jsonl"
     runnable_sympy_rows_path = fsv_run_root / "runnable_current_sympy_bin_test_rows.jsonl"
+    runnable_tox_rows_path = fsv_run_root / "runnable_current_tox_rows.jsonl"
     unsupported_rows_path = fsv_run_root / "unsupported_command_rows.jsonl"
     write_jsonl(task_plan_path, task_rows)
     write_jsonl(row_plan_path, row_rows)
@@ -606,6 +625,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
     write_jsonl(runnable_pytest_rows_path, runnable_pytest_rows)
     write_jsonl(runnable_django_rows_path, runnable_django_rows)
     write_jsonl(runnable_sympy_rows_path, runnable_sympy_rows)
+    write_jsonl(runnable_tox_rows_path, runnable_tox_rows)
     write_jsonl(unsupported_rows_path, unsupported_rows)
 
     manifest = {
@@ -655,12 +675,14 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
             "runnable_current_pytest_rows": str(runnable_pytest_rows_path),
             "runnable_current_django_runtests_rows": str(runnable_django_rows_path),
             "runnable_current_sympy_bin_test_rows": str(runnable_sympy_rows_path),
+            "runnable_current_tox_rows": str(runnable_tox_rows_path),
             "unsupported_command_rows": str(unsupported_rows_path),
         },
         "next_actions": [
             "run python_execution_trace_smoke.py across runnable_current_pytest_rows",
             "run python_execution_trace_smoke.py --command-family django_runtests across runnable_current_django_runtests_rows",
             "run python_execution_trace_smoke.py --command-family sympy_bin_test across runnable_current_sympy_bin_test_rows",
+            "run python_execution_trace_smoke.py --command-family tox across runnable_current_tox_rows",
             "add typed sys.settrace handlers for the largest handler_required command families",
             "rerun readiness audit with the generated execution-trace state root",
         ],
@@ -675,6 +697,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
     state_runnable_pytest_rows_path = state_run_root / runnable_pytest_rows_path.name
     state_runnable_django_rows_path = state_run_root / runnable_django_rows_path.name
     state_runnable_sympy_rows_path = state_run_root / runnable_sympy_rows_path.name
+    state_runnable_tox_rows_path = state_run_root / runnable_tox_rows_path.name
     state_unsupported_rows_path = state_run_root / unsupported_rows_path.name
     write_json(state_manifest_path, manifest)
     write_jsonl(state_task_plan_path, task_rows)
@@ -683,6 +706,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
     write_jsonl(state_runnable_pytest_rows_path, runnable_pytest_rows)
     write_jsonl(state_runnable_django_rows_path, runnable_django_rows)
     write_jsonl(state_runnable_sympy_rows_path, runnable_sympy_rows)
+    write_jsonl(state_runnable_tox_rows_path, runnable_tox_rows)
     write_jsonl(state_unsupported_rows_path, unsupported_rows)
     hash_path = write_artifact_hashes(
         fsv_run_root,
@@ -694,6 +718,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
             runnable_pytest_rows_path,
             runnable_django_rows_path,
             runnable_sympy_rows_path,
+            runnable_tox_rows_path,
             unsupported_rows_path,
             state_manifest_path,
             state_task_plan_path,
@@ -702,6 +727,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
             state_runnable_pytest_rows_path,
             state_runnable_django_rows_path,
             state_runnable_sympy_rows_path,
+            state_runnable_tox_rows_path,
             state_unsupported_rows_path,
         ],
     )
@@ -719,6 +745,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
         "runnable_current_pytest_rows": str(runnable_pytest_rows_path),
         "runnable_current_django_runtests_rows": str(runnable_django_rows_path),
         "runnable_current_sympy_bin_test_rows": str(runnable_sympy_rows_path),
+        "runnable_current_tox_rows": str(runnable_tox_rows_path),
         "unsupported_command_rows": str(unsupported_rows_path),
         "artifact_hashes": str(hash_path),
         "summary": summary,

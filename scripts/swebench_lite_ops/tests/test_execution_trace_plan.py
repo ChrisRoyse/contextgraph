@@ -121,6 +121,51 @@ def test_variant_test_output_markers_classify_sympy_bin_test():
     assert result["blocker_code"] is None
 
 
+def test_classify_tox_current_env_is_currently_supported_by_pytest_adapter():
+    result = classify_eval_script(
+        [
+            ": '>>>>> Start Test Output'",
+            "tox --current-env -epy39 -v -- tests/test_ext_viewcode.py",
+            ": '>>>>> End Test Output'",
+        ]
+    )
+
+    assert result["command_family"] == "tox"
+    assert result["support_status"] == "supported_current"
+    assert result["handler"] == "tox_current_env_pytest_sys_settrace_v1"
+    assert result["blocker_code"] is None
+
+
+def test_classify_tox_without_current_env_requires_handler():
+    result = classify_eval_script(
+        [
+            ": '>>>>> Start Test Output'",
+            "tox -epy39 -v -- tests/test_ext_viewcode.py",
+            ": '>>>>> End Test Output'",
+        ]
+    )
+
+    assert result["command_family"] == "tox"
+    assert result["support_status"] == "handler_required"
+    assert result["handler"] == "tox_current_env_pytest_sys_settrace_v1_requires_current_env"
+    assert result["blocker_code"] == "EXECUTION_TRACE_PLAN_UNSUPPORTED_TOX_WITHOUT_CURRENT_ENV"
+
+
+def test_classify_tox_without_passthrough_requires_handler():
+    result = classify_eval_script(
+        [
+            ": '>>>>> Start Test Output'",
+            "tox --current-env -epy39 -v",
+            ": '>>>>> End Test Output'",
+        ]
+    )
+
+    assert result["command_family"] == "tox"
+    assert result["support_status"] == "handler_required"
+    assert result["handler"] == "tox_current_env_pytest_sys_settrace_v1_requires_passthrough"
+    assert result["blocker_code"] == "EXECUTION_TRACE_PLAN_UNSUPPORTED_TOX_WITHOUT_PASSTHROUGH"
+
+
 def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
     corpus_root = tmp_path / "corpus"
     rows = [
@@ -130,6 +175,8 @@ def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
         {"task_id": "django__django-1", "repo": "django/django", "category": "subtle_flip"},
         {"task_id": "sympy__sympy-1", "repo": "sympy/sympy", "category": "known_good"},
         {"task_id": "sympy__sympy-1", "repo": "sympy/sympy", "category": "swap_variable"},
+        {"task_id": "sphinx-doc__sphinx-1", "repo": "sphinx-doc/sphinx", "category": "compile_error"},
+        {"task_id": "sphinx-doc__sphinx-1", "repo": "sphinx-doc/sphinx", "category": "wrong_file"},
     ]
     write_corpus(corpus_root, rows)
     fixture = tmp_path / "spec-fixture.json"
@@ -140,6 +187,7 @@ def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
                 "org__repo-1": script_with_command("pytest -rA tests/test_widget.py"),
                 "django__django-1": script_with_command("./tests/runtests.py migrations.test_commands"),
                 "sympy__sympy-1": script_with_command("bin/test -C --verbose sympy/tests/test_thing.py"),
+                "sphinx-doc__sphinx-1": script_with_command("tox --current-env -epy39 -v -- tests/test_ext_viewcode.py"),
             }
         },
     )
@@ -152,7 +200,7 @@ def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
             output_root=tmp_path / "fsv",
             state_root=tmp_path / "state",
             run_id="run-test",
-            expected_corpus_rows=6,
+            expected_corpus_rows=8,
             namespace="swebench",
             arch="x86_64",
             tag="latest",
@@ -182,6 +230,10 @@ def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
         json.loads(line)
         for line in Path(result["runnable_current_sympy_bin_test_rows"]).read_text(encoding="utf-8").splitlines()
     ]
+    tox_rows = [
+        json.loads(line)
+        for line in Path(result["runnable_current_tox_rows"]).read_text(encoding="utf-8").splitlines()
+    ]
     pytest_rows = [
         json.loads(line)
         for line in Path(result["runnable_current_pytest_rows"]).read_text(encoding="utf-8").splitlines()
@@ -192,15 +244,18 @@ def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
         "django_runtests": 1,
         "pytest_direct": 1,
         "sympy_bin_test": 1,
+        "tox": 1,
     }
-    assert manifest["summary"]["row_support_status_counts"] == {"supported_current": 6}
+    assert manifest["summary"]["row_support_status_counts"] == {"supported_current": 8}
     assert manifest["summary"]["current_supported_trace_fraction"] == 1.0
-    assert len(row_plan) == 6
+    assert len(row_plan) == 8
     assert len(unsupported) == 0
     assert len(django_rows) == 2
     assert all(item["command_family"] == "django_runtests" for item in django_rows)
     assert len(sympy_rows) == 2
     assert all(item["command_family"] == "sympy_bin_test" for item in sympy_rows)
+    assert len(tox_rows) == 2
+    assert all(item["command_family"] == "tox" for item in tox_rows)
     assert len(pytest_rows) == 2
     assert all(item["command_family"] == "pytest_direct" for item in pytest_rows)
     assert all("oracle_all_passed" not in item for item in row_plan)

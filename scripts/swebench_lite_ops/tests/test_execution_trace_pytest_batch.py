@@ -163,6 +163,11 @@ def fake_trace_runner_asserts_sympy(args: Namespace) -> dict[str, object]:
     return fake_trace_runner(args)
 
 
+def fake_trace_runner_asserts_tox(args: Namespace) -> dict[str, object]:
+    assert args.command_family == "tox"
+    return fake_trace_runner(args)
+
+
 def test_load_runnable_rows_rejects_target_side_fields(tmp_path: Path):
     rows_path = tmp_path / "rows.jsonl"
     row = runnable_row("org__repo-1", "known_good", 0)
@@ -215,6 +220,23 @@ def test_load_runnable_rows_accepts_sympy_family_when_requested(tmp_path: Path):
 
     assert rows[0]["command_family"] == "sympy_bin_test"
     assert rows[0]["handler"] == "python_script_sys_settrace_v1"
+
+
+def test_load_runnable_rows_accepts_tox_family_when_requested(tmp_path: Path):
+    rows_path = tmp_path / "rows.jsonl"
+    row = runnable_row(
+        "sphinx-doc__sphinx-1",
+        "known_good",
+        0,
+        command_family="tox",
+        handler="tox_current_env_pytest_sys_settrace_v1",
+    )
+    write_jsonl(rows_path, [row])
+
+    rows = load_runnable_rows(rows_path, command_family="tox")
+
+    assert rows[0]["command_family"] == "tox"
+    assert rows[0]["handler"] == "tox_current_env_pytest_sys_settrace_v1"
 
 
 def test_select_rows_applies_category_offset_and_limit():
@@ -329,6 +351,41 @@ def test_run_batch_sympy_mode_writes_family_specific_artifacts(tmp_path: Path):
     assert manifest["summary"]["sympy_bin_test_trace_rows_generated"] == 1
     assert manifest["decision"]["sympy_bin_test_batch_complete"] is True
     assert Path(result["progress"]).name == "sympy_bin_test_trace_batch_progress.json"
+
+
+def test_run_batch_tox_mode_writes_family_specific_artifacts(tmp_path: Path):
+    rows_path = tmp_path / "runnable-tox.jsonl"
+    rows = [
+        runnable_row(
+            "sphinx-doc__sphinx-1",
+            "known_good",
+            0,
+            command_family="tox",
+            handler="tox_current_env_pytest_sys_settrace_v1",
+        )
+    ]
+    write_jsonl(rows_path, rows)
+
+    result = run_batch(
+        batch_args(tmp_path, rows_path, command_family="tox"),
+        trace_runner=fake_trace_runner_asserts_tox,
+    )
+
+    manifest_path = Path(result["manifest"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    state_manifest = json.loads(
+        (tmp_path / "state" / "run-test" / "tox-batch" / "tox_trace_batch_manifest.json")
+        .read_text(encoding="utf-8")
+    )
+
+    assert result["ok"] is True
+    assert result["command_family"] == "tox"
+    assert manifest_path.name == "tox_trace_batch_manifest.json"
+    assert manifest == state_manifest
+    assert manifest["artifact_kind"] == "execution_trace_tox_batch"
+    assert manifest["summary"]["tox_trace_rows_generated"] == 1
+    assert manifest["decision"]["tox_batch_complete"] is True
+    assert Path(result["progress"]).name == "tox_trace_batch_progress.json"
 
 
 def test_run_batch_row_timeout_bounds_smoke_instance_timeout(tmp_path: Path):

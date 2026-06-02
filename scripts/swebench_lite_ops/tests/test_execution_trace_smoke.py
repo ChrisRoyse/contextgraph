@@ -392,6 +392,76 @@ def test_transform_rejects_multiple_sympy_bin_test_commands():
         )
 
 
+def test_transform_wraps_tox_current_env_passthrough_with_pytest_runner():
+    eval_script = [
+        "source /opt/miniconda3/bin/activate",
+        "conda activate testbed",
+        "cd /testbed",
+        ": '>>>>> Start Test Output'",
+        "tox --current-env -epy39 -v -- tests/test_ext_viewcode.py tests/test_domain_std.py",
+        ": '>>>>> End Test Output'",
+        "git checkout base sphinx/ext/viewcode.py",
+    ]
+
+    transformed, metadata = transform_eval_script_list(eval_script, max_events=12, command_family="tox")
+
+    wrapped = "python /tmp/contextgraph_trace_pytest.py tests/test_ext_viewcode.py tests/test_domain_std.py"
+    wrapped_index = transformed.index(wrapped)
+    end_index = transformed.index(": '>>>>> End Test Output'")
+    begin_marker_index = transformed.index("  echo CONTEXTGRAPH_EXECUTION_TRACE_BEGIN")
+    assert metadata["command_family"] == "tox"
+    assert metadata["handler"] == "tox_current_env_pytest_sys_settrace_v1"
+    assert metadata["tox_executable"] == "tox"
+    assert metadata["tox_args"] == ["--current-env", "-epy39", "-v", "--", "tests/test_ext_viewcode.py", "tests/test_domain_std.py"]
+    assert metadata["tox_passthrough_args"] == ["tests/test_ext_viewcode.py", "tests/test_domain_std.py"]
+    assert metadata["pytest_args"] == ["tests/test_ext_viewcode.py", "tests/test_domain_std.py"]
+    assert any(line == "export CONTEXTGRAPH_TRACE_MAX_EVENTS=12" for line in transformed)
+    assert wrapped_index > transformed.index("CONTEXTGRAPH_TRACE_PY")
+    assert begin_marker_index > end_index
+
+
+def test_transform_wraps_tox_current_env_with_preserved_env_prefix():
+    transformed, metadata = transform_eval_script_list(
+        [
+            ": '>>>>> Start Test Output'",
+            "PYTHONWARNINGS=ignore tox --current-env -epy39 -v -- tests/test_ext_viewcode.py",
+            ": '>>>>> End Test Output'",
+        ],
+        max_events=12,
+        command_family="tox",
+    )
+
+    assert "CONTEXTGRAPH_TRACE_PY" in transformed
+    assert "env PYTHONWARNINGS=ignore python /tmp/contextgraph_trace_pytest.py tests/test_ext_viewcode.py" in transformed
+    assert metadata["preserved_env"] == ["PYTHONWARNINGS=ignore"]
+
+
+def test_transform_rejects_tox_without_current_env():
+    with pytest.raises(ExecutionTraceSmokeError, match="EXECUTION_TRACE_SMOKE_UNSUPPORTED_TOX_REQUIRES_CURRENT_ENV"):
+        transform_eval_script_list(
+            [
+                ": '>>>>> Start Test Output'",
+                "tox -epy39 -v -- tests/test_ext_viewcode.py",
+                ": '>>>>> End Test Output'",
+            ],
+            max_events=10,
+            command_family="tox",
+        )
+
+
+def test_transform_rejects_tox_without_passthrough_tests():
+    with pytest.raises(ExecutionTraceSmokeError, match="EXECUTION_TRACE_SMOKE_UNSUPPORTED_TOX_REQUIRES_PASSTHROUGH"):
+        transform_eval_script_list(
+            [
+                ": '>>>>> Start Test Output'",
+                "tox --current-env -epy39 -v",
+                ": '>>>>> End Test Output'",
+            ],
+            max_events=10,
+            command_family="tox",
+        )
+
+
 def test_python_script_runner_executes_synthetic_script_and_writes_trace(tmp_path: Path):
     repo = tmp_path / "repo"
     script = repo / "tests" / "runtests.py"
