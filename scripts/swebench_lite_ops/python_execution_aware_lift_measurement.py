@@ -57,7 +57,12 @@ DIRECT_OUTCOME_KEYS_EXCLUDED_FROM_FEATURES = {
     "pytest_exit_code",
     "pytest_args",
 }
-FEATURE_NAMES = (
+FEATURE_MODE_AGGREGATE = "aggregate"
+FEATURE_MODE_HASHED_SYMBOLS = "hashed_symbols"
+FEATURE_MODES = (FEATURE_MODE_AGGREGATE, FEATURE_MODE_HASHED_SYMBOLS)
+DEFAULT_HASHED_FEATURE_DIM = 512
+DEFAULT_HASHED_TOKEN_LIMIT = 4096
+AGGREGATE_FEATURE_NAMES = (
     "log_events_recorded",
     "log_events_seen",
     "log_lines_executed",
@@ -74,6 +79,7 @@ FEATURE_NAMES = (
     "line_coverage_density",
     "variable_state_fraction",
 )
+FEATURE_NAMES = AGGREGATE_FEATURE_NAMES
 
 
 class ExecutionAwareLiftMeasurementError(RuntimeError):
@@ -103,6 +109,7 @@ class TraceFeature:
     sha256: str
     producer: str
     features: dict[str, float]
+    symbol_tokens: tuple[str, ...]
     feature_source_summary: dict[str, Any]
 
 
@@ -278,8 +285,15 @@ def load_corpus_entries(corpus_root: Path, expected_rows: int | None) -> list[di
     return out
 
 
-def discover_trace_features(trace_root: Path) -> tuple[dict[tuple[str, str], TraceFeature], dict[str, Any]]:
+def discover_trace_features(
+    trace_root: Path,
+    *,
+    feature_mode: str,
+    hashed_feature_dim: int,
+    hashed_token_limit: int,
+) -> tuple[dict[tuple[str, str], TraceFeature], dict[str, Any]]:
     require(trace_root.is_dir(), "EXECUTION_AWARE_LIFT_TRACE_ROOT_MISSING", {"trace_root": str(trace_root)})
+    feature_names = feature_names_for_mode(feature_mode, hashed_feature_dim)
     candidates: dict[tuple[str, str], list[TraceFeature]] = defaultdict(list)
     scanned_files = 0
     trace_json_files = 0
@@ -307,7 +321,35 @@ def discover_trace_features(trace_root: Path) -> tuple[dict[tuple[str, str], Tra
         category = str(payload.get("category") or infer_category_from_path(path))
         require(task_id, "EXECUTION_AWARE_LIFT_TRACE_TASK_ID_MISSING", {"path": str(path)})
         require(category, "EXECUTION_AWARE_LIFT_TRACE_CATEGORY_MISSING", {"path": str(path)})
-        features, source_summary = extract_trace_features(payload)
+        aggregate_features, source_summary = extract_trace_features(payload)
+        symbol_tokens = extract_symbol_tokens(payload, hashed_token_limit)
+        features = features_for_mode(
+            aggregate_features,
+            symbol_tokens,
+            feature_names=feature_names,
+            feature_mode=feature_mode,
+            hashed_feature_dim=hashed_feature_dim,
+        )
+        source_summary.update(
+            {
+                "feature_mode": feature_mode,
+                "feature_count": len(feature_names),
+                "symbol_token_count": len(symbol_tokens),
+                "unique_symbol_token_count": len(set(symbol_tokens)),
+                "symbol_token_limit": hashed_token_limit,
+                "symbol_tokens_truncated": len(symbol_tokens) >= hashed_token_limit,
+                "hashed_feature_dim": hashed_feature_dim if feature_mode == FEATURE_MODE_HASHED_SYMBOLS else 0,
+                "symbol_token_sources": [
+                    "trace_events.event",
+                    "trace_events.file",
+                    "trace_events.file:line",
+                    "trace_events.function",
+                    "line_coverage.location",
+                    "variable_states.local_names",
+                    "variable_states.locals.keys",
+                ],
+            }
+        )
         candidates[(task_id, category)].append(
             TraceFeature(
                 task_id=task_id,
@@ -316,6 +358,7 @@ def discover_trace_features(trace_root: Path) -> tuple[dict[tuple[str, str], Tra
                 sha256=sha256_file(path),
                 producer=str(payload.get("producer") or "unknown"),
                 features=features,
+                symbol_tokens=tuple(symbol_tokens),
                 feature_source_summary=source_summary,
             )
         )
@@ -331,6 +374,10 @@ def discover_trace_features(trace_root: Path) -> tuple[dict[tuple[str, str], Tra
         "unique_trace_keys": len(selected),
         "duplicate_trace_keys": duplicate_keys,
         "duplicate_resolution": "lexicographically_last_path",
+        "feature_mode": feature_mode,
+        "feature_count": len(feature_names),
+        "hashed_feature_dim": hashed_feature_dim if feature_mode == FEATURE_MODE_HASHED_SYMBOLS else 0,
+        "hashed_token_limit": hashed_token_limit,
         "direct_outcome_keys_seen_but_excluded_from_feature_vector": dict(sorted(direct_outcome_key_counts.items())),
     }
 
@@ -412,7 +459,7 @@ def extract_trace_features(payload: dict[str, Any]) -> tuple[dict[str, float], d
         "line_coverage_density": lines_executed / max(1.0, files_touched),
         "variable_state_fraction": variable_state_count / max(1.0, events_recorded),
     }
-    for name in FEATURE_NAMES:
+    for name in AGGREGATE_FEATURE_NAMES:
         require(name in features and math.isfinite(features[name]), "EXECUTION_AWARE_LIFT_FEATURE_NONFINITE", {"feature": name, "value": features.get(name)})
     return features, {
         "events_recorded": int(events_recorded),
@@ -425,6 +472,114 @@ def extract_trace_features(payload: dict[str, Any]) -> tuple[dict[str, float], d
         "truncated": truncated,
         "direct_outcome_fields_excluded": sorted(DIRECT_OUTCOME_KEYS_EXCLUDED_FROM_FEATURES),
     }
+
+
+def feature_names_for_mode(feature_mode: str, hashed_feature_dim: int) -> list[str]:
+    require(feature_mode in FEATURE_MODES, "EXECUTION_AWARE_LIFT_FEATURE_MODE_UNSUPPORTED", {"feature_mode": feature_mode, "supported": FEATURE_MODES})
+    names = list(AGGREGATE_FEATURE_NAMES)
+    if feature_mode == FEATURE_MODE_HASHED_SYMBOLS:
+        require(hashed_feature_dim > 0, "EXECUTION_AWARE_LIFT_HASHED_FEATURE_DIM_INVALID", {"hashed_feature_dim": hashed_feature_dim})
+        names.extend(hashed_feature_name(index) for index in range(hashed_feature_dim))
+    return names
+
+
+def hashed_feature_name(index: int) -> str:
+    return f"hash_{index:04d}"
+
+
+def features_for_mode(
+    aggregate_features: dict[str, float],
+    symbol_tokens: list[str],
+    *,
+    feature_names: list[str],
+    feature_mode: str,
+    hashed_feature_dim: int,
+) -> dict[str, float]:
+    features = {name: float(aggregate_features[name]) for name in AGGREGATE_FEATURE_NAMES}
+    if feature_mode == FEATURE_MODE_HASHED_SYMBOLS:
+        hashed = hashed_symbol_features(symbol_tokens, hashed_feature_dim)
+        features.update({hashed_feature_name(index): value for index, value in enumerate(hashed)})
+    for name in feature_names:
+        require(name in features and math.isfinite(features[name]), "EXECUTION_AWARE_LIFT_FEATURE_NONFINITE", {"feature": name, "value": features.get(name)})
+    return features
+
+
+def hashed_symbol_features(symbol_tokens: list[str], hashed_feature_dim: int) -> list[float]:
+    vector = [0.0 for _ in range(hashed_feature_dim)]
+    for token, count in Counter(symbol_tokens).items():
+        digest = hashlib.blake2b(token.encode("utf-8"), digest_size=16).digest()
+        bucket = int.from_bytes(digest[:8], "big") % hashed_feature_dim
+        sign = 1.0 if digest[8] & 1 else -1.0
+        vector[bucket] += sign * math.log1p(float(count))
+    norm = math.sqrt(sum(value * value for value in vector))
+    if norm > 0.0:
+        vector = [value / norm for value in vector]
+    return vector
+
+
+def extract_symbol_tokens(payload: dict[str, Any], token_limit: int) -> list[str]:
+    require(token_limit > 0, "EXECUTION_AWARE_LIFT_HASHED_TOKEN_LIMIT_INVALID", {"hashed_token_limit": token_limit})
+    tokens: list[str] = []
+
+    def add(token: str) -> None:
+        if len(tokens) >= token_limit:
+            return
+        normalized = normalize_symbol_token(token)
+        if normalized:
+            tokens.append(normalized)
+
+    trace_events = payload.get("trace_events") if isinstance(payload.get("trace_events"), list) else []
+    for event in trace_events:
+        if not isinstance(event, dict):
+            continue
+        event_name = event.get("event")
+        file_name = event.get("file")
+        function = event.get("function")
+        line = event.get("line")
+        if isinstance(event_name, str):
+            add(f"event:{event_name}")
+        if isinstance(file_name, str):
+            add(f"file:{file_name}")
+            if isinstance(line, (int, str)):
+                add(f"file_line:{file_name}:{line}")
+        if isinstance(function, str):
+            add(f"function:{function}")
+
+    line_coverage = payload.get("line_coverage") if isinstance(payload.get("line_coverage"), list) else []
+    for item in line_coverage:
+        if not isinstance(item, dict):
+            continue
+        location = item.get("location")
+        file_name = item.get("file")
+        line = item.get("line")
+        if isinstance(location, str):
+            add(f"coverage:{location}")
+        elif isinstance(file_name, str) and isinstance(line, (int, str)):
+            add(f"coverage:{file_name}:{line}")
+
+    variable_states = payload.get("variable_states") if isinstance(payload.get("variable_states"), list) else []
+    for item in variable_states:
+        if not isinstance(item, dict):
+            continue
+        local_names = item.get("local_names")
+        if isinstance(local_names, list):
+            for name in local_names:
+                if isinstance(name, str):
+                    add(f"local:{name}")
+        locals_payload = item.get("locals")
+        if isinstance(locals_payload, dict):
+            for name in sorted(locals_payload):
+                if isinstance(name, str):
+                    add(f"local:{name}")
+
+    return tokens
+
+
+def normalize_symbol_token(token: str) -> str:
+    token = token.strip().replace("\\", "/")
+    if not token:
+        return ""
+    return token[:240]
 
 
 def non_negative_number(value: Any, default: float) -> float:
@@ -484,20 +639,24 @@ def fit_and_measure(
     *,
     ridge_alpha: float,
     min_lift: float,
+    feature_names: list[str],
+    feature_mode: str,
+    hashed_feature_dim: int,
+    hashed_token_limit: int,
 ) -> dict[str, Any]:
     import numpy as np
 
     cal_trace = [traces[row.key] for row in calibration]
     hold_trace = [traces[row.key] for row in holdout]
-    means, stds = feature_normalization(cal_trace)
+    means, stds = feature_normalization(cal_trace, feature_names)
     y_cal = np.asarray([row.label for row in calibration], dtype=np.float64)
     y_hold = np.asarray([row.label for row in holdout], dtype=np.float64)
     base_cal = np.asarray([row.base_score for row in calibration], dtype=np.float64)
     base_hold = np.asarray([row.base_score for row in holdout], dtype=np.float64)
     X_static_cal = np.column_stack([np.ones(len(calibration)), [logit(value) for value in base_cal]])
     X_static_hold = np.column_stack([np.ones(len(holdout)), [logit(value) for value in base_hold]])
-    X_trace_cal = np.column_stack([X_static_cal, feature_matrix(cal_trace, means, stds)])
-    X_trace_hold = np.column_stack([X_static_hold, feature_matrix(hold_trace, means, stds)])
+    X_trace_cal = np.column_stack([X_static_cal, feature_matrix(cal_trace, means, stds, feature_names)])
+    X_trace_hold = np.column_stack([X_static_hold, feature_matrix(hold_trace, means, stds, feature_names)])
     static_coeff = fit_ridge(X_static_cal, y_cal, ridge_alpha)
     trace_coeff = fit_ridge(X_trace_cal, y_cal, ridge_alpha)
     static_hold_scores = clip_scores(X_static_hold @ static_coeff)
@@ -528,7 +687,11 @@ def fit_and_measure(
     return {
         "feature_normalization": {
             "fit_partition": "calibration",
-            "feature_names": list(FEATURE_NAMES),
+            "feature_mode": feature_mode,
+            "feature_names": feature_names,
+            "aggregate_feature_count": len(AGGREGATE_FEATURE_NAMES),
+            "hashed_feature_dim": hashed_feature_dim if feature_mode == FEATURE_MODE_HASHED_SYMBOLS else 0,
+            "hashed_token_limit": hashed_token_limit if feature_mode == FEATURE_MODE_HASHED_SYMBOLS else 0,
             "means": means,
             "stds": stds,
         },
@@ -537,7 +700,7 @@ def fit_and_measure(
             "holdout_rows_used_for_fitting": 0,
             "ridge_alpha": ridge_alpha,
             "static_model": coefficient_payload(static_coeff, ["intercept", "base_logit"]),
-            "trace_model": coefficient_payload(trace_coeff, ["intercept", "base_logit", *FEATURE_NAMES]),
+            "trace_model": coefficient_payload(trace_coeff, ["intercept", "base_logit", *feature_names]),
         },
         "report_partition": {
             "holdout_rows": len(holdout),
@@ -557,10 +720,10 @@ def fit_and_measure(
     }
 
 
-def feature_normalization(traces: list[TraceFeature]) -> tuple[dict[str, float], dict[str, float]]:
+def feature_normalization(traces: list[TraceFeature], feature_names: list[str]) -> tuple[dict[str, float], dict[str, float]]:
     means: dict[str, float] = {}
     stds: dict[str, float] = {}
-    for name in FEATURE_NAMES:
+    for name in feature_names:
         values = [trace.features[name] for trace in traces]
         mean = sum(values) / len(values)
         variance = sum((value - mean) ** 2 for value in values) / len(values)
@@ -570,11 +733,11 @@ def feature_normalization(traces: list[TraceFeature]) -> tuple[dict[str, float],
     return means, stds
 
 
-def feature_matrix(traces: list[TraceFeature], means: dict[str, float], stds: dict[str, float]) -> Any:
+def feature_matrix(traces: list[TraceFeature], means: dict[str, float], stds: dict[str, float], feature_names: list[str]) -> Any:
     import numpy as np
 
     return np.asarray(
-        [[(trace.features[name] - means[name]) / stds[name] for name in FEATURE_NAMES] for trace in traces],
+        [[(trace.features[name] - means[name]) / stds[name] for name in feature_names] for trace in traces],
         dtype=np.float64,
     )
 
@@ -689,6 +852,13 @@ def run_measurement(args: argparse.Namespace) -> dict[str, Any]:
     ship_gate_report = Path(args.ship_gate_report)
     corpus_root = Path(args.corpus_root)
     trace_root = Path(args.trace_root)
+    feature_mode = str(getattr(args, "feature_mode", FEATURE_MODE_AGGREGATE))
+    hashed_feature_dim = int(getattr(args, "hashed_feature_dim", DEFAULT_HASHED_FEATURE_DIM))
+    hashed_token_limit = int(getattr(args, "hashed_token_limit", DEFAULT_HASHED_TOKEN_LIMIT))
+    require(feature_mode in FEATURE_MODES, "EXECUTION_AWARE_LIFT_FEATURE_MODE_UNSUPPORTED", {"feature_mode": feature_mode, "supported": FEATURE_MODES})
+    require(0 < hashed_feature_dim <= 8192, "EXECUTION_AWARE_LIFT_HASHED_FEATURE_DIM_INVALID", {"hashed_feature_dim": hashed_feature_dim})
+    require(0 < hashed_token_limit <= 50000, "EXECUTION_AWARE_LIFT_HASHED_TOKEN_LIMIT_INVALID", {"hashed_token_limit": hashed_token_limit})
+    feature_names = feature_names_for_mode(feature_mode, hashed_feature_dim)
     for label, path in (
         ("output_root", output_root),
         ("state_root", state_root),
@@ -714,7 +884,12 @@ def run_measurement(args: argparse.Namespace) -> dict[str, Any]:
         expected_holdout=int(args.expected_holdout_count),
     )
     corpus_entries = load_corpus_entries(corpus_root, int(args.expected_corpus_rows) if args.expected_corpus_rows else None)
-    traces, trace_inventory = discover_trace_features(trace_root)
+    traces, trace_inventory = discover_trace_features(
+        trace_root,
+        feature_mode=feature_mode,
+        hashed_feature_dim=hashed_feature_dim,
+        hashed_token_limit=hashed_token_limit,
+    )
     corpus_keys = {(row["task_id"], row["category"]) for row in corpus_entries}
     trace_keys = set(traces)
     missing_corpus_trace = sorted(corpus_keys - trace_keys)
@@ -737,6 +912,10 @@ def run_measurement(args: argparse.Namespace) -> dict[str, Any]:
         traces,
         ridge_alpha=float(args.ridge_alpha),
         min_lift=float(args.min_correlation_lift),
+        feature_names=feature_names,
+        feature_mode=feature_mode,
+        hashed_feature_dim=hashed_feature_dim,
+        hashed_token_limit=hashed_token_limit,
     )
     calibration_feature_rows = build_feature_rows(calibration, traces, include_labels=True)
     holdout_feature_rows = build_feature_rows(holdout, traces, include_labels=True)
@@ -799,11 +978,20 @@ def run_measurement(args: argparse.Namespace) -> dict[str, Any]:
         "modeling_policy": {
             "offline_measurement_only": True,
             "baseline": "static_calibrated_from_calibration_split",
-            "candidate": "static_calibrated_plus_trace_shape_features",
+            "candidate": (
+                "static_calibrated_plus_trace_hashed_symbol_features"
+                if feature_mode == FEATURE_MODE_HASHED_SYMBOLS
+                else "static_calibrated_plus_trace_shape_features"
+            ),
+            "feature_mode": feature_mode,
+            "feature_count": len(feature_names),
+            "aggregate_feature_count": len(AGGREGATE_FEATURE_NAMES),
+            "hashed_feature_dim": hashed_feature_dim if feature_mode == FEATURE_MODE_HASHED_SYMBOLS else 0,
+            "hashed_token_limit": hashed_token_limit if feature_mode == FEATURE_MODE_HASHED_SYMBOLS else 0,
             "holdout_rows_used_for_fitting": 0,
             "direct_outcome_fields_excluded_from_live_feature_vector": sorted(DIRECT_OUTCOME_KEYS_EXCLUDED_FROM_FEATURES),
             "target_side_oracle_labels_used_only_for_offline_fit_and_report": True,
-            "feature_names": list(FEATURE_NAMES),
+            "feature_names": feature_names,
         },
         "measurement": measurement,
         "decision": {
@@ -862,6 +1050,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expected-calibration-count", type=int, default=240)
     parser.add_argument("--expected-holdout-count", type=int, default=240)
     parser.add_argument("--ridge-alpha", type=float, default=10.0)
+    parser.add_argument("--feature-mode", choices=FEATURE_MODES, default=FEATURE_MODE_AGGREGATE)
+    parser.add_argument("--hashed-feature-dim", type=int, default=DEFAULT_HASHED_FEATURE_DIM)
+    parser.add_argument("--hashed-token-limit", type=int, default=DEFAULT_HASHED_TOKEN_LIMIT)
     parser.add_argument("--min-correlation-lift", type=float, default=0.005)
     parser.add_argument("--min-trace-coverage", type=float, default=0.95)
     parser.add_argument("--allow-non-aiwonder-roots", action="store_true")

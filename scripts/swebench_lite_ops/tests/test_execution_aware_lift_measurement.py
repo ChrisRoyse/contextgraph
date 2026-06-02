@@ -8,6 +8,8 @@ import pytest
 
 from ..python_execution_aware_lift_measurement import (
     CONTESTED_MIXED_CELLS,
+    FEATURE_MODE_AGGREGATE,
+    FEATURE_MODE_HASHED_SYMBOLS,
     ExecutionAwareLiftMeasurementError,
     run_measurement,
 )
@@ -80,8 +82,16 @@ def write_corpus(root: Path, rows: list[dict]) -> None:
     )
 
 
-def write_trace(root: Path, row: dict, *, target_side: bool = False, constant: bool = False) -> None:
+def write_trace(
+    root: Path,
+    row: dict,
+    *,
+    target_side: bool = False,
+    constant: bool = False,
+    symbol_signal: bool = False,
+) -> None:
     line_count = 100 if constant else int(row["_line_count"])
+    symbol = "alpha_shape" if row["actual_oracle_pass"] else "beta_shape"
     payload = {
         "schema_version": 1,
         "producer": "test.trace",
@@ -104,18 +114,38 @@ def write_trace(root: Path, row: dict, *, target_side: bool = False, constant: b
         },
         "steps": {"event_counts": {"call": 2, "line": line_count, "return": 2, "exception": 0}},
         "trace_events": [
-            {"event": "line", "file": f"pkg/mod{idx % 3}.py", "function": f"fn{idx % 5}", "line": idx}
+            {
+                "event": "line",
+                "file": f"pkg/{symbol if symbol_signal else 'mod'}{idx % 3}.py",
+                "function": f"{symbol if symbol_signal else 'fn'}{idx % 5}",
+                "line": idx,
+            }
             for idx in range(min(line_count, 20))
         ],
-        "line_coverage": [{"location": f"pkg/mod.py:{idx}", "count": 1} for idx in range(min(line_count, 20))],
-        "variable_states": [{"event_index": idx, "local_names": ["x"]} for idx in range(min(line_count, 20))],
+        "line_coverage": [
+            {"location": f"pkg/{symbol if symbol_signal else 'mod'}.py:{idx}", "count": 1}
+            for idx in range(min(line_count, 20))
+        ],
+        "variable_states": [
+            {"event_index": idx, "local_names": [symbol if symbol_signal else "x"]}
+            for idx in range(min(line_count, 20))
+        ],
     }
     if target_side:
         payload["actual_oracle_pass"] = row["actual_oracle_pass"]
     write_json(root / row["task_id"] / f"{row['category']}.execution-trace.json", payload)
 
 
-def run_fixture(tmp_path: Path, *, constant_trace: bool = False, target_side_trace: bool = False) -> dict:
+def run_fixture(
+    tmp_path: Path,
+    *,
+    constant_trace: bool = False,
+    target_side_trace: bool = False,
+    symbol_signal: bool = False,
+    feature_mode: str = FEATURE_MODE_AGGREGATE,
+    hashed_feature_dim: int = 64,
+    hashed_token_limit: int = 512,
+) -> dict:
     calibration, holdout, corpus = make_rows()
     ship_gate = tmp_path / "ship-gate-fsv.json"
     corpus_root = tmp_path / "corpus"
@@ -123,7 +153,13 @@ def run_fixture(tmp_path: Path, *, constant_trace: bool = False, target_side_tra
     write_ship_gate(ship_gate, calibration, holdout)
     write_corpus(corpus_root, corpus)
     for row in corpus:
-        write_trace(trace_root, row, constant=constant_trace, target_side=target_side_trace and row is corpus[0])
+        write_trace(
+            trace_root,
+            row,
+            constant=constant_trace,
+            target_side=target_side_trace and row is corpus[0],
+            symbol_signal=symbol_signal,
+        )
     return run_measurement(
         Namespace(
             ship_gate_report=ship_gate,
@@ -136,6 +172,9 @@ def run_fixture(tmp_path: Path, *, constant_trace: bool = False, target_side_tra
             expected_calibration_count=len(calibration),
             expected_holdout_count=len(holdout),
             ridge_alpha=0.01,
+            feature_mode=feature_mode,
+            hashed_feature_dim=hashed_feature_dim,
+            hashed_token_limit=hashed_token_limit,
             min_correlation_lift=0.005,
             min_trace_coverage=0.95,
             allow_non_aiwonder_roots=True,
@@ -171,6 +210,29 @@ def test_no_trace_signal_blocks_promotion(tmp_path: Path):
     assert manifest["decision"]["promotion_blockers"]
 
 
+def test_hashed_symbol_features_measure_symbol_lift_without_outcome_fields(tmp_path: Path):
+    result = run_fixture(
+        tmp_path,
+        constant_trace=True,
+        symbol_signal=True,
+        feature_mode=FEATURE_MODE_HASHED_SYMBOLS,
+        hashed_feature_dim=128,
+    )
+    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+    corpus_feature_keys = set()
+    corpus_path = Path(manifest["artifacts"]["corpus_features"])
+    for line in corpus_path.read_text(encoding="utf-8").splitlines():
+        corpus_feature_keys.update(json.loads(line)["features"])
+
+    assert manifest["modeling_policy"]["feature_mode"] == FEATURE_MODE_HASHED_SYMBOLS
+    assert manifest["modeling_policy"]["candidate"] == "static_calibrated_plus_trace_hashed_symbol_features"
+    assert manifest["decision"]["promotion_allowed"] is True
+    assert "hash_0000" in corpus_feature_keys
+    assert "actual_oracle_pass" not in corpus_feature_keys
+    assert "execution_outcome" not in corpus_feature_keys
+    assert "pytest_exit_code" not in corpus_feature_keys
+
+
 def test_target_side_key_in_trace_fails_closed(tmp_path: Path):
     with pytest.raises(ExecutionAwareLiftMeasurementError, match="EXECUTION_AWARE_LIFT_TARGET_SIDE_KEY_IN_TRACE_PAYLOAD"):
         run_fixture(tmp_path, target_side_trace=True)
@@ -199,6 +261,9 @@ def test_durable_roots_require_aiwonder_without_escape(tmp_path: Path):
                 expected_calibration_count=len(calibration),
                 expected_holdout_count=len(holdout),
                 ridge_alpha=0.01,
+                feature_mode=FEATURE_MODE_AGGREGATE,
+                hashed_feature_dim=64,
+                hashed_token_limit=512,
                 min_correlation_lift=0.005,
                 min_trace_coverage=0.95,
                 allow_non_aiwonder_roots=False,
