@@ -348,6 +348,49 @@ def test_transform_wraps_django_runtests_command_after_trace_runner():
     assert begin_marker_index > end_index
 
 
+def test_transform_wraps_sympy_bin_test_command_after_trace_runner():
+    eval_script = [
+        "source /opt/miniconda3/bin/activate",
+        "conda activate testbed",
+        "cd /testbed",
+        ": '>>>>> Start Test Output'",
+        "PYTHONWARNINGS='ignore::UserWarning,ignore::SyntaxWarning' bin/test -C --verbose sympy/printing/tests/test_ccode.py",
+        ": '>>>>> End Test Output'",
+        "git checkout base sympy/printing/tests/test_ccode.py",
+    ]
+
+    transformed, metadata = transform_eval_script_list(eval_script, max_events=12, command_family="sympy_bin_test")
+
+    wrapped = (
+        "env PYTHONWARNINGS=ignore::UserWarning,ignore::SyntaxWarning "
+        "python /tmp/contextgraph_trace_python_script.py bin/test "
+        "-C --verbose sympy/printing/tests/test_ccode.py"
+    )
+    wrapped_index = transformed.index(wrapped)
+    end_index = transformed.index(": '>>>>> End Test Output'")
+    begin_marker_index = transformed.index("  echo CONTEXTGRAPH_EXECUTION_TRACE_BEGIN")
+    assert metadata["command_family"] == "sympy_bin_test"
+    assert metadata["handler"] == "python_script_sys_settrace_v1"
+    assert metadata["script_path"] == "bin/test"
+    assert metadata["script_args"] == ["-C", "--verbose", "sympy/printing/tests/test_ccode.py"]
+    assert metadata["preserved_env"] == ["PYTHONWARNINGS=ignore::UserWarning,ignore::SyntaxWarning"]
+    assert any(line == "export CONTEXTGRAPH_TRACE_MAX_EVENTS=12" for line in transformed)
+    assert wrapped_index > transformed.index("CONTEXTGRAPH_TRACE_SCRIPT_PY")
+    assert begin_marker_index > end_index
+
+
+def test_transform_rejects_multiple_sympy_bin_test_commands():
+    with pytest.raises(ExecutionTraceSmokeError, match="EXECUTION_TRACE_SMOKE_UNSUPPORTED_TEST_COMMAND"):
+        transform_eval_script_list(
+            [
+                "bin/test -C --verbose sympy/tests/test_a.py",
+                "bin/test -C --verbose sympy/tests/test_b.py",
+            ],
+            max_events=10,
+            command_family="sympy_bin_test",
+        )
+
+
 def test_python_script_runner_executes_synthetic_script_and_writes_trace(tmp_path: Path):
     repo = tmp_path / "repo"
     script = repo / "tests" / "runtests.py"

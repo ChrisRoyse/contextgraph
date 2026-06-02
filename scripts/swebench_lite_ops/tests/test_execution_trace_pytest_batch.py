@@ -158,6 +158,11 @@ def fake_trace_runner_asserts_django(args: Namespace) -> dict[str, object]:
     return fake_trace_runner(args)
 
 
+def fake_trace_runner_asserts_sympy(args: Namespace) -> dict[str, object]:
+    assert args.command_family == "sympy_bin_test"
+    return fake_trace_runner(args)
+
+
 def test_load_runnable_rows_rejects_target_side_fields(tmp_path: Path):
     rows_path = tmp_path / "rows.jsonl"
     row = runnable_row("org__repo-1", "known_good", 0)
@@ -192,6 +197,23 @@ def test_load_runnable_rows_accepts_django_family_when_requested(tmp_path: Path)
     rows = load_runnable_rows(rows_path, command_family="django_runtests")
 
     assert rows[0]["command_family"] == "django_runtests"
+    assert rows[0]["handler"] == "python_script_sys_settrace_v1"
+
+
+def test_load_runnable_rows_accepts_sympy_family_when_requested(tmp_path: Path):
+    rows_path = tmp_path / "rows.jsonl"
+    row = runnable_row(
+        "sympy__sympy-1",
+        "known_good",
+        0,
+        command_family="sympy_bin_test",
+        handler="python_script_sys_settrace_v1",
+    )
+    write_jsonl(rows_path, [row])
+
+    rows = load_runnable_rows(rows_path, command_family="sympy_bin_test")
+
+    assert rows[0]["command_family"] == "sympy_bin_test"
     assert rows[0]["handler"] == "python_script_sys_settrace_v1"
 
 
@@ -272,6 +294,41 @@ def test_run_batch_django_mode_writes_family_specific_artifacts(tmp_path: Path):
     assert manifest["summary"]["django_runtests_trace_rows_generated"] == 1
     assert manifest["decision"]["django_runtests_batch_complete"] is True
     assert Path(result["progress"]).name == "django_runtests_trace_batch_progress.json"
+
+
+def test_run_batch_sympy_mode_writes_family_specific_artifacts(tmp_path: Path):
+    rows_path = tmp_path / "runnable-sympy.jsonl"
+    rows = [
+        runnable_row(
+            "sympy__sympy-1",
+            "known_good",
+            0,
+            command_family="sympy_bin_test",
+            handler="python_script_sys_settrace_v1",
+        )
+    ]
+    write_jsonl(rows_path, rows)
+
+    result = run_batch(
+        batch_args(tmp_path, rows_path, command_family="sympy_bin_test"),
+        trace_runner=fake_trace_runner_asserts_sympy,
+    )
+
+    manifest_path = Path(result["manifest"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    state_manifest = json.loads(
+        (tmp_path / "state" / "run-test" / "sympy-bin-test-batch" / "sympy_bin_test_trace_batch_manifest.json")
+        .read_text(encoding="utf-8")
+    )
+
+    assert result["ok"] is True
+    assert result["command_family"] == "sympy_bin_test"
+    assert manifest_path.name == "sympy_bin_test_trace_batch_manifest.json"
+    assert manifest == state_manifest
+    assert manifest["artifact_kind"] == "execution_trace_sympy_bin_test_batch"
+    assert manifest["summary"]["sympy_bin_test_trace_rows_generated"] == 1
+    assert manifest["decision"]["sympy_bin_test_batch_complete"] is True
+    assert Path(result["progress"]).name == "sympy_bin_test_trace_batch_progress.json"
 
 
 def test_run_batch_row_timeout_bounds_smoke_instance_timeout(tmp_path: Path):

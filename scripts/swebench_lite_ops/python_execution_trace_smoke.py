@@ -35,7 +35,7 @@ TRACE_PYTEST_RUNNER_PATH = "/tmp/contextgraph_trace_pytest.py"
 TRACE_PYTHON_SCRIPT_RUNNER_PATH = "/tmp/contextgraph_trace_python_script.py"
 TRACE_RUNNER_PATH = TRACE_PYTEST_RUNNER_PATH
 SUPPORTED_PYTEST_PREFIX = "pytest"
-SUPPORTED_COMMAND_FAMILIES = {"pytest_direct", "django_runtests"}
+SUPPORTED_COMMAND_FAMILIES = {"pytest_direct", "django_runtests", "sympy_bin_test"}
 
 
 class ExecutionTraceSmokeError(RuntimeError):
@@ -556,7 +556,7 @@ def _heredoc_script_lines(max_events: int, command_family: str, soft_timeout_sec
         runner_path = TRACE_PYTEST_RUNNER_PATH
         runner_source = build_trace_runner_source()
         marker = "CONTEXTGRAPH_TRACE_PY"
-    elif command_family == "django_runtests":
+    elif command_family in {"django_runtests", "sympy_bin_test"}:
         runner_path = TRACE_PYTHON_SCRIPT_RUNNER_PATH
         runner_source = build_python_script_trace_runner_source()
         marker = "CONTEXTGRAPH_TRACE_SCRIPT_PY"
@@ -655,6 +655,25 @@ def _find_django_runtests_command(eval_script_list: list[str]) -> tuple[int, str
     return django_indices[0]
 
 
+def _find_sympy_bin_test_command(eval_script_list: list[str]) -> tuple[int, str, list[str]]:
+    sympy_indices: list[tuple[int, str, list[str]]] = []
+    for idx, command in enumerate(eval_script_list):
+        if _is_eval_setup_or_cleanup(command):
+            continue
+        parts = _split_shell_command(command)
+        prefix_len = 0
+        while prefix_len < len(parts) and _is_env_assignment(parts[prefix_len]):
+            prefix_len += 1
+        if prefix_len < len(parts) and parts[prefix_len] in {"bin/test", "./bin/test"}:
+            sympy_indices.append((idx, command, parts))
+    require(
+        len(sympy_indices) == 1,
+        "EXECUTION_TRACE_SMOKE_UNSUPPORTED_TEST_COMMAND",
+        {"sympy_bin_test_command_count": len(sympy_indices)},
+    )
+    return sympy_indices[0]
+
+
 def _wrap_pytest_command(original_command: str, parts: list[str]) -> tuple[str, dict[str, Any]]:
     require(parts and parts[0] == SUPPORTED_PYTEST_PREFIX, "EXECUTION_TRACE_SMOKE_BAD_PYTEST_COMMAND", original_command)
     wrapped_command = shlex.join(["python", TRACE_PYTEST_RUNNER_PATH, *parts[1:]])
@@ -691,6 +710,33 @@ def _wrap_django_runtests_command(original_command: str, parts: list[str]) -> tu
     }
 
 
+def _wrap_sympy_bin_test_command(original_command: str, parts: list[str]) -> tuple[str, dict[str, Any]]:
+    script_indices = [idx for idx, token in enumerate(parts) if token in {"bin/test", "./bin/test"}]
+    require(
+        len(script_indices) == 1,
+        "EXECUTION_TRACE_SMOKE_BAD_SYMPY_BIN_TEST_COMMAND",
+        {"command": original_command, "bin_test_token_count": len(script_indices)},
+    )
+    script_index = script_indices[0]
+    prefix = parts[:script_index]
+    require(
+        all(_is_env_assignment(token) for token in prefix),
+        "EXECUTION_TRACE_SMOKE_UNSUPPORTED_SYMPY_BIN_TEST_PREFIX",
+        {"command": original_command, "prefix": prefix},
+    )
+    script_args = parts[script_index:]
+    if prefix:
+        wrapped_parts = ["env", *prefix, "python", TRACE_PYTHON_SCRIPT_RUNNER_PATH, *script_args]
+    else:
+        wrapped_parts = ["python", TRACE_PYTHON_SCRIPT_RUNNER_PATH, *script_args]
+    return shlex.join(wrapped_parts), {
+        "handler": "python_script_sys_settrace_v1",
+        "script_path": script_args[0],
+        "script_args": script_args[1:],
+        "preserved_env": prefix,
+    }
+
+
 def transform_eval_script_list(
     eval_script_list: list[str],
     max_events: int,
@@ -706,10 +752,14 @@ def transform_eval_script_list(
         command_index, original_command, parts = _find_pytest_command(eval_script_list)
         wrapped_command, command_metadata = _wrap_pytest_command(original_command, parts)
         legacy_command_index_key = "pytest_command_index"
-    else:
+    elif command_family == "django_runtests":
         command_index, original_command, parts = _find_django_runtests_command(eval_script_list)
         wrapped_command, command_metadata = _wrap_django_runtests_command(original_command, parts)
         legacy_command_index_key = "django_runtests_command_index"
+    else:
+        command_index, original_command, parts = _find_sympy_bin_test_command(eval_script_list)
+        wrapped_command, command_metadata = _wrap_sympy_bin_test_command(original_command, parts)
+        legacy_command_index_key = "sympy_bin_test_command_index"
     transformed = list(eval_script_list)
     transformed[command_index] = wrapped_command
     heredoc_lines = _heredoc_script_lines(max_events, command_family, soft_timeout_seconds)

@@ -287,9 +287,9 @@ def command_family(command: str) -> dict[str, Any]:
         return {
             "command": command,
             "family": "sympy_bin_test",
-            "support_status": "handler_required",
-            "handler": "python_script_sys_settrace_required",
-            "blocker_code": "EXECUTION_TRACE_PLAN_UNSUPPORTED_SYMPY_BIN_TEST",
+            "support_status": "supported_current",
+            "handler": "python_script_sys_settrace_v1",
+            "blocker_code": None,
         }
     if executable in {"python", "python3"} and any(token.endswith(".py") for token in tokens[1:]):
         return {
@@ -578,6 +578,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
     runnable_rows = [row for row in row_rows if row["support_status"] == "supported_current"]
     runnable_pytest_rows = [row for row in runnable_rows if row["command_family"] == "pytest_direct"]
     runnable_django_rows = [row for row in runnable_rows if row["command_family"] == "django_runtests"]
+    runnable_sympy_rows = [row for row in runnable_rows if row["command_family"] == "sympy_bin_test"]
     unsupported_rows = [row for row in row_rows if row["support_status"] != "supported_current"]
     unexpected_categories = sorted(set(summary["categories"]) - EXPECTED_CATEGORIES)
     decision_reasons: list[str] = []
@@ -597,12 +598,14 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
     runnable_current_rows_path = fsv_run_root / "runnable_current_rows.jsonl"
     runnable_pytest_rows_path = fsv_run_root / "runnable_current_pytest_rows.jsonl"
     runnable_django_rows_path = fsv_run_root / "runnable_current_django_runtests_rows.jsonl"
+    runnable_sympy_rows_path = fsv_run_root / "runnable_current_sympy_bin_test_rows.jsonl"
     unsupported_rows_path = fsv_run_root / "unsupported_command_rows.jsonl"
     write_jsonl(task_plan_path, task_rows)
     write_jsonl(row_plan_path, row_rows)
     write_jsonl(runnable_current_rows_path, runnable_rows)
     write_jsonl(runnable_pytest_rows_path, runnable_pytest_rows)
     write_jsonl(runnable_django_rows_path, runnable_django_rows)
+    write_jsonl(runnable_sympy_rows_path, runnable_sympy_rows)
     write_jsonl(unsupported_rows_path, unsupported_rows)
 
     manifest = {
@@ -651,11 +654,13 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
             "runnable_current_rows": str(runnable_current_rows_path),
             "runnable_current_pytest_rows": str(runnable_pytest_rows_path),
             "runnable_current_django_runtests_rows": str(runnable_django_rows_path),
+            "runnable_current_sympy_bin_test_rows": str(runnable_sympy_rows_path),
             "unsupported_command_rows": str(unsupported_rows_path),
         },
         "next_actions": [
             "run python_execution_trace_smoke.py across runnable_current_pytest_rows",
             "run python_execution_trace_smoke.py --command-family django_runtests across runnable_current_django_runtests_rows",
+            "run python_execution_trace_smoke.py --command-family sympy_bin_test across runnable_current_sympy_bin_test_rows",
             "add typed sys.settrace handlers for the largest handler_required command families",
             "rerun readiness audit with the generated execution-trace state root",
         ],
@@ -669,6 +674,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
     state_runnable_current_rows_path = state_run_root / runnable_current_rows_path.name
     state_runnable_pytest_rows_path = state_run_root / runnable_pytest_rows_path.name
     state_runnable_django_rows_path = state_run_root / runnable_django_rows_path.name
+    state_runnable_sympy_rows_path = state_run_root / runnable_sympy_rows_path.name
     state_unsupported_rows_path = state_run_root / unsupported_rows_path.name
     write_json(state_manifest_path, manifest)
     write_jsonl(state_task_plan_path, task_rows)
@@ -676,6 +682,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
     write_jsonl(state_runnable_current_rows_path, runnable_rows)
     write_jsonl(state_runnable_pytest_rows_path, runnable_pytest_rows)
     write_jsonl(state_runnable_django_rows_path, runnable_django_rows)
+    write_jsonl(state_runnable_sympy_rows_path, runnable_sympy_rows)
     write_jsonl(state_unsupported_rows_path, unsupported_rows)
     hash_path = write_artifact_hashes(
         fsv_run_root,
@@ -686,6 +693,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
             runnable_current_rows_path,
             runnable_pytest_rows_path,
             runnable_django_rows_path,
+            runnable_sympy_rows_path,
             unsupported_rows_path,
             state_manifest_path,
             state_task_plan_path,
@@ -693,6 +701,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
             state_runnable_current_rows_path,
             state_runnable_pytest_rows_path,
             state_runnable_django_rows_path,
+            state_runnable_sympy_rows_path,
             state_unsupported_rows_path,
         ],
     )
@@ -709,6 +718,7 @@ def run_plan(args: argparse.Namespace) -> dict[str, Any]:
         "runnable_current_rows": str(runnable_current_rows_path),
         "runnable_current_pytest_rows": str(runnable_pytest_rows_path),
         "runnable_current_django_runtests_rows": str(runnable_django_rows_path),
+        "runnable_current_sympy_bin_test_rows": str(runnable_sympy_rows_path),
         "unsupported_command_rows": str(unsupported_rows_path),
         "artifact_hashes": str(hash_path),
         "summary": summary,

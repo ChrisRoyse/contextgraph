@@ -116,8 +116,9 @@ def test_variant_test_output_markers_classify_sympy_bin_test():
     )
 
     assert result["command_family"] == "sympy_bin_test"
-    assert result["support_status"] == "handler_required"
-    assert result["blocker_code"] == "EXECUTION_TRACE_PLAN_UNSUPPORTED_SYMPY_BIN_TEST"
+    assert result["support_status"] == "supported_current"
+    assert result["handler"] == "python_script_sys_settrace_v1"
+    assert result["blocker_code"] is None
 
 
 def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
@@ -177,6 +178,10 @@ def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
         json.loads(line)
         for line in Path(result["runnable_current_django_runtests_rows"]).read_text(encoding="utf-8").splitlines()
     ]
+    sympy_rows = [
+        json.loads(line)
+        for line in Path(result["runnable_current_sympy_bin_test_rows"]).read_text(encoding="utf-8").splitlines()
+    ]
     pytest_rows = [
         json.loads(line)
         for line in Path(result["runnable_current_pytest_rows"]).read_text(encoding="utf-8").splitlines()
@@ -188,19 +193,18 @@ def test_run_plan_with_fixture_writes_fsv_and_state_mirrors(tmp_path: Path):
         "pytest_direct": 1,
         "sympy_bin_test": 1,
     }
-    assert manifest["summary"]["row_support_status_counts"] == {
-        "handler_required": 2,
-        "supported_current": 4,
-    }
-    assert manifest["summary"]["current_supported_trace_fraction"] == 0.6666666667
+    assert manifest["summary"]["row_support_status_counts"] == {"supported_current": 6}
+    assert manifest["summary"]["current_supported_trace_fraction"] == 1.0
     assert len(row_plan) == 6
-    assert len(unsupported) == 2
+    assert len(unsupported) == 0
     assert len(django_rows) == 2
     assert all(item["command_family"] == "django_runtests" for item in django_rows)
+    assert len(sympy_rows) == 2
+    assert all(item["command_family"] == "sympy_bin_test" for item in sympy_rows)
     assert len(pytest_rows) == 2
     assert all(item["command_family"] == "pytest_direct" for item in pytest_rows)
     assert all("oracle_all_passed" not in item for item in row_plan)
-    assert "typed_trace_handlers_required" in manifest["decision"]["decision_reasons"]
+    assert manifest["decision"]["decision_reasons"] == ["all_rows_supported_by_current_trace_handlers"]
     assert manifest["doctrine_policy"]["target_labels_used_as_live_inputs"] is False
 
 

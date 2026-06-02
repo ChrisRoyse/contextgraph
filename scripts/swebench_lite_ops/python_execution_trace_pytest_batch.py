@@ -74,6 +74,21 @@ COMMAND_FAMILY_CONFIGS: dict[str, dict[str, str]] = {
         "progress_artifact_kind": "execution_trace_django_runtests_batch_progress",
         "run_suffix": "django-runtests-batch",
     },
+    "sympy_bin_test": {
+        "artifact_kind": "execution_trace_sympy_bin_test_batch",
+        "bounded_reason": "bounded_subset_run_not_full_sympy_bin_test_batch",
+        "complete_key": "sympy_bin_test_batch_complete",
+        "complete_reason": "sympy_bin_test_trace_generation_complete_for_supported_rows",
+        "failure_reason": "one_or_more_sympy_bin_test_trace_rows_failed",
+        "file_prefix": "sympy_bin_test",
+        "fraction_key": "sympy_bin_test_trace_fraction_of_corpus",
+        "generated_key": "sympy_bin_test_trace_rows_generated",
+        "handler": "python_script_sys_settrace_v1",
+        "incomplete_reason": "sympy_bin_test_trace_generation_incomplete",
+        "live_reason": "live_sys_settrace_artifacts_generated_for_sympy_bin_test_rows",
+        "progress_artifact_kind": "execution_trace_sympy_bin_test_batch_progress",
+        "run_suffix": "sympy-bin-test-batch",
+    },
 }
 TARGET_SIDE_KEYS = {
     "actual_oracle_pass",
