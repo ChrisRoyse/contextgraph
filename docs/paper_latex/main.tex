@@ -97,7 +97,9 @@ Golden-Age Spanish, and is published
 locks one subject's identity per frame across a seven-modality panel. The
 calculus computes the associations present in the chosen corpora, which are
 measurable, bounded, and auditable, and the $\binom{N}{2}$ abundance is an upper
-bound under approximate independence.
+bound under approximate independence---capped by the data-processing inequality
+(the signals re-expose corpus information rather than creating it, so the benefit
+is reduced sample complexity) and realised only up to the panel's effective rank.
 
 \medskip
 \noindent\textbf{Primary:} cs.LG \;\textperiodcentered\; \textbf{cross-list:}
@@ -198,7 +200,11 @@ The claim is precise. A frozen embedder panel used as retriever, labeller, and
 runtime guard admits a counting identity with a constructive upper bound, a
 sample-complexity theorem with measured operating points, and a per-output
 verifiability property. All of it is bounded by the associations present in the
-chosen corpora, and all of it is auditable.
+chosen corpora, and all of it is auditable. The counting identity bounds
+extractable \emph{structure}, not information: by the data-processing inequality
+(\S\ref{sec:dpi}) the panel cannot exceed the corpus's information about any real
+outcome, so DDA's operative benefit is reduced sample complexity, and the realised
+yield tracks the panel's effective rank rather than the nominal $\binom{N}{2}$.
 
 % =====================================================================
 \section{The Reframe: Frozen Embedders as a Calculus of Association}
@@ -296,6 +302,14 @@ minus the redundant ones, measured in bits against a real outcome.''
 \item Cross-lens comparison stays structured. The relationships are scalar:
 mutual information and agreement, never dim-wise flattening. The associations live
 between the spaces, and the panel is never collapsed into a single vector.
+\item \textbf{Representation, not extrapolation.} To measure anything true about a
+target $Y$, the corpus must contain observations of $Y$ and the labels must come
+from $Y$. The instrument interpolates \emph{within} the distribution its corpus
+represents; it cannot extrapolate to a phenomenon with zero representation in the
+training data. An axis the corpus never saw is an axis the panel cannot report,
+however many cross-terms are formed. This is the boundary that keeps the calculus
+empirical: it describes the associational structure of assembled corpora, and
+claims nothing about phenomena outside them.
 \end{itemize}
 
 % =====================================================================
@@ -358,14 +372,47 @@ interaction features, and $n$ graph-foundationality scalars. At $N=13$ the
 per-input yield is $13+78+1 = \mathbf{92}$; at $N=7$ (no code graph) it is
 $7+21 = \mathbf{28}$; at $N=21$ (no code graph) it is $21+210 = \mathbf{231}$.
 
-Equation (1) is a structural upper bound under approximate independence. The
-$nN$ term is tight as long as the instruments produce non-constant outputs, and
-the $\binom{N}{2}$ term is realised under approximate orthogonality, which is what
-the differentiation contract enforces (\S\ref{sec:polis}). A signal here is a
+Equation (1) is a structural upper bound under approximate independence, and the
+word \emph{upper} is load-bearing. The $nN$ term is tight as long as the
+instruments produce non-constant outputs, but the $\binom{N}{2}$ term is realised
+only under approximate orthogonality. In practice embedders trained on overlapping
+corpora are correlated, so the \emph{effective} panel rank---the participation
+ratio $N_{\mathrm{eff}}=\bigl(\sum_i\lambda_i\bigr)^2/\sum_i\lambda_i^2$ over the
+cross-embedder covariance spectrum $\{\lambda_i\}$---is smaller than the nominal
+$N$, and the realised pairwise yield falls correspondingly below $\binom{N}{2}$.
+Pairwise decorrelation does not even certify the bound: three instruments can be
+pairwise uncorrelated yet jointly dependent, so the D1 contract
+(\S\ref{sec:polis}) bounds redundancy without certifying joint independence. The
+honest figures to report alongside the nominal count are therefore
+$N_{\mathrm{eff}}$ and the measured cumulative information gain
+$\sum_i\Delta H_i$, not $\binom{N}{2}$ taken as achieved. A signal here is a
 scalar or low-dimensional feature: a deterministic function of a real input or
 fixed-corpus graph under frozen instruments, attached to a specific index, usable
 as input or target without collecting new data. DDA is therefore not synthetic
 generation, not augmentation, and not distillation.
+
+\subsection{What the count is, and is not: the data-processing bound}
+\label{sec:dpi}
+Equation (1) counts \emph{signals}, not \emph{information}, and the distinction is
+the data-processing inequality. For any external target $Y$ and any deterministic
+feature $f$ of the frozen panel applied to the corpus,
+\begin{equation}
+I(D;Y)\ \ge\ I\bigl(f(\Phi(D));Y\bigr),\tag{2}
+\end{equation}
+with equality only when $f$ is a sufficient statistic for $Y$. No marginal
+projection, no $\binom{N}{2}$ cross-term, and no foundationality scalar can carry
+more information about a real outcome than the raw corpus already held. DDA does
+not create information; it \emph{re-exposes} latent information in a form a
+downstream learner can use. Its operative value is therefore \emph{sample-complexity
+reduction}: by pre-structuring the manifold into up to $N+\binom{N}{2}+1$
+differentiated coordinates, a learner reaches a target outcome from far fewer
+labels than the raw input would demand, because structure that was implicit is now
+explicit and low-dimensional. ``Abundance'' in DDA names an abundance of
+\emph{usable, pre-structured coordinates}, never an abundance of information beyond
+the $I(D;Y)$ that (2) caps. The counting identity is thus an upper bound on
+extractable structure, and the information content of that structure is bounded by
+the corpus---the same boundary stated qualitatively in
+\S\ref{sec:reframe-honest}: a panel reports only associations its corpora contain.
 
 \subsection{Meaning compression as the fourth category}
 \label{sec:mc-fourth}
