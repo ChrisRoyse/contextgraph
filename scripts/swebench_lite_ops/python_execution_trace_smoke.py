@@ -160,6 +160,7 @@ def main() -> int:
     events = []
     line_counts = Counter()
     event_counts = Counter()
+    trace_limit_reached = [False]
     started = time.monotonic()
 
     def tracer(frame, event, arg):
@@ -172,6 +173,10 @@ def main() -> int:
             return None
         if event not in {"call", "line", "return", "exception"}:
             return tracer
+        if len(events) >= max_events:
+            trace_limit_reached[0] = True
+            sys.settrace(None)
+            return None
         rel = os.path.relpath(path, repo_root)
         lineno = int(frame.f_lineno)
         event_counts[event] += 1
@@ -187,6 +192,10 @@ def main() -> int:
                     "local_names": sorted(frame.f_locals.keys())[:16],
                 }
             )
+            if len(events) >= max_events:
+                trace_limit_reached[0] = True
+                sys.settrace(None)
+                return None
         return tracer
 
     exit_code = 2
@@ -229,7 +238,7 @@ def main() -> int:
             "lines_executed": len(line_items),
             "events_recorded": len(events),
             "events_seen": int(sum(event_counts.values())),
-            "truncated": int(sum(event_counts.values())) > len(events),
+            "truncated": bool(trace_limit_reached[0]) or int(sum(event_counts.values())) > len(events),
             "execution_outcome": execution_outcome,
         },
         "line_coverage": [{"location": item, "count": count} for item, count in line_items[:2000]],
@@ -237,6 +246,7 @@ def main() -> int:
             "elapsed_ms": elapsed_ms,
             "pytest_exit_code": exit_code,
             "max_events": max_events,
+            "trace_stopped_at_max_events": bool(trace_limit_reached[0]),
             "execution_outcome": execution_outcome,
         },
         "steps": {
@@ -316,6 +326,7 @@ def main() -> int:
     events = []
     line_counts = Counter()
     event_counts = Counter()
+    trace_limit_reached = [False]
     started = time.monotonic()
 
     def tracer(frame, event, arg):
@@ -326,6 +337,10 @@ def main() -> int:
             return None
         if event not in {"call", "line", "return", "exception"}:
             return tracer
+        if len(events) >= max_events:
+            trace_limit_reached[0] = True
+            sys.settrace(None)
+            return None
         rel = os.path.relpath(path, repo_root)
         lineno = int(frame.f_lineno)
         event_counts[event] += 1
@@ -341,6 +356,10 @@ def main() -> int:
                     "local_names": sorted(frame.f_locals.keys())[:16],
                 }
             )
+            if len(events) >= max_events:
+                trace_limit_reached[0] = True
+                sys.settrace(None)
+                return None
         return tracer
 
     exit_code = 1
@@ -383,7 +402,7 @@ def main() -> int:
                 "lines_executed": len(line_items),
                 "events_recorded": len(events),
                 "events_seen": int(sum(event_counts.values())),
-                "truncated": int(sum(event_counts.values())) > len(events),
+                "truncated": bool(trace_limit_reached[0]) or int(sum(event_counts.values())) > len(events),
                 "execution_outcome": execution_outcome,
             },
             "line_coverage": [{"location": item, "count": count} for item, count in line_items[:2000]],
@@ -392,6 +411,7 @@ def main() -> int:
                 "python_script_exit_code": exit_code,
                 "max_events": max_events,
                 "script_dir": script_dir,
+                "trace_stopped_at_max_events": bool(trace_limit_reached[0]),
                 "execution_outcome": execution_outcome,
             },
             "steps": {

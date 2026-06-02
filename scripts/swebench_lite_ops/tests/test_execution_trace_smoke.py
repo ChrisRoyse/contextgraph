@@ -147,6 +147,37 @@ def test_runner_executes_and_scopes_trace_to_repo_root(tmp_path: Path):
     validate_trace_payload(payload)
 
 
+def test_pytest_runner_stops_tracing_at_max_events(tmp_path: Path):
+    repo_root = tmp_path / "testbed"
+    repo_root.mkdir()
+    (repo_root / "busy.py").write_text(
+        "def run():\n"
+        "    total = 0\n"
+        "    for i in range(1000):\n"
+        "        total += i\n"
+        "    return total\n",
+        encoding="utf-8",
+    )
+    fake_pytest = (
+        "import sys\n"
+        "def main(argv):\n"
+        "    sys.path.insert(0, " + repr(str(repo_root)) + ")\n"
+        "    import busy\n"
+        "    assert busy.run() == 499500\n"
+        "    return 0\n"
+    )
+
+    payload = _run_pytest_trace_runner(
+        tmp_path, fake_pytest_pkg=fake_pytest, repo_root=repo_root, argv=["-rA"], max_events=5
+    )
+
+    assert len(payload["trace_events"]) == 5
+    assert payload["coverage"]["events_recorded"] == 5
+    assert payload["coverage"]["truncated"] is True
+    assert payload["runtime_metrics"]["trace_stopped_at_max_events"] is True
+    validate_trace_payload(payload)
+
+
 def test_validate_rejects_non_execution_outcome_without_captured_exception():
     payload = {
         "execution_outcome": "import_error",
@@ -349,6 +380,53 @@ def test_python_script_runner_executes_synthetic_script_and_writes_trace(tmp_pat
     assert payload["steps"]["script_args"] == ["expected"]
     assert payload["coverage"]["lines_executed"] > 0
     assert payload["trace_events"]
+
+
+def test_python_script_runner_stops_tracing_at_max_events(tmp_path: Path):
+    repo = tmp_path / "repo"
+    script = repo / "tests" / "runtests.py"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        "\n".join(
+            [
+                "total = 0",
+                "for i in range(1000):",
+                "    total += i",
+                "raise SystemExit(0 if total == 499500 else 6)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner = tmp_path / "contextgraph_trace_python_script.py"
+    output = tmp_path / "trace.json"
+    runner.write_text(build_python_script_trace_runner_source(), encoding="utf-8")
+    env = dict(os.environ)
+    env.update(
+        {
+            "CONTEXTGRAPH_TRACE_OUTPUT": str(output),
+            "CONTEXTGRAPH_TRACE_REPO_ROOT": str(repo),
+            "CONTEXTGRAPH_TRACE_MAX_EVENTS": "6",
+        }
+    )
+
+    completed = subprocess.run(
+        [sys.executable, str(runner), str(script)],
+        check=False,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=120,
+    )
+
+    assert completed.returncode == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["producer"] == "contextgraph.execution_trace_smoke.python_script_sys_settrace"
+    assert len(payload["trace_events"]) == 6
+    assert payload["coverage"]["events_recorded"] == 6
+    assert payload["coverage"]["truncated"] is True
+    assert payload["runtime_metrics"]["trace_stopped_at_max_events"] is True
+    validate_trace_payload(payload)
 
 
 def test_transform_rejects_non_pytest_command():
