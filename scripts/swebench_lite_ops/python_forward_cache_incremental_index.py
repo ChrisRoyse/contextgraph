@@ -269,13 +269,15 @@ def load_index_rows(path: Path) -> list[dict[str, Any]]:
     return [row for _line_no, row in iter_jsonl(path)]
 
 
-def source_shas(record: dict[str, Any], record_path: Path, line_no: int) -> tuple[str, str]:
+def source_shas(record: dict[str, Any], record_path: Path, line_no: int) -> tuple[str, str, bool]:
     key = record.get("key") or {}
     source_sha256 = validate_sha(
         key.get("source_sha256"),
         "MEJEPA_FORWARD_CACHE_INCREMENTAL_SOURCE_SHA_MISMATCH",
         {"record_path": str(record_path), "line_no": line_no, "field": "key.source_sha256"},
     )
+    if not key.get("source_text_sha256"):
+        return source_sha256, source_sha256, True
     source_text_sha256 = validate_sha(
         key.get("source_text_sha256"),
         "MEJEPA_FORWARD_CACHE_INCREMENTAL_SOURCE_SHA_MISMATCH",
@@ -291,7 +293,7 @@ def source_shas(record: dict[str, Any], record_path: Path, line_no: int) -> tupl
             "source_text_sha256": source_text_sha256,
         },
     )
-    return source_sha256, source_text_sha256
+    return source_sha256, source_text_sha256, False
 
 
 def row_to_v3_index(
@@ -318,7 +320,7 @@ def row_to_v3_index(
     )
     chunk_id = str(key.get("chunk_id") or record.get("chunk_id") or "")
     require(chunk_id, "MEJEPA_FORWARD_CACHE_INCREMENTAL_CHUNK_ID_MISSING", {"record_path": str(record_path), "line_no": line_no})
-    source_sha256, source_text_sha256 = source_shas(record, record_path, line_no)
+    source_sha256, source_text_sha256, legacy_source_text_sha256_derived = source_shas(record, record_path, line_no)
     model_sha256 = validate_sha(
         key.get("model_hash"),
         "MEJEPA_FORWARD_CACHE_INCREMENTAL_MODEL_HASH_MISSING",
@@ -377,6 +379,7 @@ def row_to_v3_index(
         "chunk_id": chunk_id,
         "source_sha256": source_sha256,
         "source_text_sha256": source_text_sha256,
+        "legacy_source_text_sha256_derived_from_source_sha256": legacy_source_text_sha256_derived,
         "embedder_id": expected_embedder,
         "model_sha256": model_sha256,
         "chunker_sha256": chunker_sha256,

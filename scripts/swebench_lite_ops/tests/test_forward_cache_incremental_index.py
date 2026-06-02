@@ -174,6 +174,19 @@ def test_v3_index_generator_writes_active_models_and_global_index(tmp_path: Path
     assert all(case["pass"] is True for case in readback["cases"])
 
 
+def test_v3_index_generator_derives_legacy_missing_source_text_sha(tmp_path: Path):
+    record = base_record("e1", "chunk-a")
+    del record["key"]["source_text_sha256"]
+    forward_root = write_forward_root(tmp_path / "forward", {"e1": [record]})
+
+    readback = run_pipeline(args_for(tmp_path, forward_root))
+    index_row = json.loads((tmp_path / "out" / "global_index" / "shard-000000-offset-000000000.jsonl").read_text(encoding="utf-8"))
+
+    assert readback["passes"] is True
+    assert index_row["source_text_sha256"] == index_row["source_sha256"]
+    assert index_row["legacy_source_text_sha256_derived_from_source_sha256"] is True
+
+
 def test_v3_index_generator_rejects_duplicate_key(tmp_path: Path):
     duplicate = base_record("e1", "chunk-a")
     forward_root = write_forward_root(tmp_path / "forward", {"e1": [duplicate, dict(duplicate)]})

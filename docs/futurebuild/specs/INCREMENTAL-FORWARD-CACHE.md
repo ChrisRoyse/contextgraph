@@ -46,6 +46,13 @@ The current Rust row key already records the load-bearing identity fields:
 - `input_sha256`
 - `source_text_sha256`
 
+Legacy v2 smoke roots created before this field was explicit may contain
+`source_sha256` without `source_text_sha256`. A v3 index generator may derive
+`source_text_sha256 = source_sha256` for that legacy-missing case only, and must
+mark the row with an explicit legacy derivation flag. If both fields are present
+and differ, the generator must fail closed with
+`MEJEPA_FORWARD_CACHE_INCREMENTAL_SOURCE_SHA_MISMATCH`.
+
 The current layout does not provide:
 
 - one durable active-model pointer per embedder
