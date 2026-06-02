@@ -389,11 +389,30 @@ def describe_soft_timeout(exc):
     return info
 
 
+class TraceMaxEventsReached(BaseException):
+    def __init__(self, frame):
+        self.filename = getattr(getattr(frame, "f_code", None), "co_filename", None)
+        self.lineno = getattr(frame, "f_lineno", None)
+        super().__init__("contextgraph trace max events reached")
+
+
+def describe_max_events_reached(exc):
+    info = {"type": "TraceMaxEventsReached", "message": str(exc)}
+    filename = getattr(exc, "filename", None)
+    lineno = getattr(exc, "lineno", None)
+    if filename is not None:
+        info["filename"] = str(filename)
+    if lineno is not None:
+        info["lineno"] = int(lineno)
+    return info
+
+
 def main() -> int:
     output_path = os.environ.get("CONTEXTGRAPH_TRACE_OUTPUT", "/tmp/contextgraph_execution_trace.json")
     repo_root = os.environ.get("CONTEXTGRAPH_TRACE_REPO_ROOT", "/testbed")
     max_events = int(os.environ.get("CONTEXTGRAPH_TRACE_MAX_EVENTS", "5000"))
     soft_timeout_s = int(os.environ.get("CONTEXTGRAPH_TRACE_SOFT_TIMEOUT_SECONDS", "0"))
+    exit_at_max_events = os.environ.get("CONTEXTGRAPH_TRACE_EXIT_AT_MAX_EVENTS", "0") == "1"
     script_argv = sys.argv[1:]
     if not script_argv:
         return 2
@@ -416,6 +435,8 @@ def main() -> int:
         if len(events) >= max_events:
             trace_limit_reached[0] = True
             sys.settrace(None)
+            if exit_at_max_events:
+                raise TraceMaxEventsReached(frame)
             return None
         rel = os.path.relpath(path, repo_root)
         lineno = int(frame.f_lineno)
@@ -435,6 +456,8 @@ def main() -> int:
             if len(events) >= max_events:
                 trace_limit_reached[0] = True
                 sys.settrace(None)
+                if exit_at_max_events:
+                    raise TraceMaxEventsReached(frame)
                 return None
         return tracer
 
@@ -479,6 +502,10 @@ def main() -> int:
         execution_outcome = "run_timeout"
         captured_exception = describe_soft_timeout(exc)
         exit_code = 124
+    except TraceMaxEventsReached as exc:
+        execution_outcome = "max_events_reached"
+        captured_exception = describe_max_events_reached(exc)
+        exit_code = 0
     except KeyboardInterrupt as exc:
         if not soft_timeout_triggered[0]:
             raise
@@ -519,6 +546,7 @@ def main() -> int:
                 "max_events": max_events,
                 "script_dir": script_dir,
                 "soft_timeout_s": soft_timeout_s,
+                "exit_at_max_events": bool(exit_at_max_events),
                 "trace_stopped_at_max_events": bool(trace_limit_reached[0]),
                 "execution_outcome": execution_outcome,
             },
@@ -570,6 +598,7 @@ def _heredoc_script_lines(max_events: int, command_family: str, soft_timeout_sec
         "export CONTEXTGRAPH_TRACE_REPO_ROOT=/testbed",
         f"export CONTEXTGRAPH_TRACE_MAX_EVENTS={int(max_events)}",
         f"export CONTEXTGRAPH_TRACE_SOFT_TIMEOUT_SECONDS={int(soft_timeout_seconds)}",
+        f"export CONTEXTGRAPH_TRACE_EXIT_AT_MAX_EVENTS={1 if command_family == 'sympy_bin_test' else 0}",
         f"rm -f {shlex.quote(TRACE_OUTPUT_PATH)}",
     ]
 

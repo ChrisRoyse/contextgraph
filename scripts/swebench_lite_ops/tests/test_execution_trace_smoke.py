@@ -375,6 +375,7 @@ def test_transform_wraps_sympy_bin_test_command_after_trace_runner():
     assert metadata["script_args"] == ["-C", "--verbose", "sympy/printing/tests/test_ccode.py"]
     assert metadata["preserved_env"] == ["PYTHONWARNINGS=ignore::UserWarning,ignore::SyntaxWarning"]
     assert any(line == "export CONTEXTGRAPH_TRACE_MAX_EVENTS=12" for line in transformed)
+    assert any(line == "export CONTEXTGRAPH_TRACE_EXIT_AT_MAX_EVENTS=1" for line in transformed)
     assert wrapped_index > transformed.index("CONTEXTGRAPH_TRACE_SCRIPT_PY")
     assert begin_marker_index > end_index
 
@@ -485,6 +486,56 @@ def test_python_script_runner_stops_tracing_at_max_events(tmp_path: Path):
     assert payload["coverage"]["events_recorded"] == 6
     assert payload["coverage"]["truncated"] is True
     assert payload["runtime_metrics"]["trace_stopped_at_max_events"] is True
+    validate_trace_payload(payload)
+
+
+def test_python_script_runner_can_exit_at_max_events(tmp_path: Path):
+    repo = tmp_path / "repo"
+    script = repo / "bin" / "test"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        "\n".join(
+            [
+                "total = 0",
+                "for i in range(1000):",
+                "    total += i",
+                "raise SystemExit(9)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner = tmp_path / "contextgraph_trace_python_script.py"
+    output = tmp_path / "trace.json"
+    runner.write_text(build_python_script_trace_runner_source(), encoding="utf-8")
+    env = dict(os.environ)
+    env.update(
+        {
+            "CONTEXTGRAPH_TRACE_OUTPUT": str(output),
+            "CONTEXTGRAPH_TRACE_REPO_ROOT": str(repo),
+            "CONTEXTGRAPH_TRACE_MAX_EVENTS": "6",
+            "CONTEXTGRAPH_TRACE_EXIT_AT_MAX_EVENTS": "1",
+        }
+    )
+
+    completed = subprocess.run(
+        [sys.executable, str(runner), str(script)],
+        check=False,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=120,
+    )
+
+    assert completed.returncode == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["execution_outcome"] == "max_events_reached"
+    assert payload["captured_exception"]["type"] == "TraceMaxEventsReached"
+    assert payload["runtime_metrics"]["python_script_exit_code"] == 0
+    assert payload["runtime_metrics"]["exit_at_max_events"] is True
+    assert payload["runtime_metrics"]["trace_stopped_at_max_events"] is True
+    assert payload["coverage"]["truncated"] is True
+    assert len(payload["trace_events"]) == 6
     validate_trace_payload(payload)
 
 
