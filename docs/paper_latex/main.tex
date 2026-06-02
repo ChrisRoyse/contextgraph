@@ -724,28 +724,6 @@ data strategy, the fixed corpus an organisation already holds admits a structure
 multiplication of supervisory signals per input.
 
 % =====================================================================
-\section{Scope and Future Work}
-\label{sec:limits}
-Three scope notes bound the measured claims. The Case~3 figure of 0.961 is
-encoder-matched, so it is within-WavLM-family agreement, and the cross-encoder
-re-score is the natural confirmation. The voice result is for one speaker in
-English, and Case~1's Golden-Age Spanish transfer is a single, striking instance
-rather than a swept matrix. The per-input counts of 92 and 231 are upper bounds
-under approximate independence, with the exact pairwise yield set by a
-mutual-information audit.
-
-Three experiments would sharpen the picture. The first is an ECAPA-TDNN
-cross-encoder re-score of the Case~3 argmax candidates, which promotes the headline
-to cross-encoder identity ranking once the mean clears $0.85$ with Pearson at least
-$0.6$. The second is a pairwise mutual-information audit across the 13-embedder
-panel and the 21-slot socialmedia2.com slate on 100 to 1{,}000 inputs, which replaces the
-pairwise part of the count with a measured $N_{\mathrm{eff}}$. The third is a
-four-point sweep of $n_m\in\{10,25,50,100\}$ on Case~3, turning the one-row
-sample-complexity anchor into a curve. Beyond those, socialmedia2.com's ${\ge}500$-citizen
-calibration against 30-day tie outcomes turns its differentiation contract from a
-build-time guarantee into a measured-in-bits result.
-
-% =====================================================================
 \section{Conclusion}
 A frozen embedder is a reusable instrument that has memorised the
 association-structure of its training data, and the lens is designed by choosing
