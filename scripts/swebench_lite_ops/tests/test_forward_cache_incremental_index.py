@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ..python_forward_cache_incremental_index import IncrementalIndexError, run_pipeline
+from ..python_forward_cache_incremental_index import IncrementalIndexError, run_missing_key_plan, run_pipeline
 
 
 def sha256_bytes(payload: bytes) -> str:
@@ -141,6 +141,30 @@ def args_for(tmp_path: Path, root: Path) -> argparse.Namespace:
     )
 
 
+def plan_args_for(
+    tmp_path: Path,
+    index_root: Path,
+    *,
+    target_embedder_id: str = "e1",
+    target_model_sha256: str | None = None,
+    target_preprocessing_sha256: str | None = None,
+    active_models_path: Path | None = None,
+) -> argparse.Namespace:
+    return argparse.Namespace(
+        index_root=index_root,
+        active_models_path=active_models_path,
+        output_root=tmp_path / "plan",
+        output_parent=tmp_path,
+        run_id="run-plan",
+        clean_output=False,
+        allow_non_aiwonder_roots=True,
+        target_embedder_id=target_embedder_id,
+        target_model_sha256=target_model_sha256 or fixture_sha(f"model:{target_embedder_id}:next"),
+        target_preprocessing_sha256=target_preprocessing_sha256,
+        allow_empty_plan=False,
+    )
+
+
 def test_v3_index_generator_writes_active_models_and_global_index(tmp_path: Path):
     forward_root = write_forward_root(
         tmp_path / "forward",
@@ -210,3 +234,80 @@ def test_v3_index_generator_rejects_source_sha_mismatch(tmp_path: Path):
 
     with pytest.raises(IncrementalIndexError, match="MEJEPA_FORWARD_CACHE_INCREMENTAL_SOURCE_SHA_MISMATCH"):
         run_pipeline(args_for(tmp_path, forward_root))
+
+
+def test_missing_key_planner_selects_only_target_embedder_new_model(tmp_path: Path):
+    forward_root = write_forward_root(
+        tmp_path / "forward",
+        {
+            "e1": [base_record("e1", "chunk-a"), base_record("e1", "chunk-b")],
+            "e6": [base_record("e6", "chunk-a"), base_record("e6", "chunk-b")],
+        },
+    )
+    run_pipeline(args_for(tmp_path, forward_root))
+
+    readback = run_missing_key_plan(plan_args_for(tmp_path, tmp_path / "out"))
+    inventory_rows = [
+        json.loads(line)
+        for line in (tmp_path / "plan" / "missing_key_inventory.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert readback["passes"] is True
+    assert readback["summary"]["eligible_chunk_count"] == 2
+    assert readback["summary"]["missing_key_count"] == 2
+    assert readback["summary"]["unchanged_embedder_selected_count"] == 0
+    assert readback["summary"]["unchanged_embedder_selection_counts"] == {"e6": 0}
+    assert {row["embedder_id"] for row in inventory_rows} == {"e1"}
+    assert {row["model_sha256"] for row in inventory_rows} == {fixture_sha("model:e1:next")}
+    assert all(row["reason"] == "target_model_row_missing" for row in inventory_rows)
+    assert all(case["pass"] is True for case in readback["cases"])
+
+
+def test_missing_key_planner_rejects_missing_active_model_pointer(tmp_path: Path):
+    forward_root = write_forward_root(
+        tmp_path / "forward",
+        {
+            "e1": [base_record("e1", "chunk-a")],
+            "e6": [base_record("e6", "chunk-a")],
+        },
+    )
+    run_pipeline(args_for(tmp_path, forward_root))
+    active_models_path = tmp_path / "out" / "active_models.json"
+    active_models = json.loads(active_models_path.read_text(encoding="utf-8"))
+    del active_models["active_models"]["e1"]
+    write_json(active_models_path, active_models)
+
+    with pytest.raises(IncrementalIndexError, match="MEJEPA_FORWARD_CACHE_INCREMENTAL_MODEL_POINTER_MISSING"):
+        run_missing_key_plan(plan_args_for(tmp_path, tmp_path / "out"))
+
+
+def test_missing_key_planner_rejects_chunker_mismatch(tmp_path: Path):
+    forward_root = write_forward_root(tmp_path / "forward", {"e1": [base_record("e1", "chunk-a")]})
+    run_pipeline(args_for(tmp_path, forward_root))
+    active_models_path = tmp_path / "out" / "active_models.json"
+    active_models = json.loads(active_models_path.read_text(encoding="utf-8"))
+    active_models["chunker_sha256"] = fixture_sha("different-chunker")
+    write_json(active_models_path, active_models)
+
+    with pytest.raises(IncrementalIndexError, match="MEJEPA_FORWARD_CACHE_INCREMENTAL_CHUNKER_MISMATCH"):
+        run_missing_key_plan(plan_args_for(tmp_path, tmp_path / "out"))
+
+
+def test_missing_key_planner_rejects_empty_selected_row_set(tmp_path: Path):
+    forward_root = write_forward_root(
+        tmp_path / "forward",
+        {
+            "e1": [base_record("e1", "chunk-a"), base_record("e1", "chunk-b")],
+            "e6": [base_record("e6", "chunk-a"), base_record("e6", "chunk-b")],
+        },
+    )
+    run_pipeline(args_for(tmp_path, forward_root))
+
+    with pytest.raises(IncrementalIndexError, match="MEJEPA_FORWARD_CACHE_INCREMENTAL_EMPTY_SELECTED_ROW_SET"):
+        run_missing_key_plan(
+            plan_args_for(
+                tmp_path,
+                tmp_path / "out",
+                target_model_sha256=fixture_sha("model:e1"),
+            )
+        )

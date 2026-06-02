@@ -31,6 +31,18 @@ DEFAULT_CORPUS_PROFILE = "static_ast_python"
 DEFAULT_OUTPUT_PARENT = Path("/zfs/archive/contextgraph/state/forward-cache-incremental-v3")
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 MOUNTED_PATH_MARKERS = ("/mnt/c", "/mnt/d")
+V3_KEY_FIELDS = (
+    "corpus_profile",
+    "chunk_id",
+    "source_sha256",
+    "source_text_sha256",
+    "embedder_id",
+    "model_sha256",
+    "chunker_sha256",
+    "preprocessing_sha256",
+)
+MISSING_KEY_PLAN_ARTIFACT_KIND = "forward_cache_missing_key_plan"
+MISSING_KEY_ARTIFACT_KIND = "forward_cache_missing_key"
 
 
 class IncrementalIndexError(RuntimeError):
@@ -159,6 +171,26 @@ def validate_sha(value: Any, code: str, detail: Any) -> str:
     raw = str(value or "")
     require(bool(SHA256_RE.match(raw)), code, detail)
     return raw
+
+
+def v3_key_from_mapping(value: dict[str, Any]) -> dict[str, str]:
+    return {field: str(value.get(field) or "") for field in V3_KEY_FIELDS}
+
+
+def validate_v3_key_fields(value: dict[str, Any], code: str, detail: Any) -> dict[str, str]:
+    key = v3_key_from_mapping(value)
+    require(all(key.values()), code, detail)
+    for field in (
+        "source_sha256",
+        "source_text_sha256",
+        "model_sha256",
+        "chunker_sha256",
+        "preprocessing_sha256",
+    ):
+        detail_map = dict(detail) if isinstance(detail, dict) else {"detail": detail}
+        detail_map["field"] = field
+        validate_sha(key[field], code, detail_map)
+    return key
 
 
 def reject_mounted_path(path: Path, code: str) -> None:
@@ -519,6 +551,7 @@ def process_shard(
 
 
 def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
+    require(args.cache_root is not None, "MEJEPA_FORWARD_CACHE_INCREMENTAL_CACHE_ROOT_MISSING", "--cache-root")
     require(args.cache_root.exists(), "MEJEPA_FORWARD_CACHE_INCREMENTAL_CACHE_ROOT_MISSING", args.cache_root)
     require(args.max_records_per_embedder is None or args.max_records_per_embedder > 0, "MEJEPA_FORWARD_CACHE_INCREMENTAL_LIMIT_INVALID", args.max_records_per_embedder)
     require_aiwonder_root(args.output_root, args.allow_non_aiwonder_roots)
@@ -639,9 +672,305 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
     return readback
 
 
+def load_active_models(active_models_path: Path) -> tuple[str, dict[str, str], dict[str, Any]]:
+    require(active_models_path.is_file(), "MEJEPA_FORWARD_CACHE_INCREMENTAL_ACTIVE_MODELS_MISSING", active_models_path)
+    reject_mounted_path(active_models_path, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_ACTIVE_MODELS_PATH")
+    payload = read_json(active_models_path)
+    chunker_sha256 = validate_sha(
+        payload.get("chunker_sha256"),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_CHUNKER_HASH_INVALID",
+        {"active_models_path": str(active_models_path), "field": "chunker_sha256"},
+    )
+    active_models_raw = payload.get("active_models") or {}
+    require(
+        isinstance(active_models_raw, dict) and active_models_raw,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_ACTIVE_MODELS_EMPTY",
+        active_models_path,
+    )
+    active_models: dict[str, str] = {}
+    for embedder_id, model_sha256 in sorted(active_models_raw.items()):
+        require(str(embedder_id), "MEJEPA_FORWARD_CACHE_INCREMENTAL_MODEL_POINTER_MISSING", active_models_path)
+        active_models[str(embedder_id)] = validate_sha(
+            model_sha256,
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_MODEL_HASH_MISSING",
+            {"active_models_path": str(active_models_path), "embedder_id": str(embedder_id)},
+        )
+    return chunker_sha256, active_models, payload
+
+
+def global_index_files(index_root: Path) -> list[Path]:
+    global_index_root = index_root / "global_index"
+    require(global_index_root.is_dir(), "MEJEPA_FORWARD_CACHE_INCREMENTAL_GLOBAL_INDEX_MISSING", global_index_root)
+    files = sorted(global_index_root.glob("*.jsonl"))
+    require(files, "MEJEPA_FORWARD_CACHE_INCREMENTAL_GLOBAL_INDEX_EMPTY", global_index_root)
+    return files
+
+
+def read_v3_index_rows(index_root: Path, active_chunker_sha256: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    reject_mounted_path(index_root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_INDEX_ROOT")
+    rows: list[dict[str, Any]] = []
+    files: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for index_path in global_index_files(index_root):
+        reject_mounted_path(index_path, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_INDEX_PATH")
+        file_rows = 0
+        for line_no, row in iter_jsonl(index_path):
+            detail = {"index_path": str(index_path), "line_no": line_no}
+            key = validate_v3_key_fields(row, "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_KEY_INVALID", detail)
+            require(
+                key["chunker_sha256"] == active_chunker_sha256,
+                "MEJEPA_FORWARD_CACHE_INCREMENTAL_CHUNKER_MISMATCH",
+                {**detail, "expected": active_chunker_sha256, "actual": key["chunker_sha256"]},
+            )
+            cache_key_sha256 = validate_sha(
+                row.get("cache_key_sha256"),
+                "MEJEPA_FORWARD_CACHE_INCREMENTAL_CACHE_KEY_INVALID",
+                detail,
+            )
+            recomputed_cache_key = sha256_json(key)
+            require(
+                cache_key_sha256 == recomputed_cache_key,
+                "MEJEPA_FORWARD_CACHE_INCREMENTAL_CACHE_KEY_MISMATCH",
+                {**detail, "expected": recomputed_cache_key, "actual": cache_key_sha256},
+            )
+            record_path = row.get("record_path")
+            if record_path:
+                reject_mounted_path(Path(str(record_path)), "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_RECORD_PATH")
+            require(
+                cache_key_sha256 not in seen_keys,
+                "MEJEPA_FORWARD_CACHE_INCREMENTAL_DUPLICATE_ROW",
+                {**detail, "cache_key_sha256": cache_key_sha256},
+            )
+            seen_keys.add(cache_key_sha256)
+            rows.append({**row, **key})
+            file_rows += 1
+        files.append({"path": str(index_path), "sha256": sha256_file(index_path), "row_count": file_rows})
+    require(rows, "MEJEPA_FORWARD_CACHE_INCREMENTAL_GLOBAL_INDEX_EMPTY", index_root)
+    return rows, files
+
+
+def target_preprocessing_sha256(args: argparse.Namespace, active_target_rows: list[dict[str, Any]]) -> str:
+    if args.target_preprocessing_sha256:
+        return validate_sha(
+            args.target_preprocessing_sha256,
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_PREPROCESSING_HASH_MISSING",
+            "--target-preprocessing-sha256",
+        )
+    values = {str(row["preprocessing_sha256"]) for row in active_target_rows}
+    require(
+        active_target_rows,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_TARGET_EMBEDDER_MISSING",
+        args.target_embedder_id,
+    )
+    require(
+        len(values) == 1,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_TARGET_PREPROCESSING_AMBIGUOUS",
+        {"target_embedder_id": args.target_embedder_id, "preprocessing_sha256_values": sorted(values)},
+    )
+    return next(iter(values))
+
+
+def run_missing_key_plan(args: argparse.Namespace) -> dict[str, Any]:
+    require(args.index_root is not None, "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_ROOT_MISSING", "--index-root")
+    require(args.index_root.exists(), "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_ROOT_MISSING", args.index_root)
+    require(args.target_embedder_id, "MEJEPA_FORWARD_CACHE_INCREMENTAL_TARGET_EMBEDDER_MISSING", "--target-embedder-id")
+    target_model_sha256 = validate_sha(
+        args.target_model_sha256,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_TARGET_MODEL_HASH_INVALID",
+        "--target-model-sha256",
+    )
+    require_aiwonder_root(args.output_root, args.allow_non_aiwonder_roots)
+    reject_mounted_path(args.output_root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_OUTPUT_ROOT")
+    require(
+        args.output_root.absolute() != args.index_root.absolute(),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_OVERLAPS_INDEX_ROOT",
+        {"index_root": str(args.index_root), "output_root": str(args.output_root)},
+    )
+    active_models_path = args.active_models_path or args.index_root / "active_models.json"
+    chunker_sha256, active_models, active_models_payload = load_active_models(active_models_path)
+    before = {"output_root": tree_state(args.output_root)}
+    if args.output_root.exists():
+        require(args.clean_output, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_EXISTS", args.output_root)
+        shutil.rmtree(args.output_root)
+    work_root = args.output_root.with_name(f"{args.output_root.name}.tmp-{os.getpid()}")
+    if work_root.exists():
+        shutil.rmtree(work_root)
+    work_root.mkdir(parents=True)
+    index_rows, index_files = read_v3_index_rows(args.index_root, chunker_sha256)
+    observed_embedders = sorted({str(row["embedder_id"]) for row in index_rows})
+    missing_pointers = sorted(embedder_id for embedder_id in observed_embedders if embedder_id not in active_models)
+    require(
+        not missing_pointers,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_MODEL_POINTER_MISSING",
+        {"active_models_path": str(active_models_path), "missing": missing_pointers},
+    )
+    target_embedder_id = str(args.target_embedder_id)
+    require(
+        target_embedder_id in active_models,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_MODEL_POINTER_MISSING",
+        {"active_models_path": str(active_models_path), "target_embedder_id": target_embedder_id},
+    )
+    active_rows = [
+        row for row in index_rows if str(row["model_sha256"]) == active_models[str(row["embedder_id"])]
+    ]
+    active_target_rows = [
+        row for row in active_rows if str(row["embedder_id"]) == target_embedder_id
+    ]
+    preprocessing_sha256 = target_preprocessing_sha256(args, active_target_rows)
+    chunk_identity_by_key: dict[str, dict[str, str]] = {}
+    for row in active_rows:
+        chunk_identity = {
+            "corpus_profile": str(row["corpus_profile"]),
+            "chunk_id": str(row["chunk_id"]),
+            "source_sha256": str(row["source_sha256"]),
+            "source_text_sha256": str(row["source_text_sha256"]),
+            "chunker_sha256": str(row["chunker_sha256"]),
+        }
+        identity_key = sha256_json(chunk_identity)
+        existing = chunk_identity_by_key.get(identity_key)
+        require(
+            existing is None or existing == chunk_identity,
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_CHUNK_IDENTITY_CONFLICT",
+            {"identity_key": identity_key, "first": existing, "second": chunk_identity},
+        )
+        chunk_identity_by_key[identity_key] = chunk_identity
+    require(
+        chunk_identity_by_key,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_EMPTY_SELECTED_ROW_SET",
+        {"index_root": str(args.index_root), "reason": "no active chunk identities"},
+    )
+    existing_keys = {str(row["cache_key_sha256"]) for row in index_rows}
+    missing_rows: list[dict[str, Any]] = []
+    existing_target_key_count = 0
+    for chunk_identity in sorted(chunk_identity_by_key.values(), key=lambda item: (item["chunk_id"], item["source_sha256"])):
+        key = {
+            **chunk_identity,
+            "embedder_id": target_embedder_id,
+            "model_sha256": target_model_sha256,
+            "preprocessing_sha256": preprocessing_sha256,
+        }
+        cache_key_sha256 = sha256_json(key)
+        if cache_key_sha256 in existing_keys:
+            existing_target_key_count += 1
+            continue
+        missing_rows.append(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "artifact_kind": MISSING_KEY_ARTIFACT_KIND,
+                "cache_key_sha256": cache_key_sha256,
+                **key,
+                "reason": "target_model_row_missing",
+            }
+        )
+    require(
+        args.allow_empty_plan or missing_rows,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_EMPTY_SELECTED_ROW_SET",
+        {
+            "target_embedder_id": target_embedder_id,
+            "target_model_sha256": target_model_sha256,
+            "eligible_chunk_count": len(chunk_identity_by_key),
+            "existing_target_key_count": existing_target_key_count,
+        },
+    )
+    unchanged_embedder_selection_counts = {
+        embedder_id: 0 for embedder_id in observed_embedders if embedder_id != target_embedder_id
+    }
+    require(
+        all(str(row["embedder_id"]) == target_embedder_id for row in missing_rows),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_UNCHANGED_EMBEDDER_SELECTED",
+        {"target_embedder_id": target_embedder_id},
+    )
+    inventory_path = work_root / "missing_key_inventory.jsonl"
+    written_count = write_jsonl(inventory_path, missing_rows)
+    require(
+        written_count == len(missing_rows),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_WRITE_COUNT_MISMATCH",
+        inventory_path,
+    )
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": MISSING_KEY_PLAN_ARTIFACT_KIND,
+        "created_at_utc": utc_now(),
+        "passes": True,
+        "inputs": {
+            "index_root": str(args.index_root),
+            "active_models_path": str(active_models_path),
+            "output_root": str(args.output_root),
+            "target_embedder_id": target_embedder_id,
+            "target_model_sha256": target_model_sha256,
+            "target_preprocessing_sha256": preprocessing_sha256,
+            "allow_empty_plan": bool(args.allow_empty_plan),
+        },
+        "source_summary": {
+            "active_models_sha256": sha256_file(active_models_path),
+            "active_models": active_models,
+            "active_models_artifact_kind": active_models_payload.get("artifact_kind"),
+            "chunker_sha256": chunker_sha256,
+            "global_index_files": index_files,
+        },
+        "summary": {
+            "index_row_count": len(index_rows),
+            "observed_embedder_count": len(observed_embedders),
+            "observed_embedders": observed_embedders,
+            "eligible_chunk_count": len(chunk_identity_by_key),
+            "target_embedder_id": target_embedder_id,
+            "target_model_sha256": target_model_sha256,
+            "target_preprocessing_sha256": preprocessing_sha256,
+            "existing_target_key_count": existing_target_key_count,
+            "missing_key_count": len(missing_rows),
+            "unchanged_embedder_selected_count": sum(unchanged_embedder_selection_counts.values()),
+            "unchanged_embedder_selection_counts": unchanged_embedder_selection_counts,
+        },
+        "cases": [
+            {
+                "case": "active_model_pointers_complete",
+                "expected": "every embedder observed in the index has an active model pointer",
+                "actual": {"missing_pointers": missing_pointers},
+                "pass": not missing_pointers,
+            },
+            {
+                "case": "chunker_identity_matches",
+                "expected": chunker_sha256,
+                "actual": sorted({row["chunker_sha256"] for row in index_rows}),
+                "pass": True,
+            },
+            {
+                "case": "non_empty_missing_key_set",
+                "expected": "missing_key_count > 0 unless allow_empty_plan=true",
+                "actual": {"missing_key_count": len(missing_rows), "allow_empty_plan": bool(args.allow_empty_plan)},
+                "pass": bool(missing_rows) or bool(args.allow_empty_plan),
+            },
+            {
+                "case": "unchanged_embedders_excluded",
+                "expected": 0,
+                "actual": sum(unchanged_embedder_selection_counts.values()),
+                "pass": sum(unchanged_embedder_selection_counts.values()) == 0,
+            },
+        ],
+    }
+    write_json(work_root / "missing_key_plan_manifest.json", manifest)
+    write_json(work_root / "missing_key_plan_artifact_hashes.json", artifact_hashes(work_root))
+    work_root.replace(args.output_root)
+    readback = read_json(args.output_root / "missing_key_plan_manifest.json")
+    after = {"output_root": tree_state(args.output_root)}
+    readback["manual_readback"] = {
+        "before": before,
+        "after": after,
+        "manifest_sha256": sha256_file(args.output_root / "missing_key_plan_manifest.json"),
+        "inventory_sha256": sha256_file(args.output_root / "missing_key_inventory.jsonl"),
+        "artifact_hashes_sha256": sha256_file(args.output_root / "missing_key_plan_artifact_hashes.json"),
+    }
+    write_json(args.output_root / "missing_key_plan.readback.json", readback)
+    return readback
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cache-root", type=Path, required=True)
+    parser.add_argument("--mode", choices=("index", "plan-missing"), default="index")
+    parser.add_argument("--cache-root", type=Path)
+    parser.add_argument("--index-root", type=Path)
+    parser.add_argument("--active-models-path", type=Path)
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--output-parent", type=Path, default=DEFAULT_OUTPUT_PARENT)
     parser.add_argument("--run-id", default=None)
@@ -653,6 +982,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-records-per-embedder", type=int)
     parser.add_argument("--clean-output", action="store_true")
     parser.add_argument("--allow-non-aiwonder-roots", action="store_true")
+    parser.add_argument("--target-embedder-id")
+    parser.add_argument("--target-model-sha256")
+    parser.add_argument("--target-preprocessing-sha256")
+    parser.add_argument("--allow-empty-plan", action="store_true")
     return parser
 
 
@@ -663,11 +996,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.output_root is None:
         args.output_root = args.output_parent / run_id
     try:
-        readback = run_pipeline(args)
+        if args.mode == "index":
+            readback = run_pipeline(args)
+            print(json.dumps(readback["summary"], indent=2, sort_keys=True))
+        else:
+            readback = run_missing_key_plan(args)
+            print(json.dumps(readback["summary"], indent=2, sort_keys=True))
     except IncrementalIndexError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    print(json.dumps(readback["summary"], indent=2, sort_keys=True))
     return 0
 
 
