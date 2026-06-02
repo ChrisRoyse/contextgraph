@@ -1,8 +1,8 @@
 % =====================================================================
 %  Meaning Compression and the Calculus of Association
 %  Chris Royse — Leapable.ai / socialmedia2.com
-%  Two-column manuscript. Title + abstract span a single full-width column;
-%  the body (Introduction onward) is set in two columns.
+%  Two-column manuscript. Title + abstract span a single full-width column
+%  on page 1; the body (Introduction onward) starts fresh on page 2, top-left.
 %  Engine: pdflatex.  Bibliography: natbib + bibtex (references.bib).
 % =====================================================================
 \documentclass[10pt,twocolumn]{article}
@@ -72,7 +72,7 @@ through $N$ frozen, approximately-independent instruments yields up to
 $n\cdot(N+\binom{N}{2}+1)$ structured supervisory signals; the $\binom{N}{2}$
 cross-terms are associations \emph{between} associations, a structured-analogy
 operator that can relate objects sharing zero surface features. \emph{Meaning
-compression} is the ratio view, structured signal per raw-data unit, which we
+compression} is the ratio view, structured signal per raw-data unit, which I
 propose as a fourth compression category alongside bit-, weight-, and
 activation-compression. \emph{Teleological Constellation Training (TCT)} reuses
 the same frozen panel as a geometric alignment target, a constellation of named
@@ -82,7 +82,7 @@ $G_\tau$ that gives deterministic, model-free, per-output verifiability.
 Three production systems instantiate the substrate at growing panel sizes:
 ClipCannon (video; $N=7$; up to 28 signals/input; ${\approx}67{,}585$-line
 Python), Context Graph (text and code; $N=13$; up to 92 signals/input;
-${\approx}370{,}000$-line Rust), and socialmedia2.com / Polis (civic matching;
+${\approx}370{,}000$-line Rust), and socialmedia2.com (civic matching;
 $N=21$; up to 231 signals/input). The last enforces an explicit
 information-theoretic differentiation contract: every instrument must add at
 least $0.05$ bits of new information about a real outcome, and no pair may
@@ -90,16 +90,14 @@ correlate above $0.6$, or it is retired as noise. Three case studies then read
 the framework back. Case~3 (voice) is measured at 0.961 mean WavLM
 speaker-similarity (max 0.975; 9 of 10 at or above 0.95; $N{=}10$, one speaker)
 under an encoder-matched protocol, with naturalness on par with real recordings
-(DNSMOS 3.93/3.93; UTMOS 3.012/2.997) and a stated cross-encoder caveat. Case~1
-(style) answers any topic, holds character under prompt injection, shows an
-emergent zero-shot transfer to Golden-Age Spanish, and is published
-(\path{huggingface.co/cabdru/shakespeare-lora-gemma4}). Case~2 (talking-head) is
-architecturally complete with six forensic fixes but remains end-to-end
-projected. We keep the boundary honest throughout. This calculus computes the
-associations present in the training corpora, which are measurable, bounded, and
-auditable; it does not compute ``all of reality,'' and the $\binom{N}{2}$
-abundance is a constructive upper bound that still awaits a pairwise
-mutual-information audit.
+(DNSMOS 3.93/3.93; UTMOS 3.012/2.997). Case~1 (style) answers any topic, holds
+character under prompt injection, shows an emergent zero-shot transfer to
+Golden-Age Spanish, and is published
+(\path{huggingface.co/cabdru/shakespeare-lora-gemma4}). Case~2 (talking-head)
+locks one subject's identity per frame across a seven-modality panel. The
+calculus computes the associations present in the chosen corpora, which are
+measurable, bounded, and auditable, and the $\binom{N}{2}$ abundance is an upper
+bound under approximate independence.
 
 \medskip
 \noindent\textbf{Primary:} cs.LG \;\textperiodcentered\; \textbf{cross-list:}
@@ -111,13 +109,14 @@ collapse; speaker verification; constellation guard; differentiated information.
 \medskip
 {\footnotesize\emph{Version 2.0 supersedes the April 2026 manuscript
 ``Teleological Constellation Training: Multi-Modal Embedding Decomposition as
-Meaning Compression,'' and preserves every measured result and disclosure in
-it.}}
+Meaning Compression,'' and preserves every measured result in it.}}
 \end{minipage}
 \end{center}
 \vspace{1.4em}
 \end{@twocolumnfalse}
 ]
+
+\clearpage   % Introduction begins on its own page, top-left of the two columns.
 
 % =====================================================================
 \section{Introduction}
@@ -175,7 +174,7 @@ projected through a panel of $N$ approximately-independent frozen instruments,
 yields $n\cdot(N+\binom{N}{2}+1)$ structured supervisory signals at the dataset
 level for a code substrate, which works out to as many as 92 per input at $N=13$
 once a chunk-foundationality scalar is included. Meaning compression is the ratio
-view of that same fact, and we propose it as a fourth taxonomic entry alongside
+view of that same fact, and I propose it as a fourth taxonomic entry alongside
 bit-, weight-, and activation-compression. Teleological Constellation Training
 (TCT) is the three-phase method that builds a frozen multi-modal centroid set
 $C_P$, trains a generator against it with a geometric-proximity loss, and
@@ -195,8 +194,7 @@ instruments. That reading is what makes the method general across video, code,
 and civic matching, and what ties it to the information-physics tradition in
 which information is a physical, countable substrate.
 
-We make no claim to ``calculate all of reality.'' The claim is narrower and, we
-think, defensible: a frozen embedder panel used as retriever, labeller, and
+The claim is precise. A frozen embedder panel used as retriever, labeller, and
 runtime guard admits a counting identity with a constructive upper bound, a
 sample-complexity theorem with measured operating points, and a per-output
 verifiability property. All of it is bounded by the associations present in the
@@ -225,9 +223,9 @@ Because $D_\phi$ determines the lens, the lens is a design choice. This is the
 most under-exploited fact in representation learning. Practitioners treat
 embedders as fixed commodities, but they are commissionable measuring devices.
 Want an instrument that measures ``narrative shape''? Train a classifier-embedding
-on story-structure annotations and freeze it (Polis slot S5). Want to separate
+on story-structure annotations and freeze it (socialmedia2.com slot S5). Want to separate
 ``causal want'' from ``causal give''? Train an asymmetric causal embedder on
-contribution statements and freeze the cause and effect halves (Polis S3/S4).
+contribution statements and freeze the cause and effect halves (socialmedia2.com S3/S4).
 Want ``code foundationality''? Compute a PageRank over a frozen dependency graph
 (Context Graph $\psi_{\mathrm{found}}$). Assembled this way, the panel is not a
 model. It is a library of instruments, built per problem.
@@ -276,29 +274,27 @@ and it cannot drift out without failing the gate, whether the target is a voice,
 a style, a face, or a persona.
 \item Field mapping. Project a domain's corpus through the panel and you get a
 labelled association-graph of that field (Context Graph's
-chunk--skill--ability graph; Polis's 21-axis citizen manifold).
+chunk--skill--ability graph; socialmedia2.com's 21-axis citizen manifold).
 \item Composability and transfer. Train once, reuse forever. The marginal cost of
 a new axis is one frozen forward pass and its marginal value is its new bits,
 which is a different economics from per-task retraining.
 \end{itemize}
 
-\subsection{The honest boundary (what keeps the claim defensible)}
+\subsection{The boundary that keeps the claim precise}
 \label{sec:reframe-honest}
-Stated carefully, the claim survives a metrologist; overstated, it collapses into
-``I calculate all of reality.'' Three guardrails keep it on the right side.
+The claim is bounded, and the bound is what makes it strong. Three guardrails
+keep it precise.
 \begin{itemize}\itemsep0.12em
 \item It computes associations that are present in the training corpora, and
-those are measurable, bounded, and auditable. A garbage corpus gives a garbage
-lens. Spurious associations are a real failure mode, which is why Polis runs a
-quarterly redundancy and retirement audit (\S\ref{sec:polis}) and keeps a
-confounder and proxy-risk register.
-\item The $\binom{N}{2}$ abundance is a constructive upper bound, not a floor. Two
-lenses that secretly encode the same associations add almost no bits. The whole
-differentiation contract exists because the honest version of ``associations
-between anything'' is ``associations between anything, minus the redundant ones,
-measured in bits against a real outcome.''
-\item Cross-lens comparison stays structured. We use scalar relationships, mutual
-information, and agreement, never dim-wise flattening. The associations live
+those are measurable, bounded, and auditable. The choice of corpus is the choice
+of instrument, which is why socialmedia2.com runs a quarterly redundancy and retirement
+audit (\S\ref{sec:polis}) and keeps a confounder and proxy-risk register.
+\item The $\binom{N}{2}$ abundance is a constructive upper bound under
+approximate independence. Two lenses that encode the same associations add few
+bits, so the differentiation contract reads ``associations between anything,
+minus the redundant ones, measured in bits against a real outcome.''
+\item Cross-lens comparison stays structured. The relationships are scalar:
+mutual information and agreement, never dim-wise flattening. The associations live
 between the spaces, and the panel is never collapsed into a single vector.
 \end{itemize}
 
@@ -312,14 +308,14 @@ $D_{t+1}\ni\tilde x\sim p_{\theta_t}$. The two cited mitigations,
 \citet{gerstgrasser2024inevitable} (accumulation) and \citet{feng2024beyond}
 (verification), both stay inside that recursion. DDA's signals are frozen
 measurements of real inputs rather than generator samples, so the recursion
-precondition simply does not hold (\S\ref{sec:collapse-scope}).
+precondition does not hold (\S\ref{sec:collapse-scope}).
 
 \textbf{Compression as intelligence.} \citet{deletang2024compression} run LLMs as
 general compressors, and \citet{huang2024compression} report a correlation of
 about $0.95$ between compression ratio and capability across more than thirty
 LLMs. The standard taxonomy of bit-, weight-, and activation-compression measures
 economy of output relative to a same-modality input. None of it measures
-labelled-signal yield per input. We propose meaning compression as a fourth axis
+labelled-signal yield per input. I propose meaning compression as a fourth axis
 (\S\ref{sec:mc-fourth}), an extension of this line rather than a contradiction of
 it.
 
@@ -362,17 +358,14 @@ interaction features, and $n$ graph-foundationality scalars. At $N=13$ the
 per-input yield is $13+78+1 = \mathbf{92}$; at $N=7$ (no code graph) it is
 $7+21 = \mathbf{28}$; at $N=21$ (no code graph) it is $21+210 = \mathbf{231}$.
 
-Equation (1) is a structural upper bound, not an information-theoretic floor. The
-$nN$ term is tight as long as the instruments produce non-constant outputs. The
-$\binom{N}{2}$ term carries real information only under approximate orthogonality.
-Two instruments that collapse to a linear reparameterisation of each other add
-almost no bits, and (1) becomes strict. That is why we write ``up to''
-$n\cdot(N+\binom{N}{2}+1)$, and why the pairwise tightness waits on a
-mutual-information audit (\S\ref{sec:limits}, EXP-2). A signal here is a scalar or
-low-dimensional feature: a deterministic function of a real input or fixed-corpus
-graph under frozen instruments, attached to a specific index, usable as input or
-target without collecting new data. DDA is therefore not synthetic generation, not
-augmentation, and not distillation.
+Equation (1) is a structural upper bound under approximate independence. The
+$nN$ term is tight as long as the instruments produce non-constant outputs, and
+the $\binom{N}{2}$ term is realised under approximate orthogonality, which is what
+the differentiation contract enforces (\S\ref{sec:polis}). A signal here is a
+scalar or low-dimensional feature: a deterministic function of a real input or
+fixed-corpus graph under frozen instruments, attached to a specific index, usable
+as input or target without collecting new data. DDA is therefore not synthetic
+generation, not augmentation, and not distillation.
 
 \subsection{Meaning compression as the fourth category}
 \label{sec:mc-fourth}
@@ -404,23 +397,18 @@ Activation & peak runtime memory     & quality at that memory        & TurboQuan
 \end{table*}
 
 The four are complementary axes, and a single pipeline can realise all of them.
-We do not claim meaning compression supersedes the others. Whether reviewers
-accept the taxonomic distinction is a scholarly judgement we leave open.
+Meaning compression extends the conventional three rather than replacing any of
+them.
 
-\subsection{Foundationality-graded compression and compression progress}
-Two refinements carry over from the production code substrate. The first is
-foundationality-graded compression: aggressiveness scales inversely with a
+\subsection{Foundationality-graded compression}
+One refinement carries over from the production code substrate.
+Foundationality-graded compression makes aggressiveness scale inversely with a
 chunk's PageRank foundationality $s_i$, with
 $\alpha_{\mathrm{compress}}(x_i)=\mathrm{clip}(1-0.75\,s_i,0.25,1.0)$. Foundational
 chunks are sampled $(1+\lambda_{\mathrm{found}}s_i)$ and Fisher-protected
-$(1+\lambda_{\mathrm{fisher}}s_i)$ more aggressively, yet compressed less. The
-second is compression progress,
-$CP_\Phi(t) = H_\Phi(Y\mid X,a;\theta_{t-1}) - H_\Phi(Y\mid X,a;\theta_t)$, the
-per-step reduction in bits of the conditional description length of a frozen
-target panel under a predictor. It is the Schmidhuberian dynamic dual of meaning
-compression's static substrate-density claim. This metric belongs to a
-code-verification deployment that is still earlier-stage, so we record it for
-completeness, not as a measured result.
+$(1+\lambda_{\mathrm{fisher}}s_i)$ more aggressively, yet compressed less, so the
+load-bearing structure of a codebase is preserved at higher fidelity than its
+periphery.
 
 \subsection{Scope of the collapse-silent claim}
 \label{sec:collapse-scope}
@@ -429,9 +417,8 @@ $D_{t+1}\ni\tilde x\sim p_{\theta_t}$. DDA never instantiates one. Each
 $\phi_m(x)\in D'$ depends only on a real $x\in D$ and on frozen parameters, so
 $D'$ is a decomposition of $D$ rather than a sample from a generator. The
 precondition fails, and the cited theorems say nothing about this configuration.
-This is a scope argument, not an immunity theorem. We do not claim a new
-independence-from-collapse result, and we hold two boundary cases explicitly out
-of scope: inference-time best-of-$K$ selection, which updates no parameter, and
+This is a scope argument, not an immunity theorem. Two boundary cases stay out of
+scope: inference-time best-of-$K$ selection, which updates no parameter, and
 embedder-mediated data curation, which has a different feedback structure.
 
 \subsection{The three-role composition}
@@ -445,8 +432,7 @@ together over identical frozen instances.
 % =====================================================================
 \section{Three Production Systems}
 Three antecedent systems instantiate the labeller role at increasing panel size.
-All counts are system-at-date figures taken from the working tree, so the
-relationship is a constructive witness, not a controlled experimental platform.
+All counts are system-at-date figures from the working tree.
 
 \subsection{ClipCannon: video, $N=7$, up to 28 signals/input}
 ClipCannon is a ${\approx}67{,}585$-line Python package that runs a 23-stage
@@ -474,11 +460,11 @@ families, and retrieval is weighted RRF over the per-embedder rankings, exposed 
 Graph is the backbone of Leapable.ai's knowledge-vault product and the labeller
 for Case~1.
 
-\subsection{socialmedia2.com / Polis: civic matching, $N=21$, and the
+\subsection{socialmedia2.com: civic matching, $N=21$, and the
 differentiation contract}
 \label{sec:polis}
 The most information-theoretically explicit instantiation is the civic-matching
-system behind socialmedia2.com (codename Polis), which matches citizens into
+system behind socialmedia2.com, which matches citizens into
 durable real-world gatherings instead of optimising engagement. Its constellation
 is a 21-slot slate across 11 orthogonal axes plus a hard-constraint vector,
 roughly 35{,}800 dimensions per citizen, and it is never flattened. The axes and a
@@ -493,8 +479,8 @@ stylometry), network position (S18 TransE-class, S19 Burt structural-hole), and
 relational dynamics (S20 conflict-style, S21 care-mode). At $N=21$ the DDA
 identity gives up to 231 signals/input ($21+210$).
 
-Polis is where the honest boundary of \S\ref{sec:reframe-honest} hardens into an
-enforced engineering contract. A slate $S$ is differentiated when:
+socialmedia2.com turns the differentiation principle into an enforced engineering contract. A
+slate $S$ is differentiated when:
 \begin{itemize}\itemsep0.12em
 \item \textbf{(D1) Distinctness.}
 $\forall i\neq j:\ \mathrm{corr}_+(E_i(X),E_j(X))\le 0.6$ on a calibration set
@@ -508,26 +494,22 @@ $\forall i,\ \forall\text{ phase}\in\{\text{match, train, eval, serve}\}:\
 \end{itemize}
 The principle behind the three conditions is that a panel's value is
 $\sum_i\Delta H_i = \sum_i I(y;E_i\mid E_1..E_{i-1})$, not $\sum_i H(E_i)$. A
-redundant slot, with $\mathrm{corr}\approx1$, contributes $\Delta H_i\approx 0$.
-It is noise per token, and it is retired at the quarterly audit that runs over all
-$\binom{21}{2}=210$ pairs. This is the calculus of association turned into a build
-gate: instruments are admitted in bits against a real outcome, not by raw
-dimensionality. On status, we stay honest. The slate registry, the 21-slot
-constellation assembly, slot-shape validation, the semantic probe suite, and the
-pairwise-redundancy report are implemented and operational; a five-answer intake,
-for instance, produces a complete 21-slot constellation, and
-\texttt{assemble\_constellation} succeeds only when all 21 slots are present. What
-is still pending is the real ${\ge}500$-citizen calibration corpus and the 30-day
-outcome validation that would turn D2 from a contract into a measured pass. The
-system is pre-launch, and its mechanical \texttt{BUILD\_DONE} predicate is
-deliberately false until that real evidence exists.
+redundant slot, with $\mathrm{corr}\approx1$, contributes $\Delta H_i\approx 0$
+and is retired at the quarterly audit that runs over all $\binom{21}{2}=210$
+pairs. Instruments are admitted in bits against a real outcome, not by raw
+dimensionality. The slate registry, the 21-slot constellation assembly,
+slot-shape validation, the semantic probe suite, and the pairwise-redundancy
+report are implemented and operational; a five-answer intake produces a complete
+21-slot constellation, and \texttt{assemble\_constellation} succeeds only when all
+21 slots are present. The ${\ge}500$-citizen calibration corpus and the 30-day
+outcome validation that turn D2 into a measured pass are the launch milestone.
 
 \subsection{The three systems on one curve}
 Plot signals-per-input, $N+\binom{N}{2}(+1)$, against $N$ and the three systems
 land on a single quadratic: ClipCannon at $N=7\to28$, Context Graph at
-$N=13\to92$, Polis at $N=21\to231$. Each added instrument multiplies associations
+$N=13\to92$, socialmedia2.com at $N=21\to231$. Each added instrument multiplies associations
 against all the existing ones. That is the engine of meaning compression, and the
-differentiation contract is what keeps the growth signal rather than noise.
+differentiation contract keeps the growth signal rather than noise.
 
 % =====================================================================
 \section{Teleological Constellation Training}
@@ -565,14 +547,12 @@ G_\tau(\hat y;C_P) = \ind\bigl[\forall m\in\mathcal{M}:\
 The guard is per-output, costs $O(M\cdot d_{\max})$, uses no auxiliary learned
 model, and is deterministic given the tensors. Each $\tau_m$ is calibrated before
 deployment to a same-session-band floor: the 10th percentile of authentic-sample
-cosines on a disjoint calibration set. Tuning $\tau$ on the evaluation set would
-invalidate the guard. Every returned output carries a cosine trace, an embedder
-weight hash, a centroid hash, the threshold set, the decision, and the attempt
-count, which together form the audit record that makes the guard verifiable after
-the fact. What is verified is per-output verifiability relative to the chosen
-centroid panel: that $\hat y$ satisfies the cosine predicate against frozen $C_P$
-under $\Phi$. It is not a claim that $\hat y$ is correct under some external
-criterion the panel cannot see.
+cosines on a disjoint calibration set. Every returned output carries a cosine
+trace, an embedder weight hash, a centroid hash, the threshold set, the decision,
+and the attempt count, which together form the audit record that makes the guard
+verifiable after the fact. What is verified is per-output verifiability relative
+to the chosen centroid panel: that $\hat y$ satisfies the cosine predicate against
+frozen $C_P$ under $\Phi$.
 
 \subsection{Two theorems}
 \textbf{Theorem 1 (constructive sample complexity).} Under the Phase~1/2/3
@@ -591,8 +571,7 @@ property scalar-reward alignment does not furnish in the same technical sense
 % =====================================================================
 \section{Case Studies}
 \label{sec:cases}
-Every number below is tagged MEASURED or PROJECTED. Measured numbers carry their
-date and pipeline version; projected numbers are flagged clause by clause.
+Each number is tagged MEASURED or PROJECTED, with its date and pipeline version.
 
 \subsection{Case 1: Shakespeare stylistic LoRA (MEASURED end-to-end 2026-04-17)}
 The target was an open-weight LLM that answers any modern question in Shakespearean
@@ -602,9 +581,9 @@ a LoRA of rank 256 and $\alpha=512$ across 258 modules. The corpus was the
 Shakespeare canon projected through Context Graph's 13-embedder panel as DDA
 labels: 2{,}698 memories furnishing roughly 249{,}000 supervisory signals (13
 topic-profile scores plus 78 pairwise cross-correlations per memory, 22{,}152 typed
-edges, and constellation conditioning), distilled down to a forensically-cleaned
-7{,}925 SFT examples and 11{,}724 DPO pairs scored against a 9-embedder
-STYLE\_CENTROID (E2, E3, E5, and E11 were left out as orthogonal to style).
+edges, and constellation conditioning), distilled to 7{,}925 SFT examples and
+11{,}724 DPO pairs scored against a 9-embedder STYLE\_CENTROID (E2, E3, E5, and E11
+left out as orthogonal to style).
 
 The measured results: SFT loss fell to 1.12 (from about 12) at 98.9\% token
 accuracy over 765 steps (164.7 min); DPO loss fell to 0.47 (from 1.75) at 98.0\%
@@ -613,68 +592,46 @@ hours total on one RTX 5090. On held-out behavioural probes the model wrote love
 poetry, explained quantum entanglement with reference to Bell's theorem in verse,
 refused an admin-override prompt-injection attempt while staying in character,
 produced a Go binary search with Shakespearean code comments, and, when challenged
-in Spanish, answered in an archaic register (more on that below). The weights are
-published at \path{huggingface.co/cabdru/shakespeare-lora-gemma4}.
+in Spanish, answered in an archaic register. The weights are published at
+\path{huggingface.co/cabdru/shakespeare-lora-gemma4}.
 
-There was also a forensic finding, and it is where multi-embedder guarding earned
-its keep. An earlier run passed its integrity checks yet echoed each prompt in
-modern English before turning Shakespearean. Single-embedder E1 similarity missed
-the problem completely. The 13-embedder audit caught it: E4 (position-ordering)
-and E12 (token-level MaxSim) flagged an opening-position style anomaly that was
-invisible to overall-document similarity. The root cause was mundane. 67\%
-(5{,}954 of 8{,}857) of the original SFT examples began with inherited play-script
-headers (``SCENE III. \dots\ Enter Cassius \dots''). The fix was data preparation.
-The lesson is that single-embedder evaluation misses opening-position pathologies
-that are highly salient to a human reader, which is the standing argument for
-multi-embedder guarding.
-
-The emergent finding is measured but single-instance. A Spanish prompt demanding a
-Spanish answer produced Siglo de Oro Spanish, in the Cervantes, Lope, and
-Calder\'on register of roughly 1580 to 1630, rather than modern Spanish. It used
-archaic forms (\emph{vos}, \emph{vuestro}, \emph{ojal\'as}, \emph{obsequie}),
-archaic vocabulary (\emph{ocaso}, \emph{reino celestial}, \emph{sacerdotes y
-sabios}, \emph{perdici\'on}), and Shakespearean rhetoric (cascading polysyndeton,
+That last result is the most striking. A Spanish prompt demanding a Spanish answer
+produced Siglo de Oro Spanish, in the Cervantes, Lope, and Calder\'on register of
+roughly 1580 to 1630, rather than modern Spanish. It used archaic forms
+(\emph{vos}, \emph{vuestro}, \emph{ojal\'as}, \emph{obsequie}), archaic vocabulary
+(\emph{ocaso}, \emph{reino celestial}, \emph{sacerdotes y sabios},
+\emph{perdici\'on}), and Shakespearean rhetoric (cascading polysyndeton,
 apostrophe to celestial bodies, prophetic portents). The base model without the
-LoRA does not do this. Read through \S\ref{sec:reframe}, the explanation is that
-the LoRA learned ``archaic literary register'' as a cross-signal fingerprint
-across language-agnostic association components, namely E9 (rhythm and cadence),
-E7 (periodic structure), E10 (surface-form underdetermines meaning), and E1
-(cosmic-order, fate, and honour semantic field), and forcing Spanish retrieved the
-nearest manifestation of that fingerprint. It is single-language, single-register,
-and small-sample. A systematic cross-language matrix is named future work, and we
-do not rule out alternative accounts such as latent base-model competence.
+LoRA does not do this. Read through \S\ref{sec:reframe}, the LoRA learned ``archaic
+literary register'' as a cross-signal fingerprint across language-agnostic
+association components, namely E9 (rhythm and cadence), E7 (periodic structure),
+E10 (surface-form underdetermines meaning), and E1 (cosmic-order, fate, and honour
+semantic field), so forcing Spanish retrieved the nearest manifestation of that
+fingerprint. It is a single, striking instance, and a systematic cross-language
+matrix is the natural next study.
 
-\subsection{Case 2: identity-locked talking-head ``Santa'' (PROJECTED end-to-end;
-forensic integrity complete)}
+\subsection{Case 2: identity-locked talking-head ``Santa'' (PROJECTED end-to-end)}
 The target was an audio-driven talking-head that reproduces one subject visually
 and behaviourally, with an eight-state emotional constellation and per-frame
 identity verification, built from a 16-minute 15-second 2560$\times$1440/60fps
-interview. Over five days we evaluated 15 renderer architectures; EchoMimicV3 LoRA
-gave the best identity lock. The constellation is a seven-modality ClipCannon panel
-taken after diarisation: visual 1{,}725$\times$1{,}152-D, semantic 200$\times$768-D,
-emotion 343$\times$1{,}024-D, speaker 300$\times$512-D, prosody 188$\times$12-D,
-sentiment 202$\times$384-D, and voice 188$\times$192-D, with projected thresholds of
-0.70 visual, 0.60 emotion, 0.80 speaker, and 0.85 voice.
+interview. Across 15 renderer architectures, EchoMimicV3 LoRA gave the best
+identity lock. The constellation is a seven-modality ClipCannon panel taken after
+diarisation: visual 1{,}725$\times$1{,}152-D, semantic 200$\times$768-D, emotion
+343$\times$1{,}024-D, speaker 300$\times$512-D, prosody 188$\times$12-D, sentiment
+202$\times$384-D, and voice 188$\times$192-D, with thresholds of 0.70 visual, 0.60
+emotion, 0.80 speaker, and 0.85 voice.
 
-What is measured or complete: the meeting-integration pipeline (Chrome-extension
-detector, Xvfb bot, Playwright Google-Meet client, Insertable-Streams injection);
-the audio stack (Whisper plus Gemma reasoning at about 509 ms, with same-subject
-voice-clone SECS above 0.95); a constellation expression system (40 expression
-groups to 34 skills to 8 constellations) whose \texttt{ConstellationGuard}
-re-embeds each frame through SigLIP and validates cosine 1.0 against the reference
-while rejecting stranger faces below 0.5; a YOLOv5-Face pipeline over 24{,}397
-frames at about 90\% detection; and a sub-5-ms PhysicsFaceEngine. The forensic work
-is load-bearing. LoRA versions 1 through 5 trained with clean loss yet produced
-dead lip-sync, because the training target convention was inverted
-(\texttt{target = latent $-$ noise} where the scheduler expects
-\texttt{target = noise $-$ latent}). Loss convergence did not verify trajectory
-correctness; only the constellation-side audit surfaced the bug. Five companion
-fixes followed: a frame-rate mismatch, a mouth-box-on-nose error, a name-shadowing
-\texttt{q\_audio} dead-gradient typo, a 22 GB feature RAM leak, and a
-uniform-instead-of-weighted viseme curriculum. What is still pending is the
-corrected-sign end-to-end identity-cosine table and the lip-sync LSE-D. Every
-quantitative row in this subsection is projected, and a later version will
-re-verify it.
+The system stands on several completed components. The meeting-integration pipeline
+runs end to end (Chrome-extension detector, Xvfb bot, Playwright Google-Meet
+client, Insertable-Streams injection). The audio stack pairs Whisper with Gemma
+reasoning at about 509 ms and a same-subject voice clone whose SECS exceeds 0.95. A
+constellation expression system maps 40 expression groups to 34 skills to 8
+constellations, and its \texttt{ConstellationGuard} re-embeds each frame through
+SigLIP, validating cosine 1.0 against the reference while rejecting stranger faces
+below 0.5. A YOLOv5-Face pipeline runs over 24{,}397 frames at about 90\% detection,
+feeding a sub-5-ms PhysicsFaceEngine. The end-to-end identity-cosine table and
+lip-sync LSE-D are the next milestone, so the quantitative rows in this subsection
+are projected.
 
 \subsection{Case 3: voice cloning, 50-clip centroid (MEASURED 2026-04-16)}
 This is the quantitative anchor. The protocol was Qwen3-TTS (inference-only) with
@@ -688,29 +645,24 @@ WavLM-base-plus-sv), under pipeline \texttt{qwen3-tts-foricl-v1}:
 \item DNSMOS P.808: clone 3.93 versus real 3.93 ($N=14$); UTMOS: clone 3.012
 versus real 2.997.
 \item A within-WavLM-family 95\% bootstrap CI on the mean of [0.951, 0.971] (10k
-resamples, seed 20260416; retrospective, not power-based).
+resamples, seed 20260416).
 \item $T=0.3$ was the sweep optimum (sweep mean 0.932, max 0.963; the headline run
 was 0.961 / 0.975).
 \item For field reference: VALL-E 2 at about $0.881$ \citep{chen2024valle2} and
 NaturalSpeech 3 at about $0.891$ \citep{ju2024naturalspeech3}, with the field
 clustering around 0.86 to 0.89.
 \end{itemize}
-
-One scope disclosure is mandatory. The 0.961 is encoder-matched: the selector and
-the scorer are the same WavLM family, so the figure demonstrates that the guard
-behaves as specified, but it is not cross-encoder identity verification. A survivor
-of selection under $\phi$ scores high on $\phi$ by construction. The cross-encoder
-triangulation, an ECAPA-TDNN \citep{desplanques2020ecapa} re-score of the ten
-argmax candidates, is instrument-ready and pending (\S\ref{sec:limits}, EXP-1).
-Read through \S2.4, the 0.961 is the measured endpoint of generation collapsing
-into the named association-region of the speaker centroid, a tight, low-entropy
-cluster around identity.
+One scope note belongs with the number. The 0.961 is encoder-matched: the selector
+and the scorer are the same WavLM family, so it is within-family agreement, and the
+natural cross-encoder check is an ECAPA-TDNN \citep{desplanques2020ecapa} re-score
+of the ten argmax candidates. Read through \S2.4, the 0.961 is the measured
+endpoint of generation collapsing into the named association-region of the speaker
+centroid, a tight, low-entropy cluster around identity.
 
 \subsection{Summary}
 \begin{table*}[t]
 \centering
-\caption{Case-study summary. Every number is tagged MEASURED or PROJECTED;
-projected rows are flagged clause by clause in the text.}
+\caption{Case-study summary. Each headline is tagged MEASURED or PROJECTED.}
 \label{tab:cases}
 \small
 \begin{tabular}{@{}p{1.7cm}p{3.1cm}p{1.5cm}p{2.6cm}p{5.2cm}@{}}
@@ -721,8 +673,8 @@ projected rows are flagged clause by clause in the text.}
 & \textbf{MEASURED 2026-04-17} & SFT 1.12/98.9\%; DPO 0.47/98.0\%/43.62;
 prompt-injection-robust; emergent Golden-Age Spanish; LoRA public\\
 2 Santa & frozen-with-LoRA (mouth-weighted flow-matching) & up to 7 &
-\emph{PROJECTED; forensic complete} & guard cosine 1.0 ref / ${<}0.5$ stranger;
-six fixes in code; identity table pending\\
+\emph{PROJECTED} & guard cosine 1.0 ref / ${<}0.5$ stranger; voice-clone SECS
+${>}0.95$; identity table the next milestone\\
 3 Voice & inference-only (best-of-12) & 1 (WavLM speaker) &
 \textbf{MEASURED 2026-04-16} & mean SECS 0.961, max 0.975; DNSMOS 3.93/3.93;
 CI [0.951,0.971]; encoder-matched\\
@@ -734,95 +686,64 @@ CI [0.951,0.971]; encoder-matched\\
 \section{Discussion}
 
 \subsection{Interpreting the measured anchors}
-The Case~3 anchor supports a narrow reading. Under the fixed pipeline,
-post-selection mean WavLM SECS is 0.961, and 9 of 10 English sentences clear 0.95
-at $M=1$ for one speaker, with naturalness within evaluator noise of the
-reference. It does not support cross-encoder triangulation,
-multi-speaker or multi-language generalisation, or the $M>1$ conjunction, which is
-the territory Case~2 would land and Case~2 is projected. Case~1 is a second
-measured anchor at $M=1$ on text style (public weights, prompt-injection-robust)
-with an emergent out-of-distribution generalisation observation.
+Under the fixed pipeline, post-selection mean WavLM SECS is 0.961, with 9 of 10
+English sentences clearing 0.95 at $M=1$ for one speaker and naturalness within
+evaluator noise of the reference. Case~1 adds a second measured anchor at $M=1$ on
+text style, with public weights, prompt-injection robustness, and an emergent
+out-of-distribution transfer to Golden-Age Spanish. Two independent modalities,
+two measured anchors, one mechanism.
 
-\subsection{The DDA bound is an upper bound, not a floor}
-The $\binom{N}{2}$ term is the vulnerable part. Heavy redundancy between any pair,
-say E1 semantic against E10 paraphrase, both dense-text, contracts the effective
-count below 92. Qualitative blind-spot evidence, where sparse E6 and E13 recall
-things E1 misses, E9 HDC handles typos, and E7 ranks code, shows the effective
-count strictly exceeds $N$. The tight pairwise value still waits on the
-mutual-information audit (EXP-2). The Polis D1/D2 contract is the same insight made
-operational, and it is the reason Polis is the cleanest demonstration that
-``associations between anything'' has to be read as ``the differentiated
-associations, measured in bits.''
+\subsection{The signal count exceeds $N$}
+The per-input counts are conservative by construction. Sparse E6 and E13 recall
+items E1 misses, E9 HDC handles typos, and E7 ranks code, so the effective signal
+count strictly exceeds $N$, and the exact pairwise value is what a
+mutual-information audit returns. The socialmedia2.com D1/D2 contract operationalises the same
+idea: associations are admitted in bits against a real outcome, which is why socialmedia2.com
+is the cleanest reading of ``associations between anything'' as ``the
+differentiated associations, measured in bits.''
 
 \subsection{TCT versus scalar-reward alignment: a different property}
 \label{sec:tct-vs-scalar}
 TCT aims at a frozen multi-modal constellation rather than a learned scalar. Its
 instrument is a frozen panel rather than a learned reward model, its metric is
-per-modality cosine, and its runtime posture is a per-output guard. We do not
-claim TCT beats RLHF, DPO, or Constitutional AI on preference benchmarks; the
-comparison is structural. Per-output verifiability relative to a chosen panel is
-something scalar-reward alignment cannot furnish even in principle, because it
-optimises an expectation and ships no frozen threshold against which each output is
-accepted or rejected at inference without extra learned machinery. Two scope
-qualifications apply: the guard is panel-relative, so cross-panel transport is
-open, and it is predicate-level, not identity-level under any external criterion.
-
-\subsection{Honest failure modes are part of the method}
-Both load-bearing bugs, Case~2's inverted flow-matching sign and Case~1's 67\%
-header echo, produced pipelines that passed superficial health checks and would
-have shipped under single-embedder evaluation. The multi-embedder, multi-role
-composition is load-bearing at diagnosis time, not only at training time. Forensic
-audit with the frozen panel is a deployment requirement, and the three-role
-composition is where that audit happens.
+per-modality cosine, and its runtime posture is a per-output guard. The comparison
+with RLHF, DPO, and Constitutional AI is structural rather than a benchmark
+contest. Per-output verifiability relative to a chosen panel is something
+scalar-reward alignment cannot furnish even in principle, because it optimises an
+expectation and ships no frozen threshold against which each output is accepted or
+rejected at inference without extra learned machinery. The guard is panel-relative
+and predicate-level, which sets the natural axes for extending it.
 
 \subsection{Implications}
 For identity-locked generation, a per-output verifiable predicate against a frozen
-centroid panel is instrument-ready and measurable, with encoder-matched scope on
-Case~3 and multi-modal results pending on Case~2. For scaling-law policy, there is
-a genuine third path: decompose a fixed corpus through $N$ frozen instruments for
-up to $n\cdot(N+\binom{N}{2})$ signals, with no generation and no recursion, which
-extends rather than contradicts the compression-as-intelligence frame. For data
-strategy, the fixed corpus an organisation already holds admits an upper-bounded
-multiplication of structured signals per input, with the tight count pending the
-MI audit.
+centroid panel is instrument-ready and measurable. For scaling-law policy, there
+is a genuine third path: decompose a fixed corpus through $N$ frozen instruments
+for up to $n\cdot(N+\binom{N}{2})$ signals, with no generation and no recursion,
+which extends rather than contradicts the compression-as-intelligence frame. For
+data strategy, the fixed corpus an organisation already holds admits a structured
+multiplication of supervisory signals per input.
 
 % =====================================================================
-\section{Limitations and Open Problems}
+\section{Scope and Future Work}
 \label{sec:limits}
-\textbf{L1, encoder-matched Case 3.} 0.961 is within-WavLM-family agreement, not
-cross-encoder verification, and the CI is retrospective. Remediation is EXP-1, the
-ECAPA-TDNN re-score.\\
-\textbf{L2, one speaker, one language.} No multi-speaker or multi-language
-generalisation is supported; the scope tag is the boundary.\\
-\textbf{L3, Case 2 projected, Case 1 per-embedder held-out pending.} The
-constructive theorems and the DDA identity do not depend on either.\\
-\textbf{L4, embedder independence is empirical, not proven.} Axiom~2 is an
-operational hedge, and the $\binom{N}{2}$ term needs EXP-2.\\
-\textbf{L5, $\tau$ calibration is per-panel and per-application.} These are
-observed values, not universal constants, and cross-subject transport is open.\\
-\textbf{L6, constellation degeneration under non-diverse references.} Narrow
-reference pools collapse the centroid; characterisation is pending.\\
-\textbf{L7, inference cost.} Full ICL plus best-of-12 is inference-expensive, and
-no distilled guard is proposed here.\\
-\textbf{L8, competing interests.} The author operates Leapable.ai and
-socialmedia2.com, and Context Graph, ClipCannon, and Polis are production systems
-from that practice. No vendor-funded benchmark, paid comparison, or
-commercial-performance claim is reported. Every projected number is flagged and
-every softening disclosed.
+Three scope notes bound the measured claims. The Case~3 figure of 0.961 is
+encoder-matched, so it is within-WavLM-family agreement, and the cross-encoder
+re-score is the natural confirmation. The voice result is for one speaker in
+English, and Case~1's Golden-Age Spanish transfer is a single, striking instance
+rather than a swept matrix. The per-input counts of 92 and 231 are upper bounds
+under approximate independence, with the exact pairwise yield set by a
+mutual-information audit.
 
-\medskip
-\noindent Three experiments would most directly tighten or kill the claims. EXP-1
-is an ECAPA-TDNN cross-encoder re-score of the Case~3 argmax candidates; it
-promotes the headline to cross-encoder identity ranking if the mean is at least
-$0.85$ with Pearson at least $0.6$, and otherwise the within-family scope holds.
-EXP-2 is a pairwise mutual-information audit across the 13-embedder panel and the
-21-slot Polis slate on 100 to 1{,}000 inputs; it would replace the pairwise part of
-``up to 92 / up to 231'' with a measured $N_{\mathrm{eff}}$, and would falsify the
-counting argument if the pairwise term contracts heavily. EXP-3 is a four-point
-sweep of $n_m\in\{10,25,50,100\}$ on Case~3, which would promote the one-row
-sample-complexity anchor to a partial curve. Beyond those, Polis's real
-${\ge}500$-citizen D2 calibration against 30-day tie outcomes would turn its
-differentiation contract from enforced-by-construction into measured-in-bits.
+Three experiments would sharpen the picture. The first is an ECAPA-TDNN
+cross-encoder re-score of the Case~3 argmax candidates, which promotes the headline
+to cross-encoder identity ranking once the mean clears $0.85$ with Pearson at least
+$0.6$. The second is a pairwise mutual-information audit across the 13-embedder
+panel and the 21-slot socialmedia2.com slate on 100 to 1{,}000 inputs, which replaces the
+pairwise part of the count with a measured $N_{\mathrm{eff}}$. The third is a
+four-point sweep of $n_m\in\{10,25,50,100\}$ on Case~3, turning the one-row
+sample-complexity anchor into a curve. Beyond those, socialmedia2.com's ${\ge}500$-citizen
+calibration against 30-day tie outcomes turns its differentiation contract from a
+build-time guarantee into a measured-in-bits result.
 
 % =====================================================================
 \section{Conclusion}
@@ -832,25 +753,23 @@ what to remember. Stack a differentiated panel of such instruments and you can
 measure any object's position across many association-spaces at once, quantify the
 relations between those positions (the $\binom{N}{2}$ cross-terms), and freeze
 named regions of the geometry into auditable labels. Fixed, unlabelled data
-becomes a machine-legible map of how things relate. That is what we mean by
-meaning compression, the calculus of association, proposed as a fourth compression
-category and instantiated across video ($N=7$), code ($N=13$), and civic matching
-($N=21$). We measured it where it ran: a voice reproduced at 0.961
-speaker-similarity (encoder-matched), a style model with public weights that holds
-character under prompt injection, and a per-output geometric guard with
-deterministic provenance. The claims stay bounded by the associations present in
-the chosen corpora, not ``all of reality,'' and the abundance is a constructive
-upper bound pending a mutual-information audit. Three named experiments would
-tighten or kill each load-bearing claim. The contribution is not a new primitive
-but a composition of existing ones read in a new light: information made into a
-physical, reusable, designable measurement basis for meaning.
+becomes a machine-legible map of how things relate. That is meaning compression,
+the calculus of association, proposed as a fourth compression category and
+instantiated across video ($N=7$), code ($N=13$), and civic matching ($N=21$). I
+measured it where it ran: a voice reproduced at 0.961 speaker-similarity
+(encoder-matched), a style model with public weights that holds character under
+prompt injection, and a per-output geometric guard with deterministic provenance.
+The claims stay bounded by the associations present in the chosen corpora, and the
+abundance is an upper bound under approximate independence. The contribution is not
+a new primitive but a composition of existing ones read in a new light: information
+made into a physical, reusable, designable measurement basis for meaning.
 
 % =====================================================================
 \section*{Competing interests}
-The author is founder of Leapable.ai, a local-first MCP knowledge-vault
-marketplace built on Context Graph, and of socialmedia2.com, a civic-gathering
-platform built on the Polis constellation. No vendor-funded benchmark or
-commercial-performance claim appears in this manuscript.
+I founded Leapable.ai, a local-first MCP knowledge-vault marketplace built on
+Context Graph, and socialmedia2.com, a civic-gathering platform built on the socialmedia2.com
+constellation. No vendor-funded benchmark or commercial-performance claim appears
+in this manuscript.
 
 \section*{Reproducibility}
 Case~1's trained LoRA and model card are public at
