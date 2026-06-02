@@ -425,8 +425,9 @@ def failed_row_record(
     row: dict[str, Any],
     exc: BaseException,
     cleanup: dict[str, Any] | None,
+    failure_artifacts: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    record = {
         **row,
         "status": "failed",
         "row_run_id": row_run_id(row),
@@ -435,6 +436,9 @@ def failed_row_record(
         "error": f"{type(exc).__name__}: {exc}",
         "container_cleanup": cleanup,
     }
+    if failure_artifacts is not None:
+        record["failure_artifacts"] = failure_artifacts
+    return record
 
 
 def copy_trace(src: Path, dest: Path, code: str) -> str:
@@ -444,6 +448,96 @@ def copy_trace(src: Path, dest: Path, code: str) -> str:
     shutil.copyfile(src, tmp)
     tmp.replace(dest)
     return sha256_file(dest)
+
+
+def row_smoke_roots(
+    row: dict[str, Any],
+    fsv_run_root: Path,
+    state_run_root: Path,
+) -> tuple[str, Path, Path, Path]:
+    child_run_id = row_run_id(row)
+    fsv_smoke_root = fsv_run_root / "row-smokes" / child_run_id / "trace-smoke"
+    state_smoke_root = state_run_root / "row-smokes" / child_run_id / "trace-smoke"
+    log_dir = (
+        fsv_smoke_root
+        / "logs"
+        / "run_evaluation"
+        / child_run_id
+        / "contextgraph-execution-trace-smoke"
+        / str(row.get("task_id") or "unknown")
+    )
+    return child_run_id, fsv_smoke_root, state_smoke_root, log_dir
+
+
+def _existing_artifact_rows(paths: dict[str, Path]) -> list[dict[str, Any]]:
+    rows = []
+    for label, path in sorted(paths.items()):
+        if path.is_file():
+            rows.append(
+                {
+                    "label": label,
+                    "path": str(path),
+                    "sha256": sha256_file(path),
+                    "bytes": path.stat().st_size,
+                }
+            )
+    return rows
+
+
+def write_smoke_failure_manifest(
+    *,
+    row: dict[str, Any],
+    exc: BaseException,
+    fsv_run_root: Path,
+    state_run_root: Path,
+) -> dict[str, Any]:
+    child_run_id, fsv_smoke_root, state_smoke_root, log_dir = row_smoke_roots(
+        row,
+        fsv_run_root,
+        state_run_root,
+    )
+    artifact_paths = {
+        "eval_script": log_dir / "eval.sh",
+        "patch": log_dir / "patch.diff",
+        "report": log_dir / "report.json",
+        "run_instance_log": log_dir / "run_instance.log",
+        "test_output": log_dir / "test_output.txt",
+        "fsv_smoke_success_manifest": fsv_smoke_root / "execution_trace_smoke_manifest.json",
+        "state_smoke_success_manifest": state_smoke_root / "execution_trace_smoke_manifest.json",
+    }
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "artifact_kind": "execution_trace_smoke_failure_manifest",
+        "task_id": TASK_ID,
+        "created_at_utc": utc_now(),
+        "row": row_key(row),
+        "row_run_id": child_run_id,
+        "error_code": classify_error_code(exc),
+        "error_type": type(exc).__name__,
+        "error": f"{type(exc).__name__}: {exc}",
+        "fsv_smoke_root": str(fsv_smoke_root),
+        "state_smoke_root": str(state_smoke_root),
+        "log_dir": str(log_dir),
+        "existing_artifacts": _existing_artifact_rows(artifact_paths),
+    }
+    fsv_manifest = fsv_smoke_root / "execution_trace_smoke_failure_manifest.json"
+    state_manifest = state_smoke_root / fsv_manifest.name
+    write_json(fsv_manifest, manifest)
+    write_json(state_manifest, manifest)
+    manifest["fsv_failure_manifest_sha256"] = sha256_file(fsv_manifest)
+    manifest["state_failure_manifest_sha256"] = sha256_file(state_manifest)
+    write_json(fsv_manifest, manifest)
+    write_json(state_manifest, manifest)
+    return {
+        "fsv_failure_manifest": str(fsv_manifest),
+        "state_failure_manifest": str(state_manifest),
+        "fsv_failure_manifest_sha256": manifest["fsv_failure_manifest_sha256"],
+        "state_failure_manifest_sha256": manifest["state_failure_manifest_sha256"],
+        "fsv_smoke_root": str(fsv_smoke_root),
+        "state_smoke_root": str(state_smoke_root),
+        "log_dir": str(log_dir),
+        "existing_artifacts": manifest["existing_artifacts"],
+    }
 
 
 def run_one_row(
@@ -521,7 +615,7 @@ def result_artifacts(row: dict[str, Any] | None) -> dict[str, Any] | None:
             "trace_summary": row.get("trace_summary") or {},
         }
     if row.get("status") == "failed":
-        return {"error": row.get("error")}
+        return {"error": row.get("error"), "failure_artifacts": row.get("failure_artifacts")}
     return None
 
 
@@ -872,6 +966,16 @@ def finalize_batch_artifacts(
         *[Path(row["state_trace"]) for row in successes],
         *[Path(row["fsv_trace"]) for row in successes],
     ]
+    for row in failures:
+        failure_artifacts = row.get("failure_artifacts") or {}
+        if not isinstance(failure_artifacts, dict):
+            continue
+        for key in ("fsv_failure_manifest", "state_failure_manifest"):
+            value = failure_artifacts.get(key)
+            if value:
+                path = Path(str(value))
+                if path.is_file():
+                    hash_inputs.append(path)
     hash_path = write_artifact_hashes(fsv_run_root, hash_inputs)
     state_hash_path = state_run_root / hash_path.name
     write_json(state_hash_path, read_json(hash_path, "EXECUTION_TRACE_PYTEST_BATCH_HASH_JSON_INVALID"))
@@ -988,7 +1092,13 @@ def run_batch(
                     )
             except (ExecutionTracePytestBatchError, ExecutionTraceSmokeError, OSError, RuntimeError) as exc:
                 cleanup = container_cleanup(row, args, classify_error_code(exc))
-                row_results.append(failed_row_record(row, exc, cleanup))
+                failure_artifacts = write_smoke_failure_manifest(
+                    row=row,
+                    exc=exc,
+                    fsv_run_root=fsv_run_root,
+                    state_run_root=state_run_root,
+                )
+                row_results.append(failed_row_record(row, exc, cleanup, failure_artifacts))
             write_progress_artifacts(
                 args=args,
                 run_id=run_id,

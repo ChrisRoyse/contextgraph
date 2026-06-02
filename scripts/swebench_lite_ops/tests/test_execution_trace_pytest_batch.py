@@ -356,6 +356,21 @@ def test_run_batch_continue_on_error_records_failed_rows(tmp_path: Path):
 
     def runner(args: Namespace) -> dict[str, object]:
         if args.task_id == "org__repo-2":
+            log_dir = (
+                Path(args.output_root)
+                / args.run_id
+                / "trace-smoke"
+                / "logs"
+                / "run_evaluation"
+                / args.run_id
+                / "contextgraph-execution-trace-smoke"
+                / args.task_id
+            )
+            log_dir.mkdir(parents=True)
+            (log_dir / "test_output.txt").write_text("synthetic pytest output\n", encoding="utf-8")
+            (log_dir / "report.json").write_text("{}\n", encoding="utf-8")
+            (log_dir / "eval.sh").write_text("python /tmp/contextgraph_trace_pytest.py\n", encoding="utf-8")
+            (log_dir / "run_instance.log").write_text("synthetic run log\n", encoding="utf-8")
             raise RuntimeError("synthetic trace failure")
         return fake_trace_runner(args)
 
@@ -374,10 +389,27 @@ def test_run_batch_continue_on_error_records_failed_rows(tmp_path: Path):
     assert result["ok"] is False
     assert len(failed) == 1
     assert failed[0]["task_id"] == "org__repo-2"
+    failure_artifacts = failed[0]["failure_artifacts"]
+    fsv_failure_manifest = Path(failure_artifacts["fsv_failure_manifest"])
+    state_failure_manifest = Path(failure_artifacts["state_failure_manifest"])
+    assert fsv_failure_manifest.is_file()
+    assert state_failure_manifest.is_file()
+    assert json.loads(fsv_failure_manifest.read_text(encoding="utf-8")) == json.loads(
+        state_failure_manifest.read_text(encoding="utf-8")
+    )
+    labels = {row["label"] for row in failure_artifacts["existing_artifacts"]}
+    assert {"eval_script", "report", "run_instance_log", "test_output"}.issubset(labels)
     assert "one_or_more_direct_pytest_trace_rows_failed" in manifest["decision"]["decision_reasons"]
     assert progress["counts"]["attempted_rows"] == 2
     assert progress["counts"]["failed_rows"] == 1
     assert progress["last_completed_artifacts"]["error"] == "RuntimeError: synthetic trace failure"
+    assert progress["last_completed_artifacts"]["failure_artifacts"]["fsv_failure_manifest"] == str(
+        fsv_failure_manifest
+    )
+    artifact_hashes = json.loads(Path(result["artifact_hashes"]).read_text(encoding="utf-8"))
+    hashed_paths = {row["path"] for row in artifact_hashes["artifacts"]}
+    assert str(fsv_failure_manifest) in hashed_paths
+    assert str(state_failure_manifest) in hashed_paths
     assert [row["phase"] for row in history].count("row_completed") == 2
 
 

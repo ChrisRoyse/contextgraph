@@ -631,6 +631,7 @@ def extract_trace_payload(test_output: str) -> dict[str, Any]:
             raise ExecutionTraceSmokeError(
                 f"EXECUTION_TRACE_SMOKE_TRACE_PAYLOAD_BAD_JSON_AFTER_XTRACE_STRIP: {exc}"
             ) from exc
+    payload = augment_trace_payload_from_pytest_output(payload, test_output)
     validate_trace_payload(payload)
     return payload
 
@@ -687,6 +688,96 @@ def payload_execution_outcome(payload: dict[str, Any]) -> str:
         if isinstance(coverage, dict):
             outcome = coverage.get("execution_outcome")
     return str(outcome or "executed")
+
+
+def _trace_payload_has_no_execution(payload: dict[str, Any]) -> bool:
+    events = payload.get("trace_events")
+    coverage = payload.get("coverage")
+    lines_executed = 0
+    if isinstance(coverage, dict):
+        try:
+            lines_executed = int(coverage.get("lines_executed") or 0)
+        except (TypeError, ValueError):
+            lines_executed = 0
+    return isinstance(events, list) and not events and lines_executed == 0
+
+
+def _payload_pytest_exit_code(payload: dict[str, Any]) -> int | None:
+    metrics = payload.get("runtime_metrics")
+    if not isinstance(metrics, dict):
+        return None
+    raw = metrics.get("pytest_exit_code")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def infer_pytest_collection_syntax_error(test_output: str) -> dict[str, Any] | None:
+    """Extract pytest-caught collection SyntaxError evidence, if present."""
+    lines = test_output.splitlines()
+    for idx, line in enumerate(lines):
+        match = re.search(r'File "(/testbed/[^"]+)", line ([0-9]+)', line)
+        if not match:
+            continue
+        text: str | None = None
+        message: str | None = None
+        for candidate in lines[idx + 1:idx + 8]:
+            stripped = candidate.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("^"):
+                continue
+            if stripped.startswith("SyntaxError:"):
+                message = stripped.split(":", 1)[1].strip()
+                break
+            if text is None and not stripped.startswith("File "):
+                text = stripped[:500]
+        if message is None:
+            continue
+        captured: dict[str, Any] = {
+            "type": "SyntaxError",
+            "message": message,
+            "filename": match.group(1),
+            "lineno": int(match.group(2)),
+        }
+        if text:
+            captured["text"] = text
+        return captured
+    return None
+
+
+def augment_trace_payload_from_pytest_output(payload: dict[str, Any], test_output: str) -> dict[str, Any]:
+    if payload_execution_outcome(payload) in NON_EXECUTION_OUTCOMES:
+        return payload
+    if not _trace_payload_has_no_execution(payload):
+        return payload
+    pytest_exit_code = _payload_pytest_exit_code(payload)
+    if pytest_exit_code not in {2, 4}:
+        return payload
+    captured = infer_pytest_collection_syntax_error(test_output)
+    if captured is None:
+        return payload
+
+    updated = dict(payload)
+    updated["execution_outcome"] = "compile_error"
+    updated["captured_exception"] = captured
+    coverage = dict(updated.get("coverage") or {})
+    coverage["execution_outcome"] = "compile_error"
+    updated["coverage"] = coverage
+    runtime_metrics = dict(updated.get("runtime_metrics") or {})
+    runtime_metrics["execution_outcome"] = "compile_error"
+    updated["runtime_metrics"] = runtime_metrics
+    steps = dict(updated.get("steps") or {})
+    steps["non_execution_inference"] = {
+        "source": "pytest_collection_syntax_error_output",
+        "pytest_exit_code": pytest_exit_code,
+        "required_source_prefix": "/testbed/",
+    }
+    updated["steps"] = steps
+    return updated
 
 
 def validate_trace_payload(payload: Any) -> None:

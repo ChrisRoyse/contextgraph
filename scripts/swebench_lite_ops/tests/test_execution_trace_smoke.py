@@ -504,6 +504,43 @@ def test_extract_trace_payload_fails_closed_without_events():
         extract_trace_payload(output)
 
 
+def test_extract_trace_payload_infers_pytest_collection_syntax_error():
+    payload = {
+        "coverage": {"events_recorded": 0, "events_seen": 0, "files_touched": 0, "lines_executed": 0},
+        "line_coverage": [],
+        "producer": "contextgraph.execution_trace_smoke.pytest_sys_settrace",
+        "runtime_metrics": {"elapsed_ms": 113, "max_events": 5000, "pytest_exit_code": 4},
+        "schema_version": 1,
+        "steps": {"event_counts": {}, "pytest_args": ["-rA", "lib/matplotlib/tests/test_rcparams.py"]},
+        "trace_events": [],
+        "variable_states": [],
+    }
+    output = "\n".join(
+        [
+            "ImportError while loading conftest '/testbed/lib/matplotlib/tests/conftest.py'.",
+            '  File "/testbed/lib/matplotlib/__init__.py", line 1464',
+            "    def _bad_(:",
+            "              ^",
+            "SyntaxError: invalid syntax",
+            TRACE_BEGIN,
+            json.dumps(payload),
+            TRACE_END,
+        ]
+    )
+
+    parsed = extract_trace_payload(output)
+
+    assert parsed["execution_outcome"] == "compile_error"
+    assert parsed["coverage"]["execution_outcome"] == "compile_error"
+    assert parsed["runtime_metrics"]["execution_outcome"] == "compile_error"
+    captured = parsed["captured_exception"]
+    assert captured["type"] == "SyntaxError"
+    assert captured["filename"] == "/testbed/lib/matplotlib/__init__.py"
+    assert captured["lineno"] == 1464
+    assert captured["text"] == "def _bad_(:"
+    assert parsed["steps"]["non_execution_inference"]["source"] == "pytest_collection_syntax_error_output"
+
+
 def test_load_corpus_entry_resolves_patch_and_hash(tmp_path: Path):
     corpus = tmp_path / "corpus"
     patch = corpus / "mutations" / "org__repo-1" / "known_good.patch"
