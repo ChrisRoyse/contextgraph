@@ -340,12 +340,37 @@ def eval_container_name(row: dict[str, Any]) -> str:
     return f"sweb.eval.{row['task_id']}.{row_run_id(row)}"
 
 
+# The SIGALRM row watchdog is a LAST-RESORT backstop, armed strictly ABOVE
+# swebench's own exec timeout so swebench always times out cleanly first
+# (writing test_output.txt + report.json) before the watchdog can interrupt it.
+# The old code armed the SIGALRM at exactly row_timeout while swebench's exec
+# timeout was also clamped to row_timeout, so they fired at the same instant:
+# the SIGALRM interrupted swebench mid-exec, swebench reported an eval error,
+# no test_output.txt was written, and the smoke misreported TEST_OUTPUT_MISSING
+# (the #824 masking bug). This buffer gives swebench teardown headroom.
+SWEBENCH_TIMEOUT_BACKSTOP_BUFFER_S = 120
+
+
 def effective_instance_timeout(args: argparse.Namespace) -> int:
+    """Timeout handed to swebench's in-container exec (the PRIMARY timeout)."""
     instance_timeout = int(args.instance_timeout)
     row_timeout_value = getattr(args, "row_timeout", None)
     if row_timeout_value is None or int(row_timeout_value) <= 0:
         return instance_timeout
     return min(instance_timeout, int(row_timeout_value))
+
+
+def watchdog_timeout(args: argparse.Namespace) -> int | None:
+    """Seconds for the SIGALRM backstop, or None when no row watchdog is set.
+
+    Always strictly greater than swebench's exec timeout so the clean swebench
+    timeout fires first and the watchdog only triggers if swebench's own
+    teardown itself hangs.
+    """
+    row_timeout_value = getattr(args, "row_timeout", None)
+    if row_timeout_value is None or int(row_timeout_value) <= 0:
+        return None
+    return effective_instance_timeout(args) + SWEBENCH_TIMEOUT_BACKSTOP_BUFFER_S
 
 
 def stop_eval_container(row: dict[str, Any], args: argparse.Namespace, reason: str) -> dict[str, Any]:
@@ -936,7 +961,7 @@ def run_batch(
         progress_history=progress_history,
         phase="selected",
     )
-    effective_row_timeout = getattr(args, "row_timeout", None)
+    effective_row_timeout = watchdog_timeout(args)
     with batch_signal_handlers():
         for row in selected_rows:
             write_progress_artifacts(

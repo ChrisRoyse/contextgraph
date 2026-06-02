@@ -14,15 +14,225 @@ from ..python_execution_trace_smoke import (
     TRACE_END,
     build_python_script_trace_runner_source,
     build_trace_runner_source,
+    classify_missing_test_output,
+    detect_swebench_timeout,
     extract_trace_payload,
     load_corpus_entry,
+    payload_execution_outcome,
     transform_eval_script_list,
+    validate_trace_payload,
 )
 
 
 def write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _run_pytest_trace_runner(
+    tmp_path: Path,
+    *,
+    fake_pytest_pkg: str,
+    repo_root: Path,
+    argv: list[str] | None = None,
+    max_events: int = 5000,
+) -> dict:
+    """Execute the REAL generated runner in a subprocess against a synthetic repo.
+
+    `fake_pytest_pkg` is written to a directory placed first on PYTHONPATH so it
+    shadows any installed pytest. This exercises the actual runner code path
+    (import + settrace + payload write), not a mock.
+    """
+    runner_path = tmp_path / "contextgraph_trace_pytest.py"
+    runner_path.write_text(build_trace_runner_source(), encoding="utf-8")
+    fake_lib = tmp_path / "fakelib"
+    pkg_dir = fake_lib / "pytest"
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+    (pkg_dir / "__init__.py").write_text(fake_pytest_pkg, encoding="utf-8")
+    output_path = tmp_path / "trace_out.json"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(fake_lib) + os.pathsep + env.get("PYTHONPATH", "")
+    env["CONTEXTGRAPH_TRACE_OUTPUT"] = str(output_path)
+    env["CONTEXTGRAPH_TRACE_REPO_ROOT"] = str(repo_root)
+    env["CONTEXTGRAPH_TRACE_MAX_EVENTS"] = str(max_events)
+    completed = subprocess.run(
+        [sys.executable, "-S", str(runner_path), *(argv or [])],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert output_path.is_file(), (
+        f"runner did not write payload; rc={completed.returncode} "
+        f"stdout={completed.stdout[-2000:]} stderr={completed.stderr[-2000:]}"
+    )
+    return json.loads(output_path.read_text(encoding="utf-8"))
+
+
+def test_runner_captures_import_syntax_error_as_compile_outcome(tmp_path: Path):
+    # #823: a compile_error mutation breaks a module on the `import pytest` path.
+    # The runner must capture the SyntaxError as a truthful outcome and STILL
+    # write a payload (it used to crash before settrace/finally).
+    repo_root = tmp_path / "testbed"
+    repo_root.mkdir()
+    fake_pytest = (
+        "from . import broken  # noqa: F401\n"
+        "def main(argv):\n"
+        "    return 0\n"
+    )
+    # broken submodule has a real syntax error -> SyntaxError at `import pytest`.
+    runner_path = tmp_path / "contextgraph_trace_pytest.py"
+    runner_path.write_text(build_trace_runner_source(), encoding="utf-8")
+    fake_lib = tmp_path / "fakelib"
+    pkg_dir = fake_lib / "pytest"
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+    (pkg_dir / "__init__.py").write_text(fake_pytest, encoding="utf-8")
+    (pkg_dir / "broken.py").write_text("def _bad_(:\n    pass\n", encoding="utf-8")
+    output_path = tmp_path / "trace_out.json"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(fake_lib) + os.pathsep + env.get("PYTHONPATH", "")
+    env["CONTEXTGRAPH_TRACE_OUTPUT"] = str(output_path)
+    env["CONTEXTGRAPH_TRACE_REPO_ROOT"] = str(repo_root)
+    env["CONTEXTGRAPH_TRACE_MAX_EVENTS"] = "100"
+    completed = subprocess.run(
+        [sys.executable, "-S", str(runner_path), "-rA", "test_x.py"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert output_path.is_file(), f"payload not written; stderr={completed.stderr[-2000:]}"
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["execution_outcome"] == "import_error"
+    captured = payload["captured_exception"]
+    assert captured["type"] == "SyntaxError"
+    assert captured["filename"].endswith("broken.py")
+    assert captured["lineno"] == 1
+    # The validator must accept this truthful no-execution payload.
+    validate_trace_payload(payload)
+    assert payload_execution_outcome(payload) == "import_error"
+
+
+def test_runner_executes_and_scopes_trace_to_repo_root(tmp_path: Path):
+    # Happy path: fake pytest.main executes a repo module; only repo lines are
+    # traced (scoping). The fake pytest's own lines (outside repo_root) must NOT
+    # appear in line_coverage.
+    repo_root = tmp_path / "testbed"
+    repo_root.mkdir()
+    (repo_root / "repomod.py").write_text(
+        "def run():\n"
+        "    total = 0\n"
+        "    for i in range(3):\n"
+        "        total += i\n"
+        "    return total\n",
+        encoding="utf-8",
+    )
+    fake_pytest = (
+        "import sys\n"
+        "def main(argv):\n"
+        "    sys.path.insert(0, " + repr(str(repo_root)) + ")\n"
+        "    import repomod\n"
+        "    assert repomod.run() == 3\n"
+        "    return 0\n"
+    )
+    payload = _run_pytest_trace_runner(
+        tmp_path, fake_pytest_pkg=fake_pytest, repo_root=repo_root, argv=["-rA"], max_events=500
+    )
+    assert payload["execution_outcome"] == "executed"
+    assert payload["coverage"]["lines_executed"] > 0
+    locations = [row["location"] for row in payload["line_coverage"]]
+    assert all(loc.startswith("repomod.py:") for loc in locations), locations
+    files = {ev["file"] for ev in payload["trace_events"]}
+    assert files == {"repomod.py"}, files
+    validate_trace_payload(payload)
+
+
+def test_validate_rejects_non_execution_outcome_without_captured_exception():
+    payload = {
+        "execution_outcome": "import_error",
+        "captured_exception": None,
+        "coverage": {"lines_executed": 0},
+        "line_coverage": [],
+        "runtime_metrics": {},
+        "steps": {},
+        "trace_events": [],
+    }
+    with pytest.raises(ExecutionTraceSmokeError) as exc:
+        validate_trace_payload(payload)
+    assert "WITHOUT_CAPTURED_EXCEPTION" in str(exc.value)
+
+
+def test_validate_rejects_captured_exception_without_location():
+    payload = {
+        "execution_outcome": "compile_error",
+        "captured_exception": {"type": "SyntaxError", "message": "bad"},
+        "coverage": {"lines_executed": 0},
+        "line_coverage": [],
+        "runtime_metrics": {},
+        "steps": {},
+        "trace_events": [],
+    }
+    with pytest.raises(ExecutionTraceSmokeError) as exc:
+        validate_trace_payload(payload)
+    assert "CAPTURED_EXCEPTION_LOCATION_MISSING" in str(exc.value)
+
+
+def test_validate_rejects_executed_outcome_with_empty_trace():
+    payload = {
+        "execution_outcome": "executed",
+        "captured_exception": None,
+        "coverage": {"lines_executed": 0},
+        "line_coverage": [],
+        "runtime_metrics": {},
+        "steps": {},
+        "trace_events": [],
+    }
+    with pytest.raises(ExecutionTraceSmokeError) as exc:
+        validate_trace_payload(payload)
+    assert "TRACE_EVENTS_EMPTY" in str(exc.value)
+
+
+def _write_run_log(tmp_path: Path, text: str) -> tuple[Path, Path]:
+    log_dir = tmp_path / "log_dir"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "run_instance.log").write_text(text, encoding="utf-8")
+    return log_dir, log_dir / "test_output.txt"
+
+
+def test_classify_missing_output_detects_interruption(tmp_path: Path):
+    log_dir, test_output = _write_run_log(
+        tmp_path, "Creating container...\nEXECUTION_TRACE_PYTEST_BATCH_INTERRUPTED: SIGALRM\n"
+    )
+    code, detail = classify_missing_test_output(log_dir, test_output, 900)
+    assert code == "EXECUTION_TRACE_SMOKE_RUN_INTERRUPTED_BEFORE_OUTPUT"
+    assert detail["instance_timeout_s"] == 900
+
+
+def test_classify_missing_output_detects_timeout(tmp_path: Path):
+    log_dir, test_output = _write_run_log(tmp_path, "Test timed out after 1800s\n")
+    code, _ = classify_missing_test_output(log_dir, test_output, 1800)
+    assert code == "EXECUTION_TRACE_SMOKE_INSTANCE_TIMED_OUT_BEFORE_OUTPUT"
+
+
+def test_classify_missing_output_detects_eval_error(tmp_path: Path):
+    log_dir, test_output = _write_run_log(tmp_path, "Error in evaluating model for x\nTraceback...\n")
+    code, _ = classify_missing_test_output(log_dir, test_output, 1800)
+    assert code == "EXECUTION_TRACE_SMOKE_RUN_EVALUATION_ERROR_BEFORE_OUTPUT"
+
+
+def test_detect_swebench_timeout_marker():
+    out = "test_requests.py .......F\nTimeout error: 90 seconds exceeded.\n"
+    assert detect_swebench_timeout(out) == "Timeout error: 90 seconds exceeded."
+    assert detect_swebench_timeout(">>>>> Test Timed Out after 1800s") is not None
+    assert detect_swebench_timeout("all good\n1 passed\n") is None
+
+
+def test_classify_missing_output_no_log(tmp_path: Path):
+    log_dir = tmp_path / "empty"
+    log_dir.mkdir()
+    code, detail = classify_missing_test_output(log_dir, log_dir / "test_output.txt", 1800)
+    assert code == "EXECUTION_TRACE_SMOKE_TEST_OUTPUT_MISSING_NO_RUN_LOG"
+    assert detail["log_present"] is False
 
 
 def test_trace_runner_source_avoids_future_annotations_for_python36_testbeds():

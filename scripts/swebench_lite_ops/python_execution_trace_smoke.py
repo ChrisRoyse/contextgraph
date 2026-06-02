@@ -132,7 +132,25 @@ import sys
 import time
 from collections import Counter
 
-import pytest
+
+def describe_exception(exc):
+    info = {"type": type(exc).__name__, "message": str(exc)[:2000]}
+    filename = getattr(exc, "filename", None)
+    lineno = getattr(exc, "lineno", None)
+    offset = getattr(exc, "offset", None)
+    text = getattr(exc, "text", None)
+    if filename is not None:
+        info["filename"] = str(filename)
+    if lineno is not None:
+        info["lineno"] = int(lineno)
+    if offset is not None:
+        try:
+            info["offset"] = int(offset)
+        except (TypeError, ValueError):
+            pass
+    if text is not None:
+        info["text"] = str(text)[:500]
+    return info
 
 
 def main() -> int:
@@ -145,10 +163,14 @@ def main() -> int:
     started = time.monotonic()
 
     def tracer(frame, event, arg):
-        if event not in {"call", "line", "return", "exception"}:
-            return tracer
+        # Scope strictly to repo_root. Returning None tells CPython not to
+        # invoke per-line callbacks for this frame at all, so framework/stdlib
+        # frames cost nothing (PEP 669 "disable locations" principle applied to
+        # sys.settrace). This keeps the trace repo-relevant and bounds overhead.
         path = frame.f_code.co_filename
         if not path.startswith(repo_root):
+            return None
+        if event not in {"call", "line", "return", "exception"}:
             return tracer
         rel = os.path.relpath(path, repo_root)
         lineno = int(frame.f_lineno)
@@ -168,49 +190,75 @@ def main() -> int:
         return tracer
 
     exit_code = 2
-    sys.settrace(tracer)
+    execution_outcome = "executed"
+    captured_exception = None
+
+    # Import pytest under guard: a compile_error mutation in any module on the
+    # import path (e.g. _pytest/assertion/rewrite.py for the pytest repo itself)
+    # raises SyntaxError HERE, which is the genuine dynamic truth for that row.
+    pytest_module = None
     try:
-        exit_code = int(pytest.main(sys.argv[1:]))
-    finally:
-        sys.settrace(None)
-        elapsed_ms = int((time.monotonic() - started) * 1000)
-        line_items = sorted(line_counts.items())
-        payload = {
-            "schema_version": 1,
-            "producer": "contextgraph.execution_trace_smoke.pytest_sys_settrace",
-            "coverage": {
-                "files_touched": len({item.split(":", 1)[0] for item, _count in line_items}),
-                "lines_executed": len(line_items),
-                "events_recorded": len(events),
-                "events_seen": int(sum(event_counts.values())),
-                "truncated": int(sum(event_counts.values())) > len(events),
-            },
-            "line_coverage": [{"location": item, "count": count} for item, count in line_items[:2000]],
-            "runtime_metrics": {
-                "elapsed_ms": elapsed_ms,
-                "pytest_exit_code": exit_code,
-                "max_events": max_events,
-            },
-            "steps": {
-                "event_counts": dict(sorted(event_counts.items())),
-                "pytest_args": sys.argv[1:],
-            },
-            "trace_events": events,
-            "variable_states": [
-                {
-                    "event_index": idx,
-                    "file": event["file"],
-                    "line": event["line"],
-                    "function": event["function"],
-                    "local_names": event["local_names"],
-                }
-                for idx, event in enumerate(events[:200])
-                if event.get("local_names")
-            ],
-        }
-        with open(output_path, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, sort_keys=True)
-            handle.write("\n")
+        import pytest as pytest_module
+    except BaseException as exc:  # noqa: BLE001 - any import failure is a real outcome
+        execution_outcome = "import_error"
+        captured_exception = describe_exception(exc)
+
+    if pytest_module is not None:
+        sys.settrace(tracer)
+        try:
+            exit_code = int(pytest_module.main(sys.argv[1:]))
+        except SystemExit as exc:
+            code = exc.code
+            exit_code = int(code) if isinstance(code, int) else (0 if code is None else 1)
+        except BaseException as exc:  # noqa: BLE001 - record any in-run failure truthfully
+            execution_outcome = "run_exception"
+            captured_exception = describe_exception(exc)
+            exit_code = 2
+        finally:
+            sys.settrace(None)
+
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    line_items = sorted(line_counts.items())
+    payload = {
+        "schema_version": 1,
+        "producer": "contextgraph.execution_trace_smoke.pytest_sys_settrace",
+        "execution_outcome": execution_outcome,
+        "captured_exception": captured_exception,
+        "coverage": {
+            "files_touched": len({item.split(":", 1)[0] for item, _count in line_items}),
+            "lines_executed": len(line_items),
+            "events_recorded": len(events),
+            "events_seen": int(sum(event_counts.values())),
+            "truncated": int(sum(event_counts.values())) > len(events),
+            "execution_outcome": execution_outcome,
+        },
+        "line_coverage": [{"location": item, "count": count} for item, count in line_items[:2000]],
+        "runtime_metrics": {
+            "elapsed_ms": elapsed_ms,
+            "pytest_exit_code": exit_code,
+            "max_events": max_events,
+            "execution_outcome": execution_outcome,
+        },
+        "steps": {
+            "event_counts": dict(sorted(event_counts.items())),
+            "pytest_args": sys.argv[1:],
+        },
+        "trace_events": events,
+        "variable_states": [
+            {
+                "event_index": idx,
+                "file": event["file"],
+                "line": event["line"],
+                "function": event["function"],
+                "local_names": event["local_names"],
+            }
+            for idx, event in enumerate(events[:200])
+            if event.get("local_names")
+        ],
+    }
+    with open(output_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, sort_keys=True)
+        handle.write("\n")
     return exit_code
 
 
@@ -236,6 +284,26 @@ def normalize_exit_code(value):
     return 1
 
 
+def describe_exception(exc):
+    info = {"type": type(exc).__name__, "message": str(exc)[:2000]}
+    filename = getattr(exc, "filename", None)
+    lineno = getattr(exc, "lineno", None)
+    offset = getattr(exc, "offset", None)
+    text = getattr(exc, "text", None)
+    if filename is not None:
+        info["filename"] = str(filename)
+    if lineno is not None:
+        info["lineno"] = int(lineno)
+    if offset is not None:
+        try:
+            info["offset"] = int(offset)
+        except (TypeError, ValueError):
+            pass
+    if text is not None:
+        info["text"] = str(text)[:500]
+    return info
+
+
 def main() -> int:
     output_path = os.environ.get("CONTEXTGRAPH_TRACE_OUTPUT", "/tmp/contextgraph_execution_trace.json")
     repo_root = os.environ.get("CONTEXTGRAPH_TRACE_REPO_ROOT", "/testbed")
@@ -251,10 +319,12 @@ def main() -> int:
     started = time.monotonic()
 
     def tracer(frame, event, arg):
-        if event not in {"call", "line", "return", "exception"}:
-            return tracer
+        # Scope strictly to repo_root: return None for out-of-repo frames so
+        # CPython skips per-line callbacks there entirely (bounds overhead).
         path = frame.f_code.co_filename
         if not path.startswith(repo_root):
+            return None
+        if event not in {"call", "line", "return", "exception"}:
             return tracer
         rel = os.path.relpath(path, repo_root)
         lineno = int(frame.f_lineno)
@@ -274,7 +344,8 @@ def main() -> int:
         return tracer
 
     exit_code = 1
-    unhandled_exception_type = None
+    execution_outcome = "executed"
+    captured_exception = None
     previous_argv = sys.argv
     previous_path = list(sys.path)
     script_abspath = os.path.abspath(script_path)
@@ -288,10 +359,14 @@ def main() -> int:
         exit_code = 0
     except SystemExit as exc:
         exit_code = normalize_exit_code(exc.code)
-    except BaseException as exc:
-        unhandled_exception_type = type(exc).__name__
+    except SyntaxError as exc:
+        execution_outcome = "compile_error"
+        captured_exception = describe_exception(exc)
+        exit_code = 2
+    except BaseException as exc:  # noqa: BLE001 - record any failure truthfully
+        execution_outcome = "run_exception"
+        captured_exception = describe_exception(exc)
         exit_code = 1
-        raise
     finally:
         sys.settrace(None)
         sys.argv = previous_argv
@@ -301,12 +376,15 @@ def main() -> int:
         payload = {
             "schema_version": 1,
             "producer": "contextgraph.execution_trace_smoke.python_script_sys_settrace",
+            "execution_outcome": execution_outcome,
+            "captured_exception": captured_exception,
             "coverage": {
                 "files_touched": len({item.split(":", 1)[0] for item, _count in line_items}),
                 "lines_executed": len(line_items),
                 "events_recorded": len(events),
                 "events_seen": int(sum(event_counts.values())),
                 "truncated": int(sum(event_counts.values())) > len(events),
+                "execution_outcome": execution_outcome,
             },
             "line_coverage": [{"location": item, "count": count} for item, count in line_items[:2000]],
             "runtime_metrics": {
@@ -314,7 +392,7 @@ def main() -> int:
                 "python_script_exit_code": exit_code,
                 "max_events": max_events,
                 "script_dir": script_dir,
-                "unhandled_exception_type": unhandled_exception_type,
+                "execution_outcome": execution_outcome,
             },
             "steps": {
                 "event_counts": dict(sorted(event_counts.items())),
@@ -595,14 +673,53 @@ def strip_json_string_line_wraps(body: str) -> str:
     return "".join(out)
 
 
+# Outcomes where the code genuinely could not execute. These are truthful
+# dynamic signals (the candidate does not compile / import), NOT failures to
+# trace, so a zero-execution payload is valid IF and ONLY IF a real exception
+# was positively captured (type + source location). Anything else fails closed.
+NON_EXECUTION_OUTCOMES = {"import_error", "compile_error"}
+
+
+def payload_execution_outcome(payload: dict[str, Any]) -> str:
+    outcome = payload.get("execution_outcome")
+    if not outcome:
+        coverage = payload.get("coverage")
+        if isinstance(coverage, dict):
+            outcome = coverage.get("execution_outcome")
+    return str(outcome or "executed")
+
+
 def validate_trace_payload(payload: Any) -> None:
     require(isinstance(payload, dict), "EXECUTION_TRACE_SMOKE_TRACE_PAYLOAD_NOT_OBJECT")
     for key in ("coverage", "line_coverage", "runtime_metrics", "steps", "trace_events"):
         require(key in payload, "EXECUTION_TRACE_SMOKE_TRACE_KEY_MISSING", key)
     require(isinstance(payload["trace_events"], list), "EXECUTION_TRACE_SMOKE_TRACE_EVENTS_NOT_ARRAY")
-    require(len(payload["trace_events"]) > 0, "EXECUTION_TRACE_SMOKE_TRACE_EVENTS_EMPTY")
     coverage = payload["coverage"]
     require(isinstance(coverage, dict), "EXECUTION_TRACE_SMOKE_COVERAGE_NOT_OBJECT")
+    outcome = payload_execution_outcome(payload)
+    if outcome in NON_EXECUTION_OUTCOMES:
+        # Truthful no-execution outcome: require a positively captured exception
+        # pinning the failure to a real source location. Do NOT accept an empty
+        # trace with no captured error (that would mask a broken runner).
+        captured = payload.get("captured_exception")
+        require(
+            isinstance(captured, dict),
+            "EXECUTION_TRACE_SMOKE_NON_EXECUTION_OUTCOME_WITHOUT_CAPTURED_EXCEPTION",
+            {"execution_outcome": outcome},
+        )
+        require(
+            bool(captured.get("type")),
+            "EXECUTION_TRACE_SMOKE_CAPTURED_EXCEPTION_TYPE_MISSING",
+            {"execution_outcome": outcome},
+        )
+        require(
+            captured.get("filename") and captured.get("lineno") is not None,
+            "EXECUTION_TRACE_SMOKE_CAPTURED_EXCEPTION_LOCATION_MISSING",
+            {"execution_outcome": outcome, "captured_exception": captured},
+        )
+        return
+    # Normal executed outcome: real coverage must exist.
+    require(len(payload["trace_events"]) > 0, "EXECUTION_TRACE_SMOKE_TRACE_EVENTS_EMPTY")
     require(int(coverage.get("lines_executed") or 0) > 0, "EXECUTION_TRACE_SMOKE_LINE_COVERAGE_EMPTY")
 
 
@@ -610,7 +727,10 @@ def trace_summary(payload: dict[str, Any]) -> dict[str, Any]:
     events = payload.get("trace_events") or []
     coverage = payload.get("coverage") or {}
     event_counts = Counter(str(event.get("event") or "") for event in events if isinstance(event, dict))
+    captured = payload.get("captured_exception")
     return {
+        "execution_outcome": payload_execution_outcome(payload),
+        "captured_exception": captured if isinstance(captured, dict) else None,
         "trace_events_recorded": len(events),
         "trace_event_types": dict(sorted(event_counts.items())),
         "lines_executed": int(coverage.get("lines_executed") or 0),
@@ -641,6 +761,58 @@ def import_swebench_runtime() -> dict[str, Any]:
         "make_test_spec": make_test_spec,
         "load_swebench_dataset": load_swebench_dataset,
     }
+
+
+def classify_missing_test_output(
+    log_dir: Path,
+    test_output_path: Path,
+    instance_timeout: int,
+) -> tuple[str, dict[str, Any]]:
+    """Map an absent test_output.txt to a precise, diagnosable error code.
+
+    swebench writes test_output.txt for both pass/fail and its own clean
+    instance-timeout. The file is only ABSENT when run_instance aborted before
+    writing it (e.g. an external SIGALRM watchdog interrupted swebench's exec,
+    a Docker build/run error, or a hard crash). The previous code reported the
+    generic TEST_OUTPUT_MISSING for all of these, masking timeouts. We read
+    swebench's run_instance.log and classify by signature so the operator sees
+    exactly what failed.
+    """
+    run_log = log_dir / "run_instance.log"
+    detail: dict[str, Any] = {
+        "test_output": str(test_output_path),
+        "run_instance_log": str(run_log),
+        "instance_timeout_s": int(instance_timeout),
+    }
+    if not run_log.is_file():
+        detail["log_present"] = False
+        return "EXECUTION_TRACE_SMOKE_TEST_OUTPUT_MISSING_NO_RUN_LOG", detail
+    log_text = run_log.read_text(encoding="utf-8", errors="replace")
+    detail["log_present"] = True
+    detail["run_instance_log_tail"] = log_text[-1500:]
+    if "INTERRUPTED" in log_text or "SIGALRM" in log_text or "KeyboardInterrupt" in log_text:
+        return "EXECUTION_TRACE_SMOKE_RUN_INTERRUPTED_BEFORE_OUTPUT", detail
+    if "timed out" in log_text.lower() or "timeout" in log_text.lower():
+        return "EXECUTION_TRACE_SMOKE_INSTANCE_TIMED_OUT_BEFORE_OUTPUT", detail
+    if "Error in evaluating model" in log_text or "Traceback" in log_text:
+        return "EXECUTION_TRACE_SMOKE_RUN_EVALUATION_ERROR_BEFORE_OUTPUT", detail
+    return "EXECUTION_TRACE_SMOKE_TEST_OUTPUT_MISSING", detail
+
+
+def detect_swebench_timeout(test_output: str) -> str | None:
+    """Return the swebench timeout marker line if the run timed out, else None.
+
+    swebench appends a timeout notice to test_output.txt when its in-container
+    exec exceeds the instance timeout (e.g. 'Timeout error: 90 seconds
+    exceeded.' or the older '>>>>> Test Timed Out' banner). Detecting it lets us
+    report an explicit timeout instead of a downstream REPORT_MISSING.
+    """
+    for marker in ("Timeout error:", ">>>>> Test Timed Out", "Test Timed Out"):
+        idx = test_output.find(marker)
+        if idx >= 0:
+            line_end = test_output.find("\n", idx)
+            return test_output[idx: line_end if line_end > idx else idx + 120].strip()
+    return None
 
 
 def load_dataset_instance(runtime: dict[str, Any], dataset_name: str, split: str, task_id: str) -> dict[str, Any]:
@@ -724,9 +896,30 @@ def run_trace_smoke(args: argparse.Namespace) -> dict[str, Any]:
     test_output_path = log_dir / runtime["LOG_TEST_OUTPUT"]
     report_path = log_dir / runtime["LOG_REPORT"]
     eval_script_path = log_dir / "eval.sh"
-    require(test_output_path.is_file(), "EXECUTION_TRACE_SMOKE_TEST_OUTPUT_MISSING", {"test_output": str(test_output_path)})
-    require(report_path.is_file(), "EXECUTION_TRACE_SMOKE_REPORT_MISSING", {"report": str(report_path)})
+    if not test_output_path.is_file():
+        code, detail = classify_missing_test_output(log_dir, test_output_path, args.instance_timeout)
+        raise ExecutionTraceSmokeError(f"{code}: {detail}")
     test_output = test_output_path.read_text(encoding="utf-8", errors="replace")
+    # swebench's clean instance-timeout writes test_output.txt (with a timeout
+    # marker) but no report.json. Surface that as an explicit, honest timeout
+    # instead of the indirect REPORT_MISSING. The traced process was killed
+    # before finalizing the trace, so this row simply has no trace yet.
+    timeout_marker = detect_swebench_timeout(test_output)
+    if timeout_marker is not None:
+        raise ExecutionTraceSmokeError(
+            "EXECUTION_TRACE_SMOKE_INSTANCE_TIMED_OUT: "
+            + json.dumps(
+                {
+                    "task_id": args.task_id,
+                    "category": args.category,
+                    "instance_timeout_s": int(args.instance_timeout),
+                    "swebench_timeout_marker": timeout_marker,
+                    "test_output": str(test_output_path),
+                },
+                sort_keys=True,
+            )
+        )
+    require(report_path.is_file(), "EXECUTION_TRACE_SMOKE_REPORT_MISSING", {"report": str(report_path)})
     trace_payload = extract_trace_payload(test_output)
     trace_payload.update(
         {

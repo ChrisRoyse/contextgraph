@@ -8,11 +8,36 @@ from pathlib import Path
 import pytest
 
 from ..python_execution_trace_pytest_batch import (
+    SWEBENCH_TIMEOUT_BACKSTOP_BUFFER_S,
     ExecutionTracePytestBatchError,
+    effective_instance_timeout,
     load_runnable_rows,
     run_batch,
     select_rows,
+    watchdog_timeout,
 )
+
+
+def test_watchdog_fires_strictly_after_swebench_timeout():
+    # #824: when a row watchdog is set, swebench's exec timeout must finish first.
+    args = Namespace(instance_timeout=1800, row_timeout=900)
+    swebench_to = effective_instance_timeout(args)
+    backstop = watchdog_timeout(args)
+    assert swebench_to == 900
+    assert backstop == 900 + SWEBENCH_TIMEOUT_BACKSTOP_BUFFER_S
+    assert backstop > swebench_to  # the watchdog never races swebench's own timeout
+
+
+def test_watchdog_disabled_when_no_row_timeout():
+    args = Namespace(instance_timeout=1800, row_timeout=None)
+    assert watchdog_timeout(args) is None
+    assert effective_instance_timeout(args) == 1800
+
+
+def test_watchdog_still_above_swebench_for_small_row_timeout():
+    args = Namespace(instance_timeout=1800, row_timeout=5)
+    assert effective_instance_timeout(args) == 5
+    assert watchdog_timeout(args) == 5 + SWEBENCH_TIMEOUT_BACKSTOP_BUFFER_S
 
 
 def write_json(path: Path, value: object) -> None:
