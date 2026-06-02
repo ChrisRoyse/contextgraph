@@ -303,6 +303,22 @@ def test_transform_wraps_single_pytest_command_after_trace_runner():
     assert begin_marker_index > end_index
 
 
+def test_transform_exports_soft_timeout_when_requested():
+    eval_script = [
+        "source /opt/miniconda3/bin/activate",
+        "conda activate testbed",
+        "cd /testbed",
+        ": 'START TEST OUTPUT'",
+        "pytest -rA test_requests.py",
+        ": 'END TEST OUTPUT'",
+    ]
+
+    transformed, metadata = transform_eval_script_list(eval_script, max_events=12, soft_timeout_seconds=44)
+
+    assert metadata["soft_timeout_seconds"] == 44
+    assert any(line == "export CONTEXTGRAPH_TRACE_SOFT_TIMEOUT_SECONDS=44" for line in transformed)
+
+
 def test_transform_wraps_django_runtests_command_after_trace_runner():
     eval_script = [
         "source /opt/miniconda3/bin/activate",
@@ -426,6 +442,56 @@ def test_python_script_runner_stops_tracing_at_max_events(tmp_path: Path):
     assert payload["coverage"]["events_recorded"] == 6
     assert payload["coverage"]["truncated"] is True
     assert payload["runtime_metrics"]["trace_stopped_at_max_events"] is True
+    validate_trace_payload(payload)
+
+
+def test_python_script_runner_writes_payload_on_soft_timeout(tmp_path: Path):
+    repo = tmp_path / "repo"
+    script = repo / "tests" / "runtests.py"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        "\n".join(
+            [
+                "import time",
+                "total = 0",
+                "for i in range(10):",
+                "    total += i",
+                "time.sleep(20)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner = tmp_path / "contextgraph_trace_python_script.py"
+    output = tmp_path / "trace.json"
+    runner.write_text(build_python_script_trace_runner_source(), encoding="utf-8")
+    env = dict(os.environ)
+    env.update(
+        {
+            "CONTEXTGRAPH_TRACE_OUTPUT": str(output),
+            "CONTEXTGRAPH_TRACE_REPO_ROOT": str(repo),
+            "CONTEXTGRAPH_TRACE_MAX_EVENTS": "500",
+            "CONTEXTGRAPH_TRACE_SOFT_TIMEOUT_SECONDS": "1",
+        }
+    )
+
+    completed = subprocess.run(
+        [sys.executable, str(runner), str(script)],
+        check=False,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+
+    assert completed.returncode == 124
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["execution_outcome"] == "run_timeout"
+    assert payload["coverage"]["execution_outcome"] == "run_timeout"
+    assert payload["runtime_metrics"]["python_script_exit_code"] == 124
+    assert payload["runtime_metrics"]["soft_timeout_s"] == 1
+    assert payload["captured_exception"]["type"] == "TraceSoftTimeout"
+    assert payload["trace_events"]
     validate_trace_payload(payload)
 
 

@@ -128,6 +128,7 @@ def load_corpus_entry(corpus_root: Path, task_id: str, category: str) -> dict[st
 def build_trace_runner_source() -> str:
     return r'''import json
 import os
+import signal
 import sys
 import time
 from collections import Counter
@@ -153,10 +154,27 @@ def describe_exception(exc):
     return info
 
 
+class TraceSoftTimeout(Exception):
+    def __init__(self, frame):
+        self.filename = getattr(getattr(frame, "f_code", None), "co_filename", None)
+        self.lineno = getattr(frame, "f_lineno", None)
+        super().__init__("contextgraph trace soft timeout")
+
+
+def describe_soft_timeout(exc):
+    info = {"type": "TraceSoftTimeout", "message": str(exc)}
+    if exc.filename is not None:
+        info["filename"] = str(exc.filename)
+    if exc.lineno is not None:
+        info["lineno"] = int(exc.lineno)
+    return info
+
+
 def main() -> int:
     output_path = os.environ.get("CONTEXTGRAPH_TRACE_OUTPUT", "/tmp/contextgraph_execution_trace.json")
     repo_root = os.environ.get("CONTEXTGRAPH_TRACE_REPO_ROOT", "/testbed")
     max_events = int(os.environ.get("CONTEXTGRAPH_TRACE_MAX_EVENTS", "5000"))
+    soft_timeout_s = int(os.environ.get("CONTEXTGRAPH_TRACE_SOFT_TIMEOUT_SECONDS", "0"))
     events = []
     line_counts = Counter()
     event_counts = Counter()
@@ -202,6 +220,9 @@ def main() -> int:
     execution_outcome = "executed"
     captured_exception = None
 
+    def soft_timeout_handler(signum, frame):
+        raise TraceSoftTimeout(frame)
+
     # Import pytest under guard: a compile_error mutation in any module on the
     # import path (e.g. _pytest/assertion/rewrite.py for the pytest repo itself)
     # raises SyntaxError HERE, which is the genuine dynamic truth for that row.
@@ -213,17 +234,26 @@ def main() -> int:
         captured_exception = describe_exception(exc)
 
     if pytest_module is not None:
+        if soft_timeout_s > 0:
+            signal.signal(signal.SIGALRM, soft_timeout_handler)
+            signal.alarm(soft_timeout_s)
         sys.settrace(tracer)
         try:
             exit_code = int(pytest_module.main(sys.argv[1:]))
         except SystemExit as exc:
             code = exc.code
             exit_code = int(code) if isinstance(code, int) else (0 if code is None else 1)
+        except TraceSoftTimeout as exc:
+            execution_outcome = "run_timeout"
+            captured_exception = describe_soft_timeout(exc)
+            exit_code = 124
         except BaseException as exc:  # noqa: BLE001 - record any in-run failure truthfully
             execution_outcome = "run_exception"
             captured_exception = describe_exception(exc)
             exit_code = 2
         finally:
+            if soft_timeout_s > 0:
+                signal.alarm(0)
             sys.settrace(None)
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
@@ -246,6 +276,7 @@ def main() -> int:
             "elapsed_ms": elapsed_ms,
             "pytest_exit_code": exit_code,
             "max_events": max_events,
+            "soft_timeout_s": soft_timeout_s,
             "trace_stopped_at_max_events": bool(trace_limit_reached[0]),
             "execution_outcome": execution_outcome,
         },
@@ -281,6 +312,7 @@ def build_python_script_trace_runner_source() -> str:
     return r'''import json
 import os
 import runpy
+import signal
 import sys
 import time
 from collections import Counter
@@ -314,10 +346,27 @@ def describe_exception(exc):
     return info
 
 
+class TraceSoftTimeout(Exception):
+    def __init__(self, frame):
+        self.filename = getattr(getattr(frame, "f_code", None), "co_filename", None)
+        self.lineno = getattr(frame, "f_lineno", None)
+        super().__init__("contextgraph trace soft timeout")
+
+
+def describe_soft_timeout(exc):
+    info = {"type": "TraceSoftTimeout", "message": str(exc)}
+    if exc.filename is not None:
+        info["filename"] = str(exc.filename)
+    if exc.lineno is not None:
+        info["lineno"] = int(exc.lineno)
+    return info
+
+
 def main() -> int:
     output_path = os.environ.get("CONTEXTGRAPH_TRACE_OUTPUT", "/tmp/contextgraph_execution_trace.json")
     repo_root = os.environ.get("CONTEXTGRAPH_TRACE_REPO_ROOT", "/testbed")
     max_events = int(os.environ.get("CONTEXTGRAPH_TRACE_MAX_EVENTS", "5000"))
+    soft_timeout_s = int(os.environ.get("CONTEXTGRAPH_TRACE_SOFT_TIMEOUT_SECONDS", "0"))
     script_argv = sys.argv[1:]
     if not script_argv:
         return 2
@@ -372,6 +421,12 @@ def main() -> int:
     sys.argv = [script_path] + script_args
     if script_dir:
         sys.path.insert(0, script_dir)
+    def soft_timeout_handler(signum, frame):
+        raise TraceSoftTimeout(frame)
+
+    if soft_timeout_s > 0:
+        signal.signal(signal.SIGALRM, soft_timeout_handler)
+        signal.alarm(soft_timeout_s)
     sys.settrace(tracer)
     try:
         runpy.run_path(script_path, run_name="__main__")
@@ -382,11 +437,17 @@ def main() -> int:
         execution_outcome = "compile_error"
         captured_exception = describe_exception(exc)
         exit_code = 2
+    except TraceSoftTimeout as exc:
+        execution_outcome = "run_timeout"
+        captured_exception = describe_soft_timeout(exc)
+        exit_code = 124
     except BaseException as exc:  # noqa: BLE001 - record any failure truthfully
         execution_outcome = "run_exception"
         captured_exception = describe_exception(exc)
         exit_code = 1
     finally:
+        if soft_timeout_s > 0:
+            signal.alarm(0)
         sys.settrace(None)
         sys.argv = previous_argv
         sys.path[:] = previous_path
@@ -411,6 +472,7 @@ def main() -> int:
                 "python_script_exit_code": exit_code,
                 "max_events": max_events,
                 "script_dir": script_dir,
+                "soft_timeout_s": soft_timeout_s,
                 "trace_stopped_at_max_events": bool(trace_limit_reached[0]),
                 "execution_outcome": execution_outcome,
             },
@@ -443,7 +505,7 @@ if __name__ == "__main__":
 '''
 
 
-def _heredoc_script_lines(max_events: int, command_family: str) -> list[str]:
+def _heredoc_script_lines(max_events: int, command_family: str, soft_timeout_seconds: int = 0) -> list[str]:
     if command_family == "pytest_direct":
         runner_path = TRACE_PYTEST_RUNNER_PATH
         runner_source = build_trace_runner_source()
@@ -461,6 +523,7 @@ def _heredoc_script_lines(max_events: int, command_family: str) -> list[str]:
         f"export CONTEXTGRAPH_TRACE_OUTPUT={shlex.quote(TRACE_OUTPUT_PATH)}",
         "export CONTEXTGRAPH_TRACE_REPO_ROOT=/testbed",
         f"export CONTEXTGRAPH_TRACE_MAX_EVENTS={int(max_events)}",
+        f"export CONTEXTGRAPH_TRACE_SOFT_TIMEOUT_SECONDS={int(soft_timeout_seconds)}",
         f"rm -f {shlex.quote(TRACE_OUTPUT_PATH)}",
     ]
 
@@ -586,6 +649,7 @@ def transform_eval_script_list(
     eval_script_list: list[str],
     max_events: int,
     command_family: str = "pytest_direct",
+    soft_timeout_seconds: int = 0,
 ) -> tuple[list[str], dict[str, Any]]:
     require(
         command_family in SUPPORTED_COMMAND_FAMILIES,
@@ -602,7 +666,7 @@ def transform_eval_script_list(
         legacy_command_index_key = "django_runtests_command_index"
     transformed = list(eval_script_list)
     transformed[command_index] = wrapped_command
-    heredoc_lines = _heredoc_script_lines(max_events, command_family)
+    heredoc_lines = _heredoc_script_lines(max_events, command_family, soft_timeout_seconds)
     transformed[command_index:command_index] = heredoc_lines
     emit_index = command_index + len(heredoc_lines) + 2
     require(
@@ -618,6 +682,7 @@ def transform_eval_script_list(
         "test_command_index": command_index,
         legacy_command_index_key: command_index,
         "max_events": int(max_events),
+        "soft_timeout_seconds": int(soft_timeout_seconds),
     }
     metadata.update(command_metadata)
     return transformed, metadata
@@ -973,10 +1038,13 @@ def run_trace_smoke(args: argparse.Namespace) -> dict[str, Any]:
         env_image_tag=args.tag,
         arch=args.arch,
     )
+    soft_timeout_margin = int(getattr(args, "trace_soft_timeout_margin", 30))
+    soft_timeout_seconds = max(0, int(args.instance_timeout) - soft_timeout_margin) if soft_timeout_margin > 0 else 0
     transformed, transform_metadata = transform_eval_script_list(
         list(test_spec.eval_script_list),
         max_events=args.max_events,
         command_family=args.command_family,
+        soft_timeout_seconds=soft_timeout_seconds,
     )
     test_spec.eval_script_list = transformed
 
@@ -1146,6 +1214,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--tag", default="latest")
     parser.add_argument("--instance-timeout", type=int, default=1800)
     parser.add_argument("--max-events", type=int, default=5000)
+    parser.add_argument(
+        "--trace-soft-timeout-margin",
+        type=int,
+        default=30,
+        help="Seconds before SWE-bench hard timeout to write a partial trace payload; 0 disables.",
+    )
     parser.add_argument("--command-family", choices=sorted(SUPPORTED_COMMAND_FAMILIES), default="pytest_direct")
     parser.add_argument("--allow-non-aiwonder-roots", action="store_true")
 

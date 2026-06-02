@@ -565,6 +565,7 @@ def run_one_row(
         tag=args.tag,
         instance_timeout=effective_instance_timeout(args),
         max_events=args.max_events,
+        trace_soft_timeout_margin=int(getattr(args, "trace_soft_timeout_margin", 30)),
         command_family=config["command_family"],
         allow_non_aiwonder_roots=bool(args.allow_non_aiwonder_roots),
     )
@@ -1176,6 +1177,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="Optional Python-side row watchdog. SIGALRM writes a failed-row ledger before finalization.",
     )
     parser.add_argument("--max-events", type=int, default=5000)
+    parser.add_argument(
+        "--trace-soft-timeout-margin",
+        type=int,
+        default=30,
+        help="Seconds before SWE-bench hard timeout to write a partial trace payload; 0 disables.",
+    )
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument("--allow-non-aiwonder-roots", action="store_true")
 
