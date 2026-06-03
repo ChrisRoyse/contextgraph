@@ -174,9 +174,15 @@ impl Default for DeltaPComponents {
 pub struct DeltaKComponents {
     pub cos_align: f32,
     pub fisher_violation: f32,
+    #[serde(default = "default_fisher_violation_source")]
+    pub fisher_violation_source: String,
     pub ece: f32,
     pub embedder_coherence: f32,
     pub embedder_coherence_source: String,
+}
+
+fn default_fisher_violation_source() -> String {
+    "bootstrap_neutral_no_fisher_snapshot".to_string()
 }
 
 impl Default for DeltaKComponents {
@@ -184,6 +190,7 @@ impl Default for DeltaKComponents {
         Self {
             cos_align: 0.0,
             fisher_violation: 0.0,
+            fisher_violation_source: default_fisher_violation_source(),
             ece: 0.0,
             embedder_coherence: 0.5,
             embedder_coherence_source: "bootstrap_neutral_n_lt_1000".to_string(),
@@ -381,6 +388,19 @@ impl DeltaKComponents {
             ));
         }
         validate_unit("delta_k.fisher_violation", self.fisher_violation)?;
+        validate_source(
+            "delta_k.fisher_violation_source",
+            &self.fisher_violation_source,
+            &["computed", "bootstrap_neutral_no_fisher_snapshot"],
+        )?;
+        if self.fisher_violation_source == "bootstrap_neutral_no_fisher_snapshot"
+            && self.fisher_violation != 0.0
+        {
+            return Err(UtmlError::new(
+                UtmlErrorCode::InvalidSignal,
+                "delta_k.fisher_violation must be 0.0 when no Fisher snapshot source is present",
+            ));
+        }
         validate_unit("delta_k.ece", self.ece)?;
         validate_unit("delta_k.embedder_coherence", self.embedder_coherence)?;
         validate_source(
@@ -454,12 +474,13 @@ pub fn compute_delta_k(c: DeltaKComponents) -> Result<f32, UtmlError> {
         ));
     }
     let cos_align_normalized = (c.cos_align + 1.0) / 2.0;
-    Ok(clamp01(
-        0.5 * cos_align_normalized
-            + 0.3 * (1.0 - c.fisher_violation)
-            + 0.15 * (1.0 - c.ece)
-            + 0.05 * c.embedder_coherence,
-    ))
+    let non_fisher =
+        0.5 * cos_align_normalized + 0.15 * (1.0 - c.ece) + 0.05 * c.embedder_coherence;
+    if c.fisher_violation_source == "computed" {
+        Ok(clamp01(non_fisher + 0.3 * (1.0 - c.fisher_violation)))
+    } else {
+        Ok(clamp01(non_fisher / 0.7))
+    }
 }
 
 pub fn compute_delta_omega(c: DeltaOmegaComponents) -> Result<f32, UtmlError> {
@@ -953,6 +974,7 @@ mod tests {
         let value = compute_delta_k(DeltaKComponents {
             cos_align: 0.8,
             fisher_violation: 0.2,
+            fisher_violation_source: "computed".to_string(),
             ece: 0.1,
             embedder_coherence: 0.6,
             embedder_coherence_source: "computed".to_string(),
@@ -963,12 +985,42 @@ mod tests {
         let err = compute_delta_k(DeltaKComponents {
             cos_align: -0.01,
             fisher_violation: 0.0,
+            fisher_violation_source: "computed".to_string(),
             ece: 0.0,
             embedder_coherence: 1.0,
             embedder_coherence_source: "computed".to_string(),
         })
         .unwrap_err();
         assert_eq!(err.code(), "UTML_CATASTROPHIC_FORGETTING");
+    }
+
+    #[test]
+    fn delta_k_bootstrap_fisher_source_excludes_fisher_term() {
+        let value = compute_delta_k(DeltaKComponents {
+            cos_align: 0.8,
+            fisher_violation: 0.0,
+            fisher_violation_source: "bootstrap_neutral_no_fisher_snapshot".to_string(),
+            ece: 0.1,
+            embedder_coherence: 0.6,
+            embedder_coherence_source: "computed".to_string(),
+        })
+        .unwrap();
+        let expected = (0.5 * 0.9 + 0.15 * 0.9 + 0.05 * 0.6) / 0.7;
+        assert!((value - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn delta_k_fails_closed_on_nonzero_bootstrap_fisher() {
+        let err = compute_delta_k(DeltaKComponents {
+            cos_align: 0.8,
+            fisher_violation: 0.2,
+            fisher_violation_source: "bootstrap_neutral_no_fisher_snapshot".to_string(),
+            ece: 0.1,
+            embedder_coherence: 0.6,
+            embedder_coherence_source: "computed".to_string(),
+        })
+        .unwrap_err();
+        assert_eq!(err.code(), "UTML_INVALID_SIGNAL");
     }
 
     #[test]

@@ -224,7 +224,8 @@ impl Trainer {
                 },
                 DeltaKComponents {
                     cos_align: if plan.force_count > 0 { 0.85 } else { 0.65 },
-                    fisher_violation: 0.2,
+                    fisher_violation: 0.0,
+                    fisher_violation_source: "bootstrap_neutral_no_fisher_snapshot".to_string(),
                     ece: 0.1,
                     embedder_coherence: 0.5,
                     embedder_coherence_source: "bootstrap_neutral_n_lt_1000".to_string(),
@@ -875,6 +876,7 @@ fn countable_training_signal(
         DeltaKComponents {
             cos_align: if force_count > 0 { 0.85 } else { 0.65 },
             fisher_violation: 0.0,
+            fisher_violation_source: "computed".to_string(),
             ece: 0.1,
             embedder_coherence: 0.5,
             embedder_coherence_source: "computed".to_string(),
@@ -1458,6 +1460,14 @@ mod tests {
         assert_eq!(cert.predictor_parameter_update_count, 0);
         assert!(!cert.checkpoint_readback_verified);
         assert!(!cert.ship_gate_countable_training);
+        assert_eq!(cert.signal.delta_k_components.fisher_violation, 0.0);
+        assert_eq!(
+            cert.signal
+                .delta_k_components
+                .fisher_violation_source
+                .as_str(),
+            "bootstrap_neutral_no_fisher_snapshot"
+        );
         let serialized = serde_json::to_value(&cert)?;
         assert_eq!(serialized["trained_predictor"], serde_json::json!(false));
         assert_eq!(
@@ -1471,6 +1481,14 @@ mod tests {
         assert_eq!(
             serialized["ship_gate_countable_training"],
             serde_json::json!(false)
+        );
+        assert_eq!(
+            serialized["signal"]["delta_k_components"]["fisher_violation"],
+            serde_json::json!(0.0)
+        );
+        assert_eq!(
+            serialized["signal"]["delta_k_components"]["fisher_violation_source"],
+            serde_json::json!("bootstrap_neutral_no_fisher_snapshot")
         );
         assert_eq!(
             cert.loss_components
