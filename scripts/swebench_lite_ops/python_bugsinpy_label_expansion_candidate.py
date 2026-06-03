@@ -52,7 +52,7 @@ CLASS_LABEL_PREFIXES = {
 
 CLASS_REGISTRY_TOKENS = {
     "floating_point_precision": ("precision", "float", "floating", "dtype", "decimal", "nan", "inf"),
-    "memory_aliasing_mutation": ("aliasing", "mutable", "inplace", "copy", "view", "shared", "reference"),
+    "memory_aliasing_mutation": ("aliasing", "mutable", "inplace", "copy", "view", "shared"),
     "resource_leak": (
         "resource",
         "close",

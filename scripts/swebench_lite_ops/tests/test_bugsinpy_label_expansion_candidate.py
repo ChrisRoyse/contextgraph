@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from ..python_auto_label_discovery import source_surface_labels
-from ..python_bugsinpy_label_expansion_candidate import run_candidate_expansion
+from ..python_bugsinpy_label_expansion_candidate import registry_class_hits, run_candidate_expansion
 
 
 def write_bug(root: Path, project: str, bug_id: str, patch: str) -> None:
@@ -202,6 +202,14 @@ def test_candidate_expansion_covers_state_aliasing_rows(tmp_path: Path) -> None:
     assert summary["counts"]["candidate_class_covered_count"] == 1
     candidate_rows = (out / "candidate_registry_expansion.jsonl").read_text(encoding="utf-8")
     assert "state_aliasing:memory_aliasing_mutation_surface" in candidate_rows
+
+
+def test_state_aliasing_registry_hits_ignore_variable_reference_swap() -> None:
+    hits = registry_class_hits(
+        "memory_aliasing_mutation",
+        ["mutation_micro:variable_reference_swap", "state_aliasing:shared_reference_surface"],
+    )
+    assert hits == ["state_aliasing:shared_reference_surface"]
 
 
 def test_candidate_expansion_passes_with_support_without_full_coverage(tmp_path: Path) -> None:
