@@ -11,8 +11,10 @@ use crate::replay_buffer::{ReplayBufferRow, ReplayPriorityConfig};
 use context_graph_mejepa::{PredictionId, Verdict};
 use rocksdb::{WriteOptions, DB};
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 
 const ONLINE_HEAD_STATE_SCHEMA_VERSION: u32 = 1;
+const ONLINE_HEAD_MAX_NEIGHBORS_CAP: usize = 128;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -108,6 +110,65 @@ pub struct OnlineHeadUpdateReport {
     pub flat_vector_concat_used: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct OnlineHeadNeighborConfig {
+    pub max_distance: f32,
+    pub max_neighbors: usize,
+}
+
+impl Default for OnlineHeadNeighborConfig {
+    fn default() -> Self {
+        Self {
+            max_distance: 0.05,
+            max_neighbors: 16,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct OnlineHeadNeighbor {
+    pub panel_signature_hash: String,
+    pub distance: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct OnlineHeadNeighborContext {
+    pub replay_cell_id: String,
+    pub label_signature_hash: String,
+    pub skill_signature_hash: Option<String>,
+    pub ability_signature_hash: Option<String>,
+    pub membership_signature_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OnlineHeadPredictionSource {
+    BaseNoCorrection,
+    ExactPanel,
+    NeighborPanel,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct OnlineHeadPredictionReport {
+    pub schema_version: u32,
+    pub base_verdict: Verdict,
+    pub corrected_verdict: Verdict,
+    pub source: OnlineHeadPredictionSource,
+    pub query_panel_signature_hash: String,
+    pub matched_panel_signature_hash: Option<String>,
+    pub matched_distance: Option<f32>,
+    pub matched_head_state: Option<OnlineHeadStateRow>,
+    pub neighbor_count_considered: usize,
+    pub neighbor_max_distance: f32,
+    pub context_matched: bool,
+    pub flat_vector_concat_used: bool,
+    pub claims_fisher_ewc_protection: bool,
+}
+
 impl OnlineHeadStateRow {
     pub fn validate(&self) -> Result<(), TrainerError> {
         if self.schema_version != ONLINE_HEAD_STATE_SCHEMA_VERSION {
@@ -175,6 +236,69 @@ impl OnlineHeadRepeatMetricRow {
             return Err(invalid("updated_at_unix_ms", "must be positive"));
         }
         Ok(())
+    }
+}
+
+impl OnlineHeadNeighborConfig {
+    fn validate(&self) -> Result<(), TrainerError> {
+        if !self.max_distance.is_finite() || self.max_distance < 0.0 {
+            return Err(invalid("max_distance", "must be finite and non-negative"));
+        }
+        if self.max_neighbors == 0 || self.max_neighbors > ONLINE_HEAD_MAX_NEIGHBORS_CAP {
+            return Err(invalid(
+                "max_neighbors",
+                format!("must be in 1..={ONLINE_HEAD_MAX_NEIGHBORS_CAP}"),
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl OnlineHeadNeighbor {
+    fn validate(&self) -> Result<(), TrainerError> {
+        validate_id("neighbor.panel_signature_hash", &self.panel_signature_hash)?;
+        if !self.distance.is_finite() || self.distance < 0.0 {
+            return Err(invalid(
+                "neighbor.distance",
+                "must be finite and non-negative",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl OnlineHeadNeighborContext {
+    pub fn from_replay_row(row: &ReplayBufferRow) -> Result<Self, TrainerError> {
+        row.validate()?;
+        Ok(Self {
+            replay_cell_id: row.cell_id.clone(),
+            label_signature_hash: row.label_signature_hash.clone().ok_or_else(|| {
+                invalid(
+                    "label_signature_hash",
+                    "neighbor correction requires label-aware replay context",
+                )
+            })?,
+            skill_signature_hash: row.skill_signature_hash.clone(),
+            ability_signature_hash: row.ability_signature_hash.clone(),
+            membership_signature_hash: row.membership_signature_hash.clone(),
+        })
+    }
+
+    pub fn validate(&self) -> Result<(), TrainerError> {
+        validate_id("replay_cell_id", &self.replay_cell_id)?;
+        validate_id("label_signature_hash", &self.label_signature_hash)?;
+        validate_optional_id("skill_signature_hash", &self.skill_signature_hash)?;
+        validate_optional_id("ability_signature_hash", &self.ability_signature_hash)?;
+        validate_optional_id("membership_signature_hash", &self.membership_signature_hash)?;
+        Ok(())
+    }
+
+    fn matches_row(&self, row: &OnlineHeadStateRow) -> bool {
+        self.replay_cell_id == row.replay_cell_id
+            && self.label_signature_hash == row.label_signature_hash
+            && self.skill_signature_hash == row.skill_signature_hash
+            && self.ability_signature_hash == row.ability_signature_hash
+            && self.membership_signature_hash == row.membership_signature_hash
     }
 }
 
@@ -328,6 +452,105 @@ pub fn predict_with_online_head(
         .unwrap_or(base_verdict))
 }
 
+pub fn predict_with_online_head_neighbors(
+    db: &DB,
+    panel_signature_hash: &str,
+    base_verdict: Verdict,
+    context: &OnlineHeadNeighborContext,
+    neighbors: &[OnlineHeadNeighbor],
+    config: OnlineHeadNeighborConfig,
+) -> Result<OnlineHeadPredictionReport, TrainerError> {
+    validate_id("panel_signature_hash", panel_signature_hash)?;
+    validate_binary_verdict("base_verdict", base_verdict)?;
+    context.validate()?;
+    config.validate()?;
+    if neighbors.len() > config.max_neighbors {
+        return Err(invalid(
+            "neighbors",
+            format!(
+                "got {} neighbors, max {}",
+                neighbors.len(),
+                config.max_neighbors
+            ),
+        ));
+    }
+    for neighbor in neighbors {
+        neighbor.validate()?;
+    }
+
+    let exact_key = online_head_key(panel_signature_hash)?;
+    if let Some(row) = read_online_head_state_row(db, &exact_key)? {
+        if context.matches_row(&row) {
+            return Ok(OnlineHeadPredictionReport {
+                schema_version: ONLINE_HEAD_STATE_SCHEMA_VERSION,
+                base_verdict,
+                corrected_verdict: row.corrected_verdict,
+                source: OnlineHeadPredictionSource::ExactPanel,
+                query_panel_signature_hash: panel_signature_hash.to_string(),
+                matched_panel_signature_hash: Some(row.panel_signature_hash.clone()),
+                matched_distance: Some(0.0),
+                matched_head_state: Some(row),
+                neighbor_count_considered: 0,
+                neighbor_max_distance: config.max_distance,
+                context_matched: true,
+                flat_vector_concat_used: false,
+                claims_fisher_ewc_protection: false,
+            });
+        }
+    }
+
+    let mut candidates = neighbors.to_vec();
+    candidates.sort_by(compare_neighbors);
+    let mut considered = 0_usize;
+    for neighbor in candidates {
+        if neighbor.panel_signature_hash == panel_signature_hash {
+            continue;
+        }
+        if neighbor.distance > config.max_distance {
+            continue;
+        }
+        considered += 1;
+        let head_key = online_head_key(&neighbor.panel_signature_hash)?;
+        let Some(row) = read_online_head_state_row(db, &head_key)? else {
+            continue;
+        };
+        if !context.matches_row(&row) {
+            continue;
+        }
+        return Ok(OnlineHeadPredictionReport {
+            schema_version: ONLINE_HEAD_STATE_SCHEMA_VERSION,
+            base_verdict,
+            corrected_verdict: row.corrected_verdict,
+            source: OnlineHeadPredictionSource::NeighborPanel,
+            query_panel_signature_hash: panel_signature_hash.to_string(),
+            matched_panel_signature_hash: Some(row.panel_signature_hash.clone()),
+            matched_distance: Some(neighbor.distance),
+            matched_head_state: Some(row),
+            neighbor_count_considered: considered,
+            neighbor_max_distance: config.max_distance,
+            context_matched: true,
+            flat_vector_concat_used: false,
+            claims_fisher_ewc_protection: false,
+        });
+    }
+
+    Ok(OnlineHeadPredictionReport {
+        schema_version: ONLINE_HEAD_STATE_SCHEMA_VERSION,
+        base_verdict,
+        corrected_verdict: base_verdict,
+        source: OnlineHeadPredictionSource::BaseNoCorrection,
+        query_panel_signature_hash: panel_signature_hash.to_string(),
+        matched_panel_signature_hash: None,
+        matched_distance: None,
+        matched_head_state: None,
+        neighbor_count_considered: considered,
+        neighbor_max_distance: config.max_distance,
+        context_matched: false,
+        flat_vector_concat_used: false,
+        claims_fisher_ewc_protection: false,
+    })
+}
+
 pub fn read_online_head_state_row(
     db: &DB,
     head_key: &str,
@@ -461,6 +684,13 @@ fn contexts_agree(mistake: &MistakeLogRow, replay: &ReplayBufferRow) -> bool {
         && mistake.membership_signature_hash == replay.membership_signature_hash
 }
 
+fn compare_neighbors(a: &OnlineHeadNeighbor, b: &OnlineHeadNeighbor) -> Ordering {
+    a.distance
+        .partial_cmp(&b.distance)
+        .unwrap_or(Ordering::Greater)
+        .then_with(|| a.panel_signature_hash.cmp(&b.panel_signature_hash))
+}
+
 fn verdict_from_bias(value: f32) -> Verdict {
     if value >= 0.0 {
         Verdict::Pass
@@ -490,4 +720,236 @@ fn validate_binary_verdict(field: &'static str, verdict: Verdict) -> Result<(), 
 
 fn non_binary_verdict(field: &'static str) -> TrainerError {
     invalid(field, "online binary head only accepts pass/fail rows")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ability_resolver::open_ability_resolver_rocksdb;
+    use crate::label_bridge::{
+        ability_signature_hash, accepted_label_signature_hash, membership_signature_hash,
+        skill_signature_hash,
+    };
+    use crate::mistake_log::{mistake_id_from_evidence_parts, MistakeTruthSource};
+    use crate::replay_buffer::{
+        ability_aware_replay_cell_id, ReplayBufferSource, ReplayRetentionTier,
+    };
+
+    const NOW: i64 = 1_780_470_000_000;
+
+    fn rows(byte: u8, suffix: &str) -> (MistakeLogRow, ReplayBufferRow) {
+        let prediction_id = PredictionId([byte; 16]);
+        let accepted_label_ids = vec!["ast_surface:function".to_string()];
+        let active_skill_ids = vec!["skill:unit_sequence".to_string()];
+        let active_higher_ability_ids = vec!["ability:boundary_sequence".to_string()];
+        let source_membership_keys = vec![
+            "chunk_skill::chunk:fsv689::python:before:fsv689::skill:unit_sequence".to_string(),
+        ];
+        let label_signature_hash = accepted_label_signature_hash(&accepted_label_ids).unwrap();
+        let skill_signature_hash = Some(skill_signature_hash(&active_skill_ids).unwrap());
+        let ability_signature_hash =
+            Some(ability_signature_hash(&active_higher_ability_ids).unwrap());
+        let membership_signature_hash =
+            Some(membership_signature_hash(&source_membership_keys).unwrap());
+        let code_state_key = format!("python:before:fsv689:{suffix}");
+        let named_failure_mode = "failure:neighbor_mistake_loop".to_string();
+        let replay_row_key = hex::encode(prediction_id.0);
+        let mistake_id = mistake_id_from_evidence_parts(
+            prediction_id,
+            &code_state_key,
+            &label_signature_hash,
+            skill_signature_hash.as_deref(),
+            ability_signature_hash.as_deref(),
+            membership_signature_hash.as_deref(),
+            Verdict::Fail,
+        )
+        .unwrap();
+        let cell_id = ability_aware_replay_cell_id(
+            "python",
+            "fsv689_mistake_loop",
+            &code_state_key,
+            &named_failure_mode,
+            &label_signature_hash,
+            skill_signature_hash.as_deref(),
+            ability_signature_hash.as_deref(),
+            membership_signature_hash.as_deref(),
+        )
+        .unwrap();
+        (
+            MistakeLogRow {
+                schema_version: 1,
+                mistake_id,
+                prediction_id,
+                predicted_verdict: Verdict::Pass,
+                ground_truth_verdict: Verdict::Fail,
+                truth_source: MistakeTruthSource::SwebenchDockerOracle,
+                code_state_key: code_state_key.clone(),
+                named_failure_mode: Some(named_failure_mode),
+                accepted_label_ids: accepted_label_ids.clone(),
+                active_skill_ids: active_skill_ids.clone(),
+                label_signature_hash: label_signature_hash.clone(),
+                skill_signature_hash: skill_signature_hash.clone(),
+                failure_evidence_set_ids: vec![code_state_key],
+                replay_row_key,
+                accepted_registry_sha256: Some("sha256:fsv689-accepted-registry".to_string()),
+                usefulness_metrics_sha256: Some("sha256:fsv689-usefulness".to_string()),
+                learning_bridge_manifest_sha256: Some("sha256:fsv689-bridge".to_string()),
+                created_at_unix_ms: NOW,
+                active_higher_ability_ids: active_higher_ability_ids.clone(),
+                source_membership_keys: source_membership_keys.clone(),
+                ability_signature_hash: ability_signature_hash.clone(),
+                membership_signature_hash: membership_signature_hash.clone(),
+            },
+            ReplayBufferRow {
+                prediction_id,
+                surprise_z: 2.0,
+                cell_id,
+                coverage_gap_score: 0.75,
+                last_replayed_ts: None,
+                replay_count: 0,
+                retention_weight: 1.0,
+                protected: true,
+                retention_tier: ReplayRetentionTier::Hot,
+                source: ReplayBufferSource::AcceptedLabelMistake,
+                created_at_unix_ms: NOW,
+                updated_at_unix_ms: NOW,
+                accepted_label_ids,
+                active_skill_ids,
+                active_higher_ability_ids,
+                source_membership_keys,
+                label_signature_hash: Some(label_signature_hash),
+                skill_signature_hash,
+                ability_signature_hash,
+                membership_signature_hash,
+            },
+        )
+    }
+
+    fn record_panel(
+        db: &DB,
+        panel_signature_hash: &str,
+        mistake_row: MistakeLogRow,
+        replay_row: ReplayBufferRow,
+    ) {
+        apply_online_mistake_update_sync_readback(
+            db,
+            OnlineHeadUpdateInput {
+                panel_signature_hash: panel_signature_hash.to_string(),
+                mistake_row,
+                replay_row,
+                base_verdict_before_update: Verdict::Pass,
+                now_unix_ms: NOW + 1,
+            },
+            OnlineHeadUpdateConfig {
+                learning_rate: 1.0,
+                repeat_window_size: 4,
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn neighbor_prediction_propagates_to_non_identical_panel_when_context_matches() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = open_ability_resolver_rocksdb(temp.path(), true).unwrap();
+        let (mistake_row, replay_row) = rows(0x68, "source");
+        let context = OnlineHeadNeighborContext::from_replay_row(&replay_row).unwrap();
+        record_panel(&db, "panel:fsv689:source", mistake_row, replay_row);
+
+        assert_eq!(
+            predict_with_online_head(&db, "panel:fsv689:heldout", Verdict::Pass).unwrap(),
+            Verdict::Pass
+        );
+
+        let report = predict_with_online_head_neighbors(
+            &db,
+            "panel:fsv689:heldout",
+            Verdict::Pass,
+            &context,
+            &[OnlineHeadNeighbor {
+                panel_signature_hash: "panel:fsv689:source".to_string(),
+                distance: 0.01,
+            }],
+            OnlineHeadNeighborConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.source, OnlineHeadPredictionSource::NeighborPanel);
+        assert_eq!(report.corrected_verdict, Verdict::Fail);
+        assert_eq!(
+            report.matched_panel_signature_hash.as_deref(),
+            Some("panel:fsv689:source")
+        );
+        assert_eq!(report.matched_distance, Some(0.01));
+        assert!(report.context_matched);
+        assert!(!report.flat_vector_concat_used);
+        assert!(!report.claims_fisher_ewc_protection);
+    }
+
+    #[test]
+    fn neighbor_prediction_does_not_cross_distance_or_context_boundaries() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = open_ability_resolver_rocksdb(temp.path(), true).unwrap();
+        let (mistake_row, replay_row) = rows(0x69, "source");
+        let context = OnlineHeadNeighborContext::from_replay_row(&replay_row).unwrap();
+        record_panel(&db, "panel:fsv689:source", mistake_row, replay_row);
+
+        let distant = predict_with_online_head_neighbors(
+            &db,
+            "panel:fsv689:heldout",
+            Verdict::Pass,
+            &context,
+            &[OnlineHeadNeighbor {
+                panel_signature_hash: "panel:fsv689:source".to_string(),
+                distance: 0.25,
+            }],
+            OnlineHeadNeighborConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(distant.source, OnlineHeadPredictionSource::BaseNoCorrection);
+        assert_eq!(distant.corrected_verdict, Verdict::Pass);
+
+        let mut wrong_context = context;
+        wrong_context.label_signature_hash = "labels:not_the_recorded_context".to_string();
+        let mismatch = predict_with_online_head_neighbors(
+            &db,
+            "panel:fsv689:heldout",
+            Verdict::Pass,
+            &wrong_context,
+            &[OnlineHeadNeighbor {
+                panel_signature_hash: "panel:fsv689:source".to_string(),
+                distance: 0.01,
+            }],
+            OnlineHeadNeighborConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            mismatch.source,
+            OnlineHeadPredictionSource::BaseNoCorrection
+        );
+        assert_eq!(mismatch.corrected_verdict, Verdict::Pass);
+    }
+
+    #[test]
+    fn neighbor_prediction_fails_closed_on_invalid_neighbor_input() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = open_ability_resolver_rocksdb(temp.path(), true).unwrap();
+        let (_mistake_row, replay_row) = rows(0x70, "source");
+        let context = OnlineHeadNeighborContext::from_replay_row(&replay_row).unwrap();
+
+        let err = predict_with_online_head_neighbors(
+            &db,
+            "panel:fsv689:heldout",
+            Verdict::Pass,
+            &context,
+            &[OnlineHeadNeighbor {
+                panel_signature_hash: "panel:fsv689:source".to_string(),
+                distance: f32::NAN,
+            }],
+            OnlineHeadNeighborConfig::default(),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
+    }
 }
