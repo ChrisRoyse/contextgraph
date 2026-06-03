@@ -6,7 +6,9 @@ from pathlib import Path
 from ..python_bugsinpy_failure_mode_catalog_probe import (
     classify_bug,
     iter_bugs,
+    label_has_registry_token,
     parse_patch_files,
+    registry_hits_by_bug_class,
     run_probe,
 )
 
@@ -145,6 +147,22 @@ def test_run_probe_counts_class_specific_registry_hit(tmp_path: Path) -> None:
     summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
     assert summary["fractions"]["class_specific_unlabeled_fraction"] == 0.0
     assert summary["decision"]["classification"] == "catalog_gaps_minor_defer"
+
+
+def test_registry_token_matching_avoids_generic_substrings() -> None:
+    assert label_has_registry_token("runtime_surface:async_missing_await", "async")
+    assert label_has_registry_token("runtime_surface:async_missing_await", "missing_await")
+    assert not label_has_registry_token("dominant_surface:numeric_boundary_or_comparison_surface", "nan")
+    hits = registry_hits_by_bug_class(
+        {
+            "dominant_surface:numeric_boundary_or_comparison_surface",
+            "code_state_identity:mutation_category:off_by_one",
+            "ast_surface:import_dependency_surface",
+        }
+    )
+    assert hits["floating_point_precision"] == []
+    assert hits["memory_aliasing_mutation"] == []
+    assert hits["test_only_pass_mocked_dependency"] == []
 
 
 def test_iter_bugs_skips_missing_patch(tmp_path: Path) -> None:

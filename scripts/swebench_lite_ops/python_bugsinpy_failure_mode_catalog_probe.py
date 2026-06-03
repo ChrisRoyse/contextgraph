@@ -137,12 +137,12 @@ BUG_CLASS_RULES: dict[str, tuple[str, ...]] = {
 REGISTRY_CLASS_TOKENS: dict[str, tuple[str, ...]] = {
     "async_await_misuse": ("async", "await", "coroutine", "event_loop", "blocking_call_in_coroutine"),
     "concurrency_race_deadlock": ("concurrency", "race", "deadlock", "thread", "lock"),
-    "memory_aliasing_mutation": ("alias", "mutation", "mutable", "inplace", "copy", "view"),
-    "floating_point_precision": ("float", "precision", "round", "nan", "inf", "dtype", "decimal"),
+    "memory_aliasing_mutation": ("alias", "mutable", "inplace", "copy", "view"),
+    "floating_point_precision": ("float", "floating", "precision", "isclose", "allclose", "dtype", "decimal"),
     "api_deprecation_version_drift": ("deprecation", "deprecated", "version", "compat", "api_drift"),
     "resource_leak": ("resource", "socket", "file_handle", "close", "cleanup", "leak"),
     "generator_iterator_exhaustion": ("generator", "iterator", "iterable", "stopiteration", "exhaust"),
-    "test_only_pass_mocked_dependency": ("mock", "monkeypatch", "weak_test", "test_only", "dependency"),
+    "test_only_pass_mocked_dependency": ("mock", "monkeypatch", "weak_test", "test_only"),
     "other_unclassified_real_bug": (),
 }
 
@@ -403,10 +403,21 @@ def registry_hits_by_bug_class(accepted_labels: Iterable[str]) -> dict[str, list
         hits = [
             label
             for label in labels
-            if any(token.lower() in label.lower() for token in tokens)
+            if any(label_has_registry_token(label, token) for token in tokens)
         ]
         out[bug_class] = hits
     return out
+
+
+def label_has_registry_token(label_id: str, token: str) -> bool:
+    label_parts = [part for part in re.split(r"[^a-z0-9]+", label_id.lower()) if part]
+    token_parts = [part for part in re.split(r"[^a-z0-9]+", token.lower()) if part]
+    if not token_parts:
+        return False
+    if len(token_parts) == 1:
+        return token_parts[0] in label_parts
+    width = len(token_parts)
+    return any(label_parts[idx : idx + width] == token_parts for idx in range(0, len(label_parts) - width + 1))
 
 
 def label_family(label_id: str) -> str:
@@ -420,7 +431,7 @@ def class_hits_from_emitted_labels(labels: Iterable[str]) -> dict[str, list[str]
         hits = [
             label
             for label in label_list
-            if any(token.lower() in label.lower() for token in tokens)
+            if any(label_has_registry_token(label, token) for token in tokens)
         ]
         if hits:
             out[bug_class] = sorted(set(hits))
