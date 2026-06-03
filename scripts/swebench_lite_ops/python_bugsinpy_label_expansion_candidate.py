@@ -46,6 +46,7 @@ DEFAULT_OUTPUT_ROOT = Path(
 )
 
 CLASS_LABEL_PREFIXES = {
+    "api_deprecation_version_drift": ("api_version:",),
     "floating_point_precision": ("numeric_precision:",),
     "http_protocol_io": ("protocol_io:",),
     "memory_aliasing_mutation": ("state_aliasing:",),
@@ -53,6 +54,15 @@ CLASS_LABEL_PREFIXES = {
 }
 
 CLASS_REGISTRY_TOKENS = {
+    "api_deprecation_version_drift": (
+        "deprecation",
+        "deprecated",
+        "version",
+        "compat",
+        "api_drift",
+        "collections_abc",
+        "python_requires",
+    ),
     "floating_point_precision": ("precision", "float", "floating", "dtype", "decimal", "nan", "inf"),
     "http_protocol_io": ("protocol", "http", "request", "response", "url", "download", "websocket"),
     "memory_aliasing_mutation": ("aliasing", "mutable", "inplace", "copy", "view", "shared"),

@@ -83,6 +83,21 @@ def test_source_surface_labels_emit_protocol_io_family() -> None:
     assert "protocol_io:http_request_response_surface" in labels
 
 
+def test_source_surface_labels_emit_api_version_family() -> None:
+    labels = source_surface_labels(
+        {
+            "source_text": "from collections.abc import Mapping  # compat for deprecated import path",
+            "relative_path": "pkg/compat.py",
+            "node_kind": "ImportFrom",
+            "chunk_kind": "patch_hunk_line",
+        }
+    )
+    assert "api_version:api_deprecation_version_drift_surface" in labels
+    assert "api_version:collections_abc_import_surface" in labels
+    assert "api_version:deprecation_warning_surface" in labels
+    assert "api_version:compatibility_branch_surface" in labels
+
+
 def test_candidate_expansion_covers_float_precision_rows(tmp_path: Path) -> None:
     bugs_root = tmp_path / "BugsInPy"
     write_bug(
@@ -258,6 +273,45 @@ def test_candidate_expansion_covers_taxonomy_derived_protocol_rows(tmp_path: Pat
     assert "protocol_io:http_protocol_io_surface" in candidate_rows
 
 
+def test_candidate_expansion_covers_api_version_rows(tmp_path: Path) -> None:
+    bugs_root = tmp_path / "BugsInPy"
+    write_bug(
+        bugs_root,
+        "demo",
+        "1",
+        """diff --git a/demo/compat.py b/demo/compat.py
+--- a/demo/compat.py
++++ b/demo/compat.py
+@@ -1,2 +1,2 @@
+-from collections import Mapping
++from collections.abc import Mapping  # deprecated import path compatibility
+""",
+    )
+    registry = tmp_path / "accepted.jsonl"
+    write_registry(registry, ["ast_surface:call_api_surface"])
+    out = tmp_path / "out"
+    args = type(
+        "Args",
+        (),
+        {
+            "bugsinpy_root": bugs_root,
+            "target_class": "api_deprecation_version_drift",
+            "accepted_registry": registry,
+            "output_root": out,
+            "sample_size": 0,
+            "min_support": 1,
+        },
+    )()
+    manifest = run_candidate_expansion(args)
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert manifest["passes"] is True
+    assert summary["counts"]["target_class_bug_count"] == 1
+    assert summary["counts"]["candidate_class_covered_count"] == 1
+    candidate_rows = (out / "candidate_registry_expansion.jsonl").read_text(encoding="utf-8")
+    assert "api_version:api_deprecation_version_drift_surface" in candidate_rows
+    assert "api_version:collections_abc_import_surface" in candidate_rows
+
+
 def test_state_aliasing_registry_hits_ignore_variable_reference_swap() -> None:
     hits = registry_class_hits(
         "memory_aliasing_mutation",
@@ -272,6 +326,14 @@ def test_protocol_registry_hits_ignore_entropy_proxy_driver_labels() -> None:
         ["pair:e1/e10:driver:entropy_proxy", "protocol_io:http_request_response_surface"],
     )
     assert hits == ["protocol_io:http_request_response_surface"]
+
+
+def test_api_version_registry_hits_ignore_generic_call_api_surface() -> None:
+    hits = registry_class_hits(
+        "api_deprecation_version_drift",
+        ["ast_surface:call_api_surface", "api_version:runtime_version_guard_surface"],
+    )
+    assert hits == ["api_version:runtime_version_guard_surface"]
 
 
 def test_candidate_expansion_passes_with_support_without_full_coverage(tmp_path: Path) -> None:

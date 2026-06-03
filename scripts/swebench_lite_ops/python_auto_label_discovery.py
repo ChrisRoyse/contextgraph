@@ -572,6 +572,63 @@ def protocol_io_surface_labels(text: str, rel: str) -> list[str]:
     return sorted(set(labels))
 
 
+def api_version_surface_labels(text: str, rel: str) -> list[str]:
+    lowered = text.lower()
+    rel_lowered = rel.lower()
+    haystack = f"{lowered}\n{rel_lowered}"
+    labels: list[str] = []
+    if any(token in haystack for token in ("deprecat", "pendingdeprecationwarning")):
+        labels.append("api_version:deprecation_warning_surface")
+    if any(
+        token in haystack
+        for token in (
+            "compat",
+            "backport",
+            "fallback",
+            "legacy",
+            "py2",
+            "py3",
+            "six.",
+            "six import",
+        )
+    ):
+        labels.append("api_version:compatibility_branch_surface")
+    if any(
+        token in haystack
+        for token in (
+            "sys.version_info",
+            "__version__",
+            "python_version",
+            "python_requires",
+            "requires-python",
+        )
+    ):
+        labels.append("api_version:runtime_version_guard_surface")
+    if any(
+        token in haystack
+        for token in (
+            "packaging.version",
+            "parse_version",
+            "looseversion",
+            "strictversion",
+            "version(",
+        )
+    ):
+        labels.append("api_version:packaging_version_surface")
+    if "collections.abc" in haystack:
+        labels.append("api_version:collections_abc_import_surface")
+    if any(
+        token in haystack
+        for token in ("install_requires", "extras_require", "requires_dist", "dependency version")
+    ):
+        labels.append("api_version:dependency_requirement_surface")
+    if any(token in haystack for token in ("importlib.metadata", "importlib_metadata", "pkg_resources")):
+        labels.append("api_version:importlib_metadata_surface")
+    if labels:
+        labels.append("api_version:api_deprecation_version_drift_surface")
+    return sorted(set(labels))
+
+
 def source_surface_labels(row: dict[str, Any]) -> list[str]:
     text = str(row.get("source_text") or "").strip()
     rel = str(row.get("relative_path") or "").lower()
@@ -616,6 +673,7 @@ def source_surface_labels(row: dict[str, Any]) -> list[str]:
     labels.extend(resource_lifecycle_surface_labels(text))
     labels.extend(state_aliasing_surface_labels(text))
     labels.extend(protocol_io_surface_labels(text, rel))
+    labels.extend(api_version_surface_labels(text, rel))
     if not labels:
         labels.append("ast_surface:generic_code_surface")
     return sorted(set(labels))
