@@ -1,4 +1,5 @@
 use crate::materialize::TimeStep;
+use crate::panel_graph::PanelGraphEnvelope;
 use crate::panel_json::PanelEnvelope;
 use crate::{InstrumentError, InstrumentResult, PANEL_DIM};
 use rocksdb::{ColumnFamily, ColumnFamilyDescriptor, IteratorMode, Options, WriteBatch, DB};
@@ -7,8 +8,13 @@ use serde_json::Value;
 use std::path::Path;
 
 pub const CF_MEJEPA_PANELS: &str = "mejepa_panels";
+pub const CF_MEJEPA_PANEL_GRAPHS: &str = "mejepa_panel_graphs";
 pub const CF_MEJEPA_PANEL_META: &str = "mejepa_panel_meta";
-pub const MEJEPA_PANEL_CFS: &[&str] = &[CF_MEJEPA_PANELS, CF_MEJEPA_PANEL_META];
+pub const MEJEPA_PANEL_CFS: &[&str] = &[
+    CF_MEJEPA_PANELS,
+    CF_MEJEPA_PANEL_GRAPHS,
+    CF_MEJEPA_PANEL_META,
+];
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -214,6 +220,67 @@ impl PanelStore {
         Ok(Some(meta))
     }
 
+    pub fn put_panel_graph(
+        &self,
+        key: &PanelKey,
+        envelope: &PanelGraphEnvelope,
+    ) -> InstrumentResult<()> {
+        key.validate()?;
+        envelope.validate()?;
+        let storage_key = key.storage_key();
+        let graph_bytes = serde_json::to_vec(envelope).map_err(|err| {
+            InstrumentError::store(
+                "serialize",
+                CF_MEJEPA_PANEL_GRAPHS,
+                err.to_string(),
+                "ensure PanelGraphEnvelope remains JSON-serializable",
+            )
+        })?;
+        self.db
+            .put_cf(
+                self.cf(CF_MEJEPA_PANEL_GRAPHS)?,
+                storage_key.as_bytes(),
+                graph_bytes,
+            )
+            .map_err(|err| {
+                InstrumentError::store(
+                    "put",
+                    CF_MEJEPA_PANEL_GRAPHS,
+                    err.to_string(),
+                    "inspect RocksDB write permissions, WAL state, and disk capacity",
+                )
+            })
+    }
+
+    pub fn get_panel_graph(&self, key: &PanelKey) -> InstrumentResult<Option<PanelGraphEnvelope>> {
+        key.validate()?;
+        let storage_key = key.storage_key();
+        let Some(bytes) = self
+            .db
+            .get_cf(self.cf(CF_MEJEPA_PANEL_GRAPHS)?, storage_key.as_bytes())
+            .map_err(|err| {
+                InstrumentError::store(
+                    "get",
+                    CF_MEJEPA_PANEL_GRAPHS,
+                    err.to_string(),
+                    "inspect RocksDB read permissions and column-family health",
+                )
+            })?
+        else {
+            return Ok(None);
+        };
+        let envelope: PanelGraphEnvelope = serde_json::from_slice(&bytes).map_err(|err| {
+            InstrumentError::store(
+                "deserialize",
+                CF_MEJEPA_PANEL_GRAPHS,
+                err.to_string(),
+                "do not mutate persisted ME-JEPA PanelGraph envelopes outside this API",
+            )
+        })?;
+        envelope.validate()?;
+        Ok(Some(envelope))
+    }
+
     pub fn count_cf(&self, cf_name: &'static str) -> InstrumentResult<usize> {
         let cf = self.cf(cf_name)?;
         let mut count = 0usize;
@@ -329,7 +396,11 @@ fn time_step_slug(time_step: TimeStep) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{InstrumentSlot, PanelBuilder, PanelProvenance};
+    use crate::{
+        ChunkEdge, EdgeKind, InstrumentSlot, PanelBuilder, PanelGraph, PanelGraphDoctrine,
+        PanelGraphEnvelope, PanelGraphNode, PanelProvenance,
+    };
+    use sha2::{Digest, Sha256};
     use std::collections::BTreeMap;
 
     fn panel() -> crate::Panel {
@@ -347,6 +418,52 @@ mod tests {
         PanelEnvelope::try_new(
             TimeStep::T2,
             panel(),
+            PanelProvenance {
+                code_version: "test-sha".into(),
+                embedder_versions: BTreeMap::from([("e_oracle".into(), "deterministic-v1".into())]),
+                corpus_sha: "a".repeat(64),
+                frozen_at_unix_ms: 1,
+                source_sha256: "b".repeat(64),
+            },
+        )
+        .unwrap()
+    }
+
+    fn lower_hex(bytes: &[u8]) -> String {
+        let mut out = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            use std::fmt::Write;
+            write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
+        }
+        out
+    }
+
+    fn hash(value: &str) -> String {
+        lower_hex(&Sha256::digest(value.as_bytes()))
+    }
+
+    fn panel_graph_envelope() -> PanelGraphEnvelope {
+        let nodes = vec![
+            PanelGraphNode::try_new("pkg/a.py::chunk:1", panel()).unwrap(),
+            PanelGraphNode::try_new("pkg/b.py::chunk:1", panel()).unwrap(),
+        ];
+        let edges = vec![ChunkEdge::try_new(
+            "pkg/a.py::chunk:1",
+            "pkg/b.py::chunk:1",
+            EdgeKind::Calls,
+            hash("call-edge"),
+        )
+        .unwrap()];
+        let graph = PanelGraph::try_new(
+            nodes,
+            edges,
+            hash("dependency-subgraph"),
+            "pkg/a.py::chunk:1",
+            PanelGraphDoctrine::preserved(),
+        )
+        .unwrap();
+        PanelGraphEnvelope::try_new(
+            graph,
             PanelProvenance {
                 code_version: "test-sha".into(),
                 embedder_versions: BTreeMap::from([("e_oracle".into(), "deterministic-v1".into())]),
@@ -377,6 +494,24 @@ mod tests {
         let meta = reopened.get_meta(&key).unwrap().unwrap();
         assert_eq!(meta.panel_hash, envelope.panel_hash);
         assert_eq!(meta.filled_mask, envelope.panel.filled_mask());
+    }
+
+    #[test]
+    fn panel_store_round_trips_panel_graph() {
+        let tmp = tempfile::tempdir().unwrap();
+        let key = PanelKey::new("sympy__sympy-20590", TimeStep::T1).unwrap();
+        let graph = panel_graph_envelope();
+        {
+            let store = PanelStore::open(tmp.path()).unwrap();
+            store.put_panel_graph(&key, &graph).unwrap();
+            store.flush().unwrap();
+        }
+
+        let reopened = PanelStore::open(tmp.path()).unwrap();
+        assert_eq!(reopened.count_cf(CF_MEJEPA_PANEL_GRAPHS).unwrap(), 1);
+        let readback = reopened.get_panel_graph(&key).unwrap().unwrap();
+        assert_eq!(readback, graph);
+        assert_eq!(reopened.count_cf(CF_MEJEPA_PANELS).unwrap(), 0);
     }
 
     #[test]

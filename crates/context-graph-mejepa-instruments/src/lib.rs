@@ -43,6 +43,7 @@ mod features;
 pub mod frozen_hook;
 pub mod materialize;
 pub mod panel_b;
+pub mod panel_graph;
 pub mod panel_json;
 pub mod panel_store;
 pub mod q4_accuracy_labels;
@@ -626,9 +627,14 @@ pub use panel_b::{
     validate_aiwonder_models_root, MissingPanelBArtifact, PanelBArtifact, PanelBArtifactManifest,
     PanelBArtifactSpec, PanelBSlot, PANEL_B_ARTIFACT_SCHEMA_VERSION,
 };
+pub use panel_graph::{
+    ChunkEdge, EdgeKind, PanelGraph, PanelGraphDoctrine, PanelGraphEnvelope, PanelGraphNode,
+    MAX_PANEL_GRAPH_EDGES, MAX_PANEL_GRAPH_NODES, PANEL_GRAPH_SCHEMA_VERSION,
+};
 pub use panel_json::{PanelEnvelope, PanelProvenance, PANEL_JSON_SCHEMA_VERSION};
 pub use panel_store::{
-    PanelKey, PanelMeta, PanelStore, CF_MEJEPA_PANELS, CF_MEJEPA_PANEL_META, MEJEPA_PANEL_CFS,
+    PanelKey, PanelMeta, PanelStore, CF_MEJEPA_PANELS, CF_MEJEPA_PANEL_GRAPHS,
+    CF_MEJEPA_PANEL_META, MEJEPA_PANEL_CFS,
 };
 pub use q4_accuracy_labels::{
     extract_q4_accuracy_labels, run_q4_accuracy_tools_with_timeout, write_q4_accuracy_raw_outputs,

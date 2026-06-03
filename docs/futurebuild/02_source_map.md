@@ -145,7 +145,7 @@ Build profiles: `release` (thin LTO, 16 CGUs, strip), `release-max` (1 CGU), `de
 | `e_reasoning.rs` | `EReasoning` | 384 | Reasoning / reflexion trace |
 | `e_scalars.rs` | `Scalars` | 128 | BFS depth, blame age, churn, coverage Δ, repo-health |
 | `q4_security_labels.rs` | (frozen display-only) | — | Bandit + Semgrep label pipeline; Q4 read-only after ambiguity-boundary freeze |
-| `panel_json.rs` + `panel_store.rs` | — | — | Panel envelope (`PANEL_JSON_SCHEMA_VERSION`), RocksDB `PanelStore` |
+| `panel_json.rs` + `panel_graph.rs` + `panel_store.rs` | — | — | Panel envelope (`PANEL_JSON_SCHEMA_VERSION`), PanelGraph envelope (`PANEL_GRAPH_SCHEMA_VERSION`), RocksDB `PanelStore` |
 | `materialize.rs` | — | — | `materialize_panel`, `vectors_from_panel`, `TimeStep` |
 | `frozen_hook.rs` | — | — | `FrozenGuard`, `FrozenSnapshot`, `hash_f32s` — enforces zero-grad on frozen targets |
 | `tests.rs` | — | — | 27+ unit tests |

@@ -50,6 +50,7 @@ Single RocksDB instance per runtime root. CFs are opened deterministically at da
 | `CF_MEJEPA_STRESS_RUNS` | `(run_id, case_id)` | JSON | End-to-end stress harness |
 | `CF_MEJEPA_SYNTHETIC_STRESS_RESULTS` | `(run_id, case_id)` | JSON | Synthetic 30-case stress |
 | `CF_MEJEPA_PANELS` | `panel_id` | JSON-encoded `Panel` (array of 15 per-embedder vectors serialized as 5,120 f32 contiguous buffer + per-slot offsets + `filled_mask`) | Materialized panels |
+| `CF_MEJEPA_PANEL_GRAPHS` | `panel_id` | JSON-encoded `PanelGraphEnvelope` (canonical chunk nodes, typed chunk edges, dependency-subgraph SHA, root chunk, doctrine policy flags) | BLINDSPOT-004 / #726 variable-arity multi-chunk panel rows |
 | `CF_MEJEPA_PANEL_CACHE` / `CF_MEJEPA_PANEL_META` | — | — | Hot panel cache + metadata |
 | `CF_MEJEPA_AUX_SIGNALS_OVERRIDES` | `(panel_id, slot)` | JSON | Operator override slot values |
 | `CF_MEJEPA_EVAL_REPORTS` | `(eval_run_id, cell)` | JSON | Holdout/ship-gate eval rows |

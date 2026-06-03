@@ -40,6 +40,9 @@ pub const CF_MEJEPA_STRESS_RUNS: &str = "CF_MEJEPA_STRESS_RUNS";
 // TASK-PY-G-071 — known-answer synthetic Python stress-corpus eval rows.
 pub const CF_MEJEPA_SYNTHETIC_STRESS_RESULTS: &str = "CF_MEJEPA_SYNTHETIC_STRESS_RESULTS";
 pub const CF_MEJEPA_PANELS: &str = "CF_MEJEPA_PANELS";
+// BLINDSPOT-004 / #726 — variable-arity chunk graph rows; additive beside the
+// existing flat 5,120-d panel rows until the PanelGraph predictor head ships.
+pub const CF_MEJEPA_PANEL_GRAPHS: &str = "CF_MEJEPA_PANEL_GRAPHS";
 // TASK-PY-G-111 — cross-panel Goodhart-defense observations and agreement rows.
 pub const CF_MEJEPA_PANEL_B_OBSERVATIONS: &str = "CF_MEJEPA_PANEL_B_OBSERVATIONS";
 pub const CF_MEJEPA_CROSS_PANEL_AGREEMENT: &str = "CF_MEJEPA_CROSS_PANEL_AGREEMENT";
@@ -376,6 +379,7 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_SYNTHETIC_STRESS_RESULTS,
     CF_MEJEPA_TRAIN_CERTS,
     CF_MEJEPA_PANELS,
+    CF_MEJEPA_PANEL_GRAPHS,
     CF_MEJEPA_PANEL_B_OBSERVATIONS,
     CF_MEJEPA_CROSS_PANEL_AGREEMENT,
     CF_MEJEPA_PATHWAY_TREES,
@@ -710,6 +714,7 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_STRESS_RUNS,
     CF_MEJEPA_SYNTHETIC_STRESS_RESULTS,
     CF_MEJEPA_PANELS,
+    CF_MEJEPA_PANEL_GRAPHS,
     CF_MEJEPA_PANEL_B_OBSERVATIONS,
     CF_MEJEPA_CROSS_PANEL_AGREEMENT,
     CF_MEJEPA_PATHWAY_TREES,
