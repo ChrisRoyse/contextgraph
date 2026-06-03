@@ -48,6 +48,7 @@ DEFAULT_OUTPUT_ROOT = Path(
 CLASS_LABEL_PREFIXES = {
     "api_deprecation_version_drift": ("api_version:",),
     "async_await_misuse": ("async_flow:",),
+    "concurrency_race_deadlock": ("concurrency_flow:",),
     "floating_point_precision": ("numeric_precision:",),
     "generator_iterator_exhaustion": ("iterator_flow:",),
     "http_protocol_io": ("protocol_io:",),
@@ -73,6 +74,18 @@ CLASS_REGISTRY_TOKENS = {
         "event_loop",
         "blocking_call_in_coroutine",
         "websocket",
+    ),
+    "concurrency_race_deadlock": (
+        "concurrency",
+        "race",
+        "deadlock",
+        "thread",
+        "lock",
+        "queue",
+        "timeout",
+        "future",
+        "executor",
+        "multiprocessing",
     ),
     "floating_point_precision": ("precision", "float", "floating", "dtype", "decimal", "nan", "inf"),
     "generator_iterator_exhaustion": (

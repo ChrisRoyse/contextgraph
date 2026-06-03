@@ -707,6 +707,35 @@ def async_flow_surface_labels(text: str, rel: str) -> list[str]:
     return sorted(set(labels))
 
 
+def concurrency_flow_surface_labels(text: str, rel: str) -> list[str]:
+    lowered = text.lower()
+    rel_lowered = rel.lower()
+    haystack = f"{lowered}\n{rel_lowered}"
+    labels: list[str] = []
+    if any(token in haystack for token in ("thread", "threading", "thread_local", "thread-safety")):
+        labels.append("concurrency_flow:thread_execution_surface")
+    if any(token in haystack for token in ("lock", "rlock", "locked", "deadlock", "no-lock")):
+        labels.append("concurrency_flow:lock_deadlock_surface")
+    if any(token in haystack for token in ("queue", "queue.", ".queue", "max_queue")):
+        labels.append("concurrency_flow:queue_coordination_surface")
+    if any(
+        token in haystack
+        for token in ("multiprocessing", "processpool", "process_pool", "manager()", "workers=")
+    ):
+        labels.append("concurrency_flow:multiprocessing_surface")
+    if any(token in haystack for token in ("timeout", "timed out", "deadline", "time.time()")):
+        labels.append("concurrency_flow:timeout_surface")
+    if any(token in haystack for token in ("concurrent", "future", "executor", "submit(")):
+        labels.append("concurrency_flow:future_executor_surface")
+    if any(token in haystack for token in ("asyncio", "event_loop", "ioloop", "uvloop")):
+        labels.append("concurrency_flow:async_scheduler_surface")
+    if any(token in haystack for token in ("race", "atomic", "synchron")):
+        labels.append("concurrency_flow:race_condition_surface")
+    if labels:
+        labels.append("concurrency_flow:concurrency_race_deadlock_surface")
+    return sorted(set(labels))
+
+
 def source_surface_labels(row: dict[str, Any]) -> list[str]:
     text = str(row.get("source_text") or "").strip()
     rel = str(row.get("relative_path") or "").lower()
@@ -755,6 +784,7 @@ def source_surface_labels(row: dict[str, Any]) -> list[str]:
     labels.extend(iterator_flow_surface_labels(text))
     labels.extend(mock_dependency_surface_labels(text, rel))
     labels.extend(async_flow_surface_labels(text, rel))
+    labels.extend(concurrency_flow_surface_labels(text, rel))
     if not labels:
         labels.append("ast_surface:generic_code_surface")
     return sorted(set(labels))

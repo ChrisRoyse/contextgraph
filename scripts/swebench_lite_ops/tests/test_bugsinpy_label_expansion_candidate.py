@@ -146,6 +146,21 @@ def test_source_surface_labels_emit_async_flow_family() -> None:
     assert "async_flow:websocket_async_surface" in labels
 
 
+def test_source_surface_labels_emit_concurrency_flow_family() -> None:
+    labels = source_surface_labels(
+        {
+            "source_text": "executor.submit(worker); queue.put(item); lock.release()",
+            "relative_path": "pkg/concurrent_worker.py",
+            "node_kind": "Call",
+            "chunk_kind": "patch_hunk_line",
+        }
+    )
+    assert "concurrency_flow:concurrency_race_deadlock_surface" in labels
+    assert "concurrency_flow:future_executor_surface" in labels
+    assert "concurrency_flow:queue_coordination_surface" in labels
+    assert "concurrency_flow:lock_deadlock_surface" in labels
+
+
 def test_candidate_expansion_covers_float_precision_rows(tmp_path: Path) -> None:
     bugs_root = tmp_path / "BugsInPy"
     write_bug(
@@ -483,6 +498,48 @@ def test_candidate_expansion_covers_async_await_rows(tmp_path: Path) -> None:
     assert "async_flow:await_expression_surface" in candidate_rows
 
 
+def test_candidate_expansion_covers_concurrency_rows(tmp_path: Path) -> None:
+    bugs_root = tmp_path / "BugsInPy"
+    write_bug(
+        bugs_root,
+        "demo",
+        "1",
+        """diff --git a/demo/workers.py b/demo/workers.py
+--- a/demo/workers.py
++++ b/demo/workers.py
+@@ -1,2 +1,4 @@
+ def run(executor, queue, item):
+-    return executor.submit(worker, item)
++    future = executor.submit(worker, item)
++    queue.put(future)
++    return future
+""",
+    )
+    registry = tmp_path / "accepted.jsonl"
+    write_registry(registry, ["ast_surface:return_value_surface"])
+    out = tmp_path / "out"
+    args = type(
+        "Args",
+        (),
+        {
+            "bugsinpy_root": bugs_root,
+            "target_class": "concurrency_race_deadlock",
+            "accepted_registry": registry,
+            "output_root": out,
+            "sample_size": 0,
+            "min_support": 1,
+        },
+    )()
+    manifest = run_candidate_expansion(args)
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert manifest["passes"] is True
+    assert summary["counts"]["target_class_bug_count"] == 1
+    assert summary["counts"]["candidate_class_covered_count"] == 1
+    candidate_rows = (out / "candidate_registry_expansion.jsonl").read_text(encoding="utf-8")
+    assert "concurrency_flow:concurrency_race_deadlock_surface" in candidate_rows
+    assert "concurrency_flow:future_executor_surface" in candidate_rows
+
+
 def test_state_aliasing_registry_hits_ignore_variable_reference_swap() -> None:
     hits = registry_class_hits(
         "memory_aliasing_mutation",
@@ -529,6 +586,14 @@ def test_async_await_registry_hits_ignore_generic_function_contract_surface() ->
         ["ast_surface:function_contract_surface", "async_flow:await_expression_surface"],
     )
     assert hits == ["async_flow:await_expression_surface"]
+
+
+def test_concurrency_registry_hits_ignore_generic_control_flow_surface() -> None:
+    hits = registry_class_hits(
+        "concurrency_race_deadlock",
+        ["ast_surface:control_flow_surface", "concurrency_flow:thread_execution_surface"],
+    )
+    assert hits == ["concurrency_flow:thread_execution_surface"]
 
 
 def test_candidate_expansion_passes_with_support_without_full_coverage(tmp_path: Path) -> None:
