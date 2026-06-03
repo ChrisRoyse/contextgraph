@@ -11,6 +11,7 @@ import pytest
 
 from ..python_forward_cache_incremental_index import (
     IncrementalIndexError,
+    run_materialize_active_index,
     run_missing_key_plan,
     run_pipeline,
     run_promote_active_model,
@@ -222,6 +223,24 @@ def promote_args_for(
         allow_non_aiwonder_roots=True,
         target_embedder_id=target_embedder_id,
         target_model_sha256=target_model_sha256 or fixture_sha(f"model:{target_embedder_id}:next"),
+    )
+
+
+def materialize_args_for(
+    tmp_path: Path,
+    index_root: Path,
+    *,
+    active_models_path: Path | None = None,
+    additional_index_roots: list[Path] | None = None,
+    output_root: Path | None = None,
+) -> argparse.Namespace:
+    return argparse.Namespace(
+        index_root=index_root,
+        additional_index_root=additional_index_roots,
+        active_models_path=active_models_path,
+        output_root=output_root or tmp_path / "active",
+        clean_output=False,
+        allow_non_aiwonder_roots=True,
     )
 
 
@@ -639,6 +658,85 @@ def test_promote_active_model_writes_generation_and_rollback(tmp_path: Path, mon
     assert promoted["active_models"]["e6"] == fixture_sha("model:e6")
     assert rollback["active_models"]["e1"] == fixture_sha("model:e1")
     assert all(case["pass"] is True for case in readback["cases"])
+
+
+def test_materialize_active_index_uses_promoted_pointer_and_base_unchanged_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    forward_root = write_forward_root(
+        tmp_path / "forward",
+        {
+            "e1": [base_record("e1", "chunk-a"), base_record("e1", "chunk-b")],
+            "e6": [base_record("e6", "chunk-a"), base_record("e6", "chunk-b")],
+        },
+    )
+    run_pipeline(args_for(tmp_path, forward_root))
+    run_missing_key_plan(plan_args_for(tmp_path, tmp_path / "out"))
+    inventory_path = tmp_path / "plan" / "missing_key_inventory.jsonl"
+    inventory_rows = [json.loads(line) for line in inventory_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    runner = tmp_path / "fake_runner.py"
+    write_fake_recompute_runner(runner)
+    write_chunks_jsonl(tmp_path / "chunks.jsonl", ["chunk-a", "chunk-b"])
+    monkeypatch.setenv("FAKE_FORWARD_MODEL_SHA256", fixture_sha("model:e1:next"))
+    monkeypatch.setenv("FAKE_FORWARD_PREPROCESSING_SHA256", inventory_rows[0]["preprocessing_sha256"])
+    run_recompute_missing(
+        recompute_args_for(
+            tmp_path,
+            tmp_path / "out",
+            inventory_path,
+            tmp_path / "chunks.jsonl",
+            runner,
+        )
+    )
+    run_promote_active_model(
+        promote_args_for(
+            tmp_path,
+            tmp_path / "out",
+            tmp_path / "recompute" / "recomputed_v3",
+        )
+    )
+
+    readback = run_materialize_active_index(
+        materialize_args_for(
+            tmp_path,
+            tmp_path / "out",
+            active_models_path=tmp_path / "promotion" / "active_models.promoted.json",
+            additional_index_roots=[tmp_path / "recompute" / "recomputed_v3"],
+        )
+    )
+    active_rows = [
+        json.loads(line)
+        for line in (tmp_path / "active" / "active_index" / "active_index.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert readback["passes"] is True
+    assert readback["summary"]["input_index_root_count"] == 2
+    assert readback["summary"]["active_row_count"] == 4
+    assert readback["summary"]["inactive_model_row_count"] == 2
+    assert readback["summary"]["active_rows_by_embedder"] == {"e1": 2, "e6": 2}
+    assert {row["model_sha256"] for row in active_rows if row["embedder_id"] == "e1"} == {fixture_sha("model:e1:next")}
+    assert {row["model_sha256"] for row in active_rows if row["embedder_id"] == "e6"} == {fixture_sha("model:e6")}
+    assert all(case["pass"] is True for case in readback["cases"])
+
+
+def test_materialize_active_index_rejects_missing_active_model_pointer(tmp_path: Path):
+    forward_root = write_forward_root(
+        tmp_path / "forward",
+        {
+            "e1": [base_record("e1", "chunk-a")],
+            "e6": [base_record("e6", "chunk-a")],
+        },
+    )
+    run_pipeline(args_for(tmp_path, forward_root))
+    active_models_path = tmp_path / "out" / "active_models.json"
+    active_models = json.loads(active_models_path.read_text(encoding="utf-8"))
+    del active_models["active_models"]["e6"]
+    write_json(active_models_path, active_models)
+
+    with pytest.raises(IncrementalIndexError, match="MEJEPA_FORWARD_CACHE_INCREMENTAL_MODEL_POINTER_MISSING"):
+        run_materialize_active_index(materialize_args_for(tmp_path, tmp_path / "out"))
 
 
 def test_promote_active_model_rejects_noop_pointer(tmp_path: Path):

@@ -18,7 +18,7 @@ import shutil
 import shlex
 import subprocess
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -49,6 +49,8 @@ MISSING_KEY_ARTIFACT_KIND = "forward_cache_missing_key"
 RECOMPUTE_ARTIFACT_KIND = "forward_cache_missing_key_recompute"
 PROMOTION_ARTIFACT_KIND = "forward_cache_active_model_promotion"
 ROLLBACK_ARTIFACT_KIND = "forward_cache_active_model_rollback"
+ACTIVE_INDEX_ARTIFACT_KIND = "forward_cache_active_index"
+ACTIVE_INDEX_MATERIALIZATION_ARTIFACT_KIND = "forward_cache_active_index_materialization"
 
 
 class IncrementalIndexError(RuntimeError):
@@ -1449,6 +1451,245 @@ def run_promote_active_model(args: argparse.Namespace) -> dict[str, Any]:
     return readback
 
 
+def active_materialization_index_roots(args: argparse.Namespace) -> list[Path]:
+    roots = [args.index_root] + list(args.additional_index_root or [])
+    require(
+        all(root is not None for root in roots),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_ROOT_MISSING",
+        "--index-root",
+    )
+    seen: set[Path] = set()
+    unique_roots: list[Path] = []
+    for root in roots:
+        root = Path(root)
+        require(root.exists(), "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_ROOT_MISSING", root)
+        reject_mounted_path(root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_INDEX_ROOT")
+        resolved_root = resolved(root)
+        require(
+            resolved_root not in seen,
+            "MEJEPA_FORWARD_CACHE_INCREMENTAL_DUPLICATE_INDEX_ROOT",
+            root,
+        )
+        seen.add(resolved_root)
+        unique_roots.append(root)
+    return unique_roots
+
+
+def active_serving_identity(row: dict[str, Any]) -> dict[str, str]:
+    return {
+        "corpus_profile": str(row["corpus_profile"]),
+        "chunk_id": str(row["chunk_id"]),
+        "source_sha256": str(row["source_sha256"]),
+        "source_text_sha256": str(row["source_text_sha256"]),
+        "embedder_id": str(row["embedder_id"]),
+        "model_sha256": str(row["model_sha256"]),
+        "chunker_sha256": str(row["chunker_sha256"]),
+    }
+
+
+def run_materialize_active_index(args: argparse.Namespace) -> dict[str, Any]:
+    require(args.index_root is not None, "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_ROOT_MISSING", "--index-root")
+    require(args.output_root is not None, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_ROOT_MISSING", "--output-root")
+    require_aiwonder_root(args.output_root, args.allow_non_aiwonder_roots)
+    reject_mounted_path(args.output_root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_OUTPUT_ROOT")
+    index_roots = active_materialization_index_roots(args)
+    for index_root in index_roots:
+        require_no_path_overlap(args.output_root, index_root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_OVERLAPS_INDEX_ROOT")
+    active_models_path = args.active_models_path or args.index_root / "active_models.json"
+    require_no_path_overlap(args.output_root, active_models_path, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_OVERLAPS_ACTIVE_MODELS")
+    chunker_sha256, active_models, active_models_payload = load_active_models(active_models_path)
+    before = {"output_root": tree_state(args.output_root)}
+    if args.output_root.exists():
+        require(args.clean_output, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_EXISTS", args.output_root)
+        shutil.rmtree(args.output_root)
+    work_root = args.output_root.with_name(f"{args.output_root.name}.tmp-{os.getpid()}")
+    if work_root.exists():
+        shutil.rmtree(work_root)
+    work_root.mkdir(parents=True)
+
+    active_rows: list[dict[str, Any]] = []
+    index_root_summaries: list[dict[str, Any]] = []
+    active_cache_keys: dict[str, dict[str, Any]] = {}
+    active_serving_identities: dict[str, dict[str, Any]] = {}
+    selected_by_embedder: Counter[str] = Counter()
+    inactive_by_embedder: Counter[str] = Counter()
+    rows_without_pointer_by_embedder: Counter[str] = Counter()
+    observed_embedders: set[str] = set()
+    input_index_row_count = 0
+
+    for index_root in index_roots:
+        rows, files = read_v3_index_rows(index_root, chunker_sha256)
+        index_root_summaries.append(
+            {
+                "index_root": str(index_root),
+                "global_index_files": files,
+                "row_count": len(rows),
+            }
+        )
+        input_index_row_count += len(rows)
+        for row in rows:
+            embedder_id = str(row["embedder_id"])
+            model_sha256 = str(row["model_sha256"])
+            observed_embedders.add(embedder_id)
+            if embedder_id not in active_models:
+                rows_without_pointer_by_embedder[embedder_id] += 1
+                continue
+            if model_sha256 != active_models[embedder_id]:
+                inactive_by_embedder[embedder_id] += 1
+                continue
+            cache_key_sha256 = str(row["cache_key_sha256"])
+            require(
+                cache_key_sha256 not in active_cache_keys,
+                "MEJEPA_FORWARD_CACHE_INCREMENTAL_DUPLICATE_ACTIVE_ROW",
+                {
+                    "cache_key_sha256": cache_key_sha256,
+                    "first": active_cache_keys.get(cache_key_sha256),
+                    "second": {"index_root": str(index_root), "record_path": row.get("record_path")},
+                },
+            )
+            serving_identity = active_serving_identity(row)
+            serving_identity_sha256 = sha256_json(serving_identity)
+            require(
+                serving_identity_sha256 not in active_serving_identities,
+                "MEJEPA_FORWARD_CACHE_INCREMENTAL_ACTIVE_PREPROCESSING_AMBIGUOUS",
+                {
+                    "serving_identity_sha256": serving_identity_sha256,
+                    "serving_identity": serving_identity,
+                    "first": active_serving_identities.get(serving_identity_sha256),
+                    "second_preprocessing_sha256": row["preprocessing_sha256"],
+                },
+            )
+            selected = dict(row)
+            selected["active_index_artifact_kind"] = ACTIVE_INDEX_ARTIFACT_KIND
+            selected["active_index_source_root"] = str(index_root)
+            selected["active_serving_identity_sha256"] = serving_identity_sha256
+            active_cache_keys[cache_key_sha256] = {
+                "index_root": str(index_root),
+                "record_path": row.get("record_path"),
+            }
+            active_serving_identities[serving_identity_sha256] = {
+                "index_root": str(index_root),
+                "preprocessing_sha256": row["preprocessing_sha256"],
+                "record_path": row.get("record_path"),
+            }
+            active_rows.append(selected)
+            selected_by_embedder[embedder_id] += 1
+
+    require(
+        not rows_without_pointer_by_embedder,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_MODEL_POINTER_MISSING",
+        {
+            "active_models_path": str(active_models_path),
+            "rows_without_pointer_by_embedder": dict(rows_without_pointer_by_embedder),
+        },
+    )
+    missing_active_embedders = sorted(embedder_id for embedder_id in active_models if selected_by_embedder[embedder_id] == 0)
+    require(
+        not missing_active_embedders,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_ACTIVE_ROW_MISSING",
+        {"active_models_path": str(active_models_path), "missing_active_embedders": missing_active_embedders},
+    )
+    require(
+        active_rows,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_EMPTY_SELECTED_ROW_SET",
+        {"active_models_path": str(active_models_path), "index_roots": [str(root) for root in index_roots]},
+    )
+    active_rows.sort(key=lambda row: (str(row["chunk_id"]), str(row["embedder_id"]), str(row["cache_key_sha256"])))
+    active_index_path = work_root / "active_index" / "active_index.jsonl"
+    written_count = write_jsonl(active_index_path, active_rows)
+    require(
+        written_count == len(active_rows),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_WRITE_COUNT_MISMATCH",
+        active_index_path,
+    )
+
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": ACTIVE_INDEX_MATERIALIZATION_ARTIFACT_KIND,
+        "created_at_utc": utc_now(),
+        "passes": True,
+        "inputs": {
+            "index_root": str(args.index_root),
+            "additional_index_roots": [str(root) for root in (args.additional_index_root or [])],
+            "active_models_path": str(active_models_path),
+            "output_root": str(args.output_root),
+        },
+        "source_summary": {
+            "active_models_sha256": sha256_file(active_models_path),
+            "active_models_artifact_kind": active_models_payload.get("artifact_kind"),
+            "active_models_generation_id": active_models_payload.get("generation_id"),
+            "active_models": active_models,
+            "chunker_sha256": chunker_sha256,
+            "index_roots": index_root_summaries,
+        },
+        "summary": {
+            "input_index_root_count": len(index_roots),
+            "input_index_row_count": input_index_row_count,
+            "observed_embedder_count": len(observed_embedders),
+            "observed_embedders": sorted(observed_embedders),
+            "active_embedder_count": len(active_models),
+            "active_embedders": sorted(active_models),
+            "active_row_count": len(active_rows),
+            "active_rows_by_embedder": dict(sorted(selected_by_embedder.items())),
+            "inactive_model_row_count": sum(inactive_by_embedder.values()),
+            "inactive_model_rows_by_embedder": dict(sorted(inactive_by_embedder.items())),
+            "rows_without_active_pointer_count": sum(rows_without_pointer_by_embedder.values()),
+            "duplicate_active_key_count": 0,
+            "serving_identity_ambiguity_count": 0,
+        },
+        "artifacts": {
+            "active_index_path": str(args.output_root / "active_index" / "active_index.jsonl"),
+        },
+        "cases": [
+            {
+                "case": "active_model_pointers_complete",
+                "expected": 0,
+                "actual": sum(rows_without_pointer_by_embedder.values()),
+                "pass": True,
+            },
+            {
+                "case": "inactive_model_rows_excluded",
+                "expected": "all active-index rows match active model pointers",
+                "actual": {"inactive_model_row_count": sum(inactive_by_embedder.values())},
+                "pass": True,
+            },
+            {
+                "case": "duplicate_active_keys_rejected",
+                "expected": 0,
+                "actual": 0,
+                "pass": True,
+            },
+            {
+                "case": "active_serving_identity_unambiguous",
+                "expected": 0,
+                "actual": 0,
+                "pass": True,
+            },
+            {
+                "case": "every_active_embedder_has_rows",
+                "expected": [],
+                "actual": missing_active_embedders,
+                "pass": True,
+            },
+        ],
+    }
+    write_json(work_root / "active_index_manifest.json", manifest)
+    write_json(work_root / "active_index_artifact_hashes.json", artifact_hashes(work_root))
+    work_root.replace(args.output_root)
+    readback = read_json(args.output_root / "active_index_manifest.json")
+    after = {"output_root": tree_state(args.output_root)}
+    readback["manual_readback"] = {
+        "before": before,
+        "after": after,
+        "manifest_sha256": sha256_file(args.output_root / "active_index_manifest.json"),
+        "active_index_sha256": sha256_file(args.output_root / "active_index" / "active_index.jsonl"),
+        "artifact_hashes_sha256": sha256_file(args.output_root / "active_index_artifact_hashes.json"),
+    }
+    write_json(args.output_root / "active_index_manifest.readback.json", readback)
+    return readback
+
+
 def runner_env_for_recompute(
     args: argparse.Namespace,
     *,
@@ -1806,9 +2047,14 @@ def run_recompute_missing(args: argparse.Namespace) -> dict[str, Any]:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("index", "plan-missing", "recompute-missing", "promote-active-model"), default="index")
+    parser.add_argument(
+        "--mode",
+        choices=("index", "plan-missing", "recompute-missing", "promote-active-model", "materialize-active-index"),
+        default="index",
+    )
     parser.add_argument("--cache-root", type=Path)
     parser.add_argument("--index-root", type=Path)
+    parser.add_argument("--additional-index-root", type=Path, action="append")
     parser.add_argument("--recomputed-index-root", type=Path)
     parser.add_argument("--active-models-path", type=Path)
     parser.add_argument("--missing-key-inventory", type=Path)
@@ -1853,8 +2099,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.mode == "recompute-missing":
             readback = run_recompute_missing(args)
             print(json.dumps(readback["summary"], indent=2, sort_keys=True))
-        else:
+        elif args.mode == "promote-active-model":
             readback = run_promote_active_model(args)
+            print(json.dumps(readback["summary"], indent=2, sort_keys=True))
+        else:
+            readback = run_materialize_active_index(args)
             print(json.dumps(readback["summary"], indent=2, sort_keys=True))
     except IncrementalIndexError as exc:
         print(str(exc), file=sys.stderr)
