@@ -92,3 +92,57 @@ def test_candidate_expansion_covers_float_precision_rows(tmp_path: Path) -> None
     assert summary["counts"]["target_class_bug_count"] == 1
     assert summary["counts"]["candidate_registry_rows"] >= 2
     assert summary["fractions"]["candidate_class_uncovered_fraction"] == 0.0
+
+
+def test_candidate_expansion_passes_with_support_without_full_coverage(tmp_path: Path) -> None:
+    bugs_root = tmp_path / "BugsInPy"
+    write_bug(
+        bugs_root,
+        "demo",
+        "1",
+        """diff --git a/demo/metrics.py b/demo/metrics.py
+--- a/demo/metrics.py
++++ b/demo/metrics.py
+@@ -1,2 +1,3 @@
+-def ok(values, expected):
+-    return values == expected
++def ok(values, expected):
++    return np.allclose(values.astype('float64'), expected, rtol=1e-7)
+""",
+    )
+    write_bug(
+        bugs_root,
+        "demo",
+        "2",
+        """diff --git a/demo/encoder.py b/demo/encoder.py
+--- a/demo/encoder.py
++++ b/demo/encoder.py
+@@ -1,3 +1,3 @@
+ def encode(obj):
+     if isinstance(obj, (str, int, float)):
+-        return obj
++        return encoder(obj)
+""",
+    )
+    registry = tmp_path / "accepted.jsonl"
+    write_registry(registry, ["ast_surface:return_value_surface"])
+    out = tmp_path / "out"
+    args = type(
+        "Args",
+        (),
+        {
+            "bugsinpy_root": bugs_root,
+            "target_class": "floating_point_precision",
+            "accepted_registry": registry,
+            "output_root": out,
+            "sample_size": 0,
+            "min_support": 1,
+        },
+    )()
+    manifest = run_candidate_expansion(args)
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert manifest["passes"] is True
+    assert summary["decision"]["candidate_label_axis_defined"] is True
+    assert summary["decision"]["full_class_coverage"] is False
+    assert summary["counts"]["target_class_bug_count"] == 2
+    assert summary["counts"]["candidate_class_covered_count"] == 1

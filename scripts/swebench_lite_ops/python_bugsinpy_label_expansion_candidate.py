@@ -180,7 +180,8 @@ def run_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
         }
     ]
 
-    passes = bool(class_count >= args.min_support and class_candidate_hit_count == class_count and candidate_rows)
+    candidate_label_axis_defined = bool(class_candidate_hit_count >= args.min_support and candidate_rows)
+    full_class_coverage = bool(class_count > 0 and class_candidate_hit_count == class_count)
     output_root = args.output_root
     output_root.mkdir(parents=True, exist_ok=True)
     bug_rows_path = output_root / "bug_label_rows.jsonl"
@@ -196,11 +197,16 @@ def run_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
         "formula_version": FORMULA_VERSION,
         "task_id": TASK_ID,
         "target_class": args.target_class,
-        "passes": passes,
+        "passes": candidate_label_axis_defined,
         "decision": {
-            "candidate_label_axis_defined": passes,
+            "candidate_label_axis_defined": candidate_label_axis_defined,
+            "full_class_coverage": full_class_coverage,
             "promotion_allowed": False,
-            "next_required_artifact": "extended_corpus_utility_gate",
+            "next_required_artifact": (
+                "extended_corpus_utility_gate"
+                if full_class_coverage
+                else "unassigned_row_triage_then_extended_corpus_utility_gate"
+            ),
         },
         "counts": {
             "bugsinpy_total_records": len(all_records),
@@ -240,7 +246,7 @@ def run_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
         "formula_version": FORMULA_VERSION,
         "base_artifact_kind": BASE_ARTIFACT_KIND,
         "task_id": TASK_ID,
-        "passes": passes,
+        "passes": candidate_label_axis_defined,
         "source": {
             "bugsinpy_root": str(args.bugsinpy_root),
             "bugsinpy_git_head": git_head(args.bugsinpy_root),
