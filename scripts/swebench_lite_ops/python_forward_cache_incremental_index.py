@@ -47,6 +47,8 @@ V3_KEY_FIELDS = (
 MISSING_KEY_PLAN_ARTIFACT_KIND = "forward_cache_missing_key_plan"
 MISSING_KEY_ARTIFACT_KIND = "forward_cache_missing_key"
 RECOMPUTE_ARTIFACT_KIND = "forward_cache_missing_key_recompute"
+PROMOTION_ARTIFACT_KIND = "forward_cache_active_model_promotion"
+ROLLBACK_ARTIFACT_KIND = "forward_cache_active_model_rollback"
 
 
 class IncrementalIndexError(RuntimeError):
@@ -1219,6 +1221,234 @@ def changed_file_states(before: dict[str, dict[str, Any]], after: dict[str, dict
     return changed
 
 
+def run_promote_active_model(args: argparse.Namespace) -> dict[str, Any]:
+    require(args.index_root is not None, "MEJEPA_FORWARD_CACHE_INCREMENTAL_INDEX_ROOT_MISSING", "--index-root")
+    require(args.recomputed_index_root is not None, "MEJEPA_FORWARD_CACHE_INCREMENTAL_RECOMPUTED_INDEX_ROOT_MISSING", "--recomputed-index-root")
+    require(args.output_root is not None, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_ROOT_MISSING", "--output-root")
+    require(args.target_embedder_id, "MEJEPA_FORWARD_CACHE_INCREMENTAL_TARGET_EMBEDDER_MISSING", "--target-embedder-id")
+    target_embedder_id = str(args.target_embedder_id)
+    target_model_sha256 = validate_sha(
+        args.target_model_sha256,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_TARGET_MODEL_HASH_INVALID",
+        "--target-model-sha256",
+    )
+    require_aiwonder_root(args.output_root, args.allow_non_aiwonder_roots)
+    reject_mounted_path(args.output_root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_OUTPUT_ROOT")
+    reject_mounted_path(args.index_root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_INDEX_ROOT")
+    reject_mounted_path(args.recomputed_index_root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_MOUNTED_RECOMPUTED_INDEX_ROOT")
+    require_no_path_overlap(args.output_root, args.index_root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_OVERLAPS_INDEX_ROOT")
+    require_no_path_overlap(args.output_root, args.recomputed_index_root, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_OVERLAPS_RECOMPUTED_INDEX_ROOT")
+    active_models_path = args.active_models_path or args.index_root / "active_models.json"
+    chunker_sha256, active_models, active_models_payload = load_active_models(active_models_path)
+    require(
+        target_embedder_id in active_models,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_MODEL_POINTER_MISSING",
+        {"active_models_path": str(active_models_path), "target_embedder_id": target_embedder_id},
+    )
+    previous_model_sha256 = active_models[target_embedder_id]
+    require(
+        previous_model_sha256 != target_model_sha256,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_PROMOTION_NOOP",
+        {"target_embedder_id": target_embedder_id, "target_model_sha256": target_model_sha256},
+    )
+    before = {"output_root": tree_state(args.output_root)}
+    if args.output_root.exists():
+        require(args.clean_output, "MEJEPA_FORWARD_CACHE_INCREMENTAL_OUTPUT_EXISTS", args.output_root)
+        shutil.rmtree(args.output_root)
+    current_rows, current_index_files = read_v3_index_rows(args.index_root, chunker_sha256)
+    recomputed_rows, recomputed_index_files = read_v3_index_rows(args.recomputed_index_root, chunker_sha256)
+    active_current_rows = [
+        row for row in current_rows if str(row["model_sha256"]) == active_models[str(row["embedder_id"])]
+    ]
+    active_chunk_identity = {
+        (
+            str(row["corpus_profile"]),
+            str(row["chunk_id"]),
+            str(row["source_sha256"]),
+            str(row["source_text_sha256"]),
+            str(row["chunker_sha256"]),
+        )
+        for row in active_current_rows
+    }
+    require(
+        active_chunk_identity,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_EMPTY_SELECTED_ROW_SET",
+        {"index_root": str(args.index_root), "reason": "no active chunk identities"},
+    )
+    target_recomputed_rows = [
+        row
+        for row in recomputed_rows
+        if str(row["embedder_id"]) == target_embedder_id
+        and str(row["model_sha256"]) == target_model_sha256
+    ]
+    require(
+        len(target_recomputed_rows) == len(recomputed_rows),
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_PROMOTION_RECOMPUTED_TARGET_MISMATCH",
+        {"target_embedder_id": target_embedder_id, "target_model_sha256": target_model_sha256},
+    )
+    recomputed_chunk_identity = {
+        (
+            str(row["corpus_profile"]),
+            str(row["chunk_id"]),
+            str(row["source_sha256"]),
+            str(row["source_text_sha256"]),
+            str(row["chunker_sha256"]),
+        )
+        for row in target_recomputed_rows
+    }
+    require(
+        recomputed_chunk_identity == active_chunk_identity,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_PROMOTION_CHUNK_COVERAGE_MISMATCH",
+        {
+            "missing_chunks": sorted(active_chunk_identity - recomputed_chunk_identity),
+            "unexpected_chunks": sorted(recomputed_chunk_identity - active_chunk_identity),
+        },
+    )
+    unchanged_before = unchanged_record_file_states(
+        args.index_root,
+        chunker_sha256,
+        target_embedder_id,
+    )
+    promoted_models = dict(active_models)
+    promoted_models[target_embedder_id] = target_model_sha256
+    unchanged_pointer_changes = {
+        embedder_id: {"before": active_models[embedder_id], "after": promoted_models[embedder_id]}
+        for embedder_id in sorted(active_models)
+        if embedder_id != target_embedder_id and active_models[embedder_id] != promoted_models[embedder_id]
+    }
+    require(
+        not unchanged_pointer_changes,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_PROMOTION_UNCHANGED_POINTER_CHANGED",
+        unchanged_pointer_changes,
+    )
+    args.output_root.mkdir(parents=True, exist_ok=False)
+    previous_active_models_sha256 = sha256_file(active_models_path)
+    generation_id = f"gen-{utc_stamp()}-{target_embedder_id}-{target_model_sha256[7:15]}"
+    promoted_payload = {
+        "schema_version": SCHEMA_VERSION,
+        "artifact_kind": ACTIVE_MODELS_ARTIFACT_KIND,
+        "generation_id": generation_id,
+        "created_at_utc": utc_now(),
+        "corpus_profile": active_models_payload.get("corpus_profile", DEFAULT_CORPUS_PROFILE),
+        "chunker_sha256": chunker_sha256,
+        "active_models": promoted_models,
+        "parent_active_models_path": str(active_models_path),
+        "parent_active_models_sha256": previous_active_models_sha256,
+        "promotion": {
+            "target_embedder_id": target_embedder_id,
+            "from_model_sha256": previous_model_sha256,
+            "to_model_sha256": target_model_sha256,
+            "recomputed_index_root": str(args.recomputed_index_root),
+        },
+    }
+    rollback_payload = {
+        "schema_version": SCHEMA_VERSION,
+        "artifact_kind": ROLLBACK_ARTIFACT_KIND,
+        "generation_id": f"rollback-{generation_id}",
+        "created_at_utc": utc_now(),
+        "rolls_back_generation_id": generation_id,
+        "corpus_profile": promoted_payload["corpus_profile"],
+        "chunker_sha256": chunker_sha256,
+        "active_models": active_models,
+        "restores": {
+            "target_embedder_id": target_embedder_id,
+            "from_model_sha256": target_model_sha256,
+            "to_model_sha256": previous_model_sha256,
+        },
+    }
+    write_json(args.output_root / "active_models.promoted.json", promoted_payload)
+    write_json(args.output_root / "active_models.rollback.json", rollback_payload)
+    unchanged_after = {
+        path: file_state(Path(path))
+        for path in unchanged_before
+    }
+    unchanged_changes = changed_file_states(unchanged_before, unchanged_after)
+    require(
+        not unchanged_changes,
+        "MEJEPA_FORWARD_CACHE_INCREMENTAL_UNCHANGED_RECORD_FILE_REWRITTEN",
+        unchanged_changes,
+    )
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": PROMOTION_ARTIFACT_KIND,
+        "created_at_utc": utc_now(),
+        "passes": True,
+        "inputs": {
+            "index_root": str(args.index_root),
+            "recomputed_index_root": str(args.recomputed_index_root),
+            "active_models_path": str(active_models_path),
+            "output_root": str(args.output_root),
+            "target_embedder_id": target_embedder_id,
+            "target_model_sha256": target_model_sha256,
+        },
+        "source_summary": {
+            "active_models_sha256": previous_active_models_sha256,
+            "current_index_files": current_index_files,
+            "recomputed_index_files": recomputed_index_files,
+            "unchanged_record_files_before": unchanged_before,
+        },
+        "summary": {
+            "target_embedder_id": target_embedder_id,
+            "from_model_sha256": previous_model_sha256,
+            "to_model_sha256": target_model_sha256,
+            "eligible_chunk_count": len(active_chunk_identity),
+            "recomputed_target_row_count": len(target_recomputed_rows),
+            "active_model_changed_count": sum(
+                1 for embedder_id in active_models if active_models[embedder_id] != promoted_models[embedder_id]
+            ),
+            "unchanged_pointer_changed_count": len(unchanged_pointer_changes),
+            "unchanged_record_file_count": len(unchanged_before),
+            "unchanged_record_changed_count": len(unchanged_changes),
+        },
+        "artifacts": {
+            "promoted_active_models": str(args.output_root / "active_models.promoted.json"),
+            "rollback_active_models": str(args.output_root / "active_models.rollback.json"),
+        },
+        "cases": [
+            {
+                "case": "target_pointer_only_changed",
+                "expected": 1,
+                "actual": sum(1 for embedder_id in active_models if active_models[embedder_id] != promoted_models[embedder_id]),
+                "pass": True,
+            },
+            {
+                "case": "recomputed_rows_cover_active_chunks",
+                "expected": len(active_chunk_identity),
+                "actual": len(target_recomputed_rows),
+                "pass": True,
+            },
+            {
+                "case": "rollback_restores_previous_pointer",
+                "expected": previous_model_sha256,
+                "actual": rollback_payload["active_models"][target_embedder_id],
+                "pass": True,
+            },
+            {
+                "case": "unchanged_record_files_stable",
+                "expected": 0,
+                "actual": len(unchanged_changes),
+                "pass": True,
+            },
+        ],
+    }
+    write_json(args.output_root / "promotion_manifest.json", manifest)
+    write_json(args.output_root / "promotion_artifact_hashes.json", artifact_hashes(args.output_root))
+    readback = read_json(args.output_root / "promotion_manifest.json")
+    after = {"output_root": tree_state(args.output_root)}
+    readback["manual_readback"] = {
+        "before": before,
+        "after": after,
+        "manifest_sha256": sha256_file(args.output_root / "promotion_manifest.json"),
+        "promoted_active_models_sha256": sha256_file(args.output_root / "active_models.promoted.json"),
+        "rollback_active_models_sha256": sha256_file(args.output_root / "active_models.rollback.json"),
+        "artifact_hashes_sha256": sha256_file(args.output_root / "promotion_artifact_hashes.json"),
+        "unchanged_record_files_after": unchanged_after,
+    }
+    write_json(args.output_root / "promotion_manifest.readback.json", readback)
+    return readback
+
+
 def runner_env_for_recompute(
     args: argparse.Namespace,
     *,
@@ -1576,9 +1806,10 @@ def run_recompute_missing(args: argparse.Namespace) -> dict[str, Any]:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("index", "plan-missing", "recompute-missing"), default="index")
+    parser.add_argument("--mode", choices=("index", "plan-missing", "recompute-missing", "promote-active-model"), default="index")
     parser.add_argument("--cache-root", type=Path)
     parser.add_argument("--index-root", type=Path)
+    parser.add_argument("--recomputed-index-root", type=Path)
     parser.add_argument("--active-models-path", type=Path)
     parser.add_argument("--missing-key-inventory", type=Path)
     parser.add_argument("--chunks-jsonl", type=Path)
@@ -1619,8 +1850,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.mode == "plan-missing":
             readback = run_missing_key_plan(args)
             print(json.dumps(readback["summary"], indent=2, sort_keys=True))
-        else:
+        elif args.mode == "recompute-missing":
             readback = run_recompute_missing(args)
+            print(json.dumps(readback["summary"], indent=2, sort_keys=True))
+        else:
+            readback = run_promote_active_model(args)
             print(json.dumps(readback["summary"], indent=2, sort_keys=True))
     except IncrementalIndexError as exc:
         print(str(exc), file=sys.stderr)

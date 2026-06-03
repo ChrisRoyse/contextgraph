@@ -9,7 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from ..python_forward_cache_incremental_index import IncrementalIndexError, run_missing_key_plan, run_pipeline, run_recompute_missing
+from ..python_forward_cache_incremental_index import (
+    IncrementalIndexError,
+    run_missing_key_plan,
+    run_pipeline,
+    run_promote_active_model,
+    run_recompute_missing,
+)
 
 
 def sha256_bytes(payload: bytes) -> str:
@@ -193,6 +199,29 @@ def recompute_args_for(
         true_batch_size=1,
         gpu_vram_guard_bytes=0,
         models_config=None,
+    )
+
+
+def promote_args_for(
+    tmp_path: Path,
+    index_root: Path,
+    recomputed_index_root: Path,
+    *,
+    output_root: Path | None = None,
+    target_embedder_id: str = "e1",
+    target_model_sha256: str | None = None,
+) -> argparse.Namespace:
+    return argparse.Namespace(
+        index_root=index_root,
+        recomputed_index_root=recomputed_index_root,
+        active_models_path=None,
+        output_root=output_root or tmp_path / "promotion",
+        output_parent=tmp_path,
+        run_id="run-promotion",
+        clean_output=False,
+        allow_non_aiwonder_roots=True,
+        target_embedder_id=target_embedder_id,
+        target_model_sha256=target_model_sha256 or fixture_sha(f"model:{target_embedder_id}:next"),
     )
 
 
@@ -561,6 +590,76 @@ def test_recompute_missing_runs_target_only_and_preserves_unchanged_records(tmp_
     assert readback["summary"]["unchanged_record_file_count"] == 1
     assert readback["summary"]["unchanged_record_changed_count"] == 0
     assert all(case["pass"] is True for case in readback["cases"])
+
+
+def test_promote_active_model_writes_generation_and_rollback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    forward_root = write_forward_root(
+        tmp_path / "forward",
+        {
+            "e1": [base_record("e1", "chunk-a"), base_record("e1", "chunk-b")],
+            "e6": [base_record("e6", "chunk-a"), base_record("e6", "chunk-b")],
+        },
+    )
+    run_pipeline(args_for(tmp_path, forward_root))
+    run_missing_key_plan(plan_args_for(tmp_path, tmp_path / "out"))
+    inventory_path = tmp_path / "plan" / "missing_key_inventory.jsonl"
+    inventory_rows = [json.loads(line) for line in inventory_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    runner = tmp_path / "fake_runner.py"
+    write_fake_recompute_runner(runner)
+    write_chunks_jsonl(tmp_path / "chunks.jsonl", ["chunk-a", "chunk-b"])
+    monkeypatch.setenv("FAKE_FORWARD_MODEL_SHA256", fixture_sha("model:e1:next"))
+    monkeypatch.setenv("FAKE_FORWARD_PREPROCESSING_SHA256", inventory_rows[0]["preprocessing_sha256"])
+    run_recompute_missing(
+        recompute_args_for(
+            tmp_path,
+            tmp_path / "out",
+            inventory_path,
+            tmp_path / "chunks.jsonl",
+            runner,
+        )
+    )
+
+    readback = run_promote_active_model(
+        promote_args_for(
+            tmp_path,
+            tmp_path / "out",
+            tmp_path / "recompute" / "recomputed_v3",
+        )
+    )
+    promoted = json.loads((tmp_path / "promotion" / "active_models.promoted.json").read_text(encoding="utf-8"))
+    rollback = json.loads((tmp_path / "promotion" / "active_models.rollback.json").read_text(encoding="utf-8"))
+
+    assert readback["passes"] is True
+    assert readback["summary"]["active_model_changed_count"] == 1
+    assert readback["summary"]["eligible_chunk_count"] == 2
+    assert readback["summary"]["recomputed_target_row_count"] == 2
+    assert readback["summary"]["unchanged_pointer_changed_count"] == 0
+    assert readback["summary"]["unchanged_record_changed_count"] == 0
+    assert promoted["active_models"]["e1"] == fixture_sha("model:e1:next")
+    assert promoted["active_models"]["e6"] == fixture_sha("model:e6")
+    assert rollback["active_models"]["e1"] == fixture_sha("model:e1")
+    assert all(case["pass"] is True for case in readback["cases"])
+
+
+def test_promote_active_model_rejects_noop_pointer(tmp_path: Path):
+    forward_root = write_forward_root(
+        tmp_path / "forward",
+        {
+            "e1": [base_record("e1", "chunk-a")],
+            "e6": [base_record("e6", "chunk-a")],
+        },
+    )
+    run_pipeline(args_for(tmp_path, forward_root))
+
+    with pytest.raises(IncrementalIndexError, match="MEJEPA_FORWARD_CACHE_INCREMENTAL_PROMOTION_NOOP"):
+        run_promote_active_model(
+            promote_args_for(
+                tmp_path,
+                tmp_path / "out",
+                tmp_path / "out",
+                target_model_sha256=fixture_sha("model:e1"),
+            )
+        )
 
 
 def test_recompute_missing_rejects_empty_inventory(tmp_path: Path):
