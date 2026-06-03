@@ -51,6 +51,7 @@ CLASS_LABEL_PREFIXES = {
     "generator_iterator_exhaustion": ("iterator_flow:",),
     "http_protocol_io": ("protocol_io:",),
     "memory_aliasing_mutation": ("state_aliasing:",),
+    "test_only_pass_mocked_dependency": ("mock_dependency:",),
     "resource_leak": ("resource_lifecycle:",),
 }
 
@@ -75,6 +76,14 @@ CLASS_REGISTRY_TOKENS = {
     ),
     "http_protocol_io": ("protocol", "http", "request", "response", "url", "download", "websocket"),
     "memory_aliasing_mutation": ("aliasing", "mutable", "inplace", "copy", "view", "shared"),
+    "test_only_pass_mocked_dependency": (
+        "mock",
+        "monkeypatch",
+        "weak_test",
+        "test_only",
+        "fixture",
+        "stub",
+    ),
     "resource_leak": (
         "resource",
         "close",

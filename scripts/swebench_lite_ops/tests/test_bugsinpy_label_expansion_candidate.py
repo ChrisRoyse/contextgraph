@@ -115,6 +115,22 @@ def test_source_surface_labels_emit_iterator_flow_family() -> None:
     assert "iterator_flow:iterator_loop_surface" in labels
 
 
+def test_source_surface_labels_emit_mock_dependency_family() -> None:
+    labels = source_surface_labels(
+        {
+            "source_text": "monkeypatch.setattr(client, 'get', MagicMock(return_value=response))",
+            "relative_path": "tests/test_client.py",
+            "node_kind": "Call",
+            "chunk_kind": "patch_hunk_line",
+        }
+    )
+    assert "mock_dependency:mocked_dependency_weak_test_surface" in labels
+    assert "mock_dependency:mock_patch_surface" in labels
+    assert "mock_dependency:monkeypatch_surface" in labels
+    assert "mock_dependency:mock_assertion_surface" in labels
+    assert "mock_dependency:test_only_dependency_surface" in labels
+
+
 def test_candidate_expansion_covers_float_precision_rows(tmp_path: Path) -> None:
     bugs_root = tmp_path / "BugsInPy"
     write_bug(
@@ -370,6 +386,47 @@ def test_candidate_expansion_covers_generator_iterator_rows(tmp_path: Path) -> N
     assert "iterator_flow:iterator_materialization_surface" in candidate_rows
 
 
+def test_candidate_expansion_covers_mock_dependency_rows(tmp_path: Path) -> None:
+    bugs_root = tmp_path / "BugsInPy"
+    write_bug(
+        bugs_root,
+        "demo",
+        "1",
+        """diff --git a/tests/test_client.py b/tests/test_client.py
+--- a/tests/test_client.py
++++ b/tests/test_client.py
+@@ -1,2 +1,4 @@
+ def test_client(monkeypatch):
+-    assert client.get("/health")
++    monkeypatch.setattr(client, "get", MagicMock(return_value=response))
++    assert client.get("/health")
+""",
+    )
+    registry = tmp_path / "accepted.jsonl"
+    write_registry(registry, ["ast_surface:test_oracle_surface"])
+    out = tmp_path / "out"
+    args = type(
+        "Args",
+        (),
+        {
+            "bugsinpy_root": bugs_root,
+            "target_class": "test_only_pass_mocked_dependency",
+            "accepted_registry": registry,
+            "output_root": out,
+            "sample_size": 0,
+            "min_support": 1,
+        },
+    )()
+    manifest = run_candidate_expansion(args)
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert manifest["passes"] is True
+    assert summary["counts"]["target_class_bug_count"] == 1
+    assert summary["counts"]["candidate_class_covered_count"] == 1
+    candidate_rows = (out / "candidate_registry_expansion.jsonl").read_text(encoding="utf-8")
+    assert "mock_dependency:mocked_dependency_weak_test_surface" in candidate_rows
+    assert "mock_dependency:monkeypatch_surface" in candidate_rows
+
+
 def test_state_aliasing_registry_hits_ignore_variable_reference_swap() -> None:
     hits = registry_class_hits(
         "memory_aliasing_mutation",
@@ -400,6 +457,14 @@ def test_generator_iterator_registry_hits_ignore_generic_control_flow_surface() 
         ["ast_surface:control_flow_surface", "iterator_flow:iterable_contract_surface"],
     )
     assert hits == ["iterator_flow:iterable_contract_surface"]
+
+
+def test_mock_dependency_registry_hits_ignore_generic_test_path_surface() -> None:
+    hits = registry_class_hits(
+        "test_only_pass_mocked_dependency",
+        ["path_surface:test_path", "mock_dependency:test_only_dependency_surface"],
+    )
+    assert hits == ["mock_dependency:test_only_dependency_surface"]
 
 
 def test_candidate_expansion_passes_with_support_without_full_coverage(tmp_path: Path) -> None:

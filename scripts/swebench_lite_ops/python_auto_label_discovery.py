@@ -651,6 +651,34 @@ def iterator_flow_surface_labels(text: str) -> list[str]:
     return sorted(set(labels))
 
 
+def mock_dependency_surface_labels(text: str, rel: str) -> list[str]:
+    lowered = text.lower()
+    rel_lowered = rel.lower()
+    haystack = f"{lowered}\n{rel_lowered}"
+    labels: list[str] = []
+    if any(token in haystack for token in ("mock", "magicmock", "mock(", "mock.", "unittest.mock")):
+        labels.append("mock_dependency:mock_patch_surface")
+    if any(token in haystack for token in ("patch(", "@patch", ".patch(")):
+        labels.append("mock_dependency:mock_patch_surface")
+    if "monkeypatch" in haystack:
+        labels.append("mock_dependency:monkeypatch_surface")
+    if any(token in haystack for token in ("pytest.fixture", "@fixture", "fixture(", " fixture")):
+        labels.append("mock_dependency:fixture_surface")
+    if any(token in haystack for token in ("pytest.mark.skip", "skipif", "xfail", "expectedfailure")):
+        labels.append("mock_dependency:skip_xfail_surface")
+    if any(token in haystack for token in ("pytest.raises", "assertraises", "assert_raises")):
+        labels.append("mock_dependency:assert_raises_surface")
+    if any(token in haystack for token in ("return_value", "side_effect", "assert_called", "call_args")):
+        labels.append("mock_dependency:mock_assertion_surface")
+    if any(token in haystack for token in ("stub", "fake", "dummy")):
+        labels.append("mock_dependency:dependency_stub_surface")
+    if "pytest" in haystack or "unittest" in haystack or "test" in rel_lowered:
+        labels.append("mock_dependency:test_only_dependency_surface")
+    if labels:
+        labels.append("mock_dependency:mocked_dependency_weak_test_surface")
+    return sorted(set(labels))
+
+
 def source_surface_labels(row: dict[str, Any]) -> list[str]:
     text = str(row.get("source_text") or "").strip()
     rel = str(row.get("relative_path") or "").lower()
@@ -697,6 +725,7 @@ def source_surface_labels(row: dict[str, Any]) -> list[str]:
     labels.extend(protocol_io_surface_labels(text, rel))
     labels.extend(api_version_surface_labels(text, rel))
     labels.extend(iterator_flow_surface_labels(text))
+    labels.extend(mock_dependency_surface_labels(text, rel))
     if not labels:
         labels.append("ast_surface:generic_code_surface")
     return sorted(set(labels))
