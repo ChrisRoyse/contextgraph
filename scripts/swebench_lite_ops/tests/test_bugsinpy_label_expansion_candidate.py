@@ -98,6 +98,23 @@ def test_source_surface_labels_emit_api_version_family() -> None:
     assert "api_version:compatibility_branch_surface" in labels
 
 
+def test_source_surface_labels_emit_iterator_flow_family() -> None:
+    labels = source_surface_labels(
+        {
+            "source_text": "return list(next(item) for item in iter(generator))",
+            "relative_path": "pkg/iterators.py",
+            "node_kind": "Return",
+            "chunk_kind": "patch_hunk_line",
+        }
+    )
+    assert "iterator_flow:generator_iterator_exhaustion_surface" in labels
+    assert "iterator_flow:yield_generator_surface" in labels
+    assert "iterator_flow:iterable_contract_surface" in labels
+    assert "iterator_flow:next_stopiteration_surface" in labels
+    assert "iterator_flow:iterator_materialization_surface" in labels
+    assert "iterator_flow:iterator_loop_surface" in labels
+
+
 def test_candidate_expansion_covers_float_precision_rows(tmp_path: Path) -> None:
     bugs_root = tmp_path / "BugsInPy"
     write_bug(
@@ -312,6 +329,47 @@ def test_candidate_expansion_covers_api_version_rows(tmp_path: Path) -> None:
     assert "api_version:collections_abc_import_surface" in candidate_rows
 
 
+def test_candidate_expansion_covers_generator_iterator_rows(tmp_path: Path) -> None:
+    bugs_root = tmp_path / "BugsInPy"
+    write_bug(
+        bugs_root,
+        "demo",
+        "1",
+        """diff --git a/demo/iterators.py b/demo/iterators.py
+--- a/demo/iterators.py
++++ b/demo/iterators.py
+@@ -1,2 +1,4 @@
+ def collect(generator):
+-    return generator
++    values = list(generator)
++    return next(iter(values))
+""",
+    )
+    registry = tmp_path / "accepted.jsonl"
+    write_registry(registry, ["ast_surface:return_value_surface"])
+    out = tmp_path / "out"
+    args = type(
+        "Args",
+        (),
+        {
+            "bugsinpy_root": bugs_root,
+            "target_class": "generator_iterator_exhaustion",
+            "accepted_registry": registry,
+            "output_root": out,
+            "sample_size": 0,
+            "min_support": 1,
+        },
+    )()
+    manifest = run_candidate_expansion(args)
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert manifest["passes"] is True
+    assert summary["counts"]["target_class_bug_count"] == 1
+    assert summary["counts"]["candidate_class_covered_count"] == 1
+    candidate_rows = (out / "candidate_registry_expansion.jsonl").read_text(encoding="utf-8")
+    assert "iterator_flow:generator_iterator_exhaustion_surface" in candidate_rows
+    assert "iterator_flow:iterator_materialization_surface" in candidate_rows
+
+
 def test_state_aliasing_registry_hits_ignore_variable_reference_swap() -> None:
     hits = registry_class_hits(
         "memory_aliasing_mutation",
@@ -334,6 +392,14 @@ def test_api_version_registry_hits_ignore_generic_call_api_surface() -> None:
         ["ast_surface:call_api_surface", "api_version:runtime_version_guard_surface"],
     )
     assert hits == ["api_version:runtime_version_guard_surface"]
+
+
+def test_generator_iterator_registry_hits_ignore_generic_control_flow_surface() -> None:
+    hits = registry_class_hits(
+        "generator_iterator_exhaustion",
+        ["ast_surface:control_flow_surface", "iterator_flow:iterable_contract_surface"],
+    )
+    assert hits == ["iterator_flow:iterable_contract_surface"]
 
 
 def test_candidate_expansion_passes_with_support_without_full_coverage(tmp_path: Path) -> None:

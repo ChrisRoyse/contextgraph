@@ -629,6 +629,28 @@ def api_version_surface_labels(text: str, rel: str) -> list[str]:
     return sorted(set(labels))
 
 
+def iterator_flow_surface_labels(text: str) -> list[str]:
+    lowered = text.lower()
+    labels: list[str] = []
+    if any(token in lowered for token in ("yield", "generator", "yield from")):
+        labels.append("iterator_flow:yield_generator_surface")
+    if any(token in lowered for token in ("iter(", "__iter__", "iterator", "iterable")):
+        labels.append("iterator_flow:iterable_contract_surface")
+    if any(token in lowered for token in ("next(", "__next__", "stopiteration")):
+        labels.append("iterator_flow:next_stopiteration_surface")
+    if any(token in lowered for token in ("itertools", "tee(", "chain(", "islice(")):
+        labels.append("iterator_flow:itertools_pipeline_surface")
+    if re.search(r"\b(list|tuple|set|dict)\(", lowered):
+        labels.append("iterator_flow:iterator_materialization_surface")
+    if any(token in lowered for token in ("enumerate(", "zip(", "map(", "filter(", "range(")):
+        labels.append("iterator_flow:iterator_loop_surface")
+    if re.search(r"\bfor\b.+\bin\b", lowered):
+        labels.append("iterator_flow:iterator_loop_surface")
+    if labels:
+        labels.append("iterator_flow:generator_iterator_exhaustion_surface")
+    return sorted(set(labels))
+
+
 def source_surface_labels(row: dict[str, Any]) -> list[str]:
     text = str(row.get("source_text") or "").strip()
     rel = str(row.get("relative_path") or "").lower()
@@ -674,6 +696,7 @@ def source_surface_labels(row: dict[str, Any]) -> list[str]:
     labels.extend(state_aliasing_surface_labels(text))
     labels.extend(protocol_io_surface_labels(text, rel))
     labels.extend(api_version_surface_labels(text, rel))
+    labels.extend(iterator_flow_surface_labels(text))
     if not labels:
         labels.append("ast_surface:generic_code_surface")
     return sorted(set(labels))

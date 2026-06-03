@@ -48,6 +48,7 @@ DEFAULT_OUTPUT_ROOT = Path(
 CLASS_LABEL_PREFIXES = {
     "api_deprecation_version_drift": ("api_version:",),
     "floating_point_precision": ("numeric_precision:",),
+    "generator_iterator_exhaustion": ("iterator_flow:",),
     "http_protocol_io": ("protocol_io:",),
     "memory_aliasing_mutation": ("state_aliasing:",),
     "resource_leak": ("resource_lifecycle:",),
@@ -64,6 +65,14 @@ CLASS_REGISTRY_TOKENS = {
         "python_requires",
     ),
     "floating_point_precision": ("precision", "float", "floating", "dtype", "decimal", "nan", "inf"),
+    "generator_iterator_exhaustion": (
+        "generator",
+        "iterator",
+        "iterable",
+        "stopiteration",
+        "exhaustion",
+        "materialization",
+    ),
     "http_protocol_io": ("protocol", "http", "request", "response", "url", "download", "websocket"),
     "memory_aliasing_mutation": ("aliasing", "mutable", "inplace", "copy", "view", "shared"),
     "resource_leak": (
@@ -169,6 +178,17 @@ def unassigned_retriage_reason(classification_reasons: Iterable[str]) -> str:
         return "context_only_inplace_reference"
     if reasons <= {r"\bid\(", r"\bviews\b"}:
         return "context_only_shared_reference"
+    if reasons <= {
+        r"\biter\(",
+        r"\bnext\(",
+        r"\byield\b",
+        r"\bgenerator\b",
+        r"\bIterator\b",
+        r"\bIterable\b",
+        r"\bStopIteration\b",
+        r"\bitertools\b",
+    }:
+        return "context_only_generator_iterator_reference"
     if reasons <= {r"\bhttp\b", r"\brequest\b", r"\bresponse\b", r"\bheader\b", r"\bcookie\b", r"\burl\b"}:
         return "context_only_http_reference"
     if reasons <= {r"\bdownload\b", r"\byoutube", r"\bscrapy\b", r"\btornado\b"}:
