@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
+
+use fs2::FileExt;
 
 use crate::oracle::configure_child_process_group;
 use crate::source_patch::SourcePatchTask;
@@ -35,6 +37,16 @@ pub(crate) fn ensure_repo_cache(
     repo_cache_dir: &Path,
 ) -> MutationResult<PathBuf> {
     validate_repo_slug(repo)?;
+    let url = format!("https://github.com/{repo}.git");
+    ensure_repo_cache_from_url(repo, base_commit, repo_cache_dir, &url)
+}
+
+fn ensure_repo_cache_from_url(
+    repo: &str,
+    base_commit: &str,
+    repo_cache_dir: &Path,
+    url: &str,
+) -> MutationResult<PathBuf> {
     fs::create_dir_all(repo_cache_dir).map_err(|err| {
         MutationError::invalid(
             "repo_cache_dir",
@@ -43,25 +55,10 @@ pub(crate) fn ensure_repo_cache(
         )
     })?;
     let cache = repo_cache_dir.join(format!("{}.git", repo.replace('/', "__")));
-    if !cache.exists() {
-        let url = format!("https://github.com/{repo}.git");
-        run_git(
-            &[],
-            &[
-                "clone",
-                "--quiet",
-                "--bare",
-                &url,
-                cache.to_str().ok_or_else(|| {
-                    MutationError::invalid(
-                        "repo_cache_dir",
-                        "repository cache path is not valid UTF-8",
-                        "use a UTF-8 filesystem path for the repository cache",
-                    )
-                })?,
-            ],
-            "clone repository cache",
-        )?;
+    let _lock = acquire_repo_cache_lock(repo_cache_dir, repo)?;
+    if !is_valid_bare_repo_cache(&cache)? {
+        remove_invalid_repo_cache(&cache)?;
+        clone_repo_cache(repo, url, repo_cache_dir, &cache)?;
     }
     if !git_commit_exists(&cache, base_commit)? {
         run_git(
@@ -81,6 +78,140 @@ pub(crate) fn ensure_repo_cache(
         ));
     }
     Ok(cache)
+}
+
+fn acquire_repo_cache_lock(repo_cache_dir: &Path, repo: &str) -> MutationResult<File> {
+    let lock_dir = repo_cache_dir.join(".locks");
+    fs::create_dir_all(&lock_dir).map_err(|err| {
+        MutationError::invalid(
+            "repo_cache_dir",
+            format!("failed to create file:{}: {err}", lock_dir.display()),
+            "choose a writable repository cache directory",
+        )
+    })?;
+    let lock_path = lock_dir.join(format!("{}.lock", sanitize_component(repo)));
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .map_err(|err| {
+            MutationError::invalid(
+                "repo_cache_dir",
+                format!("failed to open file:{}: {err}", lock_path.display()),
+                "choose a writable repository cache directory",
+            )
+        })?;
+    file.lock_exclusive().map_err(|err| {
+        MutationError::op_failed(
+            "repo_cache.lock",
+            format!("failed to lock file:{}: {err}", lock_path.display()),
+            "wait for the active source-backed corpus job or inspect stale repository cache locks",
+        )
+    })?;
+    Ok(file)
+}
+
+fn is_valid_bare_repo_cache(cache: &Path) -> MutationResult<bool> {
+    if !cache.exists() {
+        return Ok(false);
+    }
+    if !cache.is_dir() {
+        return Err(MutationError::invalid(
+            "repo_cache_dir",
+            format!(
+                "repository cache path exists but is not a directory: file:{}",
+                cache.display()
+            ),
+            "remove the invalid repository cache path and rerun corpus generation",
+        ));
+    }
+    let output = run_git_timed(
+        Some(cache),
+        &["rev-parse", "--is-bare-repository"],
+        GIT_QUERY_TIMEOUT,
+        "validate repository cache",
+    )?;
+    Ok(output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "true")
+}
+
+fn remove_invalid_repo_cache(cache: &Path) -> MutationResult<()> {
+    if !cache.exists() {
+        return Ok(());
+    }
+    if !cache.is_dir() {
+        return Err(MutationError::invalid(
+            "repo_cache_dir",
+            format!(
+                "repository cache path exists but is not a directory: file:{}",
+                cache.display()
+            ),
+            "remove the invalid repository cache path and rerun corpus generation",
+        ));
+    }
+    fs::remove_dir_all(cache).map_err(|err| {
+        MutationError::op_failed(
+            "repo_cache.cleanup",
+            format!(
+                "failed to remove stale repository cache file:{}: {err}",
+                cache.display()
+            ),
+            "inspect repository cache ownership and stale corpus jobs",
+        )
+    })
+}
+
+fn clone_repo_cache(
+    repo: &str,
+    url: &str,
+    repo_cache_dir: &Path,
+    cache: &Path,
+) -> MutationResult<()> {
+    let tmp_cache = repo_cache_dir.join(format!(
+        "{}.git.tmp-{}",
+        sanitize_component(repo),
+        std::process::id()
+    ));
+    if tmp_cache.exists() {
+        fs::remove_dir_all(&tmp_cache).map_err(|err| {
+            MutationError::op_failed(
+                "repo_cache.cleanup",
+                format!(
+                    "failed to remove stale temporary repository cache file:{}: {err}",
+                    tmp_cache.display()
+                ),
+                "inspect repository cache ownership and stale corpus jobs",
+            )
+        })?;
+    }
+    let tmp_arg = tmp_cache.to_str().ok_or_else(|| {
+        MutationError::invalid(
+            "repo_cache_dir",
+            "temporary repository cache path is not valid UTF-8",
+            "use a UTF-8 filesystem path for the repository cache",
+        )
+    })?;
+    let clone_result = run_git(
+        &[],
+        &["clone", "--quiet", "--bare", url, tmp_arg],
+        "clone repository cache",
+    );
+    if let Err(err) = clone_result {
+        let _ = fs::remove_dir_all(&tmp_cache);
+        return Err(err);
+    }
+    fs::rename(&tmp_cache, cache).map_err(|err| {
+        MutationError::op_failed(
+            "repo_cache.rename",
+            format!(
+                "failed to promote temporary repository cache file:{} to file:{}: {err}",
+                tmp_cache.display(),
+                cache.display()
+            ),
+            "inspect repository cache ownership and stale corpus jobs",
+        )
+    })
 }
 
 pub(crate) fn candidate_python_paths(
@@ -739,7 +870,30 @@ impl Drop for WorkDirGuard {
 
 #[cfg(test)]
 mod tests {
-    use super::candidate_python_priority;
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    use super::{candidate_python_priority, ensure_repo_cache_from_url};
+
+    fn run_git(dir: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .expect("git command must spawn");
+        assert!(
+            output.status.success(),
+            "git {:?} failed stdout={} stderr={}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).expect("git stdout must be UTF-8")
+    }
 
     #[test]
     fn production_python_paths_rank_before_ci_docs_and_tests() {
@@ -762,5 +916,61 @@ mod tests {
         assert_eq!(paths[3], "bin/authors_update.py");
         assert_eq!(paths[4], "docs/conf.py");
         assert_eq!(paths[5], ".ci/parse_durations_log.py");
+    }
+
+    #[test]
+    fn repo_cache_clone_is_safe_for_same_repo_parallel_workers() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let source = tmp.path().join("source");
+        fs::create_dir_all(source.join("pkg")).expect("mkdir source package");
+        run_git(tmp.path(), &["init", "--quiet", source.to_str().unwrap()]);
+        run_git(&source, &["config", "user.name", "ContextGraph Test"]);
+        run_git(
+            &source,
+            &["config", "user.email", "contextgraph@example.test"],
+        );
+        fs::write(source.join("pkg/mod.py"), "def f():\n    return 1\n").expect("write source");
+        run_git(&source, &["add", "."]);
+        run_git(&source, &["commit", "--quiet", "-m", "base"]);
+        let base_commit = run_git(&source, &["rev-parse", "HEAD"]).trim().to_string();
+        let repo_cache_dir = Arc::new(tmp.path().join("cache"));
+        let source_url = Arc::new(source.to_str().expect("source path UTF-8").to_string());
+        let barrier = Arc::new(Barrier::new(8));
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let repo_cache_dir = Arc::clone(&repo_cache_dir);
+            let source_url = Arc::clone(&source_url);
+            let base_commit = base_commit.clone();
+            let barrier = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                barrier.wait();
+                ensure_repo_cache_from_url(
+                    "example/repo",
+                    &base_commit,
+                    &repo_cache_dir,
+                    &source_url,
+                )
+                .map_err(|err| format!("{err:?}"))
+            }));
+        }
+        for handle in handles {
+            let cache = handle.join().expect("worker join").expect("cache ensured");
+            assert_eq!(cache, repo_cache_dir.join("example__repo.git"));
+        }
+        let cache = repo_cache_dir.join("example__repo.git");
+        assert_eq!(
+            run_git(&cache, &["rev-parse", "--is-bare-repository"]).trim(),
+            "true"
+        );
+        assert_eq!(
+            run_git(&cache, &["cat-file", "-t", &base_commit]).trim(),
+            "commit"
+        );
+        let tmp_entries = fs::read_dir(repo_cache_dir.as_ref())
+            .expect("read cache dir")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp-"))
+            .count();
+        assert_eq!(tmp_entries, 0);
     }
 }
