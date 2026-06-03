@@ -482,6 +482,48 @@ def numeric_precision_surface_labels(text: str) -> list[str]:
     return sorted(set(labels))
 
 
+def resource_lifecycle_surface_labels(text: str) -> list[str]:
+    lowered = text.lower()
+    labels: list[str] = []
+    if any(token in lowered for token in ("open(", ".open(", "close(", ".close(", "closed")):
+        labels.append("resource_lifecycle:open_close_surface")
+    if re.search(r"\bwith\b", lowered):
+        labels.append("resource_lifecycle:context_manager_surface")
+    if any(
+        token in lowered
+        for token in (
+            "socket",
+            "session",
+            "connection",
+            "cursor",
+            "file",
+            "fd",
+            "handle",
+            "tempfile",
+            "stream",
+        )
+    ):
+        labels.append("resource_lifecycle:resource_handle_surface")
+    if any(
+        token in lowered
+        for token in (
+            "finally",
+            "cleanup",
+            "tear_down",
+            "teardown",
+            "dispose",
+            "release",
+            "flush",
+            "commit",
+            "rollback",
+        )
+    ):
+        labels.append("resource_lifecycle:cleanup_release_surface")
+    if labels:
+        labels.append("resource_lifecycle:resource_leak_surface")
+    return sorted(set(labels))
+
+
 def source_surface_labels(row: dict[str, Any]) -> list[str]:
     text = str(row.get("source_text") or "").strip()
     rel = str(row.get("relative_path") or "").lower()
@@ -523,6 +565,7 @@ def source_surface_labels(row: dict[str, Any]) -> list[str]:
     if "test" in rel:
         labels.append("path_surface:test_path")
     labels.extend(numeric_precision_surface_labels(text))
+    labels.extend(resource_lifecycle_surface_labels(text))
     if not labels:
         labels.append("ast_surface:generic_code_surface")
     return sorted(set(labels))

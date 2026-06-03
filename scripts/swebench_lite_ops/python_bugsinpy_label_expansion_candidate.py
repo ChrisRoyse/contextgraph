@@ -46,10 +46,23 @@ DEFAULT_OUTPUT_ROOT = Path(
 
 CLASS_LABEL_PREFIXES = {
     "floating_point_precision": ("numeric_precision:",),
+    "resource_leak": ("resource_lifecycle:",),
 }
 
 CLASS_REGISTRY_TOKENS = {
     "floating_point_precision": ("precision", "float", "floating", "dtype", "decimal", "nan", "inf"),
+    "resource_leak": (
+        "resource",
+        "close",
+        "cleanup",
+        "socket",
+        "session",
+        "connection",
+        "cursor",
+        "handle",
+        "release",
+        "dispose",
+    ),
 }
 
 
@@ -113,6 +126,14 @@ def unassigned_retriage_reason(classification_reasons: Iterable[str]) -> str:
         return "context_only_decimal_reference"
     if reasons <= {r"\bnan\b", r"\binf\b", r"\bnp\."}:
         return "context_only_nan_inf_reference"
+    if reasons <= {r"\bfile\b"}:
+        return "context_only_file_reference"
+    if reasons <= {r"\bwith\b"}:
+        return "context_only_context_manager_reference"
+    if reasons <= {r"\bSession\b", r"\bConnection\b", r"\bsocket\b", r"\bcursor\b"}:
+        return "context_only_resource_handle_reference"
+    if reasons <= {r"\bclose\(", r"\bcleanup\b", r"\brelease\b", r"\bdispose\b", r"\bfinally\b"}:
+        return "context_only_cleanup_reference"
     return "mixed_or_manual_triage_required"
 
 

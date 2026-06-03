@@ -41,6 +41,21 @@ def test_source_surface_labels_emit_numeric_precision_family() -> None:
     assert "numeric_precision:tolerance_threshold_surface" in labels
 
 
+def test_source_surface_labels_emit_resource_lifecycle_family() -> None:
+    labels = source_surface_labels(
+        {
+            "source_text": "with open(path) as handle: session.close()",
+            "relative_path": "pkg/io.py",
+            "node_kind": "With",
+            "chunk_kind": "patch_hunk_line",
+        }
+    )
+    assert "resource_lifecycle:resource_leak_surface" in labels
+    assert "resource_lifecycle:context_manager_surface" in labels
+    assert "resource_lifecycle:open_close_surface" in labels
+    assert "resource_lifecycle:resource_handle_surface" in labels
+
+
 def test_candidate_expansion_covers_float_precision_rows(tmp_path: Path) -> None:
     bugs_root = tmp_path / "BugsInPy"
     write_bug(
@@ -92,6 +107,46 @@ def test_candidate_expansion_covers_float_precision_rows(tmp_path: Path) -> None
     assert summary["counts"]["target_class_bug_count"] == 1
     assert summary["counts"]["candidate_registry_rows"] >= 2
     assert summary["fractions"]["candidate_class_uncovered_fraction"] == 0.0
+
+
+def test_candidate_expansion_covers_resource_rows(tmp_path: Path) -> None:
+    bugs_root = tmp_path / "BugsInPy"
+    write_bug(
+        bugs_root,
+        "demo",
+        "1",
+        """diff --git a/demo/io.py b/demo/io.py
+--- a/demo/io.py
++++ b/demo/io.py
+@@ -1,2 +1,4 @@
+ def read(path):
+-    return open(path).read()
++    with open(path) as handle:
++        return handle.read()
+""",
+    )
+    registry = tmp_path / "accepted.jsonl"
+    write_registry(registry, ["ast_surface:return_value_surface"])
+    out = tmp_path / "out"
+    args = type(
+        "Args",
+        (),
+        {
+            "bugsinpy_root": bugs_root,
+            "target_class": "resource_leak",
+            "accepted_registry": registry,
+            "output_root": out,
+            "sample_size": 0,
+            "min_support": 1,
+        },
+    )()
+    manifest = run_candidate_expansion(args)
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert manifest["passes"] is True
+    assert summary["counts"]["target_class_bug_count"] == 1
+    assert summary["counts"]["candidate_class_covered_count"] == 1
+    candidate_rows = (out / "candidate_registry_expansion.jsonl").read_text(encoding="utf-8")
+    assert "resource_lifecycle:resource_leak_surface" in candidate_rows
 
 
 def test_candidate_expansion_passes_with_support_without_full_coverage(tmp_path: Path) -> None:
