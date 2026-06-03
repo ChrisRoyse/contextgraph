@@ -129,6 +129,8 @@ struct VerifyArgs {
     sample_fraction: f64,
     #[arg(long = "sample-key")]
     sample_keys: Vec<String>,
+    #[arg(long)]
+    quarantine_config: Option<PathBuf>,
     #[arg(
         long,
         default_value = AIWONDER_SWEBENCH_PYTHON
@@ -144,6 +146,26 @@ struct VerifyArgs {
     oracle_repeat_runs: usize,
     #[arg(long)]
     oracle_repeat_output: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CorpusQuarantineConfig {
+    #[serde(default)]
+    quarantined_tasks: Vec<CorpusQuarantineEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CorpusQuarantineEntry {
+    task_id: String,
+    reason: String,
+    flakiness_rate: f64,
+    oracle_runs: usize,
+    observed_outcomes: Vec<bool>,
+    observed_verdict_sha256: Vec<String>,
+    operator_id: String,
+    created_unix_ms: i64,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -761,7 +783,15 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
         Some(path) => Some(require_durable_path(&path, "verify.oracle_repeat_output")?),
         None => None,
     };
+    args.quarantine_config = match args.quarantine_config.take() {
+        Some(path) => Some(require_durable_path(&path, "verify.quarantine_config")?),
+        None => None,
+    };
     validate_verify_args(&args)?;
+    let quarantine = match &args.quarantine_config {
+        Some(path) => load_corpus_quarantine(path)?,
+        None => BTreeMap::new(),
+    };
     let index = read_index(&args.corpus)?;
     validate_complete_index(&index)?;
     let store_path = resolve_corpus_path(&args.corpus, &index.store_path)?;
@@ -853,6 +883,7 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
     }
     let mut oracle_sample = Vec::new();
     let mut oracle_repeat_tasks = Vec::new();
+    let mut quarantine_covered_mismatches = Vec::new();
     let mut oracle_sample_count = 0usize;
     let oracle_sample_skipped_due_to_local_failures = !failures.is_empty();
     if !oracle_sample_skipped_due_to_local_failures {
@@ -866,6 +897,7 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
         for entry in &sampled_entries {
             let mut fresh_runs = Vec::with_capacity(args.oracle_repeat_runs);
             let mut repeat_runs_for_output = Vec::with_capacity(args.oracle_repeat_runs);
+            let quarantine_entry = quarantine.get(&entry.task_id);
             for repeat_run_index in 1..=args.oracle_repeat_runs {
                 let run_id = oracle_repeat_run_id(&args, entry, repeat_run_index)?;
                 let fresh_verdict = run_oracle_for_entry(&args, &index, entry, &run_id)?;
@@ -877,19 +909,36 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
                     .to_string();
                 let matches_persisted = fresh_hash == entry.oracle_verdict_sha256;
                 if !matches_persisted {
-                    failures.push(json!({
+                    let mismatch = json!({
                         "key": format!("{}|{}", entry.task_id, entry.category.slug()),
                         "run_index": repeat_run_index,
                         "error": "fresh oracle sample hash mismatch",
                         "expected": entry.oracle_verdict_sha256,
                         "actual": fresh_hash,
-                    }));
+                    });
+                    if let Some(quarantine_entry) = quarantine_entry {
+                        quarantine_covered_mismatches.push(json!({
+                            "key": format!("{}|{}", entry.task_id, entry.category.slug()),
+                            "task_id": entry.task_id,
+                            "category": entry.category.slug(),
+                            "run_index": repeat_run_index,
+                            "error": "quarantine covered fresh oracle sample hash mismatch",
+                            "expected": entry.oracle_verdict_sha256,
+                            "actual": fresh_hash,
+                            "quarantine_reason": quarantine_entry.reason,
+                            "quarantine_flakiness_rate": quarantine_entry.flakiness_rate,
+                            "quarantine_oracle_runs": quarantine_entry.oracle_runs,
+                        }));
+                    } else {
+                        failures.push(mismatch);
+                    }
                 }
                 fresh_runs.push(json!({
                     "run_index": repeat_run_index,
                     "fresh_oracle_verdict_sha256": fresh_hash,
                     "fresh_all_passed": fresh_verdict.all_passed(),
                     "matches_persisted": matches_persisted,
+                    "quarantine_covered_mismatch": !matches_persisted && quarantine_entry.is_some(),
                 }));
                 repeat_runs_for_output.push(fresh_run);
             }
@@ -907,6 +956,8 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
                 "fresh_oracle_verdict_sha256": first_run["fresh_oracle_verdict_sha256"].clone(),
                 "persisted_all_passed": entry.oracle_all_passed,
                 "fresh_all_passed": first_run["fresh_all_passed"].clone(),
+                "quarantined_task": quarantine_entry.is_some(),
+                "quarantine_reason": quarantine_entry.map(|entry| entry.reason.clone()),
                 "matches_persisted": fresh_runs.iter().all(|run| run["matches_persisted"].as_bool() == Some(true)),
                 "fresh_runs": fresh_runs,
             }));
@@ -955,6 +1006,10 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
         "oracle_repeat_output": oracle_repeat_output_path,
         "oracle_repeat_output_task_count": oracle_repeat_tasks.len(),
         "oracle_repeat_output_written": oracle_repeat_output_written,
+        "quarantine_config": args.quarantine_config.as_ref().map(|path| path.display().to_string()),
+        "quarantine_task_count": quarantine.len(),
+        "quarantine_covered_mismatch_count": quarantine_covered_mismatches.len(),
+        "quarantine_covered_mismatches": quarantine_covered_mismatches,
         "oracle_sample": oracle_sample,
         "failures": failures,
         "passes": passes,
@@ -2066,6 +2121,7 @@ fn smoke(mut args: SmokeArgs) -> CliResult<()> {
         corpus: args.output.clone(),
         sample_fraction: args.sample_fraction,
         sample_keys: Vec::new(),
+        quarantine_config: None,
         venv_python: args.venv_python.clone(),
         run_id_prefix: format!("{}-verify", args.run_id_prefix),
         instance_timeout_secs: args.instance_timeout_secs,
@@ -2346,6 +2402,7 @@ fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
         corpus: args.output.clone(),
         sample_fraction: args.sample_fraction,
         sample_keys: Vec::new(),
+        quarantine_config: None,
         venv_python: args.venv_python.clone(),
         run_id_prefix: format!("{}-verify", args.run_id_prefix),
         instance_timeout_secs: args.instance_timeout_secs,
@@ -2792,6 +2849,94 @@ fn validate_verify_args(args: &VerifyArgs) -> CliResult<()> {
         return Err("oracle_repeat_runs must be >= 2 when oracle_repeat_output is set".into());
     }
     Ok(())
+}
+
+fn load_corpus_quarantine(path: &Path) -> CliResult<BTreeMap<String, CorpusQuarantineEntry>> {
+    if !path.is_file() {
+        return Err(format!("MEJEPA_CORPUS_QUARANTINE_MISSING: {}", path.display()).into());
+    }
+    let raw = fs::read_to_string(path)?;
+    let config: CorpusQuarantineConfig = toml::from_str(&raw)?;
+    let mut entries = BTreeMap::new();
+    for entry in config.quarantined_tasks {
+        validate_corpus_quarantine_entry(&entry)?;
+        let task_id = entry.task_id.clone();
+        if entries.insert(task_id.clone(), entry).is_some() {
+            return Err(format!("MEJEPA_CORPUS_QUARANTINE_DUPLICATE_TASK: {}", task_id).into());
+        }
+    }
+    Ok(entries)
+}
+
+fn validate_corpus_quarantine_entry(entry: &CorpusQuarantineEntry) -> CliResult<()> {
+    validate_corpus_quarantine_task_id(&entry.task_id)?;
+    if entry.reason.trim().is_empty() {
+        return Err(format!("MEJEPA_CORPUS_QUARANTINE_REASON_MISSING: {}", entry.task_id).into());
+    }
+    if !(entry.flakiness_rate.is_finite() && (0.0..=1.0).contains(&entry.flakiness_rate)) {
+        return Err(format!("MEJEPA_CORPUS_QUARANTINE_RATE_INVALID: {}", entry.task_id).into());
+    }
+    if entry.oracle_runs < 2 {
+        return Err(format!(
+            "MEJEPA_CORPUS_QUARANTINE_INSUFFICIENT_RUNS: {}",
+            entry.task_id
+        )
+        .into());
+    }
+    if entry.observed_outcomes.len() != entry.oracle_runs {
+        return Err(format!(
+            "MEJEPA_CORPUS_QUARANTINE_OUTCOME_COUNT_MISMATCH: {}",
+            entry.task_id
+        )
+        .into());
+    }
+    if entry.observed_verdict_sha256.len() != entry.oracle_runs {
+        return Err(format!(
+            "MEJEPA_CORPUS_QUARANTINE_HASH_COUNT_MISMATCH: {}",
+            entry.task_id
+        )
+        .into());
+    }
+    for hash in &entry.observed_verdict_sha256 {
+        normalize_corpus_quarantine_sha256(hash)?;
+    }
+    if entry.operator_id.trim().is_empty() {
+        return Err(format!(
+            "MEJEPA_CORPUS_QUARANTINE_OPERATOR_MISSING: {}",
+            entry.task_id
+        )
+        .into());
+    }
+    if entry.created_unix_ms <= 0 {
+        return Err(format!(
+            "MEJEPA_CORPUS_QUARANTINE_CREATED_AT_INVALID: {}",
+            entry.task_id
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn validate_corpus_quarantine_task_id(task_id: &str) -> CliResult<()> {
+    if task_id.trim().is_empty() || task_id.trim() != task_id {
+        return Err("MEJEPA_CORPUS_QUARANTINE_TASK_ID_INVALID".into());
+    }
+    if task_id
+        .bytes()
+        .any(|byte| byte == 0 || byte == b'\n' || byte == b'\r')
+    {
+        return Err("MEJEPA_CORPUS_QUARANTINE_TASK_ID_INVALID".into());
+    }
+    Ok(())
+}
+
+fn normalize_corpus_quarantine_sha256(value: &str) -> CliResult<String> {
+    let stripped = value.strip_prefix("sha256:").unwrap_or(value);
+    if stripped.len() == 64 && stripped.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Ok(stripped.to_ascii_lowercase())
+    } else {
+        Err(format!("MEJEPA_CORPUS_QUARANTINE_HASH_INVALID: {value}").into())
+    }
 }
 
 fn ensure_output_directory_ready(output: &Path) -> CliResult<()> {
@@ -3941,6 +4086,7 @@ mod tests {
             corpus: PathBuf::from("/zfs/archive/contextgraph/corpus/synthetic-repeat-check"),
             sample_fraction: 1.0,
             sample_keys: Vec::new(),
+            quarantine_config: None,
             venv_python: venv.path().to_path_buf(),
             run_id_prefix: "synthetic-repeat-check".to_string(),
             instance_timeout_secs: 1,
@@ -3955,6 +4101,84 @@ mod tests {
         assert!(error
             .to_string()
             .contains("oracle_repeat_runs must be >= 2"));
+        Ok(())
+    }
+
+    #[test]
+    fn corpus_quarantine_loader_accepts_flakiness_audit_toml() -> CliResult<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("corpus_quarantine.toml");
+        fs::write(
+            &path,
+            r#"
+[[quarantined_tasks]]
+task_id = "psf__requests-1766"
+reason = "oracle flakiness 0.500000 > threshold 0.050000 over 2 runs for psf__requests-1766|known_good"
+flakiness_rate = 0.5
+oracle_runs = 2
+observed_outcomes = [
+    false,
+    true,
+]
+observed_verdict_sha256 = [
+    "0adf3e5745f5e0e974f4c3f3575dd1f8ed85203128a88e77a6fefe56311dc9b0",
+    "sha256:a1e56fa06f67cc74766c75cc54a4de27f8a02958a787dfa1ef142e47a087de26",
+]
+operator_id = "test"
+created_unix_ms = 1
+"#,
+        )?;
+
+        let quarantine = load_corpus_quarantine(&path)?;
+
+        assert_eq!(quarantine.len(), 1);
+        let entry = quarantine.get("psf__requests-1766").unwrap();
+        assert_eq!(entry.oracle_runs, 2);
+        assert_eq!(entry.observed_outcomes, vec![false, true]);
+        assert_eq!(entry.flakiness_rate, 0.5);
+        Ok(())
+    }
+
+    #[test]
+    fn corpus_quarantine_loader_rejects_duplicate_tasks() -> CliResult<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("corpus_quarantine.toml");
+        fs::write(
+            &path,
+            r#"
+[[quarantined_tasks]]
+task_id = "duplicate-task"
+reason = "first"
+flakiness_rate = 0.5
+oracle_runs = 2
+observed_outcomes = [false, true]
+observed_verdict_sha256 = [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+]
+operator_id = "test"
+created_unix_ms = 1
+
+[[quarantined_tasks]]
+task_id = "duplicate-task"
+reason = "second"
+flakiness_rate = 0.5
+oracle_runs = 2
+observed_outcomes = [false, true]
+observed_verdict_sha256 = [
+    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+]
+operator_id = "test"
+created_unix_ms = 1
+"#,
+        )?;
+
+        let err = load_corpus_quarantine(&path).expect_err("duplicate quarantine must fail");
+
+        assert!(err
+            .to_string()
+            .contains("MEJEPA_CORPUS_QUARANTINE_DUPLICATE_TASK"));
         Ok(())
     }
 
