@@ -75,6 +75,10 @@ struct GenerateArgs {
     output: PathBuf,
     #[arg(long, default_value = "tasks/swebench-lite")]
     tasks_dir: PathBuf,
+    #[arg(long, default_value = "princeton-nlp/SWE-bench_Lite")]
+    dataset_name: String,
+    #[arg(long, default_value = "test")]
+    dataset_split: String,
     #[arg(
         long,
         default_value = AIWONDER_SWEBENCH_PYTHON
@@ -154,6 +158,10 @@ struct SmokeArgs {
     output: PathBuf,
     #[arg(long, default_value = "tasks/swebench-lite")]
     tasks_dir: PathBuf,
+    #[arg(long, default_value = "princeton-nlp/SWE-bench_Lite")]
+    dataset_name: String,
+    #[arg(long, default_value = "test")]
+    dataset_split: String,
     #[arg(
         long,
         default_value = AIWONDER_SWEBENCH_PYTHON
@@ -293,6 +301,10 @@ struct CorpusIndex {
     corpus_version: String,
     #[serde(default = "default_embedder_version")]
     embedder_version: String,
+    #[serde(default = "default_dataset_name")]
+    dataset_name: String,
+    #[serde(default = "default_dataset_split")]
+    dataset_split: String,
     #[serde(default)]
     complete: bool,
     generated_at_unix_ms: u128,
@@ -330,6 +342,14 @@ struct GeneratedEntry {
 
 fn default_entry_language() -> Language {
     Language::Python
+}
+
+fn default_dataset_name() -> String {
+    "princeton-nlp/SWE-bench_Lite".to_string()
+}
+
+fn default_dataset_split() -> String {
+    "test".to_string()
 }
 
 fn main() -> CliResult<()> {
@@ -378,6 +398,8 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
         .collect::<Vec<_>>();
     let patch_by_task = load_official_patches(
         &args.venv_python,
+        &args.dataset_name,
+        &args.dataset_split,
         selected
             .iter()
             .map(|manifest| manifest.instance_id.as_str())
@@ -445,6 +467,8 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
             schema_version: 1,
             corpus_version: MEJEPA_CORPUS_VERSION_V1.to_string(),
             embedder_version: MEJEPA_EMBEDDER_VERSION_V1.to_string(),
+            dataset_name: args.dataset_name.clone(),
+            dataset_split: args.dataset_split.clone(),
             complete: false,
             generated_at_unix_ms: unix_ms(),
             seed: args.seed,
@@ -623,6 +647,8 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
             args.output.join("swebench-runs"),
             args.venv_python.clone(),
         );
+        batch_config.dataset_name = args.dataset_name.clone();
+        batch_config.split = args.dataset_split.clone();
         batch_config.instance_timeout = Duration::from_secs(args.instance_timeout_secs);
         batch_config.overall_timeout = Duration::from_secs(args.overall_timeout_secs);
         batch_config.max_workers = args.oracle_workers;
@@ -842,7 +868,7 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
             let mut repeat_runs_for_output = Vec::with_capacity(args.oracle_repeat_runs);
             for repeat_run_index in 1..=args.oracle_repeat_runs {
                 let run_id = oracle_repeat_run_id(&args, entry, repeat_run_index)?;
-                let fresh_verdict = run_oracle_for_entry(&args, entry, &run_id)?;
+                let fresh_verdict = run_oracle_for_entry(&args, &index, entry, &run_id)?;
                 let fresh_run = oracle_repeat_run_json(run_id, &fresh_verdict)?;
                 let fresh_hash = fresh_run
                     .get("oracle_verdict_sha256")
@@ -1188,6 +1214,8 @@ fn merge(mut args: MergeArgs) -> CliResult<()> {
                 schema_version: shard_index.schema_version,
                 corpus_version: shard_index.corpus_version.clone(),
                 embedder_version: shard_index.embedder_version.clone(),
+                dataset_name: shard_index.dataset_name.clone(),
+                dataset_split: shard_index.dataset_split.clone(),
                 complete: false,
                 generated_at_unix_ms: unix_ms(),
                 seed: shard_index.seed,
@@ -1334,6 +1362,8 @@ fn normalize(mut args: NormalizeArgs) -> CliResult<()> {
         schema_version: source_index.schema_version,
         corpus_version: source_index.corpus_version.clone(),
         embedder_version: source_index.embedder_version.clone(),
+        dataset_name: source_index.dataset_name.clone(),
+        dataset_split: source_index.dataset_split.clone(),
         complete: false,
         generated_at_unix_ms: unix_ms(),
         seed: source_index.seed,
@@ -1534,6 +1564,8 @@ fn generate_fixtures(mut args: GenerateFixturesArgs) -> CliResult<()> {
         schema_version: 1,
         corpus_version: MEJEPA_CORPUS_VERSION_V1.to_string(),
         embedder_version: MEJEPA_EMBEDDER_VERSION_V1.to_string(),
+        dataset_name: "contextgraph/generated-multilang-fixtures".to_string(),
+        dataset_split: "generated".to_string(),
         complete: false,
         generated_at_unix_ms: unix_ms(),
         seed: args.seed,
@@ -2012,6 +2044,8 @@ fn smoke(mut args: SmokeArgs) -> CliResult<()> {
     let generate_args = GenerateArgs {
         output: args.output.clone(),
         tasks_dir: args.tasks_dir.clone(),
+        dataset_name: args.dataset_name.clone(),
+        dataset_split: args.dataset_split.clone(),
         venv_python: args.venv_python.clone(),
         instance_ids: args.instance_ids.clone(),
         categories: args.categories.clone(),
@@ -2290,6 +2324,8 @@ fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
     validate_generate_args(&GenerateArgs {
         output: args.output.clone(),
         tasks_dir: args.tasks_dir.clone(),
+        dataset_name: args.dataset_name.clone(),
+        dataset_split: args.dataset_split.clone(),
         venv_python: args.venv_python.clone(),
         instance_ids: args.instance_ids.clone(),
         categories: args.categories.clone(),
@@ -2344,6 +2380,12 @@ fn require_corpus_path(path: &Path, field: &'static str) -> CliResult<PathBuf> {
 }
 
 fn validate_generate_args(args: &GenerateArgs) -> CliResult<()> {
+    if args.dataset_name.trim().is_empty() {
+        return Err("dataset_name must be non-empty".into());
+    }
+    if args.dataset_split.trim().is_empty() {
+        return Err("dataset_split must be non-empty".into());
+    }
     if !args.venv_python.is_file() {
         return Err(format!(
             "SWE-bench venv python does not exist: {}",
@@ -2825,6 +2867,20 @@ fn validate_resume_index(
         )
         .into());
     }
+    if index.dataset_name != args.dataset_name {
+        return Err(format!(
+            "cannot resume with different dataset_name: index={} args={}",
+            index.dataset_name, args.dataset_name
+        )
+        .into());
+    }
+    if index.dataset_split != args.dataset_split {
+        return Err(format!(
+            "cannot resume with different dataset_split: index={} args={}",
+            index.dataset_split, args.dataset_split
+        )
+        .into());
+    }
     if index.seed != args.seed {
         return Err(format!(
             "cannot resume with different seed: index={} args={}",
@@ -3053,6 +3109,8 @@ fn select_manifests(
 
 fn load_official_patches(
     venv_python: &Path,
+    dataset_name: &str,
+    dataset_split: &str,
     instance_ids: &[&str],
 ) -> CliResult<BTreeMap<String, String>> {
     let ids_json = serde_json::to_string(instance_ids)?;
@@ -3061,8 +3119,10 @@ import json
 import sys
 from datasets import load_dataset
 ids = set(json.loads(sys.argv[1]))
+dataset_name = sys.argv[2]
+dataset_split = sys.argv[3]
 rows = {}
-for row in load_dataset("princeton-nlp/SWE-bench_Lite", split="test"):
+for row in load_dataset(dataset_name, split=dataset_split):
     if row["instance_id"] in ids:
         rows[row["instance_id"]] = row.get("patch") or ""
 missing = sorted(ids - set(rows))
@@ -3072,7 +3132,7 @@ print(json.dumps(rows, sort_keys=True))
 "#;
     let output = run_capture_timed(
         venv_python,
-        &["-c", snippet, &ids_json],
+        &["-c", snippet, &ids_json, dataset_name, dataset_split],
         OFFICIAL_PATCH_LOADER_TIMEOUT,
         "load official SWE-bench patches",
     )
@@ -3139,6 +3199,7 @@ fn write_mutated_patch(
 
 fn run_oracle_for_entry(
     args: &VerifyArgs,
+    index: &CorpusIndex,
     entry: &GeneratedEntry,
     run_id: &str,
 ) -> CliResult<OracleVerdict> {
@@ -3164,6 +3225,8 @@ fn run_oracle_for_entry(
         args.venv_python.clone(),
         SwebenchPredictionMode::Custom(prediction),
     );
+    config.dataset_name = index.dataset_name.clone();
+    config.split = index.dataset_split.clone();
     config.instance_timeout = Duration::from_secs(args.instance_timeout_secs);
     config.overall_timeout = Duration::from_secs(args.overall_timeout_secs);
     let result = run_swebench_lite_oracle(&config)?;
@@ -3241,6 +3304,12 @@ fn validate_merge_compatible(
             shard.display()
         )
         .into());
+    }
+    if actual.dataset_name != expected.dataset_name {
+        return Err(format!("shard {} has incompatible dataset_name", shard.display()).into());
+    }
+    if actual.dataset_split != expected.dataset_split {
+        return Err(format!("shard {} has incompatible dataset_split", shard.display()).into());
     }
     if actual.seed != expected.seed {
         return Err(format!("shard {} has incompatible seed", shard.display()).into());
