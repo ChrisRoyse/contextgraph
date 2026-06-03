@@ -15,9 +15,10 @@ use context_graph_mejepa_cf::{
 };
 use context_graph_mejepa_train::{
     apply_online_mistake_update_sync_readback, count_cf_rows, online_head_key,
-    open_ability_resolver_rocksdb, read_all_mistake_log_rows, read_all_skill_lifecycle_audit_rows,
-    read_mistake_log_row, read_online_head_state_row, read_replay_row,
-    write_mistake_log_row_sync_readback, write_replay_row_sync_readback, MistakeLogRow,
+    open_ability_resolver_rocksdb, predict_with_online_head_neighbors, read_all_mistake_log_rows,
+    read_all_skill_lifecycle_audit_rows, read_mistake_log_row, read_online_head_state_row,
+    read_replay_row, write_mistake_log_row_sync_readback, write_replay_row_sync_readback,
+    MistakeLogRow, OnlineHeadNeighbor, OnlineHeadNeighborConfig, OnlineHeadNeighborContext,
     OnlineHeadRepeatMetricRow, OnlineHeadStateRow, OnlineHeadUpdateConfig, OnlineHeadUpdateInput,
     ReplayBufferRow,
 };
@@ -68,6 +69,11 @@ struct MistakeLoopStatusRequest {
     panel_signature_hash: String,
     #[serde(default = "default_repeat_metric_limit")]
     repeat_metric_limit: usize,
+    base_verdict: Option<Verdict>,
+    neighbor_context: Option<OnlineHeadNeighborContext>,
+    #[serde(default)]
+    neighbors: Vec<OnlineHeadNeighbor>,
+    neighbor_config: Option<OnlineHeadNeighborConfig>,
 }
 
 impl Handlers {
@@ -270,11 +276,12 @@ fn run_mistake_loop_status(request: MistakeLoopStatusRequest) -> AnyhowResult<Va
     if request.repeat_metric_limit > 10_000 {
         bail!("repeatMetricLimit must be <= 10000");
     }
-    let db_path = resolve_mistake_loop_db_path(request.db_path)?;
+    let db_path = resolve_mistake_loop_db_path(request.db_path.clone())?;
     let db = open_ability_resolver_rocksdb(&db_path, false)
         .with_context(|| format!("open mistake-loop DB {}", db_path.display()))?;
     let head_key = online_head_key(&request.panel_signature_hash)?;
     let online_head_state = read_online_head_state_row(&db, &head_key)?;
+    let neighbor_prediction = neighbor_prediction_report(&db, &request)?;
     let (online_head_state_count, repeat_metrics) =
         scan_online_head_cf(&db, request.repeat_metric_limit)?;
     let latest_mistake = read_all_mistake_log_rows(&db)?.into_iter().max_by(|a, b| {
@@ -289,12 +296,41 @@ fn run_mistake_loop_status(request: MistakeLoopStatusRequest) -> AnyhowResult<Va
         "onlineHeadKey": head_key,
         "matchingOnlineHeadStateExists": online_head_state.is_some(),
         "onlineHeadState": online_head_state,
+        "neighborPrediction": neighbor_prediction,
         "onlineHeadStateCount": online_head_state_count,
         "repeatMetrics": repeat_metrics,
         "repeatMetricCountReturned": repeat_metrics.len(),
         "latestMistake": latest_mistake,
         "counts": cf_counts(&db)?
     }))
+}
+
+fn neighbor_prediction_report(
+    db: &rocksdb::DB,
+    request: &MistakeLoopStatusRequest,
+) -> AnyhowResult<Option<Value>> {
+    let requested = request.neighbor_context.is_some()
+        || !request.neighbors.is_empty()
+        || request.neighbor_config.is_some()
+        || request.base_verdict.is_some();
+    if !requested {
+        return Ok(None);
+    }
+    let context = request
+        .neighbor_context
+        .as_ref()
+        .ok_or_else(|| anyhow!("neighborContext is required for neighbor prediction status"))?;
+    let base_verdict = request.base_verdict.unwrap_or(Verdict::Pass);
+    ensure_binary_verdict("baseVerdict", base_verdict)?;
+    let report = predict_with_online_head_neighbors(
+        db,
+        &request.panel_signature_hash,
+        base_verdict,
+        context,
+        &request.neighbors,
+        request.neighbor_config.unwrap_or_default(),
+    )?;
+    Ok(Some(serde_json::to_value(report)?))
 }
 
 fn scan_online_head_cf(
@@ -384,6 +420,7 @@ fn source_of_truth(db_path: &Path) -> Value {
             "writesReplayBuffer": CF_MEJEPA_REPLAY_BUFFER,
             "readsOnlineHeadState": CF_MEJEPA_ONLINE_HEAD_STATE,
             "readsSkillLifecycleAudit": CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
+            "readsNeighborPredictionReport": true,
             "noCachedJsonSummary": true,
             "noNewPredictionHeadIntroduced": true
         }),
@@ -438,10 +475,173 @@ fn mistake_loop_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use context_graph_mejepa_train::label_bridge::{
+        ability_signature_hash, accepted_label_signature_hash, membership_signature_hash,
+        skill_signature_hash,
+    };
+    use context_graph_mejepa_train::{
+        ability_aware_replay_cell_id, mistake_id_from_evidence_parts, MistakeTruthSource,
+        ReplayBufferSource, ReplayRetentionTier,
+    };
+    use tempfile::TempDir;
+
+    const TEST_NOW_MS: i64 = 1_780_470_400_000;
 
     #[test]
     fn rejects_bad_prediction_hex() {
         assert!(prediction_id_from_hex("abcd").is_err());
         assert!(prediction_id_from_hex("not-hex").is_err());
+    }
+
+    #[test]
+    fn status_returns_bounded_neighbor_prediction_report() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("mistake-loop.db");
+        {
+            let _db = open_ability_resolver_rocksdb(&db_path, true).unwrap();
+        }
+        let rows = build_test_rows([0x42; 16], "mcp-neighbor").unwrap();
+        run_record_mistake(RecordMistakeRequest {
+            db_path: Some(db_path.clone()),
+            panel_signature_hash: "panel:mcp:test:source".to_string(),
+            mistake_row: rows.mistake.clone(),
+            replay_row: rows.replay.clone(),
+            base_verdict_before_update: Verdict::Pass,
+            now_unix_ms: TEST_NOW_MS + 1,
+            online_head_config: Some(OnlineHeadUpdateConfig {
+                learning_rate: 1.0,
+                repeat_window_size: 100,
+            }),
+        })
+        .unwrap();
+
+        let status = run_mistake_loop_status(MistakeLoopStatusRequest {
+            db_path: Some(db_path),
+            panel_signature_hash: "panel:mcp:test:heldout".to_string(),
+            repeat_metric_limit: 10,
+            base_verdict: Some(Verdict::Pass),
+            neighbor_context: Some(
+                OnlineHeadNeighborContext::from_replay_row(&rows.replay).unwrap(),
+            ),
+            neighbors: vec![OnlineHeadNeighbor {
+                panel_signature_hash: "panel:mcp:test:source".to_string(),
+                distance: 0.01,
+            }],
+            neighbor_config: Some(OnlineHeadNeighborConfig::default()),
+        })
+        .unwrap();
+
+        assert_eq!(status["matchingOnlineHeadStateExists"], json!(false));
+        assert_eq!(
+            status["neighborPrediction"]["source"],
+            json!("neighborPanel")
+        );
+        assert_eq!(
+            status["neighborPrediction"]["correctedVerdict"],
+            json!("fail")
+        );
+        assert_eq!(
+            status["neighborPrediction"]["matchedPanelSignatureHash"],
+            json!("panel:mcp:test:source")
+        );
+        assert_eq!(
+            status["neighborPrediction"]["flatVectorConcatUsed"],
+            json!(false)
+        );
+        assert_eq!(
+            status["neighborPrediction"]["claimsFisherEwcProtection"],
+            json!(false)
+        );
+    }
+
+    struct TestRows {
+        mistake: MistakeLogRow,
+        replay: ReplayBufferRow,
+    }
+
+    fn build_test_rows(
+        prediction_bytes: [u8; 16],
+        suffix: &str,
+    ) -> Result<TestRows, Box<dyn std::error::Error>> {
+        let prediction_id = PredictionId(prediction_bytes);
+        let accepted_label_ids = vec!["ast_surface:function".to_string()];
+        let active_skill_ids = vec!["skill:unit_sequence".to_string()];
+        let active_higher_ability_ids = vec!["ability:boundary_sequence".to_string()];
+        let source_membership_keys =
+            vec!["chunk_skill::chunk:mcp-status::python:before::skill:unit_sequence".to_string()];
+        let label_signature_hash = accepted_label_signature_hash(&accepted_label_ids)?;
+        let skill_signature_hash = Some(skill_signature_hash(&active_skill_ids)?);
+        let ability_signature_hash = Some(ability_signature_hash(&active_higher_ability_ids)?);
+        let membership_signature_hash = Some(membership_signature_hash(&source_membership_keys)?);
+        let code_state_key = format!("python:before:mcp-status:{suffix}");
+        let named_failure_mode = "failure:neighbor_status".to_string();
+        let replay_row_key = hex::encode(prediction_id.0);
+        let mistake_id = mistake_id_from_evidence_parts(
+            prediction_id,
+            &code_state_key,
+            &label_signature_hash,
+            skill_signature_hash.as_deref(),
+            ability_signature_hash.as_deref(),
+            membership_signature_hash.as_deref(),
+            Verdict::Fail,
+        )?;
+        let cell_id = ability_aware_replay_cell_id(
+            "python",
+            "mcp_status_mistake_loop",
+            &code_state_key,
+            &named_failure_mode,
+            &label_signature_hash,
+            skill_signature_hash.as_deref(),
+            ability_signature_hash.as_deref(),
+            membership_signature_hash.as_deref(),
+        )?;
+        Ok(TestRows {
+            mistake: MistakeLogRow {
+                schema_version: 1,
+                mistake_id,
+                prediction_id,
+                predicted_verdict: Verdict::Pass,
+                ground_truth_verdict: Verdict::Fail,
+                truth_source: MistakeTruthSource::SwebenchDockerOracle,
+                code_state_key: code_state_key.clone(),
+                named_failure_mode: Some(named_failure_mode),
+                accepted_label_ids: accepted_label_ids.clone(),
+                active_skill_ids: active_skill_ids.clone(),
+                label_signature_hash: label_signature_hash.clone(),
+                skill_signature_hash: skill_signature_hash.clone(),
+                failure_evidence_set_ids: vec![code_state_key],
+                replay_row_key,
+                accepted_registry_sha256: Some("sha256:mcp-status-accepted-registry".to_string()),
+                usefulness_metrics_sha256: Some("sha256:mcp-status-usefulness".to_string()),
+                learning_bridge_manifest_sha256: Some("sha256:mcp-status-bridge".to_string()),
+                created_at_unix_ms: TEST_NOW_MS,
+                active_higher_ability_ids: active_higher_ability_ids.clone(),
+                source_membership_keys: source_membership_keys.clone(),
+                ability_signature_hash: ability_signature_hash.clone(),
+                membership_signature_hash: membership_signature_hash.clone(),
+            },
+            replay: ReplayBufferRow {
+                prediction_id,
+                surprise_z: 2.0,
+                cell_id,
+                coverage_gap_score: 0.75,
+                last_replayed_ts: None,
+                replay_count: 0,
+                retention_weight: 1.0,
+                protected: true,
+                retention_tier: ReplayRetentionTier::Hot,
+                source: ReplayBufferSource::AcceptedLabelMistake,
+                created_at_unix_ms: TEST_NOW_MS,
+                updated_at_unix_ms: TEST_NOW_MS,
+                accepted_label_ids,
+                active_skill_ids,
+                active_higher_ability_ids,
+                source_membership_keys,
+                label_signature_hash: Some(label_signature_hash),
+                skill_signature_hash,
+                ability_signature_hash,
+                membership_signature_hash,
+            },
+        })
     }
 }

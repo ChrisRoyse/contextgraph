@@ -1557,7 +1557,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_MISTAKE_LOOP_STATUS,
-            "TASK-PY-G-112B online-head status: read the exact online_head:<panelSignatureHash> row, byte-readable repeat-mistake metrics, and source CF counts directly from RocksDB.",
+            "TASK-PY-G-112B online-head status: read exact online_head:<panelSignatureHash> rows, optional bounded-neighbor correction reports, byte-readable repeat-mistake metrics, and source CF counts directly from RocksDB.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -1570,7 +1570,51 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "maxLength": 512,
                         "pattern": "^[A-Za-z0-9:_-]+$"
                     },
-                    "repeatMetricLimit": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 20}
+                    "repeatMetricLimit": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 20},
+                    "baseVerdict": {
+                        "type": "string",
+                        "enum": ["pass", "fail"],
+                        "description": "Base verdict used only when neighborContext is supplied; defaults to pass."
+                    },
+                    "neighborContext": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "replayCellId": {"type": "string", "minLength": 1, "maxLength": 512},
+                            "labelSignatureHash": {"type": "string", "minLength": 1, "maxLength": 512},
+                            "skillSignatureHash": {"type": ["string", "null"], "minLength": 1, "maxLength": 512},
+                            "abilitySignatureHash": {"type": ["string", "null"], "minLength": 1, "maxLength": 512},
+                            "membershipSignatureHash": {"type": ["string", "null"], "minLength": 1, "maxLength": 512}
+                        },
+                        "required": ["replayCellId", "labelSignatureHash"]
+                    },
+                    "neighbors": {
+                        "type": "array",
+                        "maxItems": 128,
+                        "default": [],
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["panelSignatureHash", "distance"],
+                            "properties": {
+                                "panelSignatureHash": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 512,
+                                    "pattern": "^[A-Za-z0-9:_-]+$"
+                                },
+                                "distance": {"type": "number", "minimum": 0}
+                            }
+                        }
+                    },
+                    "neighborConfig": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "maxDistance": {"type": "number", "minimum": 0, "default": 0.05},
+                            "maxNeighbors": {"type": "integer", "minimum": 1, "maximum": 128, "default": 16}
+                        }
+                    }
                 }
             }),
         ),
