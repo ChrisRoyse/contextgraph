@@ -58,7 +58,10 @@ pub struct OracleFlakinessAuditOutput {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OracleFlakinessTaskReport {
+    pub audit_key: String,
     pub task_id: String,
+    pub repo: Option<String>,
+    pub category: Option<String>,
     pub run_count: usize,
     pub pass_count: usize,
     pub fail_count: usize,
@@ -276,19 +279,22 @@ pub fn build_quarantine_from_audit(
         created_unix_ms > 0,
         "MEJEPA_ORACLE_FLAKINESS_CREATED_AT_INVALID"
     );
-    let mut seen_tasks = BTreeSet::new();
+    let mut seen_rows = BTreeSet::new();
     let mut reports = Vec::new();
-    let mut quarantined_tasks = Vec::new();
+    let mut quarantined_by_task = BTreeMap::new();
     for task in &input.tasks {
         validate_task_id(&task.task_id)?;
+        validate_optional_audit_field("repo", task.repo.as_deref())?;
+        validate_optional_audit_field("category", task.category.as_deref())?;
+        let audit_key = oracle_task_audit_key(task)?;
         ensure!(
-            seen_tasks.insert(task.task_id.clone()),
-            "MEJEPA_ORACLE_FLAKINESS_DUPLICATE_TASK: {}",
-            task.task_id
+            seen_rows.insert(audit_key.clone()),
+            "MEJEPA_ORACLE_FLAKINESS_DUPLICATE_ROW: {}",
+            audit_key
         );
         let report = classify_task(task, required_runs, threshold)?;
         if report.quarantined {
-            quarantined_tasks.push(CorpusQuarantineEntry {
+            let entry = CorpusQuarantineEntry {
                 task_id: task.task_id.clone(),
                 reason: report.reason.clone(),
                 flakiness_rate: report.flakiness_rate,
@@ -301,11 +307,21 @@ pub fn build_quarantine_from_audit(
                     .collect::<Result<Vec<_>>>()?,
                 operator_id: operator_id.to_string(),
                 created_unix_ms,
-            });
+            };
+            quarantined_by_task
+                .entry(task.task_id.clone())
+                .and_modify(|existing: &mut CorpusQuarantineEntry| {
+                    if entry.flakiness_rate > existing.flakiness_rate {
+                        *existing = entry.clone();
+                    }
+                })
+                .or_insert(entry);
         }
         reports.push(report);
     }
-    let config = CorpusQuarantineConfig { quarantined_tasks };
+    let config = CorpusQuarantineConfig {
+        quarantined_tasks: quarantined_by_task.into_values().collect(),
+    };
     config.validate()?;
     Ok((reports, config))
 }
@@ -315,10 +331,11 @@ fn classify_task(
     required_runs: usize,
     threshold: f32,
 ) -> Result<OracleFlakinessTaskReport> {
+    let audit_key = oracle_task_audit_key(task)?;
     ensure!(
         task.runs.len() >= required_runs,
         "MEJEPA_ORACLE_FLAKINESS_INSUFFICIENT_RUNS: {} has {} runs, expected at least {}",
-        task.task_id,
+        audit_key,
         task.runs.len(),
         required_runs
     );
@@ -330,12 +347,12 @@ fn classify_task(
         ensure!(
             !run.run_id.trim().is_empty(),
             "MEJEPA_ORACLE_FLAKINESS_RUN_ID_EMPTY: {}",
-            task.task_id
+            audit_key
         );
         ensure!(
             run_ids.insert(run.run_id.clone()),
             "MEJEPA_ORACLE_FLAKINESS_DUPLICATE_RUN: {} {}",
-            task.task_id,
+            audit_key,
             run.run_id
         );
         if run.oracle_all_passed {
@@ -355,17 +372,20 @@ fn classify_task(
     let quarantined = flakiness_rate > threshold;
     let reason = if quarantined {
         format!(
-            "oracle flakiness {:.6} > threshold {:.6} over {} runs",
-            flakiness_rate, threshold, run_count
+            "oracle flakiness {:.6} > threshold {:.6} over {} runs for {}",
+            flakiness_rate, threshold, run_count, audit_key
         )
     } else {
         format!(
-            "oracle flakiness {:.6} <= threshold {:.6} over {} runs",
-            flakiness_rate, threshold, run_count
+            "oracle flakiness {:.6} <= threshold {:.6} over {} runs for {}",
+            flakiness_rate, threshold, run_count, audit_key
         )
     };
     Ok(OracleFlakinessTaskReport {
+        audit_key,
         task_id: task.task_id.clone(),
+        repo: task.repo.clone(),
+        category: task.category.clone(),
         run_count,
         pass_count,
         fail_count,
@@ -411,6 +431,32 @@ fn validate_task_id(task_id: &str) -> Result<()> {
         "MEJEPA_CORPUS_TASK_ID_INVALID: task_id contains control characters"
     );
     Ok(())
+}
+
+fn validate_optional_audit_field(field_name: &str, value: Option<&str>) -> Result<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    ensure!(
+        !value.trim().is_empty() && value.trim() == value,
+        "MEJEPA_ORACLE_FLAKINESS_INVALID_FIELD: {field_name} must be non-empty with no surrounding whitespace when present"
+    );
+    ensure!(
+        !value
+            .bytes()
+            .any(|byte| byte == 0 || byte == b'\n' || byte == b'\r'),
+        "MEJEPA_ORACLE_FLAKINESS_INVALID_FIELD: {field_name} contains control characters"
+    );
+    Ok(())
+}
+
+fn oracle_task_audit_key(task: &OracleTaskRuns) -> Result<String> {
+    validate_task_id(&task.task_id)?;
+    validate_optional_audit_field("category", task.category.as_deref())?;
+    Ok(match task.category.as_deref() {
+        Some(category) => format!("{}|{}", task.task_id, category),
+        None => task.task_id.clone(),
+    })
 }
 
 fn validate_sha256(value: &str) -> Result<()> {
