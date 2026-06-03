@@ -769,6 +769,11 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
             "ridge_alpha": float(args.ridge_alpha),
             "primary_variant": primary_variant,
         },
+        "source": {
+            "source_commit": str(getattr(args, "source_commit", "") or ""),
+            "runner_path": str(Path(__file__).resolve()),
+            "runner_sha256": sha256_file(Path(__file__).resolve()),
+        },
         "summary": {
             "eval_row_count": len(eval_rows),
             "split_counts": dict(sorted(split_counts.items())),
@@ -847,6 +852,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ridge-alpha", type=float, default=25.0)
     parser.add_argument("--primary-variant", default="graph_vector_summary")
     parser.add_argument("--min-holdout-pearson-lift", type=float, default=0.005)
+    parser.add_argument("--source-commit", default="")
     parser.add_argument("--allow-non-aiwonder-roots", action="store_true")
     parser.add_argument("--clean", action="store_true")
     return parser.parse_args()
