@@ -266,6 +266,14 @@ def test_state_aliasing_registry_hits_ignore_variable_reference_swap() -> None:
     assert hits == ["state_aliasing:shared_reference_surface"]
 
 
+def test_protocol_registry_hits_ignore_entropy_proxy_driver_labels() -> None:
+    hits = registry_class_hits(
+        "http_protocol_io",
+        ["pair:e1/e10:driver:entropy_proxy", "protocol_io:http_request_response_surface"],
+    )
+    assert hits == ["protocol_io:http_request_response_surface"]
+
+
 def test_candidate_expansion_passes_with_support_without_full_coverage(tmp_path: Path) -> None:
     bugs_root = tmp_path / "BugsInPy"
     write_bug(

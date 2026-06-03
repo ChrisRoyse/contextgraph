@@ -54,7 +54,7 @@ CLASS_LABEL_PREFIXES = {
 
 CLASS_REGISTRY_TOKENS = {
     "floating_point_precision": ("precision", "float", "floating", "dtype", "decimal", "nan", "inf"),
-    "http_protocol_io": ("protocol", "http", "request", "response", "url", "proxy", "download", "websocket"),
+    "http_protocol_io": ("protocol", "http", "request", "response", "url", "download", "websocket"),
     "memory_aliasing_mutation": ("aliasing", "mutable", "inplace", "copy", "view", "shared"),
     "resource_leak": (
         "resource",
