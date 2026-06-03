@@ -1557,24 +1557,34 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_MISTAKE_LOOP_STATUS,
-            "TASK-PY-G-112B online-head status: read exact online_head:<panelSignatureHash> rows, optional bounded-neighbor correction reports, byte-readable repeat-mistake metrics, and source CF counts directly from RocksDB.",
+            "TASK-PY-G-112B online-head status: read exact online_head:<panelSignatureHash> rows, derive bounded neighbor candidates from persisted panel state when neighbors are omitted, return correction reports, byte-readable repeat-mistake metrics, and source CF counts directly from RocksDB.",
             json!({
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["panelSignatureHash"],
                 "properties": {
                     "dbPath": {"type": "string"},
+                    "panelDbPath": {
+                        "type": "string",
+                        "description": "Panel RocksDB path used to derive bounded neighbor candidates when neighbors[] is omitted. If omitted, CONTEXTGRAPH_MEJEPA_PANEL_DB is used."
+                    },
                     "panelSignatureHash": {
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 512,
                         "pattern": "^[A-Za-z0-9:_-]+$"
                     },
+                    "panelTimeStep": {
+                        "type": "string",
+                        "enum": ["t0", "t1", "t2"],
+                        "default": "t2",
+                        "description": "Persisted panel time step used for slot-preserving panel-distance neighbor derivation."
+                    },
                     "repeatMetricLimit": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 20},
                     "baseVerdict": {
                         "type": "string",
                         "enum": ["pass", "fail"],
-                        "description": "Base verdict used only when neighborContext is supplied; defaults to pass."
+                        "description": "Base verdict used when neighborContext is supplied; defaults to pass."
                     },
                     "neighborContext": {
                         "type": "object",
@@ -1592,6 +1602,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "array",
                         "maxItems": 128,
                         "default": [],
+                        "description": "Optional manual neighbor list. When omitted or empty, the tool derives neighbors from persisted panel state via panelDbPath/CONTEXTGRAPH_MEJEPA_PANEL_DB.",
                         "items": {
                             "type": "object",
                             "additionalProperties": false,

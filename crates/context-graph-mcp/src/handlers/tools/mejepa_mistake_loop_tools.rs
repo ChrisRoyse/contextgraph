@@ -13,6 +13,9 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_MISTAKE_LOG, CF_MEJEPA_ONLINE_HEAD_STATE, CF_MEJEPA_REPLAY_BUFFER,
     CF_MEJEPA_SKILL_LIFECYCLE_AUDIT,
 };
+use context_graph_mejepa_instruments::{
+    InstrumentSlot, Panel, PanelKey, PanelStore, TimeStep, CF_MEJEPA_PANELS,
+};
 use context_graph_mejepa_train::{
     apply_online_mistake_update_sync_readback, count_cf_rows, online_head_key,
     open_ability_resolver_rocksdb, predict_with_online_head_neighbors, read_all_mistake_log_rows,
@@ -30,6 +33,8 @@ use crate::tools::names as tool_names;
 
 const ENV_TRAIN_DB: &str = "CONTEXTGRAPH_MEJEPA_TRAIN_DB";
 const ENV_INFER_DB: &str = "CONTEXTGRAPH_MEJEPA_INFER_DB";
+const ENV_PANEL_DB: &str = "CONTEXTGRAPH_MEJEPA_PANEL_DB";
+const ONLINE_HEAD_RUNTIME_NEIGHBOR_CAP: usize = 128;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -66,7 +71,9 @@ struct MistakeHistoryRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MistakeLoopStatusRequest {
     db_path: Option<PathBuf>,
+    panel_db_path: Option<PathBuf>,
     panel_signature_hash: String,
+    panel_time_step: Option<TimeStep>,
     #[serde(default = "default_repeat_metric_limit")]
     repeat_metric_limit: usize,
     base_verdict: Option<Verdict>,
@@ -281,7 +288,8 @@ fn run_mistake_loop_status(request: MistakeLoopStatusRequest) -> AnyhowResult<Va
         .with_context(|| format!("open mistake-loop DB {}", db_path.display()))?;
     let head_key = online_head_key(&request.panel_signature_hash)?;
     let online_head_state = read_online_head_state_row(&db, &head_key)?;
-    let neighbor_prediction = neighbor_prediction_report(&db, &request)?;
+    let (neighbor_prediction, neighbor_candidate_provenance) =
+        neighbor_prediction_report(&db, &request)?;
     let (online_head_state_count, repeat_metrics) =
         scan_online_head_cf(&db, request.repeat_metric_limit)?;
     let latest_mistake = read_all_mistake_log_rows(&db)?.into_iter().max_by(|a, b| {
@@ -297,6 +305,7 @@ fn run_mistake_loop_status(request: MistakeLoopStatusRequest) -> AnyhowResult<Va
         "matchingOnlineHeadStateExists": online_head_state.is_some(),
         "onlineHeadState": online_head_state,
         "neighborPrediction": neighbor_prediction,
+        "neighborCandidateProvenance": neighbor_candidate_provenance,
         "onlineHeadStateCount": online_head_state_count,
         "repeatMetrics": repeat_metrics,
         "repeatMetricCountReturned": repeat_metrics.len(),
@@ -308,13 +317,13 @@ fn run_mistake_loop_status(request: MistakeLoopStatusRequest) -> AnyhowResult<Va
 fn neighbor_prediction_report(
     db: &rocksdb::DB,
     request: &MistakeLoopStatusRequest,
-) -> AnyhowResult<Option<Value>> {
+) -> AnyhowResult<(Option<Value>, Option<Value>)> {
     let requested = request.neighbor_context.is_some()
         || !request.neighbors.is_empty()
         || request.neighbor_config.is_some()
         || request.base_verdict.is_some();
     if !requested {
-        return Ok(None);
+        return Ok((None, None));
     }
     let context = request
         .neighbor_context
@@ -322,15 +331,188 @@ fn neighbor_prediction_report(
         .ok_or_else(|| anyhow!("neighborContext is required for neighbor prediction status"))?;
     let base_verdict = request.base_verdict.unwrap_or(Verdict::Pass);
     ensure_binary_verdict("baseVerdict", base_verdict)?;
+    let config = request.neighbor_config.unwrap_or_default();
+    let (neighbors, provenance) = if request.neighbors.is_empty() {
+        derive_panel_store_neighbors(request, config)?
+    } else {
+        (
+            request.neighbors.clone(),
+            json!({
+                "mode": "manualRequestNeighbors",
+                "candidateCount": request.neighbors.len(),
+                "slotIdentityPreserved": true,
+                "flatVectorConcatUsed": false,
+                "targetLabelsUsedAsLiveInputs": false,
+                "persistedPanelStoreUsed": false
+            }),
+        )
+    };
     let report = predict_with_online_head_neighbors(
         db,
         &request.panel_signature_hash,
         base_verdict,
         context,
-        &request.neighbors,
-        request.neighbor_config.unwrap_or_default(),
+        &neighbors,
+        config,
     )?;
-    Ok(Some(serde_json::to_value(report)?))
+    Ok((Some(serde_json::to_value(report)?), Some(provenance)))
+}
+
+fn derive_panel_store_neighbors(
+    request: &MistakeLoopStatusRequest,
+    config: OnlineHeadNeighborConfig,
+) -> AnyhowResult<(Vec<OnlineHeadNeighbor>, Value)> {
+    if config.max_neighbors == 0 || config.max_neighbors > ONLINE_HEAD_RUNTIME_NEIGHBOR_CAP {
+        bail!("neighborConfig.maxNeighbors must be in 1..={ONLINE_HEAD_RUNTIME_NEIGHBOR_CAP}");
+    }
+    let panel_db_path = resolve_panel_db_path(request.panel_db_path.clone())?;
+    let time_step = request.panel_time_step.unwrap_or(TimeStep::T2);
+    let store = PanelStore::open(&panel_db_path)
+        .map_err(|err| anyhow!("open panel DB {}: {err}", panel_db_path.display()))?;
+    let query_key = PanelKey::new(request.panel_signature_hash.clone(), time_step)
+        .map_err(|err| anyhow!("query panel key invalid: {err}"))?;
+    let query = store
+        .get_envelope(&query_key)
+        .map_err(|err| anyhow!("read query panel {}: {err}", query_key.storage_key()))?
+        .ok_or_else(|| {
+            anyhow!(
+                "query panel {} missing from persisted panel store",
+                query_key.storage_key()
+            )
+        })?;
+    let rows = store
+        .scan_cf_json(CF_MEJEPA_PANELS)
+        .map_err(|err| anyhow!("scan panel store {CF_MEJEPA_PANELS}: {err}"))?;
+    let mut candidates = Vec::new();
+    for (storage_key, value) in rows {
+        let Some((candidate_attempt_id, _)) = storage_key.split_once('/') else {
+            continue;
+        };
+        if candidate_attempt_id == request.panel_signature_hash {
+            continue;
+        }
+        let envelope: context_graph_mejepa_instruments::PanelEnvelope =
+            serde_json::from_value(value)
+                .with_context(|| format!("decode panel envelope {storage_key}"))?;
+        if envelope.time_step != time_step {
+            continue;
+        }
+        let distance = slot_preserving_panel_distance(&query.panel, &envelope.panel)
+            .with_context(|| format!("compute panel distance {storage_key}"))?;
+        candidates.push(DerivedPanelNeighbor {
+            neighbor: OnlineHeadNeighbor {
+                panel_signature_hash: candidate_attempt_id.to_string(),
+                distance,
+            },
+            storage_key,
+            panel_hash: envelope.panel_hash,
+            filled_mask: envelope.panel.filled_mask(),
+            shared_slot_count: shared_filled_slot_count(&query.panel, &envelope.panel),
+        });
+    }
+    candidates.sort_by(|left, right| {
+        left.neighbor
+            .distance
+            .partial_cmp(&right.neighbor.distance)
+            .unwrap_or(std::cmp::Ordering::Greater)
+            .then_with(|| {
+                left.neighbor
+                    .panel_signature_hash
+                    .cmp(&right.neighbor.panel_signature_hash)
+            })
+    });
+    let scanned_candidate_count = candidates.len();
+    candidates.truncate(config.max_neighbors);
+    let neighbors = candidates
+        .iter()
+        .map(|candidate| candidate.neighbor.clone())
+        .collect::<Vec<_>>();
+    let provenance_candidates = candidates
+        .iter()
+        .map(|candidate| {
+            json!({
+                "panelSignatureHash": candidate.neighbor.panel_signature_hash,
+                "distance": candidate.neighbor.distance,
+                "panelStorageKey": candidate.storage_key,
+                "panelHash": candidate.panel_hash,
+                "filledMask": candidate.filled_mask,
+                "sharedSlotCount": candidate.shared_slot_count
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok((
+        neighbors,
+        json!({
+            "mode": "persistedPanelStore",
+            "sourceOfTruth": mejepa_db_source_of_truth(
+                &panel_db_path,
+                json!({
+                    "readsPanelStore": CF_MEJEPA_PANELS,
+                    "panelTimeStep": time_step,
+                    "queryPanelStorageKey": query_key.storage_key(),
+                    "queryPanelHash": query.panel_hash,
+                    "queryFilledMask": query.panel.filled_mask(),
+                    "distanceFormula": "mean_slotwise_rms_over_shared_filled_slots_v1"
+                }),
+            ),
+            "candidateCountScanned": scanned_candidate_count,
+            "candidateCountReturned": provenance_candidates.len(),
+            "maxNeighbors": config.max_neighbors,
+            "maxDistance": config.max_distance,
+            "candidates": provenance_candidates,
+            "slotIdentityPreserved": true,
+            "flatVectorConcatUsed": false,
+            "targetLabelsUsedAsLiveInputs": false,
+            "persistedPanelStoreUsed": true
+        }),
+    ))
+}
+
+#[derive(Debug)]
+struct DerivedPanelNeighbor {
+    neighbor: OnlineHeadNeighbor,
+    storage_key: String,
+    panel_hash: String,
+    filled_mask: u16,
+    shared_slot_count: usize,
+}
+
+fn slot_preserving_panel_distance(left: &Panel, right: &Panel) -> AnyhowResult<f32> {
+    let mut slot_count = 0usize;
+    let mut slot_distance_sum = 0.0_f64;
+    for slot in InstrumentSlot::all() {
+        if !left.is_filled(slot) || !right.is_filled(slot) {
+            continue;
+        }
+        let left_values = left.slot(slot);
+        let right_values = right.slot(slot);
+        let mut squared_sum = 0.0_f64;
+        for (left_value, right_value) in left_values.iter().zip(right_values.iter()) {
+            let delta = (*left_value as f64) - (*right_value as f64);
+            squared_sum += delta * delta;
+        }
+        let rms = (squared_sum / left_values.len() as f64).sqrt();
+        if !rms.is_finite() || rms < 0.0 {
+            bail!("non-finite panel distance for slot {}", slot.slug());
+        }
+        slot_distance_sum += rms;
+        slot_count += 1;
+    }
+    if slot_count == 0 {
+        bail!("query and candidate panels have no shared filled slots");
+    }
+    let distance = (slot_distance_sum / slot_count as f64) as f32;
+    if !distance.is_finite() || distance < 0.0 {
+        bail!("non-finite panel distance");
+    }
+    Ok(distance)
+}
+
+fn shared_filled_slot_count(left: &Panel, right: &Panel) -> usize {
+    InstrumentSlot::all()
+        .into_iter()
+        .filter(|slot| left.is_filled(*slot) && right.is_filled(*slot))
+        .count()
 }
 
 fn scan_online_head_cf(
@@ -411,6 +593,21 @@ fn resolve_mistake_loop_db_path(input: Option<PathBuf>) -> AnyhowResult<PathBuf>
     }
 }
 
+fn resolve_panel_db_path(input: Option<PathBuf>) -> AnyhowResult<PathBuf> {
+    match input {
+        Some(path) if !path.as_os_str().is_empty() => Ok(path),
+        Some(_) => bail!("panelDbPath must be a non-empty path"),
+        None => {
+            let raw = std::env::var(ENV_PANEL_DB)
+                .with_context(|| format!("panelDbPath or {ENV_PANEL_DB} is required"))?;
+            if raw.trim().is_empty() {
+                bail!("{ENV_PANEL_DB} must not be empty");
+            }
+            Ok(PathBuf::from(raw))
+        }
+    }
+}
+
 fn source_of_truth(db_path: &Path) -> Value {
     mejepa_db_source_of_truth(
         db_path,
@@ -475,6 +672,7 @@ fn mistake_loop_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use context_graph_mejepa_instruments::{PanelBuilder, PanelEnvelope, PanelProvenance};
     use context_graph_mejepa_train::label_bridge::{
         ability_signature_hash, accepted_label_signature_hash, membership_signature_hash,
         skill_signature_hash,
@@ -517,7 +715,9 @@ mod tests {
 
         let status = run_mistake_loop_status(MistakeLoopStatusRequest {
             db_path: Some(db_path),
+            panel_db_path: None,
             panel_signature_hash: "panel:mcp:test:heldout".to_string(),
+            panel_time_step: None,
             repeat_metric_limit: 10,
             base_verdict: Some(Verdict::Pass),
             neighbor_context: Some(
@@ -551,6 +751,111 @@ mod tests {
         assert_eq!(
             status["neighborPrediction"]["claimsFisherEwcProtection"],
             json!(false)
+        );
+        assert_eq!(
+            status["neighborCandidateProvenance"]["mode"],
+            json!("manualRequestNeighbors")
+        );
+        assert_eq!(
+            status["neighborCandidateProvenance"]["flatVectorConcatUsed"],
+            json!(false)
+        );
+    }
+
+    #[test]
+    fn status_derives_neighbor_prediction_from_persisted_panel_store() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("mistake-loop.db");
+        let panel_db_path = temp.path().join("panel.db");
+        {
+            let _db = open_ability_resolver_rocksdb(&db_path, true).unwrap();
+        }
+        {
+            let store = PanelStore::open(&panel_db_path).unwrap();
+            persist_panel(&store, "panel:mcp:test:source", 0.100).unwrap();
+            persist_panel(&store, "panel:mcp:test:heldout", 0.101).unwrap();
+            persist_panel(&store, "panel:mcp:test:distant", 0.900).unwrap();
+            store.flush().unwrap();
+        }
+        let rows = build_test_rows([0x43; 16], "mcp-derived-neighbor").unwrap();
+        run_record_mistake(RecordMistakeRequest {
+            db_path: Some(db_path.clone()),
+            panel_signature_hash: "panel:mcp:test:source".to_string(),
+            mistake_row: rows.mistake.clone(),
+            replay_row: rows.replay.clone(),
+            base_verdict_before_update: Verdict::Pass,
+            now_unix_ms: TEST_NOW_MS + 1,
+            online_head_config: Some(OnlineHeadUpdateConfig {
+                learning_rate: 1.0,
+                repeat_window_size: 100,
+            }),
+        })
+        .unwrap();
+
+        let status = run_mistake_loop_status(MistakeLoopStatusRequest {
+            db_path: Some(db_path),
+            panel_db_path: Some(panel_db_path),
+            panel_signature_hash: "panel:mcp:test:heldout".to_string(),
+            panel_time_step: Some(TimeStep::T2),
+            repeat_metric_limit: 10,
+            base_verdict: Some(Verdict::Pass),
+            neighbor_context: Some(
+                OnlineHeadNeighborContext::from_replay_row(&rows.replay).unwrap(),
+            ),
+            neighbors: Vec::new(),
+            neighbor_config: Some(OnlineHeadNeighborConfig {
+                max_distance: 0.05,
+                max_neighbors: 8,
+            }),
+        })
+        .unwrap();
+
+        assert_eq!(status["matchingOnlineHeadStateExists"], json!(false));
+        assert_eq!(
+            status["neighborPrediction"]["source"],
+            json!("neighborPanel")
+        );
+        assert_eq!(
+            status["neighborPrediction"]["matchedPanelSignatureHash"],
+            json!("panel:mcp:test:source")
+        );
+        assert_eq!(
+            status["neighborPrediction"]["correctedVerdict"],
+            json!("fail")
+        );
+        assert_eq!(
+            status["neighborPrediction"]["flatVectorConcatUsed"],
+            json!(false)
+        );
+        assert_eq!(
+            status["neighborCandidateProvenance"]["mode"],
+            json!("persistedPanelStore")
+        );
+        assert_eq!(
+            status["neighborCandidateProvenance"]["persistedPanelStoreUsed"],
+            json!(true)
+        );
+        assert_eq!(
+            status["neighborCandidateProvenance"]["slotIdentityPreserved"],
+            json!(true)
+        );
+        assert_eq!(
+            status["neighborCandidateProvenance"]["flatVectorConcatUsed"],
+            json!(false)
+        );
+        assert_eq!(
+            status["neighborCandidateProvenance"]["targetLabelsUsedAsLiveInputs"],
+            json!(false)
+        );
+        assert_eq!(
+            status["neighborCandidateProvenance"]["candidates"][0]["panelSignatureHash"],
+            json!("panel:mcp:test:source")
+        );
+        assert!(
+            status["neighborCandidateProvenance"]["candidates"][0]["distance"]
+                .as_f64()
+                .unwrap()
+                < 0.05
         );
     }
 
@@ -643,5 +948,31 @@ mod tests {
                 membership_signature_hash,
             },
         })
+    }
+
+    fn persist_panel(
+        store: &PanelStore,
+        attempt_id: &str,
+        base_value: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut builder = PanelBuilder::new();
+        let values = (0..InstrumentSlot::EOracle.dim())
+            .map(|idx| base_value + idx as f32 * 0.000_001)
+            .collect::<Vec<_>>();
+        builder.set_slot(InstrumentSlot::EOracle, &values)?;
+        let envelope = PanelEnvelope::try_new(
+            TimeStep::T2,
+            builder.build()?,
+            PanelProvenance {
+                code_version: "mcp-runtime-panel-knn-test".to_string(),
+                embedder_versions: [("e_oracle".to_string(), "deterministic-test".to_string())]
+                    .into(),
+                corpus_sha: "a".repeat(64),
+                frozen_at_unix_ms: TEST_NOW_MS,
+                source_sha256: "b".repeat(64),
+            },
+        )?;
+        store.put_envelope(&PanelKey::new(attempt_id, TimeStep::T2)?, &envelope)?;
+        Ok(())
     }
 }
