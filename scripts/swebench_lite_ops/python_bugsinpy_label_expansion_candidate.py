@@ -103,6 +103,19 @@ def registry_rows_for_candidate_labels(target_class: str, support: Counter[str])
     return rows
 
 
+def unassigned_retriage_reason(classification_reasons: Iterable[str]) -> str:
+    reasons = set(classification_reasons)
+    if reasons <= {r"\bnp\.", r"\bnumpy\b", r"\bdtype\b"}:
+        return "context_only_numpy_dtype_reference"
+    if reasons <= {r"\bfloat\b"}:
+        return "context_only_float_type_reference"
+    if reasons <= {r"\bDecimal\b"}:
+        return "context_only_decimal_reference"
+    if reasons <= {r"\bnan\b", r"\binf\b", r"\bnp\."}:
+        return "context_only_nan_inf_reference"
+    return "mixed_or_manual_triage_required"
+
+
 def run_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
     accepted_labels, registry_rows = read_registry(args.accepted_registry)
     previous_class_hits = registry_class_hits(args.target_class, accepted_labels)
@@ -111,6 +124,8 @@ def run_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
 
     bug_rows: list[dict[str, Any]] = []
     candidate_support: Counter[str] = Counter()
+    unassigned_rows: list[dict[str, Any]] = []
+    unassigned_reasons: Counter[str] = Counter()
     class_count = 0
     assigned_count = 0
     generic_match_count = 0
@@ -134,6 +149,27 @@ def run_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
             candidate_support.update(candidate_labels)
         if candidate_class_hits:
             class_candidate_hit_count += 1
+        else:
+            retriage_reason = unassigned_retriage_reason(class_reasons.get(args.target_class, []))
+            unassigned_reasons[retriage_reason] += 1
+            unassigned_rows.append(
+                {
+                    "artifact_kind": f"{ARTIFACT_KIND}_unassigned_row",
+                    "schema_version": SCHEMA_VERSION,
+                    "formula_version": FORMULA_VERSION,
+                    "record_id": record.record_id,
+                    "project": record.project,
+                    "bug_id": record.bug_id,
+                    "target_class": args.target_class,
+                    "classification_reasons": class_reasons.get(args.target_class, []),
+                    "retriage_reason": retriage_reason,
+                    "patch_sha256": record.patch_sha256,
+                    "candidate_labels": candidate_labels,
+                    "slot_identity_preserved": True,
+                    "flat_vector_concat_used": False,
+                    "target_labels_used_as_live_inputs": False,
+                }
+            )
         row_json = json.dumps(record.bug_info, sort_keys=True)
         if "/mnt/c" in row_json or "/mnt/d" in row_json:
             mounted_drive_hits += 1
@@ -177,6 +213,7 @@ def run_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
             "previous_accepted_registry_class_hit_count": len(previous_class_hits),
             "candidate_registry_row_count": len(candidate_rows),
             "candidate_label_support": dict(sorted(candidate_support.items())),
+            "unassigned_retriage_reason_counts": dict(sorted(unassigned_reasons.items())),
         }
     ]
 
@@ -187,9 +224,11 @@ def run_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
     bug_rows_path = output_root / "bug_label_rows.jsonl"
     registry_path = output_root / "candidate_registry_expansion.jsonl"
     coverage_path = output_root / "coverage_matrix.jsonl"
+    unassigned_path = output_root / "unassigned_rows.jsonl"
     bug_row_count = write_jsonl(bug_rows_path, bug_rows)
     candidate_row_count = write_jsonl(registry_path, candidate_rows)
     coverage_row_count = write_jsonl(coverage_path, coverage_rows)
+    unassigned_row_count = write_jsonl(unassigned_path, unassigned_rows)
 
     summary = {
         "artifact_kind": f"{ARTIFACT_KIND}_summary",
@@ -215,6 +254,7 @@ def run_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
             "candidate_assigned_count": assigned_count,
             "candidate_class_covered_count": class_candidate_hit_count,
             "candidate_registry_rows": candidate_row_count,
+            "unassigned_rows": unassigned_row_count,
             "previous_accepted_registry_rows": len(registry_rows),
             "previous_accepted_registry_class_hit_count": len(previous_class_hits),
             "generic_accepted_label_match_count": generic_match_count,
@@ -257,17 +297,20 @@ def run_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
             "bug_label_rows": str(bug_rows_path),
             "candidate_registry_expansion": str(registry_path),
             "coverage_matrix": str(coverage_path),
+            "unassigned_rows": str(unassigned_path),
             "summary": str(summary_path),
         },
         "line_counts": {
             "bug_label_rows": bug_row_count,
             "candidate_registry_expansion": candidate_row_count,
             "coverage_matrix": coverage_row_count,
+            "unassigned_rows": unassigned_row_count,
         },
         "stable_hashes": {
             "bug_label_rows": sha256_file(bug_rows_path),
             "candidate_registry_expansion": sha256_file(registry_path),
             "coverage_matrix": sha256_file(coverage_path),
+            "unassigned_rows": sha256_file(unassigned_path),
             "summary": sha256_file(summary_path),
         },
     }

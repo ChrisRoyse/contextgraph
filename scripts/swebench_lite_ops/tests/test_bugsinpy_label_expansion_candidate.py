@@ -146,3 +146,6 @@ def test_candidate_expansion_passes_with_support_without_full_coverage(tmp_path:
     assert summary["decision"]["full_class_coverage"] is False
     assert summary["counts"]["target_class_bug_count"] == 2
     assert summary["counts"]["candidate_class_covered_count"] == 1
+    assert summary["counts"]["unassigned_rows"] == 1
+    unassigned = json.loads((out / "unassigned_rows.jsonl").read_text(encoding="utf-8"))
+    assert unassigned["retriage_reason"] == "context_only_float_type_reference"
