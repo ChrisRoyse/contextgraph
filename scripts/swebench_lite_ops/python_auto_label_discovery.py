@@ -679,6 +679,34 @@ def mock_dependency_surface_labels(text: str, rel: str) -> list[str]:
     return sorted(set(labels))
 
 
+def async_flow_surface_labels(text: str, rel: str) -> list[str]:
+    lowered = text.lower()
+    rel_lowered = rel.lower()
+    haystack = f"{lowered}\n{rel_lowered}"
+    labels: list[str] = []
+    if re.search(r"\basync\s+def\b", lowered) or re.search(r"\basync\s+(for|with)\b", lowered):
+        labels.append("async_flow:async_syntax_surface")
+    if re.search(r"\bawait\b", lowered):
+        labels.append("async_flow:await_expression_surface")
+    if any(
+        token in haystack
+        for token in ("asyncio", "event_loop", "event loop", "uvloop", "run_until_complete")
+    ):
+        labels.append("async_flow:event_loop_surface")
+    if any(
+        token in haystack
+        for token in ("coroutine", "ensure_future", "create_task", "taskgroup", "gather(")
+    ):
+        labels.append("async_flow:coroutine_task_surface")
+    if any(token in haystack for token in ("websocket", "web socket")):
+        labels.append("async_flow:websocket_async_surface")
+    if any(token in haystack for token in ("time.sleep", "blocking", "synchronous call")) and labels:
+        labels.append("async_flow:blocking_call_in_coroutine_surface")
+    if labels:
+        labels.append("async_flow:async_await_misuse_surface")
+    return sorted(set(labels))
+
+
 def source_surface_labels(row: dict[str, Any]) -> list[str]:
     text = str(row.get("source_text") or "").strip()
     rel = str(row.get("relative_path") or "").lower()
@@ -726,6 +754,7 @@ def source_surface_labels(row: dict[str, Any]) -> list[str]:
     labels.extend(api_version_surface_labels(text, rel))
     labels.extend(iterator_flow_surface_labels(text))
     labels.extend(mock_dependency_surface_labels(text, rel))
+    labels.extend(async_flow_surface_labels(text, rel))
     if not labels:
         labels.append("ast_surface:generic_code_surface")
     return sorted(set(labels))

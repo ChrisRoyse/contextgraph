@@ -131,6 +131,21 @@ def test_source_surface_labels_emit_mock_dependency_family() -> None:
     assert "mock_dependency:test_only_dependency_surface" in labels
 
 
+def test_source_surface_labels_emit_async_flow_family() -> None:
+    labels = source_surface_labels(
+        {
+            "source_text": "async def handler(websocket): await websocket.receive_text()",
+            "relative_path": "fastapi/routing.py",
+            "node_kind": "AsyncFunctionDef",
+            "chunk_kind": "patch_hunk_line",
+        }
+    )
+    assert "async_flow:async_await_misuse_surface" in labels
+    assert "async_flow:async_syntax_surface" in labels
+    assert "async_flow:await_expression_surface" in labels
+    assert "async_flow:websocket_async_surface" in labels
+
+
 def test_candidate_expansion_covers_float_precision_rows(tmp_path: Path) -> None:
     bugs_root = tmp_path / "BugsInPy"
     write_bug(
@@ -427,6 +442,47 @@ def test_candidate_expansion_covers_mock_dependency_rows(tmp_path: Path) -> None
     assert "mock_dependency:monkeypatch_surface" in candidate_rows
 
 
+def test_candidate_expansion_covers_async_await_rows(tmp_path: Path) -> None:
+    bugs_root = tmp_path / "BugsInPy"
+    write_bug(
+        bugs_root,
+        "demo",
+        "1",
+        """diff --git a/demo/ws.py b/demo/ws.py
+--- a/demo/ws.py
++++ b/demo/ws.py
+@@ -1,2 +1,3 @@
+-def handler(websocket):
+-    return websocket.receive_text()
++async def handler(websocket):
++    return await websocket.receive_text()
+""",
+    )
+    registry = tmp_path / "accepted.jsonl"
+    write_registry(registry, ["ast_surface:return_value_surface"])
+    out = tmp_path / "out"
+    args = type(
+        "Args",
+        (),
+        {
+            "bugsinpy_root": bugs_root,
+            "target_class": "async_await_misuse",
+            "accepted_registry": registry,
+            "output_root": out,
+            "sample_size": 0,
+            "min_support": 1,
+        },
+    )()
+    manifest = run_candidate_expansion(args)
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert manifest["passes"] is True
+    assert summary["counts"]["target_class_bug_count"] == 1
+    assert summary["counts"]["candidate_class_covered_count"] == 1
+    candidate_rows = (out / "candidate_registry_expansion.jsonl").read_text(encoding="utf-8")
+    assert "async_flow:async_await_misuse_surface" in candidate_rows
+    assert "async_flow:await_expression_surface" in candidate_rows
+
+
 def test_state_aliasing_registry_hits_ignore_variable_reference_swap() -> None:
     hits = registry_class_hits(
         "memory_aliasing_mutation",
@@ -465,6 +521,14 @@ def test_mock_dependency_registry_hits_ignore_generic_test_path_surface() -> Non
         ["path_surface:test_path", "mock_dependency:test_only_dependency_surface"],
     )
     assert hits == ["mock_dependency:test_only_dependency_surface"]
+
+
+def test_async_await_registry_hits_ignore_generic_function_contract_surface() -> None:
+    hits = registry_class_hits(
+        "async_await_misuse",
+        ["ast_surface:function_contract_surface", "async_flow:await_expression_surface"],
+    )
+    assert hits == ["async_flow:await_expression_surface"]
 
 
 def test_candidate_expansion_passes_with_support_without_full_coverage(tmp_path: Path) -> None:
