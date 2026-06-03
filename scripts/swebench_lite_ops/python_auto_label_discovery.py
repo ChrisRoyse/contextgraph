@@ -464,6 +464,24 @@ def stable_partition(row_key: str) -> str:
     return "train"
 
 
+def numeric_precision_surface_labels(text: str) -> list[str]:
+    lowered = text.lower()
+    labels: list[str] = []
+    if re.search(r"\b\d+\.\d+\b", text) or re.search(r"\b(float|decimal)\b", lowered):
+        labels.append("numeric_precision:float_literal_or_decimal_surface")
+    if any(token in lowered for token in ("np.", "numpy", "dtype", "astype", "float32", "float64")):
+        labels.append("numeric_precision:dtype_or_numpy_surface")
+    if any(token in lowered for token in ("isclose", "allclose", "rtol", "atol", "epsilon", "eps", "precision", "tolerance")):
+        labels.append("numeric_precision:tolerance_threshold_surface")
+    if re.search(r"\b(isnan|isinf|nan|inf)\b", lowered):
+        labels.append("numeric_precision:nan_inf_surface")
+    if any(token in lowered for token in ("sum(", "cumsum", "accumulate", "mean(", "std(", "variance", "var(")):
+        labels.append("numeric_precision:accumulation_order_surface")
+    if labels:
+        labels.append("numeric_precision:floating_point_precision_surface")
+    return sorted(set(labels))
+
+
 def source_surface_labels(row: dict[str, Any]) -> list[str]:
     text = str(row.get("source_text") or "").strip()
     rel = str(row.get("relative_path") or "").lower()
@@ -504,6 +522,7 @@ def source_surface_labels(row: dict[str, Any]) -> list[str]:
         labels.append("path_surface:configuration_path")
     if "test" in rel:
         labels.append("path_surface:test_path")
+    labels.extend(numeric_precision_surface_labels(text))
     if not labels:
         labels.append("ast_surface:generic_code_surface")
     return sorted(set(labels))
