@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ..python_bugsinpy_unclassified_taxonomy_triage import run_triage, triage_classes
+from ..python_bugsinpy_unclassified_taxonomy_triage import run_triage, semantic_patch_text, triage_classes
 from ..python_bugsinpy_failure_mode_catalog_probe import parse_patch_files
 
 
@@ -35,6 +35,18 @@ def test_triage_classes_detect_type_validation() -> None:
     classes, reasons = triage_classes(record, parse_patch_files(patch))
     assert "type_validation_serialization" in classes
     assert reasons["type_validation_serialization"]
+
+
+def test_semantic_patch_text_drops_git_index_metadata() -> None:
+    patch = """diff --git a/demo.py b/demo.py
+index abc123..def456 100644
+--- a/demo.py
++++ b/demo.py
+@@ -1 +1 @@
+-x = 1
++x = 2
+"""
+    assert "index abc123" not in semantic_patch_text(patch)
 
 
 def test_run_triage_splits_other_rows(tmp_path: Path) -> None:

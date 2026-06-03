@@ -121,6 +121,15 @@ def stable_label_hash(label_id: str) -> str:
     return "label:" + hashlib.sha256(label_id.encode("utf-8")).hexdigest()[:24]
 
 
+def semantic_patch_text(patch_text: str) -> str:
+    semantic_lines = []
+    for line in patch_text.splitlines():
+        if line.startswith(("diff --git ", "index ", "--- ", "+++ ", "@@ ")):
+            continue
+        semantic_lines.append(line)
+    return "\n".join(semantic_lines)
+
+
 def classification_text(record: Any, patch_files: Iterable[Any]) -> str:
     affected_paths = " ".join(
         path
@@ -129,7 +138,7 @@ def classification_text(record: Any, patch_files: Iterable[Any]) -> str:
         if path and path != "/dev/null"
     )
     info_text = " ".join(f"{key}={value}" for key, value in sorted(record.bug_info.items()))
-    return "\n".join([record.project, record.bug_id, affected_paths, info_text, record.patch_text])
+    return "\n".join([record.project, record.bug_id, affected_paths, info_text, semantic_patch_text(record.patch_text)])
 
 
 def triage_classes(record: Any, patch_files: Iterable[Any]) -> tuple[list[str], dict[str, list[str]]]:
