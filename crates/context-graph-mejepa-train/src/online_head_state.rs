@@ -325,6 +325,7 @@ pub fn apply_online_mistake_update_sync_readback(
         input.mistake_row.ability_signature_hash.as_deref(),
         input.mistake_row.membership_signature_hash.as_deref(),
     )?;
+    let previous_metric = read_repeat_metric_row(db, &metric_key)?;
     let before = read_online_head_state_row(db, &head_key)?;
     let previous_mistakes = before.as_ref().map(|row| row.mistake_count).unwrap_or(0);
     let correction_bias = before
@@ -354,8 +355,22 @@ pub fn apply_online_mistake_update_sync_readback(
         updated_at_unix_ms: input.now_unix_ms,
     };
     write_online_head_state_row_sync_readback(db, &after)?;
-    let repeated = previous_mistakes.min(config.repeat_window_size.saturating_sub(1));
-    let observed = after.mistake_count.min(config.repeat_window_size);
+    let previous_cell_mistakes = previous_metric
+        .as_ref()
+        .map(|row| row.mistake_count)
+        .unwrap_or(0);
+    let previous_cell_repeats = previous_metric
+        .as_ref()
+        .map(|row| row.repeated_mistake_count)
+        .unwrap_or(0);
+    let observed = previous_cell_mistakes
+        .saturating_add(1)
+        .min(config.repeat_window_size);
+    let repeated = if previous_cell_mistakes == 0 {
+        0
+    } else {
+        previous_cell_repeats.saturating_add(1).min(observed)
+    };
     let metric = OnlineHeadRepeatMetricRow {
         schema_version: ONLINE_HEAD_STATE_SCHEMA_VERSION,
         metric_key: metric_key.clone(),
@@ -951,5 +966,29 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
+    }
+
+    #[test]
+    fn repeat_metric_aggregates_non_identical_panels_by_cell_context() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = open_ability_resolver_rocksdb(temp.path(), true).unwrap();
+        let (first_mistake, first_replay) = rows(0x71, "shared-cell");
+        let (second_mistake, second_replay) = rows(0x72, "shared-cell");
+        let metric_key = repeat_metric_key(
+            &first_replay.cell_id,
+            &first_mistake.label_signature_hash,
+            first_mistake.skill_signature_hash.as_deref(),
+            first_mistake.ability_signature_hash.as_deref(),
+            first_mistake.membership_signature_hash.as_deref(),
+        )
+        .unwrap();
+
+        record_panel(&db, "panel:fsv689:first", first_mistake, first_replay);
+        record_panel(&db, "panel:fsv689:second", second_mistake, second_replay);
+
+        let metric = read_repeat_metric_row(&db, &metric_key).unwrap().unwrap();
+        assert_eq!(metric.mistake_count, 2);
+        assert_eq!(metric.repeated_mistake_count, 1);
+        assert!((metric.mistake_repeat_rate - 0.5).abs() < f32::EPSILON);
     }
 }
