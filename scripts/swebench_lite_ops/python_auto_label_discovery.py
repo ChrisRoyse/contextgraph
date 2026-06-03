@@ -556,6 +556,22 @@ def state_aliasing_surface_labels(text: str) -> list[str]:
     return sorted(set(labels))
 
 
+def protocol_io_surface_labels(text: str, rel: str) -> list[str]:
+    lowered = text.lower()
+    rel_lowered = rel.lower()
+    haystack = f"{lowered}\n{rel_lowered}"
+    labels: list[str] = []
+    if any(token in haystack for token in ("http", "request", "response", "header", "cookie", "url", "proxy")):
+        labels.append("protocol_io:http_request_response_surface")
+    if any(token in haystack for token in ("websocket", "stream", "scrapy", "tornado")):
+        labels.append("protocol_io:websocket_stream_surface")
+    if any(token in haystack for token in ("download", "youtube", "extractor", "media", "playlist")):
+        labels.append("protocol_io:download_extraction_surface")
+    if labels:
+        labels.append("protocol_io:http_protocol_io_surface")
+    return sorted(set(labels))
+
+
 def source_surface_labels(row: dict[str, Any]) -> list[str]:
     text = str(row.get("source_text") or "").strip()
     rel = str(row.get("relative_path") or "").lower()
@@ -599,6 +615,7 @@ def source_surface_labels(row: dict[str, Any]) -> list[str]:
     labels.extend(numeric_precision_surface_labels(text))
     labels.extend(resource_lifecycle_surface_labels(text))
     labels.extend(state_aliasing_surface_labels(text))
+    labels.extend(protocol_io_surface_labels(text, rel))
     if not labels:
         labels.append("ast_surface:generic_code_surface")
     return sorted(set(labels))

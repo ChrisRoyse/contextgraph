@@ -29,6 +29,7 @@ from .python_bugsinpy_failure_mode_catalog_probe import (
     write_json,
     write_jsonl,
 )
+from .python_bugsinpy_unclassified_taxonomy_triage import triage_classes
 
 
 ARTIFACT_KIND = "bugsinpy_label_expansion_candidate"
@@ -46,12 +47,14 @@ DEFAULT_OUTPUT_ROOT = Path(
 
 CLASS_LABEL_PREFIXES = {
     "floating_point_precision": ("numeric_precision:",),
+    "http_protocol_io": ("protocol_io:",),
     "memory_aliasing_mutation": ("state_aliasing:",),
     "resource_leak": ("resource_lifecycle:",),
 }
 
 CLASS_REGISTRY_TOKENS = {
     "floating_point_precision": ("precision", "float", "floating", "dtype", "decimal", "nan", "inf"),
+    "http_protocol_io": ("protocol", "http", "request", "response", "url", "proxy", "download", "websocket"),
     "memory_aliasing_mutation": ("aliasing", "mutable", "inplace", "copy", "view", "shared"),
     "resource_leak": (
         "resource",
@@ -66,6 +69,8 @@ CLASS_REGISTRY_TOKENS = {
         "dispose",
     ),
 }
+
+TAXONOMY_DERIVED_TARGETS = {"http_protocol_io"}
 
 
 def stable_label_hash(label_id: str) -> str:
@@ -118,6 +123,16 @@ def registry_rows_for_candidate_labels(target_class: str, support: Counter[str])
     return rows
 
 
+def target_membership(record: Any, patch_files: Iterable[Any], target_class: str) -> tuple[bool, dict[str, list[str]]]:
+    base_classes, base_reasons = classify_bug(record, patch_files)
+    if target_class in TAXONOMY_DERIVED_TARGETS:
+        if base_classes != ["other_unclassified_real_bug"]:
+            return False, {}
+        taxonomy_classes, taxonomy_reasons = triage_classes(record, patch_files)
+        return target_class in taxonomy_classes, taxonomy_reasons
+    return target_class in base_classes, base_reasons
+
+
 def unassigned_retriage_reason(classification_reasons: Iterable[str]) -> str:
     reasons = set(classification_reasons)
     if reasons <= {r"\bnp\.", r"\bnumpy\b", r"\bdtype\b"}:
@@ -144,6 +159,10 @@ def unassigned_retriage_reason(classification_reasons: Iterable[str]) -> str:
         return "context_only_inplace_reference"
     if reasons <= {r"\bid\(", r"\bviews\b"}:
         return "context_only_shared_reference"
+    if reasons <= {r"\bhttp\b", r"\brequest\b", r"\bresponse\b", r"\bheader\b", r"\bcookie\b", r"\burl\b"}:
+        return "context_only_http_reference"
+    if reasons <= {r"\bdownload\b", r"\byoutube", r"\bscrapy\b", r"\btornado\b"}:
+        return "context_only_protocol_project_reference"
     return "mixed_or_manual_triage_required"
 
 
@@ -165,8 +184,8 @@ def run_candidate_expansion(args: argparse.Namespace) -> dict[str, Any]:
 
     for record in sampled_records:
         patch_files = parse_patch_files(record.patch_text)
-        bug_classes, class_reasons = classify_bug(record, patch_files)
-        if args.target_class not in bug_classes:
+        is_member, class_reasons = target_membership(record, patch_files, args.target_class)
+        if not is_member:
             continue
         class_count += 1
         emitted_labels = labels_from_patch(patch_files)

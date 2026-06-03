@@ -70,6 +70,19 @@ def test_source_surface_labels_emit_state_aliasing_family() -> None:
     assert "state_aliasing:mutable_container_surface" in labels
 
 
+def test_source_surface_labels_emit_protocol_io_family() -> None:
+    labels = source_surface_labels(
+        {
+            "source_text": "response = request.get(url, headers=headers)",
+            "relative_path": "pkg/http/client.py",
+            "node_kind": "Assign",
+            "chunk_kind": "patch_hunk_line",
+        }
+    )
+    assert "protocol_io:http_protocol_io_surface" in labels
+    assert "protocol_io:http_request_response_surface" in labels
+
+
 def test_candidate_expansion_covers_float_precision_rows(tmp_path: Path) -> None:
     bugs_root = tmp_path / "BugsInPy"
     write_bug(
@@ -202,6 +215,47 @@ def test_candidate_expansion_covers_state_aliasing_rows(tmp_path: Path) -> None:
     assert summary["counts"]["candidate_class_covered_count"] == 1
     candidate_rows = (out / "candidate_registry_expansion.jsonl").read_text(encoding="utf-8")
     assert "state_aliasing:memory_aliasing_mutation_surface" in candidate_rows
+
+
+def test_candidate_expansion_covers_taxonomy_derived_protocol_rows(tmp_path: Path) -> None:
+    bugs_root = tmp_path / "BugsInPy"
+    write_bug(
+        bugs_root,
+        "demo",
+        "1",
+        """diff --git a/demo/http_client.py b/demo/http_client.py
+--- a/demo/http_client.py
++++ b/demo/http_client.py
+@@ -1,2 +1,3 @@
+-def fetch(request, url):
+-    return request.get(url)
++def fetch(request, url, headers):
++    response = request.get(url, headers=headers)
++    return response
+""",
+    )
+    registry = tmp_path / "accepted.jsonl"
+    write_registry(registry, ["ast_surface:return_value_surface"])
+    out = tmp_path / "out"
+    args = type(
+        "Args",
+        (),
+        {
+            "bugsinpy_root": bugs_root,
+            "target_class": "http_protocol_io",
+            "accepted_registry": registry,
+            "output_root": out,
+            "sample_size": 0,
+            "min_support": 1,
+        },
+    )()
+    manifest = run_candidate_expansion(args)
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert manifest["passes"] is True
+    assert summary["counts"]["target_class_bug_count"] == 1
+    assert summary["counts"]["candidate_class_covered_count"] == 1
+    candidate_rows = (out / "candidate_registry_expansion.jsonl").read_text(encoding="utf-8")
+    assert "protocol_io:http_protocol_io_surface" in candidate_rows
 
 
 def test_state_aliasing_registry_hits_ignore_variable_reference_swap() -> None:
