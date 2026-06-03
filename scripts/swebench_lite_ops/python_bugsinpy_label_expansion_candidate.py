@@ -46,11 +46,13 @@ DEFAULT_OUTPUT_ROOT = Path(
 
 CLASS_LABEL_PREFIXES = {
     "floating_point_precision": ("numeric_precision:",),
+    "memory_aliasing_mutation": ("state_aliasing:",),
     "resource_leak": ("resource_lifecycle:",),
 }
 
 CLASS_REGISTRY_TOKENS = {
     "floating_point_precision": ("precision", "float", "floating", "dtype", "decimal", "nan", "inf"),
+    "memory_aliasing_mutation": ("aliasing", "mutable", "inplace", "copy", "view", "shared", "reference"),
     "resource_leak": (
         "resource",
         "close",
@@ -134,6 +136,14 @@ def unassigned_retriage_reason(classification_reasons: Iterable[str]) -> str:
         return "context_only_resource_handle_reference"
     if reasons <= {r"\bclose\(", r"\bcleanup\b", r"\brelease\b", r"\bdispose\b", r"\bfinally\b"}:
         return "context_only_cleanup_reference"
+    if reasons <= {r"\bcopy\b", r"\bdeepcopy\b", r"\bview\b"}:
+        return "context_only_copy_view_reference"
+    if reasons <= {r"\bappend\(", r"\bextend\(", r"\bpop\(", r"\bclear\(", r"\bsetdefault\("}:
+        return "context_only_mutable_container_reference"
+    if reasons <= {r"\binplace\b"}:
+        return "context_only_inplace_reference"
+    if reasons <= {r"\bid\(", r"\bviews\b"}:
+        return "context_only_shared_reference"
     return "mixed_or_manual_triage_required"
 
 

@@ -56,6 +56,20 @@ def test_source_surface_labels_emit_resource_lifecycle_family() -> None:
     assert "resource_lifecycle:resource_handle_surface" in labels
 
 
+def test_source_surface_labels_emit_state_aliasing_family() -> None:
+    labels = source_surface_labels(
+        {
+            "source_text": "items = values.copy(); items.append(next_value)",
+            "relative_path": "pkg/state.py",
+            "node_kind": "Assign",
+            "chunk_kind": "patch_hunk_line",
+        }
+    )
+    assert "state_aliasing:memory_aliasing_mutation_surface" in labels
+    assert "state_aliasing:copy_view_surface" in labels
+    assert "state_aliasing:mutable_container_surface" in labels
+
+
 def test_candidate_expansion_covers_float_precision_rows(tmp_path: Path) -> None:
     bugs_root = tmp_path / "BugsInPy"
     write_bug(
@@ -147,6 +161,47 @@ def test_candidate_expansion_covers_resource_rows(tmp_path: Path) -> None:
     assert summary["counts"]["candidate_class_covered_count"] == 1
     candidate_rows = (out / "candidate_registry_expansion.jsonl").read_text(encoding="utf-8")
     assert "resource_lifecycle:resource_leak_surface" in candidate_rows
+
+
+def test_candidate_expansion_covers_state_aliasing_rows(tmp_path: Path) -> None:
+    bugs_root = tmp_path / "BugsInPy"
+    write_bug(
+        bugs_root,
+        "demo",
+        "1",
+        """diff --git a/demo/state.py b/demo/state.py
+--- a/demo/state.py
++++ b/demo/state.py
+@@ -1,2 +1,4 @@
+ def add(values, item):
+-    values.append(item)
++    copied = values.copy()
++    copied.append(item)
++    return copied
+""",
+    )
+    registry = tmp_path / "accepted.jsonl"
+    write_registry(registry, ["ast_surface:return_value_surface"])
+    out = tmp_path / "out"
+    args = type(
+        "Args",
+        (),
+        {
+            "bugsinpy_root": bugs_root,
+            "target_class": "memory_aliasing_mutation",
+            "accepted_registry": registry,
+            "output_root": out,
+            "sample_size": 0,
+            "min_support": 1,
+        },
+    )()
+    manifest = run_candidate_expansion(args)
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert manifest["passes"] is True
+    assert summary["counts"]["target_class_bug_count"] == 1
+    assert summary["counts"]["candidate_class_covered_count"] == 1
+    candidate_rows = (out / "candidate_registry_expansion.jsonl").read_text(encoding="utf-8")
+    assert "state_aliasing:memory_aliasing_mutation_surface" in candidate_rows
 
 
 def test_candidate_expansion_passes_with_support_without_full_coverage(tmp_path: Path) -> None:

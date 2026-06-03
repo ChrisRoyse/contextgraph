@@ -524,6 +524,38 @@ def resource_lifecycle_surface_labels(text: str) -> list[str]:
     return sorted(set(labels))
 
 
+def state_aliasing_surface_labels(text: str) -> list[str]:
+    lowered = text.lower()
+    labels: list[str] = []
+    if any(token in lowered for token in ("copy(", ".copy(", "deepcopy", "view(", ".view(", "copy=")):
+        labels.append("state_aliasing:copy_view_surface")
+    if any(
+        token in lowered
+        for token in (
+            "append(",
+            ".append(",
+            "extend(",
+            ".extend(",
+            "update(",
+            ".update(",
+            "pop(",
+            ".pop(",
+            "clear(",
+            ".clear(",
+            "setdefault(",
+            ".setdefault(",
+        )
+    ):
+        labels.append("state_aliasing:mutable_container_surface")
+    if any(token in lowered for token in ("inplace", "+=", "-=", "*=", "/=", "//=", "%=", "|=", "&=")):
+        labels.append("state_aliasing:inplace_mutation_surface")
+    if re.search(r"\bis\b", lowered) or "id(" in lowered or "same object" in lowered or "shared" in lowered:
+        labels.append("state_aliasing:shared_reference_surface")
+    if labels:
+        labels.append("state_aliasing:memory_aliasing_mutation_surface")
+    return sorted(set(labels))
+
+
 def source_surface_labels(row: dict[str, Any]) -> list[str]:
     text = str(row.get("source_text") or "").strip()
     rel = str(row.get("relative_path") or "").lower()
@@ -566,6 +598,7 @@ def source_surface_labels(row: dict[str, Any]) -> list[str]:
         labels.append("path_surface:test_path")
     labels.extend(numeric_precision_surface_labels(text))
     labels.extend(resource_lifecycle_surface_labels(text))
+    labels.extend(state_aliasing_surface_labels(text))
     if not labels:
         labels.append("ast_surface:generic_code_surface")
     return sorted(set(labels))
