@@ -192,11 +192,13 @@ Tier 5 measurements are the cheapest highest-leverage tests. If they fail, **no 
 | Variable | Target | What it actually means |
 |---|---|---|
 | `I(Panel_D; Oracle_D)` (panel-sufficiency MI) | **≥ τ_MI bits** | Probability-theoretic upper bound on what *any* predictor reading this panel can know about the oracle outcome. If less than `τ_MI`, the panel literally cannot determine the verdict, and adding training data is wasted. |
-| `oracle_self_consistency(D)` (n-replica per-artifact) | **≥ τ_sc** | Run the oracle n× on the same artifact. Measure how often it agrees with itself. If `< τ_corr`, the target threshold is mathematically unreachable as stated. |
+| `oracle_self_consistency(D)` (n-replica per-artifact) — **flakiness axis** | **≥ τ_sc** | Run the oracle n× on the same artifact; how often does it agree with *itself*? Bounds reproducibility only. If `< τ_corr`, the threshold is unreachable as stated. |
+| `oracle_validity(D)` (all-tests re-validation + weak-test/leak audit) — **validity axis** | **≥ τ_sc** | Does the verdict track *real correctness*? Self-consistency can be 1.0 while validity is low (weak tests pass wrong artifacts; solution leakage). A panel matched to an invalid oracle fits noise — silent catastrophic failure. Sets the true ceiling `τ_corr = min(τ_corr, oracle_validity)`. |
+| `association_sufficiency` (k-NN verdict locality / MinSet fraction) | high locality / small MinSet | `I(panel;oracle) ≥ τ_MI` guarantees the kernel *exists* but not that it is *small*. Bits can be present yet scrambled (MinSet → 100%). Same-verdict artifacts must be co-located so the constellation edge derives one from another. The **second** substrate gate, beyond raw MI. |
 | `inter_sensor_distinctness` gate | passes for all active slots | No two sensors alias each other's vector space. Aliased spaces produce a sensor-identity collapse and silent failure. |
-| Per-sensor pretraining-corpus overlap with eval corpus | documented; counterfactual cutoff experiment if overlap > 30% | Pretraining-corpus Goodhart audit — were the test artifacts in the sensor's training data? |
+| Per-sensor pretraining-corpus overlap with eval corpus | documented; counterfactual cutoff experiment if overlap > 30% | Pretraining-corpus Goodhart/contamination audit — were the test artifacts in the sensor's training data? |
 
-**State-change levers if Tier 5 fails:** add sensors, expand corpus, refine oracle harness (replica voting, flakiness modeling), or, if oracle self-consistency proves a hard ceiling lower than `τ_corr`, revise `τ_corr` downward to `oracle_self_consistency − ε` and document the carve-out. **Lowering `τ_corr` arbitrarily because the current state cannot reach it is forbidden** — that is doctrine breach, not progress.
+**State-change levers if Tier 5 fails:** add/replace sensors (selected by *marginal* ΔI, **not** standalone bits — mutual information is not additive: prune redundant sensors, keep synergistic ones), expand corpus, refine the oracle harness (replica voting, flakiness modeling), **audit oracle validity** (all-tests re-validation, weak-test/leak detection) and revise `τ_corr` to the valid ceiling, or improve panel *geometry* for association-sufficiency. **Lowering `τ_corr` arbitrarily because the current state cannot reach it is forbidden** — that is doctrine breach, not progress.
 
 ### Tier 6 — Sensor/Embedder Gating
 
@@ -728,7 +730,9 @@ Once filled, the universal formula in Part II instantiates to `D`'s exact ship-g
 | Cross-panel `corr_B` (Panel B) | ≥ 0.95 with `|corr_a − corr_b| ≤ 0.05` | Not yet measured |
 | `mistake_repeat_rate` (rolling 100-mistake window) | ≤ 0.05 | Storage/MCP shipped; full convergence measurement blocked behind trainer + telemetry repairs |
 | **`I(panel; oracle)` (Tier-5 panel sufficiency)** | **≥ 0.95 bits** | **`0.461` bits (Kraskov) / `0.096` (MINE) / `0.125` (classifier LB) — `panel_sufficient=false`** |
-| **`oracle_self_consistency` (Tier-5 oracle reachability)** | **≥ 0.97** | **`1.0` (300 Docker invocations, clean) ✓** |
+| **`oracle_self_consistency` (Tier-5 flakiness axis)** | **≥ 0.97** | **`1.0` (300 Docker invocations, clean) ✓** |
+| **`oracle_validity` (Tier-5 validity axis, #845)** | **≥ 0.97** | **Open — flakiness measured (1.0); validity (weak-test/leak) not yet measured** |
+| **`association_sufficiency` (k-NN locality / MinSet)** | high / small | **Not yet measured — moot until panel is verdict-sufficient** |
 
 **Honest gap to ship:** `0.95 − 0.4843 = 0.4657` against raw Pearson — **but this gap is not the predictor's to close yet.** The Tier-5 substrate probes (below) have now been run and they relocate the bottleneck upstream of the predictor entirely.
 
@@ -764,13 +768,14 @@ Per-slot readback from #759 names the deficiency precisely:
 
 ### XII.4 — The plan: assemble a high-signal embedder panel for Python
 
-The binding work is **building a panel whose `I(panel; oracle) ≥ 0.95 bits`** (#745). The method is an empirical embedder-selection loop, not a guess:
+The binding work is **building a panel whose `I(panel; oracle) ≥ 0.95 bits`** (#745/#844). The method is an empirical embedder-selection loop, not a guess:
 
+0. **Fill the known zeros first (cheapest; do before any neural candidate).** Add near-deterministic structural features for the cells reading ~0 bits — parse/compile check (`compile_error`), removed-test-call diff (`delete_test_call`), import-closure intersection (`wrong_file`) — as **isolated slots gated per-cell with a no-global-regression rule**. (The #774 lesson: a generic execution-trace blob lifted `subtle_flip` +0.21 but regressed `off_by_one`/`swap_variable` and the global number → failed the utility gate. Targeted, isolated indicators do not dilute other cells.) Re-run #759 and confirm those cells move off zero.
 1. **Acquire candidates.** Download / instantiate a broad pool of candidate encoders across modalities: code-outcome / execution-aware models, causal (edit→outcome) embedders, dependency/runtime/env encoders, AST/CFG/DFG structural encoders, plus execution-trace and coverage feature extractors. (HTTP only on the research/acquisition path, never in action paths — doctrine §10.)
 2. **Run them over the corpus** to produce per-candidate panel vectors on the 2,400-row dataset (slot identity preserved; no flat-concat).
-3. **Measure each candidate's marginal bit contribution** — `I({candidate}; oracle)` standalone, and `ΔI = I(panel ∪ {candidate}; oracle) − I(panel; oracle)` (greedy forward selection), reusing the #759 MINE + classifier + Kraskov estimator stack. Watch **per-cell** MI on the behavioral categories (currently ~0) — those are the cells that must move.
-4. **Greedily assemble the panel** that maximizes `I(panel; oracle)` subject to the Tier-6 gates (novelty `< 0.7` vs existing slots; per-cell utility lift `≥ 0.005`; inter-sensor distinctness). Stop when `I(panel; oracle) ≥ 0.95 bits` or candidates are exhausted.
-5. **Acceptance gate:** re-run #759 → require `I(panel; oracle) ≥ 0.95 bits` AND behavioral-cell MI off zero. Only then is the kernel (#843) well-posed and the predictor head (training, #683) able to move Tier-1.
+3. **Measure each candidate's marginal bit contribution** — select by **marginal `ΔI = I(panel ∪ {candidate}; oracle) − I(panel; oracle)` in the context of the current panel, never standalone bits** (mutual information is not additive: redundant sensors — the current similarity panel — carry the same bits; synergistic sensors carry little alone but much together, so a low standalone score is not grounds to discard). Use greedy forward selection + drop-one backward elimination, reusing the #759 MINE + classifier + Kraskov estimator stack. Watch **per-cell** `ΔI` on the behavioral categories (currently ~0).
+4. **Greedily assemble the minimal panel** that reaches sufficiency subject to the Tier-6 gates (novelty `< 0.7` vs existing slots; per-cell utility lift `≥ 0.005`; inter-sensor distinctness). Stop at sufficiency and **prune** — past sufficiency, extra sensors add redundancy/cost and can dilute the predictor (#774); target minimal-not-maximal (#518 Pareto).
+5. **Acceptance — two gates:** re-run #759 → require **(a) verdict-sufficiency** `I(panel; oracle) ≥ 0.95 bits` (against the validity-audited ceiling, #845) with behavioral-cell MI off zero, **and (b) association-sufficiency** — high k-NN verdict locality / small MinSet (bits present but scrambled give a ~100% kernel, §Tier-5). Only when both pass is the kernel (#843) well-posed and the predictor head (#683) able to move Tier-1.
 
 This is the Tier-5 → Tier-6 loop made concrete: **measure bit contribution, keep what carries oracle signal, assemble the minimal sufficient panel, then find the kernel.**
 
