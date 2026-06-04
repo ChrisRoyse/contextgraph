@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -51,7 +52,13 @@ def mutation_patch(category: str) -> str:
     )
 
 
-def make_corpus(tmp_path: Path, *, omit_category: str | None = None, corrupt_hash: bool = False) -> tuple[Path, Path]:
+def make_corpus(
+    tmp_path: Path,
+    *,
+    omit_category: str | None = None,
+    corrupt_hash: bool = False,
+    crlf_category: str | None = None,
+) -> tuple[Path, Path]:
     corpus = tmp_path / "corpus"
     task_id = "demo__repo-1"
     entries = []
@@ -59,10 +66,14 @@ def make_corpus(tmp_path: Path, *, omit_category: str | None = None, corrupt_has
         if category == omit_category:
             continue
         patch_text = mutation_patch(category)
+        patch_bytes = patch_text.encode("utf-8")
+        if category == crlf_category:
+            patch_text = patch_text.replace("\n", "\r\n")
+            patch_bytes = patch_text.encode("utf-8")
         patch_path = Path("mutations") / task_id / f"{category}.patch"
         full_path = corpus / patch_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_text(patch_text, encoding="utf-8")
+        full_path.write_bytes(patch_bytes)
         entries.append(
             {
                 "task_id": task_id,
@@ -71,7 +82,9 @@ def make_corpus(tmp_path: Path, *, omit_category: str | None = None, corrupt_has
                 "category": category,
                 "bucket": "holdout",
                 "patch_path": patch_path.as_posix(),
-                "patch_sha256": "sha256:" + "0" * 64 if corrupt_hash and category == "known_good" else sha256_prefixed_text(patch_text),
+                "patch_sha256": "sha256:" + "0" * 64
+                if corrupt_hash and category == "known_good"
+                else "sha256:" + hashlib.sha256(patch_bytes).hexdigest(),
                 "oracle_verdict_sha256": "sha256:" + "1" * 64,
             }
         )
@@ -145,6 +158,18 @@ def test_rejects_patch_hash_mismatch(tmp_path: Path) -> None:
     with pytest.raises(VerifiedCleanedManifestError) as exc:
         run_export(args(tmp_path, corpus, tasks), dataset_rows=[make_dataset_row()])
     assert exc.value.code == "SWEBENCH_VERIFIED_PATCH_SHA_MISMATCH"
+
+
+def test_preserves_crlf_patch_bytes_for_hash_verification(tmp_path: Path) -> None:
+    corpus, tasks = make_corpus(tmp_path, crlf_category="wrong_file")
+    result = run_export(args(tmp_path, corpus, tasks), dataset_rows=[make_dataset_row()])
+
+    manifest = json.loads((tmp_path / "out" / "cleaned_manifest.json").read_text(encoding="utf-8"))
+    wrong_file = next(row for row in manifest["rows"] if row["mutation_category"] == "wrong_file")
+
+    assert result["passes"] is True
+    assert "\r\n" in wrong_file["patch"]["text"]
+    assert wrong_file["patch"]["sha256"] == "sha256:" + hashlib.sha256(wrong_file["patch"]["text"].encode("utf-8")).hexdigest()
 
 
 def test_rejects_task_manifest_metadata_mismatch(tmp_path: Path) -> None:

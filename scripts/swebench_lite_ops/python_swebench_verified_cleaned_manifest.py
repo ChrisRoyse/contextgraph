@@ -86,8 +86,17 @@ def read_patch_text(corpus_root: Path, entry: dict[str, Any]) -> tuple[str, str]
     rel = safe_relative_path(str(entry.get("patch_path") or ""), "entry.patch_path")
     path = corpus_root / rel.as_posix()
     ensure_file(path, "SWEBENCH_VERIFIED_PATCH_FILE_MISSING", "mutation patch")
-    text = path.read_text(encoding="utf-8")
-    actual = sha256_prefixed_text(text)
+    raw = path.read_bytes()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise VerifiedCleanedManifestError(
+            "SWEBENCH_VERIFIED_PATCH_UTF8_INVALID",
+            "mutation patch bytes are not valid UTF-8",
+            "Regenerate the upstream corpus patch before exporting the cleaned manifest.",
+            {"task_id": entry.get("task_id"), "category": entry.get("category"), "path": str(path), "error": str(exc)},
+        ) from exc
+    actual = "sha256:" + hashlib.sha256(raw).hexdigest()
     expected = str(entry.get("patch_sha256") or "")
     require(
         actual == expected,
