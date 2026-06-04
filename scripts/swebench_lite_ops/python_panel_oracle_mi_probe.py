@@ -36,6 +36,8 @@ DEFAULT_STATE_PARENT = Path("/zfs/archive/contextgraph/state/mi-audit/inv-032-v1
 ACTIVE_EMBEDDERS = ("e1", "e10", "e12", "e13", "e14", "e6", "e7", "e8", "e9")
 RETIRED_EMBEDDERS = ("e2", "e3", "e4")
 EPS = 1.0e-12
+DIMENSION_REDUCTION_SEED = 759032
+COUNT_SKETCH_VERSION = "panel_mi_count_sketch_v1"
 
 
 class PanelMiError(RuntimeError):
@@ -520,6 +522,31 @@ def stratified_split(y: Any, holdout_fraction: float, seed: int) -> tuple[list[i
     return train, holdout
 
 
+def deterministic_count_sketch(Xs: Any, max_components: int) -> tuple[Any, dict[str, Any]]:
+    import numpy as np
+
+    source = np.asarray(Xs, dtype=np.float64)
+    require(source.ndim == 2, "PANEL_MI_COUNT_SKETCH_SOURCE_SHAPE", source.shape)
+    require(max_components > 0, "PANEL_MI_COUNT_SKETCH_COMPONENTS_INVALID", max_components)
+    feature_count = int(source.shape[1])
+    projection = np.zeros((feature_count, max_components), dtype=np.float64)
+    scale = math.sqrt(float(max_components) / max(1.0, float(feature_count)))
+    column_counts: Counter[int] = Counter()
+    for feature_idx in range(feature_count):
+        digest = hashlib.sha256(f"{COUNT_SKETCH_VERSION}:{feature_idx}:{max_components}".encode("ascii")).digest()
+        column = int.from_bytes(digest[:8], "little") % max_components
+        sign = 1.0 if (digest[8] & 1) == 0 else -1.0
+        projection[feature_idx, column] = sign * scale
+        column_counts[column] += 1
+    reduced = (source @ projection).astype(np.float32)
+    return reduced, {
+        "count_sketch_version": COUNT_SKETCH_VERSION,
+        "count_sketch_scale": scale,
+        "count_sketch_min_bucket_size": min(column_counts.values()) if column_counts else 0,
+        "count_sketch_max_bucket_size": max(column_counts.values()) if column_counts else 0,
+    }
+
+
 def standardize_and_reduce(X: Any, y: Any, max_components: int, seed: int) -> tuple[Any, dict[str, Any]]:
     import numpy as np
 
@@ -529,35 +556,36 @@ def standardize_and_reduce(X: Any, y: Any, max_components: int, seed: int) -> tu
     keep = std > 1.0e-10
     Xs = (X64[:, keep] - mean[keep]) / std[keep]
     info: dict[str, Any] = {
-        "input_dim": int(X.shape[1]),
+        "input_dim": int(X64.shape[1]),
         "nonconstant_dim": int(Xs.shape[1]),
         "method": "standardize_only",
         "output_dim": int(Xs.shape[1]),
+        "evaluation_seed": int(seed),
+        "reduction_seed_policy": "fixed_independent_of_evaluation_seed",
     }
     if max_components > 0 and Xs.shape[1] > max_components and Xs.shape[0] > max_components + 2:
         try:
             from sklearn.decomposition import PCA
 
-            pca = PCA(n_components=max_components, svd_solver="randomized", random_state=seed)
+            pca = PCA(n_components=max_components, svd_solver="randomized", random_state=DIMENSION_REDUCTION_SEED)
             Xr = pca.fit_transform(Xs).astype(np.float32)
             info.update(
                 {
                     "method": "sklearn_randomized_pca",
                     "output_dim": int(Xr.shape[1]),
+                    "random_state": DIMENSION_REDUCTION_SEED,
                     "explained_variance_ratio_sum": float(pca.explained_variance_ratio_.sum()),
                 }
             )
             return Xr, info
         except Exception as err:
             info["pca_error"] = repr(err)
-        rng = np.random.default_rng(seed)
-        projection = rng.normal(0.0, 1.0 / math.sqrt(float(max_components)), size=(Xs.shape[1], max_components))
-        Xr = (Xs @ projection).astype(np.float32)
+        Xr, sketch_info = deterministic_count_sketch(Xs, max_components)
         info.update(
             {
-                "method": "numpy_gaussian_random_projection",
+                "method": "numpy_deterministic_count_sketch",
                 "output_dim": int(Xr.shape[1]),
-                "random_projection_seed": seed,
+                **sketch_info,
             }
         )
         return Xr, info
@@ -993,7 +1021,7 @@ def ross_kraskov_fallback(
         "label": label,
         "valid": True,
         "estimator": "ross_kraskov_discrete_continuous_fallback",
-        "note": "Approximate Ross/Kraskov kNN estimate after deterministic random projection; used because sklearn is unavailable in the aiwonder venv.",
+        "note": "Approximate Ross/Kraskov kNN estimate after deterministic dimensionality reduction; used because sklearn is unavailable in the aiwonder venv.",
         "seed": seed,
         "sample_count": int(n),
         "label_counts": dict(sorted(counts.items())),
