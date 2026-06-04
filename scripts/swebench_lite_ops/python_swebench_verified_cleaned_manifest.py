@@ -358,6 +358,7 @@ def run_export(args: argparse.Namespace, dataset_rows: list[dict[str, Any]] | No
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--corpus-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--evidence-root", type=Path, required=True)
     parser.add_argument("--tasks-dir", type=Path, default=None)
     parser.add_argument("--dataset-name", default=DEFAULT_DATASET_NAME)
     parser.add_argument("--dataset-split", default=DEFAULT_DATASET_SPLIT)
