@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from .. import python_embedder_candidate_mi_screen as screen
 from ..python_embedder_candidate_mi_screen import CandidateMiScreenError, run_candidate_screen
 
 
@@ -105,6 +106,8 @@ def make_args(tmp_path: Path, dataset_root: Path, candidates: list[str], **overr
         "state_parent": tmp_path / "state",
         "run_id": "run-test-candidate-mi",
         "seed": 844,
+        "replicate_seed": [],
+        "require_seed_stability": False,
         "holdout_fraction": 0.25,
         "kraskov_neighbors": 3,
         "min_delta_bits": 0.005,
@@ -212,3 +215,66 @@ def test_candidate_screen_rejects_flat_vector_dataset(tmp_path: Path) -> None:
 
     with pytest.raises(CandidateMiScreenError, match="CANDIDATE_MI_FLAT_VECTOR_CONCAT_USED"):
         run_candidate_screen(make_args(tmp_path, dataset_root, [f"signal={signal_path}"]))
+
+
+def test_candidate_screen_seed_stability_gate_controls_greedy_selection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dataset_root, signal_path, noise_path = fixture(tmp_path)
+
+    def fake_classifier_lower_bound_safe(*, X: object, y: object, label: str, seed: int, holdout_fraction: float) -> dict:
+        del X, y, holdout_fraction
+        bits = 0.10
+        if "candidate:stable:standalone" in label:
+            bits = 0.04
+        elif "candidate:unstable:standalone" in label:
+            bits = 0.04
+        elif "candidate:stable:baseline_plus_candidate" in label:
+            bits = 0.16
+        elif "candidate:unstable:baseline_plus_candidate" in label:
+            bits = 0.20
+        elif "seed_stability:stable:augmented" in label:
+            bits = 0.16
+        elif "seed_stability:unstable:augmented" in label:
+            bits = 0.20 if seed == 844 else 0.101
+        elif "greedy_step_candidate:stable" in label:
+            bits = 0.16
+        elif "greedy_step_candidate:unstable" in label:
+            bits = 0.20 if seed == 844 else 0.101
+        return {
+            "label": label,
+            "valid": True,
+            "seed": seed,
+            "lower_bound_bits": bits,
+            "target_entropy_bits": 1.0,
+            "cross_entropy_bits": 1.0 - bits,
+        }
+
+    monkeypatch.setattr(screen, "classifier_lower_bound_safe", fake_classifier_lower_bound_safe)
+    result = run_candidate_screen(
+        make_args(
+            tmp_path,
+            dataset_root,
+            [f"unstable={signal_path}", f"stable={noise_path}"],
+            replicate_seed=[845],
+            require_seed_stability=True,
+            novelty_max_corr=1.1,
+        )
+    )
+    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+    summary_rows = [
+        json.loads(line)
+        for line in Path(manifest["artifacts"]["candidate_matrix_summaries"]).read_text(encoding="utf-8").splitlines()
+    ]
+    by_id = {row["candidate_id"]: row for row in summary_rows}
+    seed_rows = [
+        json.loads(line)
+        for line in Path(manifest["artifacts"]["candidate_seed_stability"]).read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert manifest["decision_rule"]["require_seed_stability"] is True
+    assert manifest["decision_rule"]["replicate_seeds"] == [844, 845]
+    assert by_id["unstable"]["utility_gate_pass"] is True
+    assert by_id["unstable"]["seed_stability_gate_pass"] is False
+    assert by_id["unstable"]["tier6_precheck_pass"] is False
+    assert by_id["stable"]["seed_stability_gate_pass"] is True
+    assert manifest["selected_candidates"] == ["stable"]
+    assert {row["seed"] for row in seed_rows if row["candidate_id"] == "unstable"} == {844, 845}

@@ -579,6 +579,92 @@ def classifier_bits(row: dict[str, Any]) -> float | None:
     return None
 
 
+def unique_seed_sequence(primary_seed: int, extra_seeds: Iterable[int]) -> list[int]:
+    out: list[int] = []
+    for seed in [int(primary_seed), *[int(value) for value in extra_seeds]]:
+        if seed not in out:
+            out.append(seed)
+    require(out, "CANDIDATE_MI_SEED_LIST_EMPTY")
+    return out
+
+
+def delta_stats(values: list[float]) -> dict[str, float | None]:
+    if not values:
+        return {"min": None, "mean": None, "max": None, "std": None}
+    mean = sum(values) / len(values)
+    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    return {
+        "min": min(values),
+        "mean": mean,
+        "max": max(values),
+        "std": math.sqrt(variance),
+    }
+
+
+def seed_stability_readback(
+    *,
+    baseline_X: Any,
+    candidate_X: Any,
+    y: Any,
+    candidate_id: str,
+    seeds: list[int],
+    holdout_fraction: float,
+    min_delta_bits: float,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    rows: list[dict[str, Any]] = []
+    valid_deltas: list[float] = []
+    for seed in seeds:
+        baseline = classifier_lower_bound_safe(
+            X=baseline_X,
+            y=y,
+            label=f"seed_stability:{candidate_id}:baseline:seed:{seed}",
+            seed=seed,
+            holdout_fraction=holdout_fraction,
+        )
+        augmented = classifier_lower_bound_safe(
+            X=concatenate_features([baseline_X, candidate_X]),
+            y=y,
+            label=f"seed_stability:{candidate_id}:augmented:seed:{seed}",
+            seed=seed,
+            holdout_fraction=holdout_fraction,
+        )
+        baseline_bits = classifier_bits(baseline)
+        augmented_bits = classifier_bits(augmented)
+        delta_bits = None if baseline_bits is None or augmented_bits is None else augmented_bits - baseline_bits
+        if delta_bits is not None:
+            valid_deltas.append(float(delta_bits))
+        rows.append(
+            {
+                "candidate_id": candidate_id,
+                "seed": seed,
+                "baseline_classifier_bits": baseline_bits,
+                "augmented_classifier_bits": augmented_bits,
+                "augmented_delta_bits_vs_baseline": delta_bits,
+                "utility_gate_pass": bool(delta_bits is not None and delta_bits >= min_delta_bits),
+                "baseline_classifier_lower_bound": baseline,
+                "augmented_classifier_lower_bound": augmented,
+            }
+        )
+    stats = delta_stats(valid_deltas)
+    summary = {
+        "seeds": seeds,
+        "seed_count": len(seeds),
+        "valid_seed_count": len(valid_deltas),
+        "all_seeds_valid": len(valid_deltas) == len(seeds),
+        "min_delta_bits": stats["min"],
+        "mean_delta_bits": stats["mean"],
+        "max_delta_bits": stats["max"],
+        "std_delta_bits": stats["std"],
+        "stable_utility_gate_pass": bool(
+            len(valid_deltas) == len(seeds)
+            and stats["min"] is not None
+            and float(stats["min"]) >= min_delta_bits
+        ),
+        "required_min_delta_bits": min_delta_bits,
+    }
+    return summary, rows
+
+
 def matrix_subset(X: Any, indexes: list[int]) -> Any:
     import numpy as np
 
@@ -722,6 +808,11 @@ def run_candidate_screen(args: argparse.Namespace) -> dict[str, Any]:
         )
         for spec in candidate_specs
     ]
+    replicate_seeds = unique_seed_sequence(
+        int(args.seed),
+        parse_seed_values(getattr(args, "replicate_seed", [])),
+    )
+    require_seed_stability = bool(getattr(args, "require_seed_stability", False))
 
     base_eval = evaluate_feature_set(
         X=dataset.X,
@@ -743,6 +834,7 @@ def run_candidate_screen(args: argparse.Namespace) -> dict[str, Any]:
     estimate_rows: list[dict[str, Any]] = [base_eval]
     per_cell_rows: list[dict[str, Any]] = []
     candidate_summary_rows: list[dict[str, Any]] = []
+    seed_stability_rows: list[dict[str, Any]] = []
     categories = sorted({str(row.get("mutation_category") or row.get("category")) for row in dataset.rows})
     category_indexes = {
         category: [idx for idx, row in enumerate(dataset.rows) if str(row.get("mutation_category") or row.get("category")) == category]
@@ -786,6 +878,17 @@ def run_candidate_screen(args: argparse.Namespace) -> dict[str, Any]:
         novelty_value = novelty.get("max_abs_corr")
         utility_gate_pass = bool(delta_bits is not None and delta_bits >= float(args.min_delta_bits))
         novelty_gate_pass = bool(isinstance(novelty_value, (int, float)) and float(novelty_value) < float(args.novelty_max_corr))
+        stability_summary, stability_rows = seed_stability_readback(
+            baseline_X=dataset.X,
+            candidate_X=candidate.X,
+            y=y,
+            candidate_id=candidate.candidate_id,
+            seeds=replicate_seeds,
+            holdout_fraction=float(args.holdout_fraction),
+            min_delta_bits=float(args.min_delta_bits),
+        )
+        seed_stability_rows.extend(stability_rows)
+        stability_gate_pass = bool(stability_summary["stable_utility_gate_pass"])
         estimate_rows.extend([standalone, augmented])
         cell_delta_by_category: dict[str, float | None] = {}
         for category, indexes in category_indexes.items():
@@ -844,7 +947,11 @@ def run_candidate_screen(args: argparse.Namespace) -> dict[str, Any]:
                 "novelty": novelty,
                 "utility_gate_pass": utility_gate_pass,
                 "novelty_gate_pass": novelty_gate_pass,
-                "tier6_precheck_pass": utility_gate_pass and novelty_gate_pass,
+                "seed_stability_gate_pass": stability_gate_pass,
+                "tier6_precheck_pass": utility_gate_pass
+                and novelty_gate_pass
+                and (stability_gate_pass if require_seed_stability else True),
+                "seed_stability": stability_summary,
                 "behavioral_cell_delta_bits": {
                     category: cell_delta_by_category.get(category)
                     for category in BEHAVIORAL_CELLS
@@ -864,16 +971,20 @@ def run_candidate_screen(args: argparse.Namespace) -> dict[str, Any]:
         min_delta_bits=float(args.min_delta_bits),
         novelty_by_candidate={row["candidate_id"]: row["novelty"] for row in candidate_summary_rows},
         novelty_max_corr=float(args.novelty_max_corr),
+        selection_seeds=replicate_seeds,
+        require_seed_stability=require_seed_stability,
     )
     final_bits = greedy_rows[-1]["selected_panel_bits"] if greedy_rows else float(baseline_bits)
 
     candidate_summary_path = output_root / "candidate_matrix_summaries.jsonl"
     estimates_path = output_root / "candidate_estimates.jsonl"
     per_cell_path = output_root / "candidate_per_cell_estimates.jsonl"
+    seed_stability_path = output_root / "candidate_seed_stability.jsonl"
     greedy_path = output_root / "greedy_selection.jsonl"
     write_jsonl(candidate_summary_path, candidate_summary_rows)
     write_jsonl(estimates_path, estimate_rows)
     write_jsonl(per_cell_path, per_cell_rows)
+    write_jsonl(seed_stability_path, seed_stability_rows)
     write_jsonl(greedy_path, greedy_rows)
     matrix_npz_path = output_root / "candidate_feature_matrices.npz"
     np.savez_compressed(matrix_npz_path, **{sanitize_npz_key(candidate.candidate_id): candidate.X for candidate in candidates})
@@ -908,6 +1019,10 @@ def run_candidate_screen(args: argparse.Namespace) -> dict[str, Any]:
             "target_bits": 0.95,
             "min_delta_bits": float(args.min_delta_bits),
             "novelty_max_corr": float(args.novelty_max_corr),
+            "primary_seed": int(args.seed),
+            "replicate_seeds": replicate_seeds,
+            "require_seed_stability": require_seed_stability,
+            "stable_utility_requires_all_seed_deltas": require_seed_stability,
             "panel_sufficient": bool(final_bits >= 0.95),
             "classification": (
                 "panel_sufficient"
@@ -932,6 +1047,8 @@ def run_candidate_screen(args: argparse.Namespace) -> dict[str, Any]:
             "candidate_estimates_sha256": sha256_file(estimates_path),
             "candidate_per_cell_estimates": str(per_cell_path),
             "candidate_per_cell_estimates_sha256": sha256_file(per_cell_path),
+            "candidate_seed_stability": str(seed_stability_path),
+            "candidate_seed_stability_sha256": sha256_file(seed_stability_path),
             "greedy_selection": str(greedy_path),
             "greedy_selection_sha256": sha256_file(greedy_path),
             "candidate_feature_matrices_npz": str(matrix_npz_path),
@@ -944,9 +1061,9 @@ def run_candidate_screen(args: argparse.Namespace) -> dict[str, Any]:
     copied_paths = mirror_to_state(
         output_root=output_root,
         state_root=state_root,
-        paths=[manifest_path, candidate_summary_path, estimates_path, per_cell_path, greedy_path],
+        paths=[manifest_path, candidate_summary_path, estimates_path, per_cell_path, seed_stability_path, greedy_path],
     )
-    hash_path = write_artifact_hashes(output_root, [manifest_path, candidate_summary_path, estimates_path, per_cell_path, greedy_path, matrix_npz_path, *copied_paths])
+    hash_path = write_artifact_hashes(output_root, [manifest_path, candidate_summary_path, estimates_path, per_cell_path, seed_stability_path, greedy_path, matrix_npz_path, *copied_paths])
     state_hash_path = state_root / hash_path.name
     write_json(state_hash_path, json.loads(hash_path.read_text(encoding="utf-8")))
     return {
@@ -976,11 +1093,32 @@ def greedy_selection(
     min_delta_bits: float,
     novelty_by_candidate: dict[str, dict[str, Any]],
     novelty_max_corr: float,
+    selection_seeds: list[int],
+    require_seed_stability: bool,
 ) -> list[dict[str, Any]]:
     remaining = {candidate.candidate_id: candidate for candidate in candidates}
     selected_matrices = [baseline_X]
     selected_rows: list[dict[str, Any]] = []
     current_bits = baseline_bits
+    current_bits_by_seed: dict[int, float] = {int(seed): baseline_bits for seed in selection_seeds}
+    if require_seed_stability:
+        current_bits_by_seed = {}
+        for stable_seed in selection_seeds:
+            baseline_result = classifier_lower_bound_safe(
+                X=baseline_X,
+                y=y,
+                label=f"greedy_stability:baseline:seed:{stable_seed}",
+                seed=stable_seed,
+                holdout_fraction=holdout_fraction,
+            )
+            seed_bits = classifier_bits(baseline_result)
+            require(
+                seed_bits is not None,
+                "CANDIDATE_MI_GREEDY_STABILITY_BASELINE_INVALID",
+                {"seed": stable_seed, "classifier_lower_bound": baseline_result},
+            )
+            current_bits_by_seed[int(stable_seed)] = float(seed_bits)
+        current_bits = min(current_bits_by_seed.values())
     step = 0
     while remaining and current_bits < 0.95:
         best: dict[str, Any] | None = None
@@ -990,30 +1128,86 @@ def greedy_selection(
             if not isinstance(novelty_value, (int, float)) or float(novelty_value) >= novelty_max_corr:
                 continue
             X_trial = concatenate_features([*selected_matrices, candidate.X])
-            result = classifier_lower_bound_safe(
-                X=X_trial,
-                y=y,
-                label=f"greedy_step_candidate:{candidate_id}",
-                seed=seed,
-                holdout_fraction=holdout_fraction,
-            )
-            bits = classifier_bits(result)
-            if bits is None:
-                continue
-            delta = bits - current_bits
-            row = {
-                "candidate_id": candidate_id,
-                "trial_bits": bits,
-                "delta_bits": delta,
-                "classifier_lower_bound": result,
-            }
-            if best is None or bits > best["trial_bits"]:
+            if require_seed_stability:
+                seed_rows: list[dict[str, Any]] = []
+                trial_bits_by_seed: dict[int, float] = {}
+                delta_bits_by_seed: dict[int, float] = {}
+                invalid = False
+                for stable_seed in selection_seeds:
+                    result = classifier_lower_bound_safe(
+                        X=X_trial,
+                        y=y,
+                        label=f"greedy_step_candidate:{candidate_id}:seed:{stable_seed}",
+                        seed=stable_seed,
+                        holdout_fraction=holdout_fraction,
+                    )
+                    bits = classifier_bits(result)
+                    if bits is None:
+                        invalid = True
+                        seed_rows.append(
+                            {
+                                "seed": stable_seed,
+                                "trial_bits": None,
+                                "delta_bits": None,
+                                "classifier_lower_bound": result,
+                            }
+                        )
+                        continue
+                    delta = float(bits) - float(current_bits_by_seed[int(stable_seed)])
+                    trial_bits_by_seed[int(stable_seed)] = float(bits)
+                    delta_bits_by_seed[int(stable_seed)] = delta
+                    seed_rows.append(
+                        {
+                            "seed": stable_seed,
+                            "trial_bits": float(bits),
+                            "delta_bits": delta,
+                            "classifier_lower_bound": result,
+                        }
+                    )
+                if invalid or len(delta_bits_by_seed) != len(selection_seeds):
+                    continue
+                delta_values = list(delta_bits_by_seed.values())
+                trial_values = list(trial_bits_by_seed.values())
+                row = {
+                    "candidate_id": candidate_id,
+                    "trial_bits": min(trial_values),
+                    "delta_bits": min(delta_values),
+                    "primary_seed_trial_bits": trial_bits_by_seed.get(int(seed)),
+                    "primary_seed_delta_bits": delta_bits_by_seed.get(int(seed)),
+                    "mean_trial_bits": sum(trial_values) / len(trial_values),
+                    "mean_delta_bits": sum(delta_values) / len(delta_values),
+                    "trial_bits_by_seed": {str(k): v for k, v in sorted(trial_bits_by_seed.items())},
+                    "delta_bits_by_seed": {str(k): v for k, v in sorted(delta_bits_by_seed.items())},
+                    "seed_trial_rows": seed_rows,
+                    "classifier_lower_bound": None,
+                }
+            else:
+                result = classifier_lower_bound_safe(
+                    X=X_trial,
+                    y=y,
+                    label=f"greedy_step_candidate:{candidate_id}",
+                    seed=seed,
+                    holdout_fraction=holdout_fraction,
+                )
+                bits = classifier_bits(result)
+                if bits is None:
+                    continue
+                delta = bits - current_bits
+                row = {
+                    "candidate_id": candidate_id,
+                    "trial_bits": bits,
+                    "delta_bits": delta,
+                    "classifier_lower_bound": result,
+                }
+            if best is None or float(row["trial_bits"]) > float(best["trial_bits"]):
                 best = row
         if best is None or float(best["delta_bits"]) < min_delta_bits:
             break
         candidate = remaining.pop(str(best["candidate_id"]))
         selected_matrices.append(candidate.X)
         current_bits = float(best["trial_bits"])
+        if require_seed_stability:
+            current_bits_by_seed = {int(k): float(v) for k, v in (best.get("trial_bits_by_seed") or {}).items()}
         step += 1
         selected_rows.append(
             {
@@ -1023,10 +1217,35 @@ def greedy_selection(
                 "delta_bits": float(best["delta_bits"]),
                 "target_bits": 0.95,
                 "panel_sufficient_after_step": current_bits >= 0.95,
+                "seed_stability_required": require_seed_stability,
+                "selection_bits_policy": "min_across_replicate_seeds" if require_seed_stability else "primary_seed",
                 "classifier_lower_bound": best["classifier_lower_bound"],
+                "seed_trial_rows": best.get("seed_trial_rows"),
+                "trial_bits_by_seed": best.get("trial_bits_by_seed"),
+                "delta_bits_by_seed": best.get("delta_bits_by_seed"),
+                "primary_seed_trial_bits": best.get("primary_seed_trial_bits"),
+                "primary_seed_delta_bits": best.get("primary_seed_delta_bits"),
+                "mean_trial_bits": best.get("mean_trial_bits"),
+                "mean_delta_bits": best.get("mean_delta_bits"),
             }
         )
     return selected_rows
+
+
+def parse_seed_values(raw_values: Iterable[Any]) -> list[int]:
+    seeds: list[int] = []
+    for raw in raw_values:
+        if raw is None:
+            continue
+        for piece in str(raw).split(","):
+            text = piece.strip()
+            if not text:
+                continue
+            try:
+                seeds.append(int(text))
+            except ValueError as exc:
+                raise CandidateMiScreenError(f"CANDIDATE_MI_REPLICATE_SEED_INVALID: {text}") from exc
+    return seeds
 
 
 def sanitize_npz_key(value: str) -> str:
@@ -1070,6 +1289,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--state-parent", type=Path, default=DEFAULT_STATE_PARENT)
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--seed", type=int, default=844032)
+    parser.add_argument(
+        "--replicate-seed",
+        action="append",
+        default=[],
+        help="Additional seed for classifier-lower-bound stability checks. May be repeated or comma-separated.",
+    )
+    parser.add_argument(
+        "--require-seed-stability",
+        action="store_true",
+        help="Require every seed delta to pass --min-delta-bits and select greedy candidates by worst seed.",
+    )
     parser.add_argument("--holdout-fraction", type=float, default=0.2)
     parser.add_argument("--kraskov-neighbors", type=int, default=5)
     parser.add_argument("--min-delta-bits", type=float, default=0.005)
