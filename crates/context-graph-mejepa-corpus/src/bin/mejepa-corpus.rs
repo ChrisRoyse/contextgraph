@@ -63,6 +63,7 @@ enum CommandKind {
     Smoke(SmokeArgs),
     Merge(MergeArgs),
     Normalize(NormalizeArgs),
+    PruneQuarantine(PruneQuarantineArgs),
     GenerateFixtures(GenerateFixturesArgs),
     PhaseCVerify(PhaseCVerifyArgs),
     PrepareImages(PrepareImagesArgs),
@@ -246,6 +247,16 @@ struct NormalizeArgs {
 }
 
 #[derive(Parser, Debug, Clone)]
+struct PruneQuarantineArgs {
+    #[arg(long)]
+    corpus: PathBuf,
+    #[arg(long)]
+    quarantine_config: PathBuf,
+    #[arg(long)]
+    output: PathBuf,
+}
+
+#[derive(Parser, Debug, Clone)]
 struct GenerateFixturesArgs {
     #[arg(long)]
     output: PathBuf,
@@ -382,6 +393,7 @@ fn main() -> CliResult<()> {
         CommandKind::Smoke(args) => smoke(args),
         CommandKind::Merge(args) => merge(args),
         CommandKind::Normalize(args) => normalize(args),
+        CommandKind::PruneQuarantine(args) => prune_quarantine(args),
         CommandKind::GenerateFixtures(args) => generate_fixtures(args),
         CommandKind::PhaseCVerify(args) => phase_c_verify(args),
         CommandKind::PrepareImages(args) => prepare_images(args),
@@ -1567,6 +1579,180 @@ fn normalize(mut args: NormalizeArgs) -> CliResult<()> {
     Ok(())
 }
 
+fn prune_quarantine(mut args: PruneQuarantineArgs) -> CliResult<()> {
+    args.corpus = require_corpus_path(&args.corpus, "prune_quarantine.corpus")?;
+    args.output = require_corpus_path(&args.output, "prune_quarantine.output")?;
+    args.quarantine_config = require_durable_path(
+        &args.quarantine_config,
+        "prune_quarantine.quarantine_config",
+    )?;
+    validate_prune_quarantine_args(&args)?;
+    prune_quarantine_impl(args)
+}
+
+fn prune_quarantine_impl(args: PruneQuarantineArgs) -> CliResult<()> {
+    let quarantine = load_corpus_quarantine(&args.quarantine_config)?;
+    if quarantine.is_empty() {
+        return Err("prune-quarantine requires at least one quarantined task".into());
+    }
+    let quarantined_tasks = quarantine.keys().cloned().collect::<BTreeSet<_>>();
+    let source_index = read_index(&args.corpus)?;
+    validate_complete_index(&source_index)?;
+    ensure_output_directory_ready(&args.output)?;
+    fs::create_dir_all(&args.output)?;
+
+    let source_store_path = resolve_corpus_path(&args.corpus, &source_index.store_path)?;
+    let source_store = OracleStore::open(&source_store_path)?;
+    let store_path_rel = PathBuf::from("oracle-store");
+    let store_path = args.output.join(&store_path_rel);
+    let store = OracleStore::open(&store_path)?;
+
+    let mut index = CorpusIndex {
+        schema_version: source_index.schema_version,
+        corpus_version: source_index.corpus_version.clone(),
+        embedder_version: source_index.embedder_version.clone(),
+        dataset_name: source_index.dataset_name.clone(),
+        dataset_split: source_index.dataset_split.clone(),
+        complete: false,
+        generated_at_unix_ms: unix_ms(),
+        seed: source_index.seed,
+        languages: source_index.languages.clone(),
+        tasks_dir: source_index.tasks_dir.clone(),
+        store_path: store_path_rel.display().to_string(),
+        corpus_sha256: None,
+        selected_task_ids: Vec::new(),
+        entries: Vec::new(),
+        // Preserve the original split assignment source of truth. This artifact
+        // is a quarantined-row projection of the corpus, not a new split.
+        split_assignments: source_index.split_assignments.clone(),
+    };
+    write_index(&args.output, &index)?;
+
+    let mut seen = BTreeSet::<String>::new();
+    let mut excluded_entries = Vec::<Value>::new();
+    for entry in &source_index.entries {
+        let key = corpus_row_key(&entry.task_id, entry.category);
+        if !seen.insert(key.clone()) {
+            return Err(format!("duplicate source corpus row key: {key}").into());
+        }
+        let source_patch_path = resolve_corpus_path(&args.corpus, &entry.patch_path)?;
+        let patch_text = fs::read_to_string(&source_patch_path)?;
+        let patch_hash = sha256_text(&patch_text);
+        if patch_hash != entry.patch_sha256 {
+            return Err(format!(
+                "source patch hash mismatch for {key}: expected {} actual {}",
+                entry.patch_sha256, patch_hash
+            )
+            .into());
+        }
+        let (mutation, verdict) = source_store
+            .get_corpus_row(&entry.task_id, entry.category)?
+            .ok_or_else(|| format!("source RocksDB row missing for {key}"))?;
+        if sha256_text(&mutation.mutated_source) != entry.patch_sha256 {
+            return Err(format!("source mutation hash mismatch for {key}").into());
+        }
+        if quarantined_tasks.contains(&entry.task_id) {
+            excluded_entries.push(json!({
+                "task_id": entry.task_id,
+                "category": entry.category.slug(),
+                "reason": quarantine
+                    .get(&entry.task_id)
+                    .map(|entry| entry.reason.clone())
+                    .unwrap_or_default(),
+            }));
+            continue;
+        }
+
+        let destination_patch_path = resolve_corpus_path(&args.output, &entry.patch_path)?;
+        write_text_checked(&destination_patch_path, &patch_text)?;
+        store.put_corpus_row(&entry.task_id, entry.category, &mutation, &verdict)?;
+        store.flush()?;
+        let (stored_mutation, stored_verdict) = store
+            .get_corpus_row(&entry.task_id, entry.category)?
+            .ok_or_else(|| {
+                format!("pruned RocksDB row missing immediately after write for {key}")
+            })?;
+        if stored_mutation != mutation || stored_verdict != verdict {
+            return Err(format!("pruned RocksDB row readback mismatch for {key}").into());
+        }
+        index.entries.push(entry.clone());
+        write_index(&args.output, &index)?;
+    }
+
+    index.selected_task_ids = index
+        .entries
+        .iter()
+        .map(|entry| entry.task_id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+
+    let mutation_cf_count = store.count_cf(CF_MEJEPA_CORPUS_MUTATION_OUTCOMES)?;
+    let verdict_cf_count = store.count_cf(CF_MEJEPA_CORPUS_ORACLE_VERDICTS_JSON)?;
+    let iterated_corpus_rows = store.iter_corpus_rows()?;
+    if mutation_cf_count != index.entries.len()
+        || verdict_cf_count != index.entries.len()
+        || iterated_corpus_rows.len() != index.entries.len()
+    {
+        return Err(format!(
+            "pruned corpus store count mismatch: index={} mutation_cf={} verdict_cf={} iterated_rows={}",
+            index.entries.len(),
+            mutation_cf_count,
+            verdict_cf_count,
+            iterated_corpus_rows.len()
+        )
+        .into());
+    }
+
+    let provenance = build_provenance(&index)?;
+    store.put_provenance(&provenance)?;
+    store.flush()?;
+    let stored_provenance = store
+        .get_provenance(&index.corpus_version, &index.embedder_version)?
+        .ok_or("pruned provenance row missing immediately after RocksDB write")?;
+    if stored_provenance != provenance {
+        return Err("pruned provenance readback mismatch immediately after RocksDB write".into());
+    }
+    index.corpus_sha256 = Some(provenance.corpus_sha256.clone());
+    index.complete = true;
+    write_stats_json(
+        &args.output,
+        &build_stats_json(&args.output, &index, &store)?,
+    )?;
+    write_index(&args.output, &index)?;
+
+    let evidence = json!({
+        "status": "pruned_quarantine",
+        "source_of_truth": {
+            "input_index": args.corpus.join("index.json").display().to_string(),
+            "input_store": source_store_path.display().to_string(),
+            "quarantine_config": args.quarantine_config.display().to_string(),
+            "output_index": args.output.join("index.json").display().to_string(),
+            "output_store": store_path.display().to_string(),
+            "provenance_cf": CF_MEJEPA_CORPUS_PROVENANCE_JSON,
+        },
+        "source_corpus_sha256": source_index.corpus_sha256,
+        "pruned_corpus_sha256": provenance.corpus_sha256,
+        "quarantine_config_sha256": sha256_path(&args.quarantine_config)?,
+        "source_entries": source_index.entries.len(),
+        "entries": index.entries.len(),
+        "excluded_entry_count": excluded_entries.len(),
+        "excluded_task_count": quarantined_tasks.len(),
+        "excluded_task_ids": quarantined_tasks,
+        "excluded_entries": excluded_entries,
+        "mutation_cf_count": mutation_cf_count,
+        "verdict_cf_count": verdict_cf_count,
+        "provenance_cf_count": store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE_JSON)?,
+        "passes": true,
+    });
+    write_json_checked(
+        &args.output.join("prune-quarantine-evidence.json"),
+        &evidence,
+    )?;
+    println!("{}", serde_json::to_string_pretty(&evidence)?);
+    Ok(())
+}
+
 fn generate_fixtures(mut args: GenerateFixturesArgs) -> CliResult<()> {
     args.output = require_corpus_path(&args.output, "generate_fixtures.output")?;
     if args.tasks_per_language == 0 {
@@ -2502,6 +2688,30 @@ fn validate_normalize_args(args: &NormalizeArgs) -> CliResult<()> {
         return Err(format!(
             "normalize corpus does not exist or is not a directory: {}",
             args.corpus.display()
+        )
+        .into());
+    }
+    ensure_output_directory_ready(&args.output)
+}
+
+fn validate_prune_quarantine_args(args: &PruneQuarantineArgs) -> CliResult<()> {
+    if args.corpus == args.output {
+        return Err(
+            "prune-quarantine requires --output to be a fresh directory distinct from --corpus"
+                .into(),
+        );
+    }
+    if !args.corpus.is_dir() {
+        return Err(format!(
+            "prune-quarantine corpus does not exist or is not a directory: {}",
+            args.corpus.display()
+        )
+        .into());
+    }
+    if !args.quarantine_config.is_file() {
+        return Err(format!(
+            "prune-quarantine quarantine config does not exist: {}",
+            args.quarantine_config.display()
         )
         .into());
     }
@@ -3938,6 +4148,11 @@ fn sha256_text(text: &str) -> String {
     format!("sha256:{:x}", Sha256::digest(text.as_bytes()))
 }
 
+fn sha256_path(path: &Path) -> CliResult<String> {
+    let bytes = fs::read(path)?;
+    Ok(format!("sha256:{:x}", Sha256::digest(&bytes)))
+}
+
 fn sha256_json_value(value: &Value) -> String {
     sha256_text(&serde_json::to_string(value).expect("JSON value serialises"))
 }
@@ -3980,6 +4195,7 @@ fn unix_ms() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use context_graph_mejepa_corpus::split::SplitBucket;
 
     #[test]
     fn swebench_oracle_cli_defaults_to_aiwonder_hot_python() -> CliResult<()> {
@@ -4179,6 +4395,135 @@ created_unix_ms = 1
         assert!(err
             .to_string()
             .contains("MEJEPA_CORPUS_QUARANTINE_DUPLICATE_TASK"));
+        Ok(())
+    }
+
+    #[test]
+    fn prune_quarantine_excludes_task_from_index_and_store() -> CliResult<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source-corpus");
+        let output = dir.path().join("pruned-corpus");
+        fs::create_dir_all(&source)?;
+
+        let verdict = OracleVerdict {
+            per_test: vec![PerTestOutcome {
+                test_id: "tests/test_synthetic.py::test_outcome".to_string(),
+                outcome: TestOutcome::Pass,
+                runtime_ms: 1,
+            }],
+            exception: None,
+            evidence_unavailable: false,
+        };
+        let store_path_rel = PathBuf::from("oracle-store");
+        let store_path = source.join(&store_path_rel);
+        let store = OracleStore::open(&store_path)?;
+        let mut entries = Vec::new();
+        for task_id in ["keep_task", "drop_task"] {
+            let patch_text = format!("patch for {task_id}\n");
+            let patch_path = PathBuf::from("mutations")
+                .join(task_id)
+                .join("known_good.patch");
+            write_text_checked(&source.join(&patch_path), &patch_text)?;
+            let mutation = MutationOutcome {
+                category: MutationCategory::KnownGood,
+                mutated_source: patch_text.clone(),
+                seed: 7,
+                mutation_site: None,
+            };
+            store.put_corpus_row(task_id, MutationCategory::KnownGood, &mutation, &verdict)?;
+            entries.push(GeneratedEntry {
+                task_id: task_id.to_string(),
+                repo: "synthetic/repo".to_string(),
+                language: Language::Python,
+                category: MutationCategory::KnownGood,
+                bucket: "train".to_string(),
+                patch_path: patch_path.display().to_string(),
+                mutation_note: "synthetic".to_string(),
+                patch_sha256: sha256_text(&patch_text),
+                oracle_verdict_sha256: sha256_json_value(&serde_json::to_value(&verdict)?),
+                oracle_all_passed: true,
+                oracle_exception: None,
+                oracle_per_test_count: 1,
+            });
+        }
+        store.flush()?;
+        drop(store);
+
+        let index = CorpusIndex {
+            schema_version: 1,
+            corpus_version: MEJEPA_CORPUS_VERSION_V1.to_string(),
+            embedder_version: MEJEPA_EMBEDDER_VERSION_V1.to_string(),
+            dataset_name: "synthetic/prune-quarantine".to_string(),
+            dataset_split: "test".to_string(),
+            complete: true,
+            generated_at_unix_ms: 1,
+            seed: 0,
+            languages: vec![Language::Python],
+            tasks_dir: "synthetic".to_string(),
+            store_path: store_path_rel.display().to_string(),
+            corpus_sha256: None,
+            selected_task_ids: vec!["keep_task".to_string(), "drop_task".to_string()],
+            entries,
+            split_assignments: vec![
+                TaskAssignment {
+                    task_id: "keep_task".to_string(),
+                    repo: "synthetic/repo".to_string(),
+                    bucket: SplitBucket::Train,
+                },
+                TaskAssignment {
+                    task_id: "drop_task".to_string(),
+                    repo: "synthetic/repo".to_string(),
+                    bucket: SplitBucket::Train,
+                },
+            ],
+        };
+        write_index(&source, &index)?;
+        let quarantine_path = dir.path().join("corpus_quarantine.toml");
+        fs::write(
+            &quarantine_path,
+            r#"
+[[quarantined_tasks]]
+task_id = "drop_task"
+reason = "synthetic flake"
+flakiness_rate = 0.5
+oracle_runs = 2
+observed_outcomes = [false, true]
+observed_verdict_sha256 = [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+]
+operator_id = "test"
+created_unix_ms = 1
+"#,
+        )?;
+
+        prune_quarantine_impl(PruneQuarantineArgs {
+            corpus: source.clone(),
+            quarantine_config: quarantine_path,
+            output: output.clone(),
+        })?;
+
+        let pruned_index = read_index(&output)?;
+        assert!(pruned_index.complete);
+        assert_eq!(pruned_index.entries.len(), 1);
+        assert_eq!(
+            pruned_index.selected_task_ids,
+            vec!["keep_task".to_string()]
+        );
+        assert_eq!(pruned_index.entries[0].task_id, "keep_task");
+        let pruned_store = OracleStore::open(output.join("oracle-store"))?;
+        assert!(pruned_store
+            .get_corpus_row("keep_task", MutationCategory::KnownGood)?
+            .is_some());
+        assert!(pruned_store
+            .get_corpus_row("drop_task", MutationCategory::KnownGood)?
+            .is_none());
+        let evidence: Value = serde_json::from_str(&fs::read_to_string(
+            output.join("prune-quarantine-evidence.json"),
+        )?)?;
+        assert_eq!(evidence["entries"], json!(1));
+        assert_eq!(evidence["excluded_entry_count"], json!(1));
+        assert_eq!(evidence["passes"], json!(true));
         Ok(())
     }
 
