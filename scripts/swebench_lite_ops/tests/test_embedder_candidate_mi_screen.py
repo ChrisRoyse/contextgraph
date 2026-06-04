@@ -173,5 +173,5 @@ def test_candidate_screen_rejects_flat_vector_dataset(tmp_path: Path) -> None:
     manifest["flat_vector_concat_used"] = True
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    with pytest.raises(CandidateMiScreenError, match="CANDIDATE_MI_DATASET_INVALID"):
+    with pytest.raises(CandidateMiScreenError, match="CANDIDATE_MI_FLAT_VECTOR_CONCAT_USED"):
         run_candidate_screen(make_args(tmp_path, dataset_root, [f"signal={signal_path}"]))

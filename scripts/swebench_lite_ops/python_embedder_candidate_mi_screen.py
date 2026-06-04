@@ -39,7 +39,6 @@ try:
         kraskov_crosscheck,
         mine_estimate,
     )
-    from .python_patch_lexical_baseline import load_dataset
 except ImportError:  # pragma: no cover - direct script execution on aiwonder.
     import sys
 
@@ -50,7 +49,6 @@ except ImportError:  # pragma: no cover - direct script execution on aiwonder.
         kraskov_crosscheck,
         mine_estimate,
     )
-    from swebench_lite_ops.python_patch_lexical_baseline import load_dataset  # type: ignore
 
 
 TASK_ID = "INV-032"
@@ -104,6 +102,17 @@ class CandidateMiScreenError(RuntimeError):
 class CandidateSpec:
     candidate_id: str
     path: Path
+
+
+@dataclass(frozen=True)
+class PanelDataset:
+    X: Any
+    y: Any
+    rows: list[dict[str, Any]]
+    manifest: dict[str, Any]
+    feature_slices: dict[str, slice]
+    dataset_npz: Path
+    rows_path: Path
 
 
 @dataclass(frozen=True)
@@ -212,6 +221,65 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
             rows.append(row)
     require(rows, "CANDIDATE_MI_SOURCE_JSONL_EMPTY", str(path))
     return rows
+
+
+def read_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise CandidateMiScreenError(f"CANDIDATE_MI_JSON_INVALID: {path}: {exc}") from exc
+
+
+def load_panel_dataset(dataset_root: Path, *, allow_non_aiwonder_roots: bool) -> PanelDataset:
+    import numpy as np
+
+    require_aiwonder_path(dataset_root, "dataset_root", allow_non_aiwonder_roots)
+    manifest_path = dataset_root / "dataset_manifest.json"
+    require(manifest_path.is_file(), "CANDIDATE_MI_DATASET_MANIFEST_MISSING", str(manifest_path))
+    manifest = read_json(manifest_path)
+    require(manifest.get("passes") is True, "CANDIDATE_MI_DATASET_NOT_PASSING", str(manifest_path))
+    require(manifest.get("slot_identity_preserved") is True, "CANDIDATE_MI_SLOT_IDENTITY_NOT_PRESERVED")
+    require(manifest.get("flat_vector_concat_used") is False, "CANDIDATE_MI_FLAT_VECTOR_CONCAT_USED")
+
+    artifacts = manifest.get("artifacts") or {}
+    dataset_npz = Path(str(artifacts.get("dataset_npz") or dataset_root / "panel_oracle_dataset.npz"))
+    rows_path = Path(
+        str(
+            artifacts.get("state_dataset_rows_jsonl")
+            or artifacts.get("dataset_rows_jsonl")
+            or dataset_root / "dataset_rows.jsonl"
+        )
+    )
+    require_aiwonder_path(dataset_npz, "dataset_npz", allow_non_aiwonder_roots)
+    require_aiwonder_path(rows_path, "dataset_rows_jsonl", allow_non_aiwonder_roots)
+    require(dataset_npz.is_file(), "CANDIDATE_MI_DATASET_NPZ_MISSING", str(dataset_npz))
+    require(rows_path.is_file(), "CANDIDATE_MI_DATASET_ROWS_MISSING", str(rows_path))
+
+    data = np.load(dataset_npz, allow_pickle=False)
+    require(set(data.files) == {"X", "y"}, "CANDIDATE_MI_DATASET_NPZ_KEYS", data.files)
+    X = np.asarray(data["X"], dtype=np.float32)
+    y = np.asarray(data["y"], dtype=np.int64)
+    require(X.ndim == 2 and y.ndim == 1 and X.shape[0] == y.shape[0], "CANDIDATE_MI_DATASET_SHAPE", (X.shape, y.shape))
+    require(bool(np.all(np.isfinite(X))), "CANDIDATE_MI_DATASET_NONFINITE_FEATURES")
+    require(set(int(value) for value in y.tolist()).issubset({0, 1}), "CANDIDATE_MI_DATASET_NON_BINARY_LABELS")
+
+    rows = [json.loads(line) for line in rows_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    require(len(rows) == int(X.shape[0]), "CANDIDATE_MI_DATASET_ROW_COUNT_MISMATCH", (len(rows), int(X.shape[0])))
+    for index, row in enumerate(rows):
+        require(int(row.get("row_index")) == index, "CANDIDATE_MI_DATASET_ROW_INDEX_MISMATCH", (index, row.get("row_index")))
+
+    raw_slices = manifest.get("feature_slices") or {}
+    active = [str(slot).lower() for slot in (manifest.get("active_embedder_ids") or [])]
+    require(active, "CANDIDATE_MI_ACTIVE_EMBEDDERS_MISSING")
+    feature_slices: dict[str, slice] = {}
+    for slot in active:
+        info = raw_slices.get(slot)
+        require(isinstance(info, dict), "CANDIDATE_MI_ACTIVE_SLICE_MISSING", slot)
+        start = int(info.get("start"))
+        stop = int(info.get("stop"))
+        require(0 <= start < stop <= X.shape[1], "CANDIDATE_MI_SLICE_OUT_OF_RANGE", {slot: (start, stop), "feature_dim": X.shape[1]})
+        feature_slices[slot] = slice(start, stop)
+    return PanelDataset(X=X, y=y, rows=rows, manifest=manifest, feature_slices=feature_slices, dataset_npz=dataset_npz, rows_path=rows_path)
 
 
 def parse_candidate_spec(raw: str) -> CandidateSpec:
@@ -629,10 +697,7 @@ def run_candidate_screen(args: argparse.Namespace) -> dict[str, Any]:
     output_root.mkdir(parents=True, exist_ok=False)
     state_root.mkdir(parents=True, exist_ok=False)
 
-    try:
-        dataset = load_dataset(dataset_root, allow_non_aiwonder_roots=bool(args.allow_non_aiwonder_roots))
-    except Exception as exc:
-        raise CandidateMiScreenError(f"CANDIDATE_MI_DATASET_INVALID: {exc}") from exc
+    dataset = load_panel_dataset(dataset_root, allow_non_aiwonder_roots=bool(args.allow_non_aiwonder_roots))
     y = np.asarray(dataset.y, dtype=np.int64)
     require(set(int(value) for value in y.tolist()).issubset({0, 1}), "CANDIDATE_MI_NON_BINARY_LABELS")
     candidates = [
