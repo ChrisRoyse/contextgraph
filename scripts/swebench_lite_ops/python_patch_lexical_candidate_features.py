@@ -204,8 +204,15 @@ def normalize_token(token: str) -> str:
     return token
 
 
-def sparse_hash_features(text: str, *, hash_dim: int, token_limit: int) -> tuple[dict[str, float], dict[str, int]]:
+def sparse_hash_features(
+    text: str,
+    *,
+    hash_dim: int,
+    token_limit: int,
+    feature_prefix: str = "lexhash",
+) -> tuple[dict[str, float], dict[str, int]]:
     require(hash_dim >= 64, "PATCH_LEXICAL_CANDIDATE_HASH_DIM_TOO_SMALL", hash_dim)
+    require(FEATURE_KEY_RE.match(feature_prefix) is not None, "PATCH_LEXICAL_CANDIDATE_FEATURE_PREFIX_INVALID", feature_prefix)
     tokens = lexical_tokens(text)
     if token_limit > 0:
         tokens = tokens[:token_limit]
@@ -219,7 +226,7 @@ def sparse_hash_features(text: str, *, hash_dim: int, token_limit: int) -> tuple
     norm = math.sqrt(float(len(tokens)))
     features: dict[str, float] = {}
     for column, value in sorted(values.items()):
-        add_feature(features, f"lexhash:{column:04d}", float(value) / norm)
+        add_feature(features, f"{feature_prefix}:{column:04d}", float(value) / norm)
     return features, {"token_count": len(tokens), "unique_token_count": len(set(tokens)), "nonzero_hash_columns": len(values)}
 
 
@@ -258,24 +265,40 @@ def load_corpus_entries(corpus_root: Path, *, allow_non_aiwonder_roots: bool) ->
     }
 
 
-def build_feature_rows(corpus_rows: list[dict[str, Any]], *, hash_dim: int, token_limit: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def build_feature_rows(
+    corpus_rows: list[dict[str, Any]],
+    *,
+    hash_dims: list[int],
+    token_limit: int,
+    candidate_id: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    hash_nonzero_counts: list[int] = []
+    hash_nonzero_counts: dict[int, list[int]] = {dim: [] for dim in hash_dims}
     token_counts: list[int] = []
     for source_index, row in enumerate(corpus_rows):
         text = Path(row["patch_path"]).read_text(encoding="utf-8", errors="replace")
         require(text.strip(), "PATCH_LEXICAL_CANDIDATE_EMPTY_PATCH_TEXT", str(row["patch_path"]))
         features = line_shape_features(text)
-        hashed, token_summary = sparse_hash_features(text, hash_dim=hash_dim, token_limit=token_limit)
-        features.update(hashed)
-        hash_nonzero_counts.append(token_summary["nonzero_hash_columns"])
-        token_counts.append(token_summary["token_count"])
+        for hash_dim in hash_dims:
+            prefix = "lexhash" if len(hash_dims) == 1 else f"lexhash{hash_dim}"
+            hashed, token_summary = sparse_hash_features(
+                text,
+                hash_dim=hash_dim,
+                token_limit=token_limit,
+                feature_prefix=prefix,
+            )
+            features.update(hashed)
+            hash_nonzero_counts[hash_dim].append(token_summary["nonzero_hash_columns"])
+            if not token_counts:
+                token_counts.append(token_summary["token_count"])
+            elif len(token_counts) <= source_index:
+                token_counts.append(token_summary["token_count"])
         out.append(
             {
                 "schema_version": SCHEMA_VERSION,
                 "artifact_kind": ARTIFACT_KIND,
                 "formula_version": FORMULA_VERSION,
-                "candidate_id": CANDIDATE_ID,
+                "candidate_id": candidate_id,
                 "source_row_index": source_index,
                 "task_instance_id": str(row["task_id"]),
                 "task_id": str(row["task_id"]),
@@ -287,17 +310,58 @@ def build_feature_rows(corpus_rows: list[dict[str, Any]], *, hash_dim: int, toke
         )
     feature_names = sorted({name for row in out for name in (row.get("features") or {})})
     require(feature_names, "PATCH_LEXICAL_CANDIDATE_FEATURES_EMPTY")
-    return out, {
-        "hash_dim": hash_dim,
+    per_dim = {
+        str(dim): {
+            "hash_nonzero_count_min": min(counts),
+            "hash_nonzero_count_max": max(counts),
+            "hash_nonzero_count_mean": sum(counts) / len(counts),
+        }
+        for dim, counts in sorted(hash_nonzero_counts.items())
+    }
+    summary = {
+        "hash_dims": hash_dims,
         "token_limit": token_limit,
         "feature_count": len(feature_names),
-        "hash_nonzero_count_min": min(hash_nonzero_counts),
-        "hash_nonzero_count_max": max(hash_nonzero_counts),
-        "hash_nonzero_count_mean": sum(hash_nonzero_counts) / len(hash_nonzero_counts),
+        "per_hash_dim": per_dim,
         "token_count_min": min(token_counts),
         "token_count_max": max(token_counts),
         "token_count_mean": sum(token_counts) / len(token_counts),
     }
+    if len(hash_dims) == 1:
+        dim = hash_dims[0]
+        summary.update(
+            {
+                "hash_dim": dim,
+                "hash_nonzero_count_min": per_dim[str(dim)]["hash_nonzero_count_min"],
+                "hash_nonzero_count_max": per_dim[str(dim)]["hash_nonzero_count_max"],
+                "hash_nonzero_count_mean": per_dim[str(dim)]["hash_nonzero_count_mean"],
+            }
+        )
+    return out, summary
+
+
+def parse_hash_dims(args: argparse.Namespace) -> list[int]:
+    raw = getattr(args, "hash_dims", None)
+    if raw:
+        parts = [part.strip() for part in str(raw).split(",") if part.strip()]
+        require(parts, "PATCH_LEXICAL_CANDIDATE_HASH_DIMS_EMPTY")
+        dims = []
+        for part in parts:
+            require(re.fullmatch(r"[0-9]+", part) is not None, "PATCH_LEXICAL_CANDIDATE_HASH_DIM_INVALID", part)
+            dims.append(int(part))
+    else:
+        dims = [int(args.hash_dim)]
+    unique = sorted(set(dims))
+    require(len(unique) == len(dims), "PATCH_LEXICAL_CANDIDATE_HASH_DIMS_DUPLICATE", dims)
+    for dim in unique:
+        require(dim >= 64, "PATCH_LEXICAL_CANDIDATE_HASH_DIM_TOO_SMALL", dim)
+    return unique
+
+
+def candidate_id_from_args(args: argparse.Namespace) -> str:
+    candidate_id = str(getattr(args, "candidate_id", CANDIDATE_ID) or CANDIDATE_ID)
+    require(re.fullmatch(r"[A-Za-z0-9_.-]+", candidate_id) is not None, "PATCH_LEXICAL_CANDIDATE_ID_INVALID", candidate_id)
+    return candidate_id
 
 
 def nonconstant_count(rows: list[dict[str, Any]], feature_names: list[str]) -> int:
@@ -362,7 +426,14 @@ def run_feature_build(args: argparse.Namespace) -> dict[str, Any]:
     state_root.mkdir(parents=True, exist_ok=False)
 
     corpus_rows, corpus_summary = load_corpus_entries(corpus_root, allow_non_aiwonder_roots=allow_non_aiwonder)
-    feature_rows, lexical_summary = build_feature_rows(corpus_rows, hash_dim=int(args.hash_dim), token_limit=int(args.token_limit))
+    hash_dims = parse_hash_dims(args)
+    candidate_id = candidate_id_from_args(args)
+    feature_rows, lexical_summary = build_feature_rows(
+        corpus_rows,
+        hash_dims=hash_dims,
+        token_limit=int(args.token_limit),
+        candidate_id=candidate_id,
+    )
     feature_names = sorted({name for row in feature_rows for name in (row.get("features") or {})})
     nonconstant = nonconstant_count(feature_rows, feature_names)
     require(nonconstant > 0, "PATCH_LEXICAL_CANDIDATE_FEATURE_MATRIX_CONSTANT")
@@ -375,7 +446,7 @@ def run_feature_build(args: argparse.Namespace) -> dict[str, Any]:
         "formula_version": FORMULA_VERSION,
         "task_id": TASK_ID,
         "canonical_issue": CANONICAL_ISSUE,
-        "candidate_id": CANDIDATE_ID,
+        "candidate_id": candidate_id,
         "run_id": run_id,
         "created_at_utc": utc_now(),
         "passes": True,
@@ -428,6 +499,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--state-parent", type=Path, default=DEFAULT_STATE_PARENT)
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--hash-dim", type=int, default=1024)
+    parser.add_argument("--hash-dims", default=None, help="Optional comma-separated hash dimensions for one multiscale candidate.")
+    parser.add_argument("--candidate-id", default=CANDIDATE_ID)
     parser.add_argument("--token-limit", type=int, default=8192)
     parser.add_argument("--allow-non-aiwonder-roots", action="store_true")
     parser.add_argument("--clean", action="store_true")

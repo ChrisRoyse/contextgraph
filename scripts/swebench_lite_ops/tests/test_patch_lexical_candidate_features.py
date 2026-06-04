@@ -53,6 +53,8 @@ def make_args(tmp_path: Path, corpus_root: Path, **overrides: object) -> Namespa
         "state_parent": tmp_path / "state",
         "run_id": "run-test-patch-lexical-candidate",
         "hash_dim": 128,
+        "hash_dims": None,
+        "candidate_id": "patch_lexical_hash",
         "token_limit": 256,
         "allow_non_aiwonder_roots": True,
         "clean": True,
@@ -82,6 +84,32 @@ def test_patch_lexical_candidate_features_emit_sanitized_sparse_rows(tmp_path: P
     assert rows[0]["features"]["shape:token_count_log1p"] > 0.0
     assert "oracle_all_passed" not in payload_text
     assert "actual_oracle_pass" not in payload_text
+    assert "pytest_exit_code" not in payload_text
+
+
+def test_patch_lexical_candidate_features_emit_multiscale_candidate(tmp_path: Path) -> None:
+    corpus_root = write_corpus(tmp_path / "corpus")
+    result = run_feature_build(
+        make_args(
+            tmp_path,
+            corpus_root,
+            run_id="run-test-patch-lexical-multiscale-candidate",
+            hash_dims="128,256",
+            candidate_id="patch_lexical_multiscale_hash",
+        )
+    )
+    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+    rows = [json.loads(line) for line in Path(result["candidate_features"]).read_text(encoding="utf-8").splitlines()]
+    payload_text = Path(result["candidate_features"]).read_text(encoding="utf-8")
+
+    assert manifest["passes"] is True
+    assert manifest["candidate_id"] == "patch_lexical_multiscale_hash"
+    assert manifest["lexical_summary"]["hash_dims"] == [128, 256]
+    assert rows[0]["candidate_id"] == "patch_lexical_multiscale_hash"
+    assert any(name.startswith("lexhash128:") for name in rows[0]["features"])
+    assert any(name.startswith("lexhash256:") for name in rows[0]["features"])
+    assert not any(name.startswith("lexhash:") for name in rows[0]["features"])
+    assert "oracle_all_passed" not in payload_text
     assert "pytest_exit_code" not in payload_text
 
 
