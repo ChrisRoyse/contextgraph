@@ -361,7 +361,28 @@ def finalize_dataset(
     rows = []
     feature_slices: dict[str, slice] = {}
     cursor = 0
-    slot_dims = {embedder_id: int(ingest_manifest["slot_dims"][embedder_id]) for embedder_id in ACTIVE_EMBEDDERS}
+    raw_slot_dims = ingest_manifest.get("slot_dims") or {}
+    missing_slot_dims = [embedder_id for embedder_id in ACTIVE_EMBEDDERS if embedder_id not in raw_slot_dims]
+    require(
+        not missing_slot_dims,
+        "PANEL_MI_SLOT_DIM_MISSING",
+        {
+            "missing_slot_dims": missing_slot_dims,
+            "workspace_state_selector": ingest_manifest.get("workspace_state_selector"),
+            "record_counts": ingest_manifest.get("record_counts"),
+            "slot_record_counts": ingest_manifest.get("slot_record_counts"),
+        },
+    )
+    slot_dims: dict[str, int] = {}
+    for embedder_id in ACTIVE_EMBEDDERS:
+        try:
+            dim = int(raw_slot_dims[embedder_id])
+        except (TypeError, ValueError) as exc:
+            raise PanelMiError(
+                f"PANEL_MI_SLOT_DIM_INVALID: {{'embedder_id': {embedder_id!r}, 'value': {raw_slot_dims[embedder_id]!r}}}"
+            ) from exc
+        require(dim > 0, "PANEL_MI_SLOT_DIM_INVALID", {"embedder_id": embedder_id, "value": raw_slot_dims[embedder_id]})
+        slot_dims[embedder_id] = dim
     for embedder_id in ACTIVE_EMBEDDERS:
         width = slot_dims[embedder_id] * 2 + 1
         feature_slices[embedder_id] = slice(cursor, cursor + width)
