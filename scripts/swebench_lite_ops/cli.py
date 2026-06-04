@@ -86,6 +86,10 @@ from .smoke_intelligence_matrices import command_smoke_intelligence
 from .smoke_storage_design import command_smoke_storage_design
 from .full_run_relaunch_gate import command_full_run_relaunch_gate
 from .python_full_ast_corpus import command_full_ast_corpus
+from .python_swebench_verified_cleaned_manifest import (
+    add_arguments as add_swebench_verified_cleaned_manifest_arguments,
+)
+from .python_swebench_verified_cleaned_manifest import command_swebench_verified_cleaned_manifest
 from .python_static_graph import command_static_graph
 from .python_test_intent import command_test_intent
 from .code_constellation_schema import command_code_constellation_schema
@@ -463,6 +467,16 @@ def build_parser() -> argparse.ArgumentParser:
     full_ast_corpus.add_argument("--clean-output", action="store_true")
     full_ast_corpus.add_argument("--resume-from-task-checkpoints", action="store_true")
     full_ast_corpus.set_defaults(func=command_full_ast_corpus, evidence_name="full-ast-corpus-command-evidence.json")
+
+    swebench_verified_cleaned_manifest = sub.add_parser(
+        "swebench-verified-cleaned-manifest",
+        help="Export a mejepa-corpus SWE-bench Verified root into full-ast-corpus cleaned-manifest shape.",
+    )
+    add_swebench_verified_cleaned_manifest_arguments(swebench_verified_cleaned_manifest)
+    swebench_verified_cleaned_manifest.set_defaults(
+        func=command_swebench_verified_cleaned_manifest,
+        evidence_name="swebench-verified-cleaned-manifest-command-evidence.json",
+    )
 
     diff_map = sub.add_parser("diff-chunk-map", help="Map Python patch/test hunks to stable AST chunks.")
     diff_map.add_argument("--workspace-manifest", type=Path, default=Path("/zfs/archive/contextgraph/corpus/python-workspaces-v1/workspace_manifest.json"))
