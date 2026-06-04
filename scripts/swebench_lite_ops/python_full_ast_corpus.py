@@ -446,6 +446,26 @@ def patch_file(hot_patch_root: Path, row: dict[str, Any], state: str, text: str)
     return path
 
 
+def skipped_auxiliary_patch_log(
+    *,
+    task_id: str,
+    state: str,
+    field: str,
+    paths_key: str,
+    path_summary: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "task_id": task_id,
+        "state": state,
+        "field": field,
+        "patch_path": None,
+        "skipped": True,
+        "skip_reason": "no_python_patch_paths",
+        "paths_key": paths_key,
+        "path_summary": path_summary,
+    }
+
+
 def build_for_task(
     *,
     task_id: str,
@@ -509,6 +529,18 @@ def build_for_task(
         ("test_patch", "test_patch", "test_new"),
         ("gold", "gold_patch", "gold_new"),
     ):
+        relative_paths = path_summaries["known_good"][paths_key]
+        if not relative_paths:
+            patch_logs.append(
+                skipped_auxiliary_patch_log(
+                    task_id=task_id,
+                    state=state_name,
+                    field=field,
+                    paths_key=paths_key,
+                    path_summary=path_summaries["known_good"],
+                )
+            )
+            continue
         reset_worktree(worktree, known_good["base_commit"], timeout=timeout)
         text = patch_text(known_good, field)
         patch_path = patch_file(hot_patch_root, known_good, state_name, text)
@@ -522,7 +554,7 @@ def build_for_task(
             result_tree_hash=patch_result["result_tree_hash"],
             worktree=worktree,
             snapshot_root=snapshot_root,
-            relative_paths=path_summaries["known_good"][paths_key],
+            relative_paths=relative_paths,
             object_store=object_store,
             schema_path=schema_path,
             chunk_schema_path=chunk_schema_path,
@@ -863,6 +895,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
     full_manifest_path = args.chunk_root / "python_full_ast_corpus_manifest.json"
     parse_summary = summarize_parse_records(parse_records)
     chunk_summary = summarize_chunks(chunks)
+    skipped_auxiliary_patch_logs = [log for log in patch_logs if log.get("skipped") is True]
     full_manifest = {
         "schema_version": 1,
         "task_id": TASK_ID,
@@ -888,6 +921,8 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
         "chunk_summary": chunk_summary,
         "state_count": len(states),
         "patch_log_count": len(patch_logs),
+        "skipped_auxiliary_patch_count": len(skipped_auxiliary_patch_logs),
+        "skipped_auxiliary_patch_sample": skipped_auxiliary_patch_logs[:20],
         "diagnostic_count": len(diagnostics),
         "diagnostic_policy": "non-fatal SyntaxWarning diagnostics are persisted as source-quality reward signals and do not fail coverage",
         "parse_records_sha256": parse_store["sha256"],
@@ -975,7 +1010,7 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
             "command": "python3 scripts/swebench_lite_ops.py full-ast-corpus",
             "cleaned_manifest_rows": len(rows),
             "task_count": len(grouped),
-            "state_policy": "row-scoped source snapshots: base/test/gold for known_good and mutation_<category> for failure categories",
+            "state_policy": "row-scoped source snapshots: base plus Python-touching test/gold for known_good and mutation_<category> for failure categories",
             "syntax_error_policy": "bounded syntax_error_file chunks are emitted for compile-error rows",
         },
         "after_state": after_state,
@@ -1004,6 +1039,8 @@ def command_full_ast_corpus(args: Any) -> dict[str, Any]:
             "chunks": chunk_summary,
             "coverage": observed_coverage,
             "patch_log_sample": patch_logs[:20],
+            "skipped_auxiliary_patch_count": len(skipped_auxiliary_patch_logs),
+            "skipped_auxiliary_patch_sample": skipped_auxiliary_patch_logs[:20],
             "diagnostic_policy": "non-fatal SyntaxWarning diagnostics are persisted and retained as reward-signal features",
             "diagnostic_sample": diagnostics[:20],
         },
