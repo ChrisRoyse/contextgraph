@@ -4,7 +4,7 @@ use context_graph_mejepa_embedders::{
     AlgorithmicEmbedderForward, EmbedError, EmbedderForward, EmbedderId, EmbedderInput,
     EmbedderOutput, ModelsConfig, PretrainedEmbedderForward, SUPPORTED_FORWARD_EMBEDDERS,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -1533,16 +1533,25 @@ fn evaluate_embedder_distinctness(
         } else {
             non_colliding_unique_input_count as f64 / unique_input_count as f64
         };
-        let duplicate_bounded_usable = unique_input_count
-            >= MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
+        let observed_input_identity_preserved = unique_input_count > 0
             && input_with_multiple_vectors_count == 0
             && non_colliding_unique_input_fraction >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION;
+        let duplicate_bounded_usable = unique_input_count
+            >= MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
+            && observed_input_identity_preserved;
+        let duplicate_limited_usable = unique_input_count
+            < MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
+            && observed_input_identity_preserved;
         let status = if row_count == 0 {
             "no_forward_records"
+        } else if !observed_input_identity_preserved {
+            "collapse"
         } else if distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION {
             "usable"
         } else if duplicate_bounded_usable {
             "usable_duplicate_bounded"
+        } else if duplicate_limited_usable {
+            "usable_duplicate_limited"
         } else {
             "collapse"
         };
@@ -1560,6 +1569,7 @@ fn evaluate_embedder_distinctness(
             "vector_collision_unique_input_count": vector_collision_unique_input_count,
             "non_colliding_unique_input_count": non_colliding_unique_input_count,
             "non_colliding_unique_input_fraction": non_colliding_unique_input_fraction,
+            "observed_input_identity_preserved": observed_input_identity_preserved,
             "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
             "top_vector_sha256_counts": top_vector_sha256_counts(counts),
@@ -1581,6 +1591,7 @@ fn evaluate_embedder_distinctness(
                 "vector_collision_unique_input_count": vector_collision_unique_input_count,
                 "non_colliding_unique_input_count": non_colliding_unique_input_count,
                 "non_colliding_unique_input_fraction": non_colliding_unique_input_fraction,
+                "observed_input_identity_preserved": observed_input_identity_preserved,
                 "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
                 "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
                 "top_vector_collision_groups": top_vector_collision_groups(&inputs),
@@ -2400,6 +2411,46 @@ mod tests {
     }
 
     #[test]
+    fn distinctness_gate_accepts_low_support_duplicate_heavy_identity_preserved_input() {
+        let mut pairs = Vec::new();
+        for idx in 0..56 {
+            let vector = format!("sha256:vector-{idx:04}");
+            let input = format!("sha256:input-{idx:04}");
+            pairs.push((vector, input));
+        }
+        for idx in 0..60 {
+            let source = idx % 56;
+            let vector = format!("sha256:vector-{source:04}");
+            let input = format!("sha256:input-{source:04}");
+            pairs.push((vector, input));
+        }
+        let refs = pairs
+            .iter()
+            .map(|(vector, input)| (vector.as_str(), input.as_str()))
+            .collect::<Vec<_>>();
+
+        let report = report_for_vector_and_input_hashes(&[("e1", refs)]);
+
+        assert!(report.passes());
+        assert_eq!(
+            report.per_embedder_metrics["e1"]["distinctness_gate_status"],
+            json!("usable_duplicate_limited")
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e1"]["unique_input_sha256_count"],
+            json!(56)
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e1"]["vector_collision_group_count"],
+            json!(0)
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e1"]["observed_input_identity_preserved"],
+            json!(true)
+        );
+    }
+
+    #[test]
     fn distinctness_gate_rejects_duplicate_heavy_input_with_vector_collisions() {
         let mut pairs = Vec::new();
         for idx in 0..80 {
@@ -2429,6 +2480,41 @@ mod tests {
         assert_eq!(
             report.per_embedder_metrics["e9"]["non_colliding_unique_input_fraction"],
             json!(0.0)
+        );
+    }
+
+    #[test]
+    fn distinctness_gate_rejects_exact_vector_collisions_even_with_high_aggregate_fraction() {
+        let mut pairs = Vec::new();
+        for idx in 0..100 {
+            let vector = if idx < 20 {
+                format!("sha256:shared-{:04}", idx / 2)
+            } else {
+                format!("sha256:vector-{idx:04}")
+            };
+            let input = format!("sha256:input-{idx:04}");
+            pairs.push((vector, input));
+        }
+        let refs = pairs
+            .iter()
+            .map(|(vector, input)| (vector.as_str(), input.as_str()))
+            .collect::<Vec<_>>();
+
+        let report = report_for_vector_and_input_hashes(&[("e9", refs)]);
+
+        assert!(!report.passes());
+        assert_eq!(report.error_code(), ERR_EMBEDDER_COLLAPSE);
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["distinctness_fraction"],
+            json!(0.9)
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["vector_collision_group_count"],
+            json!(10)
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["observed_input_identity_preserved"],
+            json!(false)
         );
     }
 

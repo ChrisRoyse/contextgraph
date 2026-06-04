@@ -321,3 +321,51 @@ def test_parallel_isolated_scheduler_runs_e8_outside_worker_pool(tmp_path, monke
     probe_path = tmp_path / "fsv_e8_serialized_dispatch_probe.json"
     probe_path.write_text(json.dumps(probe, indent=2, sort_keys=True), encoding="utf-8")
     assert json.loads(probe_path.read_text(encoding="utf-8")) == probe
+
+
+def _distinctness_rows(embedder_id: str, pairs: list[tuple[str, str]]) -> list[dict[str, str]]:
+    return [
+        {
+            "embedder_id": embedder_id,
+            "input_sha256": input_sha256,
+            "source_sha256": input_sha256,
+            "vector_sha256": vector_sha256,
+        }
+        for vector_sha256, input_sha256 in pairs
+    ]
+
+
+def test_distinctness_accepts_low_support_duplicate_heavy_identity_preserved_input():
+    pairs: list[tuple[str, str]] = []
+    for idx in range(56):
+        pairs.append((f"sha256:vector-{idx:04}", f"sha256:input-{idx:04}"))
+    for idx in range(60):
+        source = idx % 56
+        pairs.append((f"sha256:vector-{source:04}", f"sha256:input-{source:04}"))
+
+    report = scheduler.evaluate_embedder_distinctness(["e1"], _distinctness_rows("e1", pairs))
+
+    assert report["passes"] is True
+    metrics = report["per_embedder_metrics"]["e1"]
+    assert metrics["distinctness_gate_status"] == "usable_duplicate_limited"
+    assert metrics["forward_record_count"] == 116
+    assert metrics["unique_input_sha256_count"] == 56
+    assert metrics["unique_vector_sha256_count"] == 56
+    assert metrics["vector_collision_group_count"] == 0
+    assert metrics["observed_input_identity_preserved"] is True
+
+
+def test_distinctness_rejects_exact_vector_collisions_even_with_high_aggregate_fraction():
+    pairs: list[tuple[str, str]] = []
+    for idx in range(100):
+        vector = f"sha256:shared-{idx // 2:04}" if idx < 20 else f"sha256:vector-{idx:04}"
+        pairs.append((vector, f"sha256:input-{idx:04}"))
+
+    report = scheduler.evaluate_embedder_distinctness(["e9"], _distinctness_rows("e9", pairs))
+
+    assert report["passes"] is False
+    assert report["error_code"] == scheduler.ERR_EMBEDDER_COLLAPSE
+    metrics = report["per_embedder_metrics"]["e9"]
+    assert metrics["distinctness_fraction"] == 0.9
+    assert metrics["vector_collision_group_count"] == 10
+    assert metrics["observed_input_identity_preserved"] is False

@@ -732,18 +732,33 @@ def evaluate_embedder_distinctness(
             if unique_input_count == 0
             else non_colliding_unique_input_count / unique_input_count
         )
-        duplicate_bounded_usable = (
-            unique_input_count >= MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
+        observed_input_identity_preserved = (
+            unique_input_count > 0
             and input_with_multiple_vectors_count == 0
             and non_colliding_unique_input_fraction >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION
         )
-        if distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION:
+        duplicate_bounded_usable = (
+            unique_input_count >= MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
+            and observed_input_identity_preserved
+        )
+        duplicate_limited_usable = (
+            unique_input_count < MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
+            and observed_input_identity_preserved
+        )
+        if row_count == 0:
+            status = "no_forward_records"
+        elif not observed_input_identity_preserved:
+            status = "collapse"
+        elif distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION:
             status = "usable"
         elif duplicate_bounded_usable:
             status = "usable_duplicate_bounded"
+        elif duplicate_limited_usable:
+            status = "usable_duplicate_limited"
         else:
             status = "collapse"
         per_embedder_metrics[embedder_id] = {
+            "forward_record_count": row_count,
             "unique_vector_sha256_count": unique_count,
             "distinctness_fraction": distinctness_fraction,
             "distinctness_gate_status": status,
@@ -756,6 +771,7 @@ def evaluate_embedder_distinctness(
             "vector_collision_unique_input_count": vector_collision_unique_input_count,
             "non_colliding_unique_input_count": non_colliding_unique_input_count,
             "non_colliding_unique_input_fraction": non_colliding_unique_input_fraction,
+            "observed_input_identity_preserved": observed_input_identity_preserved,
             "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
             "top_vector_sha256_counts": top_vector_sha256_counts(counts),
@@ -778,6 +794,7 @@ def evaluate_embedder_distinctness(
                     "vector_collision_unique_input_count": vector_collision_unique_input_count,
                     "non_colliding_unique_input_count": non_colliding_unique_input_count,
                     "non_colliding_unique_input_fraction": non_colliding_unique_input_fraction,
+                    "observed_input_identity_preserved": observed_input_identity_preserved,
                     "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
                     "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
                     "top_vector_collision_groups": top_vector_collision_groups(counts, vector_to_inputs),
