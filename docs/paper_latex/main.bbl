@@ -1,4 +1,4 @@
-\begin{thebibliography}{23}
+\begin{thebibliography}{47}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -22,6 +22,35 @@ Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kernion,
 \newblock \emph{arXiv preprint arXiv:2212.08073}, 2022.
 \newblock URL \url{https://arxiv.org/abs/2212.08073}.
 
+\bibitem[Block(1986)]{block1986advertisement}
+Ned Block.
+\newblock Advertisement for a semantics for psychology.
+\newblock \emph{Midwest Studies in Philosophy}, 10\penalty0 (1):\penalty0
+  615--678, 1986.
+\newblock \doi{10.1111/j.1475-4975.1987.tb00558.x}.
+
+\bibitem[Blum and Mitchell(1998)]{blum1998cotraining}
+Avrim Blum and Tom Mitchell.
+\newblock Combining labeled and unlabeled data with co-training.
+\newblock In \emph{Proceedings of the Eleventh Annual Conference on
+  Computational Learning Theory (COLT)}, pages 92--100, 1998.
+\newblock \doi{10.1145/279943.279962}.
+\newblock URL \url{https://www.cs.cmu.edu/~avrim/Papers/cotrain.pdf}.
+
+\bibitem[Braun et~al.(2025)Braun, Eickhoff, Krueger, Bahrainian, and
+  Krasheninnikov]{braun2025steering}
+Joschka Braun, Carsten Eickhoff, David Krueger, Seyed~Ali Bahrainian, and
+  Dmitrii Krasheninnikov.
+\newblock Understanding ({Un}){Reliability} of steering vectors in language
+  models.
+\newblock \emph{arXiv preprint arXiv:2505.22637}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2505.22637}.
+
+\bibitem[Bridgman(1927)]{bridgman1927logic}
+Percy~W. Bridgman.
+\newblock \emph{The Logic of Modern Physics}.
+\newblock Macmillan, New York, 1927.
+
 \bibitem[Chen et~al.(2022)Chen, Wang, Chen, Wu, Liu, Chen, Li, Kanda, Yoshioka,
   Xiao, Wu, Zhou, Ren, Qian, Qian, Wu, Zeng, Yu, and Wei]{chen2022wavlm}
 Sanyuan Chen, Chengyi Wang, Zhengyang Chen, Yu~Wu, Shujie Liu, Zhuo Chen, Jinyu
@@ -43,6 +72,12 @@ Sanyuan Chen, Shujie Liu, Long Zhou, Yanqing Liu, Xu~Tan, Jinyu Li, Sheng Zhao,
 \newblock \emph{arXiv preprint arXiv:2406.05370}, 2024.
 \newblock URL \url{https://arxiv.org/abs/2406.05370}.
 
+\bibitem[Chollet(2019)]{chollet2019measure}
+Fran\c{c}ois Chollet.
+\newblock On the measure of intelligence.
+\newblock \emph{arXiv preprint arXiv:1911.01547}, 2019.
+\newblock URL \url{https://arxiv.org/abs/1911.01547}.
+
 \bibitem[Cormack et~al.(2009)Cormack, Clarke, and Buettcher]{cormack2009rrf}
 Gordon~V. Cormack, Charles L.~A. Clarke, and Stefan Buettcher.
 \newblock Reciprocal rank fusion outperforms {Condorcet} and individual rank
@@ -50,6 +85,22 @@ Gordon~V. Cormack, Charles L.~A. Clarke, and Stefan Buettcher.
 \newblock In \emph{Proceedings of the 32nd International ACM SIGIR Conference},
   pages 758--759, 2009.
 \newblock \doi{10.1145/1571941.1572114}.
+
+\bibitem[Dasgupta et~al.(2001)Dasgupta, Littman, and
+  McAllester]{dasgupta2001pac}
+Sanjoy Dasgupta, Michael~L. Littman, and David McAllester.
+\newblock {PAC} generalization bounds for co-training.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2001.
+\newblock URL
+  \url{https://proceedings.neurips.cc/paper_files/paper/2001/hash/4c144c47ecba6f8318128703ca9e2601-Abstract.html}.
+
+\bibitem[de~Saussure(1916)]{saussure1916cours}
+Ferdinand de~Saussure.
+\newblock \emph{Course in General Linguistics}.
+\newblock Payot, Paris, 1916.
+\newblock Original \emph{Cours de linguistique g\'en\'erale}; Eng. trans. W.
+  Baskin 1959, R. Harris 1983.
 
 \bibitem[Del{\'e}tang et~al.(2023)Del{\'e}tang, Ruoss, Duquenne, Catt,
   Genewein, Mattern, Grau-Moya, Wenliang, Aitchison, Orseau, Hutter, and
@@ -79,6 +130,17 @@ Elvis Dohmatob, Yunzhen Feng, Pu~Yang, Francois Charton, and Julia Kempe.
 \newblock URL \url{https://arxiv.org/abs/2402.07043}.
 \newblock ICML 2024.
 
+\bibitem[Du et~al.(2025)Du, Fu, Wen, Sun, Peng, Wei, Gao, Wang, Zhang, Li, Qiu,
+  Chang, and He]{du2025humanlike}
+Changde Du, Kaicheng Fu, Bincheng Wen, Yi~Sun, Jie Peng, Wei Wei, Ying Gao,
+  Shengpei Wang, Chuncheng Zhang, Jinpeng Li, Shuang Qiu, Le~Chang, and
+  Huiguang He.
+\newblock Human-like object concept representations emerge naturally in
+  multimodal large language models.
+\newblock \emph{Nature Machine Intelligence}, 7:\penalty0 860--875, 2025.
+\newblock \doi{10.1038/s42256-025-01049-z}.
+\newblock URL \url{https://www.nature.com/articles/s42256-025-01049-z}.
+
 \bibitem[Feng et~al.(2024)Feng, Dohmatob, Yang, Charton, and
   Kempe]{feng2024beyond}
 Yunzhen Feng, Elvis Dohmatob, Pu~Yang, Francois Charton, and Julia Kempe.
@@ -86,6 +148,12 @@ Yunzhen Feng, Elvis Dohmatob, Pu~Yang, Francois Charton, and Julia Kempe.
   verification.
 \newblock \emph{arXiv preprint arXiv:2406.07515}, 2024.
 \newblock URL \url{https://arxiv.org/abs/2406.07515}.
+
+\bibitem[Firth(1957)]{firth1957synopsis}
+John~R. Firth.
+\newblock A synopsis of linguistic theory, 1930--1955.
+\newblock In \emph{Studies in Linguistic Analysis}, pages 1--32. Blackwell,
+  Oxford, 1957.
 
 \bibitem[Formal et~al.(2021)Formal, Piwowarski, and
   Clinchant]{formal2021splade}
@@ -96,6 +164,17 @@ Thibault Formal, Benjamin Piwowarski, and St{\'e}phane Clinchant.
   2021.
 \newblock URL \url{https://arxiv.org/abs/2107.05720}.
 \newblock arXiv:2107.05720.
+
+\bibitem[G{\"a}rdenfors(2000)]{gardenfors2000conceptual}
+Peter G{\"a}rdenfors.
+\newblock \emph{Conceptual Spaces: {The} Geometry of Thought}.
+\newblock MIT Press, Cambridge, MA, 2000.
+
+\bibitem[G{\"a}rdenfors(2014)]{gardenfors2014geometry}
+Peter G{\"a}rdenfors.
+\newblock \emph{The Geometry of Meaning: {Semantics} Based on Conceptual
+  Spaces}.
+\newblock MIT Press, Cambridge, MA, 2014.
 
 \bibitem[Gerstgrasser et~al.(2024)Gerstgrasser, Schaeffer, Dey, Rafailov,
   Sleight, Hughes, Korbak, Agrawal, Pai, Gromov, Roberts, Yang, Donoho, and
@@ -108,12 +187,26 @@ Matthias Gerstgrasser, Rylan Schaeffer, Apratim Dey, Rafael Rafailov, Henry
 \newblock \emph{arXiv preprint arXiv:2404.01413}, 2024.
 \newblock URL \url{https://arxiv.org/abs/2404.01413}.
 
+\bibitem[Harnad(1990)]{harnad1990symbol}
+Stevan Harnad.
+\newblock The symbol grounding problem.
+\newblock \emph{Physica D: Nonlinear Phenomena}, 42\penalty0 (1--3):\penalty0
+  335--346, 1990.
+\newblock \doi{10.1016/0167-2789(90)90087-6}.
+
 \bibitem[Huang et~al.(2024)Huang, Zhang, Shan, and He]{huang2024compression}
 Yuzhen Huang, Jinghan Zhang, Zifei Shan, and Junxian He.
 \newblock Compression represents intelligence linearly.
 \newblock \emph{arXiv preprint arXiv:2404.09937}, 2024.
 \newblock URL \url{https://arxiv.org/abs/2404.09937}.
 \newblock COLM 2024.
+
+\bibitem[Huh et~al.(2024)Huh, Cheung, Wang, and Isola]{huh2024platonic}
+Minyoung Huh, Brian Cheung, Tongzhou Wang, and Phillip Isola.
+\newblock The platonic representation hypothesis.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2405.07987}.
+\newblock arXiv:2405.07987.
 
 \bibitem[Ju et~al.(2024)Ju, Wang, Shen, Tan, Xin, Yang,
   et~al.]{ju2024naturalspeech3}
@@ -123,6 +216,25 @@ Zeqian Ju, Yuancheng Wang, Kai Shen, Xu~Tan, Detai Xin, Dongchao Yang, et~al.
 \newblock In \emph{International Conference on Machine Learning (ICML)}, 2024.
 \newblock URL \url{https://arxiv.org/abs/2403.03100}.
 \newblock arXiv:2403.03100.
+
+\bibitem[Katz and Fodor(1963)]{katz1963structure}
+Jerrold~J. Katz and Jerry~A. Fodor.
+\newblock The structure of a semantic theory.
+\newblock \emph{Language}, 39\penalty0 (2):\penalty0 170--210, 1963.
+\newblock \doi{10.2307/411200}.
+
+\bibitem[LeCun(2022)]{lecun2022path}
+Yann LeCun.
+\newblock A path towards autonomous machine intelligence.
+\newblock Technical report, OpenReview, 2022.
+\newblock URL \url{https://openreview.net/forum?id=BZ5a1r-kVsf}.
+\newblock Position paper, Version 0.9.2.
+
+\bibitem[Legg and Hutter(2007)]{legg2007universal}
+Shane Legg and Marcus Hutter.
+\newblock Universal intelligence: {A} definition of machine intelligence.
+\newblock \emph{Minds and Machines}, 17\penalty0 (4):\penalty0 391--444, 2007.
+\newblock \doi{10.1007/s11023-007-9079-x}.
 
 \bibitem[Longpre et~al.(2024)Longpre, Mahari, Lee, Lund, Oderinwale, Brannon,
   et~al.]{longpre2024consent}
@@ -141,12 +253,28 @@ Yu~A. Malkov and Dmitry~A. Yashunin.
 \newblock URL \url{https://arxiv.org/abs/1603.09320}.
 \newblock arXiv:1603.09320.
 
+\bibitem[Morris et~al.(2024)Morris, Sohl-Dickstein, Fiedel, Warkentin, Dafoe,
+  Faust, Farabet, and Legg]{morris2024levels}
+Meredith~Ringel Morris, Jascha Sohl-Dickstein, Noah Fiedel, Tris Warkentin,
+  Allan Dafoe, Aleksandra Faust, Clement Farabet, and Shane Legg.
+\newblock Levels of {AGI} for operationalizing progress on the path to {AGI}.
+\newblock In \emph{Proceedings of the 41st International Conference on Machine
+  Learning (ICML)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2311.02462}.
+\newblock arXiv:2311.02462.
+
 \bibitem[Nussbaum et~al.(2024)Nussbaum, Morris, Duderstadt, and
   Mulyar]{nussbaum2024nomic}
 Zach Nussbaum, John~X. Morris, Brandon Duderstadt, and Andriy Mulyar.
 \newblock Nomic embed: {Training} a reproducible long context text embedder.
 \newblock \emph{arXiv preprint arXiv:2402.01613}, 2024.
 \newblock URL \url{https://arxiv.org/abs/2402.01613}.
+
+\bibitem[Osgood et~al.(1957)Osgood, Suci, and
+  Tannenbaum]{osgood1957measurement}
+Charles~E. Osgood, George~J. Suci, and Percy~H. Tannenbaum.
+\newblock \emph{The Measurement of Meaning}.
+\newblock University of Illinois Press, Urbana, IL, 1957.
 
 \bibitem[Ouyang et~al.(2022)Ouyang, Wu, Jiang, Almeida, Wainwright, Mishkin,
   Zhang, Agarwal, Slama, Ray, et~al.]{ouyang2022instructgpt}
@@ -169,6 +297,13 @@ Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher~D.
 \newblock URL \url{https://arxiv.org/abs/2305.18290}.
 \newblock arXiv:2305.18290.
 
+\bibitem[Rosch(1975)]{rosch1975cognitive}
+Eleanor Rosch.
+\newblock Cognitive representations of semantic categories.
+\newblock \emph{Journal of Experimental Psychology: General}, 104\penalty0
+  (3):\penalty0 192--233, 1975.
+\newblock \doi{10.1037/0096-3445.104.3.192}.
+
 \bibitem[Santhanam et~al.(2022)Santhanam, Khattab, Saad-Falcon, Potts, and
   Zaharia]{santhanam2022colbertv2}
 Keshav Santhanam, Omar Khattab, Jon Saad-Falcon, Christopher Potts, and Matei
@@ -188,6 +323,21 @@ Ilia Shumailov, Zakhar Shumaylov, Yiren Zhao, Nicolas Papernot, Ross Anderson,
 \newblock \doi{10.1038/s41586-024-07566-y}.
 \newblock URL \url{https://www.nature.com/articles/s41586-024-07566-y}.
 
+\bibitem[Sridharan and Kakade(2008)]{sridharan2008multiview}
+Karthik Sridharan and Sham~M. Kakade.
+\newblock An information theoretic framework for multi-view learning.
+\newblock In \emph{Proceedings of the 21st Annual Conference on Learning Theory
+  (COLT)}, pages 403--414, 2008.
+\newblock URL
+  \url{https://www.learningtheory.org/colt2008/papers/94-Sridharan.pdf}.
+
+\bibitem[Steyvers and Tenenbaum(2005)]{steyvers2005largescale}
+Mark Steyvers and Joshua~B. Tenenbaum.
+\newblock The large-scale structure of semantic networks: {Statistical}
+  analyses and a model of semantic growth.
+\newblock \emph{Cognitive Science}, 29\penalty0 (1):\penalty0 41--78, 2005.
+\newblock \doi{10.1207/s15516709cog2901_3}.
+
 \bibitem[Villalobos et~al.(2022)Villalobos, Ho, Sevilla, Besiroglu, Heim, and
   Hobbhahn]{villalobos2022data}
 Pablo Villalobos, Anson Ho, Jaime Sevilla, Tamay Besiroglu, Lennart Heim, and
@@ -197,6 +347,15 @@ Pablo Villalobos, Anson Ho, Jaime Sevilla, Tamay Besiroglu, Lennart Heim, and
 \newblock \emph{arXiv preprint arXiv:2211.04325}, 2022.
 \newblock URL \url{https://arxiv.org/abs/2211.04325}.
 \newblock Revised 2024; ICML 2024.
+
+\bibitem[Vincent-Lamarre et~al.(2016)Vincent-Lamarre, Blondin~Mass{\'e}, Lopes,
+  Lord, Marcotte, and Harnad]{vincentlamarre2016latent}
+Philippe Vincent-Lamarre, Alexandre Blondin~Mass{\'e}, Marcos Lopes,
+  M{\'e}lanie Lord, Odile Marcotte, and Stevan Harnad.
+\newblock The latent structure of dictionaries.
+\newblock \emph{Topics in Cognitive Science}, 8\penalty0 (3):\penalty0
+  625--659, 2016.
+\newblock \doi{10.1111/tops.12211}.
 
 \bibitem[Wang et~al.(2021)Wang, Gao, Zhu, Zhang, Liu, Li, and
   Tang]{wang2021kepler}
@@ -209,6 +368,15 @@ Xiaozhi Wang, Tianyu Gao, Zhaocheng Zhu, Zhengyan Zhang, Zhiyuan Liu, Juanzi
 \newblock URL \url{https://arxiv.org/abs/1911.06136}.
 \newblock arXiv:1911.06136.
 
+\bibitem[White et~al.(2016)White, Reisinger, Sakaguchi, Vieira, Zhang,
+  Rudinger, Rawlins, and Van~Durme]{white2016universal}
+Aaron~Steven White, Drew Reisinger, Keisuke Sakaguchi, Tim Vieira, Sheng Zhang,
+  Rachel Rudinger, Kyle Rawlins, and Benjamin Van~Durme.
+\newblock Universal decompositional semantics on universal dependencies.
+\newblock In \emph{Proceedings of the 2016 Conference on Empirical Methods in
+  Natural Language Processing (EMNLP)}, pages 1713--1723, 2016.
+\newblock URL \url{https://aclanthology.org/D16-1177}.
+
 \bibitem[Zhai et~al.(2023)Zhai, Mustafa, Kolesnikov, and Beyer]{zhai2023siglip}
 Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer.
 \newblock Sigmoid loss for language image pre-training.
@@ -216,5 +384,14 @@ Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer.
   Computer Vision (ICCV)}, 2023.
 \newblock URL \url{https://arxiv.org/abs/2303.15343}.
 \newblock arXiv:2303.15343.
+
+\bibitem[Zou et~al.(2023)Zou, Phan, Chen, Campbell, Guo, Ren, Pan, Yin,
+  Mazeika, et~al.]{zou2023repe}
+Andy Zou, Long Phan, Sarah Chen, James Campbell, Phillip Guo, Richard Ren,
+  Alexander Pan, Xuwang Yin, Mantas Mazeika, et~al.
+\newblock Representation engineering: {A} top-down approach to {AI}
+  transparency.
+\newblock \emph{arXiv preprint arXiv:2310.01405}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2310.01405}.
 
 \end{thebibliography}

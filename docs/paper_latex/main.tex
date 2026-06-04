@@ -34,15 +34,17 @@
 % shorthand for the indicator
 \newcommand{\ind}{\mathbbm{1}}
 
-\title{\vspace{-2.2em}\bfseries Meaning Compression and the Calculus of Association:\\
-Frozen Embedders as Designable Measurement Instruments, Derived Data
-Abundance, and Teleological Constellation Training}
+\title{\vspace{-2.2em}\bfseries The Calculus of Association: A Formula for
+Artificial General Intelligence\\[0.25em]
+\normalsize\mdseries Meaning Compression, Frozen Embedders as Designable
+Measurement Instruments, Derived Data Abundance, and Teleological Constellation
+Training}
 
 \author{\textbf{Chris Royse}\\[0.2em]
 Leapable.ai \textperiodcentered{} socialmedia2.com\\
 \texttt{chrisroyseai@gmail.com}}
 
-\date{Version 2.0 (association-calculus reframe), 31 May 2026}
+\date{3 June 2026}
 
 % =====================================================================
 \begin{document}
@@ -56,62 +58,55 @@ Leapable.ai \textperiodcentered{} socialmedia2.com\\
 \small
 
 \noindent\textbf{Abstract.}
-A trained embedder is usually treated as a black-box vectoriser. This paper
-takes the opposite view. A frozen embedder is a designable measurement
-instrument. It crystallises the associational structure of whatever corpus it
-was trained on, so that projecting a new input through it does not so much
-``encode'' the input as report where that input sits inside the corpus's whole
-web of associations. The corpus is the lens. That is what makes the instrument
-manufacturable: you can commission a measuring device for any axis of
-association you can assemble a corpus for, freeze it, and reuse it indefinitely.
+This paper advances one claim: intelligence is the measurement and composition of
+associations. A dictionary cannot define a word with a word---each entry sends you
+to others, a merry-go-round of symbols that never bottoms out (Harnad's symbol
+grounding problem)---yet it works, because meaning is carried by the
+\emph{associations} between words, not the words: model a dictionary as a graph and
+$\approx 99\%$ is definable from a grounding kernel of $\approx 1\%$. So meaning is
+grounded association. Human intelligence runs this calculus on a biological
+substrate; \emph{artificial general intelligence is the same calculus written
+down}, and building it is what this paper does. The instrument is a \emph{frozen
+embedder}: trained on a corpus and frozen, it stops being a vectoriser and becomes
+a measurement device that reports where an input sits in that corpus's web of
+associations. The lens is manufacturable---commission one for any axis a corpus
+exists for---so a panel of them is a designable basis for meaning, general because
+the instruments cover any domain and the cross-terms bridge across domains.
 
-Three constructs follow from this one reframe, and each is formalised and
-instantiated in a running production system. \emph{Derived Data Abundance
-(DDA)} is a counting identity. A fixed corpus of $n$ real inputs projected
-through $N$ frozen, approximately-independent instruments yields up to
-$n\cdot(N+\binom{N}{2}+1)$ structured supervisory signals; the $\binom{N}{2}$
-cross-terms are associations \emph{between} associations, a structured-analogy
-operator that can relate objects sharing zero surface features. \emph{Meaning
-compression} is the ratio view, structured signal per raw-data unit, which I
-propose as a fourth compression category alongside bit-, weight-, and
-activation-compression. \emph{Teleological Constellation Training (TCT)} reuses
-the same frozen panel as a geometric alignment target, a constellation of named
-identity centroids that is never flattened, with a per-output cosine guard
-$G_\tau$ that gives deterministic, model-free, per-output verifiability.
+Three constructs follow, each formalised and running in production. \emph{Derived
+Data Abundance}: $n$ real inputs through $N$ frozen, approximately-independent
+instruments yield up to $n(N+\binom{N}{2}+1)$ structured signals, the
+$\binom{N}{2}$ cross-terms being associations \emph{between} associations.
+\emph{Meaning compression} is the per-input yield, complementary to the
+compression-as-intelligence tradition. \emph{Teleological Constellation Training}
+reuses the same panel as a frozen alignment target with a per-output cosine guard
+$G_\tau$. Together they give an operational account of definition: a term is the
+constellation the other instruments form at one instrument's index---G\"ardenfors's
+object category, instantiated at scale with an information-theoretic
+differentiation contract (every instrument must add ${\ge}0.05$ bits about a real
+outcome; no pair may correlate above $0.6$).
 
-Three production systems instantiate the substrate at growing panel sizes:
-ClipCannon (video; $N=7$; up to 28 signals/input; ${\approx}67{,}585$-line
-Python), Context Graph (text and code; $N=13$; up to 92 signals/input;
-${\approx}370{,}000$-line Rust), and socialmedia2.com (civic matching;
-$N=21$; up to 231 signals/input). The last enforces an explicit
-information-theoretic differentiation contract: every instrument must add at
-least $0.05$ bits of new information about a real outcome, and no pair may
-correlate above $0.6$, or it is retired as noise. Three case studies then read
-the framework back. Case~3 (voice) is measured at 0.961 mean WavLM
-speaker-similarity (max 0.975; 9 of 10 at or above 0.95; $N{=}10$, one speaker)
-under an encoder-matched protocol, with naturalness on par with real recordings
-(DNSMOS 3.93/3.93; UTMOS 3.012/2.997). Case~1 (style) answers any topic, holds
-character under prompt injection, shows an emergent zero-shot transfer to
-Golden-Age Spanish, and is published
-(\path{huggingface.co/cabdru/shakespeare-lora-gemma4}). Case~2 (talking-head)
-locks one subject's identity per frame across a seven-modality panel. The
-calculus computes the associations present in the chosen corpora, which are
-measurable, bounded, and auditable, and the $\binom{N}{2}$ abundance is an upper
-bound under approximate independence---capped by the data-processing inequality
-(the signals re-expose corpus information rather than creating it, so the benefit
-is reduced sample complexity) and realised only up to the panel's effective rank.
+Three systems instantiate the panel at growing size: ClipCannon (video, $N=7$),
+Context Graph (text and code, $N=13$, up to 92 signals/input), and socialmedia2.com
+(civic matching, $N=21$). Measured anchors: a voice reproduced at $0.961$ mean
+WavLM speaker-similarity (encoder-matched; DNSMOS 3.93/3.93) and a published style
+model that holds character under prompt injection with an emergent zero-shot
+transfer to Golden-Age Spanish. The bound is stated plainly: the calculus computes
+only associations present in the chosen corpora, the $\binom{N}{2}$ abundance is an
+upper bound under approximate independence capped by the data-processing
+inequality, and the gain is reduced sample complexity realised up to the panel's
+effective rank.
 
 \medskip
 \noindent\textbf{Primary:} cs.LG \;\textperiodcentered\; \textbf{cross-list:}
 cs.CL, cs.CV, cs.IT\\
-\noindent\textbf{Keywords:} frozen embedders; multi-embedder decomposition;
-mutual information; meaning compression; identity-locked generation; model
-collapse; speaker verification; constellation guard; differentiated information.
+\noindent\textbf{Keywords:} artificial general intelligence; calculus of
+association; grounded association; symbol grounding; relational intelligence;
+frozen embedders; multi-embedder
+decomposition; mutual information; meaning compression; identity-locked
+generation; model collapse; speaker verification; constellation guard;
+differentiated information.
 
-\medskip
-{\footnotesize\emph{Version 2.0 supersedes the April 2026 manuscript
-``Teleological Constellation Training: Multi-Modal Embedding Decomposition as
-Meaning Compression,'' and preserves every measured result in it.}}
 \end{minipage}
 \end{center}
 \vspace{1.4em}
@@ -123,20 +118,65 @@ Meaning Compression,'' and preserves every measured result in it.}}
 % =====================================================================
 \section{Introduction}
 
-\subsection{The data wall, and the two paths everyone is already on}
-Frontier pre-training has nearly reached the ceiling of high-quality public
-text. \citet{villalobos2022data} put the indexed human-text stock at roughly
-$300$ trillion tokens and project exhaustion somewhere between 2026 and 2032,
-sooner under over-training regimes. \citet{longpre2024consent} watched a quarter
-of the high-quality C4 tokens become restricted in a single year. The
-most-discussed response is to train on generator-synthesised data, and that road
-is bounded: \citet{shumailov2024collapse} show in \emph{Nature} that recursive
+\subsection{Intelligence is the calculus of association}
+\label{sec:thesis}
+Open a dictionary and try to find where meaning is stored. You cannot define a
+word with a word: every definition is built of other words, whose definitions are
+built of others, and the trip is a merry-go-round of symbols that never comes to
+rest on what anything means. \citet{harnad1990symbol} named this the
+\emph{symbol grounding problem} and made it vivid with the Chinese/Chinese
+dictionary-go-round: with only a monolingual dictionary in a language you do not
+speak, you pass endlessly from one meaningless string to another. The words, in
+themselves, are empty. And yet a dictionary works. What carries the meaning is not
+the words but the \emph{associations} between them---which word is invoked to
+define which. \citet{vincentlamarre2016latent} made this quantitative: model a
+dictionary as a directed graph of definitional links and roughly $99\%$ of it can
+be defined, by association alone, from a grounding kernel of about $1\%$ (a
+minimum feedback vertex set) that must be anchored outside language. The mental
+lexicon has the same shape: a small-world, scale-free association graph that grows
+by differentiation \citep{steyvers2005largescale}.
+
+That is the thesis of this paper, stated at full strength. \emph{Intelligence is
+the measurement and composition of associations}; everything else---search,
+planning, generation---is downstream of it. Human intelligence is this calculus
+run on a biological substrate; \emph{artificial general intelligence is the same
+calculus written down}---a designable, grounded, mathematical form of it---and
+building that form is what this paper does. The word \emph{general} is not a boast
+but a consequence: because the instruments are commissionable for any axis of
+association and the cross-terms bridge any pair of domains, the same machine spans
+video, code, and civic matching without retraining a new model per task. A single
+representation, like a single word, means nothing in isolation; meaning is the structured relation between
+representations, anchored at a small set of grounded points. It follows that a
+system which can systematically \emph{measure} associations (project an object
+through many lenses), \emph{count} them (the combinatorial cross-terms),
+\emph{differentiate} them (keep only those that carry new grounded information),
+and \emph{compose} them (name regions and gate against them) is running the engine
+of intelligence itself. The rest of this paper builds that engine, formalises it
+as a \emph{calculus of association}, and measures it in three production systems.
+The one load-bearing caveat---association is circular unless it is grounded, and
+what grounds ours is contact with real outcomes---is stated in
+\S\ref{sec:reframe-honest}. \S\ref{sec:agi} then shows that the field's leading
+accounts of intelligence---compression, generalisation, world-modelling, and
+breadth-times-depth---are four projections of this one mechanism, and
+Table~\ref{tab:caps} maps every capability the field asks of AGI to a construct
+within it.
+
+\subsection{The data wall is a symptom of counting the wrong thing}
+The same lens explains the crisis the field is most worried about. Frontier
+pre-training has nearly reached the ceiling of high-quality public text.
+\citet{villalobos2022data} put the indexed human-text stock at roughly $300$
+trillion tokens and project exhaustion somewhere between 2026 and 2032, sooner
+under over-training regimes. \citet{longpre2024consent} watched a quarter of the
+high-quality C4 tokens become restricted in a single year. The most-discussed
+response is to train on generator-synthesised data, and that road is bounded:
+\citet{shumailov2024collapse} show in \emph{Nature} that recursive
 self-generation drives an irreversible distributional drift they call model
 collapse. The commercial consequence is a data-licensing race running to the
 hundreds of millions per partnership. So the standing responses divide cleanly.
 Path~1 buys more real data. Path~2 makes more synthetic data. Both count
 Shannon-compressed tokens, and both stay inside the collapse-prone recursion the
-moment they generate.
+moment they generate. The wall is what you hit when you count tokens instead of
+the associations among them; this paper counts the associations.
 
 \subsection{The reframe: a frozen embedder is a designable lens of association}
 This paper takes a third path, and it starts by asking what an embedder actually
@@ -161,11 +201,13 @@ term does not measure the object twice. It measures how the object's position in
 lens A relates to its position in lens B. That is a structured-analogy operator,
 and it can relate two things that share no surface features at all, because the
 relation lives in latent, transitive association.
-\item \emph{A centroid plus a threshold is a label.} Name a region of an
-association-space (a constellation centroid), gate membership with $G_\tau$, and
-continuous geometry becomes a discrete, countable, auditable label. That is
-meaning compression in one line: association-geometry turned into a
-machine-usable supervisory signal.
+\item \emph{A centroid plus a threshold is a label; a centroid set plus its
+cross-terms is a definition.} Name a region of an association-space (a
+constellation centroid), gate membership with $G_\tau$, and continuous geometry
+becomes a discrete, countable, auditable label---meaning compression in one line.
+Add the cross-terms and the label hardens into a \emph{definition}: the position
+in any one lens is only an index, and the meaning is the constellation of
+positions the other lenses report at that index (\S\ref{sec:definition}).
 \end{enumerate}
 Section~\ref{sec:reframe} develops the reframe and its consequences in full; the
 rest of the paper formalises and measures them.
@@ -176,8 +218,9 @@ projected through a panel of $N$ approximately-independent frozen instruments,
 yields $n\cdot(N+\binom{N}{2}+1)$ structured supervisory signals at the dataset
 level for a code substrate, which works out to as many as 92 per input at $N=13$
 once a chunk-foundationality scalar is included. Meaning compression is the ratio
-view of that same fact, and I propose it as a fourth taxonomic entry alongside
-bit-, weight-, and activation-compression. Teleological Constellation Training
+view of that same fact---structured-signal-yield per input---which I situate as a
+complementary measure within the compression-as-intelligence tradition rather
+than a rival taxonomic category. Teleological Constellation Training
 (TCT) is the three-phase method that builds a frozen multi-modal centroid set
 $C_P$, trains a generator against it with a geometric-proximity loss, and
 enforces a per-output cosine guard $G_\tau$ at inference. The same frozen panel
@@ -188,13 +231,18 @@ So the contribution is one architectural move, three consequences, and one
 reframe. The move is to use a single frozen embedder panel as retriever,
 labeller, and runtime guard at once, over identical parameter instances. The
 consequences are a counting identity ($|D'| = n\cdot(N+\binom{N}{2}+1)$, up to 92
-at $N=13$), a constructive sample-complexity bound
+at $N=13$; the multi-view interaction counted explicitly, not a new quantity), a
+constructive sample-complexity bound
 ($\mathcal{T}_{\mathrm{TCT}}(P)=O(M\cdot k)$), and a per-output verifiability
 property that scalar-reward alignment does not provide. The reframe is that all
 three are best read as a calculus of association over manufacturable measurement
 instruments. That reading is what makes the method general across video, code,
 and civic matching, and what ties it to the information-physics tradition in
-which information is a physical, countable substrate.
+which information is a physical, countable substrate. Pushed one step further it
+is a theory of \emph{definition} (\S\ref{sec:definition}): a term is the
+constellation the other instruments form at a given lens's index, taken over its
+reference set---an operational, relational realisation of G\"ardenfors's geometry
+of concepts (\S\ref{sec:related}).
 
 The claim is precise. A frozen embedder panel used as retriever, labeller, and
 runtime guard admits a counting identity with a constructive upper bound, a
@@ -261,6 +309,74 @@ a fixed, unlabelled corpus becomes a dense, structured supervisory dataset; that
 is the static side of meaning compression. Gate generation against the same
 labels and alignment becomes checkable geometry; that is the dynamic side.
 
+\subsection{From label to definition: meaning is the cross-space binding}
+\label{sec:definition}
+A single instrument, on its own, does not return a meaning. It returns an
+\emph{index}: a coordinate $\phi_m(x)$ that says \emph{where} $x$ sits in lens
+$m$, not \emph{what} sitting there amounts to. The meaning of that coordinate is
+supplied by the rest of the panel---by the constellation of positions
+$\{\phi_k(x)\}_{k\neq m}$ the other instruments report when this one reports
+$\phi_m(x)$. This holds whichever instrument is taken as the anchor, so meaning
+is fully relational: no lens carries it alone, and the panel carries it in the
+bindings between lenses. The marginal positions are the signs; the cross-terms
+are the signified.
+
+Make this precise at two levels. For a single input (the token level), its
+meaning under the panel is the relational object
+\begin{equation}
+\mathcal{M}(x) = \bigl\{\,\phi_m(x)\mapsto\{\phi_k(x)\}_{k\neq m}\ :\ m=1..N\,\bigr\},
+\tag{3}
+\end{equation}
+equivalently fixed by the joint coordinate together with all $\binom{N}{2}$
+pairwise bindings $\rho_{jk}(\phi_j(x),\phi_k(x))$. For a term (the type level),
+its \emph{definition} is the characteristic such object over a reference set
+$R_t$,
+\begin{equation}
+\mathrm{Def}(t) = \Bigl(\,\{(c_m,\tau_m)\}_{m=1}^{N},\ \{\rho_{jk}\}_{j<k}\,\Bigr),
+\tag{4}
+\end{equation}
+the per-lens centroid--threshold regions (the marginals, indexical) \emph{and}
+the characteristic cross-lens correlations (the bindings, constitutive). An input
+instantiates $t$ when its constellation falls inside the marginal regions
+\emph{and} reproduces the characteristic bindings. The marginal regions alone are
+a list of coordinates; the bindings are what make the list a concept. This is why
+the $\binom{N}{2}$ cross-terms are not a bookkeeping convenience: they are the
+part of the panel that carries meaning, and the same quantity that drives DDA's
+signal yield (\S\ref{sec:dpi}) is what turns a constellation into a definition.
+
+\emph{Worked example (``happy'').} Take ClipCannon's panel and anchor on the
+affect instrument (\texttt{wav2vec2-large}, a dimensional arousal/valence/energy
+space). A high-valence coordinate is only an index. What \emph{defines} the input
+as happy is the constellation at that index: the prosody register, the visual
+expression, the semantic content, \emph{and}, decisively, the bindings among
+them. Genuine happiness, sarcasm, and nervous laughter can share the affect
+marginal yet differ in the affect$\leftrightarrow$prosody and
+affect$\leftrightarrow$visual cross-terms; the marginal cannot separate them and
+the bindings can. ``Happy'' is therefore not a point in affect-space but a
+characteristic cross-space signature, and the same construction names a term by
+anchoring on \emph{any} instrument and reading the constellation the others form.
+This is, formally, what \citet{gardenfors2000conceptual} calls an object category
+and what operationalism \citep{bridgman1927logic} calls a concept fixed by its
+measurement operations (\S\ref{sec:related}); its boundary is stated in
+\S\ref{sec:reframe-honest}.
+
+This is also where the thesis of \S\ref{sec:thesis} becomes mechanical. A
+dictionary defines a word by the constellation of other words its definition
+invokes; $\mathrm{Def}(t)$ defines a term by the constellation of other
+instruments' coordinates at its index. They are the same object---meaning as
+structured association, not as any single symbol---and $\mathrm{Def}(t)$ is its
+machine-computable form. The operations the thesis names are now explicit:
+\emph{measure} is the projection $\{\phi_m(x)\}$, \emph{count} is the
+$\binom{N}{2}$ cross-terms, \emph{differentiate} is the bits-against-a-real-outcome
+contract (\S\ref{sec:polis}), and \emph{compose} is the centroid-and-threshold
+predicate. Run all four over a panel anchored to real outcomes and you are
+computing meaning rather than retrieving it; that is the sense in which the
+calculus of association is a formula for artificial general intelligence---the
+mathematical form of the same association-engine that human intelligence runs
+biologically, made general by designable instruments and domain-bridging
+cross-terms. What keeps it from being the empty dictionary-go-round is grounding,
+treated next.
+
 \subsection{What this makes possible}
 \begin{itemize}\itemsep0.12em
 \item A designable measurement basis for meaning. You build the exact
@@ -286,11 +402,51 @@ a new axis is one frozen forward pass and its marginal value is its new bits,
 which is a different economics from per-task retraining.
 \end{itemize}
 
+\subsection{Query-adaptive weighting: the agent steers the panel}
+\label{sec:weighting}
+The panel is not searched with a fixed metric. Because every instrument's axis of
+association is named and meaningful, an agent holding a query can assign each
+instrument a \emph{query-specific} weight and search the weighted combination,
+\begin{equation}
+\mathrm{score}(x\mid q) = \sum_{m=1}^{N} w_m(q)\,\mathrm{sim}_m\bigl(\phi_m(x),\phi_m(q)\bigr),
+\tag{6}
+\end{equation}
+fused over the per-instrument rankings (weighted reciprocal-rank fusion in the
+running systems). One query might weight the lexical and code instruments heavily
+and the temporal ones at zero; the next might invert that---the same panel, tilted
+differently. The weight vector lives on the $(N{-}1)$-simplex (and, once cross-term
+weights are admitted, a larger space), so each query selects a point in a
+continuous control space whose dimension \emph{grows with the number of
+instruments}. More lenses therefore mean more degrees of freedom to express what
+to look for, and retrieval sharpens accordingly: the agent does not merely read the
+constellation, it re-weights it toward the query. This is Gärdenfors's
+context-dependent salience---categorisation under weighted quality
+dimensions---made an explicit, per-query operation. The gain is real only up to the
+panel's differentiated rank: reweighting redundant axes adds no information
+(\S\ref{sec:dpi}), so the differentiation contract (\S\ref{sec:polis}) and
+query-adaptive weighting are two sides of one design---every instrument that earns
+its place by adding bits also adds a usable axis of control.
+
 \subsection{The boundary that keeps the claim precise}
 \label{sec:reframe-honest}
-The claim is bounded, and the bound is what makes it strong. Three guardrails
-keep it precise.
+The claim is bounded, and the bound is what makes it strong. Several guardrails
+keep it precise, and the first is the one the intelligence claim of
+\S\ref{sec:thesis} stands or falls on.
 \begin{itemize}\itemsep0.12em
+\item \textbf{Grounding, or the dictionary-go-round returns.} Association alone is
+circular: a panel of lenses defining objects only by reference to one another is
+exactly Harnad's monolingual dictionary, an endless pass from symbol to symbol
+that never reaches meaning \citep{harnad1990symbol}. The calculus escapes the
+circle only because it is \emph{anchored}: the associations are measured against,
+and admitted by their bits about, a real non-linguistic outcome---the Docker
+oracle's pass/fail in Context Graph, the recorded speaker in voice cloning, the
+$30$-day in-person tie-formation outcome at socialmedia2.com. That anchor set is the
+analogue of the dictionary's $\approx 1\%$ grounding kernel
+\citep{vincentlamarre2016latent}: small, but the thing that makes the other $99\%$
+mean anything. ``Intelligence is association'' is therefore precise only as
+``intelligence is \emph{grounded} association''; strip the anchor and the formula
+describes a very efficient way of computing nothing. The data-processing bound
+(\S\ref{sec:dpi}) is the formal statement of this ceiling.
 \item It computes associations that are present in the training corpora, and
 those are measurable, bounded, and auditable. The choice of corpus is the choice
 of instrument, which is why socialmedia2.com runs a quarterly redundancy and retirement
@@ -310,10 +466,21 @@ training data. An axis the corpus never saw is an axis the panel cannot report,
 however many cross-terms are formed. This is the boundary that keeps the calculus
 empirical: it describes the associational structure of assembled corpora, and
 claims nothing about phenomena outside them.
+\item \textbf{Definition is operational and relational, not essential.} A term is
+fixed by where its reference set measures and how those measurements co-vary,
+relative to the panel and corpus---an extensional, operational definition in
+Bridgman's sense \citep{bridgman1927logic}, not a statement of
+necessary-and-sufficient essence. Change the panel and the definition changes,
+and the data-processing bound (\S\ref{sec:dpi}) caps it at the corpus's
+information about any real outcome. The cross-terms are well-posed as meaning only
+where each instrument's training objective made the target property a coherent
+direction on its sphere (\S\ref{sec:tct-honest}); where it did not, they degrade
+to noise and the differentiation contract (\S\ref{sec:polis}) is what catches it.
 \end{itemize}
 
 % =====================================================================
 \section{Related Work (condensed)}
+\label{sec:related}
 \textbf{Data wall and collapse.} \citet{villalobos2022data} and
 \citet{longpre2024consent} frame the stock-and-accessibility problem.
 \citet{shumailov2024collapse} (\emph{Nature}), \citet{dohmatob2024tale}, and
@@ -343,6 +510,85 @@ $N$ as a labeller over a fixed corpus and a per-output runtime guard at the same
 time. The role-flip over identical frozen instances is the novelty relative to
 this pool.
 
+\textbf{Multi-view learning and co-training.} The closest theoretical ancestor
+of DDA is multi-view learning. \citet{blum1998cotraining} prove that when two
+views are conditionally independent given the label---``$x_2$ is conditionally
+independent of $x_1$ given the classification''---``any weak hypothesis can be
+boosted from unlabeled data,'' and \citet{dasgupta2001pac} give the
+corresponding PAC generalization bounds in terms of inter-view agreement.
+\citet{sridharan2008multiview} recast the assumption information-theoretically
+and derive a ``normative justification for canonical correlation analysis (CCA)''
+under it. DDA's ``approximately-independent instruments'' assumption is exactly
+this conditional-independence condition, and the $\binom{N}{2}$ cross-terms are
+the multi-view interaction the same tradition studies; the counting identity (1)
+is a bookkeeping of that interaction, not a new quantity. What is new here is not
+the combinatorics but two engineering moves: (i) the views are
+\emph{commissioned and frozen foundation-model panels}---designed by choosing a
+training corpus---rather than a fixed feature split given by the data, and
+(ii) the same frozen panel is reused as retriever, labeller, and runtime guard
+over identical parameter instances. DDA is best read as multi-view learning
+carried onto designable, frozen embedder panels.
+
+\textbf{Representation convergence.} The reframe also rests on an empirical
+regularity: \citet{huh2024platonic} argue that ``neural networks, trained with
+different objectives on different data and modalities, are converging to a shared
+statistical model of reality in their representation spaces,'' with the converged
+kernel approaching the pointwise mutual information over the latent events that
+generate observations. Two consequences matter here. First, it is what licenses a
+multi-instrument panel to be read as coordinates against one underlying
+association structure rather than $N$ incommensurable spaces. Second, the
+cross-panel triangulation we use elsewhere (a disjoint Panel~B re-encoding the
+same artifacts and reaching the same verdict) is, in effect, a local test of this
+convergence; where convergence fails, the cross-terms degrade to noise, which is
+precisely what the differentiation contract (\S\ref{sec:polis}) is built to
+catch.
+
+\textbf{Symbol grounding and the dictionary.} The thesis (\S\ref{sec:thesis})
+rests on a named result. \citet{harnad1990symbol} posed the symbol grounding
+problem: a purely symbolic system---the monolingual dictionary-go-round---never
+reaches meaning, because symbols are defined only by other symbols. The escape is
+to ground a subset outside the symbol system. \citet{vincentlamarre2016latent}
+quantified the subset: as a directed graph, a dictionary reduces to a grounding
+kernel of $\approx 10\%$ and a minimum grounding set (feedback vertex set) of
+$\approx 1\%$ from which the rest is definable by association alone, and
+\citet{steyvers2005largescale} show the mental lexicon is itself a small-world,
+scale-free association graph grown by differentiation. We read these as the
+empirical backbone of ``intelligence is grounded association'': association
+carries almost all of meaning, a small grounded anchor carries the rest, and our
+contribution is a system that makes both halves measurable---the associations as a
+frozen-instrument calculus, the anchor as contact with a real oracle outcome.
+
+\textbf{A geometric, operational, relational theory of meaning.} The
+constellation-as-definition reading (\S\ref{sec:definition}) has deep roots
+outside machine learning; the contribution here is to instantiate them on frozen
+foundation-model panels at scale. \citet{gardenfors2000conceptual,
+gardenfors2014geometry} model concepts as regions in a space of quality
+dimensions and define an \emph{object category} as a number of convex regions in
+different domains, ``together with prominence values of the domains and
+information about how the regions in different domains are correlated''---domains,
+salience weights, and cross-domain correlations that map onto our frozen
+instruments, RRF slot weights, and $\binom{N}{2}$ cross-terms, and onto prototype
+theory's centroids \citep{rosch1975cognitive}. The relational half of the
+claim---that a single coordinate is only an index and meaning lives in the
+bindings---is structuralist \citep{saussure1916cours} (``in language there are
+only differences without positive terms''), distributional
+\citep{firth1957synopsis} (``you shall know a word by the company it keeps,''
+here the company of other-instrument coordinates), and inferential-role
+\citep{block1986advertisement} in spirit. \citet{osgood1957measurement} already
+measured connotative meaning as a profile across many bipolar scales reduced by
+factor analysis; our panel is a learned, frozen, high-dimensional semantic
+differential. Defining a concept by the operations that measure it is
+operationalism \citep{bridgman1927logic}, whose known cost---instrument- and
+corpus-relativity---is exactly the boundary we state in \S\ref{sec:reframe-honest}
+rather than evade. The discrete-feature limit is componential and decompositional
+semantics \citep{katz1963structure, white2016universal}, and
+\citet{du2025humanlike} report that frozen multimodal models recover stable,
+interpretable concept dimensions aligned with human judgements---independent
+evidence that such panels carve meaning into nameable axes. None of this prior
+work composes a single frozen panel as retriever, labeller, and runtime guard
+over identical instances, nor enforces an information-theoretic differentiation
+contract (\S\ref{sec:polis}) over the cross-terms.
+
 \textbf{Identity-locked generation and alignment.} Zero-shot voice cloning (VALL-E
 2 at about $0.881$ WavLM-SV \citep{chen2024valle2}; NaturalSpeech 3 at about
 $0.891$ \citep{ju2024naturalspeech3}; the field clusters around 0.86 to 0.89) uses
@@ -351,7 +597,13 @@ cosine gate. Scalar-reward alignment (InstructGPT \citep{ouyang2022instructgpt},
 DPO \citep{rafailov2023dpo}, Constitutional AI \citep{bai2022constitutional})
 optimises an expectation under a learned scalar and ships no per-output
 frozen-threshold predicate. The contrast with TCT is structural rather than a
-benchmark contest (\S\ref{sec:tct-vs-scalar}).
+benchmark contest (\S\ref{sec:tct-vs-scalar}). The closest geometric cousins are
+representation engineering \citep{zou2023repe}, which places named directions in
+activation space at the centre of control, and activation steering---whose
+reliability \citet{braun2025steering} show is conditional: ``vector steering is
+unreliable when the target behaviour is not represented by a coherent
+direction.'' TCT inherits exactly this caveat, and \S\ref{sec:tct-honest} states
+when the cosine guard is and is not well-posed.
 
 % =====================================================================
 \section{DDA and Meaning Compression}
@@ -389,7 +641,12 @@ $\sum_i\Delta H_i$, not $\binom{N}{2}$ taken as achieved. A signal here is a
 scalar or low-dimensional feature: a deterministic function of a real input or
 fixed-corpus graph under frozen instruments, attached to a specific index, usable
 as input or target without collecting new data. DDA is therefore not synthetic
-generation, not augmentation, and not distillation.
+generation, not augmentation, and not distillation. The
+``approximate independence'' invoked here is the conditional-independence
+condition of multi-view learning \citep{blum1998cotraining}: where it holds the
+cross-terms carry signal that no single lens sees, and where it fails the
+redundant pairs are bounded out by the differentiation contract
+(\S\ref{sec:polis}).
 
 \subsection{What the count is, and is not: the data-processing bound}
 \label{sec:dpi}
@@ -414,21 +671,28 @@ extractable structure, and the information content of that structure is bounded 
 the corpus---the same boundary stated qualitatively in
 \S\ref{sec:reframe-honest}: a panel reports only associations its corpora contain.
 
-\subsection{Meaning compression as the fourth category}
+\subsection{Meaning compression: structured-signal-yield per input}
 \label{sec:mc-fourth}
 The meaning-compression ratio is
 $\mathrm{MC}(\Phi,D) = |D'|/\mathrm{raw}(D) = N+\binom{N}{2}(+1)$ per input.
 Conventional compression asks how few bits, parameters, or megabytes a fixed
 content can be squeezed into. Meaning compression flips the question: for a fixed
 amount of raw data, how many structured supervisory signals can you extract? The
-four categories work on genuinely different unit pairs, as Table~\ref{tab:four}
-sets out.
+name is by analogy and is, strictly, a \emph{yield} rather than a reduction---it
+multiplies usable coordinates rather than shrinking bits---so it is dual to, not
+a competitor of, the Kolmogorov/Shannon sense of compression that
+\citet{deletang2024compression} and \citet{huang2024compression} tie to
+capability. By the data-processing bound of \S\ref{sec:dpi} the underlying
+information is unchanged; what the yield measures is how much of it has been made
+explicit and low-dimensional. The measures work on genuinely different unit
+pairs, as Table~\ref{tab:four} sets out.
 
 \begin{table*}[t]
 \centering
-\caption{Meaning compression proposed as a fourth category alongside the
-conventional three. The categories operate on different input/output unit pairs
-and are complementary rather than competing.}
+\caption{Meaning compression as a complementary measure alongside the
+conventional three compression axes. The measures operate on different
+input/output unit pairs and are complementary rather than competing; meaning
+compression is a signal \emph{yield}, dual to the bit-reduction sense.}
 \label{tab:four}
 \small
 \begin{tabular}{@{}llll@{}}
@@ -615,6 +879,52 @@ $O(M\cdot d_{\max})$ geometric test that admits no auxiliary learned model, a
 property scalar-reward alignment does not furnish in the same technical sense
 (\S\ref{sec:tct-vs-scalar}).
 
+\subsection{When the guard is well-posed (and when it is not)}
+\label{sec:tct-honest}
+The cosine guard is geometry, and geometry can be gamed. Three caveats bound the
+claim, and stating them is what makes Theorem~2 usable rather than rhetorical.
+
+\emph{What ``model-free'' means.} The guard introduces no auxiliary
+\emph{learned} component: no preference model, no reward head, no critic trained
+on outputs. It is not free of models in the larger sense---the frozen embedder
+$\phi_m$ is itself a trained network, and the guarantee is conditional on it. The
+precise claim is that, given a fixed, hash-pinned, publicly specifiable
+$\phi_m$, the predicate (5) is a deterministic function of the output with no
+further fitting; the model is moved out of the loop and into a frozen, auditable
+instrument, not abolished.
+
+\emph{Goodhart on the threshold.} $\cos(\phi_m(\hat y),c_m)\ge\tau_m$ is an
+acceptance test, and any acceptance test optimised against hard enough can be
+satisfied off-manifold---an output that clears the cosine without carrying the
+intended property, the reward-hacking failure mode relocated into geometry. TCT
+does not escape this; it narrows it. Phase~3 is a \emph{filter} on independently
+generated candidates (best-of-$K$ in Case~3) rather than a gradient pressure that
+manufactures adversarial maxima, $\tau_m$ is calibrated to an authentic-sample
+percentile rather than pushed toward 1, and every decision carries a cosine
+trace, embedder and centroid hashes, and the attempt count, so guard-passing
+off-manifold outputs are detectable after the fact. The guard is a verifiable
+predicate, not a safe optimisation objective; using it as a training signal
+(Phase~2) reintroduces the Goodhart risk and must be paired with a held-out
+check.
+
+\emph{Cosine is only meaningful on the right sphere.} A cosine threshold reports
+identity only when the encoder was trained so that the target property
+\emph{is} a coherent direction on the unit sphere. \citet{braun2025steering}
+make this conditionality explicit for activation directions: steering is
+``unreliable when the target behaviour is not represented by a coherent
+direction,'' with high variance otherwise. This sharply stratifies our own
+evidence. Case~3 (voice) is the strong leg: WavLM-base-plus-sv is a
+speaker-verification encoder trained contrastively so that speaker identity is
+exactly a normalised, coherent direction, so the 0.961 cosine is measuring the
+quantity the encoder was built to make linear. Case~1 (style) and Case~2
+(talking-head) ride on general-purpose text and vision encoders not trained to
+place ``Shakespearean register'' or ``this face'' on a calibrated sphere; their
+guards are weaker evidence and should be read as indicative, with an
+encoder-matched, sphere-calibrated metric (as in Case~3) the standard the other
+legs have not yet met. The honest summary: per-output verifiability is real and
+strongest exactly where the instrument's training objective matches the property
+being verified.
+
 % =====================================================================
 \section{Case Studies}
 \label{sec:cases}
@@ -730,6 +1040,120 @@ CI [0.951,0.971]; encoder-matched\\
 \end{table*}
 
 % =====================================================================
+\section{The formula the field has been circling}
+\label{sec:agi}
+For three decades the search for general intelligence has produced not one
+definition but several, each capturing a different face of the same object and
+none naming the mechanism that produces it.
+
+\emph{Intelligence as compression.} Solomonoff induction and
+\citet{legg2007universal}'s universal intelligence---with Hutter's AIXI as its
+optimal agent---identify intelligence with prediction under a complexity prior,
+which is compression; \citet{deletang2024compression} and
+\citet{huang2024compression} confirm the link empirically. The limit is that AIXI
+is incomputable: it says what intelligence \emph{is} with no constructive way to
+build it. The calculus of association is the computable, grounded form---
+compression of a corpus into its association structure, admitted in bits against a
+real outcome (\S\ref{sec:polis}).
+
+\emph{Intelligence as generalisation.} \citet{chollet2019measure} argues that
+skill is not intelligence (skill can be bought with priors and data) and defines
+intelligence as skill-acquisition efficiency, controlling for priors and
+experience. That is exactly this calculus's economics: a new skill is a named
+constellation region learned from $O(k)$ grounded examples through a frozen panel
+(Theorem~1), generality comes from the cross-domain cross-terms, and the
+differentiation contract admits an instrument only by the new bits it adds about a
+real outcome. ARC-AGI tests the symptom; the calculus proposes the mechanism.
+
+\emph{Intelligence as world-modelling.} \citet{lecun2022path} argues
+autoregressive generation is a dead end and that the path runs through
+non-generative joint-embedding predictive architectures (JEPA) predicting in
+representation space. The systems here \emph{are} JEPAs, and the paper supplies
+what that programme still lacks (LeCun's configurator and hierarchy remain
+unimplemented): the organising principle is that the joint embeddings are a
+\emph{panel of grounded association instruments}, and prediction is membership in
+their constellation. LeCun's own verdict---``there is no such thing as AGI;
+intelligence is a collection of skills plus the ability to learn new ones''---is
+answered here: the skills are named regions of the panel, and learning a new one
+is one frozen forward pass plus a centroid.
+
+\emph{Intelligence as breadth $\times$ depth.} \citet{morris2024levels}
+deliberately classify AGI by capability, ``focusing on capabilities rather than
+mechanisms,'' because the mechanism is unknown. This paper supplies the bracketed
+mechanism: breadth (generality) is the composition of designable instruments and
+their cross-terms; depth (performance) is grounding to a real outcome. The two
+axes of the DeepMind matrix are the two halves of the formula.
+
+\emph{Intelligence as scale.} The dominant industrial bet---more tokens,
+parameters, compute---has no organising principle beyond ``emergence,'' and it has
+hit the data wall (\S1.2) precisely because it counts Shannon-compressed tokens
+rather than grounded associations. Its pure-symbolic form is Harnad's
+dictionary-go-round at scale: association without an anchor
+(\S\ref{sec:reframe-honest}).
+
+The pattern is hard to miss. Compression, generalisation, world-modelling, and
+breadth-times-depth are not four theories of intelligence; they are four
+projections of one. The object they project is grounded association: a calculus
+that compresses a corpus into association structure (the compression face),
+defines new skills from few grounded examples (the generalisation face), predicts
+by constellation membership in a frozen joint-embedding panel (the world-model
+face), and earns breadth from designable instruments while earning depth from
+grounding (the breadth$\times$depth face). The claim of this paper is not that one
+more facet has been found; it is that the facets are facets, and this is the thing.
+
+\subsection{Every AGI capability, and where it lives}
+\label{sec:capabilities}
+If grounded association is the formula, the standard wish-list of AGI capabilities
+should not be a set of separate features to engineer but a set of \emph{readings}
+of the one mechanism. It is. Table~\ref{tab:caps} maps each capability the field
+asks of AGI to its construct here, with an honest status: \textsc{measured} (an
+anchor exists), \textsc{shipped} (substrate built and readable), or
+\textsc{designed} (mechanism specified, full measurement pending). Hierarchical
+skills are the clearest case: a teleological constellation is itself nameable, so
+constellations compose into a chunk$\to$label$\to$skill$\to$ability hierarchy
+(399{,}777 chunks $\to$ 491 labels $\to$ 128 skills in the shipped Context Graph
+graph), and a skill is just a constellation of constellations.
+
+\begin{table*}[t]
+\centering
+\caption{The standard AGI capability list, each as a reading of grounded
+association. Status is \textsc{measured} / \textsc{shipped} / \textsc{designed};
+the framework supplies a named mechanism for every row, and the case studies
+(Table~\ref{tab:cases}) bound what is measured end-to-end today.}
+\label{tab:caps}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}p{2.7cm}p{2.7cm}p{7.4cm}p{1.5cm}@{}}
+\toprule
+\textbf{AGI capability} & \textbf{Asked for by} & \textbf{Mechanism here} & \textbf{Status}\\
+\midrule
+Generality across domains & \citet{morris2024levels} & Designable instruments $+$ cross-terms; one machine over video, code, civic matching (3 systems) & \textsc{shipped}\\
+Fast skill acquisition & \citet{chollet2019measure} & A skill $=$ a named region, learned from $O(k)$ grounded examples, $k\!\in\![10,10^2]$ (Thm~1) & \textsc{measured}\\
+Hierarchical, composable skills & general desiderata & Constellations of constellations; the chunk$\to$label$\to$skill$\to$ability graph (399{,}777$\to$491$\to$128) & \textsc{shipped}\\
+Concept formation / abstraction & \citet{gardenfors2000conceptual} & $\mathrm{Def}(t)$: a centroid $+$ threshold names a region (\S\ref{sec:definition}) & \textsc{shipped}\\
+Transfer / analogy & cognitive science & The $\binom{N}{2}$ cross-terms, a structured-analogy operator (Case~1) & \textsc{measured}\\
+Grounded world model & \citet{lecun2022path} & Frozen JEPA panel anchored to a real oracle / recording / outcome (Q2) & \textsc{measured}\\
+Planning / reasoning & \citet{lecun2022path} & Pathway exploration (top-$K$ trajectories) $+$ reverse-prediction inverse priors & \textsc{designed}\\
+Continual learning, no forgetting & general desiderata & Mistake-loop online head under EWC++ Fisher protection (partial) & \textsc{designed}\\
+Large-scale associative memory & \citet{lecun2022path} & The panel store itself (per-embedder rankings, weighted RRF) & \textsc{shipped}\\
+Query-adaptive search / navigation & retrieval; \citet{gardenfors2014geometry} & Per-query weights $w_m(q)$ over named instruments (Eq.~6); control dimension grows with $N$ & \textsc{shipped}\\
+Self-verification / calibration & \citet{morris2024levels} & Per-output guard $G_\tau$ $+$ conformal interval $+$ Brier/ECE (Case~3) & \textsc{measured}\\
+Controllability / safety by design & \citet{lecun2022path} & Identity-lock: guard rejects off-manifold output; deterministic provenance (Case~1) & \textsc{measured}\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+The honest reading of Table~\ref{tab:caps} is the strong one. Every capability the
+field enumerates for AGI has a named home in a single mechanism, several with
+measured anchors today and the remainder as specified, buildable constructs over
+the same frozen panel---not eleven research programmes but eleven readings of one
+calculus. What is \emph{not} claimed is that the integrated system has been run
+end-to-end at human level; the status column and the case-study tags
+(Table~\ref{tab:cases}) state exactly where measurement stands. The architecture
+is complete; the measurement is in progress. That distinction is the difference
+between a formula and a finished proof, and this paper claims the formula.
+
+% =====================================================================
 \section{Discussion}
 
 \subsection{Interpreting the measured anchors}
@@ -778,9 +1202,14 @@ what to remember. Stack a differentiated panel of such instruments and you can
 measure any object's position across many association-spaces at once, quantify the
 relations between those positions (the $\binom{N}{2}$ cross-terms), and freeze
 named regions of the geometry into auditable labels. Fixed, unlabelled data
-becomes a machine-legible map of how things relate. That is meaning compression,
-the calculus of association, proposed as a fourth compression category and
-instantiated across video ($N=7$), code ($N=13$), and civic matching ($N=21$). I
+becomes a machine-legible map of how things relate. Read one step further, that
+map is a theory of definition: a term is the constellation the other instruments
+form at a given lens's index, taken over its reference set---G\"ardenfors's object
+category, realised on frozen foundation-model panels and gated by a
+differentiation contract. That is meaning compression,
+the calculus of association---a structured-signal-yield measure complementary to
+the compression-as-intelligence tradition---instantiated across video ($N=7$),
+code ($N=13$), and civic matching ($N=21$). I
 measured it where it ran: a voice reproduced at 0.961 speaker-similarity
 (encoder-matched), a style model with public weights that holds character under
 prompt injection, and a per-output geometric guard with deterministic provenance.
@@ -788,6 +1217,21 @@ The claims stay bounded by the associations present in the chosen corpora, and t
 abundance is an upper bound under approximate independence. The contribution is not
 a new primitive but a composition of existing ones read in a new light: information
 made into a physical, reusable, designable measurement basis for meaning.
+
+The wider claim is the one to end on. A word in a dictionary means nothing by
+itself; its meaning is the association of the words that define it, and those
+words are themselves empty without theirs---meaning lives in the relations, not the
+symbols, and bottoms out only at a small grounded anchor. Intelligence is the
+machinery that measures, counts, differentiates, and composes those relations
+against something real. Human intelligence runs that machinery on a biological
+substrate; artificial general intelligence is the same machinery written down---a
+designable, grounded, measurable mathematical form, general because its instruments
+are commissionable for any domain and its cross-terms bridge across domains. The
+calculus of association is that form, and this paper is the report of building it,
+grounding it in a live oracle, and measuring it where it ran. If the thesis holds,
+the way to a more capable system is not more tokens or more synthetic data but more
+grounded association per real input---which is the one quantity this calculus was
+built to maximise.
 
 % =====================================================================
 \section*{Competing interests}
