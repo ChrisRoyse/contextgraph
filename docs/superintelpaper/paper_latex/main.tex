@@ -17,7 +17,8 @@
 \usepackage{array}
 \usepackage{graphicx}
 \usepackage[letterpaper,margin=0.85in,columnsep=0.28in]{geometry}
-\usepackage[numbers,sort&compress]{natbib}
+\usepackage{enumitem}
+\usepackage[natbibapa]{apacite}   % true APA (6th); natbibapa keeps \citep/\citet
 \usepackage{xcolor}
 \usepackage[colorlinks=true,linkcolor=black,citecolor=blue!55!black,urlcolor=blue!55!black]{hyperref}
 \usepackage{url}
@@ -68,9 +69,9 @@ hard ceiling on achievable correlation, decomposing into two independently
 violable axes, flakiness and validity \citep{aleithan2024swebenchplus,
 wang2025solved, openai2026swebench}. Second, it imports the symbol-grounding
 result from cognitive science---Harnad's dictionary-go-round
-\citep{harnad1990symbol} and the Vincent-Lamarre \emph{minimum grounding set} of
-$\approx1\%$ from a grounding kernel of $\approx10\%$
-\citep{vincentlamarre2016latent}---and shows a domain predictor is the same
+\citeyearpar{harnad1990symbol} and the Vincent-Lamarre \emph{minimum grounding
+set} of $\approx1\%$ from a grounding kernel of $\approx10\%$
+\citeyearpar{vincentlamarre2016latent}---and shows a domain predictor is the same
 object: a web of associations anchored at a small grounding kernel, with the
 oracle as the anchoring channel and the kernel as the minimal set of artifacts
 sent through it. Third, the load-bearing contribution: a grounding kernel can
@@ -137,14 +138,14 @@ SWE-bench literature \citep{aleithan2024swebenchplus, wang2025solved,
 openai2026swebench}.
 
 \textbf{(2) A domain predictor is a grounded association engine.} This is the
-symbol-grounding result transplanted. Harnad's dictionary-go-round
-\citep{harnad1990symbol} shows meaning defined only by reference to other meanings
-is circular; Vincent-Lamarre et al.\ \citep{vincentlamarre2016latent} make it
+symbol-grounding result transplanted. The dictionary-go-round of
+\citet{harnad1990symbol} shows meaning defined only by reference to other meanings
+is circular; \citet{vincentlamarre2016latent} make it
 quantitative---a definitional graph reduces to a grounding kernel of
 $\approx10\%$ and a minimum grounding set (a minimum feedback vertex set) of
 $\approx1\%$ from which all else is recoverable by association. The predictor is
-the same object, anchored at a small kernel of oracle-labeled artifacts. Mollo
-and Milli\`ere's \emph{Vector Grounding Problem} \citep{mollo2023vector} extends
+the same object, anchored at a small kernel of oracle-labeled artifacts. The
+\emph{Vector Grounding Problem} of \citet{mollo2023vector} extends
 this from symbols to the vectors a panel computes over, supplying the criterion I
 adopt: a representation is referentially grounded when it stands in
 causal-informational relation to a worldly outcome \emph{and} was selected for
@@ -237,13 +238,12 @@ agreement). A flaky oracle caps $\tau_{\mathrm{corr}}$.
 oracle can be perfectly reproducible yet systematically wrong: a weak test
 deterministically passes an incorrect artifact; an over-specified test
 deterministically fails a correct one. The SWE-bench audits quantify this on the
-most-used code oracle: Aleithan et al.\ report $32.67\%$ solution leakage and
-$31.08\%$ weak-test passes, with the same defects in Lite and Verified
-\citep{aleithan2024swebenchplus}; Wang et al.\ show running \emph{all} repository
-tests flips $7.8\%$ of plausible patches to incorrect \citep{wang2025solved}; and
-OpenAI's audit of a failed-task subset of SWE-bench Verified found $59.4\%$ with
-flawed tests or problem statements \citep{openai2026swebench}. None are
-flakiness; all are validity failures.
+most-used code oracle: \citet{aleithan2024swebenchplus} report $32.67\%$ solution
+leakage and $31.08\%$ weak-test passes, with the same defects in Lite and
+Verified; \citet{wang2025solved} show that running \emph{all} repository tests
+flips $7.8\%$ of plausible patches to incorrect; and \citet{openai2026swebench}
+found, in an audit of a failed-task subset of SWE-bench Verified, $59.4\%$ with
+flawed tests or problem statements. None are flakiness; all are validity failures.
 
 A predictor that perfectly matches an invalid oracle has learned to reproduce its
 mistakes. High correlation against a contaminated or weak oracle is shared error,
@@ -274,22 +274,23 @@ $(\text{intervention}\times\text{subdomain})$ matrix; and a deterministic learne
 $\mathrm{Predictor}_D$. Then $D$ admits superhuman binary verification iff there
 exists $\mathrm{Predictor}_D$ such that all of the following hold:
 
-\begin{enumerate}\itemsep0.12em
+\begin{description}[font=\bfseries,leftmargin=3.4em,labelwidth=2.7em,%
+labelsep=0.55em,itemsep=0.22em,topsep=0.4em,parsep=0pt]
 \item[T1.1] $\mathrm{corr}(\mathrm{Predictor}_D,\mathrm{Oracle}_D)\ge
-\tau_{\mathrm{corr}}$,
-\item[T1.2] stable over $k_{\text{win}}$ consecutive rolling windows,
+\tau_{\mathrm{corr}}$;
+\item[T1.2] stable over $k_{\text{win}}$ consecutive rolling windows;
 \item[T1.3] $\mathrm{corr}(\mathrm{Predictor}_D^{B},\mathrm{Oracle}_D)\ge
-\tau_{\mathrm{corr}}$ on a disjoint Panel~B (Goodhart guard),
-\item[T1.4] $|\mathrm{corr}_A-\mathrm{corr}_B|\le\varepsilon_{\text{drift}}$,
-\item[T2] the per-cell quality contract holds for every cell,
-\item[T3.1] $\textit{mistake\_repeat\_rate}\le\delta_{\text{rep}}$,
-\item[T3.2] $\textit{unrelated\_control\_delta}\le\varepsilon_{\text{unrel}}$,
-\item[T4] every doctrine invariant equals its required value exactly,
-\item[T5.1] $I(\mathrm{Panel}_D;\mathrm{Oracle}_D)\ge\tau_{\mathrm{MI}}$ bits,
-\item[T5.2] $\textit{oracle\_self\_consistency}\ge\tau_{\mathrm{sc}}$,
-\item[T5.3] the inter-sensor distinctness gate passes for all slots,
+\tau_{\mathrm{corr}}$ on a disjoint Panel~B (Goodhart guard);
+\item[T1.4] $|\mathrm{corr}_A-\mathrm{corr}_B|\le\varepsilon_{\text{drift}}$;
+\item[T2] the per-cell quality contract holds for every cell;
+\item[T3.1] $\textit{mistake\_repeat\_rate}\le\delta_{\text{rep}}$;
+\item[T3.2] $\textit{unrelated\_control\_delta}\le\varepsilon_{\text{unrel}}$;
+\item[T4] every doctrine invariant equals its required value exactly;
+\item[T5.1] $I(\mathrm{Panel}_D;\mathrm{Oracle}_D)\ge\tau_{\mathrm{MI}}$ bits;
+\item[T5.2] $\textit{oracle\_self\_consistency}\ge\tau_{\mathrm{sc}}$;
+\item[T5.3] the inter-sensor distinctness gate passes for all slots;
 \item[T6] any new/replaced sensor passes the novelty and utility gates.
-\end{enumerate}
+\end{description}
 When this is \textsc{true}, human review of machine-generated artifacts in $D$ is
 statistically unjustified. That is the operational definition of
 super-intelligence in $D$.
@@ -479,6 +480,28 @@ the cheaper, stronger existence test; the kernel computation finds the kernel on
 the MI test confirms one exists. The operational spine is therefore oracle
 $\to$ substrate $\to$ kernel $\to$ predictor/calibration.
 
+\subsection{Two gates: verdict-sufficiency and association-sufficiency}
+\label{sec:twogate}
+$I(P;Y)\ge\tau_{\mathrm{MI}}$ is necessary but not the whole story. It guarantees
+the verdict is \emph{recoverable}---the kernel \emph{exists}---but not that the
+kernel is \emph{small}. Two panels can both reach $\tau_{\mathrm{MI}}$ yet differ
+sharply in geometry: in one, the verdict is a smooth, local function of the panel
+(a candidate's nearest neighbours share its label), so a tiny grounded set
+generalises and the MinSet approaches the dictionary's $\approx1\%$; in the other,
+the same bits are present but scrambled, the verdict is a wild function of
+position, and almost every point must be grounded (MinSet $\to$ the whole corpus).
+Kernel size is therefore set by a property beyond raw information:
+\textbf{association-sufficiency}---the degree to which same-verdict artifacts are
+co-located so the constellation-membership edge (\S\ref{sec:panel}) can actually
+derive one from another. It has a cheap proxy ($k$-nearest-neighbour verdict
+agreement in the panel, using same-sensor cosine per slot) and an exact measure
+(the MinSet fraction itself). Panel acceptance is thus \emph{two} gates:
+\textbf{verdict-sufficiency} ($I(\text{panel};\text{oracle})\ge\tau_{\mathrm{MI}}$,
+the oracle itself being validity-audited per \S\ref{sec:oracle}) \emph{and}
+\textbf{association-sufficiency} (high $k$-NN locality / small MinSet). A panel
+passing only the first can answer one artifact at a time but cannot ground a small
+kernel---which defeats the purpose.
+
 % =====================================================================
 \section{The Panel and Its Sensors}
 \label{sec:panel}
@@ -543,9 +566,19 @@ behavioral cells at zero; \textbf{(4)} greedily assemble the panel maximizing
 $I(\text{panel};\text{oracle})$ subject to the Tier-6 novelty and utility gates;
 \textbf{(5)} accept by re-running the substrate test, requiring
 $I(\text{panel};\text{oracle})\ge\tau_{\mathrm{MI}}$ with behavioral-cell MI off
-zero. This is the teleosemantic grounding criterion \citep{mollo2023vector} made
-into a procedure: a sensor earns a slot when measured to carry outcome information
-and kept because of that measurement. Only then is the kernel well-posed.
+zero. Two cautions make the search principled. First, mutual information is not
+additive across sensors, so selection must use the \emph{marginal} $\Delta I$ in
+the context of the current panel, not standalone bits: redundant sensors carry the
+same bits (the failure mode of a panel of near-duplicate similarity encoders) and
+synergistic sensors carry little alone yet much in combination (so a low standalone
+score is not grounds to discard). Second, the cheapest gains are often
+\emph{deterministic} structural features aimed at the cells reading zero bits---a
+parse/compile check for a compile-error class, a diff test for a deleted-call
+class, an import-closure test for a wrong-file class---added as isolated slots and
+gated per-cell so they cannot dilute the others. This is the teleosemantic
+grounding criterion \citep{mollo2023vector} made into a procedure: a sensor earns
+a slot when measured to carry outcome information and is kept because of that
+measurement. Only then is the kernel well-posed.
 
 \subsection{Predictor, calibration, online closure}
 Downstream of a sufficient panel, the predictor is a deterministic head over the
@@ -697,9 +730,9 @@ statement rather than an act of faith.
 \section{Related Work}
 \label{sec:related}
 
-\textbf{Symbol grounding.} Harnad \citep{harnad1990symbol}, the quantitative
-kernel/MinSet of Vincent-Lamarre et al.\ \citep{vincentlamarre2016latent} (NP-hard
-per \citep{karp1972reducibility}), the small-world lexicon
+\textbf{Symbol grounding.} \citet{harnad1990symbol}, the quantitative
+kernel/MinSet of \citet{vincentlamarre2016latent} (NP-hard
+per \citealp{karp1972reducibility}), the small-world lexicon
 \citep{steyvers2005largescale}, and the vector-era update
 \citep{mollo2023vector}. The contribution is to read a domain predictor as this
 object and make the kernel computable, with grounding turned from a diagnostic
@@ -723,9 +756,181 @@ guo2017calibration, angelopoulos2021gentle} and continual learning
 \textbf{Benchmark integrity.} The oracle-validity concern draws on
 \citep{jimenez2024swebench, aleithan2024swebenchplus, wang2025solved,
 openai2026swebench}; Goodhart's variants \citep{manheim2018categorizing} motivate
-the cross-panel guard and the rejection of proxy metrics. Chollet's measure of
-intelligence \citep{chollet2019measure} frames the constellation operator as
+the cross-panel guard and the rejection of proxy metrics. The measure of
+intelligence of \citet{chollet2019measure} frames the constellation operator as
 few-shot region learning.
+
+% =====================================================================
+\section{Generalization: From Verdict Oracles to World Models}
+\label{sec:worldmodel}
+
+The instantiation of \S\ref{sec:instantiation} used a \emph{binary verdict
+oracle}. The three conditions the framework reduces to---a clean oracle, a
+sufficient panel, a minimal grounded kernel (\S\ref{sec:kernel})---are not
+specific to binary verdicts. This section theorizes their extension to
+\emph{predictive world models} in the sense of the Joint Embedding Predictive
+Architecture \citep{lecun2022path}.
+
+\textbf{Epistemic status.} This section is more speculative than
+\S\ref{sec:intro}--\S\ref{sec:fsv}: it is theory grounded in cited results and in
+the repository's measured findings, not itself a measured result. It is included
+because the same three conditions, and the same substrate test, appear to govern
+world models, and because the failure mode measured for code
+(\S\ref{sec:instantiation}, ``form not behavior'') is exactly the failure a
+world-model encoder exhibits when it captures appearance rather than dynamics. The
+genuinely uncertain ideas are given with pros and cons in
+\S\ref{sec:wm-proscons}.
+
+\subsection{The setting changes the oracle and the target}
+In the verdict setting the oracle returns one bit and $H(Y)\approx1$ bit. In the
+world-model setting the ``oracle'' is reality's response to intervention---act,
+the world evolves, observe---and the ``verdict'' is the high-dimensional future
+state. Hence the anchor is no longer clean (partially observable, stochastic,
+non-stationary); $\tau_{\mathrm{MI}}=0.95$ bits does not transfer and must be
+restated relative to how much of the future is predictable at all; and grounding
+requires \emph{intervention}, since passive data under-determines causal structure.
+
+\subsection{The kernel becomes the predictive sufficient statistic}
+The dictionary's Minimal Grounding Set (\S\ref{sec:kernel}) is the minimal set for
+static \emph{definability}. A world model needs the minimal set for \emph{prediction
+of dynamics}, which is also rigorously defined. The \textbf{causal states} of a
+process---equivalence classes of histories inducing the same distribution over
+futures---form the \emph{minimal sufficient statistic for prediction}, the
+provably simplest representation that loses no predictive power; the
+$\epsilon$-machine over them is unique and optimal \citep{shalizi2001computational}.
+Its size is bounded by the \textbf{predictive information}
+$I_{\mathrm{pred}}=I(\text{past};\text{future})$, which is \emph{sub-extensive}
+\citep{bialek2001predictability}: most of reality's bits are unpredictable detail,
+and only a small predictable core is learnable. That core is the world-model
+kernel. The dictionary's ``$\approx1\%$'' figure is a property of dictionary-graph
+topology and does \emph{not} transfer; what transfers is the structure
+(anchor $+$ small grounded kernel $+$ recovery by association) and the
+\emph{existence} of a small predictable core.
+
+\subsection{The substrate test transfers directly}
+The sufficiency test (\S\ref{sec:substrate}) generalizes from
+$I(\text{panel};\text{oracle})$ to $I(\text{representation};\text{future})$,
+bounded as before by the data-processing inequality \citep{cover2006elements}: no
+policy or planner reading the representation can know more about the future than
+the representation carries. The \S\ref{sec:instantiation} finding---the code panel
+measures form, not behavior, so $I(\text{panel};\text{oracle})\approx0.46$---is the
+same failure a world-model encoder shows when it captures appearance rather than
+dynamics. JEPA's bet \citep{lecun2022path} (predict in representation space,
+discarding unpredictable detail) is, in this light, an attempt to learn the
+causal-state representation. The framework thus offers a concrete acceptance gate:
+measure $I(\text{representation};\text{future})$ under intervention; if it is low
+while reconstruction loss is also low, the encoder learned form, not dynamics.
+
+\subsection{The grounded kernel has two layers}
+\textbf{Layer A (prior kernel / start-up software)}: directly-grounded primitives,
+the analog of the dictionary's grounded MinSet words---the core knowledge systems
+(objects, agents, number, space) \citep{spelke2007core} and the developmental
+``start-up software'' of intuitive physics and psychology
+\citep{lake2017building}, seeded as inductive bias for sample efficiency.
+\textbf{Layer B (dynamical generators)}: the minimal set whose closure generates
+predictable dynamics---symmetries and their conservation laws, a few
+interaction primitives at the agent's scale, and the causal-intervention
+operators---i.e.\ the causal-state representation of the environment seeded by
+Layer A.
+
+\subsection{Two kernels: generative versus predictive}
+A natural objection is that the real kernel of the physical world is concrete---the
+building blocks themselves (subatomic particles, atoms, genes)---and that with
+enough microscopic detail one could predict everything (the reductionist /
+Laplace's-demon hypothesis). The resolution is to separate two notions. The
+\textbf{generative (ontological) kernel} is the microscale rules plus the full
+microstate; its rules are genuinely tiny, and as a statement of what reality is
+\emph{made of} reductionism is essentially correct. The \textbf{predictive
+(epistemic) kernel} is the smallest representation, at the agent's scale and
+resources, retaining the predictable structure. The generative kernel is not a
+usable predictive kernel, and the predictive kernel is obtained by coarse-graining
+microscale detail \emph{away}, not by accumulating it. Six independent obstacles
+block ``predict the world from its microstate,'' each sufficient alone:
+(i)~reductionism does not imply constructionism---new organizing laws emerge at
+each scale \citep{anderson1972more}; (ii)~simulating quantum matter is
+exponentially costly \citep{feynman1982simulating}; (iii)~the microstate is
+unmeasurable in principle (uncertainty, no-cloning); (iv)~chaos amplifies any
+micro-error, so micro-precision buys no macro-prediction; (v)~computational
+irreducibility means there is generally no shortcut to running the system
+\citep{wolfram2002nks}; (vi)~the predictable structure is sub-extensive, so almost
+all microscopic bits are irrelevant \citep{bialek2001predictability}. The
+operation that legitimately turns microscale data into a kernel is
+coarse-graining---the renormalization group---and deep learning has been shown to
+implement a generalized RG-like coarse-graining \citep{mehta2014exact}, the
+mechanism by which a learner flows from fine input to the predictive kernel. The
+right scale is therefore not assumed but measured: the scale maximizing
+$I(\text{representation};\text{future})$ per unit of representation cost. The
+honest concession is that this scale is domain-specific---for some domains
+(protein structure from sequence, material properties from atomic configurations
+with learned effective interactions) it sits near a physical-building-block level,
+partly vindicating the building-block instinct; for others (everyday manipulation,
+weather) it sits far above the microscale.
+
+\subsection{Pros and cons of the two conjectures}
+\label{sec:wm-proscons}
+
+\noindent\emph{Conjecture 1---a world model is a kernel-finding problem (kernel
+$=$ predictive sufficient statistic).}
+
+\begin{center}\small
+\begin{tabular}{@{}p{0.46\columnwidth}p{0.46\columnwidth}@{}}
+\toprule
+Pros & Cons\\
+\midrule
+A small predictable core provably exists (predictive information is sub-extensive
+\citep{bialek2001predictability}; causal states are uniquely minimal
+\citep{shalizi2001computational}). &
+The causal states are not given; reconstructing them in high dimensions is the
+learning problem itself.\\
+Sample efficiency via a small kernel seeded by core-knowledge priors
+\citep{spelke2007core, lake2017building}. &
+The anchor is harder---partially observable, stochastic, requiring intervention to
+ground causal structure.\\
+Measurability: the substrate test transfers as
+$I(\text{representation};\text{future})$, a falsifiable gate. &
+The target is partly unpredictable (chaos, noise); the model is bounded by
+predictive information.\\
+Transfer: a grounded dynamical kernel is a world model, not a task policy. &
+The kernel is scale- and goal-relative; the domain must be scoped.\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\emph{Conjecture 2---the kernel could be a concrete physical-building-block
+scale (atoms / cells / genes).}
+
+\begin{center}\small
+\begin{tabular}{@{}p{0.46\columnwidth}p{0.46\columnwidth}@{}}
+\toprule
+Pros & Cons\\
+\midrule
+Ontologically correct: the microscale plus its laws is a complete generator, and
+the laws are tiny---one basis in principle for all domains. &
+Reductionism is not constructionism \citep{anderson1972more}; levels cannot in
+practice be derived from below.\\
+Empirically vindicated for specific domains (protein structure from sequence;
+material properties from atomic configurations). &
+Acquiring the microstate is forbidden in principle, and simulating it is
+exponentially costly \citep{feynman1982simulating}.\\
+Avoids hand-designed abstractions; ``learn from the bottom'' is general. &
+Chaos and computational irreducibility \citep{wolfram2002nks} mean micro-precision
+does not buy macro-prediction; most micro-bits are irrelevant
+\citep{bialek2001predictability}.\\
+Points to the correct mechanism---coarse-graining / RG \citep{mehta2014exact}. &
+Working systems already coarse-grain (learned effective maps); it is the wrong,
+intractable scale for most agent-scale tasks.\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textbf{Synthesis.} The generative kernel is real but unusable; the
+predictive kernel is what a world model needs; it is found by coarse-graining the
+microscale away and validated by the same $I(\cdot;\cdot)$ substrate test built for
+the verdict setting. The kernel's scale is not assumed but measured---sometimes
+near the physical building blocks, usually above them. The framework's contribution
+to the world-model question is therefore not a new architecture but a
+\emph{measurement}: where, across scales, the predictive information concentrates,
+and whether a candidate representation carries it.
 
 % =====================================================================
 \section{Limitations and Scope}
@@ -798,7 +1003,7 @@ labels; all artifacts are content-hashed and independently re-opened for readbac
 frozen-instrument and constellation framing referenced in \S\ref{sec:panel}.
 
 % =====================================================================
-\bibliographystyle{plainnat}
+\bibliographystyle{apacite}
 \bibliography{references}
 
 \end{document}

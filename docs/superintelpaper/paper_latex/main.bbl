@@ -1,190 +1,944 @@
-\begin{thebibliography}{24}
-\providecommand{\natexlab}[1]{#1}
-\providecommand{\url}[1]{\texttt{#1}}
-\expandafter\ifx\csname urlstyle\endcsname\relax
-  \providecommand{\doi}[1]{doi: #1}\else
-  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+\begin{thebibliography}{}
 
-\bibitem[Aleithan et~al.(2024)Aleithan, Xue, Mohajer, Nnorom, Uddin, and
-  Wang]{aleithan2024swebenchplus}
-Reem Aleithan, Haoran Xue, Mohammad~Mahdi Mohajer, Elijah Nnorom, Gias Uddin,
-  and Song Wang.
-\newblock {SWE}-bench+: Enhanced coding benchmark for {LLMs}.
-\newblock \emph{arXiv preprint arXiv:2410.06992}, 2024.
-\newblock URL \url{https://arxiv.org/abs/2410.06992}.
-
-\bibitem[Angelopoulos and Bates(2021)]{angelopoulos2021gentle}
-Anastasios~N. Angelopoulos and Stephen Bates.
-\newblock A gentle introduction to conformal prediction and distribution-free
-  uncertainty quantification.
-\newblock \emph{arXiv preprint arXiv:2107.07511}, 2021.
-\newblock URL \url{https://arxiv.org/abs/2107.07511}.
-
-\bibitem[Belghazi et~al.(2018)Belghazi, Baratin, Rajeswar, Ozair, Bengio,
-  Courville, and Hjelm]{belghazi2018mine}
-Mohamed~Ishmael Belghazi, Aristide Baratin, Sai Rajeswar, Sherjil Ozair, Yoshua
-  Bengio, Aaron Courville, and R~Devon Hjelm.
-\newblock Mutual information neural estimation.
-\newblock In \emph{Proceedings of the 35th International Conference on Machine
-  Learning (ICML)}, volume~80 of \emph{PMLR}, pages 531--540, 2018.
-\newblock URL \url{https://proceedings.mlr.press/v80/belghazi18a.html}.
-
-\bibitem[Brier(1950)]{brier1950verification}
-Glenn~W. Brier.
-\newblock Verification of forecasts expressed in terms of probability.
-\newblock \emph{Monthly Weather Review}, 78\penalty0 (1):\penalty0 1--3, 1950.
-\newblock \doi{10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2}.
-
-\bibitem[Chollet(2019)]{chollet2019measure}
-Fran{\c{c}}ois Chollet.
-\newblock On the measure of intelligence.
-\newblock \emph{arXiv preprint arXiv:1911.01547}, 2019.
-\newblock URL \url{https://arxiv.org/abs/1911.01547}.
-
-\bibitem[Coelho~Mollo and Milli{\`e}re(2023)]{mollo2023vector}
-Dimitri Coelho~Mollo and Rapha{\"e}l Milli{\`e}re.
-\newblock The vector grounding problem.
-\newblock \emph{arXiv preprint arXiv:2304.01481}, 2023.
-\newblock URL \url{https://arxiv.org/abs/2304.01481}.
-
-\bibitem[Cover and Thomas(2006)]{cover2006elements}
-Thomas~M. Cover and Joy~A. Thomas.
-\newblock \emph{Elements of Information Theory}.
-\newblock Wiley-Interscience, 2nd edition, 2006.
-
-\bibitem[Fano(1961)]{fano1961transmission}
-Robert~M. Fano.
-\newblock \emph{Transmission of Information: A Statistical Theory of
-  Communications}.
-\newblock MIT Press, 1961.
-
-\bibitem[Guo et~al.(2017)Guo, Pleiss, Sun, and Weinberger]{guo2017calibration}
-Chuan Guo, Geoff Pleiss, Yu~Sun, and Kilian~Q. Weinberger.
-\newblock On calibration of modern neural networks.
-\newblock In \emph{Proceedings of the 34th International Conference on Machine
-  Learning (ICML)}, volume~70 of \emph{PMLR}, pages 1321--1330, 2017.
-\newblock URL \url{https://arxiv.org/abs/1706.04599}.
-
-\bibitem[Harnad(1990)]{harnad1990symbol}
-Stevan Harnad.
-\newblock The symbol grounding problem.
-\newblock \emph{Physica D: Nonlinear Phenomena}, 42\penalty0 (1--3):\penalty0
-  335--346, 1990.
-\newblock \doi{10.1016/0167-2789(90)90087-6}.
-\newblock URL
-  \url{https://www.southampton.ac.uk/~harnad/Papers/Harnad/harnad90.sgproblem.html}.
-
-\bibitem[Huh et~al.(2024)Huh, Cheung, Wang, and Isola]{huh2024platonic}
-Minyoung Huh, Brian Cheung, Tongzhou Wang, and Phillip Isola.
-\newblock The platonic representation hypothesis.
-\newblock In \emph{Proceedings of the 41st International Conference on Machine
-  Learning (ICML)}, volume 235 of \emph{PMLR}, pages 20617--20642, 2024.
-\newblock URL \url{https://arxiv.org/abs/2405.07987}.
-
-\bibitem[Jimenez et~al.(2024)Jimenez, Yang, Wettig, Yao, Pei, Press, and
-  Narasimhan]{jimenez2024swebench}
-Carlos~E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir
-  Press, and Karthik Narasimhan.
-\newblock {SWE}-bench: Can language models resolve real-world {GitHub} issues?
-\newblock In \emph{International Conference on Learning Representations
-  (ICLR)}, 2024.
-\newblock URL \url{https://arxiv.org/abs/2310.06770}.
-
-\bibitem[Karp(1972)]{karp1972reducibility}
-Richard~M. Karp.
-\newblock Reducibility among combinatorial problems.
-\newblock In \emph{Complexity of Computer Computations}, pages 85--103. Plenum
-  Press, 1972.
-
-\bibitem[Kirkpatrick et~al.(2017)Kirkpatrick, Pascanu, Rabinowitz, Veness,
-  Desjardins, Rusu, Milan, Quan, Ramalho, Grabska-Barwinska, Hassabis, Clopath,
-  Kumaran, and Hadsell]{kirkpatrick2017overcoming}
-James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Joel Veness, Guillaume
-  Desjardins, Andrei~A. Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka
-  Grabska-Barwinska, Demis Hassabis, Claudia Clopath, Dharshan Kumaran, and
-  Raia Hadsell.
-\newblock Overcoming catastrophic forgetting in neural networks.
-\newblock \emph{Proceedings of the National Academy of Sciences}, 114\penalty0
-  (13):\penalty0 3521--3526, 2017.
-\newblock \doi{10.1073/pnas.1611835114}.
-
-\bibitem[Kraskov et~al.(2004)Kraskov, St{\"o}gbauer, and
-  Grassberger]{kraskov2004estimating}
-Alexander Kraskov, Harald St{\"o}gbauer, and Peter Grassberger.
-\newblock Estimating mutual information.
-\newblock \emph{Physical Review E}, 69\penalty0 (6):\penalty0 066138, 2004.
-\newblock \doi{10.1103/PhysRevE.69.066138}.
-\newblock URL
-  \url{https://journals.aps.org/pre/abstract/10.1103/PhysRevE.69.066138}.
-
-\bibitem[LeCun(2022)]{lecun2022path}
-Yann LeCun.
-\newblock A path towards autonomous machine intelligence.
-\newblock Technical Report Version 0.9.2, OpenReview, 2022.
-\newblock URL \url{https://openreview.net/forum?id=BZ5a1r-kVsf}.
-\newblock OpenReview id BZ5a1r-kVsf.
-
-\bibitem[Manheim and Garrabrant(2018)]{manheim2018categorizing}
-David Manheim and Scott Garrabrant.
-\newblock Categorizing variants of goodhart's law.
-\newblock \emph{arXiv preprint arXiv:1803.04585}, 2018.
-\newblock URL \url{https://arxiv.org/abs/1803.04585}.
-
-\bibitem[{OpenAI}(2026)]{openai2026swebench}
-{OpenAI}.
-\newblock Why {SWE}-bench verified no longer measures frontier coding
-  capabilities.
+\bibitem [\protect \citeauthoryear {%
+Aleithan%
+\ \protect \BOthers {.}}{%
+Aleithan%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2024}}%
+}]{%
+aleithan2024swebenchplus}
+\APACinsertmetastar {%
+aleithan2024swebenchplus}%
+\begin{APACrefauthors}%
+Aleithan, R.%
+, Xue, H.%
+, Mohajer, M\BPBI M.%
+, Nnorom, E.%
+, Uddin, G.%
+\BCBL {}\ \BBA {} Wang, S.%
+\end{APACrefauthors}%
+\unskip\
 \newblock
-  \url{https://openai.com/index/why-we-no-longer-evaluate-swe-bench-verified/},
-  2026.
+\APACrefYearMonthDay{2024}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {{SWE}-Bench+: Enhanced Coding Benchmark for {LLMs}}
+  {{SWE}-bench+: Enhanced coding benchmark for {LLMs}}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{arXiv preprint arXiv:2410.06992}{}{}{}.
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/2410.06992} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
 
-\bibitem[Poole et~al.(2019)Poole, Ozair, van~den Oord, Alemi, and
-  Tucker]{poole2019variational}
-Ben Poole, Sherjil Ozair, A{\"a}ron van~den Oord, Alexander~A. Alemi, and
-  George Tucker.
-\newblock On variational bounds of mutual information.
-\newblock In \emph{Proceedings of the 36th International Conference on Machine
-  Learning (ICML)}, volume~97 of \emph{PMLR}, 2019.
-\newblock URL \url{https://arxiv.org/abs/1905.06922}.
+\bibitem [\protect \citeauthoryear {%
+Anderson%
+}{%
+Anderson%
+}{%
+{\protect \APACyear {1972}}%
+}]{%
+anderson1972more}
+\APACinsertmetastar {%
+anderson1972more}%
+\begin{APACrefauthors}%
+Anderson, P\BPBI W.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{1972}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {More Is Different} {More is different}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{Science}{177}{4047}{393--396}.
+\newblock
+\begin{APACrefDOI} \doi{10.1126/science.177.4047.393} \end{APACrefDOI}
+\PrintBackRefs{\CurrentBib}
 
-\bibitem[Steyvers and Tenenbaum(2005)]{steyvers2005largescale}
-Mark Steyvers and Joshua~B. Tenenbaum.
-\newblock The large-scale structure of semantic networks: Statistical analyses
-  and a model of semantic growth.
-\newblock \emph{Cognitive Science}, 29\penalty0 (1):\penalty0 41--78, 2005.
-\newblock \doi{10.1207/s15516709cog2901_3}.
-\newblock URL
-  \url{https://onlinelibrary.wiley.com/doi/10.1207/s15516709cog2901_3}.
+\bibitem [\protect \citeauthoryear {%
+Angelopoulos%
+\ \BBA {} Bates%
+}{%
+Angelopoulos%
+\ \BBA {} Bates%
+}{%
+{\protect \APACyear {2021}}%
+}]{%
+angelopoulos2021gentle}
+\APACinsertmetastar {%
+angelopoulos2021gentle}%
+\begin{APACrefauthors}%
+Angelopoulos, A\BPBI N.%
+\BCBT {}\ \BBA {} Bates, S.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2021}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {A Gentle Introduction to Conformal Prediction and
+  Distribution-Free Uncertainty Quantification} {A gentle introduction to
+  conformal prediction and distribution-free uncertainty
+  quantification}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{arXiv preprint arXiv:2107.07511}{}{}{}.
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/2107.07511} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
 
-\bibitem[Tishby et~al.(1999)Tishby, Pereira, and Bialek]{tishby1999information}
-Naftali Tishby, Fernando~C. Pereira, and William Bialek.
-\newblock The information bottleneck method.
-\newblock In \emph{Proceedings of the 37th Allerton Conference on
-  Communication, Control and Computing}, 1999.
-\newblock URL \url{https://arxiv.org/abs/physics/0004057}.
+\bibitem [\protect \citeauthoryear {%
+Belghazi%
+\ \protect \BOthers {.}}{%
+Belghazi%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2018}}%
+}]{%
+belghazi2018mine}
+\APACinsertmetastar {%
+belghazi2018mine}%
+\begin{APACrefauthors}%
+Belghazi, M\BPBI I.%
+, Baratin, A.%
+, Rajeswar, S.%
+, Ozair, S.%
+, Bengio, Y.%
+, Courville, A.%
+\BCBL {}\ \BBA {} Hjelm, R\BPBI D.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2018}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Mutual Information Neural Estimation} {Mutual
+  information neural estimation}.{\BBCQ}
+\newblock
+\BIn{} \APACrefbtitle {Proceedings of the 35th International Conference on
+  Machine Learning (ICML)} {Proceedings of the 35th international conference on
+  machine learning (icml)}\ (\BVOL~80, \BPGS\ 531--540).
+\newblock
+\begin{APACrefURL} \url{https://proceedings.mlr.press/v80/belghazi18a.html}
+  \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
 
-\bibitem[van~den Oord et~al.(2018)van~den Oord, Li, and
-  Vinyals]{vandenoord2018cpc}
-A{\"a}ron van~den Oord, Yazhe Li, and Oriol Vinyals.
-\newblock Representation learning with contrastive predictive coding.
-\newblock \emph{arXiv preprint arXiv:1807.03748}, 2018.
-\newblock URL \url{https://arxiv.org/abs/1807.03748}.
+\bibitem [\protect \citeauthoryear {%
+Bialek%
+, Nemenman%
+\BCBL {}\ \BBA {} Tishby%
+}{%
+Bialek%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2001}}%
+}]{%
+bialek2001predictability}
+\APACinsertmetastar {%
+bialek2001predictability}%
+\begin{APACrefauthors}%
+Bialek, W.%
+, Nemenman, I.%
+\BCBL {}\ \BBA {} Tishby, N.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2001}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Predictability, Complexity, and Learning}
+  {Predictability, complexity, and learning}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{Neural Computation}{13}{11}{2409--2463}.
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/physics/0007070} \end{APACrefURL}
+\newblock
+\APACrefnote{arXiv:physics/0007070}
+\PrintBackRefs{\CurrentBib}
 
-\bibitem[Vincent-Lamarre et~al.(2016)Vincent-Lamarre, Blondin~Mass{\'e}, Lopes,
-  Lord, Marcotte, and Harnad]{vincentlamarre2016latent}
-Philippe Vincent-Lamarre, Alexandre Blondin~Mass{\'e}, Marcos Lopes,
-  M{\'e}lanie Lord, Odile Marcotte, and Stevan Harnad.
-\newblock The latent structure of dictionaries.
-\newblock \emph{Topics in Cognitive Science}, 8\penalty0 (3):\penalty0
-  625--659, 2016.
-\newblock \doi{10.1111/tops.12211}.
-\newblock URL \url{https://onlinelibrary.wiley.com/doi/10.1111/tops.12211}.
+\bibitem [\protect \citeauthoryear {%
+Brier%
+}{%
+Brier%
+}{%
+{\protect \APACyear {1950}}%
+}]{%
+brier1950verification}
+\APACinsertmetastar {%
+brier1950verification}%
+\begin{APACrefauthors}%
+Brier, G\BPBI W.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{1950}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Verification of Forecasts Expressed in Terms of
+  Probability} {Verification of forecasts expressed in terms of
+  probability}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{Monthly Weather Review}{78}{1}{1--3}.
+\newblock
+\begin{APACrefDOI} \doi{10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2}
+  \end{APACrefDOI}
+\PrintBackRefs{\CurrentBib}
 
-\bibitem[Wang(2025)]{wang2025solved}
-et~al. Wang.
-\newblock Are ``solved issues'' in {SWE}-bench really solved correctly? an
-  empirical study.
-\newblock \emph{arXiv preprint arXiv:2503.15223}, 2025.
-\newblock URL \url{https://arxiv.org/abs/2503.15223}.
+\bibitem [\protect \citeauthoryear {%
+Chollet%
+}{%
+Chollet%
+}{%
+{\protect \APACyear {2019}}%
+}]{%
+chollet2019measure}
+\APACinsertmetastar {%
+chollet2019measure}%
+\begin{APACrefauthors}%
+Chollet, F.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2019}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {On the Measure of Intelligence} {On the measure of
+  intelligence}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{arXiv preprint arXiv:1911.01547}{}{}{}.
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/1911.01547} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Coelho~Mollo%
+\ \BBA {} Milli{\`e}re%
+}{%
+Coelho~Mollo%
+\ \BBA {} Milli{\`e}re%
+}{%
+{\protect \APACyear {2023}}%
+}]{%
+mollo2023vector}
+\APACinsertmetastar {%
+mollo2023vector}%
+\begin{APACrefauthors}%
+Coelho~Mollo, D.%
+\BCBT {}\ \BBA {} Milli{\`e}re, R.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2023}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {The Vector Grounding Problem} {The vector grounding
+  problem}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{arXiv preprint arXiv:2304.01481}{}{}{}.
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/2304.01481} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Cover%
+\ \BBA {} Thomas%
+}{%
+Cover%
+\ \BBA {} Thomas%
+}{%
+{\protect \APACyear {2006}}%
+}]{%
+cover2006elements}
+\APACinsertmetastar {%
+cover2006elements}%
+\begin{APACrefauthors}%
+Cover, T\BPBI M.%
+\BCBT {}\ \BBA {} Thomas, J\BPBI A.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYear{2006}.
+\newblock
+\APACrefbtitle {Elements of Information Theory} {Elements of information
+  theory}\ (\PrintOrdinal{2nd}\ \BEd).
+\newblock
+\APACaddressPublisher{}{Wiley-Interscience}.
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Fano%
+}{%
+Fano%
+}{%
+{\protect \APACyear {1961}}%
+}]{%
+fano1961transmission}
+\APACinsertmetastar {%
+fano1961transmission}%
+\begin{APACrefauthors}%
+Fano, R\BPBI M.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYear{1961}.
+\newblock
+\APACrefbtitle {Transmission of Information: A Statistical Theory of
+  Communications} {Transmission of information: A statistical theory of
+  communications}.
+\newblock
+\APACaddressPublisher{}{MIT Press}.
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Feynman%
+}{%
+Feynman%
+}{%
+{\protect \APACyear {1982}}%
+}]{%
+feynman1982simulating}
+\APACinsertmetastar {%
+feynman1982simulating}%
+\begin{APACrefauthors}%
+Feynman, R\BPBI P.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{1982}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Simulating Physics with Computers} {Simulating physics
+  with computers}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{International Journal of Theoretical
+  Physics}{21}{6--7}{467--488}.
+\newblock
+\begin{APACrefDOI} \doi{10.1007/BF02650179} \end{APACrefDOI}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Guo%
+, Pleiss%
+, Sun%
+\BCBL {}\ \BBA {} Weinberger%
+}{%
+Guo%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2017}}%
+}]{%
+guo2017calibration}
+\APACinsertmetastar {%
+guo2017calibration}%
+\begin{APACrefauthors}%
+Guo, C.%
+, Pleiss, G.%
+, Sun, Y.%
+\BCBL {}\ \BBA {} Weinberger, K\BPBI Q.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2017}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {On Calibration of Modern Neural Networks} {On
+  calibration of modern neural networks}.{\BBCQ}
+\newblock
+\BIn{} \APACrefbtitle {Proceedings of the 34th International Conference on
+  Machine Learning (ICML)} {Proceedings of the 34th international conference on
+  machine learning (icml)}\ (\BVOL~70, \BPGS\ 1321--1330).
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/1706.04599} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Harnad%
+}{%
+Harnad%
+}{%
+{\protect \APACyear {1990}}%
+}]{%
+harnad1990symbol}
+\APACinsertmetastar {%
+harnad1990symbol}%
+\begin{APACrefauthors}%
+Harnad, S.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{1990}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {The Symbol Grounding Problem} {The symbol grounding
+  problem}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{Physica D: Nonlinear Phenomena}{42}{1--3}{335--346}.
+\newblock
+\begin{APACrefURL}
+  \url{https://www.southampton.ac.uk/~harnad/Papers/Harnad/harnad90.sgproblem.html}
+  \end{APACrefURL}
+\newblock
+\begin{APACrefDOI} \doi{10.1016/0167-2789(90)90087-6} \end{APACrefDOI}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Huh%
+, Cheung%
+, Wang%
+\BCBL {}\ \BBA {} Isola%
+}{%
+Huh%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2024}}%
+}]{%
+huh2024platonic}
+\APACinsertmetastar {%
+huh2024platonic}%
+\begin{APACrefauthors}%
+Huh, M.%
+, Cheung, B.%
+, Wang, T.%
+\BCBL {}\ \BBA {} Isola, P.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2024}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {The Platonic Representation Hypothesis} {The platonic
+  representation hypothesis}.{\BBCQ}
+\newblock
+\BIn{} \APACrefbtitle {Proceedings of the 41st International Conference on
+  Machine Learning (ICML)} {Proceedings of the 41st international conference on
+  machine learning (icml)}\ (\BVOL~235, \BPGS\ 20617--20642).
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/2405.07987} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Jimenez%
+\ \protect \BOthers {.}}{%
+Jimenez%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2024}}%
+}]{%
+jimenez2024swebench}
+\APACinsertmetastar {%
+jimenez2024swebench}%
+\begin{APACrefauthors}%
+Jimenez, C\BPBI E.%
+, Yang, J.%
+, Wettig, A.%
+, Yao, S.%
+, Pei, K.%
+, Press, O.%
+\BCBL {}\ \BBA {} Narasimhan, K.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2024}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {{SWE}-bench: Can Language Models Resolve Real-World
+  {GitHub} Issues?} {{SWE}-bench: Can language models resolve real-world
+  {GitHub} issues?}{\BBCQ}
+\newblock
+\BIn{} \APACrefbtitle {International Conference on Learning Representations
+  (ICLR).} {International conference on learning representations (iclr).}
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/2310.06770} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Karp%
+}{%
+Karp%
+}{%
+{\protect \APACyear {1972}}%
+}]{%
+karp1972reducibility}
+\APACinsertmetastar {%
+karp1972reducibility}%
+\begin{APACrefauthors}%
+Karp, R\BPBI M.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{1972}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Reducibility Among Combinatorial Problems} {Reducibility
+  among combinatorial problems}.{\BBCQ}
+\newblock
+\BIn{} \APACrefbtitle {Complexity of Computer Computations} {Complexity of
+  computer computations}\ (\BPGS\ 85--103).
+\newblock
+\APACaddressPublisher{}{Plenum Press}.
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Kirkpatrick%
+\ \protect \BOthers {.}}{%
+Kirkpatrick%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2017}}%
+}]{%
+kirkpatrick2017overcoming}
+\APACinsertmetastar {%
+kirkpatrick2017overcoming}%
+\begin{APACrefauthors}%
+Kirkpatrick, J.%
+, Pascanu, R.%
+, Rabinowitz, N.%
+, Veness, J.%
+, Desjardins, G.%
+, Rusu, A\BPBI A.%
+\BDBL {}Hadsell, R.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2017}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Overcoming Catastrophic Forgetting in Neural Networks}
+  {Overcoming catastrophic forgetting in neural networks}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{Proceedings of the National Academy of
+  Sciences}{114}{13}{3521--3526}.
+\newblock
+\begin{APACrefDOI} \doi{10.1073/pnas.1611835114} \end{APACrefDOI}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Kraskov%
+, St{\"o}gbauer%
+\BCBL {}\ \BBA {} Grassberger%
+}{%
+Kraskov%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2004}}%
+}]{%
+kraskov2004estimating}
+\APACinsertmetastar {%
+kraskov2004estimating}%
+\begin{APACrefauthors}%
+Kraskov, A.%
+, St{\"o}gbauer, H.%
+\BCBL {}\ \BBA {} Grassberger, P.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2004}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Estimating Mutual Information} {Estimating mutual
+  information}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{Physical Review E}{69}{6}{066138}.
+\newblock
+\begin{APACrefURL}
+  \url{https://journals.aps.org/pre/abstract/10.1103/PhysRevE.69.066138}
+  \end{APACrefURL}
+\newblock
+\begin{APACrefDOI} \doi{10.1103/PhysRevE.69.066138} \end{APACrefDOI}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Lake%
+, Ullman%
+, Tenenbaum%
+\BCBL {}\ \BBA {} Gershman%
+}{%
+Lake%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2017}}%
+}]{%
+lake2017building}
+\APACinsertmetastar {%
+lake2017building}%
+\begin{APACrefauthors}%
+Lake, B\BPBI M.%
+, Ullman, T\BPBI D.%
+, Tenenbaum, J\BPBI B.%
+\BCBL {}\ \BBA {} Gershman, S\BPBI J.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2017}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Building Machines That Learn and Think Like People}
+  {Building machines that learn and think like people}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{Behavioral and Brain Sciences}{40}{}{e253}.
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/1604.00289} \end{APACrefURL}
+\newblock
+\APACrefnote{arXiv:1604.00289}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+LeCun%
+}{%
+LeCun%
+}{%
+{\protect \APACyear {2022}}%
+}]{%
+lecun2022path}
+\APACinsertmetastar {%
+lecun2022path}%
+\begin{APACrefauthors}%
+LeCun, Y.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2022}{}{}.
+\newblock
+\APACrefbtitle {A Path Towards Autonomous Machine Intelligence} {A path towards
+  autonomous machine intelligence}\ \APACbVolEdTR{}{\BTR{}\ \BNUM\ Version
+  0.9.2}.
+\newblock
+\APACaddressInstitution{}{OpenReview}.
+\newblock
+\begin{APACrefURL} \url{https://openreview.net/forum?id=BZ5a1r-kVsf}
+  \end{APACrefURL}
+\newblock
+\APACrefnote{OpenReview id BZ5a1r-kVsf}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Manheim%
+\ \BBA {} Garrabrant%
+}{%
+Manheim%
+\ \BBA {} Garrabrant%
+}{%
+{\protect \APACyear {2018}}%
+}]{%
+manheim2018categorizing}
+\APACinsertmetastar {%
+manheim2018categorizing}%
+\begin{APACrefauthors}%
+Manheim, D.%
+\BCBT {}\ \BBA {} Garrabrant, S.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2018}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Categorizing Variants of Goodhart's Law} {Categorizing
+  variants of goodhart's law}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{arXiv preprint arXiv:1803.04585}{}{}{}.
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/1803.04585} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Mehta%
+\ \BBA {} Schwab%
+}{%
+Mehta%
+\ \BBA {} Schwab%
+}{%
+{\protect \APACyear {2014}}%
+}]{%
+mehta2014exact}
+\APACinsertmetastar {%
+mehta2014exact}%
+\begin{APACrefauthors}%
+Mehta, P.%
+\BCBT {}\ \BBA {} Schwab, D\BPBI J.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2014}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {An Exact Mapping Between the Variational Renormalization
+  Group and Deep Learning} {An exact mapping between the variational
+  renormalization group and deep learning}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{arXiv preprint arXiv:1410.3831}{}{}{}.
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/1410.3831} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+{OpenAI}%
+}{%
+{OpenAI}%
+}{%
+{\protect \APACyear {2026}}%
+}]{%
+openai2026swebench}
+\APACinsertmetastar {%
+openai2026swebench}%
+\begin{APACrefauthors}%
+{OpenAI}.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2026}{}{}.
+\newblock
+\APACrefbtitle {Why {SWE}-bench Verified No Longer Measures Frontier Coding
+  Capabilities.} {Why {SWE}-bench verified no longer measures frontier coding
+  capabilities.}
+\newblock
+\APAChowpublished
+  {\url{https://openai.com/index/why-we-no-longer-evaluate-swe-bench-verified/}}.
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Poole%
+, Ozair%
+, van~den Oord%
+, Alemi%
+\BCBL {}\ \BBA {} Tucker%
+}{%
+Poole%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2019}}%
+}]{%
+poole2019variational}
+\APACinsertmetastar {%
+poole2019variational}%
+\begin{APACrefauthors}%
+Poole, B.%
+, Ozair, S.%
+, van~den Oord, A.%
+, Alemi, A\BPBI A.%
+\BCBL {}\ \BBA {} Tucker, G.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2019}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {On Variational Bounds of Mutual Information} {On
+  variational bounds of mutual information}.{\BBCQ}
+\newblock
+\BIn{} \APACrefbtitle {Proceedings of the 36th International Conference on
+  Machine Learning (ICML)} {Proceedings of the 36th international conference on
+  machine learning (icml)}\ (\BVOL~97).
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/1905.06922} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Shalizi%
+\ \BBA {} Crutchfield%
+}{%
+Shalizi%
+\ \BBA {} Crutchfield%
+}{%
+{\protect \APACyear {2001}}%
+}]{%
+shalizi2001computational}
+\APACinsertmetastar {%
+shalizi2001computational}%
+\begin{APACrefauthors}%
+Shalizi, C\BPBI R.%
+\BCBT {}\ \BBA {} Crutchfield, J\BPBI P.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2001}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Computational Mechanics: Pattern and Prediction,
+  Structure and Simplicity} {Computational mechanics: Pattern and prediction,
+  structure and simplicity}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{Journal of Statistical Physics}{104}{3--4}{817--879}.
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/cond-mat/9907176}
+  \end{APACrefURL}
+\newblock
+\APACrefnote{arXiv:cond-mat/9907176}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Spelke%
+\ \BBA {} Kinzler%
+}{%
+Spelke%
+\ \BBA {} Kinzler%
+}{%
+{\protect \APACyear {2007}}%
+}]{%
+spelke2007core}
+\APACinsertmetastar {%
+spelke2007core}%
+\begin{APACrefauthors}%
+Spelke, E\BPBI S.%
+\BCBT {}\ \BBA {} Kinzler, K\BPBI D.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2007}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Core Knowledge} {Core knowledge}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{Developmental Science}{10}{1}{89--96}.
+\newblock
+\begin{APACrefDOI} \doi{10.1111/j.1467-7687.2007.00569.x} \end{APACrefDOI}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Steyvers%
+\ \BBA {} Tenenbaum%
+}{%
+Steyvers%
+\ \BBA {} Tenenbaum%
+}{%
+{\protect \APACyear {2005}}%
+}]{%
+steyvers2005largescale}
+\APACinsertmetastar {%
+steyvers2005largescale}%
+\begin{APACrefauthors}%
+Steyvers, M.%
+\BCBT {}\ \BBA {} Tenenbaum, J\BPBI B.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2005}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {The Large-Scale Structure of Semantic Networks:
+  Statistical Analyses and a Model of Semantic Growth} {The large-scale
+  structure of semantic networks: Statistical analyses and a model of semantic
+  growth}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{Cognitive Science}{29}{1}{41--78}.
+\newblock
+\begin{APACrefURL}
+  \url{https://onlinelibrary.wiley.com/doi/10.1207/s15516709cog2901_3}
+  \end{APACrefURL}
+\newblock
+\begin{APACrefDOI} \doi{10.1207/s15516709cog2901_3} \end{APACrefDOI}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Tishby%
+, Pereira%
+\BCBL {}\ \BBA {} Bialek%
+}{%
+Tishby%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {1999}}%
+}]{%
+tishby1999information}
+\APACinsertmetastar {%
+tishby1999information}%
+\begin{APACrefauthors}%
+Tishby, N.%
+, Pereira, F\BPBI C.%
+\BCBL {}\ \BBA {} Bialek, W.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{1999}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {The Information Bottleneck Method} {The information
+  bottleneck method}.{\BBCQ}
+\newblock
+\BIn{} \APACrefbtitle {Proceedings of the 37th Allerton Conference on
+  Communication, Control and Computing.} {Proceedings of the 37th allerton
+  conference on communication, control and computing.}
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/physics/0004057} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+van~den Oord%
+, Li%
+\BCBL {}\ \BBA {} Vinyals%
+}{%
+van~den Oord%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2018}}%
+}]{%
+vandenoord2018cpc}
+\APACinsertmetastar {%
+vandenoord2018cpc}%
+\begin{APACrefauthors}%
+van~den Oord, A.%
+, Li, Y.%
+\BCBL {}\ \BBA {} Vinyals, O.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2018}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Representation Learning with Contrastive Predictive
+  Coding} {Representation learning with contrastive predictive coding}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{arXiv preprint arXiv:1807.03748}{}{}{}.
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/1807.03748} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+{Vincent-Lamarre}%
+\ \protect \BOthers {.}}{%
+{Vincent-Lamarre}%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2016}}%
+}]{%
+vincentlamarre2016latent}
+\APACinsertmetastar {%
+vincentlamarre2016latent}%
+\begin{APACrefauthors}%
+{Vincent-Lamarre}, P.%
+, {Blondin Mass{\'e}}, A.%
+, Lopes, M.%
+, Lord, M.%
+, Marcotte, O.%
+\BCBL {}\ \BBA {} Harnad, S.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2016}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {The Latent Structure of Dictionaries} {The latent
+  structure of dictionaries}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{Topics in Cognitive Science}{8}{3}{625--659}.
+\newblock
+\begin{APACrefURL} \url{https://onlinelibrary.wiley.com/doi/10.1111/tops.12211}
+  \end{APACrefURL}
+\newblock
+\begin{APACrefDOI} \doi{10.1111/tops.12211} \end{APACrefDOI}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Wang%
+, Pradel%
+\BCBL {}\ \BBA {} Liu%
+}{%
+Wang%
+\ \protect \BOthers {.}}{%
+{\protect \APACyear {2025}}%
+}]{%
+wang2025solved}
+\APACinsertmetastar {%
+wang2025solved}%
+\begin{APACrefauthors}%
+Wang, Y.%
+, Pradel, M.%
+\BCBL {}\ \BBA {} Liu, Z.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYearMonthDay{2025}{}{}.
+\newblock
+{\BBOQ}\APACrefatitle {Are ``Solved Issues'' in {SWE}-bench Really Solved
+  Correctly? An Empirical Study} {Are ``solved issues'' in {SWE}-bench really
+  solved correctly? an empirical study}.{\BBCQ}
+\newblock
+\APACjournalVolNumPages{arXiv preprint arXiv:2503.15223}{}{}{}.
+\newblock
+\begin{APACrefURL} \url{https://arxiv.org/abs/2503.15223} \end{APACrefURL}
+\PrintBackRefs{\CurrentBib}
+
+\bibitem [\protect \citeauthoryear {%
+Wolfram%
+}{%
+Wolfram%
+}{%
+{\protect \APACyear {2002}}%
+}]{%
+wolfram2002nks}
+\APACinsertmetastar {%
+wolfram2002nks}%
+\begin{APACrefauthors}%
+Wolfram, S.%
+\end{APACrefauthors}%
+\unskip\
+\newblock
+\APACrefYear{2002}.
+\newblock
+\APACrefbtitle {A New Kind of Science} {A new kind of science}.
+\newblock
+\APACaddressPublisher{}{Wolfram Media}.
+\PrintBackRefs{\CurrentBib}
 
 \end{thebibliography}
