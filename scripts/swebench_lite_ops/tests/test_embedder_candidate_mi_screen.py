@@ -34,7 +34,7 @@ def write_dataset(root: Path, *, X: np.ndarray, y: np.ndarray, rows: list[dict],
     (root / "dataset_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def write_candidate(path: Path, rows: list[dict], values: np.ndarray, *, forbidden: bool = False) -> None:
+def write_candidate(path: Path, rows: list[dict], values: np.ndarray, *, feature_field: str = "features", forbidden: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     out = []
     for idx, row in enumerate(rows):
@@ -45,7 +45,7 @@ def write_candidate(path: Path, rows: list[dict], values: np.ndarray, *, forbidd
         payload = {
             "task_id": row["task_instance_id"],
             "category": row["mutation_category"],
-            "features": features,
+            feature_field: features,
         }
         if forbidden and idx == 0:
             payload["actual_oracle_pass"] = bool(row["oracle_all_passed"])
@@ -147,6 +147,43 @@ def test_candidate_screen_selects_signal_and_mirrors_state(tmp_path: Path) -> No
     assert by_id["trace_signal"]["augmented_delta_bits_vs_baseline"] > by_id["trace_noise"]["augmented_delta_bits_vs_baseline"]
     assert "trace_signal" in manifest["selected_candidates"]
     assert state_manifest.read_text(encoding="utf-8") == manifest_path.read_text(encoding="utf-8")
+
+
+def test_candidate_screen_accepts_per_candidate_feature_fields(tmp_path: Path) -> None:
+    dataset_root, _signal_path, noise_path = fixture(tmp_path)
+    rows = [
+        json.loads(line)
+        for line in (dataset_root / "dataset_rows.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    y = np.load(dataset_root / "panel_oracle_dataset.npz")["y"]
+    live_path = tmp_path / "live.jsonl"
+    live_values = np.column_stack([y.astype(np.float32), np.ones_like(y, dtype=np.float32)])
+    write_candidate(live_path, rows, live_values, feature_field="live_features")
+
+    result = run_candidate_screen(
+        make_args(
+            tmp_path,
+            dataset_root,
+            [f"live_signal:live_features={live_path}", f"trace_noise={noise_path}"],
+        )
+    )
+    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+    summary_rows = [
+        json.loads(line)
+        for line in Path(manifest["artifacts"]["candidate_matrix_summaries"]).read_text(encoding="utf-8").splitlines()
+    ]
+    by_id = {row["candidate_id"]: row for row in summary_rows}
+
+    assert by_id["live_signal"]["source_summary"]["feature_field"] == "live_features"
+    assert by_id["trace_noise"]["source_summary"]["feature_field"] == "features"
+    assert "live_signal" in manifest["selected_candidates"]
+
+
+def test_candidate_screen_rejects_forbidden_per_candidate_feature_field(tmp_path: Path) -> None:
+    dataset_root, signal_path, _noise_path = fixture(tmp_path)
+
+    with pytest.raises(CandidateMiScreenError, match="CANDIDATE_MI_FEATURE_FIELD_FORBIDDEN"):
+        run_candidate_screen(make_args(tmp_path, dataset_root, [f"bad:oracle_all_passed={signal_path}"]))
 
 
 def test_candidate_screen_rejects_target_side_source_rows(tmp_path: Path) -> None:

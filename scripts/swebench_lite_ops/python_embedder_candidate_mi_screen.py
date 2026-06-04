@@ -102,6 +102,7 @@ class CandidateMiScreenError(RuntimeError):
 class CandidateSpec:
     candidate_id: str
     path: Path
+    feature_field: str | None = None
 
 
 @dataclass(frozen=True)
@@ -284,13 +285,23 @@ def load_panel_dataset(dataset_root: Path, *, allow_non_aiwonder_roots: bool) ->
 
 def parse_candidate_spec(raw: str) -> CandidateSpec:
     require("=" in raw, "CANDIDATE_MI_CANDIDATE_SPEC_INVALID", raw)
-    candidate_id, path_text = raw.split("=", 1)
+    candidate_head, path_text = raw.split("=", 1)
+    candidate_head = candidate_head.strip()
+    if ":" in candidate_head:
+        candidate_id, feature_field = candidate_head.split(":", 1)
+        feature_field = feature_field.strip()
+        require(bool(feature_field), "CANDIDATE_MI_FEATURE_FIELD_EMPTY", raw)
+        require(re.match(r"^[A-Za-z0-9_]+$", feature_field) is not None, "CANDIDATE_MI_FEATURE_FIELD_INVALID", feature_field)
+        require(feature_field not in FORBIDDEN_FEATURE_KEYS, "CANDIDATE_MI_FEATURE_FIELD_FORBIDDEN", feature_field)
+    else:
+        candidate_id = candidate_head
+        feature_field = None
     candidate_id = candidate_id.strip()
     require(bool(candidate_id), "CANDIDATE_MI_CANDIDATE_ID_EMPTY", raw)
-    require(re.match(r"^[A-Za-z0-9_.:-]+$", candidate_id) is not None, "CANDIDATE_MI_CANDIDATE_ID_INVALID", candidate_id)
+    require(re.match(r"^[A-Za-z0-9_.-]+$", candidate_id) is not None, "CANDIDATE_MI_CANDIDATE_ID_INVALID", candidate_id)
     path = Path(path_text.strip())
     require(str(path), "CANDIDATE_MI_CANDIDATE_PATH_EMPTY", raw)
-    return CandidateSpec(candidate_id=candidate_id, path=path)
+    return CandidateSpec(candidate_id=candidate_id, path=path, feature_field=feature_field)
 
 
 def row_key(row: dict[str, Any]) -> tuple[str, str]:
@@ -348,12 +359,13 @@ def load_candidate_matrix(
     *,
     spec: CandidateSpec,
     dataset_rows: list[dict[str, Any]],
-    feature_field: str,
+    default_feature_field: str,
     allow_non_aiwonder_roots: bool,
 ) -> CandidateMatrix:
     import numpy as np
 
     require_aiwonder_path(spec.path, f"candidate:{spec.candidate_id}", allow_non_aiwonder_roots)
+    feature_field = spec.feature_field or default_feature_field
     source_rows = read_jsonl(spec.path)
     dataset_keys = [row_key(row) for row in dataset_rows]
     require(len(set(dataset_keys)) == len(dataset_keys), "CANDIDATE_MI_DATASET_KEY_DUPLICATE")
@@ -402,6 +414,7 @@ def load_candidate_matrix(
             "matched_row_count": int(X.shape[0]),
             "extra_row_count": len(extra),
             "feature_count": len(ordered_features),
+            "feature_field": feature_field,
             "nonconstant_feature_count": nonconstant_dim,
             "min_feature_presence": min(feature_counts.values()) if feature_counts else 0,
             "max_feature_presence": max(feature_counts.values()) if feature_counts else 0,
@@ -704,7 +717,7 @@ def run_candidate_screen(args: argparse.Namespace) -> dict[str, Any]:
         load_candidate_matrix(
             spec=spec,
             dataset_rows=dataset.rows,
-            feature_field=str(args.feature_field),
+            default_feature_field=str(args.feature_field),
             allow_non_aiwonder_roots=bool(args.allow_non_aiwonder_roots),
         )
         for spec in candidate_specs
