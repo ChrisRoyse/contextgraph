@@ -21,14 +21,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-try:
-    from .python_patch_lexical_baseline import lexical_tokens
-except ImportError:  # pragma: no cover - direct script execution on aiwonder.
-    import sys
-
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from swebench_lite_ops.python_patch_lexical_baseline import lexical_tokens  # type: ignore
-
 
 TASK_ID = "INV-032"
 CANONICAL_ISSUE = "#844"
@@ -41,6 +33,10 @@ DEFAULT_CORPUS_ROOT = Path("/zfs/archive/contextgraph/corpus/swebench-lite-pytho
 DEFAULT_OUTPUT_PARENT = Path("/zfs/archive/contextgraph/fsv/embedder-candidate-screening-fsv")
 DEFAULT_STATE_PARENT = Path("/zfs/archive/contextgraph/state/embedder-candidate-screening/inv-032-v1")
 FEATURE_KEY_RE = re.compile(r"^[A-Za-z0-9_.:/@|+=, -]{1,240}$")
+TOKEN_RE = re.compile(
+    r"[A-Za-z_][A-Za-z0-9_]*|0x[0-9A-Fa-f]+|\d+\.\d+|\d+|==|!=|<=|>=|->|[-+*/%]=|"
+    r"[-+*/%<>]=?|[(){}\[\].,:;]"
+)
 
 
 class PatchLexicalCandidateFeatureError(RuntimeError):
@@ -168,6 +164,44 @@ def line_shape_features(text: str) -> dict[str, float]:
     add_feature(features, "line:add_minus_del", float(prefixes["add"] - prefixes["del"]))
     add_feature(features, "line:add_del_total_log1p", math.log1p(prefixes["add"] + prefixes["del"]))
     return features
+
+
+def lexical_tokens(text: str) -> list[str]:
+    tokens: list[str] = []
+    previous: str | None = None
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip("\n")
+        prefix = "ctx"
+        body = line
+        if line.startswith("+") and not line.startswith("+++"):
+            prefix = "add"
+            body = line[1:]
+        elif line.startswith("-") and not line.startswith("---"):
+            prefix = "del"
+            body = line[1:]
+        elif line.startswith("@@"):
+            prefix = "hunk"
+        elif line.startswith("diff ") or line.startswith("index ") or line.startswith("---") or line.startswith("+++"):
+            prefix = "meta"
+        tokens.append(f"line:{prefix}")
+        for match in TOKEN_RE.finditer(body.lower()):
+            token = normalize_token(match.group(0))
+            current = f"{prefix}:{token}"
+            tokens.append(current)
+            if previous is not None:
+                tokens.append(f"bi:{previous}>{current}")
+            previous = current
+    return tokens
+
+
+def normalize_token(token: str) -> str:
+    if token.isdigit():
+        return "<int>"
+    if re.fullmatch(r"\d+\.\d+", token):
+        return "<float>"
+    if re.fullmatch(r"0x[0-9a-f]+", token):
+        return "<hex>"
+    return token
 
 
 def sparse_hash_features(text: str, *, hash_dim: int, token_limit: int) -> tuple[dict[str, float], dict[str, int]]:
