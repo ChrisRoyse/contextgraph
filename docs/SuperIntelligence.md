@@ -4,7 +4,7 @@
 
 This document depends on no other file. Every term, every threshold, every protocol, every architectural decision needed to evaluate the predicate or build a verifier against it is contained here.
 
-**Last updated:** 2026-05-27.
+**Last updated:** 2026-06-04.
 
 ---
 
@@ -718,7 +718,7 @@ Once filled, the universal formula in Part II instantiates to `D`'s exact ship-g
 
 ## Part XII — Worked Instantiation: ME-JEPA-Code on Python (Current Project State)
 
-**Current measurement (2026-05-24).**
+**Current measurement (updated 2026-06-04 with the panel-sufficiency reframe).**
 
 | Metric | Target | Latest measurement |
 |---|---|---|
@@ -727,30 +727,70 @@ Once filled, the universal formula in Part II instantiates to `D`'s exact ship-g
 | ECE (aggregate) | ≤ 0.05 | `0.0240316074` ✓ |
 | Cross-panel `corr_B` (Panel B) | ≥ 0.95 with `|corr_a − corr_b| ≤ 0.05` | Not yet measured |
 | `mistake_repeat_rate` (rolling 100-mistake window) | ≤ 0.05 | Storage/MCP shipped; full convergence measurement blocked behind trainer + telemetry repairs |
+| **`I(panel; oracle)` (Tier-5 panel sufficiency)** | **≥ 0.95 bits** | **`0.461` bits (Kraskov) / `0.096` (MINE) / `0.125` (classifier LB) — `panel_sufficient=false`** |
+| **`oracle_self_consistency` (Tier-5 oracle reachability)** | **≥ 0.97** | **`1.0` (300 Docker invocations, clean) ✓** |
 
-**Honest gap to ship:** `0.95 − 0.4843 = 0.4657` against raw Pearson.
+**Honest gap to ship:** `0.95 − 0.4843 = 0.4657` against raw Pearson — **but this gap is not the predictor's to close yet.** The Tier-5 substrate probes (below) have now been run and they relocate the bottleneck upstream of the predictor entirely.
 
-**Tier 5 substrate probes (not yet measured — cheapest highest-leverage tests in the project):**
-- `I(panel; oracle_outcome)` ≥ 0.95 bits — if below, panel is provably underpowered; no further model work moves Tier-1 #1 without state change (corpus/panel expansion). Estimated cost ~3-5 days of compute.
-- `oracle_self_consistency` ≥ 0.97 — if below, Tier-1 #1 is mathematically unreachable at 0.95; either raise oracle replica voting or revise `τ_corr` downward to floor minus epsilon. Estimated cost ~2 hours of Docker oracle re-runs.
+### XII.1 — The grounding-kernel reframe (the central 2026-06-04 finding)
 
-Both probes have the property that they can falsify Tier 1 in advance of any further model work. Running them before more model investment is mandatory.
+The paper `docs/paper_latex/main.tex` (§ symbol-grounding, `:551-557`) separates two objects the ship-gate vocabulary routinely conflates:
 
-**Per-cell weak cells today:** `delete_test_call`, `off_by_one`, `subtle_flip`. `delete_test_call` is corpus-starved (zero calibration-split failures) — addressed by an active regeneration plan (1,131 deterministic candidates awaiting Docker oracle batch).
+- **Anchor / grounding channel** — the operator that turns a candidate into a grounded bit by contact with non-linguistic reality. Ours is the **Docker oracle** Pass/Fail. It is the *channel*, not the kernel.
+- **The grounding kernel (the "1% kernel" / minimum grounding set, MGS)** — the minimal *set of artifacts* that must be pushed through the anchor so the rest is recoverable by **association alone**. For dictionaries this is a minimum feedback vertex set of ≈1% of words (Vincent-Lamarre 2016). For Python: the MGS of the code-association graph (nodes = `(patch, verdict)`; edge `X←Y` = "given the grounded verdict on `Y`, the frozen panel predicts `verdict(X)`" — the constellation-membership `Def(t)` operator).
+
+**Consequence:** the current ship gate brute-forces the anchor across 100% of the corpus (oracle-everything, correlate). The kernel reframe says: ground only the ~1% MGS and derive the other 99% by association. The MGS concentrates on the **Pass/Fail decision-surface boundary cases**, not the obvious-pass / obvious-fail patches.
+
+### XII.2 — Does the Python kernel exist? Already answered: NO at the current panel
+
+A small kernel can only exist if the panel carries the bits — the data-processing ceiling. `I(panel; oracle)` is the **all-methods upper bound**: no predictor, no MGS search, no constellation operator can recover more verdict-information than the panel shares with the oracle. Measured (#759, aiwonder SoT `/zfs/archive/contextgraph/fsv/inv-032-panel-sufficiency-mi-fsv/run-20260529T234900Z/full-candidate-map`, 2,400 rows, slot-identity preserved, no flat-concat):
+
+- `I(panel; oracle) ≤ 0.461 bits ≪ 0.95` → **kernel does not exist at the current 9-slot panel.**
+- Anchor is clean: `oracle_self_consistency = 1.0` (#760) — the oracle is **not** the bottleneck.
+
+Computing the MGS today would only re-derive `MGS ≈ 100%`. **You cannot calculate a kernel into existence — raising the panel's bits is what makes one possible.** The existence/size harness is specified (#843) and gated on panel sufficiency.
+
+### XII.3 — Why the panel is information-starved: it measures form, not behavior
+
+Per-slot readback from #759 names the deficiency precisely:
+
+- **Drop-one-embedder ablation (largest deltas):** `e8=0.031, e6=0.029, e7=0.021, e14=0.019` bits. **No slot is load-bearing** — the strongest single contributor is worth 0.031 bits. This is *absence* of signal, not redundancy (redundancy → low drop-one but high joint; here the joint is also low).
+- **Per-cell MINE:** `swap_variable=0.231` bits (the only non-trivial cell), `off_by_one=0.021`, and `compile_error / delete_test_call / wrong_file / over_engineer / subtle_flip` all **near zero**. The one cell with signal is the pure token-level edit; the near-zero cells are the **behavioral** ones.
+
+**The embedders see what code *looks like*, not what it *does*.** Two distinct, compounding deficiencies:
+
+1. **Wrong objective.** E1/E7/E8 etc. are similarity/retrieval embedders (the original memory system). Pass/fail prediction is an *outcome/causal* task; a great similarity embedder carries almost no outcome signal.
+2. **Wrong modality / observability floor.** The panel is fed static AST. Static source **under-determines** runtime pass/fail, so for behavioral cells the answer is not in the input at all — no embedder can extract a bit the input lacks. Recovering those bits likely requires **execution-derived inputs** (traces, partial-run/coverage, dependency/runtime/env state).
+
+### XII.4 — The plan: assemble a high-signal embedder panel for Python
+
+The binding work is **building a panel whose `I(panel; oracle) ≥ 0.95 bits`** (#745). The method is an empirical embedder-selection loop, not a guess:
+
+1. **Acquire candidates.** Download / instantiate a broad pool of candidate encoders across modalities: code-outcome / execution-aware models, causal (edit→outcome) embedders, dependency/runtime/env encoders, AST/CFG/DFG structural encoders, plus execution-trace and coverage feature extractors. (HTTP only on the research/acquisition path, never in action paths — doctrine §10.)
+2. **Run them over the corpus** to produce per-candidate panel vectors on the 2,400-row dataset (slot identity preserved; no flat-concat).
+3. **Measure each candidate's marginal bit contribution** — `I({candidate}; oracle)` standalone, and `ΔI = I(panel ∪ {candidate}; oracle) − I(panel; oracle)` (greedy forward selection), reusing the #759 MINE + classifier + Kraskov estimator stack. Watch **per-cell** MI on the behavioral categories (currently ~0) — those are the cells that must move.
+4. **Greedily assemble the panel** that maximizes `I(panel; oracle)` subject to the Tier-6 gates (novelty `< 0.7` vs existing slots; per-cell utility lift `≥ 0.005`; inter-sensor distinctness). Stop when `I(panel; oracle) ≥ 0.95 bits` or candidates are exhausted.
+5. **Acceptance gate:** re-run #759 → require `I(panel; oracle) ≥ 0.95 bits` AND behavioral-cell MI off zero. Only then is the kernel (#843) well-posed and the predictor head (training, #683) able to move Tier-1.
+
+This is the Tier-5 → Tier-6 loop made concrete: **measure bit contribution, keep what carries oracle signal, assemble the minimal sufficient panel, then find the kernel.**
 
 **Activation event for Python.** When the activation banner in Part VII emits TRUE, the 8 consequences execute: human review of AI-generated Python patches becomes statistically unjustified, and the same predicate template begins instantiation for the next eligible domain.
 
-**Critical path to ship.** The ordered sequence required to move Tier-1 #1 from `0.4843` to `0.95`:
+### XII.5 — Critical path to ship (revised 2026-06-04, panel-sufficiency-first)
 
-1. Unified real training path with public trainer contract; production checkpoint manifest required fail-closed.
-2. Inter-embedder distinctness gate passes; v2 static AST cache rebuild with 9 active slots (`e1, e6, e7, e8, e9, e10, e12, e13, e14`); retired temporal slots stay retired for static AST.
-3. Per-cell weak-cell corpus regeneration (e.g., `delete_test_call` Docker oracle batch over 1,131 deterministic candidates → rebuild AST → labels).
-4. Per-slot OOD aggregation; slot-preserving panel projections (anti-compensation invariant repair).
-5. Replace any rank-lift Goodhart metric with raw Pearson + isotonic/Platt calibration.
-6. Eliminate hardcoded/no-op telemetry, pseudo-cert confidence, dead public training surfaces.
-7. Manual full-system FSV/hardening gate; auto-FSV retirement; heal-drill truthfulness; geometry-label bakeoff.
-8. (Parallel post-substrate) Causal-embedder track: auto-labeler extension + in-slot causal embedder replacement + low-signal embedder audit.
-9. (Blocked behind 1-8) Trajectory ECE / entropy aux loss / Panel B / multi-file holdout.
+The earlier ordering put predictor-head repair first. The Tier-5 evidence inverts this: while `I(panel;oracle) < 0.95`, **head/training/calibration work cannot move Tier-1** — it optimizes a derivation that is information-theoretically impossible at this panel.
+
+1. **Panel sufficiency (the binding gate-mover, #745).** Acquire → run → measure-bit-contribution → assemble a panel with `I(panel; oracle) ≥ 0.95 bits` and behavioral-cell MI off zero. Likely requires causal/outcome embedders and execution-derived inputs (XII.3–XII.4). Acceptance = re-run #759.
+2. **Kernel/MGS computation (#843).** Once the panel is sufficient, compute the Python MGS (size, composition, per-cell) via the constellation-membership association edge (#841); adopt `MGS_fraction` as the headline progress metric and re-baseline the gate as kernel-coverage.
+3. Inter-embedder distinctness gate; clean static cache substrate (kept current).
+4. Per-cell weak-cell corpus regeneration (`delete_test_call` Docker oracle batch over 1,131 deterministic candidates → rebuild AST → labels).
+5. Unified real training path with public trainer contract; production checkpoint manifest required fail-closed (#683) — **now downstream of panel sufficiency.**
+6. Per-slot OOD aggregation; slot-preserving panel projections (anti-compensation repair).
+7. Replace any rank-lift Goodhart metric with raw Pearson + isotonic/Platt calibration; eliminate hardcoded telemetry / pseudo-cert confidence / dead training surfaces.
+8. Manual full-system FSV/hardening gate; auto-FSV retirement; heal-drill truthfulness; geometry-label bakeoff.
+9. (Blocked behind 1-8) Cross-panel `corr_B` / Panel B; trajectory ECE / entropy aux loss; multi-file holdout.
+
+**Issue map (2026-06-04):** reframe synthesis #842 · kernel/MGS harness #843 · panel sufficiency / embedder assembly #745 (+ new candidate-screening child) · derivation engine #841 · existence evidence #759 (MI) + #760 (oracle clean) · gate ordering #712/#383.
 
 ---
 

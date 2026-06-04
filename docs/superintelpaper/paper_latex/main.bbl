@@ -1,0 +1,190 @@
+\begin{thebibliography}{24}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Aleithan et~al.(2024)Aleithan, Xue, Mohajer, Nnorom, Uddin, and
+  Wang]{aleithan2024swebenchplus}
+Reem Aleithan, Haoran Xue, Mohammad~Mahdi Mohajer, Elijah Nnorom, Gias Uddin,
+  and Song Wang.
+\newblock {SWE}-bench+: Enhanced coding benchmark for {LLMs}.
+\newblock \emph{arXiv preprint arXiv:2410.06992}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2410.06992}.
+
+\bibitem[Angelopoulos and Bates(2021)]{angelopoulos2021gentle}
+Anastasios~N. Angelopoulos and Stephen Bates.
+\newblock A gentle introduction to conformal prediction and distribution-free
+  uncertainty quantification.
+\newblock \emph{arXiv preprint arXiv:2107.07511}, 2021.
+\newblock URL \url{https://arxiv.org/abs/2107.07511}.
+
+\bibitem[Belghazi et~al.(2018)Belghazi, Baratin, Rajeswar, Ozair, Bengio,
+  Courville, and Hjelm]{belghazi2018mine}
+Mohamed~Ishmael Belghazi, Aristide Baratin, Sai Rajeswar, Sherjil Ozair, Yoshua
+  Bengio, Aaron Courville, and R~Devon Hjelm.
+\newblock Mutual information neural estimation.
+\newblock In \emph{Proceedings of the 35th International Conference on Machine
+  Learning (ICML)}, volume~80 of \emph{PMLR}, pages 531--540, 2018.
+\newblock URL \url{https://proceedings.mlr.press/v80/belghazi18a.html}.
+
+\bibitem[Brier(1950)]{brier1950verification}
+Glenn~W. Brier.
+\newblock Verification of forecasts expressed in terms of probability.
+\newblock \emph{Monthly Weather Review}, 78\penalty0 (1):\penalty0 1--3, 1950.
+\newblock \doi{10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2}.
+
+\bibitem[Chollet(2019)]{chollet2019measure}
+Fran{\c{c}}ois Chollet.
+\newblock On the measure of intelligence.
+\newblock \emph{arXiv preprint arXiv:1911.01547}, 2019.
+\newblock URL \url{https://arxiv.org/abs/1911.01547}.
+
+\bibitem[Coelho~Mollo and Milli{\`e}re(2023)]{mollo2023vector}
+Dimitri Coelho~Mollo and Rapha{\"e}l Milli{\`e}re.
+\newblock The vector grounding problem.
+\newblock \emph{arXiv preprint arXiv:2304.01481}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2304.01481}.
+
+\bibitem[Cover and Thomas(2006)]{cover2006elements}
+Thomas~M. Cover and Joy~A. Thomas.
+\newblock \emph{Elements of Information Theory}.
+\newblock Wiley-Interscience, 2nd edition, 2006.
+
+\bibitem[Fano(1961)]{fano1961transmission}
+Robert~M. Fano.
+\newblock \emph{Transmission of Information: A Statistical Theory of
+  Communications}.
+\newblock MIT Press, 1961.
+
+\bibitem[Guo et~al.(2017)Guo, Pleiss, Sun, and Weinberger]{guo2017calibration}
+Chuan Guo, Geoff Pleiss, Yu~Sun, and Kilian~Q. Weinberger.
+\newblock On calibration of modern neural networks.
+\newblock In \emph{Proceedings of the 34th International Conference on Machine
+  Learning (ICML)}, volume~70 of \emph{PMLR}, pages 1321--1330, 2017.
+\newblock URL \url{https://arxiv.org/abs/1706.04599}.
+
+\bibitem[Harnad(1990)]{harnad1990symbol}
+Stevan Harnad.
+\newblock The symbol grounding problem.
+\newblock \emph{Physica D: Nonlinear Phenomena}, 42\penalty0 (1--3):\penalty0
+  335--346, 1990.
+\newblock \doi{10.1016/0167-2789(90)90087-6}.
+\newblock URL
+  \url{https://www.southampton.ac.uk/~harnad/Papers/Harnad/harnad90.sgproblem.html}.
+
+\bibitem[Huh et~al.(2024)Huh, Cheung, Wang, and Isola]{huh2024platonic}
+Minyoung Huh, Brian Cheung, Tongzhou Wang, and Phillip Isola.
+\newblock The platonic representation hypothesis.
+\newblock In \emph{Proceedings of the 41st International Conference on Machine
+  Learning (ICML)}, volume 235 of \emph{PMLR}, pages 20617--20642, 2024.
+\newblock URL \url{https://arxiv.org/abs/2405.07987}.
+
+\bibitem[Jimenez et~al.(2024)Jimenez, Yang, Wettig, Yao, Pei, Press, and
+  Narasimhan]{jimenez2024swebench}
+Carlos~E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir
+  Press, and Karthik Narasimhan.
+\newblock {SWE}-bench: Can language models resolve real-world {GitHub} issues?
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2310.06770}.
+
+\bibitem[Karp(1972)]{karp1972reducibility}
+Richard~M. Karp.
+\newblock Reducibility among combinatorial problems.
+\newblock In \emph{Complexity of Computer Computations}, pages 85--103. Plenum
+  Press, 1972.
+
+\bibitem[Kirkpatrick et~al.(2017)Kirkpatrick, Pascanu, Rabinowitz, Veness,
+  Desjardins, Rusu, Milan, Quan, Ramalho, Grabska-Barwinska, Hassabis, Clopath,
+  Kumaran, and Hadsell]{kirkpatrick2017overcoming}
+James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Joel Veness, Guillaume
+  Desjardins, Andrei~A. Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka
+  Grabska-Barwinska, Demis Hassabis, Claudia Clopath, Dharshan Kumaran, and
+  Raia Hadsell.
+\newblock Overcoming catastrophic forgetting in neural networks.
+\newblock \emph{Proceedings of the National Academy of Sciences}, 114\penalty0
+  (13):\penalty0 3521--3526, 2017.
+\newblock \doi{10.1073/pnas.1611835114}.
+
+\bibitem[Kraskov et~al.(2004)Kraskov, St{\"o}gbauer, and
+  Grassberger]{kraskov2004estimating}
+Alexander Kraskov, Harald St{\"o}gbauer, and Peter Grassberger.
+\newblock Estimating mutual information.
+\newblock \emph{Physical Review E}, 69\penalty0 (6):\penalty0 066138, 2004.
+\newblock \doi{10.1103/PhysRevE.69.066138}.
+\newblock URL
+  \url{https://journals.aps.org/pre/abstract/10.1103/PhysRevE.69.066138}.
+
+\bibitem[LeCun(2022)]{lecun2022path}
+Yann LeCun.
+\newblock A path towards autonomous machine intelligence.
+\newblock Technical Report Version 0.9.2, OpenReview, 2022.
+\newblock URL \url{https://openreview.net/forum?id=BZ5a1r-kVsf}.
+\newblock OpenReview id BZ5a1r-kVsf.
+
+\bibitem[Manheim and Garrabrant(2018)]{manheim2018categorizing}
+David Manheim and Scott Garrabrant.
+\newblock Categorizing variants of goodhart's law.
+\newblock \emph{arXiv preprint arXiv:1803.04585}, 2018.
+\newblock URL \url{https://arxiv.org/abs/1803.04585}.
+
+\bibitem[{OpenAI}(2026)]{openai2026swebench}
+{OpenAI}.
+\newblock Why {SWE}-bench verified no longer measures frontier coding
+  capabilities.
+\newblock
+  \url{https://openai.com/index/why-we-no-longer-evaluate-swe-bench-verified/},
+  2026.
+
+\bibitem[Poole et~al.(2019)Poole, Ozair, van~den Oord, Alemi, and
+  Tucker]{poole2019variational}
+Ben Poole, Sherjil Ozair, A{\"a}ron van~den Oord, Alexander~A. Alemi, and
+  George Tucker.
+\newblock On variational bounds of mutual information.
+\newblock In \emph{Proceedings of the 36th International Conference on Machine
+  Learning (ICML)}, volume~97 of \emph{PMLR}, 2019.
+\newblock URL \url{https://arxiv.org/abs/1905.06922}.
+
+\bibitem[Steyvers and Tenenbaum(2005)]{steyvers2005largescale}
+Mark Steyvers and Joshua~B. Tenenbaum.
+\newblock The large-scale structure of semantic networks: Statistical analyses
+  and a model of semantic growth.
+\newblock \emph{Cognitive Science}, 29\penalty0 (1):\penalty0 41--78, 2005.
+\newblock \doi{10.1207/s15516709cog2901_3}.
+\newblock URL
+  \url{https://onlinelibrary.wiley.com/doi/10.1207/s15516709cog2901_3}.
+
+\bibitem[Tishby et~al.(1999)Tishby, Pereira, and Bialek]{tishby1999information}
+Naftali Tishby, Fernando~C. Pereira, and William Bialek.
+\newblock The information bottleneck method.
+\newblock In \emph{Proceedings of the 37th Allerton Conference on
+  Communication, Control and Computing}, 1999.
+\newblock URL \url{https://arxiv.org/abs/physics/0004057}.
+
+\bibitem[van~den Oord et~al.(2018)van~den Oord, Li, and
+  Vinyals]{vandenoord2018cpc}
+A{\"a}ron van~den Oord, Yazhe Li, and Oriol Vinyals.
+\newblock Representation learning with contrastive predictive coding.
+\newblock \emph{arXiv preprint arXiv:1807.03748}, 2018.
+\newblock URL \url{https://arxiv.org/abs/1807.03748}.
+
+\bibitem[Vincent-Lamarre et~al.(2016)Vincent-Lamarre, Blondin~Mass{\'e}, Lopes,
+  Lord, Marcotte, and Harnad]{vincentlamarre2016latent}
+Philippe Vincent-Lamarre, Alexandre Blondin~Mass{\'e}, Marcos Lopes,
+  M{\'e}lanie Lord, Odile Marcotte, and Stevan Harnad.
+\newblock The latent structure of dictionaries.
+\newblock \emph{Topics in Cognitive Science}, 8\penalty0 (3):\penalty0
+  625--659, 2016.
+\newblock \doi{10.1111/tops.12211}.
+\newblock URL \url{https://onlinelibrary.wiley.com/doi/10.1111/tops.12211}.
+
+\bibitem[Wang(2025)]{wang2025solved}
+et~al. Wang.
+\newblock Are ``solved issues'' in {SWE}-bench really solved correctly? an
+  empirical study.
+\newblock \emph{arXiv preprint arXiv:2503.15223}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2503.15223}.
+
+\end{thebibliography}

@@ -1,0 +1,804 @@
+% =====================================================================
+%  The Oracle and the Kernel
+%  A Falsifiable, Substrate-Bounded Theory of Domain Super-Intelligence
+%  Chris Royse — chrisroyseai@gmail.com
+%  Two-column manuscript. Title + abstract span a single full-width column
+%  on page 1; the body starts fresh afterward.
+%  Engine: pdflatex.  Bibliography: natbib + bibtex (references.bib).
+% =====================================================================
+\documentclass[10pt,twocolumn]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage[letterpaper,margin=0.85in,columnsep=0.28in]{geometry}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=blue!55!black,urlcolor=blue!55!black]{hyperref}
+\usepackage{url}
+
+% --- spacing / headings -------------------------------------------------
+\setlength{\parindent}{1.2em}
+\setlength{\parskip}{0.15em}
+\widowpenalty=10000
+\clubpenalty=10000
+\hyphenation{em-bed-der em-bed-ders con-stel-la-tion as-so-ci-a-tion
+  sub-strate ver-i-fi-ca-tion}
+
+\renewcommand{\arraystretch}{1.15}
+
+\title{\vspace{-2.2em}\bfseries The Oracle and the Kernel: A Falsifiable,
+Substrate-Bounded Theory of Domain Super-Intelligence\\[0.25em]
+\normalsize\mdseries The Deterministic Oracle as Grounding Anchor, the
+Minimum Grounding Set as the One-Percent Kernel, and an
+Information-Theoretic Test that Decides Whether a Kernel Can Exist at All}
+
+\author{\textbf{Chris Royse}\\[0.2em]
+\texttt{chrisroyseai@gmail.com}}
+
+\date{4 June 2026}
+
+% =====================================================================
+\begin{document}
+
+\twocolumn[
+\begin{@twocolumnfalse}
+\maketitle
+\vspace{-1.0em}
+\begin{center}
+\begin{minipage}{0.93\textwidth}
+\small
+
+\noindent\textbf{Abstract.}
+I define \emph{operational super-intelligence in a domain} as the existence of a
+deterministic predictor that agrees with the domain's ground-truth \emph{oracle}
+at a calibrated threshold, stably, with Goodhart defenses and online
+mistake-closure---at which point human review of machine-generated artifacts in
+that domain becomes statistically unjustified. This is a falsifiable,
+oracle-bounded property of a specific predictor against a specific domain, not a
+claim about general cognition. The paper makes three moves. First, it places the
+\emph{oracle} at the center: the oracle is the grounding anchor---the only point
+where the system touches non-linguistic reality---and its self-consistency is a
+hard ceiling on achievable correlation, decomposing into two independently
+violable axes, flakiness and validity \citep{aleithan2024swebenchplus,
+wang2025solved, openai2026swebench}. Second, it imports the symbol-grounding
+result from cognitive science---Harnad's dictionary-go-round
+\citep{harnad1990symbol} and the Vincent-Lamarre \emph{minimum grounding set} of
+$\approx1\%$ from a grounding kernel of $\approx10\%$
+\citep{vincentlamarre2016latent}---and shows a domain predictor is the same
+object: a web of associations anchored at a small grounding kernel, with the
+oracle as the anchoring channel and the kernel as the minimal set of artifacts
+sent through it. Third, the load-bearing contribution: a grounding kernel can
+exist only if the observation panel carries at least the oracle's worth of
+information about the outcome, measured as mutual information
+$I(\text{panel};\text{oracle})$. By the data-processing inequality
+\citep{cover2006elements} this upper-bounds \emph{every} predictor, kernel
+search, and calibrator reading the panel, so it falsifies an architecture before
+any model is trained. I instantiate the theory on ME-JEPA-Code, a binary
+\textsf{Pass}/\textsf{Fail} predictor for Python changes against a Docker test
+oracle (SWE-bench Lite, $300\times8$). The result is a clean negative the theory
+predicts and explains: the anchor is noiseless on the flakiness axis
+($\textit{oracle\_self\_consistency}=1.0$), yet the nine-sensor panel carries only
+$I(\text{panel};\text{oracle})\approx0.46$ of the ${\approx}1$ bit the verdict
+requires. A per-sensor decomposition localizes the deficit---the panel measures
+what code \emph{looks like}, not what it \emph{does}; no sensor is load-bearing;
+signal survives only in the single purely-syntactic class. The fix is not more
+training but a panel of outcome/causal and execution-derived sensors selected by
+\emph{measured} bit-contribution. The general claim: domain super-intelligence
+reduces to a clean oracle, a panel sufficient to carry its bits, and the minimal
+grounded kernel from which the rest follows by association---each separately
+measurable, each separately falsifiable.
+
+\vspace{0.6em}
+\noindent\textbf{Keywords:} symbol grounding; minimum grounding set; mutual
+information; data-processing inequality; oracle; calibrated verification;
+domain super-intelligence; JEPA.
+\vspace{1.0em}
+
+\end{minipage}
+\end{center}
+\end{@twocolumnfalse}
+]
+
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Machine generation of artifacts---code, proofs, images, diagnoses---has outrun
+human verification. A coding agent emits edits faster than a reviewer can read
+them, and the asymmetry widens with model capability. The binding constraint on
+machine throughput in any domain with a quality bar is therefore not generation
+but \emph{verification}.
+
+Verification can in principle be automated whenever the domain possesses a
+\emph{deterministic oracle}: a machine-runnable function returning ground truth
+for a candidate artifact. Code has one (run the tests in a container); theorem
+proving has a proof checker; drug binding has a wet-lab assay; chess has engine
+search. The question this paper answers is: under what conditions can a learned
+predictor stand in for that oracle so reliably that human review of
+machine-generated artifacts becomes statistically unjustified? A domain in which
+such a predictor exists is one in which \emph{operational super-intelligence} has
+been reached, and I make the term falsifiable.
+
+\subsection{Thesis}
+Three linked claims, instantiated on a live system.
+
+\textbf{(1) The oracle is the anchor, and its self-consistency is a ceiling.} A
+predictor can never agree with the oracle more often than the oracle agrees with
+itself. Oracle quality decomposes into two independently violable axes:
+\emph{flakiness} (does the oracle reproduce its verdict?) and \emph{validity}
+(does the verdict track the property of interest?), both documented in the recent
+SWE-bench literature \citep{aleithan2024swebenchplus, wang2025solved,
+openai2026swebench}.
+
+\textbf{(2) A domain predictor is a grounded association engine.} This is the
+symbol-grounding result transplanted. Harnad's dictionary-go-round
+\citep{harnad1990symbol} shows meaning defined only by reference to other meanings
+is circular; Vincent-Lamarre et al.\ \citep{vincentlamarre2016latent} make it
+quantitative---a definitional graph reduces to a grounding kernel of
+$\approx10\%$ and a minimum grounding set (a minimum feedback vertex set) of
+$\approx1\%$ from which all else is recoverable by association. The predictor is
+the same object, anchored at a small kernel of oracle-labeled artifacts. Mollo
+and Milli\`ere's \emph{Vector Grounding Problem} \citep{mollo2023vector} extends
+this from symbols to the vectors a panel computes over, supplying the criterion I
+adopt: a representation is referentially grounded when it stands in
+causal-informational relation to a worldly outcome \emph{and} was selected for
+carrying that information.
+
+\textbf{(3) A kernel exists only if the panel carries the oracle's bits.} The
+mutual information $I(\text{panel};\text{oracle})$ upper-bounds---by the
+data-processing inequality \citep{cover2006elements}---what \emph{any} predictor
+reading the panel can know about the outcome. If the panel shares fewer than the
+oracle's worth of bits with the verdict, no predictor, kernel search, or
+calibrator can close the gap; the deficit is \emph{upstream}, in the sensors.
+This converts ``is this architecture viable?'' into a cheap measurement that runs
+before any model is trained.
+
+\subsection{Contributions}
+\begin{itemize}\itemsep0.15em
+\item A falsifiable, oracle-bounded definition of domain super-intelligence
+(\S\ref{sec:predicate}), as one predicate over six measurable tiers, with the
+correlation target explicitly capped by oracle self-consistency.
+\item A theory of the oracle as grounding anchor (\S\ref{sec:oracle}), separating
+flakiness from validity and showing each bounds the predictor differently.
+\item The grounding-kernel reframe (\S\ref{sec:kernel}): the dictionary
+$\approx1\%$ minimum grounding set generalized to any domain, with the oracle as
+anchor and the kernel as the minimal set of artifacts to ground.
+\item The substrate-sufficiency test (\S\ref{sec:substrate}):
+$I(\text{panel};\text{oracle})\ge\tau_{\mathrm{MI}}$ as a method-independent
+existence test for a kernel, with the data-processing/Fano argument for why
+better modeling cannot evade it.
+\item An empirical instantiation with a clean negative result
+(\S\ref{sec:panel}--\S\ref{sec:instantiation}): on ME-JEPA-Code the oracle is
+noiseless on flakiness yet the panel carries $\approx0.46$ of $\approx1$ bit, and
+a per-sensor decomposition shows it measures form, not behavior.
+\item A method, not a guess, for fixing it (\S\ref{sec:panel}): assemble the panel
+from candidate sensors selected by measured marginal bit-contribution.
+\end{itemize}
+
+\subsection{What is and is not claimed}
+Super-intelligence here is operational and per-domain: a predictor that replaces a
+human verification function at higher accuracy and machine throughput, against a
+domain with a deterministic oracle. It is not a claim about general intelligence,
+sentience, or any property lacking a deterministic oracle. The claim is
+falsifiable precisely because it is narrow, and the central empirical result of
+the instantiation is a \emph{falsification}---the current panel provably cannot
+reach the gate---which is the kind of result the framework is built to produce
+early and cheaply. Association is circular unless grounded, so the entire edifice
+rests on the oracle being a faithful anchor; where the oracle is invalid or
+contaminated, apparent panel bits are bits about the wrong thing
+(\S\ref{sec:limits}).
+
+% =====================================================================
+\section{The Oracle: The Grounding Anchor}
+\label{sec:oracle}
+
+\subsection{Definition}
+For a domain $D$, an \emph{oracle} is a deterministic, machine-runnable function
+$\mathrm{Oracle}_D:\mathrm{Artifact}_D\to\{\textsf{Pass},\textsf{Fail}\}$ that
+returns ground truth without human judgment in the loop. The oracle is the single
+point at which the system touches \emph{non-linguistic reality}; everything else
+is internal representation that acquires meaning only through its statistical
+relation to oracle outcomes. It is the \emph{anchor} of \S\ref{sec:kernel}: the
+channel through which a symbol (or vector) connects to something outside the
+symbol system. This is why the oracle, not the predictor, is the first object of
+study---a predictor is trained and judged against it, so if the oracle is the
+wrong instrument, every downstream number measures the wrong thing with spurious
+precision.
+
+\subsection{Self-consistency as a ceiling}
+The central structural fact: \emph{you cannot agree with a measuring instrument
+more reliably than it agrees with itself}. Let
+$\textit{oracle\_self\_consistency}$ be the probability two independent
+evaluations on the same artifact agree. A predictor correlating at
+$\rho>\textit{oracle\_self\_consistency}$ would have to predict the disputed
+artifacts more stably than the oracle's own definition of truth---impossible.
+Hence
+\begin{equation}
+\tau_{\mathrm{corr}}(D)\;\le\;\textit{oracle\_self\_consistency}(D).
+\end{equation}
+Setting $\tau_{\mathrm{corr}}=0.95$ is coherent only if self-consistency
+$\ge0.95$. Measuring it is therefore a cheap Tier-5 test that can invalidate the
+whole gate framing before any model work.
+
+\subsection{Two independent axes: flakiness and validity}
+``Oracle quality'' is not one number.
+
+\textbf{Axis A---flakiness.} Does the oracle reproduce its verdict on
+re-evaluation? Measured by replica voting ($n$ runs per artifact, pairwise
+agreement). A flaky oracle caps $\tau_{\mathrm{corr}}$.
+
+\textbf{Axis B---validity.} Does the verdict track the property of interest? An
+oracle can be perfectly reproducible yet systematically wrong: a weak test
+deterministically passes an incorrect artifact; an over-specified test
+deterministically fails a correct one. The SWE-bench audits quantify this on the
+most-used code oracle: Aleithan et al.\ report $32.67\%$ solution leakage and
+$31.08\%$ weak-test passes, with the same defects in Lite and Verified
+\citep{aleithan2024swebenchplus}; Wang et al.\ show running \emph{all} repository
+tests flips $7.8\%$ of plausible patches to incorrect \citep{wang2025solved}; and
+OpenAI's audit of a failed-task subset of SWE-bench Verified found $59.4\%$ with
+flawed tests or problem statements \citep{openai2026swebench}. None are
+flakiness; all are validity failures.
+
+A predictor that perfectly matches an invalid oracle has learned to reproduce its
+mistakes. High correlation against a contaminated or weak oracle is shared error,
+not super-intelligence---the honest boundary of the framework
+(\S\ref{sec:limits}): the claim is conditional on the oracle being a faithful
+anchor, and that condition is a measurement, not an assumption.
+
+\subsection{Contamination}
+Beyond flakiness and validity sits contamination: artifacts or gold solutions
+appearing in a sensor's pretraining data ($>94\%$ of SWE-bench issues predate
+common cutoffs \citep{aleithan2024swebenchplus}; frontier models reproduce gold
+patches verbatim \citep{openai2026swebench}). Contamination inflates apparent
+panel sufficiency---a sensor may ``carry bits'' because it memorized the answer.
+Defenses: a per-sensor pretraining-overlap audit with a counterfactual-cutoff
+experiment, and cross-panel triangulation with disjoint encoders
+(\S\ref{sec:predicate}).
+
+% =====================================================================
+\section{The Universal Super-Intelligence Predicate}
+\label{sec:predicate}
+
+\subsection{Objects and predicate}
+For domain $D$: the oracle $\mathrm{Oracle}_D$ (\S\ref{sec:oracle}); a panel
+$\mathrm{Panel}_D:\mathrm{Artifact}_D\to\mathrm{Array}\langle\mathrm{Vec}_i\rangle$
+packing an artifact into an array of per-sensor vectors, each in its own space
+(no flat concatenation; \S\ref{sec:panel}); a corpus $\mathrm{Corpus}_D$ over an
+$(\text{intervention}\times\text{subdomain})$ matrix; and a deterministic learned
+$\mathrm{Predictor}_D$. Then $D$ admits superhuman binary verification iff there
+exists $\mathrm{Predictor}_D$ such that all of the following hold:
+
+\begin{enumerate}\itemsep0.12em
+\item[T1.1] $\mathrm{corr}(\mathrm{Predictor}_D,\mathrm{Oracle}_D)\ge
+\tau_{\mathrm{corr}}$,
+\item[T1.2] stable over $k_{\text{win}}$ consecutive rolling windows,
+\item[T1.3] $\mathrm{corr}(\mathrm{Predictor}_D^{B},\mathrm{Oracle}_D)\ge
+\tau_{\mathrm{corr}}$ on a disjoint Panel~B (Goodhart guard),
+\item[T1.4] $|\mathrm{corr}_A-\mathrm{corr}_B|\le\varepsilon_{\text{drift}}$,
+\item[T2] the per-cell quality contract holds for every cell,
+\item[T3.1] $\textit{mistake\_repeat\_rate}\le\delta_{\text{rep}}$,
+\item[T3.2] $\textit{unrelated\_control\_delta}\le\varepsilon_{\text{unrel}}$,
+\item[T4] every doctrine invariant equals its required value exactly,
+\item[T5.1] $I(\mathrm{Panel}_D;\mathrm{Oracle}_D)\ge\tau_{\mathrm{MI}}$ bits,
+\item[T5.2] $\textit{oracle\_self\_consistency}\ge\tau_{\mathrm{sc}}$,
+\item[T5.3] the inter-sensor distinctness gate passes for all slots,
+\item[T6] any new/replaced sensor passes the novelty and utility gates.
+\end{enumerate}
+When this is \textsc{true}, human review of machine-generated artifacts in $D$ is
+statistically unjustified. That is the operational definition of
+super-intelligence in $D$.
+
+\subsection{The six tiers}
+\textbf{Tier 1} is the ship-gate: agreement at $\tau_{\mathrm{corr}}$, stable in
+time, surviving re-encoding through an independent Panel~B without drift---the
+Goodhart guard \citep{manheim2018categorizing}. \textbf{Tier 2} requires the
+contract in \emph{every} cell, not just aggregate (per-cell correlation, Brier
+\citep{brier1950verification}, ECE \citep{guo2017calibration}, class recalls with
+confidence-interval floors). \textbf{Tier 3} is online mistake-closure: a
+disagreement with reality becomes a training signal and does not recur, without
+degrading unrelated behavior. \textbf{Tier 4} are architectural invariants that
+must hold exactly (\S\ref{sec:predicate-inv}). \textbf{Tier 5} is substrate
+quality---panel sufficiency (\S\ref{sec:substrate}), oracle reachability
+(\S\ref{sec:oracle}), sensor non-aliasing---the cheapest, most decisive tests.
+\textbf{Tier 6} gates any sensor addition by novelty (not a near-duplicate) and
+utility (lifts per-cell correlation by a floor), the gate the assembly loop of
+\S\ref{sec:panel} must satisfy.
+
+\subsection{Thresholds, and why these values}
+Thresholds are domain-set by the cost asymmetry between a false-\textsf{Pass} and
+a false-\textsf{Fail}, bounded above by the oracle (\S\ref{sec:oracle}). For the
+Python instantiation: $\tau_{\mathrm{corr}}=0.95$, $k_{\text{win}}=4$,
+$\varepsilon_{\text{drift}}=0.05$, $\delta_{\text{rep}}=0.05$,
+$\varepsilon_{\text{unrel}}=0.02$, $\tau_{\mathrm{MI}}=0.95$ bits,
+$\tau_{\mathrm{sc}}=0.97$. \textbf{Revision is allowed only upward, and only on
+evidence}: if self-consistency is measured higher, $\tau_{\mathrm{corr}}$ may
+rise; lowering it because the substrate cannot reach it is a definition change and
+a regression. The correct response to ``we cannot reach $0.95$'' is to change
+\emph{state} (better oracle, panel, corpus), never to move the goalpost.
+
+\subsection{The Tier-4 invariants (fences, not levers)}
+\label{sec:predicate-inv}
+Eight invariants must hold exactly, because each, if violated, lets the system
+reach the numbers by cheating: (1) the binary contract; (2) slot-identity
+preservation; (3) no flat-vector collapse; (4) anti-compensation (a strong sensor
+may not silently cover a blind one); (5) frozen-target collapse-immunity (zero
+trainable target parameters); (6) no inner generator; (7) leakage policy (labels
+never enter as live inputs); (8) the grounded anchor (only the oracle is truth).
+
+\subsection{State is the lever; the predicate is the fence}
+The current corpus, panel, and harness are starting \emph{state}, not
+constraints. Reaching the predicate may require corpus expansion, panel
+expansion, oracle refinement, or upward threshold revision---all legitimate. Only
+the Tier-4 invariants and the predicate are immovable. Five eligibility
+prerequisites precede the predicate: a deterministic oracle exists; it is
+reproducible and valid enough to set a coherent $\tau_{\mathrm{corr}}$; artifacts
+are observable through sensors that can in principle carry outcome information; the
+matrix is enumerable; outcomes are feedable. \S\ref{sec:instantiation} shows a
+domain can satisfy four of these and fail the third---the substrate
+prerequisite---which is exactly the negative result the framework surfaces early.
+
+% =====================================================================
+\section{The Grounding Kernel}
+\label{sec:kernel}
+
+\subsection{The dictionary-go-round and the $\approx1\%$ result}
+Harnad posed the symbol grounding problem with an image
+\citep{harnad1990symbol}: learning Chinese as a first language from only a
+Chinese/Chinese dictionary is a merry-go-round from one meaningless symbol to
+another that never reaches meaning. The escape is to ground a subset outside the
+symbol system. Vincent-Lamarre et al.\ made the structure exact
+\citep{vincentlamarre2016latent}: modeling a dictionary as a directed graph
+(defining word $\to$ defined word), recursively removing words reachable by
+definition but defining nothing reduces it to a unique \emph{Kernel} of
+$\approx10\%$; the smallest set from which all the rest is definable---the
+\emph{Minimum Feedback Vertex Set}, or \emph{Minimal Grounding Set}---is
+$\approx1\%$ of the dictionary ($\approx15\%$ of the Kernel). Finding it is
+NP-hard \citep{karp1972reducibility}. The interpretation: grounding one MinSet's
+worth of words by sensorimotor contact suffices; the symbolic code defines the
+rest by recombination. Roughly $99\%$ of meaning is carried by association; a
+$\approx1\%$ grounded anchor carries the rest. The mental lexicon has the matching
+small-world, scale-free, differentiation-grown shape \citep{steyvers2005largescale}.
+
+\subsection{Anchor versus kernel}
+Two objects must stay separate. The \emph{anchor} (grounding channel) is the
+operator that turns one item into a grounded fact by contact with reality---for
+the dictionary, sensorimotor experience; for a domain predictor, the
+\emph{oracle}. The \emph{grounding kernel} (MinSet) is the minimal \emph{set of
+items} to send through the anchor so the rest follows by association. A system
+that sends \emph{every} item through the anchor (oracle-everything, then correlate
+over the whole corpus) is not exploiting the kernel structure at all; it is
+brute-forcing the anchor across $100\%$ of the space---exactly how a naive
+ship-gate behaves, and what the reframe replaces.
+
+\subsection{The kernel of an arbitrary domain}
+Transpose to domain $D$: \emph{nodes} are candidate artifacts (or
+$(\text{artifact},\text{verdict})$ pairs); the edge $X\!\leftarrow\!Y$ (``$X$ is
+definable from $Y$ by association'') holds when, given the grounded verdict on
+$Y$, the panel predicts the verdict on $X$ above a confidence threshold---computed
+in representation space \citep{lecun2022path}, concretely a constellation-membership
+test (\S\ref{sec:panel}). The kernel is the minimum feedback vertex set of this
+graph. Two consequences: (i) the kernel is the \emph{hard boundary cases}, not the
+easy ones---obvious-\textsf{Pass}/obvious-\textsf{Fail} artifacts are the derivable
+$99\%$, while the kernel concentrates on the decision surface where only ground
+truth disambiguates (what an optimal active learner would query); (ii) there is no
+universal kernel across all knowledge---each domain has its own anchor and MinSet.
+What is universal is the \emph{structure} (association graph $+$ small grounded
+MinSet $+$ anchor), not the kernel itself.
+
+\subsection{From symbols to vectors}
+A modern panel computes over vectors, so the relevant problem is the
+\emph{Vector Grounding Problem} \citep{mollo2023vector}: can internal vector states
+be \emph{about} reality independently of human interpretation? Their teleosemantic
+answer, which I adopt as the sensor-admission criterion, is that a representation
+is referentially grounded when (1) it stands in causal-informational relation to a
+worldly outcome and (2) it has a selection history giving it the function of
+carrying that information. A sensor encoding mere surface similarity---selected to
+carry ``what this looks like,'' not ``what outcome it produces''---is, for
+grounding purposes, ungrounded with respect to the outcome, however useful for
+retrieval. \S\ref{sec:instantiation} shows this is exactly the measured deficit.
+
+\subsection{The reframe of the ship-gate}
+Combining \S\ref{sec:oracle} and \S\ref{sec:kernel} decomposes the naive gate into
+three separately-falsifiable questions, in dependency order: (1) \emph{is the
+anchor clean?} (self-consistency, validity, contamination); (2) \emph{can a kernel
+exist at all?}---does the panel carry the oracle's bits,
+$I(\text{panel};\text{oracle})\ge\tau_{\mathrm{MI}}$? if not, no kernel exists at
+this panel and the fix is upstream; (3) \emph{what is the kernel, and how small?}
+The empirical contribution (\S\ref{sec:instantiation}) is that question~1 answers
+\emph{yes} on flakiness and question~2 answers \emph{no}.
+
+% =====================================================================
+\section{Substrate Sufficiency: The Existence Test}
+\label{sec:substrate}
+
+\subsection{The question and the ceiling}
+Let $Y=\mathrm{Oracle}_D(x)\in\{\textsf{Pass},\textsf{Fail}\}$ and
+$P=\mathrm{Panel}_D(x)$. The outcome's uncertainty is $H(Y)$ ($\approx1$ bit when
+balanced); the bits the panel resolves are the mutual information
+$I(P;Y)=H(Y)-H(Y\mid P)$. The decisive property is method-independence: by the
+data-processing inequality \citep{cover2006elements}, for any function $g$,
+\begin{equation}
+I(g(P);Y)\;\le\;I(P;Y).
+\end{equation}
+A predictor is such a $g$; so is a constellation operator, a MinSet search, or a
+calibration map. \emph{No processing downstream of the panel can manufacture
+information the panel does not contain.} Fano's inequality
+\citep{fano1961transmission, cover2006elements} turns this into an error floor:
+the minimum achievable error in predicting $Y$ from $P$ is bounded below by a
+function of $H(Y\mid P)=H(Y)-I(P;Y)$, regardless of the predictor. This is the
+information-bottleneck view \citep{tishby1999information}: a panel that fails the
+test has discarded the relevant bits before the predictor sees them.
+
+\subsection{The predicate and decision rule}
+Define panel sufficiency as $I(\mathrm{Panel}_D;\mathrm{Oracle}_D)\ge
+\tau_{\mathrm{MI}}$ (with $\tau_{\mathrm{MI}}=0.95$ bits). The rule:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Measured $I(P;Y)$ & Verdict & Action\\
+\midrule
+$\ge\tau_{\mathrm{MI}}$ & sufficient & gap (if any) is downstream\\
+$[0.7,\tau_{\mathrm{MI}})$ & marginal & add 1--2 sensors; re-measure\\
+$<0.7$ & insufficient & rebuild the panel\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The test is gate-deciding and cheap relative to a training run: it can falsify an
+architecture before a single predictor is trained.
+
+\subsection{Estimation and decomposition}
+$I(P;Y)$ between a high-dimensional panel and a binary label is estimated with a
+stack read together, since each has a different bias/variance profile
+\citep{poole2019variational}: \textbf{MINE} \citep{belghazi2018mine} (neural,
+Donsker--Varadhan, a lower bound); a \textbf{classifier-based lower bound} (a
+discriminator separating joint from product-of-marginals), validated by a
+synthetic self-test; \textbf{InfoNCE} \citep{vandenoord2018cpc}
+($I\ge\log N-\mathcal{L}_{\text{NCE}}$); and the non-parametric \textbf{KSG}
+$k$-NN estimator \citep{kraskov2004estimating}. When these \emph{agree} that
+$I(P;Y)$ is far below threshold the conclusion is robust, since lower bounds can
+only understate $I$. Two decompositions say \emph{where} the deficit is:
+\emph{per-cell} MI $I(P;Y\mid\text{cell})$ (does sufficiency fail uniformly or in
+specific cells?) and \emph{drop-one-sensor} ablation $I(P;Y)-I(P\setminus\{s\};Y)$
+(is any sensor load-bearing?). Small drop-one deltas \emph{with} low joint $I$
+indicate \emph{absence} of signal, not redundancy.
+
+\subsection{Why sufficiency precedes kernel computation}
+A MinSet search is a particular $g(P)$, so it is bounded by $I(P;Y)$. If
+$I(P;Y)<\tau_{\mathrm{MI}}$, the search cannot find a kernel that does not exist;
+it returns a degenerate ``kernel'' of essentially the whole corpus. The MI test is
+the cheaper, stronger existence test; the kernel computation finds the kernel once
+the MI test confirms one exists. The operational spine is therefore oracle
+$\to$ substrate $\to$ kernel $\to$ predictor/calibration.
+
+% =====================================================================
+\section{The Panel and Its Sensors}
+\label{sec:panel}
+
+\subsection{An array of per-sensor vectors}
+The panel produces an \emph{array} of per-sensor vectors, each in its own space.
+This is the JEPA stance \citep{lecun2022path}: heterogeneous encoders that need
+not share architecture or parameters, with prediction in representation space
+rather than by reconstruction. The license to treat $N$ heterogeneous encoders as
+commensurable coordinates against one reality is the Platonic Representation
+Hypothesis \citep{huh2024platonic}: networks trained on different objectives and
+modalities converge to a shared statistical model of reality, with the converged
+kernel approaching the pointwise mutual information over the latent events that
+generate observations---the same PMI structure the grounding kernel and substrate
+test are built on.
+
+\subsection{Slot identity is sacred}
+Because each sensor's vector lives in its own space, cross-sensor dimension-wise
+comparison is meaningless and forbidden (Tier-4). Permitted: same-sensor
+similarity; array-level structured operations; and scalar pairwise cross-sensor
+relationships (MI, correlation, agreement). The panel is \emph{never} flattened
+into one vector for similarity, distance, OOD, calibration, or predictor input;
+flattening asserts a false commensurability between sensors and invites Goodhart.
+The measurements of \S\ref{sec:substrate}--\S\ref{sec:instantiation} are reported
+with \textit{slot\_identity\_preserved}$=$true and
+\textit{flat\_vector\_concat\_used}$=$false as explicit invariants.
+
+\subsection{Constellation-as-definition}
+The association edge is realized as a constellation: the \textsf{Pass} class in a
+cell is defined by
+$\mathrm{Def}(t)=(\{(c_m,\tau_m)\}_{m=1}^{N},\{\rho_{jk}\}_{j<k})$---per-sensor
+marginal regions (centroid $c_m$, threshold $\tau_m$; indexical) \emph{and} the
+characteristic cross-sensor correlations $\rho_{jk}$ (constitutive). Membership
+requires both marginals and the cross-sensor signature. This is the operator that
+lets one artifact's verdict be derived from grounded neighbors---the edge the
+kernel computation runs on---and the ``fast skill acquisition'' reading of
+intelligence \citep{chollet2019measure} applied to a \textsf{Pass}/\textsf{Fail}
+region learned from $O(k)$ grounded examples.
+
+\subsection{Form versus behavior}
+The substrate test can reveal a panel referentially grounded in the wrong thing
+\citep{mollo2023vector}: code encoders trained for \emph{similarity/retrieval}
+encode what an artifact looks like, but a \textsf{Pass}/\textsf{Fail} oracle
+measures what it does when executed. The signature, visible in per-cell MI, is
+signal for \emph{syntactic} interventions (a renamed variable changes tokens) and
+near-zero for \emph{behavioral} ones (does it compile? was a call deleted? wrong
+file?). This splits the deficit: \textbf{(1) wrong objective}---fix with
+causal/outcome sensors trained on \emph{edit}$\to$\emph{outcome}; and
+\textbf{(2) wrong modality}---static source under-determines runtime
+\textsf{Pass}/\textsf{Fail}, so the determining bits are absent from the input
+(the data-processing ceiling again), fixed with execution-derived sensors
+(traces, coverage, exception signatures, dependency/runtime/environment state).
+
+\subsection{Assembling a sufficient panel by measured bit-contribution}
+\label{sec:assembly}
+When the substrate test fails, select sensors by measured contribution to
+$I(\text{panel};\text{oracle})$, not by guess: \textbf{(1)} acquire candidates
+across the missing axes; \textbf{(2)} run each over the corpus (slot identity
+preserved, no flat-concat); \textbf{(3)} measure standalone $I(\{s\};Y)$, greedy
+marginal $\Delta I=I(P\cup\{s\};Y)-I(P;Y)$, and per-cell $\Delta I$, watching the
+behavioral cells at zero; \textbf{(4)} greedily assemble the panel maximizing
+$I(\text{panel};\text{oracle})$ subject to the Tier-6 novelty and utility gates;
+\textbf{(5)} accept by re-running the substrate test, requiring
+$I(\text{panel};\text{oracle})\ge\tau_{\mathrm{MI}}$ with behavioral-cell MI off
+zero. This is the teleosemantic grounding criterion \citep{mollo2023vector} made
+into a procedure: a sensor earns a slot when measured to carry outcome information
+and kept because of that measurement. Only then is the kernel well-posed.
+
+\subsection{Predictor, calibration, online closure}
+Downstream of a sufficient panel, the predictor is a deterministic head over the
+panel and the constellation operator, emitting \textsf{Pass}/\textsf{Fail} with
+calibrated confidence (Brier \citep{brier1950verification}, ECE and temperature
+scaling \citep{guo2017calibration}, conformal intervals
+\citep{angelopoulos2021gentle} and an explicit abstain when out-of-distribution).
+Mistakes are fed back under protection against catastrophic forgetting
+\citep{kirkpatrick2017overcoming}. None of this substitutes for substrate
+sufficiency: by the data-processing ceiling it is all bounded by
+$I(\text{panel};\text{oracle})$. Calibration makes a sufficient panel's predictor
+trustworthy; it cannot make an insufficient panel's predictor correct.
+
+% =====================================================================
+\section{Worked Instantiation: ME-JEPA-Code on Python}
+\label{sec:instantiation}
+
+Every figure below is traceable to a source-of-truth artifact
+(\S\ref{sec:fsv}); provenance is given as an FSV path under
+\path{/zfs/archive/contextgraph/...} or a tracked issue number.
+
+\subsection{Domain, oracle, corpus, panel}
+The domain is binary \textsf{Pass}/\textsf{Fail} prediction for a Python change;
+the oracle is a containerized SWE-bench harness
+(\texttt{run\_evaluation}) \citep{jimenez2024swebench}; the corpus is SWE-bench
+Lite, $300$ instances $\times\,8$ mutation categories $=2{,}400$ candidates
+(categories: \textit{known\_good}, \textit{subtle\_flip}, \textit{off\_by\_one},
+\textit{swap\_variable}, \textit{delete\_test\_call}, \textit{wrong\_file},
+\textit{over\_engineer}, \textit{compile\_error}). The MI dataset has $2{,}400$
+rows, $\textit{feature\_dim}=19209$, outcome entropy
+$\textit{target\_bits}=0.9978$ (Pass $1267$, Fail $1133$). The panel has nine
+active sensors (\texttt{e1,e6,e7,e8,e9,e10,e12,e13,e14}), slot identity preserved,
+no flat-concat.
+
+\subsection{The anchor is clean on the flakiness axis}
+Replica voting (30 instances $\times$ 10 evaluations $=300$ invocations) gives
+$\textit{oracle\_self\_consistency}=1.0$: every replica agreed; $300/300$ reports;
+all exit codes $0$. (Issue~\#760; FSV \path{inv-035-oracle-noise-floor-fsv/run-20260529T233417Z}.)
+This bounds \emph{flakiness only} (\S\ref{sec:oracle}): the oracle does not wobble,
+so it imposes no flakiness ceiling on $\tau_{\mathrm{corr}}=0.95$. It does
+\emph{not} establish \emph{validity}; the weak-test/leakage hazards
+\citep{aleithan2024swebenchplus, wang2025solved, openai2026swebench} are a
+separate, still-open axis (\S\ref{sec:limits}).
+
+\subsection{The substrate is insufficient}
+The panel-sufficiency probe ran over the $2{,}400$-row dataset with the estimator
+stack (self-test: strong-signal control $\to0.977$ bits; noise $\to0.0$):
+
+\begin{center}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Estimator & $I(\text{panel};\text{oracle})$ & vs.\ $0.95$\\
+\midrule
+MINE (Donsker--Varadhan) & $0.0960$ bits & $\ll$\\
+Classifier lower bound & $0.1254$ bits & $\ll$\\
+Ross/Kraskov ($k$-NN) & $0.4611$ bits & $\ll$\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Decision: \textit{panel\_sufficient}$=$false. Because these are lower-bound or
+conservative estimators, their agreement is robust: the panel carries at most
+$\approx0.46$ of the $\approx1$ bit required. (Issue~\#759; FSV
+\path{inv-032-panel-sufficiency-mi-fsv/run-20260529T234900Z/full-candidate-map}.)
+By the data-processing ceiling (\S\ref{sec:substrate}), \emph{no} predictor,
+kernel search, or calibrator reading this panel can reach $0.95$. A useful
+grounding kernel does not exist at this panel; the deficit is upstream.
+
+\subsection{Where the bits are missing: form, not behavior}
+\textbf{Per-cell MI:} \textit{swap\_variable} $=0.2313$ bits (the only non-trivial
+cell), \textit{off\_by\_one} $=0.0207$, and \textit{compile\_error},
+\textit{delete\_test\_call}, \textit{wrong\_file}, \textit{over\_engineer},
+\textit{subtle\_flip} all $\approx0$. \textbf{Drop-one ablation (largest):}
+\texttt{e8} $=0.0309$, \texttt{e6} $=0.0294$, \texttt{e7} $=0.0214$, \texttt{e14}
+$=0.0189$ bits. (Same FSV run.) Two conclusions match \S\ref{sec:panel}: no sensor
+is load-bearing (largest contribution $0.031$ bits, so \emph{absence} of signal,
+not redundancy), and the panel sees form not behavior---signal only in the pure
+token-level cell, near-zero in the behavioral cells. This is the Vector Grounding
+Problem \citep{mollo2023vector} made empirical.
+
+\subsection{The predictor numbers, in their place}
+The predictor head achieves raw Pearson $0.4843$ with the oracle, aggregate Brier
+$0.0924$ and ECE $0.0240$ \citep{brier1950verification, guo2017calibration}; the
+nominal gap is $0.95-0.4843=0.4657$. (Ship-gate FSV
+\path{swebench-300x8-ship-gate-fsv/run-20260521T132308Z}.) Crucially this is not
+primarily a predictor-quality gap---training and calibration are bounded by
+$I(\text{panel};\text{oracle})\le0.46$ bits and cannot reach $0.95$. A separate
+``rank-lift'' diagnostic reporting $0.7942$ is \emph{not} the predictor's oracle
+correlation; it is a category-local exemplar-similarity transform that lifts the
+apparent number without improving Brier or ECE, and is treated as a Goodhart
+artifact \citep{manheim2018categorizing}, not a gate pass.
+
+\subsection{Honest status}
+\begin{center}
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+Gate & Status\\
+\midrule
+Oracle flakiness (T5.2) & \textbf{Pass} ($1.0$)\\
+Oracle validity & \textbf{Open} (weak-test/leakage)\\
+Substrate sufficiency (T5.1) & \textbf{Fail} ($\le0.46<0.95$)\\
+Kernel existence & \textbf{No} at this panel\\
+Ship-gate corr.\ (T1.1) & \textbf{Fail} ($0.4843$)\\
+T1.2--T1.4, T2, T3 & not yet assessable\\
+\bottomrule
+\end{tabular}
+\end{center}
+This is a clean negative result of the kind the framework is designed to produce
+early: the cheapest decisive test falsified the architecture before expensive
+model work, and the decomposition turned the falsification into a direction.
+
+\subsection{The forward plan}
+Per \S\ref{sec:assembly}: acquire outcome/causal and execution-derived sensors,
+run them, measure standalone $I$ and greedy $\Delta I$ with per-cell attention to
+the behavioral cells now at zero, assemble under the Tier-6 gates, and accept only
+when the substrate test returns $\ge0.95$ bits with behavioral-cell MI off zero.
+Only then is the kernel computation well-posed and the predictor able to move
+Tier-1. (Tracked: substrate reframe \#842; kernel/MGS harness \#843; panel
+sufficiency / in-slot sensor replacement \#745; embedder candidate-screening loop
+\#844; constellation-as-definition engine \#841. The oracle-validity audit remains
+the most important open task.)
+
+% =====================================================================
+\section{Verification Protocol}
+\label{sec:fsv}
+
+The framework's claims are only as trustworthy as the discipline producing its
+numbers. The principle: \emph{a return value is a claim; the source of truth is
+the verdict; read the verdict.} Before a result is called done, four questions
+must have answers: what state changed; where it lives (a concrete source of
+truth); how it is read back independently; and the exact expected value. Three
+rules keep it honest: \textbf{no mocks} in gating tests (synthetic data only as an
+estimator self-test, never as evidence the system works); \textbf{fail closed} on
+unknowns with structured errors (the MI runner failed closed on degenerate
+all-Pass labels rather than fabricating a value); and \textbf{tests must fail when
+the feature is broken} (substrate sufficiency is designed to return false on an
+inadequate panel, and did). Each \S\ref{sec:instantiation} figure is backed by a
+content-hashed artifact written to durable storage and independently re-opened for
+readback, so the number reported is the number in the hashed file. The default
+stance is adversarial: a result is guilty until proven innocent---which is why the
+$0.7942$ rank-lift is flagged as Goodhart and oracle \emph{validity} stays
+\emph{open} despite flakiness measured at $1.0$. This protocol is what makes the
+central claim---human review becomes statistically unjustified---a checkable
+statement rather than an act of faith.
+
+% =====================================================================
+\section{Related Work}
+\label{sec:related}
+
+\textbf{Symbol grounding.} Harnad \citep{harnad1990symbol}, the quantitative
+kernel/MinSet of Vincent-Lamarre et al.\ \citep{vincentlamarre2016latent} (NP-hard
+per \citep{karp1972reducibility}), the small-world lexicon
+\citep{steyvers2005largescale}, and the vector-era update
+\citep{mollo2023vector}. The contribution is to read a domain predictor as this
+object and make the kernel computable, with grounding turned from a diagnostic
+into a measurement and a selection procedure.
+
+\textbf{Information theory.} The substrate test rests on the data-processing and
+Fano inequalities \citep{cover2006elements, fano1961transmission} and the
+information bottleneck \citep{tishby1999information}, with estimators
+\citep{belghazi2018mine, vandenoord2018cpc, kraskov2004estimating,
+poole2019variational}. The novelty is their use as a pre-training gate with
+per-cell/per-sensor diagnosis. The Platonic Representation Hypothesis
+\citep{huh2024platonic} licenses reading a heterogeneous panel as coordinates
+against one PMI structure.
+
+\textbf{World models, calibration, abstention.} The architecture is a JEPA
+\citep{lecun2022path} extended with slot identity and the constellation operator;
+calibration and conformal methods \citep{brier1950verification,
+guo2017calibration, angelopoulos2021gentle} and continual learning
+\citep{kirkpatrick2017overcoming} are subordinated to the substrate test.
+
+\textbf{Benchmark integrity.} The oracle-validity concern draws on
+\citep{jimenez2024swebench, aleithan2024swebenchplus, wang2025solved,
+openai2026swebench}; Goodhart's variants \citep{manheim2018categorizing} motivate
+the cross-panel guard and the rejection of proxy metrics. Chollet's measure of
+intelligence \citep{chollet2019measure} frames the constellation operator as
+few-shot region learning.
+
+% =====================================================================
+\section{Limitations and Scope}
+\label{sec:limits}
+
+The claim is operational and per-domain, not general (\S\ref{sec:intro}). Its
+load-bearing limitation is that everything rests on the oracle being a faithful
+anchor: the Python instantiation measured oracle \emph{flakiness} but has
+\emph{not} bounded oracle \emph{validity}, and the SWE-bench literature shows the
+validity hazard is large \citep{aleithan2024swebenchplus, wang2025solved,
+openai2026swebench}; a predictor that perfectly matched an invalid oracle would
+reproduce its mistakes, so a future Tier-1 pass must be read as conditional until
+validity is bounded. Contamination can masquerade as signal
+\citep{aleithan2024swebenchplus}; in the current instantiation the panel is
+information-\emph{starved}, so contamination is not inflating the present result,
+but it becomes first-order the moment $I(\text{panel};\text{oracle})$ rises. The
+substrate estimate is a (robust) lower bound, decisive for \emph{insufficiency}
+but requiring tighter estimation and a contamination audit for any future
+\emph{sufficiency} claim; $\tau_{\mathrm{MI}}=0.95$ bits assumes a near-balanced
+outcome and must be restated relative to $H(Y)$ for skewed base rates. The
+$\approx1\%$ kernel figure is specific to dictionary-graph topology
+\citep{vincentlamarre2016latent}; the paper claims the \emph{structure} is
+domain-general and the kernel \emph{fraction} is measurable per domain, not that
+$\approx1\%$ transfers. Permanently out of scope: domains without a deterministic
+oracle, ambiguous surfaces with no binary form against reality, generative
+substitution for the oracle, and threshold relaxation as a path to passing.
+
+% =====================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+The bottleneck on machine output in any domain with a quality bar is verification,
+not generation, and it can be automated---to the point where human review becomes
+statistically unjustified---exactly when three separable, measurable conditions
+hold. The oracle is the anchor: the single contact with reality, with quality
+decomposing into flakiness and validity, neither an assumption. A domain predictor
+is a grounded association engine: a web of associations anchored at a small
+grounding kernel, the oracle the channel and the kernel the minimal set to send
+through it. And a kernel exists only if the panel carries the oracle's bits---a
+mutual-information ceiling that bounds every predictor, kernel search, and
+calibrator, and so falsifies an architecture cheaply, before training. Instantiated
+on Python verification, the framework paid for itself with a clean negative: a
+noiseless anchor on flakiness, a panel carrying only $\approx0.46$ of $\approx1$
+bit, and a per-sensor decomposition showing the panel measures form, not behavior.
+The fix is prescribed without guessing---assemble a panel of outcome/causal and
+execution-derived sensors selected by measured bit-contribution, and only then
+compute the kernel. The general claim, restated: operational super-intelligence in
+a domain reduces to a clean oracle, a panel sufficient to carry its bits, and the
+minimal grounded kernel from which the rest follows by association---the same
+boundary Harnad drew thirty-five years ago, now with a number attached to it. The
+single most important open task is not a model improvement but a measurement: the
+oracle's \emph{validity}, so that a future gate pass means agreement with reality
+rather than with the oracle's mistakes.
+
+% =====================================================================
+\section*{Competing interests}
+The author declares no competing financial interests. No vendor-funded benchmark
+or commercial-performance claim appears in this manuscript.
+
+\section*{Reproducibility}
+Empirical figures trace to source-of-truth artifacts on the project's durable
+host (\S\ref{sec:fsv}), identified by FSV run path and tracked issue number. The
+mutual-information estimator stack includes a synthetic self-test (strong-signal
+control $\to0.977$ bits; noise control $\to0.0$) and fails closed on degenerate
+labels; all artifacts are content-hashed and independently re-opened for readback.
+
+\section*{Companion documents}
+\texttt{docs/SuperIntelligence.md} states the universal predicate in full;
+\texttt{docs/paper\_latex/main.tex} (``The Calculus of Association'') develops the
+frozen-instrument and constellation framing referenced in \S\ref{sec:panel}.
+
+% =====================================================================
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
