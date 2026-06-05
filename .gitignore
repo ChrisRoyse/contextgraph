@@ -101,6 +101,29 @@ logs/
 # Playwright MCP session artifacts (ephemeral browser logs)
 .playwright-mcp/
 
+# Browser-automation slop at repo root (social-media/Stripe screenshots,
+# accessibility snapshots, base64 blobs). Root-anchored so legit files in
+# subdirectories are unaffected. Keep this list in sync with new automation runs.
+/li-*
+/li_*
+/linkedin-*
+/linkedin_*
+/x-*
+/yt-*
+/yt_*
+/youtube-*
+/chatgpt-*
+/cgpt-*
+/composer-*
+/composer[0-9]*
+/stripe-*
+/gmail-*
+/oracle-kernel-*
+/probe.png
+/*-b64.txt
+/*_b64.json
+/*_thumb_b64.json
+
 # Environment files (may contain secrets)
 .env
 .env.*
