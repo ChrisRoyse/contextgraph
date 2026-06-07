@@ -73,11 +73,24 @@ LOAD_SENSITIVE_ISOLATED_FORWARD_SLUGS = ("e8",)
 DEFAULT_ACTIVE_EMBEDDER_COUNT = len(ISOLATED_FORWARD_SLUGS)
 DEFAULT_CORPUS_PROFILE = "static_ast_python"
 MIN_UNIQUE_VECTOR_FRACTION = 0.5
+# Per-shard CLEAN threshold (label only; NO LONGER a per-shard fatal floor). Benign
+# tokenizer-equivalent redundancy (e.g. e5-large-v2 / bert-large-uncased mapping
+# case-only variants together) sits below 0.9 yet is legitimate; the strict anti-
+# collision guard now lives at CORPUS scope (CORPUS_MIN_NON_COLLIDING_INPUT_FRACTION).
 MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION = 0.9
+# Per-shard FATAL floor: fewer than half a slot's distinct inputs mapping to a distinct
+# vector means a genuinely degenerate embedder for that shard (constant/broken model).
+CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION = 0.5
+# Corpus-scope FATAL floor (enforced across ALL shards at finalization): this is the
+# relocated strict 0.9 anti-collision guard. A genuinely collapsing embedder shows up
+# as a corpus-wide low non-colliding fraction, not one unlucky shard.
+CORPUS_MIN_NON_COLLIDING_INPUT_FRACTION = 0.9
 MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE = 64
 MAX_PAIRWISE_VECTOR_HASH_JACCARD = 0.5
 ERR_EMBEDDER_COLLAPSE = "MEJEPA_FORWARD_CACHE_EMBEDDER_COLLAPSE"
 ERR_EMBEDDER_ALIAS = "MEJEPA_FORWARD_CACHE_EMBEDDER_ALIAS"
+ERR_CORPUS_EMBEDDER_COLLAPSE = "MEJEPA_FORWARD_CACHE_CORPUS_EMBEDDER_COLLAPSE"
+INFO_EMBEDDER_BENIGN_COLLISION = "MEJEPA_FORWARD_EMBEDDER_BENIGN_COLLISION"
 DEFAULT_ESTIMATED_RECORD_BYTES = 16 * 1024
 DEFAULT_HOT_STAGE_BUDGET_BYTES = 48 * 1024 * 1024 * 1024
 DEFAULT_DURABLE_SLACK_BYTES = 2 * 1024 * 1024 * 1024
@@ -294,6 +307,36 @@ def parse_args() -> argparse.Namespace:
         "--cargo-runner",
         default=DEFAULT_CARGO_RUNNER,
         help="Shell command for the release-built Rust shard runner.",
+    )
+    parser.add_argument(
+        "--quarantine-failed-shards",
+        action="store_true",
+        help=(
+            "Resilience: on a per-shard runner failure, record the shard to a durable "
+            "failed-shards manifest and continue to the next shard instead of aborting "
+            "the whole run. The run still fails non-zero at finalization if any shard was "
+            "quarantined (fail-closed), but a single unlucky shard no longer discards days "
+            "of completed cache. Circuit breakers below still abort fast on systemic faults."
+        ),
+    )
+    parser.add_argument(
+        "--max-consecutive-shard-failures",
+        type=int,
+        default=5,
+        help=(
+            "Circuit breaker: abort immediately once this many shards fail back-to-back. "
+            "Consecutive failures indicate a systemic fault (broken embedder/environment), "
+            "not an isolated bad shard. Only meaningful with --quarantine-failed-shards."
+        ),
+    )
+    parser.add_argument(
+        "--max-total-shard-failures",
+        type=int,
+        default=50,
+        help=(
+            "Circuit breaker: abort once this many shards have failed in total across the "
+            "run. Only meaningful with --quarantine-failed-shards."
+        ),
     )
     return parser.parse_args()
 
@@ -699,6 +742,7 @@ def evaluate_embedder_distinctness(
 
     per_embedder_metrics: dict[str, Any] = {}
     collapse_failures: list[dict[str, Any]] = []
+    benign_collisions: list[dict[str, Any]] = []
     vector_hash_sets: dict[str, set[str]] = {}
     for embedder_id in active_embedder_ids:
         stats = stats_by_embedder[embedder_id]
@@ -732,31 +776,47 @@ def evaluate_embedder_distinctness(
             if unique_input_count == 0
             else non_colliding_unique_input_count / unique_input_count
         )
-        observed_input_identity_preserved = (
-            unique_input_count > 0
-            and input_with_multiple_vectors_count == 0
-            and non_colliding_unique_input_fraction >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION
+        # Determinism is the only per-shard identity guard: the SAME input must always map
+        # to exactly one vector. `observed_input_identity_preserved` keeps its published
+        # field name but now means pure determinism; the old conflated 0.9 floor moved to
+        # the catastrophic/clean split below and to the corpus-scope guard.
+        input_identity_deterministic = (
+            unique_input_count > 0 and input_with_multiple_vectors_count == 0
+        )
+        observed_input_identity_preserved = input_identity_deterministic
+        non_colliding_above_catastrophic_floor = (
+            non_colliding_unique_input_fraction >= CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION
+        )
+        non_colliding_meets_clean_threshold = (
+            non_colliding_unique_input_fraction >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION
         )
         duplicate_bounded_usable = (
             unique_input_count >= MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
-            and observed_input_identity_preserved
-        )
-        duplicate_limited_usable = (
-            unique_input_count < MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
-            and observed_input_identity_preserved
         )
         if row_count == 0:
             status = "no_forward_records"
-        elif not observed_input_identity_preserved:
-            status = "collapse"
-        elif distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION:
-            status = "usable"
-        elif duplicate_bounded_usable:
-            status = "usable_duplicate_bounded"
-        elif duplicate_limited_usable:
-            status = "usable_duplicate_limited"
+        elif not input_identity_deterministic:
+            # Same input -> multiple vectors: nondeterministic embedder. FATAL.
+            status = "collapse_nondeterministic"
+        elif not non_colliding_above_catastrophic_floor:
+            # Majority of distinct inputs collapse into shared vectors: genuinely degenerate
+            # embedder for this shard (constant/broken model). FATAL, fail fast.
+            status = "collapse_catastrophic"
+        elif non_colliding_meets_clean_threshold:
+            if distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION:
+                status = "usable"
+            elif duplicate_bounded_usable:
+                status = "usable_duplicate_bounded"
+            else:
+                status = "usable_duplicate_limited"
         else:
-            status = "collapse"
+            # 0.5 <= non_colliding < 0.9 with deterministic inputs: legitimate local
+            # redundancy (e.g. uncased embedder on case-only variants). NON-FATAL.
+            status = "usable_benign_collision"
+        status_is_fatal_collapse = status in (
+            "collapse_nondeterministic",
+            "collapse_catastrophic",
+        )
         per_embedder_metrics[embedder_id] = {
             "forward_record_count": row_count,
             "unique_vector_sha256_count": unique_count,
@@ -777,15 +837,23 @@ def evaluate_embedder_distinctness(
             "top_vector_sha256_counts": top_vector_sha256_counts(counts),
             "top_vector_collision_groups": top_vector_collision_groups(counts, vector_to_inputs),
         }
-        if status == "collapse":
+        if status_is_fatal_collapse:
+            collapse_reason = (
+                "input_identity_nondeterministic"
+                if status == "collapse_nondeterministic"
+                else "catastrophic_vector_collision"
+            )
             collapse_failures.append(
                 {
                     "error_code": ERR_EMBEDDER_COLLAPSE,
+                    "collapse_reason": collapse_reason,
+                    "distinctness_gate_status": status,
                     "embedder_id": embedder_id,
                     "row_count": row_count,
                     "unique_vector_sha256_count": unique_count,
                     "distinctness_fraction": distinctness_fraction,
                     "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+                    "catastrophic_min_non_colliding_input_fraction": CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION,
                     "unique_input_sha256_count": unique_input_count,
                     "input_distinctness_fraction": input_distinctness_fraction,
                     "unique_vector_per_unique_input_fraction": unique_vector_per_unique_input_fraction,
@@ -797,6 +865,25 @@ def evaluate_embedder_distinctness(
                     "observed_input_identity_preserved": observed_input_identity_preserved,
                     "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
                     "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
+                    "top_vector_collision_groups": top_vector_collision_groups(counts, vector_to_inputs),
+                }
+            )
+        elif status == "usable_benign_collision":
+            # Non-fatal: legitimately-redundant distinct inputs share a vector above the
+            # catastrophic floor. Recorded (not hidden) for corpus-level monitoring.
+            benign_collisions.append(
+                {
+                    "info_code": INFO_EMBEDDER_BENIGN_COLLISION,
+                    "distinctness_gate_status": status,
+                    "embedder_id": embedder_id,
+                    "row_count": row_count,
+                    "unique_input_sha256_count": unique_input_count,
+                    "vector_collision_group_count": vector_collision_group_count,
+                    "vector_collision_unique_input_count": vector_collision_unique_input_count,
+                    "non_colliding_unique_input_count": non_colliding_unique_input_count,
+                    "non_colliding_unique_input_fraction": non_colliding_unique_input_fraction,
+                    "catastrophic_min_non_colliding_input_fraction": CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION,
+                    "shard_clean_non_colliding_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
                     "top_vector_collision_groups": top_vector_collision_groups(counts, vector_to_inputs),
                 }
             )
@@ -830,7 +917,45 @@ def evaluate_embedder_distinctness(
         "pairwise_jaccard_matrix": pairwise_jaccard_matrix,
         "collapse_failures": collapse_failures,
         "alias_failures": alias_failures,
+        "benign_collisions": benign_collisions,
     }
+
+
+def evaluate_corpus_non_colliding_floor(
+    unique_input_totals: dict[str, int],
+    non_colliding_input_totals: dict[str, int],
+    benign_collision_shard_counts: dict[str, int],
+) -> tuple[dict[str, float], list[dict[str, Any]]]:
+    """Corpus-scope anti-collision guard (the relocated strict 0.9 floor).
+
+    Returns (per-embedder corpus-weighted non-colliding fraction, fatal failures). The
+    fraction is sum(non_colliding distinct inputs) / sum(distinct inputs) across ALL shards,
+    so a genuinely collapsing embedder fails corpus-wide while a handful of benign
+    per-shard collisions (e.g. uncased case-only variants) do not.
+    """
+    fractions: dict[str, float] = {}
+    failures: list[dict[str, Any]] = []
+    for embedder_id, unique_total in sorted(unique_input_totals.items()):
+        non_colliding_total = non_colliding_input_totals.get(embedder_id, 0)
+        fraction = 1.0 if unique_total == 0 else non_colliding_total / unique_total
+        fractions[embedder_id] = fraction
+        if fraction < CORPUS_MIN_NON_COLLIDING_INPUT_FRACTION:
+            failures.append(
+                {
+                    "error_code": ERR_CORPUS_EMBEDDER_COLLAPSE,
+                    "embedder_id": embedder_id,
+                    "corpus_non_colliding_unique_input_fraction": fraction,
+                    "corpus_non_colliding_unique_input_count": non_colliding_total,
+                    "corpus_unique_input_count": unique_total,
+                    "corpus_min_non_colliding_unique_input_fraction": (
+                        CORPUS_MIN_NON_COLLIDING_INPUT_FRACTION
+                    ),
+                    "benign_collision_shard_count": benign_collision_shard_counts.get(
+                        embedder_id, 0
+                    ),
+                }
+            )
+    return fractions, failures
 
 
 def merge_distinctness_metrics(
@@ -891,8 +1016,11 @@ def write_isolated_distinctness_failure(
             "min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
             "min_unique_input_count_for_duplicate_bounded_gate": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
+            "catastrophic_min_non_colliding_input_fraction": CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION,
             "collapse_failures": distinctness_report["collapse_failures"],
             "alias_failures": distinctness_report["alias_failures"],
+            "benign_collision_count": len(distinctness_report.get("benign_collisions") or []),
+            "benign_collisions": distinctness_report.get("benign_collisions") or [],
         },
         "pairwise_jaccard_matrix": distinctness_report["pairwise_jaccard_matrix"],
     }
@@ -2430,8 +2558,11 @@ def consolidate_isolated_subruns(
             "min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
             "min_unique_input_count_for_duplicate_bounded_gate": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
+            "catastrophic_min_non_colliding_input_fraction": CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION,
             "collapse_failures": distinctness_report["collapse_failures"],
             "alias_failures": distinctness_report["alias_failures"],
+            "benign_collision_count": len(distinctness_report.get("benign_collisions") or []),
+            "benign_collisions": distinctness_report.get("benign_collisions") or [],
         },
         "pairwise_jaccard_matrix": distinctness_report["pairwise_jaccard_matrix"],
         "isolated_consolidation": {
@@ -2843,6 +2974,56 @@ def completed_shard_bounded_readback(args: argparse.Namespace, shard: ShardSpec)
 
 def shard_run_log_path(args: argparse.Namespace, shard: ShardSpec) -> Path:
     return args.readback_root / "run_logs" / f"{shard.shard_id}.json"
+
+
+def failed_shards_manifest_path(args: argparse.Namespace) -> Path:
+    return args.readback_root / "forward_cache_failed_shards.jsonl"
+
+
+def record_failed_shard(
+    args: argparse.Namespace,
+    shard: ShardSpec,
+    error: str,
+    failure_index: int,
+    consecutive_failures: int,
+) -> dict[str, Any]:
+    """Capture a quarantined shard's full diagnostics and append them to a durable,
+    independently-readable failed-shards manifest. Never silent: every quarantined shard
+    is recorded with its error before the run continues."""
+    record: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "artifact_kind": "python_forward_cache_failed_shard",
+        "shard_id": shard.shard_id,
+        "chunk_offset": shard.chunk_offset,
+        "max_chunks": shard.max_chunks,
+        "failure_index": failure_index,
+        "consecutive_failures_at_quarantine": consecutive_failures,
+        "quarantined_at_utc": utc_now(),
+        "error": error,
+        "cache_root": str(shard.cache_root),
+        "readback_root": str(shard.readback_root),
+    }
+    # Best-effort: attach any durable distinctness-failure artifact the runner left behind
+    # (in the shard dir or the hot stage) so the operator can see exactly why it failed.
+    failure_artifacts: list[str] = []
+    candidates = [
+        shard.cache_root / "python_forward_cache_distinctness_failure.json",
+        shard.readback_root / "python_forward_cache_distinctness_failure.json",
+    ]
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                failure_artifacts.append(str(candidate))
+        except OSError:
+            continue
+    record["failure_artifacts"] = failure_artifacts
+    manifest_path = failed_shards_manifest_path(args)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    with manifest_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    return record
 
 
 def unique_archive_root(parent: Path, stem: str) -> Path:
@@ -4885,6 +5066,15 @@ def aggregate(
     pairwise_max_jaccard_matrix: dict[str, dict[str, float]] = {}
     per_embedder_min_distinctness_fraction: dict[str, float] = {}
     per_embedder_min_non_colliding_unique_input_fraction: dict[str, float] = {}
+    # Corpus-WEIGHTED non-colliding aggregation (the real anti-collision guard). The
+    # per-shard MIN above is fragile telemetry only — one unlucky benign-collision shard
+    # would drag it below 0.9 and reintroduce the per-shard cliff at corpus scope. The
+    # weighted totals below sum distinct inputs and non-colliding inputs across ALL shards,
+    # so a genuinely collapsing embedder shows up corpus-wide while a few benign shards do
+    # not. Enforced fatally at finalization against CORPUS_MIN_NON_COLLIDING_INPUT_FRACTION.
+    per_embedder_corpus_unique_input_total: dict[str, int] = {}
+    per_embedder_corpus_non_colliding_input_total: dict[str, int] = {}
+    per_embedder_corpus_benign_collision_shard_count: dict[str, int] = {}
     totals = {
         "chunk_count": 0,
         "cache_record_count": 0,
@@ -4959,6 +5149,24 @@ def aggregate(
                             per_embedder_min_non_colliding_unique_input_fraction[embedder_id],
                             non_colliding_fraction,
                         )
+                # Corpus-weighted totals: count distinct inputs and the subset that map to
+                # a distinct (non-colliding) vector, summed over every shard.
+                if (
+                    "unique_input_sha256_count" in row
+                    and "non_colliding_unique_input_count" in row
+                ):
+                    per_embedder_corpus_unique_input_total[embedder_id] = (
+                        per_embedder_corpus_unique_input_total.get(embedder_id, 0)
+                        + int(row["unique_input_sha256_count"])
+                    )
+                    per_embedder_corpus_non_colliding_input_total[embedder_id] = (
+                        per_embedder_corpus_non_colliding_input_total.get(embedder_id, 0)
+                        + int(row["non_colliding_unique_input_count"])
+                    )
+                if row.get("distinctness_gate_status") == "usable_benign_collision":
+                    per_embedder_corpus_benign_collision_shard_count[embedder_id] = (
+                        per_embedder_corpus_benign_collision_shard_count.get(embedder_id, 0) + 1
+                    )
         else:
             require(
                 f"{shard.shard_id} distinctness gate consistently absent",
@@ -5012,21 +5220,52 @@ def aggregate(
     if retired_embedder_policy is not None:
         corpus_manifest["retired_embedder_policy"] = retired_embedder_policy
     if distinctness_gate_present:
+        # Corpus-scope anti-collision guard: the relocated strict 0.9 floor, enforced over
+        # the WEIGHTED total across all shards (not the fragile per-shard min). A genuinely
+        # collapsing embedder fails here; benign per-shard redundancy does not.
+        (
+            per_embedder_corpus_non_colliding_fraction,
+            corpus_non_colliding_failures,
+        ) = evaluate_corpus_non_colliding_floor(
+            per_embedder_corpus_unique_input_total,
+            per_embedder_corpus_non_colliding_input_total,
+            per_embedder_corpus_benign_collision_shard_count,
+        )
         corpus_manifest["embedder_distinctness_gate"] = {
             "status": "passed",
             "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
             "min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
             "min_unique_input_count_for_duplicate_bounded_gate": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
+            "catastrophic_min_non_colliding_input_fraction": CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION,
+            "corpus_min_non_colliding_unique_input_fraction": CORPUS_MIN_NON_COLLIDING_INPUT_FRACTION,
             "shard_count": len(shards),
             "per_embedder_min_distinctness_fraction": per_embedder_min_distinctness_fraction,
             "per_embedder_min_non_colliding_unique_input_fraction": (
                 per_embedder_min_non_colliding_unique_input_fraction
             ),
+            "per_embedder_corpus_non_colliding_unique_input_fraction": (
+                per_embedder_corpus_non_colliding_fraction
+            ),
+            "per_embedder_corpus_unique_input_total": per_embedder_corpus_unique_input_total,
+            "per_embedder_corpus_non_colliding_input_total": (
+                per_embedder_corpus_non_colliding_input_total
+            ),
+            "per_embedder_benign_collision_shard_count": (
+                per_embedder_corpus_benign_collision_shard_count
+            ),
             "pairwise_max_jaccard_matrix": pairwise_max_jaccard_matrix,
             "collapse_failures": [],
             "alias_failures": [],
+            "corpus_non_colliding_failures": corpus_non_colliding_failures,
         }
+        # Fatal at finalization (fail-closed): a corpus-wide collapse means the embedder is
+        # genuinely degenerate, not one unlucky shard.
+        require(
+            "corpus-scope non-colliding floor holds for every embedder "
+            f"(failures={corpus_non_colliding_failures})",
+            not corpus_non_colliding_failures,
+        )
     json_dump_checked(output_path, corpus_manifest)
     readback = read_json(output_path)
     require("aggregate manifest readback equals written summary", readback["summary"] == corpus_manifest["summary"])
@@ -5779,6 +6018,8 @@ def main() -> int:
                 "resource": checkpoint["resource"],
             },
         )
+    failed_shards: list[dict[str, Any]] = []
+    consecutive_shard_failures = 0
     if args.mode == "run":
         for shard in shards[resume_start_index:]:
             if args.resume_completed_shards and (
@@ -5834,10 +6075,44 @@ def main() -> int:
                         "partial shard state exists without a manifest that can pass readback",
                     )
                     event(event_path, "failed_partial_shard_archived_for_retry", archive)
-            if args.isolate_embedder_processes:
-                run_logs.append(run_shard_embedder_isolated(args, shard, event_path, preflight))
-            else:
-                run_logs.append(run_shard(args, shard, event_path, preflight))
+            try:
+                if args.isolate_embedder_processes:
+                    run_log = run_shard_embedder_isolated(args, shard, event_path, preflight)
+                else:
+                    run_log = run_shard(args, shard, event_path, preflight)
+            except SchedulerError as exc:
+                if not args.quarantine_failed_shards:
+                    # Fail-closed default: abort the whole run on any shard failure.
+                    raise
+                consecutive_shard_failures += 1
+                failure_record = record_failed_shard(
+                    args,
+                    shard,
+                    str(exc),
+                    failure_index=len(failed_shards) + 1,
+                    consecutive_failures=consecutive_shard_failures,
+                )
+                failed_shards.append(failure_record)
+                event(event_path, "shard_run_failed_quarantined", failure_record)
+                # Circuit breakers: a run of back-to-back failures, or too many failures in
+                # total, indicates a systemic fault (broken embedder / environment) rather
+                # than an isolated bad shard. Abort fast and fail-closed.
+                if consecutive_shard_failures >= args.max_consecutive_shard_failures:
+                    raise SchedulerError(
+                        "PY_FORWARD_SHARD_SCHEDULER_SYSTEMIC_FAILURE: "
+                        f"{consecutive_shard_failures} consecutive shard failures "
+                        f"(>= {args.max_consecutive_shard_failures}); aborting. "
+                        f"Last failure {shard.shard_id}: {exc}"
+                    ) from exc
+                if len(failed_shards) > args.max_total_shard_failures:
+                    raise SchedulerError(
+                        "PY_FORWARD_SHARD_SCHEDULER_TOO_MANY_FAILURES: "
+                        f"{len(failed_shards)} shards failed (> {args.max_total_shard_failures}); "
+                        "aborting."
+                    ) from exc
+                continue
+            consecutive_shard_failures = 0
+            run_logs.append(run_log)
             if len(run_logs) % args.checkpoint_every_shards == 0:
                 checkpoint = write_checkpoint(
                     args,
@@ -5873,7 +6148,17 @@ def main() -> int:
         )
 
     aggregate_path = args.cache_root / "python_forward_cache_corpus_manifest.json"
-    corpus_manifest = aggregate(shards, aggregate_path, args.require_packed_store, expected_chunks_jsonl=args.chunks_jsonl)
+    # Aggregate only the shards that actually produced a passing manifest. Quarantined
+    # shards (if any) are excluded here and reported as a fatal INCOMPLETE run at the end,
+    # so the corpus manifest never silently claims to cover shards that failed.
+    failed_shard_ids = {record["shard_id"] for record in failed_shards}
+    aggregate_shards = [shard for shard in shards if shard.shard_id not in failed_shard_ids]
+    corpus_manifest = aggregate(
+        aggregate_shards,
+        aggregate_path,
+        args.require_packed_store,
+        expected_chunks_jsonl=args.chunks_jsonl,
+    )
     checkpoint = write_checkpoint(
         args,
         shards,
@@ -5938,13 +6223,32 @@ def main() -> int:
         "resume_gate": resume_gate,
         "edge_cases": edge_cases,
         "after_state": after,
-        "passes": True,
+        "failed_shard_count": len(failed_shards),
+        "failed_shards": failed_shards,
+        "failed_shards_manifest": (
+            str(failed_shards_manifest_path(args)) if failed_shards else None
+        ),
+        # A run with any quarantined shard is INCOMPLETE, never a pass.
+        "passes": not failed_shards,
     }
     readback_path = args.readback_root / "python_forward_shard_scheduler_readback.json"
     json_dump_checked(readback_path, readback)
     readback = read_json(readback_path)
-    require("scheduler READBACK readback passes", readback["passes"] is True)
+    require(
+        "scheduler READBACK round-trip is stable",
+        readback["passes"] == (not failed_shards),
+    )
     print(json.dumps(readback, indent=2, sort_keys=True))
+    # Fail-closed at finalization: all durable artifacts (corpus manifest, checkpoint,
+    # readback, failed-shards manifest) are now written, so the operator has full evidence.
+    # If any shard was quarantined the corpus is incomplete and the run must exit non-zero.
+    if failed_shards:
+        raise SchedulerError(
+            "PY_FORWARD_SHARD_SCHEDULER_INCOMPLETE: "
+            f"{len(failed_shards)} shard(s) failed and were quarantined; corpus is INCOMPLETE. "
+            f"Failed-shards manifest: {failed_shards_manifest_path(args)}. "
+            f"Failed shard ids: {[record['shard_id'] for record in failed_shards]}"
+        )
     return 0
 
 

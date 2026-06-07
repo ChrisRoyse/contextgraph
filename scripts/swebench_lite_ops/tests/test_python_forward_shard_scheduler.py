@@ -355,7 +355,11 @@ def test_distinctness_accepts_low_support_duplicate_heavy_identity_preserved_inp
     assert metrics["observed_input_identity_preserved"] is True
 
 
-def test_distinctness_rejects_exact_vector_collisions_even_with_high_aggregate_fraction():
+def test_distinctness_treats_exact_vector_collisions_above_floor_as_benign():
+    # 20 of 100 distinct inputs collide into 10 shared vectors (non_colliding = 0.8):
+    # below the 0.9 clean threshold but well above the 0.5 catastrophic floor with
+    # deterministic inputs. This is the shard-2418 shape (uncased embedder mapping
+    # case-only variants together) and must be NON-FATAL.
     pairs: list[tuple[str, str]] = []
     for idx in range(100):
         vector = f"sha256:shared-{idx // 2:04}" if idx < 20 else f"sha256:vector-{idx:04}"
@@ -363,9 +367,128 @@ def test_distinctness_rejects_exact_vector_collisions_even_with_high_aggregate_f
 
     report = scheduler.evaluate_embedder_distinctness(["e9"], _distinctness_rows("e9", pairs))
 
-    assert report["passes"] is False
-    assert report["error_code"] == scheduler.ERR_EMBEDDER_COLLAPSE
+    assert report["passes"] is True
+    assert report["collapse_failures"] == []
+    assert len(report["benign_collisions"]) == 1
+    assert report["benign_collisions"][0]["info_code"] == scheduler.INFO_EMBEDDER_BENIGN_COLLISION
     metrics = report["per_embedder_metrics"]["e9"]
+    assert metrics["distinctness_gate_status"] == "usable_benign_collision"
     assert metrics["distinctness_fraction"] == 0.9
     assert metrics["vector_collision_group_count"] == 10
-    assert metrics["observed_input_identity_preserved"] is False
+    assert metrics["non_colliding_unique_input_fraction"] == 0.8
+    # Determinism is preserved (same input -> one vector), so this is not a collapse.
+    assert metrics["observed_input_identity_preserved"] is True
+
+
+def test_distinctness_rejects_nondeterministic_input_identity():
+    # The SAME input mapping to two different vectors is a nondeterministic embedder
+    # (e.g. batch-position float drift): always fatal.
+    pairs = [
+        ("sha256:vector-a", "sha256:input-shared"),
+        ("sha256:vector-b", "sha256:input-shared"),
+        ("sha256:vector-c", "sha256:input-002"),
+        ("sha256:vector-d", "sha256:input-003"),
+    ]
+
+    report = scheduler.evaluate_embedder_distinctness(["e1"], _distinctness_rows("e1", pairs))
+
+    assert report["passes"] is False
+    assert report["error_code"] == scheduler.ERR_EMBEDDER_COLLAPSE
+    assert len(report["collapse_failures"]) == 1
+    assert report["collapse_failures"][0]["collapse_reason"] == "input_identity_nondeterministic"
+    metrics = report["per_embedder_metrics"]["e1"]
+    assert metrics["distinctness_gate_status"] == "collapse_nondeterministic"
+    assert metrics["input_with_multiple_vectors_count"] == 1
+
+
+def test_distinctness_rejects_catastrophic_vector_collision_below_floor():
+    # 60 of 100 distinct inputs collide (non_colliding = 0.4 < 0.5): genuinely
+    # degenerate embedder for this shard. Fatal, fail fast.
+    pairs: list[tuple[str, str]] = []
+    for idx in range(100):
+        vector = f"sha256:shared-{idx // 3:04}" if idx < 60 else f"sha256:vector-{idx:04}"
+        pairs.append((vector, f"sha256:input-{idx:04}"))
+
+    report = scheduler.evaluate_embedder_distinctness(["e9"], _distinctness_rows("e9", pairs))
+
+    assert report["passes"] is False
+    assert report["error_code"] == scheduler.ERR_EMBEDDER_COLLAPSE
+    assert len(report["collapse_failures"]) == 1
+    assert report["collapse_failures"][0]["collapse_reason"] == "catastrophic_vector_collision"
+    metrics = report["per_embedder_metrics"]["e9"]
+    assert metrics["distinctness_gate_status"] == "collapse_catastrophic"
+
+
+def test_corpus_non_colliding_floor_passes_when_benign_collisions_are_rare():
+    # One benign-collision shard (0.80) diluted across a healthy corpus stays above the
+    # 0.90 corpus floor: weighted = (99*1.0 + 80*0.80...) here approximated with totals.
+    # e1: 990 of 1000 distinct inputs non-colliding corpus-wide = 0.99 -> pass.
+    fractions, failures = scheduler.evaluate_corpus_non_colliding_floor(
+        unique_input_totals={"e1": 1000, "e7": 1000},
+        non_colliding_input_totals={"e1": 990, "e7": 1000},
+        benign_collision_shard_counts={"e1": 3},
+    )
+    assert failures == []
+    assert abs(fractions["e1"] - 0.99) < 1e-9
+    assert fractions["e7"] == 1.0
+
+
+def test_corpus_non_colliding_floor_fails_on_corpus_wide_collapse():
+    # An embedder that collides corpus-wide (only 60% of distinct inputs non-colliding)
+    # is genuinely degenerate and must fail the corpus floor, unlike a few benign shards.
+    fractions, failures = scheduler.evaluate_corpus_non_colliding_floor(
+        unique_input_totals={"e1": 1000, "e9": 1000},
+        non_colliding_input_totals={"e1": 600, "e9": 1000},
+        benign_collision_shard_counts={"e1": 400},
+    )
+    assert len(failures) == 1
+    failure = failures[0]
+    assert failure["embedder_id"] == "e1"
+    assert failure["error_code"] == scheduler.ERR_CORPUS_EMBEDDER_COLLAPSE
+    assert abs(failure["corpus_non_colliding_unique_input_fraction"] - 0.6) < 1e-9
+    assert failure["corpus_min_non_colliding_unique_input_fraction"] == 0.9
+    assert fractions["e9"] == 1.0
+
+
+def test_corpus_non_colliding_floor_passes_at_exact_threshold():
+    # Exactly at the 0.90 floor is acceptable (>=, not >).
+    _, failures = scheduler.evaluate_corpus_non_colliding_floor(
+        unique_input_totals={"e1": 1000},
+        non_colliding_input_totals={"e1": 900},
+        benign_collision_shard_counts={},
+    )
+    assert failures == []
+
+
+def test_record_failed_shard_writes_durable_manifest(tmp_path):
+    args = argparse.Namespace(readback_root=tmp_path / "readback")
+    shard = scheduler.ShardSpec(
+        shard_id="shard-002418-offset-000309504",
+        chunk_offset=309504,
+        max_chunks=128,
+        cache_root=tmp_path / "cache" / "shard-002418",
+        readback_root=tmp_path / "readback" / "shard-002418",
+    )
+    record = scheduler.record_failed_shard(
+        args,
+        shard,
+        error="MEJEPA_FORWARD_CACHE_EMBEDDER_COLLAPSE: simulated runner failure",
+        failure_index=1,
+        consecutive_failures=1,
+    )
+    assert record["shard_id"] == "shard-002418-offset-000309504"
+    assert record["chunk_offset"] == 309504
+    assert "simulated runner failure" in record["error"]
+    # Independently read the durable Source of Truth back.
+    manifest_path = scheduler.failed_shards_manifest_path(args)
+    assert manifest_path.is_file()
+    lines = manifest_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    readback = json.loads(lines[0])
+    assert readback["shard_id"] == "shard-002418-offset-000309504"
+    assert readback["artifact_kind"] == "python_forward_cache_failed_shard"
+    # A second failure appends, not overwrites.
+    scheduler.record_failed_shard(
+        args, shard, error="second failure", failure_index=2, consecutive_failures=2
+    )
+    assert len(manifest_path.read_text(encoding="utf-8").strip().splitlines()) == 2

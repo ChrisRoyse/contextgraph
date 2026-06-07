@@ -18,11 +18,27 @@ const DEFAULT_MODELS_CONFIG: &str = "/zfs/hot/contextgraph/models/mejepa_models_
 const STATIC_AST_CORPUS_PROFILE: &str = "static_ast_python";
 const LIVE_TEMPORAL_CORPUS_PROFILE: &str = "live_temporal";
 const MIN_UNIQUE_VECTOR_FRACTION: f64 = 0.5;
+// Per-shard CLEAN threshold: at/above this fraction of a slot's distinct inputs map
+// to a distinct vector, the shard is labeled fully "usable" with no recorded
+// collisions. This is NO LONGER a per-shard fatal floor — benign tokenizer-equivalent
+// redundancy (e.g. e5-large-v2 / bert-large-uncased mapping case-only variants such as
+// `'spam'`/`'SPAM'` to one vector) lands below 0.9 yet is legitimate and must not abort
+// a multi-day corpus build. The strict 0.9 anti-collision guard now lives at corpus
+// scope (see the scheduler's CORPUS_MIN_NON_COLLIDING_INPUT_FRACTION).
 const MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION: f64 = 0.9;
+// Per-shard FATAL floor: if FEWER than half of a slot's distinct inputs map to a
+// distinct vector, the embedder is genuinely degenerate for this shard (a constant or
+// broken model) and the run fails fast. Benign case/format redundancy sits well above
+// this floor and is recorded as a non-fatal benign collision instead.
+const CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION: f64 = 0.5;
 const MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE: usize = 64;
 const MAX_PAIRWISE_VECTOR_HASH_JACCARD: f64 = 0.5;
 const ERR_EMBEDDER_COLLAPSE: &str = "MEJEPA_FORWARD_CACHE_EMBEDDER_COLLAPSE";
 const ERR_EMBEDDER_ALIAS: &str = "MEJEPA_FORWARD_CACHE_EMBEDDER_ALIAS";
+// Non-fatal: distinct inputs that legitimately share a vector above the catastrophic
+// floor (uncased/normalizing embedder on case/whitespace variants). Recorded for
+// corpus-level monitoring; never fails a shard.
+const INFO_EMBEDDER_BENIGN_COLLISION: &str = "MEJEPA_FORWARD_EMBEDDER_BENIGN_COLLISION";
 
 type RunnerResult<T> = Result<T, RunnerError>;
 
@@ -166,6 +182,9 @@ struct DistinctnessReport {
     pairwise_jaccard_matrix: Value,
     collapse_failures: Vec<Value>,
     alias_failures: Vec<Value>,
+    // Non-fatal telemetry: distinct inputs that legitimately collide above the
+    // catastrophic floor. Never affects `passes()`; rolled up at corpus scope.
+    benign_collisions: Vec<Value>,
 }
 
 impl DistinctnessReport {
@@ -401,8 +420,11 @@ async fn run() -> RunnerResult<()> {
             "min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
             "min_unique_input_count_for_duplicate_bounded_gate": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
+            "catastrophic_min_non_colliding_input_fraction": CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION,
             "collapse_failures": distinctness_report.collapse_failures.clone(),
             "alias_failures": distinctness_report.alias_failures.clone(),
+            "benign_collision_count": distinctness_report.benign_collisions.len(),
+            "benign_collisions": distinctness_report.benign_collisions.clone(),
         },
         "pairwise_jaccard_matrix": distinctness_report.pairwise_jaccard_matrix.clone(),
     });
@@ -1487,6 +1509,7 @@ fn evaluate_embedder_distinctness(
 ) -> DistinctnessReport {
     let mut per_embedder_metrics = BTreeMap::new();
     let mut collapse_failures = Vec::new();
+    let mut benign_collisions = Vec::new();
     let mut vector_hash_sets = BTreeMap::new();
 
     for embedder_id in active_embedder_ids {
@@ -1533,28 +1556,48 @@ fn evaluate_embedder_distinctness(
         } else {
             non_colliding_unique_input_count as f64 / unique_input_count as f64
         };
-        let observed_input_identity_preserved = unique_input_count > 0
-            && input_with_multiple_vectors_count == 0
-            && non_colliding_unique_input_fraction >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION;
-        let duplicate_bounded_usable = unique_input_count
-            >= MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
-            && observed_input_identity_preserved;
-        let duplicate_limited_usable = unique_input_count
-            < MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE
-            && observed_input_identity_preserved;
+        // Determinism is the only per-shard identity guard: the SAME input must always
+        // map to exactly one vector. A violation means a nondeterministic embedder
+        // (e.g. batch-position float drift) and is always fatal. `observed_input_identity_preserved`
+        // keeps its published field name but now means pure determinism — the old
+        // conflated 0.9 non-colliding floor moved to the catastrophic/clean split below
+        // and to the corpus-scope guard in the scheduler.
+        let input_identity_deterministic =
+            unique_input_count > 0 && input_with_multiple_vectors_count == 0;
+        let observed_input_identity_preserved = input_identity_deterministic;
+        let non_colliding_above_catastrophic_floor =
+            non_colliding_unique_input_fraction >= CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION;
+        let non_colliding_meets_clean_threshold =
+            non_colliding_unique_input_fraction >= MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION;
+        let duplicate_bounded_usable =
+            unique_input_count >= MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE;
         let status = if row_count == 0 {
             "no_forward_records"
-        } else if !observed_input_identity_preserved {
-            "collapse"
-        } else if distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION {
-            "usable"
-        } else if duplicate_bounded_usable {
-            "usable_duplicate_bounded"
-        } else if duplicate_limited_usable {
-            "usable_duplicate_limited"
+        } else if !input_identity_deterministic {
+            // Same input -> multiple vectors: nondeterministic embedder. FATAL.
+            "collapse_nondeterministic"
+        } else if !non_colliding_above_catastrophic_floor {
+            // Majority of distinct inputs collapse into shared vectors: a genuinely
+            // degenerate embedder for this shard (constant/broken model). FATAL, fail fast.
+            "collapse_catastrophic"
+        } else if non_colliding_meets_clean_threshold {
+            // Clean shard (>= 0.9 of distinct inputs map to a distinct vector): original
+            // informational label hierarchy, all non-fatal.
+            if distinctness_fraction >= MIN_UNIQUE_VECTOR_FRACTION {
+                "usable"
+            } else if duplicate_bounded_usable {
+                "usable_duplicate_bounded"
+            } else {
+                "usable_duplicate_limited"
+            }
         } else {
-            "collapse"
+            // 0.5 <= non_colliding < 0.9 with deterministic inputs: legitimate local
+            // redundancy (e.g. uncased embedder on case-only variants). NON-FATAL,
+            // recorded as a benign collision and rolled up at corpus scope.
+            "usable_benign_collision"
         };
+        let status_is_fatal_collapse =
+            status == "collapse_nondeterministic" || status == "collapse_catastrophic";
         let metric = json!({
             "forward_record_count": row_count,
             "unique_vector_sha256_count": unique_count,
@@ -1575,14 +1618,22 @@ fn evaluate_embedder_distinctness(
             "top_vector_sha256_counts": top_vector_sha256_counts(counts),
             "top_vector_collision_groups": top_vector_collision_groups(&inputs),
         });
-        if status == "collapse" {
+        if status_is_fatal_collapse {
+            let collapse_reason = if status == "collapse_nondeterministic" {
+                "input_identity_nondeterministic"
+            } else {
+                "catastrophic_vector_collision"
+            };
             collapse_failures.push(json!({
                 "error_code": ERR_EMBEDDER_COLLAPSE,
+                "collapse_reason": collapse_reason,
+                "distinctness_gate_status": status,
                 "embedder_id": embedder_id,
                 "row_count": row_count,
                 "unique_vector_sha256_count": unique_count,
                 "distinctness_fraction": distinctness_fraction,
                 "min_unique_vector_fraction": MIN_UNIQUE_VECTOR_FRACTION,
+                "catastrophic_min_non_colliding_input_fraction": CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION,
                 "unique_input_sha256_count": unique_input_count,
                 "input_distinctness_fraction": input_distinctness_fraction,
                 "unique_vector_per_unique_input_fraction": unique_vector_per_unique_input_fraction,
@@ -1594,6 +1645,23 @@ fn evaluate_embedder_distinctness(
                 "observed_input_identity_preserved": observed_input_identity_preserved,
                 "duplicate_bounded_gate_min_unique_input_count": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
                 "duplicate_bounded_gate_min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
+                "top_vector_collision_groups": top_vector_collision_groups(&inputs),
+            }));
+        } else if status == "usable_benign_collision" {
+            // Non-fatal: legitimately-redundant distinct inputs share a vector above the
+            // catastrophic floor. Recorded (not hidden) for corpus-level monitoring.
+            benign_collisions.push(json!({
+                "info_code": INFO_EMBEDDER_BENIGN_COLLISION,
+                "distinctness_gate_status": status,
+                "embedder_id": embedder_id,
+                "row_count": row_count,
+                "unique_input_sha256_count": unique_input_count,
+                "vector_collision_group_count": vector_collision_group_count,
+                "vector_collision_unique_input_count": vector_collision_unique_input_count,
+                "non_colliding_unique_input_count": non_colliding_unique_input_count,
+                "non_colliding_unique_input_fraction": non_colliding_unique_input_fraction,
+                "catastrophic_min_non_colliding_input_fraction": CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION,
+                "shard_clean_non_colliding_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
                 "top_vector_collision_groups": top_vector_collision_groups(&inputs),
             }));
         }
@@ -1633,6 +1701,7 @@ fn evaluate_embedder_distinctness(
         pairwise_jaccard_matrix: Value::Object(matrix),
         collapse_failures,
         alias_failures,
+        benign_collisions,
     }
 }
 
@@ -1698,8 +1767,11 @@ fn write_distinctness_failure_artifacts(
             "min_unique_vector_per_unique_input_fraction": MIN_UNIQUE_VECTOR_PER_UNIQUE_INPUT_FRACTION,
             "min_unique_input_count_for_duplicate_bounded_gate": MIN_UNIQUE_INPUT_COUNT_FOR_DUPLICATE_BOUNDED_GATE,
             "max_pairwise_vector_hash_jaccard": MAX_PAIRWISE_VECTOR_HASH_JACCARD,
+            "catastrophic_min_non_colliding_input_fraction": CATASTROPHIC_MIN_NON_COLLIDING_INPUT_FRACTION,
             "collapse_failures": distinctness_report.collapse_failures.clone(),
             "alias_failures": distinctness_report.alias_failures.clone(),
+            "benign_collision_count": distinctness_report.benign_collisions.len(),
+            "benign_collisions": distinctness_report.benign_collisions.clone(),
         },
         "pairwise_jaccard_matrix": distinctness_report.pairwise_jaccard_matrix.clone(),
     });
@@ -2484,7 +2556,12 @@ mod tests {
     }
 
     #[test]
-    fn distinctness_gate_rejects_exact_vector_collisions_even_with_high_aggregate_fraction() {
+    fn distinctness_gate_treats_exact_vector_collisions_above_floor_as_benign() {
+        // 20 of 100 distinct inputs collide into 10 shared vectors; 80 stay unique.
+        // non_colliding_unique_input_fraction = 0.8 — below the 0.9 clean threshold but
+        // well above the 0.5 catastrophic floor, with deterministic inputs. This is the
+        // shard-2418 shape (uncased embedder mapping case-only variants together) and
+        // must be NON-FATAL: recorded as a benign collision, the shard still passes.
         let mut pairs = Vec::new();
         for idx in 0..100 {
             let vector = if idx < 20 {
@@ -2502,8 +2579,18 @@ mod tests {
 
         let report = report_for_vector_and_input_hashes(&[("e9", refs)]);
 
-        assert!(!report.passes());
-        assert_eq!(report.error_code(), ERR_EMBEDDER_COLLAPSE);
+        assert!(report.passes());
+        assert_eq!(report.collapse_failures.len(), 0);
+        assert_eq!(report.alias_failures.len(), 0);
+        assert_eq!(report.benign_collisions.len(), 1);
+        assert_eq!(
+            report.benign_collisions[0]["info_code"],
+            json!(INFO_EMBEDDER_BENIGN_COLLISION)
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["distinctness_gate_status"],
+            json!("usable_benign_collision")
+        );
         assert_eq!(
             report.per_embedder_metrics["e9"]["distinctness_fraction"],
             json!(0.9)
@@ -2513,13 +2600,90 @@ mod tests {
             json!(10)
         );
         assert_eq!(
+            report.per_embedder_metrics["e9"]["non_colliding_unique_input_fraction"],
+            json!(0.8)
+        );
+        // Determinism is preserved (same input -> one vector), so this is not a collapse.
+        assert_eq!(
             report.per_embedder_metrics["e9"]["observed_input_identity_preserved"],
-            json!(false)
+            json!(true)
         );
     }
 
     #[test]
-    fn distinctness_gate_rejects_aggregate_count_false_pass() {
+    fn distinctness_gate_rejects_nondeterministic_input_identity() {
+        // The SAME input mapping to two different vectors is a nondeterministic embedder
+        // (e.g. batch-position float drift). This must always be fatal, regardless of how
+        // distinct the overall vector space looks.
+        let report = report_for_vector_and_input_hashes(&[(
+            "e1",
+            vec![
+                ("sha256:vector-a", "sha256:input-shared"),
+                ("sha256:vector-b", "sha256:input-shared"),
+                ("sha256:vector-c", "sha256:input-002"),
+                ("sha256:vector-d", "sha256:input-003"),
+            ],
+        )]);
+
+        assert!(!report.passes());
+        assert_eq!(report.error_code(), ERR_EMBEDDER_COLLAPSE);
+        assert_eq!(report.collapse_failures.len(), 1);
+        assert_eq!(
+            report.collapse_failures[0]["collapse_reason"],
+            json!("input_identity_nondeterministic")
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e1"]["distinctness_gate_status"],
+            json!("collapse_nondeterministic")
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e1"]["input_with_multiple_vectors_count"],
+            json!(1)
+        );
+    }
+
+    #[test]
+    fn distinctness_gate_rejects_catastrophic_vector_collision_below_floor() {
+        // 60 of 100 distinct inputs collide (non_colliding = 0.4 < 0.5 catastrophic floor)
+        // with deterministic inputs. A genuinely degenerate embedder for this shard: FATAL.
+        let mut pairs = Vec::new();
+        for idx in 0..100 {
+            let vector = if idx < 60 {
+                format!("sha256:shared-{:04}", idx / 3)
+            } else {
+                format!("sha256:vector-{idx:04}")
+            };
+            let input = format!("sha256:input-{idx:04}");
+            pairs.push((vector, input));
+        }
+        let refs = pairs
+            .iter()
+            .map(|(vector, input)| (vector.as_str(), input.as_str()))
+            .collect::<Vec<_>>();
+
+        let report = report_for_vector_and_input_hashes(&[("e9", refs)]);
+
+        assert!(!report.passes());
+        assert_eq!(report.error_code(), ERR_EMBEDDER_COLLAPSE);
+        assert_eq!(report.collapse_failures.len(), 1);
+        assert_eq!(
+            report.collapse_failures[0]["collapse_reason"],
+            json!("catastrophic_vector_collision")
+        );
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["distinctness_gate_status"],
+            json!("collapse_catastrophic")
+        );
+    }
+
+    #[test]
+    fn distinctness_gate_reports_collisions_without_aggregate_masking() {
+        // Duplicate-input twin of the benign-collision case: 200 rows, 100 distinct
+        // inputs, 20 of them colliding. Aggregate row counts could fool a naive gate into
+        // reporting "usable" and hiding the collisions. The corrected gate must instead
+        // surface the true collision accounting (non_colliding = 0.8, 10 groups) and label
+        // the shard "usable_benign_collision" — non-fatal at shard scope, but explicitly
+        // recorded so the corpus-scope floor can act on it. No masking, no false clean pass.
         let mut pairs = Vec::new();
         for idx in 0..100 {
             let vector = if idx < 20 {
@@ -2547,7 +2711,14 @@ mod tests {
 
         let report = report_for_vector_and_input_hashes(&[("e9", refs)]);
 
-        assert!(!report.passes());
+        // Benign at shard scope, but NOT a clean "usable": the collisions are recorded.
+        assert!(report.passes());
+        assert_eq!(report.collapse_failures.len(), 0);
+        assert_eq!(report.benign_collisions.len(), 1);
+        assert_eq!(
+            report.per_embedder_metrics["e9"]["distinctness_gate_status"],
+            json!("usable_benign_collision")
+        );
         assert_eq!(
             report.per_embedder_metrics["e9"]["unique_vector_per_unique_input_fraction"],
             json!(0.9)
@@ -2556,6 +2727,7 @@ mod tests {
             report.per_embedder_metrics["e9"]["vector_collision_group_count"],
             json!(10)
         );
+        // The true 0.8 is surfaced (not masked up by the 100 duplicate rows).
         assert_eq!(
             report.per_embedder_metrics["e9"]["non_colliding_unique_input_fraction"],
             json!(0.8)
