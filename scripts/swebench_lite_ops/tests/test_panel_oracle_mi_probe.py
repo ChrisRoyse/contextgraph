@@ -10,8 +10,74 @@ from ..python_panel_oracle_mi_probe import (
     CodeStateAccumulator,
     PanelMiError,
     finalize_dataset,
+    power_calibration_gate,
+    screened_classifier_lower_bound,
+    screened_top_k_for,
     standardize_and_reduce,
 )
+
+
+def _high_dim_with_signal(n: int, d: int, signal_dims: int, seed: int):
+    """Build (X, y) where y is a near-deterministic function of `signal_dims`
+    real columns, embedded in d-dimensional noise. True MI is high."""
+    rng = np.random.default_rng(seed)
+    X = rng.standard_normal((n, d)).astype(np.float32)
+    w = rng.standard_normal(signal_dims)
+    score = X[:, :signal_dims] @ w
+    y = (score > np.median(score)).astype(np.int64)
+    flip = rng.random(n) < 0.02
+    y = np.where(flip, 1 - y, y)
+    return X, y
+
+
+def test_screened_lower_bound_recovers_high_dim_signal() -> None:
+    # 1 signal dim hidden in 2000 noise dims: the dense reduction path drowns it
+    # (FSV showed ~0.009 bits); train-only screening must recover it.
+    X, y = _high_dim_with_signal(n=800, d=2000, signal_dims=1, seed=1)
+    out = screened_classifier_lower_bound(X=X, y=y, label="signal", seed=11, holdout_fraction=0.25)
+    assert out["valid"] is True
+    assert out["estimator"] == "screened_train_only_logistic_lower_bound"
+    assert out["lower_bound_bits"] > 0.3, out
+
+
+def test_screened_lower_bound_zero_for_independent_label() -> None:
+    rng = np.random.default_rng(2)
+    X = rng.standard_normal((800, 2000)).astype(np.float32)
+    y = (rng.random(800) < 0.5).astype(np.int64)  # independent of X
+    out = screened_classifier_lower_bound(X=X, y=y, label="noise", seed=11, holdout_fraction=0.25)
+    assert out["valid"] is True
+    assert out["lower_bound_bits"] < 0.1, out  # no false positive
+
+
+def test_screened_lower_bound_fails_closed_on_degenerate_labels() -> None:
+    rng = np.random.default_rng(3)
+    X = rng.standard_normal((200, 500)).astype(np.float32)
+    y = np.ones(200, dtype=np.int64)  # single class
+    out = screened_classifier_lower_bound(X=X, y=y, label="degenerate", seed=11, holdout_fraction=0.25)
+    assert out["valid"] is False
+    assert out["invalid_reason"] == "DEGENERATE_ORACLE_LABELS"
+
+
+def test_screened_top_k_budget_is_clamped() -> None:
+    assert screened_top_k_for(50) == 8       # floor
+    assert screened_top_k_for(2400) == 240   # n/10
+    assert screened_top_k_for(100000) == 256  # ceiling
+
+
+def test_power_gate_passes_when_signal_detectable() -> None:
+    # Enough samples for screening to recover a planted signal -> NOT underpowered.
+    X, y = _high_dim_with_signal(n=800, d=1500, signal_dims=5, seed=4)
+    gate = power_calibration_gate(X=X, y=y, seed=11, holdout_fraction=0.25)
+    assert gate["estimator_underpowered"] is False, gate
+    assert gate["recovered_bits"] >= gate["detectable_floor_bits"]
+
+
+def test_power_gate_flags_underpowered_when_too_few_samples() -> None:
+    # 40 samples vs 3000 dims: below detection floor -> must flag underpowered
+    # rather than letting a low real reading masquerade as "insufficient".
+    X, y = _high_dim_with_signal(n=40, d=3000, signal_dims=2, seed=5)
+    gate = power_calibration_gate(X=X, y=y, seed=11, holdout_fraction=0.25)
+    assert gate["estimator_underpowered"] is True, gate
 
 
 def test_finalize_dataset_fails_closed_when_active_slot_dim_missing(tmp_path: Path) -> None:

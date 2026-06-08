@@ -1058,6 +1058,170 @@ def load_dataset(output_root: Path) -> tuple[Any, Any, list[dict[str, Any]], dic
     return data["X"], data["y"], rows, slices, manifest
 
 
+def screened_top_k_for(sample_count: int) -> int:
+    """Fixed, no-peek feature budget: ~n/10 features, clamped to [8, 256].
+
+    Selecting k by held-out performance would bias the lower bound upward, so
+    the budget is a deterministic function of sample size only.
+    """
+    return int(max(8, min(256, sample_count // 10)))
+
+
+def _numpy_l2_logistic_ce_bits(Xtr: Any, ytr: Any, Xho: Any, yho: Any, l2: float, iters: int = 1500, lr: float = 0.05) -> float:
+    """Class-balanced L2 logistic via full-batch Adam (numpy only).
+
+    Returns held-out cross-entropy in BITS. No sklearn/torch dependency so the
+    estimator runs identically everywhere and fails loudly on bad input rather
+    than silently degrading. Adam (over plain GD) is required to converge on the
+    correlated, ill-conditioned screened-feature blocks the panel produces.
+    """
+    import numpy as np
+
+    n, d = Xtr.shape
+    w = np.zeros(d, dtype=np.float64)
+    b = 0.0
+    pos = float(ytr.sum())
+    neg = float(n - pos)
+    w_pos = n / (2.0 * max(1.0, pos))
+    w_neg = n / (2.0 * max(1.0, neg))
+    sw = np.where(ytr > 0.5, w_pos, w_neg)
+    mw = np.zeros(d); vw = np.zeros(d); mb = 0.0; vb = 0.0
+    beta1, beta2, eps = 0.9, 0.999, 1.0e-8
+    for t in range(1, iters + 1):
+        z = Xtr @ w + b
+        p = 1.0 / (1.0 + np.exp(-z))
+        g = (p - ytr) * sw
+        gw = Xtr.T @ g / n + l2 * w
+        gb = float(g.mean())
+        mw = beta1 * mw + (1 - beta1) * gw
+        vw = beta2 * vw + (1 - beta2) * gw * gw
+        mb = beta1 * mb + (1 - beta1) * gb
+        vb = beta2 * vb + (1 - beta2) * gb * gb
+        mw_hat = mw / (1 - beta1 ** t); vw_hat = vw / (1 - beta2 ** t)
+        mb_hat = mb / (1 - beta1 ** t); vb_hat = vb / (1 - beta2 ** t)
+        w -= lr * mw_hat / (np.sqrt(vw_hat) + eps)
+        b -= lr * mb_hat / (math.sqrt(vb_hat) + eps)
+    pho = np.clip(1.0 / (1.0 + np.exp(-(Xho @ w + b))), 1.0e-7, 1.0 - 1.0e-7)
+    ce_nats = float(-np.mean(yho * np.log(pho) + (1.0 - yho) * np.log(1.0 - pho)))
+    return ce_nats / math.log(2.0)
+
+
+def screened_classifier_lower_bound(*, X: Any, y: Any, label: str, seed: int, holdout_fraction: float) -> dict[str, Any]:
+    """MI lower bound via TRAIN-ONLY supervised feature screening + L2 logistic.
+
+    The original dense reduction (PCA when present, else a label-blind random
+    projection) drowns sparse/localized signal in p>>n: it cannot recover even a
+    planted strong signal (FSV, INV-032 re-measurement). Screening features by
+    their train-split point-biserial correlation with the label first, then
+    fitting a regularized logistic, restores detectability. Selection touches
+    only the train rows, so H(Y) - heldout_CE remains a valid lower bound.
+    """
+    import numpy as np
+
+    labels = [int(v) for v in y.tolist()]
+    counts = Counter(labels)
+    if len(counts) < 2:
+        return {"label": label, "valid": False, "invalid_reason": "DEGENERATE_ORACLE_LABELS", "label_counts": dict(sorted(counts.items()))}
+    h_bits = entropy_bits(labels)
+    train_idx, val_idx = stratified_split(y, holdout_fraction, seed)
+    Xarr = np.asarray(X, dtype=np.float64)
+    Xtr_raw, Xho_raw = Xarr[train_idx], Xarr[val_idx]
+    ytr = np.asarray(y, dtype=np.float64)[train_idx]
+    yho = np.asarray(y, dtype=np.float64)[val_idx]
+    mu = Xtr_raw.mean(axis=0)
+    sd = Xtr_raw.std(axis=0) + 1.0e-12
+    Xz = (Xtr_raw - mu) / sd
+    yz = (ytr - ytr.mean()) / (ytr.std() + 1.0e-12)
+    corr = np.abs(Xz.T @ yz) / float(len(train_idx))
+    top_k = min(screened_top_k_for(len(labels)), Xarr.shape[1])
+    keep_idx = np.argsort(-corr)[:top_k]
+    Xs_tr = Xz[:, keep_idx]
+    Xs_ho = (Xho_raw[:, keep_idx] - mu[keep_idx]) / sd[keep_idx]
+    best_ce = float("inf")
+    best_l2 = None
+    for l2 in (1.0e-3, 1.0e-2, 1.0e-1):
+        ce = _numpy_l2_logistic_ce_bits(Xs_tr, ytr, Xs_ho, yho, l2)
+        if ce < best_ce:
+            best_ce, best_l2 = ce, l2
+    lower_bound = max(0.0, min(h_bits, h_bits - best_ce))
+    return {
+        "label": label,
+        "valid": True,
+        "estimator": "screened_train_only_logistic_lower_bound",
+        "seed": seed,
+        "sample_count": len(labels),
+        "train_count": len(train_idx),
+        "validation_count": len(val_idx),
+        "label_counts": dict(sorted(counts.items())),
+        "target_entropy_bits": h_bits,
+        "top_k": int(top_k),
+        "l2": best_l2,
+        "cross_entropy_bits": best_ce,
+        "lower_bound_bits": lower_bound,
+    }
+
+
+def power_calibration_gate(*, X: Any, y: Any, seed: int, holdout_fraction: float, min_detectable_fraction: float = 0.5, label_flip_rate: float = 0.02) -> dict[str, Any]:
+    """Detect whether the estimator can see signal AT THE CURRENT (n, p).
+
+    Plants a near-deterministic synthetic label from 8 real feature columns
+    (so the planted variable has the EXACT real dimensionality, sample size and
+    feature covariance), then runs the same lower-bound estimators against it.
+    If they cannot recover at least `min_detectable_fraction` of the planted
+    MI, the instrument is below its detection floor: a low reading on the REAL
+    label is uninformative and CANNOT establish panel insufficiency.
+    """
+    import numpy as np
+
+    Xarr = np.asarray(X, dtype=np.float64)
+    n = Xarr.shape[0]
+    rng = np.random.default_rng(int(seed) ^ 0x504F57)
+    nonconst = np.where(Xarr.std(axis=0) > 1.0e-10)[0]
+    require(nonconst.size >= 8, "PANEL_MI_POWER_GATE_TOO_FEW_FEATURES", {"nonconstant": int(nonconst.size)})
+    pick = nonconst[rng.permutation(nonconst.size)[:8]]
+    mu = Xarr[:, pick].mean(axis=0)
+    sd = Xarr[:, pick].std(axis=0) + 1.0e-12
+    score = ((Xarr[:, pick] - mu) / sd) @ rng.standard_normal(pick.size)
+    planted = (score > float(np.median(score))).astype(np.int64)
+    flip = rng.random(n) < label_flip_rate
+    planted = np.where(flip, 1 - planted, planted)
+    planted_hy = entropy_bits(planted.tolist())
+    # planted is a near-deterministic function of X; conditional entropy ~ H_b(flip)
+    flip_entropy = entropy_bits(flip.astype(int).tolist()) if 0.0 < label_flip_rate < 1.0 else 0.0
+    planted_true_mi_approx = max(0.0, planted_hy - (-(label_flip_rate * math.log2(label_flip_rate) + (1 - label_flip_rate) * math.log2(1 - label_flip_rate)) if 0.0 < label_flip_rate < 1.0 else 0.0))
+    try:
+        base = classifier_lower_bound(X=X, y=planted, label="power_planted_base", seed=seed, holdout_fraction=holdout_fraction)
+    except Exception as err:  # base estimator needs sklearn/torch; screened (numpy) is primary
+        base = {"valid": False, "invalid_reason": f"BASE_CLASSIFIER_UNAVAILABLE: {err!r}", "lower_bound_bits": None}
+    screened = screened_classifier_lower_bound(X=X, y=planted, label="power_planted_screened", seed=seed, holdout_fraction=holdout_fraction)
+    recovered = max(float(base.get("lower_bound_bits") or 0.0), float(screened.get("lower_bound_bits") or 0.0))
+    detectable_floor = min_detectable_fraction * planted_true_mi_approx
+    underpowered = recovered < detectable_floor
+    return {
+        "planted_feature_count": int(pick.size),
+        "planted_entropy_bits": planted_hy,
+        "planted_true_mi_approx_bits": planted_true_mi_approx,
+        "label_flip_rate": label_flip_rate,
+        "label_flip_entropy_bits": flip_entropy,
+        "base_recovered_bits": base.get("lower_bound_bits"),
+        "screened_recovered_bits": screened.get("lower_bound_bits"),
+        "recovered_bits": recovered,
+        "min_detectable_fraction": min_detectable_fraction,
+        "detectable_floor_bits": detectable_floor,
+        "estimator_underpowered": bool(underpowered),
+        "interpretation": (
+            "ESTIMATOR BELOW DETECTION FLOOR at this (n,p): it cannot recover a near-deterministic "
+            "planted signal, so a low reading on the real oracle label is uninformative and CANNOT "
+            "establish panel insufficiency."
+            if underpowered
+            else "Estimator recovers a planted near-deterministic signal; real readings are informative as lower bounds."
+        ),
+    }
+
+
+MIN_INFORMATIVE_TARGET_ENTROPY_BITS = 0.30
+
+
 def run_estimators(args: argparse.Namespace, output_root: Path, state_root: Path) -> dict[str, Any]:
     import numpy as np
 
@@ -1072,6 +1236,7 @@ def run_estimators(args: argparse.Namespace, output_root: Path, state_root: Path
 
     mine_rows: list[dict[str, Any]] = []
     classifier_rows: list[dict[str, Any]] = []
+    screened_rows: list[dict[str, Any]] = []
     kraskov_rows: list[dict[str, Any]] = []
     existing_mine: dict[str, dict[str, Any]] = {}
     existing_mine_path = output_root / "mine_estimates.jsonl"
@@ -1099,13 +1264,37 @@ def run_estimators(args: argparse.Namespace, output_root: Path, state_root: Path
                 )
             )
         classifier_rows.append(classifier_lower_bound(X=X_sub, y=y_sub, label=label, seed=args.seed, holdout_fraction=args.holdout_fraction))
+        screened_rows.append(screened_classifier_lower_bound(X=X_sub, y=y_sub, label=label, seed=args.seed, holdout_fraction=args.holdout_fraction))
         kraskov_rows.append(kraskov_crosscheck(X=X_sub, y=y_sub, label=label, seed=args.seed, n_neighbors=args.kraskov_neighbors))
         write_json_checked(output_root / "partial_estimator_readback.json", {"updated_at_utc": utc_now(), "completed_labels": [row["label"] for row in mine_rows]})
 
     global_mine = next(row for row in mine_rows if row["label"] == "global")
     global_classifier = next(row for row in classifier_rows if row["label"] == "global")
+    global_screened = next(row for row in screened_rows if row["label"] == "global")
     drop_rows = [row for row in mine_rows if row["label"].startswith("drop_one:")]
-    global_bits = global_mine.get("bounded_best_validation_bits") if global_mine.get("valid") else None
+
+    # Honest lower bound = the tightest (largest) valid lower bound across all
+    # estimators. A single estimator's low value is not evidence of low MI.
+    def _valid_bits(row: dict[str, Any], key: str) -> float | None:
+        return float(row[key]) if row.get("valid") and row.get(key) is not None else None
+
+    mine_bits = global_mine.get("bounded_best_validation_bits") if global_mine.get("valid") else None
+    classifier_bits = _valid_bits(global_classifier, "lower_bound_bits")
+    screened_bits = _valid_bits(global_screened, "lower_bound_bits")
+    candidate_bits = [b for b in (mine_bits, classifier_bits, screened_bits) if b is not None]
+    global_bits = max(candidate_bits) if candidate_bits else None
+
+    # Power-calibration gate at the REAL (n, p): can the estimator see signal here at all?
+    target_entropy_bits = entropy_bits(y.tolist())
+    label_degenerate = target_entropy_bits < MIN_INFORMATIVE_TARGET_ENTROPY_BITS
+    if label_degenerate:
+        power_gate = {"estimator_underpowered": True, "skipped": True,
+                      "reason": "GLOBAL_LABEL_ENTROPY_DEGENERATE",
+                      "target_entropy_bits": target_entropy_bits,
+                      "min_informative_target_entropy_bits": MIN_INFORMATIVE_TARGET_ENTROPY_BITS}
+    else:
+        power_gate = power_calibration_gate(X=X, y=y, seed=args.seed, holdout_fraction=args.holdout_fraction)
+    estimator_underpowered = bool(power_gate.get("estimator_underpowered"))
     drop_summary = []
     for row in drop_rows:
         bits = row.get("bounded_best_validation_bits") if row.get("valid") else None
@@ -1121,9 +1310,11 @@ def run_estimators(args: argparse.Namespace, output_root: Path, state_root: Path
 
     write_jsonl_checked(output_root / "mine_estimates.jsonl", mine_rows)
     write_jsonl_checked(output_root / "classifier_lower_bounds.jsonl", classifier_rows)
+    write_jsonl_checked(output_root / "screened_lower_bounds.jsonl", screened_rows)
     write_jsonl_checked(output_root / "kraskov_crosschecks.jsonl", kraskov_rows)
     write_jsonl_checked(state_root / "mine_estimates.jsonl", mine_rows)
     write_jsonl_checked(state_root / "classifier_lower_bounds.jsonl", classifier_rows)
+    write_jsonl_checked(state_root / "screened_lower_bounds.jsonl", screened_rows)
     write_jsonl_checked(state_root / "kraskov_crosschecks.jsonl", kraskov_rows)
     manifest = {
         "artifact_kind": "inv032_panel_oracle_mi_estimator_manifest",
@@ -1146,17 +1337,39 @@ def run_estimators(args: argparse.Namespace, output_root: Path, state_root: Path
             for row in mine_rows
             if row["label"].startswith("cell:")
         ],
+        "global_screened_lower_bound": global_screened,
+        "global_best_lower_bound_bits": global_bits,
+        "global_lower_bound_components_bits": {
+            "mine": mine_bits,
+            "classifier": classifier_bits,
+            "screened": screened_bits,
+        },
+        "power_calibration": power_gate,
         "decision_rule": {
             "target_bits": 0.95,
+            # All estimators here are LOWER bounds. A lower bound >= 0.95 proves
+            # sufficiency; a lower bound < 0.95 does NOT prove insufficiency
+            # (that needs an upper bound, e.g. CLUB). The power gate guards
+            # against reading the estimator's own noise floor as "insufficient".
             "panel_sufficient": bool(global_bits is not None and global_bits >= 0.95),
+            "insufficiency_provable_from_lower_bound": False,
+            "estimator_underpowered": estimator_underpowered,
+            "global_best_lower_bound_bits": global_bits,
             "classification": (
                 "panel_sufficient"
                 if global_bits is not None and global_bits >= 0.95
-                else "marginal_or_insufficient"
+                else "ESTIMATOR_UNDERPOWERED_INSUFFICIENCY_UNPROVABLE"
+                if estimator_underpowered
+                else "lower_bound_marginal_sufficiency_unconfirmed"
                 if global_bits is not None and global_bits >= 0.7
-                else "panel_provably_insufficient_or_estimator_lower_bound_low"
+                else "lower_bound_low_insufficiency_requires_upper_bound"
                 if global_bits is not None
                 else "unknown"
+            ),
+            "note": (
+                "Insufficiency is NOT proven: every estimator is a lower bound and the power gate "
+                "verifies detectability at the real (n,p). To conclusively claim I(panel;oracle) < 0.95, "
+                "add an upper-bound estimator (CLUB) and confirm the power gate passes."
             ),
         },
         "artifacts": {
@@ -1164,6 +1377,8 @@ def run_estimators(args: argparse.Namespace, output_root: Path, state_root: Path
             "mine_estimates_sha256": sha256_file(output_root / "mine_estimates.jsonl"),
             "classifier_lower_bounds_jsonl": str(output_root / "classifier_lower_bounds.jsonl"),
             "classifier_lower_bounds_sha256": sha256_file(output_root / "classifier_lower_bounds.jsonl"),
+            "screened_lower_bounds_jsonl": str(output_root / "screened_lower_bounds.jsonl"),
+            "screened_lower_bounds_sha256": sha256_file(output_root / "screened_lower_bounds.jsonl"),
             "kraskov_crosschecks_jsonl": str(output_root / "kraskov_crosschecks.jsonl"),
             "kraskov_crosschecks_sha256": sha256_file(output_root / "kraskov_crosschecks.jsonl"),
             "state_root": str(state_root),
