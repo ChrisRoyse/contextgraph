@@ -13,6 +13,7 @@ from ..python_panel_oracle_mi_probe import (
     finalize_dataset,
     power_calibration_gate,
     screened_classifier_lower_bound,
+    screened_panel_joint_lower_bound,
     screened_top_k_for,
     standardize_and_reduce,
 )
@@ -124,6 +125,92 @@ def test_sufficiency_decision_states() -> None:
     # bracket straddles target -> indeterminate
     d = _sufficiency_decision(target_bits=0.95, lower_bound_bits=0.50, upper_bound_bits=1.2, estimator_underpowered=False)
     assert d["classification"] == "INDETERMINATE_BOUNDS_STRADDLE_TARGET"
+
+
+def _slot_structured_with_signal(n: int, slot_widths, signal_slot: int, slope: float, seed: int):
+    """Build X partitioned into contiguous slots; the label is a noisy threshold
+    on ONE column inside `signal_slot`, embedded in many noise slots. Returns
+    (X, y, feature_slices, true_mi_bits). Mirrors the panel's group structure so
+    the joint estimator's slot-wise screening is exercised on real geometry."""
+    rng = np.random.default_rng(seed)
+    p = int(sum(slot_widths))
+    X = rng.standard_normal((n, p)).astype(np.float32)
+    slices = {}
+    start = 0
+    for i, w in enumerate(slot_widths):
+        slices[f"s{i}"] = slice(start, start + w)
+        start += w
+    sig_col = slices[f"s{signal_slot}"].start
+    prob = 1.0 / (1.0 + np.exp(-slope * X[:, sig_col].astype(np.float64)))
+    y = (rng.random(n) < prob).astype(np.int64)
+
+    def hb(q):
+        q = np.clip(q, 1e-12, 1 - 1e-12)
+        return -(q * np.log2(q) + (1 - q) * np.log2(1 - q))
+
+    h_y = hb(np.array([prob.mean()]))[0]
+    h_y_given_x = float(np.mean(hb(prob)))
+    return X, y, slices, float(h_y - h_y_given_x)
+
+
+def test_joint_estimator_recovers_signal_hidden_in_one_slot() -> None:
+    # Signal lives in slot s3 col0, drowned in 6 noise slots (p=3000). The GLOBAL
+    # single-split screener underpowers here; slot-wise cross-fit must recover it.
+    X, y, slices, true_mi = _slot_structured_with_signal(
+        n=2000, slot_widths=[500] * 6, signal_slot=3, slope=2.2, seed=21
+    )
+    out = screened_panel_joint_lower_bound(
+        X=X, y=y, feature_slices=slices, label="joint", seed=11, holdout_fraction=0.25
+    )
+    assert out["valid"] is True
+    assert out["estimator"] == "slotwise_crossfit_screened_lower_bound"
+    assert out["selected_feature_count"] >= 2
+    # screen / fit / holdout must be disjoint and non-trivial (RCV refit)
+    assert out["screen_count"] >= 2 and out["fit_count"] >= 2 and out["holdout_count"] >= 2
+    lb = out["lower_bound_bits"]
+    ub = out["club_upper_bound_bits"]
+    assert lb > 0.10, out                       # recovers real signal
+    assert lb <= true_mi + 0.12, (lb, true_mi)  # stays a lower bound
+    assert ub >= lb, (lb, ub)                    # ordered bracket
+
+
+def test_joint_estimator_zero_for_independent_label() -> None:
+    rng = np.random.default_rng(22)
+    X = rng.standard_normal((2000, 3000)).astype(np.float32)
+    slices = {f"s{i}": slice(i * 500, (i + 1) * 500) for i in range(6)}
+    y = (rng.random(2000) < 0.5).astype(np.int64)  # independent of X
+    out = screened_panel_joint_lower_bound(
+        X=X, y=y, feature_slices=slices, label="indep", seed=11, holdout_fraction=0.25
+    )
+    assert out["valid"] is True
+    assert out["lower_bound_bits"] < 0.10, out  # no false positive from selection
+
+
+def test_joint_estimator_fails_closed_on_degenerate_labels() -> None:
+    rng = np.random.default_rng(23)
+    X = rng.standard_normal((300, 1500)).astype(np.float32)
+    slices = {f"s{i}": slice(i * 500, (i + 1) * 500) for i in range(3)}
+    y = np.ones(300, dtype=np.int64)
+    out = screened_panel_joint_lower_bound(
+        X=X, y=y, feature_slices=slices, label="degen", seed=11, holdout_fraction=0.25
+    )
+    assert out["valid"] is False
+    assert out["invalid_reason"] == "DEGENERATE_ORACLE_LABELS"
+
+
+def test_power_gate_accepts_pluggable_joint_estimator() -> None:
+    # The gate must qualify the SAME estimator whose reading it certifies: feed
+    # the joint estimator and confirm it recovers a planted signal -> powered.
+    X, y, slices, _ = _slot_structured_with_signal(
+        n=2000, slot_widths=[500] * 6, signal_slot=2, slope=2.0, seed=24
+    )
+    gate = power_calibration_gate(
+        X=X, y=y, seed=11, holdout_fraction=0.25,
+        estimator=screened_panel_joint_lower_bound,
+        estimator_kwargs={"feature_slices": slices},
+    )
+    assert gate["estimator_underpowered"] is False, gate
+    assert gate["base_recovered_bits"] is None  # base is skipped for custom estimator
 
 
 def test_finalize_dataset_fails_closed_when_active_slot_dim_missing(tmp_path: Path) -> None:

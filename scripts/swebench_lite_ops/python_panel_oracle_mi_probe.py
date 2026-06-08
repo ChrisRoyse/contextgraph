@@ -1174,7 +1174,155 @@ def screened_classifier_lower_bound(*, X: Any, y: Any, label: str, seed: int, ho
     }
 
 
-def power_calibration_gate(*, X: Any, y: Any, seed: int, holdout_fraction: float, min_detectable_fraction: float = 0.5, label_flip_rate: float = 0.02) -> dict[str, Any]:
+def screened_panel_joint_lower_bound(
+    *,
+    X: Any,
+    y: Any,
+    feature_slices: dict[str, slice],
+    label: str,
+    seed: int,
+    holdout_fraction: float,
+    per_slot_top_m: int | None = None,
+    cross_fit: bool = True,
+) -> dict[str, Any]:
+    """Powered, slot-identity-preserving lower bound on I(panel; oracle).
+
+    The global single-split screened estimator is UNDERPOWERED at p=19209
+    (per-slot FSV: global power gate fails, yet the SAME n=2400 is powered at
+    per-slot p~2000). Root cause is the p>>n winner's curse: the top-k columns
+    selected on the train split are dominated by spuriously-correlated noise
+    winners that do not generalize. This estimator fixes that with three
+    established ultrahigh-dimensional techniques:
+
+      * Sure Independence Screening (Fan & Lv, JRSS-B 2008): rank features by
+        marginal |point-biserial corr|, keep a few.
+      * GROUP screening (Qiu & Ahn, group F-screening 2020): screen WITHIN each
+        embedder slot to a balanced budget, so each slot's spurious-winner pool is
+        ~2k (not ~19k) and every informative slot is guaranteed representation.
+        Selection never mixes columns across slots -> slot identity is preserved.
+      * Refitted Cross-Validation (Fan, Guo & Hao, JRSS-B 2012): SELECT features
+        on a screen sub-split, REFIT the logistic on a DISJOINT fit sub-split,
+        evaluate held-out CE on the holdout. Disjoint select/fit removes the
+        spurious-correlation bias that defeats same-split screening.
+
+    By the data-processing inequality the selected sub-panel is a deterministic
+    train-only function of the panel, so H(Y) - heldout_CE is a valid lower bound
+    on I(panel; oracle): if it reaches the target, sufficiency is PROVEN. The CLUB
+    value here upper-bounds I(selected_subpanel; y) only (a reduction lost info),
+    so it does NOT upper-bound the full panel and is reported for diagnostics.
+    """
+    import numpy as np
+
+    labels = [int(v) for v in y.tolist()]
+    counts = Counter(labels)
+    if len(counts) < 2:
+        return {"label": label, "valid": False, "invalid_reason": "DEGENERATE_ORACLE_LABELS", "label_counts": dict(sorted(counts.items()))}
+    require(bool(feature_slices), "PANEL_MI_JOINT_NO_SLICES", {"slices": 0})
+    h_bits = entropy_bits(labels)
+    Xarr = np.asarray(X, dtype=np.float64)
+    yarr = np.asarray(y, dtype=np.float64)
+
+    train_idx, holdout_idx = stratified_split(y, holdout_fraction, seed)
+    rng = random.Random(seed ^ 0x5A4A)
+    by_label: dict[int, list[int]] = {}
+    for i in train_idx:
+        by_label.setdefault(labels[i], []).append(i)
+    screen_idx: list[int] = []
+    fit_idx: list[int] = []
+    if cross_fit:
+        # RCV: disjoint screen/fit halves remove winner's-curse bias but cost
+        # samples. Preferred when n is large relative to the slot pool.
+        for _, idxs in sorted(by_label.items()):
+            shuffled = list(idxs)
+            rng.shuffle(shuffled)
+            cut = max(1, len(shuffled) // 2)
+            screen_idx.extend(shuffled[:cut])
+            fit_idx.extend(shuffled[cut:])
+    else:
+        # Single-split: screen and fit on the full train rows (still train-only,
+        # so the held-out CE keeps H(Y)-CE a valid lower bound). Winner's curse
+        # makes the fit conservative (over-fit train -> higher holdout CE -> lower
+        # bound), never optimistic. Preferred when samples are the binding limit.
+        screen_idx = list(train_idx)
+        fit_idx = list(train_idx)
+    require(
+        len(screen_idx) >= 2 and len(fit_idx) >= 2 and len(holdout_idx) >= 2,
+        "PANEL_MI_JOINT_SPLIT_TOO_SMALL",
+        {"screen": len(screen_idx), "fit": len(fit_idx), "holdout": len(holdout_idx)},
+    )
+
+    n_slots = len(feature_slices)
+    total_budget = min(screened_top_k_for(len(labels)), Xarr.shape[1])
+    per_slot_m = per_slot_top_m if per_slot_top_m is not None else max(4, total_budget // max(1, n_slots))
+
+    # Screen WITHIN each slot on the screen rows only (group SIS).
+    Xsc = Xarr[screen_idx]
+    ysc = yarr[screen_idx]
+    ysc_z = (ysc - ysc.mean()) / (ysc.std() + 1.0e-12)
+    selected_cols: list[int] = []
+    slot_selection: dict[str, int] = {}
+    for slot, sl in sorted(feature_slices.items()):
+        cols = np.arange(sl.start, sl.stop)
+        if cols.size == 0:
+            slot_selection[slot] = 0
+            continue
+        block = Xsc[:, sl.start : sl.stop]
+        mu = block.mean(axis=0)
+        sd = block.std(axis=0) + 1.0e-12
+        bz = (block - mu) / sd
+        corr = np.abs(bz.T @ ysc_z) / float(len(screen_idx))
+        take = int(min(per_slot_m, cols.size))
+        keep = cols[np.argsort(-corr)[:take]]
+        selected_cols.extend(int(c) for c in keep.tolist())
+        slot_selection[slot] = take
+    selected = np.array(sorted(set(selected_cols)), dtype=int)
+    require(selected.size >= 2, "PANEL_MI_JOINT_NO_FEATURES_SELECTED", {"selected": int(selected.size)})
+
+    # Refit on the DISJOINT fit rows; standardize on fit stats; eval on holdout.
+    Xfit = Xarr[fit_idx][:, selected]
+    yfit = yarr[fit_idx]
+    Xho = Xarr[holdout_idx][:, selected]
+    yho = yarr[holdout_idx]
+    mu = Xfit.mean(axis=0)
+    sd = Xfit.std(axis=0) + 1.0e-12
+    Xfit_z = (Xfit - mu) / sd
+    Xho_z = (Xho - mu) / sd
+    best_ce = float("inf")
+    best_l2 = None
+    best_zho = None
+    for l2 in (1.0e-3, 1.0e-2, 1.0e-1):
+        ce, zho = _numpy_l2_logistic_ce_bits(Xfit_z, yfit, Xho_z, yho, l2)
+        if ce < best_ce:
+            best_ce, best_l2, best_zho = ce, l2, zho
+    lower_bound = max(0.0, min(h_bits, h_bits - best_ce))
+    yho_mean = float(yho.mean())
+    club_raw = float(np.mean((yho - yho_mean) * best_zho) / math.log(2.0))
+    club_ub = max(0.0, min(club_raw, h_bits))
+    return {
+        "label": label,
+        "valid": True,
+        "estimator": "slotwise_crossfit_screened_lower_bound",
+        "cross_fit": bool(cross_fit),
+        "seed": seed,
+        "sample_count": len(labels),
+        "screen_count": len(screen_idx),
+        "fit_count": len(fit_idx),
+        "holdout_count": len(holdout_idx),
+        "label_counts": dict(sorted(counts.items())),
+        "target_entropy_bits": h_bits,
+        "n_slots": n_slots,
+        "per_slot_top_m": int(per_slot_m),
+        "selected_feature_count": int(selected.size),
+        "slot_selection_counts": slot_selection,
+        "l2": best_l2,
+        "cross_entropy_bits": best_ce,
+        "lower_bound_bits": lower_bound,
+        "club_raw_bits": club_raw,
+        "club_upper_bound_bits": club_ub,
+    }
+
+
+def power_calibration_gate(*, X: Any, y: Any, seed: int, holdout_fraction: float, min_detectable_fraction: float = 0.5, label_flip_rate: float = 0.02, estimator: Any = None, estimator_kwargs: dict[str, Any] | None = None) -> dict[str, Any]:
     """Detect whether the estimator can see signal AT THE CURRENT (n, p).
 
     Plants a near-deterministic synthetic label from 8 real feature columns
@@ -1183,6 +1331,11 @@ def power_calibration_gate(*, X: Any, y: Any, seed: int, holdout_fraction: float
     If they cannot recover at least `min_detectable_fraction` of the planted
     MI, the instrument is below its detection floor: a low reading on the REAL
     label is uninformative and CANNOT establish panel insufficiency.
+
+    When `estimator` is given (callable taking X=, y=, label=, seed=,
+    holdout_fraction=, plus estimator_kwargs), the gate tests THAT estimator's
+    full pipeline against the planted signal, so the power verdict matches the
+    exact estimator whose reading it qualifies (e.g. the slot-wise joint one).
     """
     import numpy as np
 
@@ -1202,11 +1355,19 @@ def power_calibration_gate(*, X: Any, y: Any, seed: int, holdout_fraction: float
     # planted is a near-deterministic function of X; conditional entropy ~ H_b(flip)
     flip_entropy = entropy_bits(flip.astype(int).tolist()) if 0.0 < label_flip_rate < 1.0 else 0.0
     planted_true_mi_approx = max(0.0, planted_hy - (-(label_flip_rate * math.log2(label_flip_rate) + (1 - label_flip_rate) * math.log2(1 - label_flip_rate)) if 0.0 < label_flip_rate < 1.0 else 0.0))
-    try:
-        base = classifier_lower_bound(X=X, y=planted, label="power_planted_base", seed=seed, holdout_fraction=holdout_fraction)
-    except Exception as err:  # base estimator needs sklearn/torch; screened (numpy) is primary
-        base = {"valid": False, "invalid_reason": f"BASE_CLASSIFIER_UNAVAILABLE: {err!r}", "lower_bound_bits": None}
-    screened = screened_classifier_lower_bound(X=X, y=planted, label="power_planted_screened", seed=seed, holdout_fraction=holdout_fraction)
+    if estimator is not None:
+        try:
+            est = estimator(X=X, y=planted, label="power_planted_custom", seed=seed, holdout_fraction=holdout_fraction, **(estimator_kwargs or {}))
+        except Exception as err:  # surface, never silently degrade
+            est = {"valid": False, "invalid_reason": f"CUSTOM_ESTIMATOR_FAILED: {err!r}", "lower_bound_bits": None}
+        base = {"valid": False, "invalid_reason": "BASE_SKIPPED_FOR_CUSTOM_ESTIMATOR", "lower_bound_bits": None}
+        screened = est
+    else:
+        try:
+            base = classifier_lower_bound(X=X, y=planted, label="power_planted_base", seed=seed, holdout_fraction=holdout_fraction)
+        except Exception as err:  # base estimator needs sklearn/torch; screened (numpy) is primary
+            base = {"valid": False, "invalid_reason": f"BASE_CLASSIFIER_UNAVAILABLE: {err!r}", "lower_bound_bits": None}
+        screened = screened_classifier_lower_bound(X=X, y=planted, label="power_planted_screened", seed=seed, holdout_fraction=holdout_fraction)
     recovered = max(float(base.get("lower_bound_bits") or 0.0), float(screened.get("lower_bound_bits") or 0.0))
     detectable_floor = min_detectable_fraction * planted_true_mi_approx
     underpowered = recovered < detectable_floor
