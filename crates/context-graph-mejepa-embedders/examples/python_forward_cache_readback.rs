@@ -9,8 +9,10 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs::{self, File, OpenOptions};
+use std::future::Future;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::time::Instant;
 
 const SCHEMA_VERSION: u64 = 1;
@@ -798,6 +800,69 @@ fn candidate_id_from_source(source: Option<&str>) -> Option<String> {
     }
 }
 
+/// Detect a transient GPU out-of-memory failure that can be recovered by shrinking the
+/// true-batch. OOM is an allocation refusal, not data corruption, so re-forwarding the
+/// same rows in a smaller batch produces native full-chunk vectors (true-batch only pads
+/// and stacks; per-row outputs are independent of batch grouping). Distinct from genuine
+/// structural failures (e.g. token-budget overflow) which cannot be fixed by retry.
+fn is_retryable_oom(failure: &ForwardFailure) -> bool {
+    let message = failure.message.to_ascii_uppercase();
+    message.contains("OUT_OF_MEMORY") || message.contains("OUT OF MEMORY")
+}
+
+/// Run a true-batch forward, recursively halving the batch on retryable GPU OOM down to
+/// single-row forwards before quarantining. Returns exactly one result per input, in input
+/// order. Only rows that still fail at batch size 1 are genuinely unembeddable; every other
+/// row is recovered with its native full-chunk vector (no zero/fake fill, no slot flatten,
+/// no subchunk-aggregate substitution). Worst case (OOM persists at size 1) is identical to
+/// the prior single-shot behavior.
+type ForwardBatchFuture<'a> =
+    Pin<Box<dyn Future<Output = Vec<Result<EmbedderOutput, ForwardFailure>>> + 'a>>;
+
+fn forward_true_batch_subdivided<'a>(
+    forwarder: &'a dyn EmbedderForward,
+    inputs: &'a [EmbedderInput],
+) -> ForwardBatchFuture<'a> {
+    Box::pin(async move {
+        if inputs.is_empty() {
+            return Vec::new();
+        }
+        match forwarder.forward_true_batch(inputs).await {
+            Ok(outputs) if outputs.len() == inputs.len() => {
+                outputs.into_iter().map(Ok).collect()
+            }
+            Ok(outputs) => {
+                let err = ForwardFailure::new(
+                    "MEJEPA_PY_FORWARD_TRUE_BATCH_ROW_COUNT_MISMATCH",
+                    format!(
+                        "{} true-batch output count {}, expected {}",
+                        forwarder.embedder().slug(),
+                        outputs.len(),
+                        inputs.len()
+                    ),
+                );
+                std::iter::repeat_with(|| Err(err.clone()))
+                    .take(inputs.len())
+                    .collect()
+            }
+            Err(err) => {
+                let failure = ForwardFailure::from_embed(&err);
+                if inputs.len() > 1 && is_retryable_oom(&failure) {
+                    let mid = inputs.len() / 2;
+                    let mut results = forward_true_batch_subdivided(forwarder, &inputs[..mid]).await;
+                    let right = forward_true_batch_subdivided(forwarder, &inputs[mid..]).await;
+                    results.extend(right);
+                    results
+                } else {
+                    std::iter::repeat_with(|| Err(failure.clone()))
+                        .take(inputs.len())
+                        .collect()
+                }
+            }
+        }
+    })
+}
+
 async fn run_embedder_batches(
     config: &EnvConfig,
     chunks: &[ChunkRow],
@@ -883,32 +948,7 @@ async fn run_embedder_batches(
                     .iter()
                     .map(|pending| pending.input.clone())
                     .collect::<Vec<_>>();
-                match forwarder.forward_true_batch(&forwarded).await {
-                    Ok(outputs) => {
-                        if outputs.len() == pending.len() {
-                            pending_results.extend(outputs.into_iter().map(Ok));
-                        } else {
-                            let err = ForwardFailure::new(
-                                "MEJEPA_PY_FORWARD_TRUE_BATCH_ROW_COUNT_MISMATCH",
-                                format!(
-                                    "{} true-batch output count {}, expected {}",
-                                    forwarder.embedder().slug(),
-                                    outputs.len(),
-                                    pending.len()
-                                ),
-                            );
-                            pending_results.extend(
-                                std::iter::repeat_with(|| Err(err.clone())).take(pending.len()),
-                            );
-                        }
-                    }
-                    Err(err) => {
-                        let err = ForwardFailure::from_embed(&err);
-                        pending_results.extend(
-                            std::iter::repeat_with(|| Err(err.clone())).take(pending.len()),
-                        );
-                    }
-                }
+                pending_results = forward_true_batch_subdivided(forwarder, &forwarded).await;
             } else {
                 for pending_forward in &pending {
                     pending_results.push(
@@ -2743,5 +2783,167 @@ mod tests {
 
         assert!(report.passes());
         assert_eq!(report.pairwise_jaccard_matrix["e1"]["e8"], json!(0.5));
+    }
+
+    /// Forwarder that simulates GPU OOM on true-batches larger than `oom_above_batch`,
+    /// plus any batch containing a `poison` text (which OOMs even at size 1). Records the
+    /// size of every `forward_true_batch` call so subdivision behavior is observable.
+    struct OomForwarder {
+        embedder: EmbedderId,
+        artifact_root: PathBuf,
+        oom_above_batch: usize,
+        poison: Vec<String>,
+        true_batch_sizes: Arc<Mutex<Vec<usize>>>,
+    }
+
+    impl OomForwarder {
+        fn new(oom_above_batch: usize, poison: Vec<String>, sizes: Arc<Mutex<Vec<usize>>>) -> Self {
+            Self {
+                embedder: EmbedderId::E14,
+                artifact_root: PathBuf::from("/tmp/fake-oom-forwarder"),
+                oom_above_batch,
+                poison,
+                true_batch_sizes: sizes,
+            }
+        }
+
+        fn would_oom(&self, inputs: &[EmbedderInput]) -> bool {
+            inputs.len() > self.oom_above_batch
+                || inputs.iter().any(|input| self.poison.contains(&input.text))
+        }
+
+        fn ok_output(&self, input: &EmbedderInput) -> EmbedderOutput {
+            let mut vector = vec![0.0; self.embedder.dimension()];
+            vector[0] = 1.0;
+            EmbedderOutput {
+                embedder: self.embedder,
+                source_id: input.source_id.clone(),
+                vector,
+                model_version: "fake-oom-forwarder-v1".to_string(),
+                precision_class: "fake_true_batch_forward".to_string(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl EmbedderForward for OomForwarder {
+        fn embedder(&self) -> EmbedderId {
+            self.embedder
+        }
+
+        fn model_version(&self) -> &str {
+            "fake-oom-forwarder-v1"
+        }
+
+        fn artifact_root(&self) -> &Path {
+            &self.artifact_root
+        }
+
+        async fn forward(
+            &self,
+            input: &EmbedderInput,
+        ) -> context_graph_mejepa_embedders::EmbedResult<EmbedderOutput> {
+            Ok(self.ok_output(input))
+        }
+
+        fn supports_true_batch(&self) -> bool {
+            true
+        }
+
+        async fn forward_true_batch(
+            &self,
+            inputs: &[EmbedderInput],
+        ) -> context_graph_mejepa_embedders::EmbedResult<Vec<EmbedderOutput>> {
+            self.true_batch_sizes
+                .lock()
+                .expect("sizes mutex poisoned")
+                .push(inputs.len());
+            if self.would_oom(inputs) {
+                return Err(context_graph_mejepa_embedders::EmbedError::ForwardFailed {
+                    embedder: self.embedder,
+                    message: "true-batch forward pass failed: GPU error: BgeM3DenseModel \
+                              true-batch layer 0 softmax failed: \
+                              DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")"
+                        .to_string(),
+                    remediation: "reduce batch size",
+                });
+            }
+            Ok(inputs.iter().map(|input| self.ok_output(input)).collect())
+        }
+    }
+
+    fn embedder_input(text: &str) -> EmbedderInput {
+        EmbedderInput {
+            embedder: EmbedderId::E14,
+            text: text.to_string(),
+            source_id: text.to_string(),
+        }
+    }
+
+    #[test]
+    fn is_retryable_oom_matches_cuda_oom_but_not_structural_failures() {
+        let oom = ForwardFailure::new(
+            "MEJEPA_EMBED_FORWARD_FAILED",
+            "forward pass failed for e14: true-batch forward pass failed: GPU error: \
+             BgeM3DenseModel true-batch layer 0 softmax failed: \
+             DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")",
+        );
+        assert!(is_retryable_oom(&oom));
+
+        let token_overflow = ForwardFailure::new(
+            "MEJEPA_EMBED_FORWARD_FAILED",
+            "forward pass failed for e1: true-batch forward pass failed: \
+             Input too long: 716 tokens exceeds max 512",
+        );
+        assert!(!is_retryable_oom(&token_overflow));
+
+        let byte_guard = ForwardFailure::new(
+            "MEJEPA_FORWARD_INPUT_TOO_LARGE",
+            "accepted Python AST chunk source_text exceeds max forward byte guard",
+        );
+        assert!(!is_retryable_oom(&byte_guard));
+    }
+
+    #[tokio::test]
+    async fn subdivision_recovers_all_rows_when_smaller_batches_fit() {
+        let sizes = Arc::new(Mutex::new(Vec::new()));
+        let forwarder = OomForwarder::new(2, vec![], sizes.clone());
+        let inputs: Vec<EmbedderInput> = ["a", "b", "c", "d"]
+            .iter()
+            .map(|text| embedder_input(text))
+            .collect();
+
+        let results = forward_true_batch_subdivided(&forwarder, &inputs).await;
+
+        assert_eq!(results.len(), 4);
+        assert!(
+            results.iter().all(|result| result.is_ok()),
+            "every row recovered with a native vector once the batch fit"
+        );
+        // [4] OOMs, splits into [2] + [2]; each fits at the size-2 cap.
+        assert_eq!(*sizes.lock().expect("sizes mutex poisoned"), vec![4, 2, 2]);
+    }
+
+    #[tokio::test]
+    async fn subdivision_isolates_a_row_that_ooms_even_at_batch_one() {
+        let sizes = Arc::new(Mutex::new(Vec::new()));
+        // oom_above_batch=1 forces multi-row batches to OOM (driving subdivision to
+        // singles) while non-poison single rows succeed; "poison" OOMs even alone.
+        let forwarder = OomForwarder::new(1, vec!["poison".to_string()], sizes.clone());
+        let inputs: Vec<EmbedderInput> = ["a", "poison", "c"]
+            .iter()
+            .map(|text| embedder_input(text))
+            .collect();
+
+        let results = forward_true_batch_subdivided(&forwarder, &inputs).await;
+
+        assert_eq!(results.len(), 3);
+        assert!(results[0].is_ok(), "row before the poison recovers");
+        assert!(results[2].is_ok(), "row after the poison recovers");
+        let err = results[1]
+            .as_ref()
+            .expect_err("the row that OOMs at batch size 1 is genuinely quarantined");
+        assert_eq!(err.code, "MEJEPA_EMBED_FORWARD_FAILED");
+        assert!(is_retryable_oom(err));
     }
 }
