@@ -1070,10 +1070,11 @@ def screened_top_k_for(sample_count: int) -> int:
 def _numpy_l2_logistic_ce_bits(Xtr: Any, ytr: Any, Xho: Any, yho: Any, l2: float, iters: int = 1500, lr: float = 0.05) -> float:
     """Class-balanced L2 logistic via full-batch Adam (numpy only).
 
-    Returns held-out cross-entropy in BITS. No sklearn/torch dependency so the
-    estimator runs identically everywhere and fails loudly on bad input rather
-    than silently degrading. Adam (over plain GD) is required to converge on the
-    correlated, ill-conditioned screened-feature blocks the panel produces.
+    Returns (held-out cross-entropy in BITS, held-out raw logits). No sklearn or
+    torch dependency so the estimator runs identically everywhere and fails
+    loudly on bad input rather than silently degrading. Adam (over plain GD) is
+    required to converge on the correlated, ill-conditioned screened-feature
+    blocks the panel produces. The held-out logits feed the CLUB upper bound.
     """
     import numpy as np
 
@@ -1101,9 +1102,10 @@ def _numpy_l2_logistic_ce_bits(Xtr: Any, ytr: Any, Xho: Any, yho: Any, l2: float
         mb_hat = mb / (1 - beta1 ** t); vb_hat = vb / (1 - beta2 ** t)
         w -= lr * mw_hat / (np.sqrt(vw_hat) + eps)
         b -= lr * mb_hat / (math.sqrt(vb_hat) + eps)
-    pho = np.clip(1.0 / (1.0 + np.exp(-(Xho @ w + b))), 1.0e-7, 1.0 - 1.0e-7)
+    zho = Xho @ w + b
+    pho = np.clip(1.0 / (1.0 + np.exp(-zho)), 1.0e-7, 1.0 - 1.0e-7)
     ce_nats = float(-np.mean(yho * np.log(pho) + (1.0 - yho) * np.log(1.0 - pho)))
-    return ce_nats / math.log(2.0)
+    return ce_nats / math.log(2.0), zho
 
 
 def screened_classifier_lower_bound(*, X: Any, y: Any, label: str, seed: int, holdout_fraction: float) -> dict[str, Any]:
@@ -1139,11 +1141,20 @@ def screened_classifier_lower_bound(*, X: Any, y: Any, label: str, seed: int, ho
     Xs_ho = (Xho_raw[:, keep_idx] - mu[keep_idx]) / sd[keep_idx]
     best_ce = float("inf")
     best_l2 = None
+    best_zho = None
     for l2 in (1.0e-3, 1.0e-2, 1.0e-1):
-        ce = _numpy_l2_logistic_ce_bits(Xs_tr, ytr, Xs_ho, yho, l2)
+        ce, zho = _numpy_l2_logistic_ce_bits(Xs_tr, ytr, Xs_ho, yho, l2)
         if ce < best_ce:
-            best_ce, best_l2 = ce, l2
+            best_ce, best_l2, best_zho = ce, l2, zho
     lower_bound = max(0.0, min(h_bits, h_bits - best_ce))
+    # CLUB (Cheng et al. 2020) upper bound. For binary y with variational
+    # q(y|x)=sigmoid(z), I_CLUB = E[(y - E[y]) * z] evaluated on the held-out
+    # split. Valid as an UPPER bound only when q approximates p(y|x) well, so we
+    # report it together with held-out AUC as a calibration witness.
+    yho_mean = float(yho.mean())
+    club_raw_bits = float(np.mean((yho - yho_mean) * best_zho) / math.log(2.0))
+    # MI <= H(Y) is a hard bound, so the effective upper bound caps CLUB at H(Y).
+    club_upper_bound = max(0.0, min(club_raw_bits, h_bits))
     return {
         "label": label,
         "valid": True,
@@ -1158,6 +1169,8 @@ def screened_classifier_lower_bound(*, X: Any, y: Any, label: str, seed: int, ho
         "l2": best_l2,
         "cross_entropy_bits": best_ce,
         "lower_bound_bits": lower_bound,
+        "club_raw_bits": club_raw_bits,
+        "club_upper_bound_bits": club_upper_bound,
     }
 
 
@@ -1222,6 +1235,45 @@ def power_calibration_gate(*, X: Any, y: Any, seed: int, holdout_fraction: float
 MIN_INFORMATIVE_TARGET_ENTROPY_BITS = 0.30
 
 
+def _sufficiency_decision(*, target_bits: float, lower_bound_bits: float | None, upper_bound_bits: float | None, estimator_underpowered: bool) -> dict[str, Any]:
+    """Principled sufficiency verdict from a [lower, upper] MI bracket + power gate.
+
+    - lower bound >= target            -> SUFFICIENT (proven; DPI-safe).
+    - estimator underpowered           -> UNPROVABLE (instrument below floor).
+    - upper bound < target, powered     -> INSUFFICIENT_SUPPORTED (CLUB is an
+      estimated, not guaranteed, upper bound, so "supported" not "proven").
+    - bracket straddles target          -> INDETERMINATE.
+    A low lower bound ALONE never implies insufficiency.
+    """
+    sufficient = lower_bound_bits is not None and lower_bound_bits >= target_bits
+    if sufficient:
+        classification = "PANEL_SUFFICIENT"
+    elif estimator_underpowered:
+        classification = "ESTIMATOR_UNDERPOWERED_INSUFFICIENCY_UNPROVABLE"
+    elif upper_bound_bits is not None and upper_bound_bits < target_bits:
+        classification = "PANEL_INSUFFICIENT_SUPPORTED"
+    elif lower_bound_bits is None:
+        classification = "unknown"
+    else:
+        classification = "INDETERMINATE_BOUNDS_STRADDLE_TARGET"
+    return {
+        "target_bits": target_bits,
+        "panel_sufficient": bool(sufficient),
+        "panel_insufficient_supported": classification == "PANEL_INSUFFICIENT_SUPPORTED",
+        "estimator_underpowered": bool(estimator_underpowered),
+        "global_best_lower_bound_bits": lower_bound_bits,
+        "global_club_upper_bound_bits": upper_bound_bits,
+        "classification": classification,
+        "note": (
+            "Verdict from a [lower, upper] MI bracket. Lower bounds (MINE/classifier/screened) prove "
+            "sufficiency when >= target; the CLUB upper bound supports insufficiency when < target AND "
+            "the power gate confirms the estimator can detect a planted signal at this (n,p). CLUB is an "
+            "estimated upper bound (valid when q(y|x) approximates p well), so insufficiency is 'supported', "
+            "not 'proven'."
+        ),
+    }
+
+
 def run_estimators(args: argparse.Namespace, output_root: Path, state_root: Path) -> dict[str, Any]:
     import numpy as np
 
@@ -1281,6 +1333,7 @@ def run_estimators(args: argparse.Namespace, output_root: Path, state_root: Path
     mine_bits = global_mine.get("bounded_best_validation_bits") if global_mine.get("valid") else None
     classifier_bits = _valid_bits(global_classifier, "lower_bound_bits")
     screened_bits = _valid_bits(global_screened, "lower_bound_bits")
+    screened_upper_bits = _valid_bits(global_screened, "club_upper_bound_bits")
     candidate_bits = [b for b in (mine_bits, classifier_bits, screened_bits) if b is not None]
     global_bits = max(candidate_bits) if candidate_bits else None
 
@@ -1339,39 +1392,19 @@ def run_estimators(args: argparse.Namespace, output_root: Path, state_root: Path
         ],
         "global_screened_lower_bound": global_screened,
         "global_best_lower_bound_bits": global_bits,
+        "global_club_upper_bound_bits": screened_upper_bits,
         "global_lower_bound_components_bits": {
             "mine": mine_bits,
             "classifier": classifier_bits,
             "screened": screened_bits,
         },
         "power_calibration": power_gate,
-        "decision_rule": {
-            "target_bits": 0.95,
-            # All estimators here are LOWER bounds. A lower bound >= 0.95 proves
-            # sufficiency; a lower bound < 0.95 does NOT prove insufficiency
-            # (that needs an upper bound, e.g. CLUB). The power gate guards
-            # against reading the estimator's own noise floor as "insufficient".
-            "panel_sufficient": bool(global_bits is not None and global_bits >= 0.95),
-            "insufficiency_provable_from_lower_bound": False,
-            "estimator_underpowered": estimator_underpowered,
-            "global_best_lower_bound_bits": global_bits,
-            "classification": (
-                "panel_sufficient"
-                if global_bits is not None and global_bits >= 0.95
-                else "ESTIMATOR_UNDERPOWERED_INSUFFICIENCY_UNPROVABLE"
-                if estimator_underpowered
-                else "lower_bound_marginal_sufficiency_unconfirmed"
-                if global_bits is not None and global_bits >= 0.7
-                else "lower_bound_low_insufficiency_requires_upper_bound"
-                if global_bits is not None
-                else "unknown"
-            ),
-            "note": (
-                "Insufficiency is NOT proven: every estimator is a lower bound and the power gate "
-                "verifies detectability at the real (n,p). To conclusively claim I(panel;oracle) < 0.95, "
-                "add an upper-bound estimator (CLUB) and confirm the power gate passes."
-            ),
-        },
+        "decision_rule": _sufficiency_decision(
+            target_bits=0.95,
+            lower_bound_bits=global_bits,
+            upper_bound_bits=screened_upper_bits,
+            estimator_underpowered=estimator_underpowered,
+        ),
         "artifacts": {
             "mine_estimates_jsonl": str(output_root / "mine_estimates.jsonl"),
             "mine_estimates_sha256": sha256_file(output_root / "mine_estimates.jsonl"),

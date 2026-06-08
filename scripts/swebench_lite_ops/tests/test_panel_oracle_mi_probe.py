@@ -9,12 +9,30 @@ from ..python_panel_oracle_mi_probe import (
     ACTIVE_EMBEDDERS,
     CodeStateAccumulator,
     PanelMiError,
+    _sufficiency_decision,
     finalize_dataset,
     power_calibration_gate,
     screened_classifier_lower_bound,
     screened_top_k_for,
     standardize_and_reduce,
 )
+
+
+def _binary_signal_with_true_mi(n: int, d: int, slope: float, seed: int):
+    """y ~ Bernoulli(sigmoid(slope * x0)) embedded in d-dim noise. Returns
+    (X, y, true_mi_bits) where true MI is computed from the generating probs."""
+    rng = np.random.default_rng(seed)
+    X = rng.standard_normal((n, d)).astype(np.float32)
+    p = 1.0 / (1.0 + np.exp(-slope * X[:, 0].astype(np.float64)))
+    y = (rng.random(n) < p).astype(np.int64)
+
+    def hb(q):
+        q = np.clip(q, 1e-12, 1 - 1e-12)
+        return -(q * np.log2(q) + (1 - q) * np.log2(1 - q))
+
+    h_y = hb(np.array([p.mean()]))[0]          # H(Y) = Hb(P(Y=1))
+    h_y_given_x = float(np.mean(hb(p)))         # E_x[H(Y|X=x)]
+    return X, y, float(h_y - h_y_given_x)
 
 
 def _high_dim_with_signal(n: int, d: int, signal_dims: int, seed: int):
@@ -78,6 +96,34 @@ def test_power_gate_flags_underpowered_when_too_few_samples() -> None:
     X, y = _high_dim_with_signal(n=40, d=3000, signal_dims=2, seed=5)
     gate = power_calibration_gate(X=X, y=y, seed=11, holdout_fraction=0.25)
     assert gate["estimator_underpowered"] is True, gate
+
+
+def test_club_upper_bound_brackets_true_mi() -> None:
+    # Lower bound <= true MI <= CLUB upper bound, on a clean known-MI problem.
+    X, y, true_mi = _binary_signal_with_true_mi(n=2400, d=200, slope=2.0, seed=7)
+    out = screened_classifier_lower_bound(X=X, y=y, label="bracket", seed=11, holdout_fraction=0.25)
+    lb = out["lower_bound_bits"]
+    ub = out["club_upper_bound_bits"]
+    assert 0.05 < true_mi < 0.95, true_mi  # sanity: a real, sub-target signal
+    assert lb <= true_mi + 0.12, (lb, true_mi)        # lower bound stays below
+    assert ub >= true_mi - 0.12, (ub, true_mi)        # CLUB stays above
+    assert ub >= lb, (lb, ub)                          # bracket is ordered
+
+
+def test_sufficiency_decision_states() -> None:
+    # lower bound >= target -> proven sufficient
+    d = _sufficiency_decision(target_bits=0.95, lower_bound_bits=0.97, upper_bound_bits=1.1, estimator_underpowered=False)
+    assert d["classification"] == "PANEL_SUFFICIENT" and d["panel_sufficient"] is True
+    # upper bound < target, powered -> insufficiency supported
+    d = _sufficiency_decision(target_bits=0.95, lower_bound_bits=0.20, upper_bound_bits=0.40, estimator_underpowered=False)
+    assert d["classification"] == "PANEL_INSUFFICIENT_SUPPORTED" and d["panel_insufficient_supported"] is True
+    # underpowered -> unprovable, regardless of a low upper bound
+    d = _sufficiency_decision(target_bits=0.95, lower_bound_bits=0.20, upper_bound_bits=0.40, estimator_underpowered=True)
+    assert d["classification"] == "ESTIMATOR_UNDERPOWERED_INSUFFICIENCY_UNPROVABLE"
+    assert d["panel_insufficient_supported"] is False
+    # bracket straddles target -> indeterminate
+    d = _sufficiency_decision(target_bits=0.95, lower_bound_bits=0.50, upper_bound_bits=1.2, estimator_underpowered=False)
+    assert d["classification"] == "INDETERMINATE_BOUNDS_STRADDLE_TARGET"
 
 
 def test_finalize_dataset_fails_closed_when_active_slot_dim_missing(tmp_path: Path) -> None:
