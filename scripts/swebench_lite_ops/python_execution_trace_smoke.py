@@ -204,13 +204,36 @@ def main() -> int:
     trace_limit_reached = [False]
     started = time.monotonic()
 
+    # Target-file allowlist (INV-010 #774 fix). For SWE-bench the repo IS the
+    # framework (django/sympy/...), so a repo_root-wide filter still records the
+    # framework's own import-time <module> events and exhausts the budget on
+    # boilerplate before reaching the test logic. Scoping to the diff-touched
+    # files + test files (the best-practice trace_targets.paths narrowing) spends
+    # the budget on the execution that actually diverges between pass and fail.
+    raw_targets = os.environ.get("CONTEXTGRAPH_TRACE_TARGET_FILES", "")
+    target_files = set()
+    target_dirs = []
+    for entry in raw_targets.replace(os.pathsep, "\n").replace(",", "\n").split("\n"):
+        entry = entry.strip()
+        if not entry:
+            continue
+        (target_dirs.append(entry) if entry.endswith("/") else target_files.add(entry))
+    scope_mode = "target_files" if (target_files or target_dirs) else "repo_root"
+
+    def in_scope(rel):
+        if scope_mode != "target_files":
+            return True
+        return rel in target_files or any(rel.startswith(d) for d in target_dirs)
+
     def tracer(frame, event, arg):
-        # Scope strictly to repo_root. Returning None tells CPython not to
-        # invoke per-line callbacks for this frame at all, so framework/stdlib
-        # frames cost nothing (PEP 669 "disable locations" principle applied to
-        # sys.settrace). This keeps the trace repo-relevant and bounds overhead.
+        # Returning None tells CPython not to invoke per-line callbacks for this
+        # frame at all, so out-of-scope frames cost nothing (PEP 669 "disable
+        # locations" principle applied to sys.settrace).
         path = frame.f_code.co_filename
         if not path.startswith(repo_root):
+            return None
+        rel = os.path.relpath(path, repo_root)
+        if not in_scope(rel):
             return None
         if event not in {"call", "line", "return", "exception"}:
             return tracer
@@ -220,7 +243,6 @@ def main() -> int:
             if exit_at_max_events:
                 raise TraceMaxEventsReached(frame)
             return None
-        rel = os.path.relpath(path, repo_root)
         lineno = int(frame.f_lineno)
         event_counts[event] += 1
         if event == "line":
@@ -330,6 +352,9 @@ def main() -> int:
             "exit_at_max_events": bool(exit_at_max_events),
             "trace_stopped_at_max_events": bool(trace_limit_reached[0]),
             "execution_outcome": execution_outcome,
+            "scope_mode": scope_mode,
+            "target_file_count": len(target_files) + len(target_dirs),
+            "target_files": sorted(target_files) + sorted(target_dirs),
         },
         "steps": {
             "event_counts": dict(sorted(event_counts.items())),
@@ -452,11 +477,31 @@ def main() -> int:
     trace_limit_reached = [False]
     started = time.monotonic()
 
+    # Target-file allowlist (INV-010 #774 fix); see build_trace_runner_source.
+    # For SWE-bench the repo IS the framework, so repo_root scoping still records
+    # import-time <module> boilerplate. Scope to the diff-touched/test files.
+    raw_targets = os.environ.get("CONTEXTGRAPH_TRACE_TARGET_FILES", "")
+    target_files = set()
+    target_dirs = []
+    for entry in raw_targets.replace(os.pathsep, "\n").replace(",", "\n").split("\n"):
+        entry = entry.strip()
+        if not entry:
+            continue
+        (target_dirs.append(entry) if entry.endswith("/") else target_files.add(entry))
+    scope_mode = "target_files" if (target_files or target_dirs) else "repo_root"
+
+    def in_scope(rel):
+        if scope_mode != "target_files":
+            return True
+        return rel in target_files or any(rel.startswith(d) for d in target_dirs)
+
     def tracer(frame, event, arg):
-        # Scope strictly to repo_root: return None for out-of-repo frames so
-        # CPython skips per-line callbacks there entirely (bounds overhead).
+        # Return None for out-of-scope frames so CPython skips per-line callbacks.
         path = frame.f_code.co_filename
         if not path.startswith(repo_root):
+            return None
+        rel = os.path.relpath(path, repo_root)
+        if not in_scope(rel):
             return None
         if event not in {"call", "line", "return", "exception"}:
             return tracer
@@ -466,7 +511,6 @@ def main() -> int:
             if exit_at_max_events:
                 raise TraceMaxEventsReached(frame)
             return None
-        rel = os.path.relpath(path, repo_root)
         lineno = int(frame.f_lineno)
         event_counts[event] += 1
         if event == "line":
@@ -577,6 +621,9 @@ def main() -> int:
                 "exit_at_max_events": bool(exit_at_max_events),
                 "trace_stopped_at_max_events": bool(trace_limit_reached[0]),
                 "execution_outcome": execution_outcome,
+                "scope_mode": scope_mode,
+                "target_file_count": len(target_files) + len(target_dirs),
+                "target_files": sorted(target_files) + sorted(target_dirs),
             },
             "steps": {
                 "event_counts": dict(sorted(event_counts.items())),
