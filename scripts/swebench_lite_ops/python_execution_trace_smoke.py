@@ -1341,6 +1341,21 @@ def run_trace_smoke(args: argparse.Namespace) -> dict[str, Any]:
         env_image_tag=args.tag,
         arch=args.arch,
     )
+    # INV-010 #774: scope the in-container trace to the diff-touched source files
+    # (candidate patch) plus the test files (test_patch), so the event budget is
+    # spent on the execution that diverges between pass and fail instead of the
+    # framework's import boilerplate. Honored when CONTEXTGRAPH_TRACE_TARGET_FILES
+    # is set inside the container by transform_eval_script_list.
+    if isinstance(dataset_instance, dict):
+        test_patch_text = str(dataset_instance.get("test_patch") or "")
+    else:
+        test_patch_text = str(getattr(dataset_instance, "test_patch", "") or "")
+    scope_target_files = diff_touched_files(patch_text, test_patch_text)
+    require(
+        bool(scope_target_files),
+        "EXECUTION_TRACE_SMOKE_NO_DIFF_TOUCHED_TARGET_FILES",
+        {"task_id": args.task_id, "category": args.category},
+    )
     soft_timeout_margin = int(getattr(args, "trace_soft_timeout_margin", 30))
     soft_timeout_seconds = max(0, int(args.instance_timeout) - soft_timeout_margin) if soft_timeout_margin > 0 else 0
     transformed, transform_metadata = transform_eval_script_list(
@@ -1348,7 +1363,9 @@ def run_trace_smoke(args: argparse.Namespace) -> dict[str, Any]:
         max_events=args.max_events,
         command_family=args.command_family,
         soft_timeout_seconds=soft_timeout_seconds,
+        target_files=scope_target_files,
     )
+    transform_metadata = {**transform_metadata, "scope_target_files": scope_target_files}
     test_spec.eval_script_list = transformed
 
     previous_cwd = Path.cwd()

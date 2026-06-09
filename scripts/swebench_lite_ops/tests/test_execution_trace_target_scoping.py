@@ -25,10 +25,16 @@ from pathlib import Path
 
 import pytest
 
+import argparse
+import types
+
+from .. import python_execution_trace_smoke as smoke
 from ..python_execution_trace_smoke import (
+    ExecutionTraceSmokeError,
     _heredoc_script_lines,
     build_trace_runner_source,
     diff_touched_files,
+    run_trace_smoke,
 )
 
 
@@ -187,3 +193,76 @@ def test_legacy_repo_root_mode_still_captures_boilerplate(tmp_path: Path) -> Non
     trace = _run_harness(_make_repo(tmp_path / "legacy", CALC_CORRECT), None, tmp_path, "legacy")
     assert trace["runtime_metrics"]["scope_mode"] == "repo_root"
     assert "pkg/__init__.py" in _files_in_trace(trace), _files_in_trace(trace)
+
+
+def test_run_trace_smoke_computes_and_passes_target_files(tmp_path: Path, monkeypatch) -> None:
+    """run_trace_smoke must derive trace targets from the REAL candidate patch +
+    test_patch and pass them into transform_eval_script_list. Stubs the Docker /
+    dataset deps; intercepts transform to capture the target_files it receives."""
+    candidate = (
+        "--- a/pkg/mod.py\n+++ b/pkg/mod.py\n@@ -1 +1 @@\n-    return n\n+    return n + 1\n"
+    )
+    test_patch = "--- a/tests/test_mod.py\n+++ b/tests/test_mod.py\n@@ -1 +1 @@\n-x\n+y\n"
+    patch_file = tmp_path / "cand.patch"
+    patch_file.write_text(candidate, encoding="utf-8")
+
+    monkeypatch.setattr(smoke, "load_corpus_entry", lambda *a, **k: {"patch_abspath": str(patch_file)})
+    monkeypatch.setattr(smoke, "load_dataset_instance", lambda *a, **k: {"test_patch": test_patch})
+    fake_runtime = {
+        "make_test_spec": lambda *a, **k: types.SimpleNamespace(eval_script_list=["pytest tests/test_mod.py"]),
+    }
+    monkeypatch.setattr(smoke, "import_swebench_runtime", lambda: fake_runtime)
+
+    captured: dict = {}
+
+    def fake_transform(script, **kw):
+        captured["target_files"] = kw.get("target_files")
+        raise ExecutionTraceSmokeError("STOP_AFTER_TRANSFORM")
+
+    monkeypatch.setattr(smoke, "transform_eval_script_list", fake_transform)
+
+    args = argparse.Namespace(
+        corpus_root=tmp_path / "corpus",
+        output_root=tmp_path / "out",
+        state_root=tmp_path / "state",
+        venv_python=Path(sys.executable),
+        allow_non_aiwonder_roots=True,
+        run_id="run-target-test",
+        task_id="org__repo-1",
+        category="subtle_flip",
+        dataset_name="SWE-bench/SWE-bench_Lite",
+        split="test",
+        namespace="ns",
+        tag="latest",
+        arch="x86_64",
+        instance_timeout=60,
+        trace_soft_timeout_margin=30,
+        max_events=5000,
+        command_family="pytest_direct",
+    )
+    with pytest.raises(ExecutionTraceSmokeError, match="STOP_AFTER_TRANSFORM"):
+        run_trace_smoke(args)
+    # the candidate's changed source file AND the test file are both targeted
+    assert captured["target_files"] == ["pkg/mod.py", "tests/test_mod.py"], captured
+
+
+def test_run_trace_smoke_fails_closed_when_no_target_files(tmp_path: Path, monkeypatch) -> None:
+    # An empty / non-diff candidate patch yields no targets -> fail-visible, not a
+    # silent unscoped (boilerplate) trace.
+    patch_file = tmp_path / "empty.patch"
+    patch_file.write_text("not a diff at all\n", encoding="utf-8")
+    monkeypatch.setattr(smoke, "load_corpus_entry", lambda *a, **k: {"patch_abspath": str(patch_file)})
+    monkeypatch.setattr(smoke, "load_dataset_instance", lambda *a, **k: {"test_patch": ""})
+    monkeypatch.setattr(
+        smoke, "import_swebench_runtime",
+        lambda: {"make_test_spec": lambda *a, **k: types.SimpleNamespace(eval_script_list=["pytest x"])},
+    )
+    args = argparse.Namespace(
+        corpus_root=tmp_path / "c", output_root=tmp_path / "o", state_root=tmp_path / "s",
+        venv_python=Path(sys.executable), allow_non_aiwonder_roots=True, run_id="run-z",
+        task_id="org__repo-1", category="known_good", dataset_name="d", split="test",
+        namespace="ns", tag="latest", arch="x86_64", instance_timeout=60,
+        trace_soft_timeout_margin=30, max_events=5000, command_family="pytest_direct",
+    )
+    with pytest.raises(ExecutionTraceSmokeError, match="NO_DIFF_TOUCHED_TARGET_FILES"):
+        run_trace_smoke(args)
