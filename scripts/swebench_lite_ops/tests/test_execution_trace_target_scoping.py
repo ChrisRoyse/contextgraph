@@ -25,7 +25,57 @@ from pathlib import Path
 
 import pytest
 
-from ..python_execution_trace_smoke import build_trace_runner_source
+from ..python_execution_trace_smoke import (
+    _heredoc_script_lines,
+    build_trace_runner_source,
+    diff_touched_files,
+)
+
+
+SAMPLE_PATCH = """diff --git a/src/pkg/calc.py b/src/pkg/calc.py
+index 1111..2222 100644
+--- a/src/pkg/calc.py
++++ b/src/pkg/calc.py
+@@ -1,3 +1,3 @@
+-    for i in range(n):
++    for i in range(n + 1):
+diff --git a/newfile.py b/newfile.py
+new file mode 100644
+--- /dev/null
++++ b/newfile.py
+"""
+
+TEST_PATCH = """--- a/tests/test_calc.py
++++ b/tests/test_calc.py
+@@ -1 +1 @@
+-x
++y
+"""
+
+
+def test_diff_touched_files_parses_and_dedups() -> None:
+    files = diff_touched_files(SAMPLE_PATCH, TEST_PATCH)
+    assert files == ["newfile.py", "src/pkg/calc.py", "tests/test_calc.py"], files
+    # /dev/null excluded; a//b/ prefixes stripped; deduped across both --- and +++.
+
+
+def test_diff_touched_files_empty_inputs() -> None:
+    assert diff_touched_files("", "   ") == []
+
+
+def test_heredoc_emits_target_files_export_only_when_provided() -> None:
+    with_targets = _heredoc_script_lines(
+        5000, "pytest_direct", 0, ["src/pkg/calc.py", "tests/test_calc.py"]
+    )
+    joined = "\n".join(with_targets)
+    assert "export CONTEXTGRAPH_TRACE_TARGET_FILES=" in joined
+    assert "src/pkg/calc.py,tests/test_calc.py" in joined
+    # The runner SOURCE always references the env var (it reads it); assert on the
+    # shell EXPORT statement, which is only emitted when targets are provided.
+    without = "\n".join(_heredoc_script_lines(5000, "pytest_direct", 0, None))
+    assert "export CONTEXTGRAPH_TRACE_TARGET_FILES=" not in without
+    blanks = "\n".join(_heredoc_script_lines(5000, "pytest_direct", 0, ["  ", ""]))
+    assert "export CONTEXTGRAPH_TRACE_TARGET_FILES=" not in blanks  # whitespace filtered
 
 
 INIT_SRC = textwrap.dedent(

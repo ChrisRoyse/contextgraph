@@ -654,7 +654,12 @@ if __name__ == "__main__":
 '''
 
 
-def _heredoc_script_lines(max_events: int, command_family: str, soft_timeout_seconds: int = 0) -> list[str]:
+def _heredoc_script_lines(
+    max_events: int,
+    command_family: str,
+    soft_timeout_seconds: int = 0,
+    target_files: list[str] | None = None,
+) -> list[str]:
     if command_family in {"pytest_direct", "tox"}:
         runner_path = TRACE_PYTEST_RUNNER_PATH
         runner_source = build_trace_runner_source()
@@ -665,7 +670,7 @@ def _heredoc_script_lines(max_events: int, command_family: str, soft_timeout_sec
         marker = "CONTEXTGRAPH_TRACE_SCRIPT_PY"
     else:
         raise ExecutionTraceSmokeError(f"EXECUTION_TRACE_SMOKE_UNSUPPORTED_COMMAND_FAMILY: {command_family}")
-    return [
+    lines = [
         f"cat > {runner_path} <<'{marker}'",
         runner_source.rstrip("\n"),
         marker,
@@ -674,8 +679,16 @@ def _heredoc_script_lines(max_events: int, command_family: str, soft_timeout_sec
         f"export CONTEXTGRAPH_TRACE_MAX_EVENTS={int(max_events)}",
         f"export CONTEXTGRAPH_TRACE_SOFT_TIMEOUT_SECONDS={int(soft_timeout_seconds)}",
         f"export CONTEXTGRAPH_TRACE_EXIT_AT_MAX_EVENTS={1 if command_family in {'sympy_bin_test', 'tox'} else 0}",
-        f"rm -f {shlex.quote(TRACE_OUTPUT_PATH)}",
     ]
+    # INV-010 #774: scope the in-container trace to the diff-touched + test files
+    # so the event budget lands on divergent execution, not framework imports.
+    cleaned = [str(f).strip() for f in (target_files or []) if str(f).strip()]
+    if cleaned:
+        lines.append(
+            f"export CONTEXTGRAPH_TRACE_TARGET_FILES={shlex.quote(','.join(cleaned))}"
+        )
+    lines.append(f"rm -f {shlex.quote(TRACE_OUTPUT_PATH)}")
+    return lines
 
 
 def _trace_emit_lines() -> list[str]:
@@ -902,11 +915,36 @@ def _wrap_tox_command(original_command: str, parts: list[str]) -> tuple[str, dic
     }
 
 
+def diff_touched_files(*patch_texts: str) -> list[str]:
+    """Repo-relative files changed by one or more unified diffs (the candidate
+    patch + test_patch). These are the INV-010 #774 trace targets: scoping the
+    in-container trace to them spends the event budget on the divergent execution
+    instead of framework import boilerplate. Parses `+++ b/<path>` / `--- a/<path>`
+    headers; ignores /dev/null (pure add/delete sides)."""
+    files: list[str] = []
+    seen: set[str] = set()
+    for text in patch_texts:
+        for line in (text or "").splitlines():
+            if line.startswith("+++ ") or line.startswith("--- "):
+                token = line[4:].strip()
+                if token in ("/dev/null", ""):
+                    continue
+                # strip git's a/ b/ prefix and any trailing tab metadata
+                token = token.split("\t", 1)[0]
+                if token.startswith(("a/", "b/")):
+                    token = token[2:]
+                if token and token not in seen:
+                    seen.add(token)
+                    files.append(token)
+    return sorted(files)
+
+
 def transform_eval_script_list(
     eval_script_list: list[str],
     max_events: int,
     command_family: str = "pytest_direct",
     soft_timeout_seconds: int = 0,
+    target_files: list[str] | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     require(
         command_family in SUPPORTED_COMMAND_FAMILIES,
@@ -931,7 +969,7 @@ def transform_eval_script_list(
         legacy_command_index_key = "tox_command_index"
     transformed = list(eval_script_list)
     transformed[command_index] = wrapped_command
-    heredoc_lines = _heredoc_script_lines(max_events, command_family, soft_timeout_seconds)
+    heredoc_lines = _heredoc_script_lines(max_events, command_family, soft_timeout_seconds, target_files)
     transformed[command_index:command_index] = heredoc_lines
     emit_index = command_index + len(heredoc_lines) + 2
     require(
