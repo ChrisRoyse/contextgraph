@@ -360,6 +360,24 @@ and what operationalism \citep{bridgman1927logic} calls a concept fixed by its
 measurement operations (\S\ref{sec:related}); its boundary is stated in
 \S\ref{sec:reframe-honest}.
 
+\emph{Why the geometry favours the relational reading.} That the affect marginal
+cannot separate genuine happiness from sarcasm is not an artefact of the example
+but a consequence of high-dimensional geometry. In the spaces these instruments
+inhabit, concentration of measure makes a single coordinate a weak discriminator
+of fine distinctions: the contrast between near and far angles collapses, and
+independently-commissioned lenses crowd toward mutual orthogonality, their cosines
+distributed about zero with spread ${\approx}1/\sqrt{d}$
+\citep{vershynin2018hdp,gorban2018blessing}. Two consequences both cut for the
+relational claim. First, because a lone lens has little angular contrast, the
+residual that separates near-collapsed inputs survives in the cross-lens bindings
+rather than the marginal---the geometry says \emph{why} meaning must be carried
+between the spaces and not within one. Second, near-orthogonality is exactly the
+regime of Gorban and Tyukin's stochastic-separation theorems, in which each added
+instrument supplies a genuinely new axis along which constellations become
+linearly separable; the panel's discriminative power is therefore a property of
+the joint cross-lens pattern, which is the formal content of ``a single
+representation means nothing in isolation.''
+
 This is also where the thesis of \S\ref{sec:thesis} becomes mechanical. A
 dictionary defines a word by the constellation of other words its definition
 invokes; $\mathrm{Def}(t)$ defines a term by the constellation of other
@@ -632,6 +650,11 @@ corpora are correlated, so the \emph{effective} panel rank---the participation
 ratio $N_{\mathrm{eff}}=\bigl(\sum_i\lambda_i\bigr)^2/\sum_i\lambda_i^2$ over the
 cross-embedder covariance spectrum $\{\lambda_i\}$---is smaller than the nominal
 $N$, and the realised pairwise yield falls correspondingly below $\binom{N}{2}$.
+This gap between nominal and effective rank is the concentration-of-measure regime
+of high dimension: as the per-lens dimension grows, the covariance spectrum's mass
+redistributes and independent directions crowd toward orthogonality, so the honest
+accounting is spectral rather than combinatorial
+\citep{vershynin2018hdp,gorban2018blessing}.
 Pairwise decorrelation does not even certify the bound: three instruments can be
 pairwise uncorrelated yet jointly dependent, so the D1 contract
 (\S\ref{sec:polis}) bounds redundancy without certifying joint independence. The
@@ -814,6 +837,22 @@ report are implemented and operational; a five-answer intake produces a complete
 21-slot constellation, and \texttt{assemble\_constellation} succeeds only when all
 21 slots are present. The ${\ge}500$-citizen calibration corpus and the 30-day
 outcome validation that turn D2 into a measured pass are the launch milestone.
+
+\emph{Which half of the contract binds.} High-dimensional geometry sharpens what
+D1 and D2 each guard. The distinctness cap is not symmetric in difficulty: for
+instruments commissioned on disjoint corpora, near-orthogonality is the
+high-dimensional default---random directions concentrate about cosine zero with
+spread ${\approx}1/\sqrt{d}$ \citep{vershynin2018hdp,gorban2018blessing}---so
+$\mathrm{corr}_+\le 0.6$ is satisfied almost automatically and D1 binds only the
+genuinely overlapping-corpus case (two text encoders, say). As $N$ grows and the
+slate diversifies, the live failure mode inverts: not pairs that are too
+correlated, but pairs so orthogonal that their cross-term shares no
+outcome-relevant direction and degrades to noise. That is the case D2 catches,
+which is why the marginal-bits condition, not the distinctness cap, is the binding
+half of the contract at scale. The risk is sharpest for cross-domain pairs---the
+most orthogonal of all---whose cross-terms are well-posed as meaning only when a
+shared grounding outcome gives the two lenses a common coordinate to correlate
+against (\S\ref{sec:reframe-honest}).
 
 \subsection{The three systems on one curve}
 Plot signals-per-input, $N+\binom{N}{2}(+1)$, against $N$ and the three systems

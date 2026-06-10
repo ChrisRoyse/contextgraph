@@ -1,4 +1,4 @@
-\begin{thebibliography}{47}
+\begin{thebibliography}{49}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -187,6 +187,17 @@ Matthias Gerstgrasser, Rylan Schaeffer, Apratim Dey, Rafael Rafailov, Henry
 \newblock \emph{arXiv preprint arXiv:2404.01413}, 2024.
 \newblock URL \url{https://arxiv.org/abs/2404.01413}.
 
+\bibitem[Gorban and Tyukin(2018)]{gorban2018blessing}
+Alexander~N. Gorban and Ivan~Y. Tyukin.
+\newblock Blessing of dimensionality: mathematical foundations of the
+  statistical physics of data.
+\newblock \emph{Philosophical Transactions of the Royal Society A:
+  Mathematical, Physical and Engineering Sciences}, 376\penalty0
+  (2118):\penalty0 20170237, 2018.
+\newblock \doi{10.1098/rsta.2017.0237}.
+\newblock URL \url{https://doi.org/10.1098/rsta.2017.0237}.
+\newblock arXiv:1801.03421.
+
 \bibitem[Harnad(1990)]{harnad1990symbol}
 Stevan Harnad.
 \newblock The symbol grounding problem.
@@ -337,6 +348,15 @@ Mark Steyvers and Joshua~B. Tenenbaum.
   analyses and a model of semantic growth.
 \newblock \emph{Cognitive Science}, 29\penalty0 (1):\penalty0 41--78, 2005.
 \newblock \doi{10.1207/s15516709cog2901_3}.
+
+\bibitem[Vershynin(2018)]{vershynin2018hdp}
+Roman Vershynin.
+\newblock \emph{High-Dimensional Probability: {An} Introduction with
+  Applications in Data Science}, volume~47 of \emph{Cambridge Series in
+  Statistical and Probabilistic Mathematics}.
+\newblock Cambridge University Press, Cambridge, 2018.
+\newblock \doi{10.1017/9781108231596}.
+\newblock URL \url{https://doi.org/10.1017/9781108231596}.
 
 \bibitem[Villalobos et~al.(2022)Villalobos, Ho, Sevilla, Besiroglu, Heim, and
   Hobbhahn]{villalobos2022data}
