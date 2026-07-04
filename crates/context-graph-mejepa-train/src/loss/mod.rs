@@ -1,4 +1,4 @@
-pub mod aux;
+pub mod auxiliary;
 pub mod constellation;
 pub mod counterfactual;
 pub mod entropy;
@@ -58,26 +58,26 @@ pub fn compose_l_full(
     let l_covariance = vicreg::l_covariance(predicted_latent)?;
     let l_invariance = vicreg::l_invariance(predicted_latent, predicted_latent)?;
     let l_sigreg = sigreg::sigreg_loss(predicted_latent, sigreg::SigregConfig::default())?;
-    let l_warnings = aux::l_mse(&aux_outputs.warnings, &batch_metadata.actual_warnings)?;
-    let l_runtime = aux::l_mse(&aux_outputs.runtime_log, &batch_metadata.actual_runtime_log)?;
-    let l_rss = aux::l_mse(&aux_outputs.rss, &batch_metadata.actual_rss)?;
-    let l_traceback = aux::l_cluster_ce(
+    let l_warnings = auxiliary::l_mse(&aux_outputs.warnings, &batch_metadata.actual_warnings)?;
+    let l_runtime = auxiliary::l_mse(&aux_outputs.runtime_log, &batch_metadata.actual_runtime_log)?;
+    let l_rss = auxiliary::l_mse(&aux_outputs.rss, &batch_metadata.actual_rss)?;
+    let l_traceback = auxiliary::l_cluster_ce(
         &aux_outputs.traceback_cluster_logits,
         &batch_metadata.actual_traceback_cluster_id,
     )?;
-    let l_hunk = aux::l_binary_ce(
+    let l_hunk = auxiliary::l_binary_ce(
         &aux_outputs.hunk_verdicts,
         &batch_metadata.actual_hunk_verdicts,
     )?;
-    let l_collateral = aux::l_binary_ce(
+    let l_collateral = auxiliary::l_binary_ce(
         &aux_outputs.adjacent_outcomes,
         &batch_metadata.actual_adjacent_outcomes,
     )?;
-    let l_reasoning = aux::l_cluster_contrastive(
+    let l_reasoning = auxiliary::l_cluster_contrastive(
         &aux_outputs.reasoning_embedding,
         &batch_metadata.actual_cot_cluster_id,
     )?;
-    let l_operator = aux::l_operator_match(
+    let l_operator = auxiliary::l_operator_match(
         &aux_outputs.operator_match,
         &batch_metadata.override_gold_labels,
         &batch_metadata.override_flags,
