@@ -71,7 +71,10 @@ check-python:
 	cd $(CLIPCANNON_DIR) && $(UV) lock --check
 	cd $(CLIPCANNON_DIR) && $(UV) run --locked $(PYTHON_DEV_EXTRA) python -c "import clipcannon, phoenix, voiceagent"
 
-lint: lint-rust lint-python
+lint: lint-filenames lint-rust lint-python
+
+lint-filenames:
+	@./scripts/ci/check_windows_reserved_filenames.sh
 
 lint-rust clippy:
 	cargo clippy --workspace --all-targets -- -D warnings
