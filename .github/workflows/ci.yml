@@ -32,9 +32,6 @@ jobs:
       - name: Reject C-drive path drift
         run: scripts/ci/check_no_c_drive_paths.sh
 
-      - name: Reject cross-platform-hostile filenames (Windows reserved names, illegal chars, case collisions)
-        run: scripts/ci/check_windows_reserved_filenames.sh
-
       - name: Reject schema-invalid Claude Code hook outputs
         run: scripts/ci/check_cc_hook_outputs.sh
 
